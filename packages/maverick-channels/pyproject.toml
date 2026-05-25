@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "maverick-channels"
 version = "0.1.0"
-description = "Channel adapters for Maverick (CLI, Telegram, iMessage, WhatsApp)"
+description = "Channel adapters for Maverick (Telegram, Discord, Slack, Signal, WhatsApp, SMS, Email, Matrix, iMessage)"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "texasreaper62" }]
@@ -16,7 +16,24 @@ dependencies = [
 
 [project.optional-dependencies]
 telegram = ["python-telegram-bot>=21.0"]
-all = ["python-telegram-bot>=21.0"]
+discord = ["discord.py>=2.4"]
+slack = ["slack_sdk>=3.27"]
+matrix = ["matrix-nio>=0.24"]
+whatsapp = ["fastapi>=0.110", "uvicorn>=0.27", "twilio>=9.0", "python-multipart>=0.0.9"]
+sms = ["fastapi>=0.110", "uvicorn>=0.27", "twilio>=9.0", "python-multipart>=0.0.9"]
+# Email uses stdlib only.
+# Signal needs signal-cli installed on PATH; no Python dep.
+# iMessage uses stdlib + osascript; macOS only.
+all = [
+    "python-telegram-bot>=21.0",
+    "discord.py>=2.4",
+    "slack_sdk>=3.27",
+    "matrix-nio>=0.24",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "twilio>=9.0",
+    "python-multipart>=0.0.9",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
