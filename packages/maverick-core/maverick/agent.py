@@ -148,7 +148,32 @@ class Agent:
                     f"⚠ BLOCKED by Shield ({verdict.severity}): "
                     f"{'; '.join(verdict.reasons)}. The tool was not executed."
                 )
-        return await self.tools.run(name, args)
+        output = await self.tools.run(name, args)
+        # Council finding: tool output flowed back to the LLM unscanned,
+        # so a malicious file contents / shell stdout containing
+        # `FINAL: <exfil>` or jailbreak instructions hit the next turn.
+        # Wrap the output in a clearly-delimited block so the agent
+        # treats it as data, and scan it through the shield.
+        if shield is not None:
+            try:
+                out_verdict = shield.scan_output(output)
+                if not out_verdict.allowed:
+                    self.ctx.blackboard.post(
+                        self.name, "error",
+                        f"tool={name} OUTPUT BLOCKED by Shield: "
+                        f"{'; '.join(out_verdict.reasons)}",
+                    )
+                    return (
+                        f"⚠ Tool output BLOCKED by Shield ({out_verdict.severity}): "
+                        f"{'; '.join(out_verdict.reasons)}. Result withheld."
+                    )
+            except Exception:  # pragma: no cover -- shield must never block tools on its own bug
+                pass
+        return (
+            f"<tool_output tool={name!r}>\n"
+            f"{output}\n"
+            f"</tool_output>"
+        )
 
     async def run(self) -> AgentResult:
         bb = self.ctx.blackboard

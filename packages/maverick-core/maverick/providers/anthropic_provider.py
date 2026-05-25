@@ -64,7 +64,12 @@ class AnthropicClient:
             kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
         return kwargs
 
-    def _parse_response(self, resp: Any, budget: Optional[Budget]) -> LLMResponse:
+    def _parse_response(
+        self,
+        resp: Any,
+        budget: Optional[Budget],
+        model: Optional[str] = None,
+    ) -> LLMResponse:
         text_parts: list[str] = []
         thinking_parts: list[str] = []
         tool_calls: list[ToolCall] = []
@@ -82,7 +87,14 @@ class AnthropicClient:
         cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
 
         if budget is not None:
-            budget.record_tokens(usage.input_tokens, usage.output_tokens)
+            # ``usage.input_tokens`` is non-cached input only. Cache reads
+            # and writes are billed separately at different rates.
+            budget.record_tokens(
+                usage.input_tokens, usage.output_tokens,
+                model=model,
+                cache_read_tok=cache_read,
+                cache_write_tok=cache_creation,
+            )
 
         return LLMResponse(
             text="\n".join(text_parts).strip(),
@@ -108,12 +120,12 @@ class AnthropicClient:
         kwargs = self._build_request(system, messages, tools, max_tokens, thinking_budget, model)
         if on_delta is None:
             resp = self.client.messages.create(**kwargs)
-            return self._parse_response(resp, budget)
+            return self._parse_response(resp, budget, model=kwargs.get("model"))
         with self.client.messages.stream(**kwargs) as stream:
             for event in stream.text_stream:
                 on_delta(event)
             final = stream.get_final_message()
-        return self._parse_response(final, budget)
+        return self._parse_response(final, budget, model=kwargs.get("model"))
 
     async def complete_async(
         self,
@@ -127,4 +139,4 @@ class AnthropicClient:
     ) -> LLMResponse:
         kwargs = self._build_request(system, messages, tools, max_tokens, thinking_budget, model)
         resp = await self.aclient.messages.create(**kwargs)
-        return self._parse_response(resp, budget)
+        return self._parse_response(resp, budget, model=kwargs.get("model"))

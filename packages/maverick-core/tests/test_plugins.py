@@ -3,12 +3,25 @@
 Uses a stub entry_points iterator monkey-patched into
 `maverick.plugins._entry_points` so we don't need to actually install a
 sibling plugin package in CI.
+
+v0.2 (council Tier 0 fix): plugin discovery now requires an explicit
+allowlist. These tests set MAVERICK_PLUGINS_ALLOW=* to preserve the
+pre-0.2 "everything loads" behavior so they keep testing the
+discovery / contract semantics specifically. The allowlist itself is
+tested in test_tier0_security.py.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pytest
+
 from maverick import plugins
+
+
+@pytest.fixture(autouse=True)
+def _allow_all_plugins(monkeypatch):
+    monkeypatch.setenv("MAVERICK_PLUGINS_ALLOW", "*")
 
 
 @dataclass

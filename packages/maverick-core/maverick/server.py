@@ -109,6 +109,15 @@ class Server:
         """Run all channels concurrently. One channel crashing logs but doesn't kill others."""
         if not self._channels:
             raise ValueError("no channels registered")
+        # Reclaim any goals stuck in 'active'/'pending' from a prior
+        # crash. Without this, SIGKILL/OOM mid-run leaves ghosts that
+        # show in /goals forever.
+        try:
+            reclaimed = self.world.reclaim_orphan_goals()
+            if reclaimed:
+                log.warning("reclaimed %d orphan goal(s) from prior crash", reclaimed)
+        except Exception:  # pragma: no cover
+            log.exception("orphan goal reclaim failed on serve startup")
         log.info(
             "starting %d channel(s): %s",
             len(self._channels),

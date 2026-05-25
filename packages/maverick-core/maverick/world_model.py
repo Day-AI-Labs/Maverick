@@ -19,7 +19,7 @@ from typing import Optional
 
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 SCHEMA = """
@@ -133,6 +133,18 @@ CREATE TABLE IF NOT EXISTS attachments (
 
 CREATE INDEX IF NOT EXISTS idx_attachments_goal_id ON attachments(goal_id);
 
+-- v0.2 channel idempotency: Twilio / iMessage / other channels retry
+-- webhooks on non-2xx (or slow handlers). Without a dedup key the same
+-- inbound message triggers N goal runs and N API spends.
+CREATE TABLE IF NOT EXISTS processed_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    goal_id INTEGER REFERENCES goals(id),
+    seen_at REAL NOT NULL,
+    UNIQUE(channel, external_id)
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
     content, content='messages', content_rowid='id'
 );
@@ -153,6 +165,7 @@ MIGRATIONS: dict[int, list[str]] = {
     3: [],  # goal_events table is in SCHEMA (idempotent CREATE)
     4: [],  # conversations/turns tables are in SCHEMA (idempotent CREATE)
     5: [],  # attachments table is in SCHEMA (idempotent CREATE)
+    6: [],  # processed_messages table is in SCHEMA (idempotent CREATE)
 }
 
 
@@ -248,10 +261,36 @@ class WorldModel:
         self.conn.execute("PRAGMA journal_mode = WAL")
         self.conn.execute("PRAGMA synchronous = NORMAL")
         self.conn.execute("PRAGMA busy_timeout = 5000")
+        # SQLite default is foreign_keys=OFF; without this, every
+        # `REFERENCES goals(id)` clause is decorative and a delete can
+        # orphan turns/attachments/episodes silently.
+        self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(SCHEMA)
         self._init_schema_version()
         self._apply_migrations()
         self.conn.commit()
+
+    def reclaim_orphan_goals(self, *, max_age_seconds: float = 0.0) -> int:
+        """Mark goals stuck in 'active' or 'pending' as 'blocked'.
+
+        Called on startup to recover from SIGKILL / OOM / crash mid-run.
+        Without this, a process death between create_goal() and
+        set_goal_status('done'/'blocked') leaves the row 'active' forever
+        and `active_goal()` returns a ghost. Returns rows reclaimed.
+
+        ``max_age_seconds`` filters to rows whose updated_at is older
+        than this; default 0 reclaims everything (use on process start).
+        """
+        cutoff = time.time() - max_age_seconds
+        cur = self.conn.execute(
+            "UPDATE goals SET status = 'blocked', "
+            "result = COALESCE(result, '') || ' [process restarted mid-run]', "
+            "updated_at = ? "
+            "WHERE status IN ('active', 'pending') AND updated_at < ?",
+            (time.time(), cutoff),
+        )
+        self.conn.commit()
+        return cur.rowcount
 
     def _init_schema_version(self) -> None:
         row = self.conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
@@ -511,6 +550,45 @@ class WorldModel:
                 "SELECT * FROM conversations ORDER BY last_seen DESC"
             ).fetchall()
         return [Conversation(**dict(r)) for r in rows]
+
+    # ----- channel dedup -----
+    def mark_message_processed(
+        self,
+        channel: str,
+        external_id: str,
+        goal_id: Optional[int] = None,
+    ) -> bool:
+        """Record an inbound message as processed; idempotent.
+
+        Returns True on first-write (the caller should run the goal),
+        False on duplicate (the caller should return 200 without
+        re-running). Twilio retries within 15s if the webhook is slow
+        or non-2xx; the same MessageSid arriving twice was producing
+        N goals and N spends before this.
+        """
+        try:
+            self.conn.execute(
+                "INSERT INTO processed_messages(channel, external_id, goal_id, seen_at) "
+                "VALUES(?, ?, ?, ?)",
+                (channel, external_id, goal_id, time.time()),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def lookup_processed_message(
+        self,
+        channel: str,
+        external_id: str,
+    ) -> Optional[int]:
+        """Return the goal_id for an already-processed message, if any."""
+        row = self.conn.execute(
+            "SELECT goal_id FROM processed_messages "
+            "WHERE channel = ? AND external_id = ?",
+            (channel, external_id),
+        ).fetchone()
+        return row[0] if row and row[0] is not None else None
 
     # ----- attachments -----
     def add_attachment(

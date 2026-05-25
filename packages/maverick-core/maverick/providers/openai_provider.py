@@ -161,7 +161,11 @@ class OpenAIClient:
         ]
 
     @staticmethod
-    def _from_response(resp: Any, budget: Optional[Budget]) -> LLMResponse:
+    def _from_response(
+        resp: Any,
+        budget: Optional[Budget],
+        model: Optional[str] = None,
+    ) -> LLMResponse:
         choice = resp.choices[0]
         text = choice.message.content or ""
         tool_calls: list[ToolCall] = []
@@ -179,6 +183,7 @@ class OpenAIClient:
             budget.record_tokens(
                 getattr(usage, "prompt_tokens", 0) or 0,
                 getattr(usage, "completion_tokens", 0) or 0,
+                model=model,
             )
         # Map finish_reason to Anthropic stop_reason vocab so consumers that
         # check Anthropic values (e.g., 'tool_use', 'end_turn') branch correctly.
@@ -229,7 +234,7 @@ class OpenAIClient:
             log.debug("OpenAI provider ignores thinking_budget=%s", thinking_budget)
         kwargs = self._build_kwargs(system, messages, tools, max_tokens, model)
         resp = self._sync.chat.completions.create(**kwargs)
-        return self._from_response(resp, budget)
+        return self._from_response(resp, budget, model=kwargs.get("model"))
 
     async def complete_async(
         self,
@@ -245,4 +250,4 @@ class OpenAIClient:
             log.debug("OpenAI provider ignores thinking_budget=%s", thinking_budget)
         kwargs = self._build_kwargs(system, messages, tools, max_tokens, model)
         resp = await self._async.chat.completions.create(**kwargs)
-        return self._from_response(resp, budget)
+        return self._from_response(resp, budget, model=kwargs.get("model"))

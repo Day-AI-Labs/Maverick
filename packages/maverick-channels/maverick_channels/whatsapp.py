@@ -84,6 +84,7 @@ class WhatsAppChannel(Channel):
         request: "Request",
         From: str = Form(...),  # noqa: N803
         Body: str = Form(...),  # noqa: N803
+        MessageSid: str = Form(""),  # noqa: N803 -- Twilio dedup key
     ):
         # Validate Twilio signature so random POSTs can't spoof inbound.
         signature = request.headers.get("X-Twilio-Signature", "")
@@ -93,6 +94,17 @@ class WhatsAppChannel(Channel):
         if not self._validator.validate(url, form_dict, signature):
             log.warning("WhatsApp webhook signature invalid; ignoring")
             raise HTTPException(status_code=403, detail="signature invalid")
+
+        # Twilio retries; dedup on MessageSid before triggering the swarm.
+        if MessageSid:
+            try:
+                from maverick.world_model import DEFAULT_DB, WorldModel
+                wm = WorldModel(DEFAULT_DB)
+                if not wm.mark_message_processed("whatsapp", MessageSid):
+                    log.info("WhatsApp MessageSid %s already processed; skipping", MessageSid)
+                    return Response(content="", media_type="text/xml")
+            except Exception:  # pragma: no cover
+                log.warning("WhatsApp dedup check failed; processing anyway")
 
         msg = IncomingMessage(user_id=From, text=Body, channel="whatsapp")
         try:

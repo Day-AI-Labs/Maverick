@@ -64,11 +64,21 @@ def run_goal_in_thread(
         world = WorldModel(DEFAULT_DB)
         llm = LLM()
         sandbox = build_sandbox()
-        run_goal_sync(
-            llm, world,
-            Budget(max_dollars=max_dollars, max_wall_seconds=max_wall_seconds),
-            goal_id, sandbox=sandbox, max_depth=max_depth,
-        )
+        try:
+            run_goal_sync(
+                llm, world,
+                Budget(max_dollars=max_dollars, max_wall_seconds=max_wall_seconds),
+                goal_id, sandbox=sandbox, max_depth=max_depth,
+            )
+        except Exception:
+            # If the swarm raises an unexpected exception (anything not
+            # caught by run_goal itself), the goal row is still 'active'.
+            # Mark it 'blocked' so the dashboard doesn't show a ghost.
+            log.exception("goal #%s crashed inside run_goal_sync", goal_id)
+            try:
+                world.set_goal_status(goal_id, "blocked", result="internal error")
+            except Exception:  # pragma: no cover
+                log.exception("failed to reclaim goal #%s after crash", goal_id)
     except Exception:
         log.exception("background goal run failed (goal_id=%s)", goal_id)
     finally:

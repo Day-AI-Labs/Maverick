@@ -72,6 +72,7 @@ class SMSChannel(Channel):
         request: "Request",
         From: str = Form(...),  # noqa: N803
         Body: str = Form(...),  # noqa: N803
+        MessageSid: str = Form(""),  # noqa: N803 -- Twilio dedup key
     ):
         signature = request.headers.get("X-Twilio-Signature", "")
         url = str(request.url)
@@ -80,6 +81,20 @@ class SMSChannel(Channel):
         if not self._validator.validate(url, form_dict, signature):
             log.warning("SMS webhook signature invalid; ignoring")
             raise HTTPException(status_code=403, detail="signature invalid")
+
+        # Council finding (Tier 0): Twilio retries non-2xx and slow
+        # handlers; without MessageSid dedup the same inbound SMS spawns
+        # N goals and burns N API spends. Best-effort dedup -- if the
+        # world model isn't reachable here we fall through to processing.
+        if MessageSid:
+            try:
+                from maverick.world_model import DEFAULT_DB, WorldModel
+                wm = WorldModel(DEFAULT_DB)
+                if not wm.mark_message_processed("sms", MessageSid):
+                    log.info("SMS MessageSid %s already processed; skipping", MessageSid)
+                    return Response(content="", media_type="text/xml")
+            except Exception:  # pragma: no cover
+                log.warning("SMS dedup check failed; processing anyway")
 
         msg = IncomingMessage(user_id=From, text=Body, channel="sms")
         try:

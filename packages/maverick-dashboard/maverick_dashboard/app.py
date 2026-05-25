@@ -30,6 +30,23 @@ app = FastAPI(
 )
 app.include_router(api_router)
 
+
+@app.on_event("startup")
+async def _reclaim_orphans() -> None:
+    """Mark goals stuck in active/pending as blocked after a crash.
+
+    Without this, SIGKILL/OOM mid-run strands rows in 'active' forever
+    and `active_goal()` returns a ghost. Council finding (Tier 0).
+    """
+    try:
+        from maverick.world_model import DEFAULT_DB, WorldModel
+        wm = WorldModel(DEFAULT_DB)
+        n = wm.reclaim_orphan_goals()
+        if n:
+            log.warning("reclaimed %d orphan goal(s) from prior crash", n)
+    except Exception:
+        log.exception("orphan reclaim failed on startup")
+
 _AUTH_EXEMPT = {"/healthz", "/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect"}
 _query_token_warned = False
 
