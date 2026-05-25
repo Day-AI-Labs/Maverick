@@ -2,12 +2,17 @@
 
 Each tool is a name + JSON schema + executor function. The executor may be a
 sync function returning str, or an async coroutine returning str.
+
+v0.1.2: ``base_registry`` accepts an optional list of MCPClient
+instances. If provided, every tool the MCP servers expose is
+registered as ``mcp_<server>__<tool>`` and routed through the
+MCPClient. This is how Maverick consumes the wider MCP ecosystem.
 """
 from __future__ import annotations
 
 import inspect
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Union
+from typing import Any, Awaitable, Callable, Optional, Union
 
 ToolFn = Callable[[dict[str, Any]], Union[str, Awaitable[str]]]
 
@@ -55,11 +60,15 @@ class ToolRegistry:
             return f"ERROR: {type(e).__name__}: {e}"
 
 
-def base_registry(world, sandbox) -> ToolRegistry:
-    """Build the base tool set (no spawn tools)."""
-    from .fs import read_file, write_file, list_dir
-    from .shell import shell
+def base_registry(world, sandbox, mcp_clients: Optional[list] = None) -> ToolRegistry:
+    """Build the base tool set (no spawn tools).
+
+    If ``mcp_clients`` is given, each one's discovered tools are
+    registered as ``mcp_<server>__<tool>``.
+    """
     from .ask_user import ask_user
+    from .fs import list_dir, read_file, write_file
+    from .shell import shell
 
     reg = ToolRegistry()
     reg.register(read_file(sandbox))
@@ -67,8 +76,14 @@ def base_registry(world, sandbox) -> ToolRegistry:
     reg.register(list_dir(sandbox))
     reg.register(shell(sandbox))
     reg.register(ask_user(world))
+
+    if mcp_clients:
+        from ..mcp_tools import tools_from_mcp
+        for client in mcp_clients:
+            for t in tools_from_mcp(client):
+                reg.register(t)
+
     return reg
 
 
-# Back-compat alias for older callers.
 default_registry = base_registry

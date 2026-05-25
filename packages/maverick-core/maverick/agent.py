@@ -3,7 +3,8 @@
 Every node in the swarm is an `Agent`. Agents:
   - run an async tool-use loop against the LLM
   - may spawn sub-agents (single or parallel swarm) via tools
-  - share blackboard, world model, budget, sandbox, and shield via SwarmContext
+  - share blackboard, world model, budget, sandbox, shield, and MCP
+    clients via SwarmContext
   - have a depth (root=0) and a parent reference
 
 The orchestrator is just an Agent with role='orchestrator' and a planning-
@@ -13,9 +14,10 @@ Shield chokepoints (per ARCHITECTURE.md):
   - tool-call scan: every tool_use is run through ctx.shield.scan_tool_call()
     before execution. Blocked calls return a synthetic tool_result rather
     than running the tool.
-  - input/output scans: handled at the channel boundary in server.py so the
-    whole agent run is bracketed (input before goal creation, output before
-    reply send).
+  - input/output scans: handled at the channel boundary in server.py.
+
+MCP tools (when ctx.mcp_clients is non-empty) appear in the tool registry
+as ``mcp_<server>__<tool>`` and route through the corresponding MCPClient.
 """
 from __future__ import annotations
 
@@ -42,6 +44,7 @@ Tools you can call include:
   - `ask_user` to queue a question for the user (async). Use sparingly, batch.
   - `spawn_subagent` to delegate a focused sub-task to a child specialist.
   - `spawn_swarm` to fan out INDEPENDENT sub-tasks in PARALLEL.
+  - `mcp_<server>__<tool>` for any external MCP servers wired into config.
 
 Rules:
 1. If your task naturally decomposes into 2+ independent parts and you have depth budget remaining, prefer `spawn_swarm` for speed.
@@ -65,7 +68,9 @@ Standard playbook:
 
 You have a maximum spawn depth of {max_depth}. Use it wisely.
 
-Available roles for children: researcher, coder, writer, analyst, summarizer, revisor."""
+Available roles for children: researcher, coder, writer, analyst, summarizer, revisor.
+
+External MCP tools (if any) appear as `mcp_<server>__<tool>`."""
 
 
 @dataclass
@@ -100,8 +105,11 @@ class Agent:
         self.model = model_for_role(role)
 
     def _build_tools(self) -> ToolRegistry:
-        reg = base_registry(self.ctx.world, self.ctx.sandbox)
-        # Only allow spawn if we have depth headroom.
+        reg = base_registry(
+            self.ctx.world,
+            self.ctx.sandbox,
+            mcp_clients=self.ctx.mcp_clients,
+        )
         if self.depth < self.ctx.max_depth:
             reg.register(spawn_subagent_tool(self))
             reg.register(spawn_swarm_tool(self))
@@ -115,34 +123,28 @@ class Agent:
                 role=self.role, depth=self.depth, max_depth=self.ctx.max_depth
             )
 
-        # Inject relevant skills from prior runs.
         if self.ctx.use_skills:
             try:
                 from .skills import load_skills, relevant_skills, render_for_prompt
-
                 skills = relevant_skills(self.brief, load_skills())
                 if skills:
                     base = base + "\n\n" + render_for_prompt(skills)
             except (ImportError, FileNotFoundError, ValueError):
                 pass
-
         return base
 
     def _thinking_budget(self) -> Optional[int]:
-        # Orchestrator + revisor get extended thinking; workers don't (cost).
         if self.role in ("orchestrator", "revisor"):
             return 8000
         return None
 
     async def _run_tool(self, name: str, args: dict) -> str:
-        """Run a tool with Shield gating (if configured)."""
         shield = self.ctx.shield
         if shield is not None:
             verdict = shield.scan_tool_call(name, args)
             if not verdict.allowed:
                 self.ctx.blackboard.post(
-                    self.name,
-                    "error",
+                    self.name, "error",
                     f"tool={name} BLOCKED by Shield: {'; '.join(verdict.reasons)}",
                 )
                 return (
@@ -181,7 +183,6 @@ class Agent:
                 bb.post(self.name, "error", f"budget exceeded: {e}")
                 return AgentResult(error=str(e), role=self.role, name=self.name)
 
-            # Record the assistant turn for proper conversation continuity.
             assistant_content: list[dict] = []
             if resp.thinking:
                 assistant_content.append({"type": "thinking", "thinking": resp.thinking})
@@ -218,8 +219,7 @@ class Agent:
                 if tc.name == "ask_user":
                     blocked = True
                 bb.post(
-                    self.name,
-                    "observation",
+                    self.name, "observation",
                     f"tool={tc.name} -> {output[:500]}",
                 )
                 tool_results.append(

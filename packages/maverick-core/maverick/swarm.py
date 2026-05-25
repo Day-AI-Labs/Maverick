@@ -7,12 +7,13 @@ Every agent in a swarm shares:
   - one Blackboard (shared workspace for the run)
   - one Sandbox (execution backend)
   - one Shield (input/tool-call/output scans; may be None if disabled)
+  - zero or more MCPClient instances (external tool servers via stdio)
 
 Children inherit the parent's context but get their own brief, role, and depth.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from .blackboard import Blackboard
@@ -27,11 +28,9 @@ class SwarmContext:
     world: WorldModel
     budget: Budget
     blackboard: Blackboard
-    sandbox: Any  # LocalBackend | DockerBackend; duck-typed via .exec(cmd) -> ExecResult
+    sandbox: Any
     goal_id: int
     max_depth: int = 3
-    # Whether to attempt to load relevant skills into each agent's brief.
     use_skills: bool = True
-    # Optional Shield instance from maverick_shield. None = scans disabled.
-    # Typed as Any to keep maverick-core importable without maverick-shield.
     shield: Optional[Any] = None
+    mcp_clients: list = field(default_factory=list)
