@@ -1,0 +1,74 @@
+# Getting started
+
+## Install
+
+```bash
+pipx install maverick
+```
+
+Or from source while we're still pre-release:
+
+```bash
+git clone https://github.com/texasreaper62/maverick
+cd maverick
+uv sync           # uses workspace pyproject.toml
+uv run maverick init
+```
+
+## First run
+
+```bash
+maverick init
+```
+
+The wizard takes ~2 minutes. It writes `~/.maverick/config.toml` and `~/.maverick/.env`.
+
+Then:
+
+```bash
+maverick start "Plan a 2-week trip to Japan. Write the itinerary to trip.md."
+```
+
+Watch the swarm work. When done:
+
+```bash
+maverick status      # what's currently active or blocked
+maverick skills      # what the swarm distilled from this run
+maverick facts       # what it learned about you
+```
+
+## Pausing / resuming
+
+If the swarm needs something only you can answer, it pauses and queues a question:
+
+```bash
+maverick status
+# shows: open questions: #3 (goal 1): Which dates are you traveling?
+
+maverick answer 3 "May 15-29"
+maverick resume
+```
+
+Goals survive restarts. You can shut your laptop and come back tomorrow.
+
+## Changing models or providers
+
+Re-run the wizard any time:
+
+```bash
+maverick init
+```
+
+Or edit `~/.maverick/config.toml` directly. The `[models]` section maps each agent role to a `provider:model-id` string. See [`configuration.md`](./configuration.md) for the schema.
+
+## Where data lives
+
+| File | What |
+|---|---|
+| `~/.maverick/config.toml` | Your config (deployment, models, safety, budget) |
+| `~/.maverick/.env` | API keys (chmod 600) |
+| `~/.maverick/world.db` | Persistent world model: goals, facts, episodes |
+| `~/.maverick/skills/` | Auto-distilled SKILL.md files from successful runs |
+| `~/maverick-workspace/` | Default sandbox working directory |
+
+All local. Nothing is uploaded except your prompts to the cloud LLM you chose.

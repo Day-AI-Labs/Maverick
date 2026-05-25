@@ -1,0 +1,23 @@
+# Workspace root. Each package under packages/ and apps/ is independently
+# pip-installable; this file declares the workspace for uv and groups dev
+# tooling.
+
+[tool.uv.workspace]
+members = [
+    "packages/maverick-core",
+    "packages/maverick-shield",
+    "apps/installer-cli",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "UP"]
+ignore = ["E501"]  # line length
+
+[tool.pytest.ini_options]
+testpaths = ["packages", "apps"]
+python_files = "test_*.py"
+asyncio_mode = "auto"
