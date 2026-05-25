@@ -1,0 +1,107 @@
+"""Configuration loader for Maverick.
+
+Reads ``~/.maverick/config.toml`` (or the path set by ``$MAVERICK_CONFIG``).
+Supports environment variable interpolation in string values: ``${VAR_NAME}``
+is replaced with the env value, or the empty string if unset.
+
+This is the surface the installer wizard writes to. Users can also edit
+the TOML by hand. The kernel falls back to sensible defaults if no
+config file exists, so research / dev use doesn't require running the
+wizard first.
+
+Schema overview::
+
+    [providers.<name>]
+    api_key = "${ANTHROPIC_API_KEY}"
+    base_url = "..."  # optional
+
+    [models]
+    orchestrator = "anthropic:claude-opus-4-7"
+    researcher   = "anthropic:claude-sonnet-4-6"
+    # ...
+
+    [budget]
+    max_dollars = 5.0
+
+    [safety]
+    profile = "balanced"
+"""
+from __future__ import annotations
+
+import os
+import re
+from pathlib import Path
+from typing import Any, Optional
+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:  # pragma: no cover
+    import tomli as tomllib  # type: ignore
+
+
+DEFAULT_CONFIG_PATH = Path.home() / ".maverick" / "config.toml"
+
+_ENV_PATTERN = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)\}")
+
+
+def _interp(value: Any) -> Any:
+    """Recursively replace ``${VAR}`` with environment values."""
+    if isinstance(value, str):
+        return _ENV_PATTERN.sub(lambda m: os.environ.get(m.group(1), ""), value)
+    if isinstance(value, dict):
+        return {k: _interp(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_interp(v) for v in value]
+    return value
+
+
+def config_path() -> Path:
+    override = os.environ.get("MAVERICK_CONFIG")
+    if override:
+        return Path(override).expanduser()
+    return DEFAULT_CONFIG_PATH
+
+
+def load_config(path: Optional[Path] = None) -> dict:
+    p = path or config_path()
+    if not p.exists():
+        return {}
+    with open(p, "rb") as f:
+        return _interp(tomllib.load(f))
+
+
+def get_role_model(role: str) -> Optional[str]:
+    """Return the model spec ("provider:model-id") for a role, or None."""
+    cfg = load_config()
+    spec = cfg.get("models", {}).get(role)
+    return spec if isinstance(spec, str) and spec else None
+
+
+def get_provider_config(provider: str) -> dict:
+    cfg = load_config()
+    return cfg.get("providers", {}).get(provider, {})
+
+
+def get_budget_overrides() -> dict:
+    return load_config().get("budget", {})
+
+
+def get_safety() -> dict:
+    """Return safety section with sensible defaults filled in."""
+    cfg = load_config().get("safety", {})
+    return {
+        "profile": cfg.get("profile", "balanced"),
+        "block_threshold": cfg.get("block_threshold", "high"),
+        "scan_input": cfg.get("scan_input", True),
+        "scan_tool_calls": cfg.get("scan_tool_calls", True),
+        "scan_output": cfg.get("scan_output", True),
+    }
+
+
+def get_sandbox() -> dict:
+    cfg = load_config().get("sandbox", {})
+    return {
+        "backend": cfg.get("backend", "local"),
+        "workdir": cfg.get("workdir", "~/maverick-workspace"),
+        "timeout": cfg.get("timeout", 60),
+    }
