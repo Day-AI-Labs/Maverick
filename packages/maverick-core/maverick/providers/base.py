@@ -8,7 +8,7 @@ don't need to inherit from anything.
 """
 from __future__ import annotations
 
-from typing import Protocol, Optional, Any
+from typing import Optional, Protocol
 
 from ..budget import Budget
 from ..llm import LLMResponse

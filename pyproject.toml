@@ -24,4 +24,5 @@ ignore = ["E501"]  # line length
 [tool.pytest.ini_options]
 testpaths = ["packages", "apps"]
 python_files = "test_*.py"
-asyncio_mode = "auto"
+# asyncio_mode intentionally omitted: our smoke tests are all sync. Re-enable
+# (= "auto") once we add tests that exercise the async agent loop.

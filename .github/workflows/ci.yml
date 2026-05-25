@@ -34,10 +34,19 @@ jobs:
       - name: Install packages
         run: |
           set -x
+          # Install maverick-core first so its 'maverick' dist satisfies the
+          # cross-package 'maverick>=0.1' constraints. Use --no-deps on the
+          # downstream packages so pip doesn't try to satisfy that constraint
+          # by fetching 'maverick' from PyPI (where it doesn't exist / could
+          # be an unrelated package). Then install the downstream packages'
+          # actual runtime deps explicitly.
           pip install -e ./packages/maverick-core
-          pip install -e ./packages/maverick-shield
-          pip install -e ./packages/maverick-channels
-          pip install -e ./apps/installer-cli
+          pip install --no-deps -e ./packages/maverick-shield
+          pip install --no-deps -e ./packages/maverick-channels
+          pip install --no-deps -e ./apps/installer-cli
+          # Runtime deps that --no-deps skipped:
+          pip install 'questionary>=2.0' 'rich>=13.7'
+          # Test deps:
           pip install pytest pytest-asyncio
       - name: Show installed packages
         run: pip list
