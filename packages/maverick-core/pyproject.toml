@@ -3,7 +3,11 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "maverick"
+# PyPI distribution name. The 'maverick' name was squatted on PyPI so
+# we publish as 'maverick-agent'. The Python *import* name stays as
+# `maverick` (see [tool.setuptools.packages.find]) and the CLI entry
+# point stays `maverick` (see [project.scripts]).
+name = "maverick-agent"
 version = "0.1.0"
 description = "Recursive multi-agent swarm for long-horizon work"
 requires-python = ">=3.10"
@@ -23,6 +27,8 @@ ollama     = ["openai>=1.30"]
 shield     = ["maverick-shield"]
 installer  = ["maverick-installer"]
 channels   = ["maverick-channels"]
+dashboard  = ["maverick-dashboard"]
+mcp        = ["maverick-mcp"]
 embeddings = ["fastembed>=0.3"]
 dev        = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
 all        = [
@@ -31,10 +37,22 @@ all        = [
     "maverick-shield",
     "maverick-installer",
     "maverick-channels",
+    "maverick-dashboard",
+    "maverick-mcp",
 ]
 
 [project.scripts]
 maverick = "maverick.cli:main"
+
+[project.urls]
+Homepage      = "https://github.com/texasreaper62/maverick"
+Repository    = "https://github.com/texasreaper62/maverick"
+Issues        = "https://github.com/texasreaper62/maverick/issues"
+Changelog     = "https://github.com/texasreaper62/maverick/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/texasreaper62/maverick/tree/main/docs"
+
+[project.classifiers]
+# Note: classifiers belongs at [project] level. Keeping for reference.
 
 [tool.setuptools.packages.find]
 where = ["."]

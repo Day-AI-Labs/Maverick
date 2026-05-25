@@ -11,10 +11,13 @@ license = { text = "MIT" }
 authors = [{ name = "texasreaper62" }]
 readme = "README.md"
 dependencies = [
-    "maverick>=0.1",
+    "maverick-agent>=0.1",
     "questionary>=2.0",
     "rich>=13.7",
 ]
+
+[project.urls]
+Homepage = "https://github.com/texasreaper62/maverick"
 
 [project.scripts]
 maverick-init = "maverick_installer.main:main"

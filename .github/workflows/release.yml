@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to release as (e.g., v0.1.0-alpha)'
+        description: 'Tag to release as (e.g., v0.1.0)'
         required: true
         type: string
 
@@ -46,10 +46,6 @@ jobs:
           cache-to: type=gha,mode=max
 
   pypi:
-    # Publishes every package in the workspace to PyPI on tag. Requires
-    # PYPI_API_TOKEN secret to be set in the repo (Settings > Secrets >
-    # Actions). Falls back to no-op if the token isn't configured so
-    # forks don't fail.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -114,8 +110,13 @@ jobs:
           pip install -e ./packages/maverick-core
           pip install --no-deps -e ./packages/maverick-shield
           pip install --no-deps -e ./packages/maverick-channels
+          pip install --no-deps -e ./packages/maverick-dashboard
+          pip install --no-deps -e ./packages/maverick-mcp
           pip install --no-deps -e ./apps/installer-cli
-          pip install questionary rich pyinstaller
+          # Bundled deps the --no-deps installs above skipped:
+          pip install 'questionary>=2.0' 'rich>=13.7'
+          pip install 'fastapi>=0.110' 'uvicorn>=0.27' 'jinja2>=3.1' 'python-multipart>=0.0.9'
+          pip install pyinstaller
       - name: Build single-file binary
         shell: bash
         run: |
@@ -125,10 +126,19 @@ jobs:
             --collect-all maverick \
             --collect-all maverick_shield \
             --collect-all maverick_channels \
+            --collect-all maverick_dashboard \
+            --collect-all maverick_mcp \
             --collect-all maverick_installer \
             --collect-all anthropic \
             --hidden-import tomli \
             build/pyinstaller_entry.py
+      - name: Smoke-test the binary covers all subcommands
+        shell: bash
+        run: |
+          ./dist/maverick --help
+          ./dist/maverick version
+          ./dist/maverick dashboard --help
+          ./dist/maverick mcp --help || true
       - name: Rename artifact
         shell: bash
         run: |
@@ -145,6 +155,7 @@ jobs:
   release:
     needs: [docker-image, binaries, pypi]
     runs-on: ubuntu-latest
+    # Run if binaries built. PyPI failure (missing token) doesn't block release.
     if: always() && needs.docker-image.result == 'success' && needs.binaries.result == 'success'
     steps:
       - uses: actions/checkout@v4

@@ -5,18 +5,19 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "maverick-shield"
 version = "0.1.0"
-description = "Agent Shield integration for Maverick"
+description = "Agent Shield integration + builtin fallback rules for Maverick"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "texasreaper62" }]
 readme = "README.md"
-# Base install has no required deps so it works everywhere; the guard module
-# fail-opens with a clear warning if agent-shield isn't available at runtime.
-# Users who want real scanning install the [scan] extra.
+# Built-in rules ship as part of this package. agent-shield SDK is opt-in.
 dependencies = []
 
 [project.optional-dependencies]
 scan = ["agent-shield>=14.0"]
+
+[project.urls]
+Homepage = "https://github.com/texasreaper62/maverick"
 
 [tool.setuptools.packages.find]
 where = ["."]

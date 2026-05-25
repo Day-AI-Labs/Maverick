@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
 # Maverick VPS bootstrap script.
 #
-# Usage on a fresh Ubuntu / Debian VPS (run as root or via sudo):
-#
+# Usage:
 #   curl -sSL https://raw.githubusercontent.com/texasreaper62/maverick/main/deploy/vps/install.sh | sudo bash
+#
+# Or pin to a specific tag:
+#   curl -sSL ...install.sh | sudo MAVERICK_VERSION=v0.1.0 bash
 #
 # What it does:
 #   1. Installs Python 3.12, pipx, git
-#   2. Installs maverick (core + shield + channels + installer) into one pipx venv
-#   3. Runs `maverick init` interactively so you pick deployment / providers /
-#      models / channels / safety / sandbox / budget
+#   2. Installs maverick (core + shield + channels + dashboard + mcp + installer)
+#      into one pipx venv
+#   3. Runs `maverick init` interactively
 #   4. Drops a systemd unit so maverick serve runs at boot
 #   5. Optionally configures Caddy for HTTPS (see Caddyfile next to this script)
 
 set -euo pipefail
+
+MAVERICK_VERSION="${MAVERICK_VERSION:-main}"
 
 log() { echo "==> $*" >&2; }
 
@@ -35,18 +39,21 @@ install_system_deps() {
 }
 
 install_maverick() {
-  log "Installing maverick..."
-  # Until packages are on PyPI, install from source.
+  log "Installing maverick @ ${MAVERICK_VERSION}..."
   if [[ ! -d /opt/maverick ]]; then
-    git clone https://github.com/texasreaper62/maverick /opt/maverick
+    git clone --branch "${MAVERICK_VERSION}" --depth 1 \
+        https://github.com/texasreaper62/maverick /opt/maverick \
+      || git clone https://github.com/texasreaper62/maverick /opt/maverick
   else
-    git -C /opt/maverick pull --ff-only
+    git -C /opt/maverick fetch --depth 1 origin "${MAVERICK_VERSION}" 2>/dev/null || true
+    git -C /opt/maverick checkout "${MAVERICK_VERSION}" 2>/dev/null \
+      || git -C /opt/maverick pull --ff-only
   fi
-  # Install the core package into a fresh pipx venv, then inject the rest
-  # so they all share one environment.
   pipx install /opt/maverick/packages/maverick-core --force
   pipx inject maverick /opt/maverick/packages/maverick-shield
   pipx inject maverick /opt/maverick/packages/maverick-channels
+  pipx inject maverick /opt/maverick/packages/maverick-dashboard
+  pipx inject maverick /opt/maverick/packages/maverick-mcp
   pipx inject maverick /opt/maverick/apps/installer-cli
 }
 
