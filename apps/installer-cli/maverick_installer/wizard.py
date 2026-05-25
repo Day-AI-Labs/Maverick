@@ -3,6 +3,8 @@
 A friendly, opinionated walk-through. Sets up:
   - deployment target
   - AI providers and per-role models
+  - channels (Telegram, Discord, Slack, Signal, WhatsApp, SMS, Email,
+    Matrix, iMessage)
   - safety profile
   - sandbox backend
   - budget caps
@@ -34,7 +36,21 @@ ENV_FILE = CONFIG_DIR / ".env"
 console = Console()
 
 
-# ---------- prompt primitives (questionary if available, plain stdin otherwise) ----------
+# Channel catalog: (id, label, env_vars_needed)
+CHANNELS: list[tuple[str, str, list[str]]] = [
+    ("telegram", "Telegram bot (free, easiest)",        ["TELEGRAM_BOT_TOKEN"]),
+    ("discord",  "Discord bot (Gateway WS)",            ["DISCORD_BOT_TOKEN"]),
+    ("slack",    "Slack (Socket Mode)",                 ["SLACK_APP_TOKEN", "SLACK_BOT_TOKEN"]),
+    ("signal",   "Signal (via signal-cli)",             []),
+    ("email",    "Email (IMAP/SMTP, stdlib only)",      ["EMAIL_USER", "EMAIL_APP_PASSWORD"]),
+    ("matrix",   "Matrix (federated)",                  ["MATRIX_ACCESS_TOKEN"]),
+    ("whatsapp", "WhatsApp (Twilio, needs webhook)",    ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]),
+    ("sms",      "SMS (Twilio, needs webhook)",         ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]),
+    ("imessage", "iMessage (macOS only)",               []),
+]
+
+
+# ---------- prompt primitives ----------
 
 def _q_select(message: str, choices: list[str], default: str | None = None) -> str:
     if questionary is None:
@@ -60,13 +76,13 @@ def _q_text(message: str, default: str = "") -> str:
 
 def _q_checkbox(message: str, choices: list[str], default: list[str] | None = None) -> list[str]:
     if questionary is None:
-        print(f"{message} (comma-separated numbers)")
+        print(f"{message} (comma-separated numbers, blank = none)")
         for i, c in enumerate(choices):
             marker = "*" if default and c in default else " "
             print(f"  {marker} {i+1}) {c}")
         raw = input("> ").strip()
-        if not raw and default:
-            return default
+        if not raw:
+            return default or []
         picks = [c.strip() for c in raw.split(",")]
         return [choices[int(p) - 1] for p in picks if p.isdigit() and 1 <= int(p) <= len(choices)]
     return questionary.checkbox(message, choices=choices, default=default).ask()
@@ -87,8 +103,9 @@ def welcome() -> None:
     console.print(Panel.fit(
         "[bold cyan]Welcome to Maverick.[/bold cyan]\n\n"
         "An AI agent you fully control — pick your models, your safety\n"
-        "level, your deployment target. Privacy-first, safety by default.\n\n"
-        "This wizard takes about 2 minutes. You can re-run it any time:\n"
+        "level, your deployment target, and your channels. Privacy-first,\n"
+        "safety by default.\n\n"
+        "This wizard takes about 3 minutes. You can re-run it any time:\n"
         "  [bold]maverick init[/bold]",
         title="Maverick Installer",
         border_style="cyan",
@@ -102,7 +119,7 @@ def pick_deployment() -> str:
             "desktop  - This computer (recommended for first-time users)",
             "docker   - Local Docker container (isolated, easy to remove)",
             "vps      - Remote server you own (always-on)",
-            "phone    - Phone companion (Maverick runs on desktop/VPS; talk to it from your phone)",
+            "phone    - Phone companion (Maverick runs on desktop/VPS; phone is a frontend)",
         ],
     )
     return pick.split()[0]
@@ -150,8 +167,83 @@ def pick_models_per_role(providers: list[str]) -> dict[str, str]:
         pick = _q_select(f"  {role}: {hint}", choices, default=default_choice)
         if pick.startswith("[skip"):
             continue
-        role_models[role] = pick.split()[0]  # "provider:id"
+        role_models[role] = pick.split()[0]
     return role_models
+
+
+def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]:
+    """Returns (channels_config, env_vars_needed)."""
+    console.print()
+    if deployment == "desktop":
+        if not _q_confirm(
+            "Enable any messaging channels (Telegram, Discord, Signal, etc.) for remote access?",
+            default=False,
+        ):
+            return {}, set()
+    elif deployment == "phone":
+        console.print(
+            "[bold]Phone-companion mode:[/bold] pick the channels your phone will use.\n"
+        )
+
+    choices = [f"{ch_id:9} - {label}" for ch_id, label, _ in CHANNELS]
+    picked = _q_checkbox("Which channels do you want to enable?", choices)
+    picked_ids = [p.split()[0] for p in picked]
+
+    channels: dict[str, dict[str, Any]] = {}
+    envs: set[str] = set()
+
+    for ch_id in picked_ids:
+        info = next((c for c in CHANNELS if c[0] == ch_id), None)
+        if info is None:
+            continue
+        envs.update(info[2])
+
+        cfg: dict[str, Any] = {"enabled": True}
+
+        if ch_id == "telegram":
+            cfg["bot_token"] = "${TELEGRAM_BOT_TOKEN}"
+        elif ch_id == "discord":
+            cfg["bot_token"] = "${DISCORD_BOT_TOKEN}"
+        elif ch_id == "slack":
+            cfg["app_token"] = "${SLACK_APP_TOKEN}"
+            cfg["bot_token"] = "${SLACK_BOT_TOKEN}"
+        elif ch_id == "signal":
+            cfg["phone_number"] = _q_text(
+                "  Signal phone number (e.g., +12345550199)", default=""
+            )
+        elif ch_id == "email":
+            cfg["imap_host"] = _q_text("  IMAP server", default="imap.gmail.com")
+            cfg["smtp_host"] = _q_text("  SMTP server", default="smtp.gmail.com")
+            cfg["smtp_port"] = int(_q_text("  SMTP port", default="465"))
+            cfg["imap_user"] = "${EMAIL_USER}"
+            cfg["imap_password"] = "${EMAIL_APP_PASSWORD}"
+            cfg["smtp_user"] = "${EMAIL_USER}"
+            cfg["smtp_password"] = "${EMAIL_APP_PASSWORD}"
+            cfg["poll_interval"] = 30
+        elif ch_id == "matrix":
+            cfg["homeserver"] = _q_text("  Matrix homeserver URL", default="https://matrix.org")
+            cfg["user_id"] = _q_text("  Matrix user ID (e.g., @you:matrix.org)", default="")
+            cfg["access_token"] = "${MATRIX_ACCESS_TOKEN}"
+        elif ch_id == "whatsapp":
+            cfg["account_sid"] = "${TWILIO_ACCOUNT_SID}"
+            cfg["auth_token"] = "${TWILIO_AUTH_TOKEN}"
+            cfg["from_number"] = _q_text(
+                "  WhatsApp 'from' (e.g., whatsapp:+14155238886)", default=""
+            )
+            cfg["port"] = int(_q_text("  Webhook port", default="8765"))
+        elif ch_id == "sms":
+            cfg["account_sid"] = "${TWILIO_ACCOUNT_SID}"
+            cfg["auth_token"] = "${TWILIO_AUTH_TOKEN}"
+            cfg["from_number"] = _q_text(
+                "  SMS 'from' number (e.g., +14155551234)", default=""
+            )
+            cfg["port"] = int(_q_text("  Webhook port", default="8766"))
+        elif ch_id == "imessage":
+            cfg["poll_interval"] = 5
+
+        channels[ch_id] = cfg
+
+    return channels, envs
 
 
 def pick_safety() -> dict[str, Any]:
@@ -206,13 +298,24 @@ def pick_sandbox() -> dict[str, Any]:
     return {"backend": backend, "workdir": workdir, "timeout": 60}
 
 
-def collect_api_keys(providers: list[str]) -> dict[str, str]:
+def collect_api_keys(providers: list[str], channel_envs: set[str]) -> dict[str, str]:
     keys: dict[str, str] = {}
+    needed: list[str] = []
+
     for prov in providers:
         info = catalog.PROVIDERS.get(prov, {})
         env_name = info.get("env")
-        if not env_name:
-            continue
+        if env_name:
+            needed.append(env_name)
+
+    needed.extend(sorted(channel_envs))
+
+    if not needed:
+        return keys
+
+    console.print()
+    console.print("[bold]API keys / tokens[/bold] (stored in ~/.maverick/.env, chmod 600)")
+    for env_name in dict.fromkeys(needed):  # dedupe preserving order
         current = os.environ.get(env_name, "")
         masked = (current[:7] + "...") if current else "(none)"
         val = _q_text(f"  {env_name} [current: {masked}]", default=current)
@@ -227,6 +330,7 @@ def write_config(
     deployment: str,
     providers: list[str],
     role_models: dict[str, str],
+    channels: dict[str, dict[str, Any]],
     safety: dict[str, Any],
     budget: dict[str, float],
     sandbox: dict[str, Any],
@@ -259,6 +363,18 @@ def write_config(
         for role, spec in role_models.items():
             lines.append(f'{role} = "{spec}"')
         lines.append("")
+
+    for ch_id, cfg in channels.items():
+        lines.append(f"[channels.{ch_id}]")
+        for k, v in cfg.items():
+            if isinstance(v, bool):
+                lines.append(f"{k} = {str(v).lower()}")
+            elif isinstance(v, (int, float)):
+                lines.append(f"{k} = {v}")
+            else:
+                lines.append(f'{k} = "{v}"')
+        lines.append("")
+
     lines.append("[budget]")
     for k, v in budget.items():
         lines.append(f"{k} = {v}")
@@ -318,24 +434,26 @@ def run() -> int:
         console.print("[red]No providers selected. Aborting.[/red]")
         return 1
     role_models = pick_models_per_role(providers)
+    channels, channel_envs = pick_channels(deployment)
     safety = pick_safety()
     budget = pick_budget()
     sandbox = pick_sandbox()
-    keys = collect_api_keys(providers)
+    keys = collect_api_keys(providers, channel_envs)
 
     console.print()
     if not _q_confirm("Write config and finish?", default=True):
         console.print("Aborted. Nothing written.")
         return 0
 
-    write_config(deployment, providers, role_models, safety, budget, sandbox, keys)
+    write_config(deployment, providers, role_models, channels, safety, budget, sandbox, keys)
     ok = smoke_test()
     if ok:
         console.print()
+        next_step = "maverick serve" if channels else 'maverick start "hello"'
         console.print(Panel.fit(
             "[bold green]All set.[/bold green]\n\n"
             "Try:\n"
-            '  [bold]maverick start "summarize the latest Anthropic announcements"[/bold]\n'
+            f"  [bold]{next_step}[/bold]\n"
             "  [bold]maverick status[/bold]\n"
             "  [bold]maverick skills[/bold]",
             border_style="green",
