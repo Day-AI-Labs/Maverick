@@ -116,40 +116,30 @@ jobs:
           # Bundled deps the --no-deps installs above skipped:
           pip install 'questionary>=2.0' 'rich>=13.7'
           pip install 'fastapi>=0.110' 'uvicorn>=0.27' 'jinja2>=3.1' 'python-multipart>=0.0.9'
-          pip install pyinstaller
-      - name: Build single-file binary
+          # Pin to PyInstaller 6.x: earlier major lacks Python 3.12 support,
+          # later (7.x in 2025+) had API drifts we don't want to chase
+          # release-by-release. 6.x is well-stabilized for Python 3.10-3.12.
+          pip install 'pyinstaller>=6.0,<7.0'
+      - name: Diagnostic - verify sqlite3 is importable at build time
         shell: bash
         run: |
-          # --collect-all maverick brings in our code; PyInstaller's static
-          # analyzer normally picks up stdlib transitively, but on the
-          # v0.1.0 release sqlite3 was missed on all three platforms, so
-          # we force-include it (and _sqlite3, its C extension) explicitly.
-          # Same defensive treatment for other stdlib modules we depend on
-          # through deep import chains where the analyzer is unreliable.
-          pyinstaller \
-            --onefile \
-            --name maverick \
-            --collect-all maverick \
-            --collect-all maverick_shield \
-            --collect-all maverick_channels \
-            --collect-all maverick_dashboard \
-            --collect-all maverick_mcp \
-            --collect-all maverick_installer \
-            --collect-all anthropic \
-            --collect-submodules sqlite3 \
-            --hidden-import sqlite3 \
-            --hidden-import _sqlite3 \
-            --hidden-import sqlite3.dbapi2 \
-            --hidden-import hashlib \
-            --hidden-import _hashlib \
-            --hidden-import hmac \
-            --hidden-import base64 \
-            --hidden-import secrets \
-            --hidden-import tomli \
-            --hidden-import tomllib \
-            --hidden-import email.mime.text \
-            --hidden-import email.mime.multipart \
-            build/pyinstaller_entry.py
+          # Prove sqlite3 is available BEFORE pyinstaller runs. If this
+          # fails, the Python install on the runner doesn't have sqlite3
+          # support compiled in -- which is what would silently cause
+          # --hidden-import sqlite3 to be a no-op (you can't bundle what
+          # doesn't exist in the source Python). The v0.1.0/v0.1.1
+          # release binaries failed precisely this way on all 3 OSes.
+          python -c "import sqlite3; print('sqlite3 version:', sqlite3.sqlite_version)"
+          python -c "import _sqlite3; print('_sqlite3 ok')"
+      - name: Build single-file binary
+        shell: bash
+        working-directory: build
+        run: |
+          # Spec file gives the analyzer an unambiguous hiddenimports list.
+          # Previous attempts via --hidden-import on the CLI silently no-op'd
+          # under --collect-all interaction; the spec file pattern is what
+          # the PyInstaller docs recommend for non-trivial builds.
+          pyinstaller --clean --noconfirm --distpath ../dist maverick.spec
       - name: Smoke-test the binary covers all subcommands
         shell: bash
         run: |

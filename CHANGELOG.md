@@ -4,6 +4,31 @@ All notable changes to Maverick. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] -- 2026-05-25
+
+### Fixed
+- PyInstaller release binaries on all three platforms (Linux x86_64,
+  macOS arm64, Windows x86_64) failed at `import sqlite3` -- the
+  v0.1.0 build flags missed bundling stdlib `sqlite3`. Switched to a
+  `.spec` file with an explicit `hiddenimports` list and pinned
+  PyInstaller to `>=6.0,<7.0`. A diagnostic step now verifies
+  `sqlite3` is importable on the build host before the bundle runs.
+- `maverick version` reported `maverick: not installed` after the
+  PyPI rename to `maverick-agent`. The reporter now reads
+  `maverick-agent` as the canonical distribution name.
+
+### Added
+- Multi-turn conversation state per channel user (schema v3 -> v4).
+- File + image input on goals (schema v4 -> v5) with mime allowlist,
+  per-file/per-goal quotas, vision-block delivery for images.
+- Plugin SDK via `importlib.metadata` entry_points for tools, channels,
+  skills, personas. Fault-isolated.
+- `benchmarks/harness.py` + RESULTS.md.
+- `ask_user` is now scoped to the running goal.
+- Council medium-priority polish: docs, schema migration tests,
+  orchestrator E2E test, channel adapter smoke tests, /chat/goal
+  user-friendly labels, multi-line REPL.
+
 ## [Unreleased] -- v0.1.0-alpha
 
 First public release. Maverick combines [Maverick Agent](https://github.com/texasreaper62/research/tree/main/maverick) (recursive multi-agent swarm)

@@ -57,13 +57,29 @@ def version() -> None:
     import importlib.metadata
 
     click.echo(click.style("Maverick installed packages", bold=True))
-    for pkg in ("maverick", "maverick-shield", "maverick-channels",
-                "maverick-dashboard", "maverick-mcp", "maverick-installer"):
-        try:
-            v = importlib.metadata.version(pkg)
-            click.echo(f"  {pkg:22s} {v}")
-        except importlib.metadata.PackageNotFoundError:
-            click.echo(f"  {pkg:22s} " + click.style("not installed", fg="yellow"))
+    # PyPI distribution name for the core is `maverick-agent` (the
+    # `maverick` name was squatted). Fall back to `maverick` if the
+    # squatter ever releases the original name.
+    pkg_names = [
+        ("maverick-agent",     ("maverick-agent", "maverick")),
+        ("maverick-shield",    ("maverick-shield",)),
+        ("maverick-channels",  ("maverick-channels",)),
+        ("maverick-dashboard", ("maverick-dashboard",)),
+        ("maverick-mcp",       ("maverick-mcp",)),
+        ("maverick-installer", ("maverick-installer",)),
+    ]
+    for display, candidates in pkg_names:
+        version = None
+        for c in candidates:
+            try:
+                version = importlib.metadata.version(c)
+                break
+            except importlib.metadata.PackageNotFoundError:
+                continue
+        if version:
+            click.echo(f"  {display:22s} {version}")
+        else:
+            click.echo(f"  {display:22s} " + click.style("not installed", fg="yellow"))
     click.echo("")
     click.echo(click.style("Runtime", bold=True))
     try:
