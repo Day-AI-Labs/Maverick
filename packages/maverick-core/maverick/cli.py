@@ -1,6 +1,8 @@
 """Maverick CLI."""
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import sys
 from pathlib import Path
@@ -75,6 +77,42 @@ def start(
     result = run_goal_sync(llm, world, budget, goal_id, sandbox=sandbox, max_depth=max_depth)
     click.echo("")
     click.echo(result)
+
+
+@main.command()
+@click.option("--max-depth", default=3, type=int, help="Maximum swarm spawn depth per request.")
+@click.option("--verbose", "-v", is_flag=True, help="Enable debug logging.")
+def serve(max_depth: int, verbose: bool) -> None:
+    """Start the channel server (Telegram, iMessage, etc.).
+
+    Reads enabled channels from ~/.maverick/config.toml and listens on
+    each one. Each incoming message becomes a goal that runs through
+    the swarm; the response is sent back over the same channel.
+    """
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+
+    try:
+        from .server import build_from_config
+    except ImportError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+
+    try:
+        server = build_from_config()
+    except RuntimeError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+
+    server.max_depth = max_depth
+    click.echo("Maverick serve running. Ctrl-C to stop.")
+    try:
+        asyncio.run(server.run())
+    except KeyboardInterrupt:
+        click.echo("\nshutting down...")
+        asyncio.run(server.stop())
 
 
 @main.command()
