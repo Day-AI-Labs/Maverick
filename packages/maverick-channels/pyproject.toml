@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "maverick-channels"
+version = "0.1.0"
+description = "Channel adapters for Maverick (CLI, Telegram, iMessage, WhatsApp)"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "texasreaper62" }]
+readme = "README.md"
+dependencies = [
+    "maverick>=0.1",
+]
+
+[project.optional-dependencies]
+telegram = ["python-telegram-bot>=21.0"]
+all = ["python-telegram-bot>=21.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["maverick_channels*"]

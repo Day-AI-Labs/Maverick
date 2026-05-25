@@ -1,0 +1,29 @@
+[Unit]
+Description=Maverick agent (long-horizon multi-agent swarm)
+Documentation=https://github.com/texasreaper62/maverick
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/home/%i/maverick-workspace
+EnvironmentFile=/home/%i/.maverick/.env
+Environment=MAVERICK_CONFIG=/home/%i/.maverick/config.toml
+# Idle by default — channels (telegram etc.) wake it.
+ExecStart=/home/%i/.local/bin/maverick serve
+Restart=on-failure
+RestartSec=5s
+
+# Security hardening.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/%i/.maverick /home/%i/maverick-workspace
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

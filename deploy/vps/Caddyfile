@@ -1,0 +1,31 @@
+# Caddy reverse proxy for the optional Maverick web dashboard.
+#
+# Replace `maverick.example.com` with your domain. Caddy will obtain
+# and renew a Let's Encrypt cert automatically.
+#
+# Place at /etc/caddy/Caddyfile and reload:  caddy reload
+
+maverick.example.com {
+    # Health check passthrough.
+    handle /healthz {
+        respond "ok" 200
+    }
+
+    # Dashboard (when shipped).
+    handle {
+        reverse_proxy localhost:8765
+    }
+
+    # Basic security headers.
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+
+    log {
+        output file /var/log/caddy/maverick.log
+        format json
+    }
+}
