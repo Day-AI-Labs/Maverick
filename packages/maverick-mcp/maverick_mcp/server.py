@@ -1,19 +1,11 @@
 """MCP server for Maverick.
 
-Minimal JSON-RPC 2.0 over stdio implementation matching the
-MCP 2024-11-05 spec. Exposes Maverick's CLI verbs as tools so any
-MCP client (Claude Code, Claude Desktop, Cursor, ...) can drive the
-swarm.
+v0.1.6: unknown tool / missing required arg now produces JSON-RPC error
+``-32601`` / ``-32602`` rather than ``{isError: true, content: [...]}``.
+``isError`` is for tool *execution* failures; "this tool doesn't exist"
+is a protocol error and Claude Desktop / Cursor mishandle the wrong form.
 
-Methods implemented:
-  - initialize
-  - tools/list
-  - tools/call
-  - notifications/initialized (no-op)
-  - ping
-
-Transport: stdio line-delimited JSON. Clients spawn this process and
-communicate via stdin/stdout.
+Also: ``ping`` notifications (no id) no longer get a response.
 """
 from __future__ import annotations
 
@@ -36,6 +28,14 @@ SERVER_NAME = "maverick"
 SERVER_VERSION = "0.1.0"
 
 
+class _ProtocolError(Exception):
+    """Raised for JSON-RPC level errors (unknown method/tool, bad params)."""
+    def __init__(self, code: int, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "maverick_start",
@@ -46,8 +46,8 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "title": {"type": "string", "description": "Short title for the goal."},
-                "description": {"type": "string", "description": "Longer goal description."},
+                "title": {"type": "string"},
+                "description": {"type": "string"},
                 "max_dollars": {"type": "number", "default": 5.0},
                 "max_wall_seconds": {"type": "number", "default": 3600},
                 "max_depth": {"type": "integer", "default": 3},
@@ -62,7 +62,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "maverick_resume",
-        "description": "Resume a paused goal by id (or the most recent active/blocked goal).",
+        "description": "Resume a paused goal by id.",
         "inputSchema": {
             "type": "object",
             "properties": {"goal_id": {"type": "integer"}},
@@ -70,7 +70,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "maverick_answer",
-        "description": "Answer a queued question (from `ask_user`) so a paused goal can resume.",
+        "description": "Answer a queued question.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -82,7 +82,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "maverick_skill_install",
-        "description": "Install a SKILL.md from a URL, gh:org/repo[:path], or local file.",
+        "description": "Install a SKILL.md from a URL or gh:org/repo[:path].",
         "inputSchema": {
             "type": "object",
             "properties": {"source": {"type": "string"}},
@@ -91,12 +91,12 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "maverick_skills_list",
-        "description": "List installed / distilled skills with their triggers.",
+        "description": "List installed / distilled skills.",
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "maverick_fact_set",
-        "description": "Store a fact in the persistent world model (key/value).",
+        "description": "Store a fact in the persistent world model.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -108,10 +108,12 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "maverick_facts_get",
-        "description": "Get all known facts from the world model.",
+        "description": "Get all known facts.",
         "inputSchema": {"type": "object", "properties": {}},
     },
 ]
+
+_TOOL_NAMES = {t["name"] for t in TOOLS}
 
 
 class MCPServer:
@@ -131,10 +133,26 @@ class MCPServer:
 
     def handle_tools_call(self, params: dict) -> dict:
         name = params.get("name")
+        if name not in _TOOL_NAMES:
+            # Per MCP spec, unknown tool -> protocol error (-32602 invalid
+            # params on tools/call) NOT isError. Claude Desktop/Cursor
+            # surface this correctly only when it comes back as JSON-RPC
+            # error. Raise so run() handles the envelope.
+            raise _ProtocolError(-32602, f"unknown tool: {name!r}")
         arguments = params.get("arguments", {}) or {}
+        # Validate required args declared in the schema.
+        tool_spec = next(t for t in TOOLS if t["name"] == name)
+        required = tool_spec.get("inputSchema", {}).get("required", []) or []
+        missing = [r for r in required if r not in arguments]
+        if missing:
+            raise _ProtocolError(
+                -32602,
+                f"missing required argument(s) for {name}: {missing}",
+            )
         try:
             result = self._dispatch_tool(name, arguments)
         except Exception as e:
+            # Tool *execution* failure -> isError envelope is correct here.
             return {
                 "isError": True,
                 "content": [{"type": "text", "text": f"{type(e).__name__}: {e}"}],
@@ -144,7 +162,7 @@ class MCPServer:
             "content": [{"type": "text", "text": result}],
         }
 
-    def _dispatch_tool(self, name: Optional[str], args: dict) -> str:
+    def _dispatch_tool(self, name: str, args: dict) -> str:
         if name == "maverick_start":
             return self._tool_start(args)
         if name == "maverick_status":
@@ -161,7 +179,7 @@ class MCPServer:
             return self._tool_fact_set(args)
         if name == "maverick_facts_get":
             return self._tool_facts_get()
-        raise ValueError(f"unknown tool {name!r}")
+        raise _ProtocolError(-32602, f"unknown tool {name!r}")  # defense in depth
 
     def _tool_start(self, args: dict) -> str:
         from maverick.budget import Budget
@@ -169,7 +187,6 @@ class MCPServer:
         from maverick.orchestrator import run_goal_sync
         from maverick.sandbox import build_sandbox
         from maverick.world_model import WorldModel
-
         title = args["title"]
         description = args.get("description", "")
         budget = Budget(
@@ -218,7 +235,8 @@ class MCPServer:
 
     def _tool_skill_install(self, args: dict) -> str:
         from maverick.skills import install_skill
-        s = install_skill(args["source"])
+        # CLI / MCP callers are local & trusted (the user typed it).
+        s = install_skill(args["source"], trusted_local=True)
         return f"installed: {s.name} -> {s.path}"
 
     def _tool_skills_list(self) -> str:
@@ -269,12 +287,10 @@ class MCPServer:
             except json.JSONDecodeError as e:
                 log.warning("bad JSON: %s", e)
                 continue
-
             method = msg.get("method")
             request_id = msg.get("id")
             params = msg.get("params", {}) or {}
             is_notification = request_id is None
-
             try:
                 if method == "initialize":
                     self._send_result(request_id, self.handle_initialize(params))
@@ -285,10 +301,14 @@ class MCPServer:
                 elif method == "notifications/initialized":
                     pass
                 elif method == "ping":
-                    self._send_result(request_id, {})
+                    if not is_notification:
+                        self._send_result(request_id, {})
                 else:
                     if not is_notification:
                         self._send_error(request_id, -32601, f"method not found: {method}")
+            except _ProtocolError as e:
+                if not is_notification:
+                    self._send_error(request_id, e.code, e.message)
             except Exception as e:
                 log.exception("handler error")
                 if not is_notification:

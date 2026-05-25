@@ -1,11 +1,11 @@
 """Skill auto-generation, community install, and retrieval.
 
-v0.1.5: ``relevant_skills`` now tries the embedding-based retriever in
-``maverick.skill_embeddings`` first, falling back to the lexical scorer
-when ``fastembed`` isn't installed. This keeps the closed-loop
-learning effective on paraphrased goals (e.g. "compare these two
-things" matches a skill triggered by "vs.") without forcing the heavy
-ONNX runtime on users who don't want it.
+v0.1.6 security hardening (council review):
+  - install_skill validates frontmatter BEFORE writing to disk
+  - gh:org/repo format strictly validated against a regex
+  - file:// / ftp:// / gopher:// URLs rejected
+  - new ``trusted_local`` flag: REST API can disable the local-path branch
+    so attackers can't POST {"source": "/etc/passwd"} and read host files
 """
 from __future__ import annotations
 
@@ -25,6 +25,10 @@ log = logging.getLogger(__name__)
 
 SKILLS_DIR = Path.home() / ".maverick" / "skills"
 INSTALL_TIMEOUT = 30.0
+
+# Strict: at least one slash, kebab + dots allowed in org/repo; optional :path
+# inside the repo with forward slashes + dots. Rejects empty, @user, schemes.
+_GH_PATTERN = re.compile(r"^[\w.-]+/[\w.-]+(:[\w./-]+)?$")
 
 
 DISTILLER_SYSTEM = """You distill successful agent trajectories into reusable SKILL.md files.
@@ -110,10 +114,8 @@ def load_skills(skills_dir: Path = SKILLS_DIR) -> list[Skill]:
 
 
 def _relevant_skills_lexical(goal: str, all_skills: list[Skill], max_n: int = 3) -> list[Skill]:
-    """Original word-overlap + substring scorer. Always available, fast."""
     goal_lower = goal.lower()
     goal_words = set(re.findall(r"\w+", goal_lower))
-
     scored: list[tuple[int, Skill]] = []
     for s in all_skills:
         score = 0
@@ -129,12 +131,6 @@ def _relevant_skills_lexical(goal: str, all_skills: list[Skill], max_n: int = 3)
 
 
 def relevant_skills(goal: str, all_skills: list[Skill], max_n: int = 3) -> list[Skill]:
-    """Pick the top-N skills for a goal.
-
-    Tries embedding-based retrieval first (when ``fastembed`` is installed)
-    and falls back to lexical scoring otherwise. The fallback is also used
-    when embeddings fail for any reason (corrupt cache, OOM, etc.).
-    """
     try:
         from .skill_embeddings import relevant_skills_embed
         result = relevant_skills_embed(goal, all_skills, max_n=max_n)
@@ -161,11 +157,32 @@ def _safe_name(raw: str) -> str:
     return name or "skill"
 
 
-def install_skill(source: str, skills_dir: Path = SKILLS_DIR) -> Skill:
-    skills_dir.mkdir(parents=True, exist_ok=True)
+def install_skill(
+    source: str,
+    skills_dir: Path = SKILLS_DIR,
+    trusted_local: bool = True,
+) -> Skill:
+    """Install a skill from a URL, ``gh:org/repo[:path]``, or local path.
 
+    Args:
+        source: where to fetch the SKILL.md from
+        skills_dir: where to write it
+        trusted_local: if False, bare-string sources (local file paths) are
+            rejected. The REST API passes ``trusted_local=False`` so an
+            attacker can't POST ``{"source": "/etc/passwd"}`` to read host
+            files. CLI callers pass True (default) since the user is
+            already on the local machine.
+
+    Raises ValueError if the source can't be fetched or parsed. The file is
+    only written to disk AFTER frontmatter validation succeeds.
+    """
     if source.startswith("gh:"):
         rest = source[3:]
+        if not _GH_PATTERN.match(rest):
+            raise ValueError(
+                f"invalid gh: source {source!r}. Expected gh:org/repo or "
+                "gh:org/repo:path/to/SKILL.md"
+            )
         if ":" in rest:
             repo, path = rest.split(":", 1)
         else:
@@ -174,14 +191,29 @@ def install_skill(source: str, skills_dir: Path = SKILLS_DIR) -> Skill:
         content = _fetch_url(url)
     elif source.startswith(("http://", "https://")):
         content = _fetch_url(source)
+    elif source.startswith(("file://", "ftp://", "gopher://", "data:", "javascript:")):
+        raise ValueError(
+            f"scheme not allowed: {source.split(':', 1)[0]!r}. "
+            "Use https:// or gh:org/repo[:path]."
+        )
     else:
+        if not trusted_local:
+            raise ValueError(
+                "bare-path skill sources are not allowed from this caller. "
+                "Use https:// or gh:org/repo[:path] instead."
+            )
         p = Path(source).expanduser()
         if not p.exists():
             raise ValueError(f"local file {source!r} does not exist")
         content = p.read_text(encoding="utf-8")
 
-    m = re.search(r"^name:\s*(\S+)", content, re.MULTILINE)
-    name = _safe_name(m.group(1)) if m else "imported-skill"
+    # CRITICAL: parse + validate BEFORE writing to disk. Old behavior wrote
+    # the file first and parsed second -- an attacker passing /etc/passwd
+    # would still leave its contents on disk even though install errored.
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    tmp_path = skills_dir / ".validating"
+    parsed = Skill.parse(content, tmp_path)
+    name = _safe_name(parsed.name) if parsed.name else "imported-skill"
     target = skills_dir / f"{name}.md"
     target.write_text(content, encoding="utf-8")
     return Skill.parse(content, target)
@@ -214,7 +246,6 @@ def distill(
     skills_dir: Path = SKILLS_DIR,
 ) -> Optional[Skill]:
     skills_dir.mkdir(parents=True, exist_ok=True)
-
     trajectory = blackboard.render(200)
     prompt = (
         f"Goal: {goal}\n\n"
@@ -223,7 +254,6 @@ def distill(
         "Distill this into a SKILL.md file that would let a future agent "
         "solve a similar goal faster. Only output the markdown."
     )
-
     resp = llm.complete(
         system=DISTILLER_SYSTEM,
         messages=[{"role": "user", "content": prompt}],
@@ -237,7 +267,6 @@ def distill(
         if text.startswith("markdown"):
             text = text[len("markdown") :]
         text = text.strip()
-
     try:
         m = re.search(r"^name:\s*(\S+)", text, re.MULTILINE)
         name = _safe_name(m.group(1)) if m else "skill"

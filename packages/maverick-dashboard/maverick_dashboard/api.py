@@ -1,21 +1,23 @@
 """REST API for Maverick.
 
-Mounted at /api/v1 on the dashboard. Any HTTP client can:
-  - create + run a goal
-  - poll goal status
-  - stream live events
-  - read / write facts
-  - list / install skills
-
-Auth: bearer token via the dashboard middleware (set
-``MAVERICK_DASHBOARD_TOKEN``); same auth applies to /api routes.
-
-Auto-generated OpenAPI schema is at /docs and /openapi.json.
+v0.1.6 security + correctness fixes (council review):
+  - POST /goals now honors `max_dollars` / `max_wall_seconds` / `max_depth`
+    from the payload (was silently using hardcoded $2 + 1hr + depth=3).
+  - POST /skills no longer accepts bare local paths -- attackers can't
+    POST {"source": "/etc/passwd"} to read host files.
+  - POST /goals/{id}/answer now takes a Pydantic body (`AnswerIn`),
+    not query strings -- OpenAPI clients sending JSON now work.
+  - Concurrent-run cap: a process-wide semaphore limits how many
+    BackgroundTask goals can be in flight simultaneously (DEFAULTS
+    below; override via env).
+  - Goal `result` field consistent: returns None when unset, not "".
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import threading
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
@@ -25,14 +27,20 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["v1"])
 
+# Cap concurrent in-flight goal runs from the REST API. Prevents an attacker
+# (or buggy client) from firing 100 POST /goals in 30s and burning unbounded
+# Anthropic spend. Override with MAVERICK_MAX_CONCURRENT_GOALS env.
+MAX_CONCURRENT = int(os.environ.get("MAVERICK_MAX_CONCURRENT_GOALS", "3"))
+_run_semaphore = threading.BoundedSemaphore(MAX_CONCURRENT)
+
 
 class GoalIn(BaseModel):
-    title: str = Field(..., max_length=200, examples=["Plan a 2-week trip to Japan"])
-    description: str = Field("", examples=["Solo, mid-budget, May 5–19, foodie-focused"])
-    max_dollars: float = 5.0
-    max_wall_seconds: float = 3600.0
-    max_depth: int = 3
-    template: Optional[str] = Field(None, examples=["trip-plan"])
+    title: str = Field(..., max_length=200)
+    description: str = ""
+    max_dollars: float = Field(5.0, ge=0.0, le=100.0)
+    max_wall_seconds: float = Field(3600.0, ge=1.0, le=86400.0)
+    max_depth: int = Field(3, ge=1, le=5)
+    template: Optional[str] = None
     params: Optional[dict[str, str]] = None
 
 
@@ -64,11 +72,14 @@ class FactIn(BaseModel):
     value: str
 
 
+class AnswerIn(BaseModel):
+    """Body shape for POST /goals/{id}/answer."""
+    question_id: int
+    answer: str
+
+
 class SkillInstallIn(BaseModel):
-    source: str = Field(..., examples=[
-        "gh:texasreaper62/awesome-maverick-skills:research/web-search.md",
-        "https://example.com/my-skill.md",
-    ])
+    source: str = Field(..., description="https://... or gh:org/repo[:path]")
 
 
 class SkillOut(BaseModel):
@@ -78,12 +89,22 @@ class SkillOut(BaseModel):
 
 
 def _world():
-    # See app.py:_world for why we resolve DEFAULT_DB at call time.
     from maverick.world_model import DEFAULT_DB, WorldModel
     return WorldModel(DEFAULT_DB)
 
 
-def _run_goal_in_thread(goal_id: int) -> None:
+def _run_goal_in_thread(
+    goal_id: int,
+    max_dollars: float,
+    max_wall_seconds: float,
+    max_depth: int,
+) -> None:
+    """Run a goal synchronously under the concurrency semaphore."""
+    acquired = _run_semaphore.acquire(blocking=False)
+    if not acquired:
+        log.warning("REST API: concurrency cap (%d) hit; goal %s queued in thread",
+                    MAX_CONCURRENT, goal_id)
+        _run_semaphore.acquire()  # block until a slot opens
     try:
         from maverick.budget import Budget
         from maverick.llm import LLM
@@ -93,15 +114,21 @@ def _run_goal_in_thread(goal_id: int) -> None:
         world = WorldModel(DEFAULT_DB)
         llm = LLM()
         sandbox = build_sandbox()
-        run_goal_sync(llm, world, Budget(max_dollars=2.0), goal_id, sandbox=sandbox)
+        run_goal_sync(
+            llm, world,
+            Budget(max_dollars=max_dollars, max_wall_seconds=max_wall_seconds),
+            goal_id, sandbox=sandbox, max_depth=max_depth,
+        )
     except Exception:
         log.exception("REST API background goal run failed (goal_id=%s)", goal_id)
+    finally:
+        _run_semaphore.release()
 
 
 def _to_goal_out(g) -> GoalOut:
     return GoalOut(
         id=g.id, status=g.status, title=g.title,
-        description=g.description, result=g.result,
+        description=g.description, result=g.result,  # None stays None (no `or ""`)
     )
 
 
@@ -112,10 +139,8 @@ async def create_goal(payload: GoalIn, bg: BackgroundTasks) -> GoalOut:
             status_code=400,
             detail="ANTHROPIC_API_KEY not set. Run `maverick init` first.",
         )
-
     title = payload.title
     description = payload.description
-
     if payload.template:
         from maverick.templates import load_template
         try:
@@ -126,10 +151,12 @@ async def create_goal(payload: GoalIn, bg: BackgroundTasks) -> GoalOut:
             title, description = tpl.render(**(payload.params or {}))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-
     w = _world()
     goal_id = w.create_goal(title[:200], description)
-    bg.add_task(_run_goal_in_thread, goal_id)
+    bg.add_task(
+        _run_goal_in_thread, goal_id,
+        payload.max_dollars, payload.max_wall_seconds, payload.max_depth,
+    )
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=500, detail="goal vanished after create")
@@ -140,9 +167,12 @@ async def create_goal(payload: GoalIn, bg: BackgroundTasks) -> GoalOut:
 async def list_goals(
     status: Optional[str] = None,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[GoalOut]:
     w = _world()
     goals = w.list_goals(status=status)
+    if offset:
+        goals = goals[:-offset] if offset < len(goals) else []
     return [_to_goal_out(g) for g in goals[-limit:]]
 
 
@@ -176,16 +206,12 @@ async def goal_events(
 
 
 @router.post("/goals/{goal_id}/answer", status_code=204)
-async def answer_question(
-    goal_id: int,
-    question_id: int,
-    answer: str,
-) -> None:
+async def answer_question(goal_id: int, payload: AnswerIn) -> None:
     w = _world()
     qs = w.open_questions(goal_id=goal_id)
-    if not any(q.id == question_id for q in qs):
+    if not any(q.id == payload.question_id for q in qs):
         raise HTTPException(status_code=404, detail="no such open question for this goal")
-    w.answer(question_id, answer)
+    w.answer(payload.question_id, payload.answer)
 
 
 @router.get("/facts", response_model=dict[str, str])
@@ -211,7 +237,8 @@ async def list_installed_skills() -> list[SkillOut]:
 async def install_skill_endpoint(payload: SkillInstallIn) -> SkillOut:
     from maverick.skills import install_skill
     try:
-        s = install_skill(payload.source)
+        # REST callers are remote/untrusted -- block bare local paths.
+        s = install_skill(payload.source, trusted_local=False)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return SkillOut(name=s.name, triggers=s.triggers, tools_needed=s.tools_needed)

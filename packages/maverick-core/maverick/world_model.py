@@ -1,12 +1,13 @@
-"""Persistent world model. SQLite with FTS5 for cheap recall.
+"""Persistent world model. SQLite with FTS5 + per-connection WAL.
 
-v0.1.3: schema_version bumped to 3. Adds a ``goal_events`` table that
-the agent writes blackboard entries to in near-real-time so the
-dashboard can stream live progress without sharing in-memory state
-with the agent process.
-
-v0.1.2: episodes track cost_dollars/tokens/tool_calls so the
-dashboard can show per-run spend and aggregate.
+v0.1.6 reliability hardening:
+  - PRAGMA journal_mode=WAL so the agent process (writer) and dashboard
+    process (reader) don't deadlock on each other.
+  - PRAGMA busy_timeout=5000 so concurrent commits retry briefly
+    instead of raising OperationalError.
+  - check_same_thread=False so FastAPI's threadpool can share the connection.
+  - Indexes on goals(status) and goals(updated_at) for the dashboard's
+    `list goals by status` and `active_goal()` queries.
 """
 from __future__ import annotations
 
@@ -37,6 +38,9 @@ CREATE TABLE IF NOT EXISTS goals (
     deadline REAL,
     result TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_goals_status     ON goals(status);
+CREATE INDEX IF NOT EXISTS idx_goals_updated_at ON goals(updated_at);
 
 CREATE TABLE IF NOT EXISTS episodes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,8 +90,7 @@ CREATE TABLE IF NOT EXISTS goal_events (
     ts REAL NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_goal_events_goal_ts
-    ON goal_events(goal_id, id);
+CREATE INDEX IF NOT EXISTS idx_goal_events_goal_id_id ON goal_events(goal_id, id);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
     content, content='messages', content_rowid='id'
@@ -106,10 +109,7 @@ MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE episodes ADD COLUMN output_tokens INTEGER DEFAULT 0",
         "ALTER TABLE episodes ADD COLUMN tool_calls INTEGER DEFAULT 0",
     ],
-    3: [
-        # goal_events table is defined idempotently in SCHEMA above;
-        # no ALTER needed. This migration entry just bumps the version.
-    ],
+    3: [],  # goal_events table is in SCHEMA (idempotent CREATE)
 }
 
 
@@ -163,8 +163,17 @@ class WorldModel:
     def __init__(self, path: Path = DEFAULT_DB):
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(path)
+        # check_same_thread=False so FastAPI threadpool can share. Combined
+        # with WAL + busy_timeout this is safe for the agent+dashboard
+        # concurrency pattern (one writer process + many readers).
+        self.conn = sqlite3.connect(path, check_same_thread=False, timeout=10.0)
         self.conn.row_factory = sqlite3.Row
+        # WAL must be set before any other operation that creates pages.
+        # synchronous=NORMAL under WAL is safe + much faster than FULL.
+        # busy_timeout returns SQLITE_BUSY only after 5s of contention.
+        self.conn.execute("PRAGMA journal_mode = WAL")
+        self.conn.execute("PRAGMA synchronous = NORMAL")
+        self.conn.execute("PRAGMA busy_timeout = 5000")
         self.conn.executescript(SCHEMA)
         self._init_schema_version()
         self._apply_migrations()
@@ -285,7 +294,7 @@ class WorldModel:
             "runs": row["runs"],
         }
 
-    # ----- goal events (live progress stream) -----
+    # ----- goal events -----
     def append_event(self, goal_id: int, agent: str, kind: str, content: str) -> int:
         cur = self.conn.execute(
             "INSERT INTO goal_events(goal_id, agent, kind, content, ts) VALUES(?, ?, ?, ?, ?)",
@@ -301,6 +310,13 @@ class WorldModel:
             (goal_id, since_id, limit),
         ).fetchall()
         return [GoalEvent(**dict(r)) for r in rows]
+
+    def prune_goal_events(self, older_than_seconds: float = 30 * 24 * 3600) -> int:
+        """Delete goal_events rows older than N seconds. Returns rows removed."""
+        cutoff = time.time() - older_than_seconds
+        cur = self.conn.execute("DELETE FROM goal_events WHERE ts < ?", (cutoff,))
+        self.conn.commit()
+        return cur.rowcount
 
     # ----- facts -----
     def upsert_fact(self, key: str, value: str, episode_id: Optional[int] = None) -> None:

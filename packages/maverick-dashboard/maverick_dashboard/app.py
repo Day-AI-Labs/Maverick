@@ -1,14 +1,18 @@
 """FastAPI dashboard for Maverick.
 
-Local browser UI + REST API. /chat lets the user start a goal from the
-browser; the agent runs in a FastAPI BackgroundTask and the page polls
-/api/goal/{id}/events for live progress.
-
-v0.1.4: mounts /api/v1 (full REST + OpenAPI docs at /docs).
+v0.1.6 security hardening (council review):
+  - Bearer token now compared with hmac.compare_digest (constant-time).
+  - ?token= still accepted but emits a one-time deprecation warning per
+    process; cookies handoff is recommended for production.
+  - /openapi.json, /docs, /redoc are EXEMPT from auth so OpenAPI tooling
+    can fetch the schema.
+  - REST API mounted at /api/v1 is auth-gated like every other path
+    (previously only browser pages were tested -- silent bypass risk).
 """
 from __future__ import annotations
 
 import argparse
+import hmac
 import logging
 import os
 from pathlib import Path
@@ -26,32 +30,44 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 app = FastAPI(
     title="Maverick Dashboard + REST API",
-    description=(
-        "Local browser UI plus a REST API for programmatic access. "
-        "Read-only browser views; full agent control via /api/v1."
-    ),
+    description="Local browser UI plus REST API for programmatic access.",
     version="0.1.0",
 )
 app.include_router(api_router)
 
+# Paths that bypass bearer auth so external tooling (OpenAPI generators,
+# health probes) and the docs UIs work without credentials.
+_AUTH_EXEMPT = {"/healthz", "/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect"}
+
+_query_token_warned = False
+
 
 @app.middleware("http")
 async def bearer_auth(request: Request, call_next):
+    global _query_token_warned
     expected = os.environ.get("MAVERICK_DASHBOARD_TOKEN")
-    if not expected or request.url.path == "/healthz":
+    if not expected or request.url.path in _AUTH_EXEMPT:
         return await call_next(request)
+    # Constant-time comparisons (resists timing oracles).
     auth = request.headers.get("authorization", "")
-    token_qs = request.query_params.get("token", "")
-    if auth == f"Bearer {expected}" or token_qs == expected:
+    header_token = auth[7:] if auth.startswith("Bearer ") else ""
+    query_token = request.query_params.get("token", "")
+    ok_header = header_token and hmac.compare_digest(header_token, expected)
+    ok_query = query_token and hmac.compare_digest(query_token, expected)
+    if ok_header:
+        return await call_next(request)
+    if ok_query:
+        if not _query_token_warned:
+            log.warning(
+                "Bearer token accepted via ?token= -- this leaks via Referer / "
+                "proxy logs / browser history. Prefer Authorization: Bearer."
+            )
+            _query_token_warned = True
         return await call_next(request)
     return JSONResponse({"detail": "unauthorized"}, status_code=401)
 
 
 def _world():
-    # Read DEFAULT_DB from the module at call time so monkeypatching in tests
-    # actually reroutes the connection. WorldModel() (no arg) would bind to
-    # the default-arg value captured at function-definition time, defeating
-    # the test's monkeypatch.
     from maverick.world_model import DEFAULT_DB, WorldModel
     return WorldModel(DEFAULT_DB)
 
@@ -111,7 +127,8 @@ async def chat_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "chat.html", {"recent": recent})
 
 
-def _run_goal_in_thread(goal_id: int) -> None:
+def _run_goal_in_thread(goal_id: int, max_dollars: float = 2.0,
+                       max_wall_seconds: float = 1800.0, max_depth: int = 3) -> None:
     try:
         from maverick.budget import Budget
         from maverick.llm import LLM
@@ -121,7 +138,11 @@ def _run_goal_in_thread(goal_id: int) -> None:
         world = WorldModel(DEFAULT_DB)
         llm = LLM()
         sandbox = build_sandbox()
-        run_goal_sync(llm, world, Budget(max_dollars=2.0), goal_id, sandbox=sandbox)
+        run_goal_sync(
+            llm, world,
+            Budget(max_dollars=max_dollars, max_wall_seconds=max_wall_seconds),
+            goal_id, sandbox=sandbox, max_depth=max_depth,
+        )
     except Exception:
         log.exception("dashboard background goal run failed (goal_id=%s)", goal_id)
 
