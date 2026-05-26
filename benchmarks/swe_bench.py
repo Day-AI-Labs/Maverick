@@ -606,6 +606,101 @@ def write_csv(rows: list[Row], out_path: Path) -> None:
                     pass
 
 
+def _write_run_meta(out_dir: Path, args, manifest_path: Path) -> Path:
+    """Wave 12 (council F16): emit run_meta.json next to the results CSV.
+
+    Captures everything needed to reproduce or audit a run:
+      - Maverick git rev (HEAD sha)
+      - manifest SHA-256
+      - pip freeze
+      - Anthropic API client version
+      - relevant env vars (MAVERICK_*, ANTHROPIC_*)
+      - CLI args
+      - host info (python version, platform)
+    """
+    import hashlib
+    import platform
+    import subprocess as _sp
+    out_dir.mkdir(parents=True, exist_ok=True)
+    meta_path = out_dir / "run_meta.json"
+
+    # Maverick git rev — best-effort.
+    try:
+        rev = _sp.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(Path(__file__).resolve().parent.parent),
+            capture_output=True, text=True, timeout=5,
+        )
+        git_sha = rev.stdout.strip() if rev.returncode == 0 else "unknown"
+    except (OSError, _sp.SubprocessError):
+        git_sha = "unknown"
+
+    # Manifest SHA — pins the exact instance set evaluated.
+    manifest_sha = "unknown"
+    try:
+        if manifest_path.exists():
+            h = hashlib.sha256()
+            h.update(manifest_path.read_bytes())
+            manifest_sha = h.hexdigest()
+    except OSError:
+        pass
+
+    # pip freeze — pinned dep snapshot.
+    try:
+        freeze = _sp.run(
+            [sys.executable, "-m", "pip", "freeze"],
+            capture_output=True, text=True, timeout=30,
+        )
+        pip_freeze = freeze.stdout if freeze.returncode == 0 else ""
+    except (OSError, _sp.SubprocessError):
+        pip_freeze = ""
+
+    # Anthropic SDK version.
+    try:
+        import anthropic as _a
+        anthropic_version = getattr(_a, "__version__", "unknown")
+    except Exception:
+        anthropic_version = "not-installed"
+
+    # Env vars that affect behavior — capture but redact API keys.
+    env_snapshot = {}
+    for k, v in os.environ.items():
+        if not (k.startswith("MAVERICK_") or k.startswith("ANTHROPIC_")
+                or k in ("OPENAI_API_KEY",)):
+            continue
+        if "KEY" in k or "TOKEN" in k or "SECRET" in k:
+            env_snapshot[k] = "REDACTED" if v else ""
+        else:
+            env_snapshot[k] = v
+
+    meta = {
+        "started_at": time.time(),
+        "started_at_iso": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "maverick_git_sha": git_sha,
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": manifest_sha,
+        "pip_freeze": pip_freeze,
+        "anthropic_sdk_version": anthropic_version,
+        "anthropic_version_header": "2023-06-01",
+        "env_snapshot": env_snapshot,
+        "cli_args": {
+            k: (str(v) if isinstance(v, Path) else v)
+            for k, v in vars(args).items()
+        },
+        "host": {
+            "python_version": sys.version,
+            "python_executable": sys.executable,
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+            "node": platform.node(),
+        },
+    }
+    meta_path.write_text(
+        json.dumps(meta, indent=2, default=str), encoding="utf-8",
+    )
+    return meta_path
+
+
 def already_done(out_path: Path) -> set[tuple[str, str]]:
     """Read out_path and return the set of (instance_id, pipeline) pairs
     already written AND that succeeded. Used by main() to skip on resume.
@@ -717,6 +812,15 @@ def main() -> int:
 
     if args.instance_hard_cap is not None:
         os.environ["MAVERICK_INSTANCE_HARD_CAP"] = str(args.instance_hard_cap)
+
+    # Wave 12 (F16): write run_meta.json before the first instance so a
+    # crash mid-run still leaves provenance for replay/audit. Sibling to
+    # the results CSV.
+    try:
+        meta_path = _write_run_meta(args.out.parent, args, args.instances)
+        print(f"run_meta: {meta_path}", file=sys.stderr)
+    except Exception as e:
+        print(f"warning: run_meta.json write failed: {e}", file=sys.stderr)
 
     pipelines = [p.strip() for p in args.pipelines.split(",") if p.strip()]
     for p in pipelines:
