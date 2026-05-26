@@ -166,10 +166,31 @@ def read_file(sandbox) -> Tool:
 
     return Tool(
         name="read_file",
-        description="Read a file from the workspace.",
+        description=(
+            "Read a file from the workspace, returning its contents. "
+            "Use this aggressively during LOCALIZE to understand code "
+            "BEFORE editing — never write a SEARCH/REPLACE block from "
+            "memory or from an LLM-summarized view of the file. The "
+            "SEARCH section must match the file's exact bytes including "
+            "whitespace, indentation, and line endings. Files >8KB are "
+            "truncated; chain multiple calls if you need more. In "
+            "benchmark opaque mode (SWE-bench Pro / Verified), reads "
+            "under `tests/`, `test/`, and `.git/` are blocked — the "
+            "tests directory holds the grader's expected values and "
+            ".git can leak the gold answer via refs/objects."
+        ),
         input_schema={
             "type": "object",
-            "properties": {"path": {"type": "string", "description": "Path to read."}},
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "Path to read, workspace-relative. Examples: "
+                        "`src/foo.py`, `lib/bar/baz.js`. Absolute paths "
+                        "and `..` traversal are rejected."
+                    ),
+                },
+            },
             "required": ["path"],
         },
         fn=fn,
@@ -191,12 +212,35 @@ def write_file(sandbox) -> Tool:
 
     return Tool(
         name="write_file",
-        description="Write content to a file in the workspace. Overwrites if it exists.",
+        description=(
+            "Write content to a file in the workspace, creating the "
+            "file (and any missing parent directories) if it doesn't "
+            "exist, or OVERWRITING the entire file if it does. Use "
+            "`str_replace_editor` or SEARCH/REPLACE blocks for "
+            "surgical edits to existing files — write_file is for "
+            "creating NEW files (e.g. a `reproduce.py` script during "
+            "LOCALIZE) or for files small enough that a full rewrite "
+            "is appropriate. Avoid using write_file on existing "
+            "production code — it's easy to drop content accidentally."
+        ),
         input_schema={
             "type": "object",
             "properties": {
-                "path": {"type": "string"},
-                "content": {"type": "string"},
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "Path to write, workspace-relative. Parent "
+                        "directories created as needed."
+                    ),
+                },
+                "content": {
+                    "type": "string",
+                    "description": (
+                        "Complete file contents. Will overwrite any "
+                        "existing file at the path. Use a trailing "
+                        "newline."
+                    ),
+                },
             },
             "required": ["path", "content"],
         },

@@ -205,10 +205,45 @@ def shell(sandbox) -> Tool:
 
     return Tool(
         name="shell",
-        description="Run a shell command in the sandbox. Use for builds, tests, scripts, etc.",
+        description=(
+            "Run a shell command in the sandbox. Use for running "
+            "tests, builds, greps, finding files, inspecting "
+            "environment, running reproduction scripts.\n\n"
+            "Each invocation starts a fresh shell — there's no "
+            "persistent cwd, env, or shell variables between calls. "
+            "Use absolute or workspace-relative paths; do NOT `cd` "
+            "then expect the next call to be in that directory.\n\n"
+            "Always pass non-interactive flags: `-y` / `-f` for "
+            "package managers, `-q` to silence prompts. Interactive "
+            "commands (vi, nano, less, more, `git rebase -i`) hang "
+            "the sandbox. Use `cat`, `head -N`, `tail -N` for reading.\n\n"
+            "Common patterns:\n"
+            "  • `python -m pytest path::test -xvs` — single test, "
+            "verbose, exit-on-fail, no capture\n"
+            "  • `grep -rn 'pattern' src/` — recursive search, line "
+            "numbers, file paths\n"
+            "  • `git diff` — see what you're about to submit\n"
+            "  • `python -c 'import pkg; print(pkg.__file__)'` — "
+            "check which install Python loads\n\n"
+            "In benchmark opaque mode, git-internals access is "
+            "blocked: no `git log -p`, `git show <ref>`, `git cat-file`, "
+            "`git for-each-ref`, `git rev-list`, or `cat .git/*`. The "
+            "gold answer is reachable via those; we block them. Use "
+            "`git diff` (working tree vs HEAD) and `git status` "
+            "freely — those are safe."
+        ),
         input_schema={
             "type": "object",
-            "properties": {"cmd": {"type": "string"}},
+            "properties": {
+                "cmd": {
+                    "type": "string",
+                    "description": (
+                        "Shell command to execute in the sandbox. "
+                        "Single line preferred; chain with `&&` or "
+                        "`;` for sequences."
+                    ),
+                },
+            },
             "required": ["cmd"],
         },
         fn=fn,
