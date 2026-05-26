@@ -15,9 +15,13 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] mcp: %(message)s",
 )
 
-PROTOCOL_VERSION = "2024-11-05"
+# Protocol version. MCP 2025-11-25 ships Tasks / Resources / Elicitation /
+# Sampling / MCP Apps; we negotiate down to the older spec when a client
+# advertises that, but our initialize response is on the current one.
+PROTOCOL_VERSION = "2025-11-25"
+PROTOCOL_VERSION_FALLBACK = "2024-11-05"
 SERVER_NAME = "maverick"
-SERVER_VERSION = "0.1.1"
+SERVER_VERSION = "0.2.0"
 
 
 class _ProtocolError(Exception):
@@ -120,14 +124,195 @@ class MCPServer:
 
     def handle_initialize(self, params: dict) -> dict:
         self._initialized = True
+        # Negotiate down if the client only speaks the older spec.
+        client_ver = params.get("protocolVersion", "")
+        version = PROTOCOL_VERSION
+        if client_ver and client_ver < "2025-11-25":
+            version = PROTOCOL_VERSION_FALLBACK
         return {
-            "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": {"tools": {}},
+            "protocolVersion": version,
+            "capabilities": {
+                "tools": {"listChanged": False},
+                # Resources: goals/skills/facts exposed as URI-addressable
+                # objects for clients (Claude Desktop, Cursor) that support
+                # the 2025-11-25 spec.
+                "resources": {"subscribe": False, "listChanged": False},
+                # Prompts: ship templated goal patterns so clients can
+                # surface "start a research run" / "plan a trip" without
+                # the user typing the prompt themselves.
+                "prompts": {"listChanged": False},
+                # Elicitation: server can ask the user a follow-up question
+                # (replaces our ask_user tool in 2025-11-25-aware clients).
+                # We declare it; the actual call falls back to tool-result
+                # when the client doesn't support it.
+                "elicitation": {},
+            },
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
         }
 
     def handle_tools_list(self, params: dict) -> dict:
         return {"tools": TOOLS}
+
+    # ---- 2025-11-25 Resources -----------------------------------------
+
+    def handle_resources_list(self, params: dict) -> dict:
+        """Expose Maverick state as MCP Resources.
+
+        - maverick://goals/{id}     — single goal status + result
+        - maverick://goals          — list of active/recent goals
+        - maverick://skills         — installed skills
+        - maverick://facts          — known facts about the user
+        """
+        try:
+            from maverick.world_model import DEFAULT_DB, WorldModel
+            wm = WorldModel(DEFAULT_DB)
+            goals = wm.list_goals()[-20:]
+        except Exception:
+            goals = []
+        resources = [
+            {
+                "uri": "maverick://goals",
+                "name": "All recent goals",
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "maverick://skills",
+                "name": "Installed skills",
+                "mimeType": "application/json",
+            },
+            {
+                "uri": "maverick://facts",
+                "name": "Facts about the user",
+                "mimeType": "application/json",
+            },
+        ]
+        for g in goals:
+            resources.append({
+                "uri": f"maverick://goals/{g.id}",
+                "name": f"goal #{g.id} ({g.status}): {g.title[:60]}",
+                "mimeType": "application/json",
+            })
+        return {"resources": resources}
+
+    def handle_resources_read(self, params: dict) -> dict:
+        uri = params.get("uri", "")
+        if not uri.startswith("maverick://"):
+            raise _ProtocolError(-32602, f"unsupported uri scheme: {uri}")
+        path = uri[len("maverick://"):]
+        from maverick.world_model import DEFAULT_DB, WorldModel
+        wm = WorldModel(DEFAULT_DB)
+
+        if path == "goals":
+            data = [
+                {"id": g.id, "status": g.status, "title": g.title}
+                for g in wm.list_goals()[-20:]
+            ]
+        elif path.startswith("goals/"):
+            try:
+                gid = int(path.split("/", 1)[1])
+            except ValueError as e:
+                raise _ProtocolError(-32602, f"bad goal id in {uri}") from e
+            g = wm.get_goal(gid)
+            if g is None:
+                raise _ProtocolError(-32602, f"no such goal: {uri}")
+            data = {
+                "id": g.id, "status": g.status, "title": g.title,
+                "description": g.description, "result": g.result,
+            }
+        elif path == "skills":
+            try:
+                from maverick.skills import load_skills
+                data = [
+                    {"name": s.name, "triggers": s.triggers,
+                     "tools_needed": s.tools_needed}
+                    for s in load_skills()
+                ]
+            except Exception:
+                data = []
+        elif path == "facts":
+            data = wm.get_facts()
+        else:
+            raise _ProtocolError(-32602, f"unknown resource path: {uri}")
+
+        return {
+            "contents": [{
+                "uri": uri,
+                "mimeType": "application/json",
+                "text": json.dumps(data, indent=2, default=str),
+            }],
+        }
+
+    # ---- 2025-11-25 Prompts -------------------------------------------
+
+    def handle_prompts_list(self, params: dict) -> dict:
+        return {"prompts": [
+            {
+                "name": "research_topic",
+                "description": "Spawn a research swarm to investigate a topic.",
+                "arguments": [
+                    {"name": "topic", "description": "What to research",
+                     "required": True},
+                    {"name": "depth", "description": "shallow / medium / deep",
+                     "required": False},
+                ],
+            },
+            {
+                "name": "draft_message",
+                "description": "Draft an email / message in a given tone.",
+                "arguments": [
+                    {"name": "recipient", "required": True},
+                    {"name": "intent", "required": True},
+                    {"name": "tone", "required": False},
+                ],
+            },
+            {
+                "name": "compare_options",
+                "description": "Compare 2-N options against a criterion list.",
+                "arguments": [
+                    {"name": "options", "required": True},
+                    {"name": "criteria", "required": True},
+                ],
+            },
+        ]}
+
+    def handle_prompts_get(self, params: dict) -> dict:
+        name = params.get("name", "")
+        args = params.get("arguments", {}) or {}
+        templates = {
+            "research_topic": (
+                "Spawn a research swarm to investigate: {topic}. "
+                "Depth: {depth}. Verify findings before FINAL."
+            ),
+            "draft_message": (
+                "Draft a message to {recipient} with intent: {intent}. "
+                "Tone: {tone}. Keep it concise."
+            ),
+            "compare_options": (
+                "Compare these options: {options}. Use criteria: {criteria}. "
+                "Build a table; recommend one."
+            ),
+        }
+        if name not in templates:
+            raise _ProtocolError(-32602, f"unknown prompt: {name}")
+        try:
+            text = templates[name].format(**{
+                "topic": args.get("topic", ""),
+                "depth": args.get("depth", "medium"),
+                "recipient": args.get("recipient", ""),
+                "intent": args.get("intent", ""),
+                "tone": args.get("tone", "professional"),
+                "options": args.get("options", ""),
+                "criteria": args.get("criteria", ""),
+            })
+        except KeyError as e:
+            raise _ProtocolError(-32602, f"missing argument: {e}") from e
+        return {
+            "description": f"Maverick prompt: {name}",
+            "messages": [{
+                "role": "user",
+                "content": {"type": "text", "text": text},
+            }],
+        }
 
     def handle_tools_call(self, params: dict) -> dict:
         name = params.get("name")
@@ -284,6 +469,14 @@ class MCPServer:
                     self._send_result(request_id, self.handle_tools_list(params))
                 elif method == "tools/call":
                     self._send_result(request_id, self.handle_tools_call(params))
+                elif method == "resources/list":
+                    self._send_result(request_id, self.handle_resources_list(params))
+                elif method == "resources/read":
+                    self._send_result(request_id, self.handle_resources_read(params))
+                elif method == "prompts/list":
+                    self._send_result(request_id, self.handle_prompts_list(params))
+                elif method == "prompts/get":
+                    self._send_result(request_id, self.handle_prompts_get(params))
                 elif method == "notifications/initialized":
                     pass
                 elif method == "ping":

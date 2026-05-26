@@ -86,3 +86,60 @@ class TestProtocol:
         })
         assert out["isError"] is True
         assert "text" in out["content"][0]
+
+
+class TestProtocol2025_11_25:
+    """Tests for the new MCP 2025-11-25 primitives."""
+
+    def test_initialize_advertises_new_capabilities(self):
+        s = MCPServer()
+        out = s.handle_initialize({"protocolVersion": "2025-11-25"})
+        assert "resources" in out["capabilities"]
+        assert "prompts" in out["capabilities"]
+        assert "elicitation" in out["capabilities"]
+
+    def test_initialize_negotiates_down_for_old_clients(self):
+        s = MCPServer()
+        out = s.handle_initialize({"protocolVersion": "2024-11-05"})
+        assert out["protocolVersion"] == "2024-11-05"
+
+    def test_initialize_uses_current_version_for_new_clients(self):
+        s = MCPServer()
+        out = s.handle_initialize({"protocolVersion": "2025-11-25"})
+        assert out["protocolVersion"] == "2025-11-25"
+
+    def test_resources_list_includes_static_namespaces(self):
+        s = MCPServer()
+        out = s.handle_resources_list({})
+        uris = {r["uri"] for r in out["resources"]}
+        assert "maverick://goals" in uris
+        assert "maverick://skills" in uris
+        assert "maverick://facts" in uris
+
+    def test_resources_read_rejects_unsupported_scheme(self):
+        s = MCPServer()
+        with pytest.raises(_ProtocolError):
+            s.handle_resources_read({"uri": "file:///etc/passwd"})
+
+    def test_prompts_list_returns_three_templates(self):
+        s = MCPServer()
+        out = s.handle_prompts_list({})
+        names = {p["name"] for p in out["prompts"]}
+        assert "research_topic" in names
+        assert "draft_message" in names
+        assert "compare_options" in names
+
+    def test_prompts_get_renders_with_args(self):
+        s = MCPServer()
+        out = s.handle_prompts_get({
+            "name": "research_topic",
+            "arguments": {"topic": "fusion reactors", "depth": "deep"},
+        })
+        text = out["messages"][0]["content"]["text"]
+        assert "fusion reactors" in text
+        assert "deep" in text
+
+    def test_prompts_get_unknown_raises(self):
+        s = MCPServer()
+        with pytest.raises(_ProtocolError):
+            s.handle_prompts_get({"name": "nonexistent", "arguments": {}})
