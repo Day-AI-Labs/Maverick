@@ -59,22 +59,25 @@ report 1865.
 on a busted pipeline is no fun.
 
 ```bash
-# Slice the manifest to first 10 lines for smoke.
-head -10 ~/.maverick/swebench-pro/manifest.jsonl > /tmp/smoke.jsonl
+# Slice the manifest to first 10 lines for smoke. Use ~/.maverick/
+# (cross-platform via Path.home()) instead of /tmp/ so the same
+# commands work on Linux / macOS / Windows.
+mkdir -p ~/.maverick/swebench-pro
+head -10 ~/.maverick/swebench-pro/manifest.jsonl > ~/.maverick/swebench-pro/smoke.jsonl
 
 # Run Maverick + 3 baselines, with a HARD CAP via the budget args.
 # Per-task: $5 cap × 4 pipelines × 10 tasks = $200 worst-case.
 python benchmarks/swe_bench.py \
-    --instances /tmp/smoke.jsonl \
+    --instances ~/.maverick/swebench-pro/smoke.jsonl \
     --pipelines maverick,sonnet_single \
-    --out /tmp/smoke_predictions.csv
+    --out ~/.maverick/swebench-pro/smoke_predictions.csv
 ```
 
 The harness streams progress lines per (instance, pipeline) and appends
 one CSV row each. After the smoke completes, eyeball the patches:
 
 ```bash
-csvtool col 1,2,9,8 /tmp/smoke_predictions.csv | head -20
+csvtool col 1,2,9,8 ~/.maverick/swebench-pro/smoke_predictions.csv | head -20
 ```
 
 If `outcome` is mostly `success` and `predicted_patch` starts with
@@ -91,9 +94,10 @@ expects, then run their official evaluator in Docker:
 # `replace('\\n', chr(10))` is no longer needed and would corrupt
 # patches that contain the literal two-character sequence `\n`.
 python -c "
-import csv, json
-with open('/tmp/smoke_predictions.csv') as f, \
-     open('/tmp/preds.jsonl', 'w') as out:
+import csv, json, pathlib
+home = pathlib.Path.home() / '.maverick' / 'swebench-pro'
+with open(home / 'smoke_predictions.csv') as f, \
+     open(home / 'preds.jsonl', 'w') as out:
     r = csv.DictReader(f)
     for row in r:
         if row['pipeline'] != 'maverick':
@@ -108,7 +112,7 @@ with open('/tmp/smoke_predictions.csv') as f, \
 # Run the official evaluator (builds Docker images per instance; first
 # run is slow, subsequent runs reuse cache).
 python -m swebench.harness.run_evaluation \
-    --predictions_path /tmp/preds.jsonl \
+    --predictions_path ~/.maverick/swebench-pro/preds.jsonl \
     --dataset_name Scale/swe-bench-pro \
     --split test \
     --max_workers 4 \
@@ -285,6 +289,29 @@ Combined Wave 11 expected lift: **+15-25pp** vs Wave 10 baseline.
 With Opus 4.7 as orchestrator, expected Pro public score: **63-70%**.
 Path B cost target: **$1.50-2.50/task → $2.40-3.90/resolved**.
 
+## Pre-flight: environment checker
+
+Run this BEFORE the shadow benchmark — catches the most common
+failure modes (bad API key, typo'd model overrides, low disk, blocked
+egress, stale config.toml) in under 5 seconds at ~$0.001 spend:
+
+```bash
+python benchmarks/preflight.py
+```
+
+For offline boxes or to skip the API ping:
+```bash
+python benchmarks/preflight.py --skip-network --skip-api
+```
+
+For Verified-only smoke (smaller disk requirement):
+```bash
+python benchmarks/preflight.py --min-disk-gb 50
+```
+
+Exits 0 on PASS, 2 on FAIL. Fix every FAIL before launching a paid run.
+Warnings are advisory but worth reading.
+
 ## Pre-flight: adversarial test suite
 
 Before the real run, verify Wave 11's invariants hold on the box that
@@ -334,7 +361,7 @@ python benchmarks/swe_bench.py \
     --pipelines maverick \
     --instance-hard-cap 3.0 \
     --adoption-tripwire 0.5 \
-    --out /tmp/verified_smoke.csv
+    --out ~/.maverick/swebench-pro/verified_smoke.csv
 ```
 
 Check:
