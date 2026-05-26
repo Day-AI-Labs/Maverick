@@ -19,7 +19,7 @@ from typing import Optional
 
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 SCHEMA = """
@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS episodes (
     output_tokens INTEGER DEFAULT 0,
     tool_calls INTEGER DEFAULT 0
 );
+
+CREATE INDEX IF NOT EXISTS idx_episodes_ended_at ON episodes(ended_at);
 
 CREATE TABLE IF NOT EXISTS facts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -91,6 +93,7 @@ CREATE TABLE IF NOT EXISTS goal_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_goal_events_goal_id_id ON goal_events(goal_id, id);
+CREATE INDEX IF NOT EXISTS idx_goal_events_ts          ON goal_events(ts);
 
 -- v0.2 multi-turn: per-channel-user conversation threads.
 -- (channel, user_id) is the natural key so the same iMessage user
@@ -166,6 +169,18 @@ MIGRATIONS: dict[int, list[str]] = {
     4: [],  # conversations/turns tables are in SCHEMA (idempotent CREATE)
     5: [],  # attachments table is in SCHEMA (idempotent CREATE)
     6: [],  # processed_messages table is in SCHEMA (idempotent CREATE)
+    # Wave 12 (council F17): episodes.ended_at + goal_events.ts indexes.
+    # list_episodes() does `ORDER BY ended_at DESC LIMIT N` which is a
+    # full table scan without the index — visible above ~5k episodes;
+    # SWE-bench Pro creates ~7500 episodes per sweep (1865 instances ×
+    # best-of-4 attempts) so the dashboard's recent-episodes query
+    # was painful. prune_goal_events queries by ts < cutoff.
+    7: [
+        "CREATE INDEX IF NOT EXISTS idx_episodes_ended_at "
+        "ON episodes(ended_at)",
+        "CREATE INDEX IF NOT EXISTS idx_goal_events_ts "
+        "ON goal_events(ts)",
+    ],
 }
 
 
