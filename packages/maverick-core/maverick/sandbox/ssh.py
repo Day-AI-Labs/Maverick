@@ -19,6 +19,7 @@ import shlex
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 from .local import ExecResult
 
@@ -53,13 +54,14 @@ class SSHBackend:
                 "Check your SSH config / keys."
             )
 
-    def exec(self, cmd: str) -> ExecResult:
+    def exec(self, cmd: str, timeout: Optional[float] = None) -> ExecResult:
+        effective = self.timeout if timeout is None else timeout
         remote = f"mkdir -p {shlex.quote(str(self.workdir))} && " \
                  f"cd {shlex.quote(str(self.workdir))} && {cmd}"
         args = ["ssh", *self.ssh_args, self.host, remote]
         try:
             result = subprocess.run(
-                args, capture_output=True, text=True, timeout=self.timeout,
+                args, capture_output=True, text=True, timeout=effective,
             )
             return ExecResult(
                 stdout=result.stdout[-8000:],
@@ -69,6 +71,6 @@ class SSHBackend:
         except subprocess.TimeoutExpired as e:
             return ExecResult(
                 stdout=(e.stdout or b"").decode("utf-8", errors="replace")[-8000:],
-                stderr=f"TIMEOUT after {self.timeout}s",
+                stderr=f"TIMEOUT after {effective}s",
                 exit_code=124,
             )

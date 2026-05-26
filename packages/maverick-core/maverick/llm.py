@@ -94,11 +94,17 @@ class LLMResponse:
 def model_for_role(role: str) -> str:
     """Return the model spec for a role (may be 'provider:id' or bare id).
 
-    Resolution order:
-      1. ``~/.maverick/config.toml`` -> ``[models]`` -> role
-      2. ``ROLE_MODELS`` defaults
-      3. ``DEFAULT_MODEL``
+    Resolution order (Wave 11):
+      1. Per-role env override `MAVERICK_MODEL_OVERRIDE_<ROLE>` (set by
+         best-of-N to swap models per attempt).
+      2. ``~/.maverick/config.toml`` -> ``[models]`` -> role
+      3. ``ROLE_MODELS`` defaults
+      4. ``DEFAULT_MODEL``
     """
+    import os
+    override = os.environ.get(f"MAVERICK_MODEL_OVERRIDE_{role.upper()}")
+    if override:
+        return override
     try:
         from .config import get_role_model
         spec = get_role_model(role)

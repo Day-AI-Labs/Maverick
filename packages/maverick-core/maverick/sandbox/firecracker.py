@@ -77,10 +77,19 @@ class FirecrackerBackend:
                 f"Firecracker provider must be 'local' or 'e2b', got {self.provider!r}"
             )
 
-    def exec(self, cmd: str) -> ExecResult:
-        if self.provider == "e2b":
-            return self._exec_e2b(cmd)
-        return self._exec_local(cmd)
+    def exec(self, cmd: str, timeout: Optional[float] = None) -> ExecResult:
+        # Wave 11: per-call timeout propagated to underlying providers
+        # via a temporary self.timeout swap. Both _exec_e2b and
+        # _exec_local read self.timeout; restore on exit.
+        prior = self.timeout
+        if timeout is not None:
+            self.timeout = timeout
+        try:
+            if self.provider == "e2b":
+                return self._exec_e2b(cmd)
+            return self._exec_local(cmd)
+        finally:
+            self.timeout = prior
 
     def _exec_local(self, cmd: str) -> ExecResult:
         """Run inside a freshly-booted local microVM.

@@ -18,6 +18,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 from .local import ExecResult
 
@@ -46,7 +47,11 @@ class DockerBackend:
                 "change [sandbox] backend to 'local' in ~/.maverick/config.toml."
             ) from e
 
-    def exec(self, cmd: str) -> ExecResult:
+    def exec(self, cmd: str, timeout: Optional[float] = None) -> ExecResult:
+        # Wave 11: per-call `timeout` matches LocalBackend so the shell
+        # tool can plumb a longer cap for pytest/npm test/etc. Falls
+        # back to self.timeout (default 60 s).
+        effective = self.timeout if timeout is None else timeout
         args = [
             "docker", "run", "--rm",
             "-v", f"{self.workdir.resolve()}:/workspace",
@@ -61,7 +66,7 @@ class DockerBackend:
                 args,
                 capture_output=True,
                 text=True,
-                timeout=self.timeout,
+                timeout=effective,
             )
             return ExecResult(
                 stdout=result.stdout[-8000:],
@@ -71,6 +76,6 @@ class DockerBackend:
         except subprocess.TimeoutExpired as e:
             return ExecResult(
                 stdout=(e.stdout or b"").decode("utf-8", errors="replace")[-8000:],
-                stderr=f"TIMEOUT after {self.timeout}s",
+                stderr=f"TIMEOUT after {effective}s",
                 exit_code=124,
             )

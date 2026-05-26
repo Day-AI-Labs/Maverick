@@ -19,6 +19,22 @@ from ..llm import LLMResponse, ToolCall
 from ..retry import async_retry, sync_retry
 
 
+def _default_cache_ttl() -> str:
+    """Wave 11: benchmark mode defaults to 5m TTL (no cross-instance
+    reuse), interactive mode keeps 1h (multi-turn within a single
+    long-running goal benefits from longer cache life).
+
+    Explicit MAVERICK_ANTHROPIC_CACHE_TTL always wins.
+    """
+    explicit = os.environ.get("MAVERICK_ANTHROPIC_CACHE_TTL")
+    if explicit:
+        return explicit
+    coding = os.environ.get("MAVERICK_CODING_MODE", "").lower() in ("1", "true", "yes")
+    if coding:
+        return "5m"
+    return "1h"
+
+
 def _ephemeral(obj: dict) -> dict:
     # Anthropic regressed the default cache TTL from 1h to 5m in early
     # March 2026 (issue #46829 on anthropics/claude-code). For agent
@@ -26,7 +42,10 @@ def _ephemeral(obj: dict) -> dict:
     # across many turns inside a single goal -- 5m is too short and
     # forces ~20% extra spend on re-creates. Explicitly set 1h on every
     # cache control block so we get the discount we expect.
-    ttl = os.environ.get("MAVERICK_ANTHROPIC_CACHE_TTL", "1h")
+    # Wave 11: in coding-mode (SWE-bench style), default to 5m since
+    # there is no cross-instance reuse and the 25% cache-write surcharge
+    # on a 1h TTL is wasted.
+    ttl = _default_cache_ttl()
     return {**obj, "cache_control": {"type": "ephemeral", "ttl": ttl}}
 
 

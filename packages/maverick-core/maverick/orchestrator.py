@@ -285,7 +285,31 @@ async def run_goal_best_of_n(
     per_attempt_wall = budget.max_wall_seconds / n
     candidates: list[Candidate] = []
 
-    for i in range(n):
+    # Wave 11: heterogeneous best-of-N. Inter-model diversity beats
+    # intra-model temperature diversity on SWE-bench (RoBoN paper, arxiv
+    # 2512.05542: +3.4pp over best individual at large N). The default
+    # ladder is (Sonnet-cheap, Sonnet-warm, Opus) — first the cheap
+    # primary, then a temperature-warmed re-roll, then the heavyweight
+    # for the long tail. Configurable via MAVERICK_BON_LADDER as
+    # comma-separated "model:temperature" pairs.
+    default_ladder = "claude-sonnet-4-6:0.3,claude-sonnet-4-6:0.7,claude-opus-4-7:0.4"
+    raw_ladder = os.environ.get("MAVERICK_BON_LADDER", default_ladder)
+    ladder: list[tuple[str, float]] = []
+    for entry in raw_ladder.split(","):
+        if ":" in entry:
+            mdl, t = entry.rsplit(":", 1)
+            try:
+                ladder.append((mdl.strip(), float(t)))
+            except ValueError:
+                ladder.append((mdl.strip(), 0.3 + 0.25 * len(ladder)))
+        elif entry.strip():
+            ladder.append((entry.strip(), 0.3 + 0.25 * len(ladder)))
+    # Pad the ladder with temperature-only steps if N > len(ladder).
+    while len(ladder) < n:
+        ladder.append(("", round(0.2 + 0.25 * len(ladder), 2)))
+    ladder = ladder[:n]
+
+    for i, (per_model, per_temp) in enumerate(ladder):
         # Wave 9 fix (council M12): respect parent dollar cap.
         if budget.dollars >= budget.max_dollars * 0.95:
             log.info("best-of-N early break: parent budget 95%% spent")
@@ -299,11 +323,11 @@ async def run_goal_best_of_n(
             max_output_tokens=budget.max_output_tokens,
             max_tool_calls=budget.max_tool_calls,
         )
-        # Wave 9 fix (council H6): give each attempt a temperature nudge
-        # so we get real diversity instead of 4× the same answer. The
-        # nudge is wired via env so all providers/agents see it.
         prior_temp = os.environ.get("MAVERICK_TEMPERATURE")
-        os.environ["MAVERICK_TEMPERATURE"] = str(round(0.2 + i * 0.25, 2))
+        prior_model_override = os.environ.get("MAVERICK_MODEL_OVERRIDE_ORCHESTRATOR")
+        os.environ["MAVERICK_TEMPERATURE"] = str(per_temp)
+        if per_model:
+            os.environ["MAVERICK_MODEL_OVERRIDE_ORCHESTRATOR"] = per_model
         try:
             try:
                 answer = await run_goal(
@@ -323,11 +347,15 @@ async def run_goal_best_of_n(
                 budget.output_tokens += attempt_budget.output_tokens
                 continue
         finally:
-            # Restore temperature so the next call site isn't surprised.
+            # Restore env so the next call site isn't surprised.
             if prior_temp is None:
                 os.environ.pop("MAVERICK_TEMPERATURE", None)
             else:
                 os.environ["MAVERICK_TEMPERATURE"] = prior_temp
+            if prior_model_override is None:
+                os.environ.pop("MAVERICK_MODEL_OVERRIDE_ORCHESTRATOR", None)
+            else:
+                os.environ["MAVERICK_MODEL_OVERRIDE_ORCHESTRATOR"] = prior_model_override
 
         budget.dollars += attempt_budget.dollars
         budget.input_tokens += attempt_budget.input_tokens

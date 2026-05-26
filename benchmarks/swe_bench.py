@@ -78,6 +78,70 @@ def _dry_run_row(instance_id: str, pipeline: str) -> Row:
     )
 
 
+# Wave 11: hoist LLM() across instances. anthropic.Client holds an
+# httpx connection pool; constructing a fresh LLM per instance leaked
+# ~5-10 MB of RSS per instance and OOM-killed the run around #800-1200
+# on a 1865-instance Pro sweep. One LLM per process, threadsafe per
+# the Anthropic SDK's documented invariants.
+_SHARED_LLM = None
+
+
+def _get_shared_llm():
+    global _SHARED_LLM
+    if _SHARED_LLM is None:
+        from maverick.llm import LLM
+        _SHARED_LLM = LLM()
+    return _SHARED_LLM
+
+
+def _reset_workdir(workdir, base_commit: str = "") -> None:
+    """Wave 11: reset workdir to a known clean state between instances.
+
+    The harness's sandbox workdir is shared across instances when using
+    LocalBackend (or a mounted volume on Docker). Without this reset,
+    git state from instance N pollutes instance N+1's run — pre-applied
+    edits, untracked files, branch tip drift. Documented as +10-25pp
+    silent score leak in operational-failure research.
+
+    Best-effort: failures are logged but not raised so a missing-git
+    workdir (e.g., synthetic dry-run paths) doesn't abort the run.
+    """
+    import subprocess
+    from pathlib import Path
+    workdir_path = Path(workdir)
+    if not workdir_path.exists() or not (workdir_path / ".git").exists():
+        return
+    try:
+        if base_commit:
+            subprocess.run(
+                ["git", "-C", str(workdir_path), "reset", "--hard", base_commit],
+                capture_output=True, timeout=30,
+            )
+        else:
+            subprocess.run(
+                ["git", "-C", str(workdir_path), "reset", "--hard", "HEAD"],
+                capture_output=True, timeout=30,
+            )
+        subprocess.run(
+            ["git", "-C", str(workdir_path), "clean", "-fdx"],
+            capture_output=True, timeout=30,
+        )
+        # Strip reflog/branches/tags that could leak the gold patch
+        # (Princeton issue #465). Best-effort; failures don't block.
+        if os.environ.get("MAVERICK_BENCHMARK_OPAQUE", "1") != "0":
+            subprocess.run(
+                ["git", "-C", str(workdir_path), "reflog", "expire",
+                 "--expire=all", "--all"],
+                capture_output=True, timeout=15,
+            )
+            subprocess.run(
+                ["git", "-C", str(workdir_path), "gc", "--prune=now", "--quiet"],
+                capture_output=True, timeout=30,
+            )
+    except (subprocess.SubprocessError, OSError):
+        pass
+
+
 def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
     """Spin up a Maverick swarm against the instance brief.
 
@@ -94,6 +158,13 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
     prepended to the brief. Cost is summed across all episodes
     in this goal, not just the last one. Test envs are cleared after
     the run so they don't leak into adjacent processes.
+
+    Wave 11: LLM is hoisted to a process-wide singleton (no RSS leak),
+    workdir is reset before the run (no state bleed), per-instance
+    cost is hard-capped, Pro `requirements`/`interface` fields are
+    surfaced into the brief, and the 30-turn productivity ceiling is
+    honored (most successful Pro solutions resolve in ~25 turns per
+    Scale Labs' empirical study).
     """
     if os.environ.get("MAVERICK_BENCH_DRY_RUN") == "1":
         return _dry_run_row(instance_id, "maverick")
@@ -101,7 +172,6 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
     import asyncio
     from maverick.budget import Budget
     from maverick.coding_mode import extract_unified_diff
-    from maverick.llm import LLM
     from maverick.orchestrator import run_goal_best_of_n, run_goal_sync
     from maverick.sandbox import build_sandbox
     from maverick.world_model import WorldModel
@@ -119,11 +189,24 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
     # follow-on non-bench process sharing the same shell).
     _env_keys = (
         "MAVERICK_FAIL_TO_PASS", "MAVERICK_PASS_TO_PASS", "MAVERICK_LANGUAGE",
+        "MAVERICK_BASE_COMMIT",
     )
     _prior_env = {k: os.environ.get(k) for k in _env_keys}
     os.environ["MAVERICK_FAIL_TO_PASS"] = "||".join(kwargs.get("fail_to_pass") or [])
     os.environ["MAVERICK_PASS_TO_PASS"] = "||".join(kwargs.get("pass_to_pass") or [])
     os.environ["MAVERICK_LANGUAGE"] = str(kwargs.get("language") or "")
+    base_commit = str(kwargs.get("base_commit") or "")
+    if base_commit:
+        os.environ["MAVERICK_BASE_COMMIT"] = base_commit
+
+    # Wave 11 (D8): reset workdir to a clean state before the run so
+    # state from instance N-1 doesn't pollute. Also strips reflog/tags
+    # that could leak gold (Princeton issue #465).
+    try:
+        sandbox_pre = build_sandbox()
+        _reset_workdir(sandbox_pre.workdir, base_commit=base_commit)
+    except Exception:
+        pass
 
     # Wave 10 (B2): pre-read failing-test source as initial context so the
     # agent localises against the actual assertions rather than guessing.
@@ -163,13 +246,32 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
         except Exception:
             failing_test_context = ""
 
-    enriched_brief = brief + failing_test_context
+    # Wave 11: surface Pro `requirements` + `interface` fields. SWE-bench
+    # Pro adds these as part of issue augmentation; harnesses that drop
+    # them lose easy points because the agent has to infer the spec.
+    pro_block = ""
+    requirements = (kwargs.get("requirements") or "").strip()
+    interface = (kwargs.get("interface") or "").strip()
+    if requirements or interface:
+        parts = []
+        if requirements:
+            parts.append(f"REQUIREMENTS (from Pro spec):\n{requirements}")
+        if interface:
+            parts.append(f"INTERFACE (expected class/function signatures):\n{interface}")
+        pro_block = "\n\n" + "\n\n".join(parts)
+
+    enriched_brief = brief + pro_block + failing_test_context
 
     start = time.monotonic()
     world = WorldModel()
-    llm = LLM()
+    llm = _get_shared_llm()
     gid = world.create_goal(f"swe-bench:{instance_id}", enriched_brief)
-    budget = Budget(max_dollars=3.0, max_wall_seconds=600.0)
+    # Wave 11: per-instance hard cost cap honors operator's
+    # --instance-hard-cap; defaults to $3 to align with Scale's published
+    # Pro budget. Wall is capped at 25 turns x 60s = 25 min effective.
+    instance_cap = float(os.environ.get("MAVERICK_INSTANCE_HARD_CAP", "3.0"))
+    instance_wall = float(os.environ.get("MAVERICK_INSTANCE_WALL_SEC", "1500"))
+    budget = Budget(max_dollars=instance_cap, max_wall_seconds=instance_wall)
     sandbox = build_sandbox()
 
     try:
@@ -190,6 +292,13 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = v
+        # Wave 11 (D18): release the per-instance WorldModel SQLite
+        # connection. Without this, 1865 instances leak 1865 open file
+        # descriptors and SQLite WAL handles.
+        try:
+            world.close()
+        except Exception:
+            pass
 
     # Wave 10 (C6): sum cost across ALL episodes for this goal, not just
     # the most recent one. Best-of-N runs N episodes; prior code reported
@@ -211,6 +320,57 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
     diff = extract_unified_diff(result or "") or extract_unified_diff(
         (goal.result or "") if goal else ""
     ) or ""
+
+    # Wave 11: surface tool-use signals + verifier confidence + trace
+    # data for adoption tripwire + forensics. The agent posts these
+    # to the blackboard which mirrors into goal_events.
+    try:
+        events = world.goal_events(gid, limit=2000)
+    except Exception:
+        events = []
+    str_replace_used = any(
+        "search_replace_used=1" in (e.content or "")
+        for e in events
+    )
+    verifier_events = [
+        e.content for e in events
+        if e.kind == "verify"
+    ]
+    tool_invocations = [
+        e.content for e in events
+        if e.kind == "observation" and (e.content or "").startswith("tool=")
+    ]
+    tool_names = set()
+    for tinv in tool_invocations:
+        if tinv.startswith("tool="):
+            name = tinv.split("=", 1)[1].split(" ", 1)[0].rstrip(",")
+            tool_names.add(name)
+
+    extra_payload: dict = {
+        "goal_id": gid,
+        "run_text": (result or "")[:500],
+        "str_replace_editor_used": bool(str_replace_used),
+        "tool_names": sorted(tool_names),
+        "verify_event_count": len(verifier_events),
+        "num_turns": len(tool_invocations),
+    }
+    # Optional per-instance JSON sidecar for forensics.
+    trace_dir = os.environ.get("MAVERICK_TRACE_DIR")
+    if trace_dir:
+        try:
+            from pathlib import Path as _Path
+            from dataclasses import asdict as _asdict
+            tp = _Path(trace_dir)
+            tp.mkdir(parents=True, exist_ok=True)
+            safe_id = instance_id.replace("/", "_")
+            sidecar = tp / f"{safe_id}.jsonl"
+            with sidecar.open("w") as f:
+                for e in events:
+                    f.write(json.dumps(_asdict(e), default=str) + "\n")
+        except Exception as e:
+            print(f"warning: trace write failed for {instance_id}: {e}",
+                  file=sys.stderr)
+
     return Row(
         instance_id=instance_id,
         pipeline="maverick",
@@ -221,7 +381,7 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
         tokens_out=total_out,
         predicted_patch=diff[:50_000],
         outcome=last_outcome or ("success" if diff else "no-diff"),
-        extra={"goal_id": gid, "run_text": (result or "")[:500]},
+        extra=extra_payload,
     )
 
 
@@ -444,11 +604,23 @@ def main() -> int:
                     help="Stop the run when accumulated $ spend exceeds N.")
     ap.add_argument("--no-resume", action="store_true",
                     help="Don't skip rows already in the output CSV.")
+    ap.add_argument("--instance-hard-cap", type=float, default=None,
+                    help="Hard per-instance $ cap (sets MAVERICK_INSTANCE_HARD_CAP).")
+    ap.add_argument("--worker-index", type=int, default=0,
+                    help="Shard index (0..num-workers-1). Wave 11 (D8 shard).")
+    ap.add_argument("--num-workers", type=int, default=1,
+                    help="Total number of parallel shards.")
+    ap.add_argument("--adoption-tripwire", type=float, default=None,
+                    help="Abort if SEARCH/REPLACE adoption rate < N (0.0-1.0) "
+                    "after the first 25 instances. Sentinel for prompt drift.")
     args = ap.parse_args()
 
     if not args.instances.exists():
         print(f"manifest not found: {args.instances}", file=sys.stderr)
         return 2
+
+    if args.instance_hard_cap is not None:
+        os.environ["MAVERICK_INSTANCE_HARD_CAP"] = str(args.instance_hard_cap)
 
     pipelines = [p.strip() for p in args.pipelines.split(",") if p.strip()]
     for p in pipelines:
@@ -457,6 +629,19 @@ def main() -> int:
             return 2
 
     instances = load_instances(args.instances)
+    # Wave 11 (D8): shard by hash(instance_id) % num_workers so two
+    # parallel harness processes don't redo each other's work even
+    # though both started with the same manifest.
+    if args.num_workers > 1:
+        import hashlib
+        instances = [
+            inst for inst in instances
+            if (int(hashlib.sha256(inst["instance_id"].encode()).hexdigest(), 16)
+                % args.num_workers) == args.worker_index
+        ]
+        print(f"shard {args.worker_index}/{args.num_workers}: "
+              f"{len(instances)} instances assigned", file=sys.stderr)
+
     done = set() if args.no_resume else already_done(args.out)
     if done:
         print(f"resuming: {len(done)} (instance,pipeline) pairs already in {args.out}",
@@ -465,6 +650,9 @@ def main() -> int:
     total_spend = 0.0
     skipped = 0
     written = 0
+    # Wave 11: adoption tripwire counters.
+    str_replace_uses = 0
+    instances_with_str_replace_signal = 0
 
     try:
         for inst in instances:
@@ -475,6 +663,10 @@ def main() -> int:
                 "pass_to_pass": inst.get("pass_to_pass", []) or [],
                 "gold_patch": inst.get("gold_patch", "") or "",
                 "language": inst.get("language", "") or "",
+                # Wave 11: Pro-specific manifest fields.
+                "base_commit": inst.get("base_commit", "") or "",
+                "requirements": inst.get("requirements", "") or "",
+                "interface": inst.get("interface", "") or "",
             }
             for pipeline in pipelines:
                 if (iid, pipeline) in done:
@@ -500,9 +692,31 @@ def main() -> int:
                 write_csv([row], args.out)
                 written += 1
                 total_spend += row.cost_dollars
+                # Wave 11: track SEARCH/REPLACE adoption via extra signal.
+                if pipeline == "maverick":
+                    if row.extra.get("str_replace_editor_used"):
+                        str_replace_uses += 1
+                    if "str_replace_editor_used" in row.extra:
+                        instances_with_str_replace_signal += 1
                 print(f"{iid}\t{pipeline}\t{row.outcome}\t"
                       f"${row.cost_dollars:.3f}\t{row.wall_seconds:.1f}s"
                       f"\ttotal=${total_spend:.2f}")
+                # Wave 11: adoption tripwire. After 25 instances, if
+                # SEARCH/REPLACE adoption is below the threshold, abort
+                # so we don't burn $4k on a degenerate run.
+                if (args.adoption_tripwire is not None
+                        and instances_with_str_replace_signal >= 25):
+                    rate = str_replace_uses / instances_with_str_replace_signal
+                    if rate < args.adoption_tripwire:
+                        print(
+                            f"ABORT: SEARCH/REPLACE adoption {rate:.1%} < "
+                            f"{args.adoption_tripwire:.1%} after "
+                            f"{instances_with_str_replace_signal} instances. "
+                            f"Spent: ${total_spend:.2f}. Prompt likely "
+                            "regressed; check tool-use template before "
+                            "scaling up.", file=sys.stderr,
+                        )
+                        return 4
     except KeyboardInterrupt:
         print(f"\nSIGINT caught; {written} row(s) flushed to {args.out}",
               file=sys.stderr)
@@ -510,6 +724,10 @@ def main() -> int:
 
     print(f"\n{written} row(s) appended to {args.out}; "
           f"{skipped} skipped (already done); total ${total_spend:.2f}")
+    if instances_with_str_replace_signal > 0:
+        rate = str_replace_uses / instances_with_str_replace_signal
+        print(f"SEARCH/REPLACE adoption: {rate:.1%} "
+              f"({str_replace_uses}/{instances_with_str_replace_signal})")
     return 0
 
 
