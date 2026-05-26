@@ -45,15 +45,118 @@ class MCPServerSpec:
     args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
     inherit_env: bool = False  # opt-in to full os.environ inheritance
+    # SHA-256 of the executable / NPM package SHASUM / image digest the
+    # operator expects. When set, MCPClient.start() refuses to spawn if
+    # the actual command resolves to a different hash. Defends the
+    # supply-chain attack class shipped to STDIO MCP in April 2026
+    # (CVE-2026-30615 et al). Default None = no pin (legacy behavior).
+    pin_sha256: Optional[str] = None
 
     @classmethod
     def from_config(cls, name: str, cfg: dict) -> "MCPServerSpec":
-        return cls(
+        spec = cls(
             name=name,
             command=cfg["command"],
             args=list(cfg.get("args", [])),
             env={k: str(v) for k, v in (cfg.get("env", {}) or {}).items()},
             inherit_env=bool(cfg.get("inherit_env", False)),
+            pin_sha256=cfg.get("pin_sha256"),
+        )
+        _validate_subprocess_inputs(spec)
+        return spec
+
+    def __post_init__(self):
+        # Allow direct construction (tests / programmatic use) but still
+        # apply the input validation. The dataclass default args don't
+        # call from_config so we hook __post_init__.
+        _validate_subprocess_inputs(self)
+
+
+_DENY_CHARS = ("\n", "\r", "\0")
+_DENY_SHELL_METAS = (";", "|", "&", "$(", "`", ">", "<")
+
+
+def _validate_subprocess_inputs(spec: "MCPServerSpec") -> None:
+    """Defend against the CVE-2026-30615 STDIO Trifecta and friends.
+
+    Hostile MCP server listings embedded newlines / shell metas in
+    `command` or `args`, causing client launchers to spawn unintended
+    processes (200k vulnerable clients across Cursor, VS Code, Windsurf,
+    Claude Code, LangChain, LangFlow, LiteLLM, Flowise per April 2026
+    OX Security advisory).
+
+    Rules:
+      - command must be a simple program name or absolute path; no
+        shell metacharacters, no embedded NUL / newline.
+      - each arg must not contain NUL / newline / CR.
+      - env keys must match [A-Z][A-Z0-9_]*; values must not contain
+        NUL / newline / CR.
+    """
+    for ch in _DENY_CHARS:
+        if ch in spec.command:
+            raise ValueError(
+                f"MCP server {spec.name!r} command contains illegal char {ch!r}"
+            )
+    # The command itself is allowed to include path slashes / dots /
+    # dashes; reject only shell metacharacters that would re-enter a
+    # shell parse.
+    for meta in _DENY_SHELL_METAS:
+        if meta in spec.command:
+            raise ValueError(
+                f"MCP server {spec.name!r} command contains shell metacharacter "
+                f"{meta!r}; pass it through args instead"
+            )
+    for i, arg in enumerate(spec.args):
+        if not isinstance(arg, str):
+            raise ValueError(
+                f"MCP server {spec.name!r} arg #{i} is not a string"
+            )
+        for ch in _DENY_CHARS:
+            if ch in arg:
+                raise ValueError(
+                    f"MCP server {spec.name!r} arg #{i} contains illegal char {ch!r}"
+                )
+    import re as _re
+    key_re = _re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+    for k, v in (spec.env or {}).items():
+        if not key_re.match(k):
+            raise ValueError(
+                f"MCP server {spec.name!r} env key {k!r} is not a valid identifier"
+            )
+        if not isinstance(v, str):
+            raise ValueError(
+                f"MCP server {spec.name!r} env[{k}] is not a string"
+            )
+        for ch in _DENY_CHARS:
+            if ch in v:
+                raise ValueError(
+                    f"MCP server {spec.name!r} env[{k}] contains illegal char {ch!r}"
+                )
+
+
+def _verify_command_pin(spec: "MCPServerSpec") -> None:
+    """If spec.pin_sha256 is set, hash the resolved executable and refuse
+    to spawn on mismatch. Resolution uses shutil.which for argv[0]."""
+    if not spec.pin_sha256:
+        return
+    import hashlib as _hashlib
+    import shutil as _shutil
+    from pathlib import Path as _Path
+    resolved = _shutil.which(spec.command) if "/" not in spec.command else spec.command
+    if not resolved or not _Path(resolved).exists():
+        raise MCPClientError(
+            f"MCP server {spec.name!r}: cannot resolve {spec.command!r} to "
+            f"verify pin_sha256"
+        )
+    h = _hashlib.sha256()
+    with open(resolved, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    actual = h.hexdigest()
+    if actual != spec.pin_sha256:
+        raise MCPClientError(
+            f"MCP server {spec.name!r}: pin_sha256 mismatch. "
+            f"Expected {spec.pin_sha256}, got {actual} for {resolved}"
         )
 
 
@@ -86,6 +189,10 @@ class MCPClient:
         return self._req_id
 
     async def start(self) -> None:
+        # Verify pinned hash before doing anything. This catches the
+        # CVE-2026-30615 / Postmark / Smithery supply-chain class --
+        # if the binary was replaced under us, refuse to launch.
+        _verify_command_pin(self.spec)
         env = _build_env(self.spec)
         log.info("MCP client starting server %r (%s %s) [env keys: %d]",
                  self.spec.name, self.spec.command, " ".join(self.spec.args),

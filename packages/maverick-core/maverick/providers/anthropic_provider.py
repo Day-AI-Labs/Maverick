@@ -20,7 +20,14 @@ from ..retry import async_retry, sync_retry
 
 
 def _ephemeral(obj: dict) -> dict:
-    return {**obj, "cache_control": {"type": "ephemeral"}}
+    # Anthropic regressed the default cache TTL from 1h to 5m in early
+    # March 2026 (issue #46829 on anthropics/claude-code). For agent
+    # workloads -- where system prompts and tool catalogs are reused
+    # across many turns inside a single goal -- 5m is too short and
+    # forces ~20% extra spend on re-creates. Explicitly set 1h on every
+    # cache control block so we get the discount we expect.
+    ttl = os.environ.get("MAVERICK_ANTHROPIC_CACHE_TTL", "1h")
+    return {**obj, "cache_control": {"type": "ephemeral", "ttl": ttl}}
 
 
 def _cached_system(text: str) -> list[dict]:

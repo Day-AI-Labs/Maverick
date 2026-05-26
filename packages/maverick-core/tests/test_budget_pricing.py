@@ -14,9 +14,9 @@ from maverick.llm import MODEL_OPUS, MODEL_SONNET, MODEL_HAIKU
 
 def test_opus_priced_at_opus_rate():
     b = Budget(max_dollars=100.0, max_input_tokens=10_000_000, max_output_tokens=10_000_000)
-    # 1M input + 1M output on Opus = $15 in + $75 out = $90
+    # 1M input + 1M output on Opus 4.7 (May 2026) = $5 in + $25 out = $30
     b.record_tokens(1_000_000, 1_000_000, model=MODEL_OPUS)
-    assert abs(b.dollars - 90.0) < 0.001
+    assert abs(b.dollars - 30.0) < 0.001
 
 
 def test_sonnet_priced_at_sonnet_rate():
@@ -50,9 +50,9 @@ def test_no_model_uses_fallback_rate():
 def test_cache_read_is_one_tenth_of_input():
     """Anthropic bills cache reads at 0.1x of input rate."""
     b = Budget(max_dollars=100.0, max_input_tokens=10_000_000, max_output_tokens=10_000_000)
-    # 1M cache reads on Opus = $15 * 0.1 = $1.50
+    # 1M cache reads on Opus 4.7 = $5 * 0.1 = $0.50
     b.record_tokens(0, 0, model=MODEL_OPUS, cache_read_tok=1_000_000)
-    assert abs(b.dollars - 1.50) < 0.001
+    assert abs(b.dollars - 0.50) < 0.001
 
 
 def test_cache_write_is_one_and_a_quarter_input():
@@ -82,6 +82,6 @@ def test_opus_run_actually_hits_the_dollar_cap():
     import pytest
     from maverick.budget import BudgetExceeded
     b = Budget(max_dollars=5.0)
-    # 500k input on Opus = $15 * 0.5 = $7.50 -- should exceed $5 cap.
+    # 1.5M input on Opus 4.7 = $5 * 1.5 = $7.50 -- should exceed $5 cap.
     with pytest.raises(BudgetExceeded):
-        b.record_tokens(500_000, 0, model=MODEL_OPUS)
+        b.record_tokens(1_500_000, 0, model=MODEL_OPUS)

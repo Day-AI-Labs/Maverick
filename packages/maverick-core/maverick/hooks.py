@@ -1,0 +1,230 @@
+"""Lifecycle hooks for agent / tool events.
+
+Modeled after Claude Code's hook system. User registers shell-command
+or Python callables to fire at well-defined points; failures in a
+hook are isolated (logged, not propagated). Hooks can BLOCK a tool
+call (Pre*) by returning a falsy "allowed" flag, or annotate the
+trace (Post*).
+
+Events:
+  - SessionStart:    once at process startup
+  - PreToolUse:      before any tool executes (can block)
+  - PostToolUse:     after a tool returns (cannot block)
+  - UserPromptSubmit: before agent processes a user message
+  - Stop:            when the agent decides FINAL
+  - SubagentStop:    when a sub-agent completes
+  - SessionEnd:      once at process exit
+
+Configure via ~/.maverick/config.toml:
+
+    [[hooks]]
+    event = "PreToolUse"
+    matcher = "shell"           # tool-name glob; * = any tool
+    command = "~/.maverick/hooks/before-shell.sh"
+    timeout_ms = 5000
+
+    [[hooks]]
+    event = "PostToolUse"
+    matcher = "write_file"
+    command = "python3 ~/.maverick/hooks/format-on-write.py"
+
+Or programmatically:
+
+    from maverick.hooks import register, HookEvent, HookContext
+    register(HookEvent.PRE_TOOL_USE, lambda ctx: not ctx.tool_name.startswith("dangerous_"))
+"""
+from __future__ import annotations
+
+import asyncio
+import fnmatch
+import logging
+import os
+import shlex
+import time
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Callable, Optional
+
+
+log = logging.getLogger(__name__)
+
+
+class HookEvent(str, Enum):
+    SESSION_START = "SessionStart"
+    PRE_TOOL_USE = "PreToolUse"
+    POST_TOOL_USE = "PostToolUse"
+    USER_PROMPT_SUBMIT = "UserPromptSubmit"
+    STOP = "Stop"
+    SUBAGENT_STOP = "SubagentStop"
+    SESSION_END = "SessionEnd"
+
+
+@dataclass
+class HookContext:
+    """Data delivered to every hook invocation."""
+    event: HookEvent
+    tool_name: str = ""
+    tool_args: dict[str, Any] = field(default_factory=dict)
+    tool_result: Optional[str] = None
+    goal_id: Optional[int] = None
+    agent_role: str = ""
+    duration_ms: float = 0.0
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class HookSpec:
+    event: HookEvent
+    matcher: str = "*"
+    command: Optional[str] = None
+    callable: Optional[Callable[[HookContext], Any]] = None
+    timeout_ms: int = 5000
+
+    def matches(self, ctx: HookContext) -> bool:
+        if self.event != ctx.event:
+            return False
+        if self.event in (HookEvent.PRE_TOOL_USE, HookEvent.POST_TOOL_USE):
+            return fnmatch.fnmatch(ctx.tool_name or "", self.matcher)
+        return True
+
+
+_registry: list[HookSpec] = []
+
+
+def register(
+    event: HookEvent,
+    callable_or_command: Any,
+    *,
+    matcher: str = "*",
+    timeout_ms: int = 5000,
+) -> HookSpec:
+    """Register a hook. Returns the spec for later unregister/unit-test."""
+    if callable(callable_or_command):
+        spec = HookSpec(event=event, matcher=matcher,
+                        callable=callable_or_command, timeout_ms=timeout_ms)
+    else:
+        spec = HookSpec(event=event, matcher=matcher,
+                        command=str(callable_or_command), timeout_ms=timeout_ms)
+    _registry.append(spec)
+    return spec
+
+
+def unregister(spec: HookSpec) -> None:
+    try:
+        _registry.remove(spec)
+    except ValueError:
+        pass
+
+
+def clear() -> None:
+    """Drop all registered hooks. Used in tests + on session restart."""
+    _registry.clear()
+
+
+def load_from_config() -> None:
+    """Read [[hooks]] entries from ~/.maverick/config.toml and register
+    each one. Safe to call multiple times; clear() first if you don't
+    want duplicates."""
+    try:
+        from .config import load_config
+        cfg = load_config()
+    except Exception as e:  # pragma: no cover
+        log.debug("hook config load failed: %s", e)
+        return
+    for entry in cfg.get("hooks", []) or []:
+        try:
+            event = HookEvent(entry["event"])
+        except (KeyError, ValueError):
+            log.warning("invalid hook event: %s", entry)
+            continue
+        cmd = entry.get("command")
+        if not cmd:
+            log.warning("hook missing command: %s", entry)
+            continue
+        register(
+            event, cmd,
+            matcher=entry.get("matcher", "*"),
+            timeout_ms=int(entry.get("timeout_ms", 5000)),
+        )
+
+
+async def dispatch(ctx: HookContext) -> bool:
+    """Fire every hook matching this context. Returns False if any
+    Pre* hook explicitly blocked the action (exit code != 0 for shell;
+    falsy return for callable). Always returns True for Post* events."""
+    is_blocking = ctx.event in (HookEvent.PRE_TOOL_USE, HookEvent.USER_PROMPT_SUBMIT)
+    allowed = True
+    for spec in list(_registry):
+        if not spec.matches(ctx):
+            continue
+        start = time.monotonic()
+        try:
+            ok = await _run_one(spec, ctx)
+        except Exception as e:
+            log.warning("hook %s/%s raised: %s", spec.event.value, spec.matcher, e)
+            ok = True  # fail-open on hook bugs
+        ctx.duration_ms = (time.monotonic() - start) * 1000
+        if is_blocking and not ok:
+            allowed = False
+            log.info(
+                "hook %s/%s BLOCKED %s",
+                spec.event.value, spec.matcher, ctx.tool_name or ctx.event.value,
+            )
+    return allowed
+
+
+async def _run_one(spec: HookSpec, ctx: HookContext) -> bool:
+    if spec.callable is not None:
+        result = spec.callable(ctx)
+        if asyncio.iscoroutine(result):
+            result = await result
+        # Truthy or None = allow; explicit False = block.
+        return bool(result) if result is not None else True
+
+    # Shell command. Pass context as JSON on stdin so the hook can
+    # parse without parsing argv quirks.
+    import json
+    env = dict(os.environ)
+    env["MAVERICK_HOOK_EVENT"] = spec.event.value
+    env["MAVERICK_HOOK_TOOL"] = ctx.tool_name or ""
+    payload = json.dumps({
+        "event": ctx.event.value,
+        "tool_name": ctx.tool_name,
+        "tool_args": ctx.tool_args,
+        "tool_result": ctx.tool_result,
+        "goal_id": ctx.goal_id,
+        "agent_role": ctx.agent_role,
+    })
+    try:
+        cmd = shlex.split(os.path.expanduser(spec.command))
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(payload.encode()),
+                timeout=spec.timeout_ms / 1000.0,
+            )
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            log.warning("hook %s timed out (>%dms)", spec.command, spec.timeout_ms)
+            return True  # timeouts don't block
+        if stdout:
+            log.debug("hook %s stdout: %s", spec.command, stdout.decode(errors="replace")[:500])
+        if stderr:
+            log.info("hook %s stderr: %s", spec.command, stderr.decode(errors="replace")[:500])
+        return proc.returncode == 0
+    except FileNotFoundError:
+        log.warning("hook command not found: %s", spec.command)
+        return True  # missing hook doesn't block
+
+
+def installed() -> list[HookSpec]:
+    return list(_registry)

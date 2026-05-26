@@ -68,6 +68,17 @@ class Server:
         # row. Every inbound message becomes a 'user' turn; the
         # orchestrator's final answer is appended as 'assistant' turn
         # inside run_goal so future messages have history.
+
+        # EU AI Act Article 50: disclose AI to new channel users on
+        # first turn. `first_turn_disclosure` checks the conversation
+        # row (creates if needed) and returns None on follow-up turns.
+        from .compliance import first_turn_disclosure
+        disclosure = first_turn_disclosure(
+            self.world,
+            channel=msg.channel or "unknown",
+            user_id=msg.user_id,
+        )
+
         conversation = self.world.get_or_create_conversation(
             channel=msg.channel or "unknown",
             user_id=msg.user_id,
@@ -100,6 +111,8 @@ class Server:
             if not verdict.allowed:
                 return f"⚠ Output blocked: {'; '.join(verdict.reasons)}"
 
+        if disclosure is not None:
+            return f"{disclosure}\n\n{result}"
         return result
 
     def add_channel(self, channel) -> None:

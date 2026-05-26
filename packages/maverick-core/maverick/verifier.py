@@ -138,6 +138,7 @@ async def verify_proposal(
     budget: Optional[Budget] = None,
     *,
     max_tokens: int = 1024,
+    proposer_model: Optional[str] = None,
 ) -> VerifierVerdict:
     """Ask the verifier role to judge a proposer's final answer.
 
@@ -149,11 +150,23 @@ async def verify_proposal(
     JSON-without-required-fields → reject. This keeps the proposer
     honest -- a flaky verifier can only make the system MORE careful,
     not less.
+
+    Cross-family guard (May 2026 research): if the verifier model is in
+    the same family as the proposer (e.g. both Anthropic), they can be
+    jailbroken in lockstep (Anthropic's alignment-faking paper
+    arxiv:2412.14093 + 2026 deceptive-alignment follow-ups). When the
+    proposer_model is passed and matches the verifier's family, we
+    swap to a cross-family verifier via MODEL_FAMILY_FALLBACK.
     """
     if not proposal or not proposal.strip():
         return VerifierVerdict.reject("proposal is empty")
 
     model = model_for_role("verifier")
+    if proposer_model and _same_family(proposer_model, model):
+        cross = _cross_family_fallback(model)
+        if cross is not None:
+            model = cross
+
     user_msg = (
         f"GOAL BRIEF:\n{brief}\n\n"
         f"PROPOSED FINAL ANSWER:\n{proposal}\n\n"
@@ -175,3 +188,56 @@ async def verify_proposal(
             critique=f"verifier call failed: {e}", issues=[],
         )
     return _parse(resp.text)
+
+
+def _provider(model: str) -> str:
+    """Extract the provider/family slug from a `provider:model-id` spec."""
+    if ":" in model:
+        return model.split(":", 1)[0].lower()
+    # Bare ids: heuristic prefix match.
+    m = model.lower()
+    if m.startswith("claude"):
+        return "anthropic"
+    if m.startswith("gpt") or m.startswith("o"):
+        return "openai"
+    if m.startswith("gemini"):
+        return "gemini"
+    if m.startswith("deepseek"):
+        return "deepseek"
+    if m.startswith("qwen"):
+        return "qwen"
+    if m.startswith("grok"):
+        return "xai"
+    if m.startswith("llama"):
+        return "meta"
+    return "unknown"
+
+
+def _same_family(a: str, b: str) -> bool:
+    return _provider(a) == _provider(b)
+
+
+# Preferred cross-family verifier per source family. Read from env if
+# the operator wants to override. The fallback chain ends with the
+# original model (no swap) when no peer is configured.
+def _cross_family_fallback(model: str) -> Optional[str]:
+    """Pick a verifier from a different provider family.
+
+    Priority order: explicit env override, then a curated default.
+    Returns None if no cross-family peer is configured / available.
+    """
+    explicit = os.environ.get("MAVERICK_CROSS_FAMILY_VERIFIER")
+    if explicit:
+        return explicit
+
+    fam = _provider(model)
+    defaults = {
+        "anthropic": "openai:gpt-5.4",
+        "openai":    "anthropic:claude-sonnet-4-6",
+        "gemini":    "anthropic:claude-sonnet-4-6",
+        "deepseek":  "anthropic:claude-sonnet-4-6",
+        "qwen":      "anthropic:claude-sonnet-4-6",
+        "xai":       "anthropic:claude-sonnet-4-6",
+        "meta":      "anthropic:claude-sonnet-4-6",
+    }
+    return defaults.get(fam)

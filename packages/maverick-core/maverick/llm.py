@@ -45,11 +45,31 @@ ROLE_MODELS: dict[str, str] = {
 }
 
 
-# Anthropic pricing per million tokens (2026 list, no cache discount).
+# Per-million-token list prices (May 2026, no cache discount, USD).
+# Used by Budget.record_tokens to compute spend accurately per model.
 MODEL_PRICES: dict[str, tuple[float, float]] = {
-    MODEL_OPUS:   (15.0, 75.0),
-    MODEL_SONNET: (3.0, 15.0),
-    MODEL_HAIKU:  (0.80, 4.0),
+    # Anthropic
+    MODEL_OPUS:                  (5.0, 25.0),   # opus 4.7 May 2026 pricing
+    MODEL_SONNET:                (3.0, 15.0),
+    MODEL_HAIKU:                 (0.80, 4.0),
+    # OpenAI
+    "gpt-5.5":                   (5.0, 20.0),
+    "gpt-5.4":                   (3.0, 12.0),
+    "gpt-5.4-pro":               (10.0, 40.0),
+    "gpt-5.4-mini":              (0.50, 2.0),
+    "gpt-5.4-nano":              (0.10, 0.40),
+    # OpenRouter / DeepSeek
+    "deepseek-v4-pro":           (0.14, 0.55),
+    "deepseek-v4-flash":         (0.07, 0.28),
+    # xAI
+    "grok-4.3":                  (1.25, 2.50),
+    # Google
+    "gemini-3-pro":              (2.50, 10.0),
+    "gemini-3-flash":            (0.15, 0.60),
+    # Open-weight defaults via Ollama: priced at zero (compute cost).
+    "qwen3-coder-next":          (0.0, 0.0),
+    "qwen3-32b":                 (0.0, 0.0),
+    "llama-4-maverick":          (0.0, 0.0),
 }
 
 

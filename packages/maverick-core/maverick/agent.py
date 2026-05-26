@@ -152,7 +152,31 @@ class Agent:
                     f"⚠ BLOCKED by Shield ({verdict.severity}): "
                     f"{'; '.join(verdict.reasons)}. The tool was not executed."
                 )
+
+        # PreToolUse hooks: any registered hook can BLOCK the call by
+        # returning a non-zero exit code (shell hook) or a falsy value
+        # (Python callable). Modeled on Claude Code's hook surface.
+        from .hooks import HookContext, HookEvent, dispatch as _dispatch_hooks
+        pre_ctx = HookContext(
+            event=HookEvent.PRE_TOOL_USE,
+            tool_name=name, tool_args=args,
+            goal_id=self.ctx.goal_id, agent_role=self.role,
+        )
+        if not await _dispatch_hooks(pre_ctx):
+            self.ctx.blackboard.post(
+                self.name, "error",
+                f"tool={name} BLOCKED by PreToolUse hook",
+            )
+            return "⚠ BLOCKED by hook. The tool was not executed."
+
         output = await self.tools.run(name, args)
+
+        post_ctx = HookContext(
+            event=HookEvent.POST_TOOL_USE,
+            tool_name=name, tool_args=args, tool_result=output,
+            goal_id=self.ctx.goal_id, agent_role=self.role,
+        )
+        await _dispatch_hooks(post_ctx)
         # Council finding: tool output flowed back to the LLM unscanned,
         # so a malicious file contents / shell stdout containing
         # `FINAL: <exfil>` or jailbreak instructions hit the next turn.
@@ -272,6 +296,7 @@ class Agent:
                             from .verifier import verify_proposal
                             verdict = await verify_proposal(
                                 self.brief, final, self.ctx.llm, self.ctx.budget,
+                                proposer_model=self.model,
                             )
                         except BudgetExceeded:
                             verdict = None
