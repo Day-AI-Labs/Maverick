@@ -242,6 +242,18 @@ def _wire_imessage(server, cfg):
     ))
 
 
+def _wire_voice(server, cfg):
+    from maverick_channels.voice import VoiceChannel
+    server.add_channel(VoiceChannel(
+        handler=server._handle_message,
+        api_key=cfg.get("api_key") or os.environ.get("VAPI_API_KEY"),
+        phone_number=cfg.get("phone_number"),
+        port=cfg.get("port", 8770),
+        assistant_id=cfg.get("assistant_id"),
+        provider=cfg.get("provider", "vapi"),
+    ))
+
+
 _WIRES = {
     "telegram": _wire_telegram,
     "discord":  _wire_discord,
@@ -252,6 +264,7 @@ _WIRES = {
     "whatsapp": _wire_whatsapp,
     "sms":      _wire_sms,
     "imessage": _wire_imessage,
+    "voice":    _wire_voice,
 }
 
 

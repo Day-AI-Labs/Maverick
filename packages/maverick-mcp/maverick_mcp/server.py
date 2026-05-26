@@ -498,7 +498,21 @@ class MCPServer:
 
 
 def main() -> None:
-    MCPServer().run()
+    """Entry point. Defaults to stdio transport (Claude Desktop /
+    Cursor compatible). Pass `--http` for the Streamable HTTP
+    transport (hosted Maverick, MCP gateways)."""
+    import argparse
+    ap = argparse.ArgumentParser(prog="maverick-mcp")
+    ap.add_argument("--http", action="store_true",
+                    help="Serve over Streamable HTTP instead of stdio")
+    ap.add_argument("--host", default="0.0.0.0")  # noqa: S104
+    ap.add_argument("--port", type=int, default=8771)
+    args = ap.parse_args()
+    if args.http:
+        from .http_transport import serve
+        serve(host=args.host, port=args.port)
+    else:
+        MCPServer().run()
 
 
 if __name__ == "__main__":
