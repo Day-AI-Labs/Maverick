@@ -798,27 +798,48 @@ def defensive_validate(patch: str, *, fail_to_pass: list[str] = None,
             _MIN_GOLD_TOKENS_FOR_CHEATING_CHECK = 30
             if (ours_tokens and theirs_tokens
                     and len(theirs_tokens) >= _MIN_GOLD_TOKENS_FOR_CHEATING_CHECK):
+                # Signal 1: longest contiguous matching block. Verbatim
+                # copies produce one long block. Trivial bypass: insert
+                # `_=None;` between every 5-6 gold tokens to break the
+                # contiguous run.
                 matcher = SequenceMatcher(
                     None, ours_tokens, theirs_tokens, autojunk=False,
                 )
-                # Use the LONGEST contiguous matching block, not the
-                # sum of all matches. Verbatim copies produce one long
-                # block (entire gold appears contiguously); legitimate
-                # different fixes share only scattered short keyword
-                # runs (def / return / class). Block-size / gold_len
-                # signals "what fraction of gold appears as a
-                # continuous verbatim run in ours" — the actual
-                # cheating signal.
                 blocks = matcher.get_matching_blocks()
                 longest = max((b.size for b in blocks), default=0)
                 gold_fraction = longest / max(1, len(theirs_tokens))
-                if gold_fraction >= 0.50:
+
+                # Signal 2 (May 26 council fix, Princeton-perspective
+                # audit #5): n-gram Jaccard. Closes the splice-bypass
+                # of signal 1 by working at the 3-gram-set level —
+                # inserting noise between gold tokens breaks the
+                # CONTIGUOUS run but preserves the 3-gram overlap.
+                # Threshold 0.35 calibrated against Scale's published
+                # Nov-2025 cheating-detector methodology.
+                def _ngrams(seq: list[str], n: int = 3) -> set:
+                    if len(seq) < n:
+                        return set()
+                    return {tuple(seq[i:i + n]) for i in range(len(seq) - n + 1)}
+                ours_ngrams = _ngrams(ours_tokens)
+                theirs_ngrams = _ngrams(theirs_tokens)
+                if theirs_ngrams:
+                    jaccard = len(ours_ngrams & theirs_ngrams) / len(
+                        ours_ngrams | theirs_ngrams
+                    )
+                else:
+                    jaccard = 0.0
+
+                if gold_fraction >= 0.50 or jaccard >= 0.35:
                     result.ok = False
+                    metric = (
+                        f"longest verbatim run = {gold_fraction:.0%}"
+                        if gold_fraction >= 0.50
+                        else f"3-gram Jaccard overlap = {jaccard:.0%}"
+                    )
                     result.warnings.append(
-                        f"longest verbatim run = {gold_fraction:.0%} of "
-                        "the gold patch tokens — exceeds the 50% "
-                        "cheating-detector threshold; reformulate the "
-                        "fix in your own structure"
+                        f"{metric} of gold patch — cheating-detector "
+                        "threshold exceeded; reformulate in your own "
+                        "structure"
                     )
                     result.fn_risk = "high"
 

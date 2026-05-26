@@ -195,16 +195,22 @@ def _reset_workdir(workdir, base_commit: str = "") -> None:
             ["git", "-C", str(workdir_path), "clean", "-fdx"],
             capture_output=True, timeout=30,
         )
-        if os.environ.get("MAVERICK_BENCHMARK_OPAQUE", "1") != "0":
-            subprocess.run(
-                ["git", "-C", str(workdir_path), "reflog", "expire",
-                 "--expire=all", "--all"],
-                capture_output=True, timeout=15,
-            )
-            subprocess.run(
-                ["git", "-C", str(workdir_path), "gc", "--prune=now", "--quiet"],
-                capture_output=True, timeout=30,
-            )
+        # May 26 council fix (long-tail audit #3): always run reflog
+        # expire + gc, not just in opaque mode. In non-opaque dev runs,
+        # the reflog accumulates a new entry per `reset --hard` (one per
+        # instance). Across 1865 Verified instances on a shared workdir
+        # the orphaned-objects pile observed >5GB. Cheap to run (sub-
+        # second on a clean tree) and not security-sensitive.
+        # Timeout bumped to 120s for large repos (sympy can exceed 30s).
+        subprocess.run(
+            ["git", "-C", str(workdir_path), "reflog", "expire",
+             "--expire=all", "--all"],
+            capture_output=True, timeout=30,
+        )
+        subprocess.run(
+            ["git", "-C", str(workdir_path), "gc", "--prune=now", "--quiet"],
+            capture_output=True, timeout=120,
+        )
     except _ResetWorkdirError:
         raise
     except (subprocess.SubprocessError, OSError) as e:
@@ -435,6 +441,18 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
         )
     else:
         total_cost, total_in, total_out, last_outcome = 0.0, 0, 0, ""
+
+    # May 26 council fix (harness audit #3): Budget.check() is post-hoc
+    # — a single fat API call (cache write surcharge or 100k-token tool
+    # result) can blow the cap by 30-50% AFTER the record completes.
+    # Surface that as a distinct outcome so the operator sees overruns
+    # instead of them blending into "success". The 1.1× headroom
+    # accounts for normal cache-write surcharge variance.
+    if total_cost > instance_cap * 1.1 and last_outcome:
+        last_outcome = (
+            f"budget-overrun(${total_cost:.2f}>${instance_cap:.2f}):"
+            f" {last_outcome}"
+        )
 
     # Wave 10 (C1): predicted_patch must be the EXTRACTED diff, not the
     # orchestrator's prose. The orchestrator's return value starts with

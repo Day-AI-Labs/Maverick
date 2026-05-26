@@ -383,17 +383,26 @@ class Agent:
             # but resp.thinking is set (older mocks / non-Anthropic).
             thinking_blocks = getattr(resp, "thinking_blocks", None) or []
             if thinking_blocks:
+                # May 26 council fix (API audit #2): include the block
+                # EVEN IF the text is empty as long as a signature is
+                # present. Anthropic still requires the signature-bearing
+                # block to be echoed back to maintain continuity. The old
+                # `if resp.thinking:` check at the elif below would drop
+                # empty-text-signature pairs entirely.
                 for tb_text, tb_sig in thinking_blocks:
+                    if not tb_text and not tb_sig:
+                        continue
                     block_dict: dict = {"type": "thinking", "thinking": tb_text}
                     if tb_sig:
                         block_dict["signature"] = tb_sig
                     assistant_content.append(block_dict)
-            elif resp.thinking:
+            elif resp.thinking or getattr(resp, "thinking_signature", None):
+                sig = getattr(resp, "thinking_signature", None)
                 thinking_block: dict = {
-                    "type": "thinking", "thinking": resp.thinking,
+                    "type": "thinking", "thinking": resp.thinking or "",
                 }
-                if resp.thinking_signature:
-                    thinking_block["signature"] = resp.thinking_signature
+                if sig:
+                    thinking_block["signature"] = sig
                 assistant_content.append(thinking_block)
             if resp.text:
                 assistant_content.append({"type": "text", "text": resp.text})
