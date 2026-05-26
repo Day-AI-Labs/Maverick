@@ -47,12 +47,17 @@ ROLE_MODELS: dict[str, str] = {
 
 # Per-million-token list prices (May 2026, no cache discount, USD).
 # Used by Budget.record_tokens to compute spend accurately per model.
-# Verified Wave 12 against Anthropic's public pricing page; the prior
-# `MODEL_OPUS: (5.0, 25.0)` was a 3x under-report and made every Pro
-# sweep silently 3x over its stated budget.
+#
+# Wave 12 hotfix: an earlier Wave 12 commit raised Opus to ($15, $75)
+# based on a confused reading of Anthropic's docs (those are the
+# legacy Opus 4.0/4.1 rates; Opus 4.5/4.6/4.7 are all priced at
+# $5/$25). Verified May 2026 against
+# https://platform.claude.com/docs/en/about-claude/pricing and against
+# vals.ai's measured Opus 4.7 cost-per-test of $2.42 (which only
+# reconciles with $5/$25). Reverting to the correct ($5.0, $25.0).
 MODEL_PRICES: dict[str, tuple[float, float]] = {
-    # Anthropic (verified May 2026 against anthropic.com/pricing)
-    MODEL_OPUS:                  (15.0, 75.0),   # opus 4.7
+    # Anthropic (verified May 2026 against platform.claude.com/docs/.../pricing)
+    MODEL_OPUS:                  (5.0, 25.0),    # opus 4.7 (also 4.5, 4.6)
     MODEL_SONNET:                (3.0, 15.0),    # sonnet 4.6
     MODEL_HAIKU:                 (1.0, 5.0),     # haiku 4.5
     # OpenAI (only enable after verifying against platform.openai.com/docs/pricing

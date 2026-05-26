@@ -244,7 +244,7 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
     # follow-on non-bench process sharing the same shell).
     _env_keys = (
         "MAVERICK_FAIL_TO_PASS", "MAVERICK_PASS_TO_PASS", "MAVERICK_LANGUAGE",
-        "MAVERICK_BASE_COMMIT",
+        "MAVERICK_BASE_COMMIT", "MAVERICK_GOLD_PATCH",
     )
     _prior_env = {k: os.environ.get(k) for k in _env_keys}
     os.environ["MAVERICK_FAIL_TO_PASS"] = "||".join(kwargs.get("fail_to_pass") or [])
@@ -253,6 +253,21 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
     base_commit = str(kwargs.get("base_commit") or "")
     if base_commit:
         os.environ["MAVERICK_BASE_COMMIT"] = base_commit
+    # Wave 12 hotfix: complete the gold-patch plumbing. The agent's
+    # defensive_validate reads via coding_mode.get_gold_patch() which
+    # pops MAVERICK_GOLD_PATCH from env on first call (security). Before
+    # this fix the harness never SET the env var, so the cheating
+    # detector silently never fired. We set it from the manifest's
+    # `gold_patch` field; coding_mode.reset_gold_patch_cache() is
+    # called below so per-instance values don't bleed across instances.
+    gold_patch = str(kwargs.get("gold_patch") or "")
+    if gold_patch:
+        os.environ["MAVERICK_GOLD_PATCH"] = gold_patch
+    try:
+        from maverick.coding_mode import reset_gold_patch_cache
+        reset_gold_patch_cache()
+    except Exception:
+        pass
 
     # Wave 11 (D8): reset workdir to a clean state before the run so
     # state from instance N-1 doesn't pollute. Also strips reflog/tags

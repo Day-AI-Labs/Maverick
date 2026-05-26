@@ -9,6 +9,7 @@ format.
 """
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Callable, Optional
 
@@ -17,6 +18,10 @@ import anthropic
 from ..budget import Budget
 from ..llm import LLMResponse, ToolCall
 from ..retry import async_retry, sync_retry
+
+log = logging.getLogger(__name__)
+# Module-level flag so we only emit the low-cache warning once per process.
+_LOW_CACHE_WARNING_EMITTED: dict[str, bool] = {}
 
 
 def _default_cache_ttl() -> str:
@@ -45,8 +50,48 @@ def _ephemeral(obj: dict) -> dict:
     # Wave 11: in coding-mode (SWE-bench style), default to 5m since
     # there is no cross-instance reuse and the 25% cache-write surcharge
     # on a 1h TTL is wasted.
+    #
+    # Wave 12 hotfix — minimum cacheable prompt size:
+    # Claude Opus 4.5+, Sonnet 4.5+, and Haiku 4.5: the cumulative prompt
+    # up to AND INCLUDING the cache breakpoint must be >= 4,096 tokens
+    # or the breakpoint is silently ignored (no API error, no cache
+    # write, no cache read on subsequent calls). Older Claude 4.x and
+    # 3.x models use 1,024.
+    #
+    # Maverick's current system prompt (~1,085 tokens) + tool catalog
+    # (~716 tokens) sit BELOW the 4,096 threshold individually, which
+    # means cache_control on them is currently a no-op. The messages
+    # breakpoint is the one that actually delivers caching on long
+    # agent traces (history grows past 4k by turn 3-4). We still mark
+    # system + tools with cache_control — it's harmless if the block
+    # is too small, and starts working once the prompt expands.
     ttl = _default_cache_ttl()
     return {**obj, "cache_control": {"type": "ephemeral", "ttl": ttl}}
+
+
+# Wave 12 hotfix: cacheable-block minimums per Anthropic model family.
+# Used to warn / no-op cache_control when the prompt is too small.
+_MIN_CACHE_TOKENS_4X = 4096
+_MIN_CACHE_TOKENS_3X = 1024
+
+
+def _min_cache_tokens(model_id: str) -> int:
+    """Minimum cumulative prompt tokens (up to + including breakpoint)
+    required for prompt caching to actually take effect.
+
+    Claude 4.5+ (opus 4.5/4.6/4.7, sonnet 4.5/4.6, haiku 4.5): 4096.
+    Earlier 4.x and all 3.x: 1024.
+    """
+    if (
+        model_id.startswith("claude-opus-4-5")
+        or model_id.startswith("claude-opus-4-6")
+        or model_id.startswith("claude-opus-4-7")
+        or model_id.startswith("claude-sonnet-4-5")
+        or model_id.startswith("claude-sonnet-4-6")
+        or model_id.startswith("claude-haiku-4-5")
+    ):
+        return _MIN_CACHE_TOKENS_4X
+    return _MIN_CACHE_TOKENS_3X
 
 
 def _cached_system(text: str) -> list[dict]:
@@ -157,23 +202,73 @@ class AnthropicClient:
         }
         if tools:
             kwargs["tools"] = _cached_tools(tools)
+
+        # Wave 12 hotfix: warn (once per model) when system+tools is below
+        # the min-cache threshold. The cache_control markers are silently
+        # ignored in that case — we still set them so caching kicks in
+        # if/when the prompt grows, but operators should know that the
+        # advertised 30-50% input-cost cut isn't happening on small prompts.
+        model_for_min = kwargs["model"] or ""
+        min_tokens = _min_cache_tokens(model_for_min)
+        if not _LOW_CACHE_WARNING_EMITTED.get(model_for_min):
+            # Heuristic token estimate: 4 chars/token.
+            sys_tok = len(system or "") // 4
+            tools_tok = (
+                sum(len(str(t)) for t in (tools or [])) // 4
+            )
+            if sys_tok + tools_tok < min_tokens:
+                log.warning(
+                    "prompt cache no-op: system+tools=%d tok (~%d sys + ~%d tools) "
+                    "< %d-token min for %s. cache_control on system/tools "
+                    "is ignored; only the messages breakpoint will cache "
+                    "once history grows past %d tokens. Expand the system "
+                    "prompt or tool descriptions to unlock system/tool caching.",
+                    sys_tok + tools_tok, sys_tok, tools_tok,
+                    min_tokens, model_for_min, min_tokens,
+                )
+                _LOW_CACHE_WARNING_EMITTED[model_for_min] = True
+        # Wave 12 hotfix: thinking + interleaved-thinking handling per
+        # Anthropic's May 2026 docs (platform.claude.com/docs/.../adaptive-thinking):
+        #
+        #   - Opus 4.7:  ONLY adaptive mode accepted. Manual
+        #                `thinking={"type":"enabled"}` returns 400.
+        #                Interleaved thinking is automatic — no header.
+        #   - Opus 4.6 / Sonnet 4.6 / Haiku 4.5: interleaved is automatic
+        #                in adaptive mode; the beta header is deprecated
+        #                and ignored.
+        #   - Sonnet 4.5 / Opus 4.5 and older: the
+        #                `interleaved-thinking-2025-05-14` header is
+        #                still required to get interleaved behavior.
+        #
+        # An earlier Wave 12 commit set the beta header unconditionally
+        # for any "claude-opus-/claude-sonnet-4" prefix — that breaks
+        # against Opus 4.7 (400) and is wasted noise on 4.6.
+        model_id = (model or self.DEFAULT_MODEL) or ""
+        is_opus_47 = model_id.startswith("claude-opus-4-7")
+        is_modern_4x = (
+            model_id.startswith("claude-opus-4-6")
+            or model_id.startswith("claude-opus-4-7")
+            or model_id.startswith("claude-sonnet-4-6")
+            or model_id.startswith("claude-haiku-4-5")
+        )
+        legacy_thinking_header_required = (
+            model_id.startswith("claude-opus-4-5")
+            or model_id.startswith("claude-sonnet-4-5")
+        )
+
         if thinking_budget and thinking_budget > 0:
             kwargs["max_tokens"] = max(max_tokens, thinking_budget + 1024)
-            kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
+            if is_opus_47:
+                # Opus 4.7 rejects explicit "enabled"; only "adaptive"
+                # is supported. Drop budget_tokens — adaptive auto-sizes.
+                kwargs["thinking"] = {"type": "adaptive"}
+            else:
+                kwargs["thinking"] = {
+                    "type": "enabled", "budget_tokens": thinking_budget,
+                }
 
-        # Wave 12 (council F13b) + hardening: enable interleaved thinking
-        # whenever the model is in a thinking-capable family (Opus/Sonnet
-        # 4.x). Previously gated on `thinking_budget > 0`, which missed
-        # the common case of callers using Opus's default thinking
-        # without specifying a budget. The header is additive — strings
-        # can be comma-separated for multiple betas.
-        model_id = (model or self.DEFAULT_MODEL) or ""
-        thinking_capable = (
-            "thinking" in kwargs
-            or model_id.startswith("claude-opus-")
-            or model_id.startswith("claude-sonnet-4")
-        )
-        if thinking_capable:
+        # Beta header gating — only set on legacy models that still need it.
+        if legacy_thinking_header_required and "thinking" in kwargs:
             extra_headers = kwargs.get("extra_headers", {})
             beta = extra_headers.get("anthropic-beta", "")
             betas = [b.strip() for b in beta.split(",") if b.strip()]
@@ -181,6 +276,15 @@ class AnthropicClient:
                 betas.append("interleaved-thinking-2025-05-14")
             extra_headers["anthropic-beta"] = ",".join(betas)
             kwargs["extra_headers"] = extra_headers
+        # For 4.6 and 4.7 models, interleaved is automatic in adaptive
+        # mode — no header needed. Note: even WITHOUT thinking_budget,
+        # callers may want adaptive default on Opus 4.7. Surface that:
+        if is_opus_47 and "thinking" not in kwargs:
+            # Opus 4.7 with no explicit thinking spec: let the model
+            # decide via adaptive. This matches the docs' "adaptive is
+            # the only supported mode" guidance.
+            kwargs["thinking"] = {"type": "adaptive"}
+        _ = is_modern_4x  # documented above; kept for future logic
         # Wave 10 (D1): orchestrator best-of-N sets MAVERICK_TEMPERATURE
         # per attempt to force candidate diversity. Wire it through here
         # so the provider actually honours it -- before this fix the env

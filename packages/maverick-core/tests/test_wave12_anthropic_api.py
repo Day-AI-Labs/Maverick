@@ -98,13 +98,48 @@ class TestToolsSorted:
 
 
 class TestInterleavedThinkingHeader:
-    def test_header_added_when_thinking_enabled(self):
+    """Wave 12 hotfix: header policy per Anthropic May 2026 docs.
+    Opus 4.7 + Sonnet 4.6 + Haiku 4.5: adaptive thinking is built-in,
+    NO header needed (and Opus 4.7 rejects manual `enabled`).
+    Sonnet 4.5 / Opus 4.5: header still required to get interleaved.
+    """
+
+    def test_header_required_for_sonnet_4_5(self):
         from maverick.providers.anthropic_provider import AnthropicClient
 
-        # Construct without making a real network call; only need
-        # _build_request.
         client = AnthropicClient.__new__(AnthropicClient)
-        # _build_request doesn't touch self.client/aclient.
+        kwargs = client._build_request(
+            system="sys",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=None,
+            max_tokens=4096,
+            thinking_budget=8000,
+            model="claude-sonnet-4-5",
+        )
+        beta = kwargs.get("extra_headers", {}).get("anthropic-beta", "")
+        assert "interleaved-thinking-2025-05-14" in beta
+
+    def test_header_required_for_opus_4_5(self):
+        from maverick.providers.anthropic_provider import AnthropicClient
+
+        client = AnthropicClient.__new__(AnthropicClient)
+        kwargs = client._build_request(
+            system="sys",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=None,
+            max_tokens=4096,
+            thinking_budget=8000,
+            model="claude-opus-4-5",
+        )
+        beta = kwargs.get("extra_headers", {}).get("anthropic-beta", "")
+        assert "interleaved-thinking-2025-05-14" in beta
+
+    def test_header_NOT_set_for_sonnet_4_6(self):
+        """4.6+ has interleaved automatic in adaptive mode — header would
+        be deprecated noise."""
+        from maverick.providers.anthropic_provider import AnthropicClient
+
+        client = AnthropicClient.__new__(AnthropicClient)
         kwargs = client._build_request(
             system="sys",
             messages=[{"role": "user", "content": "hi"}],
@@ -113,15 +148,35 @@ class TestInterleavedThinkingHeader:
             thinking_budget=8000,
             model="claude-sonnet-4-6",
         )
-        assert "extra_headers" in kwargs
-        beta = kwargs["extra_headers"].get("anthropic-beta", "")
-        assert "interleaved-thinking-2025-05-14" in beta
+        beta = kwargs.get("extra_headers", {}).get("anthropic-beta", "")
+        assert "interleaved-thinking" not in beta
 
-    def test_header_added_for_opus_sonnet4_without_explicit_budget(self):
-        """Wave 12 hardening: the header is added whenever the model is
-        in a thinking-capable family (Opus 4.x, Sonnet 4.x), even when
-        the caller doesn't pass thinking_budget. Without this, Opus
-        runs default — which use thinking — were missing the beta."""
+    def test_opus_4_7_uses_adaptive_not_enabled(self):
+        """Opus 4.7 returns 400 on `thinking={"type":"enabled"}`. We must
+        send `adaptive` instead."""
+        from maverick.providers.anthropic_provider import AnthropicClient
+
+        client = AnthropicClient.__new__(AnthropicClient)
+        kwargs = client._build_request(
+            system="sys",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=None,
+            max_tokens=4096,
+            thinking_budget=8000,
+            model="claude-opus-4-7",
+        )
+        thinking = kwargs.get("thinking", {})
+        assert thinking.get("type") == "adaptive", (
+            f"Opus 4.7 must use adaptive thinking; got {thinking}"
+        )
+        # No header for 4.7 either.
+        beta = kwargs.get("extra_headers", {}).get("anthropic-beta", "")
+        assert "interleaved-thinking" not in beta
+
+    def test_opus_4_7_defaults_to_adaptive_even_without_budget(self):
+        """Opus 4.7 only supports adaptive — if caller doesn't ask for
+        thinking, we still emit adaptive so the model can think when
+        it judges it useful."""
         from maverick.providers.anthropic_provider import AnthropicClient
 
         client = AnthropicClient.__new__(AnthropicClient)
@@ -131,12 +186,12 @@ class TestInterleavedThinkingHeader:
             tools=None,
             max_tokens=4096,
             thinking_budget=None,
-            model="claude-sonnet-4-6",
+            model="claude-opus-4-7",
         )
-        beta = kwargs.get("extra_headers", {}).get("anthropic-beta", "")
-        assert "interleaved-thinking-2025-05-14" in beta
+        thinking = kwargs.get("thinking", {})
+        assert thinking.get("type") == "adaptive"
 
-    def test_header_not_added_for_legacy_model(self):
+    def test_header_not_added_for_legacy_pre_4x_model(self):
         from maverick.providers.anthropic_provider import AnthropicClient
 
         client = AnthropicClient.__new__(AnthropicClient)
@@ -148,7 +203,6 @@ class TestInterleavedThinkingHeader:
             thinking_budget=None,
             model="claude-3-5-sonnet-20241022",
         )
-        # Legacy model (pre-4.x family) — no thinking support, no header.
         beta = kwargs.get("extra_headers", {}).get("anthropic-beta", "")
         assert "interleaved-thinking" not in beta
 

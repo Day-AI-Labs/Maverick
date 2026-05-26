@@ -13,12 +13,15 @@ from maverick.llm import MODEL_OPUS, MODEL_SONNET, MODEL_HAIKU
 
 
 def test_opus_priced_at_opus_rate():
-    b = Budget(max_dollars=200.0, max_input_tokens=10_000_000, max_output_tokens=10_000_000)
-    # Wave 12 fix: Opus 4.7 May 2026 list = $15 in + $75 out per Mtok.
-    # 1M input + 1M output = $15 + $75 = $90 (was 3x under-billed at $30
-    # while the file claimed (5.0, 25.0)).
+    b = Budget(max_dollars=100.0, max_input_tokens=10_000_000, max_output_tokens=10_000_000)
+    # Wave 12 hotfix: Opus 4.7 May 2026 list = $5 in + $25 out per Mtok.
+    # An earlier Wave 12 commit incorrectly raised this to $15/$75 (legacy
+    # Opus 4.0/4.1 rates). Verified against
+    # https://platform.claude.com/docs/en/about-claude/pricing and against
+    # vals.ai's measured $2.42/test for Opus 4.7 on SWE-bench Verified.
+    # 1M input + 1M output = $5 + $25 = $30.
     b.record_tokens(1_000_000, 1_000_000, model=MODEL_OPUS)
-    assert abs(b.dollars - 90.0) < 0.001
+    assert abs(b.dollars - 30.0) < 0.001
 
 
 def test_sonnet_priced_at_sonnet_rate():
@@ -54,9 +57,9 @@ def test_no_model_uses_fallback_rate():
 def test_cache_read_is_one_tenth_of_input():
     """Anthropic bills cache reads at 0.1x of input rate."""
     b = Budget(max_dollars=100.0, max_input_tokens=10_000_000, max_output_tokens=10_000_000)
-    # 1M cache reads on Opus 4.7 = $15 * 0.1 = $1.50
+    # 1M cache reads on Opus 4.7 = $5 * 0.1 = $0.50
     b.record_tokens(0, 0, model=MODEL_OPUS, cache_read_tok=1_000_000)
-    assert abs(b.dollars - 1.5) < 0.001
+    assert abs(b.dollars - 0.5) < 0.001
 
 
 def test_cache_write_5m_is_one_and_a_quarter_input():
@@ -93,13 +96,14 @@ def test_cache_tokens_tracked_separately_from_input_cap():
 
 
 def test_opus_run_actually_hits_the_dollar_cap():
-    """The whole point of the fix: an Opus call past max_dollars must raise."""
+    """An Opus call past max_dollars must raise — proves Opus is billed at
+    the actual Opus rate, not silently downgraded to fallback."""
     import pytest
     from maverick.budget import BudgetExceeded
-    b = Budget(max_dollars=5.0)
-    # Wave 12: 0.5M input on Opus 4.7 @ $15/Mtok = $7.50 -- should exceed $5 cap.
+    b = Budget(max_dollars=3.0)
+    # Opus 4.7 @ $5/Mtok input: 1M input = $5.00 > $3 cap → BudgetExceeded.
     with pytest.raises(BudgetExceeded):
-        b.record_tokens(500_000, 0, model=MODEL_OPUS)
+        b.record_tokens(1_000_000, 0, model=MODEL_OPUS)
 
 
 def test_nullsafe_record_tokens_handles_none():
