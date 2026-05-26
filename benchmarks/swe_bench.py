@@ -343,6 +343,9 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
     instance_wall = float(os.environ.get("MAVERICK_INSTANCE_WALL_SEC", "1500"))
     budget = Budget(max_dollars=instance_cap, max_wall_seconds=instance_wall)
     sandbox = build_sandbox()
+    # Pre-initialize so the post-finally row construction always has a
+    # value, even if the agent raises before episode bookkeeping.
+    all_eps: list = []
 
     try:
         if best_of_n > 1:
@@ -354,6 +357,15 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
             result = run_goal_sync(
                 llm, world, budget, gid, sandbox=sandbox, max_depth=3,
             )
+        # Wave 10 (C6): sum cost across ALL episodes for this goal, not
+        # just the most recent one. Best-of-N runs N episodes; prior
+        # code reported only eps[0] (one attempt) and lost the other
+        # N-1. Wave 12 hotfix: this read MUST happen BEFORE the finally
+        # block closes the WorldModel SQLite connection — otherwise
+        # the entire harness raises ProgrammingError("Cannot operate
+        # on a closed database") and every instance silently errors
+        # with $0 cost recorded.
+        all_eps = world.list_episodes(goal_id=gid)
     finally:
         # Wave 10 (D11): restore env so the next instance / process
         # doesn't inherit this instance's test sets.
@@ -369,11 +381,6 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
             world.close()
         except Exception:
             pass
-
-    # Wave 10 (C6): sum cost across ALL episodes for this goal, not just
-    # the most recent one. Best-of-N runs N episodes; prior code reported
-    # only eps[0] (one attempt) and lost the other N-1.
-    all_eps = world.list_episodes(goal_id=gid)
     if all_eps:
         total_cost = sum(getattr(e, "cost_dollars", 0.0) or 0.0 for e in all_eps)
         total_in   = sum(getattr(e, "input_tokens", 0) or 0 for e in all_eps)
