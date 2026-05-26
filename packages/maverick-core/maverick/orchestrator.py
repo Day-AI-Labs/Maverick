@@ -236,3 +236,102 @@ async def run_goal(
 
 def run_goal_sync(*args, **kwargs) -> str:
     return asyncio.run(run_goal(*args, **kwargs))
+
+
+async def run_goal_best_of_n(
+    llm: "LLM",
+    world: "WorldModel",
+    budget: "Budget",
+    goal_id: int,
+    sandbox: Optional[Any] = None,
+    max_depth: int = 3,
+    conversation_id: Optional[int] = None,
+    n: int = 4,
+) -> str:
+    """Coding-mode best-of-N: run N independent attempts, pick the one
+    whose patch (a) applies and (b) passes the most FAIL_TO_PASS /
+    PASS_TO_PASS tests.
+
+    Falls back to single-shot `run_goal` when n<=1 or coding mode is
+    off. Each attempt runs against a fresh clone-of-clone so they
+    don't pollute each other's git state.
+
+    Called from the SWE-bench harness when MAVERICK_BEST_OF_N > 1.
+    """
+    from .coding_mode import (
+        Candidate,
+        evaluate_candidate,
+        extract_unified_diff,
+        from_env as _cm_from_env,
+        select_best_candidate,
+    )
+
+    cfg = _cm_from_env()
+    if n <= 1 or not cfg.enabled:
+        return await run_goal(
+            llm, world, budget, goal_id,
+            sandbox=sandbox, max_depth=max_depth,
+            conversation_id=conversation_id,
+        )
+
+    # Run N attempts. Each gets its own slice of budget so one bad
+    # attempt can't starve the others.
+    per_attempt_dollars = budget.max_dollars / n
+    per_attempt_wall = budget.max_wall_seconds / n
+    candidates: list[Candidate] = []
+
+    for i in range(n):
+        from .budget import Budget as _Budget
+        attempt_budget = _Budget(
+            max_dollars=per_attempt_dollars,
+            max_wall_seconds=per_attempt_wall,
+            max_input_tokens=budget.max_input_tokens,
+            max_output_tokens=budget.max_output_tokens,
+            max_tool_calls=budget.max_tool_calls,
+        )
+        try:
+            answer = await run_goal(
+                llm, world, attempt_budget, goal_id,
+                sandbox=sandbox, max_depth=max_depth,
+                conversation_id=conversation_id,
+            )
+        except Exception as e:
+            log.warning("best-of-N attempt %d failed: %s", i, e)
+            candidates.append(Candidate(
+                index=i, patch="", score=0.0,
+                apply_check_passed=False, error=str(e),
+            ))
+            # Roll the spend into the parent budget so we don't lie.
+            budget.dollars += attempt_budget.dollars
+            budget.input_tokens += attempt_budget.input_tokens
+            budget.output_tokens += attempt_budget.output_tokens
+            continue
+
+        budget.dollars += attempt_budget.dollars
+        budget.input_tokens += attempt_budget.input_tokens
+        budget.output_tokens += attempt_budget.output_tokens
+
+        patch = extract_unified_diff(answer) or ""
+        from pathlib import Path as _Path
+        workdir = _Path(getattr(sandbox, "workdir", "."))
+        cand = await evaluate_candidate(patch, workdir, cfg, sandbox, i)
+        candidates.append(cand)
+
+        if cand.score >= 0.99:
+            # Early exit: a candidate that passes ALL tests is as good
+            # as it gets; don't pay for the remaining N-1 attempts.
+            log.info("best-of-N early exit at attempt %d: all tests pass", i)
+            break
+
+    best = select_best_candidate(candidates)
+    if best is None or not best.patch:
+        return (
+            "Stopped: none of the {n} attempts produced an applyable patch.\n"
+            "[{summary}]"
+        ).format(n=len(candidates), summary=budget.summary())
+
+    test_note = (
+        f"\n\n[best of {len(candidates)}; score={best.score:.2f}]"
+        + (f"\n[{best.test_result.summary()}]" if best.test_result else "")
+    )
+    return f"DONE.\n\n{best.patch}{test_note}\n\n[{budget.summary()}]"

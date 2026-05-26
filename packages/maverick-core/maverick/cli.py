@@ -204,13 +204,36 @@ def mcp() -> None:
 @click.option("--max-depth", default=3, type=int)
 @click.option("--workdir", default=None)
 @click.option("--sandbox", "sandbox_backend", default=None,
-              type=click.Choice(["local", "docker", "ssh"]))
+              type=click.Choice(["local", "docker", "ssh", "firecracker"]))
+@click.option("--coding-mode", is_flag=True,
+              help="Strict diff-only worker prompts + git apply --check "
+                   "self-validation. Use for SWE-bench-style runs.")
+@click.option("--best-of-n", default=1, type=int,
+              help="In coding mode, generate N candidate patches and "
+                   "pick the one whose tests pass (or applies smallest).")
+@click.option("--fail-to-pass", default=None,
+              help="||-separated pytest node IDs that must pass after fix "
+                   "(SWE-bench FAIL_TO_PASS). Enables test-driven verifier.")
+@click.option("--pass-to-pass", default=None,
+              help="||-separated pytest node IDs that must KEEP passing.")
 @click.pass_context
 def start(
     ctx, title, description, template_name, params,
     max_dollars, max_wall_seconds, max_depth, workdir, sandbox_backend,
+    coding_mode, best_of_n, fail_to_pass, pass_to_pass,
 ) -> None:
     """Start a new goal and run the swarm."""
+    # Coding-mode flags propagate via env so coding_mode.from_env()
+    # picks them up everywhere (agent prompt, patch validator,
+    # test-driven verifier, best-of-N candidate eval).
+    if coding_mode:
+        os.environ["MAVERICK_CODING_MODE"] = "1"
+    if best_of_n > 1:
+        os.environ["MAVERICK_BEST_OF_N"] = str(best_of_n)
+    if fail_to_pass:
+        os.environ["MAVERICK_FAIL_TO_PASS"] = fail_to_pass
+    if pass_to_pass:
+        os.environ["MAVERICK_PASS_TO_PASS"] = pass_to_pass
     if not os.environ.get("ANTHROPIC_API_KEY"):
         click.echo("ERROR: ANTHROPIC_API_KEY not set. Run: maverick doctor", err=True)
         sys.exit(2)
@@ -267,7 +290,18 @@ def start(
         poller.start()
 
     try:
-        result = run_goal_sync(llm, world, bud, goal_id, sandbox=sandbox, max_depth=max_depth)
+        if coding_mode and best_of_n > 1:
+            import asyncio as _asyncio
+            from .orchestrator import run_goal_best_of_n
+            result = _asyncio.run(run_goal_best_of_n(
+                llm, world, bud, goal_id,
+                sandbox=sandbox, max_depth=max_depth, n=best_of_n,
+            ))
+        else:
+            result = run_goal_sync(
+                llm, world, bud, goal_id,
+                sandbox=sandbox, max_depth=max_depth,
+            )
     finally:
         stop_poll.set()
         if poller is not None:

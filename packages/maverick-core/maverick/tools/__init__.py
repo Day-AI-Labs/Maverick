@@ -79,6 +79,7 @@ def base_registry(
     from .ask_user import ask_user
     from .attachments import list_attachments_tool
     from .fs import list_dir, read_file, write_file
+    from .repo_map import repo_map
     from .shell import shell
 
     reg = ToolRegistry()
@@ -88,6 +89,7 @@ def base_registry(
     reg.register(shell(sandbox))
     reg.register(ask_user(world, goal_id=goal_id))
     reg.register(list_attachments_tool(world, goal_id))
+    reg.register(repo_map(sandbox))
 
     if mcp_clients:
         from ..mcp_tools import tools_from_mcp

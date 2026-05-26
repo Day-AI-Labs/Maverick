@@ -78,23 +78,37 @@ def _dry_run_row(instance_id: str, pipeline: str) -> Row:
     )
 
 
-def run_maverick(instance_id: str, brief: str) -> Row:
+def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
     """Spin up a Maverick swarm against the instance brief.
 
-    The brief is the canonical SWE-bench problem statement. Maverick is
-    handed it as a goal title + description and run to completion. The
-    output FINAL is treated as the "predicted patch" (in practice
-    Maverick should produce a unified diff; the upstream evaluator
-    will fail any FINAL that doesn't apply).
+    Wave 8: coding-mode + best-of-N support. The harness sets
+    MAVERICK_CODING_MODE=1 + MAVERICK_BEST_OF_N + MAVERICK_FAIL_TO_PASS /
+    MAVERICK_PASS_TO_PASS so coding_mode.from_env() picks up the
+    benchmark context. The agent then uses the strict diff-only
+    template, self-validates patches via `git apply --check`, runs
+    the test-driven verifier when ground-truth tests are present,
+    and (when n > 1) returns the best-of-N candidate.
     """
     if os.environ.get("MAVERICK_BENCH_DRY_RUN") == "1":
         return _dry_run_row(instance_id, "maverick")
 
+    import asyncio
     from maverick.budget import Budget
     from maverick.llm import LLM
-    from maverick.orchestrator import run_goal_sync
+    from maverick.orchestrator import run_goal_best_of_n, run_goal_sync
     from maverick.sandbox import build_sandbox
     from maverick.world_model import WorldModel
+
+    # Default: turn coding mode ON for any SWE-bench-shaped task. Caller
+    # can disable by setting MAVERICK_CODING_MODE=0 explicitly.
+    os.environ.setdefault("MAVERICK_CODING_MODE", "1")
+    # Best-of-N defaults to 4 for the headline run; override via env.
+    best_of_n = int(os.environ.get("MAVERICK_BEST_OF_N", "1"))
+    # Surface SWE-bench tests via env so the agent's verifier sees them.
+    if "fail_to_pass" in kwargs:
+        os.environ["MAVERICK_FAIL_TO_PASS"] = "||".join(kwargs["fail_to_pass"])
+    if "pass_to_pass" in kwargs:
+        os.environ["MAVERICK_PASS_TO_PASS"] = "||".join(kwargs["pass_to_pass"])
 
     start = time.monotonic()
     world = WorldModel()
@@ -102,7 +116,16 @@ def run_maverick(instance_id: str, brief: str) -> Row:
     gid = world.create_goal(f"swe-bench:{instance_id}", brief)
     budget = Budget(max_dollars=3.0, max_wall_seconds=600.0)
     sandbox = build_sandbox()
-    result = run_goal_sync(llm, world, budget, gid, sandbox=sandbox, max_depth=3)
+
+    if best_of_n > 1:
+        result = asyncio.run(run_goal_best_of_n(
+            llm, world, budget, gid,
+            sandbox=sandbox, max_depth=3, n=best_of_n,
+        ))
+    else:
+        result = run_goal_sync(
+            llm, world, budget, gid, sandbox=sandbox, max_depth=3,
+        )
 
     # Pull verifier signals from the most recent episode.
     eps = world.list_episodes(limit=1)

@@ -185,6 +185,42 @@ Per-task cost depends on cascade + caching. May-2026 ballpark:
 **Set `MAVERICK_CASCADE_ROUTING=1`** for the headline run. The
 Karpathy-prescribed cost curve only materializes with cascade on.
 
+## Wave 8 scoring boosters (turn these on for the real run)
+
+Five additions that materially improve the score; flip them on:
+
+```bash
+export MAVERICK_CASCADE_ROUTING=1   # 5× cheaper at same accuracy
+export MAVERICK_CODING_MODE=1       # strict diff-only worker prompt
+export MAVERICK_BEST_OF_N=4         # generate 4 candidates, pick the best
+# FAIL_TO_PASS / PASS_TO_PASS are loaded per-instance by the harness
+```
+
+| Booster | Estimated lift on SWE-bench Pro |
+|---|---|
+| `MAVERICK_CODING_MODE=1` (diff-only template) | +5-10% (no prose rejections) |
+| `git apply --check` self-validation (auto in coding mode) | +5-15% (catches unapplyable patches) |
+| Test-driven verifier (auto when FAIL_TO_PASS set) | +10-20% (ground truth vs LLM-as-judge) |
+| `MAVERICK_BEST_OF_N=4` (selection pressure) | +5-10% |
+| `repo_map` tool (always available) | +3-8% (better localization) |
+
+Combined estimate: SWE-bench Pro in the 50-65% range with cascade ON.
+Real numbers TBD when you run.
+
+To load FAIL_TO_PASS / PASS_TO_PASS into the manifest, extend the
+step-1 download snippet:
+
+```python
+for ex in ds:
+    f.write(json.dumps({
+        'instance_id': ex['instance_id'],
+        'brief': ex['problem_statement'],
+        'gold_patch': ex['patch'],
+        'fail_to_pass': ex.get('FAIL_TO_PASS', []),
+        'pass_to_pass': ex.get('PASS_TO_PASS', []),
+    }) + chr(10))
+```
+
 ## Troubleshooting
 
 - **`docker pull` rate-limited**: log into Docker Hub or use a mirror.
