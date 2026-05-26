@@ -87,7 +87,11 @@ class Agent:
         self.brief = brief
         self.depth = depth
         self.parent = parent
-        self.max_steps = max_steps
+        # Wave 11: Scale Labs' Pro empirical study (arxiv 2509.16941)
+        # shows "most successful solutions resolve in ~25 rounds; long-
+        # tail iteration past that has diminishing returns." Allow ops
+        # to override globally via MAVERICK_MAX_STEPS, default 25.
+        self.max_steps = int(os.environ.get("MAVERICK_MAX_STEPS", str(max_steps)))
         self.name = f"{role}-{depth}-{uuid.uuid4().hex[:6]}"
 
         self.tools = self._build_tools()

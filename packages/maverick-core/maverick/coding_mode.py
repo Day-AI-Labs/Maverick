@@ -38,12 +38,18 @@ WORK IN THREE PHASES, IN ORDER:
 PHASE 1 — LOCALIZE:
   Three-step localization. Each step must produce structured output
   before you move on.
-    (a) Top files: use `repo_map` + grep to pick the top 3 files most
-        likely to contain the bug. Read the failing test(s) referenced
-        in the brief first — the traceback names the function directly.
-    (b) Top classes/functions: in those files, pick the 3 specific
-        classes or functions implicated.
-    (c) Exact edit location: identify the precise lines that change.
+    (a) Reproduce the bug: if a failing test is provided, run it via
+        `shell` and capture the traceback. The top frame names the
+        function directly — that's your starting point. If no failing
+        test, write a 5-line reproducer (`reproduce.py`) and run it
+        before reading any production code.
+    (b) Top files: use `repo_map` + grep to pick the top 3 files most
+        likely to contain the bug. Bias grep queries toward
+        identifiers from the issue + the traceback (class names,
+        function names, error strings).
+    (c) Top classes/functions: in those files, pick the 3 specific
+        classes or functions implicated, and identify the precise
+        lines that change.
   Do NOT proceed to EDIT until you have an explicit (file, function,
   lines) target. Edits to files outside this list will be rejected.
 
