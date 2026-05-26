@@ -357,6 +357,22 @@ class Agent:
                 bb.post(self.name, "error", f"budget exceeded: {e}")
                 return AgentResult(error=str(e), role=self.role, name=self.name)
 
+            # May 26 smoke fix: when the response contains BOTH a FINAL:
+            # marker AND tool_use blocks, the model is confused. If
+            # FINAL validation fails and we `continue`, the tool_use
+            # blocks get appended to assistant message history with NO
+            # matching tool_result — Anthropic returns HTTP 400 on the
+            # next turn:
+            #   messages.N: tool_use ids were found without tool_result
+            #   blocks immediately after
+            # Drop the tool_use blocks before assembling the assistant
+            # message; the FINAL critique is what we want the model to
+            # respond to, not the orphan tools.
+            if resp.text and resp.tool_calls:
+                import re as _re_final
+                if _re_final.search(r"(?:^|\n)\s*FINAL:", resp.text):
+                    resp.tool_calls = []
+
             assistant_content: list[dict] = []
             if resp.thinking:
                 # May 26 smoke fix: Anthropic requires `signature` on
