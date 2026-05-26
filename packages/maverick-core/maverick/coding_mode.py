@@ -432,14 +432,17 @@ def _extract_diff_paths(patch: str) -> list[str]:
                 paths.add(a)
                 paths.add(b)
         elif line.startswith('+++ "b/'):
-            # Quoted +++/--- form.
+            # Quoted +++/--- form. Wave 12 hardening: .strip() so a
+            # trailing space inside the quoted content doesn't desync
+            # path extraction from the bare form (`+++ b/foo` vs
+            # `+++ "b/foo "`).
             end = line.rfind('"')
             if end > len('+++ "b/'):
-                paths.add(line[len('+++ "b/'):end])
+                paths.add(line[len('+++ "b/'):end].strip())
         elif line.startswith('--- "a/'):
             end = line.rfind('"')
             if end > len('--- "a/'):
-                paths.add(line[len('--- "a/'):end])
+                paths.add(line[len('--- "a/'):end].strip())
         elif line.startswith("+++ b/"):
             paths.add(line[len("+++ b/"):].strip())
         elif line.startswith("--- a/"):
@@ -573,14 +576,22 @@ def defensive_validate(patch: str, *, fail_to_pass: list[str] = None,
         if ours_text and theirs_text:
             ours_all = _TOKEN_RE.findall(ours_text)
             theirs_all = _TOKEN_RE.findall(theirs_text)
-            # Wave 12 hardening (agent 5 #1): SAMPLE tokens uniformly
-            # rather than slicing the head. A bypass attempt that
-            # prepends 5000 lines of noise then verbatim-copies the
-            # gold suffix would zero the ratio under the prior `[:5000]`
-            # truncation. With uniform sampling the gold tokens are
-            # represented regardless of position. Cap at 5000 per side
-            # to keep SequenceMatcher's O(n*m) work bounded.
-            def _sample(tokens: list[str], k: int = 5_000) -> list[str]:
+            # Wave 12 hardening (agent 5 #1 + agent 1 review): measure
+            # "what fraction of the GOLD appears as a verbatim run in
+            # ours?", not symmetric ratio. The symmetric metric is
+            # defeated by prepending unrelated noise: noise dilutes the
+            # denominator below the 50% threshold even when 100% of the
+            # gold tokens appear in ours.
+            #
+            # The cheating-detection signal we want: "did the candidate
+            # copy more than half the gold patch token-for-token?". We
+            # use SequenceMatcher.get_matching_blocks() to find the
+            # total length of matched subsequence vs len(gold).
+            #
+            # Cap inputs at 10000 tokens to bound SequenceMatcher's
+            # O(n*m) cost. For inputs above the cap, sample uniformly
+            # so a large patch's matching region is still represented.
+            def _sample(tokens: list[str], k: int = 10_000) -> list[str]:
                 if len(tokens) <= k:
                     return tokens
                 step = len(tokens) / k
@@ -589,18 +600,27 @@ def defensive_validate(patch: str, *, fail_to_pass: list[str] = None,
             ours_tokens = _sample(ours_all)
             theirs_tokens = _sample(theirs_all)
             if ours_tokens and theirs_tokens:
-                ratio = SequenceMatcher(
-                    None, ours_tokens, theirs_tokens,
-                ).ratio()
-                # Wave 12 hardening (agent 5 #2): use >=, not >. A 50%
-                # rename produces exactly 0.50 which was slipping
-                # through the strict-greater check.
-                if ratio >= 0.50:
+                matcher = SequenceMatcher(
+                    None, ours_tokens, theirs_tokens, autojunk=False,
+                )
+                # Use the LONGEST contiguous matching block, not the
+                # sum of all matches. Verbatim copies produce one long
+                # block (entire gold appears contiguously); legitimate
+                # different fixes share only scattered short keyword
+                # runs (def / return / class). Block-size / gold_len
+                # signals "what fraction of gold appears as a
+                # continuous verbatim run in ours" — the actual
+                # cheating signal.
+                blocks = matcher.get_matching_blocks()
+                longest = max((b.size for b in blocks), default=0)
+                gold_fraction = longest / max(1, len(theirs_tokens))
+                if gold_fraction >= 0.50:
                     result.ok = False
                     result.warnings.append(
-                        f"token-overlap ratio {ratio:.0%} meets the 50% "
-                        "cheating-detector threshold; reformulate the fix "
-                        "in your own structure"
+                        f"longest verbatim run = {gold_fraction:.0%} of "
+                        "the gold patch tokens — exceeds the 50% "
+                        "cheating-detector threshold; reformulate the "
+                        "fix in your own structure"
                     )
                     result.fn_risk = "high"
 
@@ -884,15 +904,24 @@ def _parse_gotest(out: str) -> tuple[int, int, bool]:
     # Wave 12 (council F7d): subtests are indented (`    --- PASS:`);
     # allow leading whitespace. (council F7e): detect build/compile
     # failures so we don't silently report 0/0 = ok.
+    # Wave 12 hardening: tighten the bare-error-line heuristic — a
+    # package name like `github.com/PASSport/foo` contains "PASS" but
+    # isn't a real test pass. Anchor on `\nFAIL\t` (the canonical go
+    # test failure-status line) instead of substring "PASS not in out".
     out = _strip_ansi(out)
     p = len(re.findall(r"^\s*--- PASS:", out, re.M))
     f = len(re.findall(r"^\s*--- FAIL:", out, re.M))
     # Build failures: `FAIL\t...\t[build failed]` or "cannot find package".
-    if (
-        re.search(r"\bFAIL\b.*\[build failed\]", out)
+    build_fail = (
+        re.search(r"\bFAIL\b.*\[build failed\]", out) is not None
         or "cannot find package" in out
-        or re.search(r"^\s*\S+\.go:\d+:\d+:", out, re.M) and "PASS" not in out
-    ):
+        or (
+            re.search(r"^\s*\S+\.go:\d+:\d+:", out, re.M) is not None
+            and "\nFAIL\t" in out
+            and p == 0
+        )
+    )
+    if build_fail:
         # All tests effectively failed due to compile error; bump failed
         # by 1 minimum so the candidate scores non-OK.
         return p, max(f, 1), True
@@ -1208,14 +1237,19 @@ def select_best_candidate(candidates: list[Candidate]) -> Optional[Candidate]:
     if all_zero:
         # Prefer the LAST (typically most-thought) attempt that produced
         # any non-empty patch; ladder ordering is cheap→warm→Opus.
-        usable.sort(key=lambda c: (-c.index, -len(c.patch)))
+        # Wave 12 hardening: deterministic final tiebreaker (patch text)
+        # in case two attempts share index AND length (e.g., the BoN
+        # ladder retried the same model and produced identical patches).
+        usable.sort(key=lambda c: (-c.index, -len(c.patch), c.patch))
         return usable[0]
     # Higher score first; among ties, prefer the median-length patch
     # (the "Occam without bias toward no-ops" tie-break).
     import statistics
     lengths = [len(c.patch) for c in usable]
     median_len = statistics.median(lengths) if lengths else 0
-    usable.sort(key=lambda c: (-c.score, abs(len(c.patch) - median_len)))
+    usable.sort(key=lambda c: (
+        -c.score, abs(len(c.patch) - median_len), c.patch,
+    ))
     return usable[0]
 
 

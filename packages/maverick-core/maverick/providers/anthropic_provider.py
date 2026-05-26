@@ -61,7 +61,11 @@ def _cached_tools(tools: list[dict]) -> list[dict]:
     # cache key includes the tools[] block, and a non-deterministic
     # order silently busts the cache write. Stable order = predictable
     # cache hits = 30-50% input cost reduction over the run.
-    out = [dict(t) for t in sorted(tools, key=lambda t: t.get("name", ""))]
+    # Wave 12 hardening: coerce key via str() so a malformed tool with
+    # name=None or non-string doesn't blow sorted() with TypeError.
+    out = [dict(t) for t in sorted(
+        tools, key=lambda t: str(t.get("name") or ""),
+    )]
     out[-1] = _ephemeral(out[-1])
     return out
 
@@ -156,14 +160,20 @@ class AnthropicClient:
         if thinking_budget and thinking_budget > 0:
             kwargs["max_tokens"] = max(max_tokens, thinking_budget + 1024)
             kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
-            # Wave 12 (council F13b): enable interleaved thinking so the
-            # model can produce thinking blocks BETWEEN tool calls, not
-            # just once at the start. Without this beta header, complex
-            # multi-step debugging (typical SWE-bench Pro instance) gets
-            # one bulk reasoning pass + a long unreasoned tool sequence,
-            # which costs accuracy in the long tail. The header is
-            # additive — strings can be comma-separated for multiple
-            # betas, but the SDK currently accepts only the single one.
+
+        # Wave 12 (council F13b) + hardening: enable interleaved thinking
+        # whenever the model is in a thinking-capable family (Opus/Sonnet
+        # 4.x). Previously gated on `thinking_budget > 0`, which missed
+        # the common case of callers using Opus's default thinking
+        # without specifying a budget. The header is additive — strings
+        # can be comma-separated for multiple betas.
+        model_id = (model or self.DEFAULT_MODEL) or ""
+        thinking_capable = (
+            "thinking" in kwargs
+            or model_id.startswith("claude-opus-")
+            or model_id.startswith("claude-sonnet-4")
+        )
+        if thinking_capable:
             extra_headers = kwargs.get("extra_headers", {})
             beta = extra_headers.get("anthropic-beta", "")
             betas = [b.strip() for b in beta.split(",") if b.strip()]
@@ -204,17 +214,23 @@ class AnthropicClient:
             elif t == "tool_use":
                 tool_calls.append(ToolCall(id=block.id, name=block.name, input=dict(block.input)))
 
-        usage = resp.usage
-        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
-        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
-        # Wave 12 (council F13c): nullsafe input/output tokens. Anthropic
-        # SDK can hand back `None` on streaming refusals or partial
-        # responses; `int(None)` raises and we silently log $0 for the
-        # call. record_tokens does its own `int(x or 0)` coercion, but
-        # we belt-and-brace here so the model param is preserved even
-        # if usage is partially missing.
-        in_tok = getattr(usage, "input_tokens", 0) or 0
-        out_tok = getattr(usage, "output_tokens", 0) or 0
+        # Wave 12 (council F13c) + hardening: nullsafe usage parsing.
+        # If resp.usage itself is None (streaming refusal), getattr
+        # chains through 0 defaults. Coerce all values via int() inside
+        # a try block to catch non-int truthy values (string "100" from
+        # a mock, Decimal from a future SDK schema).
+        usage = getattr(resp, "usage", None)
+
+        def _safe_int(value, default=0) -> int:
+            try:
+                return int(value) if value is not None else default
+            except (TypeError, ValueError):
+                return default
+
+        cache_creation = _safe_int(getattr(usage, "cache_creation_input_tokens", 0))
+        cache_read = _safe_int(getattr(usage, "cache_read_input_tokens", 0))
+        in_tok = _safe_int(getattr(usage, "input_tokens", 0))
+        out_tok = _safe_int(getattr(usage, "output_tokens", 0))
 
         if budget is not None:
             # ``usage.input_tokens`` is non-cached input only. Cache reads

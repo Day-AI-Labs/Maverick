@@ -36,9 +36,30 @@ _CACHE_WRITE_MULT_1H = 2.0
 
 
 def _cache_write_mult_from_ttl(ttl: Optional[str]) -> float:
-    """Map Anthropic cache TTL string to the write surcharge multiplier."""
-    if ttl and ttl.lower() in ("1h", "60m", "3600s"):
+    """Map Anthropic cache TTL string to the write surcharge multiplier.
+
+    Wave 12 hardening: strip + lowercase before matching so trailing
+    whitespace ("1h ") or case variants ("1H") don't silently downgrade
+    to the 5m rate. Also: anything >= 5m duration is billed at 2.0x to
+    match Anthropic's published surcharge tiers (the SDK accepts more
+    TTL strings than the original 3-value whitelist).
+    """
+    if not ttl:
+        return _CACHE_WRITE_MULT_5M
+    norm = ttl.strip().lower()
+    # Known 1h-tier aliases.
+    if norm in ("1h", "60m", "3600s", "1hour", "1 hour"):
         return _CACHE_WRITE_MULT_1H
+    # Parse duration suffixes — anything > 5m bills at 1h rate.
+    try:
+        if norm.endswith("h"):
+            return _CACHE_WRITE_MULT_1H if float(norm[:-1]) >= 1 else _CACHE_WRITE_MULT_5M
+        if norm.endswith("m"):
+            return _CACHE_WRITE_MULT_1H if float(norm[:-1]) > 5 else _CACHE_WRITE_MULT_5M
+        if norm.endswith("s"):
+            return _CACHE_WRITE_MULT_1H if float(norm[:-1]) > 300 else _CACHE_WRITE_MULT_5M
+    except ValueError:
+        pass
     return _CACHE_WRITE_MULT_5M
 
 
@@ -116,6 +137,11 @@ class Budget:
         # future parallel best-of-N (or multi-agent swarm where two
         # agents share a Budget) can't lose updates. `+=` on float is
         # NOT atomic in CPython under threads — we'd silently undercount.
+        # Wave 12 hardening: check() runs INSIDE the lock too — TOCTOU
+        # otherwise lets two threads both pass check() with state that
+        # the OTHER thread has already invalidated. check() does no I/O
+        # and elapsed() is reentrant-safe, so holding the lock through
+        # it is fine.
         with self._lock:
             self.input_tokens += in_tok
             self.cache_read_tokens += cache_read_tok
@@ -128,12 +154,12 @@ class Budget:
             self.dollars += (cache_read_tok / 1_000_000) * in_rate * _CACHE_READ_MULT
             self.dollars += (cache_write_tok / 1_000_000) * in_rate * write_mult
             self.dollars += (out_tok / 1_000_000) * out_rate
-        self.check()
+            self.check()
 
     def record_tool_call(self) -> None:
         with self._lock:
             self.tool_calls += 1
-        self.check()
+            self.check()
 
     def elapsed(self) -> float:
         # Wave 12: use monotonic so NTP clock-skew doesn't bypass the wall
@@ -149,6 +175,21 @@ class Budget:
         self._started_monotonic = time.monotonic()
         # Wave 12 (F12b): per-instance lock for atomic counter updates.
         self._lock = threading.Lock()
+
+    def __getstate__(self):
+        """Wave 12 hardening: threading.Lock is unpicklable. Drop the
+        non-picklable transient fields so a Budget can survive being
+        sent to a multiprocessing worker (and the monotonic clock is
+        per-process — reset on unpickle to avoid bogus elapsed math)."""
+        state = self.__dict__.copy()
+        state.pop("_lock", None)
+        state.pop("_started_monotonic", None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._lock = threading.Lock()
+        self._started_monotonic = time.monotonic()
 
     def check(self) -> None:
         if self.input_tokens > self.max_input_tokens:

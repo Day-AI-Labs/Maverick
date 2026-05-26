@@ -90,19 +90,38 @@ def _dry_run_row(instance_id: str, pipeline: str) -> Row:
 def _sanitize_patch_for_csv(diff: str) -> str:
     if not diff:
         return ""
-    # Strip NUL and other C0 controls except \t \n \r (which are
-    # legitimately quoted by csv.DictWriter).
-    cleaned = "".join(
-        c for c in diff if c >= " " or c in "\t\n\r"
-    )
+    # Wave 12 hardening: normalize CRLF to LF before C0 strip so Windows-
+    # origin patches don't leave bare \r that csv.DictReader misinterprets
+    # as embedded newlines. Also strip BOM (U+FEFF) and C1 controls
+    # (U+0080-U+009F + zero-width / bidi U+200B-U+200F, U+202A-U+202E),
+    # all of which break various downstream parsers (Excel, pandas
+    # strict-encoding, SWE-bench grader).
+    diff = diff.replace("\r\n", "\n").replace("\r", "")
+    cleaned_chars = []
+    for c in diff:
+        cp = ord(c)
+        if c in "\t\n":
+            cleaned_chars.append(c)
+            continue
+        if cp < 0x20:               # C0 controls (excluding \t\n above)
+            continue
+        if 0x7F <= cp <= 0x9F:      # DEL + C1 controls
+            continue
+        if cp == 0xFEFF:            # BOM
+            continue
+        if 0x200B <= cp <= 0x200F:  # zero-width / RTL marks
+            continue
+        if 0x202A <= cp <= 0x202E:  # bidi override
+            continue
+        cleaned_chars.append(c)
+    cleaned = "".join(cleaned_chars)
     if not cleaned:
         return ""
     # Excel formula-injection: if the first non-whitespace char is one
-    # of the dangerous prefixes, prepend a leading apostrophe. The diff
-    # body's `+`/`-` are fine — they're on per-line basis inside quoted
-    # CSV fields; only the first char of the cell matters.
+    # of the dangerous prefixes, prepend a leading apostrophe. `\t` and
+    # `\r` no longer appear after the strip above; keep `=+-@` only.
     leader = cleaned.lstrip()[:1]
-    if leader in ("=", "+", "-", "@", "\t", "\r"):
+    if leader in ("=", "+", "-", "@"):
         cleaned = "'" + cleaned
     return cleaned
 
@@ -646,14 +665,24 @@ def _write_run_meta(out_dir: Path, args, manifest_path: Path) -> Path:
         pass
 
     # pip freeze — pinned dep snapshot.
+    # Wave 12 hardening: 120s timeout (was 30s) because pip freeze on a
+    # fresh venv with many packages on a slow CI worker can take 60+s.
+    # 30s silently returned empty pip_freeze, defeating the audit purpose.
     try:
         freeze = _sp.run(
             [sys.executable, "-m", "pip", "freeze"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=120,
         )
         pip_freeze = freeze.stdout if freeze.returncode == 0 else ""
-    except (OSError, _sp.SubprocessError):
+        if not pip_freeze:
+            print(
+                "warning: pip freeze returned empty output for run_meta.json",
+                file=sys.stderr,
+            )
+    except (OSError, _sp.SubprocessError) as e:
         pip_freeze = ""
+        print(f"warning: pip freeze failed for run_meta.json: {e}",
+              file=sys.stderr)
 
     # Anthropic SDK version.
     try:
@@ -772,12 +801,18 @@ def main() -> int:
     # (kubelet, systemd, AWS Batch) get a clean shutdown instead of
     # an unflushed CSV. SIGINT (Ctrl-C) is already caught by the
     # KeyboardInterrupt block.
+    # Wave 12 hardening: reset the global flag so reentry (tests calling
+    # main() twice in one process, harness wrappers, etc.) doesn't
+    # immediately short-circuit because a prior call set the flag.
+    global _TERMINATE_REQUESTED
+    _TERMINATE_REQUESTED = False
     import signal as _signal
     try:
         _signal.signal(_signal.SIGTERM, _on_sigterm)
-    except (ValueError, OSError):
-        # Some environments (Windows, embedded threads) reject signal
-        # registration; harness still works, just less graceful on TERM.
+    except (ValueError, OSError, AttributeError):
+        # Some environments (Windows w/o SIGTERM symbol, embedded threads)
+        # reject signal registration; harness still works, just less
+        # graceful on TERM.
         pass
 
     ap = argparse.ArgumentParser()
@@ -900,8 +935,19 @@ def main() -> int:
                 write_csv([row], args.out)
                 written += 1
                 total_spend += row.cost_dollars
-                # Wave 12 (F11e): consecutive-failure circuit breaker.
-                if row.outcome.startswith("error:"):
+                # Wave 12 (F11e) + hardening: consecutive-failure
+                # circuit breaker. A "failure" outcome (pipeline caught
+                # an API error and downgraded to failure) should ALSO
+                # count toward the breaker — only explicitly successful
+                # outcomes reset the counter. Otherwise a pipeline that
+                # swallows errors internally defeats the safety net.
+                outcome_clean = row.outcome.strip().lower()
+                is_failure_class = (
+                    outcome_clean.startswith("error")
+                    or outcome_clean.startswith("failure")
+                    or outcome_clean.startswith("budget")
+                )
+                if is_failure_class:
                     consecutive_failures += 1
                 else:
                     consecutive_failures = 0

@@ -365,16 +365,41 @@ class WorldModel:
         current = self.conn.execute(
             "SELECT version FROM schema_version LIMIT 1"
         ).fetchone()[0]
-        while current < SCHEMA_VERSION:
-            next_version = current + 1
-            for stmt in MIGRATIONS.get(next_version, []):
+        # Wave 12 hardening: temporarily bump busy_timeout for the
+        # migration. CREATE INDEX on a multi-million-row table
+        # (long-lived production DB) can take 30s+ and the 5s default
+        # would raise "database is locked" against a running dashboard.
+        # Restore after, even on exception.
+        prior = None
+        try:
+            prior = self.conn.execute(
+                "PRAGMA busy_timeout"
+            ).fetchone()[0]
+            self.conn.execute("PRAGMA busy_timeout = 60000")
+        except sqlite3.Error:
+            prior = None
+        try:
+            while current < SCHEMA_VERSION:
+                next_version = current + 1
+                for stmt in MIGRATIONS.get(next_version, []):
+                    try:
+                        self.conn.execute(stmt)
+                    except sqlite3.OperationalError as e:
+                        msg = str(e).lower()
+                        if "duplicate column" not in msg:
+                            raise
+                self.conn.execute(
+                    "UPDATE schema_version SET version = ?", (next_version,),
+                )
+                current = next_version
+        finally:
+            if prior is not None:
                 try:
-                    self.conn.execute(stmt)
-                except sqlite3.OperationalError as e:
-                    if "duplicate column" not in str(e).lower():
-                        raise
-            self.conn.execute("UPDATE schema_version SET version = ?", (next_version,))
-            current = next_version
+                    self.conn.execute(
+                        f"PRAGMA busy_timeout = {int(prior)}",
+                    )
+                except sqlite3.Error:
+                    pass
 
     @property
     def schema_version(self) -> int:

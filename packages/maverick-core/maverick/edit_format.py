@@ -468,28 +468,34 @@ def render_diff(workdir: Path) -> str:
     with a proper `--- /dev/null` hunk.
     """
     import subprocess
-    # Mark untracked files as intent-to-add so `git diff HEAD` produces
-    # their /dev/null hunks. Use --no-color/no-ext-diff for stability.
+    # Wave 12 hardening: use `-z` for NUL-separated `ls-files` output so
+    # filenames containing newlines or special chars aren't split into
+    # bogus entries. `-c core.quotePath=false` keeps non-ASCII paths
+    # unescaped (otherwise `git add` doesn't recognize them). Chunk the
+    # `add` invocation to stay under ARG_MAX on large untracked sets.
     try:
         ls = subprocess.run(
-            ["git", "-C", str(workdir), "ls-files",
-             "--others", "--exclude-standard"],
+            ["git", "-c", "core.quotePath=false", "-C", str(workdir),
+             "ls-files", "--others", "--exclude-standard", "-z"],
             capture_output=True, timeout=15,
         )
-        if ls.returncode == 0 and ls.stdout.strip():
-            paths = ls.stdout.decode("utf-8", errors="replace").splitlines()
-            paths = [p for p in paths if p.strip()]
-            if paths:
+        if ls.returncode == 0 and ls.stdout:
+            raw = ls.stdout.decode("utf-8", errors="replace")
+            paths = [p for p in raw.split("\x00") if p]
+            # Chunk to avoid blowing ARG_MAX (~128KB on Linux). 100 per
+            # add is well within limits even for very long paths.
+            for i in range(0, len(paths), 100):
+                chunk = paths[i:i + 100]
                 subprocess.run(
-                    ["git", "-C", str(workdir), "add", "--intent-to-add", "--"]
-                    + paths,
+                    ["git", "-C", str(workdir), "add", "--intent-to-add",
+                     "--"] + chunk,
                     capture_output=True, timeout=30,
                 )
     except (subprocess.SubprocessError, OSError):
         pass
     try:
         proc = subprocess.run(
-            ["git", "-C", str(workdir), "diff",
+            ["git", "-c", "core.quotePath=false", "-C", str(workdir), "diff",
              "--no-color", "--no-ext-diff", "--unified=3", "HEAD"],
             capture_output=True, timeout=30,
         )

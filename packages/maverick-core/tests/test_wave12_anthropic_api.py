@@ -117,7 +117,11 @@ class TestInterleavedThinkingHeader:
         beta = kwargs["extra_headers"].get("anthropic-beta", "")
         assert "interleaved-thinking-2025-05-14" in beta
 
-    def test_header_not_added_when_thinking_disabled(self):
+    def test_header_added_for_opus_sonnet4_without_explicit_budget(self):
+        """Wave 12 hardening: the header is added whenever the model is
+        in a thinking-capable family (Opus 4.x, Sonnet 4.x), even when
+        the caller doesn't pass thinking_budget. Without this, Opus
+        runs default — which use thinking — were missing the beta."""
         from maverick.providers.anthropic_provider import AnthropicClient
 
         client = AnthropicClient.__new__(AnthropicClient)
@@ -129,7 +133,22 @@ class TestInterleavedThinkingHeader:
             thinking_budget=None,
             model="claude-sonnet-4-6",
         )
-        # No extra_headers (or no beta) when thinking off.
+        beta = kwargs.get("extra_headers", {}).get("anthropic-beta", "")
+        assert "interleaved-thinking-2025-05-14" in beta
+
+    def test_header_not_added_for_legacy_model(self):
+        from maverick.providers.anthropic_provider import AnthropicClient
+
+        client = AnthropicClient.__new__(AnthropicClient)
+        kwargs = client._build_request(
+            system="sys",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=None,
+            max_tokens=4096,
+            thinking_budget=None,
+            model="claude-3-5-sonnet-20241022",
+        )
+        # Legacy model (pre-4.x family) — no thinking support, no header.
         beta = kwargs.get("extra_headers", {}).get("anthropic-beta", "")
         assert "interleaved-thinking" not in beta
 
