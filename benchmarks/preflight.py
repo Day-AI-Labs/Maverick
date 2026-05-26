@@ -166,10 +166,10 @@ def check_config_no_stale_overrides() -> bool:
     try:
         if sys.version_info >= (3, 11):
             import tomllib
-            cfg = tomllib.loads(cfg_path.read_text())
+            cfg = tomllib.loads(cfg_path.read_text(encoding="utf-8"))
         else:
             import tomli
-            cfg = tomli.loads(cfg_path.read_text())
+            cfg = tomli.loads(cfg_path.read_text(encoding="utf-8"))
     except Exception as e:
         _warn(f"~/.maverick/config.toml exists but failed to parse: {e}")
         return True  # Don't block; parse failure means it won't be used.

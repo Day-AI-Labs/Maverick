@@ -41,15 +41,23 @@ def _is_test_path(rel_path: str) -> bool:
 
     Wave 10 (S1): we block read access to these in opaque benchmark
     mode so the agent can't hardcode to gold expected values it spied
-    in the assertion bodies. The agent CAN still read the test fixture's
-    setup helpers, conftest, etc. — only the test files themselves are
-    gated.
+    in the assertion bodies.
+
+    Wave 12 hardening pass: any path UNDER a tests/ directory is
+    blocked, not just files that match the test-naming heuristic. The
+    prior rule (file matches test_*.py AND lives in tests/) left
+    tests/conftest.py, tests/__init__.py, tests/helpers.py, and the
+    FAIL_TO_PASS support files readable — these typically contain the
+    expected-value tables and parametrize IDs the agent must not see.
     """
     p = rel_path.lower().replace("\\", "/")
     parts = [x for x in p.split("/") if x]
     name = parts[-1] if parts else ""
     in_test_dir = any(seg in {"tests", "test", "__tests__", "spec", "specs"}
                       for seg in parts[:-1])
+    # Wave 12: ANY file under tests/ is gated.
+    if in_test_dir:
+        return True
     test_file = (
         name.startswith("test_")
         or name.endswith("_test.py")
@@ -62,21 +70,77 @@ def _is_test_path(rel_path: str) -> bool:
         or name.endswith("Test.java")
         or name.endswith("Tests.java")
     )
-    return in_test_dir and test_file
+    return test_file
+
+
+def _is_dotgit_path(rel_path: str) -> bool:
+    """Wave 12 (council F9d): block reads under `.git/`.
+
+    The .git directory leaks the gold answer via refs/objects:
+      - `.git/refs/heads/main` → gold commit SHA
+      - `.git/objects/<sha>` → raw object contents (the patch)
+      - `.git/HEAD`, `.git/packed-refs` → ref enumeration
+    The shell tool already blocks `git log -p` / `git show` / `git
+    cat-file`; this closes the corresponding file-read backdoor.
+    """
+    p = rel_path.replace("\\", "/")
+    parts = [x for x in p.split("/") if x]
+    return any(seg == ".git" for seg in parts)
+
+
+def _is_opaque_blocked(rel_path: str) -> bool:
+    """Return True if `rel_path` should be blocked under opaque benchmark
+    mode. Combines the test-path and .git-path checks."""
+    import os as _os
+    opaque = _os.environ.get("MAVERICK_BENCHMARK_OPAQUE", "1") != "0"
+    coding = _os.environ.get(
+        "MAVERICK_CODING_MODE", ""
+    ).lower() in ("1", "true", "yes")
+    if not (opaque and coding):
+        return False
+    return _is_test_path(rel_path) or _is_dotgit_path(rel_path)
+
+
+def _is_opaque_blocked_resolved(sandbox, rel_path: str) -> bool:
+    """Wave 12 hardening pass: re-check the opacity gate on the CANONICAL
+    resolved path so symlink trickery cannot bypass it.
+
+    The raw-input check `_is_opaque_blocked(rel_path)` catches the
+    direct case (`.git/HEAD`, `tests/test_foo.py`). But the agent
+    could do `ln -s .git safe_dir` then `read_file("safe_dir/HEAD")` —
+    raw input contains neither `.git` nor `tests/`. After
+    `_safe_resolve` follows the symlink, we re-derive the workspace-
+    relative form and re-run the gate so the canonical location is
+    what's checked.
+    """
+    if _is_opaque_blocked(rel_path):
+        return True
+    try:
+        workdir = Path(sandbox.workdir).resolve()
+        candidate = (workdir / rel_path).resolve()
+        rel = candidate.relative_to(workdir).as_posix()
+    except (ValueError, OSError):
+        # Can't resolve cleanly — let downstream _safe_resolve produce
+        # the proper error.
+        return False
+    return _is_opaque_blocked(rel)
 
 
 def read_file(sandbox) -> Tool:
     def fn(args: dict) -> str:
-        import os as _os
         path_arg = args["path"]
-        # Wave 10 (S1): in benchmark opaque mode, block reads of test
-        # files. Fail-open elsewhere — we don't want to break the
-        # consumer-facing agent. The check uses both env vars so a
-        # harness misconfiguration (CODING_MODE without OPAQUE) is
-        # still gated by the explicit opaque flag.
-        opaque = _os.environ.get("MAVERICK_BENCHMARK_OPAQUE", "1") != "0"
-        coding = _os.environ.get("MAVERICK_CODING_MODE", "").lower() in ("1", "true", "yes")
-        if opaque and coding and _is_test_path(path_arg):
+        # Wave 10 (S1) + Wave 12 (F9d) + Wave 12 hardening: block test
+        # AND .git/ reads in opaque mode, on the CANONICAL resolved
+        # path so symlinks can't bypass.
+        if _is_opaque_blocked_resolved(sandbox, path_arg):
+            if _is_dotgit_path(path_arg):
+                return (
+                    f"ERROR: read_file({path_arg!r}) blocked in benchmark "
+                    "opaque mode. The .git directory leaks the gold "
+                    "answer via refs/objects; derive your fix from the "
+                    "code under test, not from git's internal storage. "
+                    "(Override by setting MAVERICK_BENCHMARK_OPAQUE=0.)"
+                )
             return (
                 f"ERROR: read_file({path_arg!r}) blocked in benchmark "
                 "opaque mode. The test files contain the grader's "

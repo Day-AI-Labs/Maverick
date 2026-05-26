@@ -33,6 +33,7 @@ import csv
 import json
 import os
 import sys
+import threading
 import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -78,20 +79,74 @@ def _dry_run_row(instance_id: str, pipeline: str) -> Row:
     )
 
 
+# Wave 12: sanitize patches before they reach the CSV. Three failures
+# in one place: (a) NUL bytes break csv.DictReader on resume → silent
+# re-runs that double-charge; (b) Excel auto-executes cells starting
+# with `=+-@\t\r` and patch lines literally start with `+`/`-` → CSV
+# formula injection when anyone opens RESULTS_SWE.csv in Excel for
+# analysis; (c) other C0 control characters can confuse downstream
+# tooling. Truncation is REMOVED — SWE-bench Pro has no patch-size cap
+# and the prior 50_000-byte slice cut mid-hunk on multi-file refactors.
+def _sanitize_patch_for_csv(diff: str) -> str:
+    if not diff:
+        return ""
+    # Wave 12 hardening: normalize CRLF to LF before C0 strip so Windows-
+    # origin patches don't leave bare \r that csv.DictReader misinterprets
+    # as embedded newlines. Also strip BOM (U+FEFF) and C1 controls
+    # (U+0080-U+009F + zero-width / bidi U+200B-U+200F, U+202A-U+202E),
+    # all of which break various downstream parsers (Excel, pandas
+    # strict-encoding, SWE-bench grader).
+    diff = diff.replace("\r\n", "\n").replace("\r", "")
+    cleaned_chars = []
+    for c in diff:
+        cp = ord(c)
+        if c in "\t\n":
+            cleaned_chars.append(c)
+            continue
+        if cp < 0x20:               # C0 controls (excluding \t\n above)
+            continue
+        if 0x7F <= cp <= 0x9F:      # DEL + C1 controls
+            continue
+        if cp == 0xFEFF:            # BOM
+            continue
+        if 0x200B <= cp <= 0x200F:  # zero-width / RTL marks
+            continue
+        if 0x202A <= cp <= 0x202E:  # bidi override
+            continue
+        cleaned_chars.append(c)
+    cleaned = "".join(cleaned_chars)
+    if not cleaned:
+        return ""
+    # Excel formula-injection: if the first non-whitespace char is one
+    # of the dangerous prefixes, prepend a leading apostrophe. `\t` and
+    # `\r` no longer appear after the strip above; keep `=+-@` only.
+    leader = cleaned.lstrip()[:1]
+    if leader in ("=", "+", "-", "@"):
+        cleaned = "'" + cleaned
+    return cleaned
+
+
 # Wave 11: hoist LLM() across instances. anthropic.Client holds an
 # httpx connection pool; constructing a fresh LLM per instance leaked
 # ~5-10 MB of RSS per instance and OOM-killed the run around #800-1200
 # on a 1865-instance Pro sweep. One LLM per process, threadsafe per
 # the Anthropic SDK's documented invariants.
 _SHARED_LLM = None
+# Wave 12 (council F12a): lock around lazy init so two pipeline calls
+# starting near-simultaneously don't double-construct the LLM (which
+# would leak a second httpx pool and stomp on the first's connections).
+_SHARED_LLM_LOCK = threading.Lock()
 
 
 def _get_shared_llm():
     global _SHARED_LLM
-    if _SHARED_LLM is None:
-        from maverick.llm import LLM
-        _SHARED_LLM = LLM()
-    return _SHARED_LLM
+    if _SHARED_LLM is not None:
+        return _SHARED_LLM
+    with _SHARED_LLM_LOCK:
+        if _SHARED_LLM is None:
+            from maverick.llm import LLM
+            _SHARED_LLM = LLM()
+        return _SHARED_LLM
 
 
 def _reset_workdir(workdir, base_commit: str = "") -> None:
@@ -364,7 +419,7 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
             tp.mkdir(parents=True, exist_ok=True)
             safe_id = instance_id.replace("/", "_")
             sidecar = tp / f"{safe_id}.jsonl"
-            with sidecar.open("w") as f:
+            with sidecar.open("w", encoding="utf-8") as f:
                 for e in events:
                     f.write(json.dumps(_asdict(e), default=str) + "\n")
         except Exception as e:
@@ -379,7 +434,14 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
         cost_dollars=total_cost,
         tokens_in=total_in,
         tokens_out=total_out,
-        predicted_patch=diff[:50_000],
+        # Wave 12 fix: SWE-bench Pro grader has no patch-size cap; the
+        # previous [:50_000] silently truncated mid-hunk on multi-file
+        # refactors (Django/pandas instances ~60-100KB). Sanitize NUL
+        # bytes (csv.DictReader fails on them, breaking resume) and
+        # neutralize CSV-formula-injection prefixes (Excel auto-executes
+        # cells starting with =+-@\t\r — patch lines naturally start
+        # with `+`/`-`).
+        predicted_patch=_sanitize_patch_for_csv(diff),
         outcome=last_outcome or ("success" if diff else "no-diff"),
         extra=extra_payload,
     )
@@ -487,7 +549,7 @@ def load_instances(manifest: Path) -> list[dict]:
     harness; the bad line is logged + skipped so the run continues.
     """
     out: list[dict] = []
-    for lineno, raw in enumerate(manifest.read_text().splitlines(), start=1):
+    for lineno, raw in enumerate(manifest.read_text(encoding="utf-8").splitlines(), start=1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
@@ -509,7 +571,7 @@ def load_instances(manifest: Path) -> list[dict]:
             out.append(obj)
         else:
             brief_path = manifest.parent / f"{line}.txt"
-            brief = brief_path.read_text() if brief_path.exists() else ""
+            brief = brief_path.read_text(encoding="utf-8") if brief_path.exists() else ""
             out.append({"instance_id": line, "brief": brief})
     return out
 
@@ -531,7 +593,7 @@ def write_csv(rows: list[Row], out_path: Path) -> None:
     cols = list(asdict(Row("", "", "")).keys())
     cols.remove("extra")
     new_file = not out_path.exists()
-    with out_path.open("a", newline="") as f:
+    with out_path.open("a", newline="", encoding="utf-8") as f:
         try:
             import fcntl as _fcntl
             _fcntl.flock(f.fileno(), _fcntl.LOCK_EX)
@@ -563,20 +625,135 @@ def write_csv(rows: list[Row], out_path: Path) -> None:
                     pass
 
 
+def _write_run_meta(out_dir: Path, args, manifest_path: Path) -> Path:
+    """Wave 12 (council F16): emit run_meta.json next to the results CSV.
+
+    Captures everything needed to reproduce or audit a run:
+      - Maverick git rev (HEAD sha)
+      - manifest SHA-256
+      - pip freeze
+      - Anthropic API client version
+      - relevant env vars (MAVERICK_*, ANTHROPIC_*)
+      - CLI args
+      - host info (python version, platform)
+    """
+    import hashlib
+    import platform
+    import subprocess as _sp
+    out_dir.mkdir(parents=True, exist_ok=True)
+    meta_path = out_dir / "run_meta.json"
+
+    # Maverick git rev — best-effort.
+    try:
+        rev = _sp.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(Path(__file__).resolve().parent.parent),
+            capture_output=True, text=True, timeout=5,
+        )
+        git_sha = rev.stdout.strip() if rev.returncode == 0 else "unknown"
+    except (OSError, _sp.SubprocessError):
+        git_sha = "unknown"
+
+    # Manifest SHA — pins the exact instance set evaluated.
+    manifest_sha = "unknown"
+    try:
+        if manifest_path.exists():
+            h = hashlib.sha256()
+            h.update(manifest_path.read_bytes())
+            manifest_sha = h.hexdigest()
+    except OSError:
+        pass
+
+    # pip freeze — pinned dep snapshot.
+    # Wave 12 hardening: 120s timeout (was 30s) because pip freeze on a
+    # fresh venv with many packages on a slow CI worker can take 60+s.
+    # 30s silently returned empty pip_freeze, defeating the audit purpose.
+    try:
+        freeze = _sp.run(
+            [sys.executable, "-m", "pip", "freeze"],
+            capture_output=True, text=True, timeout=120,
+        )
+        pip_freeze = freeze.stdout if freeze.returncode == 0 else ""
+        if not pip_freeze:
+            print(
+                "warning: pip freeze returned empty output for run_meta.json",
+                file=sys.stderr,
+            )
+    except (OSError, _sp.SubprocessError) as e:
+        pip_freeze = ""
+        print(f"warning: pip freeze failed for run_meta.json: {e}",
+              file=sys.stderr)
+
+    # Anthropic SDK version.
+    try:
+        import anthropic as _a
+        anthropic_version = getattr(_a, "__version__", "unknown")
+    except Exception:
+        anthropic_version = "not-installed"
+
+    # Env vars that affect behavior — capture but redact API keys.
+    env_snapshot = {}
+    for k, v in os.environ.items():
+        if not (k.startswith("MAVERICK_") or k.startswith("ANTHROPIC_")
+                or k in ("OPENAI_API_KEY",)):
+            continue
+        if "KEY" in k or "TOKEN" in k or "SECRET" in k:
+            env_snapshot[k] = "REDACTED" if v else ""
+        else:
+            env_snapshot[k] = v
+
+    meta = {
+        "started_at": time.time(),
+        "started_at_iso": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "maverick_git_sha": git_sha,
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": manifest_sha,
+        "pip_freeze": pip_freeze,
+        "anthropic_sdk_version": anthropic_version,
+        "anthropic_version_header": "2023-06-01",
+        "env_snapshot": env_snapshot,
+        "cli_args": {
+            k: (str(v) if isinstance(v, Path) else v)
+            for k, v in vars(args).items()
+        },
+        "host": {
+            "python_version": sys.version,
+            "python_executable": sys.executable,
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+            "node": platform.node(),
+        },
+    }
+    meta_path.write_text(
+        json.dumps(meta, indent=2, default=str), encoding="utf-8",
+    )
+    return meta_path
+
+
 def already_done(out_path: Path) -> set[tuple[str, str]]:
     """Read out_path and return the set of (instance_id, pipeline) pairs
-    already written. Used by main() to skip on resume.
+    already written AND that succeeded. Used by main() to skip on resume.
 
     Wave 10 (D12): csv.Error during read no longer silently empties the
     set; instead we log a visible warning so a partial-write race or
     corrupt CSV doesn't trigger a SILENT re-run that double-charges.
+
+    Wave 12 (council F11b): rows whose `outcome` starts with "error:"
+    are NOT marked done. The agent errored (sandbox crash, API
+    outage, etc) without producing a real patch — resuming should
+    retry these, not skip them.
     """
     if not out_path.exists():
         return set()
     done: set[tuple[str, str]] = set()
+    error_rows = 0
     try:
-        with out_path.open() as f:
+        with out_path.open(encoding="utf-8") as f:
             for row in csv.DictReader(f):
+                outcome = (row.get("outcome") or "").strip()
+                if outcome.startswith("error:"):
+                    error_rows += 1
+                    continue
                 done.add((row["instance_id"], row["pipeline"]))
     except (OSError, KeyError) as e:
         print(f"warning: could not read resume state from {out_path}: {e}",
@@ -589,10 +766,55 @@ def already_done(out_path: Path) -> set[tuple[str, str]]:
             f"trigger re-runs of partially-written instances.",
             file=sys.stderr,
         )
+    if error_rows:
+        print(
+            f"info: {error_rows} error row(s) found in {out_path} — "
+            "they will be retried (Wave 12: errors no longer mark a "
+            "row as done)",
+            file=sys.stderr,
+        )
     return done
 
 
+# Wave 12 (council F11a): clean-exit flag shared with signal handler.
+# Set on SIGTERM; the main loop checks it after each row write and
+# exits gracefully (last row flushed, partial accounting reported).
+_TERMINATE_REQUESTED: bool = False
+
+
+def _on_sigterm(signum, frame) -> None:  # pragma: no cover (signal)
+    global _TERMINATE_REQUESTED
+    _TERMINATE_REQUESTED = True
+    # Single line, no stdlib calls beyond stdio — signal handlers are
+    # async-signal-safe restricted.
+    try:
+        sys.stderr.write(
+            "\nSIGTERM received; finishing current row + exiting...\n"
+        )
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
 def main() -> int:
+    # Wave 12 (F11a): install SIGTERM handler so cloud schedulers
+    # (kubelet, systemd, AWS Batch) get a clean shutdown instead of
+    # an unflushed CSV. SIGINT (Ctrl-C) is already caught by the
+    # KeyboardInterrupt block.
+    # Wave 12 hardening: reset the global flag so reentry (tests calling
+    # main() twice in one process, harness wrappers, etc.) doesn't
+    # immediately short-circuit because a prior call set the flag.
+    global _TERMINATE_REQUESTED
+    _TERMINATE_REQUESTED = False
+    import signal as _signal
+    try:
+        _signal.signal(_signal.SIGTERM, _on_sigterm)
+    except (ValueError, OSError, AttributeError):
+        # Some environments (Windows w/o SIGTERM symbol, embedded threads)
+        # reject signal registration; harness still works, just less
+        # graceful on TERM.
+        pass
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--instances", type=Path, required=True,
                     help="manifest of instance IDs (one per line or JSON-per-line)")
@@ -613,6 +835,10 @@ def main() -> int:
     ap.add_argument("--adoption-tripwire", type=float, default=None,
                     help="Abort if SEARCH/REPLACE adoption rate < N (0.0-1.0) "
                     "after the first 25 instances. Sentinel for prompt drift.")
+    ap.add_argument("--max-consecutive-failures", type=int, default=10,
+                    help="Wave 12 (F11e): abort if N consecutive instances "
+                    "error out (likely API outage / quota exhaustion / "
+                    "sandbox crash). 0 to disable.")
     args = ap.parse_args()
 
     if not args.instances.exists():
@@ -621,6 +847,15 @@ def main() -> int:
 
     if args.instance_hard_cap is not None:
         os.environ["MAVERICK_INSTANCE_HARD_CAP"] = str(args.instance_hard_cap)
+
+    # Wave 12 (F16): write run_meta.json before the first instance so a
+    # crash mid-run still leaves provenance for replay/audit. Sibling to
+    # the results CSV.
+    try:
+        meta_path = _write_run_meta(args.out.parent, args, args.instances)
+        print(f"run_meta: {meta_path}", file=sys.stderr)
+    except Exception as e:
+        print(f"warning: run_meta.json write failed: {e}", file=sys.stderr)
 
     pipelines = [p.strip() for p in args.pipelines.split(",") if p.strip()]
     for p in pipelines:
@@ -653,9 +888,15 @@ def main() -> int:
     # Wave 11: adoption tripwire counters.
     str_replace_uses = 0
     instances_with_str_replace_signal = 0
+    # Wave 12 (F11e): consecutive-failure counter for circuit breaker.
+    consecutive_failures = 0
 
     try:
         for inst in instances:
+            if _TERMINATE_REQUESTED:
+                print("SIGTERM exit: stopping instance iteration",
+                      file=sys.stderr)
+                break
             iid = inst["instance_id"]
             brief = inst.get("brief", "")
             extra = {
@@ -669,6 +910,8 @@ def main() -> int:
                 "interface": inst.get("interface", "") or "",
             }
             for pipeline in pipelines:
+                if _TERMINATE_REQUESTED:
+                    break
                 if (iid, pipeline) in done:
                     skipped += 1
                     continue
@@ -692,6 +935,33 @@ def main() -> int:
                 write_csv([row], args.out)
                 written += 1
                 total_spend += row.cost_dollars
+                # Wave 12 (F11e) + hardening: consecutive-failure
+                # circuit breaker. A "failure" outcome (pipeline caught
+                # an API error and downgraded to failure) should ALSO
+                # count toward the breaker — only explicitly successful
+                # outcomes reset the counter. Otherwise a pipeline that
+                # swallows errors internally defeats the safety net.
+                outcome_clean = row.outcome.strip().lower()
+                is_failure_class = (
+                    outcome_clean.startswith("error")
+                    or outcome_clean.startswith("failure")
+                    or outcome_clean.startswith("budget")
+                )
+                if is_failure_class:
+                    consecutive_failures += 1
+                else:
+                    consecutive_failures = 0
+                if (args.max_consecutive_failures > 0
+                        and consecutive_failures >= args.max_consecutive_failures):
+                    print(
+                        f"ABORT: {consecutive_failures} consecutive errors "
+                        f"(>={args.max_consecutive_failures}). Likely API "
+                        "outage / quota / sandbox issue — bail before "
+                        "burning through the manifest. Last error: "
+                        f"{row.outcome}",
+                        file=sys.stderr,
+                    )
+                    return 5
                 # Wave 11: track SEARCH/REPLACE adoption via extra signal.
                 if pipeline == "maverick":
                     if row.extra.get("str_replace_editor_used"):
@@ -721,6 +991,11 @@ def main() -> int:
         print(f"\nSIGINT caught; {written} row(s) flushed to {args.out}",
               file=sys.stderr)
         return 130
+
+    if _TERMINATE_REQUESTED:
+        print(f"\nSIGTERM exit: {written} row(s) flushed to {args.out}; "
+              f"total ${total_spend:.2f}", file=sys.stderr)
+        return 143  # 128 + SIGTERM(15)
 
     print(f"\n{written} row(s) appended to {args.out}; "
           f"{skipped} skipped (already done); total ${total_spend:.2f}")

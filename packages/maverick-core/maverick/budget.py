@@ -11,6 +11,7 @@ v0.2 cost-correctness fix:
 """
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -26,8 +27,40 @@ _FALLBACK_PRICE_IN = 3.0
 _FALLBACK_PRICE_OUT = 15.0
 
 # Anthropic cache multipliers (over the list input price).
-_CACHE_READ_MULT = 0.1     # 90% discount on cache reads
-_CACHE_WRITE_MULT = 1.25   # 25% premium on cache writes
+# Two TTLs: 5m default (1.25x write surcharge) and 1h (2.0x write surcharge).
+# Wave 12: prior code collapsed all writes to 1.25x; long-TTL writes were
+# under-billed by ~40%.
+_CACHE_READ_MULT = 0.1     # 90% discount on cache reads (both TTLs)
+_CACHE_WRITE_MULT_5M = 1.25
+_CACHE_WRITE_MULT_1H = 2.0
+
+
+def _cache_write_mult_from_ttl(ttl: Optional[str]) -> float:
+    """Map Anthropic cache TTL string to the write surcharge multiplier.
+
+    Wave 12 hardening: strip + lowercase before matching so trailing
+    whitespace ("1h ") or case variants ("1H") don't silently downgrade
+    to the 5m rate. Also: anything >= 5m duration is billed at 2.0x to
+    match Anthropic's published surcharge tiers (the SDK accepts more
+    TTL strings than the original 3-value whitelist).
+    """
+    if not ttl:
+        return _CACHE_WRITE_MULT_5M
+    norm = ttl.strip().lower()
+    # Known 1h-tier aliases.
+    if norm in ("1h", "60m", "3600s", "1hour", "1 hour"):
+        return _CACHE_WRITE_MULT_1H
+    # Parse duration suffixes — anything > 5m bills at 1h rate.
+    try:
+        if norm.endswith("h"):
+            return _CACHE_WRITE_MULT_1H if float(norm[:-1]) >= 1 else _CACHE_WRITE_MULT_5M
+        if norm.endswith("m"):
+            return _CACHE_WRITE_MULT_1H if float(norm[:-1]) > 5 else _CACHE_WRITE_MULT_5M
+        if norm.endswith("s"):
+            return _CACHE_WRITE_MULT_1H if float(norm[:-1]) > 300 else _CACHE_WRITE_MULT_5M
+    except ValueError:
+        pass
+    return _CACHE_WRITE_MULT_5M
 
 
 def _lookup_price(model: Optional[str]) -> tuple[float, float]:
@@ -76,36 +109,87 @@ class Budget:
         model: Optional[str] = None,
         cache_read_tok: int = 0,
         cache_write_tok: int = 0,
+        cache_write_ttl: Optional[str] = None,
     ) -> None:
         """Add usage from one LLM call.
 
         ``in_tok`` is the number of input tokens billed at full rate
         (i.e. excludes the cache_read_tok and cache_write_tok counts).
-        ``cache_read_tok`` is billed at 0.1x, ``cache_write_tok`` at 1.25x.
+        ``cache_read_tok`` is billed at 0.1x, ``cache_write_tok`` at
+        1.25x (5m TTL) or 2.0x (1h TTL) — pass ``cache_write_ttl="1h"``
+        when caching with a 1h breakpoint.
+
+        Wave 12 nullsafety: ``in_tok``/``out_tok``/cache counts coerce
+        to ``int(... or 0)`` — Anthropic occasionally returns ``None``
+        in ``usage`` on streaming refusals; the prior code raised
+        ``TypeError`` and the instance counted as $0 spent.
 
         Council finding: cache reads/writes accumulate in separate
         counters so ``max_input_tokens`` reflects the BILLABLE input
         budget (non-cached only). Caching is a discount, so heavy
         caching should let you DO more work within the same input cap.
         """
-        self.input_tokens += in_tok
-        self.cache_read_tokens += cache_read_tok
-        self.cache_write_tokens += cache_write_tok
-        self.output_tokens += out_tok
+        in_tok = int(in_tok or 0)
+        out_tok = int(out_tok or 0)
+        cache_read_tok = int(cache_read_tok or 0)
+        cache_write_tok = int(cache_write_tok or 0)
+        # Wave 12 (council F12b): make the accumulator atomic so a
+        # future parallel best-of-N (or multi-agent swarm where two
+        # agents share a Budget) can't lose updates. `+=` on float is
+        # NOT atomic in CPython under threads — we'd silently undercount.
+        # Wave 12 hardening: check() runs INSIDE the lock too — TOCTOU
+        # otherwise lets two threads both pass check() with state that
+        # the OTHER thread has already invalidated. check() does no I/O
+        # and elapsed() is reentrant-safe, so holding the lock through
+        # it is fine.
+        with self._lock:
+            self.input_tokens += in_tok
+            self.cache_read_tokens += cache_read_tok
+            self.cache_write_tokens += cache_write_tok
+            self.output_tokens += out_tok
 
-        in_rate, out_rate = _lookup_price(model)
-        self.dollars += (in_tok / 1_000_000) * in_rate
-        self.dollars += (cache_read_tok / 1_000_000) * in_rate * _CACHE_READ_MULT
-        self.dollars += (cache_write_tok / 1_000_000) * in_rate * _CACHE_WRITE_MULT
-        self.dollars += (out_tok / 1_000_000) * out_rate
-        self.check()
+            in_rate, out_rate = _lookup_price(model)
+            write_mult = _cache_write_mult_from_ttl(cache_write_ttl)
+            self.dollars += (in_tok / 1_000_000) * in_rate
+            self.dollars += (cache_read_tok / 1_000_000) * in_rate * _CACHE_READ_MULT
+            self.dollars += (cache_write_tok / 1_000_000) * in_rate * write_mult
+            self.dollars += (out_tok / 1_000_000) * out_rate
+            self.check()
 
     def record_tool_call(self) -> None:
-        self.tool_calls += 1
-        self.check()
+        with self._lock:
+            self.tool_calls += 1
+            self.check()
 
     def elapsed(self) -> float:
-        return time.time() - self.started_at
+        # Wave 12: use monotonic so NTP clock-skew doesn't bypass the wall
+        # cap. `started_at` is captured in __post_init__ for monotonic.
+        try:
+            return time.monotonic() - self._started_monotonic
+        except AttributeError:
+            # Legacy path: dataclass instance created before __post_init__
+            # extension landed. Fall back to wall clock.
+            return time.time() - self.started_at
+
+    def __post_init__(self) -> None:
+        self._started_monotonic = time.monotonic()
+        # Wave 12 (F12b): per-instance lock for atomic counter updates.
+        self._lock = threading.Lock()
+
+    def __getstate__(self):
+        """Wave 12 hardening: threading.Lock is unpicklable. Drop the
+        non-picklable transient fields so a Budget can survive being
+        sent to a multiprocessing worker (and the monotonic clock is
+        per-process — reset on unpickle to avoid bogus elapsed math)."""
+        state = self.__dict__.copy()
+        state.pop("_lock", None)
+        state.pop("_started_monotonic", None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._lock = threading.Lock()
+        self._started_monotonic = time.monotonic()
 
     def check(self) -> None:
         if self.input_tokens > self.max_input_tokens:

@@ -70,6 +70,13 @@ class AgentResult:
     # Verifier signals (only populated on the orchestrator's FINAL).
     verifier_confidence: float = 1.0
     verifier_critique: str = ""
+    # Wave 12: rendered unified diff produced by the FINAL handler
+    # (SEARCH/REPLACE blocks applied + `git diff` rendered, or unified
+    # diff extracted from FINAL). Best-of-N reads this directly instead
+    # of re-extracting from prose at orchestrator.py:364 — the prior
+    # path silently dropped SR-only candidates that produced a perfect
+    # rendered diff but had no `--- a/` substring in `result`.
+    final_patch: Optional[str] = None
 
 
 class Agent:
@@ -468,14 +475,15 @@ class Agent:
                         # so we ask for revision instead of submitting
                         # something the grader will silently zero out.
                         try:
-                            from .coding_mode import defensive_validate
+                            from .coding_mode import (
+                                defensive_validate,
+                                get_gold_patch,
+                            )
                             def_check = defensive_validate(
                                 patch,
                                 fail_to_pass=coding_cfg.fail_to_pass,
                                 pass_to_pass=coding_cfg.pass_to_pass,
-                                gold_patch=os.environ.get(
-                                    "MAVERICK_GOLD_PATCH", "",
-                                ),
+                                gold_patch=get_gold_patch(),
                                 opaque=(os.environ.get(
                                     "MAVERICK_BENCHMARK_OPAQUE", "1",
                                 ) != "0"),
@@ -494,6 +502,17 @@ class Agent:
                                 "content": def_check.critique(),
                             })
                             continue
+                        # Wave 12 hardening: when defensive validate
+                        # passes (ok=True) but emitted warnings (WARN
+                        # path — conftest.py / pyproject.toml etc.),
+                        # post the advisory to the blackboard so it
+                        # shows up in trace; we still ACCEPT the patch.
+                        if def_check is not None and def_check.warnings:
+                            bb.post(
+                                self.name, "verify",
+                                f"defensive warnings (accepted anyway): "
+                                f"{def_check.warnings}",
+                            )
                         validation = validate_patch(patch, workdir)
                         if not validation.valid:
                             self._patch_validated = True  # one retry max
@@ -676,6 +695,7 @@ class Agent:
                                     final=final, role=self.role, name=self.name,
                                     verifier_confidence=test_result.score,
                                     verifier_critique=test_result.summary(),
+                                    final_patch=getattr(self, "_final_patch", None),
                                 )
                             # Tests failed → revise. Wave 9 (council H2):
                             # do NOT leak raw assertion bodies to the
@@ -723,6 +743,7 @@ class Agent:
                                     final=final, role=self.role, name=self.name,
                                     verifier_confidence=test_result.score,
                                     verifier_critique=test_result.summary(),
+                                    final_patch=getattr(self, "_final_patch", None),
                                 )
                             self._patch_validated = True
                             messages.append({"role": "user", "content": critique})
@@ -781,6 +802,7 @@ class Agent:
                         final=final, role=self.role, name=self.name,
                         verifier_confidence=verdict.confidence if verdict else 1.0,
                         verifier_critique=verdict.critique if verdict else "",
+                        final_patch=getattr(self, "_final_patch", None),
                     )
                 bb.post(self.name, "observation", resp.text[:1000])
 

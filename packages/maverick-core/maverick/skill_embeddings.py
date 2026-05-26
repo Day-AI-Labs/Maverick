@@ -70,7 +70,7 @@ def _load_cache() -> dict[str, CachedEmbedding]:
     if not CACHE_PATH.exists():
         return {}
     try:
-        raw = json.loads(CACHE_PATH.read_text())
+        raw = json.loads(CACHE_PATH.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {}
     out: dict[str, CachedEmbedding] = {}
@@ -94,7 +94,7 @@ def _save_cache(cache: dict[str, CachedEmbedding]) -> None:
         name: {"text": e.text, "mtime": e.mtime, "vector": e.vector}
         for name, e in cache.items()
     }
-    CACHE_PATH.write_text(json.dumps(raw))
+    CACHE_PATH.write_text(json.dumps(raw), encoding="utf-8")
 
 
 def _skill_to_embed_text(skill) -> str:

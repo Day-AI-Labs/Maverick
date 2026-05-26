@@ -38,7 +38,7 @@ def run_one(
     db_path: Optional[Path] = None,
 ) -> dict:
     """Run a single benchmark. Returns a metrics dict."""
-    spec = benchmark_path.read_text()
+    spec = benchmark_path.read_text(encoding="utf-8")
 
     # We don't actually invoke the LLM in CI; export a flag so the
     # harness can be smoke-tested. Real runs require ANTHROPIC_API_KEY.
@@ -110,10 +110,11 @@ def append_results(row: dict, results_path: Path) -> None:
         results_path.write_text(
             "# Maverick benchmark results\n\n"
             "Auto-appended by `benchmarks/harness.py`. Each row is one run.\n\n"
-            + header + divider
+            + header + divider,
+            encoding="utf-8",
         )
     line = "| " + " | ".join(str(row.get(c, "")) for c in cols) + " |\n"
-    with results_path.open("a") as f:
+    with results_path.open("a", encoding="utf-8") as f:
         f.write(line)
 
 

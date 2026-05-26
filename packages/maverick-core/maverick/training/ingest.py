@@ -37,7 +37,7 @@ def load_donations(outbox: Path) -> Iterator[dict]:
         return
     for p in sorted(outbox.glob("*.json")):
         try:
-            yield json.loads(p.read_text())
+            yield json.loads(p.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
 
@@ -146,7 +146,7 @@ def main() -> int:
         world = None
 
     count = 0
-    with args.out_file.open("w") as out:
+    with args.out_file.open("w", encoding="utf-8") as out:
         for record in load_donations(args.in_dir):
             events = (
                 fetch_steps_for_goal(world, record.get("goal_id", 0))

@@ -107,7 +107,7 @@ def load_skills(skills_dir: Path = SKILLS_DIR) -> list[Skill]:
     out = []
     for p in skills_dir.glob("*.md"):
         try:
-            out.append(Skill.parse(p.read_text(), p))
+            out.append(Skill.parse(p.read_text(encoding="utf-8"), p))
         except Exception:
             continue
     return out
@@ -306,7 +306,7 @@ def distill(
         m = re.search(r"^name:\s*(\S+)", text, re.MULTILINE)
         name = _safe_name(m.group(1)) if m else "skill"
         path = skills_dir / f"{name}.md"
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8")
         return Skill.parse(text, path)
     except Exception:
         return None

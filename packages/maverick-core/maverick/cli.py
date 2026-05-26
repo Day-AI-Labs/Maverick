@@ -129,7 +129,7 @@ def config(action: str) -> None:
     if not p.exists():
         click.echo(f"No config at {p}. Run:  maverick init", err=True)
         sys.exit(1)
-    click.echo(p.read_text())
+    click.echo(p.read_text(encoding="utf-8"))
 
 
 @main.command()
@@ -789,7 +789,7 @@ def export(ctx, channel: str, user: str, output) -> None:
 
     payload = json.dumps(data, indent=2, default=str)
     if output:
-        Path(output).write_text(payload)
+        Path(output).write_text(payload, encoding="utf-8")
         click.echo(f"exported to {output}")
     else:
         click.echo(payload)

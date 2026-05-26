@@ -81,7 +81,7 @@ class CostTracker:
 
     def write(self) -> None:
         self.results_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.results_path.open("a") as f:
+        with self.results_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(asdict(self.row)) + "\n")
 
 
@@ -125,7 +125,7 @@ def load_results(path: Path) -> list[TaskRow]:
     if not path.exists():
         return []
     out: list[TaskRow] = []
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:

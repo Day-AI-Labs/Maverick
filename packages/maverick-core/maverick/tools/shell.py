@@ -14,17 +14,47 @@ from . import Tool
 # minimum-surprise blocklist — generic `git` (status, diff, apply,
 # add, commit, reset) stays available so the agent can still work.
 _GIT_GOLD_LEAK_PATTERNS = [
-    re.compile(r"\bgit\s+log\b.*?(?:-p|--patch|--all|--reflog)\b"),
-    re.compile(r"\bgit\s+show\b"),
-    re.compile(r"\bgit\s+blame\b"),
-    # `git diff` is fine for HEAD-vs-worktree (the normal case);
-    # block only when it's pointed at another ref.
-    re.compile(r"\bgit\s+diff\s+\S+\.\."),
-    # `git stash list` / `git stash show` could surface a leftover
-    # gold stash from the harness setup.
-    re.compile(r"\bgit\s+stash\s+(?:list|show)\b"),
-    # Reflog can also reveal pre-bug state.
-    re.compile(r"\bgit\s+reflog\b"),
+    # Porcelain commands — most leak vectors. We accept that any of
+    # these tokens after `git` (possibly with global flags like -P,
+    # -C dir, --git-dir=path, -c k=v) defeats the simple `\bgit\s+log\b`
+    # anchor, so we accept ANY non-newline char between `git` and the
+    # subcommand. The `git\b` start anchor still rules out `gitlab` etc.
+    re.compile(r"\bgit\s[^\n;&|]*?\blog\b.*?(?:-p|--patch|--all|--reflog)\b"),
+    re.compile(r"\bgit\s[^\n;&|]*?\bshow\b"),
+    re.compile(r"\bgit\s[^\n;&|]*?\bblame\b"),
+    # `git diff` HEAD-vs-worktree is fine; block ref-vs-ref diffs.
+    re.compile(r"\bgit\s[^\n;&|]*?\bdiff\s+\S+\.\."),
+    re.compile(r"\bgit\s[^\n;&|]*?\bstash\s+(?:list|show)\b"),
+    re.compile(r"\bgit\s[^\n;&|]*?\breflog\b"),
+    # Plumbing — Wave 12 hardening: full coverage including subcommands
+    # that the original list missed (rev-list, show-ref, ls-files,
+    # fsck, update-ref, symbolic-ref).
+    re.compile(r"\bgit\s[^\n;&|]*?\bcat-file\b"),
+    re.compile(r"\bgit\s[^\n;&|]*?\bfor-each-ref\b"),
+    re.compile(r"\bgit\s[^\n;&|]*?\brev-list\b"),
+    re.compile(r"\bgit\s[^\n;&|]*?\bshow-ref\b"),
+    re.compile(r"\bgit\s[^\n;&|]*?\bsymbolic-ref\b"),
+    re.compile(r"\bgit\s[^\n;&|]*?\bls-tree\b"),
+    re.compile(r"\bgit\s[^\n;&|]*?\bls-files\b"),
+    re.compile(r"\bgit\s[^\n;&|]*?\bfsck\b"),
+    re.compile(r"\bgit\s[^\n;&|]*?\bupdate-ref\b"),
+    re.compile(
+        r"\bgit\s[^\n;&|]*?\brev-parse\b.*\b"
+        r"(?:HEAD\^|HEAD~|main|master|origin)"
+    ),
+    # `git --git-dir=PATH` redirects to a foreign .git — block any
+    # use that names a path (Wave 12 hardening from agent 2's #3).
+    re.compile(r"\bgit\s+--git-dir[=\s]+\S+"),
+    # Any *consuming utility* against `.git/<sensitive>` paths.
+    # Wave 12 hardening (agent 2's #2): the prior allowlist (cat/
+    # head/tail/less/more/strings/hexdump/od) missed python/awk/xxd/
+    # grep/sed/cp/mv/tar/rsync. Anchor on the .git/<file> token so
+    # the rule fires regardless of who reads it.
+    re.compile(
+        r"\.git/(?:HEAD|ORIG_HEAD|FETCH_HEAD|MERGE_HEAD|packed-refs"
+        r"|refs(?:/|\b)|objects(?:/|\b)|index\b)",
+    ),
+    re.compile(r"\bfind\s+\.git\b"),
 ]
 
 
@@ -109,6 +139,16 @@ def shell(sandbox) -> Tool:
         cmd = args["cmd"]
         opaque = os.environ.get("MAVERICK_BENCHMARK_OPAQUE", "1") != "0"
         coding = os.environ.get("MAVERICK_CODING_MODE", "").lower() in ("1", "true", "yes")
+        # Wave 12 (council F9c): defensively pop MAVERICK_GOLD_PATCH
+        # (and cache) before ANY subprocess inherits the env. This
+        # guards the window between agent.run() start and the first
+        # defensive_validate() call. Idempotent: a no-op once popped.
+        if opaque:
+            try:
+                from ..coding_mode import get_gold_patch as _gp
+                _gp()
+            except Exception:
+                pass
         if opaque and coding:
             blocked, fragment = _is_blocked_in_opaque(cmd)
             if blocked:

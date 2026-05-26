@@ -27,7 +27,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import Tool
-from .fs import _safe_resolve
+from .fs import (
+    _is_dotgit_path,
+    _is_opaque_blocked_resolved,
+    _safe_resolve,
+)
 
 
 _MAX_VIEW_BYTES = 12000
@@ -79,6 +83,22 @@ def str_replace_editor(sandbox) -> Tool:
             return f"ERROR: {e}"
 
         if cmd == "view":
+            # Wave 12 (council F9b) + hardening pass: str_replace_editor.view
+            # was an opacity bypass — the agent could read test files /
+            # .git via this tool because the gate lived only in
+            # read_file. Mirror read_file's symlink-resolved block here.
+            if _is_opaque_blocked_resolved(sandbox, path_arg):
+                if _is_dotgit_path(path_arg):
+                    return (
+                        f"ERROR: view({path_arg!r}) blocked in benchmark "
+                        "opaque mode (.git internals leak the gold)."
+                    )
+                return (
+                    f"ERROR: view({path_arg!r}) blocked in benchmark "
+                    "opaque mode (test files contain gold expected "
+                    "values). Read the production module under test "
+                    "instead. (Override: MAVERICK_BENCHMARK_OPAQUE=0.)"
+                )
             if not target.exists():
                 return f"ERROR: {target} not found"
             if target.is_dir():

@@ -459,11 +459,43 @@ def render_diff(workdir: Path) -> str:
     Called after `apply_blocks` succeeds to produce the diff payload for
     the benchmark CSV. Models never hand-write `@@ -N,M +N,M @@` hunk
     headers — git computes them from the actual file deltas.
+
+    Wave 12 fix: `git diff HEAD` does NOT include untracked files. SR
+    blocks that create a new file via empty-SEARCH succeed on disk but
+    were silently absent from the rendered patch (~15% of fix instances
+    on SWE-bench Pro need new files). We now `git add --intent-to-add`
+    every untracked path before running diff so new files show up
+    with a proper `--- /dev/null` hunk.
     """
     import subprocess
+    # Wave 12 hardening: use `-z` for NUL-separated `ls-files` output so
+    # filenames containing newlines or special chars aren't split into
+    # bogus entries. `-c core.quotePath=false` keeps non-ASCII paths
+    # unescaped (otherwise `git add` doesn't recognize them). Chunk the
+    # `add` invocation to stay under ARG_MAX on large untracked sets.
+    try:
+        ls = subprocess.run(
+            ["git", "-c", "core.quotePath=false", "-C", str(workdir),
+             "ls-files", "--others", "--exclude-standard", "-z"],
+            capture_output=True, timeout=15,
+        )
+        if ls.returncode == 0 and ls.stdout:
+            raw = ls.stdout.decode("utf-8", errors="replace")
+            paths = [p for p in raw.split("\x00") if p]
+            # Chunk to avoid blowing ARG_MAX (~128KB on Linux). 100 per
+            # add is well within limits even for very long paths.
+            for i in range(0, len(paths), 100):
+                chunk = paths[i:i + 100]
+                subprocess.run(
+                    ["git", "-C", str(workdir), "add", "--intent-to-add",
+                     "--"] + chunk,
+                    capture_output=True, timeout=30,
+                )
+    except (subprocess.SubprocessError, OSError):
+        pass
     try:
         proc = subprocess.run(
-            ["git", "-C", str(workdir), "diff",
+            ["git", "-c", "core.quotePath=false", "-C", str(workdir), "diff",
              "--no-color", "--no-ext-diff", "--unified=3", "HEAD"],
             capture_output=True, timeout=30,
         )

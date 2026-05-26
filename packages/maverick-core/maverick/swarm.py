@@ -13,6 +13,7 @@ Children inherit the parent's context but get their own brief, role, and depth.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -20,6 +21,19 @@ from .blackboard import Blackboard
 from .budget import Budget
 from .llm import LLM
 from .world_model import WorldModel
+
+
+def _default_use_skills() -> bool:
+    """Wave 12: honor MAVERICK_USE_SKILLS env var.
+
+    The runbook tells operators to set MAVERICK_USE_SKILLS=0 for
+    SWE-bench Pro runs (skill memorization is a contamination risk —
+    see reproducibility-audit + Karpathy-review findings). The env
+    var existed and was read by preflight.py but was NEVER wired
+    into the SwarmContext default — skills were silently ON for every
+    run. This restores the runbook's intent.
+    """
+    return os.environ.get("MAVERICK_USE_SKILLS", "1").lower() not in ("0", "false", "no")
 
 
 @dataclass
@@ -31,6 +45,6 @@ class SwarmContext:
     sandbox: Any
     goal_id: int
     max_depth: int = 3
-    use_skills: bool = True
+    use_skills: bool = field(default_factory=_default_use_skills)
     shield: Optional[Any] = None
     mcp_clients: list = field(default_factory=list)
