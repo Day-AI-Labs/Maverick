@@ -25,6 +25,19 @@ _GIT_GOLD_LEAK_PATTERNS = [
     re.compile(r"\bgit\s+stash\s+(?:list|show)\b"),
     # Reflog can also reveal pre-bug state.
     re.compile(r"\bgit\s+reflog\b"),
+    # Wave 12 (council F9d): direct object/ref enumeration. The
+    # harness's setup leaves the gold reachable via these plumbing
+    # commands even when porcelain (log/show/diff) is blocked.
+    re.compile(r"\bgit\s+cat-file\b"),
+    re.compile(r"\bgit\s+for-each-ref\b"),
+    re.compile(r"\bgit\s+rev-parse\b.*\b(?:HEAD\^|HEAD~|main|master|origin)"),
+    re.compile(r"\bgit\s+ls-tree\b"),
+    # `cat .git/refs/...` / `head .git/HEAD` / `find .git` — raw
+    # filesystem access to git internals. The fs.py read_file
+    # blocks .git/ via the tool, but shell.cat is a separate channel.
+    re.compile(r"\b(?:cat|head|tail|less|more|strings|hexdump|od)\b[^|;&]*?\.git/"),
+    re.compile(r"\bfind\s+\.git\b"),
+    re.compile(r"\bls\s+[^|;&]*?\.git/(?:refs|objects|packed-refs|HEAD)\b"),
 ]
 
 
@@ -109,6 +122,16 @@ def shell(sandbox) -> Tool:
         cmd = args["cmd"]
         opaque = os.environ.get("MAVERICK_BENCHMARK_OPAQUE", "1") != "0"
         coding = os.environ.get("MAVERICK_CODING_MODE", "").lower() in ("1", "true", "yes")
+        # Wave 12 (council F9c): defensively pop MAVERICK_GOLD_PATCH
+        # (and cache) before ANY subprocess inherits the env. This
+        # guards the window between agent.run() start and the first
+        # defensive_validate() call. Idempotent: a no-op once popped.
+        if opaque:
+            try:
+                from ..coding_mode import get_gold_patch as _gp
+                _gp()
+            except Exception:
+                pass
         if opaque and coding:
             blocked, fragment = _is_blocked_in_opaque(cmd)
             if blocked:

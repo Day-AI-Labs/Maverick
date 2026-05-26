@@ -274,6 +274,37 @@ def validate_patch(patch: str, workdir: Path) -> PatchValidation:
     )
 
 
+# Wave 12 (council F9f): MAVERICK_GOLD_PATCH is popped from os.environ
+# on first read so the gold answer cannot be exfiltrated via
+# `printenv` / `env` / `cat $MAVERICK_GOLD_PATCH` inside the agent's
+# sandboxed shell. Subsequent reads in the same instance return the
+# cached value. The harness re-sets the env var per instance.
+_GOLD_PATCH_CACHE: str = ""
+
+
+def get_gold_patch() -> str:
+    """Pop+cache MAVERICK_GOLD_PATCH on first call (per-instance).
+
+    Returns the cached value on subsequent calls. The benchmark harness
+    sets the env var freshly for each instance; the FIRST read in that
+    instance pops it from the environment so the agent's shell cannot
+    see it. Defensive validator and any other code that needs the gold
+    must go through this accessor, NOT os.environ directly.
+    """
+    global _GOLD_PATCH_CACHE
+    import os
+    new = os.environ.pop("MAVERICK_GOLD_PATCH", None)
+    if new is not None:
+        _GOLD_PATCH_CACHE = new
+    return _GOLD_PATCH_CACHE
+
+
+def reset_gold_patch_cache() -> None:
+    """Test/harness helper: clear the cache between instances."""
+    global _GOLD_PATCH_CACHE
+    _GOLD_PATCH_CACHE = ""
+
+
 # ---- Wave 11: defensive patch validation (grader brittleness rules)
 
 

@@ -475,14 +475,15 @@ class Agent:
                         # so we ask for revision instead of submitting
                         # something the grader will silently zero out.
                         try:
-                            from .coding_mode import defensive_validate
+                            from .coding_mode import (
+                                defensive_validate,
+                                get_gold_patch,
+                            )
                             def_check = defensive_validate(
                                 patch,
                                 fail_to_pass=coding_cfg.fail_to_pass,
                                 pass_to_pass=coding_cfg.pass_to_pass,
-                                gold_patch=os.environ.get(
-                                    "MAVERICK_GOLD_PATCH", "",
-                                ),
+                                gold_patch=get_gold_patch(),
                                 opaque=(os.environ.get(
                                     "MAVERICK_BENCHMARK_OPAQUE", "1",
                                 ) != "0"),

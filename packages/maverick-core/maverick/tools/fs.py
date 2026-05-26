@@ -65,18 +65,48 @@ def _is_test_path(rel_path: str) -> bool:
     return in_test_dir and test_file
 
 
+def _is_dotgit_path(rel_path: str) -> bool:
+    """Wave 12 (council F9d): block reads under `.git/`.
+
+    The .git directory leaks the gold answer via refs/objects:
+      - `.git/refs/heads/main` → gold commit SHA
+      - `.git/objects/<sha>` → raw object contents (the patch)
+      - `.git/HEAD`, `.git/packed-refs` → ref enumeration
+    The shell tool already blocks `git log -p` / `git show` / `git
+    cat-file`; this closes the corresponding file-read backdoor.
+    """
+    p = rel_path.replace("\\", "/")
+    parts = [x for x in p.split("/") if x]
+    return any(seg == ".git" for seg in parts)
+
+
+def _is_opaque_blocked(rel_path: str) -> bool:
+    """Return True if `rel_path` should be blocked under opaque benchmark
+    mode. Combines the test-path and .git-path checks."""
+    import os as _os
+    opaque = _os.environ.get("MAVERICK_BENCHMARK_OPAQUE", "1") != "0"
+    coding = _os.environ.get(
+        "MAVERICK_CODING_MODE", ""
+    ).lower() in ("1", "true", "yes")
+    if not (opaque and coding):
+        return False
+    return _is_test_path(rel_path) or _is_dotgit_path(rel_path)
+
+
 def read_file(sandbox) -> Tool:
     def fn(args: dict) -> str:
-        import os as _os
         path_arg = args["path"]
-        # Wave 10 (S1): in benchmark opaque mode, block reads of test
-        # files. Fail-open elsewhere — we don't want to break the
-        # consumer-facing agent. The check uses both env vars so a
-        # harness misconfiguration (CODING_MODE without OPAQUE) is
-        # still gated by the explicit opaque flag.
-        opaque = _os.environ.get("MAVERICK_BENCHMARK_OPAQUE", "1") != "0"
-        coding = _os.environ.get("MAVERICK_CODING_MODE", "").lower() in ("1", "true", "yes")
-        if opaque and coding and _is_test_path(path_arg):
+        # Wave 10 (S1) + Wave 12 (F9d): block test-file AND .git/ reads
+        # in opaque benchmark mode. Fail-open in normal/consumer mode.
+        if _is_opaque_blocked(path_arg):
+            if _is_dotgit_path(path_arg):
+                return (
+                    f"ERROR: read_file({path_arg!r}) blocked in benchmark "
+                    "opaque mode. The .git directory leaks the gold "
+                    "answer via refs/objects; derive your fix from the "
+                    "code under test, not from git's internal storage. "
+                    "(Override by setting MAVERICK_BENCHMARK_OPAQUE=0.)"
+                )
             return (
                 f"ERROR: read_file({path_arg!r}) blocked in benchmark "
                 "opaque mode. The test files contain the grader's "
