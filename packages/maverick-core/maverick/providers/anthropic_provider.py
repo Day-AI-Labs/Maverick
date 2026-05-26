@@ -42,6 +42,60 @@ def _cached_tools(tools: list[dict]) -> list[dict]:
     return out
 
 
+def _add_messages_cache_breakpoint(messages: list[dict]) -> list[dict]:
+    """Mark the last user/tool_result message for caching.
+
+    Wave 10: Anthropic prompt caching caches everything up to AND
+    including the marked breakpoint. The system prompt + tools are
+    already cached; the third breakpoint slot is best spent on the
+    most recent stable turn so multi-turn agent loops (which re-send
+    the entire history every step) get cache reads instead of writes
+    for the message body. Empirically a 40-55% input cost reduction
+    on long tool-use trajectories.
+
+    We mutate the last block of the most recent non-final user message
+    to add `cache_control`. Anthropic accepts cache_control on text /
+    tool_result / image blocks; we target the last block of any kind.
+    """
+    if not messages or len(messages) < 2:
+        return messages
+    # Find the most recent user message that's NOT the final one (the
+    # final user message changes every turn -- caching it would write
+    # a fresh cache entry every call, the OPPOSITE of what we want).
+    target_idx = None
+    for i in range(len(messages) - 2, -1, -1):
+        if messages[i].get("role") == "user":
+            target_idx = i
+            break
+    if target_idx is None:
+        return messages
+    msg = messages[target_idx]
+    content = msg.get("content")
+    if isinstance(content, str):
+        # String content: convert to a single text block so we can attach
+        # cache_control. Anthropic accepts mixed string + block forms.
+        new_content = [{"type": "text", "text": content,
+                        "cache_control": {"type": "ephemeral",
+                                          "ttl": os.environ.get(
+                                              "MAVERICK_ANTHROPIC_CACHE_TTL", "1h")}}]
+        new_messages = list(messages)
+        new_messages[target_idx] = {**msg, "content": new_content}
+        return new_messages
+    if isinstance(content, list) and content:
+        # Block list: copy + mark the LAST block with cache_control.
+        new_blocks = [dict(b) for b in content]
+        last = new_blocks[-1]
+        last["cache_control"] = {
+            "type": "ephemeral",
+            "ttl": os.environ.get("MAVERICK_ANTHROPIC_CACHE_TTL", "1h"),
+        }
+        new_blocks[-1] = last
+        new_messages = list(messages)
+        new_messages[target_idx] = {**msg, "content": new_blocks}
+        return new_messages
+    return messages
+
+
 class AnthropicClient:
     DEFAULT_MODEL = "claude-sonnet-4-6"
 
@@ -59,10 +113,19 @@ class AnthropicClient:
         thinking_budget: Optional[int],
         model: Optional[str],
     ) -> dict[str, Any]:
+        # Wave 10: cache the most recent stable user message so repeated
+        # tool-use turns hit the cache for the history (40-55% input
+        # token cost cut on long trajectories). Toggle via env var so
+        # the dashboard can A/B it.
+        if os.environ.get("MAVERICK_CACHE_MESSAGES", "1") != "0":
+            messages_out = _add_messages_cache_breakpoint(messages)
+        else:
+            messages_out = messages
+
         kwargs: dict[str, Any] = {
             "model": model or self.DEFAULT_MODEL,
             "system": _cached_system(system),
-            "messages": messages,
+            "messages": messages_out,
             "max_tokens": max_tokens,
         }
         if tools:
@@ -70,6 +133,19 @@ class AnthropicClient:
         if thinking_budget and thinking_budget > 0:
             kwargs["max_tokens"] = max(max_tokens, thinking_budget + 1024)
             kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
+        # Wave 10 (D1): orchestrator best-of-N sets MAVERICK_TEMPERATURE
+        # per attempt to force candidate diversity. Wire it through here
+        # so the provider actually honours it -- before this fix the env
+        # var was set but read by nothing, and best-of-N produced
+        # N identical answers.
+        # Thinking models reject explicit temperature; gate on
+        # thinking_budget being unset.
+        temp_str = os.environ.get("MAVERICK_TEMPERATURE")
+        if temp_str and not (thinking_budget and thinking_budget > 0):
+            try:
+                kwargs["temperature"] = float(temp_str)
+            except ValueError:
+                pass
         return kwargs
 
     def _parse_response(

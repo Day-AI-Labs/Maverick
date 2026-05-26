@@ -275,12 +275,14 @@ async def run_goal_best_of_n(
             conversation_id=conversation_id,
         )
 
-    # Wave 9 fix (council B6): per-attempt budget is generous-floor
-    # (max(total/n, 1200s)) so pip install / Docker setup doesn't
-    # starve the LLM phase. Total spend is bounded by parent budget's
-    # max_dollars via early-break on parent.dollars >= cap.
-    per_attempt_dollars = max(budget.max_dollars / n, 1.50)
-    per_attempt_wall = max(budget.max_wall_seconds / n, 1200.0)
+    # Wave 10 (D9): per-attempt budget MUST stay below parent cap so
+    # one expensive attempt cannot blow the harness-set dollar/wall
+    # limits. The prior floors (1.50 / 1200s) made per-attempt > parent
+    # for the typical harness Budget(max_dollars=3.0, max_wall_seconds=600).
+    # We split the parent cap evenly across N, with a sensible floor only
+    # for one-shot best-of-N=1 (which short-circuits to run_goal above).
+    per_attempt_dollars = budget.max_dollars / n
+    per_attempt_wall = budget.max_wall_seconds / n
     candidates: list[Candidate] = []
 
     for i in range(n):

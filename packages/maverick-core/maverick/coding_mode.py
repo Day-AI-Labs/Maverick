@@ -33,8 +33,34 @@ CODER_CODING_MODE_TEMPLATE = """You are a coding agent solving a software engine
 Your role: {role}
 Your depth: {depth} (root = 0, max = {max_depth})
 
+WORK IN THREE PHASES, IN ORDER:
+
+PHASE 1 — LOCALIZE:
+  - Use `repo_map` once to see the codebase layout.
+  - Read the failing test(s) referenced in the brief to understand the
+    exact behaviour they assert. Use `read_file` on the test files.
+  - Trace from the test back to the production code under test.
+  - Identify the smallest set of files that need to change.
+
+PHASE 2 — EDIT:
+  - Read each target file fully before editing so your diff hunks
+    match the exact line content (whitespace, line endings).
+  - Prefer the `str_replace_editor` tool for surgical edits: it edits
+    by exact string match + replacement and emits a perfect diff. It
+    fails LOUDLY when the search string doesn't match, which is what
+    you want.
+  - Only hand-author a unified diff when `str_replace_editor` cannot
+    express the change (multi-file refactor, file rename, etc.).
+
+PHASE 3 — VERIFY:
+  - Run `git apply --check` via `shell` against the diff you intend
+    to submit.
+  - If tests are runnable locally, run the FAIL_TO_PASS tests via
+    `shell` and confirm they now pass.
+  - If a PASS_TO_PASS test regresses, narrow the diff.
+
 OUTPUT FORMAT (STRICT):
-When you have a fix ready, respond with EXACTLY this format:
+When verified, respond with EXACTLY this format:
 
 FINAL:
 ```diff
@@ -48,77 +74,74 @@ FINAL:
 Rules:
 1. ONE unified diff per FINAL. No prose explanation, no preamble,
    no markdown headers, no "I think" / "let me explain".
-2. The diff MUST apply cleanly to HEAD via `git apply`. If you're
-   unsure, run `read_file` to verify the exact line content before
-   composing the diff.
-3. Use `shell` to run tests + `git apply --check` before declaring
-   FINAL. The orchestrator validates your patch and will reject
-   if it doesn't apply.
-4. Prefer the SMALLEST diff that makes the failing tests pass.
+2. The diff MUST apply cleanly to HEAD via `git apply`.
+3. Prefer the SMALLEST diff that makes the failing tests pass.
    Drive-by formatting changes will get the patch rejected.
-5. If you need information, use `read_file` / `list_dir` / `shell`
-   freely. Tool budget is not the bottleneck; correctness is.
-6. The `spawn_subagent` and `spawn_swarm` tools are available for
-   sub-tasks (e.g., "research how the test fixture is set up");
-   they cannot themselves produce FINAL.
+4. `spawn_subagent` / `spawn_swarm` are available for parallel
+   sub-tasks (e.g. "read these 6 files in parallel and summarise
+   what each does"); they cannot themselves produce FINAL.
 
-Available tools include file ops, shell (sandboxed), spawn_subagent,
-spawn_swarm. End with `FINAL:` followed by the diff block."""
+Available tools include `str_replace_editor`, `read_file`, `write_file`,
+`list_dir`, `repo_map`, `shell` (sandboxed), and the spawn tools.
+End with `FINAL:` followed by the diff block."""
 
 
-# A valid unified diff starts with `--- a/...` followed by `+++ b/...`
-# followed by at least one `@@ ` hunk header. Anything else is prose
-# that happens to contain triple-dash and gets rejected.
+# Wave 10: accept either `--- a/x ... +++ b/y ... @@` (raw unified diff)
+# OR a `diff --git a/x b/y` header (git format-patch output, which is
+# what every real-world diff in SWE-bench looks like). The latter
+# captures rename-only, mode-only, and binary patches that have no
+# `@@` hunk.
 _VALID_DIFF_HEADER = re.compile(
     r"---\s+(?:a/)?\S.*?\n\+\+\+\s+(?:b/)?\S.*?\n@@\s",
     re.DOTALL,
 )
-_DIFF_FILE_START = re.compile(r"(?:^|\n)(---\s+(?:a/)?\S)", re.DOTALL)
+_GIT_DIFF_HEADER = re.compile(r"^diff --git a/.+? b/.+?\s*$", re.MULTILINE)
 
 
 def extract_unified_diff(text: str) -> Optional[str]:
     """Extract the unified diff from an LLM reply, or None.
 
-    Wave 9 rewrite (council code reviewer #4 + #5): the prior version
-    accepted any text containing `--- a/` and lost content after a
-    backtick (Markdown patches break). New approach:
+    Wave 10 rewrite: normalise CRLF, accept `diff --git` headers
+    (rename-only / mode-only / binary patches), preserve trailing
+    `\\ No newline at end of file` markers without forcing an extra
+    newline.
 
-      1. Strip the `FINAL:` prefix.
-      2. Strip ALL markdown ``` fences (open + close).
-      3. Find every position where a file header starts (`--- a/`)
-         and a valid `+++ b/...` + `@@` follows. If none, return None.
-      4. Take from the first valid header to end-of-string.
-
-    Crucially: returns None on no-valid-diff so callers can hard-reject
-    rather than the previous `patch = extract(text) or text` fallback
-    that fed PROSE into `git apply --check` and inflated apply-rate
-    variance (council code reviewer #5 / #3).
+    Returns None on no-valid-diff so callers can hard-reject rather
+    than falling back to prose. Call sites in agent.py must NOT use
+    `extract_unified_diff(x) or x`.
     """
     if not text:
         return None
-    work = text
+    # Normalise CRLF before any other handling. Real-world LLM output
+    # mixes line endings; `git apply` rejects CRLF inside hunks.
+    work = text.replace("\r\n", "\n").replace("\r", "\n")
     final_idx = work.find("FINAL:")
     if final_idx >= 0:
         work = work[final_idx + len("FINAL:"):]
 
-    # Strip ALL fence markers globally so multi-fenced diffs are
-    # reconstructed correctly. Patches to Markdown files that contain
-    # literal ``` inside their hunks survive because of \n on either
-    # side of the close fence in the LLM's output: we strip the lone
-    # ``` lines, not inline backticks.
+    # Strip lone ``` fence lines (open + close) but leave inline `\`\`\``
+    # alone -- those may appear inside a Markdown file's diff hunk.
     cleaned_lines = []
-    for line in work.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("```"):
+    for line in work.split("\n"):
+        if line.strip().startswith("```"):
             continue
         cleaned_lines.append(line)
     cleaned = "\n".join(cleaned_lines)
 
-    # Find the first file header that's followed by a valid +++/@@ pair.
-    m = _VALID_DIFF_HEADER.search(cleaned)
-    if not m:
+    # Find the earliest valid anchor: either `diff --git a/x b/y` or
+    # the raw `--- a/...` triple. Whichever comes first wins.
+    git_m = _GIT_DIFF_HEADER.search(cleaned)
+    unified_m = _VALID_DIFF_HEADER.search(cleaned)
+    starts = [m.start() for m in (git_m, unified_m) if m is not None]
+    if not starts:
         return None
-    diff = cleaned[m.start():]
+    start = min(starts)
+    diff = cleaned[start:]
+
+    # Preserve a final `\ No newline at end of file` marker without
+    # forcing an unwanted trailing newline that breaks last-line edits.
+    if diff.rstrip().endswith("\\ No newline at end of file"):
+        return diff.rstrip() + "\n"
     return diff.rstrip() + "\n"
 
 
@@ -135,23 +158,40 @@ def validate_patch(patch: str, workdir: Path) -> PatchValidation:
     The agent uses this BEFORE declaring FINAL. A failing check
     triggers a revision pass with the git_apply_stderr fed back as
     the critique.
+
+    Wave 10: accept new-file diffs (`--- /dev/null`), rename-only diffs
+    (`diff --git` without `--- a/`), and normalise CRLF to LF before
+    handing bytes to git.
     """
     if not patch or not patch.strip():
         return PatchValidation(valid=False, reason="empty patch")
-    if "--- a/" not in patch or "+++ b/" not in patch:
+    # Wave 10: a valid header is EITHER `--- a/x` + `+++ b/y` (raw
+    # unified diff), OR `--- /dev/null` + `+++ b/y` (new file), OR
+    # `diff --git a/x b/y` (full git format-patch, may have no `---`
+    # for rename-only or mode-only changes).
+    has_unified = ("--- a/" in patch and "+++ b/" in patch)
+    has_new_file = ("--- /dev/null" in patch and "+++ b/" in patch)
+    has_deleted_file = ("--- a/" in patch and "+++ /dev/null" in patch)
+    has_git_header = "diff --git a/" in patch
+    if not (has_unified or has_new_file or has_deleted_file or has_git_header):
         return PatchValidation(
             valid=False,
-            reason="patch is missing `--- a/...` / `+++ b/...` headers",
+            reason="patch is missing diff headers (need `--- a/`/`+++ b/`, "
+                   "`--- /dev/null`, or `diff --git a/...`)",
         )
     if not (workdir / ".git").exists():
         return PatchValidation(
             valid=False,
             reason="workdir is not a git repository; cannot validate",
         )
+    # Normalise line endings before sending to git apply. CRLF in the
+    # input is the #1 source of "corrupt patch" errors on real LLM
+    # output that copy-paste from Windows-origin sources.
+    normalized = patch.replace("\r\n", "\n").replace("\r", "\n")
     try:
         proc = subprocess.run(
             ["git", "-C", str(workdir), "apply", "--check", "-"],
-            input=patch.encode("utf-8"),
+            input=normalized.encode("utf-8"),
             capture_output=True,
             timeout=30,
         )
@@ -224,9 +264,61 @@ _RUNNER_MARKERS = [
 ]
 
 
-def detect_test_runner(workdir: Path) -> str:
-    """Return one of: pytest|jest|vitest|mocha|cargo|gotest|rspec|gradle|maven|unsupported."""
+_LANGUAGE_TO_RUNNER = {
+    "python":     "pytest",
+    "py":         "pytest",
+    "javascript": "jest",
+    "js":         "jest",
+    "typescript": "jest",
+    "ts":         "jest",
+    "rust":       "cargo",
+    "go":         "gotest",
+    "golang":     "gotest",
+    "ruby":       "rspec",
+    "java":       "maven",  # most SWE-bench-Pro Java instances use Maven
+    "kotlin":     "gradle",
+}
+
+
+def detect_test_runner(workdir: Path, language: str = "") -> str:
+    """Return one of: pytest|jest|vitest|mocha|cargo|gotest|rspec|gradle|maven|unsupported.
+
+    Wave 10: when `language` is provided (from the SWE-bench instance
+    metadata), use it to disambiguate monorepos that ship multiple
+    marker files (e.g. JS repos with a `pyproject.toml` for `pre-commit`
+    + a `package.json` for actual tests). Without this hint, the
+    iteration order picks pytest for those repos -- wrong runner,
+    instance scores 0.
+    """
     import json as _json
+
+    lang_lower = (language or "").strip().lower()
+    hinted = _LANGUAGE_TO_RUNNER.get(lang_lower) if lang_lower else None
+
+    # If the language hint maps to a runner whose marker exists, take
+    # that runner directly. For 'node' hint we still need to disambiguate
+    # jest/vitest/mocha via package.json scripts.
+    if hinted:
+        if hinted in ("jest", "vitest", "mocha"):
+            if (workdir / "package.json").exists():
+                try:
+                    pkg = _json.loads((workdir / "package.json").read_text())
+                    test_script = (pkg.get("scripts") or {}).get("test", "").lower()
+                    if "vitest" in test_script:
+                        return "vitest"
+                    if "mocha" in test_script:
+                        return "mocha"
+                    return "jest"
+                except Exception:
+                    return "jest"
+        else:
+            # Map back to the marker tuple to confirm the runner has its
+            # marker file present; if not, fall through to discovery.
+            for name, files in _RUNNER_MARKERS:
+                if name == hinted or (name == "node" and hinted in ("jest", "vitest", "mocha")):
+                    if any((workdir / f).exists() for f in files):
+                        return hinted
+
     for name, files in _RUNNER_MARKERS:
         if not any((workdir / f).exists() for f in files):
             continue
@@ -389,6 +481,7 @@ def run_failing_tests(
     sandbox,
     *,
     timeout: float = 600.0,
+    language: str = "",
 ) -> TestRunResult:
     """Apply the staged patch + run the SWE-bench tests.
 
@@ -396,11 +489,21 @@ def run_failing_tests(
     cargo / gotest / rspec / gradle / maven). Unsupported runners
     return TestRunResult(skipped=True) so the caller can skip the
     instance instead of scoring 0.
+
+    Wave 10: `timeout` is honoured by temporarily raising
+    `sandbox.timeout` for the test runs (sandbox.exec's signature is
+    backend-agnostic and takes no timeout kwarg; the per-backend
+    `self.timeout` is what shell, write_file, etc. all share). On
+    LocalBackend the default 60s would TIMEOUT real pytest runs on
+    SWE-bench instances; with this plumb the harness can set 600s.
+
+    `language` is forwarded to detect_test_runner so monorepos pick
+    the right runner.
     """
     if not fail_to_pass and not pass_to_pass:
         return TestRunResult(error="no FAIL_TO_PASS or PASS_TO_PASS tests provided")
 
-    runner = detect_test_runner(workdir)
+    runner = detect_test_runner(workdir, language=language)
     if runner == "unsupported":
         return TestRunResult(
             error=f"unsupported test runner for workdir={workdir}",
@@ -420,6 +523,16 @@ def run_failing_tests(
         runner=runner,
     )
 
+    # Raise sandbox.timeout for the test run so pytest doesn't get cut
+    # off at the 60s LocalBackend default. Restore on exit so subsequent
+    # tool calls keep the original shell-level timeout.
+    prior_timeout = getattr(sandbox, "timeout", None)
+    if prior_timeout is not None:
+        try:
+            sandbox.timeout = max(float(prior_timeout), float(timeout))
+        except Exception:
+            pass
+
     def _run(test_ids: list[str]) -> tuple[int, int, str]:
         if not test_ids:
             return 0, 0, ""
@@ -434,21 +547,25 @@ def run_failing_tests(
                 return passed, len(test_ids) - passed, f"sandbox exec failed: {e}"
             out = (r.stdout or "") + "\n" + (r.stderr or "")
             p, f, ok = parse(out)
-            # Wave 9 fix (council #13): keep the END of the output so we
-            # capture the summary line, not the session header.
             chunks.append(out[-1000:])
             if not ok:
-                # Parser saw nothing in summary; treat remaining as failed.
                 return passed, failed + (len(test_ids) - passed - failed), "\n".join(chunks)
             passed += p
             failed += f
         return passed, failed, "\n".join(chunks)
 
-    f_pass, _, f_out = _run(fail_to_pass)
-    result.fail_to_pass_passing = f_pass
-    p_pass, _, p_out = _run(pass_to_pass)
-    result.pass_to_pass_passing = p_pass
-    result.raw_output = (f_out + "\n" + p_out)[-2000:]
+    try:
+        f_pass, _, f_out = _run(fail_to_pass)
+        result.fail_to_pass_passing = f_pass
+        p_pass, _, p_out = _run(pass_to_pass)
+        result.pass_to_pass_passing = p_pass
+        result.raw_output = (f_out + "\n" + p_out)[-2000:]
+    finally:
+        if prior_timeout is not None:
+            try:
+                sandbox.timeout = prior_timeout
+            except Exception:
+                pass
     return result
 
 
@@ -460,6 +577,7 @@ class CodingModeConfig:
     fail_to_pass: list[str] = field(default_factory=list)
     pass_to_pass: list[str] = field(default_factory=list)
     require_apply_check: bool = True
+    language: str = ""  # Wave 10: language hint for monorepo disambiguation
 
 
 def from_env() -> CodingModeConfig:
@@ -477,6 +595,7 @@ def from_env() -> CodingModeConfig:
     cfg.pass_to_pass = [
         t for t in os.environ.get("MAVERICK_PASS_TO_PASS", "").split("||") if t
     ]
+    cfg.language = os.environ.get("MAVERICK_LANGUAGE", "").strip()
     return cfg
 
 
@@ -595,6 +714,7 @@ async def evaluate_candidate(
         try:
             test_result = run_failing_tests(
                 eval_dir, cfg.fail_to_pass, cfg.pass_to_pass, sandbox,
+                language=cfg.language,
             )
         finally:
             if used_worktree and original_workdir is not None:

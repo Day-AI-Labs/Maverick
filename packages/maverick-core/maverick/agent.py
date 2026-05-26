@@ -318,7 +318,30 @@ class Agent:
                             and not getattr(self, "_patch_validated", False)):
                         from pathlib import Path as _Path
                         workdir = _Path(getattr(self.ctx.sandbox, "workdir", "."))
-                        patch = extract_unified_diff(final) or final
+                        # Wave 10 (D3): extract_unified_diff returns None
+                        # on no-valid-diff; treat that as a validation
+                        # failure instead of falling back to prose +
+                        # feeding it to git apply.
+                        patch = extract_unified_diff(final)
+                        if patch is None:
+                            self._patch_validated = True
+                            bb.post(
+                                self.name, "verify",
+                                "no valid unified diff in FINAL; asking for revision",
+                            )
+                            messages.append({
+                                "role": "user",
+                                "content": (
+                                    "Your FINAL did not contain a valid unified "
+                                    "diff. Required format:\n\n"
+                                    "FINAL:\n```diff\n--- a/path/file.py\n"
+                                    "+++ b/path/file.py\n@@ -N,M +N,M @@\n"
+                                    "-old\n+new\n```\n\n"
+                                    "Respond with a new FINAL: containing only "
+                                    "the unified diff."
+                                ),
+                            })
+                            continue
                         validation = validate_patch(patch, workdir)
                         if not validation.valid:
                             self._patch_validated = True  # one retry max
@@ -366,8 +389,35 @@ class Agent:
                             from .coding_mode import run_failing_tests
                             import subprocess as _subprocess
                             workdir = _Path(getattr(self.ctx.sandbox, "workdir", "."))
-                            # Apply the patch first so tests run against it.
-                            patch = extract_unified_diff(final) or final
+                            # Wave 10 (D3): extract_unified_diff returns None
+                            # on no-valid-diff. Don't feed prose to git apply.
+                            patch = extract_unified_diff(final)
+                            if patch is None:
+                                if not getattr(self, "_patch_validated", False):
+                                    self._patch_validated = True
+                                    bb.post(
+                                        self.name, "verify",
+                                        "no valid diff in FINAL; asking for revision",
+                                    )
+                                    messages.append({
+                                        "role": "user",
+                                        "content": (
+                                            "Your FINAL did not contain a valid "
+                                            "unified diff. Respond with a new "
+                                            "FINAL: containing ONLY the diff in "
+                                            "this exact format:\n\n"
+                                            "FINAL:\n```diff\n--- a/path/file.py\n"
+                                            "+++ b/path/file.py\n@@ ... @@\n"
+                                            "-old\n+new\n```"
+                                        ),
+                                    })
+                                    continue
+                                # Already revised once; surface and exit.
+                                return AgentResult(
+                                    final=final, role=self.role, name=self.name,
+                                    verifier_confidence=0.0,
+                                    verifier_critique="no valid diff in FINAL",
+                                )
 
                             apply_ok = False
                             try:
@@ -380,39 +430,47 @@ class Agent:
                             except Exception:
                                 apply_ok = False
 
-                            try:
-                                test_result = run_failing_tests(
-                                    workdir,
-                                    coding_cfg.fail_to_pass,
-                                    coding_cfg.pass_to_pass,
-                                    self.ctx.sandbox,
-                                )
-                            finally:
-                                # Wave 9 fix (B3): ALWAYS revert the workdir
-                                # so the next attempt reads HEAD, not the
-                                # post-patch tree. Without this, successive
-                                # revisions see corrupted state and
-                                # compound the error.
+                            # Wave 10 (D10): only run tests when apply
+                            # succeeded. Running tests on HEAD when apply
+                            # failed wastes a full test run (minutes on
+                            # SWE-bench), reports all FAIL_TO_PASS as
+                            # failing for the wrong reason, then misleads
+                            # the revision pass.
+                            if not apply_ok:
+                                test_result = None  # type: ignore[assignment]
+                            else:
                                 try:
-                                    _subprocess.run(
-                                        ["git", "-C", str(workdir),
-                                         "reset", "--hard", "HEAD"],
-                                        capture_output=True, timeout=20,
+                                    test_result = run_failing_tests(
+                                        workdir,
+                                        coding_cfg.fail_to_pass,
+                                        coding_cfg.pass_to_pass,
+                                        self.ctx.sandbox,
+                                        language=coding_cfg.language,
                                     )
-                                    _subprocess.run(
-                                        ["git", "-C", str(workdir), "clean", "-fd"],
-                                        capture_output=True, timeout=20,
-                                    )
-                                except Exception:
-                                    pass
+                                finally:
+                                    # Always revert the workdir so the next
+                                    # attempt reads HEAD, not the post-patch
+                                    # tree. Without this, successive
+                                    # revisions see corrupted state and
+                                    # compound the error.
+                                    try:
+                                        _subprocess.run(
+                                            ["git", "-C", str(workdir),
+                                             "reset", "--hard", "HEAD"],
+                                            capture_output=True, timeout=20,
+                                        )
+                                        _subprocess.run(
+                                            ["git", "-C", str(workdir), "clean", "-fd"],
+                                            capture_output=True, timeout=20,
+                                        )
+                                    except Exception:
+                                        pass
 
                             if not apply_ok:
-                                # Apply failed -> tests ran on unpatched
-                                # code -> all FAIL_TO_PASS still fail.
-                                # Council finding #9: distinguish this
-                                # from "patch was wrong" so the agent
-                                # doesn't 'fix' a working patch into a
-                                # broken one.
+                                # Wave 10 (D10): tests were skipped because
+                                # the patch wouldn't apply. Tell the agent
+                                # so it doesn't 'fix' a working patch into
+                                # a broken one based on apply-fail noise.
                                 if not getattr(self, "_patch_validated", False):
                                     self._patch_validated = True
                                     bb.post(

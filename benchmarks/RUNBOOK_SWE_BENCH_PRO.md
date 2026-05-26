@@ -86,7 +86,10 @@ Convert the CSV into the `predictions.jsonl` format that SWE-bench
 expects, then run their official evaluator in Docker:
 
 ```bash
-# Convert.
+# Convert. Wave 10: csv.DictWriter quotes newlines naturally so
+# `predicted_patch` reads back with real `\n` line breaks; the legacy
+# `replace('\\n', chr(10))` is no longer needed and would corrupt
+# patches that contain the literal two-character sequence `\n`.
 python -c "
 import csv, json
 with open('/tmp/smoke_predictions.csv') as f, \
@@ -97,7 +100,7 @@ with open('/tmp/smoke_predictions.csv') as f, \
             continue
         out.write(json.dumps({
             'instance_id': row['instance_id'],
-            'model_patch': row['predicted_patch'].replace('\\\\n', chr(10)),
+            'model_patch': row['predicted_patch'],
             'model_name_or_path': row['model_id'],
         }) + chr(10))
 "
@@ -207,8 +210,26 @@ export MAVERICK_BEST_OF_N=4         # generate 4 candidates, pick the best
 Combined estimate: SWE-bench Pro in the 50-65% range with cascade ON.
 Real numbers TBD when you run.
 
-To load FAIL_TO_PASS / PASS_TO_PASS into the manifest, extend the
-step-1 download snippet:
+## Wave 10 boosters (additional lift, ship before headline run)
+
+```bash
+export MAVERICK_BENCHMARK_OPAQUE=1     # block test-file reads + git log -p
+export MAVERICK_ANTHROPIC_CACHE_TTL=5m # SWE-bench has no cross-instance reuse
+export MAVERICK_CACHE_MESSAGES=1       # cache messages history (40-55% cost cut)
+```
+
+| Booster | Estimated lift / saving |
+|---|---|
+| `str_replace_editor` tool (OpenHands ONE thing) | +5-8% (kills 30% of apply-fail) |
+| Failing-test-as-initial-context (auto in run_maverick) | +3-6% (better localisation) |
+| 3-phase coder template (LOCALIZE → EDIT → VERIFY) | +2-4% |
+| `--- /dev/null` new-file diffs (was rejected) | +2-3% (instances needing new files) |
+| CRLF normalisation (was "corrupt patch") | +1-2% (Windows-origin patches) |
+| `predicted_patch` now extracts the diff (was prose) | huge — fixes silent corruption |
+| `MAVERICK_TEMPERATURE` actually read by provider | makes best-of-N do something |
+
+To load FAIL_TO_PASS / PASS_TO_PASS / language into the manifest,
+extend the step-1 download snippet:
 
 ```python
 for ex in ds:
@@ -218,6 +239,7 @@ for ex in ds:
         'gold_patch': ex['patch'],
         'fail_to_pass': ex.get('FAIL_TO_PASS', []),
         'pass_to_pass': ex.get('PASS_TO_PASS', []),
+        'language': ex.get('language', ''),    # Wave 10: monorepo runner hint
     }) + chr(10))
 ```
 

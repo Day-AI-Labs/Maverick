@@ -27,7 +27,12 @@ class LocalBackend:
         self.workdir = workdir or Path.cwd()
         self.timeout = timeout
 
-    def exec(self, cmd: str) -> ExecResult:
+    def exec(self, cmd: str, timeout: Optional[float] = None) -> ExecResult:
+        # Wave 10: per-call `timeout` kwarg lets the test runner override
+        # the default 60s (too short for real pytest on SWE-bench
+        # instances). Falls back to self.timeout when unset, preserving
+        # behaviour for shell-tool callers that pass no timeout.
+        effective = self.timeout if timeout is None else timeout
         try:
             result = subprocess.run(
                 cmd,
@@ -35,7 +40,7 @@ class LocalBackend:
                 cwd=str(self.workdir),
                 capture_output=True,
                 text=True,
-                timeout=self.timeout,
+                timeout=effective,
             )
             return ExecResult(
                 stdout=result.stdout[-8000:],
@@ -45,6 +50,6 @@ class LocalBackend:
         except subprocess.TimeoutExpired as e:
             return ExecResult(
                 stdout=(e.stdout or b"").decode("utf-8", errors="replace")[-8000:],
-                stderr=f"TIMEOUT after {self.timeout}s",
+                stderr=f"TIMEOUT after {effective}s",
                 exit_code=124,
             )
