@@ -834,5 +834,55 @@ def donate_clear(yes: bool) -> None:
     click.echo(f"cleared {n} record(s)")
 
 
+@main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--run", is_flag=True, help="Spawn a goal per match (default: print only).")
+@click.option("--max-dollars", default=2.0, type=float)
+@click.pass_context
+def watch(ctx, path: str, run: bool, max_dollars: float) -> None:
+    """Scan a file or directory for `# AI: <task>` markers and (optionally)
+    run each as a goal. One-shot scan; for a long-running watcher use
+    `entr` / `watchman` / `fswatch` and pipe to this command."""
+    from .watch_mode import scan_dir, scan_file
+    p = Path(path)
+    matches = scan_file(p) if p.is_file() else scan_dir(p)
+
+    count = 0
+    for m in matches:
+        count += 1
+        click.echo(
+            click.style(f"[{m.path}:{m.line_number}] ", fg="bright_black")
+            + click.style(f"AI{m.marker}", fg="cyan")
+            + f" {m.text}"
+        )
+        if m.follow_lines:
+            for fl in m.follow_lines[:4]:
+                click.echo(f"    {fl}")
+
+        if run:
+            if not os.environ.get("ANTHROPIC_API_KEY"):
+                click.echo("ERROR: ANTHROPIC_API_KEY not set; skipping --run.", err=True)
+                continue
+            world = WorldModel(ctx.obj["db"])
+            llm = LLM(model=ctx.obj["model"])
+            sandbox = build_sandbox(workdir=str(p.parent if p.is_file() else p))
+            title = (m.text or m.follow_lines[0] if m.follow_lines else "").strip()[:80]
+            goal_id = world.create_goal(title or "watch-mode goal", m.to_goal())
+            click.echo(click.style(f"  -> goal #{goal_id}", fg="bright_black"))
+            try:
+                result = run_goal_sync(
+                    llm, world, Budget(max_dollars=max_dollars),
+                    goal_id, sandbox=sandbox, max_depth=2,
+                )
+                click.echo(result)
+            except Exception as e:
+                click.echo(click.style(f"  goal #{goal_id} failed: {e}", fg="red"))
+
+    if count == 0:
+        click.echo(f"no AI markers found in {path}")
+    else:
+        click.echo(f"\nfound {count} marker(s)")
+
+
 if __name__ == "__main__":
     main()
