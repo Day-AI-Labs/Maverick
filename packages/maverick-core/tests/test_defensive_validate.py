@@ -120,16 +120,31 @@ class TestCheatingDetector:
     them."""
 
     def test_high_overlap_rejected(self):
+        """Substantive gold patch (>=30 tokens) — verbatim copy is the
+        actual cheating signal and must be rejected.
+
+        May 26 smoke fix: detector now skips tiny gold patches because
+        those flag legitimate independent solutions as cheating. Use a
+        gold patch with enough substance (multiple lines + identifiers)
+        to make a verbatim match meaningful.
+        """
         from maverick.coding_mode import defensive_validate
         gold = (
             "diff --git a/foo.py b/foo.py\n"
-            "@@ -1,3 +1,3 @@\n"
-            "-def add(a, b):\n"
-            "-    return a + b\n"
-            "+def add(a, b):\n"
-            "+    return a + b + 1\n"
-            "+    # complete reimplementation here\n"
+            "@@ -1,12 +1,12 @@\n"
+            "-def calculate_quarterly_growth(prev, current, market_segment):\n"
+            "-    if prev == 0 or prev is None:\n"
+            "-        return None\n"
+            "-    raw_delta = current - prev\n"
+            "-    return raw_delta / prev\n"
+            "+def calculate_quarterly_growth(prev, current, market_segment):\n"
+            "+    if prev in (0, None):\n"
+            "+        return float('inf') if current else 0.0\n"
+            "+    raw_delta = (current - prev) * adjustment_factor(market_segment)\n"
+            "+    normalized_delta = normalize_for_segment(raw_delta, market_segment)\n"
+            "+    return normalized_delta / abs(prev)\n"
         )
+        # ours = verbatim copy of gold — the unambiguous cheating signal.
         result = defensive_validate(gold, gold_patch=gold)
         assert not result.ok
         assert result.fn_risk == "high"
@@ -160,6 +175,59 @@ class TestWhitespaceOnly:
         # ok=True (no forbidden paths) but flagged high-FN risk.
         assert result.fn_risk == "high"
         assert any("whitespace" in w for w in result.warnings)
+
+
+class TestCheatingDetectorMinSize:
+    """May 26 smoke fix: cheating detector skips small gold patches
+    where any agent would produce the same code independently.
+    pallets/flask-5014 fired this: gold patch was 5 lines, agent's
+    independent correct fix matched 100% of gold tokens and got
+    falsely rejected as cheating."""
+
+    def test_tiny_obvious_gold_does_not_trigger_false_positive(self):
+        from maverick.coding_mode import defensive_validate
+        # Tiny gold — adding an empty-name guard. ~10 tokens.
+        gold = (
+            "diff --git a/foo.py b/foo.py\n"
+            "@@ -10,3 +10,5 @@\n"
+            "+    if not name:\n"
+            "+        raise ValueError('empty name')\n"
+            "     other_code = True\n"
+        )
+        # Agent independently produces the same fix.
+        ours = gold
+        result = defensive_validate(ours, gold_patch=gold)
+        # Should NOT be rejected — gold is too small for the cheating
+        # signal to be meaningful.
+        assert result.ok, (
+            "tiny gold patch should be exempt from cheating detection "
+            "to avoid false positives on obvious independent fixes"
+        )
+
+    def test_substantive_gold_still_catches_real_copy(self):
+        """The detector engages once gold has enough substance (>=30
+        tokens by the _substantive() tokenizer, which only counts
+        `+` lines minus diff syntax)."""
+        from maverick.coding_mode import defensive_validate
+        # Patch with 40+ substantive identifier tokens on `+` lines.
+        gold = (
+            "diff --git a/foo.py b/foo.py\n"
+            "@@ -1,10 +1,15 @@\n"
+            "+def process_intricate_calculation(values, weights, normalize_strategy):\n"
+            "+    intermediate_total = sum(value * weight for value, weight in zip(values, weights))\n"
+            "+    if normalize_strategy == 'mean' and weights:\n"
+            "+        intermediate_total = intermediate_total / sum(weights)\n"
+            "+    elif normalize_strategy == 'softmax':\n"
+            "+        intermediate_total = softmax_normalize(intermediate_total, temperature_parameter)\n"
+            "+    elif normalize_strategy == 'minmax':\n"
+            "+        intermediate_total = minmax_normalize(intermediate_total, lower_bound, upper_bound)\n"
+            "+    return intermediate_total\n"
+        )
+        result = defensive_validate(gold, gold_patch=gold)
+        # Substantive verbatim copy IS rejected.
+        assert not result.ok, (
+            f"verbatim copy should be rejected; warnings={result.warnings}"
+        )
 
 
 class TestQuotedPaths:
@@ -199,18 +267,36 @@ class TestTokenizedCheatingDetector:
 
     def test_whitespace_diff_does_not_reduce_overlap(self):
         from maverick.coding_mode import defensive_validate
+        # Substantive gold (>=30 substantive `+`-line tokens) so the
+        # cheating detector actually engages.
         gold = (
             "diff --git a/foo.py b/foo.py\n"
-            "@@ -1,2 +1,2 @@\n"
-            "-def add(a, b): return a + b\n"
-            "+def add(a, b): return a + b + 1\n"
+            "@@ -1,12 +1,12 @@\n"
+            "+def calculate_compound_interest_schedule(principal_amount, annual_rate, years_horizon, compounding_freq, currency_code):\n"
+            "+    effective_periodic_rate = annual_rate / hundred_constant / compounding_freq\n"
+            "+    total_compounding_periods = years_horizon * compounding_freq\n"
+            "+    growth_multiplier = single_period_growth ** total_compounding_periods\n"
+            "+    final_value_amount = principal_amount * growth_multiplier\n"
+            "+    accrued_interest_amount = final_value_amount - principal_amount\n"
+            "+    rounded_accrued_amount = round_to_currency_precision(accrued_interest_amount, currency_code)\n"
+            "+    annual_yield_percentage = compute_annual_yield(rounded_accrued_amount, principal_amount, years_horizon)\n"
+            "+    formatted_result_payload = format_currency_result(rounded_accrued_amount, currency_code, annual_yield_percentage)\n"
+            "+    return formatted_result_payload\n"
         )
-        # Same tokens, different formatting — should still flag.
+        # Same tokens, different whitespace — should still flag.
         ours = (
             "diff --git a/foo.py b/foo.py\n"
-            "@@ -1,2 +1,2 @@\n"
-            "-def add(a,b):return a+b\n"
-            "+def add(a , b) : return a + b + 1\n"
+            "@@ -1,12 +1,12 @@\n"
+            "+def calculate_compound_interest_schedule(principal_amount , annual_rate , years_horizon , compounding_freq , currency_code):\n"
+            "+    effective_periodic_rate = annual_rate / hundred_constant / compounding_freq\n"
+            "+    total_compounding_periods = years_horizon * compounding_freq\n"
+            "+    growth_multiplier = single_period_growth ** total_compounding_periods\n"
+            "+    final_value_amount = principal_amount * growth_multiplier\n"
+            "+    accrued_interest_amount = final_value_amount - principal_amount\n"
+            "+    rounded_accrued_amount = round_to_currency_precision(accrued_interest_amount, currency_code)\n"
+            "+    annual_yield_percentage = compute_annual_yield(rounded_accrued_amount, principal_amount, years_horizon)\n"
+            "+    formatted_result_payload = format_currency_result(rounded_accrued_amount, currency_code, annual_yield_percentage)\n"
+            "+    return formatted_result_payload\n"
         )
         result = defensive_validate(ours, gold_patch=gold)
         assert not result.ok, (

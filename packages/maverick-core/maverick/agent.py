@@ -505,7 +505,17 @@ class Agent:
                         except Exception:
                             def_check = None
                         if def_check is not None and not def_check.ok:
-                            self._patch_validated = True
+                            # May 26 smoke fix: DO NOT set
+                            # `_patch_validated = True` here. The flag
+                            # short-circuits the entire SR-extract-apply
+                            # block on the next iteration, so when the
+                            # agent revises in response to the critique,
+                            # the new SR blocks are silently ignored
+                            # (workdir untouched, no patch produced).
+                            # Fired on pallets/flask-5014 — agent
+                            # produced correct fix, cheating detector
+                            # false-positive rejected it, then the
+                            # agent's revision attempt was no-op'd.
                             bb.post(
                                 self.name, "verify",
                                 f"patch rejected by defensive validator: "

@@ -113,14 +113,23 @@ class TestTokenOverlapNoisePrefixBypass:
             f"warnings={result.warnings}"
         )
 
-    def test_exact_50_percent_caught(self):
-        """Wave 12 hardening (agent 5 #2): boundary `>= 0.50` instead
-        of `> 0.50`. A 50% rename was slipping through."""
+    def test_exact_50_percent_caught_on_substantive_gold(self):
+        """Boundary `>= 0.50` (not `> 0.50`).
+
+        May 26 smoke fix: the detector now skips gold patches with
+        fewer than 30 tokens to avoid false-positives on obvious
+        one-line fixes. The boundary test uses a 30+-token gold so
+        the detector engages, and constructs ours with ~50% longest
+        contiguous match to verify the boundary behavior."""
         from maverick.coding_mode import defensive_validate
-        # Construct a patch with EXACTLY 0.50 token overlap.
-        gold = "diff --git a/x.py b/x.py\n@@ -1 +1 @@\n+a b c d\n"
-        ours = "diff --git a/x.py b/x.py\n@@ -1 +1 @@\n+a b e f\n"
-        # 4 tokens each; 2 shared = 50%.
+        # 60+ tokens in gold so the detector engages.
+        gold_body = " ".join([f"identifier_{i}" for i in range(60)])
+        gold = f"diff --git a/x.py b/x.py\n@@ -1 +1 @@\n+{gold_body}\n"
+        # ours: first 30 tokens of gold + 30 unrelated tokens =
+        # longest contiguous match is 30/60 = 50% of gold tokens.
+        first_half = " ".join([f"identifier_{i}" for i in range(30)])
+        unrelated = " ".join([f"other_{i}" for i in range(30)])
+        ours = f"diff --git a/x.py b/x.py\n@@ -1 +1 @@\n+{first_half} {unrelated}\n"
         result = defensive_validate(ours, gold_patch=gold)
         # >= 0.50 → blocked
         assert not result.ok

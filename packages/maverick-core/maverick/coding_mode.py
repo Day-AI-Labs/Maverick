@@ -767,7 +767,17 @@ def defensive_validate(patch: str, *, fail_to_pass: list[str] = None,
 
             ours_tokens = _sample(ours_all)
             theirs_tokens = _sample(theirs_all)
-            if ours_tokens and theirs_tokens:
+            # May 26 smoke fix (pallets/flask-5014 false positive):
+            # the cheating detector was rejecting tiny obvious fixes
+            # where any agent would independently produce the same
+            # code (e.g. adding a one-line empty-name guard). Require
+            # a MINIMUM gold patch size before applying the detector
+            # — a 5-token gold patch can't meaningfully signal
+            # cheating because the match is forced. 30 tokens
+            # corresponds to roughly a 5-line non-trivial change.
+            _MIN_GOLD_TOKENS_FOR_CHEATING_CHECK = 30
+            if (ours_tokens and theirs_tokens
+                    and len(theirs_tokens) >= _MIN_GOLD_TOKENS_FOR_CHEATING_CHECK):
                 matcher = SequenceMatcher(
                     None, ours_tokens, theirs_tokens, autojunk=False,
                 )
