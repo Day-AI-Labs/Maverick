@@ -87,6 +87,11 @@ args    = ["-y", "@modelcontextprotocol/server-github"]
 env     = { GITHUB_PERSONAL_ACCESS_TOKEN = "${GITHUB_TOKEN}" }
 ```
 
+`backend = "local"` runs tools in the same runtime environment as
+Maverick. For untrusted skills, avoid mounting secret-bearing paths into
+that runtime and prefer sandbox isolation that does not expose host
+state.
+
 ## Per-role model choice
 
 This is the *fully control every aspect* knob. Heavy roles benefit from a smart model; cheap roles can use a small one. Mix providers freely — the orchestrator can be a cloud Opus while the summarizer is a local Llama.

@@ -8,6 +8,8 @@ tests that hit a mocked SDK client.
 from __future__ import annotations
 
 import importlib.util
+import sys
+import types
 
 import pytest
 
@@ -137,3 +139,43 @@ class TestNewProviderEndpoints:
         from maverick.providers.moonshot_provider import MoonshotClient
         client = MoonshotClient()
         assert "moonshot.cn" in str(client._sync.base_url)
+
+
+class _FakeOpenAIClient:
+    def __init__(self, api_key=None, base_url=None):
+        self.api_key = api_key
+        self.base_url = base_url
+
+
+def _install_fake_openai(monkeypatch):
+    fake = types.ModuleType("openai")
+    fake.OpenAI = _FakeOpenAIClient
+    fake.AsyncOpenAI = _FakeOpenAIClient
+    monkeypatch.setitem(sys.modules, "openai", fake)
+
+
+class TestThirdPartyProvidersDoNotFallbackToOpenAIKey:
+    def test_moonshot_does_not_use_openai_env_key(self, monkeypatch):
+        _install_fake_openai(monkeypatch)
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-should-not-leak")
+        monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
+        from maverick.providers.moonshot_provider import MoonshotClient
+        client = MoonshotClient()
+        assert client._sync.api_key is None
+
+    def test_deepseek_does_not_use_openai_env_key(self, monkeypatch):
+        _install_fake_openai(monkeypatch)
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-should-not-leak")
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        from maverick.providers.deepseek_provider import DeepSeekClient
+        client = DeepSeekClient()
+        assert client._sync.api_key is None
+
+    def test_xai_does_not_use_openai_env_key(self, monkeypatch):
+        _install_fake_openai(monkeypatch)
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-should-not-leak")
+        monkeypatch.delenv("XAI_API_KEY", raising=False)
+        monkeypatch.delenv("GROK_API_KEY", raising=False)
+        from maverick.providers.xai_provider import XaiClient
+        client = XaiClient()
+        assert client._sync.api_key is None

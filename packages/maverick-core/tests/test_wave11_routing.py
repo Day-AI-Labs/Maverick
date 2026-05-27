@@ -97,22 +97,22 @@ class TestThinkingBudgetWiredThrough:
 
 class TestHetBoNLadder:
     """Wave 11: best-of-N ladder env-configurable, defaults to
-    Sonnet-cheap → Sonnet-warm → Opus."""
+    configured orchestrator model with temperature diversity."""
 
     def test_default_ladder_parses(self, monkeypatch):
         # Indirect test: import the module and confirm the default
         # string parses into 3 (model, temp) tuples by replicating the
         # parsing logic. (The runtime BoN code itself requires a full
         # WorldModel/LLM setup that's overkill for unit tests.)
-        default = "claude-sonnet-4-6:0.3,claude-sonnet-4-6:0.7,claude-opus-4-7:0.4"
+        default = "openai:gpt-5.4-mini:0.3,openai:gpt-5.4-mini:0.7,openai:gpt-5.4-mini:0.95"
         ladder = []
         for entry in default.split(","):
             mdl, t = entry.rsplit(":", 1)
             ladder.append((mdl.strip(), float(t)))
         assert len(ladder) == 3
-        assert ladder[0] == ("claude-sonnet-4-6", 0.3)
-        assert ladder[1] == ("claude-sonnet-4-6", 0.7)
-        assert ladder[2] == ("claude-opus-4-7", 0.4)
+        assert ladder[0] == ("openai:gpt-5.4-mini", 0.3)
+        assert ladder[1] == ("openai:gpt-5.4-mini", 0.7)
+        assert ladder[2] == ("openai:gpt-5.4-mini", 0.95)
 
     def test_env_ladder_override(self, monkeypatch):
         monkeypatch.setenv(

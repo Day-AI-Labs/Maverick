@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 
 from maverick.secrets import scrub
+from maverick.cli import _sanitize_progress_content
 
 
 class TestSecretScrubbing:
@@ -165,3 +166,18 @@ class TestErrorMessageVoice:
         assert "1 question" in out
         assert "What's your timezone?" in out
         assert "maverick answer" in out
+
+
+class TestProgressSanitization:
+    def test_strips_terminal_control_sequences(self):
+        text = "ok\r\n\x1b[2Kforged\x1b]52;c;QUJD\x07tail"
+        out = _sanitize_progress_content(text, limit=200)
+        assert "\x1b" not in out
+        assert "\r" not in out and "\n" not in out
+        assert "forged" in out
+
+    def test_scrubs_secrets_before_display(self):
+        text = "Authorization: Bearer abc123secrettokenvalue4567890"
+        out = _sanitize_progress_content(text, limit=200)
+        assert "abc123secrettokenvalue4567890" not in out
+        assert "[REDACTED:bearer]" in out

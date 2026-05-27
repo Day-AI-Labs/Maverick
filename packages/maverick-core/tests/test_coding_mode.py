@@ -418,6 +418,21 @@ class TestRepoMapTool:
         out = repo_map(_Sandbox()).fn({})
         assert "ERROR" in out
 
+    def test_skips_top_level_symlink(self, tmp_path):
+        from maverick.tools.repo_map import repo_map
+
+        outside = tmp_path.parent / "outside-secret-dir"
+        outside.mkdir(exist_ok=True)
+        (outside / "secret.txt").write_text("nope")
+        (tmp_path / "host_root").symlink_to(outside, target_is_directory=True)
+
+        class _Sandbox:
+            workdir = tmp_path
+
+        out = repo_map(_Sandbox()).fn({})
+        assert "host_root@    [symlink skipped]" in out
+        assert "secret.txt" not in out
+
 
 class TestRepoMapInRegistry:
     def test_repo_map_registered(self, tmp_path):

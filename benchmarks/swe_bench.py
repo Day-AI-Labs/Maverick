@@ -336,8 +336,9 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
     fail_ids = kwargs.get("fail_to_pass") or []
     if fail_ids:
         try:
-            sandbox_workdir = build_sandbox().workdir
-            from pathlib import Path as _Path
+            sandbox = build_sandbox()
+            sandbox_workdir = Path(sandbox.workdir).resolve()
+            from maverick.tools.fs import _safe_resolve, _is_opaque_blocked_resolved
             seen: set[str] = set()
             chunks: list[str] = []
             for tid in fail_ids[:5]:  # at most 5 distinct files
@@ -346,12 +347,21 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
                 if not path_part or path_part in seen:
                     continue
                 seen.add(path_part)
-                tp = _Path(sandbox_workdir) / path_part
+                if _is_opaque_blocked_resolved(sandbox, path_part):
+                    continue
+                try:
+                    tp = _safe_resolve(sandbox, path_part)
+                except ValueError:
+                    continue
+                try:
+                    rel = tp.relative_to(sandbox_workdir).as_posix()
+                except ValueError:
+                    continue
                 if tp.exists() and tp.is_file():
                     try:
                         txt = tp.read_text(encoding="utf-8", errors="replace")
                         chunks.append(
-                            f"--- failing test file: {path_part} ---\n"
+                            f"--- failing test file: {rel} ---\n"
                             f"{txt[:6000]}\n"
                         )
                     except (OSError, PermissionError):

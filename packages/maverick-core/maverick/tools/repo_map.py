@@ -41,6 +41,15 @@ _CACHE: dict[str, str] = {}
 _CACHE_MAX = 64
 
 
+def _inside_workspace(root: Path, candidate: Path) -> bool:
+    """True when candidate resolves under root."""
+    try:
+        candidate.resolve().relative_to(root.resolve())
+        return True
+    except (OSError, ValueError):
+        return False
+
+
 def clear_repo_map_cache() -> None:
     """Invalidate the repo_map cache. Called by the harness between
     instances when the workdir is reset to a different commit."""
@@ -96,12 +105,21 @@ def repo_map(sandbox) -> Tool:
         entries = [e for e in entries if e.name not in _IGNORE_DIRS][:_MAX_TOP_ENTRIES]
 
         for entry in entries:
+            # Never follow top-level symlinks; they may point outside the workspace.
+            if entry.is_symlink():
+                lines.append(f"  {entry.name}@    [symlink skipped]")
+                continue
+
             if entry.is_dir():
                 # One-line summary: top N files within.
                 try:
                     children = sorted(
                         x.name for x in entry.iterdir()
-                        if x.name not in _IGNORE_DIRS
+                        if (
+                            x.name not in _IGNORE_DIRS
+                            and (not x.is_symlink())
+                            and _inside_workspace(root, x)
+                        )
                     )[:_MAX_NESTED_PER_DIR]
                 except OSError:
                     children = ["(unreadable)"]

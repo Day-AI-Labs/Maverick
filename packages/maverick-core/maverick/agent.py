@@ -12,6 +12,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Optional
 
+from ._envparse import env_int
 from .budget import BudgetExceeded
 from .llm import model_for_role
 from .swarm import SwarmContext
@@ -85,6 +86,7 @@ class Agent:
         ctx: SwarmContext,
         role: str,
         brief: str,
+        model_override: Optional[str] = None,
         depth: int = 0,
         parent: Optional["Agent"] = None,
         max_steps: int = 25,
@@ -98,12 +100,17 @@ class Agent:
         # shows "most successful solutions resolve in ~25 rounds; long-
         # tail iteration past that has diminishing returns." Allow ops
         # to override globally via MAVERICK_MAX_STEPS, default 25.
-        self.max_steps = int(os.environ.get("MAVERICK_MAX_STEPS", str(max_steps)))
+        self.max_steps = env_int("MAVERICK_MAX_STEPS", max_steps)
         self.name = f"{role}-{depth}-{uuid.uuid4().hex[:6]}"
 
         self.tools = self._build_tools()
         self.system = self._build_system()
-        self.model = model_for_role(role)
+        self.model = model_override or model_for_role(role)
+        # Tracks whether we've already given one LLM-verifier-driven
+        # revision pass for this agent run. Separate from
+        # `_already_verified` so revised FINALs can be re-verified once
+        # without permitting repeated reject/revise loops.
+        self._verifier_revision_used = False
 
     def _build_tools(self) -> ToolRegistry:
         reg = base_registry(
@@ -848,7 +855,21 @@ class Agent:
                             verdict = None
 
                         if verdict is not None and not verdict.accepts:
+                            if getattr(self, "_verifier_revision_used", False):
+                                self._already_verified = True
+                                bb.post(
+                                    self.name, "verify",
+                                    "verifier rejected after retry; accepting "
+                                    "second attempt per one-revision cap",
+                                )
+                                return AgentResult(
+                                    final=final, role=self.role, name=self.name,
+                                    verifier_confidence=verdict.confidence,
+                                    verifier_critique=verdict.critique,
+                                    final_patch=getattr(self, "_final_patch", None),
+                                )
                             self._already_verified = True
+                            self._verifier_revision_used = True
                             bb.post(
                                 self.name, "verify",
                                 f"verifier rejected (conf={verdict.confidence:.2f}): "

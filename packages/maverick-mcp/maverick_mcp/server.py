@@ -158,17 +158,9 @@ class MCPServer:
     def handle_resources_list(self, params: dict) -> dict:
         """Expose Maverick state as MCP Resources.
 
-        - maverick://goals/{id}     — single goal status + result
         - maverick://goals          — list of active/recent goals
         - maverick://skills         — installed skills
-        - maverick://facts          — known facts about the user
         """
-        try:
-            from maverick.world_model import DEFAULT_DB, WorldModel
-            wm = WorldModel(DEFAULT_DB)
-            goals = wm.list_goals()[-20:]
-        except Exception:
-            goals = []
         resources = [
             {
                 "uri": "maverick://goals",
@@ -180,18 +172,7 @@ class MCPServer:
                 "name": "Installed skills",
                 "mimeType": "application/json",
             },
-            {
-                "uri": "maverick://facts",
-                "name": "Facts about the user",
-                "mimeType": "application/json",
-            },
         ]
-        for g in goals:
-            resources.append({
-                "uri": f"maverick://goals/{g.id}",
-                "name": f"goal #{g.id} ({g.status}): {g.title[:60]}",
-                "mimeType": "application/json",
-            })
         return {"resources": resources}
 
     def handle_resources_read(self, params: dict) -> dict:
@@ -207,18 +188,6 @@ class MCPServer:
                 {"id": g.id, "status": g.status, "title": g.title}
                 for g in wm.list_goals()[-20:]
             ]
-        elif path.startswith("goals/"):
-            try:
-                gid = int(path.split("/", 1)[1])
-            except ValueError as e:
-                raise _ProtocolError(-32602, f"bad goal id in {uri}") from e
-            g = wm.get_goal(gid)
-            if g is None:
-                raise _ProtocolError(-32602, f"no such goal: {uri}")
-            data = {
-                "id": g.id, "status": g.status, "title": g.title,
-                "description": g.description, "result": g.result,
-            }
         elif path == "skills":
             try:
                 from maverick.skills import load_skills
@@ -229,8 +198,6 @@ class MCPServer:
                 ]
             except Exception:
                 data = []
-        elif path == "facts":
-            data = wm.get_facts()
         else:
             raise _ProtocolError(-32602, f"unknown resource path: {uri}")
 

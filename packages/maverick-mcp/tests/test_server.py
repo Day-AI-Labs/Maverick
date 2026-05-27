@@ -114,7 +114,6 @@ class TestProtocol2025_11_25:
         uris = {r["uri"] for r in out["resources"]}
         assert "maverick://goals" in uris
         assert "maverick://skills" in uris
-        assert "maverick://facts" in uris
 
     def test_resources_read_rejects_unsupported_scheme(self):
         s = MCPServer()

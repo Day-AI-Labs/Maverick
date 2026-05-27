@@ -325,6 +325,24 @@ def _find_with_fuzzy(content: str, needle: str) -> tuple[Optional[int], Optional
     return None, None, ""
 
 
+
+
+def _is_sensitive_path(path_str: str) -> bool:
+    """Best-effort guard to avoid echoing secret-bearing file contents."""
+    p = Path(path_str)
+    lower_name = p.name.lower()
+    lower_parts = [part.lower() for part in p.parts]
+    if lower_name in {
+        ".env", ".env.local", ".env.production", ".env.development",
+        "credentials", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519",
+    }:
+        return True
+    if any(part in {".ssh", ".aws", ".gnupg", ".secrets"} for part in lower_parts):
+        return True
+    if lower_name.endswith((".pem", ".key", ".p12", ".pfx")):
+        return True
+    return False
+
 def _apply_one(block: SearchReplaceBlock, workdir: Path) -> ApplyResult:
     target = (workdir / block.path).resolve()
     # Guard against path traversal.
@@ -417,7 +435,12 @@ def _apply_one(block: SearchReplaceBlock, workdir: Path) -> ApplyResult:
                     best_ratio = r
                     best_idx = i
         near = ""
-        if best_idx >= 0:
+        if _is_sensitive_path(block.path):
+            near = (
+                "closest match context omitted for sensitive path; "
+                "re-open the target file locally and copy exact bytes"
+            )
+        elif best_idx >= 0:
             lo, hi = max(0, best_idx - 5), min(len(ctx_lines), best_idx + 6)
             near_block = "\n".join(
                 f"{i+1:>4}: {ctx_lines[i]}" for i in range(lo, hi)

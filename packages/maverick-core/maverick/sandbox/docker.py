@@ -16,6 +16,7 @@ wizard's smoke test catches it before the agent runs.
 from __future__ import annotations
 
 import subprocess
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -52,8 +53,10 @@ class DockerBackend:
         # tool can plumb a longer cap for pytest/npm test/etc. Falls
         # back to self.timeout (default 60 s).
         effective = self.timeout if timeout is None else timeout
+        container_name = f"maverick-sandbox-{uuid.uuid4().hex}"
         args = [
             "docker", "run", "--rm",
+            "--name", container_name,
             "-v", f"{self.workdir.resolve()}:/workspace",
             "-w", "/workspace",
         ]
@@ -74,8 +77,16 @@ class DockerBackend:
                 exit_code=result.returncode,
             )
         except subprocess.TimeoutExpired as e:
+            subprocess.run(
+                ["docker", "rm", "-f", container_name],
+                capture_output=True,
+                timeout=10,
+            )
+            stdout = e.stdout or ""
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode("utf-8", errors="replace")
             return ExecResult(
-                stdout=(e.stdout or b"").decode("utf-8", errors="replace")[-8000:],
+                stdout=stdout[-8000:],
                 stderr=f"TIMEOUT after {effective}s",
                 exit_code=124,
             )

@@ -14,6 +14,7 @@ from .agent import Agent
 from .blackboard import Blackboard
 from .budget import Budget, BudgetExceeded
 from .llm import LLM
+from .llm import model_for_role
 from .mcp_client import load_mcp_specs_from_config, start_mcp_clients, stop_mcp_clients
 from .sandbox import LocalBackend
 from .skills import distill
@@ -58,6 +59,7 @@ async def run_goal(
     sandbox: Optional[Any] = None,
     max_depth: int = 3,
     conversation_id: Optional[int] = None,
+    orchestrator_model_override: Optional[str] = None,
 ) -> str:
     goal = world.get_goal(goal_id)
     if not goal:
@@ -129,7 +131,13 @@ async def run_goal(
             "synthesize their findings, verify, and respond with FINAL:."
         )
 
-        root = Agent(ctx=ctx, role="orchestrator", brief=brief, depth=0)
+        root = Agent(
+            ctx=ctx,
+            role="orchestrator",
+            brief=brief,
+            model_override=orchestrator_model_override,
+            depth=0,
+        )
 
         try:
             result = await root.run()
@@ -345,7 +353,10 @@ async def run_goal_best_of_n(
     # primary, then a temperature-warmed re-roll, then the heavyweight
     # for the long tail. Configurable via MAVERICK_BON_LADDER as
     # comma-separated "model:temperature" pairs.
-    default_ladder = "claude-sonnet-4-6:0.3,claude-sonnet-4-6:0.7,claude-opus-4-7:0.4"
+    configured_orchestrator_model = model_for_role("orchestrator")
+    default_ladder = ",".join(
+        f"{configured_orchestrator_model}:{t}" for t in (0.3, 0.7, 0.95)
+    )
     raw_ladder = os.environ.get("MAVERICK_BON_LADDER", default_ladder)
     ladder: list[tuple[str, float]] = []
     for entry in raw_ladder.split(","):
@@ -389,10 +400,7 @@ async def run_goal_best_of_n(
             max_tool_calls=budget.max_tool_calls,
         )
         prior_temp = os.environ.get("MAVERICK_TEMPERATURE")
-        prior_model_override = os.environ.get("MAVERICK_MODEL_OVERRIDE_ORCHESTRATOR")
         os.environ["MAVERICK_TEMPERATURE"] = str(per_temp)
-        if per_model:
-            os.environ["MAVERICK_MODEL_OVERRIDE_ORCHESTRATOR"] = per_model
         try:
             try:
                 # Wave 12 fix (council F14, biggest accuracy loss):
@@ -408,6 +416,7 @@ async def run_goal_best_of_n(
                     llm, world, attempt_budget, goal_id,
                     sandbox=sandbox, max_depth=max_depth,
                     conversation_id=None,
+                    orchestrator_model_override=per_model or None,
                 )
             except Exception as e:
                 log.warning("best-of-N attempt %d failed: %s", i, e)
@@ -426,10 +435,6 @@ async def run_goal_best_of_n(
                 os.environ.pop("MAVERICK_TEMPERATURE", None)
             else:
                 os.environ["MAVERICK_TEMPERATURE"] = prior_temp
-            if prior_model_override is None:
-                os.environ.pop("MAVERICK_MODEL_OVERRIDE_ORCHESTRATOR", None)
-            else:
-                os.environ["MAVERICK_MODEL_OVERRIDE_ORCHESTRATOR"] = prior_model_override
 
         budget.dollars += attempt_budget.dollars
         budget.input_tokens += attempt_budget.input_tokens

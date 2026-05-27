@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -12,6 +13,7 @@ import click
 from .budget import Budget
 from .llm import DEFAULT_MODEL, LLM
 from .orchestrator import run_goal_sync
+from .secrets import scrub
 from .sandbox import build_sandbox
 from .skills import (
     SKILLS_DIR,
@@ -36,14 +38,16 @@ def main(ctx: click.Context, db: str, model: str) -> None:
 @main.command()
 @click.option("--fast", is_flag=True,
               help="Skip every prompt; use recommended defaults.")
-def init(fast: bool) -> None:
+@click.option("--resume", is_flag=True,
+              help="Resume from the last unanswered wizard question.")
+def init(fast: bool, resume: bool) -> None:
     """Run the interactive setup wizard."""
     try:
         from maverick_installer.wizard import run as run_wizard
     except ImportError:
         click.echo("Install: pipx install maverick-installer", err=True)
         sys.exit(2)
-    sys.exit(run_wizard(fast=fast))
+    sys.exit(run_wizard(fast=fast, resume=resume))
 
 
 @main.command()
@@ -312,6 +316,23 @@ def start(
     click.echo(result)
 
 
+def _sanitize_progress_content(text: str, limit: int = 200) -> str:
+    """Sanitize untrusted event content before printing to a TTY.
+
+    - Scrub secret-looking values.
+    - Remove terminal control bytes / ANSI escape sequences.
+    - Collapse CR/LF to spaces for one-line progress output.
+    """
+    cleaned = scrub(text or "")
+    # Strip common ANSI/OSC escape sequences.
+    cleaned = re.sub(r"\x1B\[[0-?]*[ -/]*[@-~]", "", cleaned)
+    cleaned = re.sub(r"\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)", "", cleaned)
+    # Replace newlines / carriage returns, then drop remaining control chars.
+    cleaned = cleaned.replace("\r", " ").replace("\n", " ")
+    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", cleaned)
+    return cleaned[:limit]
+
+
 def _stream_progress(db_path, goal_id: int, stop) -> None:
     """Poll goal_events and print one line per new entry to stderr.
 
@@ -334,7 +355,7 @@ def _stream_progress(db_path, goal_id: int, stop) -> None:
                 label = labels.get(e.kind, e.kind)
                 # Strip the hex suffix from agent names for readability.
                 agent = e.agent.split("-")[0] if e.agent else "agent"
-                content = e.content[:200]
+                content = _sanitize_progress_content(e.content, limit=200)
                 click.echo(
                     click.style(f"  [{agent}] ", fg="bright_black")
                     + click.style(f"{label}: ", fg="cyan")

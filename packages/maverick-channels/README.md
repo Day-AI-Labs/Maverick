@@ -51,6 +51,8 @@ In `~/.maverick/config.toml`:
 [channels.telegram]
 enabled = true
 bot_token = "${TELEGRAM_BOT_TOKEN}"
+allowed_user_ids = ["123456789"]
+# optional alternative: allowed_chat_ids = ["-1001234567890"]
 
 [channels.discord]
 enabled = true

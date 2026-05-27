@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
+from typing import Optional, Set
 
 from .base import Channel, IncomingMessage
 
@@ -30,7 +30,13 @@ except ImportError:
 class TelegramChannel(Channel):
     name = "telegram"
 
-    def __init__(self, handler, token: Optional[str] = None):
+    def __init__(
+        self,
+        handler,
+        token: Optional[str] = None,
+        allowed_user_ids: Optional[set[str]] = None,
+        allowed_chat_ids: Optional[set[str]] = None,
+    ):
         super().__init__(handler)
         if not _HAVE_TELEGRAM:
             raise ImportError(
@@ -41,9 +47,42 @@ class TelegramChannel(Channel):
         if not self.token:
             raise ValueError("TELEGRAM_BOT_TOKEN not set")
         self._app: Optional[Application] = None
+        self.allowed_user_ids = self._normalize_allowlist(
+            allowed_user_ids,
+            env_name="TELEGRAM_ALLOWED_USER_IDS",
+        )
+        self.allowed_chat_ids = self._normalize_allowlist(
+            allowed_chat_ids,
+            env_name="TELEGRAM_ALLOWED_CHAT_IDS",
+        )
+        if not self.allowed_user_ids and not self.allowed_chat_ids:
+            raise ValueError(
+                "Set TELEGRAM_ALLOWED_USER_IDS or TELEGRAM_ALLOWED_CHAT_IDS to restrict access"
+            )
+
+    @staticmethod
+    def _normalize_allowlist(values: Optional[set[str]], env_name: str) -> Set[str]:
+        if values is not None:
+            return {str(v).strip() for v in values if str(v).strip()}
+        raw = os.environ.get(env_name, "")
+        return {item.strip() for item in raw.split(",") if item.strip()}
+
+    def _is_authorized(self, update: "Update") -> bool:
+        user_id = str(update.effective_user.id) if update.effective_user else ""
+        chat_id = str(update.effective_chat.id) if update.effective_chat else ""
+        if self.allowed_user_ids and user_id in self.allowed_user_ids:
+            return True
+        if self.allowed_chat_ids and chat_id in self.allowed_chat_ids:
+            return True
+        return False
 
     async def _on_message(self, update: "Update", _ctx: "ContextTypes.DEFAULT_TYPE") -> None:
         if not update.message or not update.message.text:
+            return
+        if not self._is_authorized(update):
+            log.warning("unauthorized telegram access: user_id=%s chat_id=%s",
+                        getattr(update.effective_user, "id", None),
+                        getattr(update.effective_chat, "id", None))
             return
         msg = IncomingMessage(
             user_id=str(update.effective_user.id),

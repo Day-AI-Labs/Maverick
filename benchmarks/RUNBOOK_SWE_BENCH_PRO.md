@@ -149,7 +149,10 @@ After both producer + scorer finish, render the Pareto frontier table:
 python -c "
 import csv, json, pathlib
 from collections import defaultdict
-csv_path = pathlib.Path('benchmarks/RESULTS_SWE_$(ls benchmarks | grep RESULTS_SWE | tail -1 | sed s/RESULTS_SWE_//;s/.csv//).csv')
+csv_candidates = sorted(pathlib.Path('benchmarks').glob('RESULTS_SWE_*.csv'))
+if not csv_candidates:
+    raise SystemExit('No RESULTS_SWE_*.csv found in benchmarks/')
+csv_path = csv_candidates[-1]
 score_paths = pathlib.Path('evaluation_results').rglob('results.json')
 scores = {}
 for p in score_paths:

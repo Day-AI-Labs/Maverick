@@ -8,6 +8,12 @@ import logging
 import os
 from typing import Optional
 
+from maverick.runner import (
+    DEFAULT_MAX_DEPTH,
+    DEFAULT_MAX_DOLLARS,
+    DEFAULT_MAX_WALL_SECONDS,
+)
+
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
@@ -103,9 +109,14 @@ async def create_goal(payload: GoalIn, bg: BackgroundTasks) -> GoalOut:
     w = _world()
     goal_id = w.create_goal(title[:200], description)
     from maverick.runner import run_goal_in_thread
+    # Enforce server-side execution caps even when callers request larger values.
+    max_dollars = min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
+    max_wall_seconds = min(payload.max_wall_seconds, DEFAULT_MAX_WALL_SECONDS)
+    max_depth = min(payload.max_depth, DEFAULT_MAX_DEPTH)
+
     bg.add_task(
         run_goal_in_thread, goal_id,
-        payload.max_dollars, payload.max_wall_seconds, payload.max_depth,
+        max_dollars, max_wall_seconds, max_depth,
     )
     g = w.get_goal(goal_id)
     if g is None:
@@ -188,12 +199,25 @@ async def upload_attachment(goal_id: int, file: UploadFile = File(...)) -> Attac
     if w.get_goal(goal_id) is None:
         raise HTTPException(status_code=404, detail="no such goal")
 
-    data = await file.read()
+    from maverick.attachments import (
+        AttachmentRejected,
+        MAX_FILE_BYTES,
+        store,
+    )
+
+    data = await file.read(MAX_FILE_BYTES + 1)
+    if len(data) > MAX_FILE_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"file too large: {len(data)} bytes (limit {MAX_FILE_BYTES})"
+            ),
+        )
+
     mime = file.content_type or "application/octet-stream"
     filename = file.filename or "upload"
 
     existing = sum(a.size_bytes for a in w.list_attachments(goal_id))
-    from maverick.attachments import AttachmentRejected, store
     try:
         stored = store(
             goal_id,
