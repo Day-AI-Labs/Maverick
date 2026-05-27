@@ -226,6 +226,23 @@ def test_preview_diff_shows_unstaged_changes(tmp_path):
     assert "+line2" in out
 
 
+def test_preview_diff_disables_ext_diff_and_textconv(tmp_path):
+    from maverick.tools.preview_diff import preview_diff
+
+    class _Sandbox:
+        workdir = str(tmp_path)
+
+    (tmp_path / ".git").mkdir()
+    with patch("subprocess.run") as run_mock:
+        run_mock.return_value = subprocess.CompletedProcess(
+            args=["git", "diff"], returncode=0, stdout=b"", stderr=b""
+        )
+        preview_diff(_Sandbox()).fn({})
+    cmd = run_mock.call_args.args[0]
+    assert "--no-ext-diff" in cmd
+    assert "--no-textconv" in cmd
+
+
 def _git_available() -> bool:
     try:
         subprocess.run(["git", "--version"], capture_output=True, check=True)
