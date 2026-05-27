@@ -65,6 +65,8 @@ def base_registry(
     sandbox,
     mcp_clients: Optional[list] = None,
     goal_id: Optional[int] = None,
+    enable_computer_use: bool = False,
+    enable_browser: bool = False,
 ) -> ToolRegistry:
     """Build the base tool set (no spawn tools).
 
@@ -75,6 +77,14 @@ def base_registry(
     running goal — otherwise the orchestrator's ``open_questions(gid)``
     filter returns nothing and "PAUSED: 0 open question(s)" is shown
     even though the agent asked.
+
+    ``enable_computer_use`` / ``enable_browser`` register optional
+    high-impact tools. Both require optional extras
+    (``maverick-agent[computer-use]`` / ``[browser]``); when missing
+    the tool factories raise an actionable ImportError at registration
+    time, NOT at tool-call time -- so a user who picks computer-use in
+    the wizard discovers the missing dep immediately rather than after
+    the first run.
     """
     from .ask_user import ask_user
     from .attachments import list_attachments_tool
@@ -95,6 +105,14 @@ def base_registry(
     # single contribution to SWE-bench scores — eliminates ~30% of
     # apply-fail failures by side-stepping hand-authored diffs.
     reg.register(str_replace_editor(sandbox))
+
+    if enable_computer_use:
+        from .computer import computer
+        reg.register(computer())
+
+    if enable_browser:
+        from .browser import browser
+        reg.register(browser())
 
     if mcp_clients:
         from ..mcp_tools import tools_from_mcp

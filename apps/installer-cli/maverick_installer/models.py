@@ -124,6 +124,39 @@ PROVIDERS: dict[str, dict] = {
             {"id": "claude-haiku-4-5",  "notes": "Faster, lower quota cost."},
         ],
     },
+    "kimi-session": {
+        "status": "ready",
+        "label": "Kimi browser session (use your kimi.com subscription)",
+        "env": None,
+        "session": True,
+        "tool_support": False,
+        "models": [
+            {"id": "kimi-k2",   "notes": "Latest Kimi. Strong agentic / code."},
+            {"id": "kimi-k1.5", "notes": "Cheaper, lighter quota cost."},
+        ],
+    },
+    "grok-session": {
+        "status": "ready",
+        "label": "Grok via x.com browser session (requires X Premium)",
+        "env": None,
+        "session": True,
+        "tool_support": False,
+        "models": [
+            {"id": "grok-4-latest", "notes": "Flagship. Reasoning + tools."},
+            {"id": "grok-4-mini",   "notes": "Cheaper sibling."},
+        ],
+    },
+    "gemini-session": {
+        "status": "ready",
+        "label": "Gemini browser session (gemini.google.com Advanced)",
+        "env": None,
+        "session": True,
+        "tool_support": False,
+        "models": [
+            {"id": "gemini-3-pro",   "notes": "Long context, smart."},
+            {"id": "gemini-3-flash", "notes": "Fast and cheap."},
+        ],
+    },
 }
 
 

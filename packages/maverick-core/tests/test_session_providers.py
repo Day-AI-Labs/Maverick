@@ -318,9 +318,14 @@ def test_llm_facade_routes_chatgpt_session(tmp_path, monkeypatch):
     with patch.object(httpx, "Client", return_value=fake):
         resp = llm.complete(system="", messages=[{"role": "user", "content": "go"}])
     assert resp.text == "routed!"
-    # The cached client is a ChatGPTSessionClient, not OpenAIClient.
+    # The cached client is a SimulatedToolCallClient wrapping a
+    # ChatGPTSessionClient -- the LLM facade auto-wraps session
+    # providers so tool-using roles work transparently.
     from maverick.session_providers.chatgpt_session import ChatGPTSessionClient
-    assert isinstance(llm._clients["chatgpt-session"], ChatGPTSessionClient)
+    from maverick.session_providers.tool_simulator import SimulatedToolCallClient
+    cached = llm._clients["chatgpt-session"]
+    assert isinstance(cached, SimulatedToolCallClient)
+    assert isinstance(cached._inner, ChatGPTSessionClient)
 
 
 # ---------- ClaudeSessionClient ----------
@@ -539,4 +544,7 @@ def test_llm_facade_routes_claude_session(tmp_path, monkeypatch):
         resp = llm.complete(system="", messages=[{"role": "user", "content": "go"}])
     assert resp.text == "routed-to-claude"
     from maverick.session_providers.claude_session import ClaudeSessionClient
-    assert isinstance(llm._clients["claude-session"], ClaudeSessionClient)
+    from maverick.session_providers.tool_simulator import SimulatedToolCallClient
+    cached = llm._clients["claude-session"]
+    assert isinstance(cached, SimulatedToolCallClient)
+    assert isinstance(cached._inner, ClaudeSessionClient)

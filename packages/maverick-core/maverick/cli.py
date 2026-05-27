@@ -672,10 +672,33 @@ _SESSION_IMPORT_PROFILES: dict[str, dict] = {
         "cookie_key": "sessionKey",
         "hint_url": "claude.ai",
     },
+    "kimi": {
+        "canon": "kimi-session",
+        "cookie_key": "access_token",
+        "hint_url": "kimi.com",
+    },
+    "grok": {
+        # Grok needs auth_token + ct0; the CLI prompts for ct0 as a 2nd input.
+        "canon": "grok-session",
+        "cookie_key": "auth_token",
+        "extra_cookie_key": "ct0",
+        "hint_url": "x.com",
+    },
+    "gemini": {
+        "canon": "gemini-session",
+        "cookie_key": "__Secure-1PSID",
+        "hint_url": "gemini.google.com",
+    },
 }
 # Aliases for the canonical names.
-_SESSION_IMPORT_PROFILES["chatgpt-session"] = _SESSION_IMPORT_PROFILES["chatgpt"]
-_SESSION_IMPORT_PROFILES["claude-session"]  = _SESSION_IMPORT_PROFILES["claude"]
+for _alias, _canon in [
+    ("chatgpt-session", "chatgpt"),
+    ("claude-session", "claude"),
+    ("kimi-session", "kimi"),
+    ("grok-session", "grok"),
+    ("gemini-session", "gemini"),
+]:
+    _SESSION_IMPORT_PROFILES[_alias] = _SESSION_IMPORT_PROFILES[_canon]
 
 
 @session.command("import")
@@ -697,6 +720,7 @@ def session_import(provider: str, token: str | None) -> None:
     from .session_providers import cookie_store
     profile = _SESSION_IMPORT_PROFILES[provider]
     canon, cookie_key, hint_url = profile["canon"], profile["cookie_key"], profile["hint_url"]
+    extra_key = profile.get("extra_cookie_key")
     if token is None:
         click.echo(
             f"Find your session cookie at {hint_url} -> DevTools (F12) -> "
@@ -706,7 +730,15 @@ def session_import(provider: str, token: str | None) -> None:
     if not token or not token.strip():
         click.echo("No token entered; aborting.", err=True)
         sys.exit(2)
-    blob = {"cookies": {cookie_key: token.strip()}}
+    cookies = {cookie_key: token.strip()}
+    if extra_key:
+        click.echo(f"Also need the {extra_key} cookie (from the same site).")
+        extra_val = click.prompt(f"Paste {extra_key}", hide_input=True)
+        if not extra_val or not extra_val.strip():
+            click.echo(f"No {extra_key} entered; aborting.", err=True)
+            sys.exit(2)
+        cookies[extra_key] = extra_val.strip()
+    blob = {"cookies": cookies}
     path = cookie_store.save_session(canon, blob)
     click.echo(f"Saved session to {path} (chmod 600)")
 
