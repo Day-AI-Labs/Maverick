@@ -51,6 +51,15 @@ class TestGoals:
         # security review).
         assert called[0][1] == 1.0
 
+
+    def test_create_rejects_invalid_template_name(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+        resp = client.post("/api/v1/goals", json={
+            "title": "test goal",
+            "template": "../escape_secret",
+        })
+        assert resp.status_code == 400
+        assert "invalid template name" in resp.json()["detail"]
     def test_create_clamps_max_dollars(self, monkeypatch):
         """Pydantic Field bounds reject values outside [0, 100]."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
