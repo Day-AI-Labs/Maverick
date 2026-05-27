@@ -48,7 +48,7 @@ async def _reclaim_orphans() -> None:
         log.exception("orphan reclaim failed on startup")
 
 _AUTH_EXEMPT = {
-    "/healthz", "/livez", "/readyz",
+    "/livez",
     "/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect",
 }
 _query_token_warned = False
