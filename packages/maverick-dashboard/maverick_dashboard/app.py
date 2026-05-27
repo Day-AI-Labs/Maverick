@@ -11,6 +11,7 @@ import hmac
 import logging
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
@@ -52,6 +53,21 @@ _AUTH_EXEMPT = {
     "/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect",
 }
 _query_token_warned = False
+
+
+def _is_same_origin(request: Request) -> bool:
+    """Allow only same-origin browser submissions for mutating form POSTs."""
+    expected = request.url.netloc
+    for header in ("origin", "referer"):
+        value = request.headers.get(header)
+        if not value:
+            continue
+        parsed = urlparse(value)
+        if parsed.netloc == expected:
+            return True
+        return False
+    # Non-browser/API clients commonly omit both headers.
+    return True
 
 
 @app.middleware("http")
@@ -144,6 +160,8 @@ async def chat_send(
     bg: BackgroundTasks,
     title: str = Form(...),
 ) -> RedirectResponse:
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise HTTPException(status_code=400, detail="ANTHROPIC_API_KEY not set.")
     w = _world()
@@ -280,11 +298,22 @@ async def metrics() -> PlainTextResponse:
     return PlainTextResponse("\n".join(lines) + "\n")
 
 
+def _is_loopback_host(host: str) -> bool:
+    return host in {"127.0.0.1", "localhost", "::1"}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Maverick dashboard")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
+
+    if not _is_loopback_host(args.host) and not os.environ.get("MAVERICK_DASHBOARD_TOKEN"):
+        raise SystemExit(
+            "Refusing to bind dashboard to a non-loopback host without "
+            "MAVERICK_DASHBOARD_TOKEN set."
+        )
+
     import uvicorn
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
