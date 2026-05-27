@@ -22,12 +22,13 @@ class TestHTTPTransport:
         app = build_app(MCPServer())
         return TestClient(app)
 
-    def test_initialize_returns_capabilities(self):
+    def test_initialize_returns_capabilities(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
         client = self._client()
         resp = client.post("/mcp", json={
             "jsonrpc": "2.0", "id": 1, "method": "initialize",
             "params": {"protocolVersion": "2025-11-25"},
-        })
+        }, headers={"Authorization": "Bearer s3cr3t"})
         assert resp.status_code == 200
         body = resp.json()
         assert body["jsonrpc"] == "2.0"
@@ -35,22 +36,24 @@ class TestHTTPTransport:
         assert "result" in body
         assert "capabilities" in body["result"]
 
-    def test_unknown_method_returns_jsonrpc_error(self):
+    def test_unknown_method_returns_jsonrpc_error(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
         client = self._client()
         resp = client.post("/mcp", json={
             "jsonrpc": "2.0", "id": 2, "method": "no/such/method",
             "params": {},
-        })
+        }, headers={"Authorization": "Bearer s3cr3t"})
         body = resp.json()
         assert "error" in body
         assert body["error"]["code"] == -32601
 
-    def test_resources_list_works_over_http(self):
+    def test_resources_list_works_over_http(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
         client = self._client()
         resp = client.post("/mcp", json={
             "jsonrpc": "2.0", "id": 3, "method": "resources/list",
             "params": {},
-        })
+        }, headers={"Authorization": "Bearer s3cr3t"})
         body = resp.json()
         assert "result" in body
         assert "resources" in body["result"]
@@ -98,11 +101,12 @@ class TestHTTPTransport:
         assert resp.status_code == 200
         assert resp.json()["transport"] == "http"
 
-    def test_notification_returns_204(self):
+    def test_notification_returns_204(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
         client = self._client()
         resp = client.post("/mcp", json={
             "jsonrpc": "2.0", "method": "notifications/initialized",
             "params": {},
-        })
+        }, headers={"Authorization": "Bearer s3cr3t"})
         # No "id" -> notification -> 204
         assert resp.status_code == 204
