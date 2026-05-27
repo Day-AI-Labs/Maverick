@@ -157,7 +157,14 @@ class Server:
 def _wire_telegram(server, cfg):
     from maverick_channels.telegram import TelegramChannel
     token = cfg.get("bot_token") or os.environ.get("TELEGRAM_BOT_TOKEN")
-    server.add_channel(TelegramChannel(handler=server._handle_message, token=token))
+    allowed_user_ids = cfg.get("allowed_user_ids")
+    allowed_chat_ids = cfg.get("allowed_chat_ids")
+    server.add_channel(TelegramChannel(
+        handler=server._handle_message,
+        token=token,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        allowed_chat_ids={str(v) for v in allowed_chat_ids} if allowed_chat_ids else None,
+    ))
 
 
 def _wire_discord(server, cfg):
