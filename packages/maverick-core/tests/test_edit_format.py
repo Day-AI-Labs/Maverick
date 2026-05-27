@@ -262,6 +262,33 @@ class TestApplyBlocks:
         assert "+def added():" in diff
         assert "sk-secret" not in diff
 
+
+    def test_render_diff_treats_scoped_paths_as_literals(self, tmp_path):
+        """Security: prevent git pathspec-magic injection from model-supplied
+        SEARCH/REPLACE paths such as `:(glob)*`.
+        """
+        from maverick.edit_format import (
+            SearchReplaceBlock, apply_blocks, render_diff,
+        )
+        repo = _make_git_repo(tmp_path)
+        # Unrelated untracked secret must not be matched by `:(glob)*`.
+        (repo / "secret.txt").write_text("API_KEY=sk-do-not-leak\n")
+
+        blk = SearchReplaceBlock(
+            path=":(glob)*",
+            search="",
+            replace="benign\n",
+        )
+        summary = apply_blocks([blk], repo)
+        assert summary.ok
+
+        diff = render_diff(repo, paths=sorted(summary.files_touched))
+        assert "secret.txt" not in diff
+        assert "sk-do-not-leak" not in diff
+        # The literal file named `:(glob)*` should still be diffed.
+        assert "diff --git a/:(glob)* b/:(glob)*" in diff
+        assert "+benign" in diff
+
     def test_render_diff_without_paths_emits_tracked_changes_only(self, tmp_path):
         """Backward-compat path: no `paths` -> diff tracked-file changes,
         skip untracked entirely (the secure default for salvage paths).

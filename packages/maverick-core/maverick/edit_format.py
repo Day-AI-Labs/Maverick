@@ -558,6 +558,7 @@ def render_diff(workdir: Path,
     caller-supplied paths before running diff so new files show up with
     a proper `--- /dev/null` hunk.
     """
+    import os
     import subprocess
 
     scoped: list[str] = []
@@ -577,6 +578,7 @@ def render_diff(workdir: Path,
                  "ls-files", "--others", "--exclude-standard", "-z", "--"]
                 + scoped,
                 capture_output=True, timeout=15,
+                env={**os.environ, "GIT_LITERAL_PATHSPECS": "1"},
             )
             if ls.returncode == 0 and ls.stdout:
                 raw = ls.stdout.decode("utf-8", errors="replace")
@@ -588,6 +590,7 @@ def render_diff(workdir: Path,
                         ["git", "-C", str(workdir), "add", "--intent-to-add",
                          "--"] + chunk,
                         capture_output=True, timeout=30,
+                        env={**os.environ, "GIT_LITERAL_PATHSPECS": "1"},
                     )
         except (subprocess.SubprocessError, OSError):
             pass
@@ -599,7 +602,10 @@ def render_diff(workdir: Path,
         if scoped:
             cmd.append("--")
             cmd.extend(scoped)
-        proc = subprocess.run(cmd, capture_output=True, timeout=30)
+        proc = subprocess.run(
+            cmd, capture_output=True, timeout=30,
+            env={**os.environ, "GIT_LITERAL_PATHSPECS": "1"},
+        )
         if proc.returncode == 0:
             raw = proc.stdout.decode("utf-8", errors="replace")
             # May 26 smoke fix (grader audit): SWE-bench's evaluator
