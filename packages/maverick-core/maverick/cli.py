@@ -1153,12 +1153,14 @@ def unhalt() -> None:
 @main.command()
 @click.option("--month", default=None, help="YYYY-MM (default: lifetime totals).")
 @click.option("--model", default=None, help="Filter to one model id.")
+@click.option("--csv", "csv_out", is_flag=True,
+              help="Output one row per episode in CSV format.")
 @click.pass_context
-def cost(ctx, month: str | None, model: str | None) -> None:
+def cost(ctx, month: str | None, model: str | None, csv_out: bool) -> None:
     """Summarize spend across the world model."""
     world = WorldModel(ctx.obj["db"])
     try:
-        episodes = world.list_episodes(limit=10_000)
+        episodes = world.list_episodes(limit=100_000 if csv_out else 10_000)
     finally:
         world.close()
     if month:
@@ -1173,6 +1175,24 @@ def cost(ctx, month: str | None, model: str | None) -> None:
     if model:
         # Outcome strings carry model id in the format "model=X ...".
         episodes = [e for e in episodes if model in (e.outcome or "")]
+
+    if csv_out:
+        import csv as _csv
+        writer = _csv.writer(sys.stdout)
+        writer.writerow([
+            "episode_id", "goal_id", "started_at", "ended_at", "outcome",
+            "dollars", "input_tokens", "output_tokens", "tool_calls",
+        ])
+        for e in episodes:
+            writer.writerow([
+                e.id, e.goal_id,
+                e.started_at, e.ended_at or "",
+                e.outcome or "",
+                f"{(e.cost_dollars or 0):.6f}",
+                e.input_tokens, e.output_tokens, e.tool_calls,
+            ])
+        return
+
     total = sum((e.cost_dollars or 0) for e in episodes)
     in_tok = sum((e.input_tokens or 0) for e in episodes)
     out_tok = sum((e.output_tokens or 0) for e in episodes)

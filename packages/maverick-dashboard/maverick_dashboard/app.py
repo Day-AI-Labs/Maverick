@@ -11,6 +11,7 @@ import hmac
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 from urllib.parse import urlparse
 
 from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
@@ -23,6 +24,18 @@ log = logging.getLogger(__name__)
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+def _format_datetime(ts) -> str:
+    """Jinja filter: float epoch -> 'HH:MM:SS'."""
+    import datetime as _dt
+    try:
+        return _dt.datetime.fromtimestamp(float(ts)).strftime("%H:%M:%S")
+    except (TypeError, ValueError):
+        return str(ts)
+
+
+templates.env.filters["datetime"] = _format_datetime
 
 app = FastAPI(
     title="Maverick Dashboard + REST API",
@@ -187,6 +200,154 @@ async def api_goal_legacy(goal_id: int) -> dict:
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
     return {"id": g.id, "status": g.status, "title": g.title, "result": g.result or ""}
+
+
+def _build_plan_tree(world, goal_id: int, depth_cap: int = 6) -> dict:
+    """Recursively assemble the plan tree rooted at goal_id."""
+    root = world.get_goal(goal_id)
+    if root is None:
+        return {}
+
+    def _children(parent_id: int) -> list:
+        rows = world.conn.execute(
+            "SELECT id, parent_id, title, status, "
+            "(SELECT COALESCE(SUM(cost_dollars), 0) FROM episodes WHERE episodes.goal_id = goals.id) AS dollars "
+            "FROM goals WHERE parent_id = ? ORDER BY created_at ASC LIMIT 50",
+            (parent_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def _attach(node: dict, depth: int) -> dict:
+        if depth >= depth_cap:
+            node["children"] = []
+            return node
+        node["children"] = [_attach(c, depth + 1) for c in _children(node["id"])]
+        return node
+
+    root_d = {
+        "id": root.id, "parent_id": root.parent_id,
+        "title": root.title, "status": root.status,
+        "dollars": 0.0,
+    }
+    # Lookup dollars for root.
+    row = world.conn.execute(
+        "SELECT COALESCE(SUM(cost_dollars), 0) AS d FROM episodes WHERE goal_id = ?",
+        (root.id,),
+    ).fetchone()
+    root_d["dollars"] = float(row["d"]) if row else 0.0
+    return _attach(root_d, 0)
+
+
+@app.get("/api/v1/goals/{goal_id}/tree")
+async def api_plan_tree(goal_id: int) -> dict:
+    """Plan-tree JSON: root + recursive children with status + cost."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    return _build_plan_tree(w, goal_id)
+
+
+def _render_tree_html(node: dict) -> str:
+    """Pre-render the plan-tree as nested <ul><li> HTML.
+
+    Avoids Jinja's recursive-macro limitation (dict args aren't hashable
+    for the autoescape cache). Escapes user-controlled fields with html
+    escape to keep titles safe.
+    """
+    import html as _html
+
+    def _esc(s) -> str:
+        return _html.escape(str(s)) if s is not None else ""
+
+    def _render(n: dict) -> str:
+        dollars_html = (
+            f' <span class="cost">${n["dollars"]:.4f}</span>'
+            if n.get("dollars") else ""
+        )
+        node_html = (
+            f'<a class="node" href="/goals#{n["id"]}">'
+            f'<span class="nid">#{_esc(n["id"])}</span> '
+            f'<span class="badge {_esc(n["status"])}">{_esc(n["status"])}</span> '
+            f'<span class="title">{_esc(n.get("title") or "(untitled)")}</span>'
+            f"{dollars_html}"
+            f"</a>"
+        )
+        children = n.get("children") or []
+        if not children:
+            return f"<li>{node_html}</li>"
+        children_html = "".join(_render(c) for c in children)
+        return f"<li>{node_html}<ul>{children_html}</ul></li>"
+
+    return f"<ul>{_render(node)}</ul>"
+
+
+@app.get("/goals/{goal_id}/plan", response_class=HTMLResponse)
+async def plan_tree_page(request: Request, goal_id: int) -> HTMLResponse:
+    """HTML plan-tree visualization."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    root = _build_plan_tree(w, goal_id)
+    tree_html = _render_tree_html(root)
+    return templates.TemplateResponse(
+        request, "plan_tree.html",
+        {"goal": g, "root": root, "tree_html": tree_html},
+    )
+
+
+@app.get("/goals/{goal_id}/trajectory", response_class=HTMLResponse)
+async def trajectory_page(request: Request, goal_id: int) -> HTMLResponse:
+    """Trajectory replay: timeline of every event with a scrubber."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    events = w.goal_events(goal_id, limit=10_000)
+    return templates.TemplateResponse(
+        request, "trajectory.html",
+        {"goal": g, "events": events},
+    )
+
+
+@app.get("/api/v1/cost.csv", response_class=PlainTextResponse)
+async def cost_csv(month: Optional[str] = None) -> str:
+    """CSV rollup of episode spend.
+
+    ``month`` filter: YYYY-MM (e.g. 2026-04). Omit for lifetime.
+    Columns: episode_id, goal_id, started_at, ended_at, outcome,
+    dollars, in_tokens, out_tokens, tool_calls.
+    """
+    import csv
+    import datetime as _dt
+    import io as _io
+
+    w = _world()
+    episodes = w.list_episodes(limit=100_000)
+    if month:
+        try:
+            start = _dt.datetime.strptime(month, "%Y-%m").timestamp()
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"bad month: {e}")
+        end = start + 31 * 86_400
+        episodes = [e for e in episodes if start <= (e.started_at or 0) < end]
+
+    buf = _io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "episode_id", "goal_id", "started_at", "ended_at", "outcome",
+        "dollars", "input_tokens", "output_tokens", "tool_calls",
+    ])
+    for e in episodes:
+        writer.writerow([
+            e.id, e.goal_id,
+            e.started_at, e.ended_at or "",
+            e.outcome or "",
+            f"{e.cost_dollars:.6f}",
+            e.input_tokens, e.output_tokens, e.tool_calls,
+        ])
+    return buf.getvalue()
 
 
 @app.get("/api/goal/{goal_id}/events")
