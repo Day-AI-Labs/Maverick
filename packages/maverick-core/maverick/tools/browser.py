@@ -23,9 +23,11 @@ Safety:
 from __future__ import annotations
 
 import base64
+import ipaddress
 import logging
 import os
 import re
+from urllib.parse import urlparse
 import threading
 from typing import Any, Optional
 
@@ -149,6 +151,32 @@ def close_browser() -> None:
 _SAFE_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 
 
+def _is_safe_browser_url(url: str) -> bool:
+    if not _SAFE_URL_RE.match(url):
+        return False
+
+    host = (urlparse(url).hostname or "").strip().lower()
+    if not host:
+        return False
+    if host == "localhost" or host.endswith(".localhost"):
+        return False
+
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        # Non-IP hostnames are allowed.
+        return True
+
+    return not (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
 def _run_browser_action(args: dict[str, Any]) -> str:
     if os.environ.get("MAVERICK_BROWSER_DISABLE") == "1":
         return "ERROR: browser tool disabled by MAVERICK_BROWSER_DISABLE=1"
@@ -169,8 +197,11 @@ def _run_browser_action(args: dict[str, Any]) -> str:
 
     if action == "navigate":
         url = args.get("url") or ""
-        if not _SAFE_URL_RE.match(url):
-            return f"ERROR: URL must start with http:// or https://; got {url!r}"
+        if not _is_safe_browser_url(url):
+            return (
+                "ERROR: URL must be http(s) and must not target localhost or "
+                f"non-public IP ranges; got {url!r}"
+            )
         log.info("browser.navigate %s", url)
         page.goto(url, timeout=timeout, wait_until="domcontentloaded")
         return f"navigated to {page.url} (status: loaded)"

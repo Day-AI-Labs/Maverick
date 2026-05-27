@@ -432,13 +432,15 @@ def test_browser_tool_kill_switch(monkeypatch):
 
 
 def test_browser_tool_rejects_unsafe_url(monkeypatch):
-    """navigate must refuse non-http(s) URLs."""
+    """navigate must refuse non-public / non-http(s) URLs."""
     monkeypatch.setenv("MAVERICK_BROWSER_DISABLE", "0")
     # Mock the session so we don't actually try to start playwright.
     from maverick.tools import browser as browser_mod
 
     class _FakePage:
         url = "about:blank"
+        def goto(self, url, timeout, wait_until):
+            self.url = url
 
     class _FakeSession:
         @property
@@ -447,7 +449,16 @@ def test_browser_tool_rejects_unsafe_url(monkeypatch):
 
     monkeypatch.setattr(browser_mod, "_get_session", lambda: _FakeSession())
     out = browser_mod._run_browser_action({"action": "navigate", "url": "file:///etc/passwd"})
-    assert "must start with http" in out.lower()
+    assert "must be http(s)" in out.lower()
+
+    out = browser_mod._run_browser_action({"action": "navigate", "url": "http://127.0.0.1:8000"})
+    assert "non-public ip ranges" in out.lower()
+
+    out = browser_mod._run_browser_action({"action": "navigate", "url": "http://localhost:8000"})
+    assert "localhost" in out.lower()
+
+    out = browser_mod._run_browser_action({"action": "navigate", "url": "https://example.com"})
+    assert out.startswith("navigated to https://example.com")
 
 
 def test_browser_tool_schema_lists_all_actions():
