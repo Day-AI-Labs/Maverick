@@ -169,6 +169,7 @@ def default_for_role(role: str) -> str:
         "writer":          "anthropic:claude-sonnet-4-6",
         "analyst":         "anthropic:claude-sonnet-4-6",
         "revisor":         "anthropic:claude-opus-4-7",
+        "verifier":        "anthropic:claude-sonnet-4-6",
         "summarizer":      "anthropic:claude-haiku-4-5",
         "skill_distiller": "anthropic:claude-sonnet-4-6",
     }[role]
