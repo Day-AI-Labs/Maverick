@@ -125,7 +125,8 @@ def test_server_passes_channel_user_to_run_goal(monkeypatch):
             self._cid = 1
             self._gid = 1
         def get_or_create_conversation(self, channel, user_id):
-            class C: pass
+            class C:
+                pass
             c = C()
             c.id = self._cid
             return c
