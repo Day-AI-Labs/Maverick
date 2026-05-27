@@ -1024,7 +1024,7 @@ def _cmd_for(runner: str, ids: list[str]):
         names = "|".join(re.escape(i.split("::", 1)[1]) for i in ids if "::" in i)
         if not names:
             names = "."
-        return f"go test -count=1 -run '^({names})$' " + " ".join(pkgs or ["./..."])
+        return f"go test -count=1 -run '^({names})$' " + " ".join(q(p) for p in (pkgs or ["./..."]))
     if runner == "rspec":
         return "bundle exec rspec --format documentation " + " ".join(q(i) for i in ids)
     if runner == "gradle":

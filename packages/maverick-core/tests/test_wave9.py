@@ -222,6 +222,17 @@ class TestNonPytestParsers:
         assert f == 3
 
 
+class TestCommandBuilding:
+    def test_gotest_quotes_manifest_package_paths(self):
+        from maverick.coding_mode import _cmd_for
+        cmd = _cmd_for(
+            "gotest",
+            ["./...; touch /tmp/pwned #::TestFoo"],
+        )
+        assert isinstance(cmd, str)
+        assert cmd.endswith("'./...; touch /tmp/pwned #'")
+
+
 # ---- repo_map cache + token cap ----
 
 class TestRepoMapCache:
