@@ -556,7 +556,8 @@ def render_diff(workdir: Path) -> str:
     try:
         proc = subprocess.run(
             ["git", "-c", "core.quotePath=false", "-C", str(workdir), "diff",
-             "--no-color", "--no-ext-diff", "--unified=3", "HEAD"],
+             "--no-color", "--no-ext-diff", "--no-textconv",
+             "--unified=3", "HEAD"],
             capture_output=True, timeout=30,
         )
         if proc.returncode == 0:
