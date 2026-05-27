@@ -1,0 +1,192 @@
+"""Data-retention enforcement.
+
+Reads ``[retention]`` from ``~/.maverick/config.toml`` and prunes:
+
+  - ``~/.maverick/audit/YYYY-MM-DD.ndjson`` files older than
+    ``audit_days``.
+  - ``episodes`` rows in ``~/.maverick/world.db`` with
+    ``ended_at`` older than ``episodes_days``.
+  - ``goal_events`` rows with ``ts`` older than ``events_days``.
+
+Config defaults are "no pruning" — retention is opt-in. The CLI
+exposes ``maverick retention enforce [--dry-run]``.
+"""
+from __future__ import annotations
+
+import logging
+import sqlite3
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+from .writer import DEFAULT_AUDIT_DIR
+
+log = logging.getLogger(__name__)
+
+
+def _config() -> dict:
+    try:
+        from ..config import load_config
+        return (load_config() or {}).get("retention") or {}
+    except Exception as e:
+        log.debug("retention: cannot load config: %s", e)
+        return {}
+
+
+def _cutoff_for_days(days: int, *, now: Optional[float] = None) -> float:
+    now = now if now is not None else time.time()
+    return now - max(1, int(days)) * 86400.0
+
+
+def purge_audit_files(
+    *,
+    days: int,
+    audit_dir: Path = DEFAULT_AUDIT_DIR,
+    dry_run: bool = False,
+    now: Optional[float] = None,
+) -> dict:
+    """Remove ``YYYY-MM-DD.ndjson`` files older than ``days``.
+
+    Filename date wins over mtime — easier to reason about, immune to
+    filesystem mtime drift from backups/rsync.
+    """
+    if days is None or int(days) <= 0:
+        return {"removed": [], "kept": 0, "reason": "disabled"}
+    if not audit_dir.exists():
+        return {"removed": [], "kept": 0, "reason": "no audit dir"}
+
+    cutoff_ts = _cutoff_for_days(days, now=now)
+    cutoff_day = datetime.utcfromtimestamp(cutoff_ts).date()
+    removed: list[str] = []
+    kept = 0
+    for path in sorted(audit_dir.glob("*.ndjson")):
+        try:
+            day = datetime.strptime(path.stem, "%Y-%m-%d").date()
+        except ValueError:
+            kept += 1
+            continue
+        if day < cutoff_day:
+            removed.append(path.name)
+            if not dry_run:
+                try:
+                    path.unlink()
+                except OSError as e:
+                    log.warning("retention: cannot unlink %s: %s", path, e)
+                    continue
+        else:
+            kept += 1
+    log.info(
+        "retention: audit purge cutoff=%s removed=%d kept=%d dry_run=%s",
+        cutoff_day, len(removed), kept, dry_run,
+    )
+    return {"removed": removed, "kept": kept, "cutoff_day": str(cutoff_day)}
+
+
+def _purge_table_by_time(
+    db_path: Path,
+    table: str,
+    time_col: str,
+    cutoff_ts: float,
+    *,
+    dry_run: bool,
+) -> int:
+    if not db_path.exists():
+        return 0
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cur = conn.execute(
+            f"SELECT COUNT(*) FROM {table} WHERE {time_col} IS NOT NULL AND {time_col} < ?",
+            (cutoff_ts,),
+        )
+        (count,) = cur.fetchone()
+        if not dry_run and count > 0:
+            conn.execute(
+                f"DELETE FROM {table} WHERE {time_col} IS NOT NULL AND {time_col} < ?",
+                (cutoff_ts,),
+            )
+            conn.commit()
+        return int(count or 0)
+    finally:
+        conn.close()
+
+
+def purge_world_episodes(
+    *,
+    days: int,
+    db_path: Optional[Path] = None,
+    dry_run: bool = False,
+    now: Optional[float] = None,
+) -> dict:
+    """Delete ``episodes`` rows ended before ``days`` ago."""
+    if days is None or int(days) <= 0:
+        return {"deleted": 0, "reason": "disabled"}
+    from ..world_model import DEFAULT_DB
+    db_path = db_path or DEFAULT_DB
+    cutoff_ts = _cutoff_for_days(days, now=now)
+    deleted = _purge_table_by_time(
+        db_path, "episodes", "ended_at", cutoff_ts, dry_run=dry_run,
+    )
+    log.info("retention: episodes deleted=%d dry_run=%s", deleted, dry_run)
+    return {"deleted": deleted, "cutoff_ts": cutoff_ts}
+
+
+def purge_world_events(
+    *,
+    days: int,
+    db_path: Optional[Path] = None,
+    dry_run: bool = False,
+    now: Optional[float] = None,
+) -> dict:
+    """Delete ``goal_events`` rows older than ``days``."""
+    if days is None or int(days) <= 0:
+        return {"deleted": 0, "reason": "disabled"}
+    from ..world_model import DEFAULT_DB
+    db_path = db_path or DEFAULT_DB
+    cutoff_ts = _cutoff_for_days(days, now=now)
+    deleted = _purge_table_by_time(
+        db_path, "goal_events", "ts", cutoff_ts, dry_run=dry_run,
+    )
+    log.info("retention: goal_events deleted=%d dry_run=%s", deleted, dry_run)
+    return {"deleted": deleted, "cutoff_ts": cutoff_ts}
+
+
+def enforce(
+    *,
+    config: Optional[dict] = None,
+    dry_run: bool = False,
+    audit_dir: Path = DEFAULT_AUDIT_DIR,
+    db_path: Optional[Path] = None,
+    now: Optional[float] = None,
+) -> dict:
+    """Apply every configured retention rule. Returns a per-rule report."""
+    cfg = config if config is not None else _config()
+    if not cfg:
+        return {"status": "disabled", "reason": "no [retention] in config"}
+
+    audit_days = cfg.get("audit_days")
+    episodes_days = cfg.get("episodes_days")
+    events_days = cfg.get("events_days")
+
+    report: dict = {"dry_run": dry_run}
+    if audit_days:
+        report["audit"] = purge_audit_files(
+            days=audit_days, audit_dir=audit_dir, dry_run=dry_run, now=now,
+        )
+    if episodes_days:
+        report["episodes"] = purge_world_episodes(
+            days=episodes_days, db_path=db_path, dry_run=dry_run, now=now,
+        )
+    if events_days:
+        report["goal_events"] = purge_world_events(
+            days=events_days, db_path=db_path, dry_run=dry_run, now=now,
+        )
+    return report
+
+
+__all__ = [
+    "enforce",
+    "purge_audit_files",
+    "purge_world_episodes",
+    "purge_world_events",
+]

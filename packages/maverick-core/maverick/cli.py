@@ -1256,5 +1256,72 @@ def logs_cmd(pattern: str | None, num: int, day: str | None) -> None:
         click.echo(_json.dumps(r, default=str))
 
 
+# ----- Cache management ------------------------------------------------
+
+@main.group("cache")
+def cache_group() -> None:
+    """Inspect and clear in-process caches (file reads, repo map, embeddings)."""
+
+
+@cache_group.command("stats")
+def cache_stats_cmd() -> None:
+    """Show cache sizes."""
+    import json as _json
+    from .cache import stats
+    click.echo(_json.dumps(stats(), default=str, indent=2))
+
+
+@cache_group.command("purge")
+@click.option(
+    "--scope", "scopes", multiple=True,
+    type=click.Choice(["files", "repo_map", "skill_embeddings", "all"]),
+    help="Scope to purge (repeatable). Default: all.",
+)
+def cache_purge_cmd(scopes: tuple[str, ...]) -> None:
+    """Purge cache(s)."""
+    import json as _json
+    from .cache import purge
+    report = purge(scopes or ("all",))
+    click.echo(_json.dumps(report, default=str, indent=2))
+
+
+# ----- Retention enforcement ------------------------------------------
+
+@main.group("retention")
+def retention_group() -> None:
+    """Enforce ~/.maverick/config.toml [retention] rules."""
+
+
+@retention_group.command("enforce")
+@click.option("--dry-run", is_flag=True, help="Report what would be removed.")
+@click.option("--audit-days", type=int, default=None,
+              help="Override [retention].audit_days.")
+@click.option("--episodes-days", type=int, default=None,
+              help="Override [retention].episodes_days.")
+@click.option("--events-days", type=int, default=None,
+              help="Override [retention].events_days.")
+def retention_enforce_cmd(
+    dry_run: bool,
+    audit_days: int | None,
+    episodes_days: int | None,
+    events_days: int | None,
+) -> None:
+    """Apply retention rules to the audit log and world model."""
+    import json as _json
+    from .audit.retention import enforce
+    # CLI overrides take precedence if any are set; otherwise read config.
+    cfg: dict | None = None
+    if any(v is not None for v in (audit_days, episodes_days, events_days)):
+        cfg = {}
+        if audit_days is not None:
+            cfg["audit_days"] = audit_days
+        if episodes_days is not None:
+            cfg["episodes_days"] = episodes_days
+        if events_days is not None:
+            cfg["events_days"] = events_days
+    report = enforce(config=cfg, dry_run=dry_run)
+    click.echo(_json.dumps(report, default=str, indent=2))
+
+
 if __name__ == "__main__":
     main()
