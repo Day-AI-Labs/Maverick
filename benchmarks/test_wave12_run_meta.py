@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -87,3 +88,35 @@ class TestRunMetaWriter:
         )
         # ...non-secret env vars preserved.
         assert env.get("MAVERICK_CODING_MODE") == "1"
+
+    def test_additional_secret_names_redacted(self, tmp_path, monkeypatch):
+        sb = _load_sb()
+        monkeypatch.setenv("MAVERICK_PASSWORD", "correct-horse-battery-staple")
+        monkeypatch.setenv("ANTHROPIC_CREDENTIALS", "client_id:client_secret")
+        monkeypatch.setenv("MAVERICK_AUTH_URL", "https://ci-user:ci-pass@example.internal/api")
+        manifest = tmp_path / "m.txt"
+        manifest.write_text("a\n", encoding="utf-8")
+        args = SimpleNamespace(instances=manifest, out=tmp_path / "r.csv")
+        sb._write_run_meta(tmp_path, args, manifest)
+        env = json.loads((tmp_path / "run_meta.json").read_text(encoding="utf-8"))["env_snapshot"]
+        assert env.get("MAVERICK_PASSWORD") == "REDACTED"
+        assert env.get("ANTHROPIC_CREDENTIALS") == "REDACTED"
+        assert env.get("MAVERICK_AUTH_URL") == "REDACTED"
+
+    def test_pip_freeze_authenticated_urls_redacted(self, tmp_path, monkeypatch):
+        sb = _load_sb()
+
+        class _R:
+            returncode = 0
+            stdout = (
+                "privatepkg @ git+https://user:ghp_FAKESECRET@example.internal/org/privatepkg.git@main\n"
+            )
+
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: _R())
+        manifest = tmp_path / "m.txt"
+        manifest.write_text("a\n", encoding="utf-8")
+        args = SimpleNamespace(instances=manifest, out=tmp_path / "r.csv")
+        sb._write_run_meta(tmp_path, args, manifest)
+        pip_freeze = json.loads((tmp_path / "run_meta.json").read_text(encoding="utf-8"))["pip_freeze"]
+        assert "user:ghp_FAKESECRET@" not in pip_freeze
+        assert "https://REDACTED@" in pip_freeze
