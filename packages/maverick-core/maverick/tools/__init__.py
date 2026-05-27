@@ -114,11 +114,15 @@ def base_registry(
     from .http_fetch import http_fetch
     from .pdf_reader import read_pdf
     from .view_image import view_image
+    from .dep_graph import dep_graph
+    from .ast_edit import ast_edit
     reg.register(web_search())
     reg.register(recall())
     reg.register(http_fetch())
     reg.register(read_pdf())
     reg.register(view_image())
+    reg.register(dep_graph(sandbox))
+    reg.register(ast_edit(sandbox))
 
     if enable_computer_use:
         from .computer import computer

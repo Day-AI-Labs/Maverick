@@ -893,6 +893,39 @@ def smoke_test() -> bool:
     return True
 
 
+PARTIAL_STATE_PATH = CONFIG_DIR / "wizard-partial.json"
+
+
+def _save_partial(state: dict[str, Any]) -> None:
+    """Persist wizard progress so --resume can pick up later."""
+    try:
+        import json as _json
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        PARTIAL_STATE_PATH.write_text(_json.dumps(state, default=str))
+        os.chmod(PARTIAL_STATE_PATH, 0o600)
+    except OSError:
+        pass
+
+
+def _load_partial() -> dict[str, Any] | None:
+    """Return persisted partial state, or None if absent."""
+    if not PARTIAL_STATE_PATH.exists():
+        return None
+    try:
+        import json as _json
+        return _json.loads(PARTIAL_STATE_PATH.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def _clear_partial() -> None:
+    try:
+        if PARTIAL_STATE_PATH.exists():
+            PARTIAL_STATE_PATH.unlink()
+    except OSError:
+        pass
+
+
 def run_fast() -> int:
     """``maverick init --fast``: zero-question setup with sensible defaults.
 
@@ -952,7 +985,7 @@ def run_fast() -> int:
     return 0
 
 
-def run(fast: bool = False) -> int:
+def run(fast: bool = False, resume: bool = False) -> int:
     if fast:
         return run_fast()
     welcome()
@@ -961,26 +994,80 @@ def run(fast: bool = False) -> int:
             "[red]Preflight failed.[/red] Fix the issues above and re-run `maverick init`."
         )
         return 1
-    deployment = pick_deployment()
-    providers = pick_providers()
+
+    # --resume: load any persisted partial state and only ask
+    # questions the user hasn't answered yet.
+    state: dict[str, Any] = {}
+    if resume:
+        loaded = _load_partial()
+        if loaded:
+            state = loaded
+            console.print(
+                f"[dim]Resuming from {PARTIAL_STATE_PATH}: "
+                f"{len(state)} answers already on file.[/dim]\n"
+            )
+        else:
+            console.print(
+                f"[yellow]⚠[/yellow] No partial state at {PARTIAL_STATE_PATH}; "
+                "starting fresh.\n"
+            )
+
+    deployment = state.get("deployment") or pick_deployment()
+    state["deployment"] = deployment
+    _save_partial(state)
+
+    providers = state.get("providers") or pick_providers()
     if not providers:
         console.print("[red]No providers selected. Aborting.[/red]")
         return 1
-    role_models = pick_models_per_role(providers)
-    channels, channel_envs = pick_channels(deployment)
-    safety = pick_safety()
-    budget = pick_budget()
-    sandbox = pick_sandbox()
-    capabilities = pick_capabilities()
+    state["providers"] = providers
+    _save_partial(state)
+
+    role_models = state.get("role_models")
+    if role_models is None:
+        role_models = pick_models_per_role(providers)
+        state["role_models"] = role_models
+        _save_partial(state)
+
+    channels_state = state.get("channels")
+    if channels_state is None:
+        channels, channel_envs = pick_channels(deployment)
+        # JSON-safe: store envs as a sorted list.
+        state["channels"] = channels
+        state["channel_envs"] = sorted(channel_envs)
+        _save_partial(state)
+    else:
+        channels = channels_state
+        channel_envs = set(state.get("channel_envs") or [])
+
+    safety = state.get("safety") or pick_safety()
+    state["safety"] = safety
+    _save_partial(state)
+
+    budget = state.get("budget") or pick_budget()
+    state["budget"] = budget
+    _save_partial(state)
+
+    sandbox = state.get("sandbox") or pick_sandbox()
+    state["sandbox"] = sandbox
+    _save_partial(state)
+
+    capabilities = state.get("capabilities") or pick_capabilities()
+    state["capabilities"] = capabilities
+    _save_partial(state)
+
+    # Keys/sessions are never persisted to disk in the partial state
+    # (they're secrets; the only safe place is ~/.maverick/.env).
     keys = collect_api_keys(providers, channel_envs)
     collect_browser_sessions(providers)
 
     console.print()
     if not _q_confirm("Write config and finish?", default=True):
-        console.print("Aborted. Nothing written.")
+        console.print("Aborted. Partial state saved; resume with `maverick init --resume`.")
         return 0
 
     write_config(deployment, providers, role_models, channels, safety, budget, sandbox, keys, capabilities)
+    _clear_partial()
     ok = smoke_test()
     if ok:
         console.print()
