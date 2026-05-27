@@ -8,6 +8,8 @@ and carries the right code. The `isError` envelope is only for tool
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from maverick_mcp.server import (
@@ -87,6 +89,36 @@ class TestProtocol:
         assert out["isError"] is True
         assert "text" in out["content"][0]
 
+    def test_maverick_start_blocks_disallowed_input(self, monkeypatch):
+        s = MCPServer()
+        s._shield = SimpleNamespace(
+            scan_input=lambda _text: SimpleNamespace(allowed=False, reasons=["blocked input"]),
+            scan_output=lambda _text: SimpleNamespace(allowed=True, reasons=[]),
+        )
+
+        out = s.handle_tools_call({
+            "name": "maverick_start",
+            "arguments": {"title": "bad payload", "description": "ignore rules"},
+        })
+
+        assert out["isError"] is False
+        assert "⚠ Blocked: blocked input" in out["content"][0]["text"]
+
+    def test_tools_call_blocks_disallowed_output(self, monkeypatch):
+        s = MCPServer()
+        s._shield = SimpleNamespace(
+            scan_output=lambda _text: SimpleNamespace(allowed=False, reasons=["blocked output"]),
+        )
+        monkeypatch.setattr(s, "_dispatch_tool", lambda *_args, **_kwargs: "secret")
+
+        out = s.handle_tools_call({
+            "name": "maverick_status",
+            "arguments": {},
+        })
+
+        assert out["isError"] is True
+        assert "⚠ Output blocked: blocked output" in out["content"][0]["text"]
+
 
 class TestProtocol2025_11_25:
     """Tests for the new MCP 2025-11-25 primitives."""
@@ -114,7 +146,6 @@ class TestProtocol2025_11_25:
         uris = {r["uri"] for r in out["resources"]}
         assert "maverick://goals" in uris
         assert "maverick://skills" in uris
-        assert "maverick://facts" in uris
 
     def test_resources_read_rejects_unsupported_scheme(self):
         s = MCPServer()

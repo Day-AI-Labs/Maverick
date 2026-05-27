@@ -156,6 +156,7 @@ def apply_to_registry(
     allowed, denied = resolve_lists(channel=channel, user_id=user_id)
     if not allowed and not denied:
         return
+    reg.set_acl(allowed=allowed, denied=denied)
     current = {t.name for t in reg.all()}
     keep = filter_tools(current, allowed=allowed, denied=denied)
     drop = current - keep

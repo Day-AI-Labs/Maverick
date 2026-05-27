@@ -13,9 +13,11 @@ Design:
 
 - FastAPI + Jinja2 templates + a sprinkle of htmx for the live
   refresh on the goals list. No React, no build step.
-- All requests are local; the server binds to ``127.0.0.1`` by default
-  so nothing is exposed off-host. Pass ``--host 0.0.0.0`` if you're
-  running on a VPS and have a reverse proxy + auth in front.
+- The server binds to ``127.0.0.1`` by default so nothing is exposed
+  off-host.
+- To bind publicly (for example ``--host 0.0.0.0``), you **must** set
+  ``MAVERICK_DASHBOARD_TOKEN`` and send ``Authorization: Bearer <token>``
+  on requests.
 - No write actions in v0.1 — the dashboard is read-only. Mutating
   actions (cancel a goal, remove a skill) come in v0.2 once we add
   CSRF.

@@ -54,6 +54,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
@@ -102,7 +103,13 @@ jobs:
           EOF
 
           # Run; capture output for the PR comment.
-          maverick start "${{ inputs.goal }}" 2>&1 | tee /tmp/agent-output.txt
+          printf "%s" "${{ inputs.goal }}" > /tmp/goal.txt
+          python - <<'PY' 2>&1 | tee /tmp/agent-output.txt
+          import subprocess
+          goal = open("/tmp/goal.txt", "r", encoding="utf-8").read()
+          p = subprocess.run(["maverick", "start", goal], check=False)
+          raise SystemExit(p.returncode)
+          PY
           echo "exit=$?" >> "$GITHUB_OUTPUT"
 
       - name: Post review comment
@@ -114,11 +121,16 @@ jobs:
             let body = "🤖 **Maverick agent review**\n\n";
             try {
               const out = fs.readFileSync("/tmp/agent-output.txt", "utf8");
+              let redacted = out
+                .replace(/sk-ant-[A-Za-z0-9_\-]+/g, "[REDACTED_ANTHROPIC_KEY]")
+                .replace(/sk-proj[A-Za-z0-9_\-]+/g, "[REDACTED_OPENAI_KEY]")
+                .replace(/gh[pousr]_[A-Za-z0-9_]+/g, "[REDACTED_GITHUB_TOKEN]");
+
               // Truncate to avoid GitHub's 65k comment limit.
               const max = 50000;
-              body += "```\n" + (out.length > max
-                ? out.slice(0, max) + "\n\n[... truncated]"
-                : out
+              body += "```\n" + (redacted.length > max
+                ? redacted.slice(0, max) + "\n\n[... truncated]"
+                : redacted
               ) + "\n```";
             } catch (e) {
               body += `(no output captured: ${e.message})`;

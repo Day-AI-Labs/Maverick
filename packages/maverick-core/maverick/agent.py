@@ -106,6 +106,11 @@ class Agent:
         self.tools = self._build_tools()
         self.system = self._build_system()
         self.model = model_override or model_for_role(role)
+        # Tracks whether we've already given one LLM-verifier-driven
+        # revision pass for this agent run. Separate from
+        # `_already_verified` so revised FINALs can be re-verified once
+        # without permitting repeated reject/revise loops.
+        self._verifier_revision_used = False
 
     def _build_tools(self) -> ToolRegistry:
         reg = base_registry(
@@ -850,7 +855,21 @@ class Agent:
                             verdict = None
 
                         if verdict is not None and not verdict.accepts:
+                            if getattr(self, "_verifier_revision_used", False):
+                                self._already_verified = True
+                                bb.post(
+                                    self.name, "verify",
+                                    "verifier rejected after retry; accepting "
+                                    "second attempt per one-revision cap",
+                                )
+                                return AgentResult(
+                                    final=final, role=self.role, name=self.name,
+                                    verifier_confidence=verdict.confidence,
+                                    verifier_critique=verdict.critique,
+                                    final_patch=getattr(self, "_final_patch", None),
+                                )
                             self._already_verified = True
+                            self._verifier_revision_used = True
                             bb.post(
                                 self.name, "verify",
                                 f"verifier rejected (conf={verdict.confidence:.2f}): "

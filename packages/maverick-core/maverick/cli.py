@@ -1017,6 +1017,28 @@ def donate_clear(yes: bool) -> None:
     click.echo(f"cleared {n} record(s)")
 
 
+
+
+def _watch_goal_allowed(goal_text: str) -> tuple[bool, str | None]:
+    """Best-effort Shield scan for watch-mode marker goals."""
+    try:
+        from maverick_shield import Shield  # type: ignore
+    except ImportError:
+        return True, None
+
+    try:
+        verdict = Shield.from_config().scan_input(goal_text)
+    except Exception as exc:  # pragma: no cover
+        logging.getLogger(__name__).warning(
+            "Shield raised %s during watch --run scan; failing open",
+            type(exc).__name__,
+        )
+        return True, None
+
+    if verdict.allowed:
+        return True, None
+    return False, f"blocked by Shield ({verdict.severity}): {'; '.join(verdict.reasons)}"
+
 @main.command()
 @click.argument("path", type=click.Path(exists=True))
 @click.option("--run", is_flag=True, help="Spawn a goal per match (default: print only).")
@@ -1050,7 +1072,12 @@ def watch(ctx, path: str, run: bool, max_dollars: float) -> None:
             llm = LLM(model=ctx.obj["model"])
             sandbox = build_sandbox(workdir=str(p.parent if p.is_file() else p))
             title = (m.text or m.follow_lines[0] if m.follow_lines else "").strip()[:80]
-            goal_id = world.create_goal(title or "watch-mode goal", m.to_goal())
+            goal_text = m.to_goal()
+            allowed, reason = _watch_goal_allowed(goal_text)
+            if not allowed:
+                click.echo(click.style(f"  skipped: {reason}", fg="yellow"), err=True)
+                continue
+            goal_id = world.create_goal(title or "watch-mode goal", goal_text)
             click.echo(click.style(f"  -> goal #{goal_id}", fg="bright_black"))
             try:
                 result = run_goal_sync(

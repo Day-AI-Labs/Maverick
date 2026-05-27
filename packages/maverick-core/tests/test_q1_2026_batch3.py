@@ -183,6 +183,8 @@ def test_wizard_run_accepts_fast_flag(tmp_path, monkeypatch):
     assert 'target = "desktop"' in body
     assert "[providers.anthropic]" in body
     assert "[safety]" in body
+    assert "[sandbox]" in body
+    assert "backend = \"docker\"" in body
     # ENV stored the key.
     assert wizard.ENV_FILE.exists()
     env_body = wizard.ENV_FILE.read_text()

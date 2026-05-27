@@ -143,8 +143,17 @@ def list_templates() -> list[str]:
     return out
 
 
+def _validate_template_name(name: str) -> None:
+    """Only allow safe template IDs like ``trip-plan`` or ``research_v2``."""
+    if not re.match(r"^[A-Za-z0-9][A-Za-z0-9_-]*$", name):
+        raise ValueError(
+            f"invalid template name {name!r}; use only letters, numbers, _ and -"
+        )
+
+
 def load_template(name: str) -> Template:
     """Find ``name.md`` in candidate dirs and parse it."""
+    _validate_template_name(name)
     for d in _candidate_dirs():
         p = d / f"{name}.md"
         if p.exists():
