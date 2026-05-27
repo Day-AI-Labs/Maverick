@@ -121,6 +121,15 @@ _TOOL_NAMES = {t["name"] for t in TOOLS}
 class MCPServer:
     def __init__(self):
         self._initialized = False
+        self._shield = self._build_shield()
+
+    @staticmethod
+    def _build_shield():
+        try:
+            from maverick_shield import Shield
+            return Shield.from_config()
+        except Exception:
+            return None
 
     def handle_initialize(self, params: dict) -> dict:
         self._initialized = True
@@ -298,6 +307,13 @@ class MCPServer:
                 "isError": True,
                 "content": [{"type": "text", "text": f"{type(e).__name__}: {e}"}],
             }
+        if self._shield is not None:
+            verdict = self._shield.scan_output(result)
+            if not verdict.allowed:
+                return {
+                    "isError": True,
+                    "content": [{"type": "text", "text": f"⚠ Output blocked: {'; '.join(verdict.reasons)}"}],
+                }
         return {
             "isError": False,
             "content": [{"type": "text", "text": result}],
@@ -330,6 +346,10 @@ class MCPServer:
         from maverick.world_model import WorldModel
         title = args["title"]
         description = args.get("description", "")
+        if self._shield is not None:
+            verdict = self._shield.scan_input(f"{title}\n{description}")
+            if not verdict.allowed:
+                return f"⚠ Blocked: {'; '.join(verdict.reasons)}"
         budget = Budget(
             max_dollars=float(args.get("max_dollars", 5.0)),
             max_wall_seconds=float(args.get("max_wall_seconds", 3600)),
