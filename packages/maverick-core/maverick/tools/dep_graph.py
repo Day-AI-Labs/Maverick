@@ -19,6 +19,7 @@ import ast
 import logging
 import os
 import re
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +60,7 @@ _SKIP_DIRS = frozenset({
 })
 
 _PY_RE = re.compile(r"\.py$")
+_MAX_PARSE_BYTES = 1_000_000
 
 
 def _walk_py_files(root: Path, *, max_files: int = 2000) -> list[Path]:
@@ -76,9 +78,22 @@ def _walk_py_files(root: Path, *, max_files: int = 2000) -> list[Path]:
 def _parse_module(path: Path, root: Path) -> dict[str, Any] | None:
     """Return {'rel', 'imports', 'symbols', 'calls'} or None on failure."""
     try:
-        src = path.read_text(encoding="utf-8", errors="replace")
+        st = path.stat(follow_symlinks=False)
     except OSError:
         return None
+    if not stat.S_ISREG(st.st_mode):
+        return None
+    if st.st_size > _MAX_PARSE_BYTES:
+        return None
+
+    try:
+        with path.open("rb") as fh:
+            raw = fh.read(_MAX_PARSE_BYTES + 1)
+    except OSError:
+        return None
+    if len(raw) > _MAX_PARSE_BYTES:
+        return None
+    src = raw.decode("utf-8", errors="replace")
     try:
         tree = ast.parse(src, filename=str(path))
     except SyntaxError:
