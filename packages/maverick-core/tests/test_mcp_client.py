@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from maverick.mcp_client import (
+    MCPClient,
     MCPServerSpec,
     _content_to_str,
     load_mcp_specs_from_config,
@@ -90,3 +91,48 @@ class TestLoadSpecsFromConfig:
         specs = load_mcp_specs_from_config()
         assert len(specs) == 1
         assert specs[0].name == "fs"
+
+
+class TestStartLogging:
+    def test_start_log_redacts_args(self, monkeypatch, caplog):
+        class DummyStderr:
+            async def readline(self):
+                return b""
+
+        class DummyProc:
+            returncode = None
+            stdin = object()
+            stdout = object()
+            stderr = DummyStderr()
+
+        async def _fake_create_subprocess_exec(*args, **kwargs):
+            return DummyProc()
+
+        async def _fake_request(self, method, params):
+            if method == "initialize":
+                return {"protocolVersion": "2024-11-05"}
+            if method == "tools/list":
+                return {"tools": []}
+            return {}
+
+        async def _fake_send_notification(self, method, params):
+            return None
+
+        monkeypatch.setattr("asyncio.create_subprocess_exec", _fake_create_subprocess_exec)
+        monkeypatch.setattr(MCPClient, "_request", _fake_request)
+        monkeypatch.setattr(MCPClient, "_notify", _fake_send_notification)
+        spec = MCPServerSpec(
+            name="pg",
+            command="npx",
+            args=["postgres://user:pass@db/prod", "--token=argv-secret"],
+        )
+        client = MCPClient(spec)
+
+        caplog.set_level("INFO")
+        import asyncio
+        asyncio.run(client.start())
+
+        msg = "\n".join(r.getMessage() for r in caplog.records)
+        assert "argv-secret" not in msg
+        assert "postgres://user:pass@db/prod" not in msg
+        assert "args=2" in msg
