@@ -162,6 +162,15 @@ async def verify_proposal(
         return VerifierVerdict.reject("proposal is empty")
 
     model = model_for_role("verifier")
+    # Privacy-safe fallback: if verifier isn't explicitly configured,
+    # inherit the proposer model to avoid surprise provider egress.
+    try:
+        from .config import get_role_model
+        if not get_role_model("verifier") and proposer_model:
+            model = proposer_model
+    except Exception:
+        pass
+
     if proposer_model and _same_family(proposer_model, model):
         cross = _cross_family_fallback(model)
         if cross is not None:

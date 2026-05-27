@@ -15,6 +15,7 @@ ROLES: list[tuple[str, str]] = [
     ("writer",          "Drafts long prose. Quality matters."),
     ("analyst",         "Synthesizes findings. Reasoning-heavy."),
     ("revisor",         "Second-pass review when verify fails. Smart model."),
+    ("verifier",        "Independent final-answer check; keep provider aligned with privacy needs."),
     ("summarizer",      "Cheap distillation. Tiny model is fine."),
     ("skill_distiller", "Turns trajectories into reusable skills."),
 ]

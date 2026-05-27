@@ -29,6 +29,7 @@ coder           = "anthropic:claude-sonnet-4-6"
 writer          = "anthropic:claude-sonnet-4-6"
 analyst         = "anthropic:claude-sonnet-4-6"
 revisor         = "anthropic:claude-opus-4-7"
+verifier        = "anthropic:claude-sonnet-4-6"
 summarizer      = "anthropic:claude-haiku-4-5"
 skill_distiller = "anthropic:claude-sonnet-4-6"
 
@@ -101,6 +102,7 @@ Roles available:
 | `writer`       | Drafts long prose. |
 | `analyst`      | Synthesizes findings. |
 | `revisor`      | Second-pass review when verify fails. |
+| `verifier`     | Independent final-answer check. |
 | `summarizer`   | Cheap distillation. |
 | `skill_distiller` | Turns trajectories into reusable skills. |
 
