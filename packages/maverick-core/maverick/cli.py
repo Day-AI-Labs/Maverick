@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -12,6 +13,7 @@ import click
 from .budget import Budget
 from .llm import DEFAULT_MODEL, LLM
 from .orchestrator import run_goal_sync
+from .secrets import scrub
 from .sandbox import build_sandbox
 from .skills import (
     SKILLS_DIR,
@@ -314,6 +316,23 @@ def start(
     click.echo(result)
 
 
+def _sanitize_progress_content(text: str, limit: int = 200) -> str:
+    """Sanitize untrusted event content before printing to a TTY.
+
+    - Scrub secret-looking values.
+    - Remove terminal control bytes / ANSI escape sequences.
+    - Collapse CR/LF to spaces for one-line progress output.
+    """
+    cleaned = scrub(text or "")
+    # Strip common ANSI/OSC escape sequences.
+    cleaned = re.sub(r"\x1B\[[0-?]*[ -/]*[@-~]", "", cleaned)
+    cleaned = re.sub(r"\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)", "", cleaned)
+    # Replace newlines / carriage returns, then drop remaining control chars.
+    cleaned = cleaned.replace("\r", " ").replace("\n", " ")
+    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", cleaned)
+    return cleaned[:limit]
+
+
 def _stream_progress(db_path, goal_id: int, stop) -> None:
     """Poll goal_events and print one line per new entry to stderr.
 
@@ -336,7 +355,7 @@ def _stream_progress(db_path, goal_id: int, stop) -> None:
                 label = labels.get(e.kind, e.kind)
                 # Strip the hex suffix from agent names for readability.
                 agent = e.agent.split("-")[0] if e.agent else "agent"
-                content = e.content[:200]
+                content = _sanitize_progress_content(e.content, limit=200)
                 click.echo(
                     click.style(f"  [{agent}] ", fg="bright_black")
                     + click.style(f"{label}: ", fg="cyan")
