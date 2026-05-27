@@ -78,3 +78,39 @@ jobs:
         with:
           packages-dir: dist/
           skip-existing: true
+
+  sign:
+    # Sign every built artifact with cosign (keyless via Sigstore OIDC).
+    # Signatures + provenance bundles get attached to the GitHub Release.
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write     # release attach
+      id-token: write     # Sigstore OIDC
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign artifacts (keyless)
+        run: |
+          set -e
+          mkdir -p signatures
+          for f in dist/*.tar.gz dist/*.whl; do
+            [ -f "$f" ] || continue
+            base=$(basename "$f")
+            cosign sign-blob --yes \
+              --bundle "signatures/${base}.cosign.bundle" \
+              "$f"
+          done
+          ls -la signatures/
+      - name: Attach signatures to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            signatures/*.cosign.bundle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

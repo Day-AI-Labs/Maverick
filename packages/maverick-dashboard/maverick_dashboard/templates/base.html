@@ -5,10 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}Maverick{% endblock %}</title>
   <style>
-    :root {
+    /* Theme presets. The body class chosen by the route + ?theme=
+       query param selects the active palette. Default = dark. */
+    :root,
+    body.theme-dark {
       --bg: #0d1117; --panel: #161b22; --border: #30363d;
       --text: #e6edf3; --muted: #8b949e; --accent: #2ea043;
       --warn: #d29922; --danger: #f85149;
+    }
+    body.theme-light {
+      --bg: #ffffff; --panel: #f6f8fa; --border: #d0d7de;
+      --text: #1f2328; --muted: #59636e; --accent: #1f883d;
+      --warn: #9a6700; --danger: #cf222e;
+    }
+    body.theme-solarized {
+      --bg: #002b36; --panel: #073642; --border: #586e75;
+      --text: #eee8d5; --muted: #93a1a1; --accent: #859900;
+      --warn: #b58900; --danger: #dc322f;
+    }
+    body.theme-hicontrast {
+      --bg: #000000; --panel: #111111; --border: #ffffff;
+      --text: #ffffff; --muted: #cccccc; --accent: #00ff00;
+      --warn: #ffff00; --danger: #ff5050;
     }
     * { box-sizing: border-box; }
     body { margin: 0; font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg); color: var(--text); }
@@ -40,7 +58,7 @@
     footer { text-align: center; color: var(--muted); padding: 2rem; font-size: 0.8rem; }
   </style>
 </head>
-<body>
+<body class="theme-{{ theme or 'dark' }}">
   <header>
     <h1>Maverick</h1>
     <nav>
@@ -51,6 +69,13 @@
       <a href="/facts">facts</a>
       <a href="/spend">spend</a>
     </nav>
+    <span style="margin-left: auto; display: flex; gap: 0.5rem; align-items: center;">
+      <span class="muted" style="font-size: 0.75rem;">theme</span>
+      <a href="?theme=dark" title="Dark"><span style="display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 50%; background: #0d1117; border: 1px solid var(--border);"></span></a>
+      <a href="?theme=light" title="Light"><span style="display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 50%; background: #f6f8fa; border: 1px solid var(--border);"></span></a>
+      <a href="?theme=solarized" title="Solarized"><span style="display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 50%; background: #002b36; border: 1px solid var(--border);"></span></a>
+      <a href="?theme=hicontrast" title="High contrast"><span style="display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 50%; background: #000; border: 1px solid #fff;"></span></a>
+    </span>
   </header>
   <main>
     {% block content %}{% endblock %}

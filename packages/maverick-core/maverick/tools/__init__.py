@@ -136,7 +136,14 @@ def base_registry(
     from .clipboard import clipboard
     from .preview_diff import preview_diff
     from .kv_memory import kv_memory
+    from .apply_patch import apply_patch
     from .arxiv import arxiv
+    from .calendar_tool import calendar_tool
+    from .compute import compute
+    from .email_tool import email_tool
+    from .git_advanced import git_advanced
+    from .pandas_query import pandas_query
+    from .semantic_scholar import semantic_scholar
     reg.register(recall())
     reg.register(http_fetch())
     reg.register(read_pdf())
@@ -147,6 +154,13 @@ def base_registry(
     reg.register(preview_diff(sandbox))
     reg.register(kv_memory(world, goal_id))
     reg.register(arxiv())
+    reg.register(semantic_scholar())
+    reg.register(apply_patch(sandbox))
+    reg.register(compute())
+    reg.register(email_tool())
+    reg.register(pandas_query())
+    reg.register(git_advanced(sandbox))
+    reg.register(calendar_tool())
 
     # Voice tools (opt-in extra; tool factories raise ImportError only
     # when called without the required API key OR SDK; registering is

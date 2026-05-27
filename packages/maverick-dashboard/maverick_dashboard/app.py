@@ -36,6 +36,53 @@ def _format_datetime(ts) -> str:
 
 
 templates.env.filters["datetime"] = _format_datetime
+# Make `theme` available unconditionally so templates rendered without
+# a Request object (rare; legacy paths) still resolve `theme or 'dark'`.
+templates.env.globals.setdefault("theme", "dark")
+
+_VALID_THEMES = {"dark", "light", "solarized", "hicontrast"}
+
+
+def _resolve_theme(request: "Request") -> str:
+    """Pick the theme from ``?theme=`` query param, cookie, config, then dark."""
+    q = (request.query_params.get("theme") or "").strip().lower()
+    if q in _VALID_THEMES:
+        return q
+    c = (request.cookies.get("mvk_theme") or "").strip().lower()
+    if c in _VALID_THEMES:
+        return c
+    try:
+        from maverick.config import load_config
+        cfg = (load_config() or {}).get("dashboard") or {}
+        cfg_theme = (cfg.get("theme") or "").strip().lower()
+        if cfg_theme in _VALID_THEMES:
+            return cfg_theme
+    except Exception:
+        pass
+    return "dark"
+
+
+# Context processor: every template gets the `theme` variable for the
+# body class + the theme switcher links.
+def _theme_context(request: "Request") -> dict:
+    return {"theme": _resolve_theme(request)}
+
+
+# Register the per-request context processor with Starlette so every
+# TemplateResponse picks up the resolved theme automatically.
+templates.context_processors.append(_theme_context)
+
+
+def _set_theme_cookie(response, theme: str) -> None:
+    """Persist the theme choice as a cookie so it sticks across page loads."""
+    if theme in _VALID_THEMES:
+        response.set_cookie(
+            "mvk_theme", theme,
+            max_age=30 * 24 * 3600,  # 30 days
+            samesite="lax",
+            httponly=False,  # the switcher links are visible to JS anyway
+        )
+
 
 app = FastAPI(
     title="Maverick Dashboard + REST API",
@@ -43,6 +90,16 @@ app = FastAPI(
     version="0.1.0",
 )
 app.include_router(api_router)
+
+
+@app.middleware("http")
+async def persist_theme(request: Request, call_next):
+    """If ?theme=X is in the URL, set a cookie so it sticks."""
+    response = await call_next(request)
+    q = request.query_params.get("theme")
+    if q and q.lower() in _VALID_THEMES:
+        _set_theme_cookie(response, q.lower())
+    return response
 
 
 @app.on_event("startup")
