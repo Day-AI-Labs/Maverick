@@ -147,6 +147,31 @@ class TestMCPPinSha256:
         spec = MCPServerSpec(name="x", command="any-command-here")
         _verify_command_pin(spec)  # no raise
 
+
+    def test_pin_posix_backslash_command_uses_path_lookup(
+        self, tmp_path, monkeypatch,
+    ):
+        """On POSIX, backslash is not a path separator, so command
+        resolution must go through PATH lookup semantics."""
+        import hashlib
+        from maverick.mcp_client import MCPServerSpec, _verify_command_pin
+
+        exe = tmp_path / "resolved-tool"
+        exe.write_bytes(b"#!/bin/sh\necho ok\n")
+        sha = hashlib.sha256(exe.read_bytes()).hexdigest()
+
+        looked_up = {"called": False}
+
+        def fake_which(cmd):
+            looked_up["called"] = True
+            assert cmd == "foo\\bar"
+            return str(exe)
+
+        monkeypatch.setattr("shutil.which", fake_which)
+        spec = MCPServerSpec(name="x", command="foo\\bar", pin_sha256=sha)
+        _verify_command_pin(spec)
+        assert looked_up["called"] is True
+
     def test_pin_windows_backslash_path_resolves_directly(
         self, tmp_path, monkeypatch,
     ):
@@ -163,6 +188,7 @@ class TestMCPPinSha256:
         exe = tmp_path / "mcp-tool"
         exe.write_bytes(b"#!/bin/sh\necho ok\n")
         sha = hashlib.sha256(exe.read_bytes()).hexdigest()
+        monkeypatch.setattr("maverick.mcp_client.os.name", "nt")
         monkeypatch.setattr("shutil.which", lambda _: None)
         # Use a backslash separator anywhere in the command to simulate
         # a Windows path on a Linux test runner.
