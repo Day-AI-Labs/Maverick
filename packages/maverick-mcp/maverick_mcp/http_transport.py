@@ -49,12 +49,15 @@ except ImportError:
 
 
 def _check_bearer(authorization: Optional[str]) -> bool:
-    """Bearer-token gate. If MAVERICK_MCP_TOKEN is unset, allow all
-    (matches the stdio behavior where the OS handles auth via process
-    ownership)."""
+    """Bearer-token gate for network HTTP transport.
+
+    Unlike stdio, HTTP requests are network-reachable; token auth is
+    therefore mandatory and a missing MAVERICK_MCP_TOKEN rejects all
+    requests.
+    """
     expected = os.environ.get("MAVERICK_MCP_TOKEN")
     if not expected:
-        return True
+        return False
     if not authorization or not authorization.startswith("Bearer "):
         return False
     given = authorization[len("Bearer "):].strip()
@@ -150,7 +153,7 @@ def _dispatch(server, method: str, params: dict) -> dict:
     return handler(params)
 
 
-def serve(host: str = "0.0.0.0", port: int = 8771) -> None:  # noqa: S104
+def serve(host: str = "127.0.0.1", port: int = 8771) -> None:
     """Run the HTTP transport on host:port. Blocking."""
     import uvicorn
     from .server import MCPServer

@@ -251,6 +251,7 @@ def _wire_voice(server, cfg):
         port=cfg.get("port", 8770),
         assistant_id=cfg.get("assistant_id"),
         provider=cfg.get("provider", "vapi"),
+        webhook_token=cfg.get("webhook_token") or os.environ.get("VAPI_WEBHOOK_TOKEN"),
     ))
 
 

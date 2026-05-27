@@ -505,7 +505,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(prog="maverick-mcp")
     ap.add_argument("--http", action="store_true",
                     help="Serve over Streamable HTTP instead of stdio")
-    ap.add_argument("--host", default="0.0.0.0")  # noqa: S104
+    ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8771)
     args = ap.parse_args()
     if args.http:

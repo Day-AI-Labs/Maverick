@@ -27,6 +27,7 @@ Requires::
 """
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 from typing import Optional
@@ -37,12 +38,12 @@ log = logging.getLogger(__name__)
 
 
 try:
-    from fastapi import FastAPI, HTTPException, Request, Response
+    from fastapi import FastAPI, Header, HTTPException, Request, Response
     import httpx
     _HAVE_DEPS = True
 except ImportError:
     _HAVE_DEPS = False
-    FastAPI = HTTPException = Request = Response = httpx = None  # type: ignore
+    FastAPI = Header = HTTPException = Request = Response = httpx = None  # type: ignore
 
 
 class VoiceChannel(Channel):
@@ -68,6 +69,7 @@ class VoiceChannel(Channel):
         port: int = 8770,
         assistant_id: Optional[str] = None,
         provider: str = "vapi",
+        webhook_token: Optional[str] = None,
     ):
         super().__init__(handler)
         if not _HAVE_DEPS:
@@ -82,12 +84,30 @@ class VoiceChannel(Channel):
         self.port = port
         self.assistant_id = assistant_id
         self.provider = provider
+        self.webhook_token = webhook_token or os.environ.get("VAPI_WEBHOOK_TOKEN")
 
         self._app = FastAPI()
         self._app.post("/webhook/voice")(self._handle_webhook)
         self._uvicorn_server = None
 
-    async def _handle_webhook(self, request: "Request"):
+    def _check_webhook_auth(self, authorization: Optional[str]) -> bool:
+        """Require bearer auth for inbound webhook events."""
+        expected = self.webhook_token
+        if not expected:
+            return False
+        if not authorization or not authorization.startswith("Bearer "):
+            return False
+        given = authorization[len("Bearer "):].strip()
+        return hmac.compare_digest(expected, given)
+
+    async def _handle_webhook(
+        self,
+        request: "Request",
+        authorization: Optional[str] = Header(None),
+    ):
+        if not self._check_webhook_auth(authorization):
+            raise HTTPException(status_code=401, detail="invalid webhook bearer")
+
         # Vapi sends webhook events with a `type` field: "function-call",
         # "end-of-call-report", "transcript", "speech-update", etc.
         # We only care about transcripts that resolve into agent turns.
@@ -128,7 +148,7 @@ class VoiceChannel(Channel):
         log.info("Voice channel listening on :%d (provider=%s)",
                  self.port, self.provider)
         config = uvicorn.Config(
-            self._app, host="0.0.0.0", port=self.port,  # noqa: S104
+            self._app, host="127.0.0.1", port=self.port,
             log_level="info",
         )
         self._uvicorn_server = uvicorn.Server(config)

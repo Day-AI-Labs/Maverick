@@ -82,14 +82,14 @@ class TestHTTPTransport:
         }, headers={"Authorization": "Bearer wrong"})
         assert resp.status_code == 401
 
-    def test_no_auth_required_when_token_unset(self, monkeypatch):
+    def test_auth_required_when_token_unset(self, monkeypatch):
         monkeypatch.delenv("MAVERICK_MCP_TOKEN", raising=False)
         client = self._client()
         resp = client.post("/mcp", json={
             "jsonrpc": "2.0", "id": 1, "method": "initialize",
             "params": {},
         })
-        assert resp.status_code == 200
+        assert resp.status_code == 401
 
     def test_healthz_exempt(self, monkeypatch):
         monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")

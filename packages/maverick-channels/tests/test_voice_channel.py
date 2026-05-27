@@ -60,3 +60,40 @@ def test_voice_channel_picks_up_env(monkeypatch):
     monkeypatch.setenv("VAPI_API_KEY", "from-env")
     chan = VoiceChannel(handler=_noop)
     assert chan.api_key == "from-env"
+
+
+@pytest.mark.skipif(not _have_deps(), reason="fastapi+httpx not installed")
+def test_voice_webhook_requires_bearer_token(monkeypatch):
+    from fastapi.testclient import TestClient
+    from maverick_channels.voice import VoiceChannel
+
+    async def _noop(_):
+        return "ok"
+
+    monkeypatch.setenv("VAPI_WEBHOOK_TOKEN", "voice-secret")
+    chan = VoiceChannel(handler=_noop, api_key="vapi-test-key")
+    client = TestClient(chan._app)
+    payload = {"message": {"type": "transcript", "role": "user", "transcript": "hi"}}
+    resp = client.post("/webhook/voice", json=payload)
+    assert resp.status_code == 401
+
+
+@pytest.mark.skipif(not _have_deps(), reason="fastapi+httpx not installed")
+def test_voice_webhook_accepts_valid_bearer_token(monkeypatch):
+    from fastapi.testclient import TestClient
+    from maverick_channels.voice import VoiceChannel
+
+    async def _noop(_):
+        return "ok"
+
+    monkeypatch.setenv("VAPI_WEBHOOK_TOKEN", "voice-secret")
+    chan = VoiceChannel(handler=_noop, api_key="vapi-test-key")
+    client = TestClient(chan._app)
+    payload = {"message": {"type": "transcript", "role": "user", "transcript": "hi"}}
+    resp = client.post(
+        "/webhook/voice",
+        json=payload,
+        headers={"Authorization": "Bearer voice-secret"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"response": "ok"}
