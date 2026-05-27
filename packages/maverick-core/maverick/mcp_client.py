@@ -202,9 +202,8 @@ class MCPClient:
         # if the binary was replaced under us, refuse to launch.
         _verify_command_pin(self.spec)
         env = _build_env(self.spec)
-        log.info("MCP client starting server %r (%s %s) [env keys: %d]",
-                 self.spec.name, self.spec.command, " ".join(self.spec.args),
-                 len(env))
+        log.info("MCP client starting server %r (command=%s, args=%d, env keys=%d)",
+                 self.spec.name, self.spec.command, len(self.spec.args), len(env))
         try:
             self._proc = await asyncio.create_subprocess_exec(
                 self.spec.command, *self.spec.args,
