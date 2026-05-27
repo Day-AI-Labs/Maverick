@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -12,6 +13,7 @@ import click
 from .budget import Budget
 from .llm import DEFAULT_MODEL, LLM
 from .orchestrator import run_goal_sync
+from .secrets import scrub
 from .sandbox import build_sandbox
 from .skills import (
     SKILLS_DIR,
@@ -34,14 +36,18 @@ def main(ctx: click.Context, db: str, model: str) -> None:
 
 
 @main.command()
-def init() -> None:
+@click.option("--fast", is_flag=True,
+              help="Skip every prompt; use recommended defaults.")
+@click.option("--resume", is_flag=True,
+              help="Resume from the last unanswered wizard question.")
+def init(fast: bool, resume: bool) -> None:
     """Run the interactive setup wizard."""
     try:
         from maverick_installer.wizard import run as run_wizard
     except ImportError:
         click.echo("Install: pipx install maverick-installer", err=True)
         sys.exit(2)
-    sys.exit(run_wizard())
+    sys.exit(run_wizard(fast=fast, resume=resume))
 
 
 @main.command()
@@ -310,6 +316,23 @@ def start(
     click.echo(result)
 
 
+def _sanitize_progress_content(text: str, limit: int = 200) -> str:
+    """Sanitize untrusted event content before printing to a TTY.
+
+    - Scrub secret-looking values.
+    - Remove terminal control bytes / ANSI escape sequences.
+    - Collapse CR/LF to spaces for one-line progress output.
+    """
+    cleaned = scrub(text or "")
+    # Strip common ANSI/OSC escape sequences.
+    cleaned = re.sub(r"\x1B\[[0-?]*[ -/]*[@-~]", "", cleaned)
+    cleaned = re.sub(r"\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)", "", cleaned)
+    # Replace newlines / carriage returns, then drop remaining control chars.
+    cleaned = cleaned.replace("\r", " ").replace("\n", " ")
+    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", cleaned)
+    return cleaned[:limit]
+
+
 def _stream_progress(db_path, goal_id: int, stop) -> None:
     """Poll goal_events and print one line per new entry to stderr.
 
@@ -332,7 +355,7 @@ def _stream_progress(db_path, goal_id: int, stop) -> None:
                 label = labels.get(e.kind, e.kind)
                 # Strip the hex suffix from agent names for readability.
                 agent = e.agent.split("-")[0] if e.agent else "agent"
-                content = e.content[:200]
+                content = _sanitize_progress_content(e.content, limit=200)
                 click.echo(
                     click.style(f"  [{agent}] ", fg="bright_black")
                     + click.style(f"{label}: ", fg="cyan")
@@ -1042,6 +1065,148 @@ def watch(ctx, path: str, run: bool, max_dollars: float) -> None:
         click.echo(f"no AI markers found in {path}")
     else:
         click.echo(f"\nfound {count} marker(s)")
+
+
+# ----- Audit log ---------------------------------------------------------
+
+@main.group()
+def audit() -> None:
+    """Inspect the audit log (~/.maverick/audit/YYYY-MM-DD.ndjson)."""
+
+
+@audit.command("tail")
+@click.option("-n", "--num", default=50, type=int, help="Lines to tail.")
+@click.option("--day", default=None, help="YYYY-MM-DD (default: today).")
+def audit_tail(num: int, day: str | None) -> None:
+    """Print the last N audit events."""
+    import json as _json
+    from .audit import default_audit_log
+    for ev in default_audit_log().tail(num, day=day):
+        click.echo(_json.dumps(ev, default=str))
+
+
+@audit.command("grep")
+@click.argument("pattern")
+@click.option("--day", default=None, help="YYYY-MM-DD (default: today).")
+def audit_grep(pattern: str, day: str | None) -> None:
+    """Regex grep over today's audit log."""
+    import json as _json
+    from .audit import default_audit_log
+    for ev in default_audit_log().grep(pattern, day=day):
+        click.echo(_json.dumps(ev, default=str))
+
+
+# ----- Killswitch --------------------------------------------------------
+
+@main.command()
+@click.option("--reason", default="manual halt", help="Why you're halting.")
+def halt(reason: str) -> None:
+    """Halt all in-flight goals by writing the HALT file."""
+    from .killswitch import _halt_file_path
+    p = _halt_file_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(reason + "\n")
+    click.echo(f"halt set: {p}")
+
+
+@main.command("unhalt")
+def unhalt() -> None:
+    """Remove the HALT file to allow goals to run again."""
+    from .killswitch import _halt_file_path
+    p = _halt_file_path()
+    if p.exists():
+        p.unlink()
+        click.echo(f"cleared: {p}")
+    else:
+        click.echo(f"no halt file at {p}")
+
+
+# ----- Cost / export / logs --------------------------------------------
+
+@main.command()
+@click.option("--month", default=None, help="YYYY-MM (default: lifetime totals).")
+@click.option("--model", default=None, help="Filter to one model id.")
+@click.pass_context
+def cost(ctx, month: str | None, model: str | None) -> None:
+    """Summarize spend across the world model."""
+    world = WorldModel(ctx.obj["db"])
+    try:
+        episodes = world.list_episodes(limit=10_000)
+    finally:
+        world.close()
+    if month:
+        import datetime as _dt
+        start = _dt.datetime.strptime(month, "%Y-%m").timestamp()
+        # End-of-month: add ~31 days and trim by month.
+        end = start + 31 * 86_400
+        episodes = [
+            e for e in episodes
+            if start <= (e.started_at or 0) < end
+        ]
+    if model:
+        # Outcome strings carry model id in the format "model=X ...".
+        episodes = [e for e in episodes if model in (e.outcome or "")]
+    total = sum((e.cost_dollars or 0) for e in episodes)
+    in_tok = sum((e.input_tokens or 0) for e in episodes)
+    out_tok = sum((e.output_tokens or 0) for e in episodes)
+    tool_calls = sum((e.tool_calls or 0) for e in episodes)
+    click.echo(f"Episodes:    {len(episodes):>10}")
+    click.echo(f"Dollars:     ${total:.4f}")
+    click.echo(f"Input tok:   {in_tok:>10,}")
+    click.echo(f"Output tok:  {out_tok:>10,}")
+    click.echo(f"Tool calls:  {tool_calls:>10,}")
+
+
+@main.command("export")
+@click.argument("goal_id", type=int)
+@click.option("-o", "--output", type=click.Path(),
+              help="Path for the bundle (default: ./goal-<id>.json).")
+@click.pass_context
+def export_goal(ctx, goal_id: int, output: str | None) -> None:
+    """Export a goal's full trajectory as a portable JSON bundle.
+
+    The bundle includes the goal record, all child goals, every event,
+    and the episode summaries. No prompt content is included unless it
+    was logged to events.
+    """
+    import json as _json
+    world = WorldModel(ctx.obj["db"])
+    try:
+        goal = world.get_goal(goal_id)
+        if goal is None:
+            click.echo(f"goal {goal_id} not found", err=True)
+            sys.exit(2)
+        events = world.goal_events(goal_id, limit=10_000)
+        episodes = world.list_episodes(limit=200, goal_id=goal_id)
+        from dataclasses import asdict
+        bundle = {
+            "v": 1,
+            "goal": asdict(goal),
+            "events": [asdict(e) for e in events],
+            "episodes": [asdict(e) for e in episodes],
+        }
+    finally:
+        world.close()
+    out_path = Path(output) if output else Path(f"goal-{goal_id}.json")
+    out_path.write_text(_json.dumps(bundle, default=str, indent=2))
+    click.echo(f"wrote {out_path}")
+
+
+@main.command("logs")
+@click.argument("pattern", required=False)
+@click.option("-n", "--num", default=200, type=int, help="Lines to show.")
+@click.option("--day", default=None, help="YYYY-MM-DD (default: today).")
+def logs_cmd(pattern: str | None, num: int, day: str | None) -> None:
+    """Show recent audit log entries (optionally regex-filtered).
+
+    Equivalent to `maverick audit grep <pattern>` or `audit tail -n N`.
+    """
+    import json as _json
+    from .audit import default_audit_log
+    al = default_audit_log()
+    rows = al.grep(pattern, day=day) if pattern else al.tail(num, day=day)
+    for r in rows[-num:]:
+        click.echo(_json.dumps(r, default=str))
 
 
 if __name__ == "__main__":

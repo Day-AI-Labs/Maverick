@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 
 SKILLS_DIR = Path.home() / ".maverick" / "skills"
 INSTALL_TIMEOUT = 30.0
+MAX_SKILL_DOWNLOAD_BYTES = 256 * 1024
 
 # Strict: at least one slash, kebab + dots allowed in org/repo; optional :path
 # inside the repo with forward slashes + dots. Rejects empty, @user, schemes.
@@ -189,7 +190,9 @@ def install_skill(
             repo, path = rest, "SKILL.md"
         url = f"https://raw.githubusercontent.com/{repo}/main/{path}"
         content = _fetch_url(url)
-    elif source.startswith(("http://", "https://")):
+    elif source.startswith("http://"):
+        raise ValueError("insecure URL scheme not allowed for skill install: use https://")
+    elif source.startswith("https://"):
         content = _fetch_url(source)
     elif source.startswith(("file://", "ftp://", "gopher://", "data:", "javascript:")):
         raise ValueError(
@@ -259,7 +262,19 @@ def _fetch_url(url: str) -> str:
         with urllib.request.urlopen(url, timeout=INSTALL_TIMEOUT) as resp:
             if resp.status != 200:
                 raise ValueError(f"HTTP {resp.status} from {url}")
-            return resp.read().decode("utf-8", errors="replace")
+            chunks: list[bytes] = []
+            total = 0
+            while True:
+                chunk = resp.read(8192)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_SKILL_DOWNLOAD_BYTES:
+                    raise ValueError(
+                        f"skill download too large (> {MAX_SKILL_DOWNLOAD_BYTES} bytes)"
+                    )
+                chunks.append(chunk)
+            return b"".join(chunks).decode("utf-8", errors="replace")
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
         raise ValueError(f"failed to fetch {url}: {e}") from e
 

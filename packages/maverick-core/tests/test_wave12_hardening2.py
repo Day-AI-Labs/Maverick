@@ -58,6 +58,30 @@ class TestBudgetPickling:
         assert b2.input_tokens == 11_000
 
 
+    def test_round_trip_preserves_elapsed_for_wall_cap(self):
+        from maverick.budget import Budget, BudgetExceeded
+
+        b = Budget(max_wall_seconds=0.01)
+        # Exhaust wall-time budget before serialization.
+        while b.elapsed() <= 0.02:
+            pass
+        try:
+            b.check()
+        except BudgetExceeded:
+            pass
+        else:
+            raise AssertionError("pre-pickle budget should already be exceeded")
+
+        b2 = pickle.loads(pickle.dumps(b))
+        # Must remain exceeded after unpickle (no timer reset bypass).
+        try:
+            b2.check()
+        except BudgetExceeded:
+            pass
+        else:
+            raise AssertionError("post-unpickle wall cap bypassed")
+
+
 class TestGotestPassInPackageName:
     def test_pass_in_package_name_does_not_mask_build_failure(self):
         """Package paths like github.com/PASSport/foo contain `PASS`;

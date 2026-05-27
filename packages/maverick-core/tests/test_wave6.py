@@ -25,11 +25,11 @@ class TestCrossFamilyVerifier:
         assert _same_family("anthropic:claude-opus-4-7", "claude-sonnet-4-6") is True
         assert _same_family("claude-opus-4-7", "gpt-5.4") is False
 
-    def test_cross_family_fallback_default(self):
-        """Anthropic orchestrator -> OpenAI verifier (default cross-family pick)."""
+    def test_cross_family_fallback_default_is_none(self):
+        """No implicit cross-provider swap without explicit operator opt-in."""
         from maverick.verifier import _cross_family_fallback
-        assert _cross_family_fallback("claude-opus-4-7") == "openai:gpt-5.4"
-        assert _cross_family_fallback("gpt-5.4").startswith("anthropic:")
+        assert _cross_family_fallback("claude-opus-4-7") is None
+        assert _cross_family_fallback("gpt-5.4") is None
 
     def test_cross_family_env_override(self, monkeypatch):
         from maverick.verifier import _cross_family_fallback
@@ -54,9 +54,9 @@ class TestCrossFamilyVerifier:
             proposer_model="anthropic:claude-opus-4-7",
         )
         assert len(fake_llm.calls) == 1
-        # Either explicit cross-family or the default openai fallback.
+        # Without explicit opt-in, verifier model should remain unchanged.
         model_used = fake_llm.calls[0].get("model") or ""
-        assert "claude" not in model_used.lower()
+        assert model_used == "claude-sonnet-4-6"
 
 
 # ---------- MCP STDIO subprocess input sanitization ----------

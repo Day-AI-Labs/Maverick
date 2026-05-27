@@ -158,7 +158,7 @@ def get_diff(workdir: Path, *, max_bytes: int = 100_000) -> str:
         return ""
     try:
         proc = subprocess.run(
-            ["git", "-C", str(workdir), "diff", "HEAD"],
+            ["git", "-C", str(workdir), "-c", "diff.external=", "-c", "diff.textconv=false", "diff", "--no-ext-diff", "--no-textconv", "HEAD"],
             capture_output=True, text=True, timeout=10,
         )
         diff = proc.stdout or ""

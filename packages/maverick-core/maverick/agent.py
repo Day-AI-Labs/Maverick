@@ -12,6 +12,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Optional
 
+from ._envparse import env_int
 from .budget import BudgetExceeded
 from .llm import model_for_role
 from .swarm import SwarmContext
@@ -85,6 +86,7 @@ class Agent:
         ctx: SwarmContext,
         role: str,
         brief: str,
+        model_override: Optional[str] = None,
         depth: int = 0,
         parent: Optional["Agent"] = None,
         max_steps: int = 25,
@@ -98,12 +100,12 @@ class Agent:
         # shows "most successful solutions resolve in ~25 rounds; long-
         # tail iteration past that has diminishing returns." Allow ops
         # to override globally via MAVERICK_MAX_STEPS, default 25.
-        self.max_steps = int(os.environ.get("MAVERICK_MAX_STEPS", str(max_steps)))
+        self.max_steps = env_int("MAVERICK_MAX_STEPS", max_steps)
         self.name = f"{role}-{depth}-{uuid.uuid4().hex[:6]}"
 
         self.tools = self._build_tools()
         self.system = self._build_system()
-        self.model = model_for_role(role)
+        self.model = model_override or model_for_role(role)
         # Tracks whether we've already given one LLM-verifier-driven
         # revision pass for this agent run. Separate from
         # `_already_verified` so revised FINALs can be re-verified once
@@ -235,7 +237,7 @@ class Agent:
                     ),
                 ))
                 return None, summary
-            patch = render_diff(workdir)
+            patch = render_diff(workdir, paths=touched_paths)
             return patch, summary
         return extract_unified_diff(final), None
 
@@ -374,8 +376,8 @@ class Agent:
             # message; the FINAL critique is what we want the model to
             # respond to, not the orphan tools.
             if resp.text and resp.tool_calls:
-                import re as _re_final
-                if _re_final.search(r"(?:^|\n)\s*FINAL:", resp.text):
+                from .coding_mode import has_final_marker as _has_final
+                if _has_final(resp.text):
                     resp.tool_calls = []
 
             assistant_content: list[dict] = []
@@ -426,14 +428,15 @@ class Agent:
                 # blackboard as a plain observation, was never applied,
                 # and the orchestrator returned the raw SR text as
                 # `final` with `final_patch=None` — silent score loss.
-                # Use the LAST line-anchored FINAL: marker, mirroring
-                # extract_unified_diff's logic.
-                import re as _re
-                _final_matches = list(_re.finditer(
-                    r"(?:^|\n)\s*FINAL:\s*\n?", resp.text,
-                ))
-                if _final_matches:
-                    final = resp.text[_final_matches[-1].end():].strip()
+                # Use the LAST line-anchored FINAL: marker OUTSIDE any
+                # fenced code block. Skipping code-block markers
+                # prevents attacker-controlled quoted content (file
+                # bodies, tool output) from redefining the final
+                # answer mid-response.
+                from .coding_mode import find_final_marker_end as _final_end
+                _fe = _final_end(resp.text)
+                if _fe is not None:
+                    final = resp.text[_fe:].strip()
                     # May 26 council fix: clear any stale `_final_patch`
                     # from a previous FINAL attempt. If a prior FINAL was
                     # rejected (defensive/validate) and the revised

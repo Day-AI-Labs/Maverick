@@ -126,6 +126,11 @@ class TestDetectRunnerLanguageHint:
         (tmp_path / "pyproject.toml").write_text("[project]\n")
         assert detect_test_runner(tmp_path, language="python") == "pytest"
 
+    def test_java_hint_with_gradle_markers_picks_gradle(self, tmp_path):
+        from maverick.coding_mode import detect_test_runner
+        (tmp_path / "build.gradle").write_text("plugins {}\n")
+        assert detect_test_runner(tmp_path, language="java") == "gradle"
+
 
 # ---- D1: MAVERICK_TEMPERATURE is read by the Anthropic provider ----
 

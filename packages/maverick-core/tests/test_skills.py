@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -68,6 +69,27 @@ class TestInstallSkill:
         skills_dir = tmp_path / "deep" / "path" / "that" / "doesnt" / "exist"
         install_skill(str(source), skills_dir=skills_dir)
         assert skills_dir.is_dir()
+
+    def test_http_url_rejected(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="insecure URL scheme"):
+            install_skill("http://example.com/skill.md", skills_dir=tmp_path / "skills")
+
+    def test_https_download_has_size_limit(self, tmp_path: Path):
+        class FakeResp:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self, n: int = -1) -> bytes:
+                return b"x" * (300 * 1024)
+
+        with patch("urllib.request.urlopen", return_value=FakeResp()):
+            with pytest.raises(ValueError, match="too large"):
+                install_skill("https://example.com/skill.md", skills_dir=tmp_path / "skills")
 
 
 class TestRemoveSkill:

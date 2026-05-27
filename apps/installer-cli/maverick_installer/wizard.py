@@ -81,6 +81,14 @@ def _q_text(message: str, default: str = "") -> str:
     return questionary.text(message, default=default).ask()
 
 
+def _q_secret(message: str) -> str:
+    if questionary is None:
+        import getpass
+
+        return getpass.getpass(f"{message}: ").strip()
+    return questionary.password(message).ask() or ""
+
+
 def _q_checkbox(message: str, choices: list[str], default: list[str] | None = None) -> list[str]:
     if questionary is None:
         print(f"{message} (comma-separated numbers, blank = none)")
@@ -509,17 +517,21 @@ def collect_api_keys(providers: list[str], channel_envs: set[str]) -> dict[str, 
     for env_name in dict.fromkeys(needed):  # dedupe preserving order
         current = os.environ.get(env_name, "")
         masked = (current[:7] + "...") if current else "(none)"
-        val = _q_text(f"  {env_name} [current: {masked}]", default=current)
-        if val:
-            # Validate when we know how.
-            validator = _VALIDATORS.get(env_name)
-            if validator:
-                ok, msg = validator(val)
-                marker = "[green]✓[/green]" if ok else "[red]✗[/red]"
-                console.print(f"    {marker} {msg}")
-                if not ok and not _q_confirm("Save anyway?", default=False):
-                    continue
-            keys[env_name] = val
+        val = _q_secret(f"  {env_name} [current: {masked}] (leave blank to keep current)")
+        if not val:
+            if current:
+                keys[env_name] = current
+            continue
+
+        # Validate when we know how.
+        validator = _VALIDATORS.get(env_name)
+        if validator:
+            ok, msg = validator(val)
+            marker = "[green]✓[/green]" if ok else "[red]✗[/red]"
+            console.print(f"    {marker} {msg}")
+            if not ok and not _q_confirm("Save anyway?", default=False):
+                continue
+        keys[env_name] = val
     return keys
 
 
@@ -893,33 +905,181 @@ def smoke_test() -> bool:
     return True
 
 
-def run() -> int:
+PARTIAL_STATE_PATH = CONFIG_DIR / "wizard-partial.json"
+
+
+def _save_partial(state: dict[str, Any]) -> None:
+    """Persist wizard progress so --resume can pick up later."""
+    try:
+        import json as _json
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        PARTIAL_STATE_PATH.write_text(_json.dumps(state, default=str))
+        os.chmod(PARTIAL_STATE_PATH, 0o600)
+    except OSError:
+        pass
+
+
+def _load_partial() -> dict[str, Any] | None:
+    """Return persisted partial state, or None if absent."""
+    if not PARTIAL_STATE_PATH.exists():
+        return None
+    try:
+        import json as _json
+        return _json.loads(PARTIAL_STATE_PATH.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def _clear_partial() -> None:
+    try:
+        if PARTIAL_STATE_PATH.exists():
+            PARTIAL_STATE_PATH.unlink()
+    except OSError:
+        pass
+
+
+def run_fast() -> int:
+    """``maverick init --fast``: zero-question setup with sensible defaults.
+
+    Skips every prompt. Writes a minimal config that runs on Anthropic
+    Claude (BYOK via ANTHROPIC_API_KEY env), local sandbox, balanced
+    safety, $5/run cap. Users can `maverick init` later to customize.
+    """
+    welcome()
+    if not preflight():
+        console.print(
+            "[red]Preflight failed.[/red] Fix the issues above and re-run."
+        )
+        return 1
+    console.print(
+        "[bold]Fast setup:[/bold] using recommended defaults. "
+        "Run `maverick init` (no --fast) anytime to customize.\n"
+    )
+    deployment = "desktop"
+    providers = ["anthropic"]
+    role_models: dict[str, str] = {}  # use ROLE_MODELS defaults
+    channels: dict[str, Any] = {}
+    safety = {
+        "profile": "balanced",
+        "block_threshold": "high",
+        "scan_input": True,
+        "scan_tool_calls": True,
+        "scan_output": True,
+    }
+    budget = {
+        "max_dollars": 5.0,
+        "max_wall_seconds": 3600.0,
+        "max_tool_calls": 500,
+    }
+    sandbox = {
+        "backend": "local",
+        "workdir": str(Path.home() / "maverick-workspace"),
+        "timeout": 60,
+    }
+    capabilities = {"computer_use": False, "browser": False}
+    # Pick up the API key from the env if it's already there;
+    # otherwise the wizard's later run can populate ~/.maverick/.env.
+    keys: dict[str, str] = {}
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        keys["ANTHROPIC_API_KEY"] = os.environ["ANTHROPIC_API_KEY"]
+    write_config(
+        deployment, providers, role_models, channels, safety, budget,
+        sandbox, keys, capabilities,
+    )
+    smoke_test()
+    console.print()
+    console.print(Panel.fit(
+        "[bold green]Fast setup complete.[/bold green]\n\n"
+        "Try: [bold]maverick start \"hello\"[/bold]\n"
+        "(If ANTHROPIC_API_KEY wasn't set, edit ~/.maverick/.env first.)",
+        border_style="green",
+    ))
+    return 0
+
+
+def run(fast: bool = False, resume: bool = False) -> int:
+    if fast:
+        return run_fast()
     welcome()
     if not preflight():
         console.print(
             "[red]Preflight failed.[/red] Fix the issues above and re-run `maverick init`."
         )
         return 1
-    deployment = pick_deployment()
-    providers = pick_providers()
+
+    # --resume: load any persisted partial state and only ask
+    # questions the user hasn't answered yet.
+    state: dict[str, Any] = {}
+    if resume:
+        loaded = _load_partial()
+        if loaded:
+            state = loaded
+            console.print(
+                f"[dim]Resuming from {PARTIAL_STATE_PATH}: "
+                f"{len(state)} answers already on file.[/dim]\n"
+            )
+        else:
+            console.print(
+                f"[yellow]⚠[/yellow] No partial state at {PARTIAL_STATE_PATH}; "
+                "starting fresh.\n"
+            )
+
+    deployment = state.get("deployment") or pick_deployment()
+    state["deployment"] = deployment
+    _save_partial(state)
+
+    providers = state.get("providers") or pick_providers()
     if not providers:
         console.print("[red]No providers selected. Aborting.[/red]")
         return 1
-    role_models = pick_models_per_role(providers)
-    channels, channel_envs = pick_channels(deployment)
-    safety = pick_safety()
-    budget = pick_budget()
-    sandbox = pick_sandbox()
-    capabilities = pick_capabilities()
+    state["providers"] = providers
+    _save_partial(state)
+
+    role_models = state.get("role_models")
+    if role_models is None:
+        role_models = pick_models_per_role(providers)
+        state["role_models"] = role_models
+        _save_partial(state)
+
+    channels_state = state.get("channels")
+    if channels_state is None:
+        channels, channel_envs = pick_channels(deployment)
+        # JSON-safe: store envs as a sorted list.
+        state["channels"] = channels
+        state["channel_envs"] = sorted(channel_envs)
+        _save_partial(state)
+    else:
+        channels = channels_state
+        channel_envs = set(state.get("channel_envs") or [])
+
+    safety = state.get("safety") or pick_safety()
+    state["safety"] = safety
+    _save_partial(state)
+
+    budget = state.get("budget") or pick_budget()
+    state["budget"] = budget
+    _save_partial(state)
+
+    sandbox = state.get("sandbox") or pick_sandbox()
+    state["sandbox"] = sandbox
+    _save_partial(state)
+
+    capabilities = state.get("capabilities") or pick_capabilities()
+    state["capabilities"] = capabilities
+    _save_partial(state)
+
+    # Keys/sessions are never persisted to disk in the partial state
+    # (they're secrets; the only safe place is ~/.maverick/.env).
     keys = collect_api_keys(providers, channel_envs)
     collect_browser_sessions(providers)
 
     console.print()
     if not _q_confirm("Write config and finish?", default=True):
-        console.print("Aborted. Nothing written.")
+        console.print("Aborted. Partial state saved; resume with `maverick init --resume`.")
         return 0
 
     write_config(deployment, providers, role_models, channels, safety, budget, sandbox, keys, capabilities)
+    _clear_partial()
     ok = smoke_test()
     if ok:
         console.print()

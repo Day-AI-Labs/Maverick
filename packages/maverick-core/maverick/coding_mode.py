@@ -315,6 +315,106 @@ _VALID_DIFF_HEADER = re.compile(
 )
 _GIT_DIFF_HEADER = re.compile(r"^diff --git a/.+? b/.+?\s*$", re.MULTILINE)
 
+# Constrain the post-marker whitespace match to horizontal whitespace
+# (spaces/tabs) plus at most ONE newline. A greedy `\s*` could consume
+# multiple newlines worth of blank-line content, which is what the
+# fence-masking pass produces.
+_FINAL_MARKER_RE = re.compile(r"(?:^|\n)[ \t]*FINAL:[ \t]*\n?")
+
+
+# A line that is "purely" a fence: optional leading whitespace, then
+# 3+ of `'` or `~`, then only trailing whitespace. CommonMark-style
+# closing fences fit this; in-diff context lines like " ```python"
+# (which have a non-whitespace info string after the marker) do not.
+_PURE_FENCE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})[ \t]*$")
+
+
+def _mask_fenced_code(text: str) -> str:
+    """Return a copy of `text` with fenced (``` or ~~~) code-block content
+    replaced by spaces. Same length as the original, so regex match
+    offsets map 1:1 to the input.
+
+    Security purpose: attacker-controlled data (repository contents,
+    tool output) is typically quoted into an assistant response inside
+    a fenced code block. A `FINAL:` line embedded inside such a block
+    should not be treated as the model's structural final-answer marker.
+    Masking the block before scanning for FINAL: closes that
+    data/control confusion vector while keeping legitimate
+    reasoning-before-FINAL: prose untouched.
+
+    Closing fences must be a "pure" fence line — only fence chars and
+    whitespace — with the same fence char and >= the opening run
+    length. This avoids treating in-diff context lines like
+    " ```python" (which have an info string after the marker) as
+    fence closers.
+    """
+    if not text:
+        return text
+    out = list(text)
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    line_start = 0
+    n = len(text)
+    for i in range(n + 1):
+        if i == n or text[i] == '\n':
+            line = text[line_start:i]
+            stripped = line.strip()
+            if in_fence:
+                # Blank fenced-line content (preserve newlines).
+                for j in range(line_start, i):
+                    if out[j] != '\n':
+                        out[j] = ' '
+                m = _PURE_FENCE_RE.match(line)
+                if (m and m.group(1)[0] == fence_char
+                        and len(m.group(1)) >= fence_len):
+                    in_fence = False
+                    fence_char = ""
+                    fence_len = 0
+            else:
+                if stripped.startswith("```") or stripped.startswith("~~~"):
+                    fence_char = stripped[0]
+                    run = 0
+                    for c in stripped:
+                        if c == fence_char:
+                            run += 1
+                        else:
+                            break
+                    fence_len = run
+                    in_fence = True
+                    # Blank the fence-opening line so a malformed
+                    # opener like "```FINAL:" can't smuggle a marker.
+                    for j in range(line_start, i):
+                        if out[j] != '\n':
+                            out[j] = ' '
+            line_start = i + 1
+    return ''.join(out)
+
+
+def find_final_marker_end(text: str) -> Optional[int]:
+    """Return the offset right after the last `FINAL:` marker in `text`
+    that is NOT inside a fenced code block, or None if no such marker
+    exists.
+
+    The trailing FINAL: marker is canonical because the model is told
+    to end its turn with FINAL:. Skipping markers inside ``` / ~~~
+    fences prevents attacker-controlled quoted content from steering
+    the extracted final answer.
+    """
+    if not text:
+        return None
+    masked = _mask_fenced_code(text)
+    matches = list(_FINAL_MARKER_RE.finditer(masked))
+    if not matches:
+        return None
+    return matches[-1].end()
+
+
+def has_final_marker(text: str) -> bool:
+    """True iff `text` contains a `FINAL:` marker outside any fenced
+    code block."""
+    return find_final_marker_end(text) is not None
+
 
 def extract_unified_diff(text: str) -> Optional[str]:
     """Extract the unified diff from an LLM reply, or None.
@@ -345,11 +445,13 @@ def extract_unified_diff(text: str) -> Optional[str]:
     # mixes line endings; `git apply` rejects CRLF inside hunks.
     work = text.replace("\r\n", "\n").replace("\r", "\n")
 
-    # Anchor FINAL: at line start; use the LAST occurrence since the
-    # model is instructed to end its turn with FINAL: ...
-    final_matches = list(re.finditer(r"(?:^|\n)\s*FINAL:\s*\n?", work))
-    if final_matches:
-        work = work[final_matches[-1].end():]
+    # Anchor FINAL: at line start; use the LAST occurrence OUTSIDE any
+    # fenced (``` / ~~~) code block. Skipping fences keeps attacker-
+    # controlled quoted content (file bodies, tool output) from
+    # redefining where the patch starts.
+    final_end = find_final_marker_end(work)
+    if final_end is not None:
+        work = work[final_end:]
 
     # Find the earliest valid anchor: either `diff --git a/x b/y` or
     # the raw `--- a/...` triple. Whichever comes first wins.
@@ -796,6 +898,21 @@ def defensive_validate(patch: str, *, fail_to_pass: list[str] = None,
             # cheating because the match is forced. 30 tokens
             # corresponds to roughly a 5-line non-trivial change.
             _MIN_GOLD_TOKENS_FOR_CHEATING_CHECK = 30
+            # Forensic signal: even below the threshold, when the
+            # candidate's substantive content is byte-identical to the
+            # gold patch, log a non-blocking warning. Independent
+            # reproductions of obvious fixes almost never come out
+            # byte-for-byte identical (whitespace, ordering, naming
+            # diverge), so this captures the rare leak case without
+            # re-introducing false positives the threshold was added
+            # to prevent.
+            if (len(theirs_tokens) < _MIN_GOLD_TOKENS_FOR_CHEATING_CHECK
+                    and ours_text == theirs_text):
+                result.warnings.append(
+                    "tiny gold patch matched byte-for-byte by candidate; "
+                    "below cheating-detector threshold but flagged for "
+                    "manual review"
+                )
             if (ours_tokens and theirs_tokens
                     and len(theirs_tokens) >= _MIN_GOLD_TOKENS_FOR_CHEATING_CHECK):
                 # Signal 1: longest contiguous matching block. Verbatim
@@ -965,14 +1082,20 @@ def detect_test_runner(workdir: Path, language: str = "") -> str:
                 if name == hinted or (name == "node" and hinted in ("jest", "vitest", "mocha")):
                     if any((workdir / f).exists() for f in files):
                         return hinted
+            # Java repos can be Maven OR Gradle. Keep the strict
+            # language-hint behavior (avoid cross-language fallbacks)
+            # while still allowing Gradle-only Java repos.
+            if lang_lower == "java":
+                for name, files in _RUNNER_MARKERS:
+                    if name == "gradle" and any((workdir / f).exists() for f in files):
+                        return "gradle"
         # May 26 council fix (test-runner audit #3): when the
         # language hint is set but its expected markers are missing,
         # the OLD code fell through to the generic loop — which picks
         # pytest first if any `pyproject.toml` / `setup.py` exists
-        # (common in JS repos that ship `pre-commit` config). A Java
-        # repo hinted "java" but missing `pom.xml` would get classed
-        # as pytest. Trust the hint: return unsupported instead of
-        # falling back to a wrong runner.
+        # (common in JS repos that ship `pre-commit` config).
+        # Trust the hint: return unsupported instead of falling back
+        # to a wrong cross-language runner.
         return "unsupported"
 
     for name, files in _RUNNER_MARKERS:
@@ -1024,7 +1147,7 @@ def _cmd_for(runner: str, ids: list[str]):
         names = "|".join(re.escape(i.split("::", 1)[1]) for i in ids if "::" in i)
         if not names:
             names = "."
-        return f"go test -count=1 -run '^({names})$' " + " ".join(pkgs or ["./..."])
+        return f"go test -count=1 -run '^({names})$' " + " ".join(q(p) for p in (pkgs or ["./..."]))
     if runner == "rspec":
         return "bundle exec rspec --format documentation " + " ".join(q(i) for i in ids)
     if runner == "gradle":

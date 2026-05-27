@@ -334,21 +334,11 @@ def _same_family(a: str, b: str) -> bool:
 def _cross_family_fallback(model: str) -> Optional[str]:
     """Pick a verifier from a different provider family.
 
-    Priority order: explicit env override, then a curated default.
-    Returns None if no cross-family peer is configured / available.
+    Uses only explicit env override; no implicit provider swap is performed.
+    Returns None when no cross-family peer is explicitly configured.
     """
     explicit = os.environ.get("MAVERICK_CROSS_FAMILY_VERIFIER")
     if explicit:
         return explicit
 
-    fam = _provider(model)
-    defaults = {
-        "anthropic": "openai:gpt-5.4",
-        "openai":    "anthropic:claude-sonnet-4-6",
-        "gemini":    "anthropic:claude-sonnet-4-6",
-        "deepseek":  "anthropic:claude-sonnet-4-6",
-        "qwen":      "anthropic:claude-sonnet-4-6",
-        "xai":       "anthropic:claude-sonnet-4-6",
-        "meta":      "anthropic:claude-sonnet-4-6",
-    }
-    return defaults.get(fam)
+    return None

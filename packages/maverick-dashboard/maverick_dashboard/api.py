@@ -188,12 +188,25 @@ async def upload_attachment(goal_id: int, file: UploadFile = File(...)) -> Attac
     if w.get_goal(goal_id) is None:
         raise HTTPException(status_code=404, detail="no such goal")
 
-    data = await file.read()
+    from maverick.attachments import (
+        AttachmentRejected,
+        MAX_FILE_BYTES,
+        store,
+    )
+
+    data = await file.read(MAX_FILE_BYTES + 1)
+    if len(data) > MAX_FILE_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"file too large: {len(data)} bytes (limit {MAX_FILE_BYTES})"
+            ),
+        )
+
     mime = file.content_type or "application/octet-stream"
     filename = file.filename or "upload"
 
     existing = sum(a.size_bytes for a in w.list_attachments(goal_id))
-    from maverick.attachments import AttachmentRejected, store
     try:
         stored = store(
             goal_id,

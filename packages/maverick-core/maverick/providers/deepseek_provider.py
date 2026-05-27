@@ -23,4 +23,8 @@ class DeepSeekClient(OpenAIClient):
         url = base_url or os.environ.get(
             "DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1",
         )
-        super().__init__(api_key=key, base_url=url)
+        super().__init__(
+            api_key=key,
+            base_url=url,
+            allow_openai_env_fallback=False,
+        )

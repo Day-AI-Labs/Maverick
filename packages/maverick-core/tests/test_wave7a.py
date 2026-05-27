@@ -90,6 +90,38 @@ class TestReviewDiff:
         assert v.comments[0].severity == "nit"
 
 
+class TestGetDiff:
+    def test_git_diff_disables_external_helpers(self, monkeypatch, tmp_path):
+        from maverick.reviewer import get_diff
+
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+
+        class _Proc:
+            stdout = "ok"
+
+        seen = {}
+
+        def _fake_run(cmd, **kwargs):
+            seen["cmd"] = cmd
+            seen["kwargs"] = kwargs
+            return _Proc()
+
+        monkeypatch.setattr("maverick.reviewer.subprocess.run", _fake_run)
+
+        out = get_diff(repo)
+        assert out == "ok"
+        assert "--no-ext-diff" in seen["cmd"]
+        assert "--no-textconv" in seen["cmd"]
+        assert "diff.external=" in seen["cmd"]
+        assert "diff.textconv=false" in seen["cmd"]
+
+    def test_non_repo_returns_empty(self, tmp_path):
+        from maverick.reviewer import get_diff
+
+        assert get_diff(tmp_path) == ""
+
+
 class TestReviewVerdictRendering:
     def test_empty_pass_is_short(self):
         from maverick.reviewer import ReviewVerdict, format_for_human

@@ -212,10 +212,76 @@ class TestApplyBlocks:
         )
         summary = apply_blocks([blk], repo)
         assert summary.ok
-        diff = render_diff(repo)
+        diff = render_diff(repo, paths=sorted(summary.files_touched))
         assert diff.startswith("diff --git")
         assert "-    return a + b" in diff
         assert "+    return a + b + 1" in diff
+
+    def test_render_diff_scopes_to_paths_and_skips_unrelated_untracked(self, tmp_path):
+        """Security: when `paths` is supplied, render_diff must not leak
+        unrelated untracked files (scratch files, secrets, build artifacts).
+        """
+        from maverick.edit_format import (
+            SearchReplaceBlock, apply_blocks, render_diff,
+        )
+        repo = _make_git_repo(tmp_path)
+        # Unrelated untracked file with sensitive contents.
+        (repo / "secret.txt").write_text("API_KEY=sk-secret-do-not-leak\n")
+        blk = SearchReplaceBlock(
+            path="seed.py",
+            search="def add(a, b):\n    return a + b\n",
+            replace="def add(a, b):\n    return a + b + 1\n",
+        )
+        summary = apply_blocks([blk], repo)
+        assert summary.ok
+        diff = render_diff(repo, paths=sorted(summary.files_touched))
+        assert "sk-secret-do-not-leak" not in diff
+        assert "secret.txt" not in diff
+        assert "seed.py" in diff
+
+    def test_render_diff_includes_new_files_in_paths(self, tmp_path):
+        """When `paths` includes a new file the caller created, the new
+        file must still appear via intent-to-add.
+        """
+        from maverick.edit_format import (
+            SearchReplaceBlock, apply_blocks, render_diff,
+        )
+        repo = _make_git_repo(tmp_path)
+        # Unrelated untracked secret that must NOT leak.
+        (repo / "secret.txt").write_text("API_KEY=sk-secret\n")
+        # SR block that creates a new file (empty SEARCH).
+        blk = SearchReplaceBlock(
+            path="new_module.py",
+            search="",
+            replace="def added():\n    return 1\n",
+        )
+        summary = apply_blocks([blk], repo)
+        assert summary.ok
+        diff = render_diff(repo, paths=sorted(summary.files_touched))
+        assert "new_module.py" in diff
+        assert "+def added():" in diff
+        assert "sk-secret" not in diff
+
+    def test_render_diff_without_paths_emits_tracked_changes_only(self, tmp_path):
+        """Backward-compat path: no `paths` -> diff tracked-file changes,
+        skip untracked entirely (the secure default for salvage paths).
+        """
+        from maverick.edit_format import (
+            SearchReplaceBlock, apply_blocks, render_diff,
+        )
+        repo = _make_git_repo(tmp_path)
+        (repo / "scratch.txt").write_text("ignore me\n")
+        blk = SearchReplaceBlock(
+            path="seed.py",
+            search="def add(a, b):\n    return a + b\n",
+            replace="def add(a, b):\n    return a + b + 1\n",
+        )
+        summary = apply_blocks([blk], repo)
+        assert summary.ok
+        diff = render_diff(repo)
+        assert "seed.py" in diff
+        assert "scratch.txt" not in diff
+        assert "ignore me" not in diff
 
 
 # ---- repair prompt ----
@@ -237,3 +303,41 @@ class TestRepairPrompt:
         assert "closest match" in out
         assert "<<<<<<< SEARCH" in out
         assert ">>>>>>> REPLACE" in out
+
+
+class TestSensitiveNearMiss:
+    def test_sensitive_paths_do_not_include_near_miss_file_content(self, tmp_path):
+        from maverick.edit_format import SearchReplaceBlock, apply_blocks
+
+        repo = _make_git_repo(tmp_path)
+        env_path = repo / ".env"
+        env_path.write_text("OPENAI_API_KEY=sk-live-secret\nOTHER=value\n", encoding="utf-8")
+
+        blk = SearchReplaceBlock(
+            path=".env",
+            search="API_TOKEN_DOES_NOT_EXIST",
+            replace="OPENAI_API_KEY=updated",
+        )
+        summary = apply_blocks([blk], repo)
+
+        assert not summary.ok
+        res = summary.results[0]
+        assert "sensitive path" in res.near_miss_context
+        assert "sk-live-secret" not in res.near_miss_context
+
+    def test_non_sensitive_paths_still_include_near_miss_context(self, tmp_path):
+        from maverick.edit_format import SearchReplaceBlock, apply_blocks
+
+        repo = _make_git_repo(tmp_path)
+        (repo / "seed.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+        blk = SearchReplaceBlock(
+            path="seed.py",
+            search="return a + c",
+            replace="return a + b",
+        )
+
+        summary = apply_blocks([blk], repo)
+        assert not summary.ok
+        res = summary.results[0]
+        assert "closest match" in res.near_miss_context
+        assert "return a + b" in res.near_miss_context

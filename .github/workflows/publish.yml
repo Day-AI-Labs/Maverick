@@ -1,0 +1,80 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+# Publishes all six maverick-* packages to PyPI when a `v*` tag is
+# pushed. Uses PyPI trusted publishing (OIDC) -- no API tokens stored
+# in GitHub secrets. Set up the trusted-publishers config at
+# https://pypi.org/manage/account/publishing/ before this workflow
+# can succeed.
+
+permissions:
+  contents: read
+  id-token: write   # for PyPI OIDC
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      built: ${{ steps.list.outputs.dirs }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build tools
+        run: python -m pip install --upgrade build
+
+      - id: list
+        name: Discover packages
+        run: |
+          set -e
+          # Each package directory with a pyproject.toml under packages/
+          # or apps/ is a candidate.
+          dirs=()
+          for d in packages/* apps/*; do
+            if [ -f "$d/pyproject.toml" ]; then
+              dirs+=("$d")
+            fi
+          done
+          printf 'discovered: %s\n' "${dirs[@]}"
+          # Emit as a JSON array for the matrix job.
+          echo "dirs=$(printf '%s\n' "${dirs[@]}" | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+
+      - name: Build all packages
+        run: |
+          set -e
+          mkdir -p dist-all
+          for d in packages/* apps/*; do
+            if [ -f "$d/pyproject.toml" ]; then
+              echo "==> Building $d"
+              (cd "$d" && python -m build --outdir ../../dist-all .)
+            fi
+          done
+          ls -la dist-all
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist-all/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/maverick-agent
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          skip-existing: true

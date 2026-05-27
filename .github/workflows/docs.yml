@@ -1,0 +1,66 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
+      - 'CODE_OF_CONDUCT.md'
+      - 'SECURITY.md'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install MkDocs Material
+        run: |
+          python -m pip install --upgrade pip
+          pip install 'mkdocs-material>=9.5'
+      - name: Symlink top-level community files into docs/
+        # MkDocs only serves files under docs/; we symlink so we don't
+        # duplicate content in two places.
+        run: |
+          set -e
+          mkdir -p docs
+          for f in CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md ROADMAP.md; do
+            if [ -f "$f" ] && [ ! -e "docs/$f" ]; then
+              ln -s "../$f" "docs/$f"
+            fi
+          done
+          # ROADMAP.md may already live under docs/.
+          if [ -f "ROADMAP.md" ] && [ ! -e "docs/ROADMAP.md" ]; then
+            ln -s "../ROADMAP.md" "docs/ROADMAP.md"
+          fi
+      - name: Build site
+        run: mkdocs build --strict --site-dir _site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

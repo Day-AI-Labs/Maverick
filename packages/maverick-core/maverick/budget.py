@@ -183,13 +183,18 @@ class Budget:
         per-process — reset on unpickle to avoid bogus elapsed math)."""
         state = self.__dict__.copy()
         state.pop("_lock", None)
+        # Preserve consumed wall time across process boundaries.
+        # Monotonic baselines are process-local, so serialize elapsed
+        # duration and reconstruct a compatible baseline on restore.
+        state["_elapsed_at_pickle"] = self.elapsed()
         state.pop("_started_monotonic", None)
         return state
 
     def __setstate__(self, state):
         self.__dict__.update(state)
         self._lock = threading.Lock()
-        self._started_monotonic = time.monotonic()
+        elapsed = float(self.__dict__.pop("_elapsed_at_pickle", 0.0) or 0.0)
+        self._started_monotonic = time.monotonic() - max(0.0, elapsed)
 
     def check(self) -> None:
         if self.input_tokens > self.max_input_tokens:
