@@ -16,18 +16,22 @@ from typing import Optional, Union
 from .docker import DockerBackend
 from .firecracker import FirecrackerBackend
 from .local import ExecResult, LocalBackend
+from .podman import PodmanBackend
 from .ssh import SSHBackend
 
 __all__ = [
     "LocalBackend",
     "DockerBackend",
+    "PodmanBackend",
     "FirecrackerBackend",
     "SSHBackend",
     "ExecResult",
     "build_sandbox",
 ]
 
-Sandbox = Union[LocalBackend, DockerBackend, FirecrackerBackend, SSHBackend]
+Sandbox = Union[
+    LocalBackend, DockerBackend, PodmanBackend, FirecrackerBackend, SSHBackend,
+]
 
 
 def build_sandbox(
@@ -59,6 +63,12 @@ def build_sandbox(
     if chosen == "docker":
         image = full_cfg.get("image", "python:3.12-slim")
         return DockerBackend(workdir=wd, image=image, timeout=timeout)
+    if chosen == "podman":
+        image = full_cfg.get("image", "python:3.12-slim")
+        return PodmanBackend(
+            workdir=wd, image=image, timeout=timeout,
+            allow_network=bool(full_cfg.get("allow_network", False)),
+        )
     if chosen == "firecracker":
         return FirecrackerBackend(
             workdir=wd,

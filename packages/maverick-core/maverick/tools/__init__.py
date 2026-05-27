@@ -143,8 +143,12 @@ def base_registry(
     from .calendar_tool import calendar_tool
     from .compute import compute
     from .email_tool import email_tool
+    from .embeddings import embeddings
     from .file_watcher import file_watcher
     from .git_advanced import git_advanced
+    from .gitlab import gitlab
+    from .jira import jira
+    from .linear import linear
     from .pandas_query import pandas_query
     from .semantic_scholar import semantic_scholar
     from .wikipedia import wikipedia
@@ -167,6 +171,10 @@ def base_registry(
     reg.register(git_advanced(sandbox))
     reg.register(calendar_tool())
     reg.register(file_watcher())
+    reg.register(linear())
+    reg.register(jira())
+    reg.register(gitlab())
+    reg.register(embeddings())
 
     # Voice tools (opt-in extra; tool factories raise ImportError only
     # when called without the required API key OR SDK; registering is

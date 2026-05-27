@@ -218,6 +218,20 @@ async def spend_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/providers", response_class=HTMLResponse)
+async def providers_page(request: Request) -> HTMLResponse:
+    from maverick.provider_health import get as _health
+    return templates.TemplateResponse(
+        request, "providers.html", {"rows": _health().snapshot()},
+    )
+
+
+@app.get("/api/v1/providers")
+async def providers_api() -> JSONResponse:
+    from maverick.provider_health import get as _health
+    return JSONResponse({"providers": _health().snapshot()})
+
+
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request) -> HTMLResponse:
     recent = list(reversed(_world().list_goals()[-10:]))

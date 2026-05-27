@@ -225,7 +225,24 @@ class LLM:
         )
         if on_delta is not None and provider == "anthropic":
             kwargs["on_delta"] = on_delta
-        return client.complete(**kwargs)
+        import time as _time
+        _t0 = _time.time()
+        _d0 = budget.dollars if budget else 0.0
+        _err = False
+        try:
+            return client.complete(**kwargs)
+        except Exception:
+            _err = True
+            raise
+        finally:
+            _dt_ms = (_time.time() - _t0) * 1000.0
+            _spent = (budget.dollars - _d0) if budget else 0.0
+            try:
+                from .provider_health import get as _h
+                _h().record(provider, model_id,
+                            latency_ms=_dt_ms, dollars=_spent, error=_err)
+            except Exception:  # pragma: no cover -- never fail on stats
+                pass
 
     async def complete_async(
         self,
@@ -239,7 +256,24 @@ class LLM:
     ) -> LLMResponse:
         provider, model_id = _parse_spec(model or self.model)
         client = self._get_client(provider)
-        return await client.complete_async(
-            system=system, messages=messages, tools=tools, budget=budget,
-            max_tokens=max_tokens, thinking_budget=thinking_budget, model=model_id,
-        )
+        import time as _time
+        _t0 = _time.time()
+        _d0 = budget.dollars if budget else 0.0
+        _err = False
+        try:
+            return await client.complete_async(
+                system=system, messages=messages, tools=tools, budget=budget,
+                max_tokens=max_tokens, thinking_budget=thinking_budget, model=model_id,
+            )
+        except Exception:
+            _err = True
+            raise
+        finally:
+            _dt_ms = (_time.time() - _t0) * 1000.0
+            _spent = (budget.dollars - _d0) if budget else 0.0
+            try:
+                from .provider_health import get as _h
+                _h().record(provider, model_id,
+                            latency_ms=_dt_ms, dollars=_spent, error=_err)
+            except Exception:  # pragma: no cover
+                pass
