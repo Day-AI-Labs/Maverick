@@ -192,8 +192,14 @@ class LLM:
             if provider not in self._clients:
                 from .session_providers import is_session_provider
                 if is_session_provider(provider):
+                    # Session providers get auto-wrapped in the tool
+                    # simulator so tool-using roles (orchestrator,
+                    # coder, researcher) work transparently. The
+                    # wrapper is a no-op when tools=None.
                     from .session_providers import get_session_client
-                    self._clients[provider] = get_session_client(provider)
+                    self._clients[provider] = get_session_client(
+                        provider, simulate_tools=True,
+                    )
                 else:
                     from .providers import get_provider_client
                     key = self._anthropic_api_key if provider == "anthropic" else None
