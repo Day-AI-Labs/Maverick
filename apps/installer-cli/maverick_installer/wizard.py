@@ -81,6 +81,14 @@ def _q_text(message: str, default: str = "") -> str:
     return questionary.text(message, default=default).ask()
 
 
+def _q_secret(message: str) -> str:
+    if questionary is None:
+        import getpass
+
+        return getpass.getpass(f"{message}: ").strip()
+    return questionary.password(message).ask() or ""
+
+
 def _q_checkbox(message: str, choices: list[str], default: list[str] | None = None) -> list[str]:
     if questionary is None:
         print(f"{message} (comma-separated numbers, blank = none)")
@@ -509,17 +517,21 @@ def collect_api_keys(providers: list[str], channel_envs: set[str]) -> dict[str, 
     for env_name in dict.fromkeys(needed):  # dedupe preserving order
         current = os.environ.get(env_name, "")
         masked = (current[:7] + "...") if current else "(none)"
-        val = _q_text(f"  {env_name} [current: {masked}]", default=current)
-        if val:
-            # Validate when we know how.
-            validator = _VALIDATORS.get(env_name)
-            if validator:
-                ok, msg = validator(val)
-                marker = "[green]✓[/green]" if ok else "[red]✗[/red]"
-                console.print(f"    {marker} {msg}")
-                if not ok and not _q_confirm("Save anyway?", default=False):
-                    continue
-            keys[env_name] = val
+        val = _q_secret(f"  {env_name} [current: {masked}] (leave blank to keep current)")
+        if not val:
+            if current:
+                keys[env_name] = current
+            continue
+
+        # Validate when we know how.
+        validator = _VALIDATORS.get(env_name)
+        if validator:
+            ok, msg = validator(val)
+            marker = "[green]✓[/green]" if ok else "[red]✗[/red]"
+            console.print(f"    {marker} {msg}")
+            if not ok and not _q_confirm("Save anyway?", default=False):
+                continue
+        keys[env_name] = val
     return keys
 
 
