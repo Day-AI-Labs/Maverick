@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from . import Tool
+from .http_fetch import _is_private_ip
 
 log = logging.getLogger(__name__)
 
@@ -59,19 +60,33 @@ def _guess_mime(source: str) -> str:
 def _load_image(source: str) -> tuple[bytes, str] | None:
     """Return (image_bytes, mime_type) for the source, or None on failure."""
     if source.startswith(("http://", "https://")):
+        from urllib.parse import urlparse
+
+        parsed = urlparse(source)
+        if parsed.hostname and _is_private_ip(parsed.hostname):
+            return None
         try:
             import httpx
         except ImportError:
             return None
         try:
-            resp = httpx.get(source, timeout=30.0, follow_redirects=True)
+            resp = httpx.get(source, timeout=30.0, follow_redirects=False)
             resp.raise_for_status()
             mime = (resp.headers.get("content-type") or _guess_mime(source)).split(";")[0].strip()
             return resp.content, mime
         except Exception as e:
             log.warning("image fetch failed: %s", e)
             return None
+    workdir = Path.cwd().resolve()
     path = Path(os.path.expanduser(source))
+    if not path.is_absolute():
+        path = (workdir / path).resolve()
+    else:
+        path = path.resolve()
+    try:
+        path.relative_to(workdir)
+    except ValueError:
+        return None
     if not path.exists() or not path.is_file():
         return None
     return path.read_bytes(), _guess_mime(source)
