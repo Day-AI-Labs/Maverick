@@ -233,13 +233,24 @@ async def run_goal(
             except Exception as e:  # pragma: no cover -- never block on history
                 log.warning("conversation turn write failed: %s", e)
 
-        try:
-            skill = distill(goal.title, summary, blackboard, llm, budget=budget)
-            skill_note = f"\n\n[distilled skill: {skill.name}]" if skill else ""
-        except BudgetExceeded:
-            skill_note = "\n\n[skill distill skipped: budget]"
-        except Exception as e:
-            skill_note = f"\n\n[skill distill error: {e}]"
+        # Security hardening: disable automatic closed-loop distillation by
+        # default. Trajectories can contain untrusted goal/tool/workspace text
+        # and writing LLM output directly to persisted skills creates a
+        # cross-run prompt-injection primitive. Operators can opt in explicitly
+        # via MAVERICK_AUTO_DISTILL=1.
+        auto_distill = os.getenv("MAVERICK_AUTO_DISTILL", "").strip().lower() in {
+            "1", "true", "yes", "on",
+        }
+        if auto_distill:
+            try:
+                skill = distill(goal.title, summary, blackboard, llm, budget=budget)
+                skill_note = f"\n\n[distilled skill: {skill.name}]" if skill else ""
+            except BudgetExceeded:
+                skill_note = "\n\n[skill distill skipped: budget]"
+            except Exception as e:
+                skill_note = f"\n\n[skill distill error: {e}]"
+        else:
+            skill_note = "\n\n[skill distill disabled: set MAVERICK_AUTO_DISTILL=1 to enable]"
 
         # Wave 12 hotfix: in coding mode the orchestrator's return value
         # IS the benchmark CSV's `predicted_patch` after extract_unified_diff.
