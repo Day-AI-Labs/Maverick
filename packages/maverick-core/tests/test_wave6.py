@@ -147,47 +147,50 @@ class TestMCPPinSha256:
         spec = MCPServerSpec(name="x", command="any-command-here")
         _verify_command_pin(spec)  # no raise
 
-    def test_pin_windows_backslash_path_resolves_directly(
+
+    def test_pin_posix_backslash_command_uses_path_lookup(
         self, tmp_path, monkeypatch,
     ):
-        """Wave 11: Windows absolute paths like 'C:\\foo\\mcp-tool' must
-        be recognised as paths (not bare command names) so we don't
-        fruitlessly send them through `shutil.which`."""
+        """On POSIX, backslash is not a path separator, so command
+        resolution must go through PATH lookup semantics."""
         import hashlib
         from maverick.mcp_client import MCPServerSpec, _verify_command_pin
-        # Real file at a real path; verify the hash matches via the
-        # "path detected" code path. Force `shutil.which` to never
-        # succeed -- if our heuristic falls through to it on a path-
-        # shaped command, we'd see the same failure Cstep saw on
-        # Windows.
-        exe = tmp_path / "mcp-tool"
+
+        exe = tmp_path / "resolved-tool"
         exe.write_bytes(b"#!/bin/sh\necho ok\n")
         sha = hashlib.sha256(exe.read_bytes()).hexdigest()
-        monkeypatch.setattr("shutil.which", lambda _: None)
-        # Use a backslash separator anywhere in the command to simulate
-        # a Windows path on a Linux test runner.
-        backslashy = str(exe).replace("/", "\\")
-        spec = MCPServerSpec(name="x", command=backslashy, pin_sha256=sha)
-        # The heuristic detects "\\" -> treats as path -> uses it
-        # directly. We then need the file to actually exist; since the
-        # original tmp_path uses forward slashes, write the file again
-        # at the backslash-form path... which on Linux is literally a
-        # different filename. So we simulate by patching Path.exists.
-        from pathlib import Path
-        monkeypatch.setattr(
-            Path, "exists",
-            lambda self: True if "\\" in str(self) else self.is_file(),
-        )
-        # And patch open() to return the real file's bytes when asked
-        # for the backslash-form path.
-        real_open = open
 
-        def fake_open(p, *a, **kw):
-            if "\\" in str(p):
-                return real_open(exe, *a, **kw)
-            return real_open(p, *a, **kw)
-        monkeypatch.setattr("builtins.open", fake_open)
-        _verify_command_pin(spec)  # no raise -> heuristic worked
+        looked_up = {"called": False}
+
+        def fake_which(cmd):
+            looked_up["called"] = True
+            assert cmd == "foo\\bar"
+            return str(exe)
+
+        monkeypatch.setattr("shutil.which", fake_which)
+        spec = MCPServerSpec(name="x", command="foo\\bar", pin_sha256=sha)
+        _verify_command_pin(spec)
+        assert looked_up["called"] is True
+
+    def test_command_looks_like_path_platform_semantics(self):
+        """Pure heuristic test: forward slash is always a path separator;
+        backslash counts only on Windows. Tested via the injectable
+        `on_windows` parameter rather than monkeypatching `os.name` —
+        the latter has process-wide side effects (pathlib's `Path()`
+        constructor checks `os.name` to pick PosixPath vs WindowsPath,
+        so flipping it on a Linux test runner breaks subsequent
+        Path() calls until teardown).
+        """
+        from maverick.mcp_client import _command_looks_like_path
+        # Forward slash: always a path on both platforms.
+        assert _command_looks_like_path("/usr/bin/mcp-tool", on_windows=False)
+        assert _command_looks_like_path("/usr/bin/mcp-tool", on_windows=True)
+        # Backslash: path on Windows, plain command on POSIX.
+        assert not _command_looks_like_path("foo\\bar", on_windows=False)
+        assert _command_looks_like_path("C:\\foo\\mcp-tool", on_windows=True)
+        # Plain command name: never a path.
+        assert not _command_looks_like_path("mcp-tool", on_windows=False)
+        assert not _command_looks_like_path("mcp-tool", on_windows=True)
 
 
 # ---------- EU AI Act Article 50 disclosure ----------
