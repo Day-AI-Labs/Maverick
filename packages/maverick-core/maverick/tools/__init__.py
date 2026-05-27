@@ -128,6 +128,16 @@ def base_registry(
         from .browser import browser
         reg.register(browser())
 
+    # Apply allow/deny lists from ~/.maverick/config.toml [security].
+    # Fail-soft: any error here is logged and the registry is left
+    # untouched.
+    try:
+        from ..safety.tool_acl import apply_to_registry
+        apply_to_registry(reg)
+    except Exception as e:  # pragma: no cover
+        import logging as _logging
+        _logging.getLogger(__name__).warning("tool_acl: %s", e)
+
     if mcp_clients:
         from ..mcp_tools import tools_from_mcp
         for client in mcp_clients:
