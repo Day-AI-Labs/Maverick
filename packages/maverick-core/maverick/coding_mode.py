@@ -965,14 +965,20 @@ def detect_test_runner(workdir: Path, language: str = "") -> str:
                 if name == hinted or (name == "node" and hinted in ("jest", "vitest", "mocha")):
                     if any((workdir / f).exists() for f in files):
                         return hinted
+            # Java repos can be Maven OR Gradle. Keep the strict
+            # language-hint behavior (avoid cross-language fallbacks)
+            # while still allowing Gradle-only Java repos.
+            if lang_lower == "java":
+                for name, files in _RUNNER_MARKERS:
+                    if name == "gradle" and any((workdir / f).exists() for f in files):
+                        return "gradle"
         # May 26 council fix (test-runner audit #3): when the
         # language hint is set but its expected markers are missing,
         # the OLD code fell through to the generic loop — which picks
         # pytest first if any `pyproject.toml` / `setup.py` exists
-        # (common in JS repos that ship `pre-commit` config). A Java
-        # repo hinted "java" but missing `pom.xml` would get classed
-        # as pytest. Trust the hint: return unsupported instead of
-        # falling back to a wrong runner.
+        # (common in JS repos that ship `pre-commit` config).
+        # Trust the hint: return unsupported instead of falling back
+        # to a wrong cross-language runner.
         return "unsupported"
 
     for name, files in _RUNNER_MARKERS:
