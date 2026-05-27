@@ -57,7 +57,7 @@ def _run_factory(sandbox):
                 "a git repository at the sandbox workdir."
             )
         max_bytes = int(args.get("max_bytes") or 50_000)
-        cmd = ["git", "-C", cwd, "diff"]
+        cmd = ["git", "-C", cwd, "diff", "--no-ext-diff", "--no-textconv"]
         if args.get("staged"):
             cmd.append("--cached")
         if args.get("stat_only"):

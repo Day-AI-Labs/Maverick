@@ -26,6 +26,7 @@ _PROVIDER_ALIASES = {
     "deepseek":   (),
     "openrouter": (),
     "ollama":     ("local",),
+    "tgi":        ("huggingface-tgi", "hf-tgi"),
 }
 
 
@@ -67,6 +68,9 @@ def get_provider_client(name: str, api_key: Optional[str] = None) -> Any:
     if canon == "xai":
         from .xai_provider import XaiClient
         return XaiClient(api_key=api_key)
+    if canon == "tgi":
+        from .tgi_provider import TGIClient
+        return TGIClient(api_key=api_key)
     raise ValueError(
         f"unknown provider {name!r}. Available: "
         + ", ".join(KNOWN_PROVIDERS)
@@ -75,7 +79,7 @@ def get_provider_client(name: str, api_key: Optional[str] = None) -> Any:
 
 KNOWN_PROVIDERS = (
     "anthropic", "openai", "moonshot", "xai", "gemini",
-    "deepseek", "openrouter", "ollama",
+    "deepseek", "openrouter", "ollama", "tgi",
 )
 
 

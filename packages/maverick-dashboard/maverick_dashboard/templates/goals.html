@@ -5,14 +5,18 @@
   <div class="panel">
     {% if goals %}
     <table>
-      <thead><tr><th>id</th><th>status</th><th>title</th><th>description</th></tr></thead>
+      <thead><tr><th>id</th><th>status</th><th>title</th><th>description</th><th></th></tr></thead>
       <tbody>
       {% for g in goals %}
-        <tr>
+        <tr id="{{ g.id }}">
           <td><code>#{{ g.id }}</code></td>
           <td><span class="badge {{ g.status }}">{{ g.status }}</span></td>
           <td>{{ g.title }}</td>
           <td class="muted">{{ (g.description or '')[:120] }}{% if g.description and g.description|length > 120 %}…{% endif %}</td>
+          <td class="muted" style="white-space: nowrap;">
+            <a href="/goals/{{ g.id }}/plan">plan</a> ·
+            <a href="/goals/{{ g.id }}/trajectory">replay</a>
+          </td>
         </tr>
       {% endfor %}
       </tbody>
