@@ -6,12 +6,14 @@ No API calls. Pure unit tests on ``_to_openai_messages``, ``_to_openai_tools``,
 from __future__ import annotations
 
 import json
+import sys
 from types import SimpleNamespace
 
 from maverick.providers.openai_provider import (
     OpenAIClient,
     _extract_tool_result_text,
 )
+from maverick.providers.openrouter_provider import OpenRouterClient
 
 
 class TestExtractToolResultText:
@@ -187,3 +189,46 @@ class TestFromResponse:
         )
         out = OpenAIClient._from_response(resp, budget=None)
         assert out.tool_calls[0].input == {}
+
+
+class TestProviderApiKeyIsolation:
+    def test_openrouter_does_not_fallback_to_openai_env(self, monkeypatch):
+        captures = []
+
+        class FakeClient:
+            def __init__(self, api_key=None, base_url=None):
+                captures.append((api_key, base_url))
+
+        class FakeModule:
+            OpenAI = FakeClient
+            AsyncOpenAI = FakeClient
+
+        monkeypatch.setitem(sys.modules, "openai", FakeModule())
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+        OpenRouterClient()
+
+        assert captures[0][0] is None
+        assert captures[1][0] is None
+        assert captures[0][1] == "https://openrouter.ai/api/v1"
+
+    def test_openrouter_prefers_openrouter_env(self, monkeypatch):
+        captures = []
+
+        class FakeClient:
+            def __init__(self, api_key=None, base_url=None):
+                captures.append((api_key, base_url))
+
+        class FakeModule:
+            OpenAI = FakeClient
+            AsyncOpenAI = FakeClient
+
+        monkeypatch.setitem(sys.modules, "openai", FakeModule())
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-openrouter")
+
+        OpenRouterClient()
+
+        assert captures[0][0] == "sk-openrouter"
+        assert captures[1][0] == "sk-openrouter"
