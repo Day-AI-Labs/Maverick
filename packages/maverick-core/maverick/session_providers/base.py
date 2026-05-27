@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from ..budget import Budget
+from ..budget import Budget, BudgetExceeded
 
 log = logging.getLogger(__name__)
 
@@ -62,5 +62,7 @@ def approx_record_budget(
     out_tok = max(1, len(output) // 4)
     try:
         budget.record_tokens(in_tok, out_tok, model=model)
+    except BudgetExceeded:
+        raise
     except Exception:
         log.exception("budget.record_tokens failed (non-fatal)")
