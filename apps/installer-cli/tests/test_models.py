@@ -103,7 +103,8 @@ def test_wizard_model_ids_have_pricing():
     cost from the user. Wizard-offered ids must be priced.
 
     Exemptions:
-      - ollama / openrouter: local or aggregated catalogs (dynamic).
+      - ollama / openrouter / tgi: local or aggregated or self-hosted
+        catalogs (dynamic, zero per-token cost to the user).
       - session providers: user pays a flat subscription, no per-token
         billing meaningful at this layer.
     """
@@ -113,7 +114,7 @@ def test_wizard_model_ids_have_pricing():
         pytest.skip("maverick-core not installed in this environment")
     unpriced: list[str] = []
     for prov_id, info in models.PROVIDERS.items():
-        if prov_id in ("ollama", "openrouter"):
+        if prov_id in ("ollama", "openrouter", "tgi"):
             continue
         if info.get("session"):
             continue

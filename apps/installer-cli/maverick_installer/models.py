@@ -103,6 +103,14 @@ PROVIDERS: dict[str, dict] = {
             {"id": "phi3:14b",             "notes": "Local, small, fast."},
         ],
     },
+    "tgi": {
+        "status": "ready",
+        "label": "HuggingFace TGI (self-hosted inference)",
+        "env": None,
+        "models": [
+            {"id": "tgi",                  "notes": "Whatever model your TGI server serves; URL via TGI_BASE_URL env."},
+        ],
+    },
     "chatgpt-session": {
         "status": "ready",
         "label": "ChatGPT browser session (use your Plus subscription, no API key)",
