@@ -74,6 +74,7 @@ class TestMigrationToV7:
         # + MIGRATIONS so the v6→v7 migration path runs.
         monkeypatch.undo()
         wm_v7 = world_model.WorldModel(path=db_path)
-        assert wm_v7.schema_version == 7
+        # v6 -> head: HEAD is currently 8 (Q1 2026 index audit added v8).
+        assert wm_v7.schema_version >= 7
         assert _index_exists(wm_v7.conn, "idx_episodes_ended_at")
         assert _index_exists(wm_v7.conn, "idx_goal_events_ts")

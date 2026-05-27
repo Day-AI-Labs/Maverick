@@ -181,10 +181,28 @@ class OpenAIClient:
                 ))
         if budget is not None and getattr(resp, "usage", None):
             usage = resp.usage
+            # Extract cached-token counts where the provider reports
+            # them. Vendors expose this on the usage object under
+            # different field names; we try the known shapes and fall
+            # back to 0:
+            #   - OpenAI:   usage.prompt_tokens_details.cached_tokens
+            #   - DeepSeek: usage.prompt_cache_hit_tokens (and _miss_tokens)
+            #   - Gemini OpenAI-compat: prompt_tokens_details.cached_tokens
+            # When a cached count is reported, the BILLABLE prompt
+            # tokens (full rate) is prompt_tokens - cached_tokens.
+            cache_read_tok = 0
+            details = getattr(usage, "prompt_tokens_details", None)
+            if details is not None:
+                cache_read_tok = int(getattr(details, "cached_tokens", 0) or 0)
+            if cache_read_tok == 0:
+                cache_read_tok = int(getattr(usage, "prompt_cache_hit_tokens", 0) or 0)
+            full_in = int(getattr(usage, "prompt_tokens", 0) or 0)
+            billable_in = max(full_in - cache_read_tok, 0)
             budget.record_tokens(
-                getattr(usage, "prompt_tokens", 0) or 0,
-                getattr(usage, "completion_tokens", 0) or 0,
+                billable_in,
+                int(getattr(usage, "completion_tokens", 0) or 0),
                 model=model,
+                cache_read_tok=cache_read_tok,
             )
         # Map finish_reason to Anthropic stop_reason vocab so consumers that
         # check Anthropic values (e.g., 'tool_use', 'end_turn') branch correctly.

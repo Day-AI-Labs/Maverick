@@ -19,7 +19,7 @@ from typing import Optional
 
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 SCHEMA = """
@@ -155,6 +155,18 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
 CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
     INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
 END;
+
+-- Q1 2026 index audit (schema v8): cover the hot queries identified
+-- in docs/performance/world-model-indexes.md. These are duplicated in
+-- MIGRATIONS[8] so existing databases pick them up on next open.
+CREATE INDEX IF NOT EXISTS idx_episodes_goal_started
+    ON episodes(goal_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_episodes_started
+    ON episodes(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_goals_status_updated
+    ON goals(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_goals_parent
+    ON goals(parent_id, created_at);
 """
 
 
@@ -180,6 +192,28 @@ MIGRATIONS: dict[int, list[str]] = {
         "ON episodes(ended_at)",
         "CREATE INDEX IF NOT EXISTS idx_goal_events_ts "
         "ON goal_events(ts)",
+    ],
+    # Q1 2026 index audit: hot queries identified via EXPLAIN QUERY PLAN.
+    #
+    # - list_episodes(goal_id=...) filters by goal_id then orders by
+    #   started_at: needs idx_episodes_goal_started.
+    # - list_episodes() (no goal filter) orders by started_at: full
+    #   table scan was OK on small DBs, painful at 100k+ episodes.
+    # - monitor.snapshot resolves the active goal by status + ORDER BY
+    #   updated_at DESC LIMIT 1: covers via idx_goals_status_updated.
+    # - cross_goal_memory.recall scans WHERE status IN (succeeded,
+    #   done, failed) ORDER BY updated_at DESC LIMIT 500: covered by
+    #   idx_goals_status_updated.
+    # - parent_id filter for _fetch_subgoals: needs idx_goals_parent.
+    8: [
+        "CREATE INDEX IF NOT EXISTS idx_episodes_goal_started "
+        "ON episodes(goal_id, started_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_episodes_started "
+        "ON episodes(started_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_goals_status_updated "
+        "ON goals(status, updated_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_goals_parent "
+        "ON goals(parent_id, created_at)",
     ],
 }
 
