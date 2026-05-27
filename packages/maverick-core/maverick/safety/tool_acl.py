@@ -67,6 +67,7 @@ def apply_to_registry(reg) -> None:
     allowed, denied = _load_lists()
     if not allowed and not denied:
         return
+    reg.set_acl(allowed=allowed, denied=denied)
     current = {t.name for t in reg.all()}
     keep = filter_tools(current, allowed=allowed, denied=denied)
     drop = current - keep

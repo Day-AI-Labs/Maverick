@@ -100,6 +100,8 @@ async def create_goal(payload: GoalIn, bg: BackgroundTasks) -> GoalOut:
         from maverick.templates import load_template
         try:
             tpl = load_template(payload.template)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         except FileNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
         try:

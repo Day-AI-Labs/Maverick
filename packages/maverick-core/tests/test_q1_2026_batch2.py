@@ -127,6 +127,33 @@ def test_tool_acl_apply_to_registry(tmp_path, monkeypatch):
     assert "shell" in names
 
 
+def test_tool_acl_blocks_late_registered_tools(tmp_path, monkeypatch):
+    """ACL should also apply to tools registered after apply_to_registry."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config_dir = tmp_path / ".maverick"
+    config_dir.mkdir()
+    (config_dir / "config.toml").write_text(
+        '[security]\nallowed_tools = ["read_file"]\n'
+    )
+    import importlib
+    import maverick.config as cfg_mod
+    importlib.reload(cfg_mod)
+
+    from maverick.tools import Tool, base_registry
+
+    class _FakeSandbox:
+        pass
+
+    class _FakeWorld:
+        pass
+
+    reg = base_registry(world=_FakeWorld(), sandbox=_FakeSandbox())
+    reg.register(Tool(name="late_tool", description="x", input_schema={}, fn=lambda _a: "ok"))
+    names = {t.name for t in reg.all()}
+    assert "read_file" in names
+    assert "late_tool" not in names
+
+
 # ---------- budget_status ----------
 
 def test_budget_status_no_budget():

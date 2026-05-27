@@ -9,7 +9,7 @@
 // API for richer features (streaming run output, plan-tree updates),
 // but the shell-out path is good enough for v0.1.
 
-import { spawn, exec, ExecException } from "child_process";
+import { spawn } from "child_process";
 import * as vscode from "vscode";
 
 function getCli(): string {
@@ -27,9 +27,20 @@ function runCliCapture(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const cli = getCli();
     const cwd = getCwd();
-    exec([cli, ...args].join(" "), { cwd }, (err: ExecException | null, stdout: string, stderr: string) => {
-      if (err) {
-        reject(new Error(`${err.message}\n${stderr}`));
+    const child = spawn(cli, args, { cwd });
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (data: Buffer) => {
+      stdout += data.toString();
+    });
+    child.stderr.on("data", (data: Buffer) => {
+      stderr += data.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code: number | null) => {
+      if ((code ?? 0) !== 0) {
+        reject(new Error(`maverick exited with code ${code ?? 0}\n${stderr}`));
         return;
       }
       resolve(stdout);

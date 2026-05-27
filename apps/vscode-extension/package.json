@@ -86,6 +86,7 @@
         "maverick.cliPath": {
           "type": "string",
           "default": "maverick",
+          "scope": "machine-overridable",
           "description": "Path to the `maverick` CLI executable."
         },
         "maverick.workspaceCwd": {
