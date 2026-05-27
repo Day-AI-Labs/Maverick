@@ -513,44 +513,40 @@ def apply_blocks(blocks: list[SearchReplaceBlock], workdir: Path,
     return summary
 
 
-def render_diff(workdir: Path) -> str:
+def render_diff(workdir: Path, touched_paths: list[str] | None = None) -> str:
     """Run `git diff` against `workdir` and return the unified diff.
 
     Called after `apply_blocks` succeeds to produce the diff payload for
     the benchmark CSV. Models never hand-write `@@ -N,M +N,M @@` hunk
     headers — git computes them from the actual file deltas.
 
-    Wave 12 fix: `git diff HEAD` does NOT include untracked files. SR
-    blocks that create a new file via empty-SEARCH succeed on disk but
-    were silently absent from the rendered patch (~15% of fix instances
-    on SWE-bench Pro need new files). We now `git add --intent-to-add`
-    every untracked path before running diff so new files show up
-    with a proper `--- /dev/null` hunk.
+    `git diff HEAD` does NOT include untracked files. To include SR
+    blocks that create a new file, callers can pass `touched_paths`
+    and we only `git add --intent-to-add` those paths that are both
+    touched and currently untracked. This avoids leaking unrelated
+    local untracked files into the rendered patch.
     """
     import subprocess
-    # Wave 12 hardening: use `-z` for NUL-separated `ls-files` output so
-    # filenames containing newlines or special chars aren't split into
-    # bogus entries. `-c core.quotePath=false` keeps non-ASCII paths
-    # unescaped (otherwise `git add` doesn't recognize them). Chunk the
-    # `add` invocation to stay under ARG_MAX on large untracked sets.
+    # Use `-z` for NUL-separated `ls-files` output so filenames with
+    # special chars aren't split into bogus entries. `-c
+    # core.quotePath=false` keeps non-ASCII paths unescaped.
     try:
-        ls = subprocess.run(
-            ["git", "-c", "core.quotePath=false", "-C", str(workdir),
-             "ls-files", "--others", "--exclude-standard", "-z"],
-            capture_output=True, timeout=15,
-        )
-        if ls.returncode == 0 and ls.stdout:
-            raw = ls.stdout.decode("utf-8", errors="replace")
-            paths = [p for p in raw.split("\x00") if p]
-            # Chunk to avoid blowing ARG_MAX (~128KB on Linux). 100 per
-            # add is well within limits even for very long paths.
-            for i in range(0, len(paths), 100):
-                chunk = paths[i:i + 100]
-                subprocess.run(
-                    ["git", "-C", str(workdir), "add", "--intent-to-add",
-                     "--"] + chunk,
-                    capture_output=True, timeout=30,
-                )
+        if touched_paths:
+            ls = subprocess.run(
+                ["git", "-c", "core.quotePath=false", "-C", str(workdir),
+                 "ls-files", "--others", "--exclude-standard", "-z"],
+                capture_output=True, timeout=15,
+            )
+            if ls.returncode == 0 and ls.stdout:
+                raw = ls.stdout.decode("utf-8", errors="replace")
+                untracked = {p for p in raw.split("\x00") if p}
+                paths = [p for p in touched_paths if p in untracked]
+                if paths:
+                    subprocess.run(
+                        ["git", "-C", str(workdir), "add", "--intent-to-add",
+                         "--"] + paths,
+                        capture_output=True, timeout=30,
+                    )
     except (subprocess.SubprocessError, OSError):
         pass
     try:

@@ -230,7 +230,7 @@ class Agent:
                     ),
                 ))
                 return None, summary
-            patch = render_diff(workdir)
+            patch = render_diff(workdir, touched_paths=touched_paths)
             return patch, summary
         return extract_unified_diff(final), None
 

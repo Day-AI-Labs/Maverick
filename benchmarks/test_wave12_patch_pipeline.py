@@ -33,12 +33,11 @@ def _init_repo(tmp_path: Path) -> Path:
 
 class TestRenderDiffNewFiles:
     def test_new_file_appears_in_diff(self, tmp_path):
-        from maverick.edit_format import render_diff
+        from maverick.edit_format import SearchReplaceBlock, apply_blocks, render_diff
         repo = _init_repo(tmp_path)
-        # Create a new (untracked) file; without intent-to-add this
-        # would NOT appear in `git diff HEAD`.
-        (repo / "newmod.py").write_text("def f():\n    return 42\n")
-        diff = render_diff(repo)
+        blk = SearchReplaceBlock(path="newmod.py", search="", replace="def f():\n    return 42\n")
+        summary = apply_blocks([blk], repo)
+        diff = render_diff(repo, touched_paths=sorted(summary.files_touched))
         assert "newmod.py" in diff, (
             "new untracked file missing from rendered diff "
             f"(this was the pre-Wave-12 silent score leak): {diff!r}"
@@ -47,13 +46,27 @@ class TestRenderDiffNewFiles:
         assert "/dev/null" in diff or "new file" in diff
 
     def test_modify_and_new_file_both_appear(self, tmp_path):
-        from maverick.edit_format import render_diff
+        from maverick.edit_format import SearchReplaceBlock, apply_blocks, render_diff
         repo = _init_repo(tmp_path)
-        (repo / "seed.py").write_text("x = 2\n")          # modify tracked
-        (repo / "newmod.py").write_text("y = 99\n")        # create new
-        diff = render_diff(repo)
+        blocks = [
+            SearchReplaceBlock(path="seed.py", search="x = 1\n", replace="x = 2\n"),
+            SearchReplaceBlock(path="newmod.py", search="", replace="y = 99\n"),
+        ]
+        summary = apply_blocks(blocks, repo)
+        diff = render_diff(repo, touched_paths=sorted(summary.files_touched))
         assert "seed.py" in diff
         assert "newmod.py" in diff
+
+    def test_unrelated_untracked_file_not_included(self, tmp_path):
+        from maverick.edit_format import SearchReplaceBlock, apply_blocks, render_diff
+        repo = _init_repo(tmp_path)
+        (repo / "secret.txt").write_text("API_KEY=sk-secret\n")
+        blk = SearchReplaceBlock(path="seed.py", search="x = 1\n", replace="x = 2\n")
+        summary = apply_blocks([blk], repo)
+        diff = render_diff(repo, touched_paths=sorted(summary.files_touched))
+        assert "seed.py" in diff
+        assert "secret.txt" not in diff
+        assert "API_KEY=sk-secret" not in diff
 
 
 # ---- _sanitize_patch_for_csv ----
