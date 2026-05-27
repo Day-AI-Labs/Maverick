@@ -108,7 +108,13 @@ def base_registry(
     reg.register(str_replace_editor(sandbox))
 
     from .recall import recall
+    from .http_fetch import http_fetch
+    from .pdf_reader import read_pdf
+    from .view_image import view_image
     reg.register(recall())
+    reg.register(http_fetch())
+    reg.register(read_pdf())
+    reg.register(view_image())
 
     if enable_web_search:
         from .web_search import web_search
@@ -121,6 +127,16 @@ def base_registry(
     if enable_browser:
         from .browser import browser
         reg.register(browser())
+
+    # Apply allow/deny lists from ~/.maverick/config.toml [security].
+    # Fail-soft: any error here is logged and the registry is left
+    # untouched.
+    try:
+        from ..safety.tool_acl import apply_to_registry
+        apply_to_registry(reg)
+    except Exception as e:  # pragma: no cover
+        import logging as _logging
+        _logging.getLogger(__name__).warning("tool_acl: %s", e)
 
     if mcp_clients:
         from ..mcp_tools import tools_from_mcp

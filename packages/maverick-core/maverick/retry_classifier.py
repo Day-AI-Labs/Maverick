@@ -1,0 +1,130 @@
+"""Error-class taxonomy + retry policy router.
+
+When a provider call fails, we want different retry strategies for
+different failure types:
+
+  - rate_limit          -> back off long, respect Retry-After
+  - transient_network   -> back off short, retry many times
+  - server_5xx          -> back off medium, fewer retries
+  - content_filter      -> don't retry; surface to caller (refusal)
+  - auth                -> don't retry; user must fix config
+  - context_overflow    -> don't retry; need to compact + redo
+  - malformed_response  -> retry once with same prompt; could be a fluke
+  - unknown             -> conservative: short backoff, 2 retries
+
+This module is a thin classifier + policy table. Existing retry.py
+already implements exponential backoff; this gives it shape.
+"""
+from __future__ import annotations
+
+import logging
+import re
+from dataclasses import dataclass
+from enum import Enum
+
+log = logging.getLogger(__name__)
+
+
+class ErrorClass(str, Enum):
+    RATE_LIMIT        = "rate_limit"
+    TRANSIENT_NETWORK = "transient_network"
+    SERVER_5XX        = "server_5xx"
+    CONTENT_FILTER    = "content_filter"
+    AUTH              = "auth"
+    CONTEXT_OVERFLOW  = "context_overflow"
+    MALFORMED         = "malformed_response"
+    UNKNOWN           = "unknown"
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    max_retries: int
+    initial_delay_seconds: float
+    backoff_multiplier: float
+    max_delay_seconds: float
+    retry: bool  # if False, the error is terminal
+
+
+POLICIES: dict[ErrorClass, RetryPolicy] = {
+    ErrorClass.RATE_LIMIT:        RetryPolicy(6, 10.0, 2.0, 120.0, True),
+    ErrorClass.TRANSIENT_NETWORK: RetryPolicy(8,  0.5, 2.0,  20.0, True),
+    ErrorClass.SERVER_5XX:        RetryPolicy(4,  2.0, 2.0,  30.0, True),
+    ErrorClass.CONTENT_FILTER:    RetryPolicy(0,  0.0, 1.0,   0.0, False),
+    ErrorClass.AUTH:              RetryPolicy(0,  0.0, 1.0,   0.0, False),
+    ErrorClass.CONTEXT_OVERFLOW:  RetryPolicy(0,  0.0, 1.0,   0.0, False),
+    ErrorClass.MALFORMED:         RetryPolicy(1,  1.0, 1.0,   2.0, True),
+    ErrorClass.UNKNOWN:           RetryPolicy(2,  1.0, 2.0,   8.0, True),
+}
+
+
+# Lower-cased patterns to substring-match against str(exception).
+_PATTERNS: list[tuple[ErrorClass, re.Pattern]] = [
+    (ErrorClass.RATE_LIMIT,        re.compile(r"\b429\b|rate.?limit|too many requests|quota", re.IGNORECASE)),
+    (ErrorClass.AUTH,              re.compile(r"\b401\b|unauthorized|invalid.api.key|authentication", re.IGNORECASE)),
+    # "refus" alone is too broad (e.g. "Connection refused" is a
+    # network error, not a content filter). Require a content-related
+    # marker.
+    (ErrorClass.CONTENT_FILTER,    re.compile(
+        r"content.?(filter|policy)|"
+        r"refusal|"
+        r"(?:refus(?:ed|ing)?\s+(?:by|due\s+to|because)\s+(?:safety|policy|content))|"
+        r"\bharmful\b|disallow|"
+        r"safety\s+(?:filter|guidelines?|policy)",
+        re.IGNORECASE,
+    )),
+    (ErrorClass.CONTEXT_OVERFLOW,  re.compile(r"context.{0,4}(length|window|overflow)|prompt.{0,4}too.{0,4}long|maximum context", re.IGNORECASE)),
+    (ErrorClass.SERVER_5XX,        re.compile(r"\b50[0-9]\b|internal.server|service unavailable|bad gateway", re.IGNORECASE)),
+    (ErrorClass.TRANSIENT_NETWORK, re.compile(r"timeout|timed out|connection (?:reset|refused|aborted|error)|temporary|dns", re.IGNORECASE)),
+    (ErrorClass.MALFORMED,         re.compile(r"json.?decode|malformed|invalid response|unexpected.*format", re.IGNORECASE)),
+]
+
+
+def classify(exc: BaseException) -> ErrorClass:
+    """Map an exception to an ErrorClass. Substring-based pattern match."""
+    if exc is None:
+        return ErrorClass.UNKNOWN
+    # Some HTTP libraries put the status code on the exception itself.
+    code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    if isinstance(code, int):
+        if code == 429:
+            return ErrorClass.RATE_LIMIT
+        if code in (401, 403):
+            return ErrorClass.AUTH
+        if 500 <= code < 600:
+            return ErrorClass.SERVER_5XX
+    text = f"{type(exc).__name__}: {exc}"
+    for klass, pat in _PATTERNS:
+        if pat.search(text):
+            return klass
+    return ErrorClass.UNKNOWN
+
+
+def policy_for(exc: BaseException) -> RetryPolicy:
+    """Convenience: ``classify`` + lookup."""
+    return POLICIES[classify(exc)]
+
+
+def should_retry(exc: BaseException, *, attempts_so_far: int) -> bool:
+    """True iff the policy for this exception allows another retry."""
+    pol = policy_for(exc)
+    return pol.retry and attempts_so_far < pol.max_retries
+
+
+def next_delay(exc: BaseException, *, attempts_so_far: int) -> float:
+    """Compute the next backoff delay for the given exception class."""
+    pol = policy_for(exc)
+    if not pol.retry:
+        return 0.0
+    delay = pol.initial_delay_seconds * (pol.backoff_multiplier ** attempts_so_far)
+    return min(delay, pol.max_delay_seconds)
+
+
+__all__ = [
+    "ErrorClass",
+    "RetryPolicy",
+    "POLICIES",
+    "classify",
+    "policy_for",
+    "should_retry",
+    "next_delay",
+]

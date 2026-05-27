@@ -103,6 +103,63 @@ class TestRowConversion:
         assert out["fail_to_pass"] == []
 
 
+class TestInstanceIdValidation:
+    """Reject dataset rows that try to traverse out of repos_dir."""
+
+    def test_accepts_normal_swe_bench_id(self):
+        m = _load_fetcher()
+        assert m._validate_instance_id("django__django-12345")
+        assert m._validate_instance_id("pallets__flask-5014")
+        assert m._validate_instance_id("scikit-learn__scikit-learn-123")
+
+    def test_rejects_path_traversal(self):
+        m = _load_fetcher()
+        assert not m._validate_instance_id("../outside")
+        assert not m._validate_instance_id("..")
+        assert not m._validate_instance_id("foo/../bar")
+        assert not m._validate_instance_id("foo/bar")
+
+    def test_rejects_absolute_path(self):
+        m = _load_fetcher()
+        assert not m._validate_instance_id("/tmp/escape")
+        assert not m._validate_instance_id("/etc/passwd")
+
+    def test_rejects_empty_and_dot(self):
+        m = _load_fetcher()
+        assert not m._validate_instance_id("")
+        assert not m._validate_instance_id(".")
+        assert not m._validate_instance_id(None)  # type: ignore[arg-type]
+
+    def test_clone_instance_rejects_traversal(self, tmp_path):
+        m = _load_fetcher()
+        repos_dir = tmp_path / "repos"
+        repos_dir.mkdir()
+        row = {
+            "instance_id": "../escaped",
+            "repo": "org/repo",
+            "base_commit": "a" * 40,
+        }
+        ok, msg = m._clone_instance(row, repos_dir)
+        assert not ok
+        assert "unsafe instance_id" in msg
+        # Confirm nothing was created outside repos_dir.
+        assert not (tmp_path / "escaped").exists()
+
+    def test_clone_instance_rejects_absolute(self, tmp_path):
+        m = _load_fetcher()
+        repos_dir = tmp_path / "repos"
+        repos_dir.mkdir()
+        row = {
+            "instance_id": str(tmp_path / "absolute_escape"),
+            "repo": "org/repo",
+            "base_commit": "a" * 40,
+        }
+        ok, msg = m._clone_instance(row, repos_dir)
+        assert not ok
+        assert "unsafe instance_id" in msg
+        assert not (tmp_path / "absolute_escape").exists()
+
+
 class TestManifestWrite:
     def test_writes_jsonl_one_per_line(self, tmp_path):
         import json

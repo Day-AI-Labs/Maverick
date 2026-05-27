@@ -24,11 +24,30 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Iterable
+
+
+# SWE-bench instance ids look like `<org>__<repo>-<number>`, e.g.
+# `django__django-12345`. Restrict to alphanumerics, `_`, `-`, and `.`
+# so a malicious dataset row can't smuggle path traversal (`..`,
+# absolute path, embedded slash) into the staging target.
+_INSTANCE_ID_RE = re.compile(r"^[A-Za-z0-9._\-]+$")
+
+
+def _validate_instance_id(iid: str) -> bool:
+    """True iff `iid` is safe to join with the staging directory."""
+    if not isinstance(iid, str) or not iid:
+        return False
+    if iid in (".", ".."):
+        return False
+    if not _INSTANCE_ID_RE.match(iid):
+        return False
+    return True
 
 
 def _load_dataset(split: str = "test"):
@@ -98,7 +117,15 @@ def _clone_instance(row: dict, repos_dir: Path, depth: int = 1) -> tuple[bool, s
     base_commit = row.get("base_commit", "")
     if not repo or not base_commit:
         return False, f"{iid}: missing repo or base_commit"
-    target = repos_dir / iid
+    if not _validate_instance_id(iid):
+        return False, f"{iid!r}: unsafe instance_id (must match [A-Za-z0-9._-]+)"
+    # Resolve and confirm containment so a future change can't regress.
+    repos_root = repos_dir.resolve()
+    target = (repos_dir / iid).resolve()
+    try:
+        target.relative_to(repos_root)
+    except ValueError:
+        return False, f"{iid!r}: resolves outside repos_dir {repos_root}"
     if target.exists():
         return True, f"{iid}: already staged"
     url = f"https://github.com/{repo}.git"

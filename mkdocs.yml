@@ -1,0 +1,110 @@
+site_name: Maverick
+site_description: Open-source recursive multi-agent swarm. Drives Claude / GPT / Kimi / Grok / Gemini / Ollama from one kernel.
+site_url: https://texasreaper62.github.io/Maverick/
+repo_url: https://github.com/texasreaper62/Maverick
+repo_name: texasreaper62/Maverick
+edit_uri: edit/main/docs/
+copyright: MIT-licensed. Built for everyone, not just the technical few.
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.action.edit
+    - content.action.view
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/pencil
+    view: material/eye
+
+plugins:
+  - search:
+      lang: en
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+nav:
+  - Home:
+      - Welcome: index.md
+      - Getting started: getting-started.md
+  - Guides:
+      - Configuration: configuration.md
+      - Deployment: deployment.md
+      - Operations: operations.md
+      - Safety: safety.md
+      - Plugins: plugins.md
+      - Starter goals: templates/starter-goals.md
+  - Reference:
+      - API: api.md
+  - Performance:
+      - Streaming parity: performance/streaming-parity.md
+  - Security:
+      - Threat model: security/threat-model.md
+  - Roadmap:
+      - 36-month plan: ROADMAP.md
+  - Community:
+      - Contributing: CONTRIBUTING.md
+      - Code of Conduct: CODE_OF_CONDUCT.md
+      - Security policy: SECURITY.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/texasreaper62/Maverick
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/maverick-agent/
+  generator: false
+
+# How to preview locally:
+#   pip install 'mkdocs-material'
+#   mkdocs serve
+# Production build (gh-pages):
+#   mkdocs gh-deploy --force

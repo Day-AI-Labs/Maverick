@@ -32,6 +32,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -124,6 +125,29 @@ def _sanitize_patch_for_csv(diff: str) -> str:
     if leader in ("=", "+", "-", "@"):
         cleaned = "'" + cleaned
     return cleaned
+
+
+def _redact_url_userinfo(text: str) -> str:
+    # redact credentials in URLs like https://user:pass@example/repo.git
+    return re.sub(r"([a-zA-Z][a-zA-Z0-9+.\-]*://)[^/@\s]+@", r"\1REDACTED@", text)
+
+
+def _scrub_pip_freeze(text: str) -> str:
+    return _redact_url_userinfo(text or "")
+
+
+def _is_secret_env_key(key: str) -> bool:
+    key_u = (key or "").upper()
+    markers = ("KEY", "TOKEN", "SECRET", "PASSWORD", "PASS", "AUTH", "CREDENTIAL")
+    return any(m in key_u for m in markers)
+
+
+def _scrub_env_value(key: str, value: str) -> str:
+    if not value:
+        return ""
+    if _is_secret_env_key(key):
+        return "REDACTED"
+    return _redact_url_userinfo(value)
 
 
 # Wave 11: hoist LLM() across instances. anthropic.Client holds an
@@ -780,7 +804,7 @@ def _write_run_meta(out_dir: Path, args, manifest_path: Path) -> Path:
             [sys.executable, "-m", "pip", "freeze"],
             capture_output=True, text=True, timeout=120,
         )
-        pip_freeze = freeze.stdout if freeze.returncode == 0 else ""
+        pip_freeze = _scrub_pip_freeze(freeze.stdout) if freeze.returncode == 0 else ""
         if not pip_freeze:
             print(
                 "warning: pip freeze returned empty output for run_meta.json",
@@ -804,10 +828,7 @@ def _write_run_meta(out_dir: Path, args, manifest_path: Path) -> Path:
         if not (k.startswith("MAVERICK_") or k.startswith("ANTHROPIC_")
                 or k in ("OPENAI_API_KEY",)):
             continue
-        if "KEY" in k or "TOKEN" in k or "SECRET" in k:
-            env_snapshot[k] = "REDACTED" if v else ""
-        else:
-            env_snapshot[k] = v
+        env_snapshot[k] = _scrub_env_value(k, v)
 
     meta = {
         "started_at": time.time(),

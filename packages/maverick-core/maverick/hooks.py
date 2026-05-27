@@ -228,3 +228,62 @@ async def _run_one(spec: HookSpec, ctx: HookContext) -> bool:
 
 def installed() -> list[HookSpec]:
     return list(_registry)
+
+
+def load_from_entry_points() -> int:
+    """Discover hooks contributed by third-party plugins.
+
+    Plugins publish entry points under the ``maverick.hooks`` group:
+
+        # In a plugin's pyproject.toml:
+        [project.entry-points."maverick.hooks"]
+        my_hook = "my_plugin.hooks:register_hooks"
+
+    The referenced object MUST be a callable that takes no arguments
+    and returns a list of (event, callable) tuples, or a list of
+    HookSpec objects. We call each one, register what it returned,
+    and isolate failures (one broken plugin doesn't disable the rest).
+
+    Returns the number of hooks registered.
+    """
+    try:
+        from importlib.metadata import entry_points
+    except ImportError:  # pragma: no cover -- py<3.10
+        return 0
+    try:
+        eps = entry_points(group="maverick.hooks")
+    except TypeError:  # pragma: no cover -- py<3.10 API differences
+        eps = entry_points().get("maverick.hooks", [])  # type: ignore[assignment]
+
+    registered = 0
+    for ep in eps:
+        try:
+            register_fn = ep.load()
+        except Exception as e:
+            log.warning("hooks: cannot load entry point %s: %s", ep.name, e)
+            continue
+        try:
+            items = register_fn() or []
+        except Exception as e:
+            log.warning("hooks: entry point %s raised on call: %s", ep.name, e)
+            continue
+        for item in items:
+            try:
+                if isinstance(item, HookSpec):
+                    _registry.append(item)
+                    registered += 1
+                elif isinstance(item, tuple) and len(item) == 2:
+                    event, fn = item
+                    register(event, fn)
+                    registered += 1
+                else:
+                    log.warning(
+                        "hooks: entry point %s yielded invalid item %r",
+                        ep.name, item,
+                    )
+            except Exception as e:
+                log.warning(
+                    "hooks: failed to register from %s: %s", ep.name, e,
+                )
+    log.info("hooks: loaded %d hooks from entry points", registered)
+    return registered

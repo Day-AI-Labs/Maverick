@@ -893,7 +893,68 @@ def smoke_test() -> bool:
     return True
 
 
-def run() -> int:
+def run_fast() -> int:
+    """``maverick init --fast``: zero-question setup with sensible defaults.
+
+    Skips every prompt. Writes a minimal config that runs on Anthropic
+    Claude (BYOK via ANTHROPIC_API_KEY env), local sandbox, balanced
+    safety, $5/run cap. Users can `maverick init` later to customize.
+    """
+    welcome()
+    if not preflight():
+        console.print(
+            "[red]Preflight failed.[/red] Fix the issues above and re-run."
+        )
+        return 1
+    console.print(
+        "[bold]Fast setup:[/bold] using recommended defaults. "
+        "Run `maverick init` (no --fast) anytime to customize.\n"
+    )
+    deployment = "desktop"
+    providers = ["anthropic"]
+    role_models: dict[str, str] = {}  # use ROLE_MODELS defaults
+    channels: dict[str, Any] = {}
+    safety = {
+        "profile": "balanced",
+        "block_threshold": "high",
+        "scan_input": True,
+        "scan_tool_calls": True,
+        "scan_output": True,
+    }
+    budget = {
+        "max_dollars": 5.0,
+        "max_wall_seconds": 3600.0,
+        "max_tool_calls": 500,
+    }
+    sandbox = {
+        "backend": "local",
+        "workdir": str(Path.home() / "maverick-workspace"),
+        "timeout": 60,
+    }
+    capabilities = {"computer_use": False, "browser": False}
+    # Pick up the API key from the env if it's already there;
+    # otherwise the wizard's later run can populate ~/.maverick/.env.
+    keys: dict[str, str] = {}
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        keys["ANTHROPIC_API_KEY"] = os.environ["ANTHROPIC_API_KEY"]
+    write_config(
+        deployment, providers, role_models, channels, safety, budget,
+        sandbox, keys, capabilities,
+    )
+    smoke_test()
+    console.print()
+    console.print(Panel.fit(
+        "[bold green]Fast setup complete.[/bold green]\n\n"
+        "Try: [bold]maverick start \"hello\"[/bold]\n"
+        "(If ANTHROPIC_API_KEY wasn't set, edit ~/.maverick/.env first.)",
+        border_style="green",
+    ))
+    return 0
+
+
+def run(fast: bool = False) -> int:
+    if fast:
+        return run_fast()
     welcome()
     if not preflight():
         console.print(

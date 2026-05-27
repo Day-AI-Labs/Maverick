@@ -35,10 +35,12 @@ class TestRenderDiffNewFiles:
     def test_new_file_appears_in_diff(self, tmp_path):
         from maverick.edit_format import render_diff
         repo = _init_repo(tmp_path)
-        # Create a new (untracked) file; without intent-to-add this
-        # would NOT appear in `git diff HEAD`.
+        # Create a new (untracked) file. Callers MUST pass it via
+        # `paths` so intent-to-add only touches files the caller knows
+        # about — this prevents unrelated untracked content (scratch
+        # files, secrets) leaking into the rendered patch.
         (repo / "newmod.py").write_text("def f():\n    return 42\n")
-        diff = render_diff(repo)
+        diff = render_diff(repo, paths=["newmod.py"])
         assert "newmod.py" in diff, (
             "new untracked file missing from rendered diff "
             f"(this was the pre-Wave-12 silent score leak): {diff!r}"
@@ -51,9 +53,22 @@ class TestRenderDiffNewFiles:
         repo = _init_repo(tmp_path)
         (repo / "seed.py").write_text("x = 2\n")          # modify tracked
         (repo / "newmod.py").write_text("y = 99\n")        # create new
-        diff = render_diff(repo)
+        diff = render_diff(repo, paths=["seed.py", "newmod.py"])
         assert "seed.py" in diff
         assert "newmod.py" in diff
+
+    def test_no_paths_omits_untracked_files(self, tmp_path):
+        """Security contract: without an explicit `paths` argument,
+        render_diff returns ONLY tracked-file changes. Unrelated
+        untracked content must not leak into the patch."""
+        from maverick.edit_format import render_diff
+        repo = _init_repo(tmp_path)
+        (repo / "seed.py").write_text("x = 2\n")
+        (repo / "scratch.txt").write_text("API_KEY=sk-do-not-leak\n")
+        diff = render_diff(repo)
+        assert "seed.py" in diff
+        assert "scratch.txt" not in diff
+        assert "sk-do-not-leak" not in diff
 
 
 # ---- _sanitize_patch_for_csv ----

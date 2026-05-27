@@ -1,0 +1,109 @@
+{
+  "name": "maverick",
+  "displayName": "Maverick Agent",
+  "description": "Sidebar view + commands for Maverick from inside VS Code.",
+  "version": "0.1.0",
+  "publisher": "texasreaper62",
+  "license": "MIT",
+  "homepage": "https://github.com/texasreaper62/Maverick",
+  "bugs": {
+    "url": "https://github.com/texasreaper62/Maverick/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/texasreaper62/Maverick.git",
+    "directory": "apps/vscode-extension"
+  },
+  "categories": ["AI", "Programming Languages", "Other"],
+  "keywords": ["agent", "AI", "maverick", "claude", "swarm"],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onView:maverick.runs",
+    "onCommand:maverick.start"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "maverick.start",
+        "title": "Maverick: Start goal..."
+      },
+      {
+        "command": "maverick.status",
+        "title": "Maverick: Show status"
+      },
+      {
+        "command": "maverick.halt",
+        "title": "Maverick: Halt all running goals"
+      },
+      {
+        "command": "maverick.unhalt",
+        "title": "Maverick: Clear HALT flag"
+      },
+      {
+        "command": "maverick.refreshRuns",
+        "title": "Maverick: Refresh runs",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "maverick.openExport",
+        "title": "Maverick: Export run as JSON..."
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "maverick",
+          "title": "Maverick",
+          "icon": "$(rocket)"
+        }
+      ]
+    },
+    "views": {
+      "maverick": [
+        {
+          "id": "maverick.runs",
+          "name": "Recent runs",
+          "contextualTitle": "Maverick runs"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "maverick.refreshRuns",
+          "when": "view == maverick.runs",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "type": "object",
+      "title": "Maverick",
+      "properties": {
+        "maverick.cliPath": {
+          "type": "string",
+          "default": "maverick",
+          "description": "Path to the `maverick` CLI executable."
+        },
+        "maverick.workspaceCwd": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use the current workspace as cwd when invoking maverick."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  }
+}

@@ -1,0 +1,131 @@
+name: Maverick agent on PR (reusable)
+
+# Reusable workflow for downstream projects: invoke a Maverick goal on
+# every pull request. Comment the agent's findings as a PR review.
+#
+# Usage in a consumer repo's `.github/workflows/code-review.yml`:
+#
+#     jobs:
+#       review:
+#         uses: texasreaper62/Maverick/.github/workflows/agent-on-pr.yml@main
+#         with:
+#           goal: "Review this PR for logic bugs and missing edge cases."
+#           max_dollars: 0.50
+#         secrets:
+#           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+on:
+  workflow_call:
+    inputs:
+      goal:
+        description: 'Goal text for the agent.'
+        required: true
+        type: string
+      max_dollars:
+        description: 'Hard cost cap for the agent run.'
+        required: false
+        default: 1.00
+        type: number
+      model:
+        description: 'Model spec (e.g. anthropic:claude-sonnet-4-6).'
+        required: false
+        default: 'anthropic:claude-sonnet-4-6'
+        type: string
+      timeout_minutes:
+        description: 'Job timeout.'
+        required: false
+        default: 15
+        type: number
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: false
+      OPENAI_API_KEY:
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  agent-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Maverick
+        run: |
+          python -m pip install --upgrade pip
+          pip install 'maverick-agent[all]'
+
+      - name: Run agent
+        id: run
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MAVERICK_CONSENT_MODE: auto-deny
+          MAVERICK_FETCH_RESPECT_ROBOTS: '1'
+        run: |
+          set -e
+          mkdir -p ~/.maverick
+          cat > ~/.maverick/config.toml <<EOF
+          [providers.anthropic]
+          api_key = "\${ANTHROPIC_API_KEY}"
+
+          [models]
+          orchestrator = "${{ inputs.model }}"
+          coder        = "${{ inputs.model }}"
+          researcher   = "${{ inputs.model }}"
+
+          [budget]
+          max_dollars = ${{ inputs.max_dollars }}
+          max_wall_seconds = $(( ${{ inputs.timeout_minutes }} * 60 ))
+          max_tool_calls = 200
+
+          [safety]
+          profile = "balanced"
+          block_threshold = "high"
+          scan_input = true
+          scan_tool_calls = true
+          scan_output = true
+
+          [sandbox]
+          backend = "local"
+          workdir = "${{ github.workspace }}"
+          timeout = 60
+          EOF
+
+          # Run; capture output for the PR comment.
+          maverick start "${{ inputs.goal }}" 2>&1 | tee /tmp/agent-output.txt
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Post review comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = "🤖 **Maverick agent review**\n\n";
+            try {
+              const out = fs.readFileSync("/tmp/agent-output.txt", "utf8");
+              // Truncate to avoid GitHub's 65k comment limit.
+              const max = 50000;
+              body += "```\n" + (out.length > max
+                ? out.slice(0, max) + "\n\n[... truncated]"
+                : out
+              ) + "\n```";
+            } catch (e) {
+              body += `(no output captured: ${e.message})`;
+            }
+            await github.rest.issues.createComment({
+              issue_number: context.payload.pull_request.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });

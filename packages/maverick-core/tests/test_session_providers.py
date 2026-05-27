@@ -281,6 +281,25 @@ def test_chatgpt_session_request_body_shape(tmp_path, monkeypatch):
     assert "hello" in flat
 
 
+
+
+def test_chatgpt_session_budget_exceeded_propagates(tmp_path, monkeypatch):
+    _stub_session(tmp_path, monkeypatch, access_token="t")
+    from maverick.budget import Budget, BudgetExceeded
+    from maverick.session_providers.chatgpt_session import ChatGPTSessionClient
+
+    conv_resp = _FakeResponse(200, text=_sse("hello there, friend"))
+    fake = _FakeClient(auth_response=None, conv_response=conv_resp)
+    budget = Budget(max_input_tokens=1, max_output_tokens=1)
+
+    import httpx
+    with patch.object(httpx, "Client", return_value=fake):
+        client = ChatGPTSessionClient()
+        with pytest.raises(BudgetExceeded):
+            client.complete(
+                system="", messages=[{"role": "user", "content": "hi"}],
+                budget=budget,
+            )
 def test_chatgpt_session_budget_recorded(tmp_path, monkeypatch):
     _stub_session(tmp_path, monkeypatch, access_token="t")
     from maverick.budget import Budget

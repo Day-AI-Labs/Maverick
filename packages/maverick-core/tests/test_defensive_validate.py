@@ -204,6 +204,51 @@ class TestCheatingDetectorMinSize:
             "to avoid false positives on obvious independent fixes"
         )
 
+    def test_tiny_exact_match_emits_forensic_warning(self):
+        """Below the 30-token threshold, byte-identical copies are not
+        rejected (to avoid false positives), but they DO emit a
+        non-blocking warning so the operator can spot-check later.
+        Independent reproductions of obvious fixes almost never come
+        out byte-for-byte identical.
+        """
+        from maverick.coding_mode import defensive_validate
+        gold = (
+            "diff --git a/foo.py b/foo.py\n"
+            "@@ -10,3 +10,5 @@\n"
+            "+    if not name:\n"
+            "+        raise ValueError('empty name')\n"
+            "     other_code = True\n"
+        )
+        result = defensive_validate(gold, gold_patch=gold)
+        assert result.ok
+        assert any(
+            "tiny gold patch matched byte-for-byte" in w
+            for w in result.warnings
+        ), f"missing forensic warning; got {result.warnings}"
+
+    def test_tiny_non_exact_does_not_warn(self):
+        """When the tiny candidate is NOT byte-identical to gold, no
+        warning is emitted — independent reproductions are exempt."""
+        from maverick.coding_mode import defensive_validate
+        gold = (
+            "diff --git a/foo.py b/foo.py\n"
+            "@@ -10,3 +10,5 @@\n"
+            "+    if not name:\n"
+            "+        raise ValueError('empty name')\n"
+        )
+        ours = (
+            "diff --git a/foo.py b/foo.py\n"
+            "@@ -10,3 +10,5 @@\n"
+            "+    if name is None:\n"
+            "+        raise ValueError('name required')\n"
+        )
+        result = defensive_validate(ours, gold_patch=gold)
+        assert result.ok
+        assert not any(
+            "tiny gold patch matched byte-for-byte" in w
+            for w in result.warnings
+        )
+
     def test_substantive_gold_still_catches_real_copy(self):
         """The detector engages once gold has enough substance (>=30
         tokens by the _substantive() tokenizer, which only counts

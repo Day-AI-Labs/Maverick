@@ -1,0 +1,223 @@
+"""Consent prompts for destructive actions.
+
+Tools that mutate user state (rm, force-push, mass-send, dd, mkfs)
+call ``require_consent(action, risk_level)`` which:
+
+  1. Checks the consent ledger -- a previously-granted consent for the
+     same (action, scope) returns immediately.
+  2. Checks ``MAVERICK_CONSENT_MODE`` env var:
+        - "auto-approve"   -> grant + log
+        - "auto-deny"      -> deny + log
+        - "ask" (default)  -> ask the user; in non-tty contexts, deny
+  3. Logs an audit event for prompt + result.
+
+Threading: prompts serialize through a lock so two parallel agents
+don't both pop a prompt simultaneously on the same TTY.
+
+Note: this is the *primitive*. Tools wire it in themselves; we don't
+auto-intercept every shell command (that's the agent shield's job).
+"""
+from __future__ import annotations
+
+import logging
+import os
+import sys
+import threading
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+log = logging.getLogger(__name__)
+
+
+CONSENT_LEDGER_PATH = Path.home() / ".maverick" / "consent.ledger"
+
+
+class ConsentDenied(Exception):
+    """Raised when ``require_consent(..., raise_on_deny=True)`` is denied."""
+
+    def __init__(self, action: str):
+        super().__init__(f"consent denied for action: {action}")
+        self.action = action
+
+
+@dataclass(frozen=True)
+class ConsentDecision:
+    granted: bool
+    source: str           # "ledger" | "auto" | "prompt" | "non-tty-deny"
+    risk: str             # "low" | "medium" | "high" | "critical"
+    ts: float
+
+
+_prompt_lock = threading.Lock()
+
+
+def _resolve_mode() -> str:
+    return (os.environ.get("MAVERICK_CONSENT_MODE") or "ask").strip().lower()
+
+
+def _ledger_lines() -> list[str]:
+    if not CONSENT_LEDGER_PATH.exists():
+        return []
+    try:
+        return CONSENT_LEDGER_PATH.read_text().splitlines()
+    except OSError:
+        return []
+
+
+def _append_ledger(line: str) -> None:
+    try:
+        CONSENT_LEDGER_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(CONSENT_LEDGER_PATH, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+        try:
+            os.chmod(CONSENT_LEDGER_PATH, 0o600)
+        except OSError:
+            pass
+    except OSError as e:
+        log.warning("consent: cannot append to ledger: %s", e)
+
+
+def _check_ledger(action: str, scope: str | None) -> bool:
+    """True if a prior ``grant`` for ``(action, scope)`` is recorded."""
+    key = f"grant\t{action}\t{scope or ''}"
+    return any(line.split("|", 1)[-1].strip() == key for line in _ledger_lines())
+
+
+def grant_persistent(action: str, scope: str | None = None) -> None:
+    """Record a forever-grant; subsequent require_consent() returns immediately.
+
+    Use sparingly; the more we ledger, the less the prompts matter.
+    """
+    ts = time.time()
+    _append_ledger(f"{ts}|grant\t{action}\t{scope or ''}")
+
+
+def revoke(action: str, scope: str | None = None) -> bool:
+    """Remove all matching grants. Returns True if anything was removed."""
+    lines = _ledger_lines()
+    if not lines:
+        return False
+    key = f"grant\t{action}\t{scope or ''}"
+    kept = [line for line in lines if line.split("|", 1)[-1].strip() != key]
+    if len(kept) == len(lines):
+        return False
+    try:
+        CONSENT_LEDGER_PATH.write_text("\n".join(kept) + "\n" if kept else "")
+        os.chmod(CONSENT_LEDGER_PATH, 0o600)
+        return True
+    except OSError as e:
+        log.warning("consent: cannot rewrite ledger: %s", e)
+        return False
+
+
+def list_grants() -> list[tuple[str, str]]:
+    """Return [(action, scope), ...] of all current grants."""
+    out: list[tuple[str, str]] = []
+    for line in _ledger_lines():
+        body = line.split("|", 1)[-1]
+        parts = body.split("\t")
+        if len(parts) >= 3 and parts[0] == "grant":
+            out.append((parts[1], parts[2]))
+    return out
+
+
+def require_consent(
+    action: str,
+    *,
+    risk: str = "medium",
+    scope: str | None = None,
+    detail: str | None = None,
+    raise_on_deny: bool = False,
+) -> ConsentDecision:
+    """Gate a destructive action through user (or env) approval.
+
+    ``action`` is a short identifier (e.g. "rm-rf", "force-push",
+    "mass-dm"). ``scope`` is the resource being acted on (e.g.
+    "/tmp/build", "main", "channel:#general"). ``detail`` is a
+    human-readable description shown in the prompt.
+
+    Returns a ConsentDecision. If ``raise_on_deny``, denials raise
+    ConsentDenied instead.
+    """
+    ts = time.time()
+    # 1) Ledger fast-path.
+    if _check_ledger(action, scope):
+        return _emit(ConsentDecision(True, "ledger", risk, ts), action, scope, detail)
+    # 2) Mode override.
+    mode = _resolve_mode()
+    if mode == "auto-approve":
+        return _emit(ConsentDecision(True, "auto", risk, ts), action, scope, detail)
+    if mode == "auto-deny":
+        d = _emit(ConsentDecision(False, "auto", risk, ts), action, scope, detail)
+        if raise_on_deny:
+            raise ConsentDenied(action)
+        return d
+    # 3) Interactive prompt (or non-tty deny).
+    if not sys.stdin.isatty():
+        d = _emit(ConsentDecision(False, "non-tty-deny", risk, ts), action, scope, detail)
+        if raise_on_deny:
+            raise ConsentDenied(action)
+        return d
+    with _prompt_lock:
+        msg = _format_prompt(action, risk, scope, detail)
+        sys.stderr.write(msg)
+        sys.stderr.flush()
+        try:
+            reply = input().strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            reply = ""
+    granted = reply in {"y", "yes"}
+    d = _emit(ConsentDecision(granted, "prompt", risk, ts), action, scope, detail)
+    if not granted and raise_on_deny:
+        raise ConsentDenied(action)
+    return d
+
+
+def _format_prompt(action: str, risk: str, scope: Optional[str], detail: Optional[str]) -> str:
+    risk_tag = {"low": "?", "medium": "!", "high": "!!", "critical": "!!!"}.get(risk, "?")
+    parts = [
+        f"\n[CONSENT {risk_tag}] {action}",
+    ]
+    if scope:
+        parts.append(f"  scope: {scope}")
+    if detail:
+        parts.append(f"  detail: {detail}")
+    parts.append("Allow? [y/N]: ")
+    return "\n".join(parts)
+
+
+def _emit(
+    decision: ConsentDecision,
+    action: str,
+    scope: Optional[str],
+    detail: Optional[str],
+) -> ConsentDecision:
+    """Log the consent decision to the audit log (fail-safe)."""
+    try:
+        from ..audit import EventKind, record
+        record(
+            EventKind.CONSENT_PROMPT,
+            action=action, risk=decision.risk,
+            scope=scope, detail=detail,
+        )
+        record(
+            EventKind.CONSENT_RESULT,
+            action=action,
+            decision="approve" if decision.granted else "deny",
+            source=decision.source,
+        )
+    except Exception:  # pragma: no cover -- never crash on audit
+        pass
+    return decision
+
+
+__all__ = [
+    "ConsentDecision",
+    "ConsentDenied",
+    "require_consent",
+    "grant_persistent",
+    "revoke",
+    "list_grants",
+]
