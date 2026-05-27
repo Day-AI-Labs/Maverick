@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+import types
 
+from maverick.cli import _watch_goal_allowed
 from maverick.llm import MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
 from maverick.routing import RouteSignal, pick
 from maverick.watch_mode import scan_dir, scan_file, scan_text
@@ -119,3 +121,46 @@ class TestWatchMode:
     def test_scan_file_missing_returns_empty(self, tmp_path):
         matches = list(scan_file(tmp_path / "missing.py"))
         assert matches == []
+
+
+class TestWatchModeShieldScan:
+    def test_watch_goal_allowed_when_shield_missing(self, monkeypatch):
+        import builtins
+        orig_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "maverick_shield":
+                raise ImportError
+            return orig_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        allowed, reason = _watch_goal_allowed("safe goal")
+        assert allowed is True
+        assert reason is None
+
+    def test_watch_goal_blocked_when_shield_rejects(self, monkeypatch):
+        class _Shield:
+            @classmethod
+            def from_config(cls):
+                return cls()
+
+            def scan_input(self, _):
+                return types.SimpleNamespace(
+                    allowed=False, severity="high", reasons=["prompt injection"]
+                )
+
+        monkeypatch.setattr("maverick.cli.Shield", _Shield, raising=False)
+        import sys
+        # monkeypatch.setitem restores the original (or removes) on
+        # teardown. Direct mutation of `sys.modules` leaked the fake
+        # always-rejects Shield to subsequent tests (test_skills,
+        # test_wave3) and caused unrelated failures whenever this
+        # test ran first in the session.
+        monkeypatch.setitem(
+            sys.modules,
+            "maverick_shield",
+            types.SimpleNamespace(Shield=_Shield),
+        )
+        allowed, reason = _watch_goal_allowed("malicious goal")
+        assert allowed is False
+        assert "blocked by Shield" in (reason or "")

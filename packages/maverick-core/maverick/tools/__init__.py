@@ -35,8 +35,23 @@ class Tool:
 class ToolRegistry:
     def __init__(self):
         self._tools: dict[str, Tool] = {}
+        self._acl_allowed: set[str] = set()
+        self._acl_denied: set[str] = set()
+
+    def set_acl(self, *, allowed: set[str] | None = None, denied: set[str] | None = None) -> None:
+        self._acl_allowed = set(allowed or set())
+        self._acl_denied = set(denied or set())
+
+    def _acl_allows(self, name: str) -> bool:
+        if self._acl_allowed and name not in self._acl_allowed:
+            return False
+        if self._acl_denied and name in self._acl_denied:
+            return False
+        return True
 
     def register(self, tool: Tool) -> None:
+        if not self._acl_allows(tool.name):
+            return
         self._tools[tool.name] = tool
 
     def get(self, name: str) -> Tool:
@@ -67,6 +82,7 @@ def base_registry(
     goal_id: Optional[int] = None,
     enable_computer_use: bool = False,
     enable_browser: bool = False,
+    enable_web_search: bool = False,
 ) -> ToolRegistry:
     """Build the base tool set (no spawn tools).
 
@@ -94,9 +110,14 @@ def base_registry(
     from .str_edit import str_replace_editor
 
     reg = ToolRegistry()
-    reg.register(read_file(sandbox))
-    reg.register(write_file(sandbox))
-    reg.register(list_dir(sandbox))
+    # SSHBackend executes shell commands remotely, but filesystem tools
+    # are local pathlib operations. Registering read/write/list for SSH
+    # would access the Maverick host filesystem instead of the remote
+    # sandbox host.
+    if sandbox.__class__.__name__ != "SSHBackend":
+        reg.register(read_file(sandbox))
+        reg.register(write_file(sandbox))
+        reg.register(list_dir(sandbox))
     reg.register(shell(sandbox))
     reg.register(ask_user(world, goal_id=goal_id))
     reg.register(list_attachments_tool(world, goal_id))
@@ -106,23 +127,37 @@ def base_registry(
     # apply-fail failures by side-stepping hand-authored diffs.
     reg.register(str_replace_editor(sandbox))
 
-    # Web search and cross-goal memory are zero-config additions:
-    # web_search degrades to free DuckDuckGo when no API key is set;
-    # recall_past_goals uses fastembed when present, jaccard otherwise.
-    from .web_search import web_search
     from .recall import recall
     from .http_fetch import http_fetch
     from .pdf_reader import read_pdf
     from .view_image import view_image
     from .dep_graph import dep_graph
     from .ast_edit import ast_edit
-    reg.register(web_search())
+    from .clipboard import clipboard
+    from .preview_diff import preview_diff
+    from .kv_memory import kv_memory
+    from .arxiv import arxiv
     reg.register(recall())
     reg.register(http_fetch())
     reg.register(read_pdf())
     reg.register(view_image())
     reg.register(dep_graph(sandbox))
     reg.register(ast_edit(sandbox))
+    reg.register(clipboard())
+    reg.register(preview_diff(sandbox))
+    reg.register(kv_memory(world, goal_id))
+    reg.register(arxiv())
+
+    # Voice tools (opt-in extra; tool factories raise ImportError only
+    # when called without the required API key OR SDK; registering is
+    # cheap).
+    from .voice import speak, transcribe_audio
+    reg.register(transcribe_audio())
+    reg.register(speak())
+
+    if enable_web_search:
+        from .web_search import web_search
+        reg.register(web_search())
 
     if enable_computer_use:
         from .computer import computer

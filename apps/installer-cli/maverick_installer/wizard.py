@@ -942,7 +942,7 @@ def run_fast() -> int:
     """``maverick init --fast``: zero-question setup with sensible defaults.
 
     Skips every prompt. Writes a minimal config that runs on Anthropic
-    Claude (BYOK via ANTHROPIC_API_KEY env), local sandbox, balanced
+    Claude (BYOK via ANTHROPIC_API_KEY env), Docker sandbox, balanced
     safety, $5/run cap. Users can `maverick init` later to customize.
     """
     welcome()
@@ -972,7 +972,7 @@ def run_fast() -> int:
         "max_tool_calls": 500,
     }
     sandbox = {
-        "backend": "local",
+        "backend": "docker",
         "workdir": str(Path.home() / "maverick-workspace"),
         "timeout": 60,
     }

@@ -29,6 +29,7 @@ coder           = "anthropic:claude-sonnet-4-6"
 writer          = "anthropic:claude-sonnet-4-6"
 analyst         = "anthropic:claude-sonnet-4-6"
 revisor         = "anthropic:claude-opus-4-7"
+verifier        = "anthropic:claude-sonnet-4-6"
 summarizer      = "anthropic:claude-haiku-4-5"
 skill_distiller = "anthropic:claude-sonnet-4-6"
 
@@ -87,6 +88,11 @@ args    = ["-y", "@modelcontextprotocol/server-github"]
 env     = { GITHUB_PERSONAL_ACCESS_TOKEN = "${GITHUB_TOKEN}" }
 ```
 
+`backend = "local"` runs tools in the same runtime environment as
+Maverick. For untrusted skills, avoid mounting secret-bearing paths into
+that runtime and prefer sandbox isolation that does not expose host
+state.
+
 ## Per-role model choice
 
 This is the *fully control every aspect* knob. Heavy roles benefit from a smart model; cheap roles can use a small one. Mix providers freely — the orchestrator can be a cloud Opus while the summarizer is a local Llama.
@@ -101,6 +107,7 @@ Roles available:
 | `writer`       | Drafts long prose. |
 | `analyst`      | Synthesizes findings. |
 | `revisor`      | Second-pass review when verify fails. |
+| `verifier`     | Independent final-answer check. |
 | `summarizer`   | Cheap distillation. |
 | `skill_distiller` | Turns trajectories into reusable skills. |
 

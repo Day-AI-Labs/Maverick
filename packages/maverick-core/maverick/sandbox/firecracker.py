@@ -91,6 +91,19 @@ class FirecrackerBackend:
         finally:
             self.timeout = prior
 
+
+    def _e2b_network_config(self) -> dict:
+        if self.network == "egress-deny":
+            return {"egress": "deny"}
+        if self.network == "egress-allow":
+            return {"egress": "allow"}
+        if self.network.startswith("bridge="):
+            return {"bridge": self.network.split("=", 1)[1]}
+        raise ValueError(
+            "Firecracker network must be one of: "
+            "'egress-deny', 'egress-allow', or 'bridge=<name>'"
+        )
+
     def _exec_local(self, cmd: str) -> ExecResult:
         """Run inside a freshly-booted local microVM.
 
@@ -122,7 +135,7 @@ class FirecrackerBackend:
         rootfs = Path.home() / ".maverick" / "firecracker" / "rootfs.img"
         if not kernel.exists() or not rootfs.exists():
             return ExecResult(
-                returncode=127,
+                exit_code=127,
                 stdout="",
                 stderr=(
                     f"firecracker kernel/rootfs not found at "
@@ -136,16 +149,29 @@ class FirecrackerBackend:
             "--root-drive", str(rootfs),
             "--ncpus", "1",
             "--memory", "512",
-            "--", "/bin/sh", "-c", cmd,
         ]
+        if self.network == "egress-deny":
+            args += ["--no-network"]
+        elif self.network.startswith("bridge="):
+            args += ["--tap-device", self.network.split("=", 1)[1]]
+        elif self.network != "egress-allow":
+            return ExecResult(
+                stdout="",
+                stderr=(
+                    "firecracker invalid network policy; expected "
+                    "egress-deny|egress-allow|bridge=<name>"
+                ),
+                exit_code=126,
+            )
+        args += ["--", "/bin/sh", "-c", cmd]
         try:
             proc = subprocess.run(
                 args, capture_output=True, text=True, timeout=self.timeout,
             )
         except subprocess.TimeoutExpired:
-            return ExecResult(returncode=124, stdout="", stderr="firecracker timeout")
+            return ExecResult(exit_code=124, stdout="", stderr="firecracker timeout")
         return ExecResult(
-            returncode=proc.returncode,
+            exit_code=proc.returncode,
             stdout=proc.stdout,
             stderr=proc.stderr,
         )
@@ -166,9 +192,9 @@ class FirecrackerBackend:
                 args, capture_output=True, text=True, timeout=self.timeout,
             )
         except subprocess.TimeoutExpired:
-            return ExecResult(returncode=124, stdout="", stderr="docker timeout")
+            return ExecResult(exit_code=124, stdout="", stderr="docker timeout")
         return ExecResult(
-            returncode=proc.returncode,
+            exit_code=proc.returncode,
             stdout=proc.stdout,
             stderr=proc.stderr,
         )
@@ -179,7 +205,7 @@ class FirecrackerBackend:
             import httpx
         except ImportError:
             return ExecResult(
-                returncode=127, stdout="",
+                exit_code=127, stdout="",
                 stderr=(
                     "E2B Firecracker requires httpx. Install: "
                     "pip install httpx"
@@ -194,11 +220,11 @@ class FirecrackerBackend:
                 sb = client.post(
                     "https://api.e2b.dev/sandboxes",
                     headers={"Authorization": f"Bearer {self.api_key}"},
-                    json={"template": self.image},
+                    json={"template": self.image, "network": self._e2b_network_config()},
                 )
                 if sb.status_code >= 300:
                     return ExecResult(
-                        returncode=126, stdout="",
+                        exit_code=126, stdout="",
                         stderr=f"e2b sandbox create failed: {sb.status_code}",
                     )
                 sb_id = sb.json().get("id")
@@ -213,10 +239,10 @@ class FirecrackerBackend:
                 )
                 data = run.json() if run.status_code < 300 else {}
                 return ExecResult(
-                    returncode=int(data.get("exitCode", 1)),
+                    exit_code=int(data.get("exitCode", 1)),
                     stdout=data.get("stdout", ""),
                     stderr=data.get("stderr", "")
                               or (f"http {run.status_code}" if run.status_code >= 300 else ""),
                 )
         except Exception as e:
-            return ExecResult(returncode=125, stdout="", stderr=f"e2b error: {e}")
+            return ExecResult(exit_code=125, stdout="", stderr=f"e2b error: {e}")

@@ -21,4 +21,5 @@ class OpenRouterClient(OpenAIClient):
         super().__init__(
             api_key=api_key or os.environ.get("OPENROUTER_API_KEY"),
             base_url=base_url or "https://openrouter.ai/api/v1",
+            allow_openai_env_fallback=False,
         )

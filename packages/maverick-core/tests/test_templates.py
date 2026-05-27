@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from maverick.templates import Template, _substitute
+from maverick.templates import Template, _substitute, load_template
 
 
 TEMPLATE_BODY = """---
@@ -57,3 +57,13 @@ def test_substitute_leaves_unknown_vars_alone():
     out = _substitute("hello {{ name }}, {{ missing }}", {"name": "world"})
     assert "hello world" in out
     assert "{{ missing }}" in out
+
+
+def test_load_template_rejects_path_traversal():
+    with pytest.raises(ValueError, match="invalid template name"):
+        load_template("../secret")
+
+
+def test_load_template_rejects_absolute_path():
+    with pytest.raises(ValueError, match="invalid template name"):
+        load_template("/tmp/secret")

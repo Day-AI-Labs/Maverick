@@ -121,6 +121,15 @@ _TOOL_NAMES = {t["name"] for t in TOOLS}
 class MCPServer:
     def __init__(self):
         self._initialized = False
+        self._shield = self._build_shield()
+
+    @staticmethod
+    def _build_shield():
+        try:
+            from maverick_shield import Shield
+            return Shield.from_config()
+        except Exception:
+            return None
 
     def handle_initialize(self, params: dict) -> dict:
         self._initialized = True
@@ -158,17 +167,9 @@ class MCPServer:
     def handle_resources_list(self, params: dict) -> dict:
         """Expose Maverick state as MCP Resources.
 
-        - maverick://goals/{id}     — single goal status + result
         - maverick://goals          — list of active/recent goals
         - maverick://skills         — installed skills
-        - maverick://facts          — known facts about the user
         """
-        try:
-            from maverick.world_model import DEFAULT_DB, WorldModel
-            wm = WorldModel(DEFAULT_DB)
-            goals = wm.list_goals()[-20:]
-        except Exception:
-            goals = []
         resources = [
             {
                 "uri": "maverick://goals",
@@ -180,18 +181,7 @@ class MCPServer:
                 "name": "Installed skills",
                 "mimeType": "application/json",
             },
-            {
-                "uri": "maverick://facts",
-                "name": "Facts about the user",
-                "mimeType": "application/json",
-            },
         ]
-        for g in goals:
-            resources.append({
-                "uri": f"maverick://goals/{g.id}",
-                "name": f"goal #{g.id} ({g.status}): {g.title[:60]}",
-                "mimeType": "application/json",
-            })
         return {"resources": resources}
 
     def handle_resources_read(self, params: dict) -> dict:
@@ -207,18 +197,6 @@ class MCPServer:
                 {"id": g.id, "status": g.status, "title": g.title}
                 for g in wm.list_goals()[-20:]
             ]
-        elif path.startswith("goals/"):
-            try:
-                gid = int(path.split("/", 1)[1])
-            except ValueError as e:
-                raise _ProtocolError(-32602, f"bad goal id in {uri}") from e
-            g = wm.get_goal(gid)
-            if g is None:
-                raise _ProtocolError(-32602, f"no such goal: {uri}")
-            data = {
-                "id": g.id, "status": g.status, "title": g.title,
-                "description": g.description, "result": g.result,
-            }
         elif path == "skills":
             try:
                 from maverick.skills import load_skills
@@ -229,8 +207,6 @@ class MCPServer:
                 ]
             except Exception:
                 data = []
-        elif path == "facts":
-            data = wm.get_facts()
         else:
             raise _ProtocolError(-32602, f"unknown resource path: {uri}")
 
@@ -331,6 +307,13 @@ class MCPServer:
                 "isError": True,
                 "content": [{"type": "text", "text": f"{type(e).__name__}: {e}"}],
             }
+        if self._shield is not None:
+            verdict = self._shield.scan_output(result)
+            if not verdict.allowed:
+                return {
+                    "isError": True,
+                    "content": [{"type": "text", "text": f"⚠ Output blocked: {'; '.join(verdict.reasons)}"}],
+                }
         return {
             "isError": False,
             "content": [{"type": "text", "text": result}],
@@ -363,6 +346,10 @@ class MCPServer:
         from maverick.world_model import WorldModel
         title = args["title"]
         description = args.get("description", "")
+        if self._shield is not None:
+            verdict = self._shield.scan_input(f"{title}\n{description}")
+            if not verdict.allowed:
+                return f"⚠ Blocked: {'; '.join(verdict.reasons)}"
         budget = Budget(
             max_dollars=float(args.get("max_dollars", 5.0)),
             max_wall_seconds=float(args.get("max_wall_seconds", 3600)),

@@ -92,6 +92,8 @@ def run() -> None:
 
     ans = _recv()
     state["deployment"] = ans.split()[0]
+    if state["deployment"] == "docker":
+        state["sandbox"]["backend"] = "docker"
 
     # Step 2: providers
     _send(_step(

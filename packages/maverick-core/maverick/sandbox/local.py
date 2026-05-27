@@ -5,6 +5,7 @@ That's the abstraction Hermes' 7 backends collapse to. Start simple.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +38,15 @@ class LocalBackend:
         # explicit decode the result.stdout types diverge. Pin both
         # branches to str.
         effective = self.timeout if timeout is None else timeout
+        child_env = os.environ.copy()
+        for key in (
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "GITHUB_TOKEN",
+            "GH_TOKEN",
+        ):
+            child_env.pop(key, None)
+
         try:
             result = subprocess.run(
                 cmd,
@@ -45,6 +55,7 @@ class LocalBackend:
                 capture_output=True,
                 text=True,
                 timeout=effective,
+                env=child_env,
             )
             return ExecResult(
                 stdout=(result.stdout or "")[-8000:],

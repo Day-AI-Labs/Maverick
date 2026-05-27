@@ -8,6 +8,12 @@ import logging
 import os
 from typing import Optional
 
+from maverick.runner import (
+    DEFAULT_MAX_DEPTH,
+    DEFAULT_MAX_DOLLARS,
+    DEFAULT_MAX_WALL_SECONDS,
+)
+
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
@@ -94,6 +100,8 @@ async def create_goal(payload: GoalIn, bg: BackgroundTasks) -> GoalOut:
         from maverick.templates import load_template
         try:
             tpl = load_template(payload.template)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         except FileNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
         try:
@@ -103,9 +111,14 @@ async def create_goal(payload: GoalIn, bg: BackgroundTasks) -> GoalOut:
     w = _world()
     goal_id = w.create_goal(title[:200], description)
     from maverick.runner import run_goal_in_thread
+    # Enforce server-side execution caps even when callers request larger values.
+    max_dollars = min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
+    max_wall_seconds = min(payload.max_wall_seconds, DEFAULT_MAX_WALL_SECONDS)
+    max_depth = min(payload.max_depth, DEFAULT_MAX_DEPTH)
+
     bg.add_task(
         run_goal_in_thread, goal_id,
-        payload.max_dollars, payload.max_wall_seconds, payload.max_depth,
+        max_dollars, max_wall_seconds, max_depth,
     )
     g = w.get_goal(goal_id)
     if g is None:

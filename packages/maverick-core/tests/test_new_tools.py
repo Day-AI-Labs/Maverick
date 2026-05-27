@@ -258,8 +258,8 @@ def test_monitor_render_shows_children(world_with_history):
 
 # ---------- registry includes new tools ----------
 
-def test_base_registry_includes_web_search_and_recall():
-    """web_search + recall are zero-config; should be registered by default."""
+def test_base_registry_excludes_web_search_by_default_but_keeps_recall():
+    """web_search is opt-in; recall remains enabled by default."""
     from maverick.tools import base_registry
 
     class _FakeSandbox:
@@ -270,5 +270,23 @@ def test_base_registry_includes_web_search_and_recall():
 
     reg = base_registry(world=_FakeWorld(), sandbox=_FakeSandbox())
     names = {t.name for t in reg.all()}
-    assert "web_search" in names
+    assert "web_search" not in names
     assert "recall_past_goals" in names
+
+
+def test_base_registry_can_enable_web_search_explicitly():
+    from maverick.tools import base_registry
+
+    class _FakeSandbox:
+        pass
+
+    class _FakeWorld:
+        pass
+
+    reg = base_registry(
+        world=_FakeWorld(),
+        sandbox=_FakeSandbox(),
+        enable_web_search=True,
+    )
+    names = {t.name for t in reg.all()}
+    assert "web_search" in names

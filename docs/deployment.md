@@ -24,16 +24,18 @@ Isolated, reproducible, easy to nuke.
 
 ```bash
 docker run -it --rm \
-  -v ~/.maverick:/root/.maverick \
   -v ~/maverick-workspace:/workspace \
-  -e ANTHROPIC_API_KEY \
+  -v ~/.maverick/config.toml:/root/.maverick/config.toml:ro \
+  -e ANTHROPIC_API_KEY=... \
   ghcr.io/texasreaper62/maverick:latest \
   start "..."
 ```
 
-The sandbox is *inside* the container; the agent can't reach files
-outside the mounted workdir. Recommended for users running untrusted
-skills.
+For untrusted skills, **do not** mount `~/.maverick/` into the same
+container that runs the agent tools. A local sandbox inside this
+container can read mounted files and process environment variables.
+Mount only the workspace and a read-only `config.toml`; keep API keys
+scoped to this container run.
 
 ## VPS
 
