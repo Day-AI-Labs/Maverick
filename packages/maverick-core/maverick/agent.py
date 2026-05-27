@@ -85,6 +85,7 @@ class Agent:
         ctx: SwarmContext,
         role: str,
         brief: str,
+        model_override: Optional[str] = None,
         depth: int = 0,
         parent: Optional["Agent"] = None,
         max_steps: int = 25,
@@ -103,7 +104,7 @@ class Agent:
 
         self.tools = self._build_tools()
         self.system = self._build_system()
-        self.model = model_for_role(role)
+        self.model = model_override or model_for_role(role)
 
     def _build_tools(self) -> ToolRegistry:
         reg = base_registry(
