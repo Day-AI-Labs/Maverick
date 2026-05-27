@@ -151,7 +151,16 @@ class TestWatchModeShieldScan:
 
         monkeypatch.setattr("maverick.cli.Shield", _Shield, raising=False)
         import sys
-        sys.modules["maverick_shield"] = types.SimpleNamespace(Shield=_Shield)
+        # monkeypatch.setitem restores the original (or removes) on
+        # teardown. Direct mutation of `sys.modules` leaked the fake
+        # always-rejects Shield to subsequent tests (test_skills,
+        # test_wave3) and caused unrelated failures whenever this
+        # test ran first in the session.
+        monkeypatch.setitem(
+            sys.modules,
+            "maverick_shield",
+            types.SimpleNamespace(Shield=_Shield),
+        )
         allowed, reason = _watch_goal_allowed("malicious goal")
         assert allowed is False
         assert "blocked by Shield" in (reason or "")
