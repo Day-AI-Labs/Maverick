@@ -197,7 +197,7 @@ def _run_fetch(args: dict[str, Any]) -> str:
     render = (args.get("render") or "markdown").lower()
 
     try:
-        with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+        with httpx.Client(timeout=30.0, follow_redirects=False) as client:
             resp = client.request(method, url, headers=headers, content=body)
     except httpx.HTTPError as e:
         return f"ERROR: {type(e).__name__}: {e}"

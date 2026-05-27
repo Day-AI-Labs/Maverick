@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from . import Tool
+from .http_fetch import _is_private_ip
 
 log = logging.getLogger(__name__)
 
@@ -68,20 +69,35 @@ def _parse_pages(spec: str, total: int) -> list[int]:
 
 
 def _load_bytes(source: str) -> bytes | None:
-    """Get the PDF bytes from a local path or URL."""
+    """Get PDF bytes from a workspace-local path or safe URL."""
     if source.startswith(("http://", "https://")):
+        from urllib.parse import urlparse
+
+        parsed = urlparse(source)
+        if parsed.hostname and _is_private_ip(parsed.hostname):
+            return None
         try:
             import httpx
         except ImportError:
             return None
         try:
-            resp = httpx.get(source, timeout=30.0, follow_redirects=True)
+            resp = httpx.get(source, timeout=30.0, follow_redirects=False)
             resp.raise_for_status()
             return resp.content
         except Exception as e:
             log.warning("pdf fetch failed: %s", e)
             return None
+
+    workdir = Path.cwd().resolve()
     p = Path(os.path.expanduser(source))
+    if not p.is_absolute():
+        p = (workdir / p).resolve()
+    else:
+        p = p.resolve()
+    try:
+        p.relative_to(workdir)
+    except ValueError:
+        return None
     if not p.exists() or not p.is_file():
         return None
     return p.read_bytes()
