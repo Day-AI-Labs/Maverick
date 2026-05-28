@@ -142,6 +142,9 @@ async def create_goal(payload: GoalIn, bg: BackgroundTasks) -> GoalOut:
             title, description = tpl.render(**(payload.params or {}))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+    title = (title or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
     w = _world()
     goal_id = w.create_goal(title[:200], description)
     from maverick.runner import run_goal_in_thread
@@ -211,10 +214,13 @@ async def goal_events(
 @router.post("/goals/{goal_id}/answer", status_code=204)
 async def answer_question(goal_id: int, payload: AnswerIn) -> None:
     w = _world()
+    answer = (payload.answer or "").strip()
+    if not answer:
+        raise HTTPException(status_code=400, detail="answer is required")
     qs = w.open_questions(goal_id=goal_id)
     if not any(q.id == payload.question_id for q in qs):
         raise HTTPException(status_code=404, detail="no such open question for this goal")
-    w.answer(payload.question_id, payload.answer)
+    w.answer(payload.question_id, answer)
 
 
 class AttachmentOut(BaseModel):

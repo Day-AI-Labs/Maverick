@@ -225,6 +225,7 @@
           try {
             const url = '/api/goal/' + goalId + '/events?since=' + sinceId;
             const resp = await fetch(url);
+            if (resp.status === 404) { done = true; return; }  // goal gone; stop polling
             if (!resp.ok) { setTimeout(poll, 5000); return; }
             applyPayload(await resp.json());
             if (done) return;
