@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Maverick exposes {} tools", tools.tools.len());
 
     let out = client
-        .call_tool("shell", json!({ "command": "echo hello from rust" }))
+        .call_tool("maverick_status", json!({}))
         .await?;
     println!("{}", out.text());
 

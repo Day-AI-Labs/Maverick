@@ -40,8 +40,8 @@ const tools = await client.listTools();
 console.log("Maverick exposes", tools.tools.length, "tools");
 
 const result = await client.callTool({
-  name: "shell",
-  arguments: { command: "echo hello from typescript" },
+  name: "maverick_status",
+  arguments: {},
 });
 console.log(result.content);
 
@@ -51,18 +51,17 @@ await client.close();
 Run with `npx tsx quickstart.ts` (or `bun run quickstart.ts`,
 `deno run --allow-all quickstart.ts`).
 
-You should see the tool list, then "hello from typescript".
+You should see the tool list and a status response (for a fresh install: "no goals yet").
 
 ## What works
 
-- Every tool Maverick registers (web search, repo map, str_replace
-  editor, kv memory, jira/linear/slack/notion/datadog/…) is callable
-  from TS by name.
-- Long-running goals: spawn a goal via the `start_goal` tool, then
-  poll `goal_status` / read trajectory tools.
-- Stdout / stderr from sandboxed shell commands streams back via
-  `notifications/message` events; subscribe via
-  `client.setRequestHandler(...)`.
+- The MCP server currently exposes the `maverick_*` tools documented in
+  `packages/maverick-mcp/README.md` (for example `maverick_start`,
+  `maverick_status`, `maverick_resume`, and `maverick_answer`).
+- Long-running goals: start with `maverick_start`, then check progress with
+  `maverick_status` and resume/answer as needed.
+- Tool names are strict; call `listTools` first and use one of the returned
+  names exactly as shown.
 
 ## What's gated
 

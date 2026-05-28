@@ -57,8 +57,8 @@ func main() {
     fmt.Printf("Maverick exposes %d tools\n", len(tools.Tools))
 
     out, err := c.CallTool(ctx, client.CallToolParams{
-        Name:      "shell",
-        Arguments: json.RawMessage(`{"command": "echo hello from go"}`),
+        Name:      "maverick_status",
+        Arguments: json.RawMessage(`{}`),
     })
     if err != nil {
         log.Fatal(err)
