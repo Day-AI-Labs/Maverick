@@ -332,17 +332,41 @@ class AnthropicClient:
         # second turn (Anthropic rejects the assistant message
         # because the signature doesn't match the text).
         thinking_blocks: list[tuple[str, Optional[str]]] = []
+        # May 28 fix: capture blocks in their ORIGINAL order. Anthropic
+        # rejects a rearranged thinking-block sequence ("the latest
+        # assistant message ... cannot be modified"), which the old
+        # bucket-by-type reconstruction triggered on interleaved Opus
+        # 4.7 turns (thinking between tool_use). We replay these verbatim.
+        content_blocks: list[dict] = []
         for block in resp.content:
             t = getattr(block, "type", None)
             if t == "text":
                 text_parts.append(block.text)
+                content_blocks.append({"type": "text", "text": block.text})
             elif t == "thinking":
                 text = getattr(block, "thinking", "")
                 sig = getattr(block, "signature", None)
                 thinking_parts.append(text)
                 thinking_blocks.append((text, sig))
+                tb: dict = {"type": "thinking", "thinking": text}
+                if sig:
+                    tb["signature"] = sig
+                content_blocks.append(tb)
+            elif t == "redacted_thinking":
+                # Opaque, signature-bearing block. The old loop dropped
+                # these entirely, which also breaks the "must match the
+                # original response" contract — echo it back unchanged.
+                data = getattr(block, "data", None)
+                rb: dict = {"type": "redacted_thinking"}
+                if data is not None:
+                    rb["data"] = data
+                content_blocks.append(rb)
             elif t == "tool_use":
                 tool_calls.append(ToolCall(id=block.id, name=block.name, input=dict(block.input)))
+                content_blocks.append({
+                    "type": "tool_use", "id": block.id,
+                    "name": block.name, "input": dict(block.input),
+                })
 
         # Wave 12 (council F13c) + hardening: nullsafe usage parsing.
         # If resp.usage itself is None (streaming refusal), getattr
@@ -397,6 +421,7 @@ class AnthropicClient:
             thinking_signature=(
                 thinking_blocks[0][1] if thinking_blocks else None
             ),
+            content_blocks=content_blocks,
             tool_calls=tool_calls,
             stop_reason=resp.stop_reason,
             cache_creation_tokens=cache_creation,

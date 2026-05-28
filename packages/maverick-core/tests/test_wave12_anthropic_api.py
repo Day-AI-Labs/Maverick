@@ -232,3 +232,73 @@ class TestNullsafeUsage:
         # Should not raise; budget records 0 spend.
         assert budget.dollars == 0.0
         assert resp.text == ""
+
+
+class TestInterleavedThinkingOrder:
+    """May 28 fix: _parse_response must keep the model's ORIGINAL block
+    order (thinking interleaved with tool_use) and echo redacted_thinking
+    back. Anthropic rejects a rearranged thinking sequence on the next
+    request: "thinking blocks in the latest assistant message cannot be
+    modified ... must remain as they were in the original response."
+    """
+
+    @staticmethod
+    def _block(**kw):
+        b = type("_Block", (), {})()
+        for k, v in kw.items():
+            setattr(b, k, v)
+        return b
+
+    def test_content_blocks_preserve_interleaved_order(self):
+        from maverick.providers.anthropic_provider import AnthropicClient
+
+        client = AnthropicClient.__new__(AnthropicClient)
+
+        class _Resp:
+            usage = None
+            stop_reason = "tool_use"
+
+        resp = _Resp()
+        resp.content = [
+            self._block(type="thinking", thinking="reason A", signature="sigA"),
+            self._block(type="tool_use", id="t1", name="shell", input={"cmd": "ls"}),
+            self._block(type="redacted_thinking", data="RD=="),
+            self._block(type="thinking", thinking="reason B", signature="sigB"),
+            self._block(type="tool_use", id="t2", name="read", input={"path": "x"}),
+            self._block(type="text", text="done"),
+        ]
+        out = client._parse_response(resp, None, model="claude-opus-4-7")
+
+        # Original interleaving preserved (the bug hoisted all thinking
+        # to the front, producing thinking,thinking,text,tool_use,tool_use).
+        types = [b["type"] for b in out.content_blocks]
+        assert types == [
+            "thinking", "tool_use", "redacted_thinking",
+            "thinking", "tool_use", "text",
+        ], f"original order not preserved: {types}"
+        # Per-block signatures kept.
+        assert out.content_blocks[0]["signature"] == "sigA"
+        assert out.content_blocks[3]["signature"] == "sigB"
+        # redacted_thinking echoed verbatim (was silently dropped before).
+        assert out.content_blocks[2] == {"type": "redacted_thinking", "data": "RD=="}
+        # Bucketed back-compat fields still populated for other callers.
+        assert out.text == "done"
+        assert [tc.id for tc in out.tool_calls] == ["t1", "t2"]
+        assert [t[0] for t in out.thinking_blocks] == ["reason A", "reason B"]
+
+    def test_thinking_block_without_signature_omits_key(self):
+        from maverick.providers.anthropic_provider import AnthropicClient
+
+        client = AnthropicClient.__new__(AnthropicClient)
+
+        class _Resp:
+            usage = None
+            stop_reason = "end_turn"
+
+        resp = _Resp()
+        resp.content = [
+            self._block(type="thinking", thinking="t", signature=None),
+            self._block(type="text", text="hi"),
+        ]
+        out = client._parse_response(resp, None, model="claude-opus-4-7")
+        assert "signature" not in out.content_blocks[0]
