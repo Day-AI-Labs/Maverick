@@ -68,6 +68,16 @@ def _headers() -> dict[str, str]:
     }
 
 
+def _env_true(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return False
+
+
 def _get(path: str, params: dict | None = None) -> tuple[int, Any]:
     import httpx
     r = httpx.get(f"{_API}/{path}", headers=_headers(),
@@ -178,6 +188,11 @@ def _op_refund_create(charge_id: str, amount_cents: int, reason: str,
             f"{' reason=' + reason if reason else ''}. "
             "Re-run with confirm=true to actually issue the refund."
         )
+    if not _env_true("MAVERICK_STRIPE_ENABLE_REFUNDS"):
+        return (
+            "ERROR: refund_create is disabled by policy. "
+            "Set MAVERICK_STRIPE_ENABLE_REFUNDS=true to allow real refunds."
+        )
     body: dict = {"charge": charge_id}
     if amount_cents:
         body["amount"] = amount_cents
@@ -239,7 +254,7 @@ def _run(args: dict[str, Any]) -> str:
                 (args.get("charge_id") or "").strip(),
                 int(args.get("amount_cents") or 0),
                 (args.get("reason") or "").strip(),
-                bool(args.get("confirm")),
+                _as_bool(args.get("confirm")),
             )
         if op == "balance":
             return _op_balance()
