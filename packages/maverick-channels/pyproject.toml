@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maverick-channels"
-version = "0.1.1"
+version = "0.1.2"
 description = "Channel adapters for Maverick (Telegram, Discord, Slack, Signal, ...)"
 requires-python = ">=3.10"
 license = { text = "MIT" }

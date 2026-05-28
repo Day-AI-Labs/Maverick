@@ -20,5 +20,5 @@ Available channels (status as of v0.1):
 """
 from .base import Channel, IncomingMessage, Handler
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 __all__ = ["Channel", "IncomingMessage", "Handler"]

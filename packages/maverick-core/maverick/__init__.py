@@ -1,3 +1,3 @@
 """Maverick: recursive multi-agent swarm for long-horizon work."""
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"

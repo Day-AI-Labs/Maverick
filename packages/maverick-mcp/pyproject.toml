@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maverick-mcp"
-version = "0.1.1"
+version = "0.1.2"
 description = "Model Context Protocol server for Maverick (exposes the swarm to MCP clients)"
 requires-python = ">=3.10"
 license = { text = "MIT" }
