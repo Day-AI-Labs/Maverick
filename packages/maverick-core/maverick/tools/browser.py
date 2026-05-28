@@ -74,7 +74,7 @@ _BROWSER_INPUT_SCHEMA: dict[str, Any] = {
         "action": {
             "type": "string",
             "enum": [
-                "navigate", "click", "type", "press", "scroll",
+                "navigate", "click", "type", "fill_form", "press", "scroll",
                 "screenshot", "extract_text", "extract_html",
                 "find_text", "wait_for", "go_back", "go_forward",
                 "current_url", "list_links", "save_session", "close",
@@ -92,6 +92,11 @@ _BROWSER_INPUT_SCHEMA: dict[str, Any] = {
         "text": {
             "type": "string",
             "description": "Text to type, key to press, or text to find.",
+        },
+        "fields": {
+            "type": "object",
+            "description": "For 'fill_form': a {css_selector: value} map; fills many inputs in one call, in order.",
+            "additionalProperties": {"type": "string"},
         },
         "delta_y": {
             "type": "integer",
@@ -300,6 +305,24 @@ def _run_browser_action(args: dict[str, Any]) -> str:
         page.fill(selector, text, timeout=timeout)
         return f"typed {len(text)} chars into {selector!r}"
 
+    if action == "fill_form":
+        fields = args.get("fields")
+        if not isinstance(fields, dict) or not fields:
+            return "ERROR: fill_form requires a non-empty 'fields' object {selector: value}"
+        filled: list[str] = []
+        errors: list[str] = []
+        for selector, value in fields.items():
+            try:
+                page.fill(selector, str(value), timeout=timeout)
+                filled.append(selector)
+            except Exception as e:
+                errors.append(f"{selector}: {type(e).__name__}")
+        log.info("browser.fill_form filled=%d errors=%d", len(filled), len(errors))
+        summary = f"filled {len(filled)}/{len(fields)} field(s)"
+        if errors:
+            summary += "; failed: " + ", ".join(errors[:10])
+        return summary
+
     if action == "press":
         text = args.get("text") or ""
         selector = args.get("selector")
@@ -390,7 +413,8 @@ def browser() -> Tool:
         name="browser",
         description=(
             "Browse the web. navigate to a URL, find_text or use CSS selectors "
-            "to interact (click, type), extract_text or extract_html to read, "
+            "to interact (click, type, fill_form to batch-fill many inputs), "
+            "extract_text or extract_html to read, "
             "screenshot to see, list_links to discover navigation. Use this "
             "for normal web tasks; use the 'computer' tool for non-DOM UIs."
         ),
