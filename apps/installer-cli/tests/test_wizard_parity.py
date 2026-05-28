@@ -7,10 +7,14 @@ crash-on-bad-input ``int()`` / ``float()`` calls.
 from __future__ import annotations
 
 import sys
-import tomllib
 from pathlib import Path
 
 import pytest
+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:  # pragma: no cover -- Py 3.10 CI matrix
+    import tomli as tomllib  # type: ignore[no-redef]
 
 
 # ---------- _safe_int / _safe_float ----------
