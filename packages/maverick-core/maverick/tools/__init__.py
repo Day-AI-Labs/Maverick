@@ -157,18 +157,23 @@ def base_registry(
     from .apply_patch import apply_patch
     from .arxiv import arxiv
     from .calendar_tool import calendar_tool
+    from .cloudflare_tool import cloudflare_tool
     from .compute import compute
     from .currency import currency
+    from .datadog_tool import datadog_tool
     from .diagnose import diagnose
     from .discord_bot import discord_bot
     from .dns_lookup import dns_lookup
+    from .elasticsearch_tool import elasticsearch_tool
     from .email_tool import email_tool
     from .embeddings import embeddings
     from .file_watcher import file_watcher
     from .geocode import geocode
     from .git_advanced import git_advanced
+    from .github_actions import github_actions
     from .gitlab import gitlab
     from .hackernews import hackernews
+    from .hubspot_tool import hubspot_tool
     from .huggingface import huggingface
     from .ios_sim import ios_sim
     from .jira import jira
@@ -178,9 +183,12 @@ def base_registry(
     from .notion import notion
     from .ocr import ocr
     from .openapi_runner import openapi_runner
+    from .pagerduty_tool import pagerduty_tool
     from .pandas_query import pandas_query
     from .posthog_tool import posthog_tool
     from .redis_tool import redis_tool
+    from .s3_tool import s3_tool
+    from .salesforce_tool import salesforce_tool
     from .semantic_scholar import semantic_scholar
     from .sentry_tool import sentry_tool
     from .shopify_tool import shopify_tool
@@ -189,6 +197,7 @@ def base_registry(
     from .stripe_tool import stripe_tool
     from .test_impact import test_impact
     from .translate import translate
+    from .twilio_tool import twilio_tool
     from .wikipedia import wikipedia
     from .youtube import youtube
     reg.register(recall())
@@ -239,6 +248,15 @@ def base_registry(
     reg.register(mongodb_tool())
     reg.register(redis_tool())
     reg.register(sentry_tool())
+    reg.register(pagerduty_tool())
+    reg.register(salesforce_tool())
+    reg.register(cloudflare_tool())
+    reg.register(datadog_tool())
+    reg.register(hubspot_tool())
+    reg.register(twilio_tool())
+    reg.register(s3_tool())
+    reg.register(elasticsearch_tool())
+    reg.register(github_actions())
 
     # Voice tools (opt-in extra; tool factories raise ImportError only
     # when called without the required API key OR SDK; registering is
