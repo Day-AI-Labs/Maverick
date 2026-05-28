@@ -9,21 +9,25 @@
        query param selects the active palette. Default = dark. */
     :root,
     body.theme-dark {
+      color-scheme: dark;
       --bg: #0d1117; --panel: #161b22; --border: #30363d;
       --text: #e6edf3; --muted: #9aa3ad; --accent: #3fb950;
       --warn: #d29922; --danger: #f85149;
     }
     body.theme-light {
+      color-scheme: light;
       --bg: #ffffff; --panel: #f6f8fa; --border: #d0d7de;
       --text: #1f2328; --muted: #57606a; --accent: #1a7f37;
       --warn: #9a6700; --danger: #cf222e;
     }
     body.theme-solarized {
+      color-scheme: dark;
       --bg: #002b36; --panel: #073642; --border: #586e75;
       --text: #eee8d5; --muted: #93a1a1; --accent: #6c9b00;
       --warn: #b58900; --danger: #dc322f;
     }
     body.theme-hicontrast {
+      color-scheme: dark;
       --bg: #000000; --panel: #111111; --border: #ffffff;
       --text: #ffffff; --muted: #cccccc; --accent: #00ff00;
       --warn: #ffff00; --danger: #ff5050;
@@ -39,6 +43,9 @@
     a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
       outline: 2px solid var(--accent); outline-offset: 2px;
     }
+    /* #content is a programmatic skip-link target (tabindex=-1), not a
+       tab stop, so it needs no focus ring of its own. */
+    main:focus { outline: none; }
     .mono, code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, "Roboto Mono", monospace; }
     .skip-link { position: absolute; left: -9999px; }
     .skip-link:focus { left: 1rem; top: 1rem; background: var(--accent); color: #fff; padding: 0.5rem 1rem; border-radius: 4px; z-index: 100; }
@@ -90,7 +97,7 @@
   <a class="skip-link" href="#content">Skip to content</a>
   <header>
     <h1>Maverick</h1>
-    <nav>
+    <nav aria-label="Primary">
       {% set _nav = [
         ('/', 'Overview'), ('/chat', 'Chat'), ('/goals', 'Goals'),
         ('/skills', 'Skills'), ('/store', 'Store'), ('/facts', 'Facts'),
@@ -120,7 +127,7 @@
       </select>
     </span>
   </header>
-  <main id="content">
+  <main id="content" tabindex="-1">
     {% block content %}{% endblock %}
   </main>
   <footer>

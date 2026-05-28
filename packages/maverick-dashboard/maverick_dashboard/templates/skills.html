@@ -44,10 +44,12 @@
       const form = document.getElementById('skill-install-form');
       const src = document.getElementById('skill-source');
       const msg = document.getElementById('skill-install-msg');
+      const btn = form.querySelector('button[type="submit"]');
       form.addEventListener('submit', async function(ev) {
         ev.preventDefault();
         const source = src.value.trim();
         if (!source) return;
+        if (btn) btn.disabled = true;
         msg.style.color = 'var(--muted)';
         msg.textContent = 'Installing…';
         try {
@@ -68,6 +70,8 @@
         } catch (e) {
           msg.style.color = 'var(--danger)';
           msg.textContent = String(e);
+        } finally {
+          if (btn) btn.disabled = false;
         }
       });
     })();

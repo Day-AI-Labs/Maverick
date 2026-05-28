@@ -5,7 +5,7 @@
   <div class="panel">
     {% if facts %}
     <table>
-      <thead><tr><th>key</th><th>value</th></tr></thead>
+      <thead><tr><th scope="col">key</th><th scope="col">value</th></tr></thead>
       <tbody>
       {% for k, v in facts.items() %}
         <tr><td><code>{{ k }}</code></td><td>{{ v }}</td></tr>

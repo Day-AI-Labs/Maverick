@@ -39,7 +39,7 @@
         search
       </button>
     </form>
-    <p id="audit-search-msg" class="muted" style="margin-top: 0.5rem; min-height: 1em; font-size: 0.85rem;"></p>
+    <p id="audit-search-msg" role="status" aria-live="polite" class="muted" style="margin-top: 0.5rem; min-height: 1em; font-size: 0.85rem;"></p>
     <pre id="audit-search-results" style="white-space: pre-wrap; margin: 0; max-height: 360px; overflow-y: auto; font-size: 0.8rem;"></pre>
   </div>
 
@@ -79,13 +79,12 @@
       });
     })();
   </script>
-  </div>
 
   <div class="panel">
     {% if events %}
       <table>
         <thead>
-          <tr><th>ts</th><th>kind</th><th>agent</th><th>goal</th><th>detail</th></tr>
+          <tr><th scope="col">ts</th><th scope="col">kind</th><th scope="col">agent</th><th scope="col">goal</th><th scope="col">detail</th></tr>
         </thead>
         <tbody>
         {% for ev in events %}

@@ -6,7 +6,7 @@
   <div class="panel">
     {% if servers %}
       <table>
-        <thead><tr><th>name</th><th>command</th><th>args</th></tr></thead>
+        <thead><tr><th scope="col">name</th><th scope="col">command</th><th scope="col">args</th></tr></thead>
         <tbody>
         {% for name, s in servers.items() %}
           <tr>
