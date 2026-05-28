@@ -383,42 +383,59 @@ class Agent:
                     resp.tool_calls = []
 
             assistant_content: list[dict] = []
-            # May 26 council fix: emit ONE thinking block per original
-            # block, preserving each block's exact signature. Concatenating
-            # text but keeping only the first signature corrupted multi-
-            # block interleaved thinking on Opus 4.7 — the signature is
-            # derived from the EXACT text of its block. Falls back to
-            # the legacy single-block path when thinking_blocks is empty
-            # but resp.thinking is set (older mocks / non-Anthropic).
-            thinking_blocks = getattr(resp, "thinking_blocks", None) or []
-            if thinking_blocks:
-                # May 26 council fix (API audit #2): include the block
-                # EVEN IF the text is empty as long as a signature is
-                # present. Anthropic still requires the signature-bearing
-                # block to be echoed back to maintain continuity. The old
-                # `if resp.thinking:` check at the elif below would drop
-                # empty-text-signature pairs entirely.
-                for tb_text, tb_sig in thinking_blocks:
-                    if not tb_text and not tb_sig:
+            ordered_blocks = getattr(resp, "content_blocks", None)
+            if ordered_blocks:
+                # May 28 fix: replay the model's blocks in their ORIGINAL
+                # order. Anthropic rejects a rearranged thinking-block
+                # sequence on the next request — the bucket-by-type rebuild
+                # in the else branch reordered interleaved Opus 4.7 turns
+                # (thinking between tool_use) and triggered "thinking blocks
+                # in the latest assistant message cannot be modified". Drop
+                # any tool_use the FINAL-marker check above cleared, else
+                # the orphan tool_use 400s with no matching tool_result.
+                keep_ids = {tc.id for tc in resp.tool_calls}
+                for blk in ordered_blocks:
+                    if (blk.get("type") == "tool_use"
+                            and blk.get("id") not in keep_ids):
                         continue
-                    block_dict: dict = {"type": "thinking", "thinking": tb_text}
-                    if tb_sig:
-                        block_dict["signature"] = tb_sig
-                    assistant_content.append(block_dict)
-            elif resp.thinking or getattr(resp, "thinking_signature", None):
-                sig = getattr(resp, "thinking_signature", None)
-                thinking_block: dict = {
-                    "type": "thinking", "thinking": resp.thinking or "",
-                }
-                if sig:
-                    thinking_block["signature"] = sig
-                assistant_content.append(thinking_block)
-            if resp.text:
-                assistant_content.append({"type": "text", "text": resp.text})
-            for tc in resp.tool_calls:
-                assistant_content.append(
-                    {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.input}
-                )
+                    assistant_content.append(dict(blk))
+            else:
+                # May 26 council fix: emit ONE thinking block per original
+                # block, preserving each block's exact signature. Concatenating
+                # text but keeping only the first signature corrupted multi-
+                # block interleaved thinking on Opus 4.7 — the signature is
+                # derived from the EXACT text of its block. Falls back to
+                # the legacy single-block path when thinking_blocks is empty
+                # but resp.thinking is set (older mocks / non-Anthropic).
+                thinking_blocks = getattr(resp, "thinking_blocks", None) or []
+                if thinking_blocks:
+                    # May 26 council fix (API audit #2): include the block
+                    # EVEN IF the text is empty as long as a signature is
+                    # present. Anthropic still requires the signature-bearing
+                    # block to be echoed back to maintain continuity. The old
+                    # `if resp.thinking:` check at the elif below would drop
+                    # empty-text-signature pairs entirely.
+                    for tb_text, tb_sig in thinking_blocks:
+                        if not tb_text and not tb_sig:
+                            continue
+                        block_dict: dict = {"type": "thinking", "thinking": tb_text}
+                        if tb_sig:
+                            block_dict["signature"] = tb_sig
+                        assistant_content.append(block_dict)
+                elif resp.thinking or getattr(resp, "thinking_signature", None):
+                    sig = getattr(resp, "thinking_signature", None)
+                    thinking_block: dict = {
+                        "type": "thinking", "thinking": resp.thinking or "",
+                    }
+                    if sig:
+                        thinking_block["signature"] = sig
+                    assistant_content.append(thinking_block)
+                if resp.text:
+                    assistant_content.append({"type": "text", "text": resp.text})
+                for tc in resp.tool_calls:
+                    assistant_content.append(
+                        {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.input}
+                    )
             messages.append({"role": "assistant", "content": assistant_content})
 
             if resp.text:

@@ -8,7 +8,7 @@ import pytest
 from maverick.agent import Agent, AgentResult
 from maverick.blackboard import Blackboard
 from maverick.budget import Budget, BudgetExceeded
-from maverick.llm import ToolCall
+from maverick.llm import LLMResponse, ToolCall
 from maverick.sandbox import LocalBackend
 from maverick.swarm import SwarmContext
 from maverick.world_model import WorldModel
@@ -108,3 +108,53 @@ class TestAgentLoop:
         observations = [e for e in ctx.blackboard.entries if e.kind == "observation"]
         assert any("BLOCKED" in o.content for o in observations)
         assert result.final == "blocked, gave up"
+
+    @pytest.mark.asyncio
+    async def test_interleaved_thinking_order_preserved_in_history(
+        self, ctx, fake_llm,
+    ):
+        """May 28 fix: the echoed assistant turn must preserve the
+        model's ORIGINAL block order. The old bucket-by-type rebuild
+        hoisted all thinking before all tool_use, which Anthropic
+        rejects on interleaved Opus 4.7 turns ("thinking blocks in the
+        latest assistant message cannot be modified")."""
+        interleaved = [
+            {"type": "thinking", "thinking": "plan A", "signature": "sigA"},
+            {"type": "tool_use", "id": "t1", "name": "shell",
+             "input": {"cmd": "echo one"}},
+            {"type": "thinking", "thinking": "plan B", "signature": "sigB"},
+            {"type": "tool_use", "id": "t2", "name": "shell",
+             "input": {"cmd": "echo two"}},
+        ]
+        fake_llm.scripted = [
+            LLMResponse(
+                text="", thinking=None,
+                tool_calls=[
+                    ToolCall(id="t1", name="shell", input={"cmd": "echo one"}),
+                    ToolCall(id="t2", name="shell", input={"cmd": "echo two"}),
+                ],
+                stop_reason="tool_use",
+                content_blocks=interleaved,
+            ),
+            LLMResponse(
+                text="FINAL: done", thinking=None, tool_calls=[],
+                stop_reason="end_turn",
+            ),
+        ]
+        agent = Agent(ctx=ctx, role="coder", brief="do two things")
+        result = await agent.run()
+        assert result.final == "done"
+
+        # Find turn-1's echoed assistant message across all recorded
+        # calls (FINAL triggers an extra verifier call, so we can't
+        # assume a fixed index). Its blocks must match the interleaved
+        # order exactly — NOT all-thinking-then-all-tools.
+        all_msgs = [m for call in fake_llm.calls for m in call["messages"]]
+        turn1 = [
+            m for m in all_msgs
+            if m["role"] == "assistant"
+            and any(isinstance(b, dict) and b.get("id") == "t1"
+                    for b in m["content"])
+        ]
+        assert turn1, "turn-1 assistant message not found in echoed history"
+        assert turn1[0]["content"] == interleaved

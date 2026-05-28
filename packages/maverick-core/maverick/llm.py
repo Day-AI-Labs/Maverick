@@ -123,6 +123,17 @@ class LLMResponse:
     # Legacy field kept for back-compat with mocks; equals
     # thinking_blocks[0][1] if thinking_blocks present.
     thinking_signature: Optional[str] = None
+    # May 28 fix: the model's output blocks in their ORIGINAL order,
+    # already in Anthropic content-block dict form (thinking /
+    # redacted_thinking / text / tool_use, interleaved as returned).
+    # Anthropic forbids rearranging the thinking-block sequence
+    # relative to tool_use ("you can't rearrange or modify the
+    # sequence of these blocks"), so the bucketed thinking/text/
+    # tool_calls fields above cannot rebuild an interleaved Opus 4.7
+    # turn faithfully. agent.py replays these verbatim when present;
+    # None for providers that don't emit interleaved thinking (they
+    # fall back to the bucketed reconstruction).
+    content_blocks: Optional[list[dict]] = None
 
     def __post_init__(self):
         if self.thinking_blocks is None:
