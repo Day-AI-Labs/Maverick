@@ -317,6 +317,18 @@ async def list_installed_skills() -> list[SkillOut]:
     ]
 
 
+def _require_skill_install_opt_in() -> None:
+    if os.environ.get("MAVERICK_ALLOW_SKILL_INSTALL", "").lower() not in {"1", "true", "yes"}:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "skill install via REST is disabled. Set "
+                "MAVERICK_ALLOW_SKILL_INSTALL=1 to opt in, or use "
+                "`maverick skill install` on the host."
+            ),
+        )
+
+
 @router.post("/skills", response_model=SkillOut, status_code=201)
 async def install_skill_endpoint(payload: SkillInstallIn) -> SkillOut:
     """Install a skill from a URL or ``gh:org/repo[:path]``.
@@ -328,15 +340,7 @@ async def install_skill_endpoint(payload: SkillInstallIn) -> SkillOut:
     chain. CLI ``maverick skill install`` remains available without
     the flag because it requires shell access on the host.
     """
-    if os.environ.get("MAVERICK_ALLOW_SKILL_INSTALL", "").lower() not in {"1", "true", "yes"}:
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "skill install via REST is disabled. Set "
-                "MAVERICK_ALLOW_SKILL_INSTALL=1 to opt in, or use "
-                "`maverick skill install` on the host."
-            ),
-        )
+    _require_skill_install_opt_in()
     from maverick.skills import install_skill
     try:
         s = install_skill(payload.source, trusted_local=False)
@@ -368,16 +372,13 @@ async def catalog_list(kind: str) -> dict:
 
 @router.post("/catalog/skills/install", response_model=SkillOut, status_code=201)
 async def catalog_install_skill(payload: CatalogInstallIn) -> SkillOut:
-    """Install a skill from the catalog by name.
+    """Install a catalog skill by name.
 
-    Council ecosystem-seat: this does NOT require
-    MAVERICK_ALLOW_SKILL_INSTALL. Unlike the free-text-source
-    /skills endpoint (the RCE vector), a catalog install is both
-    curated (the name resolves through a vetted index) and hash-pinned
-    (the fetched bytes are verified against the index's sha256 before
-    anything is written). A consumer can click "Install" without
-    touching an env var.
+    Catalog metadata (source + hash) can come from remote indexes, so
+    this endpoint keeps the same operator opt-in gate as free-text skill
+    installs.
     """
+    _require_skill_install_opt_in()
     from maverick.skills import install_from_catalog
     try:
         s = install_from_catalog(payload.name)

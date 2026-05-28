@@ -1,10 +1,4 @@
-"""Skill Store: catalog list + hash-pinned install endpoint + /store page.
-
-The hash-pinned catalog install must work WITHOUT
-MAVERICK_ALLOW_SKILL_INSTALL (that's the whole point — a consumer
-clicks Install without touching an env var), while the free-text
-/skills endpoint stays gated.
-"""
+"""Skill Store: catalog list + hash-pinned install endpoint + /store page."""
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
@@ -60,10 +54,10 @@ def test_catalog_list_unreachable_returns_empty(monkeypatch):
     assert r.json()["entries"] == []
 
 
-# ---------- catalog install (no env gate) ----------
+# ---------- catalog install (same env gate as /skills) ----------
 
-def test_catalog_install_does_not_require_opt_in(monkeypatch):
-    """The key property: install works WITHOUT MAVERICK_ALLOW_SKILL_INSTALL."""
+def test_catalog_install_requires_opt_in(monkeypatch):
+    """Catalog installs are also gated by MAVERICK_ALLOW_SKILL_INSTALL."""
     monkeypatch.delenv("MAVERICK_ALLOW_SKILL_INSTALL", raising=False)
     monkeypatch.delenv("MAVERICK_DASHBOARD_TOKEN", raising=False)
 
@@ -83,12 +77,12 @@ def test_catalog_install_does_not_require_opt_in(monkeypatch):
         json={"name": "summarize-url"},
         headers={"Origin": "http://testserver"},
     )
-    assert r.status_code == 201, r.text
-    assert called["name"] == "summarize-url"
-    assert r.json()["name"] == "summarize-url"
+    assert r.status_code == 403
+    assert "MAVERICK_ALLOW_SKILL_INSTALL" in r.json()["detail"]
 
 
 def test_catalog_install_hash_mismatch_400(monkeypatch):
+    monkeypatch.setenv("MAVERICK_ALLOW_SKILL_INSTALL", "1")
     monkeypatch.delenv("MAVERICK_DASHBOARD_TOKEN", raising=False)
     import maverick.skills as sk
 
