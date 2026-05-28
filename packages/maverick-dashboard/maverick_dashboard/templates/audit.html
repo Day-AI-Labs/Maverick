@@ -50,10 +50,12 @@
       const day = document.getElementById('audit-search-day');
       const msg = document.getElementById('audit-search-msg');
       const out = document.getElementById('audit-search-results');
+      const btn = form.querySelector('button[type="submit"]');
       form.addEventListener('submit', async function(ev) {
         ev.preventDefault();
         const p = pat.value.trim();
         if (!p) { msg.textContent = 'Pattern required.'; return; }
+        if (btn) btn.disabled = true;
         msg.style.color = 'var(--muted)';
         msg.textContent = 'Searching…';
         out.textContent = '';
@@ -75,6 +77,8 @@
         } catch (e) {
           msg.style.color = 'var(--danger)';
           msg.textContent = String(e);
+        } finally {
+          if (btn) btn.disabled = false;
         }
       });
     })();

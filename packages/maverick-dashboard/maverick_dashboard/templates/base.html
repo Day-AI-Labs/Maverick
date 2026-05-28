@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="theme-color" content="#0d1117" />
   <title>{% block title %}Maverick{% endblock %}</title>
   <style>
     /* Theme presets. The body class chosen by the route + ?theme=
@@ -117,7 +119,7 @@
         <span class="dot" aria-hidden="true"></span>
         <span id="halt-label">checking</span>
       </a>
-      <select id="theme-select" onchange="if (this.value) window.location.search = '?theme=' + this.value" aria-label="Theme"
+      <select id="theme-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('theme', this.value); window.location = u; }" aria-label="Theme"
               style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem;">
         <option value="">theme</option>
         <option value="dark" {% if theme == 'dark' %}selected{% endif %}>Dark</option>
@@ -164,6 +166,14 @@
           });
         }
         await refresh();
+      });
+      pill.addEventListener('keydown', function(ev) {
+        // role="button" must activate on Space; the native <a href>
+        // already handles Enter. Stop Space from scrolling the page.
+        if (ev.key === ' ' || ev.key === 'Spacebar') {
+          ev.preventDefault();
+          pill.click();
+        }
       });
       refresh();
       setInterval(refresh, 15000);
