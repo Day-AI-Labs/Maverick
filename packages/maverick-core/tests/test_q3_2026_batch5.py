@@ -298,7 +298,7 @@ def test_replay_export_empty_goal(tmp_path, monkeypatch):
 
 # ---------- registration smoke ----------
 
-def test_new_tools_register(tmp_path):
+def test_new_tools_register_opt_in(tmp_path):
     from maverick.sandbox.local import LocalBackend
     from maverick.tools import base_registry
 
@@ -306,8 +306,17 @@ def test_new_tools_register(tmp_path):
         def open_questions(self, gid):
             return []
 
-    reg = base_registry(_W(), LocalBackend(workdir=tmp_path))
-    names = {t.name for t in reg.all()}
-    assert "android" in names
-    assert "ios_sim" in names
-    assert "spend_report" in names
+    reg_default = base_registry(_W(), LocalBackend(workdir=tmp_path))
+    names_default = {t.name for t in reg_default.all()}
+    assert "android" not in names_default
+    assert "ios_sim" not in names_default
+    assert "spend_report" in names_default
+
+    reg_mobile = base_registry(
+        _W(),
+        LocalBackend(workdir=tmp_path),
+        enable_mobile_tools=True,
+    )
+    names_mobile = {t.name for t in reg_mobile.all()}
+    assert "android" in names_mobile
+    assert "ios_sim" in names_mobile

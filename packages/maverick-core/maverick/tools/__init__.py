@@ -97,6 +97,7 @@ def base_registry(
     enable_computer_use: bool = False,
     enable_browser: bool = False,
     enable_web_search: bool = False,
+    enable_mobile_tools: bool = False,
     channel: Optional[str] = None,
     user_id: Optional[str] = None,
 ) -> ToolRegistry:
@@ -110,8 +111,9 @@ def base_registry(
     filter returns nothing and "PAUSED: 0 open question(s)" is shown
     even though the agent asked.
 
-    ``enable_computer_use`` / ``enable_browser`` register optional
-    high-impact tools. Both require optional extras
+    ``enable_computer_use`` / ``enable_browser`` / ``enable_mobile_tools``
+    register optional high-impact tools. Computer/browser require
+    optional extras
     (``maverick-agent[computer-use]`` / ``[browser]``); when missing
     the tool factories raise an actionable ImportError at registration
     time, NOT at tool-call time -- so a user who picks computer-use in
@@ -210,8 +212,9 @@ def base_registry(
     reg.register(huggingface())
     reg.register(notify_tool())
     reg.register(diagnose())
-    reg.register(android())
-    reg.register(ios_sim())
+    if enable_mobile_tools:
+        reg.register(android())
+        reg.register(ios_sim())
     reg.register(spend_report())
     reg.register(test_impact())
     reg.register(youtube())
