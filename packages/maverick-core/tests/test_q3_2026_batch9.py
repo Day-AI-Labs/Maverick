@@ -212,6 +212,25 @@ def test_ocr_extract_url_blocks_private():
     assert "refusing private/loopback address" in out
 
 
+def test_ocr_extract_url_uses_workspace_tempfile(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("shutil.which", lambda b: "/usr/bin/tesseract")
+    monkeypatch.setattr("maverick.tools.ocr._run_tesseract", lambda *_a, **_k: "ok")
+
+    class _Resp:
+        status_code = 200
+        headers = {"content-type": "image/png"}
+        content = b"\x89PNG\r\n\x1a\n"
+
+    fake_httpx = types.ModuleType("httpx")
+    fake_httpx.get = lambda *a, **k: _Resp()
+    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+
+    from maverick.tools.ocr import ocr
+    out = ocr().fn({"op": "extract_url", "url": "http://example.com/a.png"})
+    assert out == "ok"
+
+
 # ---------- PostHog tool ----------
 
 def test_posthog_requires_op():

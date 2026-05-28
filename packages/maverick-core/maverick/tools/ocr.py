@@ -158,7 +158,7 @@ def _op_extract_url(url: str, lang: str, backend: str, hf_model: str) -> str:
         "image/jpg": ".jpg", "image/tiff": ".tiff",
         "image/webp": ".webp", "application/pdf": ".pdf",
     }.get(ct, ".png")
-    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False, dir=Path.cwd()) as f:
         f.write(r.content)
         tmp = f.name
     try:
