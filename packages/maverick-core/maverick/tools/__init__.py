@@ -89,6 +89,11 @@ class ToolRegistry:
                 result = self._tools[name].fn(args)
                 if inspect.isawaitable(result):
                     result = await result
+                try:
+                    from ..observability import record_metric as _rm
+                    _rm("tool_calls", labels={"tool": name, "status": "ok"})
+                except Exception:  # pragma: no cover
+                    pass
                 return result
             except Exception as e:
                 # Tool errors (incl. an injected tool_dispatch chaos failure)
@@ -96,6 +101,11 @@ class ToolRegistry:
                 # — this mirrors how real tool exceptions behave. The chaos
                 # gap the council flagged is on the LLM path, fixed by wiring
                 # maybe_fail("llm_call") into complete_async (not here).
+                try:
+                    from ..observability import record_metric as _rm
+                    _rm("tool_calls", labels={"tool": name, "status": "error"})
+                except Exception:  # pragma: no cover
+                    pass
                 return f"ERROR: {type(e).__name__}: {e}"
 
 

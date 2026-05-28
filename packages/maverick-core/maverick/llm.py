@@ -257,6 +257,15 @@ class LLM:
                             latency_ms=_dt_ms, dollars=_spent, error=_err)
             except Exception:  # pragma: no cover -- never fail on stats
                 pass
+            try:
+                from .observability import record_metric as _rm
+                _rm("llm_calls", labels={"provider": provider, "model": model_id})
+                _rm("llm_latency", _dt_ms / 1000.0,
+                    labels={"provider": provider, "model": model_id})
+                if budget is not None:
+                    _rm("budget_dollars", budget.dollars)
+            except Exception:  # pragma: no cover
+                pass
 
     async def complete_async(
         self,
@@ -306,5 +315,14 @@ class LLM:
                 from .provider_health import get as _h
                 _h().record(provider, model_id,
                             latency_ms=_dt_ms, dollars=_spent, error=_err)
+            except Exception:  # pragma: no cover
+                pass
+            try:
+                from .observability import record_metric as _rm
+                _rm("llm_calls", labels={"provider": provider, "model": model_id})
+                _rm("llm_latency", _dt_ms / 1000.0,
+                    labels={"provider": provider, "model": model_id})
+                if budget is not None:
+                    _rm("budget_dollars", budget.dollars)
             except Exception:  # pragma: no cover
                 pass
