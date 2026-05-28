@@ -172,6 +172,7 @@ def base_registry(
     from .huggingface import huggingface
     from .ios_sim import ios_sim
     from .jira import jira
+    from .mongodb_tool import mongodb_tool
     from .linear import linear
     from .notify import notify_tool
     from .notion import notion
@@ -179,7 +180,9 @@ def base_registry(
     from .openapi_runner import openapi_runner
     from .pandas_query import pandas_query
     from .posthog_tool import posthog_tool
+    from .redis_tool import redis_tool
     from .semantic_scholar import semantic_scholar
+    from .sentry_tool import sentry_tool
     from .shopify_tool import shopify_tool
     from .slack_bot import slack_bot
     from .spend_report import spend_report
@@ -233,6 +236,9 @@ def base_registry(
     reg.register(ocr())
     reg.register(posthog_tool())
     reg.register(shopify_tool())
+    reg.register(mongodb_tool())
+    reg.register(redis_tool())
+    reg.register(sentry_tool())
 
     # Voice tools (opt-in extra; tool factories raise ImportError only
     # when called without the required API key OR SDK; registering is
