@@ -152,6 +152,7 @@ def base_registry(
     from .clipboard import clipboard
     from .preview_diff import preview_diff
     from .kv_memory import kv_memory
+    from .android import android
     from .apply_patch import apply_patch
     from .arxiv import arxiv
     from .calendar_tool import calendar_tool
@@ -163,11 +164,13 @@ def base_registry(
     from .git_advanced import git_advanced
     from .gitlab import gitlab
     from .huggingface import huggingface
+    from .ios_sim import ios_sim
     from .jira import jira
     from .linear import linear
     from .notify import notify_tool
     from .pandas_query import pandas_query
     from .semantic_scholar import semantic_scholar
+    from .spend_report import spend_report
     from .wikipedia import wikipedia
     reg.register(recall())
     reg.register(http_fetch())
@@ -195,6 +198,9 @@ def base_registry(
     reg.register(huggingface())
     reg.register(notify_tool())
     reg.register(diagnose())
+    reg.register(android())
+    reg.register(ios_sim())
+    reg.register(spend_report())
 
     # Voice tools (opt-in extra; tool factories raise ImportError only
     # when called without the required API key OR SDK; registering is
