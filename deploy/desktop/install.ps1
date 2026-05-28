@@ -59,10 +59,15 @@ function Winget-Install($id, $override) {
 
 # Validate one interpreter: run it and confirm it reports >= 3.10. On
 # success, record how to invoke it ($script:PyExe / $script:PyPre).
+#
+# Probe with `--version`, NOT `-c "..."`. Windows PowerShell 5.1 mangles
+# embedded double quotes when passing args to a native exe, so a quoted
+# -c snippet fails even when the interpreter is perfectly fine -- which
+# made every detection path (PATH, registry, disk) report "not found".
 function Test-PyCandidate($exe, $pre) {
   try {
-    $v = & $exe @($pre + @('-c', 'import sys;print("%d.%d"%sys.version_info[:2])')) 2>$null
-    if ($v -match '^(\d+)\.(\d+)$' -and
+    $out = (& $exe @($pre + @('--version')) 2>&1) | Out-String
+    if ($out -match 'Python\s+(\d+)\.(\d+)' -and
         ([int]$Matches[1] -gt 3 -or ([int]$Matches[1] -eq 3 -and [int]$Matches[2] -ge 10))) {
       $script:PyExe = $exe; $script:PyPre = $pre
       return $true
@@ -141,7 +146,7 @@ Reinstall from https://www.python.org/downloads/ with 'Add python.exe to PATH' t
 "@
   }
 }
-Write-Step ("Using Python " + (Py -c 'import sys;print(sys.version.split()[0])'))
+Write-Step ("Using " + ((Py --version | Out-String).Trim()))
 
 # 2. Git
 if (-not (Have git)) { Ensure-Winget; Winget-Install 'Git.Git' }
