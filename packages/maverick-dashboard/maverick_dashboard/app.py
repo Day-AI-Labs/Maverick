@@ -759,17 +759,16 @@ def _build_plan_tree(world, goal_id: int, depth_cap: int = 6) -> dict:
           UNION ALL
           SELECT child.id, child.parent_id, child.title, child.status, d.depth + 1, child.created_at
             FROM descendants d
-            JOIN goals child ON child.parent_id = d.id
+            JOIN (
+              SELECT g.id, g.parent_id, g.title, g.status, g.created_at,
+                     ROW_NUMBER() OVER (
+                       PARTITION BY g.parent_id
+                       ORDER BY g.created_at ASC, g.id ASC
+                     ) AS rn
+                FROM goals g
+            ) child ON child.parent_id = d.id
            WHERE d.depth < ?
-             AND (
-               SELECT COUNT(*)
-                 FROM goals s
-                WHERE s.parent_id = d.id
-                  AND (
-                    s.created_at < child.created_at OR
-                    (s.created_at = child.created_at AND s.id <= child.id)
-                  )
-             ) <= ?
+             AND child.rn <= ?
         ),
         episode_totals AS (
           SELECT e.goal_id, SUM(e.cost_dollars) AS dollars
