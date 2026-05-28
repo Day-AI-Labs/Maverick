@@ -187,6 +187,7 @@ def base_registry(
     from .cloudflare_tool import cloudflare_tool
     from .clickup_tool import clickup_tool
     from .compute import compute
+    from .sql_query import sql_query
     from .confluence_tool import confluence_tool
     from .dropbox_tool import dropbox_tool
     from .gmail_tool import gmail_tool
@@ -268,6 +269,7 @@ def base_registry(
     reg.register(wikipedia())
     reg.register(apply_patch(sandbox))
     reg.register(compute())
+    reg.register(sql_query(sandbox))
     reg.register(email_tool())
     reg.register(pandas_query())
     reg.register(git_advanced(sandbox))
