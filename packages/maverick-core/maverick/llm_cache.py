@@ -190,7 +190,7 @@ class LLMCache:
                 c.execute(
                     "DELETE FROM responses WHERE key NOT IN ("
                     "  SELECT key FROM responses "
-                    "  ORDER BY created_at DESC LIMIT ?)",
+                    "  ORDER BY created_at DESC, rowid DESC LIMIT ?)",
                     (self.max_rows,),
                 )
 

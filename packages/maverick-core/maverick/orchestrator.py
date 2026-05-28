@@ -90,6 +90,14 @@ async def run_goal(
     if shield is not None:
         try:
             goal_text = f"{goal.title}\n{goal.description or ''}"
+            # Normalize (NFKC + strip zero-width/bidi/tag-block) BEFORE
+            # scanning so homoglyph / zero-width-encoded injections can't
+            # slip past the regex rules. Fail-open if unavailable.
+            try:
+                from .safety.unicode_filter import normalize as _uni_normalize
+                goal_text = _uni_normalize(goal_text).cleaned
+            except Exception:  # pragma: no cover
+                pass
             verdict = shield.scan_input(goal_text)
             if not getattr(verdict, "allowed", True):
                 reason = getattr(verdict, "reason", "") or "blocked by Shield"

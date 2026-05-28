@@ -142,6 +142,22 @@ def _is_private_ip(host: str) -> bool:
     return False
 
 
+def is_blocked_host(hostname: str) -> bool:
+    """True if ``hostname`` should be refused for SSRF safety, honoring the
+    ``MAVERICK_FETCH_ALLOW_PRIVATE=1`` override.
+
+    Use this in every tool that fetches a user/model-supplied URL so the
+    guard AND its escape-hatch stay consistent — previously some tools
+    (huggingface/view_image/pdf_reader) called ``_is_private_ip`` directly
+    with no override, so the broadened ranges made legitimate local hosts
+    unreachable with no recourse.
+    """
+    import os
+    if os.environ.get("MAVERICK_FETCH_ALLOW_PRIVATE") == "1":
+        return False
+    return _is_private_ip(hostname or "")
+
+
 def _check_robots(url: str, user_agent: str = "Maverick") -> bool:
     """Return True if robots.txt allows ``url`` for ``user_agent``."""
     try:

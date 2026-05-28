@@ -16,7 +16,7 @@ import logging
 import os
 from typing import Optional
 
-from .base import Channel, IncomingMessage
+from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ except ImportError:
 class DiscordChannel(Channel):
     name = "discord"
 
-    def __init__(self, handler, token: Optional[str] = None):
+    def __init__(self, handler, token: Optional[str] = None, allowed_user_ids=None):
         super().__init__(handler)
         if not _HAVE_DISCORD:
             raise ImportError(
@@ -40,10 +40,19 @@ class DiscordChannel(Channel):
         self.token = token or os.environ.get("DISCORD_BOT_TOKEN")
         if not self.token:
             raise ValueError("DISCORD_BOT_TOKEN not set")
+        # Without an allowlist, ANY user in a channel the bot can see could
+        # drive the agent. Require one (matches bluesky/telegram).
+        self.allowed_user_ids = normalize_allowlist(
+            allowed_user_ids, "DISCORD_ALLOWED_USER_IDS",
+        )
+        if not self.allowed_user_ids:
+            raise ValueError("Set DISCORD_ALLOWED_USER_IDS to restrict access")
 
         intents = discord.Intents.default()
         intents.message_content = True
-        self._client = _MaverickDiscordClient(handler=handler, intents=intents)
+        self._client = _MaverickDiscordClient(
+            handler=handler, allowed_user_ids=self.allowed_user_ids, intents=intents,
+        )
 
     async def start(self) -> None:
         log.info("Discord channel starting")
@@ -63,15 +72,22 @@ class DiscordChannel(Channel):
 
 if _HAVE_DISCORD:
     class _MaverickDiscordClient(discord.Client):  # type: ignore[misc]
-        def __init__(self, handler, *args, **kwargs):
+        def __init__(self, handler, allowed_user_ids=None, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self.handler = handler
+            self.allowed_user_ids = allowed_user_ids or set()
 
         async def on_ready(self):  # type: ignore[override]
             log.info("Discord ready as %s", self.user)
 
         async def on_message(self, message):  # type: ignore[override]
             if message.author == self.user:
+                return
+            # Gate on the AUTHOR id, not the channel id (which is what we
+            # reply to). An unlisted author is silently ignored.
+            author_id = str(getattr(message.author, "id", ""))
+            if not is_allowed(author_id, self.allowed_user_ids):
+                log.warning("unauthorized discord access: author_id=%s", author_id)
                 return
             msg = IncomingMessage(
                 user_id=str(message.channel.id),

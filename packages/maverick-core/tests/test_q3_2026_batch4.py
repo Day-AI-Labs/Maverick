@@ -170,7 +170,7 @@ def test_hf_image_classify_requires_url():
 
 def test_hf_image_classify_blocks_private_ip(monkeypatch):
     from maverick.tools.huggingface import huggingface
-    monkeypatch.setattr("maverick.tools.huggingface._is_private_ip", lambda _h: True)
+    monkeypatch.setattr("maverick.tools.huggingface.is_blocked_host", lambda _h: True)
     out = huggingface().fn({"op": "image_classify", "model": "x", "url": "http://127.0.0.1/a.png"})
     assert "refusing" in out
 

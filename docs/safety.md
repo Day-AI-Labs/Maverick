@@ -25,7 +25,7 @@ block_threshold = "high"
 
 ## What gets caught
 
-Agent Shield covers (F1 0.988 on real-world benchmarks):
+The **full Agent Shield SDK** (`pip install agent-shield`, ~115 patterns, F1 0.988 on real-world benchmarks) covers the categories below. Without it, Maverick falls back to a **built-in ~20-pattern** subset — the F1 number does NOT apply to the fallback. The categories below describe the full SDK:
 
 - **Prompt injection** — system prompt overrides, ChatML/LLaMA delimiters, instruction hijacking
 - **Role hijacking** — DAN mode, developer mode, persona attacks, jailbreaks
@@ -42,7 +42,12 @@ Agent Shield covers (F1 0.988 on real-world benchmarks):
 
 ## When the shield is missing
 
-Maverick still runs without `agent-shield` installed — it logs a startup warning and the scans become no-ops. This keeps the kernel useful as a research tool. For end-user installs, the wizard pulls in `agent-shield` by default.
+Two layers can be missing, and they degrade differently:
+
+- **Full `agent-shield` SDK absent** (but the `maverick-shield` wrapper present): detection uses the **built-in ~20-pattern** matcher — the F1 0.988 ruleset is forgone, but scans still run.
+- **Shield wrapper absent entirely**: scans are **skipped (fail-open)** with a startup warning, per the kernel's "runs without the shield" rule.
+
+The installer does **not** pull in `agent-shield` automatically — install it with `pip install agent-shield` for the full ruleset.
 
 To verify the shield is loaded:
 

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from . import Tool
-from .http_fetch import _is_private_ip
+from .http_fetch import is_blocked_host
 
 log = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ def _load_bytes(source: str) -> bytes | None:
         from urllib.parse import urlparse
 
         parsed = urlparse(source)
-        if parsed.hostname and _is_private_ip(parsed.hostname):
+        if parsed.hostname and is_blocked_host(parsed.hostname):
             return None
         try:
             import httpx

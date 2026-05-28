@@ -24,7 +24,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from . import Tool
-from .http_fetch import _is_private_ip
+from .http_fetch import is_blocked_host
 
 log = logging.getLogger(__name__)
 
@@ -136,8 +136,11 @@ def _op_image_classify(model: str, url: str) -> str:
         return f"ERROR: only http/https supported; got scheme={parsed.scheme!r}"
     if not parsed.netloc:
         return "ERROR: missing host in URL"
-    if _is_private_ip(parsed.hostname or ""):
-        return f"ERROR: refusing to fetch private/loopback address {parsed.hostname!r}"
+    if is_blocked_host(parsed.hostname or ""):
+        return (
+            f"ERROR: refusing to fetch private/loopback/reserved address "
+            f"{parsed.hostname!r}. Set MAVERICK_FETCH_ALLOW_PRIVATE=1 to override."
+        )
 
     import httpx
     r = httpx.get(url, timeout=30.0, follow_redirects=False)

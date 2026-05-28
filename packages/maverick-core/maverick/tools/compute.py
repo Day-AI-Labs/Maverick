@@ -69,6 +69,27 @@ def _evaluate_with_sympy(expr: str) -> str:
     return f"{val}"
 
 
+def _reject_unsafe_pow(node: ast.AST) -> None:
+    """Reject `a ** b` with a non-constant or >100 exponent, and nested
+    power-towers. Both can materialize astronomically large numbers
+    (CPU/RAM DoS of the worker) whether evaluated by Python (fallback)
+    or SymPy (`9**9**9**9`). No-op for non-Pow nodes so callers can run
+    it over every walked node.
+    """
+    if not (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow)):
+        return
+    rt = node.right
+    if not (
+        isinstance(rt, ast.Constant)
+        and isinstance(rt.value, (int, float))
+        and abs(rt.value) <= 100
+    ):
+        raise ValueError("exponent must be a constant <= 100")
+    for operand in (node.left, node.right):
+        if isinstance(operand, ast.BinOp) and isinstance(operand.op, ast.Pow):
+            raise ValueError("nested exponentiation not allowed")
+
+
 def _evaluate_fallback(expr: str) -> str:
     """Minimal evaluator using ast.literal_eval — only supports
     arithmetic on numeric literals."""
@@ -89,20 +110,7 @@ def _evaluate_fallback(expr: str) -> str:
                 raise ValueError(f"function not allowed: {ast.dump(node.func)}")
         elif isinstance(node, (ast.Attribute, ast.Import, ast.ImportFrom)):
             raise ValueError("attribute access / imports not allowed")
-        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
-            # Bound exponentiation: without SymPy this is plain Python
-            # int ** int, so '9**9**9' (a ~370M-digit number) or
-            # '10**1000000' would hang the worker on CPU + memory. The
-            # exponent must be a small literal, and power-towers
-            # (Pow nested in a Pow operand) are rejected.
-            rt = node.right
-            if not (isinstance(rt, ast.Constant)
-                    and isinstance(rt.value, (int, float))
-                    and abs(rt.value) <= 100):
-                raise ValueError("exponent must be a constant <= 100 in fallback")
-            for operand in (node.left, node.right):
-                if isinstance(operand, ast.BinOp) and isinstance(operand.op, ast.Pow):
-                    raise ValueError("nested exponentiation not allowed in fallback")
+        _reject_unsafe_pow(node)
     code = compile(tree, "<expr>", "eval")
     result = eval(code, {"__builtins__": {}}, safe_globals)
     return repr(result)
@@ -133,6 +141,10 @@ def _validate_expr_safety(expr: str) -> None:
                 raise ValueError(f"name not allowed: {node.id}")
         elif isinstance(node, ast.Attribute):
             raise ValueError("attribute access is not allowed")
+        # The SymPy path previously had NO exponent bound, so
+        # `9**9**9**9` reached sympy.N() and OOM'd the worker. Apply the
+        # same Pow guard the fallback uses.
+        _reject_unsafe_pow(node)
 
 
 def _safe_parse_expr(expr: str, *, evaluate: bool):

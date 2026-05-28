@@ -12,6 +12,7 @@ v0.1.6 reliability hardening:
 from __future__ import annotations
 
 import contextlib
+import os
 import sqlite3
 import threading
 import time
@@ -301,6 +302,14 @@ class WorldModel:
     def __init__(self, path: Path = DEFAULT_DB):
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True)
+        # world.db holds all conversation content, messages, and facts.
+        # The audit dir is locked to 0700/0600 but this DB inherited the
+        # default umask (often world-readable 0644) — any local user or
+        # backup could read everyone's data. Lock the dir + the file.
+        try:
+            os.chmod(path.parent, 0o700)
+        except OSError:
+            pass
         # check_same_thread=False so FastAPI threadpool can share. Combined
         # with WAL + busy_timeout this is safe for the agent+dashboard
         # concurrency pattern (one writer process + many readers).
@@ -317,6 +326,10 @@ class WorldModel:
         self._write_lock = threading.RLock()
         self._write_depth = 0
         self.conn = sqlite3.connect(path, check_same_thread=False, timeout=10.0)
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
         self.conn.row_factory = sqlite3.Row
         # WAL must be set before any other operation that creates pages.
         # synchronous=NORMAL under WAL is safe + much faster than FULL.

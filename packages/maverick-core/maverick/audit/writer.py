@@ -32,11 +32,9 @@ def _resolve_signing(explicit: Optional[bool]) -> bool:
     """
     if explicit is not None:
         return bool(explicit)
-    env = os.environ.get("MAVERICK_AUDIT_SIGN", "").strip().lower()
-    if env in ("1", "true", "yes", "on"):
-        return True
-    if env in ("0", "false", "no", "off"):
-        return False
+    if "MAVERICK_AUDIT_SIGN" in os.environ:
+        from .._envparse import env_bool
+        return env_bool("MAVERICK_AUDIT_SIGN", False)
     try:
         from ..config import load_config
         return bool(((load_config() or {}).get("audit") or {}).get("sign", False))

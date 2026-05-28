@@ -91,6 +91,11 @@ class ToolRegistry:
                     result = await result
                 return result
             except Exception as e:
+                # Tool errors (incl. an injected tool_dispatch chaos failure)
+                # are surfaced as a tool-result string so the agent can react
+                # — this mirrors how real tool exceptions behave. The chaos
+                # gap the council flagged is on the LLM path, fixed by wiring
+                # maybe_fail("llm_call") into complete_async (not here).
                 return f"ERROR: {type(e).__name__}: {e}"
 
 

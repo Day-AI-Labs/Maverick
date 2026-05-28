@@ -13,7 +13,7 @@ import pytest
 # ---------- TGI provider ----------
 
 class _FakeOpenAIClient:
-    def __init__(self, api_key=None, base_url=None):
+    def __init__(self, api_key=None, base_url=None, timeout=None):
         self.api_key = api_key
         self.base_url = base_url
 

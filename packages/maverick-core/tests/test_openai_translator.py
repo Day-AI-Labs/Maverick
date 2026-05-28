@@ -196,7 +196,7 @@ class TestProviderApiKeyIsolation:
         captures = []
 
         class FakeClient:
-            def __init__(self, api_key=None, base_url=None):
+            def __init__(self, api_key=None, base_url=None, timeout=None):
                 captures.append((api_key, base_url))
 
         class FakeModule:
@@ -217,7 +217,7 @@ class TestProviderApiKeyIsolation:
         captures = []
 
         class FakeClient:
-            def __init__(self, api_key=None, base_url=None):
+            def __init__(self, api_key=None, base_url=None, timeout=None):
                 captures.append((api_key, base_url))
 
         class FakeModule:

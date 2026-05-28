@@ -78,11 +78,18 @@ crossing those needs explicit consent or shield approval.
 
 ### Repudiation
 
+> **Tamper-evidence is opt-in.** The audit log is plain NDJSON by default;
+> the rows below are only *tamper-evident* with `[audit] sign = true`
+> (Ed25519 hash-chain). Even then, third-party attribution requires
+> verifying with an **externally-held** pubkey — a key co-located with the
+> log only detects accidental/non-privileged edits. Run `maverick audit
+> verify --pubkey <hex>` to check the chain.
+
 | Threat                                                        | Mitigation                                                  |
 |--------------------------------------------------------------|--------------------------------------------------------------|
-| User claims they didn't approve a destructive action           | Audit log records every consent prompt + decision + source.  |
+| User claims they didn't approve a destructive action           | Audit log records every consent prompt + decision + source (tamper-evident only when signing is on). |
 | User claims they didn't spend $X on a run                    | Episode records `cost_dollars` + `(in,out)` tokens per call. |
-| Agent took an action no one can attribute                    | Every tool call audit-logged with agent id + goal id.        |
+| Agent took an action no one can attribute                    | Every tool call audit-logged with agent id + goal id (tamper-evident only when signing is on). |
 
 ### Information disclosure
 

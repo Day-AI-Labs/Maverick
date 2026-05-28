@@ -178,8 +178,13 @@ class AnthropicClient:
         # operator sees "API outage" instead of the real "key has
         # whitespace" issue.
         key = (api_key or os.environ.get("ANTHROPIC_API_KEY") or "").strip() or None
-        self.client = anthropic.Anthropic(api_key=key)
-        self.aclient = anthropic.AsyncAnthropic(api_key=key)
+        from .base import llm_http_timeout
+        kw: dict = {"api_key": key}
+        timeout = llm_http_timeout()
+        if timeout is not None:
+            kw["timeout"] = timeout
+        self.client = anthropic.Anthropic(**kw)
+        self.aclient = anthropic.AsyncAnthropic(**kw)
 
     def _build_request(
         self,

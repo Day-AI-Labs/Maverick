@@ -36,6 +36,13 @@ def _default_use_skills() -> bool:
     return os.environ.get("MAVERICK_USE_SKILLS", "1").lower() not in ("0", "false", "no")
 
 
+def _default_max_total_spawns() -> int:
+    try:
+        return max(1, int(os.environ.get("MAVERICK_MAX_TOTAL_SPAWNS", "64")))
+    except ValueError:
+        return 64
+
+
 @dataclass
 class SwarmContext:
     llm: LLM
@@ -50,3 +57,19 @@ class SwarmContext:
     mcp_clients: list = field(default_factory=list)
     channel: Optional[str] = None
     user_id: Optional[str] = None
+    max_total_spawns: int = field(default_factory=_default_max_total_spawns)
+    _spawns_used: int = 0
+
+    def try_reserve_spawns(self, n: int) -> bool:
+        """Reserve ``n`` child-agent slots for this goal.
+
+        ``max_depth`` + per-call fan-out alone allow an exponential herd
+        (8 + 64 + 512 + ... agents) that a hijacked/confused orchestrator
+        can use to burn the whole budget on attacker work before refusal.
+        This bounds the TOTAL agents a single goal may create. Synchronous
+        (no await between check and bump), so atomic on the event loop.
+        """
+        if self._spawns_used + max(0, n) > self.max_total_spawns:
+            return False
+        self._spawns_used += max(0, n)
+        return True

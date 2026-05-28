@@ -16,9 +16,10 @@ from typing import Optional
 # Names matching this pattern are stripped from the child shell's env.
 # Catches STRIPE_API_KEY, PLAID_SECRET, CLOUDFLARE_API_TOKEN,
 # AWS_SECRET_ACCESS_KEY / AWS_ACCESS_KEY_ID / AWS_SESSION_TOKEN,
-# *_PASSWORD, *_CREDENTIAL, etc.
+# *_PASSWORD, *_CREDENTIAL, plus connection strings that embed creds
+# (DATABASE_URL, SENTRY_DSN, MONGO_URI, REDIS_URL, *_OAUTH, *_BEARER).
 _SECRET_ENV_RE = re.compile(
-    r"(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|APIKEY)",
+    r"(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|APIKEY|DSN|URI|URL|CONN|OAUTH|BEARER)",
     re.IGNORECASE,
 )
 # Stripped explicitly even though the pattern already covers them — kept

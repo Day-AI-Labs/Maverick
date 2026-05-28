@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from ..budget import Budget
 from ..llm import LLMResponse, ToolCall
@@ -76,8 +76,13 @@ class OpenAIClient:
         key = api_key
         if key is None and allow_openai_env_fallback:
             key = os.environ.get("OPENAI_API_KEY")
-        self._sync = OpenAI(api_key=key, base_url=base_url)
-        self._async = AsyncOpenAI(api_key=key, base_url=base_url)
+        from .base import llm_http_timeout
+        kw: dict = {"api_key": key, "base_url": base_url}
+        timeout = llm_http_timeout()
+        if timeout is not None:
+            kw["timeout"] = timeout
+        self._sync = OpenAI(**kw)
+        self._async = AsyncOpenAI(**kw)
 
     @staticmethod
     def _wants_max_completion(model: str) -> bool:
@@ -255,7 +260,10 @@ class OpenAIClient:
         max_tokens: int = 4096,
         thinking_budget: Optional[int] = None,
         model: Optional[str] = None,
+        on_delta: Optional[Callable[[str], None]] = None,
     ) -> LLMResponse:
+        # on_delta accepted for Provider-protocol parity; this client doesn't
+        # stream token deltas (the Anthropic client does). Ignored, not error.
         if thinking_budget:
             log.debug("OpenAI provider ignores thinking_budget=%s", thinking_budget)
         kwargs = self._build_kwargs(system, messages, tools, max_tokens, model)

@@ -271,14 +271,31 @@ class LLM:
         provider, model_id = _parse_spec(model or self.model)
         client = self._get_client(provider)
         import time as _time
+        # complete_async is the PRIMARY agent-loop path; the sync complete()
+        # had the chaos hook + trace span but this one didn't, so chaos
+        # injection and OTLP LLM spans never fired on the live path.
+        try:
+            from .chaos import maybe_fail
+            maybe_fail("llm_call", message=f"chaos: llm_call provider={provider}")
+        except ImportError:
+            pass
+        try:
+            from .observability import trace_span as _trace_span
+        except ImportError:  # pragma: no cover
+            import contextlib
+            def _trace_span(*a, **kw):  # type: ignore
+                return contextlib.nullcontext()
         _t0 = _time.time()
         _d0 = budget.dollars if budget else 0.0
         _err = False
         try:
-            return await client.complete_async(
-                system=system, messages=messages, tools=tools, budget=budget,
-                max_tokens=max_tokens, thinking_budget=thinking_budget, model=model_id,
-            )
+            with _trace_span("llm.complete", attributes={
+                "llm.provider": provider, "llm.model": model_id,
+            }):
+                return await client.complete_async(
+                    system=system, messages=messages, tools=tools, budget=budget,
+                    max_tokens=max_tokens, thinking_budget=thinking_budget, model=model_id,
+                )
         except Exception:
             _err = True
             raise

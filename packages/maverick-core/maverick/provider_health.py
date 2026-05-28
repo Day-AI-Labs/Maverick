@@ -16,7 +16,7 @@ from __future__ import annotations
 import statistics
 import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -76,7 +76,10 @@ class ProviderHealth:
     _MAX_KEYS = 512
 
     def __init__(self) -> None:
-        self._stats: dict[tuple[str, str], ProviderStat] = {}
+        # OrderedDict for O(1) LRU eviction (move_to_end on use,
+        # popitem(last=False) to drop the least-recently-used key) instead
+        # of an O(N) min()-scan under the lock on every cold-key insert.
+        self._stats: "OrderedDict[tuple[str, str], ProviderStat]" = OrderedDict()
         self._lock = threading.Lock()
 
     def _key(self, provider: str, model: str) -> tuple[str, str]:
@@ -98,12 +101,11 @@ class ProviderHealth:
             st = self._stats.get(k)
             if st is None:
                 if len(self._stats) >= self._MAX_KEYS:
-                    oldest = min(
-                        self._stats, key=lambda kk: self._stats[kk].last_seen,
-                    )
-                    self._stats.pop(oldest, None)
+                    self._stats.popitem(last=False)  # evict least-recently-used
                 st = ProviderStat(provider=k[0], model=k[1])
                 self._stats[k] = st
+            else:
+                self._stats.move_to_end(k)  # mark recently used
             st.calls += 1
             if error:
                 st.errors += 1

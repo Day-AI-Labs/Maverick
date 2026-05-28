@@ -34,6 +34,10 @@ def spawn_subagent_tool(parent: "Agent") -> Tool:
 
         if parent.depth + 1 > parent.ctx.max_depth:
             return f"ERROR: max depth {parent.ctx.max_depth} reached"
+        if not parent.ctx.try_reserve_spawns(1):
+            return (
+                f"ERROR: per-goal spawn cap ({parent.ctx.max_total_spawns}) reached"
+            )
 
         # May 26 council fix (agent-loop audit #3): inherit max_steps
         # from the parent. Without this, sub-agents fall back to env
@@ -95,6 +99,11 @@ def spawn_swarm_tool(parent: "Agent") -> Tool:
                 f"max {MAX_SWARM_FANOUT}",
             )
             agents_spec = agents_spec[:MAX_SWARM_FANOUT]
+
+        if not parent.ctx.try_reserve_spawns(len(agents_spec)):
+            return (
+                f"ERROR: per-goal spawn cap ({parent.ctx.max_total_spawns}) reached"
+            )
 
         children = [
             Agent(

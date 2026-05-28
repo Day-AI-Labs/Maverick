@@ -29,7 +29,7 @@ import logging
 import smtplib
 from email.message import EmailMessage
 
-from .base import Channel, IncomingMessage
+from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
 
 log = logging.getLogger(__name__)
 
@@ -51,8 +51,16 @@ class EmailChannel(Channel):
         smtp_password: str,
         smtp_port: int = 465,
         poll_interval: int = 30,
+        allowed_user_ids=None,
     ):
         super().__init__(handler)
+        # Without an allowlist, ANY inbound sender could drive the agent.
+        # Addresses compared case-insensitively. Require one.
+        self.allowed_user_ids = {
+            a.lower() for a in normalize_allowlist(allowed_user_ids, "EMAIL_ALLOWED_USER_IDS")
+        }
+        if not self.allowed_user_ids:
+            raise ValueError("Set EMAIL_ALLOWED_USER_IDS to restrict access")
         self.imap_host = imap_host
         self.imap_user = imap_user
         self.imap_password = imap_password
@@ -78,6 +86,9 @@ class EmailChannel(Channel):
                 log.exception("email poll failed")
                 messages = []
             for from_addr, subject, body in messages:
+                if not is_allowed((from_addr or "").lower(), self.allowed_user_ids):
+                    log.warning("unauthorized email access: from=%s", from_addr)
+                    continue
                 text = f"Subject: {subject}\n\n{body}" if subject else body
                 msg = IncomingMessage(
                     user_id=from_addr, text=text, channel="email",

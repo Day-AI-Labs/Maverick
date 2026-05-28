@@ -137,21 +137,31 @@ class AuditSigner:
         self._last_hash = self._resume_last_hash()
 
     def _resume_last_hash(self) -> str:
-        """If the file has prior entries, find the latest hash to chain on."""
+        """If the file has prior entries, find the latest hash to chain on.
+
+        A torn final line (crash mid-write, no trailing newline) must NOT
+        silently reset the chain to genesis (prev_hash=""), which would let
+        an attacker truncate-and-reappend a self-consistent sub-chain that
+        verifies clean. If the last non-empty line is unparseable, raise so
+        the caller surfaces it instead of starting a fresh chain.
+        """
         if not self._path.exists() or self._path.stat().st_size == 0:
             return ""
-        try:
-            with open(self._path, "rb") as f:
-                last_line = b""
-                for line in f:
-                    if line.strip():
-                        last_line = line
-            if not last_line:
-                return ""
-            data = json.loads(last_line)
-            return str(data.get("hash") or "")
-        except (OSError, json.JSONDecodeError):
+        with open(self._path, "rb") as f:
+            last_line = b""
+            for line in f:
+                if line.strip():
+                    last_line = line
+        if not last_line:
             return ""
+        try:
+            data = json.loads(last_line)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"audit chain resume: last line of {self._path} is unparseable "
+                "(torn write?); refusing to silently restart the chain"
+            ) from e
+        return str(data.get("hash") or "")
 
     def write(self, event: dict) -> bool:
         """Append a signed + chained event row. Returns True on success."""
@@ -169,10 +179,19 @@ class AuditSigner:
                 self._path.parent.mkdir(parents=True, exist_ok=True)
                 with open(self._path, "a", encoding="utf-8") as f:
                     f.write(line)
+                    # fsync so a power loss can't lose committed audit rows
+                    # (or leave a torn line that breaks chain resume). The
+                    # audit log is the trust anchor; durability matters more
+                    # than the small write cost here.
+                    f.flush()
+                    os.fsync(f.fileno())
                 try:
                     os.chmod(self._path, 0o600)
                 except OSError:
                     pass
+                # Only advance the in-memory chain head AFTER the row is
+                # durably on disk; otherwise a crash between write and this
+                # line would chain the next row on a hash that isn't there.
                 self._last_hash = row_hash
                 return True
             except OSError as e:

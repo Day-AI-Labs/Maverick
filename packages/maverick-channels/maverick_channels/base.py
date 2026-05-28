@@ -11,6 +11,28 @@ from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
 
+def normalize_allowlist(values, env_name: str) -> set:
+    """Build an access allowlist from an explicit arg or a comma-separated
+    env var (e.g. ``DISCORD_ALLOWED_USER_IDS``). Shared so every channel
+    enforces access the same way instead of each rolling its own."""
+    if values is not None:
+        return {str(v).strip() for v in values if str(v).strip()}
+    raw = os.environ.get(env_name, "")
+    return {item.strip() for item in raw.split(",") if item.strip()}
+
+
+def is_allowed(user_id, allowlist) -> bool:
+    """True only if ``user_id`` is an explicit allowlist member. A missing
+    id or the ``"anonymous"`` fallback NEVER passes — treat unknown as deny
+    so a channel that can't identify the sender can't be driven by anyone."""
+    if not allowlist:
+        return False
+    uid = str(user_id or "").strip()
+    if not uid or uid == "anonymous":
+        return False
+    return uid in allowlist
+
+
 def _max_inbound_chars() -> int:
     """Cap on inbound text fed to the swarm. A single oversized inbound
     message (a 200KB email, an attacker-crafted mention) would otherwise

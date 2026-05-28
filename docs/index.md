@@ -14,10 +14,11 @@ hosted platforms gate behind subscriptions.
   orchestration with shared world model, budgets, and audit log.
 - **Use your existing chat subscriptions**: ChatGPT Plus, Claude Pro,
   Kimi, X Premium, Gemini Advanced — drive them from the agent via
-  captured browser sessions, no extra API spend. Note: session
-  providers are **chat-only** — they can't make tool calls, so use them
-  for plain chat/summarizer roles. Tool-using roles (orchestrator,
-  coder, researcher) need an API-key provider.
+  captured browser sessions, no extra API spend. Note: session providers
+  have no native function-calling, so Maverick gives them tools through a
+  **simulated** markdown tool-call protocol — it works for tool-using
+  roles, but reliability is model-dependent and weaker than an API-key
+  provider's native tool use.
 - **Computer use & web browser**: Anthropic-spec computer-use tool +
   Playwright-driven browser tool, with kill switches and an audit
   trail for every action.

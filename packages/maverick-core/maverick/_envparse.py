@@ -34,3 +34,23 @@ def env_float(name: str, default: float) -> float:
             "%s=%r is not a float; using default %s", name, raw, default,
         )
         return default
+
+
+_TRUE = frozenset({"1", "true", "yes", "on"})
+_FALSE = frozenset({"0", "false", "no", "off", ""})
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    """Read a boolean env var. Recognizes 1/true/yes/on and 0/false/no/off
+    (case-insensitive). Anything unrecognized falls back to ``default``.
+    One canonical truthy-set so call sites stop disagreeing (some omitted
+    ``on``)."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    v = raw.strip().lower()
+    if v in _TRUE:
+        return True
+    if v in _FALSE:
+        return False
+    return default
