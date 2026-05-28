@@ -124,6 +124,10 @@ async def create_goal(payload: GoalIn, bg: BackgroundTasks) -> GoalOut:
                 "GEMINI_API_KEY before starting the dashboard."
             ),
         )
+    # Shared sliding-window cap across /chat/send + this route, so a
+    # runaway loop can't spawn unbounded (paid) goals.
+    from maverick_dashboard.app import check_goal_rate_limit
+    check_goal_rate_limit()
     title = payload.title
     description = payload.description
     if payload.template:

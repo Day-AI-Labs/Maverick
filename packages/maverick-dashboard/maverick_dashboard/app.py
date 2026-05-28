@@ -10,6 +10,9 @@ import argparse
 import hmac
 import logging
 import os
+import threading
+import time
+from collections import deque
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -190,7 +193,9 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
             {"path": request.url.path},
             status_code=404,
         )
-    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+    return JSONResponse(
+        {"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers,
+    )
 
 
 @app.exception_handler(RequestValidationError)
@@ -273,6 +278,45 @@ def _any_provider_key_set() -> bool:
     ANTHROPIC_API_KEY even when the user had OpenAI or Gemini set up.
     """
     return any(os.environ.get(v) for v in _PROVIDER_ENV_VARS)
+
+
+# ----- goal-creation rate limit -----
+# Council safety-seat (round 1): nothing throttled /chat/send or
+# POST /api/v1/goals. A runaway loop or a flood of same-origin posts
+# could spawn unbounded goals, each costing real money. This is an
+# in-process sliding-window limiter (no new dependency) shared by both
+# goal-creating routes. Cap is generous and configurable.
+_goal_times: "deque[float]" = deque()
+_goal_rl_lock = threading.Lock()
+
+
+def _max_goals_per_min() -> int:
+    try:
+        return max(1, int(os.environ.get("MAVERICK_DASHBOARD_MAX_GOALS_PER_MIN", "30")))
+    except ValueError:
+        return 30
+
+
+def check_goal_rate_limit() -> None:
+    """Raise HTTPException(429) if the goal-creation rate exceeds the cap.
+
+    60-second sliding window. Shared by /chat/send and /api/v1/goals so
+    the limit is global to the dashboard process, not per-route.
+    """
+    cap = _max_goals_per_min()
+    now = time.monotonic()
+    with _goal_rl_lock:
+        cutoff = now - 60.0
+        while _goal_times and _goal_times[0] < cutoff:
+            _goal_times.popleft()
+        if len(_goal_times) >= cap:
+            retry = int(60 - (now - _goal_times[0])) + 1
+            raise HTTPException(
+                status_code=429,
+                detail=f"goal rate limit reached ({cap}/min). Try again in {retry}s.",
+                headers={"Retry-After": str(max(1, retry))},
+            )
+        _goal_times.append(now)
 
 
 _world_cache: dict[str, Any] = {}
@@ -601,8 +645,12 @@ async def chat_send(
                 "the dashboard."
             ),
         )
+    check_goal_rate_limit()
+    title = (title or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="goal text is required")
     w = _world()
-    goal_id = w.create_goal(title.strip()[:200], title.strip())
+    goal_id = w.create_goal(title[:200], title[:8000])
     # Use the shared runner so this path gets the same concurrency cap,
     # budget defaults, and error handling as the REST API and MCP server.
     from maverick.runner import run_goal_in_thread
