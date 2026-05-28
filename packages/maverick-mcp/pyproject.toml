@@ -8,14 +8,14 @@ version = "0.1.1"
 description = "Model Context Protocol server for Maverick (exposes the swarm to MCP clients)"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "texasreaper62" }]
+authors = [{ name = "cdayAI" }]
 readme = "README.md"
 dependencies = [
     "maverick-agent>=0.1",
 ]
 
 [project.urls]
-Homepage = "https://github.com/texasreaper62/maverick"
+Homepage = "https://github.com/cdayAI/maverick"
 
 [project.scripts]
 maverick-mcp = "maverick_mcp.server:main"

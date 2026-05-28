@@ -20,7 +20,7 @@ from . import Tool
 log = logging.getLogger(__name__)
 
 
-_USER_AGENT = "Maverick/0.1 (https://github.com/texasreaper62/maverick)"
+_USER_AGENT = "Maverick/0.1 (https://github.com/cdayAI/maverick)"
 
 _SCHEMA: dict[str, Any] = {
     "type": "object",

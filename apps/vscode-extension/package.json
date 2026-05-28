@@ -3,15 +3,15 @@
   "displayName": "Maverick Agent",
   "description": "Sidebar view + commands for Maverick from inside VS Code.",
   "version": "0.1.0",
-  "publisher": "texasreaper62",
+  "publisher": "cdayAI",
   "license": "MIT",
-  "homepage": "https://github.com/texasreaper62/Maverick",
+  "homepage": "https://github.com/cdayAI/Maverick",
   "bugs": {
-    "url": "https://github.com/texasreaper62/Maverick/issues"
+    "url": "https://github.com/cdayAI/Maverick/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/texasreaper62/Maverick.git",
+    "url": "https://github.com/cdayAI/Maverick.git",
     "directory": "apps/vscode-extension"
   },
   "categories": ["AI", "Programming Languages", "Other"],

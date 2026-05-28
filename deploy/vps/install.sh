@@ -2,7 +2,7 @@
 # Maverick VPS bootstrap script.
 #
 # Usage:
-#   curl -sSL https://raw.githubusercontent.com/texasreaper62/maverick/main/deploy/vps/install.sh | sudo bash
+#   curl -sSL https://raw.githubusercontent.com/cdayAI/Maverick/main/deploy/vps/install.sh | sudo bash
 #
 # Or pin to a specific tag:
 #   curl -sSL ...install.sh | sudo MAVERICK_VERSION=v0.1.0 bash
@@ -42,8 +42,8 @@ install_maverick() {
   log "Installing maverick @ ${MAVERICK_VERSION}..."
   if [[ ! -d /opt/maverick ]]; then
     git clone --branch "${MAVERICK_VERSION}" --depth 1 \
-        https://github.com/texasreaper62/maverick /opt/maverick \
-      || git clone https://github.com/texasreaper62/maverick /opt/maverick
+        https://github.com/cdayAI/maverick /opt/maverick \
+      || git clone https://github.com/cdayAI/maverick /opt/maverick
   else
     git -C /opt/maverick fetch --depth 1 origin "${MAVERICK_VERSION}" 2>/dev/null || true
     git -C /opt/maverick checkout "${MAVERICK_VERSION}" 2>/dev/null \

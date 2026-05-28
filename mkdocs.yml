@@ -1,8 +1,8 @@
 site_name: Maverick
 site_description: Open-source recursive multi-agent swarm. Drives Claude / GPT / Kimi / Grok / Gemini / Ollama from one kernel.
-site_url: https://texasreaper62.github.io/Maverick/
-repo_url: https://github.com/texasreaper62/Maverick
-repo_name: texasreaper62/Maverick
+site_url: https://cdayai.github.io/Maverick/
+repo_url: https://github.com/cdayAI/Maverick
+repo_name: cdayAI/Maverick
 edit_uri: edit/main/docs/
 copyright: MIT-licensed. Built for everyone, not just the technical few.
 
@@ -98,7 +98,7 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/texasreaper62/Maverick
+      link: https://github.com/cdayAI/Maverick
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/maverick-agent/
   generator: false

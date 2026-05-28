@@ -12,7 +12,7 @@ version = "0.1.1"
 description = "Recursive multi-agent swarm for long-horizon work"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "texasreaper62" }]
+authors = [{ name = "cdayAI" }]
 readme = "README.md"
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -93,11 +93,11 @@ all        = [
 maverick = "maverick.cli:main"
 
 [project.urls]
-Homepage      = "https://github.com/texasreaper62/maverick"
-Repository    = "https://github.com/texasreaper62/maverick"
-Issues        = "https://github.com/texasreaper62/maverick/issues"
-Changelog     = "https://github.com/texasreaper62/maverick/blob/main/CHANGELOG.md"
-Documentation = "https://github.com/texasreaper62/maverick/tree/main/docs"
+Homepage      = "https://github.com/cdayAI/maverick"
+Repository    = "https://github.com/cdayAI/maverick"
+Issues        = "https://github.com/cdayAI/maverick/issues"
+Changelog     = "https://github.com/cdayAI/maverick/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/cdayAI/maverick/tree/main/docs"
 
 [tool.setuptools.packages.find]
 where = ["."]

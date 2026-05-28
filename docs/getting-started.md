@@ -2,6 +2,23 @@
 
 ## Install
 
+The fastest path needs nothing installed first — the script pulls in
+Python + git if they're missing, then runs the wizard.
+
+**Windows** (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/cdayAI/Maverick/main/deploy/desktop/install.ps1 | iex
+```
+
+**macOS / Linux**:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cdayAI/Maverick/main/deploy/desktop/install.sh | bash
+```
+
+If you already have Python 3.10+, you can use pipx instead:
+
 ```bash
 pipx install 'maverick-agent[installer]'
 ```
@@ -13,7 +30,7 @@ pipx environment as the kernel so `maverick init` resolves.
 From source while iterating:
 
 ```bash
-git clone https://github.com/texasreaper62/maverick
+git clone https://github.com/cdayAI/maverick
 cd maverick
 pip install -e ./packages/maverick-core
 pip install -e ./apps/installer-cli

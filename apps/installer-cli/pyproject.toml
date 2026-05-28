@@ -8,7 +8,7 @@ version = "0.1.1"
 description = "Interactive setup wizard for Maverick"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "texasreaper62" }]
+authors = [{ name = "cdayAI" }]
 readme = "README.md"
 dependencies = [
     "maverick-agent>=0.1",
@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/texasreaper62/maverick"
+Homepage = "https://github.com/cdayAI/maverick"
 
 [project.scripts]
 maverick-init = "maverick_installer.main:main"

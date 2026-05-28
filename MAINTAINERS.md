@@ -2,12 +2,12 @@
 
 | Name | Github | Areas |
 |------|--------|-------|
-| texasreaper62 | [@texasreaper62](https://github.com/texasreaper62) | All packages (BDFL) |
+| cdayAI | [@cdayAI](https://github.com/cdayAI) | All packages (BDFL) |
 
 ## How to reach us
 
 - **Conduct / community issues**: open a private security advisory at
-  https://github.com/texasreaper62/Maverick/security/advisories/new
+  https://github.com/cdayAI/Maverick/security/advisories/new
   with `[CONDUCT]` in the title.
 - **Security vulnerabilities**: see [SECURITY.md](SECURITY.md).
 - **General questions**: GitHub Discussions (when enabled), or open a
@@ -33,6 +33,6 @@ review from each.
 ## Decision process
 
 Until the project has a second maintainer, decisions follow BDFL
-("Benevolent Dictator For Life") — texasreaper62 has final call. We
+("Benevolent Dictator For Life") — cdayAI has final call. We
 expect that to change as the maintainer team grows; at 3+ maintainers
 we'll adopt a lightweight RFC process documented in `docs/rfcs/README.md`.

@@ -3,9 +3,9 @@ name = "maverick-installer-desktop"
 version = "0.1.0"
 edition = "2021"
 description = "Tauri GUI installer for Maverick"
-authors = ["texasreaper62"]
+authors = ["cdayAI"]
 license = "MIT"
-repository = "https://github.com/texasreaper62/maverick"
+repository = "https://github.com/cdayAI/maverick"
 
 [lib]
 name = "maverick_installer_desktop_lib"

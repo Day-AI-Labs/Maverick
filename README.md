@@ -1,6 +1,6 @@
 # Maverick
 
-[![CI](https://github.com/texasreaper62/maverick/actions/workflows/ci.yml/badge.svg)](https://github.com/texasreaper62/maverick/actions/workflows/ci.yml)
+[![CI](https://github.com/cdayAI/maverick/actions/workflows/ci.yml/badge.svg)](https://github.com/cdayAI/maverick/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org)
 
@@ -21,7 +21,7 @@ Early alpha. See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the technical map an
 
 | Component | v0.1 (today) | Planned (v0.2+) |
 |---|---|---|
-| Install | `pipx install 'maverick-agent[installer]'` or from source | One-click Tauri DMG / MSIX / AppImage (signed) |
+| Install | One-line bootstrap (`install.ps1` / `install.sh`), pipx, or from source | One-click Tauri DMG / MSIX / AppImage (signed) |
 | GUI | Local web dashboard (`maverick dashboard`) + chat at `/chat` | Native Tauri shell + native iOS/Android |
 | Sandbox | Local subprocess, Docker, SSH, Podman, devcontainer | Firecracker, Modal, Daytona |
 | AI providers | Anthropic (full), OpenAI, OpenRouter, Ollama, Gemini, DeepSeek (per-role routable) | Bedrock, Cohere |
@@ -31,6 +31,26 @@ Early alpha. See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the technical map an
 | Tests | 1000+ tests, ruff + pytest on Py 3.10/3.11/3.12 | Integration suite + benchmark RESULTS.md |
 
 ## Install
+
+### One-line install (recommended)
+
+No Python required — the script installs everything it needs and launches the wizard.
+
+**Windows** (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/cdayAI/Maverick/main/deploy/desktop/install.ps1 | iex
+```
+
+**macOS / Linux**:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cdayAI/Maverick/main/deploy/desktop/install.sh | bash
+```
+
+The script installs Python + git if they're missing, sets up an isolated environment, and runs `maverick init`. Override the source with `MAVERICK_REPO` / `MAVERICK_REF` (`$env:MAVERICK_REF` on Windows).
+
+### With pipx (if you already have Python 3.10+)
 
 ```bash
 pipx install 'maverick-agent[installer]'
@@ -48,7 +68,7 @@ pipx inject maverick-agent maverick-installer
 ### From source
 
 ```bash
-git clone https://github.com/texasreaper62/maverick
+git clone https://github.com/cdayAI/maverick
 cd maverick
 pip install -e ./packages/maverick-core
 pip install -e ./apps/installer-cli

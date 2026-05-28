@@ -1,6 +1,27 @@
 # Desktop deployment
 
-For v0.1, install via pipx:
+## One-line install (recommended)
+
+No Python required up front — the script installs Python + git if
+they're missing, sets up an isolated environment, and launches the
+setup wizard.
+
+**Windows** (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/cdayAI/Maverick/main/deploy/desktop/install.ps1 | iex
+```
+
+**macOS / Linux**:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cdayAI/Maverick/main/deploy/desktop/install.sh | bash
+```
+
+Pin a branch/tag or fork with `MAVERICK_REPO` / `MAVERICK_REF`
+(`$env:MAVERICK_REF` on Windows) before running.
+
+## With pipx (if you already have Python 3.10+)
 
 ```bash
 pipx install 'maverick-agent[installer]'

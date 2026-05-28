@@ -15,7 +15,7 @@ top-level `v` field.
 {
   "v": 1,
   "generated_at": "2026-04-01T12:00:00Z",
-  "source_repo": "https://github.com/texasreaper62/awesome-maverick-skills",
+  "source_repo": "https://github.com/cdayAI/awesome-maverick-skills",
   "skills": [
     {
       "name": "pr-review",
