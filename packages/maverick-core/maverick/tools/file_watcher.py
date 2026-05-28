@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from . import Tool
+from .fs import _safe_resolve
 
 log = logging.getLogger(__name__)
 
@@ -74,11 +75,14 @@ def _walk_files(root: Path, *, include_hidden: bool):
             yield Path(dirpath) / name
 
 
-def _run(args: dict[str, Any]) -> str:
+def _run(sandbox, args: dict[str, Any]) -> str:
     raw_path = (args.get("path") or "").strip()
     if not raw_path:
         return "ERROR: path is required"
-    root = Path(raw_path).expanduser()
+    try:
+        root = _safe_resolve(sandbox, raw_path)
+    except ValueError as e:
+        return f"ERROR: {e}"
     if not root.exists():
         return f"ERROR: path does not exist: {root}"
     if not root.is_dir():
@@ -140,7 +144,7 @@ def _run(args: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def file_watcher() -> Tool:
+def file_watcher(sandbox) -> Tool:
     return Tool(
         name="file_watcher",
         description=(
@@ -151,5 +155,5 @@ def file_watcher() -> Tool:
             "venv etc. Optional 'pattern' glob (e.g. '*.py')."
         ),
         input_schema=_SCHEMA,
-        fn=_run,
+        fn=lambda args: _run(sandbox, args),
     )

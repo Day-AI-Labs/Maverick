@@ -6,15 +6,20 @@ import time
 from pathlib import Path
 
 
-def test_file_watcher_requires_path():
+def _sandbox(tmp_path: Path):
+    class _Sandbox:
+        workdir = tmp_path
+    return _Sandbox()
+
+def test_file_watcher_requires_path(tmp_path: Path):
     from maverick.tools.file_watcher import file_watcher
-    out = file_watcher().fn({})
+    out = file_watcher(_sandbox(tmp_path)).fn({})
     assert "ERROR" in out and "path" in out
 
 
 def test_file_watcher_path_missing(tmp_path: Path):
     from maverick.tools.file_watcher import file_watcher
-    out = file_watcher().fn({"path": str(tmp_path / "nope")})
+    out = file_watcher(_sandbox(tmp_path)).fn({"path": str(tmp_path / "nope")})
     assert "ERROR" in out
 
 
@@ -22,7 +27,7 @@ def test_file_watcher_baseline_then_diff(tmp_path: Path):
     from maverick.tools.file_watcher import file_watcher
     (tmp_path / "a.txt").write_text("a")
     (tmp_path / "b.txt").write_text("b")
-    tool = file_watcher()
+    tool = file_watcher(_sandbox(tmp_path))
 
     baseline_out = tool.fn({"path": str(tmp_path)})
     assert "baseline" in baseline_out
@@ -54,7 +59,7 @@ def test_file_watcher_pattern(tmp_path: Path):
     os.utime(tmp_path / "keep.py", (future, future))
     os.utime(tmp_path / "skip.txt", (future, future))
 
-    tool = file_watcher()
+    tool = file_watcher(_sandbox(tmp_path))
     out = tool.fn({"path": str(tmp_path), "since": 0, "pattern": "*.py"})
     assert "keep.py" in out
     assert "skip.txt" not in out
@@ -73,7 +78,7 @@ def test_file_watcher_skips_noise_dirs(tmp_path: Path):
         if p.is_file():
             os.utime(p, (future, future))
 
-    out = file_watcher().fn({"path": str(tmp_path), "since": 0})
+    out = file_watcher(_sandbox(tmp_path)).fn({"path": str(tmp_path), "since": 0})
     assert "real.py" in out
     assert "HEAD" not in out
     assert "junk.js" not in out
@@ -81,5 +86,16 @@ def test_file_watcher_skips_noise_dirs(tmp_path: Path):
 
 def test_file_watcher_bad_since_value(tmp_path: Path):
     from maverick.tools.file_watcher import file_watcher
-    out = file_watcher().fn({"path": str(tmp_path), "since": "yesterday"})
+    out = file_watcher(_sandbox(tmp_path)).fn({"path": str(tmp_path), "since": "yesterday"})
     assert "ERROR" in out and "since" in out
+
+
+def test_file_watcher_blocks_paths_outside_workspace(tmp_path: Path):
+    from maverick.tools.file_watcher import file_watcher
+
+    outside = tmp_path.parent / "outside-watch"
+    outside.mkdir(exist_ok=True)
+    (outside / "x.txt").write_text("x")
+
+    out = file_watcher(_sandbox(tmp_path)).fn({"path": str(outside), "since": 0})
+    assert "ERROR" in out and "escapes the workspace" in out
