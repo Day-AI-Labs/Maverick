@@ -59,6 +59,13 @@ except ModuleNotFoundError:  # Python 3.10
 
 `tomli` is already in the dependency graph via `maverick-agent`'s `tomli>=2.0; python_version<'3.11'` marker, so no extra install is needed. The `.github/workflows/ci.yml` `lint` job greps for bare `import tomllib` and fails the build — if you see that check fail, add the fallback.
 
+## PR titles
+
+The `lint-pr-title` CI check (`amannn/action-semantic-pull-request`) enforces Conventional Commits. It has failed twice on the same mistake. Two rules:
+
+1. **Use a type prefix**: `feat:`, `fix:`, `perf:`, `chore:`, `ci:`, `docs:`, `refactor:`, `test:`.
+2. **The subject after the prefix must start with a letter.** Not a digit (`feat: 2027 ...` fails), not a quote (`feat: "What ..." ...` fails), not a backtick. Lead with a word: `feat: add the 2027 ...`, `feat: add a permissions page ...`.
+
 ## Where things live
 
 ```

@@ -223,8 +223,8 @@ async def security_headers(request: Request, call_next):
     """Apply baseline browser-security headers to every response.
 
     These are cheap, well-supported, and close a class of attacks
-    (clickjacking, MIME sniffing, Referer leakage) the dashboard had
-    no defense against before.
+    (clickjacking, MIME sniffing, Referer leakage, cross-origin
+    exfiltration) the dashboard had no defense against before.
     """
     response = await call_next(request)
     response.headers.setdefault("X-Frame-Options", "DENY")
@@ -232,6 +232,29 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     response.headers.setdefault(
         "Cross-Origin-Opener-Policy", "same-origin",
+    )
+    # Content-Security-Policy. The templates use first-party inline
+    # <style>, <script>, and style="" attributes, so script/style-src
+    # need 'unsafe-inline' for now (a nonce-based tightening is tracked
+    # tech debt). The value still hardens the dashboard meaningfully:
+    #   - default/connect/script/style 'self' → injected JS can't fetch()
+    #     to an external exfil endpoint or pull a remote script
+    #   - frame-ancestors 'none' → reinforces X-Frame-Options (clickjack)
+    #   - form-action 'self' → an injected <form> can't POST off-origin
+    #   - object-src 'none', base-uri 'none' → kill plugin + <base> tricks
+    # This matters because the dashboard renders agent-produced text;
+    # if any of it ever reaches an HTML sink, CSP is the backstop.
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'none'; "
+        "form-action 'self'; "
+        "object-src 'none'",
     )
     return response
 
@@ -701,7 +724,11 @@ def _render_tree_html(node: dict) -> str:
     import html as _html
 
     def _esc(s) -> str:
-        return _html.escape(str(s)) if s is not None else ""
+        # quote=True so the value is safe in attribute context too — the
+        # status string is interpolated into class="badge {status}".
+        # Status is enum-bounded today, but a future writer shouldn't be
+        # one missing quote away from attribute-injection.
+        return _html.escape(str(s), quote=True) if s is not None else ""
 
     def _render(n: dict) -> str:
         dollars_html = (

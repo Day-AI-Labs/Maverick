@@ -41,13 +41,14 @@
 <h2>Trajectory · Goal #{{ goal.id }}: {{ goal.title }}</h2>
 
 <div class="panel">
-  <div class="controls">
-    <button id="rev-all">⇤</button>
-    <button id="step-back">←</button>
-    <input id="scrub" type="range" min="0" max="{{ events|length }}" value="{{ events|length }}" />
-    <button id="step-fwd">→</button>
-    <button id="rev-end">⇥</button>
-    <span id="counter" class="muted">{{ events|length }} / {{ events|length }} events</span>
+  <div class="controls" role="group" aria-label="Trajectory playback controls">
+    <button id="rev-all" type="button" aria-label="Jump to start" title="Jump to start">⇤</button>
+    <button id="step-back" type="button" aria-label="Step back" title="Step back">←</button>
+    <input id="scrub" type="range" min="0" max="{{ events|length }}" value="{{ events|length }}"
+           aria-label="Scrub through events" />
+    <button id="step-fwd" type="button" aria-label="Step forward" title="Step forward">→</button>
+    <button id="rev-end" type="button" aria-label="Jump to end" title="Jump to end">⇥</button>
+    <span id="counter" class="muted" aria-live="polite">{{ events|length }} / {{ events|length }} events</span>
   </div>
   <ul class="timeline" id="timeline">
     {% for ev in events %}
@@ -96,6 +97,17 @@
     document.getElementById("rev-end").onclick = () => {
       scrub.value = total; scrub.dispatchEvent(new Event("input"));
     };
+    // Keyboard: left/right arrow step, Home/End jump. Ignored when the
+    // user is typing in a field.
+    document.addEventListener("keydown", (e) => {
+      const tag = (e.target.tagName || "").toLowerCase();
+      if (tag === "input" && e.target.id !== "scrub") return;
+      if (tag === "textarea") return;
+      if (e.key === "ArrowLeft") { document.getElementById("step-back").click(); }
+      else if (e.key === "ArrowRight") { document.getElementById("step-fwd").click(); }
+      else if (e.key === "Home") { document.getElementById("rev-all").click(); }
+      else if (e.key === "End") { document.getElementById("rev-end").click(); }
+    });
   })();
 </script>
 {% endblock %}
