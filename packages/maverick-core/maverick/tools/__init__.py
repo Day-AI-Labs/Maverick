@@ -160,7 +160,9 @@ def base_registry(
     from .apply_patch import apply_patch
     from .arxiv import arxiv
     from .asana_tool import asana_tool
+    from .bitbucket_tool import bitbucket_tool
     from .calendar_tool import calendar_tool
+    from .calendly_tool import calendly_tool
     from .cloudflare_tool import cloudflare_tool
     from .clickup_tool import clickup_tool
     from .compute import compute
@@ -173,35 +175,47 @@ def base_registry(
     from .elasticsearch_tool import elasticsearch_tool
     from .email_tool import email_tool
     from .embeddings import embeddings
+    from .ffmpeg_tool import ffmpeg_tool
     from .file_watcher import file_watcher
+    from .ga4_tool import ga4_tool
     from .gdrive_tool import gdrive_tool
     from .geocode import geocode
     from .git_advanced import git_advanced
     from .github_actions import github_actions
     from .gitlab import gitlab
     from .hackernews import hackernews
+    from .home_assistant_tool import home_assistant_tool
     from .hubspot_tool import hubspot_tool
     from .huggingface import huggingface
+    from .imagemagick_tool import imagemagick_tool
     from .ios_sim import ios_sim
     from .jira import jira
     from .lambda_tool import lambda_tool
-    from .mongodb_tool import mongodb_tool
     from .linear import linear
+    from .mixpanel_tool import mixpanel_tool
+    from .mongodb_tool import mongodb_tool
     from .notify import notify_tool
     from .notion import notion
     from .ocr import ocr
     from .openapi_runner import openapi_runner
     from .pagerduty_tool import pagerduty_tool
     from .pandas_query import pandas_query
+    from .pandoc_tool import pandoc_tool
+    from .plaid_tool import plaid_tool
+    from .plausible_tool import plausible_tool
     from .posthog_tool import posthog_tool
+    from .reddit_tool import reddit_tool
     from .redis_tool import redis_tool
     from .s3_tool import s3_tool
     from .salesforce_tool import salesforce_tool
     from .semantic_scholar import semantic_scholar
     from .sentry_tool import sentry_tool
+    from .ses_tool import ses_tool
     from .shopify_tool import shopify_tool
     from .slack_bot import slack_bot
+    from .sns_tool import sns_tool
     from .spend_report import spend_report
+    from .spotify_tool import spotify_tool
     from .stripe_tool import stripe_tool
     from .test_impact import test_impact
     from .translate import translate
@@ -209,6 +223,7 @@ def base_registry(
     from .vercel_tool import vercel_tool
     from .wikipedia import wikipedia
     from .youtube import youtube
+    from .zoom_tool import zoom_tool
     reg.register(recall())
     reg.register(http_fetch())
     reg.register(read_pdf())
@@ -274,6 +289,21 @@ def base_registry(
     reg.register(dynamodb_tool())
     reg.register(vercel_tool())
     reg.register(gdrive_tool())
+    reg.register(plausible_tool())
+    reg.register(mixpanel_tool())
+    reg.register(calendly_tool())
+    reg.register(zoom_tool())
+    reg.register(spotify_tool())
+    reg.register(home_assistant_tool())
+    reg.register(reddit_tool())
+    reg.register(bitbucket_tool())
+    reg.register(ses_tool())
+    reg.register(sns_tool())
+    reg.register(ffmpeg_tool())
+    reg.register(pandoc_tool())
+    reg.register(imagemagick_tool())
+    reg.register(ga4_tool())
+    reg.register(plaid_tool())
 
     # Voice tools (opt-in extra; tool factories raise ImportError only
     # when called without the required API key OR SDK; registering is
