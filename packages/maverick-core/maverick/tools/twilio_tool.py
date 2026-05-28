@@ -39,6 +39,7 @@ _TWILIO_SCHEMA: dict[str, Any] = {
         "twiml_url": {"type": "string"},
         "phone": {"type": "string"},
         "limit": {"type": "integer"},
+        "confirm": {"type": "boolean"},
     },
     "required": ["op"],
 }
@@ -101,6 +102,8 @@ def _op_sms_send(args: dict) -> str:
         return "ERROR: sms_send requires to and body"
     if not src:
         return "ERROR: sms_send requires from_ or TWILIO_FROM_NUMBER"
+    if not bool(args.get("confirm")):
+        return "DRY RUN: would send SMS. Re-run with confirm=true."
     code, data = _post("/Messages.json", {"To": to, "From": src, "Body": body})
     if code >= 400 or not isinstance(data, dict):
         return f"ERROR: sms_send ({code}): {data}"
@@ -134,6 +137,8 @@ def _op_call_create(args: dict) -> str:
         return "ERROR: call_create requires to and twiml_url"
     if not src:
         return "ERROR: call_create requires from_ or TWILIO_FROM_NUMBER"
+    if not bool(args.get("confirm")):
+        return "DRY RUN: would create call. Re-run with confirm=true."
     code, data = _post("/Calls.json", {"To": to, "From": src, "Url": twiml})
     if code >= 400 or not isinstance(data, dict):
         return f"ERROR: call_create ({code}): {data}"
@@ -189,9 +194,9 @@ def twilio_tool() -> Tool:
     return Tool(
         name="twilio",
         description=(
-            "Twilio SMS + voice. ops: sms_send (to + body), "
+            "Twilio SMS + voice. ops: sms_send (to + body, confirm=true), "
             "sms_list (optionally filtered by To), call_create "
-            "(to + twiml_url), lookup (carrier + line type). "
+            "(to + twiml_url, confirm=true), lookup (carrier + line type). "
             "Auth: TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN; "
             "TWILIO_FROM_NUMBER pre-fills From."
         ),

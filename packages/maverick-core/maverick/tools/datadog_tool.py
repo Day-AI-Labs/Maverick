@@ -41,6 +41,7 @@ _DD_SCHEMA: dict[str, Any] = {
         "limit": {"type": "integer"},
         "name": {"type": "string"},
         "monitor_id": {"type": "integer"},
+        "confirm": {"type": "boolean"},
     },
     "required": ["op"],
 }
@@ -93,6 +94,8 @@ def _op_submit_event(args: dict) -> str:
     text = (args.get("text") or "").strip()
     if not title or not text:
         return "ERROR: submit_event requires title and text"
+    if not bool(args.get("confirm")):
+        return "DRY RUN: would submit Datadog event. Re-run with confirm=true."
     body = {
         "title": title,
         "text": text,
@@ -109,6 +112,8 @@ def _op_submit_metric(args: dict) -> str:
     metric = (args.get("metric") or "").strip()
     if not metric or "value" not in args:
         return "ERROR: submit_metric requires metric and value"
+    if not bool(args.get("confirm")):
+        return "DRY RUN: would submit Datadog metric. Re-run with confirm=true."
     body = {"series": [{
         "metric": metric,
         "type": 3,  # gauge
@@ -186,8 +191,8 @@ def datadog_tool() -> Tool:
         name="datadog",
         description=(
             "Datadog events + metrics + monitors. ops: submit_event "
-            "(title + text + alert_type + tags), submit_metric "
-            "(metric + value + tags), monitors (list), monitor_get. "
+            "(title + text + alert_type + tags, confirm=true), submit_metric "
+            "(metric + value + tags, confirm=true), monitors (list), monitor_get. "
             "Auth: DATADOG_API_KEY (+ DATADOG_APP_KEY for reads). "
             "DATADOG_SITE overrides region."
         ),

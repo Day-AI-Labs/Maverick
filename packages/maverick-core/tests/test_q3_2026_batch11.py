@@ -58,21 +58,21 @@ def test_pagerduty_incidents_renders(monkeypatch):
     assert "PQ1" in out and "DB down" in out
 
 
-def test_pagerduty_acknowledge_dry_run():
-    import os
-    os.environ["PAGERDUTY_API_TOKEN"] = "tok"
+def test_pagerduty_acknowledge_dry_run(monkeypatch):
+    monkeypatch.setenv("PAGERDUTY_API_TOKEN", "tok")
+    _fake_httpx(monkeypatch, get=MagicMock(), put=MagicMock())
     from maverick.tools.pagerduty_tool import pagerduty_tool
     out = pagerduty_tool().fn({"op": "acknowledge", "id": "PQ1"})
     assert "DRY RUN" in out
 
 
-def test_pagerduty_trigger_requires_summary(monkeypatch):
+def test_pagerduty_trigger_dry_run(monkeypatch):
     monkeypatch.setenv("PAGERDUTY_API_TOKEN", "tok")
     monkeypatch.setenv("PAGERDUTY_EVENTS_KEY", "rk")
     _fake_httpx(monkeypatch, post=MagicMock())
     from maverick.tools.pagerduty_tool import pagerduty_tool
-    out = pagerduty_tool().fn({"op": "trigger"})
-    assert "summary" in out
+    out = pagerduty_tool().fn({"op": "trigger", "summary": "db down"})
+    assert "DRY RUN" in out
 
 
 # ---------- Salesforce ----------
@@ -163,7 +163,7 @@ def test_datadog_submit_event_validation(monkeypatch):
     assert "requires title" in out
 
 
-def test_datadog_submit_event_posts(monkeypatch):
+def test_datadog_submit_event_dry_run(monkeypatch):
     monkeypatch.setenv("DATADOG_API_KEY", "k")
     _fake_httpx(
         monkeypatch,
@@ -172,6 +172,19 @@ def test_datadog_submit_event_posts(monkeypatch):
     from maverick.tools.datadog_tool import datadog_tool
     out = datadog_tool().fn({
         "op": "submit_event", "title": "deploy", "text": "v1.2 shipped",
+    })
+    assert "DRY RUN" in out
+
+
+def test_datadog_submit_event_posts_with_confirm(monkeypatch):
+    monkeypatch.setenv("DATADOG_API_KEY", "k")
+    _fake_httpx(
+        monkeypatch,
+        post=MagicMock(return_value=_resp(200, {"event": {"id": 99}})),
+    )
+    from maverick.tools.datadog_tool import datadog_tool
+    out = datadog_tool().fn({
+        "op": "submit_event", "title": "deploy", "text": "v1.2 shipped", "confirm": True,
     })
     assert "event id=99" in out
 
@@ -235,12 +248,12 @@ def test_twilio_missing_credentials(monkeypatch):
     _fake_httpx(monkeypatch, post=MagicMock())
     from maverick.tools.twilio_tool import twilio_tool
     out = twilio_tool().fn({
-        "op": "sms_send", "to": "+1", "body": "x", "from_": "+15550000",
+        "op": "sms_send", "to": "+1", "body": "x", "from_": "+15550000", "confirm": True,
     })
     assert "TWILIO_ACCOUNT_SID" in out
 
 
-def test_twilio_sms_send_posts(monkeypatch):
+def test_twilio_sms_send_dry_run(monkeypatch):
     monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC123")
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok")
     monkeypatch.setenv("TWILIO_FROM_NUMBER", "+15551234567")
@@ -249,6 +262,19 @@ def test_twilio_sms_send_posts(monkeypatch):
     from maverick.tools.twilio_tool import twilio_tool
     out = twilio_tool().fn({
         "op": "sms_send", "to": "+15555550000", "body": "hello",
+    })
+    assert "DRY RUN" in out
+
+
+def test_twilio_sms_send_posts_with_confirm(monkeypatch):
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC123")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok")
+    monkeypatch.setenv("TWILIO_FROM_NUMBER", "+15551234567")
+    body = {"sid": "SM999", "status": "queued"}
+    _fake_httpx(monkeypatch, post=MagicMock(return_value=_resp(200, body)))
+    from maverick.tools.twilio_tool import twilio_tool
+    out = twilio_tool().fn({
+        "op": "sms_send", "to": "+15555550000", "body": "hello", "confirm": True,
     })
     assert "SM999" in out and "queued" in out
 

@@ -130,7 +130,9 @@ def _set_status(iid: str, status: str, confirm: bool) -> str:
     return f"{iid} -> {i.get('status', status)}"
 
 
-def _op_trigger(routing_key: str, summary: str, severity: str) -> str:
+def _op_trigger(routing_key: str, summary: str, severity: str, confirm: bool) -> str:
+    if not confirm:
+        return "DRY RUN: would trigger PagerDuty incident. Re-run with confirm=true."
     import httpx
     key = (routing_key or os.environ.get("PAGERDUTY_EVENTS_KEY", "")).strip()
     if not key:
@@ -211,6 +213,7 @@ def _run(args: dict[str, Any]) -> str:
                 (args.get("routing_key") or "").strip(),
                 (args.get("summary") or "").strip(),
                 (args.get("severity") or "").strip(),
+                bool(args.get("confirm")),
             )
         if op == "on_call":
             return _op_on_call((args.get("escalation_policy_id") or "").strip(), limit)
@@ -227,7 +230,7 @@ def pagerduty_tool() -> Tool:
         description=(
             "PagerDuty incidents + on-call. ops: incidents, "
             "incident_get, acknowledge (confirm=true), resolve "
-            "(confirm=true), trigger (Events API v2 — needs "
+            "(confirm=true), trigger (confirm=true; Events API v2 — needs "
             "routing_key or PAGERDUTY_EVENTS_KEY), on_call. REST "
             "auth: PAGERDUTY_API_TOKEN."
         ),
