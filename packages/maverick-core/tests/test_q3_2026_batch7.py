@@ -79,6 +79,7 @@ def test_stripe_missing_key(monkeypatch):
 
 def test_stripe_balance_renders(monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test")
+    monkeypatch.setenv("MAVERICK_STRIPE_ENABLE_REFUNDS", "true")
     resp = MagicMock()
     resp.status_code = 200
     resp.json = MagicMock(return_value={
@@ -112,6 +113,7 @@ def test_stripe_refund_dry_run(monkeypatch):
 
 def test_stripe_refund_with_confirm(monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test")
+    monkeypatch.setenv("MAVERICK_STRIPE_ENABLE_REFUNDS", "true")
     resp = MagicMock()
     resp.status_code = 200
     resp.json = MagicMock(return_value={
