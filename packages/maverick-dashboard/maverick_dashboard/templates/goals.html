@@ -12,7 +12,7 @@
           <td><code>#{{ g.id }}</code></td>
           <td><span class="badge {{ g.status }}">{{ g.status }}</span></td>
           <td>{{ g.title }}</td>
-          <td class="muted">{{ (g.description or '')[:120] }}{% if g.description and g.description|length > 120 %}…{% endif %}</td>
+          <td class="muted"{% if g.description and g.description|length > 120 %} title="{{ g.description }}"{% endif %}>{{ (g.description or '')[:120] }}{% if g.description and g.description|length > 120 %}…{% endif %}</td>
           <td class="muted" style="white-space: nowrap;">
             <a href="/goals/{{ g.id }}/plan">plan</a> ·
             <a href="/goals/{{ g.id }}/trajectory">replay</a>

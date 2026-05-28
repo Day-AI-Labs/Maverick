@@ -34,14 +34,15 @@
 
   <h2>progress</h2>
   <div class="panel" id="progress" data-goal="{{ goal.id }}">
-    <pre id="events" role="log" aria-live="polite" aria-label="Goal progress"
+    <pre id="events" role="log" aria-live="polite" aria-label="Goal progress" tabindex="0"
          style="white-space: pre-wrap; margin: 0; max-height: 480px; overflow-y: auto;"></pre>
     <p id="loading-placeholder" class="muted" style="margin: 0;">Connecting.</p>
   </div>
 
   <div id="result-section" class="panel" style="display: {% if goal.result %}block{% else %}none{% endif %};">
     <h3 style="margin-top: 0;">result</h3>
-    <pre id="result" style="white-space: pre-wrap; margin: 0;">{{ goal.result or '' }}</pre>
+    <pre id="result" tabindex="0" aria-label="Goal result"
+         style="white-space: pre-wrap; margin: 0; max-height: 480px; overflow-y: auto;">{{ goal.result or '' }}</pre>
   </div>
 
   <p style="margin-top: 2rem;">
