@@ -29,12 +29,13 @@ def test_csp_header_present_and_locked_down(monkeypatch, tmp_path):
     assert "http://" not in csp and "https://" not in csp
 
 
-def test_docs_csp_stays_self_only(monkeypatch):
+def test_docs_csp_allows_fastapi_cdn_assets(monkeypatch):
     monkeypatch.delenv("MAVERICK_DASHBOARD_TOKEN", raising=False)
     docs_csp = _client().get("/docs").headers.get("Content-Security-Policy", "")
     redoc_csp = _client().get("/redoc").headers.get("Content-Security-Policy", "")
+    assert "https://cdn.jsdelivr.net" in docs_csp
+    assert "https://cdn.jsdelivr.net" in redoc_csp
     assert "connect-src 'self'" in docs_csp and "connect-src 'self'" in redoc_csp
-    assert "https://" not in docs_csp and "https://" not in redoc_csp
 
 
 def test_csp_on_api_responses_too(monkeypatch, tmp_path):

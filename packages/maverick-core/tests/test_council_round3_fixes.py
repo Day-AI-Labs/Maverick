@@ -53,9 +53,9 @@ def test_erase_emits_hashed_audit_event(tmp_path, monkeypatch):
 
     db = tmp_path / "world.db"
     wm = WorldModel(db)
-    conv_id = wm.ensure_conversation("telegram", "u123")
-    gid = wm.create_goal("hello", conversation_id=conv_id)
-    wm.add_turn(conv_id, "user", "hi there", goal_id=gid)
+    conv_id = wm.get_or_create_conversation("telegram", "u123").id
+    gid = wm.create_goal("hello")
+    wm.append_turn(conv_id, "user", "hi there", goal_id=gid)
     wm.close()
 
     result = CliRunner().invoke(

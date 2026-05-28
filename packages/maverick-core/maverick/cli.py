@@ -1035,6 +1035,21 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         except OSError:
             pass
 
+    # GDPR Art. 30: record that an erasure happened, but hash the subject so
+    # the audit trail itself never re-leaks the identity we just erased.
+    import hashlib
+
+    from . import audit
+    audit.record(
+        "erase",
+        channel=channel,
+        user_hash=hashlib.sha256(user.encode()).hexdigest()[:16],
+        conversations=len(convs),
+        turns=removed_turns,
+        goals=len(goal_ids),
+        attachments=removed_attachments,
+    )
+
     click.echo(
         f"erased {len(convs)} conversation(s), {removed_turns} turn(s), "
         f"{len(goal_ids)} goal(s) and all linked rows, "
