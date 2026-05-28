@@ -119,7 +119,9 @@ def _run_sql_query(args: dict[str, Any], sandbox) -> str:
         out = _format_rows(cols, rows)
         summary = f"\n({len(rows)} row(s)" + (f", truncated at {max_rows}" if truncated else "") + ")"
         return (out + summary)[:_MAX_OUTPUT]
-    except sqlite3.Error as e:
+    except (sqlite3.Error, sqlite3.Warning) as e:
+        # sqlite3.Warning (not a subclass of Error) is what Python <=3.10
+        # raises for a multi-statement execute(); 3.11+ raises ProgrammingError.
         return f"ERROR: sqlite: {e}"
     finally:
         if conn is not None:
