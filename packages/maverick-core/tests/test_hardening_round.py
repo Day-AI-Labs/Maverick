@@ -205,18 +205,25 @@ def test_llm_cache_evicts_beyond_max_rows(tmp_path):
     assert s["entries"] <= 3, f"cap not enforced: {s['entries']} rows"
 
 
-def test_llm_cache_eviction_keeps_most_used(tmp_path):
+def test_llm_cache_eviction_is_lru_keeps_newest(tmp_path):
     from maverick.llm_cache import LLMCache
     cache = LLMCache(db_path=tmp_path / "c.db", max_rows=2)
     cache.store("hot", provider="p", model="m", text="x")
-    # Make "hot" the most-used so it survives eviction.
+    # hit_count is intentionally NOT the eviction key. A naive LFU policy
+    # (ORDER BY hit_count DESC) evicted the just-inserted hit_count=0 row and
+    # thrashed to ~0% hit rate under a stream of unique prompts, so eviction
+    # is recency-based: keep the newest rows by created_at (see llm_cache.py).
     for _ in range(5):
         cache.lookup("hot")
     cache.store("a", provider="p", model="m", text="x")
     cache.store("b", provider="p", model="m", text="x")
     cache.store("c", provider="p", model="m", text="x")
-    # "hot" has the highest hit_count → must still be present.
-    assert cache.lookup("hot") is not None
+    # Cap is 2; the two most-recently-stored keys survive, the oldest ("hot")
+    # is evicted regardless of its hit_count.
+    assert cache.lookup("c") is not None
+    assert cache.lookup("b") is not None
+    assert cache.lookup("hot") is None
+    assert cache.stats()["entries"] == 2
 
 
 def test_llm_cache_unbounded_when_max_rows_zero(tmp_path):
