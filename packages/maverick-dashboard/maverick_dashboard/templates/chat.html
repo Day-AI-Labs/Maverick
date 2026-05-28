@@ -22,6 +22,8 @@
         style="padding: 0.65rem 1.5rem; background: var(--accent); color: #fff; border: 0; border-radius: 6px; cursor: pointer; font-weight: 500;"
       >Run</button>
     </form>
+    <p id="goal-error" role="alert" aria-live="assertive"
+       style="display: none; margin: 0.75rem 0 0; color: var(--danger); font-size: 0.85rem;"></p>
     <div style="margin-top: 1rem;">
       <p class="muted" style="font-size: 0.8rem; margin: 0 0 0.5rem;">Examples</p>
       <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
@@ -47,12 +49,40 @@
           input.focus();
         });
       });
-      // Submit-time disabled state + spinner so users don't double-submit.
+      // Submit via fetch so 400/403/429 surface as an inline message
+      // instead of a raw JSON page. The empty case is still caught by the
+      // input's `required`; this handles whitespace-only titles (which
+      // satisfy `required`) and the shared goal rate limit.
       var sendForm = document.querySelector('form[action="/chat/send"]');
       var sendBtn = document.getElementById('send-btn');
-      sendForm.addEventListener('submit', function() {
+      var errBox = document.getElementById('goal-error');
+      sendForm.addEventListener('submit', async function(ev) {
+        ev.preventDefault();
+        errBox.style.display = 'none';
         sendBtn.disabled = true;
         sendBtn.textContent = 'Starting…';
+        try {
+          var resp = await fetch(sendForm.action, {
+            method: 'POST',
+            body: new FormData(sendForm),
+          });
+          if (resp.redirected) { window.location.href = resp.url; return; }
+          if (resp.ok) { window.location.reload(); return; }
+          var detail = 'Could not start the goal (' + resp.status + ').';
+          try { var j = await resp.json(); if (j && j.detail) detail = j.detail; } catch (e) {}
+          if (resp.status === 429) {
+            var ra = resp.headers.get('Retry-After');
+            if (ra) detail += ' (retry in ' + ra + 's)';
+          }
+          errBox.textContent = detail;
+          errBox.style.display = 'block';
+        } catch (e) {
+          errBox.textContent = 'Network error — is the dashboard still running?';
+          errBox.style.display = 'block';
+        } finally {
+          sendBtn.disabled = false;
+          sendBtn.textContent = 'Run';
+        }
       });
     </script>
   </div>
@@ -73,7 +103,7 @@
         </tbody>
       </table>
     {% else %}
-      <p class="muted">No goals yet.</p>
+      <p class="muted">No goals yet — type one above to get started.</p>
     {% endif %}
   </div>
 {% endblock %}

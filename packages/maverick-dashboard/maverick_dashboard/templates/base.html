@@ -91,21 +91,19 @@
   <header>
     <h1>Maverick</h1>
     <nav>
-      <a href="/">Overview</a>
-      <a href="/chat">Chat</a>
-      <a href="/goals">Goals</a>
-      <a href="/skills">Skills</a>
-      <a href="/store">Store</a>
-      <a href="/facts">Facts</a>
-      <a href="/spend">Spend</a>
-      <a href="/providers">Providers</a>
-      <a href="/tools">Tools</a>
-      <a href="/permissions">Permissions</a>
-      <a href="/channels">Channels</a>
-      <a href="/plugins">Plugins</a>
-      <a href="/mcp">MCP</a>
-      <a href="/audit">Audit</a>
-      <a href="/cache">Cache</a>
+      {% set _nav = [
+        ('/', 'Overview'), ('/chat', 'Chat'), ('/goals', 'Goals'),
+        ('/skills', 'Skills'), ('/store', 'Store'), ('/facts', 'Facts'),
+        ('/spend', 'Spend'), ('/providers', 'Providers'), ('/tools', 'Tools'),
+        ('/permissions', 'Permissions'), ('/channels', 'Channels'),
+        ('/plugins', 'Plugins'), ('/mcp', 'MCP'), ('/audit', 'Audit'),
+        ('/cache', 'Cache'),
+      ] %}
+      {% set _path = request.url.path if request else '' %}
+      {% for _href, _label in _nav %}
+        {% set _active = (_path == _href) if _href == '/' else (_path == _href or _path.startswith(_href ~ '/')) %}
+        <a href="{{ _href }}"{% if _active %} class="active" aria-current="page"{% endif %}>{{ _label }}</a>
+      {% endfor %}
     </nav>
     <span style="margin-left: auto; display: flex; gap: 0.5rem; align-items: center;">
       <a href="#" id="halt-pill" class="halt-pill" role="button" aria-label="Halt: arm or clear killswitch">
