@@ -50,4 +50,5 @@ def test_unhandled_exception_renders_500(monkeypatch, tmp_path):
     resp = client.get("/__boom", headers={"Accept": "text/html"})
     assert resp.status_code == 500
     assert "Something went wrong" in resp.text
-    assert "RuntimeError" in resp.text
+    assert "RuntimeError" not in resp.text
+    assert "test-only failure" not in resp.text

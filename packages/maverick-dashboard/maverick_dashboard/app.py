@@ -199,7 +199,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     if _wants_html(request):
         return templates.TemplateResponse(
             request, "500.html",
-            {"path": request.url.path, "detail": str(exc.errors())},
+            {"path": request.url.path},
             status_code=400,
         )
     return JSONResponse({"detail": exc.errors()}, status_code=422)
@@ -212,7 +212,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     if _wants_html(request):
         return templates.TemplateResponse(
             request, "500.html",
-            {"path": request.url.path, "detail": f"{type(exc).__name__}: {exc}"},
+            {"path": request.url.path},
             status_code=500,
         )
     return JSONResponse({"detail": "internal server error"}, status_code=500)
