@@ -198,7 +198,7 @@ def base_registry(
     reg.register(pandas_query())
     reg.register(git_advanced(sandbox))
     reg.register(calendar_tool())
-    reg.register(file_watcher())
+    reg.register(file_watcher(sandbox))
     reg.register(linear())
     reg.register(jira())
     reg.register(gitlab())
