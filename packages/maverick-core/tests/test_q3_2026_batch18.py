@@ -92,14 +92,23 @@ def test_bad_sql_returns_error(tmp_path):
     assert out.startswith("ERROR")
 
 
-def test_multi_statement_rejected(tmp_path):
+def test_multi_statement_does_not_execute_injected_write(tmp_path):
     db = _mkdb(tmp_path)
-    out = sql_query().fn({
+    # A piggy-backed write must never run -- regardless of how the running
+    # Python version handles a multi-statement execute() (<=3.10 raises
+    # sqlite3.Warning, 3.11+ raises ProgrammingError, and a hypothetical
+    # future could run only the first statement). Asserting the data
+    # invariant instead of a version-specific error message is what keeps
+    # this test from breaking across the 3.10/3.11/3.12 matrix.
+    sql_query().fn({
         "database": str(db),
-        "query": "SELECT 1; SELECT 2",
+        "query": "SELECT 1; DROP TABLE users",
         "read_only": False,
     })
-    assert out.startswith("ERROR")  # sqlite execute runs one statement only
+    c = sqlite3.connect(db)
+    tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    c.close()
+    assert "users" in tables  # the injected DROP never executed
 
 
 def test_requires_database_and_query():
