@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Iterable
 
 VALID_KINDS = ("tool", "channel", "persona")
 _NAME_RE = re.compile(r"^[a-z][a-z0-9-]{1,40}[a-z0-9]$")
