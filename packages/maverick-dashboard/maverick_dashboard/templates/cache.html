@@ -44,7 +44,7 @@
         Purge all
       </button>
     </p>
-    <p id="cache-msg" class="muted" style="min-height: 1em; margin-top: 0.75rem;"></p>
+    <p id="cache-msg" role="status" aria-live="polite" class="muted" style="min-height: 1em; margin-top: 0.75rem;"></p>
   </div>
 
   <style>
@@ -81,8 +81,9 @@
               msg.textContent = 'Purged. Reloading…';
               setTimeout(function() { window.location.reload(); }, 500);
             } else {
+              const j = await r.json().catch(function() { return {}; });
               msg.style.color = 'var(--danger)';
-              msg.textContent = 'Purge failed: ' + r.status;
+              msg.textContent = (j.detail || ('Purge failed: ' + r.status));
               document.querySelectorAll('button.purge').forEach(b => b.disabled = false);
             }
           } catch (e) {

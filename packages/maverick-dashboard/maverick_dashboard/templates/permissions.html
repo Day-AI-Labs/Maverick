@@ -86,7 +86,7 @@
     </ul>
   </div>
 
-  <p id="perm-msg" class="muted" style="min-height: 1em;"></p>
+  <p id="perm-msg" role="status" aria-live="polite" class="muted" style="min-height: 1em;"></p>
 
   <style>
     button.perm-toggle { padding: 0.35rem 0.85rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
@@ -113,9 +113,10 @@
               msg.textContent = name + ' ' + action + 'd. Takes effect on the next goal. Reloading…';
               setTimeout(function() { window.location.reload(); }, 700);
             } else {
+              const j = await r.json().catch(function() { return {}; });
               btn.disabled = false;
               msg.style.color = 'var(--danger)';
-              msg.textContent = 'Failed: ' + r.status;
+              msg.textContent = (j.detail || ('Failed: ' + r.status));
             }
           } catch (e) {
             btn.disabled = false;
