@@ -886,7 +886,7 @@ def pick_notifications() -> tuple[dict[str, Any], list[str]]:
     backend = pick.split()[0]
     if backend == "ntfy":
         topic = _q_text(
-            "  ntfy topic (a unique string that acts as the channel name)",
+            "  ntfy topic (any unique string; treat as a password)",
             default="",
         ).strip()
         return ({"backend": "ntfy", "topic": topic}, []) if topic else ({}, [])
