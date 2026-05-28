@@ -485,3 +485,12 @@ def test_gitlab_and_embeddings_register(tmp_path):
     names = {t.name for t in reg.all()}
     assert "gitlab" in names
     assert "embeddings" in names
+
+
+def test_local_backend_strips_gitlab_token(monkeypatch, tmp_path):
+    from maverick.sandbox.local import LocalBackend
+    monkeypatch.setenv("GITLAB_TOKEN", "glpat_test_secret")
+    sb = LocalBackend(workdir=tmp_path)
+    out = sb.exec("printf %s \"${GITLAB_TOKEN:-missing}\"")
+    assert out.exit_code == 0
+    assert out.stdout == "missing"

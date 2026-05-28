@@ -50,6 +50,7 @@ class LocalBackend:
             "OPENAI_API_KEY",
             "GITHUB_TOKEN",
             "GH_TOKEN",
+            "GITLAB_TOKEN",
         ):
             child_env.pop(key, None)
 
