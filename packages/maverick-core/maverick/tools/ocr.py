@@ -23,9 +23,11 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 
 from . import Tool
+from .http_fetch import _is_private_ip
 
 log = logging.getLogger(__name__)
 
@@ -117,19 +119,34 @@ def _run_hf(path: str, model: str) -> str:
 def _op_extract(path: str, lang: str, backend: str, hf_model: str) -> str:
     if not path:
         return "ERROR: extract requires path"
-    if not Path(path).exists():
+    workdir = Path.cwd().resolve()
+    candidate = Path(path)
+    candidate = (workdir / candidate).resolve() if not candidate.is_absolute() else candidate.resolve()
+    try:
+        candidate.relative_to(workdir)
+    except ValueError:
+        return f"ERROR: path escapes workspace: {path}"
+    if not candidate.exists():
         return f"ERROR: file not found: {path}"
     if backend == "hf":
-        return _run_hf(path, hf_model or "microsoft/trocr-base-printed")
-    return _run_tesseract(path, lang or "eng")
+        return _run_hf(str(candidate), hf_model or "microsoft/trocr-base-printed")
+    return _run_tesseract(str(candidate), lang or "eng")
 
 
 def _op_extract_url(url: str, lang: str, backend: str, hf_model: str) -> str:
     if not url:
         return "ERROR: extract_url requires url"
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return f"ERROR: invalid URL: {url!r}"
+    if os.environ.get("MAVERICK_FETCH_ALLOW_PRIVATE") != "1" and _is_private_ip(parsed.hostname):
+        return (
+            f"ERROR: refusing private/loopback address {parsed.hostname!r}. "
+            "Set MAVERICK_FETCH_ALLOW_PRIVATE=1 to override."
+        )
     import httpx
     try:
-        r = httpx.get(url, timeout=30.0, follow_redirects=True)
+        r = httpx.get(url, timeout=30.0, follow_redirects=False)
     except Exception as e:
         return f"ERROR: fetch failed: {type(e).__name__}: {e}"
     if r.status_code >= 400:

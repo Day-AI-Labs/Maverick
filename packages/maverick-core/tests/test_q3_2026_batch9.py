@@ -106,7 +106,9 @@ def test_openapi_call_substitutes_path_param(tmp_path, monkeypatch):
     assert captured["method"] == "GET"
 
 
-def test_openapi_call_missing_required_path_param(tmp_path):
+def test_openapi_call_missing_required_path_param(tmp_path, monkeypatch):
+    fake_httpx = types.ModuleType("httpx")
+    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
     from maverick.tools.openapi_runner import openapi_runner
     out = openapi_runner().fn({
         "op": "call", "spec": _write_spec(tmp_path),
@@ -137,6 +139,18 @@ def test_openapi_call_sends_body(tmp_path, monkeypatch):
     assert captured["body"] == {"name": "Rex"}
 
 
+def test_openapi_call_blocks_private_base_url(tmp_path, monkeypatch):
+    fake_httpx = types.ModuleType("httpx")
+    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+    from maverick.tools.openapi_runner import openapi_runner
+    out = openapi_runner().fn({
+        "op": "call", "spec": _write_spec(tmp_path),
+        "op_id": "getPet", "params": {"petId": 7},
+        "base_url": "http://127.0.0.1:8080",
+    })
+    assert "refusing private/loopback address" in out
+
+
 # ---------- OCR tool ----------
 
 def test_ocr_requires_op():
@@ -153,6 +167,7 @@ def test_ocr_extract_validates_path():
 def test_ocr_missing_tesseract(tmp_path, monkeypatch):
     img = tmp_path / "x.png"
     img.write_bytes(b"\x89PNG\r\n\x1a\n")
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("shutil.which", lambda b: None)
     from maverick.tools.ocr import ocr
     out = ocr().fn({"op": "extract", "path": str(img)})
@@ -162,6 +177,7 @@ def test_ocr_missing_tesseract(tmp_path, monkeypatch):
 def test_ocr_extract_runs_tesseract(tmp_path, monkeypatch):
     img = tmp_path / "x.png"
     img.write_bytes(b"\x89PNG\r\n\x1a\n")
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("shutil.which", lambda b: "/usr/bin/tesseract")
     monkeypatch.setattr(
         "subprocess.run",
@@ -175,12 +191,25 @@ def test_ocr_extract_runs_tesseract(tmp_path, monkeypatch):
 def test_ocr_hf_backend_requires_token(tmp_path, monkeypatch):
     img = tmp_path / "x.png"
     img.write_bytes(b"\x89PNG\r\n\x1a\n")
+    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("HUGGINGFACE_API_TOKEN", raising=False)
     fake_httpx = types.ModuleType("httpx")
     monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
     from maverick.tools.ocr import ocr
     out = ocr().fn({"op": "extract", "path": str(img), "backend": "hf"})
     assert "HUGGINGFACE_API_TOKEN" in out
+
+
+def test_ocr_extract_blocks_path_escape():
+    from maverick.tools.ocr import ocr
+    out = ocr().fn({"op": "extract", "path": "/etc/hosts"})
+    assert "path escapes workspace" in out
+
+
+def test_ocr_extract_url_blocks_private():
+    from maverick.tools.ocr import ocr
+    out = ocr().fn({"op": "extract_url", "url": "http://127.0.0.1:8000/a.png"})
+    assert "refusing private/loopback address" in out
 
 
 # ---------- PostHog tool ----------

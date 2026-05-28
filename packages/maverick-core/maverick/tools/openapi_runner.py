@@ -26,10 +26,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
+from urllib.parse import urlparse
 from typing import Any
 
 from . import Tool
+from .http_fetch import _is_private_ip
 
 log = logging.getLogger(__name__)
 
@@ -67,13 +70,25 @@ _spec_lock = threading.Lock()
 _spec_cache: dict[str, dict] = {}
 
 
+def _validate_remote_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise RuntimeError(f"invalid URL: {url!r}")
+    if os.environ.get("MAVERICK_FETCH_ALLOW_PRIVATE") != "1" and _is_private_ip(parsed.hostname):
+        raise RuntimeError(
+            f"refusing private/loopback address {parsed.hostname!r}. "
+            "Set MAVERICK_FETCH_ALLOW_PRIVATE=1 to override."
+        )
+
+
 def _load_spec(source: str) -> dict:
     with _spec_lock:
         if source in _spec_cache:
             return _spec_cache[source]
     if source.startswith(("http://", "https://")):
+        _validate_remote_url(source)
         import httpx
-        r = httpx.get(source, timeout=30.0, follow_redirects=True)
+        r = httpx.get(source, timeout=30.0, follow_redirects=False)
         r.raise_for_status()
         text = r.text
     else:
@@ -171,7 +186,6 @@ def _op_call(
     headers: dict | None,
     base_url: str,
 ) -> str:
-    import httpx
     spec = _load_spec(spec_src)
     found = _find_op(spec, op_id)
     if not found:
@@ -195,14 +209,16 @@ def _op_call(
     url = (base or "") + out_path
     if not url.startswith(("http://", "https://")):
         return "ERROR: no base URL and op has no absolute servers[0]"
+    _validate_remote_url(url)
     req_kwargs = {
         "headers": headers or {},
         "params": query,
         "timeout": 60.0,
-        "follow_redirects": True,
+        "follow_redirects": False,
     }
     if body is not None and method in {"POST", "PUT", "PATCH"}:
         req_kwargs["json"] = body
+    import httpx
     r = httpx.request(method, url, **req_kwargs)
     text = r.text or ""
     truncated = text[:3000] + (" ... (truncated)" if len(text) > 3000 else "")
@@ -217,10 +233,6 @@ def _run(args: dict[str, Any]) -> str:
     if not spec_src:
         return "ERROR: spec is required (URL or local path)"
     try:
-        import httpx  # noqa: F401
-    except ImportError:
-        return "ERROR: httpx not installed. Run: pip install 'maverick-agent[issue-trackers]'"
-    try:
         if op == "list_ops":
             return _op_list(spec_src)
         if op == "describe":
@@ -229,6 +241,10 @@ def _run(args: dict[str, Any]) -> str:
                 return "ERROR: describe requires op_id"
             return _op_describe(spec_src, op_id)
         if op == "call":
+            try:
+                import httpx  # noqa: F401
+            except ImportError:
+                return "ERROR: httpx not installed. Run: pip install 'maverick-agent[issue-trackers]'"
             op_id = (args.get("op_id") or "").strip()
             if not op_id:
                 return "ERROR: call requires op_id"
