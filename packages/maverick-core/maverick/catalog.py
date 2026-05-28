@@ -16,9 +16,9 @@ Schema (one ``index.json`` per kind, served at
           "name": "summarize-url",
           "version": "1.0.0",
           "summary": "Fetch a URL and summarise it.",
-          "source": "gh:texasreaper62/awesome-maverick-skills:summarize-url/SKILL.md",
+          "source": "gh:cdayAI/awesome-maverick-skills:summarize-url/SKILL.md",
           "sha256": "<hex digest of the fetched content>",
-          "author": "texasreaper62",
+          "author": "cdayAI",
           "verified": true,
           "install_count": 0
         }
@@ -59,7 +59,7 @@ _CACHE_DIR = Path.home() / ".maverick" / "cache" / "catalog"
 # client tolerates an unreachable index by returning an empty list, so
 # a fresh install simply shows "no catalog entries" rather than erroring.
 DEFAULT_INDEXES = (
-    "https://raw.githubusercontent.com/texasreaper62/awesome-maverick/main/catalog",
+    "https://raw.githubusercontent.com/cdayAI/awesome-maverick/main/catalog",
 )
 
 

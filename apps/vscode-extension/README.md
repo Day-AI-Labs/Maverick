@@ -1,6 +1,6 @@
 # Maverick for VS Code
 
-Sidebar + commands for the [Maverick](https://github.com/texasreaper62/Maverick)
+Sidebar + commands for the [Maverick](https://github.com/cdayAI/Maverick)
 agent framework, accessible from inside VS Code.
 
 This is an MVP (v0.1):

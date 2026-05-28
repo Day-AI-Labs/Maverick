@@ -9,7 +9,7 @@ We take that seriously.
 **Do not file public GitHub issues for vulnerabilities.** Use one of:
 
 1. **GitHub Security Advisories** (preferred):
-   https://github.com/texasreaper62/Maverick/security/advisories/new
+   https://github.com/cdayAI/Maverick/security/advisories/new
 2. **Email**: `security@` the project's domain (or the maintainer's
    public email on their GitHub profile if no domain is set up).
 

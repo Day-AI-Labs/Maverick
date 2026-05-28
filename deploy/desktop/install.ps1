@@ -2,7 +2,7 @@
   Maverick desktop bootstrap (Windows).
 
   One-line install (PowerShell):
-    irm https://raw.githubusercontent.com/texasreaper62/maverick/main/deploy/desktop/install.ps1 | iex
+    irm https://raw.githubusercontent.com/cdayAI/Maverick/main/deploy/desktop/install.ps1 | iex
 
   Zero prerequisites. It installs Python 3.12 and Git if they are
   missing (via winget), pulls Maverick, installs the agent + setup
@@ -16,7 +16,7 @@
 
 $ErrorActionPreference = 'Stop'
 
-$Repo   = if ($env:MAVERICK_REPO) { $env:MAVERICK_REPO } else { 'texasreaper62/maverick' }
+$Repo   = if ($env:MAVERICK_REPO) { $env:MAVERICK_REPO } else { 'cdayAI/Maverick' }
 $Ref    = if ($env:MAVERICK_REF)  { $env:MAVERICK_REF }  else { 'main' }
 $SrcDir = Join-Path $env:LOCALAPPDATA 'Maverick\src'
 

@@ -1,16 +1,16 @@
 # Default reviewer for everything until the maintainer team grows.
 # See MAINTAINERS.md for the area-ownership story.
-*                                       @texasreaper62
+*                                       @cdayAI
 
 # Per-package overrides (currently same person; structure ready for
 # future co-maintainers).
-/packages/maverick-core/                @texasreaper62
-/packages/maverick-shield/              @texasreaper62
-/packages/maverick-channels/            @texasreaper62
-/packages/maverick-dashboard/           @texasreaper62
-/packages/maverick-mcp/                 @texasreaper62
-/apps/installer-cli/                    @texasreaper62
-/apps/installer-desktop/                @texasreaper62
-/deploy/                                @texasreaper62
-/.github/workflows/                     @texasreaper62
-SECURITY.md                             @texasreaper62
+/packages/maverick-core/                @cdayAI
+/packages/maverick-shield/              @cdayAI
+/packages/maverick-channels/            @cdayAI
+/packages/maverick-dashboard/           @cdayAI
+/packages/maverick-mcp/                 @cdayAI
+/apps/installer-cli/                    @cdayAI
+/apps/installer-desktop/                @cdayAI
+/deploy/                                @cdayAI
+/.github/workflows/                     @cdayAI
+SECURITY.md                             @cdayAI

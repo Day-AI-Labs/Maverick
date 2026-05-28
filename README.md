@@ -1,6 +1,6 @@
 # Maverick
 
-[![CI](https://github.com/texasreaper62/maverick/actions/workflows/ci.yml/badge.svg)](https://github.com/texasreaper62/maverick/actions/workflows/ci.yml)
+[![CI](https://github.com/cdayAI/maverick/actions/workflows/ci.yml/badge.svg)](https://github.com/cdayAI/maverick/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org)
 
@@ -39,13 +39,13 @@ No Python required — the script installs everything it needs and launches the 
 **Windows** (PowerShell):
 
 ```powershell
-irm https://raw.githubusercontent.com/texasreaper62/maverick/main/deploy/desktop/install.ps1 | iex
+irm https://raw.githubusercontent.com/cdayAI/Maverick/main/deploy/desktop/install.ps1 | iex
 ```
 
 **macOS / Linux**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/texasreaper62/maverick/main/deploy/desktop/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/cdayAI/Maverick/main/deploy/desktop/install.sh | bash
 ```
 
 The script installs Python + git if they're missing, sets up an isolated environment, and runs `maverick init`. Override the source with `MAVERICK_REPO` / `MAVERICK_REF` (`$env:MAVERICK_REF` on Windows).
@@ -68,7 +68,7 @@ pipx inject maverick-agent maverick-installer
 ### From source
 
 ```bash
-git clone https://github.com/texasreaper62/maverick
+git clone https://github.com/cdayAI/maverick
 cd maverick
 pip install -e ./packages/maverick-core
 pip install -e ./apps/installer-cli

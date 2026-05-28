@@ -31,8 +31,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased] -- v0.1.0-alpha
 
-First public release. Maverick combines [Maverick Agent](https://github.com/texasreaper62/research/tree/main/maverick) (recursive multi-agent swarm)
-and [Agent Shield](https://github.com/texasreaper62/agent-shield) (safety detection)
+First public release. Maverick combines [Maverick Agent](https://github.com/cdayAI/research/tree/main/maverick) (recursive multi-agent swarm)
+and [Agent Shield](https://github.com/cdayAI/agent-shield) (safety detection)
 into a single safest-by-default agent that anyone can install in one
 command.
 

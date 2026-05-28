@@ -8,7 +8,7 @@ version = "0.1.1"
 description = "Agent Shield integration + builtin fallback rules for Maverick"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "texasreaper62" }]
+authors = [{ name = "cdayAI" }]
 readme = "README.md"
 # Built-in rules ship as part of this package. agent-shield SDK is opt-in.
 dependencies = []
@@ -17,7 +17,7 @@ dependencies = []
 scan = ["agent-shield>=14.0"]
 
 [project.urls]
-Homepage = "https://github.com/texasreaper62/maverick"
+Homepage = "https://github.com/cdayAI/maverick"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -55,7 +55,7 @@ brand-building for the founder; if it helps you ship, that's the
 whole reason it exists.
 
 You can support the project via
-[GitHub Sponsors](https://github.com/sponsors/texasreaper62) or
+[GitHub Sponsors](https://github.com/sponsors/cdayAI) or
 [Open Collective](https://opencollective.com/maverick).
 
 ## Where to go next

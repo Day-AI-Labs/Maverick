@@ -2,7 +2,7 @@
 # Maverick desktop bootstrap (macOS / Linux).
 #
 # One-line install:
-#   curl -fsSL https://raw.githubusercontent.com/texasreaper62/maverick/main/deploy/desktop/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/cdayAI/Maverick/main/deploy/desktop/install.sh | bash
 #
 # Zero prerequisites. It installs Python 3 and git if they are missing
 # (via brew / apt / dnf / pacman), pulls Maverick, installs the agent +
@@ -15,7 +15,7 @@
 
 set -euo pipefail
 
-REPO="${MAVERICK_REPO:-texasreaper62/maverick}"
+REPO="${MAVERICK_REPO:-cdayAI/Maverick}"
 REF="${MAVERICK_REF:-main}"
 SRC_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/maverick/src"
 

@@ -9,13 +9,13 @@ setup wizard.
 **Windows** (PowerShell):
 
 ```powershell
-irm https://raw.githubusercontent.com/texasreaper62/maverick/main/deploy/desktop/install.ps1 | iex
+irm https://raw.githubusercontent.com/cdayAI/Maverick/main/deploy/desktop/install.ps1 | iex
 ```
 
 **macOS / Linux**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/texasreaper62/maverick/main/deploy/desktop/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/cdayAI/Maverick/main/deploy/desktop/install.sh | bash
 ```
 
 Pin a branch/tag or fork with `MAVERICK_REPO` / `MAVERICK_REF`

@@ -10,7 +10,7 @@ maverick skill install ./benchmarks/example-skills/web-research.md
 Or point at the GitHub raw URL:
 
 ```bash
-maverick skill install gh:texasreaper62/maverick:benchmarks/example-skills/web-research.md
+maverick skill install gh:cdayAI/maverick:benchmarks/example-skills/web-research.md
 ```
 
 ## Catalog

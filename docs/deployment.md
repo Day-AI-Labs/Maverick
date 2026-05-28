@@ -27,7 +27,7 @@ docker run -it --rm \
   -v ~/maverick-workspace:/workspace \
   -v ~/.maverick/config.toml:/root/.maverick/config.toml:ro \
   -e ANTHROPIC_API_KEY=... \
-  ghcr.io/texasreaper62/maverick:latest \
+  ghcr.io/cdayai/maverick:latest \
   start "..."
 ```
 
@@ -48,7 +48,7 @@ The `vps` deployment target generates:
 - Config under `/etc/maverick/config.toml` (`MAVERICK_CONFIG` env)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/texasreaper62/maverick/main/deploy/vps/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/cdayAI/Maverick/main/deploy/vps/install.sh | sudo bash
 sudo systemctl enable --now maverick
 ```
 

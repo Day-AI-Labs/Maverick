@@ -32,7 +32,7 @@ Maverick is a recursive multi-agent swarm with a safety layer at every chokepoin
 
 ### `packages/maverick-core/`
 
-The agent kernel. Ported from `texasreaper62/research/maverick/` and evolved here.
+The agent kernel. Ported from `cdayAI/research/maverick/` and evolved here.
 
 | Module | Role |
 |---|---|
@@ -132,7 +132,7 @@ What makes Maverick a real multi-agent system, not just N parallel instances:
 | Target | How it runs | Status |
 |---|---|---|
 | **Desktop** | `pipx install maverick-agent`; runs in user's home dir. Single-file PyInstaller binaries published per release. | v0.1.1 |
-| **Docker** | `docker run -v ~/.maverick:/root/.maverick ghcr.io/texasreaper62/maverick:<tag>`. Isolated sandbox. | v0.1.1 |
+| **Docker** | `docker run -v ~/.maverick:/root/.maverick ghcr.io/cdayai/maverick:<tag>`. Isolated sandbox. | v0.1.1 |
 | **VPS** | `deploy/vps/install.sh` provisions a systemd unit. `MAVERICK_VERSION=v0.1.0 deploy/vps/install.sh` pins the release. | v0.1.1 |
 | **Phone (companion)** | Swarm runs on Desktop or VPS; phone talks via Telegram / iMessage / WhatsApp / Signal / Discord / Slack / SMS / Matrix / email. Native iOS/Android later. | v0.1.1 |
 

@@ -1,6 +1,6 @@
 [Unit]
 Description=Maverick agent (long-horizon multi-agent swarm)
-Documentation=https://github.com/texasreaper62/maverick
+Documentation=https://github.com/cdayAI/maverick
 After=network-online.target
 Wants=network-online.target
 

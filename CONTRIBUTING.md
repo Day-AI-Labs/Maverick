@@ -7,7 +7,7 @@ these guidelines before opening your first PR.
 ## Quick start (dev setup)
 
 ```bash
-git clone https://github.com/texasreaper62/maverick
+git clone https://github.com/cdayAI/maverick
 cd maverick
 pip install -e ./packages/maverick-core
 pip install --no-deps -e ./packages/maverick-shield

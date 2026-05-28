@@ -8,7 +8,7 @@ version = "0.1.1"
 description = "Channel adapters for Maverick (Telegram, Discord, Slack, Signal, ...)"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "texasreaper62" }]
+authors = [{ name = "cdayAI" }]
 readme = "README.md"
 dependencies = [
     "maverick-agent>=0.1",
@@ -33,7 +33,7 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/texasreaper62/maverick"
+Homepage = "https://github.com/cdayAI/maverick"
 
 [tool.setuptools.packages.find]
 where = ["."]
