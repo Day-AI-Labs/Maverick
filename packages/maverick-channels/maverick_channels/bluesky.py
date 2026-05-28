@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Optional
+from typing import Optional, Set
 
 from .base import Channel, Handler, IncomingMessage
 
@@ -44,16 +44,32 @@ class BlueskyChannel(Channel):
         *,
         handle: Optional[str] = None,
         password: Optional[str] = None,
+        allowed_user_ids: Optional[set[str]] = None,
         poll_interval: float = _POLL_INTERVAL_SEC,
     ):
         super().__init__(handler)
         self.handle = handle or os.environ.get("BLUESKY_HANDLE", "")
         self.password = password or os.environ.get("BLUESKY_PASSWORD", "")
+        self.allowed_user_ids = self._normalize_allowlist(
+            allowed_user_ids,
+            env_name="BLUESKY_ALLOWED_USER_IDS",
+        )
+        if not self.allowed_user_ids:
+            raise ValueError(
+                "Set BLUESKY_ALLOWED_USER_IDS to restrict access"
+            )
         self.poll_interval = poll_interval
         self._session: dict = {}
         self._last_seen_indexed_at: Optional[str] = None
         self._running = False
         self._stop_event = asyncio.Event()
+
+    @staticmethod
+    def _normalize_allowlist(values: Optional[set[str]], env_name: str) -> Set[str]:
+        if values is not None:
+            return {str(v).strip() for v in values if str(v).strip()}
+        raw = os.environ.get(env_name, "")
+        return {item.strip() for item in raw.split(",") if item.strip()}
 
     async def _ensure_session(self) -> dict:
         if self._session.get("accessJwt"):
@@ -115,6 +131,9 @@ class BlueskyChannel(Channel):
         text = record.get("text", "")
         author = notif.get("author") or {}
         user_id = author.get("did") or author.get("handle") or "anonymous"
+        if user_id not in self.allowed_user_ids:
+            log.warning("unauthorized bluesky access: user_id=%s", user_id)
+            return
         msg = IncomingMessage(
             user_id=user_id, text=text,
             channel=self.name, raw=notif,

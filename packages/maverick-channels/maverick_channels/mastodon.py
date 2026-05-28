@@ -15,7 +15,7 @@ import asyncio
 import logging
 import os
 import re
-from typing import Optional
+from typing import Optional, Set
 
 from .base import Channel, Handler, IncomingMessage
 
@@ -48,6 +48,7 @@ class MastodonChannel(Channel):
         *,
         instance: Optional[str] = None,
         access_token: Optional[str] = None,
+        allowed_user_ids: Optional[set[str]] = None,
         poll_interval: float = _POLL_INTERVAL_SEC,
     ):
         super().__init__(handler)
@@ -58,10 +59,25 @@ class MastodonChannel(Channel):
         self.access_token = (
             access_token or os.environ.get("MASTODON_ACCESS_TOKEN", "")
         )
+        self.allowed_user_ids = self._normalize_allowlist(
+            allowed_user_ids,
+            env_name="MASTODON_ALLOWED_USER_IDS",
+        )
+        if not self.allowed_user_ids:
+            raise ValueError(
+                "Set MASTODON_ALLOWED_USER_IDS to restrict access"
+            )
         self.poll_interval = poll_interval
         self._last_seen_id: Optional[str] = None
         self._running = False
         self._stop_event = asyncio.Event()
+
+    @staticmethod
+    def _normalize_allowlist(values: Optional[set[str]], env_name: str) -> Set[str]:
+        if values is not None:
+            return {str(v).strip() for v in values if str(v).strip()}
+        raw = os.environ.get(env_name, "")
+        return {item.strip() for item in raw.split(",") if item.strip()}
 
     @property
     def _base_url(self) -> str:
@@ -108,6 +124,9 @@ class MastodonChannel(Channel):
         account = notif.get("account") or {}
         text = _strip_html(status.get("content", ""))
         user_id = account.get("acct") or account.get("username") or "anonymous"
+        if user_id not in self.allowed_user_ids:
+            log.warning("unauthorized mastodon access: user_id=%s", user_id)
+            return
         msg = IncomingMessage(
             user_id=user_id, text=text,
             channel=self.name, raw=notif,

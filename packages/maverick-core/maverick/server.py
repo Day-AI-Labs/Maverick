@@ -222,20 +222,24 @@ def _wire_matrix(server, cfg):
 
 def _wire_bluesky(server, cfg):
     from maverick_channels.bluesky import BlueskyChannel
+    allowed_user_ids = cfg.get("allowed_user_ids")
     server.add_channel(BlueskyChannel(
         handler=server._handle_message,
         handle=cfg.get("handle") or os.environ.get("BLUESKY_HANDLE"),
         password=cfg.get("password") or os.environ.get("BLUESKY_PASSWORD"),
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
         poll_interval=cfg.get("poll_interval", 30),
     ))
 
 
 def _wire_mastodon(server, cfg):
     from maverick_channels.mastodon import MastodonChannel
+    allowed_user_ids = cfg.get("allowed_user_ids")
     server.add_channel(MastodonChannel(
         handler=server._handle_message,
         instance=cfg.get("instance") or os.environ.get("MASTODON_INSTANCE"),
         access_token=cfg.get("access_token") or os.environ.get("MASTODON_ACCESS_TOKEN"),
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
         poll_interval=cfg.get("poll_interval", 30),
     ))
 

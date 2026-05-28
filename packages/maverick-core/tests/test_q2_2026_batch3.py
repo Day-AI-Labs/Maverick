@@ -133,7 +133,7 @@ async def test_bluesky_start_requires_credentials():
     async def handler(msg):
         return ""
 
-    ch = BlueskyChannel(handler=handler, handle="", password="")
+    ch = BlueskyChannel(handler=handler, handle="", password="", allowed_user_ids={"did:plc:ok"})
     with pytest.raises(RuntimeError, match="BLUESKY_HANDLE"):
         await ch.start()
 
@@ -162,6 +162,7 @@ async def test_bluesky_session_created_and_cached():
 
         ch = BlueskyChannel(
             handler=handler, handle="me.bsky.social", password="app-pass",
+            allowed_user_ids={"did:plc:ok"},
         )
         sess = await ch._ensure_session()
         assert sess["accessJwt"] == "tok-123"
@@ -180,7 +181,7 @@ async def test_mastodon_requires_token():
     async def handler(msg):
         return ""
 
-    ch = MastodonChannel(handler=handler, access_token="")
+    ch = MastodonChannel(handler=handler, access_token="", allowed_user_ids={"ok@example"})
     with pytest.raises(RuntimeError, match="MASTODON_ACCESS_TOKEN"):
         await ch._poll_once()
 
@@ -220,6 +221,7 @@ async def test_mastodon_poll_uses_since_id():
         ch = MastodonChannel(
             handler=handler, access_token="tok",
             instance="mastodon.test",
+            allowed_user_ids={"user@example"},
         )
         first = await ch._poll_once()
         assert len(first) == 1
@@ -245,3 +247,23 @@ def test_wizard_catalog_includes_tgi():
     from maverick_installer import models
     assert "tgi" in models.PROVIDERS
     assert models.PROVIDERS["tgi"]["status"] == "ready"
+
+
+def test_bluesky_requires_allowlist():
+    from maverick_channels.bluesky import BlueskyChannel
+
+    async def handler(msg):
+        return ""
+
+    with pytest.raises(ValueError, match="BLUESKY_ALLOWED_USER_IDS"):
+        BlueskyChannel(handler=handler, handle="me", password="pass", allowed_user_ids=set())
+
+
+def test_mastodon_requires_allowlist():
+    from maverick_channels.mastodon import MastodonChannel
+
+    async def handler(msg):
+        return ""
+
+    with pytest.raises(ValueError, match="MASTODON_ALLOWED_USER_IDS"):
+        MastodonChannel(handler=handler, access_token="tok", allowed_user_ids=set())
