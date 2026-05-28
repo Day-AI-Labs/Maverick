@@ -59,9 +59,22 @@ def test_chat_form_has_inline_error_region(monkeypatch, tmp_path):
 
 
 def test_chat_form_submits_via_fetch(monkeypatch, tmp_path):
-    """The form posts with fetch so 4xx surfaces inline, not as raw JSON."""
+    """The form posts with fetch so 4xx surfaces inline, not as raw JSON.
+
+    The handler lives in base.html (shared by the chat + overview forms),
+    so it ships on every page render.
+    """
     _prep(monkeypatch, tmp_path)
     r = _client().get("/chat")
-    assert "new FormData(sendForm)" in r.text
+    assert "new FormData(form)" in r.text
     # It reads Retry-After so a rate-limited user sees the wait time.
     assert "Retry-After" in r.text
+
+
+def test_overview_first_run_form_has_inline_error_region(monkeypatch, tmp_path):
+    """The landing-page first-goal form gets the same graceful errors."""
+    _prep(monkeypatch, tmp_path)
+    r = _client().get("/")
+    # Empty DB -> first-run branch with the goal form.
+    assert 'action="/chat/send"' in r.text
+    assert 'id="goal-error"' in r.text
