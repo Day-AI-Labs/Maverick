@@ -124,8 +124,12 @@ def _op_search(args: dict) -> str:
         return f"no hits (total={total_val})"
     out = [f"total={total_val} took={data.get('took')}ms"]
     for h in hits:
+        # _score is null on any query with a `sort` clause (the norm for
+        # time-series/log search), so format it conditionally.
+        sc = h.get("_score")
+        score_s = f"{sc:>6.2f}" if isinstance(sc, (int, float)) else f"{'—':>6}"
         out.append(
-            f"  [{h.get('_score'):>6.2f}]  {h.get('_id')}  "
+            f"  [{score_s}]  {h.get('_id')}  "
             f"{json.dumps(h.get('_source') or {}, default=str)[:200]}"
         )
     return "\n".join(out)

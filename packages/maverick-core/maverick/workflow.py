@@ -148,8 +148,7 @@ class Workflow:
             args = self._interpolate(step.args, outputs)
             t0 = time.time()
             try:
-                # ToolRegistry.run is async; drive it synchronously here.
-                raw = asyncio.run(registry.run(step.tool, args))
+                raw = _drive(registry.run(step.tool, args))
                 ok = not str(raw).startswith("ERROR:")
                 err = "" if ok else str(raw)
             except Exception as e:
@@ -169,6 +168,26 @@ class Workflow:
                     break
             outputs[step.name] = sr.output
         return result
+
+
+def _drive(coro):
+    """Run an awaitable to completion from a SYNC caller, whether or not
+    an event loop is already running on this thread.
+
+    ``asyncio.run`` raises "cannot be called from a running event loop"
+    when invoked from inside async code (the agent kernel runs in a
+    loop). When a loop is already running we off-load the coroutine to a
+    dedicated thread with its own loop and block for the result; the
+    short-lived thread keeps the workflow callable from both sync and
+    async contexts.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(lambda: asyncio.run(coro)).result()
 
 
 __all__ = [

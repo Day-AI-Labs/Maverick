@@ -132,7 +132,7 @@ def _op_monitors(args: dict) -> str:
     if not data:
         return "no monitors"
     return "\n".join(
-        f"  {m.get('id'):>10}  [{m.get('overall_state', '?'):>4}]  "
+        f"  {str(m.get('id') or '?'):>10}  [{m.get('overall_state', '?'):>4}]  "
         f"{(m.get('name') or '')[:80]}"
         for m in data
     )

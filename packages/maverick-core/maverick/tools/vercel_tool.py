@@ -95,7 +95,7 @@ def _op_projects(args: dict) -> str:
     if not rows:
         return "no projects"
     return "\n".join(
-        f"  {p.get('id')}  {p.get('name'):<30}  "
+        f"  {p.get('id')}  {(p.get('name') or '?'):<30}  "
         f"framework={p.get('framework', '?')}  "
         f"latest={(p.get('latestDeployments') or [{}])[0].get('readyState', '?')}"
         for p in rows
@@ -115,7 +115,7 @@ def _op_deployments(args: dict) -> str:
         return "no deployments"
     return "\n".join(
         f"  {d.get('uid')}  [{d.get('state', '?'):>10}]  "
-        f"{d.get('name'):<30}  {d.get('source', '?'):>8}  "
+        f"{(d.get('name') or '?'):<30}  {d.get('source', '?'):>8}  "
         f"created={d.get('created')}"
         for d in rows
     )
@@ -180,7 +180,7 @@ def _op_domains(args: dict) -> str:
     if not rows:
         return "no domains"
     return "\n".join(
-        f"  {d.get('name'):<40}  verified={d.get('verified')}  "
+        f"  {(d.get('name') or '?'):<40}  verified={d.get('verified')}  "
         f"git_branch={d.get('gitBranch', '?')}"
         for d in rows
     )

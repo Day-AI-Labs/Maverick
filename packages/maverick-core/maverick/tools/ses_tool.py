@@ -53,7 +53,7 @@ def _op_send(args: dict) -> str:
     if not args.get("confirm"):
         return (
             f"DRY RUN: would send to {len(to)} recipient(s) "
-            "with subject {subject!r}. Re-run with confirm=true."
+            f"with subject {subject!r}. Re-run with confirm=true."
         )
     msg: dict = {
         "Subject": {"Data": subject},

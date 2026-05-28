@@ -138,27 +138,33 @@ def next_run(expr: str, *, after: Optional[float] = None) -> float:
     dom_restricted = dom != set(range(1, 32))
     dow_restricted = dow != set(range(0, 7))
 
-    # 4 years of minutes is the hard cap (handles Feb-29-only schedules).
-    for _ in range(366 * 4 * 24 * 60):
-        if (
-            t.minute in minute
-            and t.hour in hour
-            and t.month in mon
-        ):
-            # cron weekday: Mon=0..Sun=6 in python; we use Sun=0..Sat=6.
-            py_dow = (t.weekday() + 1) % 7  # Mon(0)->1 ... Sun(6)->0
-            dom_ok = t.day in dom
-            dow_ok = py_dow in dow
-            if dom_restricted and dow_restricted:
-                match = dom_ok or dow_ok
-            elif dom_restricted:
-                match = dom_ok
-            elif dow_restricted:
-                match = dow_ok
-            else:
-                match = True
-            if match:
-                return t.timestamp()
+    def _day_matches(d: _dt.datetime) -> bool:
+        if d.month not in mon:
+            return False
+        # cron weekday: Mon=0..Sun=6 in python; we use Sun=0..Sat=6.
+        py_dow = (d.weekday() + 1) % 7  # Mon(0)->1 ... Sun(6)->0
+        dom_ok = d.day in dom
+        dow_ok = py_dow in dow
+        if dom_restricted and dow_restricted:
+            return dom_ok or dow_ok
+        if dom_restricted:
+            return dom_ok
+        if dow_restricted:
+            return dow_ok
+        return True
+
+    # Bound the search to ~4 years. Skip whole non-matching days in one
+    # jump instead of walking 1440 dead minutes each — so an impossible
+    # schedule ('0 0 30 2 *', Feb 30) costs ~1.5k day-steps, not ~2M
+    # minute-steps.
+    deadline = base + _dt.timedelta(days=366 * 4)
+    while t <= deadline:
+        if not _day_matches(t):
+            t = (t + _dt.timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0)
+            continue
+        if t.hour in hour and t.minute in minute:
+            return t.timestamp()
         t += _dt.timedelta(minutes=1)
     raise CronError(f"no match for {expr!r} within 4 years")
 

@@ -139,7 +139,8 @@ def pick(signal: CostSignal) -> Optional[str]:
         # cheap AND working; 10% errors ≈ 1x cost surcharge, 100%
         # errors ≈ 10x surcharge).
         stat = snap.get((provider, model))
-        err_pen = 1.0 + (stat["error_rate"] * 10.0 if stat else 0.0)
+        err_rate = (stat.get("error_rate") or 0.0) if stat else 0.0
+        err_pen = 1.0 + err_rate * 10.0
         return cost * err_pen
 
     available = [c for c in candidates if _provider_available(c[0])]

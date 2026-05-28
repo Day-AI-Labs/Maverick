@@ -99,7 +99,7 @@ def _op_list(args: dict) -> str:
     if not rows:
         return f"no files match {query!r}"
     return "\n".join(
-        f"  {f.get('id'):<35}  {f.get('mimeType', '?'):<40}  "
+        f"  {(f.get('id') or '?'):<35}  {f.get('mimeType', '?'):<40}  "
         f"{(f.get('name') or '')[:60]}"
         for f in rows
     )

@@ -106,10 +106,15 @@ class LLMCache:
         db_path: Optional[Path] = None,
         *,
         ttl_seconds: float = DEFAULT_TTL_S,
+        max_rows: int = 5000,
     ) -> None:
         self.db_path = Path(db_path or DEFAULT_DB).expanduser()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.ttl_seconds = float(ttl_seconds)
+        # Hard cap on stored rows. TTL eviction is lazy (on read of the
+        # expired key), so without a count cap a stream of unique prompts
+        # would grow the DB without bound between purge_expired() sweeps.
+        self.max_rows = int(max_rows) if max_rows and max_rows > 0 else 0
         self._lock = threading.Lock()
         self._ensure_schema()
 
@@ -174,6 +179,15 @@ class LLMCache:
                 "VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
                 (key, provider, model, text, thinking, stop_reason, now),
             )
+            if self.max_rows:
+                # Evict beyond the cap, keeping the most-used then most-
+                # recent rows (approximate LRU/LFU).
+                c.execute(
+                    "DELETE FROM responses WHERE key NOT IN ("
+                    "  SELECT key FROM responses "
+                    "  ORDER BY hit_count DESC, created_at DESC LIMIT ?)",
+                    (self.max_rows,),
+                )
 
     def purge_expired(self, *, now: Optional[float] = None) -> int:
         if not self.ttl_seconds:

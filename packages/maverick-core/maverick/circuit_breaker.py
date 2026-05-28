@@ -162,13 +162,25 @@ class _Registry:
 _REG = _Registry()
 
 
+_DEFAULT_THRESHOLD = 5
+_DEFAULT_COOLDOWN = 30.0
+
+
 def get(
     key: str,
     *,
-    failure_threshold: int = 5,
-    cooldown_seconds: float = 30.0,
+    failure_threshold: int = _DEFAULT_THRESHOLD,
+    cooldown_seconds: float = _DEFAULT_COOLDOWN,
 ) -> CircuitBreaker:
-    """Return the breaker for ``key``, creating it on first call."""
+    """Return the breaker for ``key``, creating it on first call.
+
+    If the breaker already exists and the caller passes *non-default*
+    config that differs from the live breaker, the new thresholds are
+    applied in place (without resetting the breaker's state) — so a
+    later ``get("x", cooldown_seconds=120)`` isn't silently ignored
+    just because something touched ``"x"`` earlier with defaults. A
+    debug line records the change.
+    """
     with _REG.lock:
         br = _REG.breakers.get(key)
         if br is None:
@@ -178,6 +190,20 @@ def get(
                 cooldown_seconds=cooldown_seconds,
             )
             _REG.breakers[key] = br
+            return br
+        # Existing breaker: honor an explicit, differing override.
+        changed = False
+        if (failure_threshold != _DEFAULT_THRESHOLD
+                and failure_threshold != br.failure_threshold):
+            br.failure_threshold = int(failure_threshold)
+            changed = True
+        if (cooldown_seconds != _DEFAULT_COOLDOWN
+                and cooldown_seconds != br.cooldown_seconds):
+            br.cooldown_seconds = float(cooldown_seconds)
+            changed = True
+        if changed:
+            log.debug("circuit %r reconfigured: threshold=%s cooldown=%s",
+                      key, br.failure_threshold, br.cooldown_seconds)
     return br
 
 

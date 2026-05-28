@@ -79,7 +79,10 @@ def _op_run_report(args: dict) -> str:
     )
     if r.status_code >= 400:
         return f"ERROR: run_report ({r.status_code}): {r.text[:300]}"
-    data = r.json()
+    try:
+        data = r.json()
+    except ValueError:
+        return f"ERROR: run_report: non-JSON response: {r.text[:300]}"
     rows = data.get("rows") or []
     if not rows:
         return "no rows"
@@ -105,7 +108,10 @@ def _op_realtime(args: dict) -> str:
     )
     if r.status_code >= 400:
         return f"ERROR: realtime ({r.status_code}): {r.text[:300]}"
-    data = r.json()
+    try:
+        data = r.json()
+    except ValueError:
+        return f"ERROR: realtime: non-JSON response: {r.text[:300]}"
     rows = data.get("rows") or []
     if not rows:
         return "no realtime users"
