@@ -210,7 +210,7 @@ def test_redis_set_with_ttl(monkeypatch):
     monkeypatch.setenv("REDIS_URL", "redis://localhost")
     from maverick.tools.redis_tool import redis_tool
     out = redis_tool().fn({
-        "op": "set", "key": "k", "value": "v", "ttl_seconds": 60,
+        "op": "set", "key": "k", "value": "v", "ttl_seconds": 60, "confirm": True,
     })
     assert "OK" in out and "ttl=60" in out
 
@@ -243,8 +243,27 @@ def test_redis_publish(monkeypatch):
     _install_fake_redis(monkeypatch, publish=3)
     monkeypatch.setenv("REDIS_URL", "redis://localhost")
     from maverick.tools.redis_tool import redis_tool
-    out = redis_tool().fn({"op": "publish", "channel": "alerts", "message": "x"})
+    out = redis_tool().fn({
+        "op": "publish", "channel": "alerts", "message": "x", "confirm": True,
+    })
     assert "3 subscriber" in out
+
+
+def test_redis_mutations_require_confirm(monkeypatch):
+    _install_fake_redis(monkeypatch, set=True)
+    monkeypatch.setenv("REDIS_URL", "redis://localhost")
+    from maverick.tools.redis_tool import redis_tool
+    out = redis_tool().fn({"op": "set", "key": "k", "value": "v"})
+    assert "DRY RUN" in out
+
+
+def test_redis_requires_explicit_connection(monkeypatch):
+    _install_fake_redis(monkeypatch, get="hello")
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    monkeypatch.delenv("REDIS_HOST", raising=False)
+    from maverick.tools.redis_tool import redis_tool
+    out = redis_tool().fn({"op": "get", "key": "greeting"})
+    assert "must be set explicitly" in out
 
 
 # ---------- Sentry ----------

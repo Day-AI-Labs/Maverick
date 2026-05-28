@@ -1,9 +1,7 @@
 """Redis tool.
 
 Lets the agent talk to a Redis instance for caching, queueing, and
-small bits of state. Mutations are NOT gated by ``confirm`` because
-Redis values are by-convention ephemeral; if the user has critical
-data in Redis they should set ACLs at the server level.
+small bits of state.
 
 ops:
   - get(key)
@@ -53,6 +51,7 @@ _REDIS_SCHEMA: dict[str, Any] = {
         "channel": {"type": "string"},
         "message": {"type": "string"},
         "section": {"type": "string"},
+        "confirm": {"type": "boolean"},
     },
     "required": ["op"],
 }
@@ -63,8 +62,12 @@ def _client():
     url = os.environ.get("REDIS_URL", "").strip()
     if url:
         return redis.Redis.from_url(url, decode_responses=True)
+    if not os.environ.get("REDIS_HOST", "").strip():
+        raise ValueError(
+            "REDIS_URL (preferred) or REDIS_HOST must be set explicitly"
+        )
     return redis.Redis(
-        host=os.environ.get("REDIS_HOST", "localhost"),
+        host=os.environ["REDIS_HOST"].strip(),
         port=int(os.environ.get("REDIS_PORT", "6379")),
         db=int(os.environ.get("REDIS_DB", "0")),
         password=os.environ.get("REDIS_PASSWORD") or None,
@@ -155,6 +158,12 @@ def _run(args: dict[str, Any]) -> str:
             "Run: pip install 'maverick-agent[redis]'"
         )
     try:
+        needs_confirm = {"set", "delete", "lpush", "publish"}
+        if op in needs_confirm and args.get("confirm") is not True:
+            return (
+                f"DRY RUN: op={op!r} would mutate Redis. "
+                "Re-run with confirm=true."
+            )
         if op == "get":
             return _op_get((args.get("key") or "").strip())
         if op == "set":
