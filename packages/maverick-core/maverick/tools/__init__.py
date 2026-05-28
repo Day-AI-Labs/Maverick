@@ -169,6 +169,7 @@ def base_registry(
     from .http_fetch import http_fetch
     from .pdf_reader import read_pdf
     from .view_image import view_image
+    from .view_video import view_video
     from .dep_graph import dep_graph
     from .ast_edit import ast_edit
     from .clipboard import clipboard
@@ -256,6 +257,7 @@ def base_registry(
     reg.register(http_fetch())
     reg.register(read_pdf())
     reg.register(view_image())
+    reg.register(view_video(sandbox))
     reg.register(dep_graph(sandbox))
     reg.register(ast_edit(sandbox))
     reg.register(clipboard())

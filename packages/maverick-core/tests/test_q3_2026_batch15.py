@@ -1,0 +1,161 @@
+"""Q3 2026 batch 15.
+
+  - view_video tool: input validation, frame sampling math, mocked
+    extraction + vision dispatch, audio-transcript composition, registry.
+"""
+from __future__ import annotations
+
+import maverick.tools.view_video as vv
+from maverick.tools.view_video import _evenly_spaced, view_video
+
+
+# ---------- pure helpers ----------
+
+def test_evenly_spaced_midpoints():
+    ts = _evenly_spaced(10.0, 4)
+    assert ts == [1.25, 3.75, 6.25, 8.75]
+    assert all(0 < t < 10 for t in ts)
+    assert ts == sorted(ts)
+
+
+# ---------- input validation (no ffmpeg / no mocking needed) ----------
+
+def test_view_video_rejects_empty_source():
+    assert "source is required" in view_video().fn({"source": ""}).lower()
+
+
+def test_view_video_missing_ffmpeg(monkeypatch):
+    monkeypatch.setattr(vv, "_need", lambda b: f"ERROR: {b} not on PATH. Install ffmpeg.")
+    out = view_video().fn({"source": "clip.mp4"})
+    assert out.startswith("ERROR") and "ffmpeg" in out
+
+
+def test_view_video_missing_file(monkeypatch):
+    monkeypatch.setattr(vv, "_need", lambda b: None)
+    out = view_video().fn({"source": "/no/such/video.mp4"})
+    assert "video file not found" in out.lower()
+
+
+def test_view_video_probe_failure(monkeypatch, tmp_path):
+    vid = tmp_path / "v.mp4"
+    vid.write_bytes(b"\x00")
+    monkeypatch.setattr(vv, "_need", lambda b: None)
+    monkeypatch.setattr(vv, "_probe_duration", lambda src: None)
+    out = view_video().fn({"source": str(vid)})
+    assert "could not probe video duration" in out.lower()
+
+
+def test_view_video_no_frames_extracted(monkeypatch, tmp_path):
+    vid = tmp_path / "v.mp4"
+    vid.write_bytes(b"\x00")
+    monkeypatch.setattr(vv, "_need", lambda b: None)
+    monkeypatch.setattr(vv, "_probe_duration", lambda src: 10.0)
+    monkeypatch.setattr(vv, "_extract_frames", lambda src, ts, tmp: [])
+    out = view_video().fn({"source": str(vid)})
+    assert "extracted no frames" in out.lower()
+
+
+# ---------- mocked end-to-end dispatch ----------
+
+class _FakeResp:
+    def __init__(self, text):
+        self.text = text
+
+
+class _FakeLLM:
+    last_messages = None
+    last_model = None
+
+    def __init__(self, model=None):
+        _FakeLLM.last_model = model
+
+    def complete(self, system, messages, max_tokens):
+        _FakeLLM.last_messages = messages
+        return _FakeResp("a cat plays the piano, then jumps down")
+
+
+def _prep(monkeypatch, tmp_path, *, frames):
+    vid = tmp_path / "v.mp4"
+    vid.write_bytes(b"\x00")
+    monkeypatch.setattr(vv, "_need", lambda b: None)
+    monkeypatch.setattr(vv, "_probe_duration", lambda src: 12.0)
+    monkeypatch.setattr(vv, "_extract_frames", lambda src, ts, tmp: frames)
+    monkeypatch.setattr("maverick.llm.LLM", _FakeLLM)
+    return vid
+
+
+def test_view_video_full_flow_builds_vision_blocks(monkeypatch, tmp_path):
+    frames = [(2.0, b"\xff\xd8a"), (6.0, b"\xff\xd8b"), (10.0, b"\xff\xd8c")]
+    vid = _prep(monkeypatch, tmp_path, frames=frames)
+    out = view_video().fn({"source": str(vid), "prompt": "What instrument?"})
+    assert out == "a cat plays the piano, then jumps down"
+
+    content = _FakeLLM.last_messages[0]["content"]
+    images = [b for b in content if b.get("type") == "image"]
+    texts = [b["text"] for b in content if b.get("type") == "text"]
+    assert len(images) == 3
+    assert images[0]["source"]["media_type"] == "image/jpeg"
+    assert any("frame at" in t for t in texts)
+    # The prompt is the trailing text block.
+    assert content[-1] == {"type": "text", "text": "What instrument?"}
+
+
+def test_view_video_clamps_num_frames(monkeypatch, tmp_path):
+    seen: dict[str, int] = {}
+
+    def _capture(src, ts, tmp):
+        seen["n"] = len(ts)
+        return [(float(i), b"\xff\xd8x") for i in range(len(ts))]
+
+    vid = tmp_path / "v.mp4"
+    vid.write_bytes(b"\x00")
+    monkeypatch.setattr(vv, "_need", lambda b: None)
+    monkeypatch.setattr(vv, "_probe_duration", lambda src: 60.0)
+    monkeypatch.setattr(vv, "_extract_frames", _capture)
+    monkeypatch.setattr("maverick.llm.LLM", _FakeLLM)
+    view_video().fn({"source": str(vid), "num_frames": 100})
+    assert seen["n"] == 20  # capped at _MAX_FRAMES
+
+
+def test_view_video_includes_transcript_when_requested(monkeypatch, tmp_path):
+    frames = [(3.0, b"\xff\xd8a")]
+    vid = _prep(monkeypatch, tmp_path, frames=frames)
+    monkeypatch.setattr(vv, "_transcribe_track", lambda src, tmp: "hello from the clip")
+    view_video().fn({"source": str(vid), "transcribe": True})
+    texts = [b["text"] for b in _FakeLLM.last_messages[0]["content"]
+             if b.get("type") == "text"]
+    assert any("hello from the clip" in t for t in texts)
+
+
+def test_view_video_skips_transcript_by_default(monkeypatch, tmp_path):
+    frames = [(3.0, b"\xff\xd8a")]
+    vid = _prep(monkeypatch, tmp_path, frames=frames)
+
+    def _boom(src, tmp):
+        raise AssertionError("_transcribe_track must not run when transcribe is false")
+
+    monkeypatch.setattr(vv, "_transcribe_track", _boom)
+    out = view_video().fn({"source": str(vid)})
+    assert out == "a cat plays the piano, then jumps down"
+
+
+# ---------- registry ----------
+
+def test_view_video_registered_by_default():
+    from maverick.tools import base_registry
+
+    class _FakeSandbox:
+        pass
+
+    class _FakeWorld:
+        pass
+
+    reg = base_registry(world=_FakeWorld(), sandbox=_FakeSandbox())
+    names = {t.name for t in reg.all()}
+    assert "view_video" in names
+
+
+def test_view_video_schema_requires_source():
+    tool = view_video()
+    assert tool.input_schema["required"] == ["source"]
+    assert "num_frames" in tool.input_schema["properties"]
