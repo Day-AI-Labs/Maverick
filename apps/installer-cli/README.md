@@ -1,11 +1,20 @@
 # maverick-installer
 
-The interactive setup wizard. Reach it via:
+The interactive setup wizard. Installed as part of the kernel's
+`[installer]` extra:
 
 ```bash
-maverick init           # if maverick-core is installed
-maverick-init           # standalone entry point
+pipx install 'maverick-agent[installer]'
+maverick init
 ```
+
+If the kernel is already installed without the extra:
+
+```bash
+pipx inject maverick-agent maverick-installer
+```
+
+A standalone `maverick-init` entry point is also exposed.
 
 Walks through:
 
@@ -17,4 +26,4 @@ Walks through:
 6. Budget caps
 7. API keys
 
-Writes `~/.maverick/config.toml` and `~/.maverick/.env`.
+Writes `~/.maverick/config.toml` (0o600) and `~/.maverick/.env` (0o600).

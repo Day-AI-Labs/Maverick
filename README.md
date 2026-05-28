@@ -1,61 +1,71 @@
 # Maverick
 
-An AI agent that anyone can run -- powerful enough for engineers, simple enough for everyone else.
+[![CI](https://github.com/texasreaper62/maverick/actions/workflows/ci.yml/badge.svg)](https://github.com/texasreaper62/maverick/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org)
 
-Maverick combines two open-source projects into a single, safest-by-default assistant:
+An open-source AI agent you fully control. Powerful enough for engineers, simple enough for everyone else.
 
-- **Maverick Agent** -- a recursive multi-agent swarm optimized for long-horizon work (hours, not minutes).
-- **Agent Shield** -- a mature safety layer with F1 0.988 prompt-injection detection (full SDK) plus a built-in 20-pattern fallback that ships with Maverick.
+Maverick combines two projects into one safest-by-default assistant:
 
-Install in one command, the wizard walks you through every choice, and it deploys anywhere -- desktop, Docker, VPS, or phone-companion (via any of 9 channels).
+- **Maverick Agent**: a recursive multi-agent swarm optimised for long-horizon work (hours, not minutes).
+- **Agent Shield**: a safety layer with F1 0.988 prompt-injection detection (full SDK) plus a built-in 20-pattern fallback that ships with Maverick.
+
+The wizard walks you through every choice. Deploy on desktop, in Docker, on a VPS, or as a phone companion (via any of 9 channels).
 
 ## Status
 
-**Early alpha.** Foundation complete; tag `v0.1.0` to publish to PyPI + GHCR. See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the technical map and [`docs/getting-started.md`](./docs/getting-started.md) for the install flow.
+Early alpha. Foundation complete. See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the technical map and [`docs/getting-started.md`](./docs/getting-started.md) for the install flow.
 
 ## What works today vs. planned
 
 | Component | v0.1 (today) | Planned (v0.2+) |
 |---|---|---|
-| Install | Source via `pip install -e ./packages/maverick-core` (one-step `pip install maverick-agent` lands when tagged) | One-click Tauri DMG / MSIX / AppImage (signed) |
+| Install | `pipx install 'maverick-agent[installer]'` or from source | One-click Tauri DMG / MSIX / AppImage (signed) |
 | GUI | Local web dashboard (`maverick dashboard`) + chat at `/chat` | Native Tauri shell + native iOS/Android |
-| Sandbox | Local subprocess, Docker, SSH | Modal / Daytona |
-| AI providers | Anthropic (full), OpenAI, OpenRouter, Ollama, Gemini -- per-role routable | Bedrock, Cohere |
-| Channels | Telegram, Discord, Slack, Signal, Email, Matrix (ready) + WhatsApp, SMS, iMessage (scaffolds) | Push notifications, voice |
-| Safety | Shield wired at 3 chokepoints; agent-shield SDK if installed, else 20 builtin rules | agent-shield SDK on PyPI; full ~115 patterns |
-| Distribution | GHCR image + PyInstaller binaries + PyPI publish all wired (untagged) | Tagged release; signed bundles |
-| Tests | 150+ tests, ruff + pytest on Py 3.10/3.11/3.12 | Integration tests + benchmark RESULTS.md |
+| Sandbox | Local subprocess, Docker, SSH, Podman, devcontainer | Firecracker, Modal, Daytona |
+| AI providers | Anthropic (full), OpenAI, OpenRouter, Ollama, Gemini, DeepSeek (per-role routable) | Bedrock, Cohere |
+| Channels | Telegram, Discord, Slack, Signal, Email, Matrix, Bluesky, Mastodon (ready); WhatsApp, SMS, iMessage (scaffolds) | Push notifications, voice |
+| Safety | Shield wired at 3 chokepoints; agent-shield SDK if installed, else 20 builtin rules | Agent-shield full ~115 patterns |
+| Distribution | GHCR image + PyInstaller binaries + PyPI publish (Trusted Publishing, OIDC) | Signed bundles; Homebrew tap |
+| Tests | 1000+ tests, ruff + pytest on Py 3.10/3.11/3.12 | Integration suite + benchmark RESULTS.md |
 
-## Install (preview)
+## Install
 
-Until PyPI publish, install from source:
+```bash
+pipx install 'maverick-agent[installer]'
+maverick init
+```
+
+The PyPI distribution name is `maverick-agent` (the `maverick` name is squatted on PyPI). The `[installer]` extra pulls the wizard into the same pipx environment so `maverick init` resolves.
+
+If you already installed the kernel without the extra, inject the wizard:
+
+```bash
+pipx inject maverick-agent maverick-installer
+```
+
+### From source
 
 ```bash
 git clone https://github.com/texasreaper62/maverick
 cd maverick
-
 pip install -e ./packages/maverick-core
-pip install --no-deps -e ./packages/maverick-shield
-pip install --no-deps -e ./packages/maverick-channels
-pip install --no-deps -e ./packages/maverick-dashboard
-pip install --no-deps -e ./packages/maverick-mcp
-pip install --no-deps -e ./apps/installer-cli
-pip install fastapi uvicorn jinja2 python-multipart questionary rich
+pip install -e ./apps/installer-cli
+# Optional sister packages:
+pip install -e ./packages/maverick-shield
+pip install -e ./packages/maverick-channels
+pip install -e ./packages/maverick-dashboard
+pip install -e ./packages/maverick-mcp
 
-maverick init                          # interactive wizard
-maverick start "Plan a 2-week trip"     # one-shot goal
-maverick chat                           # interactive REPL
-maverick dashboard                      # web UI at http://127.0.0.1:8765
-maverick serve                          # channel server (Telegram/Discord/...)
-maverick mcp                            # MCP server (Claude Code / Cursor)
-maverick doctor                         # health check
-maverick version                        # installed package versions
-```
-
-When tagged for release, the install collapses to:
-
-```bash
-pipx install maverick-agent[all]
+maverick init                           # interactive wizard
+maverick start "Plan a 2-week trip"      # one-shot goal
+maverick chat                            # interactive REPL
+maverick dashboard                       # web UI at http://127.0.0.1:8765
+maverick serve                           # channel server (Telegram/Discord/...)
+maverick mcp                             # MCP server (Claude Code / Cursor)
+maverick doctor                          # health check
+maverick version                         # installed package versions
 ```
 
 ## CLI reference

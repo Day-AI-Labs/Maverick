@@ -7,7 +7,7 @@ Four deployment targets, all driven by the same `maverick init` wizard.
 For most users.
 
 ```bash
-pipx install maverick
+pipx install 'maverick-agent[installer]'
 maverick init
 ```
 
