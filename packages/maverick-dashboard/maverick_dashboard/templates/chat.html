@@ -49,41 +49,8 @@
           input.focus();
         });
       });
-      // Submit via fetch so 400/403/429 surface as an inline message
-      // instead of a raw JSON page. The empty case is still caught by the
-      // input's `required`; this handles whitespace-only titles (which
-      // satisfy `required`) and the shared goal rate limit.
-      var sendForm = document.querySelector('form[action="/chat/send"]');
-      var sendBtn = document.getElementById('send-btn');
-      var errBox = document.getElementById('goal-error');
-      sendForm.addEventListener('submit', async function(ev) {
-        ev.preventDefault();
-        errBox.style.display = 'none';
-        sendBtn.disabled = true;
-        sendBtn.textContent = 'Starting…';
-        try {
-          var resp = await fetch(sendForm.action, {
-            method: 'POST',
-            body: new FormData(sendForm),
-          });
-          if (resp.redirected) { window.location.href = resp.url; return; }
-          if (resp.ok) { window.location.reload(); return; }
-          var detail = 'Could not start the goal (' + resp.status + ').';
-          try { var j = await resp.json(); if (j && j.detail) detail = j.detail; } catch (e) {}
-          if (resp.status === 429) {
-            var ra = resp.headers.get('Retry-After');
-            if (ra) detail += ' (retry in ' + ra + 's)';
-          }
-          errBox.textContent = detail;
-          errBox.style.display = 'block';
-        } catch (e) {
-          errBox.textContent = 'Network error — is the dashboard still running?';
-          errBox.style.display = 'block';
-        } finally {
-          sendBtn.disabled = false;
-          sendBtn.textContent = 'Run';
-        }
-      });
+      // The goal-form submit handler (fetch + inline errors) lives in
+      // base.html so the overview and chat pages share one copy.
     </script>
   </div>
 

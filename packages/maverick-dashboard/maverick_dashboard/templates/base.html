@@ -161,6 +161,40 @@
       refresh();
       setInterval(refresh, 15000);
     })();
+
+    // Shared goal-create form handler. The form appears on both the
+    // overview (first run) and chat pages; submit via fetch so a
+    // 400/403/429 shows the server message inline instead of a raw JSON
+    // page. No-ops on pages without the form + its error region.
+    (function() {
+      const form = document.querySelector('form[action="/chat/send"]');
+      const errBox = document.getElementById('goal-error');
+      if (!form || !errBox) return;
+      const btn = form.querySelector('button[type="submit"]');
+      form.addEventListener('submit', async function(ev) {
+        ev.preventDefault();
+        errBox.style.display = 'none';
+        if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+        try {
+          const resp = await fetch(form.action, { method: 'POST', body: new FormData(form) });
+          if (resp.redirected) { window.location.href = resp.url; return; }
+          if (resp.ok) { window.location.reload(); return; }
+          let detail = 'Could not start the goal (' + resp.status + ').';
+          try { const j = await resp.json(); if (j && j.detail) detail = j.detail; } catch (e) {}
+          if (resp.status === 429) {
+            const ra = resp.headers.get('Retry-After');
+            if (ra) detail += ' (retry in ' + ra + 's)';
+          }
+          errBox.textContent = detail;
+          errBox.style.display = 'block';
+        } catch (e) {
+          errBox.textContent = 'Network error — is the dashboard still running?';
+          errBox.style.display = 'block';
+        } finally {
+          if (btn) { btn.disabled = false; btn.textContent = 'Run'; }
+        }
+      });
+    })();
   </script>
 </body>
 </html>
