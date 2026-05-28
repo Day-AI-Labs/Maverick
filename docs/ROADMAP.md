@@ -230,6 +230,11 @@ shelf (vs Devin, Hermes, OpenClaw, Cline, Aider).
 - Podman sandbox.
 - Devcontainer sandbox.
 - gRPC API surface (`StartGoal`/`StreamEpisode`/`Cancel`).
+- **MCP-as-cross-language-surface (council decision)**: harden the
+  MCP server so any TypeScript / Go / Rust / .NET / JVM client can
+  drive Maverick over stdio JSON-RPC; ship a 20-line TS quickstart
+  in the README + `docs/clients/`. See "Language Bindings — Council
+  Decision" below.
 
 ---
 
@@ -371,7 +376,78 @@ shelf (vs Devin, Hermes, OpenClaw, Cline, Aider).
 
 ---
 
-## Working with this roadmap
+## Language Bindings — Council Decision (May 2026)
+
+Three-perspective council pass on whether to ship Maverick in Rust /
+TypeScript / Go / other languages. Research covered LangChain.js,
+AutoGen .NET, CrewAI, Mastra, OpenAI/Anthropic SDKs.
+
+### Conclusion
+
+**Thin API clients port well; opinionated frameworks don't.** Maverick
+is the second kind. We do **not** port `maverick-core` to a second
+language. Instead we expose Maverick to other languages **over MCP**.
+
+### Top 5 target languages (priority order)
+
+1. **TypeScript / JavaScript** — half the agent dev population lives in
+   Node / Next.js; Mastra demonstrates the appetite. Ship the official
+   client here first.
+2. **Go** — k8s / cloud-native operators, infra teams, devops tools.
+   Modest LOC count (HTTP + JSON), pairs naturally with the
+   Kubernetes sandbox.
+3. **Rust** — embedded / perf-sensitive callers, CLI tool authors;
+   smallest binary size; strong typing buys safety in long-running
+   automations.
+4. **C# / .NET** — Microsoft / Unity / Game-dev ecosystem; .NET
+   Aspire and Semantic Kernel users want a turnkey agent backend.
+5. **Java / Kotlin** — JVM enterprise + Android; second-class today,
+   but the ROI on a single thin client is high once #1 ships.
+
+(Python is not on this list because it *is* Maverick.)
+
+### Gate: don't decide, measure
+
+Smallest concrete first step (1–2 weeks, one engineer):
+
+1. Polish the existing MCP server as the official cross-language
+   surface. *(Q3 2026: in progress.)*
+2. Ship a 20-line **TypeScript quickstart** in the README — uses the
+   official MCP SDK, connects to a locally running `maverick mcp`,
+   issues one tool call. *(Q3 2026.)*
+3. Mirror that quickstart for **Go** and **Rust** before any
+   client-package decision. *(Q4 2026.)*
+4. Add opt-in analytics on MCP-client language headers.
+   *(Q4 2026 — needs new telemetry consent UI.)*
+5. **Decision gate (Q1 2027):** if >15% of active installs are being
+   driven from non-Python MCP clients, fund **one** thin
+   `@maverick/client` TypeScript package (RPC wrapper, ~2k LOC,
+   Stainless-generated where possible). Under 15%, the answer is the
+   MCP surface, full stop.
+
+### Hard constraints
+
+- No port of `maverick-core` to a second language ever — that's a
+  permanent ~40% team-headcount tax that LangChain.js shows still
+  doesn't yield parity.
+- Sandbox backends (firecracker, k8s, devcontainer, podman) stay
+  Linux-process glue in Python; they are not part of the
+  cross-language contract.
+- Multi-agent topology (orchestrator + proposer + verifier + revisor +
+  reflector) stays Python. Other languages drive Maverick; they do
+  not re-implement it.
+
+### Roadmap placement
+
+The MCP-surface + quickstart deliverables live under
+**Q3 2026 — Ecosystem** (MCP hardening, TS quickstart) and **Q4 2026
+— Ecosystem** (Go + Rust quickstarts, MCP-client analytics). The
+binding decision itself is gated to **Q1 2027** based on measured
+non-Python MCP usage.
+
+---
+
+
 
 - **Track items**: each line is a candidate GitHub issue. Slice into smaller PRs as needed.
 - **Re-prioritize**: items move freely. Anything in Q4 2028 can land Q1 2026 if a contributor wants to ship it. The quarter labels are guidance about scaling and team size, not constraints.

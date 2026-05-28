@@ -258,7 +258,14 @@ def dashboard(host: str, port: int, token) -> None:
 
 @main.command()
 def mcp() -> None:
-    """Start the MCP server on stdio."""
+    """Start the MCP server on stdio.
+
+    This is Maverick's official cross-language surface. Any MCP-speaking
+    client (TypeScript, Go, Rust, .NET, JVM, plus every IDE-side MCP
+    client like Claude Code / Cursor / Continue / Zed) can drive the
+    swarm from outside Python via this command. See
+    docs/clients/typescript-quickstart.md for a 20-line example.
+    """
     try:
         from maverick_mcp.server import main as mcp_main
     except ImportError:
