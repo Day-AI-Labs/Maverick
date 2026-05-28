@@ -131,6 +131,42 @@ def test_api_v1_mutation_allows_matching_origin(monkeypatch, tmp_path):
     assert resp.status_code == 204
 
 
+# ---------- no-token mode refuses proxied requests (launch review) ----------
+
+def test_no_token_proxied_request_requires_token(monkeypatch, tmp_path):
+    """A reverse proxy on the same host connects over loopback, so trusting the
+    loopback peer in no-token mode would serve the control surface
+    unauthenticated behind a public proxy. Any forwarding header => require a
+    token (fail closed)."""
+    from maverick import world_model
+    monkeypatch.setattr(world_model, "DEFAULT_DB", tmp_path / "world.db")
+    monkeypatch.delenv("MAVERICK_DASHBOARD_TOKEN", raising=False)
+    client = _client()
+    resp = client.get("/", headers={"X-Forwarded-For": "203.0.113.7"})
+    assert resp.status_code == 401
+    assert "MAVERICK_DASHBOARD_TOKEN" in resp.json()["detail"]
+
+
+def test_no_token_proxied_via_forwarded_header_requires_token(monkeypatch, tmp_path):
+    """The RFC 7239 ``Forwarded`` header is honored too, not just X-Forwarded-*."""
+    from maverick import world_model
+    monkeypatch.setattr(world_model, "DEFAULT_DB", tmp_path / "world.db")
+    monkeypatch.delenv("MAVERICK_DASHBOARD_TOKEN", raising=False)
+    client = _client()
+    resp = client.get("/", headers={"Forwarded": "for=203.0.113.7"})
+    assert resp.status_code == 401
+
+
+def test_no_token_direct_loopback_still_served(monkeypatch, tmp_path):
+    """Direct local use (no proxy headers) is unaffected by the proxy guard."""
+    from maverick import world_model
+    monkeypatch.setattr(world_model, "DEFAULT_DB", tmp_path / "world.db")
+    monkeypatch.delenv("MAVERICK_DASHBOARD_TOKEN", raising=False)
+    client = _client()
+    resp = client.get("/")
+    assert resp.status_code == 200
+
+
 # ---------- baseline security headers ----------
 
 def test_security_headers_present_on_every_response(monkeypatch, tmp_path):

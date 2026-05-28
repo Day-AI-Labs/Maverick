@@ -201,6 +201,27 @@ def _is_loopback_client(host: str) -> bool:
         return False
 
 
+# Standard headers a reverse proxy adds when forwarding a request.
+_PROXY_FORWARD_HEADERS = ("x-forwarded-for", "x-forwarded-host", "x-real-ip", "forwarded")
+
+
+def _is_proxied(request: Request) -> bool:
+    """True if a reverse proxy forwarded this request.
+
+    In no-token mode the dashboard trusts the loopback peer
+    (``request.client.host``). A reverse proxy on the same host connects over
+    loopback, so a deploy that fronts the app with a public proxy but forgets
+    to set ``MAVERICK_DASHBOARD_TOKEN`` on the app process would serve the
+    control surface unauthenticated to the internet — the loopback peer is the
+    proxy, not the real remote client. Treat any standard forwarding header as
+    proof a proxy is in front and fall through to the token requirement (fail
+    closed). Reading these headers only ever makes auth STRICTER, so a forged
+    header cannot grant access — at worst a direct caller locks itself out by
+    sending one.
+    """
+    return any(request.headers.get(h) for h in _PROXY_FORWARD_HEADERS)
+
+
 @app.middleware("http")
 async def bearer_auth(request: Request, call_next):
     expected = os.environ.get("MAVERICK_DASHBOARD_TOKEN")
@@ -212,7 +233,7 @@ async def bearer_auth(request: Request, call_next):
         # run history, spend, and the control surface unauthenticated to
         # the network. Set MAVERICK_DASHBOARD_TOKEN to allow remote access.
         client_host = request.client.host if request.client else ""
-        if _is_loopback_client(client_host):
+        if _is_loopback_client(client_host) and not _is_proxied(request):
             # Loopback is served without a bearer, so a malicious page open in
             # the user's browser could otherwise drive mutating endpoints via an
             # ambient cross-site request (CSRF): cancel/resume goals, disable
@@ -228,7 +249,7 @@ async def bearer_auth(request: Request, call_next):
                 )
             return await call_next(request)
         return JSONResponse(
-            {"detail": "dashboard requires MAVERICK_DASHBOARD_TOKEN for non-loopback access"},
+            {"detail": "dashboard requires MAVERICK_DASHBOARD_TOKEN for non-loopback or proxied access"},
             status_code=401,
         )
     auth = request.headers.get("authorization", "")
