@@ -478,28 +478,42 @@ def _build_plan_tree(world, goal_id: int, depth_cap: int = 6) -> dict:
     if root is None:
         return {}
 
+    per_parent_cap = 50
     rows = world.conn.execute(
         """
         WITH RECURSIVE descendants(id, parent_id, title, status, depth, created_at) AS (
           SELECT id, parent_id, title, status, 0, created_at
             FROM goals WHERE id = ?
           UNION ALL
-          SELECT g.id, g.parent_id, g.title, g.status, d.depth + 1, g.created_at
-            FROM goals g
-            JOIN descendants d ON g.parent_id = d.id
+          SELECT child.id, child.parent_id, child.title, child.status, d.depth + 1, child.created_at
+            FROM descendants d
+            JOIN (
+              SELECT id, parent_id, title, status, created_at
+                FROM (
+                  SELECT g.id, g.parent_id, g.title, g.status, g.created_at,
+                         ROW_NUMBER() OVER (
+                           PARTITION BY g.parent_id
+                           ORDER BY g.created_at ASC, g.id ASC
+                         ) AS rn
+                    FROM goals g
+                )
+               WHERE rn <= ?
+            ) AS child ON child.parent_id = d.id
            WHERE d.depth < ?
+        ),
+        episode_totals AS (
+          SELECT e.goal_id, SUM(e.cost_dollars) AS dollars
+            FROM episodes e
+            JOIN descendants d ON d.id = e.goal_id
+           GROUP BY e.goal_id
         )
         SELECT d.id, d.parent_id, d.title, d.status, d.depth,
                COALESCE(e.dollars, 0) AS dollars
           FROM descendants d
-          LEFT JOIN (
-            SELECT goal_id, SUM(cost_dollars) AS dollars
-              FROM episodes
-             GROUP BY goal_id
-          ) e ON e.goal_id = d.id
+          LEFT JOIN episode_totals e ON e.goal_id = d.id
          ORDER BY d.depth ASC, d.created_at ASC, d.id ASC
         """,
-        (goal_id, depth_cap),
+        (goal_id, per_parent_cap, depth_cap),
     ).fetchall()
 
     nodes: dict[int, dict] = {}
@@ -514,11 +528,10 @@ def _build_plan_tree(world, goal_id: int, depth_cap: int = 6) -> dict:
         }
     # Assemble children lists. Per-parent fan-out cap stays at 50 to
     # match the prior LIMIT (truncates noisy fan-outs in the UI).
-    PER_PARENT_CAP = 50
     for n in nodes.values():
         parent = nodes.get(n["parent_id"])
         if parent is not None and parent["id"] != n["id"]:
-            if len(parent["children"]) < PER_PARENT_CAP:
+            if len(parent["children"]) < per_parent_cap:
                 parent["children"].append(n)
     root_node = nodes.get(goal_id)
     if root_node is None:
