@@ -22,6 +22,8 @@ on:
 
 jobs:
   bundle:
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -51,7 +53,7 @@ jobs:
           node-version: "20"
 
       - name: Enable pnpm
-        run: corepack enable && corepack prepare pnpm@latest --activate
+        run: corepack enable && corepack prepare pnpm@10.11.1 --activate
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -67,7 +69,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('apps/installer-desktop/src-tauri/Cargo.toml') }}
 
       - name: Install frontend deps
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Generate icon variants from source icon
         # Turns the committed src-tauri/icons/icon.png into the
@@ -77,15 +79,6 @@ jobs:
 
       - name: Build bundle (unsigned)
         run: pnpm tauri build
-        env:
-          # Signing identities plug in here once the certs exist.
-          # Empty = unsigned build, which is what we ship until Tier-3.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Upload bundle artifacts
         uses: actions/upload-artifact@v4
