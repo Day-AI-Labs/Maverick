@@ -254,6 +254,9 @@ def test_record_metric_unlabeled_gauge_no_crash(monkeypatch):
     calls = {"set": None}
 
     class _Gauge:
+        def inc(self, _v):
+            raise AssertionError("gauge must not use inc() for absolute values")
+
         def set(self, v):
             calls["set"] = v
 

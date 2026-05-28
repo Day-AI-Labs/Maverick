@@ -162,13 +162,15 @@ def record_metric(
         # wrong (or empty) label set raises in prometheus_client, so only
         # scope when labels are actually provided.
         scoped = metric.labels(**labels) if labels else metric
-        # Histograms expose observe(); counters expose inc(); gauges set().
+        # Histograms expose observe(); gauges expose set() *and* inc();
+        # counters expose inc(). Prefer set() before inc() so gauges are
+        # updated as absolute values rather than accumulated.
         if hasattr(scoped, "observe"):
             scoped.observe(value)
-        elif hasattr(scoped, "inc"):
-            scoped.inc(value)
         elif hasattr(scoped, "set"):
             scoped.set(value)
+        elif hasattr(scoped, "inc"):
+            scoped.inc(value)
     except Exception:  # pragma: no cover -- never crash on metric export
         log.debug("metric %s failed", name, exc_info=True)
 
