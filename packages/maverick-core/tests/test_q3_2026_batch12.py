@@ -459,7 +459,7 @@ def test_circuit_breaker_snapshot():
 
 # ---------- registration smoke ----------
 
-def test_new_tools_register(tmp_path):
+def test_new_tools_not_registered_by_default(tmp_path):
     from maverick.sandbox.local import LocalBackend
     from maverick.tools import base_registry
 
@@ -467,6 +467,22 @@ def test_new_tools_register(tmp_path):
         def open_questions(self, gid):
             return []
 
+    reg = base_registry(_W(), LocalBackend(workdir=tmp_path))
+    names = {t.name for t in reg.all()}
+    for n in ("airtable", "asana", "clickup", "lambda",
+              "dynamodb", "vercel", "gdrive"):
+        assert n not in names, f"{n} should be opt-in"
+
+
+def test_new_tools_register_when_enabled(tmp_path, monkeypatch):
+    from maverick.sandbox.local import LocalBackend
+    from maverick.tools import base_registry
+
+    class _W:
+        def open_questions(self, gid):
+            return []
+
+    monkeypatch.setenv("MAVERICK_ENABLE_CRED_TOOLS", "true")
     reg = base_registry(_W(), LocalBackend(workdir=tmp_path))
     names = {t.name for t in reg.all()}
     for n in ("airtable", "asana", "clickup", "lambda",

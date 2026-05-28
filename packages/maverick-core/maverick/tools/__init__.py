@@ -11,8 +11,13 @@ MCPClient. This is how Maverick consumes the wider MCP ecosystem.
 from __future__ import annotations
 
 import inspect
+import os
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional, Union
+
+
+def _env_true(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 ToolFn = Callable[[dict[str, Any]], Union[str, Awaitable[str]]]
 
@@ -290,13 +295,17 @@ def base_registry(
     reg.register(s3_tool())
     reg.register(elasticsearch_tool())
     reg.register(github_actions())
-    reg.register(airtable_tool())
-    reg.register(asana_tool())
-    reg.register(clickup_tool())
-    reg.register(lambda_tool())
-    reg.register(dynamodb_tool())
-    reg.register(vercel_tool())
-    reg.register(gdrive_tool())
+    # Credentialed SaaS/cloud tools are opt-in (PR #124): they can use
+    # ambient host credentials, so they only register when the operator
+    # sets MAVERICK_ENABLE_CRED_TOOLS=true.
+    if _env_true("MAVERICK_ENABLE_CRED_TOOLS"):
+        reg.register(airtable_tool())
+        reg.register(asana_tool())
+        reg.register(clickup_tool())
+        reg.register(lambda_tool())
+        reg.register(dynamodb_tool())
+        reg.register(vercel_tool())
+        reg.register(gdrive_tool())
     reg.register(trello_tool())
     reg.register(confluence_tool())
     reg.register(replicate_tool())
