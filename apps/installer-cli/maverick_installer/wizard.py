@@ -51,9 +51,9 @@ CHANNELS: list[tuple[str, str, list[str]]] = [
     ("signal",   "Signal (via signal-cli)",             []),
     ("email",    "Email (IMAP/SMTP, stdlib only)",      ["EMAIL_USER", "EMAIL_APP_PASSWORD"]),
     ("matrix",   "Matrix (federated)",                  ["MATRIX_ACCESS_TOKEN"]),
-    ("bluesky",  "Bluesky (AT Protocol)",               ["BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"]),
+    ("bluesky",  "Bluesky (AT Protocol)",               ["BLUESKY_HANDLE", "BLUESKY_PASSWORD"]),
     ("mastodon", "Mastodon (any instance)",             ["MASTODON_ACCESS_TOKEN"]),
-    ("voice",    "Voice (Twilio Voice in, TTS out)",    ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]),
+    ("voice",    "Voice (Vapi Voice in/out)",           ["VAPI_API_KEY", "VAPI_WEBHOOK_TOKEN"]),
     ("whatsapp", "WhatsApp (Twilio, needs webhook)",    ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]),
     ("sms",      "SMS (Twilio, needs webhook)",         ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]),
     ("imessage", "iMessage (macOS only)",               []),
@@ -412,7 +412,7 @@ def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]
             cfg["access_token"] = "${MATRIX_ACCESS_TOKEN}"
         elif ch_id == "bluesky":
             cfg["handle"] = "${BLUESKY_HANDLE}"
-            cfg["app_password"] = "${BLUESKY_APP_PASSWORD}"
+            cfg["password"] = "${BLUESKY_PASSWORD}"
             cfg["poll_interval"] = 60
         elif ch_id == "mastodon":
             cfg["instance"] = _q_text(
@@ -421,13 +421,19 @@ def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]
             cfg["access_token"] = "${MASTODON_ACCESS_TOKEN}"
             cfg["poll_interval"] = 30
         elif ch_id == "voice":
-            cfg["account_sid"] = "${TWILIO_ACCOUNT_SID}"
-            cfg["auth_token"] = "${TWILIO_AUTH_TOKEN}"
-            cfg["from_number"] = _q_text(
-                "  Voice 'from' number (e.g., +14155551234)", default="",
+            cfg["api_key"] = "${VAPI_API_KEY}"
+            cfg["webhook_token"] = "${VAPI_WEBHOOK_TOKEN}"
+            cfg["phone_number"] = _q_text(
+                "  Vapi phone number (E.164, optional)", default="",
+            )
+            cfg["assistant_id"] = _q_text(
+                "  Vapi assistant ID (optional)", default="",
+            )
+            cfg["provider"] = _q_text(
+                "  Voice provider", default="vapi",
             )
             cfg["port"] = _safe_int(
-                _q_text("  Webhook port", default="8767"), default=8767,
+                _q_text("  Webhook port", default="8770"), default=8770,
             )
         elif ch_id == "whatsapp":
             cfg["account_sid"] = "${TWILIO_ACCOUNT_SID}"

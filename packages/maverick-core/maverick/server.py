@@ -218,6 +218,27 @@ def _wire_matrix(server, cfg):
     ))
 
 
+
+
+def _wire_bluesky(server, cfg):
+    from maverick_channels.bluesky import BlueskyChannel
+    server.add_channel(BlueskyChannel(
+        handler=server._handle_message,
+        handle=cfg.get("handle") or os.environ.get("BLUESKY_HANDLE"),
+        password=cfg.get("password") or os.environ.get("BLUESKY_PASSWORD"),
+        poll_interval=cfg.get("poll_interval", 30),
+    ))
+
+
+def _wire_mastodon(server, cfg):
+    from maverick_channels.mastodon import MastodonChannel
+    server.add_channel(MastodonChannel(
+        handler=server._handle_message,
+        instance=cfg.get("instance") or os.environ.get("MASTODON_INSTANCE"),
+        access_token=cfg.get("access_token") or os.environ.get("MASTODON_ACCESS_TOKEN"),
+        poll_interval=cfg.get("poll_interval", 30),
+    ))
+
 def _wire_whatsapp(server, cfg):
     from maverick_channels.whatsapp import WhatsAppChannel
     server.add_channel(WhatsAppChannel(
@@ -268,6 +289,8 @@ _WIRES = {
     "signal":   _wire_signal,
     "email":    _wire_email,
     "matrix":   _wire_matrix,
+    "bluesky":  _wire_bluesky,
+    "mastodon": _wire_mastodon,
     "whatsapp": _wire_whatsapp,
     "sms":      _wire_sms,
     "imessage": _wire_imessage,

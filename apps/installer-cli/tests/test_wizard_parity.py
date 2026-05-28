@@ -52,7 +52,7 @@ def test_bluesky_channel_env_vars():
     from maverick_installer.wizard import CHANNELS
     spec = next(c for c in CHANNELS if c[0] == "bluesky")
     assert "BLUESKY_HANDLE" in spec[2]
-    assert "BLUESKY_APP_PASSWORD" in spec[2]
+    assert "BLUESKY_PASSWORD" in spec[2]
 
 
 # ---------- new pick_*() functions exist ----------
