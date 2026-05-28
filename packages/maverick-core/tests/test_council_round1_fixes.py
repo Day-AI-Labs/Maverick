@@ -192,6 +192,63 @@ def test_docker_timeout_cleanup_is_guarded(monkeypatch):
     assert "TIMEOUT" in res.stderr
 
 
+# --- SEC-1/PRODUCT-1: tamper-evident audit log must actually be wired in ---
+
+def _crypto_works() -> bool:
+    # `cryptography` can import yet panic on use when its native backend is
+    # half-installed (missing _cffi_backend), so probe an actual op.
+    try:
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+        ed25519.Ed25519PrivateKey.generate()
+        return True
+    except BaseException:
+        return False
+
+
+def test_audit_log_signing_roundtrip_and_tamper(tmp_path, monkeypatch):
+    import json
+
+    if not _crypto_works():
+        pytest.skip("cryptography backend unavailable")
+    import maverick.audit.signing as signing
+    from maverick.audit import verify_chain
+    from maverick.audit.events import AuditEvent
+    from maverick.audit.writer import AuditLog
+
+    # Keep generated keys out of the real ~/.maverick.
+    monkeypatch.setattr(signing, "KEY_DIR", tmp_path / "keys")
+    adir = tmp_path / "audit"
+    alog = AuditLog(adir, sign=True)
+    for i in range(3):
+        assert alog.record(AuditEvent(ts=float(i), kind="tool_call", agent="a", payload={"i": i})) is True
+
+    files = list(adir.glob("*.ndjson"))
+    assert len(files) == 1
+    path = files[0]
+    lines = path.read_text().splitlines()
+    first = json.loads(lines[0])
+    assert {"hash", "sig", "key_id"} <= set(first)  # rows are signed + chained
+    assert verify_chain(path) == []                 # intact chain verifies
+
+    rows = [json.loads(x) for x in lines]
+    rows[1]["payload"] = {"i": 999}                 # tamper a historical row
+    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    assert verify_chain(path)                        # break detected
+
+
+def test_audit_log_unsigned_by_default(tmp_path):
+    import json
+
+    from maverick.audit.events import AuditEvent
+    from maverick.audit.writer import AuditLog
+
+    adir = tmp_path / "audit"
+    alog = AuditLog(adir, sign=False)
+    alog.record(AuditEvent(ts=1.0, kind="x", agent="a", payload={}))
+    row = json.loads(list(adir.glob("*.ndjson"))[0].read_text().splitlines()[0])
+    assert "sig" not in row and "hash" not in row
+
+
 # --- SEC-7: dashboard serves loopback-only when no token is configured ---
 
 def test_dashboard_loopback_helper():

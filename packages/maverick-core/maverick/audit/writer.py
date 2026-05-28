@@ -23,17 +23,50 @@ log = logging.getLogger(__name__)
 DEFAULT_AUDIT_DIR = Path.home() / ".maverick" / "audit"
 
 
+def _resolve_signing(explicit: Optional[bool]) -> bool:
+    """Whether to sign + hash-chain audit rows. Opt-in.
+
+    Precedence: explicit arg > MAVERICK_AUDIT_SIGN env > [audit] sign in
+    config.toml > off. Resolved once at construction so the hot record()
+    path never re-reads config.
+    """
+    if explicit is not None:
+        return bool(explicit)
+    env = os.environ.get("MAVERICK_AUDIT_SIGN", "").strip().lower()
+    if env in ("1", "true", "yes", "on"):
+        return True
+    if env in ("0", "false", "no", "off"):
+        return False
+    try:
+        from ..config import load_config
+        return bool(((load_config() or {}).get("audit") or {}).get("sign", False))
+    except Exception:
+        return False
+
+
 class AuditLog:
     """Append-only NDJSON sink with per-day rotation.
 
     Single writer instance per process. Thread-safe.
+
+    When signing is enabled (opt-in via ``sign=True`` /
+    ``MAVERICK_AUDIT_SIGN`` / ``[audit] sign``), each row is routed
+    through :class:`maverick.audit.signing.AuditSigner`, adding an
+    Ed25519 ``prev_hash``/``hash``/``sig`` chain so tampering is
+    detectable by ``maverick audit verify``. For third-party
+    tamper-evidence the verifier must be given an externally-held
+    pubkey: a co-located key only detects accidental/non-privileged
+    edits, not an attacker who can also write the key dir.
     """
 
-    def __init__(self, audit_dir: Path = DEFAULT_AUDIT_DIR):
+    def __init__(self, audit_dir: Path = DEFAULT_AUDIT_DIR, *, sign: Optional[bool] = None):
         self.audit_dir = audit_dir
         self._lock = threading.Lock()
         self._current_path: Optional[Path] = None
         self._current_day: Optional[str] = None
+        self._signing_enabled = _resolve_signing(sign)
+        self._signer: Any = None
+        self._signer_path: Optional[Path] = None
 
     def _path_for(self, day_str: str) -> Path:
         return self.audit_dir / f"{day_str}.ndjson"
@@ -84,6 +117,11 @@ class AuditLog:
                 return False
             try:
                 payload = _redact_event(event.to_dict())
+                signer = self._signer_for(path)
+                if signer is not None:
+                    # Sign the already-redacted payload so secrets never
+                    # enter the signed bytes either.
+                    return bool(signer.write(payload))
                 line = json.dumps(payload, default=str) + "\n"
                 with open(path, "a", encoding="utf-8") as f:
                     f.write(line)
@@ -91,6 +129,33 @@ class AuditLog:
             except (OSError, TypeError, ValueError) as e:
                 log.warning("audit: write failed: %s", e)
                 return False
+
+    def _signer_for(self, path: Path) -> Any:
+        """Lazily build (and rotate with the day file) the AuditSigner.
+
+        Falls back to unsigned writes if signing was requested but the
+        crypto extra is missing — and disables further attempts so the
+        warning logs once, not per record.
+        """
+        if not self._signing_enabled:
+            return None
+        if self._signer is None or self._signer_path != path:
+            try:
+                from .signing import AuditSigner
+                self._signer = AuditSigner(path)
+                self._signer_path = path
+            except ImportError:
+                log.warning(
+                    "audit: signing enabled but 'cryptography' not installed; "
+                    "writing UNSIGNED. Run: pip install 'maverick-agent[audit-signing]'"
+                )
+                self._signing_enabled = False
+                return None
+            except Exception as e:  # pragma: no cover - defensive
+                log.warning("audit: signer init failed (%s); writing unsigned", e)
+                self._signing_enabled = False
+                return None
+        return self._signer
 
     def tail(self, n: int = 50, day: Optional[str] = None) -> list[dict[str, Any]]:
         """Return the last ``n`` events from ``day`` (default today)."""

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from .erase import delete_user, scrub_user  # noqa: F401
 from .events import AuditEvent, EventKind  # noqa: F401
+from .signing import AuditSigner, ChainBreak, verify_chain  # noqa: F401
 from .writer import (  # noqa: F401
     AuditLog,
     default_audit_log,
@@ -36,4 +37,7 @@ __all__ = [
     "record",
     "scrub_user",
     "delete_user",
+    "AuditSigner",
+    "ChainBreak",
+    "verify_chain",
 ]

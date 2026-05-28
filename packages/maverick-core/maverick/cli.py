@@ -1278,6 +1278,49 @@ def audit_grep(pattern: str, day: str | None) -> None:
         click.echo(_json.dumps(ev, default=str))
 
 
+@audit.command("verify")
+@click.option("--day", default=None, help="YYYY-MM-DD (default: today).")
+@click.option("--file", "file_", default=None, type=click.Path(), help="Audit file to verify.")
+@click.option(
+    "--pubkey", default=None,
+    help="Trusted Ed25519 pubkey (hex). Required for real third-party "
+         "tamper-evidence; without it a locally-held key is trusted.",
+)
+def audit_verify(day: str | None, file_: str | None, pubkey: str | None) -> None:
+    """Verify the Ed25519 hash-chain of a (signed) audit log.
+
+    Reports any broken links/signatures. Exits non-zero if the chain is
+    not intact, so it can gate CI / cron checks. Only meaningful when
+    audit signing is enabled ([audit] sign = true).
+    """
+    import datetime as _dt
+    from pathlib import Path as _Path
+
+    from .audit import verify_chain
+    from .audit.writer import DEFAULT_AUDIT_DIR
+
+    if file_:
+        path = _Path(file_)
+    else:
+        d = day or _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
+        path = DEFAULT_AUDIT_DIR / f"{d}.ndjson"
+
+    if not pubkey:
+        click.echo(
+            "warning: no --pubkey given; trusting a locally-held key. For "
+            "third-party tamper-evidence, pass the externally-held pubkey.",
+            err=True,
+        )
+    breaks = verify_chain(path, pubkey_hex=pubkey)
+    if not breaks:
+        click.echo(f"OK: chain intact ({path})")
+        return
+    click.echo(f"FAIL: {len(breaks)} issue(s) in {path}", err=True)
+    for b in breaks:
+        click.echo(f"  line {b.line_no}: {b.reason} — {b.detail}", err=True)
+    raise SystemExit(1)
+
+
 # ----- Killswitch --------------------------------------------------------
 
 @main.command()
