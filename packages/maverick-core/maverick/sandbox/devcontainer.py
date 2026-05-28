@@ -22,6 +22,8 @@ Strategy:
   - Read ``remoteUser`` (default ``root``), ``workspaceFolder``
     (default ``/workspaces/<repo-name>``), ``containerEnv``
     (env vars), ``forwardPorts`` (ignored — exec model).
+  - ``runArgs`` are intentionally rejected in v1 to preserve sandbox
+    isolation guarantees.
   - For each ``exec()``: ``docker run --rm`` with the parsed config.
 
 Config::
@@ -69,7 +71,6 @@ class DevcontainerSpec:
     remote_user: str = "root"
     workspace_folder: str = "/workspaces/repo"
     container_env: dict[str, str] = field(default_factory=dict)
-    run_args: list[str] = field(default_factory=list)
 
 
 def _find_devcontainer_json(project_dir: Path) -> Optional[Path]:
@@ -101,6 +102,13 @@ def _parse_devcontainer(path: Path) -> DevcontainerSpec:
             )
         raise RuntimeError(f"{path}: missing required `image` field")
 
+    run_args = data.get("runArgs") or []
+    if run_args:
+        raise RuntimeError(
+            f"{path}: `runArgs` is not supported for security reasons in v1. "
+            "Configure sandbox options in Maverick config instead."
+        )
+
     repo_name = path.parent.name
     if path.parent.name == ".devcontainer":
         repo_name = path.parent.parent.name
@@ -113,7 +121,6 @@ def _parse_devcontainer(path: Path) -> DevcontainerSpec:
         container_env={
             str(k): str(v) for k, v in (data.get("containerEnv") or {}).items()
         },
-        run_args=[str(a) for a in (data.get("runArgs") or [])],
     )
 
 
@@ -166,7 +173,6 @@ class DevcontainerBackend:
             args.extend(["-e", f"{k}={v}"])
         if not self.allow_network:
             args.extend(["--network", "none"])
-        args.extend(self.spec.run_args)
         args.extend([self.spec.image, "sh", "-c", cmd])
 
         try:

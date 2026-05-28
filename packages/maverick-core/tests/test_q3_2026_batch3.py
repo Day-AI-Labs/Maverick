@@ -65,7 +65,6 @@ def test_devcontainer_parses_image(tmp_path, monkeypatch):
             "remoteUser": "vscode",
             "workspaceFolder": "/workspaces/myrepo",
             "containerEnv": {"FOO": "bar"},
-            "runArgs": ["--cap-add=NET_ADMIN"],
         }),
     )
     from maverick.sandbox.devcontainer import DevcontainerBackend
@@ -74,8 +73,23 @@ def test_devcontainer_parses_image(tmp_path, monkeypatch):
     assert backend.spec.remote_user == "vscode"
     assert backend.spec.workspace_folder == "/workspaces/myrepo"
     assert backend.spec.container_env == {"FOO": "bar"}
-    assert backend.spec.run_args == ["--cap-add=NET_ADMIN"]
 
+
+
+
+def test_devcontainer_rejects_run_args(tmp_path, monkeypatch):
+    _stub_subprocess_ok(monkeypatch)
+    (tmp_path / ".devcontainer").mkdir()
+    (tmp_path / ".devcontainer" / "devcontainer.json").write_text(
+        json.dumps({"image": "alpine", "runArgs": ["--privileged"]}),
+    )
+    from maverick.sandbox.devcontainer import DevcontainerBackend
+    try:
+        DevcontainerBackend(project_dir=tmp_path)
+    except RuntimeError as e:
+        assert "runArgs" in str(e)
+        return
+    raise AssertionError("expected RuntimeError")
 
 def test_devcontainer_exec_builds_docker_run(tmp_path, monkeypatch):
     (tmp_path / ".devcontainer").mkdir()
