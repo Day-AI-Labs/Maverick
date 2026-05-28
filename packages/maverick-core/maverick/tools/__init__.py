@@ -160,11 +160,15 @@ def base_registry(
     from .compute import compute
     from .currency import currency
     from .diagnose import diagnose
+    from .discord_bot import discord_bot
+    from .dns_lookup import dns_lookup
     from .email_tool import email_tool
     from .embeddings import embeddings
     from .file_watcher import file_watcher
+    from .geocode import geocode
     from .git_advanced import git_advanced
     from .gitlab import gitlab
+    from .hackernews import hackernews
     from .huggingface import huggingface
     from .ios_sim import ios_sim
     from .jira import jira
@@ -217,6 +221,10 @@ def base_registry(
     reg.register(stripe_tool())
     reg.register(currency())
     reg.register(a11y())
+    reg.register(discord_bot())
+    reg.register(hackernews())
+    reg.register(dns_lookup())
+    reg.register(geocode())
 
     # Voice tools (opt-in extra; tool factories raise ImportError only
     # when called without the required API key OR SDK; registering is
