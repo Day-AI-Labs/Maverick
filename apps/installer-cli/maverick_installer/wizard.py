@@ -807,8 +807,26 @@ def write_config(
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
     if keys:
-        ENV_FILE.write_text("\n".join(f"{k}={v}" for k, v in keys.items()) + "\n")
-        os.chmod(ENV_FILE, 0o600)
+        # Atomic + perm-from-creation: previous version was
+        # ``write_text(...)`` followed by ``chmod(0o600)``, which left
+        # the file world-readable (0o644) for one syscall. Open with
+        # ``O_CREAT | O_WRONLY | O_TRUNC`` and mode 0o600 so the file
+        # never exists at any other permission.
+        body = "\n".join(f"{k}={v}" for k, v in keys.items()) + "\n"
+        fd = os.open(
+            ENV_FILE,
+            os.O_CREAT | os.O_WRONLY | os.O_TRUNC,
+            0o600,
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(body)
+        finally:
+            # If the file already existed at a wider mode, tighten it.
+            try:
+                os.chmod(ENV_FILE, 0o600)
+            except OSError:
+                pass
 
     lines = [
         "# Maverick config. Regenerate with:  maverick init",
@@ -872,10 +890,26 @@ def write_config(
         for k, v in capabilities.items():
             lines.append(f"{k} = {str(v).lower()}")
 
-    CONFIG_FILE.write_text("\n".join(lines) + "\n")
-    console.print(f"[green]✓[/green] Wrote {CONFIG_FILE}")
+    # Config has no secrets today but does carry the deployment
+    # topology and provider names. chmod 600 so multi-user hosts don't
+    # leak it to other accounts.
+    config_body = "\n".join(lines) + "\n"
+    fd = os.open(
+        CONFIG_FILE,
+        os.O_CREAT | os.O_WRONLY | os.O_TRUNC,
+        0o600,
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(config_body)
+    finally:
+        try:
+            os.chmod(CONFIG_FILE, 0o600)
+        except OSError:
+            pass
+    console.print(f"[green]ok[/green] wrote {CONFIG_FILE} (chmod 600)")
     if keys:
-        console.print(f"[green]✓[/green] Wrote {ENV_FILE} (chmod 600)")
+        console.print(f"[green]ok[/green] wrote {ENV_FILE} (chmod 600)")
 
 
 def smoke_test() -> bool:

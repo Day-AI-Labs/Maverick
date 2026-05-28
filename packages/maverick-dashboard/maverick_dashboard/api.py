@@ -283,6 +283,24 @@ async def list_installed_skills() -> list[SkillOut]:
 
 @router.post("/skills", response_model=SkillOut, status_code=201)
 async def install_skill_endpoint(payload: SkillInstallIn) -> SkillOut:
+    """Install a skill from a URL or ``gh:org/repo[:path]``.
+
+    Skill install runs untrusted code at the next agent invocation. The
+    endpoint is gated behind ``MAVERICK_ALLOW_SKILL_INSTALL=1`` so a
+    compromised dashboard token can't be turned into one-shot RCE; an
+    operator opting in is taking explicit ownership of the supply
+    chain. CLI ``maverick skill install`` remains available without
+    the flag because it requires shell access on the host.
+    """
+    if os.environ.get("MAVERICK_ALLOW_SKILL_INSTALL", "").lower() not in {"1", "true", "yes"}:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "skill install via REST is disabled. Set "
+                "MAVERICK_ALLOW_SKILL_INSTALL=1 to opt in, or use "
+                "`maverick skill install` on the host."
+            ),
+        )
     from maverick.skills import install_skill
     try:
         s = install_skill(payload.source, trusted_local=False)

@@ -122,11 +122,24 @@ _AUTH_EXEMPT = {
     "/healthz", "/livez", "/readyz",
     "/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect",
 }
-_query_token_warned = False
+
+# Safe methods skip the CSRF check (browsers send Origin/Referer
+# inconsistently on GETs from address bars and bookmarks).
+_CSRF_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 def _is_same_origin(request: Request) -> bool:
-    """Allow only same-origin browser submissions for mutating form POSTs."""
+    """Allow only same-origin browser submissions for mutating form POSTs.
+
+    Fails closed when no Origin or Referer is present on a mutating
+    request. The previous fail-open branch ("Non-browser/API clients
+    commonly omit both headers") was a soft-CSRF: any tab on the same
+    machine could fire a no-cors fetch with both headers stripped and
+    have it accepted. Real API clients send Authorization headers and
+    are exempted by the bearer-auth middleware before they reach here.
+    """
+    if request.method in _CSRF_SAFE_METHODS:
+        return True
     expected = request.url.netloc
     for header in ("origin", "referer"):
         value = request.headers.get(header)
@@ -136,32 +149,41 @@ def _is_same_origin(request: Request) -> bool:
         if parsed.netloc == expected:
             return True
         return False
-    # Non-browser/API clients commonly omit both headers.
-    return True
+    return False
 
 
 @app.middleware("http")
 async def bearer_auth(request: Request, call_next):
-    global _query_token_warned
     expected = os.environ.get("MAVERICK_DASHBOARD_TOKEN")
     if not expected or request.url.path in _AUTH_EXEMPT:
         return await call_next(request)
     auth = request.headers.get("authorization", "")
     header_token = auth[7:] if auth.startswith("Bearer ") else ""
-    query_token = request.query_params.get("token", "")
-    ok_header = header_token and hmac.compare_digest(header_token, expected)
-    ok_query = query_token and hmac.compare_digest(query_token, expected)
-    if ok_header:
-        return await call_next(request)
-    if ok_query:
-        if not _query_token_warned:
-            log.warning(
-                "Bearer token accepted via ?token= -- leaks via Referer/logs. "
-                "Prefer Authorization: Bearer."
-            )
-            _query_token_warned = True
+    # ``?token=`` query auth was removed: it leaks the bearer through
+    # browser history, Referer headers on outbound link clicks, uvicorn
+    # access logs, and any logging proxy in front. Require the
+    # ``Authorization: Bearer`` header.
+    if header_token and hmac.compare_digest(header_token, expected):
         return await call_next(request)
     return JSONResponse({"detail": "unauthorized"}, status_code=401)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Apply baseline browser-security headers to every response.
+
+    These are cheap, well-supported, and close a class of attacks
+    (clickjacking, MIME sniffing, Referer leakage) the dashboard had
+    no defense against before.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Cross-Origin-Opener-Policy", "same-origin",
+    )
+    return response
 
 
 def _world():
