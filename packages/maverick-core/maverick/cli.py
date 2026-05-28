@@ -750,10 +750,40 @@ def skill() -> None:
 @skill.command("install")
 @click.argument("source")
 def skill_install(source: str) -> None:
-    """Install a SKILL.md."""
+    """Install a SKILL.md from a URL, gh:org/repo[:path], or local path."""
     from .skills import install_skill
     try:
         s = install_skill(source)
+    except ValueError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    click.echo(f"installed: {s.name} -> {s.path}")
+
+
+@skill.command("browse")
+def skill_browse() -> None:
+    """List skills available in the federated catalog."""
+    from .catalog import load_catalog
+    entries = load_catalog("skills")
+    if not entries:
+        click.echo("no catalog entries (index empty or unreachable).")
+        return
+    for e in entries:
+        mark = " [verified]" if e.verified else ""
+        click.echo(f"  {e.name}{mark}  v{e.version}")
+        if e.summary:
+            click.echo(f"    {e.summary}")
+    click.echo("")
+    click.echo("install one with:  maverick skill add <name>")
+
+
+@skill.command("add")
+@click.argument("name")
+def skill_add(name: str) -> None:
+    """Install a catalog skill by name (hash-verified)."""
+    from .skills import install_from_catalog
+    try:
+        s = install_from_catalog(name)
     except ValueError as e:
         click.echo(f"ERROR: {e}", err=True)
         sys.exit(2)

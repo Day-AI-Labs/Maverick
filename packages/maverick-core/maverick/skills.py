@@ -210,6 +210,13 @@ def install_skill(
             raise ValueError(f"local file {source!r} does not exist")
         content = p.read_text(encoding="utf-8")
 
+    return _validate_and_write(content, skills_dir)
+
+
+def _validate_and_write(content: str, skills_dir: Path) -> Skill:
+    """Parse + shield-scan skill content, then write it. Shared by
+    ``install_skill`` (free-text source) and ``install_from_catalog``
+    (hash-pinned source)."""
     # CRITICAL: parse + validate BEFORE writing to disk. Old behavior wrote
     # the file first and parsed second -- an attacker passing /etc/passwd
     # would still leave its contents on disk even though install errored.
@@ -255,6 +262,52 @@ def install_skill(
     target = skills_dir / f"{name}.md"
     target.write_text(content, encoding="utf-8")
     return Skill.parse(content, target)
+
+
+def _fetch_skill_source(source: str) -> str:
+    """Fetch SKILL.md content from a gh: or https: source. No local paths."""
+    if source.startswith("gh:"):
+        rest = source[3:]
+        if not _GH_PATTERN.match(rest):
+            raise ValueError(f"invalid gh: source {source!r}")
+        if ":" in rest:
+            repo, path = rest.split(":", 1)
+        else:
+            repo, path = rest, "SKILL.md"
+        return _fetch_url(f"https://raw.githubusercontent.com/{repo}/main/{path}")
+    if source.startswith("https://"):
+        return _fetch_url(source)
+    raise ValueError(
+        f"catalog source must be gh: or https:, got {source!r}"
+    )
+
+
+def install_from_catalog(
+    name: str,
+    skills_dir: Path = SKILLS_DIR,
+    *,
+    indexes: "Optional[list[str]]" = None,
+) -> Skill:
+    """Install a skill by name from the federated catalog.
+
+    Unlike ``install_skill`` with a free-text source, this is safe to
+    expose without the ``MAVERICK_ALLOW_SKILL_INSTALL`` opt-in: the
+    entry comes from a curated index AND the fetched bytes are verified
+    against the index's pinned SHA-256 before anything is written. A
+    missing or mismatched hash is a hard error.
+    """
+    from . import catalog as _catalog
+
+    entry = _catalog.resolve(name, "skills", indexes=indexes)
+    if entry is None:
+        raise ValueError(f"no catalog skill named {name!r}")
+    content = _fetch_skill_source(entry.source)
+    if not _catalog.verify_sha256(content, entry.sha256):
+        raise ValueError(
+            f"content hash mismatch for {name!r}: the fetched SKILL.md does "
+            "not match the catalog's pinned sha256. Refusing to install."
+        )
+    return _validate_and_write(content, skills_dir)
 
 
 def _fetch_url(url: str) -> str:

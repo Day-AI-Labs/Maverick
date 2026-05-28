@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}skill store · Maverick{% endblock %}
+{% block content %}
+  <h2>skill store</h2>
+
+  <div class="panel">
+    <p class="muted">
+      Curated skills from the community catalog. Each is hash-pinned, so
+      installing here is safe without the developer opt-in flag. Point at
+      your own index with <code>[catalogs] indexes</code> in
+      <code>~/.maverick/config.toml</code>.
+    </p>
+  </div>
+
+  {% if entries %}
+    <div class="store-grid">
+      {% for e in entries %}
+        <div class="store-card">
+          <div class="store-card-head">
+            <code class="store-name">{{ e.name }}</code>
+            {% if e.verified %}<span class="badge active" title="Verified author">verified</span>{% endif %}
+          </div>
+          <p class="store-summary">{{ e.summary or "No description." }}</p>
+          <p class="muted store-meta">
+            {% if e.author %}by {{ e.author }} · {% endif %}v{{ e.version }}
+            {% if e.install_count %} · {{ e.install_count }} installs{% endif %}
+          </p>
+          {% if e.name in installed %}
+            <button class="store-btn installed" disabled>Installed</button>
+          {% else %}
+            <button class="store-btn install" data-name="{{ e.name }}">Install</button>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="panel" style="text-align: center; padding: 2.5rem 1rem;">
+      <h3 style="text-transform: none; letter-spacing: 0; color: var(--text); margin: 0 0 0.5rem;">No catalog entries</h3>
+      <p class="muted">
+        The configured catalog index is empty or unreachable. Once a
+        community index is published (or you point at your own), curated
+        skills appear here for one-click install.
+      </p>
+    </div>
+  {% endif %}
+
+  <p id="store-msg" class="muted" style="min-height: 1em; margin-top: 1rem;"></p>
+
+  <style>
+    .store-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+    .store-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; display: flex; flex-direction: column; }
+    .store-card-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+    .store-name { font-size: 0.95rem; }
+    .store-summary { margin: 0 0 0.75rem; flex: 1; }
+    .store-meta { font-size: 0.78rem; margin: 0 0 1rem; }
+    .store-btn { padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; border: 0; font-weight: 500; }
+    .store-btn.install { background: var(--accent); color: #fff; }
+    .store-btn.installed { background: var(--panel); color: var(--muted); border: 1px solid var(--border); cursor: default; }
+    .store-btn[disabled] { opacity: 0.7; }
+  </style>
+
+  <script>
+    (function() {
+      const msg = document.getElementById('store-msg');
+      document.querySelectorAll('button.store-btn.install').forEach(function(btn) {
+        btn.addEventListener('click', async function() {
+          const name = btn.dataset.name;
+          btn.disabled = true;
+          btn.textContent = 'Installing…';
+          msg.style.color = 'var(--muted)';
+          msg.textContent = '';
+          try {
+            const r = await fetch('/api/v1/catalog/skills/install', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({name: name}),
+            });
+            if (r.ok) {
+              btn.textContent = 'Installed';
+              btn.classList.remove('install');
+              btn.classList.add('installed');
+              msg.style.color = 'var(--accent)';
+              msg.textContent = 'Installed ' + name + '.';
+            } else {
+              const j = await r.json().catch(function() { return {}; });
+              btn.disabled = false;
+              btn.textContent = 'Install';
+              msg.style.color = 'var(--danger)';
+              msg.textContent = (j.detail || ('HTTP ' + r.status));
+            }
+          } catch (e) {
+            btn.disabled = false;
+            btn.textContent = 'Install';
+            msg.style.color = 'var(--danger)';
+            msg.textContent = String(e);
+          }
+        });
+      });
+    })();
+  </script>
+{% endblock %}

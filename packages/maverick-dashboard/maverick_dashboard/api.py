@@ -345,6 +345,47 @@ async def install_skill_endpoint(payload: SkillInstallIn) -> SkillOut:
     return SkillOut(name=s.name, triggers=s.triggers, tools_needed=s.tools_needed)
 
 
+class CatalogInstallIn(BaseModel):
+    name: str = Field(..., max_length=200)
+
+
+@router.get("/catalog/{kind}")
+async def catalog_list(kind: str) -> dict:
+    """List federated catalog entries for a kind (skills/plugins/mcp/personas).
+
+    Tolerates an unreachable index by returning an empty list, so a
+    fresh install shows "no catalog entries" rather than 500ing.
+    """
+    from maverick.catalog import VALID_KINDS, load_catalog
+    if kind not in VALID_KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown kind {kind!r}; valid: {', '.join(VALID_KINDS)}",
+        )
+    entries = load_catalog(kind)
+    return {"kind": kind, "entries": [e.to_dict() for e in entries]}
+
+
+@router.post("/catalog/skills/install", response_model=SkillOut, status_code=201)
+async def catalog_install_skill(payload: CatalogInstallIn) -> SkillOut:
+    """Install a skill from the catalog by name.
+
+    Council ecosystem-seat: this does NOT require
+    MAVERICK_ALLOW_SKILL_INSTALL. Unlike the free-text-source
+    /skills endpoint (the RCE vector), a catalog install is both
+    curated (the name resolves through a vetted index) and hash-pinned
+    (the fetched bytes are verified against the index's sha256 before
+    anything is written). A consumer can click "Install" without
+    touching an env var.
+    """
+    from maverick.skills import install_from_catalog
+    try:
+        s = install_from_catalog(payload.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return SkillOut(name=s.name, triggers=s.triggers, tools_needed=s.tools_needed)
+
+
 @router.delete("/skills/{name}", status_code=204)
 async def remove_skill_endpoint(name: str) -> None:
     from maverick.skills import remove_skill

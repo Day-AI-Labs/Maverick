@@ -430,6 +430,20 @@ async def cache_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/store", response_class=HTMLResponse)
+async def store_page(request: Request) -> HTMLResponse:
+    """Skill Store: browse + install catalog skills without a terminal."""
+    from maverick.catalog import load_catalog
+    try:
+        entries = [e.to_dict() for e in load_catalog("skills")]
+    except Exception:
+        entries = []
+    installed = {s.name for s in _load_skills()}
+    return templates.TemplateResponse(
+        request, "store.html", {"entries": entries, "installed": installed},
+    )
+
+
 @app.get("/channels", response_class=HTMLResponse)
 async def channels_page(request: Request) -> HTMLResponse:
     """Configured + enabled channels."""
