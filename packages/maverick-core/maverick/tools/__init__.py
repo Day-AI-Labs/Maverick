@@ -324,9 +324,9 @@ def base_registry(
     reg.register(bitbucket_tool())
     reg.register(ses_tool())
     reg.register(sns_tool())
-    reg.register(ffmpeg_tool())
-    reg.register(pandoc_tool())
-    reg.register(imagemagick_tool())
+    reg.register(ffmpeg_tool(sandbox))
+    reg.register(pandoc_tool(sandbox))
+    reg.register(imagemagick_tool(sandbox))
     reg.register(ga4_tool())
     reg.register(plaid_tool())
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from . import Tool
@@ -64,7 +65,19 @@ def _run_cmd(cmd: list[str], *, timeout: float = 120.0) -> tuple[int, str, str]:
         return 124, "", f"TIMEOUT after {timeout}s"
 
 
-def _op_resize(args: dict) -> str:
+def _safe_path(sandbox, user_path: str) -> str:
+    if sandbox is None:
+        return user_path
+    workdir = Path(sandbox.workdir).resolve()
+    candidate = (workdir / user_path).resolve()
+    try:
+        candidate.relative_to(workdir)
+    except ValueError as e:
+        raise ValueError(f"path {user_path!r} escapes the workspace") from e
+    return str(candidate)
+
+
+def _op_resize(args: dict, sandbox) -> str:
     b = _magick_or_convert()
     if not b:
         return "ERROR: ImageMagick (magick/convert) not on PATH."
@@ -72,6 +85,11 @@ def _op_resize(args: dict) -> str:
     dst = (args.get("output_path") or "").strip()
     if not src or not dst:
         return "ERROR: resize requires input_path and output_path"
+    try:
+        src = _safe_path(sandbox, src)
+        dst = _safe_path(sandbox, dst)
+    except ValueError as e:
+        return f"ERROR: {e}"
     w = int(args.get("width") or 0)
     h = int(args.get("height") or 0)
     geom = f"{w if w else ''}x{h if h else ''}" or "100%"
@@ -82,7 +100,7 @@ def _op_resize(args: dict) -> str:
     return f"wrote {dst} ({geom})"
 
 
-def _op_convert(args: dict) -> str:
+def _op_convert(args: dict, sandbox) -> str:
     b = _magick_or_convert()
     if not b:
         return "ERROR: ImageMagick not on PATH."
@@ -90,6 +108,11 @@ def _op_convert(args: dict) -> str:
     dst = (args.get("output_path") or "").strip()
     if not src or not dst:
         return "ERROR: convert requires input_path and output_path"
+    try:
+        src = _safe_path(sandbox, src)
+        dst = _safe_path(sandbox, dst)
+    except ValueError as e:
+        return f"ERROR: {e}"
     cmd = [b] if b != "magick" else ["magick", "convert"]
     extra = [str(a) for a in (args.get("args") or [])]
     code, _o, stderr = _run_cmd(cmd + [src, *extra, dst])
@@ -98,13 +121,17 @@ def _op_convert(args: dict) -> str:
     return f"wrote {dst}"
 
 
-def _op_identify(args: dict) -> str:
+def _op_identify(args: dict, sandbox) -> str:
     b = _identify_bin()
     if not b:
         return "ERROR: ImageMagick identify not on PATH."
     src = (args.get("input_path") or "").strip()
     if not src:
         return "ERROR: identify requires input_path"
+    try:
+        src = _safe_path(sandbox, src)
+    except ValueError as e:
+        return f"ERROR: {e}"
     cmd = [b] if b != "magick" else ["magick", "identify"]
     code, out, stderr = _run_cmd(
         cmd + ["-format", "%w %h %m %b %f\n", src],
@@ -119,7 +146,7 @@ def _op_identify(args: dict) -> str:
     return out.strip()[:500]
 
 
-def _op_composite(args: dict) -> str:
+def _op_composite(args: dict, sandbox) -> str:
     b = _magick_or_convert()
     if not b:
         return "ERROR: ImageMagick not on PATH."
@@ -128,6 +155,12 @@ def _op_composite(args: dict) -> str:
     dst = (args.get("output_path") or "").strip()
     if not base or not overlay or not dst:
         return "ERROR: composite requires base_path, overlay_path, output_path"
+    try:
+        base = _safe_path(sandbox, base)
+        overlay = _safe_path(sandbox, overlay)
+        dst = _safe_path(sandbox, dst)
+    except ValueError as e:
+        return f"ERROR: {e}"
     geom = (args.get("geometry") or "+0+0").strip()
     cmd = [b] if b != "magick" else ["magick", "composite"]
     code, _o, stderr = _run_cmd(
@@ -138,22 +171,26 @@ def _op_composite(args: dict) -> str:
     return f"wrote {dst}"
 
 
-def _run(args: dict[str, Any]) -> str:
+def _run(args: dict[str, Any], sandbox) -> str:
     op = args.get("op")
     if not op:
         return "ERROR: op is required"
     try:
-        return {
-            "resize":    _op_resize,
-            "convert":   _op_convert,
-            "identify":  _op_identify,
+        handlers = {
+            "resize": _op_resize,
+            "convert": _op_convert,
+            "identify": _op_identify,
             "composite": _op_composite,
-        }.get(op, lambda a: f"ERROR: unknown op {op!r}")(args)
+        }
+        fn = handlers.get(op)
+        if not fn:
+            return f"ERROR: unknown op {op!r}"
+        return fn(args, sandbox)
     except Exception as e:
         return f"ERROR: imagemagick failed: {type(e).__name__}: {e}"
 
 
-def imagemagick_tool() -> Tool:
+def imagemagick_tool(sandbox=None) -> Tool:
     return Tool(
         name="imagemagick",
         description=(
@@ -163,5 +200,5 @@ def imagemagick_tool() -> Tool:
             "magick (IM 7) or convert/identify (IM 6) on PATH."
         ),
         input_schema=_IM_SCHEMA,
-        fn=_run,
+        fn=lambda args: _run(args, sandbox),
     )

@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from . import Tool
@@ -45,7 +46,19 @@ def _need_pandoc() -> str | None:
     return "ERROR: pandoc not on PATH. Install pandoc."
 
 
-def _op_convert(args: dict) -> str:
+def _safe_path(sandbox, user_path: str) -> str:
+    if sandbox is None:
+        return user_path
+    workdir = Path(sandbox.workdir).resolve()
+    candidate = (workdir / user_path).resolve()
+    try:
+        candidate.relative_to(workdir)
+    except ValueError as e:
+        raise ValueError(f"path {user_path!r} escapes the workspace") from e
+    return str(candidate)
+
+
+def _op_convert(args: dict, sandbox) -> str:
     err = _need_pandoc()
     if err:
         return err
@@ -53,6 +66,11 @@ def _op_convert(args: dict) -> str:
     dst = (args.get("output_path") or "").strip()
     if not src or not dst:
         return "ERROR: convert requires input_path and output_path"
+    try:
+        src = _safe_path(sandbox, src)
+        dst = _safe_path(sandbox, dst)
+    except ValueError as e:
+        return f"ERROR: {e}"
     cmd = ["pandoc", src, "-o", dst]
     if args.get("from_"):
         cmd.extend(["-f", str(args["from_"])])
@@ -96,13 +114,13 @@ def _string_convert(text: str, from_: str, to: str) -> str:
     return r.stdout
 
 
-def _run(args: dict[str, Any]) -> str:
+def _run(args: dict[str, Any], sandbox) -> str:
     op = args.get("op")
     if not op:
         return "ERROR: op is required"
     try:
         if op == "convert":
-            return _op_convert(args)
+            return _op_convert(args, sandbox)
         if op == "formats":
             return _op_formats(args)
         if op == "markdown_to_html":
@@ -114,7 +132,7 @@ def _run(args: dict[str, Any]) -> str:
     return f"ERROR: unknown op {op!r}"
 
 
-def pandoc_tool() -> Tool:
+def pandoc_tool(sandbox=None) -> Tool:
     return Tool(
         name="pandoc",
         description=(
@@ -124,5 +142,5 @@ def pandoc_tool() -> Tool:
             "PATH."
         ),
         input_schema=_PANDOC_SCHEMA,
-        fn=_run,
+        fn=lambda args: _run(args, sandbox),
     )

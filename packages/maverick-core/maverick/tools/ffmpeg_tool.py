@@ -17,6 +17,7 @@ import json
 import logging
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from . import Tool
@@ -55,7 +56,19 @@ def _run_cmd(cmd: list[str], *, timeout: float = 600.0) -> tuple[int, str, str]:
         return 124, "", f"TIMEOUT after {timeout}s"
 
 
-def _op_convert(args: dict) -> str:
+def _safe_path(sandbox, user_path: str) -> str:
+    if sandbox is None:
+        return user_path
+    workdir = Path(sandbox.workdir).resolve()
+    candidate = (workdir / user_path).resolve()
+    try:
+        candidate.relative_to(workdir)
+    except ValueError as e:
+        raise ValueError(f"path {user_path!r} escapes the workspace") from e
+    return str(candidate)
+
+
+def _op_convert(args: dict, sandbox) -> str:
     err = _need("ffmpeg")
     if err:
         return err
@@ -63,6 +76,11 @@ def _op_convert(args: dict) -> str:
     dst = (args.get("output_path") or "").strip()
     if not src or not dst:
         return "ERROR: convert requires input_path and output_path"
+    try:
+        src = _safe_path(sandbox, src)
+        dst = _safe_path(sandbox, dst)
+    except ValueError as e:
+        return f"ERROR: {e}"
     extra = [str(a) for a in (args.get("args") or [])]
     cmd = ["ffmpeg", "-y", "-i", src, *extra, dst]
     code, _out, stderr = _run_cmd(cmd, timeout=600)
@@ -71,7 +89,7 @@ def _op_convert(args: dict) -> str:
     return f"wrote {dst}"
 
 
-def _op_extract_audio(args: dict) -> str:
+def _op_extract_audio(args: dict, sandbox) -> str:
     err = _need("ffmpeg")
     if err:
         return err
@@ -79,6 +97,11 @@ def _op_extract_audio(args: dict) -> str:
     dst = (args.get("output_path") or "").strip()
     if not src or not dst:
         return "ERROR: extract_audio requires input_path and output_path"
+    try:
+        src = _safe_path(sandbox, src)
+        dst = _safe_path(sandbox, dst)
+    except ValueError as e:
+        return f"ERROR: {e}"
     code, _out, stderr = _run_cmd(
         ["ffmpeg", "-y", "-i", src, "-vn", "-acodec", "copy", dst],
         timeout=600,
@@ -94,7 +117,7 @@ def _op_extract_audio(args: dict) -> str:
     return f"wrote audio to {dst}"
 
 
-def _op_thumbnail(args: dict) -> str:
+def _op_thumbnail(args: dict, sandbox) -> str:
     err = _need("ffmpeg")
     if err:
         return err
@@ -102,6 +125,11 @@ def _op_thumbnail(args: dict) -> str:
     dst = (args.get("output_path") or "").strip()
     if not src or not dst:
         return "ERROR: thumbnail requires input_path and output_path"
+    try:
+        src = _safe_path(sandbox, src)
+        dst = _safe_path(sandbox, dst)
+    except ValueError as e:
+        return f"ERROR: {e}"
     t = (args.get("time") or "00:00:01").strip()
     width = int(args.get("width") or 640)
     cmd = [
@@ -114,13 +142,17 @@ def _op_thumbnail(args: dict) -> str:
     return f"wrote thumbnail to {dst}"
 
 
-def _op_info(args: dict) -> str:
+def _op_info(args: dict, sandbox) -> str:
     err = _need("ffprobe")
     if err:
         return err
     src = (args.get("input_path") or "").strip()
     if not src:
         return "ERROR: info requires input_path"
+    try:
+        src = _safe_path(sandbox, src)
+    except ValueError as e:
+        return f"ERROR: {e}"
     code, out, stderr = _run_cmd(
         ["ffprobe", "-v", "error", "-print_format", "json",
          "-show_format", "-show_streams", src],
@@ -149,22 +181,26 @@ def _op_info(args: dict) -> str:
     return "\n".join(lines)
 
 
-def _run(args: dict[str, Any]) -> str:
+def _run(args: dict[str, Any], sandbox) -> str:
     op = args.get("op")
     if not op:
         return "ERROR: op is required"
     try:
-        return {
-            "convert":       _op_convert,
+        handlers = {
+            "convert": _op_convert,
             "extract_audio": _op_extract_audio,
-            "thumbnail":     _op_thumbnail,
-            "info":          _op_info,
-        }.get(op, lambda a: f"ERROR: unknown op {op!r}")(args)
+            "thumbnail": _op_thumbnail,
+            "info": _op_info,
+        }
+        fn = handlers.get(op)
+        if not fn:
+            return f"ERROR: unknown op {op!r}"
+        return fn(args, sandbox)
     except Exception as e:
         return f"ERROR: ffmpeg request failed: {type(e).__name__}: {e}"
 
 
-def ffmpeg_tool() -> Tool:
+def ffmpeg_tool(sandbox=None) -> Tool:
     return Tool(
         name="ffmpeg",
         description=(
@@ -174,5 +210,5 @@ def ffmpeg_tool() -> Tool:
             "Requires the ffmpeg binary on PATH."
         ),
         input_schema=_FFMPEG_SCHEMA,
-        fn=_run,
+        fn=lambda args: _run(args, sandbox),
     )
