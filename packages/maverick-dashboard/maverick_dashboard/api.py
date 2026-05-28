@@ -315,7 +315,10 @@ async def list_facts() -> dict[str, str]:
 
 @router.post("/facts", status_code=204)
 async def set_fact(payload: FactIn) -> None:
-    _world().upsert_fact(payload.key, payload.value)
+    key = (payload.key or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="fact key is required")
+    _world().upsert_fact(key, payload.value)
 
 
 @router.get("/skills", response_model=list[SkillOut])
