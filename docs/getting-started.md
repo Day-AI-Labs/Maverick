@@ -3,16 +3,21 @@
 ## Install
 
 ```bash
-pipx install maverick
+pipx install 'maverick-agent[installer]'
 ```
 
-Or from source while we're still pre-release:
+The PyPI package is `maverick-agent` (the `maverick` name is
+squatted). The `[installer]` extra pulls the wizard into the same
+pipx environment as the kernel so `maverick init` resolves.
+
+From source while iterating:
 
 ```bash
 git clone https://github.com/texasreaper62/maverick
 cd maverick
-uv sync           # uses workspace pyproject.toml
-uv run maverick init
+pip install -e ./packages/maverick-core
+pip install -e ./apps/installer-cli
+maverick init
 ```
 
 ## First run

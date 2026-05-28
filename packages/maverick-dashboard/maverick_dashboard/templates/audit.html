@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}audit log{% endblock %}
+{% block content %}
+  <h2>audit log</h2>
+
+  <div class="panel">
+    <form method="get" action="/audit" style="display: flex; gap: 1rem; align-items: end; flex-wrap: wrap;">
+      <label>
+        <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">lines</div>
+        <input type="number" name="n" value="{{ n }}" min="1" max="1000"
+               style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+      </label>
+      <label>
+        <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">day (YYYY-MM-DD)</div>
+        <input type="text" name="day" value="{{ day or '' }}" placeholder="today"
+               style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+      </label>
+      <button type="submit"
+              style="padding: 0.45rem 1rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">
+        load
+      </button>
+    </form>
+  </div>
+
+  <div class="panel">
+    {% if events %}
+      <table>
+        <thead>
+          <tr><th>ts</th><th>kind</th><th>agent</th><th>goal</th><th>detail</th></tr>
+        </thead>
+        <tbody>
+        {% for ev in events %}
+          <tr>
+            <td class="muted" style="white-space: nowrap;">{{ ev.ts | datetime }}</td>
+            <td><code>{{ ev.kind }}</code></td>
+            <td class="muted">{{ ev.agent or '-' }}</td>
+            <td class="muted">{{ ev.goal_id if ev.goal_id is not none else '-' }}</td>
+            <td>
+              {% set keep = ['v', 'ts', 'kind', 'agent', 'goal_id'] %}
+              {% set extras = {} %}
+              {% for k, v in ev.items() if k not in keep %}{% set _ = extras.update({k: v}) %}{% endfor %}
+              {% if extras %}
+                <code style="font-size: 0.75rem; display: block; white-space: pre-wrap; word-break: break-all;">{{ extras | tojson(indent=2) }}</code>
+              {% else %}
+                <span class="muted">-</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">
+        No audit events for the selected day. Maverick writes to
+        <code>~/.maverick/audit/YYYY-MM-DD.ndjson</code>; run a goal first.
+      </p>
+    {% endif %}
+  </div>
+{% endblock %}

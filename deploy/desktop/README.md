@@ -3,7 +3,7 @@
 For v0.1, install via pipx:
 
 ```bash
-pipx install maverick
+pipx install 'maverick-agent[installer]'
 maverick init
 ```
 

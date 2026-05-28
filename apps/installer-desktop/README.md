@@ -2,15 +2,25 @@
 
 Native Tauri GUI installer for users who never open a terminal.
 Wraps the same `maverick_installer.wizard` logic the CLI uses, behind a
-friendly Svelte UI.
+Svelte UI.
 
-## Status: scaffold
+## Status: scaffold (not yet shippable)
 
 The Tauri shell, Cargo manifest, Svelte frontend skeleton, and the
-Python sidecar IPC are in place. To produce installable bundles you
-need Rust + pnpm + the platform SDKs (Xcode on macOS, MSVC on Windows).
-CI binaries land once the GitHub Actions matrix runner is set up
-(planned alongside the next release tag).
+Python sidecar IPC are in place. **The bundle does not build today.**
+Items still missing:
+
+- `src-tauri/icons/` (generate via `cargo tauri icon`)
+- `[[bin]]` target in `Cargo.toml`
+- Tauri v2 `src-tauri/capabilities/default.json` allowlist
+- Embedded Python runtime via `python-build-standalone` (the sidecar
+  currently shells out to system `python3`, which won't exist in a
+  packaged `.app`/`.msi`)
+- GitHub Actions matrix wired to `tauri-apps/tauri-action`
+- Code-signing identifiers (`APPLE_*`, `WINDOWS_PFX_*`) wired through
+  workflow secrets
+
+Use the CLI wizard (`maverick init`) until these are addressed.
 
 ## Local development
 
@@ -63,6 +73,6 @@ performance core, so adding Tauri is essentially free.
                                               +-------------------+
 ```
 
-The Rust shell only does window + IPC; everything else (wizard
+The Rust shell handles window + IPC. Everything else (wizard
 questions, config writes, API key validation) goes through the same
-Python code the CLI uses. Single source of truth.
+Python code the CLI wizard uses.

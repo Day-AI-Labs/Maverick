@@ -33,12 +33,13 @@ class TestBearerAuth:
         resp = client.get("/", headers={"Authorization": "Bearer s3cr3t"})
         assert resp.status_code == 200
 
-    def test_token_allows_query_param(self, monkeypatch, tmp_path):
+    def test_query_token_no_longer_allowed(self, monkeypatch, tmp_path):
+        """Council security pass: query-token auth was removed (leaked via Referer)."""
         monkeypatch.setenv("MAVERICK_DASHBOARD_TOKEN", "s3cr3t")
         from maverick import world_model
         monkeypatch.setattr(world_model, "DEFAULT_DB", tmp_path / "world.db")
         resp = client.get("/?token=s3cr3t")
-        assert resp.status_code == 200
+        assert resp.status_code == 401
 
     def test_healthz_always_open(self, monkeypatch):
         """healthz/livez must be reachable without auth even when token is set."""

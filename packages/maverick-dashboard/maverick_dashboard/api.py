@@ -75,9 +75,23 @@ class SkillOut(BaseModel):
     tools_needed: list[str]
 
 
+_world_cache: dict[str, object] = {}
+
+
 def _world():
+    """Return a per-DB-path cached WorldModel (council perf fix).
+
+    See ``maverick_dashboard.app._world`` for the rationale; both
+    modules share the same cache pattern but keep their own dicts to
+    avoid an import cycle.
+    """
     from maverick.world_model import DEFAULT_DB, WorldModel
-    return WorldModel(DEFAULT_DB)
+    key = str(DEFAULT_DB)
+    cached = _world_cache.get(key)
+    if cached is None:
+        cached = WorldModel(DEFAULT_DB)
+        _world_cache[key] = cached
+    return cached
 
 
 def _to_goal_out(g) -> GoalOut:
@@ -132,11 +146,17 @@ async def list_goals(
     limit: int = 50,
     offset: int = 0,
 ) -> list[GoalOut]:
+    """List goals (newest first), paginated.
+
+    Council perf fix: previous version pulled every goal ever into
+    Python via ``list_goals()``, then sliced. Now the LIMIT/OFFSET are
+    pushed to SQL.
+    """
     w = _world()
-    goals = w.list_goals(status=status)
-    if offset:
-        goals = goals[:-offset] if offset < len(goals) else []
-    return [_to_goal_out(g) for g in goals[-limit:]]
+    limit = max(1, min(int(limit or 50), 500))
+    offset = max(0, int(offset or 0))
+    goals = w.list_goals(status=status, limit=limit, offset=offset, order="desc")
+    return [_to_goal_out(g) for g in goals]
 
 
 @router.get("/goals/{goal_id}", response_model=GoalOut)
@@ -283,6 +303,24 @@ async def list_installed_skills() -> list[SkillOut]:
 
 @router.post("/skills", response_model=SkillOut, status_code=201)
 async def install_skill_endpoint(payload: SkillInstallIn) -> SkillOut:
+    """Install a skill from a URL or ``gh:org/repo[:path]``.
+
+    Skill install runs untrusted code at the next agent invocation. The
+    endpoint is gated behind ``MAVERICK_ALLOW_SKILL_INSTALL=1`` so a
+    compromised dashboard token can't be turned into one-shot RCE; an
+    operator opting in is taking explicit ownership of the supply
+    chain. CLI ``maverick skill install`` remains available without
+    the flag because it requires shell access on the host.
+    """
+    if os.environ.get("MAVERICK_ALLOW_SKILL_INSTALL", "").lower() not in {"1", "true", "yes"}:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "skill install via REST is disabled. Set "
+                "MAVERICK_ALLOW_SKILL_INSTALL=1 to opt in, or use "
+                "`maverick skill install` on the host."
+            ),
+        )
     from maverick.skills import install_skill
     try:
         s = install_skill(payload.source, trusted_local=False)
@@ -317,3 +355,171 @@ async def get_spend() -> dict:
             for e in episodes
         ],
     }
+
+
+# ---------- council pass: control surface ----------
+
+class HaltIn(BaseModel):
+    reason: str = Field("manual via dashboard", max_length=200)
+
+
+@router.get("/halt")
+async def halt_status() -> dict:
+    """Is the killswitch armed?"""
+    from maverick.killswitch import _halt_file_path, is_active
+    p = _halt_file_path()
+    return {
+        "active": is_active(),
+        "file": str(p),
+        "file_present": p.exists(),
+    }
+
+
+@router.post("/halt", status_code=204)
+async def halt_set(payload: HaltIn) -> None:
+    """Arm the killswitch by touching ~/.maverick/HALT.
+
+    Honoured by every agent at the next tool-call boundary. Use the
+    DELETE endpoint or ``rm ~/.maverick/HALT`` to clear.
+    """
+    from maverick.killswitch import _halt_file_path
+    p = _halt_file_path()
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text((payload.reason or "manual via dashboard") + "\n")
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"cannot write halt file: {e}")
+
+
+@router.delete("/halt", status_code=204)
+async def halt_clear() -> None:
+    """Clear the killswitch (delete ~/.maverick/HALT)."""
+    from maverick.killswitch import _halt_file_path, clear
+    p = _halt_file_path()
+    if p.exists():
+        try:
+            p.unlink()
+        except OSError as e:
+            raise HTTPException(status_code=500, detail=f"cannot remove halt file: {e}")
+    clear()
+
+
+@router.post("/goals/{goal_id}/cancel", status_code=204)
+async def cancel_goal(goal_id: int) -> None:
+    """Mark a goal as cancelled.
+
+    The agent loop checks status at each tool-call boundary; setting
+    'cancelled' here causes the next check to short-circuit the run.
+    Already-done goals are a no-op.
+    """
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    if g.status in ("done", "cancelled", "failed"):
+        return
+    w.set_goal_status(goal_id, "cancelled", result="cancelled via dashboard")
+
+
+@router.get("/goals/{goal_id}/open_questions")
+async def goal_open_questions(goal_id: int) -> dict:
+    """List unanswered questions an agent has parked for this goal."""
+    w = _world()
+    if w.get_goal(goal_id) is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    qs = w.open_questions(goal_id=goal_id)
+    return {
+        "open_questions": [
+            {"id": q.id, "question": q.question, "asked_at": q.asked_at}
+            for q in qs
+        ],
+    }
+
+
+@router.get("/plugins")
+async def list_plugins() -> dict:
+    """Discovered + allow-listed plugins, broken out by kind."""
+    try:
+        from maverick.plugins import _entry_points, _allowed_plugin_names
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"plugin discovery failed: {e}")
+    allow = _allowed_plugin_names()
+    out: dict[str, list[dict]] = {
+        "tools": [], "channels": [], "skills": [], "personas": [],
+    }
+    for kind, group in (
+        ("tools",    "maverick.tools"),
+        ("channels", "maverick.channels"),
+        ("skills",   "maverick.skills"),
+        ("personas", "maverick.personas"),
+    ):
+        try:
+            for ep in _entry_points(group):
+                out[kind].append({
+                    "name": ep.name,
+                    "module": getattr(ep, "value", str(ep)),
+                    "enabled": allow is None or ep.name in allow,
+                })
+        except Exception:
+            continue
+    return {"plugins": out, "allowlist_active": allow is not None}
+
+
+@router.get("/mcp")
+async def list_mcp_servers() -> dict:
+    """Configured MCP servers from ~/.maverick/config.toml."""
+    try:
+        from maverick.config import load_config
+        cfg = (load_config() or {}).get("mcp_servers") or {}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"config read failed: {e}")
+    return {
+        "servers": [
+            {"name": name, "command": s.get("command"), "args": s.get("args", [])}
+            for name, s in cfg.items()
+        ],
+    }
+
+
+@router.get("/tools")
+async def list_tools() -> dict:
+    """Tools the agent currently has registered (post-ACL, post-rate-limit)."""
+    try:
+        from maverick.tools import base_registry
+        from maverick.sandbox import build_sandbox
+        from maverick.world_model import DEFAULT_DB, WorldModel
+        wm = WorldModel(DEFAULT_DB)
+        sb = build_sandbox()
+        reg = base_registry(world=wm, sandbox=sb)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"registry build failed: {e}")
+    return {
+        "tools": [
+            {"name": t.name, "description": (t.description or "")[:200]}
+            for t in reg.all()
+        ],
+    }
+
+
+@router.get("/channels")
+async def list_channels() -> dict:
+    """Enabled channels from ~/.maverick/config.toml."""
+    try:
+        from maverick.config import load_config
+        cfg = (load_config() or {}).get("channels") or {}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"config read failed: {e}")
+    return {
+        "channels": [
+            {"name": name, "enabled": bool(c.get("enabled", True))}
+            for name, c in cfg.items()
+        ],
+    }
+
+
+@router.get("/audit/tail")
+async def audit_tail(n: int = 100, day: Optional[str] = None) -> dict:
+    """Tail the audit log (NDJSON at ~/.maverick/audit/YYYY-MM-DD.ndjson)."""
+    from maverick.audit import default_audit_log
+    n = max(1, min(int(n or 100), 1000))
+    return {"events": default_audit_log().tail(n, day=day)}

@@ -45,7 +45,20 @@ def init(fast: bool, resume: bool) -> None:
     try:
         from maverick_installer.wizard import run as run_wizard
     except ImportError:
-        click.echo("Install: pipx install maverick-installer", err=True)
+        # The wizard lives in the optional `installer` extra. Installing
+        # `maverick-installer` into its own pipx venv (the previous
+        # message's advice) creates an isolated env where the kernel
+        # can't import it. The correct path is to inject the extra into
+        # the same env Maverick already lives in.
+        click.echo(
+            "Install: pipx install 'maverick-agent[installer]'",
+            err=True,
+        )
+        click.echo(
+            "Or, if Maverick is already installed:  "
+            "pipx inject maverick-agent maverick-installer",
+            err=True,
+        )
         sys.exit(2)
     sys.exit(run_wizard(fast=fast, resume=resume))
 

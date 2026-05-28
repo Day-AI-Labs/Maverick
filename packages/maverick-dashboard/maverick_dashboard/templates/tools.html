@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}tools{% endblock %}
+{% block content %}
+  <h2>registered tools</h2>
+
+  <div class="panel">
+    {% if error %}
+      <p style="color: var(--danger);">Could not build the tool registry: <code>{{ error }}</code></p>
+    {% elif tools %}
+      <p class="muted">
+        {{ tools | length }} tool(s) available after ACL + rate-limit filtering.
+        Configure in <code>[security].allowed_tools</code> /
+        <code>[security].denied_tools</code> /
+        <code>[rate_limits]</code>.
+      </p>
+      <table>
+        <thead><tr><th>name</th><th>description</th></tr></thead>
+        <tbody>
+        {% for t in tools %}
+          <tr>
+            <td><code>{{ t.name }}</code></td>
+            <td class="muted" style="font-size: 0.85rem;">{{ t.description }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No tools registered.</p>
+    {% endif %}
+  </div>
+{% endblock %}

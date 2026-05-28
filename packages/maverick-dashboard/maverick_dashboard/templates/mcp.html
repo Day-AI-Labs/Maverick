@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}MCP servers{% endblock %}
+{% block content %}
+  <h2>MCP servers</h2>
+
+  <div class="panel">
+    {% if servers %}
+      <table>
+        <thead><tr><th>name</th><th>command</th><th>args</th></tr></thead>
+        <tbody>
+        {% for name, s in servers.items() %}
+          <tr>
+            <td><code>{{ name }}</code></td>
+            <td><code>{{ s.command or '-' }}</code></td>
+            <td class="muted" style="font-size: 0.85rem;">{{ s.args | join(' ') if s.args else '-' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">
+        No MCP servers configured. Add one via <code>maverick init</code>
+        or by editing <code>[mcp_servers.&lt;name&gt;]</code> in <code>~/.maverick/config.toml</code>.
+      </p>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top: 0;">what is MCP?</h3>
+    <p class="muted">
+      Model Context Protocol servers expose tools (filesystem access, GitHub, databases, etc.)
+      over a JSON-RPC channel. Maverick consumes them as <code>mcp_&lt;server&gt;__&lt;tool&gt;</code>.
+      See <a href="https://modelcontextprotocol.io" style="color: var(--accent);">modelcontextprotocol.io</a>
+      for the spec.
+    </p>
+  </div>
+{% endblock %}

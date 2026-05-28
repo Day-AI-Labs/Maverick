@@ -234,19 +234,28 @@ class TestSkills:
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
 
-    def test_install_bare_path_rejected(self):
+    def test_install_bare_path_rejected(self, monkeypatch):
         """REST callers can't POST {"source": "/etc/passwd"} (security fix)."""
+        monkeypatch.setenv("MAVERICK_ALLOW_SKILL_INSTALL", "1")
         resp = client.post("/api/v1/skills", json={"source": "/etc/passwd"})
         assert resp.status_code == 400
         assert "not allowed" in resp.json()["detail"]
 
-    def test_install_file_scheme_rejected(self):
+    def test_install_file_scheme_rejected(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_ALLOW_SKILL_INSTALL", "1")
         resp = client.post("/api/v1/skills", json={"source": "file:///etc/passwd"})
         assert resp.status_code == 400
 
-    def test_install_bad_gh_format_rejected(self):
+    def test_install_bad_gh_format_rejected(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_ALLOW_SKILL_INSTALL", "1")
         resp = client.post("/api/v1/skills", json={"source": "gh:not-valid"})
         assert resp.status_code == 400
+
+    def test_install_blocked_without_opt_in(self):
+        """Without MAVERICK_ALLOW_SKILL_INSTALL=1, endpoint refuses (council fix)."""
+        resp = client.post("/api/v1/skills", json={"source": "gh:any/repo"})
+        assert resp.status_code == 403
+        assert "MAVERICK_ALLOW_SKILL_INSTALL" in resp.json()["detail"]
 
     def test_remove_unknown_404(self):
         resp = client.delete("/api/v1/skills/does-not-exist")
@@ -308,11 +317,14 @@ class TestOpenAPI:
         )
         assert resp.status_code == 200
 
-    def test_api_endpoint_with_query_token_succeeds(self, monkeypatch):
-        """Phone browsers bookmark `?token=...`; that has to authenticate."""
+    def test_api_endpoint_with_query_token_rejected(self, monkeypatch):
+        """Council security pass: `?token=...` leaks via Referer/history.
+
+        Removed; callers must send Authorization: Bearer.
+        """
         monkeypatch.setenv("MAVERICK_DASHBOARD_TOKEN", "s3cr3t")
         resp = client.get("/api/v1/goals?token=s3cr3t")
-        assert resp.status_code == 200
+        assert resp.status_code == 401
 
     def test_api_endpoint_with_wrong_bearer_rejected(self, monkeypatch):
         monkeypatch.setenv("MAVERICK_DASHBOARD_TOKEN", "s3cr3t")

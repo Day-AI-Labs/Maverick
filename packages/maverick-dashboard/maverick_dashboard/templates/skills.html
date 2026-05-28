@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}skills{% endblock %}
+{% block title %}skills · Maverick{% endblock %}
 {% block content %}
   <h2>installed skills</h2>
   <div class="panel">
@@ -15,7 +15,61 @@
         {% endif %}
       {% endfor %}
     {% else %}
-      <p class="muted">No skills yet. Install one with <code>maverick skill install gh:...</code>.</p>
+      <p class="muted">No skills installed yet.</p>
     {% endif %}
   </div>
+
+  <h2>install a skill</h2>
+  <div class="panel">
+    <form id="skill-install-form" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+      <input type="text" id="skill-source" required
+             placeholder="gh:org/repo  or  https://example.com/skill.md"
+             style="flex: 1 1 320px; padding: 0.5rem 0.75rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px;" />
+      <button type="submit"
+              style="padding: 0.5rem 1.25rem; background: var(--accent); color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-weight: 500;">
+        Install
+      </button>
+    </form>
+    <p id="skill-install-msg" class="muted" style="margin-top: 0.75rem; min-height: 1em;"></p>
+    <p class="muted" style="font-size: 0.85rem; margin-top: 1rem;">
+      Installs run untrusted code on the next agent invocation. Opt in by
+      setting <code>MAVERICK_ALLOW_SKILL_INSTALL=1</code> on the dashboard
+      process; otherwise the endpoint returns 403 and you can use
+      <code>maverick skill install</code> on the host.
+    </p>
+  </div>
+
+  <script>
+    (function() {
+      const form = document.getElementById('skill-install-form');
+      const src = document.getElementById('skill-source');
+      const msg = document.getElementById('skill-install-msg');
+      form.addEventListener('submit', async function(ev) {
+        ev.preventDefault();
+        const source = src.value.trim();
+        if (!source) return;
+        msg.style.color = 'var(--muted)';
+        msg.textContent = 'Installing…';
+        try {
+          const r = await fetch('/api/v1/skills', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({source}),
+          });
+          if (r.ok) {
+            msg.style.color = 'var(--accent)';
+            msg.textContent = 'Installed. Reloading…';
+            setTimeout(function() { window.location.reload(); }, 600);
+          } else {
+            const j = await r.json().catch(function() { return {}; });
+            msg.style.color = 'var(--danger)';
+            msg.textContent = (j.detail || ('HTTP ' + r.status));
+          }
+        } catch (e) {
+          msg.style.color = 'var(--danger)';
+          msg.textContent = String(e);
+        }
+      });
+    })();
+  </script>
 {% endblock %}

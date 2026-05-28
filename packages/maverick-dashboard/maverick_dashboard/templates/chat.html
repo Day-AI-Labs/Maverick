@@ -1,54 +1,58 @@
 {% extends "base.html" %}
-{% block title %}chat{% endblock %}
+{% block title %}chat · Maverick{% endblock %}
 {% block content %}
   <h2>chat</h2>
   <div class="panel">
-    <label for="goal-title" style="display: block; font-weight: 600; margin-bottom: 0.5rem;">
+    <label for="goal-title" style="display: block; font-weight: 600; margin-bottom: 0.75rem;">
       What do you want Maverick to do?
     </label>
-    <p id="goal-title-help" class="muted" style="margin-top: 0; font-size: 0.9rem;">
-      Each message becomes a goal. Maverick runs it through the swarm and replies
-      below. Press the button or hit Enter.
-    </p>
-    <form method="post" action="/chat/send" style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+    <form method="post" action="/chat/send" style="display: flex; gap: 0.5rem;">
       <input
         type="text"
         id="goal-title"
         name="title"
-        placeholder="e.g. 'plan a 3-day trip to Lisbon under $1500'"
-        aria-describedby="goal-title-help"
+        placeholder="Plan a 3-day trip to Lisbon under $1500"
         required
         autofocus
-        style="flex: 1; padding: 0.65rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font: inherit;"
+        style="flex: 1; padding: 0.65rem 0.85rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px;"
       />
       <button
         type="submit"
-        style="padding: 0.65rem 1.5rem; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; font: inherit;"
-      >send</button>
+        id="send-btn"
+        style="padding: 0.65rem 1.5rem; background: var(--accent); color: #fff; border: 0; border-radius: 6px; cursor: pointer; font-weight: 500;"
+      >Run</button>
     </form>
     <div style="margin-top: 1rem;">
-      <p class="muted" style="font-size: 0.85rem; margin-bottom: 0.4rem;">Try one of these:</p>
+      <p class="muted" style="font-size: 0.8rem; margin: 0 0 0.5rem;">Examples</p>
       <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
-        <button type="button" class="example-chip" data-text="summarize my unread emails from this morning"
-                style="padding: 0.4rem 0.75rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font: inherit; font-size: 0.85rem;">
-          summarize unread emails
+        <button type="button" class="example-chip" data-text="Summarize my unread emails from this morning"
+                style="padding: 0.4rem 0.85rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font-size: 0.85rem;">
+          Summarize unread emails
         </button>
-        <button type="button" class="example-chip" data-text="research the latest news on AI safety regulation"
-                style="padding: 0.4rem 0.75rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font: inherit; font-size: 0.85rem;">
-          research a topic
+        <button type="button" class="example-chip" data-text="Research the latest news on AI safety regulation"
+                style="padding: 0.4rem 0.85rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font-size: 0.85rem;">
+          Research a topic
         </button>
-        <button type="button" class="example-chip" data-text="draft a polite reschedule email for my 2pm meeting"
-                style="padding: 0.4rem 0.75rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font: inherit; font-size: 0.85rem;">
-          draft an email
+        <button type="button" class="example-chip" data-text="Draft a polite reschedule email for my 2pm meeting"
+                style="padding: 0.4rem 0.85rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font-size: 0.85rem;">
+          Draft an email
         </button>
       </div>
     </div>
     <script>
-      document.querySelectorAll('.example-chip').forEach(btn => {
-        btn.addEventListener('click', e => {
-          document.getElementById('goal-title').value = btn.dataset.text;
-          document.getElementById('goal-title').focus();
+      document.querySelectorAll('.example-chip').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var input = document.getElementById('goal-title');
+          input.value = btn.dataset.text;
+          input.focus();
         });
+      });
+      // Submit-time disabled state + spinner so users don't double-submit.
+      var sendForm = document.querySelector('form[action="/chat/send"]');
+      var sendBtn = document.getElementById('send-btn');
+      sendForm.addEventListener('submit', function() {
+        sendBtn.disabled = true;
+        sendBtn.textContent = 'Starting…';
       });
     </script>
   </div>
@@ -63,13 +67,13 @@
           <tr>
             <td><a href="/chat/goal/{{ g.id }}" style="color: var(--text);"><code>#{{ g.id }}</code></a></td>
             <td><span class="badge {{ g.status }}">{{ g.status }}</span></td>
-            <td>{{ g.title }}</td>
+            <td><a href="/chat/goal/{{ g.id }}" style="color: var(--text); text-decoration: none;">{{ g.title }}</a></td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     {% else %}
-      <p class="muted">No goals yet — your first message above will start one.</p>
+      <p class="muted">No goals yet.</p>
     {% endif %}
   </div>
 {% endblock %}

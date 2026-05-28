@@ -1,69 +1,105 @@
 {% extends "base.html" %}
-{% block title %}Maverick — overview{% endblock %}
+{% block title %}Maverick · overview{% endblock %}
 {% block content %}
-  <div class="grid">
-    <div class="stat">
-      <div class="num">{{ counts.total }}</div>
-      <div class="label">total goals</div>
+  {% if counts.total == 0 %}
+    <div class="panel" style="text-align: center; padding: 3rem 1.5rem;">
+      <h2 style="font-size: 1.5rem; color: var(--text); text-transform: none; letter-spacing: 0; font-weight: 600; margin-bottom: 0.75rem;">Start your first goal</h2>
+      <p class="muted" style="max-width: 540px; margin: 0 auto 1.75rem;">
+        Maverick will plan a sub-agent swarm, run it under a budget cap, and
+        stream results back here.
+      </p>
+      <form method="post" action="/chat/send" style="display: flex; gap: 0.5rem; max-width: 580px; margin: 0 auto; flex-wrap: wrap;">
+        <input type="text" name="title" required autofocus
+               placeholder="Plan a 2-week trip to Japan"
+               style="flex: 1 1 320px; padding: 0.65rem 0.85rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-size: 0.95rem;" />
+        <button type="submit"
+                style="padding: 0.65rem 1.5rem; background: var(--accent); color: #fff; border: 0; border-radius: 6px; cursor: pointer; font-weight: 500; font-size: 0.95rem;">
+          Run
+        </button>
+      </form>
+      <p class="muted" style="margin-top: 1.5rem; font-size: 0.8rem;">
+        Or open the <a href="/chat">chat</a>, see <a href="/tools">available tools</a>,
+        or browse <a href="/skills">skills</a>.
+      </p>
     </div>
-    <div class="stat">
-      <div class="num">{{ counts.active }}</div>
-      <div class="label">active</div>
+  {% else %}
+    <div class="grid">
+      <div class="stat">
+        <div class="num">{{ counts.total }}</div>
+        <div class="label">total goals</div>
+      </div>
+      <div class="stat">
+        <div class="num">{{ counts.active }}</div>
+        <div class="label">active</div>
+      </div>
+      <div class="stat">
+        <div class="num">{{ counts.done }}</div>
+        <div class="label">done</div>
+      </div>
+      <div class="stat">
+        <div class="num">{{ counts.blocked }}</div>
+        <div class="label">blocked</div>
+      </div>
     </div>
-    <div class="stat">
-      <div class="num">{{ counts.done }}</div>
-      <div class="label">done</div>
+
+    <h2>recent goals</h2>
+    <div class="panel">
+      <table>
+        <thead><tr><th>id</th><th>status</th><th>title</th><th>updated</th></tr></thead>
+        <tbody>
+        {% for g in goals %}
+          <tr>
+            <td><code>#{{ g.id }}</code></td>
+            <td><span class="badge {{ g.status }}">{{ g.status }}</span></td>
+            <td><a href="/chat/goal/{{ g.id }}" style="color: var(--text); text-decoration: none;">{{ g.title }}</a></td>
+            <td class="muted" data-ts="{{ g.updated_at }}">{{ g.updated_at | datetime }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
     </div>
-    <div class="stat">
-      <div class="num">{{ counts.blocked }}</div>
-      <div class="label">blocked</div>
+
+    <h2>facts</h2>
+    <div class="panel">
+      {% if facts %}
+        {% for k, v in facts.items() %}
+          <p><code>{{ k }}</code>: {{ v }}</p>
+        {% endfor %}
+      {% else %}
+        <p class="muted">No facts yet. Set one with <code>maverick fact &lt;key&gt; &lt;value&gt;</code>.</p>
+      {% endif %}
     </div>
-  </div>
 
-  <h2>recent goals</h2>
-  <div class="panel">
-    {% if goals %}
-    <table>
-      <thead><tr><th>id</th><th>status</th><th>title</th><th>updated</th></tr></thead>
-      <tbody>
-      {% for g in goals %}
-        <tr>
-          <td><code>#{{ g.id }}</code></td>
-          <td><span class="badge {{ g.status }}">{{ g.status }}</span></td>
-          <td>{{ g.title }}</td>
-          <td class="muted">{{ g.updated_at | round | int }}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-      <p class="muted">No goals yet. Run <code>maverick start "..."</code> to begin.</p>
-    {% endif %}
-  </div>
+    <h2>top skills</h2>
+    <div class="panel">
+      {% if skills %}
+        {% for s in skills %}
+          <p><code>{{ s.name }}</code> <span class="muted">· {{ s.triggers|length }} trigger(s)</span></p>
+        {% endfor %}
+      {% else %}
+        <p class="muted">No distilled skills yet. They appear after the agent finishes its first multi-step goal.</p>
+      {% endif %}
+    </div>
 
-  <h2>facts</h2>
-  <div class="panel">
-    {% if facts %}
-      {% for k, v in facts.items() %}
-        <p><code>{{ k }}</code>: {{ v }}</p>
-      {% endfor %}
-    {% else %}
-      <p class="muted">No facts learned yet. Set one with <code>maverick fact &lt;key&gt; &lt;value&gt;</code>.</p>
-    {% endif %}
-  </div>
+    <p class="muted" style="margin-top: 2rem;">
+      <a href="/spend" style="color: var(--muted); text-decoration: underline;">View spend</a>
+    </p>
+  {% endif %}
 
-  <h2>top skills</h2>
-  <div class="panel">
-    {% if skills %}
-      {% for s in skills %}
-        <p><code>{{ s.name }}</code> <span class="muted">— {{ s.triggers|length }} trigger(s)</span></p>
-      {% endfor %}
-    {% else %}
-      <p class="muted">No skills yet. Install one with <code>maverick skill install gh:...</code>.</p>
-    {% endif %}
-  </div>
-
-  <p class="muted" style="margin-top: 2rem;">
-    <a href="/spend" style="color: var(--muted); text-decoration: underline;">view spend →</a>
-  </p>
+  <script>
+    // Replace absolute timestamps with relative time on the client.
+    (function() {
+      function rel(ts) {
+        const secs = Math.floor(Date.now() / 1000 - parseFloat(ts));
+        if (secs < 60) return 'just now';
+        if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+        if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
+        return Math.floor(secs / 86400) + 'd ago';
+      }
+      for (const el of document.querySelectorAll('[data-ts]')) {
+        const ts = el.getAttribute('data-ts');
+        if (ts) el.textContent = rel(ts);
+      }
+    })();
+  </script>
 {% endblock %}

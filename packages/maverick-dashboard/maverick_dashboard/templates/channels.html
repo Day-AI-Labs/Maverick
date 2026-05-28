@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}channels{% endblock %}
+{% block content %}
+  <h2>channels</h2>
+
+  <div class="panel">
+    {% if channels %}
+      <table>
+        <thead><tr><th>name</th><th>status</th><th>detail</th></tr></thead>
+        <tbody>
+        {% for name, cfg in channels.items() %}
+          <tr>
+            <td><code>{{ name }}</code></td>
+            <td>
+              {% if cfg.enabled is not defined or cfg.enabled %}
+                <span class="badge active">enabled</span>
+              {% else %}
+                <span class="badge blocked">disabled</span>
+              {% endif %}
+            </td>
+            <td class="muted" style="font-size: 0.85rem;">
+              {% for k, v in cfg.items() if k != 'enabled' %}
+                {{ k }}={% if v is string and v.startswith('${') %}<code>{{ v }}</code>{% else %}{{ v }}{% endif %}{% if not loop.last %}, {% endif %}
+              {% endfor %}
+            </td>
+          </tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <p class="muted">
+        No channels configured. Run <code>maverick init</code> to enable Telegram, Discord, Slack, Signal, etc.
+      </p>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top: 0;">start the channel server</h3>
+    <pre style="background: var(--bg); padding: 0.75rem; border-radius: 4px; overflow-x: auto;">maverick serve</pre>
+    <p class="muted">Channels poll/listen in the background; goals arrive over the network and run through the same swarm.</p>
+  </div>
+{% endblock %}

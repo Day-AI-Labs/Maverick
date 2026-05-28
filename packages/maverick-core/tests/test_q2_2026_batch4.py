@@ -226,9 +226,15 @@ def test_dashboard_theme_cookie_persists(dashboard_client):
     assert 'class="theme-light"' in resp2.text
 
 
-def test_dashboard_theme_switcher_links_in_header(dashboard_client):
+def test_dashboard_theme_switcher_options_in_header(dashboard_client):
+    """Council UX pass replaced the 4-coloured-dots switcher with a single
+    ``<select>`` element (accessibility + cleaner UI). All four themes
+    must still be present as options."""
     resp = dashboard_client.get("/")
     body = resp.text
-    # Switcher links for each theme.
     for theme in ("dark", "light", "solarized", "hicontrast"):
-        assert f"?theme={theme}" in body
+        # Either as the new <option value="X"> or, transitionally, as
+        # a hand-coded link still in the header.
+        assert (f'value="{theme}"' in body) or (f"?theme={theme}" in body), (
+            f"theme {theme} not exposed via the theme switcher"
+        )

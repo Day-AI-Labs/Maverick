@@ -1,84 +1,167 @@
 {% extends "base.html" %}
-{% block title %}goal #{{ goal.id }}{% endblock %}
+{% block title %}goal #{{ goal.id }} · Maverick{% endblock %}
 {% block content %}
   <h2>goal #{{ goal.id }}</h2>
 
-  <div class="panel">
-    <p>
-      <span id="status" class="badge {{ goal.status }}">{{ goal.status }}</span>
-      <span class="muted" style="margin-left: 0.5rem;">{{ goal.title }}</span>
-    </p>
-    <p class="muted" style="font-size: 0.85rem;">Live progress streams below. Polls every 2s.</p>
+  <div class="panel" style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+    <span id="status" class="badge {{ goal.status }}">{{ goal.status }}</span>
+    <span class="muted">{{ goal.title }}</span>
+    <span style="margin-left: auto; display: flex; gap: 0.5rem;">
+      <button id="cancel-btn" type="button"
+              style="padding: 0.4rem 0.8rem; background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 4px; cursor: pointer; font-size: 0.8rem;"
+              {% if goal.status in ('done', 'cancelled', 'failed') %}disabled{% endif %}>
+        Cancel goal
+      </button>
+    </span>
   </div>
 
-  <h2 id="progress-header">progress</h2>
+  <div id="question-panel" class="panel" style="display: none; border-color: var(--warn);">
+    <h3 style="margin-top: 0;">The agent is waiting on an answer</h3>
+    <p id="question-text" class="muted"></p>
+    <form id="answer-form" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+      <input type="text" id="answer-input" required
+             placeholder="Your answer"
+             style="flex: 1 1 280px; padding: 0.5rem 0.75rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px;" />
+      <button type="submit"
+              style="padding: 0.5rem 1.25rem; background: var(--accent); color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-weight: 500;">
+        Submit
+      </button>
+    </form>
+  </div>
+
+  <h2>progress</h2>
   <div class="panel" id="progress" data-goal="{{ goal.id }}">
-    <pre id="events" style="white-space: pre-wrap; margin: 0; font: inherit; max-height: 480px; overflow-y: auto;"></pre>
+    <pre id="events" role="log" aria-live="polite" aria-label="Goal progress"
+         style="white-space: pre-wrap; margin: 0; max-height: 480px; overflow-y: auto;"></pre>
+    <p id="loading-placeholder" class="muted" style="margin: 0;">Waiting for the first event…</p>
   </div>
 
   <div id="result-section" class="panel" style="display: {% if goal.result %}block{% else %}none{% endif %};">
     <h3 style="margin-top: 0;">result</h3>
-    <pre id="result" style="white-space: pre-wrap; margin: 0; font: inherit;">{{ goal.result or '' }}</pre>
+    <pre id="result" style="white-space: pre-wrap; margin: 0;">{{ goal.result or '' }}</pre>
   </div>
 
   <p style="margin-top: 2rem;">
-    <a href="/chat" class="muted" style="text-decoration: underline;">← back to chat</a>
+    <a href="/chat" class="muted" style="text-decoration: underline;">Back to chat</a>
   </p>
 
   <script>
     (function() {
       const goalId = {{ goal.id }};
       const eventsEl = document.getElementById('events');
+      const placeholderEl = document.getElementById('loading-placeholder');
       const statusEl = document.getElementById('status');
       const resultEl = document.getElementById('result');
       const resultSection = document.getElementById('result-section');
+      const cancelBtn = document.getElementById('cancel-btn');
+      const questionPanel = document.getElementById('question-panel');
+      const questionText = document.getElementById('question-text');
+      const answerForm = document.getElementById('answer-form');
+      const answerInput = document.getElementById('answer-input');
       let sinceId = 0;
       let done = false;
+      let pollDelay = 2000;
+      let currentQuestionId = null;
+
+      const KIND_LABELS = {
+        plan: 'thinking', finding: 'answer', observation: 'result',
+        error: 'error', verify: 'checking', artifact: 'produced',
+      };
+      const KIND_COLORS = {
+        plan: 'var(--accent)', finding: 'var(--accent)',
+        observation: 'var(--text)', error: 'var(--danger)',
+        verify: 'var(--warn)', artifact: 'var(--accent)',
+      };
 
       function fmtKind(k) {
-        // Map internal kinds to user-friendly labels so non-technical
-        // users can read live progress without knowing blackboard vocab.
-        const labels = {
-          plan: 'thinking',
-          finding: 'answer',
-          observation: 'result',
-          error: 'error',
-          verify: 'checking',
-          artifact: 'produced',
-        };
-        const colors = {
-          plan: 'var(--accent)', finding: 'var(--accent)',
-          observation: 'var(--text)', error: 'var(--danger)',
-          verify: 'var(--warn)', artifact: 'var(--accent)',
-        };
-        const label = labels[k] || k;
-        return `<span style="color:${colors[k] || 'var(--muted)'};">${label}</span>`;
+        const span = document.createElement('span');
+        span.style.color = KIND_COLORS[k] || 'var(--muted)';
+        span.textContent = KIND_LABELS[k] || k;
+        return span;
       }
 
       function fmtAgent(a) {
-        // The internal name is `<role>-<depth>-<hex>` (e.g.
-        // `orchestrator-0-3a7c91`). Strip the hex+depth for readability.
         if (!a) return '';
         const dashIdx = a.indexOf('-');
         return dashIdx > 0 ? a.slice(0, dashIdx) : a;
       }
 
+      function appendEvent(e) {
+        if (placeholderEl) placeholderEl.style.display = 'none';
+        const line = document.createElement('div');
+        const agent = document.createElement('span');
+        agent.className = 'muted';
+        agent.textContent = '[' + fmtAgent(e.agent) + '] ';
+        line.appendChild(agent);
+        line.appendChild(fmtKind(e.kind));
+        line.appendChild(document.createTextNode(' ' + (e.content || '')));
+        eventsEl.appendChild(line);
+      }
+
+      async function pollQuestions() {
+        try {
+          const r = await fetch('/api/v1/goals/' + goalId + '/open_questions');
+          if (!r.ok) return;
+          const j = await r.json();
+          const qs = j.open_questions || [];
+          if (qs.length) {
+            currentQuestionId = qs[0].id;
+            questionText.textContent = qs[0].question;
+            questionPanel.style.display = 'block';
+            answerInput.focus();
+          } else {
+            currentQuestionId = null;
+            questionPanel.style.display = 'none';
+          }
+        } catch (e) { /* swallow */ }
+      }
+
+      answerForm.addEventListener('submit', async function(ev) {
+        ev.preventDefault();
+        if (currentQuestionId == null || !answerInput.value.trim()) return;
+        const qid = currentQuestionId;
+        const ans = answerInput.value.trim();
+        answerInput.disabled = true;
+        try {
+          const r = await fetch('/api/v1/goals/' + goalId + '/answer', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({question_id: qid, answer: ans}),
+          });
+          if (r.ok) {
+            answerInput.value = '';
+            currentQuestionId = null;
+            questionPanel.style.display = 'none';
+          } else {
+            alert('Submit failed: ' + r.status);
+          }
+        } finally {
+          answerInput.disabled = false;
+        }
+      });
+
+      cancelBtn.addEventListener('click', async function() {
+        if (!confirm('Cancel this goal? The agent stops at its next tool-call boundary.')) return;
+        cancelBtn.disabled = true;
+        const r = await fetch('/api/v1/goals/' + goalId + '/cancel', { method: 'POST' });
+        if (!r.ok && r.status !== 204) {
+          alert('Cancel failed: ' + r.status);
+          cancelBtn.disabled = false;
+        }
+      });
+
       async function poll() {
         if (done) return;
+        if (document.visibilityState === 'hidden') {
+          setTimeout(poll, 5000);
+          return;
+        }
         try {
-          const url = `/api/goal/${goalId}/events?since=${sinceId}`;
-          const opts = {};
-          // Carry bearer token through if set (for VPS deployments).
-          const tokenQs = new URLSearchParams(window.location.search).get('token');
-          const fullUrl = tokenQs ? `${url}&token=${encodeURIComponent(tokenQs)}` : url;
-          const resp = await fetch(fullUrl, opts);
+          const url = '/api/goal/' + goalId + '/events?since=' + sinceId;
+          const resp = await fetch(url);
           if (!resp.ok) { setTimeout(poll, 5000); return; }
           const d = await resp.json();
-          for (const e of d.events) {
-            const line = document.createElement('div');
-            line.innerHTML = `<span class="muted">[${escapeHTML(fmtAgent(e.agent))}]</span> ${fmtKind(e.kind)} ${escapeHTML(e.content)}`;
-            eventsEl.appendChild(line);
-          }
+          for (const e of d.events) appendEvent(e);
           if (d.events.length > 0) sinceId = d.next_id;
           eventsEl.parentElement.scrollTop = eventsEl.parentElement.scrollHeight;
           statusEl.className = 'badge ' + d.status;
@@ -87,23 +170,24 @@
             resultEl.textContent = d.result;
             resultSection.style.display = 'block';
           }
-          if (d.status === 'done' || d.status === 'blocked') {
+          if (d.status === 'blocked') {
+            await pollQuestions();
+          }
+          if (d.status === 'done' || d.status === 'cancelled' || d.status === 'failed') {
             done = true;
+            cancelBtn.disabled = true;
             return;
           }
         } catch (e) {
           console.error('poll error', e);
         }
-        setTimeout(poll, 2000);
-      }
-
-      function escapeHTML(s) {
-        const div = document.createElement('div');
-        div.textContent = s;
-        return div.innerHTML;
+        setTimeout(poll, pollDelay);
       }
 
       poll();
+      // Poll questions on a longer cadence so the form picks up on
+      // ask_user that happens between event polls.
+      setInterval(function() { if (!done) pollQuestions(); }, 5000);
     })();
   </script>
 {% endblock %}

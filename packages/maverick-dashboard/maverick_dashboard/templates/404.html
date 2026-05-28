@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}404 · Maverick{% endblock %}
+{% block content %}
+  <div class="panel" style="text-align: center; padding: 3rem 1.5rem;">
+    <h2 style="font-size: 1.4rem; color: var(--text); text-transform: none; letter-spacing: 0; font-weight: 600; margin-bottom: 0.75rem;">404</h2>
+    <p class="muted" style="max-width: 480px; margin: 0 auto 1.5rem;">
+      Nothing at <code>{{ path or request.url.path }}</code>.
+    </p>
+    <p>
+      <a href="/" style="color: var(--accent);">Go to the overview</a>
+      &nbsp;·&nbsp;
+      <a href="/chat" style="color: var(--accent);">Start a goal</a>
+    </p>
+  </div>
+{% endblock %}

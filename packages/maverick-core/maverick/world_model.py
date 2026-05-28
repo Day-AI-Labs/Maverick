@@ -15,7 +15,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
@@ -477,11 +477,32 @@ class WorldModel:
         row = self.conn.execute("SELECT * FROM goals WHERE id = ?", (goal_id,)).fetchone()
         return Goal(**dict(row)) if row else None
 
-    def list_goals(self, status: Optional[str] = None) -> list[Goal]:
+    def list_goals(
+        self,
+        status: Optional[str] = None,
+        *,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        order: str = "asc",
+    ) -> list[Goal]:
+        """List goals, optionally filtered + paginated.
+
+        Defaults preserve historical behaviour (``limit=None`` returns
+        all rows in ASC id order). Dashboard callers should pass a
+        small ``limit`` to avoid loading every goal on every request;
+        ``order='desc'`` lets the most-recent slice be fetched cheaply.
+        """
+        direction = "DESC" if order.lower() == "desc" else "ASC"
+        sql = "SELECT * FROM goals"
+        params: tuple[Any, ...] = ()
         if status:
-            rows = self.conn.execute("SELECT * FROM goals WHERE status = ? ORDER BY id", (status,)).fetchall()
-        else:
-            rows = self.conn.execute("SELECT * FROM goals ORDER BY id").fetchall()
+            sql += " WHERE status = ?"
+            params = (status,)
+        sql += f" ORDER BY id {direction}"
+        if limit is not None:
+            sql += " LIMIT ? OFFSET ?"
+            params = params + (max(1, int(limit)), max(0, int(offset)))
+        rows = self.conn.execute(sql, params).fetchall()
         return [Goal(**dict(r)) for r in rows]
 
     def active_goal(self) -> Optional[Goal]:

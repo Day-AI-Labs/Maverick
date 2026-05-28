@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}plugins{% endblock %}
+{% block content %}
+  <h2>plugins</h2>
+
+  {% if error %}
+    <div class="panel">
+      <p style="color: var(--danger);">{{ error }}</p>
+    </div>
+  {% endif %}
+
+  <div class="panel">
+    <p class="muted">
+      {% if allowlist_active %}
+        <code>[plugins].enabled</code> is set in <code>~/.maverick/config.toml</code> &mdash; only listed plugins load.
+      {% else %}
+        No <code>[plugins].enabled</code> allowlist; pip-installed plugins load by default. Set the allowlist in <code>config.toml</code> to lock down.
+      {% endif %}
+    </p>
+  </div>
+
+  {% for label, items in groups.items() %}
+    <h2 style="margin-top: 2rem;">{{ label }}</h2>
+    <div class="panel">
+      {% if items %}
+        <table>
+          <thead><tr><th>name</th><th>module</th><th>status</th></tr></thead>
+          <tbody>
+          {% for p in items %}
+            <tr>
+              <td><code>{{ p.name }}</code></td>
+              <td class="muted" style="font-size: 0.8rem;">{{ p.module }}</td>
+              <td>
+                <span class="badge {{ 'active' if p.enabled else 'blocked' }}">
+                  {{ 'enabled' if p.enabled else 'disabled' }}
+                </span>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted">No {{ label }} plugins installed.</p>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  <div class="panel">
+    <h3 style="margin-top: 0;">install a plugin</h3>
+    <p class="muted">
+      Plugins are regular Python packages declaring <code>maverick.tools</code>,
+      <code>maverick.channels</code>, <code>maverick.skills</code>, or
+      <code>maverick.personas</code> entry points. Install with:
+    </p>
+    <pre style="background: var(--bg); padding: 0.75rem; border-radius: 4px; overflow-x: auto;">pipx inject maverick-agent &lt;package-name&gt;</pre>
+    <p class="muted">Then add the plugin's name to <code>[plugins].enabled</code> if your install uses an allowlist.</p>
+  </div>
+{% endblock %}

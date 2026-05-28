@@ -45,47 +45,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  pypi:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Check for PyPI token
-        id: token_check
-        env:
-          TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-        run: |
-          if [ -z "$TOKEN" ]; then
-            echo "no_token=true" >> "$GITHUB_OUTPUT"
-            echo "PYPI_API_TOKEN not set; skipping PyPI publish."
-          else
-            echo "no_token=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Install build tools
-        if: steps.token_check.outputs.no_token == 'false'
-        run: pip install build twine
-      - name: Build all packages
-        if: steps.token_check.outputs.no_token == 'false'
-        run: |
-          for pkg in packages/maverick-core packages/maverick-shield \
-                    packages/maverick-channels packages/maverick-dashboard \
-                    packages/maverick-mcp apps/installer-cli; do
-            echo "--- building $pkg ---"
-            (cd "$pkg" && python -m build)
-          done
-      - name: Publish to PyPI
-        if: steps.token_check.outputs.no_token == 'false'
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: |
-          for pkg in packages/maverick-core packages/maverick-shield \
-                    packages/maverick-channels packages/maverick-dashboard \
-                    packages/maverick-mcp apps/installer-cli; do
-            twine upload --skip-existing "$pkg/dist/"*
-          done
+  # PyPI publishing lives in publish.yml (Trusted Publishing / OIDC).
+  # The legacy token-based job that used to live here is removed: both
+  # workflows triggered on the same `v*` tag and would have collided on
+  # first release.
 
   binaries:
     strategy:

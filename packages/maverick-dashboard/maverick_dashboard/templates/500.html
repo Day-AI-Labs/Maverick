@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}500 · Maverick{% endblock %}
+{% block content %}
+  <div class="panel" style="text-align: center; padding: 3rem 1.5rem;">
+    <h2 style="font-size: 1.4rem; color: var(--text); text-transform: none; letter-spacing: 0; font-weight: 600; margin-bottom: 0.75rem;">Something went wrong</h2>
+    <p class="muted" style="max-width: 480px; margin: 0 auto 1.5rem;">
+      The dashboard caught an unexpected error on <code>{{ path or request.url.path }}</code>.
+      Check <code>maverick logs</code> or the server output for the full trace.
+    </p>
+    {% if detail %}
+      <pre class="muted" style="display: inline-block; text-align: left; background: var(--bg); padding: 0.85rem 1rem; border-radius: 6px; max-width: 600px; overflow-x: auto;">{{ detail }}</pre>
+      <br />
+    {% endif %}
+    <p style="margin-top: 1.5rem;">
+      <a href="/" style="color: var(--accent);">Back to the overview</a>
+    </p>
+  </div>
+{% endblock %}

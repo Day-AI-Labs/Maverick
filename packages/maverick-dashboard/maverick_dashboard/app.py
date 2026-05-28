@@ -11,12 +11,17 @@ import hmac
 import logging
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import (
+    HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse,
+    StreamingResponse,
+)
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .api import router as api_router
 
@@ -122,11 +127,24 @@ _AUTH_EXEMPT = {
     "/healthz", "/livez", "/readyz",
     "/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect",
 }
-_query_token_warned = False
+
+# Safe methods skip the CSRF check (browsers send Origin/Referer
+# inconsistently on GETs from address bars and bookmarks).
+_CSRF_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 def _is_same_origin(request: Request) -> bool:
-    """Allow only same-origin browser submissions for mutating form POSTs."""
+    """Allow only same-origin browser submissions for mutating form POSTs.
+
+    Fails closed when no Origin or Referer is present on a mutating
+    request. The previous fail-open branch ("Non-browser/API clients
+    commonly omit both headers") was a soft-CSRF: any tab on the same
+    machine could fire a no-cors fetch with both headers stripped and
+    have it accepted. Real API clients send Authorization headers and
+    are exempted by the bearer-auth middleware before they reach here.
+    """
+    if request.method in _CSRF_SAFE_METHODS:
+        return True
     expected = request.url.netloc
     for header in ("origin", "referer"):
         value = request.headers.get(header)
@@ -136,37 +154,108 @@ def _is_same_origin(request: Request) -> bool:
         if parsed.netloc == expected:
             return True
         return False
-    # Non-browser/API clients commonly omit both headers.
-    return True
+    return False
 
 
 @app.middleware("http")
 async def bearer_auth(request: Request, call_next):
-    global _query_token_warned
     expected = os.environ.get("MAVERICK_DASHBOARD_TOKEN")
     if not expected or request.url.path in _AUTH_EXEMPT:
         return await call_next(request)
     auth = request.headers.get("authorization", "")
     header_token = auth[7:] if auth.startswith("Bearer ") else ""
-    query_token = request.query_params.get("token", "")
-    ok_header = header_token and hmac.compare_digest(header_token, expected)
-    ok_query = query_token and hmac.compare_digest(query_token, expected)
-    if ok_header:
-        return await call_next(request)
-    if ok_query:
-        if not _query_token_warned:
-            log.warning(
-                "Bearer token accepted via ?token= -- leaks via Referer/logs. "
-                "Prefer Authorization: Bearer."
-            )
-            _query_token_warned = True
+    # ``?token=`` query auth was removed: it leaks the bearer through
+    # browser history, Referer headers on outbound link clicks, uvicorn
+    # access logs, and any logging proxy in front. Require the
+    # ``Authorization: Bearer`` header.
+    if header_token and hmac.compare_digest(header_token, expected):
         return await call_next(request)
     return JSONResponse({"detail": "unauthorized"}, status_code=401)
 
 
+def _wants_html(request: Request) -> bool:
+    """True when the client prefers HTML (browser nav) over JSON (API)."""
+    accept = (request.headers.get("accept") or "").lower()
+    if request.url.path.startswith(("/api/", "/openapi", "/healthz", "/livez", "/readyz", "/metrics")):
+        return False
+    return "text/html" in accept or "*/*" in accept
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Branded HTML for browser 404s; JSON for API callers."""
+    if exc.status_code == 404 and _wants_html(request):
+        return templates.TemplateResponse(
+            request, "404.html",
+            {"path": request.url.path},
+            status_code=404,
+        )
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """422 for browser nav becomes 400 with the branded error page."""
+    if _wants_html(request):
+        return templates.TemplateResponse(
+            request, "500.html",
+            {"path": request.url.path, "detail": str(exc.errors())},
+            status_code=400,
+        )
+    return JSONResponse({"detail": exc.errors()}, status_code=422)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Catch-all so we never serve the default white "Internal Server Error"."""
+    log.exception("unhandled dashboard exception on %s", request.url.path)
+    if _wants_html(request):
+        return templates.TemplateResponse(
+            request, "500.html",
+            {"path": request.url.path, "detail": f"{type(exc).__name__}: {exc}"},
+            status_code=500,
+        )
+    return JSONResponse({"detail": "internal server error"}, status_code=500)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Apply baseline browser-security headers to every response.
+
+    These are cheap, well-supported, and close a class of attacks
+    (clickjacking, MIME sniffing, Referer leakage) the dashboard had
+    no defense against before.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Cross-Origin-Opener-Policy", "same-origin",
+    )
+    return response
+
+
+_world_cache: dict[str, Any] = {}
+
+
 def _world():
+    """Return a per-DB-path cached WorldModel.
+
+    Council perf finding: opening a new WorldModel on every request
+    re-runs the PRAGMAs and the schema-migration check, leaks the
+    connection (no close()), and serialises the asyncio loop because
+    sqlite3 is sync. Cache by absolute DB path so test fixtures that
+    monkeypatch ``DEFAULT_DB`` to a fresh ``tmp_path`` still get an
+    isolated WorldModel per test.
+    """
     from maverick.world_model import DEFAULT_DB, WorldModel
-    return WorldModel(DEFAULT_DB)
+    key = str(DEFAULT_DB)
+    cached = _world_cache.get(key)
+    if cached is None:
+        cached = WorldModel(DEFAULT_DB)
+        _world_cache[key] = cached
+    return cached
 
 
 def _load_skills():
@@ -177,25 +266,31 @@ def _load_skills():
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
     w = _world()
-    goals = w.list_goals()
+    # Use SQL aggregation instead of pulling every goal into Python.
+    rows = w.conn.execute(
+        "SELECT status, COUNT(*) FROM goals GROUP BY status"
+    ).fetchall()
+    by_status = {r[0]: int(r[1]) for r in rows}
+    counts = {
+        "total":   sum(by_status.values()),
+        "active":  by_status.get("active", 0),
+        "done":    by_status.get("done", 0),
+        "blocked": by_status.get("blocked", 0),
+    }
+    # Bounded recent slice instead of "load every goal ever, take last 20".
+    recent = w.list_goals(limit=20, order="desc")
     facts = w.get_facts()
     skills = _load_skills()
-    counts = {
-        "total":  len(goals),
-        "active": sum(1 for g in goals if g.status == "active"),
-        "done":   sum(1 for g in goals if g.status == "done"),
-        "blocked": sum(1 for g in goals if g.status == "blocked"),
-    }
     return templates.TemplateResponse(
         request, "index.html",
-        {"counts": counts, "goals": list(reversed(goals[-20:])),
+        {"counts": counts, "goals": recent,
          "facts": facts, "skills": skills[:10]},
     )
 
 
 @app.get("/goals", response_class=HTMLResponse)
 async def goals_page(request: Request) -> HTMLResponse:
-    goals = list(reversed(_world().list_goals()))
+    goals = _world().list_goals(limit=200, order="desc")
     return templates.TemplateResponse(request, "goals.html", {"goals": goals})
 
 
@@ -226,6 +321,103 @@ async def providers_page(request: Request) -> HTMLResponse:
     )
 
 
+# ----- Control surface pages (council pass) -----
+
+@app.get("/audit", response_class=HTMLResponse)
+async def audit_page(request: Request) -> HTMLResponse:
+    """Tail of the local audit log."""
+    from maverick.audit import default_audit_log
+    n = max(1, min(int(request.query_params.get("n") or 200), 1000))
+    day = request.query_params.get("day") or None
+    events = default_audit_log().tail(n, day=day)
+    return templates.TemplateResponse(
+        request, "audit.html",
+        {"events": events, "n": n, "day": day},
+    )
+
+
+@app.get("/plugins", response_class=HTMLResponse)
+async def plugins_page(request: Request) -> HTMLResponse:
+    """Discovered + enabled plugins."""
+    try:
+        from maverick.plugins import _entry_points, _allowed_plugin_names
+    except Exception:
+        return templates.TemplateResponse(
+            request, "plugins.html",
+            {"groups": {}, "allowlist_active": False, "error": "plugin discovery failed"},
+        )
+    allow = _allowed_plugin_names()
+    groups: dict[str, list[dict]] = {}
+    for label, group in (
+        ("tools",    "maverick.tools"),
+        ("channels", "maverick.channels"),
+        ("skills",   "maverick.skills"),
+        ("personas", "maverick.personas"),
+    ):
+        items: list[dict] = []
+        try:
+            for ep in _entry_points(group):
+                items.append({
+                    "name": ep.name,
+                    "module": getattr(ep, "value", str(ep)),
+                    "enabled": allow is None or ep.name in allow,
+                })
+        except Exception:
+            pass
+        groups[label] = items
+    return templates.TemplateResponse(
+        request, "plugins.html",
+        {"groups": groups, "allowlist_active": allow is not None, "error": None},
+    )
+
+
+@app.get("/mcp", response_class=HTMLResponse)
+async def mcp_page(request: Request) -> HTMLResponse:
+    """Configured MCP servers."""
+    try:
+        from maverick.config import load_config
+        servers = (load_config() or {}).get("mcp_servers") or {}
+    except Exception:
+        servers = {}
+    return templates.TemplateResponse(
+        request, "mcp.html", {"servers": servers},
+    )
+
+
+@app.get("/tools", response_class=HTMLResponse)
+async def tools_page(request: Request) -> HTMLResponse:
+    """Tools the agent currently has registered (post-ACL, post-rate-limit)."""
+    tools: list[dict] = []
+    error = None
+    try:
+        from maverick.tools import base_registry
+        from maverick.sandbox import build_sandbox
+        from maverick.world_model import DEFAULT_DB, WorldModel
+        wm = WorldModel(DEFAULT_DB)
+        sb = build_sandbox()
+        reg = base_registry(world=wm, sandbox=sb)
+        tools = [{"name": t.name, "description": (t.description or "")[:240]}
+                 for t in sorted(reg.all(), key=lambda x: x.name)]
+    except Exception as e:
+        error = f"{type(e).__name__}: {e}"
+    return templates.TemplateResponse(
+        request, "tools.html", {"tools": tools, "error": error},
+    )
+
+
+@app.get("/channels", response_class=HTMLResponse)
+async def channels_page(request: Request) -> HTMLResponse:
+    """Configured + enabled channels."""
+    try:
+        from maverick.config import load_config
+        channels = (load_config() or {}).get("channels") or {}
+    except Exception:
+        channels = {}
+    return templates.TemplateResponse(
+        request, "channels.html", {"channels": channels},
+    )
+
+
 @app.get("/api/v1/providers")
 async def providers_api() -> JSONResponse:
     from maverick.provider_health import get as _health
@@ -234,7 +426,7 @@ async def providers_api() -> JSONResponse:
 
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request) -> HTMLResponse:
-    recent = list(reversed(_world().list_goals()[-10:]))
+    recent = _world().list_goals(limit=10, order="desc")
     return templates.TemplateResponse(request, "chat.html", {"recent": recent})
 
 
@@ -274,39 +466,68 @@ async def api_goal_legacy(goal_id: int) -> dict:
 
 
 def _build_plan_tree(world, goal_id: int, depth_cap: int = 6) -> dict:
-    """Recursively assemble the plan tree rooted at goal_id."""
+    """Assemble the plan tree rooted at ``goal_id`` in two queries.
+
+    Previous implementation was true N+1: ``_children`` ran one query
+    per node, each with a correlated cost subquery. Depth-6 tree
+    fanned out to thousands of SQL calls. This rewrite uses a single
+    recursive CTE for the descendant set + one aggregate JOIN for
+    costs, then assembles the tree in Python.
+    """
     root = world.get_goal(goal_id)
     if root is None:
         return {}
 
-    def _children(parent_id: int) -> list:
-        rows = world.conn.execute(
-            "SELECT id, parent_id, title, status, "
-            "(SELECT COALESCE(SUM(cost_dollars), 0) FROM episodes WHERE episodes.goal_id = goals.id) AS dollars "
-            "FROM goals WHERE parent_id = ? ORDER BY created_at ASC LIMIT 50",
-            (parent_id,),
-        ).fetchall()
-        return [dict(r) for r in rows]
+    rows = world.conn.execute(
+        """
+        WITH RECURSIVE descendants(id, parent_id, title, status, depth, created_at) AS (
+          SELECT id, parent_id, title, status, 0, created_at
+            FROM goals WHERE id = ?
+          UNION ALL
+          SELECT g.id, g.parent_id, g.title, g.status, d.depth + 1, g.created_at
+            FROM goals g
+            JOIN descendants d ON g.parent_id = d.id
+           WHERE d.depth < ?
+        )
+        SELECT d.id, d.parent_id, d.title, d.status, d.depth,
+               COALESCE(e.dollars, 0) AS dollars
+          FROM descendants d
+          LEFT JOIN (
+            SELECT goal_id, SUM(cost_dollars) AS dollars
+              FROM episodes
+             GROUP BY goal_id
+          ) e ON e.goal_id = d.id
+         ORDER BY d.depth ASC, d.created_at ASC, d.id ASC
+        """,
+        (goal_id, depth_cap),
+    ).fetchall()
 
-    def _attach(node: dict, depth: int) -> dict:
-        if depth >= depth_cap:
-            node["children"] = []
-            return node
-        node["children"] = [_attach(c, depth + 1) for c in _children(node["id"])]
-        return node
-
-    root_d = {
-        "id": root.id, "parent_id": root.parent_id,
-        "title": root.title, "status": root.status,
-        "dollars": 0.0,
-    }
-    # Lookup dollars for root.
-    row = world.conn.execute(
-        "SELECT COALESCE(SUM(cost_dollars), 0) AS d FROM episodes WHERE goal_id = ?",
-        (root.id,),
-    ).fetchone()
-    root_d["dollars"] = float(row["d"]) if row else 0.0
-    return _attach(root_d, 0)
+    nodes: dict[int, dict] = {}
+    for r in rows:
+        nodes[r["id"]] = {
+            "id":        r["id"],
+            "parent_id": r["parent_id"],
+            "title":     r["title"],
+            "status":    r["status"],
+            "dollars":   float(r["dollars"] or 0.0),
+            "children":  [],
+        }
+    # Assemble children lists. Per-parent fan-out cap stays at 50 to
+    # match the prior LIMIT (truncates noisy fan-outs in the UI).
+    PER_PARENT_CAP = 50
+    for n in nodes.values():
+        parent = nodes.get(n["parent_id"])
+        if parent is not None and parent["id"] != n["id"]:
+            if len(parent["children"]) < PER_PARENT_CAP:
+                parent["children"].append(n)
+    root_node = nodes.get(goal_id)
+    if root_node is None:
+        return {
+            "id": root.id, "parent_id": root.parent_id,
+            "title": root.title, "status": root.status,
+            "dollars": 0.0, "children": [],
+        }
+    return root_node
 
 
 @app.get("/api/v1/goals/{goal_id}/tree")
@@ -382,9 +603,14 @@ async def trajectory_page(request: Request, goal_id: int) -> HTMLResponse:
     )
 
 
-@app.get("/api/v1/cost.csv", response_class=PlainTextResponse)
-async def cost_csv(month: Optional[str] = None) -> str:
-    """CSV rollup of episode spend.
+@app.get("/api/v1/cost.csv")
+async def cost_csv(month: Optional[str] = None) -> StreamingResponse:
+    """CSV rollup of episode spend, streamed.
+
+    Council perf finding: prior version fetched up to 100k episodes
+    into memory, then filtered by month in Python before writing the
+    CSV to a StringIO. Now: stream rows directly from the DB, with the
+    month filter pushed to SQL.
 
     ``month`` filter: YYYY-MM (e.g. 2026-04). Omit for lifetime.
     Columns: episode_id, goal_id, started_at, ended_at, outcome,
@@ -395,30 +621,50 @@ async def cost_csv(month: Optional[str] = None) -> str:
     import io as _io
 
     w = _world()
-    episodes = w.list_episodes(limit=100_000)
+    start_ts: Optional[float] = None
+    end_ts: Optional[float] = None
     if month:
         try:
-            start = _dt.datetime.strptime(month, "%Y-%m").timestamp()
+            start_ts = _dt.datetime.strptime(month, "%Y-%m").timestamp()
         except ValueError as e:
             raise HTTPException(status_code=400, detail=f"bad month: {e}")
-        end = start + 31 * 86_400
-        episodes = [e for e in episodes if start <= (e.started_at or 0) < end]
+        end_ts = start_ts + 31 * 86_400
 
-    buf = _io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow([
-        "episode_id", "goal_id", "started_at", "ended_at", "outcome",
-        "dollars", "input_tokens", "output_tokens", "tool_calls",
-    ])
-    for e in episodes:
+    def generate():
+        buf = _io.StringIO()
+        writer = csv.writer(buf)
         writer.writerow([
-            e.id, e.goal_id,
-            e.started_at, e.ended_at or "",
-            e.outcome or "",
-            f"{e.cost_dollars:.6f}",
-            e.input_tokens, e.output_tokens, e.tool_calls,
+            "episode_id", "goal_id", "started_at", "ended_at", "outcome",
+            "dollars", "input_tokens", "output_tokens", "tool_calls",
         ])
-    return buf.getvalue()
+        yield buf.getvalue()
+        buf.seek(0)
+        buf.truncate(0)
+
+        params: tuple = ()
+        sql = (
+            "SELECT id, goal_id, started_at, ended_at, outcome, "
+            "cost_dollars, input_tokens, output_tokens, tool_calls "
+            "FROM episodes"
+        )
+        if start_ts is not None:
+            sql += " WHERE started_at >= ? AND started_at < ?"
+            params = (start_ts, end_ts)
+        sql += " ORDER BY id"
+
+        for row in w.conn.execute(sql, params):
+            writer.writerow([
+                row["id"], row["goal_id"],
+                row["started_at"], row["ended_at"] or "",
+                row["outcome"] or "",
+                f"{(row['cost_dollars'] or 0):.6f}",
+                row["input_tokens"], row["output_tokens"], row["tool_calls"],
+            ])
+            yield buf.getvalue()
+            buf.seek(0)
+            buf.truncate(0)
+
+    return StreamingResponse(generate(), media_type="text/csv")
 
 
 @app.get("/api/goal/{goal_id}/events")

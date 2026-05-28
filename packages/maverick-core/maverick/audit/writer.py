@@ -70,13 +70,21 @@ class AuditLog:
         return path
 
     def record(self, event: AuditEvent) -> bool:
-        """Write one event. Returns True on success."""
+        """Write one event. Returns True on success.
+
+        String fields in the event payload are run through
+        ``secret_detector.redact`` so API keys, OAuth tokens, JWTs, and
+        ``.env`` fragments that leak via tool output never land on disk
+        in plaintext. Redaction failure is non-fatal: the event still
+        writes, but a warning logs.
+        """
         with self._lock:
             path = self._rotate_if_needed()
             if path is None:
                 return False
             try:
-                line = json.dumps(event.to_dict(), default=str) + "\n"
+                payload = _redact_event(event.to_dict())
+                line = json.dumps(payload, default=str) + "\n"
                 with open(path, "a", encoding="utf-8") as f:
                     f.write(line)
                 return True
@@ -125,6 +133,31 @@ class AuditLog:
         except OSError:
             return []
         return out
+
+
+def _redact_event(payload: dict[str, Any]) -> dict[str, Any]:
+    """Walk an audit event dict and redact any embedded secrets in string values.
+
+    Lazy-imports the detector so the audit module stays usable in
+    environments where ``maverick.safety`` was stripped or vendored.
+    Returns a new dict; never mutates the input.
+    """
+    try:
+        from ..safety.secret_detector import redact
+    except Exception:
+        return payload
+
+    def _walk(v: Any) -> Any:
+        if isinstance(v, str):
+            redacted, _ = redact(v)
+            return redacted
+        if isinstance(v, dict):
+            return {k: _walk(vv) for k, vv in v.items()}
+        if isinstance(v, list):
+            return [_walk(vv) for vv in v]
+        return v
+
+    return _walk(payload)
 
 
 _default: Optional[AuditLog] = None
