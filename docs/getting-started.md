@@ -2,6 +2,23 @@
 
 ## Install
 
+The fastest path needs nothing installed first — the script pulls in
+Python + git if they're missing, then runs the wizard.
+
+**Windows** (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/texasreaper62/maverick/main/deploy/desktop/install.ps1 | iex
+```
+
+**macOS / Linux**:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/texasreaper62/maverick/main/deploy/desktop/install.sh | bash
+```
+
+If you already have Python 3.10+, you can use pipx instead:
+
 ```bash
 pipx install 'maverick-agent[installer]'
 ```
