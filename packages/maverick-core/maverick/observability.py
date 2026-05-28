@@ -5,6 +5,7 @@ Off by default. Three knobs:
   - ``MAVERICK_OTEL_EXPORTER=otlp``      enables OTLP span export
   - ``MAVERICK_OTEL_ENDPOINT=https://...``  override default collector URL
   - ``MAVERICK_PROMETHEUS_PORT=9100``    expose /metrics on this port
+  - ``MAVERICK_PROMETHEUS_ADDR=127.0.0.1`` bind address for /metrics
 
 When neither is set, this module is a pure-Python no-op: ``trace_span()``
 returns a context-manager that does nothing, ``record_metric()`` is a
@@ -95,9 +96,10 @@ def _initialize() -> None:
                 )
                 return
             port_str = os.environ.get("MAVERICK_PROMETHEUS_PORT", "9100")
+            addr = os.environ.get("MAVERICK_PROMETHEUS_ADDR", "127.0.0.1")
             try:
                 port = int(port_str)
-                start_http_server(port)
+                start_http_server(port, addr=addr)
             except (OSError, ValueError) as e:
                 log.warning("observability: Prometheus exporter failed: %s", e)
                 return
@@ -121,7 +123,7 @@ def _initialize() -> None:
                 "maverick_budget_dollars_spent",
                 "Total dollars spent (lifetime)",
             )
-            log.info("observability: Prometheus /metrics on :%d", port)
+            log.info("observability: Prometheus /metrics on %s:%d", addr, port)
 
 
 @contextlib.contextmanager
