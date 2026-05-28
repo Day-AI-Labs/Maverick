@@ -44,6 +44,21 @@ Transform tasks into verifiable goals before implementing:
 5. **No new top-level dependencies without a config knob.** If you add a feature (channel adapter, new provider, new sandbox), the installer wizard should be able to enable/disable it.
 6. **The wizard is the source of truth for UX.** When you add a capability, also add it to `apps/installer-cli/maverick_installer/`. Otherwise non-technical users can't reach it.
 
+## Python version compatibility
+
+CI runs the test matrix on 3.10, 3.11, and 3.12. A few stdlib modules are 3.11+ only — using one of them unconditionally breaks CI on 3.10. This has bitten three PRs in a row with `tomllib`. The rule:
+
+**Never `import tomllib` (or any other 3.11+ stdlib) without a fallback.** Use this exact pattern:
+
+```python
+try:
+    import tomllib  # 3.11+
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib  # type: ignore[no-redef]
+```
+
+`tomli` is already in the dependency graph via `maverick-agent`'s `tomli>=2.0; python_version<'3.11'` marker, so no extra install is needed. The `.github/workflows/ci.yml` `lint` job greps for bare `import tomllib` and fails the build — if you see that check fail, add the fallback.
+
 ## Where things live
 
 ```

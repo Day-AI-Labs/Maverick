@@ -18,6 +18,21 @@ jobs:
         run: python -m pip install 'ruff>=0.5'
       - name: Lint
         run: python -m ruff check .
+      - name: Reject bare `import tomllib` (3.11+ stdlib without 3.10 fallback)
+        # Three PRs in a row broke CI on Python 3.10 by importing tomllib
+        # without the documented tomli fallback. Catch it here so the
+        # mistake fails the lint job in seconds, not 5 minutes into the
+        # test matrix on the slowest interpreter.
+        #
+        # Column-0 match only: the legit pattern indents the import
+        # inside a try-block, so anything at column 0 is the mistake.
+        run: |
+          if grep -rn --include='*.py' -E '^import[[:space:]]+tomllib([[:space:]]|$)' apps packages benchmarks; then
+            echo ""
+            echo "ERROR: bare 'import tomllib' found above. tomllib is 3.11+ stdlib."
+            echo "Use the try/except fallback documented in CLAUDE.md."
+            exit 1
+          fi
 
   test:
     runs-on: ubuntu-latest
