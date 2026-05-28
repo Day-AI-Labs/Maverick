@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Maverick — open-source AI agent for your machine</title>
+<meta name="description" content="An open-source AI agent that runs locally. Recursive multi-agent swarm + safety layer. Pick your models. Set a budget. Run it." />
+<meta property="og:title" content="Maverick" />
+<meta property="og:description" content="An open-source AI agent that runs locally on your machine." />
+<meta property="og:type" content="website" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231a7f37'/%3E%3Ctext x='16' y='22' font-family='Helvetica' font-weight='700' font-size='18' fill='white' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #1f2328;
+    --muted: #57606a;
+    --border: #d0d7de;
+    --panel: #f6f8fa;
+    --accent: #1a7f37;
+    --accent-hover: #156a2d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117;
+      --text: #e6edf3;
+      --muted: #9aa3ad;
+      --border: #30363d;
+      --panel: #161b22;
+      --accent: #3fb950;
+      --accent-hover: #46c655;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  a { color: var(--accent); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .skip-link { position: absolute; left: -9999px; }
+  .skip-link:focus { left: 1rem; top: 1rem; padding: 0.5rem 1rem; background: var(--accent); color: #fff; border-radius: 4px; z-index: 100; }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 1rem 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  header .brand { font-weight: 700; font-size: 1.1rem; }
+  header nav { margin-left: auto; display: flex; gap: 1.25rem; }
+  header nav a { color: var(--muted); text-decoration: none; }
+  header nav a:hover { color: var(--text); }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+  section { margin-bottom: 4rem; }
+
+  .hero { text-align: center; padding: 4rem 1rem 3rem; }
+  .hero h1 { font-size: clamp(2rem, 5vw, 3rem); margin: 0 0 1rem; line-height: 1.1; font-weight: 700; }
+  .hero p.lead { font-size: 1.2rem; color: var(--muted); max-width: 640px; margin: 0 auto 2rem; }
+  .hero .cta-row { display: flex; justify-content: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .btn {
+    display: inline-block;
+    padding: 0.85rem 1.75rem;
+    border-radius: 6px;
+    font-weight: 600;
+    text-decoration: none;
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-hover); }
+  .btn.secondary { background: transparent; color: var(--text); border-color: var(--border); }
+  .btn.secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .platform-note { color: var(--muted); font-size: 0.9rem; margin-top: 0.5rem; }
+
+  h2 { font-size: 1.5rem; margin: 0 0 1.5rem; font-weight: 700; }
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1.5rem;
+  }
+  .feature {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+  }
+  .feature h3 { margin: 0 0 0.5rem; font-size: 1.05rem; font-weight: 600; }
+  .feature p { margin: 0; color: var(--muted); }
+
+  pre {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    overflow-x: auto;
+    font: 0.9rem ui-monospace, SFMono-Regular, Menlo, "Roboto Mono", monospace;
+  }
+  code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--panel); padding: 0.1em 0.35em; border-radius: 3px; }
+
+  .terminal {
+    background: #0d1117;
+    color: #e6edf3;
+    border-radius: 8px;
+    padding: 1.25rem;
+    font: 0.9rem ui-monospace, SFMono-Regular, Menlo, monospace;
+    line-height: 1.6;
+    overflow-x: auto;
+  }
+  .terminal .prompt { color: #3fb950; }
+  .terminal .out { color: #9aa3ad; }
+
+  .audience { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; }
+  .audience > div { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; }
+  .audience h3 { margin: 0 0 0.5rem; font-weight: 600; }
+  .audience ul { margin: 0.5rem 0 0; padding-left: 1.25rem; color: var(--muted); }
+
+  footer { border-top: 1px solid var(--border); padding: 2rem; text-align: center; color: var(--muted); font-size: 0.9rem; max-width: 1100px; margin: 2rem auto 0; }
+  footer a { color: var(--muted); }
+
+  @media (max-width: 720px) {
+    header { padding: 1rem; flex-wrap: wrap; }
+    main { padding: 1rem; }
+    .hero { padding: 2rem 0.5rem; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+
+<header>
+  <span class="brand">Maverick</span>
+  <nav>
+    <a href="#what">What</a>
+    <a href="#install">Install</a>
+    <a href="#audience">Who</a>
+    <a href="https://github.com/texasreaper62/maverick">GitHub</a>
+  </nav>
+</header>
+
+<main id="content">
+  <section class="hero">
+    <h1>An open-source AI agent for your machine.</h1>
+    <p class="lead">Recursive multi-agent swarm + safety layer. Pick your models. Set a budget. Run it locally.</p>
+    <div class="cta-row">
+      <a id="primary-download" class="btn primary" href="https://github.com/texasreaper62/maverick/releases/latest">Download</a>
+      <a class="btn secondary" href="#install">Install from PyPI</a>
+    </div>
+    <p class="platform-note" id="platform-note">Detecting your platform…</p>
+  </section>
+
+  <section id="what">
+    <h2>What it does</h2>
+    <div class="feature-grid">
+      <div class="feature">
+        <h3>Plans before it acts</h3>
+        <p>An orchestrator spawns specialised sub-agents (researcher, coder, writer, verifier) and runs them in parallel where possible.</p>
+      </div>
+      <div class="feature">
+        <h3>You pick the model</h3>
+        <p>Anthropic, OpenAI, Gemini, OpenRouter, Ollama, DeepSeek. Per role. Mix and match: orchestrator on Opus, summariser on Haiku.</p>
+      </div>
+      <div class="feature">
+        <h3>Real safety, not vibes</h3>
+        <p>Agent Shield scans every prompt, tool call, and output. Strict / balanced / permissive / off. F1 0.988 on prompt-injection.</p>
+      </div>
+      <div class="feature">
+        <h3>Budget is mandatory</h3>
+        <p>Per-run dollar cap, wall-clock cap, tool-call cap. The kernel refuses to bust the budget. No surprise $200 bills.</p>
+      </div>
+      <div class="feature">
+        <h3>Anywhere on your terms</h3>
+        <p>Desktop, Docker, VPS, or as a phone companion through nine channel adapters (Telegram, Discord, Slack, Signal, Matrix, Bluesky, Mastodon, email, voice).</p>
+      </div>
+      <div class="feature">
+        <h3>Open source, no paid tier</h3>
+        <p>MIT licensed. No telemetry. Your prompts go to whichever provider you configured, nowhere else.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <h2>Install</h2>
+    <pre id="install-cmd">pipx install 'maverick-agent[installer]'
+maverick init</pre>
+    <p class="platform-note">PyPI name is <code>maverick-agent</code>. The <code>[installer]</code> extra pulls the wizard into the same pipx environment so <code>maverick init</code> resolves. Requires Python 3.10+.</p>
+
+    <div class="terminal" aria-label="Terminal session example">
+      <span class="prompt">$</span> pipx install 'maverick-agent[installer]'<br>
+      <span class="out">  installed package maverick-agent 0.1.1 / maverick-installer 0.1.1</span><br>
+      <span class="prompt">$</span> maverick init<br>
+      <span class="out">  How do you want to set this up?</span><br>
+      <span class="out">    consumer  Four questions, safe defaults. About a minute.</span><br>
+      <span class="out">    advanced  Pick every model, channel, safety level, budget.</span><br>
+    </div>
+  </section>
+
+  <section id="audience">
+    <h2>Who it's for</h2>
+    <div class="audience">
+      <div>
+        <h3>Everyone else</h3>
+        <p>Consumer mode is four questions. The wizard fills the rest with safe defaults: strict safety, sandboxed shell, $5 budget cap, web search on.</p>
+        <ul>
+          <li>Download, double-click, four questions</li>
+          <li>No terminal needed once installed</li>
+          <li>You can switch to advanced any time</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Engineers + power users</h3>
+        <p>Advanced mode exposes every knob: per-role model assignment, custom MCP servers, plugin allowlist, per-tool rate limits, retention, persona, notifications, full sandbox + channel matrix.</p>
+        <ul>
+          <li>Plugin SDK with <code>maverick plugin new</code></li>
+          <li>Programmatic REST API at <code>/api/v1</code></li>
+          <li>MCP server in both directions</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <p>
+    MIT licensed.
+    <a href="https://github.com/texasreaper62/maverick">Source on GitHub</a> ·
+    <a href="https://github.com/texasreaper62/maverick/blob/main/docs/getting-started.md">Docs</a> ·
+    <a href="https://github.com/texasreaper62/maverick/issues">Issues</a>
+  </p>
+</footer>
+
+<script>
+  // Lightweight OS detection drives the primary CTA. Falls back to
+  // "all releases" if we can't be sure.
+  (function () {
+    var ua = (navigator.userAgent || "").toLowerCase();
+    var note = document.getElementById("platform-note");
+    var dl = document.getElementById("primary-download");
+    var asset = null;
+    var label = null;
+    if (ua.indexOf("win") !== -1) {
+      asset = "maverick-windows-x86_64.exe";
+      label = "Download for Windows";
+    } else if (ua.indexOf("mac") !== -1) {
+      asset = "maverick-macos-arm64";
+      label = "Download for macOS";
+    } else if (ua.indexOf("linux") !== -1) {
+      asset = "maverick-linux-x86_64";
+      label = "Download for Linux";
+    }
+    if (asset) {
+      dl.href = "https://github.com/texasreaper62/maverick/releases/latest/download/" + asset;
+      dl.textContent = label;
+      if (note) note.textContent = "Detected " + label.replace("Download for ", "") + ". All builds at github.com/texasreaper62/maverick/releases.";
+    } else if (note) {
+      note.textContent = "All builds at github.com/texasreaper62/maverick/releases.";
+    }
+  })();
+</script>
+</body>
+</html>
