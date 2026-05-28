@@ -152,11 +152,13 @@ def base_registry(
     from .clipboard import clipboard
     from .preview_diff import preview_diff
     from .kv_memory import kv_memory
+    from .a11y import a11y
     from .android import android
     from .apply_patch import apply_patch
     from .arxiv import arxiv
     from .calendar_tool import calendar_tool
     from .compute import compute
+    from .currency import currency
     from .diagnose import diagnose
     from .email_tool import email_tool
     from .embeddings import embeddings
@@ -173,6 +175,7 @@ def base_registry(
     from .semantic_scholar import semantic_scholar
     from .slack_bot import slack_bot
     from .spend_report import spend_report
+    from .stripe_tool import stripe_tool
     from .test_impact import test_impact
     from .translate import translate
     from .wikipedia import wikipedia
@@ -211,6 +214,9 @@ def base_registry(
     reg.register(notion())
     reg.register(translate())
     reg.register(slack_bot())
+    reg.register(stripe_tool())
+    reg.register(currency())
+    reg.register(a11y())
 
     # Voice tools (opt-in extra; tool factories raise ImportError only
     # when called without the required API key OR SDK; registering is
