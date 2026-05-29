@@ -161,6 +161,25 @@ class Budget:
             self.tool_calls += 1
             self.check()
 
+    def absorb(self, other: "Budget") -> None:
+        """Roll another Budget's consumption into this one atomically and
+        enforce caps.
+
+        Used when a child/attempt runs on its own Budget (e.g. best-of-N)
+        and its spend must count against the parent cap. Replaces the raw
+        ``self.dollars += other.dollars`` roll-up, which bypassed both the
+        lock (lost updates under concurrency) and ``check()`` (so the
+        parent silently busted its cap across attempts).
+        """
+        with self._lock:
+            self.input_tokens += other.input_tokens
+            self.output_tokens += other.output_tokens
+            self.cache_read_tokens += other.cache_read_tokens
+            self.cache_write_tokens += other.cache_write_tokens
+            self.dollars += other.dollars
+            self.tool_calls += other.tool_calls
+            self.check()
+
     def elapsed(self) -> float:
         # Wave 12: use monotonic so NTP clock-skew doesn't bypass the wall
         # cap. `started_at` is captured in __post_init__ for monotonic.

@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from .budget import Budget
+from .budget import Budget, BudgetExceeded
 from .llm import LLM, model_for_role
 
 log = logging.getLogger(__name__)
@@ -212,6 +212,10 @@ async def review_diff(
             max_tokens=max_tokens,
             model=model,
         )
+    except BudgetExceeded:
+        # Budget exhaustion must halt the run, never silently soft-pass:
+        # soft-passing here auto-approves the diff when the cap is hit.
+        raise
     except Exception as e:  # pragma: no cover
         log.warning("reviewer LLM call failed: %s; soft-pass", e)
         return ReviewVerdict(
