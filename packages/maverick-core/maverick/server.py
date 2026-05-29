@@ -169,15 +169,22 @@ def _wire_telegram(server, cfg):
 def _wire_discord(server, cfg):
     from maverick_channels.discord import DiscordChannel
     token = cfg.get("bot_token") or os.environ.get("DISCORD_BOT_TOKEN")
-    server.add_channel(DiscordChannel(handler=server._handle_message, token=token))
+    allowed_user_ids = cfg.get("allowed_user_ids")
+    server.add_channel(DiscordChannel(
+        handler=server._handle_message,
+        token=token,
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+    ))
 
 
 def _wire_slack(server, cfg):
     from maverick_channels.slack import SlackChannel
+    allowed_user_ids = cfg.get("allowed_user_ids")
     server.add_channel(SlackChannel(
         handler=server._handle_message,
         app_token=cfg.get("app_token") or os.environ.get("SLACK_APP_TOKEN"),
         bot_token=cfg.get("bot_token") or os.environ.get("SLACK_BOT_TOKEN"),
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
     ))
 
 
@@ -186,15 +193,18 @@ def _wire_signal(server, cfg):
     phone = cfg.get("phone_number")
     if not phone:
         raise RuntimeError("signal channel requires phone_number in config")
+    allowed_user_ids = cfg.get("allowed_user_ids")
     server.add_channel(SignalChannel(
         handler=server._handle_message,
         phone_number=phone,
         signal_cli_path=cfg.get("signal_cli_path"),
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
     ))
 
 
 def _wire_email(server, cfg):
     from maverick_channels.email import EmailChannel
+    allowed_user_ids = cfg.get("allowed_user_ids")
     server.add_channel(EmailChannel(
         handler=server._handle_message,
         imap_host=cfg["imap_host"],
@@ -205,16 +215,19 @@ def _wire_email(server, cfg):
         smtp_password=cfg["smtp_password"],
         smtp_port=cfg.get("smtp_port", 465),
         poll_interval=cfg.get("poll_interval", 30),
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
     ))
 
 
 def _wire_matrix(server, cfg):
     from maverick_channels.matrix import MatrixChannel
+    allowed_user_ids = cfg.get("allowed_user_ids")
     server.add_channel(MatrixChannel(
         handler=server._handle_message,
         homeserver=cfg["homeserver"],
         user_id=cfg["user_id"],
         access_token=cfg.get("access_token") or os.environ.get("MATRIX_ACCESS_TOKEN"),
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
     ))
 
 
@@ -267,9 +280,11 @@ def _wire_sms(server, cfg):
 
 def _wire_imessage(server, cfg):
     from maverick_channels.imessage import iMessageChannel
+    allowed_user_ids = cfg.get("allowed_user_ids")
     server.add_channel(iMessageChannel(
         handler=server._handle_message,
         poll_interval=cfg.get("poll_interval", 5),
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
     ))
 
 

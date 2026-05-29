@@ -30,7 +30,9 @@ def test_send_passes_text_via_argv_not_interpolation():
     with patch("maverick_channels.imessage.CHAT_DB") as fake_db:
         fake_db.exists.return_value = True
         fake_db.__fspath__ = lambda: "/tmp/fake_chat.db"
-        chan = iMessageChannel(handler=_noop, poll_interval=1)
+        chan = iMessageChannel(
+            handler=_noop, poll_interval=1, allowed_user_ids={"+1555"},
+        )
 
     import asyncio
     with patch("maverick_channels.imessage.subprocess.run") as run_mock:

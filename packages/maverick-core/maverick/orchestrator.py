@@ -457,9 +457,10 @@ async def run_goal_best_of_n(
                     apply_check_passed=False, error=str(e),
                 ))
                 # Roll the spend into the parent budget so we don't lie.
-                budget.dollars += attempt_budget.dollars
-                budget.input_tokens += attempt_budget.input_tokens
-                budget.output_tokens += attempt_budget.output_tokens
+                # absorb() is atomic and enforces the parent cap (raises
+                # BudgetExceeded); the prior raw += let BoN bust
+                # max_dollars across attempts without ever calling check().
+                budget.absorb(attempt_budget)
                 continue
         finally:
             # Restore env so the next call site isn't surprised.
@@ -468,9 +469,7 @@ async def run_goal_best_of_n(
             else:
                 os.environ["MAVERICK_TEMPERATURE"] = prior_temp
 
-        budget.dollars += attempt_budget.dollars
-        budget.input_tokens += attempt_budget.input_tokens
-        budget.output_tokens += attempt_budget.output_tokens
+        budget.absorb(attempt_budget)
 
         patch = extract_unified_diff(answer) or ""
         from pathlib import Path as _Path

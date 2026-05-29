@@ -495,6 +495,26 @@ def pick_models_per_role(providers: list[str]) -> dict[str, str]:
     return role_models
 
 
+# Inbound channels enforce a sender allowlist (fail-closed): only these
+# IDs can drive the agent and spend budget. The wizard must collect it or
+# the channel refuses to start. See maverick_channels.base.is_allowed.
+_ALLOWLIST_CHANNELS = {
+    "telegram", "discord", "slack", "signal", "email",
+    "matrix", "bluesky", "mastodon", "imessage",
+}
+_ALLOWLIST_HINT = {
+    "telegram": "numeric Telegram user IDs",
+    "discord": "numeric Discord user IDs",
+    "slack": "Slack user IDs, e.g. U01ABC",
+    "signal": "phone numbers, e.g. +12345550199",
+    "email": "email addresses",
+    "matrix": "MXIDs, e.g. @you:matrix.org",
+    "bluesky": "handles or DIDs",
+    "mastodon": "acct names, e.g. you@instance",
+    "imessage": "phone numbers or emails",
+}
+
+
 def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]:
     """Returns (channels_config, env_vars_needed)."""
     console.print()
@@ -589,6 +609,23 @@ def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]
             cfg["port"] = _safe_int(_q_text("  Webhook port", default="8766"), default=8766)
         elif ch_id == "imessage":
             cfg["poll_interval"] = 5
+
+        if ch_id in _ALLOWLIST_CHANNELS:
+            hint = _ALLOWLIST_HINT.get(ch_id, "sender IDs")
+            raw_ids = _q_text(
+                f"  Allowed senders, comma-separated ({hint}) — "
+                "only these can drive the agent",
+                default="",
+            )
+            ids = [s.strip() for s in raw_ids.split(",") if s.strip()]
+            if ids:
+                cfg["allowed_user_ids"] = ids
+            else:
+                console.print(
+                    "  [yellow]No allowlist set — this channel will refuse "
+                    f"all senders until you set {ch_id.upper()}_ALLOWED_USER_IDS "
+                    "or add allowed_user_ids to config.[/yellow]"
+                )
 
         channels[ch_id] = cfg
 

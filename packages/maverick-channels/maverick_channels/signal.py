@@ -20,7 +20,7 @@ import logging
 import shutil
 from typing import Optional
 
-from .base import Channel, IncomingMessage
+from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
 
 log = logging.getLogger(__name__)
 
@@ -33,9 +33,15 @@ class SignalChannel(Channel):
         handler,
         phone_number: str,
         signal_cli_path: Optional[str] = None,
+        allowed_user_ids=None,
     ):
         super().__init__(handler)
         self.phone_number = phone_number
+        self.allowed_user_ids = normalize_allowlist(
+            allowed_user_ids, "SIGNAL_ALLOWED_USER_IDS",
+        )
+        if not self.allowed_user_ids:
+            raise ValueError("Set SIGNAL_ALLOWED_USER_IDS to restrict access")
         self.signal_cli_path = signal_cli_path or shutil.which("signal-cli")
         if not self.signal_cli_path:
             raise FileNotFoundError(
@@ -87,14 +93,17 @@ class SignalChannel(Channel):
             text = envelope.get("dataMessage", {}).get("message")
             if not text or not source:
                 continue
+            if not is_allowed(source, self.allowed_user_ids):
+                log.warning("unauthorized signal access: source=%s", source)
+                continue
             msg = IncomingMessage(
                 user_id=source, text=text, channel="signal", raw=envelope,
             )
             try:
                 reply = await self.handler(msg)
-            except Exception as e:  # pragma: no cover
+            except Exception:  # pragma: no cover
                 log.exception("handler error")
-                reply = f"⚠ error: {e}"
+                reply = "⚠ An internal error occurred."
             await self.send(source, reply)
 
     async def send(self, user_id: str, text: str) -> None:

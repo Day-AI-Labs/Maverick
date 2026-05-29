@@ -30,7 +30,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-from .base import Channel, IncomingMessage
+from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ _SEND_SCRIPT = (
 class iMessageChannel(Channel):  # noqa: N801 - product spelling
     name = "imessage"
 
-    def __init__(self, handler, poll_interval: int = 5):
+    def __init__(self, handler, poll_interval: int = 5, allowed_user_ids=None):
         super().__init__(handler)
         if platform.system() != "Darwin":
             raise RuntimeError(
@@ -64,6 +64,11 @@ class iMessageChannel(Channel):  # noqa: N801 - product spelling
                 f"Messages database not found at {CHAT_DB}. Ensure Messages.app "
                 "has been opened at least once and grant Full Disk Access."
             )
+        self.allowed_user_ids = normalize_allowlist(
+            allowed_user_ids, "IMESSAGE_ALLOWED_USER_IDS",
+        )
+        if not self.allowed_user_ids:
+            raise ValueError("Set IMESSAGE_ALLOWED_USER_IDS to restrict access")
         self.poll_interval = poll_interval
         self._last_rowid: Optional[int] = None
         self._stop = False
@@ -79,14 +84,17 @@ class iMessageChannel(Channel):  # noqa: N801 - product spelling
                 messages = []
             for handle, text, rowid in messages:
                 self._last_rowid = max(self._last_rowid or 0, rowid)
+                if not is_allowed(handle, self.allowed_user_ids):
+                    log.warning("unauthorized imessage access: handle=%s", handle)
+                    continue
                 msg = IncomingMessage(
                     user_id=handle, text=text, channel="imessage",
                 )
                 try:
                     reply = await self.handler(msg)
-                except Exception as e:  # pragma: no cover
+                except Exception:  # pragma: no cover
                     log.exception("handler error")
-                    reply = f"⚠ error: {e}"
+                    reply = "⚠ An internal error occurred."
                 await self.send(handle, reply)
             await asyncio.sleep(self.poll_interval)
 
