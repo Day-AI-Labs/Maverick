@@ -47,6 +47,33 @@ def test_unknown_model_falls_back_to_sonnet_rate():
     assert abs(b.dollars - 3.0) < 0.001
 
 
+def test_router_selectable_models_bill_at_real_rate_not_fallback():
+    """Models the cost-router can SELECT but that aren't in llm.MODEL_PRICES
+    must bill at their cost_router._PRICING rate, not the Sonnet $3/$15
+    fallback. Regression: budget._lookup_price had no path to the router
+    table, so e.g. a gpt-5-nano call billed at 6x its real rate. (grok-4 is
+    omitted because its router price IS 3/15, indistinguishable from the
+    fallback.)"""
+    # model id -> (in_per_mtok, out_per_mtok) from cost_router._PRICING,
+    # each chosen so 1M+1M != the $18 fallback.
+    cases = {
+        "gpt-5-nano": (0.50, 2.50),                 # -> $3.00
+        "gpt-5-pro": (8.00, 40.00),                 # -> $48.00
+        "gemini-2.5-flash": (0.30, 1.20),           # -> $1.50
+        "gemini-2.5-pro": (5.00, 20.00),            # -> $25.00
+        "claude-haiku-4-5-20251001": (0.80, 4.00),  # -> $4.80
+    }
+    for model, (pin, pout) in cases.items():
+        b = Budget(max_dollars=1000.0, max_input_tokens=10_000_000,
+                   max_output_tokens=10_000_000)
+        b.record_tokens(1_000_000, 1_000_000, model=model)
+        expected = pin + pout
+        assert abs(b.dollars - expected) < 0.001, (
+            f"{model}: billed ${b.dollars:.2f}, expected ${expected:.2f} "
+            "(Sonnet fallback would be $18.00)"
+        )
+
+
 def test_no_model_uses_fallback_rate():
     """Back-compat: callers that don't pass model get the legacy rate."""
     b = Budget(max_dollars=100.0, max_input_tokens=10_000_000, max_output_tokens=10_000_000)

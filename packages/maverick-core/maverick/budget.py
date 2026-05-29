@@ -73,11 +73,21 @@ def _lookup_price(model: Optional[str]) -> tuple[float, float]:
         return _FALLBACK_PRICE_IN, _FALLBACK_PRICE_OUT
     if model in MODEL_PRICES:
         return MODEL_PRICES[model]
-    # Try prefix match (e.g. "anthropic:claude-opus-4-7" -> "claude-opus-4-7")
-    if ":" in model:
-        bare = model.split(":", 1)[1]
-        if bare in MODEL_PRICES:
-            return MODEL_PRICES[bare]
+    # Strip a "provider:" prefix (e.g. "anthropic:claude-opus-4-7").
+    bare = model.split(":", 1)[1] if ":" in model else model
+    if bare in MODEL_PRICES:
+        return MODEL_PRICES[bare]
+    # Models the cost-router can SELECT but that aren't in MODEL_PRICES
+    # (gpt-5-nano, gpt-5, gpt-5-pro, grok-4, gemini-2.5-*, the dated Haiku
+    # id) used to silently bill at the Sonnet fallback rate. Consult the
+    # router's own pricing table before giving up.
+    try:
+        from .cost_router import price_for_model
+        priced = price_for_model(model) or price_for_model(bare)
+        if priced is not None:
+            return priced
+    except ImportError:
+        pass
     return _FALLBACK_PRICE_IN, _FALLBACK_PRICE_OUT
 
 
