@@ -196,7 +196,7 @@ maverick init</pre>
 
     <div class="terminal" aria-label="Terminal session example">
       <span class="prompt">$</span> pipx install 'maverick-agent[installer]'<br>
-      <span class="out">  installed package maverick-agent 0.1.1 / maverick-installer 0.1.1</span><br>
+      <span class="out">  installed package maverick-agent 0.1.3 / maverick-installer 0.1.3</span><br>
       <span class="prompt">$</span> maverick init<br>
       <span class="out">  How do you want to set this up?</span><br>
       <span class="out">    consumer  Four questions, safe defaults. About a minute.</span><br>
@@ -245,24 +245,19 @@ maverick init</pre>
     var ua = (navigator.userAgent || "").toLowerCase();
     var note = document.getElementById("platform-note");
     var dl = document.getElementById("primary-download");
-    var asset = null;
-    var label = null;
-    if (ua.indexOf("win") !== -1) {
-      asset = "maverick-windows-x86_64.exe";
-      label = "Download for Windows";
-    } else if (ua.indexOf("mac") !== -1) {
-      asset = "maverick-macos-arm64";
-      label = "Download for macOS";
-    } else if (ua.indexOf("linux") !== -1) {
-      asset = "maverick-linux-x86_64";
-      label = "Download for Linux";
-    }
-    if (asset) {
-      dl.href = "https://github.com/cdayAI/maverick/releases/latest/download/" + asset;
-      dl.textContent = label;
-      if (note) note.textContent = "Detected " + label.replace("Download for ", "") + ". All builds at github.com/cdayAI/maverick/releases.";
+    // Native installers live on the latest release; their filenames are
+    // version-stamped, so we link to the release page (the button's href)
+    // and let the visitor grab the file for their OS, rather than guess an
+    // exact asset URL that breaks every release.
+    var os = null;
+    if (ua.indexOf("win") !== -1) os = "Windows";
+    else if (ua.indexOf("mac") !== -1) os = "macOS";
+    else if (ua.indexOf("linux") !== -1) os = "Linux";
+    if (os) {
+      dl.textContent = "Download for " + os;
+      if (note) note.textContent = "Detected " + os + " — grab the " + os + " installer on the release page.";
     } else if (note) {
-      note.textContent = "All builds at github.com/cdayAI/maverick/releases.";
+      note.textContent = "Pick the installer for your OS on the latest release page.";
     }
   })();
 </script>

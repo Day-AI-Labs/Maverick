@@ -15,24 +15,36 @@ The wizard walks you through every choice. Deploy on desktop, in Docker, on a VP
 
 ## Status
 
-Early alpha. See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the technical map and [`docs/getting-started.md`](./docs/getting-started.md) for the install flow.
+Alpha, but **installable today**: all six packages are on [PyPI](https://pypi.org/project/maverick-agent/), the one-line installers work on Windows/macOS/Linux, and a native double-click installer builds for all three. See [`docs/getting-started.md`](./docs/getting-started.md) for the full flow.
 
 ## What works today vs. planned
 
 | Component | v0.1 (today) | Planned (v0.2+) |
 |---|---|---|
-| Install | One-line bootstrap (`install.ps1` / `install.sh`), pipx, or from source | One-click Tauri DMG / MSIX / AppImage (signed) |
-| GUI | Local web dashboard (`maverick dashboard`) + chat at `/chat` | Native Tauri shell + native iOS/Android |
+| Install | **Native installer (`.exe` / `.dmg` / `.AppImage`)**, one-line bootstrap (`install.ps1` / `install.sh`), pipx, or from source | Code-signed bundles + auto-update |
+| GUI | Native installer app + local web dashboard (`maverick dashboard`) + chat at `/chat` | Native Tauri shell for the agent itself + iOS/Android |
 | Sandbox | Local subprocess, Docker, SSH, Podman, devcontainer | Firecracker, Modal, Daytona |
 | AI providers | Anthropic (full), OpenAI, OpenRouter, Ollama, Gemini, DeepSeek (per-role routable) | Bedrock, Cohere |
 | Channels | Telegram, Discord, Slack, Signal, Email, Matrix, Bluesky, Mastodon (ready); WhatsApp, SMS, iMessage (scaffolds) | Push notifications, voice |
 | Safety | Shield wired at 3 chokepoints; agent-shield SDK if installed, else 20 builtin rules | Agent-shield full ~115 patterns |
-| Distribution | GHCR image + PyInstaller binaries + PyPI publish (Trusted Publishing, OIDC) | Signed bundles; Homebrew tap |
+| Distribution | PyPI (6 packages), GHCR image, PyInstaller binaries, **native installers on Releases** | Code signing; Homebrew tap |
 | Tests | 1000+ tests, ruff + pytest on Py 3.10/3.11/3.12 | Integration suite + benchmark RESULTS.md |
 
 ## Install
 
-### One-line install (recommended)
+### Download the app — no terminal needed (easiest)
+
+Grab the installer for your OS from the **[latest release ›](https://github.com/cdayAI/Maverick/releases/latest)**, double-click it, then press **Install Maverick**:
+
+| OS | File on the release |
+|---|---|
+| **Windows** | `Maverick_*_x64-setup.exe` |
+| **macOS** | `Maverick_*_aarch64.dmg` |
+| **Linux** | `Maverick_*_amd64.AppImage` |
+
+It's unsigned for now, so the first launch shows an "unknown developer" prompt — on Windows click **More info → Run anyway**; on macOS right-click the app → **Open**. The app installs Python and Maverick for you, then you're set.
+
+### One-line install (paste into a terminal)
 
 No Python required — the script installs everything it needs and launches the wizard.
 

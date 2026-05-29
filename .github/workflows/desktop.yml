@@ -1,29 +1,30 @@
 name: Desktop bundle
 
-# Builds the Tauri desktop installer for macOS, Windows, and Linux.
+# Builds the native Maverick installer (Tauri) for macOS, Windows, and
+# Linux. On a version tag (`v*`) the installers are attached to that
+# GitHub release, so end users can download and double-click them
+# without a GitHub login.
 #
-# Status: produces UNSIGNED bundles. They run for development and
-# internal testing but trip SmartScreen (Windows) / Gatekeeper (macOS)
-# for end users. Code-signing + notarization are gated on the Apple
-# Developer Program / Azure Trusted Signing certs (Tier-3 calendar
-# work); the secret placeholders below are where they plug in once
-# available.
+# The app needs no prerequisites: pressing "Install Maverick" runs the
+# same bootstrap as the one-line installers (it installs Python +
+# Maverick for the user).
 #
-# Also note: the bundle currently shells out to the system Python for
-# the wizard sidecar. Until embedded Python (python-build-standalone)
-# lands, the produced bundle requires Python 3.10+ on the target
-# machine. Tracked separately.
+# Status: UNSIGNED. First launch trips SmartScreen (Windows) / Gatekeeper
+# (macOS) with an "unknown developer" prompt. Code signing + notarization
+# are gated on an Apple Developer Program membership + a Windows signing
+# cert.
 
 on:
   workflow_dispatch: {}
   push:
     tags:
+      - 'v*'
       - 'desktop-v*'
 
 jobs:
   bundle:
     permissions:
-      contents: read
+      contents: write   # attach installers to the release on a v* tag
     strategy:
       fail-fast: false
       matrix:
@@ -92,3 +93,20 @@ jobs:
             apps/installer-desktop/src-tauri/target/release/bundle/**/*.AppImage
             apps/installer-desktop/src-tauri/target/release/bundle/**/*.deb
           if-no-files-found: warn
+
+      - name: Attach installers to the release (on v* tags)
+        # Publish the built installers to the GitHub release for this tag
+        # so they're downloadable without a login. softprops appends to
+        # the existing release that publish.yml / release.yml create.
+        # .app is a directory, not a file, so it's intentionally excluded.
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            apps/installer-desktop/src-tauri/target/release/bundle/**/*.dmg
+            apps/installer-desktop/src-tauri/target/release/bundle/**/*.msi
+            apps/installer-desktop/src-tauri/target/release/bundle/**/*.exe
+            apps/installer-desktop/src-tauri/target/release/bundle/**/*.AppImage
+            apps/installer-desktop/src-tauri/target/release/bundle/**/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
