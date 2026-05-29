@@ -206,6 +206,44 @@ def test_cost_csv_month_filter_in_sql(monkeypatch, tmp_path: Path):
     assert "new" not in text
 
 
+def test_cost_csv_month_window_rolls_over_by_calendar(monkeypatch, tmp_path: Path):
+    """The month window ends at the next calendar month in UTC, not start+31d.
+
+    Regression: the filter used ``strptime(month).timestamp() + 31*86400``,
+    which (a) interpreted midnight in the server's LOCAL zone and (b) over-ran
+    short months -- Feb 1 + 31 days = Mar 4, leaking early-March rows into a
+    February report. Pin both: a Feb-15 row is kept, a Mar-2 row is excluded.
+    """
+    import datetime as dt
+
+    from maverick import world_model
+    db = tmp_path / "world.db"
+    monkeypatch.setattr(world_model, "DEFAULT_DB", db)
+    monkeypatch.delenv("MAVERICK_DASHBOARD_TOKEN", raising=False)
+    w = world_model.WorldModel(db)
+    gid = w.create_goal("g", "")
+    feb = dt.datetime(2001, 2, 15, tzinfo=dt.timezone.utc).timestamp()
+    mar = dt.datetime(2001, 3, 2, tzinfo=dt.timezone.utc).timestamp()  # +31d from Feb 1
+    eid_feb = w.start_episode(gid)
+    w.end_episode(eid_feb, "ok", "febrow", cost_dollars=0.1,
+                  input_tokens=1, output_tokens=1, tool_calls=1)
+    w.conn.execute("UPDATE episodes SET started_at = ? WHERE id = ?", (feb, eid_feb))
+    eid_mar = w.start_episode(gid)
+    w.end_episode(eid_mar, "ok", "marrow", cost_dollars=0.1,
+                  input_tokens=1, output_tokens=1, tool_calls=1)
+    w.conn.execute("UPDATE episodes SET started_at = ? WHERE id = ?", (mar, eid_mar))
+    w.conn.commit()
+
+    from maverick_dashboard import app as dash_app
+    dash_app._world_cache.clear()
+    client = _client()
+    resp = client.get("/api/v1/cost.csv?month=2001-02")
+    assert resp.status_code == 200
+    text = resp.text
+    assert "febrow" in text
+    assert "marrow" not in text  # Mar 2 must not leak into the Feb window
+
+
 def test_cost_csv_bad_month_400(monkeypatch, tmp_path: Path):
     from maverick import world_model
     monkeypatch.setattr(world_model, "DEFAULT_DB", tmp_path / "world.db")
