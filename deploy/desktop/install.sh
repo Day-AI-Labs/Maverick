@@ -92,8 +92,9 @@ install_maverick() {
   log "Installing the agent + setup wizard (this can take a minute) ..."
   pipx_cmd install --force "$SRC_DIR/packages/maverick-core"
   # The wizard ships in apps/installer-cli; install it into the same venv.
-  # We inject from source rather than the [installer] extra because
-  # maverick-installer is not published to PyPI.
+  # maverick-installer is published to PyPI as of v0.1.3, so the [installer]
+  # extra resolves from PyPI; this script injects from source as a
+  # pre-publish fallback and to pin the wizard to this checkout.
   pipx_cmd inject --force maverick-agent "$SRC_DIR/apps/installer-cli"
 }
 
