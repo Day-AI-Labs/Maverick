@@ -83,7 +83,7 @@ command.
 - Local FastAPI app at `127.0.0.1:8765` showing goals / skills / facts / spend
 - Dark monospace theme, no JS framework, htmx for the live bits
 
-**MCP server** (`maverick-mcp`)
+**MCP server** (`maverick-mcp-server`)
 - Maverick exposed as a Model Context Protocol server over stdio
 - Drives the swarm from Claude Code / Cursor / Claude Desktop / any MCP client
 - 8 tools: start / status / resume / answer / skill_install / skills_list / fact_set / facts_get

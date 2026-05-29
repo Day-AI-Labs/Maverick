@@ -1,4 +1,4 @@
-# maverick-mcp
+# maverick-mcp-server
 
 A Model Context Protocol (MCP) server that exposes Maverick's agent
 loop as a set of MCP tools. Any MCP-compatible client (Claude Code,

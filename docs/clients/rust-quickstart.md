@@ -11,7 +11,7 @@ kernel via the standard Rust MCP SDK.
 ## Prereqs
 
 ```bash
-pip install maverick-agent maverick-mcp
+pip install maverick-agent maverick-mcp-server
 cargo add mcp-sdk    # community crate; pin to a published version
 cargo add tokio --features full
 cargo add serde_json

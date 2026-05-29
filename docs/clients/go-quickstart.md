@@ -11,7 +11,7 @@ Python kernel via the standard MCP SDK for Go.
 ## Prereqs
 
 ```bash
-pip install maverick-agent maverick-mcp
+pip install maverick-agent maverick-mcp-server
 go get github.com/modelcontextprotocol/go-sdk@latest   # community SDK; pin to a tag
 ```
 

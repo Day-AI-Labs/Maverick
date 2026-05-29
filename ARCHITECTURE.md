@@ -140,7 +140,7 @@ What makes Maverick a real multi-agent system, not just N parallel instances:
 
 `.github/workflows/release.yml` triggers on `git tag v*`:
 
-- **PyPI**: `maverick-agent` (squatted, so we ship under this name; the Python import name + CLI name remain `maverick`), `maverick-shield`, `maverick-dashboard`, `maverick-mcp`, `maverick-channels`, `maverick-installer`. Gated on `PYPI_API_TOKEN`.
+- **PyPI**: `maverick-agent` (squatted, so we ship under this name; the Python import name + CLI name remain `maverick`), `maverick-shield`, `maverick-dashboard`, `maverick-mcp-server`, `maverick-channels`, `maverick-installer`. Gated on `PYPI_API_TOKEN`.
 - **GHCR**: multi-tag Docker image — `:latest`, `:vX.Y.Z`, `:vX.Y`.
 - **GitHub Releases**: PyInstaller single-file binaries for Linux x86_64, macOS arm64, Windows x86_64.
 
