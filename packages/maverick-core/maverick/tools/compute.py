@@ -162,7 +162,14 @@ def _safe_parse_expr(expr: str, *, evaluate: bool):
         "Abs": sympy.Abs, "abs": sympy.Abs,
         "min": sympy.Min, "max": sympy.Max,
     })
-    return parse_expr(expr, local_dict=local_dict, global_dict={"__builtins__": {}}, evaluate=evaluate)
+    # NOTE: do NOT pass global_dict={"__builtins__": {}} here. sympy's
+    # parser emits an AST that references sympy's auto-injected names
+    # (Integer, Float, ...); an empty global_dict strips them, so every
+    # parse raised `NameError: name 'Integer' is not defined` and the whole
+    # tool was dead on any machine with the [math] extra installed. Safety
+    # is provided by _validate_expr_safety() above (a strict AST allowlist
+    # run BEFORE this call), not by neutering sympy's namespace.
+    return parse_expr(expr, local_dict=local_dict, evaluate=evaluate)
 
 
 _VALID_OPS = {"evaluate", "simplify", "solve", "diff", "integrate"}
@@ -211,9 +218,15 @@ def _run(args: dict[str, Any]) -> str:
         try:
             var = sympy.Symbol(var_name)
             # Parse "A = B" -> A - B. If no "=", treat as "expr = 0".
+            # .strip() each side: the split leaves leading/trailing spaces
+            # (e.g. right=" 0"), and the parser tokenizes a leading space as
+            # an IndentationError.
             if "=" in eqn:
                 left, right = eqn.split("=", 1)
-                target = _safe_parse_expr(left, evaluate=True) - _safe_parse_expr(right, evaluate=True)
+                target = (
+                    _safe_parse_expr(left.strip(), evaluate=True)
+                    - _safe_parse_expr(right.strip(), evaluate=True)
+                )
             else:
                 target = _safe_parse_expr(eqn, evaluate=True)
             sols = sympy.solve(target, var)
