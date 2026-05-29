@@ -18,12 +18,15 @@ on:
   workflow_dispatch: {}
   push:
     tags:
+      # desktop-v* builds bundles standalone; v* also attaches them to the
+      # GitHub Release that release.yml creates for the product version tag.
       - 'desktop-v*'
+      - 'v*'
 
 jobs:
   bundle:
     permissions:
-      contents: read
+      contents: write   # attach bundles to the GitHub Release on v* tags
     strategy:
       fail-fast: false
       matrix:
@@ -92,3 +95,38 @@ jobs:
             apps/installer-desktop/src-tauri/target/release/bundle/**/*.AppImage
             apps/installer-desktop/src-tauri/target/release/bundle/**/*.deb
           if-no-files-found: warn
+
+      - name: Attach bundles to the existing GitHub Release (v* tags only)
+        # On v* product tags, release.yml is the SOLE creator of the GitHub
+        # Release (it has generate_release_notes:true). Do NOT use
+        # action-gh-release here -- this job could win the create race and the
+        # release would end up with no notes. Instead, wait for release.yml to
+        # create the release, then upload the bundles as assets. Same pattern
+        # as publish.yml's signature-attach step.
+        #
+        # NOTE: these desktop bundles are UNSIGNED (no Apple / Azure Trusted
+        # Signing certs yet). Signing + notarization is the human's later step.
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -e
+          bundles=$(find src-tauri/target/release/bundle \
+            \( -name '*.dmg' -o -name '*.msi' -o -name '*.exe' \
+               -o -name '*.AppImage' -o -name '*.deb' \) -type f)
+          if [ -z "$bundles" ]; then
+            echo "::warning::No desktop bundles found to attach for $TAG."
+            exit 0
+          fi
+          for i in $(seq 1 30); do
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release upload "$TAG" $bundles --clobber
+              echo "Uploaded desktop bundles to release $TAG"
+              exit 0
+            fi
+            echo "Release $TAG not found yet (attempt $i/30); sleeping 10s..."
+            sleep 10
+          done
+          echo "::warning::Release $TAG never appeared after ~5min; desktop bundles remain available as workflow artifacts."
