@@ -74,6 +74,25 @@ class TestAgentLoop:
         assert "out of money" in (result.error or "")
 
     @pytest.mark.asyncio
+    async def test_budget_checked_before_llm_call(self, ctx, make_llm_response):
+        # Already over the dollar cap: the loop must refuse to spend another
+        # call, not check only after the response lands.
+        ctx.budget.dollars = ctx.budget.max_dollars + 1.0
+        calls = {"n": 0}
+
+        class _TrackingLLM:
+            async def complete_async(self, **kwargs):
+                calls["n"] += 1
+                return make_llm_response(text="FINAL: should never run")
+
+        ctx.llm = _TrackingLLM()
+        agent = Agent(ctx=ctx, role="researcher", brief="...")
+        result = await agent.run()
+        assert calls["n"] == 0  # LLM never invoked
+        assert result.final is None
+        assert "$" in (result.error or "")
+
+    @pytest.mark.asyncio
     async def test_max_steps_hit(self, ctx, fake_llm, make_llm_response):
         fake_llm.scripted = [
             make_llm_response(

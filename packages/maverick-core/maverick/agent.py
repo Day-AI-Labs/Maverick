@@ -353,6 +353,11 @@ class Agent:
             messages = compact_messages(messages)
 
             try:
+                # Stop BEFORE spending another call when the cap is already
+                # hit. record_tokens() only checks AFTER the response lands,
+                # so a goal at 99% of budget would otherwise still fire one
+                # more (potentially expensive) call.
+                self.ctx.budget.check()
                 resp = await self.ctx.llm.complete_async(
                     system=self.system,
                     messages=messages,
