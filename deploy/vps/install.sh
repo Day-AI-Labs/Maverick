@@ -42,19 +42,24 @@ install_maverick() {
   log "Installing maverick @ ${MAVERICK_VERSION}..."
   if [[ ! -d /opt/maverick ]]; then
     git clone --branch "${MAVERICK_VERSION}" --depth 1 \
-        https://github.com/cdayAI/maverick /opt/maverick \
-      || git clone https://github.com/cdayAI/maverick /opt/maverick
+        https://github.com/cdayAI/Maverick /opt/maverick \
+      || git clone https://github.com/cdayAI/Maverick /opt/maverick
   else
     git -C /opt/maverick fetch --depth 1 origin "${MAVERICK_VERSION}" 2>/dev/null || true
     git -C /opt/maverick checkout "${MAVERICK_VERSION}" 2>/dev/null \
       || git -C /opt/maverick pull --ff-only
   fi
+  # pipx names the venv after the distribution Name, which is
+  # `maverick-agent` (packages/maverick-core/pyproject.toml), NOT the
+  # `maverick` console-script. Every inject must target `maverick-agent`
+  # or pipx errors with "Package maverick is not installed". (The desktop
+  # install scripts already use the correct name.)
   pipx install /opt/maverick/packages/maverick-core --force
-  pipx inject maverick /opt/maverick/packages/maverick-shield
-  pipx inject maverick /opt/maverick/packages/maverick-channels
-  pipx inject maverick /opt/maverick/packages/maverick-dashboard
-  pipx inject maverick /opt/maverick/packages/maverick-mcp
-  pipx inject maverick /opt/maverick/apps/installer-cli
+  pipx inject maverick-agent /opt/maverick/packages/maverick-shield
+  pipx inject maverick-agent /opt/maverick/packages/maverick-channels
+  pipx inject maverick-agent /opt/maverick/packages/maverick-dashboard
+  pipx inject maverick-agent /opt/maverick/packages/maverick-mcp
+  pipx inject maverick-agent /opt/maverick/apps/installer-cli
 }
 
 run_wizard() {
