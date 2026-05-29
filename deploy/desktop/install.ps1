@@ -12,6 +12,9 @@
   Pin or override the source first:
     $env:MAVERICK_REPO = "owner/maverick"; $env:MAVERICK_REF = "main"
     irm https://raw.githubusercontent.com/.../install.ps1 | iex
+
+  If Python is already installed but not detected, point straight at it:
+    $env:MAVERICK_PYTHON = "C:\path\to\python.exe"
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -31,9 +34,18 @@ function Have($cmd) { [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
 function Py { & $script:PyExe @($script:PyPre + $args) }
 
 function Refresh-Path {
-  $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
-  $user    = [Environment]::GetEnvironmentVariable('Path', 'User')
-  $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ';'
+  # Merge the live machine + user PATH from the registry into this
+  # session WITHOUT dropping entries already added here (a freshly
+  # installed Python dir, or pipx's bin dir below). The old version
+  # overwrote $env:Path, which silently undid those additions -- which is
+  # why `maverick init` often failed to launch in the same window.
+  $parts = @(
+    [Environment]::GetEnvironmentVariable('Path', 'Machine'),
+    [Environment]::GetEnvironmentVariable('Path', 'User'),
+    $env:Path
+  ) | Where-Object { $_ } | ForEach-Object { $_ -split ';' } | Where-Object { $_ }
+  $seen = New-Object System.Collections.Generic.HashSet[string]
+  $env:Path = (@($parts | Where-Object { $seen.Add($_) }) -join ';')
 }
 
 function Ensure-Winget {
@@ -105,6 +117,9 @@ function Get-RegistryPythons {
 # runs the python.org installer, which does NOT add Python to PATH
 # unless PrependPath is set), then a scan of well-known install dirs.
 function Resolve-Python {
+  # An explicit override wins -- the escape hatch when detection fails.
+  if ($env:MAVERICK_PYTHON -and (Test-PyCandidate $env:MAVERICK_PYTHON @())) { return $true }
+
   if ((Have py)     -and (Test-PyCandidate 'py'     @('-3'))) { return $true }
   if ((Have python) -and (Test-PyCandidate 'python' @()))     { return $true }
 
