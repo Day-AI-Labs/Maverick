@@ -1,39 +1,50 @@
 # maverick-installer-desktop
 
-Native Tauri GUI installer for users who never open a terminal.
-Wraps the same `maverick_installer.wizard` logic the CLI uses, behind a
-Svelte UI.
+Native Tauri GUI installer for users who never open a terminal. A
+double-click app with one button: it runs the same bootstrap the CLI
+one-liners use (`deploy/desktop/install.{ps1,sh}`) behind a live
+progress screen, so the user gets Maverick installed without touching a
+shell.
 
-## Status: builds an unsigned bundle
+## How it works
 
-The structural blockers are fixed — `pnpm tauri build` now produces a
-bundle on all three platforms (see `.github/workflows/desktop.yml`).
-What's done:
+```
+  +------------------+   invoke('install')    +-------------------+
+  | Svelte UI (TS)   | ─────────────────────► | Rust shell (lib)  |
+  |  Install button  | ◄───── events ──────── |  spawns bootstrap |
+  +------------------+  install-log / -done    +---------+---------+
+                                                          │
+                                                          │ stdout/stderr
+                                                          ▼
+                                          deploy/desktop/install.{ps1,sh}
+                                          (MAVERICK_NO_WIZARD=1):
+                                          installs Python + git if needed,
+                                          then pipx-installs Maverick
+```
 
-- `[[bin]]` target in `Cargo.toml`, logic split into `lib.rs` (run())
-  + a thin `main.rs` — the standard Tauri v2 layout
-- Tauri v2 `src-tauri/capabilities/default.json` allowlist (scoped to
-  the `wizard_next` command + core window ops; no shell, no fs)
-- A committed source icon at `src-tauri/icons/icon.png`; the CI step
-  + local builds run `pnpm tauri icon` to generate the platform
-  variants the bundler expects
-- GitHub Actions matrix (`desktop.yml`) on macOS / Windows / Linux
+The Rust shell owns the window and runs the bootstrap as a subprocess,
+streaming each line to the UI as a Tauri event. **No Python is required
+on the machine first** — the bootstrap installs it. This is why we shell
+out to the existing scripts instead of embedding a Python runtime: those
+scripts are already tested and are the single source of truth for "how
+to install" (winget/brew/apt, PATH, pipx, PEP 668). When the bootstrap
+finishes, the UI tells the user to run `maverick init` to configure.
 
-**Two things still gate a consumer-grade release:**
+## Status
 
-1. **Embedded Python.** The sidecar shells out to the system Python
-   (`python3` then `python`). A packaged bundle on a machine without
-   Python surfaces a clear error in the UI instead of crashing — but
-   it still won't *run* the wizard there. Bundling
-   `python-build-standalone` is the fix (tracked separately; ~3-5 days).
-2. **Code signing.** `desktop.yml` produces UNSIGNED bundles, which
-   trip SmartScreen (Windows) and Gatekeeper (macOS). The signing
-   secret placeholders are wired in the workflow; they activate once
-   the Apple Developer Program / Azure Trusted Signing certs exist.
+Builds **unsigned** bundles on macOS / Windows / Linux via
+`.github/workflows/desktop.yml`. The only thing between this and a
+consumer-grade release is **code signing** — unsigned bundles trip
+SmartScreen (Windows) and Gatekeeper (macOS), so users see an "unknown
+developer" warning they must click through. Signing activates once the
+Apple Developer Program / Windows code-signing certs exist (the
+`desktop.yml` secret placeholders are where they plug in).
 
-Until both land, the CLI wizard (`maverick init`) is the supported
-install path. The desktop bundle is buildable for development +
-internal testing.
+> **Needs real-machine testing.** CI confirms the bundle *builds*, but
+> the actual install run (winget/brew, network, the GUI driving the
+> bootstrap) has to be exercised on real Windows/macOS/Linux. Treat the
+> first build as a release candidate to smoke-test, not a shipped
+> artifact.
 
 ## Local development
 
@@ -43,9 +54,10 @@ pnpm install
 pnpm tauri dev
 ```
 
-This starts the Tauri dev shell with hot-reload on the Svelte frontend
-and the Python sidecar (`bridge.py`) reachable from the UI via Tauri's
-invoke API.
+Hot-reloads the Svelte frontend. Clicking **Install** runs the real
+bootstrap, so test in a throwaway VM/container unless you actually want
+Maverick installed on your dev box. Point it at a fork/branch with build
+env vars: `MAVERICK_REPO=you/Maverick MAVERICK_REF=my-branch`.
 
 ## Producing native bundles
 
@@ -53,9 +65,9 @@ invoke API.
 pnpm tauri build
 ```
 
-Outputs (per platform):
+Outputs per platform:
 - macOS: `.app` + `.dmg` (sign + notarize for distribution)
-- Windows: `.exe` MSI installer + standalone executable
+- Windows: `.msi` + `.exe` (NSIS)
 - Linux: `.AppImage` + `.deb`
 
 ## Why Tauri vs Electron
@@ -69,23 +81,3 @@ Outputs (per platform):
 
 Maverick already needs Rust in the toolchain for the agent-shield
 performance core, so adding Tauri is essentially free.
-
-## Architecture
-
-```
-  +------------------+      Tauri invoke      +-------------------+
-  | Svelte UI (TS)   | <--------------------> | Rust shell (main) |
-  +------------------+                        +---------+---------+
-                                                        |
-                                                        | stdin/stdout JSON-RPC
-                                                        v
-                                              +-------------------+
-                                              | bridge.py (sidecar) |
-                                              | imports maverick    |
-                                              | + maverick_installer|
-                                              +-------------------+
-```
-
-The Rust shell handles window + IPC. Everything else (wizard
-questions, config writes, API key validation) goes through the same
-Python code the CLI wizard uses.

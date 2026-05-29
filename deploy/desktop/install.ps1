@@ -199,12 +199,18 @@ $env:Path = "$binDir;$env:Path"
 Refresh-Path
 
 Write-Host ""
-Write-Host "Maverick installed." -ForegroundColor Green
-Write-Host "Launching the setup wizard..." -ForegroundColor Green
-Write-Host ""
-if (Have maverick) {
-  maverick init
+# The desktop GUI installer sets MAVERICK_NO_WIZARD: install but skip the
+# interactive wizard (the app then points the user at `maverick init`).
+if ($env:MAVERICK_NO_WIZARD) {
+  Write-Host "Maverick installed. Run 'maverick init' to configure it." -ForegroundColor Green
 } else {
-  Write-Warn "Installed, but 'maverick' isn't on this window's PATH yet."
-  Write-Host "Open a NEW PowerShell window and run:  maverick init"
+  Write-Host "Maverick installed." -ForegroundColor Green
+  Write-Host "Launching the setup wizard..." -ForegroundColor Green
+  Write-Host ""
+  if (Have maverick) {
+    maverick init
+  } else {
+    Write-Warn "Installed, but 'maverick' isn't on this window's PATH yet."
+    Write-Host "Open a NEW PowerShell window and run:  maverick init"
+  }
 }

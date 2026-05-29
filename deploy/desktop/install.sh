@@ -122,7 +122,14 @@ main() {
   ensure_pipx
   fetch_source
   install_maverick
-  run_wizard
+  # The desktop GUI installer sets MAVERICK_NO_WIZARD: do the install but
+  # skip the interactive wizard (the app then points the user at
+  # `maverick init`, which a GUI can't drive over a pipe).
+  if [ -n "${MAVERICK_NO_WIZARD:-}" ]; then
+    printf '\nMaverick installed. Run `maverick init` to configure it.\n'
+  else
+    run_wizard
+  fi
 }
 
 main "$@"

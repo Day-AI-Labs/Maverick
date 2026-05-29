@@ -1,81 +1,86 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
-  import { onMount } from 'svelte';
+  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import { onMount, onDestroy } from 'svelte';
 
-  type WizardStep = {
-    id: string;
-    question: string;
-    choices: string[];
-    kind?: string; // "text" | "secret" | "choice" | "error"
-  };
+  type Status = 'idle' | 'installing' | 'done' | 'failed';
 
-  let step: WizardStep | null = null;
-  let answer = '';
-  let error: string | null = null;
-  let done = false;
-  let doneMessage = 'Maverick is configured.';
+  let status: Status = 'idle';
+  let lines: string[] = [];
+  let errorMsg = '';
+  let logEl: HTMLElement | undefined;
 
-  async function advance(value: string) {
-    error = null;
+  const unlisteners: UnlistenFn[] = [];
+
+  onMount(async () => {
+    unlisteners.push(
+      await listen<string>('install-log', (e) => {
+        lines = [...lines, e.payload];
+        // autoscroll to the newest line
+        queueMicrotask(() => logEl?.scrollTo(0, logEl.scrollHeight));
+      })
+    );
+    unlisteners.push(await listen('install-done', () => { status = 'done'; }));
+    unlisteners.push(
+      await listen<string>('install-failed', (e) => {
+        status = 'failed';
+        errorMsg = e.payload;
+      })
+    );
+  });
+
+  onDestroy(() => unlisteners.forEach((f) => f()));
+
+  async function startInstall() {
+    status = 'installing';
+    lines = [];
+    errorMsg = '';
     try {
-      const next = await invoke<WizardStep>('wizard_next', { answer: value });
-      if (next.id === '__done__') {
-        done = true;
-        doneMessage = next.question || doneMessage;
-        step = null;
-      } else if (next.id === '__error__') {
-        error = next.question;
-      } else {
-        step = next;
-        answer = '';
-      }
+      await invoke('install');
     } catch (e) {
-      error = String(e);
+      // Failure is normally delivered via the install-failed event;
+      // this is a fallback if the command itself rejects.
+      if (status !== 'failed') {
+        status = 'failed';
+        errorMsg = String(e);
+      }
     }
   }
-
-  onMount(() => advance(''));
 </script>
 
 <main>
   <header>
-    <h1>Maverick installer</h1>
-    <p class="sub">Set up Maverick on this machine.</p>
+    <h1>Maverick</h1>
+    <p class="sub">Install the open-source AI agent on this machine.</p>
   </header>
 
-  {#if done}
-    <section class="done">
-      <h2>Setup complete.</h2>
-      <p>{doneMessage}</p>
-    </section>
-  {:else if step}
+  {#if status === 'idle'}
     <section>
-      <h2>{step.question}</h2>
-      {#if step.choices.length > 0}
-        <ul>
-          {#each step.choices as choice}
-            <li>
-              <button on:click={() => advance(choice)}>{choice}</button>
-            </li>
-          {/each}
-        </ul>
-      {:else}
-        <!-- secret steps (API keys) render as a password field -->
-        <input
-          type={step.kind === 'secret' ? 'password' : 'text'}
-          bind:value={answer}
-          on:keydown={(e) => e.key === 'Enter' && advance(answer)}
-          autofocus
-        />
-        <button on:click={() => advance(answer)}>Next</button>
-      {/if}
+      <p>
+        This installs Python (if it isn't already) and Maverick, then you'll run a
+        quick one-time setup. It takes a couple of minutes.
+      </p>
+      <button on:click={startInstall}>Install Maverick</button>
+    </section>
+  {:else if status === 'installing'}
+    <section>
+      <h2>Installing…</h2>
+      <p class="sub">Hang tight — this can take a minute or two.</p>
+      <pre bind:this={logEl} class="log">{lines.join('\n')}</pre>
+    </section>
+  {:else if status === 'done'}
+    <section class="done">
+      <h2>Maverick is installed. 🎉</h2>
+      <p>Open a terminal and run <code>maverick init</code> to finish setup.</p>
+      <pre class="log">{lines.join('\n')}</pre>
     </section>
   {:else}
-    <p class="loading">Loading...</p>
-  {/if}
-
-  {#if error}
-    <p class="error">{error}</p>
+    <section class="failed">
+      <h2>Install failed</h2>
+      <p class="error">{errorMsg}</p>
+      <pre class="log">{lines.join('\n')}</pre>
+      <button on:click={startInstall}>Try again</button>
+    </section>
   {/if}
 </main>
 
@@ -92,19 +97,23 @@
   .sub { color: #8b949e; }
   section { background: #161b22; padding: 1.5rem; border-radius: 8px; }
   h2 { margin-top: 0; font-size: 1.25rem; }
-  ul { list-style: none; padding: 0; }
-  li { margin: 0.5rem 0; }
   button {
-    background: #238636; color: #fff; border: none; padding: 0.6rem 1rem;
-    border-radius: 6px; cursor: pointer; font-size: 0.95rem; width: 100%;
-    text-align: left;
+    background: #238636; color: #fff; border: none; padding: 0.7rem 1.2rem;
+    border-radius: 6px; cursor: pointer; font-size: 1rem;
   }
   button:hover { background: #2ea043; }
-  input {
-    width: 100%; padding: 0.6rem; border-radius: 6px; border: 1px solid #30363d;
-    background: #0d1117; color: #f0f6fc; font-size: 0.95rem; margin-bottom: 0.5rem;
+  code {
+    background: #0d1117; border: 1px solid #30363d; border-radius: 4px;
+    padding: 0.1rem 0.35rem; font-size: 0.9em;
+  }
+  .log {
+    margin-top: 1rem; max-height: 320px; overflow: auto;
+    background: #010409; border: 1px solid #30363d; border-radius: 6px;
+    padding: 0.75rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8rem; line-height: 1.4; white-space: pre-wrap; word-break: break-word;
+    color: #c9d1d9;
   }
   .done h2 { color: #2ea043; }
-  .error { color: #f85149; margin-top: 1rem; }
-  .loading { color: #8b949e; }
+  .failed h2 { color: #f85149; }
+  .error { color: #f85149; }
 </style>
