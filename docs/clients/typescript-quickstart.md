@@ -12,7 +12,7 @@ from any language an MCP SDK exists in.
 ## Prereqs
 
 ```bash
-pip install maverick-agent maverick-mcp   # in any venv on the same machine
+pip install maverick-agent maverick-mcp-server   # in any venv on the same machine
 npm i @modelcontextprotocol/sdk
 ```
 

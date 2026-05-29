@@ -59,10 +59,15 @@ function Winget-Install($id, $override) {
 
 # Validate one interpreter: run it and confirm it reports >= 3.10. On
 # success, record how to invoke it ($script:PyExe / $script:PyPre).
+#
+# Probe with `--version`, NOT `-c "..."`. Windows PowerShell 5.1 mangles
+# embedded double quotes when passing args to a native exe, so a quoted
+# -c snippet fails even when the interpreter is perfectly fine -- which
+# made every detection path (PATH, registry, disk) report "not found".
 function Test-PyCandidate($exe, $pre) {
   try {
-    $v = & $exe @($pre + @('-c', 'import sys;print("%d.%d"%sys.version_info[:2])')) 2>$null
-    if ($v -match '^(\d+)\.(\d+)$' -and
+    $out = (& $exe @($pre + @('--version')) 2>&1) | Out-String
+    if ($out -match 'Python\s+(\d+)\.(\d+)' -and
         ([int]$Matches[1] -gt 3 -or ([int]$Matches[1] -eq 3 -and [int]$Matches[2] -ge 10))) {
       $script:PyExe = $exe; $script:PyPre = $pre
       return $true
@@ -71,30 +76,54 @@ function Test-PyCandidate($exe, $pre) {
   return $false
 }
 
-# Find a usable Python >= 3.10. Checks PATH first, then well-known
-# install dirs: winget runs the python.org installer, which does NOT add
-# Python to PATH unless PrependPath is set, so a fresh install is often
-# only reachable on disk.
+# Full paths to every Python registered under PEP 514. The python.org
+# installer (what winget runs) always writes these keys with the exact
+# install location, regardless of PATH or install dir -- so this finds
+# Python even when winget never put it on PATH.
+function Get-RegistryPythons {
+  $found = @()
+  $roots = @(
+    'HKCU:\SOFTWARE\Python\PythonCore',
+    'HKLM:\SOFTWARE\Python\PythonCore',
+    'HKLM:\SOFTWARE\WOW6432Node\Python\PythonCore'
+  )
+  foreach ($root in $roots) {
+    if (-not (Test-Path $root)) { continue }
+    foreach ($ver in (Get-ChildItem $root -ErrorAction SilentlyContinue)) {
+      try {
+        $ip  = Get-ItemProperty -Path (Join-Path $ver.PSPath 'InstallPath') -ErrorAction Stop
+        $exe = $ip.ExecutablePath
+        if (-not $exe -and $ip.'(default)') { $exe = Join-Path $ip.'(default)' 'python.exe' }
+        if ($exe -and (Test-Path $exe)) { $found += $exe }
+      } catch { }
+    }
+  }
+  return $found
+}
+
+# Find a usable Python >= 3.10. PATH first, then the registry (winget
+# runs the python.org installer, which does NOT add Python to PATH
+# unless PrependPath is set), then a scan of well-known install dirs.
 function Resolve-Python {
   if ((Have py)     -and (Test-PyCandidate 'py'     @('-3'))) { return $true }
   if ((Have python) -and (Test-PyCandidate 'python' @()))     { return $true }
 
-  $globs = @(
-    (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python3*\python.exe'),
-    (Join-Path $env:ProgramFiles 'Python3*\python.exe'),
-    (Join-Path $env:ProgramFiles 'Python\Python3*\python.exe'),
-    'C:\Python3*\python.exe',
-    (Join-Path $env:LOCALAPPDATA 'Programs\Python\Launcher\py.exe'),
-    'C:\Windows\py.exe'
-  )
-  if (${env:ProgramFiles(x86)}) {
-    $globs += (Join-Path ${env:ProgramFiles(x86)} 'Python3*\python.exe')
+  foreach ($exe in (Get-RegistryPythons | Sort-Object -Descending -Unique)) {
+    if (Test-PyCandidate $exe @()) { return $true }
   }
-  foreach ($g in $globs) {
-    $hits = Get-ChildItem -Path $g -ErrorAction SilentlyContinue | Sort-Object FullName -Descending
-    foreach ($hit in $hits) {
-      $pre = if ($hit.Name -ieq 'py.exe') { @('-3') } else { @() }
-      if (Test-PyCandidate $hit.FullName $pre) { return $true }
+
+  $parents = @(
+    (Join-Path $env:LOCALAPPDATA 'Programs\Python'),
+    $env:ProgramFiles,
+    (Join-Path $env:ProgramFiles 'Python'),
+    'C:\'
+  )
+  if (${env:ProgramFiles(x86)}) { $parents += ${env:ProgramFiles(x86)} }
+  foreach ($p in $parents) {
+    if (-not $p -or -not (Test-Path $p)) { continue }
+    foreach ($d in (Get-ChildItem -LiteralPath $p -Directory -Filter 'Python3*' -ErrorAction SilentlyContinue)) {
+      $exe = Join-Path $d.FullName 'python.exe'
+      if ((Test-Path $exe) -and (Test-PyCandidate $exe @())) { return $true }
     }
   }
   return $false
@@ -111,10 +140,13 @@ if (-not (Resolve-Python)) {
   # Resolve-Python also locates it on disk for the current one.
   Winget-Install 'Python.Python.3.12' '/quiet PrependPath=1 InstallLauncherAllUsers=0'
   if (-not (Resolve-Python)) {
-    Die "Python installed but couldn't be located. Open a NEW PowerShell window and re-run the command."
+    Die @"
+Python was installed but couldn't be located (PATH + registry + disk all came up empty).
+Reinstall from https://www.python.org/downloads/ with 'Add python.exe to PATH' ticked, then re-run this command.
+"@
   }
 }
-Write-Step ("Using Python " + (Py -c 'import sys;print(sys.version.split()[0])'))
+Write-Step ("Using " + ((Py --version | Out-String).Trim()))
 
 # 2. Git
 if (-not (Have git)) { Ensure-Winget; Winget-Install 'Git.Git' }

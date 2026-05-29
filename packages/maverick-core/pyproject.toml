@@ -76,7 +76,7 @@ shield          = ["maverick-shield"]
 installer  = ["maverick-installer"]
 channels   = ["maverick-channels"]
 dashboard  = ["maverick-dashboard"]
-mcp        = ["maverick-mcp"]
+mcp        = ["maverick-mcp-server"]
 embeddings = ["fastembed>=0.3"]
 dev        = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
 all        = [
@@ -86,7 +86,7 @@ all        = [
     "maverick-installer",
     "maverick-channels",
     "maverick-dashboard",
-    "maverick-mcp",
+    "maverick-mcp-server",
 ]
 
 [project.scripts]

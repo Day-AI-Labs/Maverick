@@ -138,7 +138,7 @@ def version() -> None:
         ("maverick-shield",    ("maverick-shield",)),
         ("maverick-channels",  ("maverick-channels",)),
         ("maverick-dashboard", ("maverick-dashboard",)),
-        ("maverick-mcp",       ("maverick-mcp",)),
+        ("maverick-mcp-server", ("maverick-mcp-server",)),
         ("maverick-installer", ("maverick-installer",)),
     ]
     for display, candidates in pkg_names:
@@ -269,7 +269,7 @@ def mcp() -> None:
     try:
         from maverick_mcp.server import main as mcp_main
     except ImportError:
-        click.echo("Install: pip install maverick-mcp", err=True)
+        click.echo("Install: pip install maverick-mcp-server", err=True)
         sys.exit(2)
     mcp_main()
 

@@ -72,7 +72,7 @@ def build_app(server) -> "FastAPI":
     """
     if not _HAVE_FASTAPI:
         raise ImportError(
-            "fastapi not installed; install maverick-mcp[http] to enable "
+            "fastapi not installed; install maverick-mcp-server[http] to enable "
             "the streamable HTTP transport"
         )
 
