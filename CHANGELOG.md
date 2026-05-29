@@ -4,6 +4,34 @@ All notable changes to Maverick. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] -- 2026-05-29
+
+### Added
+- One-line desktop installers: `deploy/desktop/install.ps1` (Windows,
+  `irm ... | iex`) and `deploy/desktop/install.sh` (macOS/Linux,
+  `curl ... | bash`). They install Python 3 + git if missing, set up an
+  isolated pipx environment, and launch the wizard -- no prerequisites.
+
+### Fixed
+- Windows installer could not find a just-installed Python: winget runs
+  the python.org installer without adding it to PATH. Detection now
+  falls back to the PEP 514 registry and well-known install dirs, and
+  probes with `--version` instead of a quoted `python -c "..."` snippet
+  (Windows PowerShell 5.1 mangles embedded double quotes, which made
+  every probe fail even when the interpreter was fine).
+- Release binaries crashed with `No module named 'maverick'` -- the
+  build installed packages editable, which PyInstaller can't collect.
+  Now installed non-editable, with `collect_submodules`/`copy_metadata`
+  in the spec.
+
+### Changed
+- The MCP server is published to PyPI as `maverick-mcp-server` (the
+  `maverick-mcp` name is taken by an unrelated project). The import
+  package (`maverick_mcp`) and the `maverick-mcp` command are unchanged.
+- PyPI publishing runs one job per package (`fail-fast: false`), so a
+  package without a trusted publisher can't abort the others.
+- Repository references updated to the `cdayAI` GitHub account.
+
 ## [0.1.1] -- 2026-05-25
 
 ### Fixed
