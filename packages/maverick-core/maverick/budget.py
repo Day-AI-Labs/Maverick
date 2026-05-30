@@ -11,6 +11,7 @@ v0.2 cost-correctness fix:
 """
 from __future__ import annotations
 
+import math
 import threading
 import time
 from dataclasses import dataclass, field
@@ -204,6 +205,24 @@ class Budget:
         self._started_monotonic = time.monotonic()
         # Wave 12 (F12b): per-instance lock for atomic counter updates.
         self._lock = threading.Lock()
+        # A non-finite cap (nan/inf) silently disables enforcement: every
+        # `self.dollars > nan` comparison in check() is False, so the cap
+        # never trips. TOML 1.0 has native nan/inf and `--max-dollars inf`
+        # parses, so a cap could arrive non-finite from config or a flag.
+        # Coerce any non-finite dollar/wall/token cap back to a safe default
+        # rather than run uncapped. (Budget caps are not optional.)
+        for _field, _default in (
+            ("max_dollars", 5.0),
+            ("max_wall_seconds", 3600.0),
+            ("max_input_tokens", 1_000_000),
+            ("max_output_tokens", 200_000),
+        ):
+            _v = getattr(self, _field)
+            try:
+                if not math.isfinite(float(_v)):
+                    setattr(self, _field, _default)
+            except (TypeError, ValueError):
+                setattr(self, _field, _default)
 
     def __getstate__(self):
         """Wave 12 hardening: threading.Lock is unpicklable. Drop the
@@ -281,7 +300,12 @@ def budget_from_config(*, defaults: Optional[dict] = None, **overrides) -> "Budg
     for key, caster in _BUDGET_KEY_TYPES.items():
         if cfg.get(key) is not None:
             try:
-                kwargs[key] = caster(cfg[key])
+                cast = caster(cfg[key])
+                # Reject non-finite caps from config (TOML nan/inf) -- they
+                # would disable the cap rather than set it. Skip -> prior layer.
+                if isinstance(cast, float) and not math.isfinite(cast):
+                    continue
+                kwargs[key] = cast
             except (TypeError, ValueError):
                 pass  # malformed config value -> fall back to prior layer
     for key, val in overrides.items():

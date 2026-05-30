@@ -346,9 +346,14 @@ def start(
     goal_id = world.create_goal(title, description)
     click.echo(f"goal #{goal_id} created: {title}")
     llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
-    bud = k.Budget(
-        max_dollars=max_dollars or 5.0,
-        max_wall_seconds=max_wall_seconds or 3600.0,
+    # Honor [budget] in config.toml (start used to build Budget() directly,
+    # so config caps were silently ignored). Precedence: built-in defaults
+    # < config < explicit CLI flags. A None flag passes through as "unset".
+    from .budget import budget_from_config
+    bud = budget_from_config(
+        defaults={"max_dollars": 5.0, "max_wall_seconds": 3600.0},
+        max_dollars=max_dollars,
+        max_wall_seconds=max_wall_seconds,
     )
     sandbox = k.build_sandbox(workdir=workdir, backend=sandbox_backend)
 
@@ -524,7 +529,8 @@ def chat(ctx, max_depth: int, max_dollars: float, workdir) -> None:
         title = full.splitlines()[0][:80]
         goal_id = world.create_goal(title, full)
         click.echo(click.style(f"  ... goal #{goal_id}", fg="bright_black"))
-        bud = k.Budget(max_dollars=max_dollars)
+        from .budget import budget_from_config
+        bud = budget_from_config(max_dollars=max_dollars)
         try:
             result = k.run_goal_sync(llm, world, bud, goal_id,
                                    sandbox=sandbox, max_depth=max_depth)
@@ -648,8 +654,12 @@ def answer(ctx, question_id: int, answer: tuple[str, ...]) -> None:
 @main.command()
 @click.option("--goal-id", type=int, default=None)
 @click.option("--max-depth", default=3, type=int)
+@click.option("--max-dollars", type=float, default=None,
+              help="Raise the dollar cap for this resume (e.g. after a budget halt).")
+@click.option("--max-wall-seconds", type=float, default=None,
+              help="Raise the wall-clock cap for this resume.")
 @click.pass_context
-def resume(ctx, goal_id, max_depth: int) -> None:
+def resume(ctx, goal_id, max_depth: int, max_dollars, max_wall_seconds) -> None:
     """Resume a blocked goal."""
     _require_llm_key()
     world = WorldModel(ctx.obj["db"])
@@ -667,7 +677,13 @@ def resume(ctx, goal_id, max_depth: int) -> None:
         return
     k = _kernel()
     llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
-    bud = k.Budget()
+    # Honor [budget] config, and let --max-dollars/--max-wall-seconds raise
+    # the cap on resume (the budget-halt message tells users to do this).
+    from .budget import budget_from_config
+    bud = budget_from_config(
+        max_dollars=max_dollars,
+        max_wall_seconds=max_wall_seconds,
+    )
     result = k.run_goal_sync(llm, world, bud, goal_id, max_depth=max_depth)
     click.echo(result)
 
