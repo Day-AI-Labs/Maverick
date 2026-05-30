@@ -10,7 +10,6 @@ path -- enabling MAVERICK_COST_ROUTING did nothing. These tests pin that:
 """
 from __future__ import annotations
 
-import importlib
 
 import pytest
 
