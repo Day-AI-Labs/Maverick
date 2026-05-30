@@ -42,7 +42,7 @@ _ARXIV_SCHEMA: dict[str, Any] = {
 }
 
 
-_API_URL = "http://export.arxiv.org/api/query"
+_API_URL = "https://export.arxiv.org/api/query"
 
 
 def _parse_atom(xml: str) -> list[dict[str, str]]:
