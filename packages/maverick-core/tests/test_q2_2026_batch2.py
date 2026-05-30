@@ -357,6 +357,31 @@ def test_audit_erase_missing_dir_no_crash(tmp_path):
     assert (matched, scanned) == (0, 0)
 
 
+def test_audit_erase_logs_only_redacted_subject(tmp_path, caplog):
+    import logging
+    import time as _time
+
+    from maverick.audit import AuditEvent, AuditLog, EventKind
+    from maverick.audit.erase import delete_user, scrub_user
+
+    audit_dir = tmp_path / "audit"
+    al = AuditLog(audit_dir=audit_dir)
+    secret_user = "alice-secret-123"
+    al.record(AuditEvent(ts=_time.time(), kind=EventKind.GOAL_START,
+                          agent="orch", goal_id=1,
+                          payload={"channel": "tg", "user_id": secret_user}))
+
+    with caplog.at_level(logging.INFO, logger="maverick.audit.erase"):
+        scrub_user("tg", secret_user, audit_dir=audit_dir)
+        delete_user("tg", secret_user, audit_dir=audit_dir)
+
+    log_output = caplog.text
+    assert secret_user not in log_output
+    assert "channel=tg" not in log_output
+    assert "user_id=" not in log_output
+    assert "subject_hash=" in log_output
+
+
 # ---------- skill-index spec doc ----------
 
 def test_skill_index_spec_doc_exists():
