@@ -37,12 +37,20 @@ import os
 import re
 from urllib.parse import urlparse
 import threading
+import time
 from pathlib import Path
 from typing import Any, Optional
 
 from . import Tool
 
 log = logging.getLogger(__name__)
+
+
+_MAX_FILL_FORM_FIELDS = 25
+_MAX_FILL_FORM_SELECTOR_LENGTH = 500
+_MAX_FILL_FORM_VALUE_LENGTH = 10_000
+_MAX_FILL_FORM_FIELD_TIMEOUT_MS = 1_000
+_MAX_FILL_FORM_TOTAL_TIMEOUT_MS = 5_000
 
 
 # ---------- session persistence (cookies + localStorage survive restarts) ----------
@@ -96,7 +104,12 @@ _BROWSER_INPUT_SCHEMA: dict[str, Any] = {
         "fields": {
             "type": "object",
             "description": "For 'fill_form': a {css_selector: value} map; fills many inputs in one call, in order.",
-            "additionalProperties": {"type": "string"},
+            "maxProperties": _MAX_FILL_FORM_FIELDS,
+            "propertyNames": {"maxLength": _MAX_FILL_FORM_SELECTOR_LENGTH},
+            "additionalProperties": {
+                "type": "string",
+                "maxLength": _MAX_FILL_FORM_VALUE_LENGTH,
+            },
         },
         "delta_y": {
             "type": "integer",
@@ -309,11 +322,31 @@ def _run_browser_action(args: dict[str, Any]) -> str:
         fields = args.get("fields")
         if not isinstance(fields, dict) or not fields:
             return "ERROR: fill_form requires a non-empty 'fields' object {selector: value}"
+        if len(fields) > _MAX_FILL_FORM_FIELDS:
+            return f"ERROR: fill_form supports at most {_MAX_FILL_FORM_FIELDS} fields"
+
         filled: list[str] = []
         errors: list[str] = []
+        field_timeout = min(timeout, _MAX_FILL_FORM_FIELD_TIMEOUT_MS)
+        total_timeout = min(timeout, _MAX_FILL_FORM_TOTAL_TIMEOUT_MS)
+        deadline = time.monotonic() + (total_timeout / 1000)
+
         for selector, value in fields.items():
+            selector = str(selector)
+            value = str(value)
+            if len(selector) > _MAX_FILL_FORM_SELECTOR_LENGTH:
+                errors.append(f"{selector[:80]}: selector too long")
+                continue
+            if len(value) > _MAX_FILL_FORM_VALUE_LENGTH:
+                errors.append(f"{selector}: value too long")
+                continue
+
+            remaining_ms = int((deadline - time.monotonic()) * 1000)
+            if remaining_ms <= 0:
+                errors.append("batch timeout")
+                break
             try:
-                page.fill(selector, str(value), timeout=timeout)
+                page.fill(selector, value, timeout=min(field_timeout, remaining_ms))
                 filled.append(selector)
             except Exception as e:
                 errors.append(f"{selector}: {type(e).__name__}")
