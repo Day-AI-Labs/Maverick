@@ -50,11 +50,11 @@ install_maverick() {
       || git -C /opt/maverick pull --ff-only
   fi
   pipx install /opt/maverick/packages/maverick-core --force
-  pipx inject maverick /opt/maverick/packages/maverick-shield
-  pipx inject maverick /opt/maverick/packages/maverick-channels
-  pipx inject maverick /opt/maverick/packages/maverick-dashboard
-  pipx inject maverick /opt/maverick/packages/maverick-mcp
-  pipx inject maverick /opt/maverick/apps/installer-cli
+  pipx inject maverick-agent /opt/maverick/packages/maverick-shield
+  pipx inject maverick-agent /opt/maverick/packages/maverick-channels
+  pipx inject maverick-agent /opt/maverick/packages/maverick-dashboard
+  pipx inject maverick-agent /opt/maverick/packages/maverick-mcp
+  pipx inject maverick-agent /opt/maverick/apps/installer-cli
 }
 
 run_wizard() {
