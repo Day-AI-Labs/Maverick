@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hmac
 import ipaddress
+import json
 import logging
 import os
 import re
@@ -155,6 +156,10 @@ async def _reclaim_orphans() -> None:
 _AUTH_EXEMPT = {
     "/healthz", "/livez", "/readyz",
     "/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect",
+    # /webhook/start authenticates with its own HMAC signature instead of
+    # the dashboard bearer / same-origin checks (external senders have
+    # neither), so it must bypass the centralized middleware.
+    "/webhook/start",
 }
 
 # Safe methods skip the CSRF check (browsers send Origin/Referer
@@ -765,6 +770,72 @@ async def chat_send(
     from maverick.runner import run_goal_in_thread
     bg.add_task(run_goal_in_thread, goal_id)
     return RedirectResponse(f"/chat/goal/{goal_id}", status_code=303)
+
+
+@app.post("/webhook/start")
+async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
+    """Generic inbound webhook: create a goal from an HMAC-signed POST.
+
+    Body is JSON ``{title, description?, budget?}``. The request must carry
+    an ``X-Maverick-Signature: sha256=<hex>`` header computed over the raw
+    body with the configured ``[webhooks] secret`` (see
+    ``maverick.webhooks``). Returns ``{"goal_id": <int>}`` on success.
+
+    Auth: this route is exempt from the dashboard bearer / same-origin
+    middleware (see ``_AUTH_EXEMPT``); the HMAC signature is the only
+    credential. We fail closed -- a missing/empty secret yields 401.
+    """
+    from maverick.webhooks import inbound_secret, verify_signature
+
+    secret = inbound_secret()
+    if not secret:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "inbound webhooks are not configured. Set a [webhooks] "
+                "secret in ~/.maverick/config.toml or MAVERICK_WEBHOOK_SECRET."
+            ),
+        )
+    body = await request.body()
+    signature = request.headers.get("X-Maverick-Signature") or ""
+    if not verify_signature(body, signature, secret):
+        raise HTTPException(status_code=403, detail="bad webhook signature")
+
+    if not _any_provider_key_set():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No LLM provider key configured. Run 'maverick init', or "
+                "export ANTHROPIC_API_KEY / OPENAI_API_KEY before starting "
+                "the dashboard."
+            ),
+        )
+    try:
+        payload = json.loads(body or b"{}")
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="body must be valid JSON")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="body must be a JSON object")
+
+    title = str(payload.get("title") or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
+    description = str(payload.get("description") or "")
+
+    check_goal_rate_limit()
+    w = _world()
+    goal_id = w.create_goal(title[:200], description[:8000])
+
+    from maverick.runner import run_goal_in_thread
+    budget = payload.get("budget")
+    max_dollars = None
+    if budget is not None:
+        try:
+            max_dollars = float(budget)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="budget must be a number")
+    bg.add_task(run_goal_in_thread, goal_id, max_dollars)
+    return JSONResponse({"goal_id": goal_id}, status_code=201)
 
 
 @app.get("/chat/goal/{goal_id}", response_class=HTMLResponse)

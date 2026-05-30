@@ -146,4 +146,19 @@ def verify_signature(body: bytes, signature: str, secret: str) -> bool:
     return hmac.compare_digest(signature, expected)
 
 
-__all__ = ["fire", "verify_signature"]
+def inbound_secret() -> Optional[str]:
+    """Resolve the HMAC secret used to authenticate inbound webhooks.
+
+    Shares the ``[webhooks] secret`` knob with the outbound dispatcher so
+    operators configure one signing key. ``MAVERICK_WEBHOOK_SECRET`` in the
+    environment takes precedence for deploys that prefer env over config.
+    Returns None when no secret is configured (the receiver fails closed).
+    """
+    env = os.environ.get("MAVERICK_WEBHOOK_SECRET")
+    if env:
+        return env
+    _, secret = _load_config_outbound()
+    return secret or None
+
+
+__all__ = ["fire", "verify_signature", "inbound_secret"]
