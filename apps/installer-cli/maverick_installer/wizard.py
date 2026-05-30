@@ -626,6 +626,15 @@ def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]
                     f"all senders until you set {ch_id.upper()}_ALLOWED_USER_IDS "
                     "or add allowed_user_ids to config.[/yellow]"
                 )
+        elif ch_id == "voice":
+            raw = _q_text(
+                "  Allowed caller numbers (E.164, comma-separated; "
+                "blank = any authenticated caller)",
+                default="",
+            )
+            callers = [x.strip() for x in raw.split(",") if x.strip()]
+            if callers:
+                cfg["allowed_callers"] = callers
 
         channels[ch_id] = cfg
 
@@ -1273,6 +1282,19 @@ def _capture_gemini_session() -> bool:
 
 # ---------- write + verify ----------
 
+def _toml_str(v: Any) -> str:
+    """Render a value as a TOML basic string with proper escaping.
+
+    Windows paths (e.g. a sandbox workdir ``C:\\Users\\x\\ws``) contain
+    backslashes; emitted raw into a ``"..."`` basic string, ``\\U`` is parsed
+    as a unicode escape and the config.toml the wizard just wrote can't be read
+    back (``TOMLDecodeError: Invalid hex value``). Escape backslashes and
+    double-quotes so the round-trip holds on every platform.
+    """
+    s = str(v).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{s}"'
+
+
 def _emit_kv(lines: list[str], k: str, v: Any) -> None:
     """Append one TOML key=value line, type-dispatched."""
     if isinstance(v, bool):
@@ -1280,10 +1302,10 @@ def _emit_kv(lines: list[str], k: str, v: Any) -> None:
     elif isinstance(v, (int, float)):
         lines.append(f"{k} = {v}")
     elif isinstance(v, list):
-        rendered = ", ".join(f'"{x}"' for x in v)
+        rendered = ", ".join(_toml_str(x) for x in v)
         lines.append(f"{k} = [{rendered}]")
     else:
-        lines.append(f'{k} = "{v}"')
+        lines.append(f"{k} = {_toml_str(v)}")
 
 
 def write_config(
@@ -1360,31 +1382,23 @@ def write_config(
     for ch_id, cfg in channels.items():
         lines.append(f"[channels.{ch_id}]")
         for k, v in cfg.items():
-            if isinstance(v, bool):
-                lines.append(f"{k} = {str(v).lower()}")
-            elif isinstance(v, (int, float)):
-                lines.append(f"{k} = {v}")
-            else:
-                lines.append(f'{k} = "{v}"')
+            # _emit_kv handles lists (e.g. the allowed_user_ids array) and
+            # escapes string values; the old inline branch emitted a list as
+            # a quoted string and didn't escape backslash paths.
+            _emit_kv(lines, k, v)
         lines.append("")
 
     lines.append("[budget]")
     for k, v in budget.items():
-        lines.append(f"{k} = {v}")
+        _emit_kv(lines, k, v)
     lines.append("")
     lines.append("[safety]")
     for k, v in safety.items():
-        if isinstance(v, bool):
-            lines.append(f"{k} = {str(v).lower()}")
-        else:
-            lines.append(f'{k} = "{v}"')
+        _emit_kv(lines, k, v)
     lines.append("")
     lines.append("[sandbox]")
     for k, v in sandbox.items():
-        if isinstance(v, (int, float)) and not isinstance(v, bool):
-            lines.append(f"{k} = {v}")
-        else:
-            lines.append(f'{k} = "{v}"')
+        _emit_kv(lines, k, v)
 
     if capabilities:
         lines.append("")

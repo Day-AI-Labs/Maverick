@@ -56,7 +56,8 @@ def test_world_db_permissions_locked(tmp_path):
     wm = WorldModel(p)
     wm.close()
     mode = stat.S_IMODE(os.stat(p).st_mode)
-    assert mode & 0o077 == 0  # no group/other access
+    if os.name != "nt":  # POSIX mode bits aren't meaningful on NTFS
+        assert mode & 0o077 == 0  # no group/other access
 
 
 # --- agent-safety H3: channel allowlist helpers ---

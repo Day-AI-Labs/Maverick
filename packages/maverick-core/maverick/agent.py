@@ -12,6 +12,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Optional
 
+from . import killswitch
 from ._envparse import env_int
 from .budget import BudgetExceeded
 from .llm import model_for_role
@@ -344,6 +345,22 @@ class Agent:
         messages: list[dict] = [{"role": "user", "content": first_content}]
 
         for step in range(self.max_steps):
+            # Turn-boundary safety gate. Evaluate the global killswitch
+            # (`maverick halt`, the dashboard Halt button, or the HALT
+            # file) and the wall-clock/token/tool caps BEFORE the next LLM
+            # call, so a runaway or over-budget swarm stops promptly
+            # instead of only after the next record_* call. killswitch and
+            # budget.check() are cheap and side-effect-free.
+            try:
+                killswitch.check()
+                self.ctx.budget.check()
+            except killswitch.Halted as e:
+                bb.post(self.name, "error", f"halted: {e}")
+                return AgentResult(error=f"halted: {e}", role=self.role, name=self.name)
+            except BudgetExceeded as e:
+                bb.post(self.name, "error", f"budget exceeded: {e}")
+                return AgentResult(error=str(e), role=self.role, name=self.name)
+
             # Karpathy SOTA-review item: long-context compaction. Drop
             # raw tool_result content >2KiB once it's behind the recent
             # window. The first message (user brief) is always kept.
@@ -962,6 +979,16 @@ class Agent:
             tool_results: list[dict] = []
             blocked = False
             for tc in resp.tool_calls:
+                # Tool-call boundary: honour a halt that arrived while the
+                # model was producing this turn (e.g. the user hit Halt
+                # during a long think) before executing the next tool.
+                try:
+                    killswitch.check()
+                except killswitch.Halted as e:
+                    bb.post(self.name, "error", f"halted: {e}")
+                    return AgentResult(
+                        error=f"halted: {e}", role=self.role, name=self.name,
+                    )
                 self.ctx.budget.record_tool_call()
                 output = await self._run_tool(tc.name, tc.input)
                 if tc.name == "ask_user":

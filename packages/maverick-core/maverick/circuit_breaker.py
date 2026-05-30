@@ -79,8 +79,8 @@ class CircuitBreaker:
         self._state = CircuitState.CLOSED
         self._stats = _Stats()
         self._lock = threading.Lock()
-        # HALF_OPEN lets exactly one probe through; this guards against a
-        # storm of concurrent probes all slipping past the state check.
+        # HALF_OPEN admits exactly one probe at a time; concurrent callers
+        # fast-fail until it resolves (cleared by record_success/failure).
         self._probe_in_flight = False
 
     @property
@@ -103,10 +103,12 @@ class CircuitBreaker:
             self._stats.consecutive_failures = 0
             self._stats.total_successes += 1
             self._state = CircuitState.CLOSED
+            self._probe_in_flight = False
 
     def record_failure(self) -> None:
         with self._lock:
             now = time.time()
+            self._probe_in_flight = False
             self._stats.consecutive_failures += 1
             self._stats.total_failures += 1
             self._stats.last_failure_at = now
@@ -121,7 +123,6 @@ class CircuitBreaker:
 
     def call(self, fn: Callable[[], T]) -> T:
         """Run ``fn`` if allowed; raise ``CircuitOpen`` otherwise."""
-        probing = False
         with self._lock:
             self._tick(now=time.time())
             if self._state is CircuitState.OPEN:
@@ -131,23 +132,19 @@ class CircuitBreaker:
                     f"cooldown {self.cooldown_seconds:.0f}s)"
                 )
             if self._state is CircuitState.HALF_OPEN:
-                # Only one probe at a time; others bounce until it resolves.
+                # Let exactly ONE caller probe the dependency; everyone else
+                # fast-fails (the old code admitted ALL concurrent callers in
+                # HALF_OPEN, re-storming the dead service on cooldown expiry).
                 if self._probe_in_flight:
                     raise CircuitOpen(
-                        f"circuit {self.key!r} HALF_OPEN: a probe is already "
-                        "in flight"
+                        f"circuit {self.key!r} HALF_OPEN: a probe is already in flight"
                     )
                 self._probe_in_flight = True
-                probing = True
         try:
             result = fn()
         except Exception:
             self.record_failure()
             raise
-        finally:
-            if probing:
-                with self._lock:
-                    self._probe_in_flight = False
         self.record_success()
         return result
 
@@ -155,6 +152,7 @@ class CircuitBreaker:
         with self._lock:
             self._stats = _Stats()
             self._state = CircuitState.CLOSED
+            self._probe_in_flight = False
 
     def snapshot(self) -> dict:
         with self._lock:

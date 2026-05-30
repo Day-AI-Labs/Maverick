@@ -50,6 +50,9 @@ class SlackChannel(Channel):
         self.bot_token = bot_token or os.environ.get("SLACK_BOT_TOKEN")
         if not self.app_token or not self.bot_token:
             raise ValueError("SLACK_APP_TOKEN and SLACK_BOT_TOKEN must be set")
+        # Without an allowlist, ANY workspace user who can message the bot
+        # drives the agent (and burns the operator's budget). Require one,
+        # matching discord/telegram. Default-deny via base.is_allowed.
         self.allowed_user_ids = normalize_allowlist(
             allowed_user_ids, "SLACK_ALLOWED_USER_IDS",
         )
@@ -64,6 +67,9 @@ class SlackChannel(Channel):
         if req.type == "events_api":
             event = req.payload.get("event", {})
             if event.get("type") == "message" and "bot_id" not in event:
+                # Gate on the SENDER (event["user"]); user_id below is the
+                # channel we reply to, not the author. Unlisted senders are
+                # silently ignored.
                 sender = event.get("user", "")
                 if not is_allowed(sender, self.allowed_user_ids):
                     log.warning("unauthorized slack access: user=%s", sender)

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 import traceback
 from typing import Any
@@ -20,6 +21,12 @@ logging.basicConfig(
 # advertises that, but our initialize response is on the current one.
 PROTOCOL_VERSION = "2025-11-25"
 PROTOCOL_VERSION_FALLBACK = "2024-11-05"
+# Spec revisions we can negotiate. Our behaviour is a superset of the older
+# specs, so we accept the intermediate revisions too. MCP rule: echo the
+# client's requested version if we support it, else respond with our latest.
+SUPPORTED_PROTOCOL_VERSIONS = (
+    PROTOCOL_VERSION_FALLBACK, "2025-03-26", "2025-06-18", PROTOCOL_VERSION,
+)
 SERVER_NAME = "maverick"
 SERVER_VERSION = "0.2.0"
 
@@ -133,11 +140,12 @@ class MCPServer:
 
     def handle_initialize(self, params: dict) -> dict:
         self._initialized = True
-        # Negotiate down if the client only speaks the older spec.
+        # MCP negotiation: echo the client's requested version if we support
+        # it, else respond with our latest. The old `< "2025-11-25"`
+        # lexicographic check downgraded EVERY pre-latest client -- including
+        # modern ones like "2025-06-18" -- all the way to "2024-11-05".
         client_ver = params.get("protocolVersion", "")
-        version = PROTOCOL_VERSION
-        if client_ver and client_ver < "2025-11-25":
-            version = PROTOCOL_VERSION_FALLBACK
+        version = client_ver if client_ver in SUPPORTED_PROTOCOL_VERSIONS else PROTOCOL_VERSION
         return {
             "protocolVersion": version,
             "capabilities": {
@@ -350,17 +358,37 @@ class MCPServer:
             verdict = self._shield.scan_input(f"{title}\n{description}")
             if not verdict.allowed:
                 return f"⚠ Blocked: {'; '.join(verdict.reasons)}"
-        budget = Budget(
-            max_dollars=float(args.get("max_dollars", 5.0)),
-            max_wall_seconds=float(args.get("max_wall_seconds", 3600)),
-        )
+        # Clamp client-supplied limits to operator ceilings. Over the HTTP
+        # transport the budget is 100% client-controlled, so without a cap
+        # any authenticated caller could pass max_dollars=10000 and burn the
+        # operator's provider spend. Ceilings come from env and default to
+        # the schema defaults (so the common case is unchanged); raise them
+        # with MAVERICK_MCP_MAX_DOLLARS / _MAX_WALL_SECONDS / _MAX_DEPTH.
+        def _ceil(env_var: str, default: float) -> float:
+            try:
+                return float(os.environ.get(env_var) or default)
+            except (TypeError, ValueError):
+                return float(default)
+
+        def _req(val, default: float) -> float:
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                return float(default)
+
+        max_dollars = min(_req(args.get("max_dollars", 5.0), 5.0),
+                          _ceil("MAVERICK_MCP_MAX_DOLLARS", 5.0))
+        max_wall = min(_req(args.get("max_wall_seconds", 3600), 3600.0),
+                       _ceil("MAVERICK_MCP_MAX_WALL_SECONDS", 3600.0))
+        max_depth = int(min(_req(args.get("max_depth", 3), 3),
+                            _ceil("MAVERICK_MCP_MAX_DEPTH", 3)))
+        budget = Budget(max_dollars=max_dollars, max_wall_seconds=max_wall)
         world = WorldModel()
         goal_id = world.create_goal(title, description)
         llm = LLM()
         sandbox = build_sandbox()
         return run_goal_sync(
-            llm, world, budget, goal_id, sandbox=sandbox,
-            max_depth=int(args.get("max_depth", 3)),
+            llm, world, budget, goal_id, sandbox=sandbox, max_depth=max_depth,
         )
 
     def _tool_status(self) -> str:
@@ -396,7 +424,13 @@ class MCPServer:
 
     def _tool_skill_install(self, args: dict) -> str:
         from maverick.skills import install_skill
-        s = install_skill(args["source"], trusted_local=True)
+        # MCP clients are external by definition, and the HTTP transport is
+        # network-reachable behind only a shared bearer token. trusted_local
+        # must be False so a bare local-path source (e.g. "/etc/passwd") is
+        # rejected -- otherwise an authenticated client gets arbitrary host
+        # file read, the exact hole the REST API was hardened against. Local
+        # users install skills with `maverick skill install` (trusted there).
+        s = install_skill(args["source"], trusted_local=False)
         return f"installed: {s.name} -> {s.path}"
 
     def _tool_skills_list(self) -> str:

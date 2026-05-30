@@ -39,6 +39,23 @@ def test_permissions_tools_include_enabled_flag(monkeypatch, tmp_path):
     assert any(t["enabled"] for t in body["tools"])
 
 
+def test_permissions_warns_on_local_sandbox(monkeypatch, tmp_path):
+    """The default (no-isolation) local sandbox must be flagged on the
+    permissions surface, and an isolated backend must NOT be flagged."""
+    _isolate(monkeypatch, tmp_path)  # no config file -> defaults to local
+    client = _client()
+    body = client.get("/api/v1/permissions").json()
+    assert body["sandbox_warning"], "local sandbox should be flagged"
+    assert "isolation" in body["sandbox_warning"]
+    # Page renders the banner too.
+    assert "⚠" in client.get("/permissions").text
+
+    # An explicit docker backend is isolated -> no warning.
+    (tmp_path / "config.toml").write_text('[sandbox]\nbackend = "docker"\n')
+    body2 = client.get("/api/v1/permissions").json()
+    assert body2["sandbox_warning"] is None
+
+
 def test_disable_tool_then_shows_disabled(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     client = _client()

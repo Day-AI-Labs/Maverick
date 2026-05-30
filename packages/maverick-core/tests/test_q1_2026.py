@@ -34,7 +34,9 @@ def test_audit_log_writes_ndjson(tmp_path, monkeypatch):
     # File exists with mode 0600.
     files = list((tmp_path / ".maverick" / "audit").glob("*.ndjson"))
     assert len(files) == 1
-    assert stat.S_IMODE(files[0].stat().st_mode) == 0o600
+    import os
+    if os.name != "nt":  # NTFS reports 0o666 regardless of chmod
+        assert stat.S_IMODE(files[0].stat().st_mode) == 0o600
 
 
 def test_audit_log_tail_and_grep(tmp_path):

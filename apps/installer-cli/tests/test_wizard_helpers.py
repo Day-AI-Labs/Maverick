@@ -92,8 +92,10 @@ def test_validation_cache_persists_at_chmod_600(tmp_path, monkeypatch):
     wizard._remember_validation("ANTHROPIC_API_KEY", "sk-perm", True, "ok")
     path = tmp_path / "validation-cache.json"
     assert path.exists()
+    import os
     mode = _stat.S_IMODE(path.stat().st_mode)
-    assert mode == 0o600
+    if os.name != "nt":  # NTFS reports 0o666 regardless of the chmod
+        assert mode == 0o600
 
 
 def test_empty_key_never_caches(tmp_path, monkeypatch):

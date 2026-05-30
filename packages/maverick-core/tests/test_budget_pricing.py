@@ -47,6 +47,33 @@ def test_unknown_model_falls_back_to_sonnet_rate():
     assert abs(b.dollars - 3.0) < 0.001
 
 
+def test_router_selectable_models_bill_at_real_rate_not_fallback():
+    """Models the cost-router can SELECT but that aren't in llm.MODEL_PRICES
+    must bill at their cost_router._PRICING rate, not the Sonnet $3/$15
+    fallback. Regression: budget._lookup_price had no path to the router
+    table, so e.g. a gpt-5-nano call billed at 6x its real rate. (grok-4 is
+    omitted because its router price IS 3/15, indistinguishable from the
+    fallback.)"""
+    # model id -> (in_per_mtok, out_per_mtok) from cost_router._PRICING,
+    # each chosen so 1M+1M != the $18 fallback.
+    cases = {
+        "gpt-5-nano": (0.50, 2.50),                 # -> $3.00
+        "gpt-5-pro": (8.00, 40.00),                 # -> $48.00
+        "gemini-2.5-flash": (0.30, 1.20),           # -> $1.50
+        "gemini-2.5-pro": (5.00, 20.00),            # -> $25.00
+        "claude-haiku-4-5-20251001": (0.80, 4.00),  # -> $4.80
+    }
+    for model, (pin, pout) in cases.items():
+        b = Budget(max_dollars=1000.0, max_input_tokens=10_000_000,
+                   max_output_tokens=10_000_000)
+        b.record_tokens(1_000_000, 1_000_000, model=model)
+        expected = pin + pout
+        assert abs(b.dollars - expected) < 0.001, (
+            f"{model}: billed ${b.dollars:.2f}, expected ${expected:.2f} "
+            "(Sonnet fallback would be $18.00)"
+        )
+
+
 def test_no_model_uses_fallback_rate():
     """Back-compat: callers that don't pass model get the legacy rate."""
     b = Budget(max_dollars=100.0, max_input_tokens=10_000_000, max_output_tokens=10_000_000)
@@ -180,3 +207,40 @@ def test_record_tool_call_thread_safe():
         t.join()
 
     assert b.tool_calls == 2_000
+
+
+def test_absorb_rolls_up_all_counters():
+    """best_of_n folds each attempt's spend into the parent. The rollup must
+    include cache tokens + tool_calls, not just dollars/in/out (the prior
+    inline `+=` dropped them, under-reporting the parent's spend)."""
+    parent = Budget(max_dollars=1000.0, max_input_tokens=10**9,
+                    max_output_tokens=10**9, max_tool_calls=10**6)
+    child = Budget(max_dollars=1000.0, max_input_tokens=10**9,
+                   max_output_tokens=10**9, max_tool_calls=10**6)
+    child.record_tokens(100, 50, model=MODEL_SONNET,
+                        cache_read_tok=200, cache_write_tok=20)
+    child.record_tool_call()
+    child.record_tool_call()
+
+    parent.absorb(child)
+    assert parent.input_tokens == 100
+    assert parent.output_tokens == 50
+    assert parent.cache_read_tokens == 200
+    assert parent.cache_write_tokens == 20
+    assert parent.tool_calls == 2
+    assert abs(parent.dollars - child.dollars) < 1e-9
+
+
+def test_absorb_raises_when_aggregate_over_cap():
+    """When the rolled-up spend exceeds a parent cap, absorb raises so
+    best_of_n stops spawning attempts -- and the spend is still recorded."""
+    import pytest
+    from maverick.budget import BudgetExceeded
+
+    parent = Budget(max_dollars=5.0)
+    child = Budget(max_dollars=1000.0, max_input_tokens=10**9, max_output_tokens=10**9)
+    child.record_tokens(1_000_000, 1_000_000, model=MODEL_SONNET)  # $18 on Sonnet
+    with pytest.raises(BudgetExceeded):
+        parent.absorb(child)
+    # Counters were added BEFORE the cap check -> parent reflects the spend.
+    assert abs(parent.dollars - 18.0) < 0.001

@@ -47,6 +47,23 @@ class TestProtocol:
         assert out["serverInfo"]["name"] == "maverick"
         assert "capabilities" in out
 
+    def test_initialize_negotiates_supported_versions(self):
+        """Echo the client's version if supported; else our latest. Regression:
+        the old lexicographic `< '2025-11-25'` downgraded modern clients (e.g.
+        2025-06-18) all the way to 2024-11-05."""
+        s = MCPServer()
+        # A modern intermediate spec is echoed back, NOT downgraded.
+        assert s.handle_initialize(
+            {"protocolVersion": "2025-06-18"})["protocolVersion"] == "2025-06-18"
+        # Exact-latest and oldest-supported are echoed.
+        assert s.handle_initialize(
+            {"protocolVersion": "2025-11-25"})["protocolVersion"] == "2025-11-25"
+        assert s.handle_initialize(
+            {"protocolVersion": "2024-11-05"})["protocolVersion"] == "2024-11-05"
+        # An unknown/newer version falls back to our latest.
+        assert s.handle_initialize(
+            {"protocolVersion": "2099-01-01"})["protocolVersion"] == PROTOCOL_VERSION
+
     def test_tools_list_returns_full_catalog(self):
         s = MCPServer()
         out = s.handle_tools_list({})

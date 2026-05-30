@@ -62,12 +62,19 @@ def load_session(provider: str) -> Optional[dict]:
     path = _path_for(provider)
     if not path.exists():
         return None
-    mode = stat.S_IMODE(path.stat().st_mode)
-    if mode & 0o077:
-        raise PermissionError(
-            f"{path} has mode {oct(mode)} -- expected 0600. "
-            "Run: chmod 600 " + str(path)
-        )
+    # POSIX mode bits are meaningless on Windows: NTFS reports 0o666 for
+    # every file regardless of the chmod above, so enforcing 0o600 here made
+    # EVERY load_session() raise on Windows (session import was wholly broken
+    # on the desktop installer's primary platform). On Windows the protection
+    # is the per-user profile ACL on ~/.maverick, not the POSIX bit, so skip
+    # the check there; keep it strict on POSIX.
+    if os.name != "nt":
+        mode = stat.S_IMODE(path.stat().st_mode)
+        if mode & 0o077:
+            raise PermissionError(
+                f"{path} has mode {oct(mode)} -- expected 0600. "
+                "Run: chmod 600 " + str(path)
+            )
     return json.loads(path.read_text())
 
 

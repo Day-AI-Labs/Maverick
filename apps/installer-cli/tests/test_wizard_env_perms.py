@@ -47,11 +47,13 @@ def test_env_file_created_at_0600(tmp_path: Path, monkeypatch):
     # Both files (env + config) were created with 0o600.
     assert (tmp_path / ".env").exists()
     assert (tmp_path / "config.toml").exists()
-    assert stat.S_IMODE((tmp_path / ".env").stat().st_mode) == 0o600
-    assert stat.S_IMODE((tmp_path / "config.toml").stat().st_mode) == 0o600
+    if os.name != "nt":  # NTFS reports 0o666 regardless of the chmod
+        assert stat.S_IMODE((tmp_path / ".env").stat().st_mode) == 0o600
+        assert stat.S_IMODE((tmp_path / "config.toml").stat().st_mode) == 0o600
     # The atomic open observed 0o600 on first stat:
     assert observed_modes, "patched os.open never invoked"
-    assert all(m == 0o600 for m in observed_modes), f"saw modes {observed_modes!r}"
+    if os.name != "nt":  # NTFS reports 0o666 regardless of the chmod
+        assert all(m == 0o600 for m in observed_modes), f"saw modes {observed_modes!r}"
 
 
 def test_env_file_overwrites_existing(tmp_path: Path, monkeypatch):
@@ -80,4 +82,5 @@ def test_env_file_overwrites_existing(tmp_path: Path, monkeypatch):
 
     assert "OPENAI_API_KEY=sk-new" in env.read_text()
     assert "STALE" not in env.read_text()
-    assert stat.S_IMODE(env.stat().st_mode) == 0o600
+    if os.name != "nt":  # NTFS reports 0o666 regardless of the chmod
+        assert stat.S_IMODE(env.stat().st_mode) == 0o600

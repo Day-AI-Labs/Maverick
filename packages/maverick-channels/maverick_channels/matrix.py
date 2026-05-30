@@ -53,6 +53,8 @@ class MatrixChannel(Channel):
         self.access_token = access_token or os.environ.get("MATRIX_ACCESS_TOKEN")
         if not self.access_token:
             raise ValueError("MATRIX_ACCESS_TOKEN not set")
+        # Without an allowlist any member of any room the bot joins drives
+        # the agent. Require one (default-deny via base.is_allowed).
         self.allowed_user_ids = normalize_allowlist(
             allowed_user_ids, "MATRIX_ALLOWED_USER_IDS",
         )

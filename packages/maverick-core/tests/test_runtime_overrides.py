@@ -44,7 +44,9 @@ def test_overlay_written_at_0600(monkeypatch, tmp_path):
     ro.disable_tool("shell")
     path = tmp_path / "runtime-overrides.toml"
     assert path.exists()
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    import os
+    if os.name != "nt":  # NTFS reports 0o666 regardless of chmod
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
 def test_overlay_is_valid_toml(monkeypatch, tmp_path):

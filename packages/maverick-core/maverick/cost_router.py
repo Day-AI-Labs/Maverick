@@ -60,6 +60,23 @@ _PRICING: list[tuple[str, str, int, float, float]] = [
 ]
 
 
+def price_for_model(model_id: str) -> Optional[tuple[float, float]]:
+    """Return (in_per_mtok, out_per_mtok) for a model_id from the router's
+    pricing table, or None if it isn't listed.
+
+    Budget billing (budget._lookup_price) consults this for models the
+    cost-router can SELECT but that aren't in llm.MODEL_PRICES (e.g.
+    gpt-5-nano, grok-4, gemini-2.5-*, the date-suffixed Haiku id) so they
+    bill at their real rate instead of silently falling back to Sonnet's.
+    """
+    if not model_id:
+        return None
+    for _provider, mid, _tier, in_price, out_price in _PRICING:
+        if mid == model_id:
+            return (in_price, out_price)
+    return None
+
+
 @dataclass
 class CostSignal:
     role: str = ""

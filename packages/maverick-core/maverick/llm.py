@@ -17,6 +17,7 @@ gpt-4o-mini — all in the same swarm.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -176,6 +177,35 @@ def _parse_spec(spec: str) -> tuple[str, str]:
     return "anthropic", spec
 
 
+def _run_preflight(model_id, system, messages, tools, max_tokens) -> None:
+    """Token preflight before an LLM dispatch (roadmap 'token preflight v1').
+
+    Mode via the ``MAVERICK_PREFLIGHT`` env var:
+      - ``warn`` (default): log a warning if the estimated request won't fit
+        the model's context, but still dispatch;
+      - ``strict``: raise ``PreflightFailed`` so the caller can hard-refuse
+        before burning tokens on a doomed call;
+      - ``off``: skip entirely.
+
+    Default is ``warn`` so wiring preflight onto the live path can't turn a
+    borderline-but-valid request into a false refusal (the estimate is a
+    cheap chars/token heuristic); operators opt into hard-refuse explicitly.
+    """
+    mode = os.environ.get("MAVERICK_PREFLIGHT", "warn").strip().lower()
+    if mode not in ("warn", "strict"):
+        return  # 'off' / unrecognized -> skip
+    try:
+        from .preflight import preflight
+    except ImportError:  # pragma: no cover
+        return
+    # strict=True makes preflight() raise PreflightFailed (propagates to the
+    # caller); warn mode only logs.
+    preflight(
+        model=model_id, system=system, messages=messages,
+        tools=tools, max_tokens=max_tokens, strict=(mode == "strict"),
+    )
+
+
 class LLM:
     """Multi-provider LLM dispatcher.
 
@@ -229,6 +259,7 @@ class LLM:
         on_delta=None,
     ) -> LLMResponse:
         provider, model_id = _parse_spec(model or self.model)
+        _run_preflight(model_id, system, messages, tools, max_tokens)
         client = self._get_client(provider)
         kwargs: dict[str, Any] = dict(
             system=system, messages=messages, tools=tools, budget=budget,
@@ -289,6 +320,7 @@ class LLM:
         model: Optional[str] = None,
     ) -> LLMResponse:
         provider, model_id = _parse_spec(model or self.model)
+        _run_preflight(model_id, system, messages, tools, max_tokens)
         client = self._get_client(provider)
         import time as _time
         # complete_async is the PRIMARY agent-loop path; the sync complete()

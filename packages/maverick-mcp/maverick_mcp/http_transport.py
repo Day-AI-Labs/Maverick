@@ -13,7 +13,7 @@ results (long-running tools, sampling).
 
 Usage::
 
-    maverick mcp --http --port 8771 --token $MAVERICK_MCP_TOKEN
+    MAVERICK_MCP_TOKEN=secret maverick mcp --http --port 8771
 
 Security:
   - Bearer-token auth required when MAVERICK_MCP_TOKEN is set.
@@ -29,6 +29,7 @@ across major clients; we ship Streamable HTTP as the GA transport.
 """
 from __future__ import annotations
 
+import asyncio
 import hmac
 import logging
 import os
@@ -98,10 +99,14 @@ def build_app(server) -> "FastAPI":
         method = body.get("method", "")
         params = body.get("params", {}) or {}
 
-        # Route via the existing MCPServer dispatcher. We piggyback on
-        # its method table by calling the appropriate handle_* directly.
+        # Route via the existing MCPServer dispatcher. The dispatch is
+        # SYNCHRONOUS and the swarm tools call run_goal_sync() -> asyncio.run,
+        # which raises "asyncio.run() cannot be called from a running event
+        # loop" if invoked inline under FastAPI's loop. Run it in a worker
+        # thread so it gets its own loop; this fixes maverick_start /
+        # maverick_resume over HTTP (they were completely broken).
         try:
-            result = _dispatch(server, method, params)
+            result = await asyncio.to_thread(_dispatch, server, method, params)
         except Exception as e:
             from .server import _ProtocolError
             if isinstance(e, _ProtocolError):
@@ -155,10 +160,19 @@ def _dispatch(server, method: str, params: dict) -> dict:
 
 def serve(host: str = "127.0.0.1", port: int = 8771) -> None:
     """Run the HTTP transport on host:port. Blocking."""
-    import uvicorn
     from .server import MCPServer
 
+    # build_app() raises a friendly "install maverick-mcp-server[http]" error
+    # if fastapi is missing -- do it BEFORE importing uvicorn so the user
+    # sees that hint, not a bare ModuleNotFoundError on uvicorn.
     server = MCPServer()
     app = build_app(server)
+    try:
+        import uvicorn
+    except ImportError as e:  # pragma: no cover - exercised only without the extra
+        raise ImportError(
+            "uvicorn not installed; install maverick-mcp-server[http] to enable "
+            "the streamable HTTP transport"
+        ) from e
     log.info("MCP Streamable HTTP transport on http://%s:%d/mcp", host, port)
     uvicorn.run(app, host=host, port=port, log_level="info")

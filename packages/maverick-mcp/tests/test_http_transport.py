@@ -36,6 +36,58 @@ class TestHTTPTransport:
         assert "result" in body
         assert "capabilities" in body["result"]
 
+    def test_tools_call_runs_sync_asyncio_tool_without_loop_crash(self, monkeypatch):
+        """Regression: the HTTP endpoint dispatched synchronously inside
+        FastAPI's running loop, so maverick_start (run_goal_sync ->
+        asyncio.run) crashed with 'asyncio.run() cannot be called from a
+        running event loop'. The dispatch now runs in a worker thread."""
+        import asyncio
+
+        from maverick_mcp import server as srv
+
+        async def _trivial():
+            return "DONE: stub run"
+
+        def _fake_start(self, args):
+            # Mirror run_goal_sync's pattern (asyncio.run on a coroutine) --
+            # exactly what crashed before the to_thread fix.
+            return asyncio.run(_trivial())
+
+        monkeypatch.setattr(srv.MCPServer, "_tool_start", _fake_start, raising=True)
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        client = self._client()
+        resp = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 7, "method": "tools/call",
+            "params": {"name": "maverick_start", "arguments": {"title": "hi"}},
+        }, headers={"Authorization": "Bearer s3cr3t"})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["result"]["isError"] is False, body
+        assert "DONE: stub run" in body["result"]["content"][0]["text"]
+
+    def test_skill_install_rejects_bare_local_path(self, monkeypatch):
+        """The MCP skill-install must pass trusted_local=False so a network
+        client can't read arbitrary host files via a bare local path."""
+        from types import SimpleNamespace
+
+        from maverick import skills as skills_mod
+        captured: dict = {}
+
+        def _fake_install(source, *, trusted_local=True):
+            captured["trusted_local"] = trusted_local
+            return SimpleNamespace(name="x", path="/tmp/x")
+
+        monkeypatch.setattr(skills_mod, "install_skill", _fake_install)
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        client = self._client()
+        resp = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 8, "method": "tools/call",
+            "params": {"name": "maverick_skill_install",
+                       "arguments": {"source": "/etc/passwd"}},
+        }, headers={"Authorization": "Bearer s3cr3t"})
+        assert resp.status_code == 200, resp.text
+        assert captured.get("trusted_local") is False
+
     def test_unknown_method_returns_jsonrpc_error(self, monkeypatch):
         monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
         client = self._client()

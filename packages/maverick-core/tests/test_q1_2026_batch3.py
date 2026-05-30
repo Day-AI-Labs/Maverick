@@ -217,4 +217,6 @@ def test_conventional_commits_workflow_exists():
 
 def test_starter_goals_doc_exists():
     repo_root = Path(__file__).resolve().parents[3]
-    assert (repo_root / "docs" / "templates" / "starter-goals.md").is_file()
+    # Moved out of docs/templates/ -> docs/ so MkDocs (which excludes the
+    # templates/ dir) actually builds + serves the page. See fix/docs-accuracy.
+    assert (repo_root / "docs" / "starter-goals.md").is_file()

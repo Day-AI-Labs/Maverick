@@ -38,9 +38,12 @@
     try {
       await invoke('install');
     } catch (e) {
-      // Failure is normally delivered via the install-failed event;
-      // this is a fallback if the command itself rejects.
-      if (status !== 'failed') {
+      // Failure is normally delivered via the install-failed event (which
+      // may have already run during the await and set status='failed' with
+      // a specific errorMsg); only fall back to the generic message if it
+      // hasn't. Cast through Status because TS flow-narrows `status` to
+      // 'installing' here and can't see the event listener's mutation.
+      if ((status as Status) !== 'failed') {
         status = 'failed';
         errorMsg = String(e);
       }

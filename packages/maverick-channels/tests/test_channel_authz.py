@@ -91,3 +91,73 @@ def test_matrix_requires_allowlist():
             user_id="@me:matrix.org", access_token="tok",
             allowed_user_ids=set(),
         )
+
+
+# --- voice: per-caller allowlist (launch-hardening) ------------------------
+
+def _have_voice_deps() -> bool:
+    try:
+        import fastapi  # noqa: F401
+        import httpx  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+@pytest.mark.skipif(not _have_voice_deps(), reason="fastapi+httpx not installed")
+def test_voice_allowlist_blocks_unauthorized_caller(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from maverick_channels.voice import VoiceChannel
+
+    seen = []
+
+    async def _handler(msg):
+        seen.append(msg.user_id)
+        return "ran"
+
+    monkeypatch.setenv("VAPI_WEBHOOK_TOKEN", "voice-secret")
+    chan = VoiceChannel(_handler, api_key="vapi-test-key",
+                        allowed_callers=["+12025550111"])
+    client = TestClient(chan._app)
+    hdr = {"Authorization": "Bearer voice-secret"}
+
+    def _post(number):
+        return client.post("/webhook/voice", headers=hdr, json={
+            "message": {"type": "transcript", "role": "user", "transcript": "hi"},
+            "call": {"customer": {"number": number}},
+        })
+
+    # Unauthorized caller: rejected, handler never runs.
+    resp = _post("+19998887777")
+    assert resp.status_code == 200
+    assert "authorized" in resp.json()["response"].lower()
+    assert seen == []
+
+    # Authorized caller: handler runs.
+    resp = _post("+12025550111")
+    assert resp.status_code == 200
+    assert resp.json() == {"response": "ran"}
+    assert seen == ["+12025550111"]
+
+
+@pytest.mark.skipif(not _have_voice_deps(), reason="fastapi+httpx not installed")
+def test_voice_without_allowlist_allows_any_authenticated_caller(monkeypatch):
+    """Back-compat: with no allowlist, the bearer is the gate (any caller)."""
+    from fastapi.testclient import TestClient
+
+    from maverick_channels.voice import VoiceChannel
+
+    async def _handler(_):
+        return "ran"
+
+    monkeypatch.setenv("VAPI_WEBHOOK_TOKEN", "voice-secret")
+    monkeypatch.delenv("VOICE_ALLOWED_CALLERS", raising=False)
+    chan = VoiceChannel(_handler, api_key="vapi-test-key")
+    client = TestClient(chan._app)
+    resp = client.post("/webhook/voice", headers={"Authorization": "Bearer voice-secret"}, json={
+        "message": {"type": "transcript", "role": "user", "transcript": "hi"},
+        "call": {"customer": {"number": "+19998887777"}},
+    })
+    assert resp.status_code == 200
+    assert resp.json() == {"response": "ran"}

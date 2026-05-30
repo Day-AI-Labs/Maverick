@@ -19,6 +19,30 @@ import pytest
 from maverick.llm import LLMResponse, ToolCall  # noqa: F401 - re-exported for tests
 
 
+@pytest.fixture(autouse=True)
+def _isolate_maverick_home(tmp_path, monkeypatch):
+    """Point user-home resolution at a per-test temp dir on every platform.
+
+    maverick resolves ``~/.maverick`` via ``Path.home()`` in ~30 places. On
+    Windows ``Path.home()`` reads ``USERPROFILE`` and ignores the ``$HOME``
+    that tests monkeypatch, so the suite (a) read the developer's REAL home
+    (PermissionError on pre-existing world-readable files) and (b) WROTE fake
+    sessions/config into the real ``~/.maverick`` (cross-run pollution — a
+    leftover ``____evil`` session proved it). Set both ``HOME`` and the Windows
+    vars so ``Path.home()`` is isolated everywhere.
+
+    POSIX: this just sets ``HOME`` to a temp dir (what tests already do), so it
+    is effectively a no-op and cannot regress Linux CI; a test that sets its own
+    ``HOME`` still overrides this.
+    """
+    # Use tmp_path itself (not a subdir) so a test that sets HOME=tmp_path and
+    # then computes tmp_path/.maverick/... lines up with Path.home() on every
+    # platform (on Windows Path.home() reads USERPROFILE, set here too).
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Windows: what Path.home() reads
+    return tmp_path
+
+
 @dataclass
 class FakeLLM:
     """Drop-in replacement for ``maverick.llm.LLM`` driven by a script."""

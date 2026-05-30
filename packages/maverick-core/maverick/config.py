@@ -28,6 +28,7 @@ Schema overview::
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 from pathlib import Path
@@ -81,8 +82,19 @@ def load_config(path: Optional[Path] = None) -> dict:
     p = path or config_path()
     if not p.exists():
         return {}
-    with open(p, "rb") as f:
-        return _interp(tomllib.load(f))
+    try:
+        with open(p, "rb") as f:
+            return _interp(tomllib.load(f))
+    except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as e:
+        # The kernel must tolerate a missing config (returns {} above); a
+        # corrupt/unreadable one is the adjacent case. Fail soft to defaults
+        # with a warning instead of crashing the agent loop / every
+        # get_role_model / get_safety caller on a hand-edited TOML typo.
+        logging.getLogger(__name__).warning(
+            "ignoring unreadable %s (%s: %s); using defaults",
+            p, type(e).__name__, e,
+        )
+        return {}
 
 
 def get_role_model(role: str) -> Optional[str]:

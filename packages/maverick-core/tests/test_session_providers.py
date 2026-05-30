@@ -32,8 +32,9 @@ def test_cookie_store_round_trip(tmp_path, monkeypatch):
     blob = {"cookies": {"__Secure-next-auth.session-token": "abc123"}}
     path = cookie_store.save_session("chatgpt-session", blob)
     assert path.exists()
-    # Mode 0600 enforced.
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    # Mode 0600 enforced (POSIX only; NTFS reports 0o666 regardless of chmod).
+    if os.name != "nt":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     loaded = cookie_store.load_session("chatgpt-session")
     assert loaded["cookies"]["__Secure-next-auth.session-token"] == "abc123"
     assert "saved_at" in loaded
@@ -45,8 +46,12 @@ def test_cookie_store_no_session_returns_none(tmp_path, monkeypatch):
     assert cookie_store.load_session("chatgpt-session") is None
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX file-mode perms aren't enforced on NTFS (load_session skips the check on Windows)",
+)
 def test_cookie_store_rejects_world_readable(tmp_path, monkeypatch):
-    """Refuses to load a session file with relaxed perms."""
+    """Refuses to load a session file with relaxed perms (POSIX only)."""
     monkeypatch.setenv("HOME", str(tmp_path))
     from maverick.session_providers import cookie_store
 

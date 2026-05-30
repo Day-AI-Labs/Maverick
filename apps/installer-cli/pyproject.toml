@@ -11,7 +11,7 @@ license = { text = "MIT" }
 authors = [{ name = "cdayAI" }]
 readme = "README.md"
 dependencies = [
-    "maverick-agent>=0.1",
+    "maverick-agent>=0.1.3",
     "questionary>=2.0",
     "rich>=13.7",
 ]

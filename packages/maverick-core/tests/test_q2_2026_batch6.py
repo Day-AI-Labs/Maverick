@@ -266,8 +266,10 @@ def test_reflexion_file_perms_600(tmp_path):
     assert p.exists()
     mode = stat.S_IMODE(p.stat().st_mode)
     # 0o600 OR 0o644 depending on umask + test env; the helper does
-    # chmod 600 but we don't fail if the FS quietly refuses.
-    assert (mode & 0o077) == 0 or os.geteuid() == 0
+    # chmod 600 but we don't fail if the FS quietly refuses. POSIX-only:
+    # NTFS reports 0o666 and os.geteuid() doesn't exist on Windows.
+    if os.name != "nt":
+        assert (mode & 0o077) == 0 or os.geteuid() == 0
 
 
 def test_reflexion_format_context_renders_sections():

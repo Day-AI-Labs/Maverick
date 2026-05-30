@@ -7,6 +7,12 @@
     <div class="panel"><p style="color: var(--danger);">{{ perm.error }}</p></div>
   {% endif %}
 
+  {% if perm.sandbox_warning %}
+    <div class="panel" style="border-left: 3px solid var(--danger);">
+      <p style="color: var(--danger);"><strong>⚠ {{ perm.sandbox_warning }}</strong></p>
+    </div>
+  {% endif %}
+
   <div class="panel">
     <p class="muted">
       Everything the agent is currently allowed to do. Disabling a tool

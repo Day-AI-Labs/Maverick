@@ -32,7 +32,7 @@ import logging
 import os
 from typing import Optional
 
-from .base import Channel, IncomingMessage
+from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +70,7 @@ class VoiceChannel(Channel):
         assistant_id: Optional[str] = None,
         provider: str = "vapi",
         webhook_token: Optional[str] = None,
+        allowed_callers=None,
     ):
         super().__init__(handler)
         if not _HAVE_DEPS:
@@ -85,6 +86,13 @@ class VoiceChannel(Channel):
         self.assistant_id = assistant_id
         self.provider = provider
         self.webhook_token = webhook_token or os.environ.get("VAPI_WEBHOOK_TOKEN")
+        # Optional per-caller allowlist (by phone number). The webhook bearer
+        # + loopback bind are the primary gate; when this is set we also
+        # restrict WHICH caller number may drive the agent. Empty = allow any
+        # authenticated caller (bearer still required).
+        self.allowed_callers = normalize_allowlist(
+            allowed_callers, "VOICE_ALLOWED_CALLERS",
+        )
 
         self._app = FastAPI()
         self._app.post("/webhook/voice")(self._handle_webhook)
@@ -133,6 +141,10 @@ class VoiceChannel(Channel):
                 or call.get("id")
                 or "voice-unknown"
             )
+            # Enforce the per-caller allowlist when one is configured.
+            if self.allowed_callers and not is_allowed(str(user_id), self.allowed_callers):
+                log.warning("unauthorized voice caller: %s", user_id)
+                return {"response": "Sorry, this number isn't authorized to use this assistant."}
             msg = IncomingMessage(
                 user_id=str(user_id),
                 text=transcript,

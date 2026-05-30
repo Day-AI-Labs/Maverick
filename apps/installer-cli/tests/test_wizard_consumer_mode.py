@@ -95,9 +95,11 @@ def test_run_consumer_writes_safe_defaults(monkeypatch, tmp_path: Path):
     # API key landed in .env at chmod 600.
     env = (tmp_path / ".maverick" / ".env").read_text()
     assert "ANTHROPIC_API_KEY=sk-ant-test" in env
+    import os
     import stat
     mode = stat.S_IMODE((tmp_path / ".maverick" / ".env").stat().st_mode)
-    assert mode == 0o600
+    if os.name != "nt":  # NTFS reports 0o666 regardless of the chmod
+        assert mode == 0o600
 
 
 def test_run_consumer_skip_key_succeeds(monkeypatch, tmp_path: Path):

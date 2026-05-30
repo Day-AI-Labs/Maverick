@@ -133,10 +133,36 @@ jobs:
               "$f"
           done
           ls -la signatures/
-      - name: Attach signatures to release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            signatures/*.cosign.bundle
+      - name: Attach signatures to the existing release
+        id: attach
+        # release.yml is the SOLE creator/owner of the GitHub Release (it
+        # has generate_release_notes:true). Do NOT use action-gh-release
+        # here: this fast `sign` job could win the create race and the
+        # release would end up with no notes. Instead, wait for release.yml
+        # to create the release, then upload the signatures as assets.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -e
+          for i in $(seq 1 30); do
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release upload "$TAG" signatures/*.cosign.bundle --clobber
+              echo "Uploaded signatures to release $TAG"
+              echo "uploaded=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Release $TAG not found yet (attempt $i/30); sleeping 10s..."
+            sleep 10
+          done
+          echo "::warning::Release $TAG never appeared after ~5min; uploading signatures as a workflow artifact instead."
+          echo "uploaded=false" >> "$GITHUB_OUTPUT"
+      - name: Fallback - upload signatures as workflow artifact
+        # Runs only when the release never appeared, so the signatures are
+        # still retrievable. Never fails the job.
+        if: steps.attach.outputs.uploaded == 'false'
+        uses: actions/upload-artifact@v7
+        with:
+          name: signatures
+          path: signatures/*.cosign.bundle
+          if-no-files-found: warn

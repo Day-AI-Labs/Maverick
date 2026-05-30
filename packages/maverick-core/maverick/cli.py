@@ -385,6 +385,9 @@ def start(
         stop_poll.set()
         if poller is not None:
             poller.join(timeout=2.0)
+        # Close so WorldModel.close()'s WAL TRUNCATE checkpoint runs; the
+        # poller thread (already joined) used its own connection.
+        world.close()
     click.echo("")
     click.echo(result)
 
@@ -440,7 +443,8 @@ def _stream_progress(db_path, goal_id: int, stop) -> None:
         except Exception:
             pass
         if stop.wait(timeout=1.5):
-            return
+            break
+    wm.close()
 
 
 @main.command()
@@ -590,11 +594,15 @@ def serve(max_depth: int, verbose: bool) -> None:
         asyncio.run(server.stop())
 
 
-@main.command()
+@main.command("history")
 @click.option("--limit", default=20, type=int)
 @click.pass_context
-def logs(ctx, limit: int) -> None:
-    """Show recent goal + episode history."""
+def history(ctx, limit: int) -> None:
+    """Show recent goal + episode history.
+
+    Registered as ``history`` (not ``logs``): a second ``@main.command("logs")``
+    for the audit log silently shadowed this one. ``logs`` now unambiguously
+    means the audit log; this goal/episode view is ``maverick history``."""
     world = WorldModel(ctx.obj["db"])
     goals = world.list_goals()
     if not goals:
@@ -949,9 +957,11 @@ def session_clear(provider: str) -> None:
 @click.option("--yes", is_flag=True, help="Skip confirmation.")
 @click.pass_context
 def erase(ctx, channel: str, user: str, yes: bool) -> None:
-    """GDPR Art. 17 right-to-erasure: delete everything Maverick knows
-    about a given (channel, user_id) — conversations, turns, attachments
-    on disk, and the conversation row itself."""
+    """Erase everything Maverick knows about a (channel, user_id) pair.
+
+    GDPR Art. 17 right-to-erasure: removes conversations, turns,
+    attachments on disk, and the conversation row itself. (First line kept
+    abbreviation-free so Click's short help isn't truncated at "Art.".)"""
     world = WorldModel(ctx.obj["db"])
     convs = [
         c for c in world.list_conversations(channel)
@@ -986,6 +996,23 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
     ).fetchall():
         goal_ids.add(row[0])
 
+    # Step 1b: expand to the transitive closure of subgoals. A recursive
+    # swarm creates child goals via parent_id that are NOT tied to a turn,
+    # so they're missing from the turn-derived set above. Deleting a parent
+    # while a child still references it (goals.parent_id FK) aborts the
+    # whole transaction -- a required Art.17 erasure that silently does
+    # nothing. Walk the parent_id tree so every descendant is included.
+    if goal_ids:
+        frontier = list(goal_ids)
+        while frontier:
+            fph = ",".join("?" * len(frontier))
+            child_rows = world.conn.execute(
+                f"SELECT id FROM goals WHERE parent_id IN ({fph})", frontier,
+            ).fetchall()
+            new_children = [r[0] for r in child_rows if r[0] not in goal_ids]
+            goal_ids.update(new_children)
+            frontier = new_children
+
     # Step 2: collect attachment paths to unlink (after commit).
     attachment_paths: list[str] = []
     for gid in goal_ids:
@@ -996,6 +1023,11 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
     removed_turns = 0
     try:
         world.conn.execute("BEGIN IMMEDIATE")
+        # Defer FK checks to COMMIT so deleting parents and children in one
+        # statement can't trip the goals.parent_id self-FK mid-statement.
+        # Combined with the transitive-closure expansion above, every
+        # referenced row is gone by COMMIT, so the deferred check passes.
+        world.conn.execute("PRAGMA defer_foreign_keys = ON")
         cur = world.conn.execute(
             f"DELETE FROM turns WHERE conversation_id IN ({placeholders})",
             conv_ids,
@@ -1005,7 +1037,8 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         if goal_ids:
             gph = ",".join("?" * len(goal_ids))
             gids = list(goal_ids)
-            # Order matters: children before parents (FK now enforced).
+            # FK checks are deferred to COMMIT (above) and the goal_ids set
+            # is the full subgoal closure, so delete order is not load-bearing.
             world.conn.execute(f"DELETE FROM goal_events WHERE goal_id IN ({gph})", gids)
             world.conn.execute(f"DELETE FROM messages    WHERE goal_id IN ({gph})", gids)
             world.conn.execute(f"DELETE FROM questions   WHERE goal_id IN ({gph})", gids)
@@ -1035,6 +1068,28 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         except OSError:
             pass
 
+    # Step 5: scrub the subject from PRIOR audit-log lines. Audit payloads
+    # (goal_start / tool_call / channel events) carry channel:user_id, so
+    # without this the identity we just erased stayed readable in
+    # ~/.maverick/audit/*.ndjson -- an Art.17 gap (scrub_user was dead
+    # code, never called). Done BEFORE recording the erase event below so
+    # that event (which hashes the subject) isn't itself scrubbed.
+    # NOTE: if [audit] sign is enabled, rewriting lines breaks the
+    # hash-chain; `maverick audit verify` will then report a discontinuity
+    # at the erasure point. Re-anchoring a signed chain post-erasure is a
+    # tracked follow-up; leaving PII in place would violate Art.17.
+    audit_scrubbed = 0
+    try:
+        from .audit import scrub_user
+        audit_scrubbed, _ = scrub_user(channel, user)
+    except Exception as exc:
+        click.echo(
+            f"warning: erased the database but could not scrub the audit log "
+            f"({type(exc).__name__}: {exc}); run `maverick audit grep {user}` "
+            "to check.",
+            err=True,
+        )
+
     # GDPR Art. 30: record that an erasure happened, but hash the subject so
     # the audit trail itself never re-leaks the identity we just erased.
     import hashlib
@@ -1048,6 +1103,7 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         turns=removed_turns,
         goals=len(goal_ids),
         attachments=removed_attachments,
+        audit_lines_scrubbed=audit_scrubbed,
     )
 
     # GDPR Art. 17 completeness: the DB rows + files are gone, but the
@@ -1069,15 +1125,19 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
     )
 
 
-@main.command()
+@main.command("export-user")
 @click.option("--channel", required=True, help="Channel name.")
 @click.option("--user", required=True, help="The channel user_id to export.")
 @click.option("--output", "-o", type=click.Path(), default=None,
               help="Write JSON to file (default stdout).")
 @click.pass_context
-def export(ctx, channel: str, user: str, output) -> None:
-    """GDPR Art. 15 right-of-access: dump everything Maverick knows about
-    a given (channel, user_id) as JSON."""
+def export_user(ctx, channel: str, user: str, output) -> None:
+    """Export everything Maverick knows about a (channel, user_id) as JSON.
+
+    GDPR Art. 15 right-of-access. Registered as ``export-user`` so it does
+    not collide with ``export`` (the goal-trajectory bundle below); a
+    duplicate Click command name silently shadowed this one, making the
+    data-subject export unreachable from the CLI."""
     import json
     world = WorldModel(ctx.obj["db"])
     convs = [

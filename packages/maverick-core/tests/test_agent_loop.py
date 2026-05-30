@@ -108,6 +108,69 @@ class TestAgentLoop:
         assert result.error is not None and "max_steps" in result.error
 
     @pytest.mark.asyncio
+    async def test_killswitch_halts_at_turn_boundary(
+        self, ctx, fake_llm, make_llm_response, monkeypatch,
+    ):
+        """`maverick halt` / the dashboard Halt button / the HALT file must
+        actually stop a run: the loop calls killswitch.check() at the top of
+        each turn, so an armed halt aborts BEFORE the next LLM call (no
+        further spend). Regression for the wholly-unwired killswitch."""
+        from maverick import killswitch
+        # halt() best-effort writes a HALT audit event; neutralize it so the
+        # test doesn't touch the real ~/.maverick/audit dir.
+        monkeypatch.setattr("maverick.audit.record", lambda *a, **k: None)
+        fake_llm.scripted = [
+            make_llm_response(
+                text="acting",
+                tool_calls=[ToolCall(id="t1", name="shell",
+                                     input={"cmd": "echo hi"})],
+            ),
+        ]
+        killswitch.halt("test halt")
+        try:
+            agent = Agent(ctx=ctx, role="researcher", brief="should be halted")
+            result = await agent.run()
+        finally:
+            killswitch.clear()
+        assert result.error is not None and "halted" in result.error.lower()
+        # Halt is checked before the LLM call, so the model was never invoked.
+        assert fake_llm.calls == []
+
+    @pytest.mark.asyncio
+    async def test_killswitch_halts_before_tool_dispatch(
+        self, ctx, make_llm_response, monkeypatch,
+    ):
+        """A halt that arrives DURING the LLM call (user hits Halt mid-think)
+        is honoured at the tool-call boundary: the returned tool never runs."""
+        from maverick import killswitch
+        monkeypatch.setattr("maverick.audit.record", lambda *a, **k: None)
+
+        class _HaltingLLM:
+            model = "fake:test"
+
+            def __init__(self):
+                self.calls = []
+
+            async def complete_async(self, **kwargs):
+                self.calls.append(kwargs)
+                killswitch.halt("halt during think")
+                return make_llm_response(
+                    text="acting",
+                    tool_calls=[ToolCall(id="t1", name="shell",
+                                         input={"cmd": "rm -rf /"})],
+                )
+
+        ctx.llm = _HaltingLLM()
+        try:
+            agent = Agent(ctx=ctx, role="coder", brief="...")
+            result = await agent.run()
+        finally:
+            killswitch.clear()
+        assert result.error is not None and "halted" in result.error.lower()
+        # The LLM was called exactly once; the dangerous tool was never run.
+        assert len(ctx.llm.calls) == 1
+
+    @pytest.mark.asyncio
     async def test_shield_blocks_tool_call(self, ctx, fake_llm, make_llm_response):
         class _BlockingShield:
             def scan_tool_call(self, name, args):

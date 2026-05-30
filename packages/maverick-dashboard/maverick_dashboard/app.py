@@ -596,6 +596,7 @@ def _permissions_snapshot() -> dict:
         "tools": [], "capabilities": {}, "channels": [], "sandbox": {},
         "budget": {}, "network": "open", "plugins": [], "providers": [],
         "retention": {}, "overlay_denied": [], "error": None,
+        "sandbox_warning": None,
     }
     try:
         from maverick.config import load_config
@@ -608,6 +609,17 @@ def _permissions_snapshot() -> dict:
     snap["budget"] = cfg.get("budget") or {}
     snap["retention"] = cfg.get("retention") or {}
     snap["sandbox"] = cfg.get("sandbox") or {}
+    # Security surface: the default 'local' sandbox runs model-driven shell on
+    # the host with no filesystem/network isolation (secret env vars are
+    # scrubbed, but it is not a container). Make the posture explicit on the
+    # /permissions page + API instead of leaving it silent.
+    _sb_backend = str(snap["sandbox"].get("backend") or "local").strip().lower()
+    if _sb_backend == "local":
+        snap["sandbox_warning"] = (
+            "Sandbox backend is 'local': the agent's shell runs on this host "
+            "with no filesystem/network isolation. Use the docker or podman "
+            "backend for untrusted goals."
+        )
     snap["providers"] = sorted((cfg.get("providers") or {}).keys())
     snap["channels"] = [
         {"name": n, "enabled": bool(c.get("enabled", True))}
@@ -945,10 +957,23 @@ async def cost_csv(month: Optional[str] = None) -> StreamingResponse:
     end_ts: Optional[float] = None
     if month:
         try:
-            start_ts = _dt.datetime.strptime(month, "%Y-%m").timestamp()
+            start = _dt.datetime.strptime(month, "%Y-%m").replace(
+                tzinfo=_dt.timezone.utc
+            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=f"bad month: {e}")
-        end_ts = start_ts + 31 * 86_400
+        # episodes.started_at is a UTC epoch, so build the window in UTC --
+        # a naive strptime().timestamp() interprets midnight in the server's
+        # LOCAL zone, shifting the month boundary by the UTC offset (the CSV
+        # then drops/keeps the wrong rows for anyone not running in UTC).
+        # Roll over by calendar month, not +31 days, which over-counts the
+        # short months (e.g. Feb would leak early-March rows).
+        if start.month == 12:
+            nxt = start.replace(year=start.year + 1, month=1)
+        else:
+            nxt = start.replace(month=start.month + 1)
+        start_ts = start.timestamp()
+        end_ts = nxt.timestamp()
 
     def generate():
         buf = _io.StringIO()

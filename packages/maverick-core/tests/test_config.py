@@ -12,6 +12,21 @@ def test_missing_config_returns_empty_dict():
     assert cfg == {}
 
 
+def test_corrupt_config_fails_soft_to_empty_dict():
+    """A corrupt/unparseable config.toml must not crash the agent loop; it
+    fails soft to {} like a missing file. Regression: load_config raised
+    TOMLDecodeError, which propagated through every get_role_model/get_safety
+    caller. The common real-world trigger is a Windows backslash path that
+    TOML reads as an invalid \\U escape."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
+        f.write('workdir = "C:\\Users\\x\\ws"\n[unterminated\n')  # invalid TOML
+        path = Path(f.name)
+    try:
+        assert load_config(path) == {}
+    finally:
+        path.unlink()
+
+
 def test_env_var_interpolation(monkeypatch):
     monkeypatch.setenv("MAVERICK_TEST_KEY", "hello")
     assert _interp("${MAVERICK_TEST_KEY}") == "hello"

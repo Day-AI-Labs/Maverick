@@ -48,6 +48,15 @@ class SignalChannel(Channel):
                 "signal-cli not found on PATH. Install from "
                 "https://github.com/AsamK/signal-cli"
             )
+        # Without an allowlist any Signal sender who knows the number drives
+        # the agent. Require one (default-deny via base.is_allowed).
+        self.allowed_user_ids = normalize_allowlist(
+            allowed_user_ids, "SIGNAL_ALLOWED_USER_IDS",
+        )
+        if not self.allowed_user_ids:
+            raise ValueError(
+                "Set SIGNAL_ALLOWED_USER_IDS to restrict who can drive the agent"
+            )
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._req_id = 0
 
