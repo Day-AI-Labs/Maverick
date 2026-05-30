@@ -144,6 +144,11 @@ jobs:
         run: ls -la dist/
       - uses: softprops/action-gh-release@v2
         with:
+          # On a v* tag push github.ref_name is the tag; on a manual
+          # workflow_dispatch it's a branch, so fall back to the `tag`
+          # input. Without this the action errors "GitHub Releases
+          # requires a tag" when dispatched.
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           files: dist/maverick-*
           generate_release_notes: true
           draft: false

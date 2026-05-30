@@ -1,6 +1,6 @@
 {
   "name": "@maverick/installer-desktop",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Tauri-based GUI installer for Maverick",
   "type": "module",
