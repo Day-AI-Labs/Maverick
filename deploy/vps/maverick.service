@@ -1,3 +1,7 @@
+# NOTE: the %i / /home/%i tokens below are PLACEHOLDERS. deploy/vps/install.sh
+# renders them to the install user + their home before writing this file to
+# /etc/systemd/system/. Don't `cp` this file directly -- run install.sh (or
+# sed-substitute %i yourself), or systemd gets an empty User= and broken paths.
 [Unit]
 Description=Maverick agent (long-horizon multi-agent swarm)
 Documentation=https://github.com/cdayAI/maverick

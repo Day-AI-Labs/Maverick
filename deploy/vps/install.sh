@@ -19,7 +19,25 @@ set -euo pipefail
 
 MAVERICK_VERSION="${MAVERICK_VERSION:-main}"
 
+# Everything user-facing (the pipx venv, the wizard, the systemd service)
+# runs as the human who invoked `sudo` -- or root for a direct-root install
+# -- with one consistent HOME, so the `maverick` binary always lives at a
+# single known path. Mixing a root install with a user-run service (and a
+# %i that expands to empty) was why the service never started.
+TARGET_USER="${SUDO_USER:-root}"
+TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+TARGET_HOME="${TARGET_HOME:-/root}"
+
 log() { echo "==> $*" >&2; }
+
+run_as_user() {
+  # Run a command as TARGET_USER with their HOME set.
+  if [[ "$TARGET_USER" == "root" ]]; then
+    HOME="$TARGET_HOME" "$@"
+  else
+    sudo -u "$TARGET_USER" -H "$@"
+  fi
+}
 
 require_root() {
   if [[ $EUID -ne 0 ]]; then
@@ -39,7 +57,7 @@ install_system_deps() {
 }
 
 install_maverick() {
-  log "Installing maverick @ ${MAVERICK_VERSION}..."
+  log "Installing maverick @ ${MAVERICK_VERSION} for user ${TARGET_USER}..."
   if [[ ! -d /opt/maverick ]]; then
     git clone --branch "${MAVERICK_VERSION}" --depth 1 \
         https://github.com/cdayAI/Maverick /opt/maverick \
@@ -54,22 +72,29 @@ install_maverick() {
   # `maverick` console-script. Every inject must target `maverick-agent`
   # or pipx errors with "Package maverick is not installed". (The desktop
   # install scripts already use the correct name.)
-  pipx install /opt/maverick/packages/maverick-core --force
-  pipx inject maverick-agent /opt/maverick/packages/maverick-shield
-  pipx inject maverick-agent /opt/maverick/packages/maverick-channels
-  pipx inject maverick-agent /opt/maverick/packages/maverick-dashboard
-  pipx inject maverick-agent /opt/maverick/packages/maverick-mcp
-  pipx inject maverick-agent /opt/maverick/apps/installer-cli
+  run_as_user pipx ensurepath || true
+  run_as_user pipx install /opt/maverick/packages/maverick-core --force
+  run_as_user pipx inject maverick-agent /opt/maverick/packages/maverick-shield
+  run_as_user pipx inject maverick-agent /opt/maverick/packages/maverick-channels
+  run_as_user pipx inject maverick-agent /opt/maverick/packages/maverick-dashboard
+  run_as_user pipx inject maverick-agent /opt/maverick/packages/maverick-mcp
+  run_as_user pipx inject maverick-agent /opt/maverick/apps/installer-cli
 }
 
 run_wizard() {
   log "Launching the setup wizard. Pick deployment=vps when asked."
-  sudo -u "${SUDO_USER:-root}" -i maverick init
+  run_as_user "${TARGET_HOME}/.local/bin/maverick" init
 }
 
 install_service() {
-  log "Installing systemd unit..."
-  cp /opt/maverick/deploy/vps/maverick.service /etc/systemd/system/maverick.service
+  log "Installing systemd unit (User=${TARGET_USER}, home=${TARGET_HOME})..."
+  # The unit ships with %i / /home/%i placeholders; render them to the
+  # concrete install user + home so the service runs as the same user that
+  # owns the pipx venv (and so /root vs /home/<user> is handled). Installing
+  # the raw unit left %i empty -> User= empty + /home//... -> never started.
+  sed -e "s#%i#${TARGET_USER}#g" -e "s#/home/${TARGET_USER}#${TARGET_HOME}#g" \
+      /opt/maverick/deploy/vps/maverick.service \
+    > /etc/systemd/system/maverick.service
   systemctl daemon-reload
   systemctl enable maverick.service
   log "Service installed. Start with:  systemctl start maverick"
