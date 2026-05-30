@@ -313,4 +313,118 @@ def verify_chain(path: Path, pubkey_hex: Optional[str] = None) -> list[ChainBrea
     return breaks
 
 
-__all__ = ["AuditSigner", "verify_chain", "ChainBreak", "KEY_DIR"]
+def reanchor_file(path: Path, *, force: bool = False) -> int:
+    """Re-chain + re-sign every row of a signed audit file, in place.
+
+    A GDPR erase tombstones or removes rows but does NOT recompute the
+    ``prev_hash``/``hash``/``sig`` chain, so ``verify_chain()`` then reports
+    breaks that are indistinguishable from tampering. This rewrites the file,
+    recomputing each row's chain fields under the current key so the chain
+    verifies clean again, preserving row content and order. The caller writes
+    a signed ``erase`` marker first so a verifier holding the trusted pubkey
+    can see the cut was authorized.
+
+    ``force`` re-signs even rows that currently carry no signature (e.g. a
+    file whose every signed row was tombstoned by the erase). Without it, a
+    file with no signed rows is left untouched (returns -1) -- erasing an
+    unsigned log has no chain to repair.
+
+    Returns rows re-signed, 0 if no rewrite was needed (already consistent),
+    or -1 if skipped (crypto unavailable, missing file, or unsigned without
+    ``force``).
+
+    Re-anchoring re-signs under the host key: it makes *authorized* erasure
+    verifiable-clean. It is not extra protection against an attacker who
+    already holds that key -- that is inherent to same-host key storage.
+    """
+    if not _have_crypto():
+        return -1
+    if not path.exists() or path.is_dir():
+        return -1
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    try:
+        with open(path, encoding="utf-8") as f:
+            original = f.read()
+    except OSError:
+        return -1
+
+    parsed: list[tuple[str, object]] = []
+    any_signed = False
+    for raw in original.splitlines():
+        if not raw.strip():
+            continue
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            # Never drop data on a rewrite: preserve unparseable lines
+            # verbatim (and out of the chain), mirroring verify_chain.
+            parsed.append(("raw", raw))
+            continue
+        if data.get("sig") and data.get("hash") and data.get("key_id"):
+            any_signed = True
+        parsed.append(("json", data))
+
+    if not any_signed and not force:
+        return -1
+
+    priv_bytes, _pub, key_id = _load_or_create_keypair()
+    signer = ed25519.Ed25519PrivateKey.from_private_bytes(priv_bytes)
+
+    out_lines: list[str] = []
+    prev = ""
+    resigned = 0
+    for kind, val in parsed:
+        if kind == "raw":
+            out_lines.append(val)  # type: ignore[arg-type]
+            continue
+        assert isinstance(val, dict)
+        # Strip the old chain fields, then rebuild them exactly as
+        # AuditSigner.write does (hash over payload incl. prev_hash + key_id,
+        # sort_keys=True; sig over the hash bytes).
+        payload = {
+            k: v for k, v in val.items()
+            if k not in ("hash", "sig", "prev_hash", "key_id")
+        }
+        payload["prev_hash"] = prev
+        payload["key_id"] = key_id
+        row_hash = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+        payload["hash"] = row_hash
+        payload["sig"] = signer.sign(bytes.fromhex(row_hash)).hex()
+        out_lines.append(json.dumps(payload, default=str))
+        prev = row_hash
+        resigned += 1
+
+    new_content = "".join(line + "\n" for line in out_lines)
+    if new_content == original:
+        return 0  # untouched rows under an unchanged key -> no rewrite
+
+    tmp = path.with_suffix(".ndjson.reanchortmp")
+    try:
+        mode = path.stat().st_mode & 0o777
+    except OSError:
+        mode = 0o600
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(new_content)
+            f.flush()
+            os.fsync(f.fileno())
+        tmp.replace(path)
+        try:
+            os.chmod(path, mode)
+        except OSError:
+            pass
+    except OSError as e:
+        log.warning("audit reanchor: %s: %s", path, e)
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+        return -1
+    return resigned
+
+
+__all__ = ["AuditSigner", "verify_chain", "ChainBreak", "KEY_DIR", "reanchor_file"]

@@ -155,6 +155,44 @@ class AuditLog:
                 return None
         return self._signer
 
+    def reanchor_after_erase(self) -> int:
+        """Re-chain + re-sign every audit file after a GDPR erase mutated rows.
+
+        A scrub/delete leaves the hash-chain broken at the erase points,
+        indistinguishable from tampering. This re-anchors each day file so
+        ``verify_chain`` passes again (the caller's signed ``erase`` marker
+        records that the cut was authorized), and drops the cached signer so
+        the next ``record()`` resumes from the rewritten head instead of a
+        stale in-memory hash.
+
+        No-op (returns 0) when signing is disabled -- an unsigned log has no
+        chain to repair. Never raises: a re-anchor failure must not undo a
+        completed erasure.
+        """
+        with self._lock:
+            # Re-anchoring rewrites the day file, so the in-memory chain head
+            # is now stale -- force a rebuild on the next write.
+            self._signer = None
+            self._signer_path = None
+            if not self._signing_enabled:
+                return 0
+            try:
+                from .signing import reanchor_file
+            except Exception:  # pragma: no cover - crypto missing
+                return 0
+            total = 0
+            if not self.audit_dir.exists():
+                return 0
+            for path in sorted(self.audit_dir.glob("*.ndjson")):
+                try:
+                    n = reanchor_file(path, force=True)
+                except Exception as e:  # pragma: no cover - defensive
+                    log.warning("audit: reanchor failed for %s: %s", path, e)
+                    continue
+                if n > 0:
+                    total += n
+            return total
+
     def tail(self, n: int = 50, day: Optional[str] = None) -> list[dict[str, Any]]:
         """Return the last ``n`` events from ``day`` (default today)."""
         if day is None:
@@ -254,10 +292,20 @@ def record(
     return default_audit_log().record(event)
 
 
+def reanchor_after_erase() -> int:
+    """Re-anchor the default audit log's signed chain after a GDPR erase.
+
+    Module-level shortcut for the singleton. Safe to call unconditionally:
+    a no-op when signing is off.
+    """
+    return default_audit_log().reanchor_after_erase()
+
+
 __all__ = [
     "AuditLog",
     "DEFAULT_AUDIT_DIR",
     "default_audit_log",
     "record",
+    "reanchor_after_erase",
     "EventKind",
 ]

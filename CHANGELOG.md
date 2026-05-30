@@ -15,6 +15,13 @@ Post-0.1.4 security fixes found by the adversarial pre-launch audit.
   that the *sender* is authorized), so any PSTN subscriber who texted the
   number could drive the swarm with host shell access. They now match the
   other channels: a valid signature plus an explicit allowlist member.
+- **GDPR erase now re-anchors the signed audit chain.** When `[audit] sign`
+  is enabled, scrubbing/tombstoning a user's rows used to break the Ed25519
+  hash-chain at the erasure point -- a break `maverick audit verify` could
+  not tell apart from tampering, so a routine privacy operation destroyed
+  the trust anchor. erase re-chains and re-signs the affected files (the
+  signed `erase` marker records the authorized cut) so verification passes
+  again. Also de-duplicated a double `scrub_user` call in the erase path.
 
 ### Changed (breaking)
 - The `sms` and `whatsapp` channels **require** an allowlist to start. Set

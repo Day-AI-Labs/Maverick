@@ -1074,10 +1074,9 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
     # ~/.maverick/audit/*.ndjson -- an Art.17 gap (scrub_user was dead
     # code, never called). Done BEFORE recording the erase event below so
     # that event (which hashes the subject) isn't itself scrubbed.
-    # NOTE: if [audit] sign is enabled, rewriting lines breaks the
-    # hash-chain; `maverick audit verify` will then report a discontinuity
-    # at the erasure point. Re-anchoring a signed chain post-erasure is a
-    # tracked follow-up; leaving PII in place would violate Art.17.
+    # If [audit] sign is enabled this breaks the hash-chain; Step 6 below
+    # re-anchors it so `maverick audit verify` passes again (leaving PII in
+    # place would violate Art.17).
     audit_scrubbed = 0
     try:
         from .audit import scrub_user
@@ -1106,22 +1105,21 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         audit_lines_scrubbed=audit_scrubbed,
     )
 
-    # GDPR Art. 17 completeness: the DB rows + files are gone, but the
-    # agent also wrote goal/turn text into the audit NDJSON. Tombstone the
-    # subject there too, or erasure leaks the very data it promised to
-    # remove. (The erase record above hashes the subject, so this won't
-    # match it.)
-    scrubbed = 0
+    # Step 6: scrubbing rows above broke the signed Ed25519 hash-chain at
+    # each erasure point -- a break `maverick audit verify` can't tell apart
+    # from tampering. Re-anchor the chain so it verifies clean again; the
+    # signed `erase` marker just recorded documents that the cut was
+    # authorized. No-op when signing is off; never fails the erasure.
     try:
-        scrubbed, _ = audit.scrub_user(channel, user)
-    except Exception as e:  # never fail the erasure on a scrub hiccup
-        click.echo(f"⚠ audit-log scrub failed: {e}", err=True)
+        audit.reanchor_after_erase()
+    except Exception as e:  # pragma: no cover - defensive
+        click.echo(f"⚠ audit re-anchor failed: {e}", err=True)
 
     click.echo(
         f"erased {len(convs)} conversation(s), {removed_turns} turn(s), "
         f"{len(goal_ids)} goal(s) and all linked rows, "
         f"{removed_attachments} attachment file(s), "
-        f"{scrubbed} audit event(s) scrubbed"
+        f"{audit_scrubbed} audit event(s) scrubbed"
     )
 
 

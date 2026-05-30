@@ -21,10 +21,11 @@ from __future__ import annotations
 
 from .erase import delete_user, scrub_user  # noqa: F401
 from .events import AuditEvent, EventKind  # noqa: F401
-from .signing import AuditSigner, ChainBreak, verify_chain  # noqa: F401
+from .signing import AuditSigner, ChainBreak, reanchor_file, verify_chain  # noqa: F401
 from .writer import (  # noqa: F401
     AuditLog,
     default_audit_log,
+    reanchor_after_erase,
     record,
 )
 
@@ -35,9 +36,11 @@ __all__ = [
     "AuditLog",
     "default_audit_log",
     "record",
+    "reanchor_after_erase",
     "scrub_user",
     "delete_user",
     "AuditSigner",
     "ChainBreak",
     "verify_chain",
+    "reanchor_file",
 ]
