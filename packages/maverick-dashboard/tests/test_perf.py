@@ -149,6 +149,38 @@ def test_plan_tree_uses_constant_query_count(monkeypatch, tmp_path: Path):
     )
 
 
+def test_plan_tree_leaf_does_not_rank_unrelated_goals(monkeypatch, tmp_path: Path):
+    """A tiny requested tree must not rank or scan unrelated goals."""
+    from maverick import world_model
+    from maverick_dashboard import app as dash_app
+
+    db = tmp_path / "world.db"
+    monkeypatch.setattr(world_model, "DEFAULT_DB", db)
+    w = world_model.WorldModel(db)
+    root = w.create_goal("root", "")
+    for i in range(1000):
+        w.create_goal(f"unrelated {i}", "desc")
+
+    progress_ticks = [0]
+
+    def progress() -> int:
+        progress_ticks[0] += 1
+        return 0
+
+    w.conn.set_progress_handler(progress, 100)
+    try:
+        tree = dash_app._build_plan_tree(w, root)
+    finally:
+        w.conn.set_progress_handler(None, 0)
+
+    assert tree["id"] == root
+    assert tree["children"] == []
+    assert progress_ticks[0] < 25, (
+        "plan-tree leaf fetch should stay bounded by the requested subtree; "
+        f"saw {progress_ticks[0]} progress ticks"
+    )
+
+
 def test_cost_csv_streams_not_buffers(monkeypatch, tmp_path: Path):
     """Response is streamed: setting up generator doesn't materialise all rows."""
     from maverick import world_model
