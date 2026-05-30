@@ -22,6 +22,8 @@ import logging
 from pathlib import Path
 from typing import Iterable, Iterator, Optional
 
+from .secrets import scrub
+
 log = logging.getLogger(__name__)
 
 
@@ -119,7 +121,10 @@ def _render_event(ev: dict) -> str:
                                                        "goal_id", "hash",
                                                        "prev_hash", "sig",
                                                        "key_id")}
-    body_text = json.dumps(body, indent=2, default=str)
+    # Scrub secrets: audit bodies carry tool args/results/prompts that may
+    # contain API keys, bearer tokens, or .env values. The export is a file
+    # the user shares with support/reviewers, so it must not leak them.
+    body_text = scrub(json.dumps(body, indent=2, default=str))
     return (
         f'<div class="ev">'
         f'<div class="meta">'
@@ -151,9 +156,13 @@ def export_json(goal_id: int, out_path: Path) -> int:
     events = list(_iter_events_for_goal(goal_id))
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    # Scrub secrets from the serialized bundle. scrub() replaces values
+    # with [REDACTED:kind] (no quotes/newlines), so the result stays valid
+    # JSON.
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump({"goal_id": goal_id, "events": events}, f,
-                  indent=2, default=str)
+        f.write(scrub(json.dumps(
+            {"goal_id": goal_id, "events": events}, indent=2, default=str,
+        )))
     return len(events)
 
 
