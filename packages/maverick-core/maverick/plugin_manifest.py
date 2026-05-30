@@ -87,7 +87,7 @@ class PluginManifest:
 def _load_toml(path: Path) -> dict[str, Any]:
     try:
         import tomllib  # py>=3.11
-    except ImportError:
+    except ModuleNotFoundError:
         import tomli as tomllib  # py<3.11
     return tomllib.loads(path.read_text(encoding="utf-8"))
 

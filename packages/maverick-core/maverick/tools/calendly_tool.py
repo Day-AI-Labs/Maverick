@@ -132,10 +132,16 @@ def _op_events(args: dict) -> str:
     )
 
 
+def _safe_uuid(uid: str) -> bool:
+    """Calendly UUIDs are alphanumeric + dashes; reject slashes/dots so a
+    value like 'me/../users' can't traverse to a different API path."""
+    return bool(uid) and all(c.isalnum() or c in "-_" for c in uid)
+
+
 def _op_event_invitees(args: dict) -> str:
     uid = (args.get("event_uuid") or "").strip()
-    if not uid:
-        return "ERROR: event_invitees requires event_uuid"
+    if not _safe_uuid(uid):
+        return "ERROR: event_invitees requires a valid event_uuid"
     code, data = _get(f"/scheduled_events/{uid}/invitees")
     if code >= 400 or not isinstance(data, dict):
         return f"ERROR: event_invitees ({code}): {data}"
@@ -151,8 +157,8 @@ def _op_event_invitees(args: dict) -> str:
 
 def _op_cancel(args: dict) -> str:
     uid = (args.get("event_uuid") or "").strip()
-    if not uid:
-        return "ERROR: cancel requires event_uuid"
+    if not _safe_uuid(uid):
+        return "ERROR: cancel requires a valid event_uuid"
     if not args.get("confirm"):
         return f"DRY RUN: would cancel {uid}. Re-run with confirm=true."
     code, data = _post(

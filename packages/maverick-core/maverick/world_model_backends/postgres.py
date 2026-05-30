@@ -203,7 +203,10 @@ class PostgresWorldModel:
         now = time.time()
         with self._tx() as cur:
             cur.execute(
-                "UPDATE goals SET status=%s, result=%s, updated_at=%s WHERE id=%s",
+                # COALESCE so a status-only update (result=None) doesn't wipe
+                # an existing result -- matches the SQLite backend.
+                "UPDATE goals SET status=%s, result=COALESCE(%s, result), "
+                "updated_at=%s WHERE id=%s",
                 (status, result, now, goal_id),
             )
 

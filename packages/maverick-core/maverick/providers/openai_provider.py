@@ -76,6 +76,12 @@ class OpenAIClient:
         key = api_key
         if key is None and allow_openai_env_fallback:
             key = os.environ.get("OPENAI_API_KEY")
+        # Strip whitespace: a trailing newline (`echo $KEY > file`) or stray
+        # spaces otherwise 401 every call. Covers every OpenAI-compatible
+        # provider (openrouter/deepseek/ollama/moonshot/xai/tgi/vllm), which
+        # all pass their key through here. Matches AnthropicClient.
+        if key is not None:
+            key = key.strip() or None
         from .base import llm_http_timeout
         kw: dict = {"api_key": key, "base_url": base_url}
         timeout = llm_http_timeout()

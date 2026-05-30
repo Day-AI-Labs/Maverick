@@ -65,6 +65,14 @@ def _run_factory(world, goal_id: int | None):
             value = args.get("value") or ""
             if not user_key:
                 return "ERROR: set requires key"
+            # Cap the value: an unbounded write lets the agent stash hundreds
+            # of MB in SQLite that a later get() floods the context window
+            # with. 64 KB is plenty for a fact; store a summary or path else.
+            if len(value) > 65536:
+                return (
+                    f"ERROR: value too large ({len(value)} chars; max 65536). "
+                    "Store a summary or a file path instead."
+                )
             scoped = _scoped_key(goal_id, user_key)
             # Upsert: delete existing for this scoped key, insert.
             world.conn.execute("DELETE FROM facts WHERE key=?", (scoped,))

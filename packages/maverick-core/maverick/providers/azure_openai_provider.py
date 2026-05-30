@@ -61,17 +61,24 @@ class AzureOpenAIClient(OpenAIClient):
         self.endpoint = endpoint
         self.deployment = deployment
         self.api_version = version
+        # Apply the configured HTTP timeout (the base OpenAIClient does this;
+        # we bypass it here, so wire it in manually or Azure calls can hang).
+        from .base import llm_http_timeout
+        _timeout = llm_http_timeout()
+        _extra = {"timeout": _timeout} if _timeout is not None else {}
         self._sync = AzureOpenAI(
             api_key=key,
             azure_endpoint=endpoint,
             api_version=version,
             azure_deployment=deployment,
+            **_extra,
         )
         self._async = AsyncAzureOpenAI(
             api_key=key,
             azure_endpoint=endpoint,
             api_version=version,
             azure_deployment=deployment,
+            **_extra,
         )
         # The deployment name is what Azure routes on; expose it as the
         # default model so the LLM facade's model id is harmless.

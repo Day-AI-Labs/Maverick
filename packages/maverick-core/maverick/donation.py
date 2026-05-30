@@ -153,9 +153,20 @@ def write_record(
     try:
         out_dir = outbox or DEFAULT_OUTBOX
         out_dir.mkdir(parents=True, exist_ok=True)
+        # Trajectory records carry prompt/result text; keep the outbox and
+        # files owner-only (the default umask often leaves them
+        # world-readable on servers).
+        try:
+            out_dir.chmod(0o700)
+        except OSError:
+            pass
         fname = f"{record.ts:.0f}-{record.task_brief_hash}.json"
         path = out_dir / fname
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        try:
+            path.chmod(0o600)
+        except OSError:
+            pass
         return path
     except Exception as e:  # pragma: no cover
         log.warning("trajectory donation write failed: %s", e)

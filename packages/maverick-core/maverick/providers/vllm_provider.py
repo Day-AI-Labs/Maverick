@@ -40,4 +40,4 @@ class VLLMClient(OpenAIClient):
         )
         if not url.rstrip("/").endswith("/v1"):
             url = url.rstrip("/") + "/v1"
-        super().__init__(api_key=key, base_url=url)
+        super().__init__(api_key=key, base_url=url, allow_openai_env_fallback=False)

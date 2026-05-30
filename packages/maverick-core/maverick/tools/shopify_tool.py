@@ -61,6 +61,10 @@ def _config() -> tuple[str, str]:
         raise RuntimeError(
             "Shopify requires SHOPIFY_STORE (subdomain) + SHOPIFY_ACCESS_TOKEN."
         )
+    # Reject URL-special chars so SHOPIFY_STORE can't escape the
+    # .myshopify.com host (e.g. "evil.com#", "evil.com/", "user@host").
+    if any(c in store for c in "/@#?:\\ "):
+        raise RuntimeError(f"invalid SHOPIFY_STORE: {store!r}")
     if "." not in store:
         store = f"{store}.myshopify.com"
     return store, tok

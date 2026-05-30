@@ -22,4 +22,7 @@ class GeminiClient(OpenAIClient):
         super().__init__(
             api_key=key,
             base_url=base_url or "https://generativelanguage.googleapis.com/v1beta/openai/",
+            # Don't silently fall back to OPENAI_API_KEY when no Gemini key is
+            # set -- that would send the OpenAI key to Google's endpoint.
+            allow_openai_env_fallback=False,
         )
