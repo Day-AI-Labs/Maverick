@@ -18,7 +18,7 @@ import os
 from email.message import EmailMessage
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -142,7 +142,7 @@ def _op_send(args: dict) -> str:
     body = (args.get("body") or "").strip()
     if not to or not subject or not body:
         return "ERROR: send requires to, subject, body"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would email {to}. Re-run with confirm=true."
     msg = EmailMessage()
     msg["To"] = to

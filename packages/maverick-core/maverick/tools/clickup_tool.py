@@ -17,7 +17,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -160,7 +160,7 @@ def _op_task_create(args: dict) -> str:
     name = (args.get("name") or "").strip()
     if not lid or not name:
         return "ERROR: task_create requires list_id and name"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would create task in list {lid}. Re-run with confirm=true."
     body: dict = {"name": name}
     if args.get("description"):

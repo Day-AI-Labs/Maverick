@@ -17,7 +17,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -130,7 +130,7 @@ def _op_meeting_create(args: dict) -> str:
     start = (args.get("start_time") or "").strip()
     if not topic or not start:
         return "ERROR: meeting_create requires topic and start_time"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would create '{topic}' at {start}. Re-run with confirm=true."
     user = _user(args.get("user") or "")
     body = {
@@ -149,7 +149,7 @@ def _op_meeting_delete(args: dict) -> str:
     mid = (args.get("meeting_id") or "").strip()
     if not mid:
         return "ERROR: meeting_delete requires meeting_id"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would delete {mid}. Re-run with confirm=true."
     code = _delete(f"/meetings/{mid}")
     if code >= 400:

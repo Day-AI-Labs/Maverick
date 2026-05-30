@@ -20,7 +20,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ def _op_dns_create(args: dict) -> str:
     content = (args.get("content") or "").strip()
     if not (zone and typ and name and content):
         return "ERROR: dns_create requires zone_id, type, name, content"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would create {typ} {name} -> {content}. Re-run with confirm=true."
     code, data = _post(
         f"/zones/{zone}/dns_records",
@@ -158,7 +158,7 @@ def _op_dns_update(args: dict) -> str:
     content = args.get("content")
     if not (zone and rid and content):
         return "ERROR: dns_update requires zone_id, record_id, content"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would update {rid} -> {content}. Re-run with confirm=true."
     code, data = _patch(
         f"/zones/{zone}/dns_records/{rid}", {"content": str(content)},
@@ -173,7 +173,7 @@ def _op_dns_delete(args: dict) -> str:
     rid = (args.get("record_id") or "").strip()
     if not (zone and rid):
         return "ERROR: dns_delete requires zone_id and record_id"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would delete {rid}. Re-run with confirm=true."
     code, data = _delete(f"/zones/{zone}/dns_records/{rid}")
     if not _ok(data):
@@ -186,7 +186,7 @@ def _op_purge(args: dict) -> str:
     urls = args.get("urls") or []
     if not zone:
         return "ERROR: purge requires zone_id"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         target = f"{len(urls)} URL(s)" if urls else "EVERYTHING"
         return f"DRY RUN: would purge {target} for zone {zone}. Re-run with confirm=true."
     body = {"files": urls} if urls else {"purge_everything": True}

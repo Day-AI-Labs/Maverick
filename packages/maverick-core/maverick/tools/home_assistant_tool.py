@@ -19,7 +19,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -121,7 +121,7 @@ def _op_call_service(args: dict) -> str:
     service = (args.get("service") or "").strip()
     if not _safe_seg(domain) or not _safe_seg(service):
         return "ERROR: call_service requires a valid domain and service"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return (
             f"DRY RUN: would call {domain}.{service}. "
             "Re-run with confirm=true."

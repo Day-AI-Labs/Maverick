@@ -17,7 +17,7 @@ import os
 import urllib.parse
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -148,7 +148,7 @@ def _op_create(args: dict) -> str:
     fields = args.get("fields") if isinstance(args.get("fields"), dict) else None
     if not table or not fields:
         return "ERROR: create requires table and fields"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would create record in {table}. Re-run with confirm=true."
     code, data = _post(_url(base, table), {"fields": fields}, key)
     if code >= 400 or not isinstance(data, dict):
@@ -163,7 +163,7 @@ def _op_update(args: dict) -> str:
     fields = args.get("fields") if isinstance(args.get("fields"), dict) else None
     if not table or not rid or not fields:
         return "ERROR: update requires table, record_id, fields"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would update {table}/{rid}. Re-run with confirm=true."
     code, data = _patch(_url(base, table, rid), {"fields": fields}, key)
     if code >= 400 or not isinstance(data, dict):
@@ -177,7 +177,7 @@ def _op_delete(args: dict) -> str:
     rid = (args.get("record_id") or "").strip()
     if not table or not rid:
         return "ERROR: delete requires table and record_id"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would delete {table}/{rid}. Re-run with confirm=true."
     code, data = _delete(_url(base, table, rid), key)
     if code >= 400 or not isinstance(data, dict):

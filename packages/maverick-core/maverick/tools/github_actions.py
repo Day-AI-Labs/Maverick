@@ -21,7 +21,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -183,7 +183,7 @@ def _op_dispatch(args: dict) -> str:
     ref = (args.get("ref") or "main").strip()
     if not workflow:
         return "ERROR: dispatch requires workflow"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return (
             f"DRY RUN: would dispatch {workflow}@{ref} in {owner}/{repo}. "
             "Re-run with confirm=true."
@@ -206,7 +206,7 @@ def _op_cancel(args: dict) -> str:
     rid = int(args.get("run_id") or 0)
     if not rid:
         return "ERROR: cancel requires run_id"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would cancel run {rid}. Re-run with confirm=true."
     code, data = _post(f"/repos/{owner}/{repo}/actions/runs/{rid}/cancel")
     if code >= 400:

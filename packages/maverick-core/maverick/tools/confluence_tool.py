@@ -18,7 +18,7 @@ import os
 import re
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -140,7 +140,7 @@ def _op_page_create(args: dict) -> str:
     body = args.get("body") or ""
     if not space or not title:
         return "ERROR: page_create requires space_id and title"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would create page {title!r}. Re-run with confirm=true."
     payload = {
         "type": "page",
@@ -161,7 +161,7 @@ def _op_page_update(args: dict) -> str:
     version = int(args.get("version") or 0)
     if not pid or not title or not version:
         return "ERROR: page_update requires page_id, title, version"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would update page {pid}. Re-run with confirm=true."
     payload = {
         "id": pid,

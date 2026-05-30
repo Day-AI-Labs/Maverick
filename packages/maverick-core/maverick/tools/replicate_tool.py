@@ -19,7 +19,7 @@ import os
 import time
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -151,7 +151,7 @@ def _op_cancel(args: dict) -> str:
     pid = (args.get("prediction_id") or "").strip()
     if not pid:
         return "ERROR: cancel requires prediction_id"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would cancel {pid}. Re-run with confirm=true."
     code, data = _post(f"/predictions/{pid}/cancel", {})
     if code >= 400:

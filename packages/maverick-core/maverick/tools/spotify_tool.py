@@ -20,7 +20,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -173,7 +173,7 @@ def _op_playback_state(_args: dict) -> str:
 
 def _op_play(args: dict) -> str:
     uri = (args.get("uri") or "").strip()
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would start playback ({uri or 'current track'}). Re-run with confirm=true."
     body = {"uris": [uri]} if uri and uri.startswith("spotify:track:") else (
         {"context_uri": uri} if uri else {}
@@ -185,7 +185,7 @@ def _op_play(args: dict) -> str:
 
 
 def _op_pause(args: dict) -> str:
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return "DRY RUN: would pause playback. Re-run with confirm=true."
     code = _put("/me/player/pause")
     if code >= 400:

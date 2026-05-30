@@ -16,7 +16,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -159,7 +159,7 @@ def _op_cancel(args: dict) -> str:
     uid = (args.get("event_uuid") or "").strip()
     if not _safe_uuid(uid):
         return "ERROR: cancel requires a valid event_uuid"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would cancel {uid}. Re-run with confirm=true."
     code, data = _post(
         f"/scheduled_events/{uid}/cancellation",

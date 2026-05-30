@@ -18,7 +18,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -148,7 +148,7 @@ def _op_card_create(args: dict) -> str:
     name = (args.get("name") or "").strip()
     if not lid or not name:
         return "ERROR: card_create requires list_id and name"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would create card in list {lid}. Re-run with confirm=true."
     code, data = _post("/cards", {
         "idList": lid, "name": name, "desc": args.get("desc") or "",
@@ -163,7 +163,7 @@ def _op_card_move(args: dict) -> str:
     lid = (args.get("list_id") or "").strip()
     if not cid or not lid:
         return "ERROR: card_move requires card_id and list_id"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would move {cid} -> list {lid}. Re-run with confirm=true."
     code, data = _put(f"/cards/{cid}", {"idList": lid})
     if code >= 400 or not isinstance(data, dict):
@@ -176,7 +176,7 @@ def _op_comment(args: dict) -> str:
     text = (args.get("text") or "").strip()
     if not cid or not text:
         return "ERROR: comment requires card_id and text"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would comment on {cid}. Re-run with confirm=true."
     code, data = _post(f"/cards/{cid}/actions/comments", {"text": text})
     if code >= 400:

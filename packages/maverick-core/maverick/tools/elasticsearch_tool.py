@@ -23,7 +23,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -154,7 +154,7 @@ def _op_index(args: dict) -> str:
     body = args.get("body") if isinstance(args.get("body"), dict) else None
     if not index or not did or body is None:
         return "ERROR: index requires index, doc_id, body"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would index {index}/{did}. Re-run with confirm=true."
     code, data = _put(f"/{index}/_doc/{did}", body)
     if code >= 400 or not isinstance(data, dict):
@@ -167,7 +167,7 @@ def _op_delete(args: dict) -> str:
     did = (args.get("doc_id") or "").strip()
     if not index or not did:
         return "ERROR: delete requires index and doc_id"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would delete {index}/{did}. Re-run with confirm=true."
     code, data = _delete(f"/{index}/_doc/{did}")
     if code >= 400 or not isinstance(data, dict):

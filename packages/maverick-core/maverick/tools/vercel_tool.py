@@ -17,7 +17,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -161,7 +161,7 @@ def _op_cancel(args: dict) -> str:
     did = (args.get("deployment_id") or "").strip()
     if not did:
         return "ERROR: cancel requires deployment_id"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would cancel deployment {did}. Re-run with confirm=true."
     code, data = _patch(f"/v12/deployments/{did}/cancel", {})
     if code >= 400 or not isinstance(data, dict):

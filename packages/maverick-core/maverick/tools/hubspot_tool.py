@@ -16,7 +16,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -138,7 +138,7 @@ def _op_contact_create(args: dict) -> str:
     email = (args.get("email") or "").strip()
     if not email:
         return "ERROR: contact_create requires email"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would create contact {email}. Re-run with confirm=true."
     props = {"email": email}
     if args.get("firstname"):
@@ -158,7 +158,7 @@ def _op_contact_update(args: dict) -> str:
     props = args.get("properties") if isinstance(args.get("properties"), dict) else None
     if not cid or not props:
         return "ERROR: contact_update requires contact_id and properties"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would update {cid}. Re-run with confirm=true."
     code, data = _patch(
         f"/crm/v3/objects/contacts/{cid}",

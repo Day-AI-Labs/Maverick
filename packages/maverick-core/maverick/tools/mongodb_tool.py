@@ -27,7 +27,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -167,7 +167,7 @@ def _op_insert(args: dict[str, Any]) -> str:
     db, err = _db_for(args)
     if err:
         return err
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return "DRY RUN: insert blocked. Re-run with confirm=true."
     col = (args.get("collection") or "").strip()
     doc = args.get("doc") if isinstance(args.get("doc"), dict) else None
@@ -181,7 +181,7 @@ def _op_update(args: dict[str, Any]) -> str:
     db, err = _db_for(args)
     if err:
         return err
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return "DRY RUN: update blocked. Re-run with confirm=true."
     col = (args.get("collection") or "").strip()
     flt = args.get("filter") if isinstance(args.get("filter"), dict) else None
@@ -200,7 +200,7 @@ def _op_delete(args: dict[str, Any]) -> str:
     db, err = _db_for(args)
     if err:
         return err
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return "DRY RUN: delete blocked. Re-run with confirm=true."
     col = (args.get("collection") or "").strip()
     flt = args.get("filter") if isinstance(args.get("filter"), dict) else None

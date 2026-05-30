@@ -16,7 +16,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -156,7 +156,7 @@ def _op_task_create(args: dict) -> str:
     name = (args.get("name") or "").strip()
     if not pgid or not name:
         return "ERROR: task_create requires project_gid and name"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would create task in project {pgid}. Re-run with confirm=true."
     body = {"data": {
         "projects": [pgid],
@@ -176,7 +176,7 @@ def _op_task_complete(args: dict) -> str:
     tgid = (args.get("task_gid") or "").strip()
     if not tgid:
         return "ERROR: task_complete requires task_gid"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would mark {tgid} complete. Re-run with confirm=true."
     code, data = _put(f"/tasks/{tgid}", {"data": {"completed": True}})
     if code >= 400 or not isinstance(data, dict):

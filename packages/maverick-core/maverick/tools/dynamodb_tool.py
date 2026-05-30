@@ -19,7 +19,7 @@ import os
 from decimal import Decimal
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ def _op_put(args: dict) -> str:
     item = args.get("item") if isinstance(args.get("item"), dict) else None
     if not table or not item:
         return "ERROR: put requires table and item"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would put item in {table}. Re-run with confirm=true."
     _client().Table(table).put_item(Item=item)
     return f"put item in {table}"
@@ -109,7 +109,7 @@ def _op_delete(args: dict) -> str:
     key = args.get("key") if isinstance(args.get("key"), dict) else None
     if not table or not key:
         return "ERROR: delete requires table and key"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would delete item from {table}. Re-run with confirm=true."
     _client().Table(table).delete_item(Key=key)
     return f"deleted item from {table}"

@@ -17,7 +17,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -107,7 +107,7 @@ def _op_upload(args: dict) -> str:
     content = args.get("content") or ""
     if not path:
         return "ERROR: upload requires path"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would upload to {path} ({len(content)} bytes). Re-run with confirm=true."
     r = httpx.post(
         f"{_CONTENT}/files/upload",
@@ -127,7 +127,7 @@ def _op_delete(args: dict) -> str:
     path = _norm(args.get("path") or "")
     if not path:
         return "ERROR: delete requires path"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would delete {path}. Re-run with confirm=true."
     code, data = _rpc("/files/delete_v2", {"path": path})
     if code >= 400:
@@ -139,7 +139,7 @@ def _op_share(args: dict) -> str:
     path = _norm(args.get("path") or "")
     if not path:
         return "ERROR: share requires path"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would create or fetch shared link for {path}. Re-run with confirm=true."
     code, data = _rpc(
         "/sharing/create_shared_link_with_settings", {"path": path},

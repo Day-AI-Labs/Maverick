@@ -15,7 +15,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ def _op_publish(args: dict) -> str:
     msg = (args.get("message") or "").strip()
     if not arn or not msg:
         return "ERROR: publish requires topic_arn and message"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would publish to {arn}. Re-run with confirm=true."
     kwargs = {"TopicArn": arn, "Message": msg}
     if args.get("subject"):
@@ -76,7 +76,7 @@ def _op_sms(args: dict) -> str:
     msg = (args.get("message") or "").strip()
     if not phone or not msg:
         return "ERROR: sms requires phone and message"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would SMS {phone}. Re-run with confirm=true."
     r = _client().publish(PhoneNumber=phone, Message=msg)
     return f"sent SMS (message_id={r.get('MessageId')})"
@@ -88,7 +88,7 @@ def _op_subscribe(args: dict) -> str:
     ep = (args.get("endpoint") or "").strip()
     if not arn or not proto or not ep:
         return "ERROR: subscribe requires topic_arn, protocol, endpoint"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return (
             f"DRY RUN: would subscribe {proto}:{ep} to {arn}. "
             "Re-run with confirm=true."
@@ -101,7 +101,7 @@ def _op_unsubscribe(args: dict) -> str:
     arn = (args.get("subscription_arn") or "").strip()
     if not arn:
         return "ERROR: unsubscribe requires subscription_arn"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would unsubscribe {arn}. Re-run with confirm=true."
     _client().unsubscribe(SubscriptionArn=arn)
     return f"unsubscribed {arn}"

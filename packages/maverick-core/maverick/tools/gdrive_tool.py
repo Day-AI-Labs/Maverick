@@ -19,7 +19,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -137,7 +137,7 @@ def _op_create(args: dict) -> str:
     name = (args.get("name") or "").strip()
     if not name:
         return "ERROR: create requires name"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would create {name}. Re-run with confirm=true."
     mime = (args.get("mime_type") or "text/plain").strip()
     parent = (args.get("parent_id") or os.environ.get("GDRIVE_FOLDER_ID", "")).strip()
@@ -178,7 +178,7 @@ def _op_delete(args: dict) -> str:
     fid = (args.get("file_id") or "").strip()
     if not fid:
         return "ERROR: delete requires file_id"
-    if not args.get("confirm"):
+    if not as_bool(args.get("confirm")):
         return f"DRY RUN: would delete {fid}. Re-run with confirm=true."
     code = _delete_req(f"/files/{fid}")
     if code >= 400:
