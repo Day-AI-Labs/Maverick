@@ -20,23 +20,24 @@ set -euo pipefail
 MAVERICK_VERSION="${MAVERICK_VERSION:-main}"
 
 # Everything user-facing (the pipx venv, the wizard, the systemd service)
-# runs as the human who invoked `sudo` -- or root for a direct-root install
-# -- with one consistent HOME, so the `maverick` binary always lives at a
-# single known path. Mixing a root install with a user-run service (and a
-# %i that expands to empty) was why the service never started.
-TARGET_USER="${SUDO_USER:-root}"
-TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
-TARGET_HOME="${TARGET_HOME:-/root}"
+# runs as one non-root account with one consistent HOME, so the `maverick`
+# binary always lives at a single known path. For sudo installs we use the
+# invoking human; for direct-root installs we create/use a dedicated service
+# account instead of running the remotely driven agent as root.
+SERVICE_ACCOUNT="${MAVERICK_SERVICE_USER:-maverick}"
+if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+  TARGET_USER="$SUDO_USER"
+else
+  TARGET_USER="$SERVICE_ACCOUNT"
+fi
+TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6 || true)"
+TARGET_HOME="${TARGET_HOME:-/var/lib/${TARGET_USER}}"
 
 log() { echo "==> $*" >&2; }
 
 run_as_user() {
   # Run a command as TARGET_USER with their HOME set.
-  if [[ "$TARGET_USER" == "root" ]]; then
-    HOME="$TARGET_HOME" "$@"
-  else
-    sudo -u "$TARGET_USER" -H "$@"
-  fi
+  sudo -u "$TARGET_USER" -H "$@"
 }
 
 require_root() {
@@ -46,13 +47,31 @@ require_root() {
   fi
 }
 
+ensure_target_user() {
+  if [[ "$TARGET_USER" == "root" ]]; then
+    echo "Refusing to install Maverick as root; choose a non-root sudo user or set MAVERICK_SERVICE_USER." >&2
+    exit 1
+  fi
+
+  if ! id -u "$TARGET_USER" >/dev/null 2>&1; then
+    log "Creating dedicated Maverick service user ${TARGET_USER} (${TARGET_HOME})..."
+    useradd --system --create-home --home-dir "$TARGET_HOME" --shell /usr/sbin/nologin "$TARGET_USER"
+  else
+    log "Using existing Maverick install user ${TARGET_USER} (${TARGET_HOME})..."
+    if [[ ! -d "$TARGET_HOME" ]]; then
+      primary_group="$(id -gn "$TARGET_USER")"
+      install -d -o "$TARGET_USER" -g "$primary_group" "$TARGET_HOME"
+    fi
+  fi
+}
+
 install_system_deps() {
   log "Installing system packages..."
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
   apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv pipx \
-    git curl ca-certificates sqlite3
+    git curl ca-certificates sqlite3 sudo
   pipx ensurepath || true
 }
 
@@ -102,6 +121,7 @@ install_service() {
 
 main() {
   require_root
+  ensure_target_user
   install_system_deps
   install_maverick
   run_wizard
