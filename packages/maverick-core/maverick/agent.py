@@ -18,6 +18,7 @@ from .budget import BudgetExceeded
 from .llm import model_for_role
 from .swarm import SwarmContext
 from .tools import ToolRegistry, base_registry
+from .tools.agent_bus_tool import recv_from_agent, send_to_agent
 from .tools.spawn import spawn_subagent_tool, spawn_swarm_tool
 
 
@@ -123,6 +124,10 @@ class Agent:
             user_id=self.ctx.user_id,
             budget=self.ctx.budget,
         )
+        # Cross-agent bus tools, bound to this agent's id so send records
+        # the right sender and recv drains the right inbox.
+        reg.register(send_to_agent(self.name))
+        reg.register(recv_from_agent(self.name))
         if self.depth < self.ctx.max_depth:
             reg.register(spawn_subagent_tool(self))
             reg.register(spawn_swarm_tool(self))

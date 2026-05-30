@@ -62,6 +62,39 @@ def test_agent_bus_peek():
     assert agent_bus.peek("bob") == 2
 
 
+def test_agent_bus_tools_round_trip():
+    """send_to_agent then recv_from_agent (bound to the recipient) returns
+    the payload; both tools register in a ToolRegistry."""
+    import asyncio
+
+    from maverick import agent_bus
+    from maverick.tools import ToolRegistry
+    from maverick.tools.agent_bus_tool import recv_from_agent, send_to_agent
+
+    agent_bus.clear()
+    reg = ToolRegistry()
+    reg.register(send_to_agent("alice"))   # alice is sender
+    reg.register(recv_from_agent("bob"))   # bob drains its own inbox
+    names = {t.name for t in reg.all()}
+    assert "send_to_agent" in names
+    assert "recv_from_agent" in names
+
+    sent = asyncio.run(reg.run("send_to_agent", {"to_id": "bob", "payload": {"hi": 1}}))
+    assert "sent to 'bob'" in sent
+    got = asyncio.run(reg.run("recv_from_agent", {}))
+    assert "alice" in got
+    assert "{'hi': 1}" in got
+    # Inbox now empty.
+    assert "(no messages)" in asyncio.run(reg.run("recv_from_agent", {}))
+
+
+def test_agent_bus_send_tool_requires_args():
+    from maverick.tools.agent_bus_tool import send_to_agent
+    tool = send_to_agent("alice")
+    assert "to_id is required" in tool.fn({"payload": "x"})
+    assert "payload is required" in tool.fn({"to_id": "bob"})
+
+
 # ---------- kv_memory ----------
 
 @pytest.fixture
