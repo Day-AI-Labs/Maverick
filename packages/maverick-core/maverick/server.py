@@ -169,15 +169,22 @@ def _wire_telegram(server, cfg):
 def _wire_discord(server, cfg):
     from maverick_channels.discord import DiscordChannel
     token = cfg.get("bot_token") or os.environ.get("DISCORD_BOT_TOKEN")
-    server.add_channel(DiscordChannel(handler=server._handle_message, token=token))
+    allowed = cfg.get("allowed_user_ids")
+    server.add_channel(DiscordChannel(
+        handler=server._handle_message,
+        token=token,
+        allowed_user_ids={str(v) for v in allowed} if allowed else None,
+    ))
 
 
 def _wire_slack(server, cfg):
     from maverick_channels.slack import SlackChannel
+    allowed = cfg.get("allowed_user_ids")
     server.add_channel(SlackChannel(
         handler=server._handle_message,
         app_token=cfg.get("app_token") or os.environ.get("SLACK_APP_TOKEN"),
         bot_token=cfg.get("bot_token") or os.environ.get("SLACK_BOT_TOKEN"),
+        allowed_user_ids={str(v) for v in allowed} if allowed else None,
     ))
 
 
@@ -186,10 +193,12 @@ def _wire_signal(server, cfg):
     phone = cfg.get("phone_number")
     if not phone:
         raise RuntimeError("signal channel requires phone_number in config")
+    allowed = cfg.get("allowed_user_ids")
     server.add_channel(SignalChannel(
         handler=server._handle_message,
         phone_number=phone,
         signal_cli_path=cfg.get("signal_cli_path"),
+        allowed_user_ids={str(v) for v in allowed} if allowed else None,
     ))
 
 
@@ -210,11 +219,13 @@ def _wire_email(server, cfg):
 
 def _wire_matrix(server, cfg):
     from maverick_channels.matrix import MatrixChannel
+    allowed = cfg.get("allowed_user_ids")
     server.add_channel(MatrixChannel(
         handler=server._handle_message,
         homeserver=cfg["homeserver"],
         user_id=cfg["user_id"],
         access_token=cfg.get("access_token") or os.environ.get("MATRIX_ACCESS_TOKEN"),
+        allowed_user_ids={str(v) for v in allowed} if allowed else None,
     ))
 
 
@@ -283,6 +294,7 @@ def _wire_voice(server, cfg):
         assistant_id=cfg.get("assistant_id"),
         provider=cfg.get("provider", "vapi"),
         webhook_token=cfg.get("webhook_token") or os.environ.get("VAPI_WEBHOOK_TOKEN"),
+        allowed_callers=cfg.get("allowed_callers"),
     ))
 
 

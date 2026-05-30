@@ -20,7 +20,7 @@ import logging
 import os
 from typing import Optional
 
-from .base import Channel, IncomingMessage
+from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ class MatrixChannel(Channel):
         homeserver: str,
         user_id: str,
         access_token: Optional[str] = None,
+        allowed_user_ids=None,
     ):
         super().__init__(handler)
         if not _HAVE_MATRIX:
@@ -52,12 +53,24 @@ class MatrixChannel(Channel):
         self.access_token = access_token or os.environ.get("MATRIX_ACCESS_TOKEN")
         if not self.access_token:
             raise ValueError("MATRIX_ACCESS_TOKEN not set")
+        # Without an allowlist any member of any room the bot joins drives
+        # the agent. Require one (default-deny via base.is_allowed).
+        self.allowed_user_ids = normalize_allowlist(
+            allowed_user_ids, "MATRIX_ALLOWED_USER_IDS",
+        )
+        if not self.allowed_user_ids:
+            raise ValueError(
+                "Set MATRIX_ALLOWED_USER_IDS to restrict who can drive the agent"
+            )
         self._client = AsyncClient(homeserver, user_id)
         self._client.access_token = self.access_token
         self._client.add_event_callback(self._on_message, RoomMessageText)
 
     async def _on_message(self, room: "MatrixRoom", event: "RoomMessageText") -> None:
         if event.sender == self.user_id:
+            return
+        if not is_allowed(event.sender, self.allowed_user_ids):
+            log.warning("unauthorized matrix access: sender=%s", event.sender)
             return
         msg = IncomingMessage(
             user_id=room.room_id,

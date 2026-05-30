@@ -20,7 +20,7 @@ import logging
 import shutil
 from typing import Optional
 
-from .base import Channel, IncomingMessage
+from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +33,7 @@ class SignalChannel(Channel):
         handler,
         phone_number: str,
         signal_cli_path: Optional[str] = None,
+        allowed_user_ids=None,
     ):
         super().__init__(handler)
         self.phone_number = phone_number
@@ -41,6 +42,15 @@ class SignalChannel(Channel):
             raise FileNotFoundError(
                 "signal-cli not found on PATH. Install from "
                 "https://github.com/AsamK/signal-cli"
+            )
+        # Without an allowlist any Signal sender who knows the number drives
+        # the agent. Require one (default-deny via base.is_allowed).
+        self.allowed_user_ids = normalize_allowlist(
+            allowed_user_ids, "SIGNAL_ALLOWED_USER_IDS",
+        )
+        if not self.allowed_user_ids:
+            raise ValueError(
+                "Set SIGNAL_ALLOWED_USER_IDS to restrict who can drive the agent"
             )
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._req_id = 0
@@ -86,6 +96,9 @@ class SignalChannel(Channel):
             source = envelope.get("source", "")
             text = envelope.get("dataMessage", {}).get("message")
             if not text or not source:
+                continue
+            if not is_allowed(source, self.allowed_user_ids):
+                log.warning("unauthorized signal access: source=%s", source)
                 continue
             msg = IncomingMessage(
                 user_id=source, text=text, channel="signal", raw=envelope,

@@ -17,7 +17,7 @@ import logging
 import os
 from typing import Optional
 
-from .base import Channel, IncomingMessage
+from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +39,7 @@ class SlackChannel(Channel):
         handler,
         app_token: Optional[str] = None,
         bot_token: Optional[str] = None,
+        allowed_user_ids=None,
     ):
         super().__init__(handler)
         if not _HAVE_SLACK:
@@ -49,6 +50,16 @@ class SlackChannel(Channel):
         self.bot_token = bot_token or os.environ.get("SLACK_BOT_TOKEN")
         if not self.app_token or not self.bot_token:
             raise ValueError("SLACK_APP_TOKEN and SLACK_BOT_TOKEN must be set")
+        # Without an allowlist, ANY workspace user who can message the bot
+        # drives the agent (and burns the operator's budget). Require one,
+        # matching discord/telegram. Default-deny via base.is_allowed.
+        self.allowed_user_ids = normalize_allowlist(
+            allowed_user_ids, "SLACK_ALLOWED_USER_IDS",
+        )
+        if not self.allowed_user_ids:
+            raise ValueError(
+                "Set SLACK_ALLOWED_USER_IDS to restrict who can drive the agent"
+            )
         self._web = AsyncWebClient(token=self.bot_token)
         self._sm = SocketModeClient(app_token=self.app_token, web_client=self._web)
         self._sm.socket_mode_request_listeners.append(self._on_request)
@@ -58,18 +69,25 @@ class SlackChannel(Channel):
         if req.type == "events_api":
             event = req.payload.get("event", {})
             if event.get("type") == "message" and "bot_id" not in event:
-                msg = IncomingMessage(
-                    user_id=event.get("channel", ""),
-                    text=event.get("text", ""),
-                    channel="slack",
-                    raw=event,
-                )
-                try:
-                    reply = await self.handler(msg)
-                except Exception as e:  # pragma: no cover
-                    log.exception("handler error")
-                    reply = f"⚠ error: {e}"
-                await self._web.chat_postMessage(channel=event["channel"], text=reply)
+                # Gate on the SENDER (event["user"]); user_id below is the
+                # channel we reply to, not the author. Unlisted senders are
+                # silently ignored.
+                sender = event.get("user", "")
+                if not is_allowed(sender, self.allowed_user_ids):
+                    log.warning("unauthorized slack access: user=%s", sender)
+                else:
+                    msg = IncomingMessage(
+                        user_id=event.get("channel", ""),
+                        text=event.get("text", ""),
+                        channel="slack",
+                        raw=event,
+                    )
+                    try:
+                        reply = await self.handler(msg)
+                    except Exception as e:  # pragma: no cover
+                        log.exception("handler error")
+                        reply = f"⚠ error: {e}"
+                    await self._web.chat_postMessage(channel=event["channel"], text=reply)
         await client.send_socket_mode_response(
             SocketModeResponse(envelope_id=req.envelope_id)
         )
