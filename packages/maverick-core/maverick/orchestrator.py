@@ -143,8 +143,31 @@ async def run_goal(
             channel=channel, user_id=user_id,
         )
 
+        # Facts are persisted, user/REST/MCP-settable strings that get
+        # concatenated into the orchestrator's system brief -- so an
+        # attacker-set fact (or one poisoned by a prior injection) would
+        # otherwise act as a standing instruction in EVERY future run.
+        # Redact secrets and re-scan each fact through the shield (drop the
+        # ones it flags), exactly as we do for replayed conversation turns.
         facts = world.get_facts()
-        facts_block = "\n".join(f"  {k}: {v}" for k, v in facts.items()) or "  (none)"
+        fact_lines: list[str] = []
+        for k, v in facts.items():
+            val = str(v)
+            try:
+                from .safety.secret_detector import redact as _redact
+                val, _ = _redact(val)
+            except Exception:  # pragma: no cover
+                pass
+            if shield is not None:
+                try:
+                    fv = shield.scan_input(f"{k}: {val}")
+                    if not getattr(fv, "allowed", True):
+                        fact_lines.append(f"  {k}: [redacted by Shield]")
+                        continue
+                except Exception:  # pragma: no cover
+                    pass
+            fact_lines.append(f"  {k}: {val}")
+        facts_block = "\n".join(fact_lines) or "  (none)"
 
         # Multi-turn: if this goal belongs to an ongoing conversation,
         # prepend the recent turn history so the orchestrator has context

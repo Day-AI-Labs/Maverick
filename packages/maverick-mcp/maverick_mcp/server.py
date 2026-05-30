@@ -462,6 +462,18 @@ class MCPServer:
         return "\n".join(f"{s.name}: {', '.join(s.triggers[:3])}" for s in items)
 
     def _tool_fact_set(self, args: dict) -> str:
+        # Facts are concatenated into the orchestrator's system brief on every
+        # future run, so a malicious fact set over MCP is a persistent prompt
+        # injection. Scan the value before storing (the orchestrator also
+        # redacts/re-scans facts at read time as defense-in-depth).
+        if self._shield is not None:
+            try:
+                v = self._shield.scan_input(f"{args['key']}: {args['value']}")
+                if not getattr(v, "allowed", True):
+                    reasons = "; ".join(getattr(v, "reasons", []) or []) or "blocked by Shield"
+                    return f"⚠ fact rejected by Shield: {reasons}"
+            except Exception:  # pragma: no cover -- fail open (kernel rule 1)
+                pass
         from maverick.world_model import WorldModel
         w = WorldModel()
         w.upsert_fact(args["key"], args["value"])

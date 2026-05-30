@@ -55,6 +55,18 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     ("jwt",                re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")),
     # Generic private key blocks.
     ("private_key_pem",    re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----")),
+    # Council finding #14: coverage gaps that fed the tool-output exfil class.
+    ("gitlab_pat",         re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}\b")),
+    ("twilio_api_key",     re.compile(r"\bSK[0-9a-fA-F]{32}\b")),
+    ("slack_webhook",      re.compile(r"https://hooks\.slack\.com/services/[A-Za-z0-9/]+")),
+    # Connection strings carrying inline creds (postgres/mysql/mongodb/redis).
+    ("db_connection_uri",  re.compile(
+        r"\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp)://"
+        r"[^:@/\s]+:[^@/\s]+@[^\s]+"
+    )),
+    # Authorization: Bearer <token> headers (require a token-ish length to
+    # avoid flagging the literal word "Bearer").
+    ("bearer_header",      re.compile(r"(?i)\bAuthorization\s*:\s*Bearer\s+[A-Za-z0-9._-]{12,}")),
 ]
 
 

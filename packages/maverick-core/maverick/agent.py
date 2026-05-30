@@ -308,6 +308,16 @@ class Agent:
                     )
             except Exception:  # pragma: no cover -- shield must never block tools on its own bug
                 pass
+        # Defense-in-depth: redact secrets in tool output BEFORE it returns to
+        # the model / blackboard / channel. `cat .env`, a DB row, or an API
+        # response can carry a key the shield's scan_output doesn't classify
+        # as a policy violation; the env-scrub only covers the shell child's
+        # own env, not secrets the tool reads from files/services. Fail-open.
+        try:
+            from .safety.secret_detector import redact as _redact_secrets
+            output, _redacted = _redact_secrets(output)
+        except Exception:  # pragma: no cover
+            pass
         # Council-of-20 security finding: a literal `</tool_output>` in
         # `output` (attacker-controlled file contents, shell stdout, MCP
         # response) escapes the framing and lets following text read as
