@@ -428,10 +428,17 @@ def test_notifications_dispatch_with_ntfy_topic_env(monkeypatch):
 
 # ---------- cookbook + failure-modes docs ----------
 
-@pytest.mark.parametrize("name", [
-    "index.md", "pr-review.md", "dep-migrate.md",
-    "repo-onboarding.md", "issue-triage.md", "research.md",
-])
+COOKBOOK_RECIPES = [
+    "pr-review.md", "dep-migrate.md", "repo-onboarding.md",
+    "issue-triage.md", "research.md",
+    # Quick hits (under 60 seconds).
+    "commit-message.md", "explain-error.md", "regex-builder.md",
+    "changelog-entry.md", "docstring-pass.md", "test-naming.md",
+    "env-audit.md",
+]
+
+
+@pytest.mark.parametrize("name", ["index.md", *COOKBOOK_RECIPES])
 def test_cookbook_recipe_exists(name):
     p = REPO_ROOT / "docs" / "cookbook" / name
     assert p.is_file(), f"missing cookbook recipe: {name}"
@@ -440,6 +447,16 @@ def test_cookbook_recipe_exists(name):
     if name == "index.md":
         return
     assert "## Goal text" in body or "Goal text" in body
+
+
+def test_cookbook_has_at_least_12_recipes():
+    assert len(COOKBOOK_RECIPES) >= 12
+    # And each is linked from the index so users can find it.
+    index = (REPO_ROOT / "docs" / "cookbook" / "index.md").read_text()
+    for name in COOKBOOK_RECIPES:
+        assert f"({name})" in index or f"(./{name})" in index, (
+            f"recipe not linked from index: {name}"
+        )
 
 
 def test_failure_modes_doc_exists():
