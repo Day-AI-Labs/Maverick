@@ -22,7 +22,7 @@ from typing import Any, Iterator, Optional
 
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 SCHEMA = """
@@ -77,6 +77,22 @@ CREATE TABLE IF NOT EXISTS questions (
     answer TEXT,
     answered_at REAL
 );
+
+-- v9 approval queue: high-risk actions parked by safety.consent in
+-- 'dashboard' mode. The consent path inserts a 'pending' row and polls
+-- status; the dashboard /approvals page flips it to approved/denied.
+CREATE TABLE IF NOT EXISTS approvals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    risk TEXT NOT NULL DEFAULT 'medium',
+    scope TEXT,
+    detail TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    requested_at REAL NOT NULL,
+    decided_at REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, id);
 
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -218,6 +234,11 @@ MIGRATIONS: dict[int, list[str]] = {
         "CREATE INDEX IF NOT EXISTS idx_goals_parent "
         "ON goals(parent_id, created_at)",
     ],
+    # v9 approval queue: the approvals table + its status index are in
+    # SCHEMA (idempotent CREATE). Listed here so existing DBs bump the
+    # version and pick them up on next open, matching the goal_events /
+    # conversations / attachments migration pattern above.
+    9: [],
 }
 
 
@@ -242,6 +263,18 @@ class Question:
     asked_at: float
     answer: Optional[str]
     answered_at: Optional[float]
+
+
+@dataclass
+class Approval:
+    id: int
+    action: str
+    risk: str
+    scope: Optional[str]
+    detail: Optional[str]
+    status: str
+    requested_at: float
+    decided_at: Optional[float]
 
 
 @dataclass
@@ -701,6 +734,52 @@ class WorldModel:
             "SELECT * FROM questions WHERE goal_id = ? ORDER BY id", (goal_id,)
         ).fetchall()
         return [Question(**dict(r)) for r in rows]
+
+    # ----- approvals (high-risk action queue) -----
+    def create_approval(
+        self,
+        action: str,
+        *,
+        risk: str = "medium",
+        scope: Optional[str] = None,
+        detail: Optional[str] = None,
+    ) -> int:
+        """Park a high-risk action for out-of-band (dashboard) approval."""
+        with self._writing() as conn:
+            cur = conn.execute(
+                "INSERT INTO approvals(action, risk, scope, detail, status, requested_at) "
+                "VALUES(?, ?, ?, ?, 'pending', ?)",
+                (action, risk, scope, detail, time.time()),
+            )
+            return cur.lastrowid
+
+    def get_approval(self, approval_id: int) -> Optional[Approval]:
+        row = self.conn.execute(
+            "SELECT * FROM approvals WHERE id = ?", (approval_id,)
+        ).fetchone()
+        return Approval(**dict(row)) if row else None
+
+    def pending_approvals(self) -> list[Approval]:
+        rows = self.conn.execute(
+            "SELECT * FROM approvals WHERE status = 'pending' ORDER BY id"
+        ).fetchall()
+        return [Approval(**dict(r)) for r in rows]
+
+    def decide_approval(self, approval_id: int, status: str) -> bool:
+        """Flip a pending approval to 'approved' or 'denied'.
+
+        Returns True if a pending row was transitioned, False otherwise
+        (unknown id, or already decided — so a double-click is a no-op).
+        """
+        if status not in ("approved", "denied"):
+            raise ValueError("status must be 'approved' or 'denied'")
+        with self._writing() as conn:
+            cur = conn.execute(
+                "UPDATE approvals SET status = ?, decided_at = ? "
+                "WHERE id = ? AND status = 'pending'",
+                (status, time.time(), approval_id),
+            )
+            return cur.rowcount > 0
 
     # ----- messages -----
     def append_message(self, goal_id: int, role: str, content: str) -> None:

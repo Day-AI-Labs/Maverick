@@ -678,6 +678,36 @@ async def enable_tool(name: str) -> None:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/approvals")
+async def list_approvals() -> dict:
+    """Pending high-risk actions parked by safety.consent (dashboard mode)."""
+    w = _world()
+    return {
+        "approvals": [
+            {
+                "id": a.id, "action": a.action, "risk": a.risk,
+                "scope": a.scope, "detail": a.detail,
+                "requested_at": a.requested_at,
+            }
+            for a in w.pending_approvals()
+        ],
+    }
+
+
+@router.post("/approvals/{approval_id}/approve", status_code=204)
+async def approve_approval(approval_id: int) -> None:
+    """Approve a parked action; the polling consent path then proceeds."""
+    if not _world().decide_approval(approval_id, "approved"):
+        raise HTTPException(status_code=404, detail="no such pending approval")
+
+
+@router.post("/approvals/{approval_id}/deny", status_code=204)
+async def deny_approval(approval_id: int) -> None:
+    """Deny a parked action; the polling consent path then refuses it."""
+    if not _world().decide_approval(approval_id, "denied"):
+        raise HTTPException(status_code=404, detail="no such pending approval")
+
+
 @router.get("/cache/stats")
 async def cache_stats() -> dict:
     """In-process cache sizes (file reads, repo-map, skill embeddings).
