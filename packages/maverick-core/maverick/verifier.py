@@ -272,6 +272,51 @@ async def verify_proposal_ensemble(
     return _combine(verdicts, weighted=weighted)
 
 
+def _ensemble_enabled() -> bool:
+    """Opt-in gate for the adversarial multi-verifier panel.
+
+    Off by default: a single cross-family verifier is the standard path.
+    Flip on via ``MAVERICK_VERIFY_ENSEMBLE=1`` or ``[routing]
+    verify_ensemble = true`` to run the MAV panel (stronger, ~Nx the
+    verifier cost). Spend still lands in the run's Budget, so the cap is
+    respected either way.
+    """
+    if os.environ.get("MAVERICK_VERIFY_ENSEMBLE", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }:
+        return True
+    try:
+        from .config import load_config
+        cfg = (load_config() or {}).get("routing") or {}
+        return bool(cfg.get("verify_ensemble"))
+    except Exception:
+        return False
+
+
+async def verify_final(
+    brief: str,
+    proposal: str,
+    llm: LLM,
+    budget: Optional[Budget] = None,
+    *,
+    proposer_model: Optional[str] = None,
+) -> VerifierVerdict:
+    """Verify a FINAL answer using whichever verifier the operator chose.
+
+    Single dispatch point for the live agent loop: returns the adversarial
+    cross-family ensemble when opted in (``_ensemble_enabled``), else the
+    standard single cross-family verifier. Same signature + return type as
+    ``verify_proposal`` so the call site is verifier-agnostic.
+    """
+    if _ensemble_enabled():
+        return await verify_proposal_ensemble(
+            brief, proposal, llm, budget, proposer_model=proposer_model,
+        )
+    return await verify_proposal(
+        brief, proposal, llm, budget, proposer_model=proposer_model,
+    )
+
+
 def _combine(verdicts: list["VerifierVerdict"], *, weighted: bool) -> "VerifierVerdict":
     """Combine N individual verdicts into one ensemble verdict."""
     if not verdicts:

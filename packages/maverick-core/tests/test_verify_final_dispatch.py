@@ -1,0 +1,81 @@
+"""verify_final() dispatches to the adversarial ensemble when opted in.
+
+The cross-family Multi-Agent Verification panel (verify_proposal_ensemble)
+existed and was tested, but nothing in the live agent loop could reach it --
+the FINAL handler always called the single verify_proposal. verify_final()
+is the opt-in dispatch the agent loop now uses:
+
+  - default: single cross-family verifier (verify_proposal)
+  - MAVERICK_VERIFY_ENSEMBLE=1 / [routing] verify_ensemble=true: MAV panel
+
+Both paths share verify_proposal's signature + VerifierVerdict return, so
+the call site is verifier-agnostic.
+"""
+from __future__ import annotations
+
+import asyncio
+
+import pytest
+
+from maverick import verifier
+from maverick.verifier import VerifierVerdict
+
+
+@pytest.fixture
+def _clean(monkeypatch):
+    monkeypatch.delenv("MAVERICK_VERIFY_ENSEMBLE", raising=False)
+    monkeypatch.setenv("HOME", "/nonexistent-verify-final-test")  # no config
+
+
+def _patch_both(monkeypatch):
+    """Replace both verifier impls with markers so we can see which ran."""
+    calls = []
+
+    async def _single(*a, **k):
+        calls.append("single")
+        return VerifierVerdict(confidence=0.9, accepts=True, critique="")
+
+    async def _ensemble(*a, **k):
+        calls.append("ensemble")
+        return VerifierVerdict(confidence=0.95, accepts=True, critique="")
+
+    monkeypatch.setattr(verifier, "verify_proposal", _single)
+    monkeypatch.setattr(verifier, "verify_proposal_ensemble", _ensemble)
+    return calls
+
+
+def test_default_uses_single_verifier(_clean, monkeypatch):
+    calls = _patch_both(monkeypatch)
+    v = asyncio.run(verifier.verify_final("brief", "answer", llm=None))
+    assert calls == ["single"]
+    assert v.accepts is True
+
+
+def test_env_opt_in_uses_ensemble(_clean, monkeypatch):
+    monkeypatch.setenv("MAVERICK_VERIFY_ENSEMBLE", "1")
+    calls = _patch_both(monkeypatch)
+    v = asyncio.run(verifier.verify_final("brief", "answer", llm=None))
+    assert calls == ["ensemble"]
+    assert v.confidence == 0.95
+
+
+def test_stringy_false_does_not_enable_ensemble(_clean, monkeypatch):
+    # bool("false") is True; the gate must parse explicitly.
+    monkeypatch.setenv("MAVERICK_VERIFY_ENSEMBLE", "false")
+    calls = _patch_both(monkeypatch)
+    asyncio.run(verifier.verify_final("brief", "answer", llm=None))
+    assert calls == ["single"]
+
+
+def test_verify_final_passes_proposer_model_through(_clean, monkeypatch):
+    seen = {}
+
+    async def _single(brief, proposal, llm, budget=None, *, proposer_model=None):
+        seen["proposer_model"] = proposer_model
+        return VerifierVerdict(confidence=1.0, accepts=True, critique="")
+
+    monkeypatch.setattr(verifier, "verify_proposal", _single)
+    asyncio.run(verifier.verify_final(
+        "b", "a", llm=None, proposer_model="anthropic:claude-opus-4-8",
+    ))
+    assert seen["proposer_model"] == "anthropic:claude-opus-4-8"

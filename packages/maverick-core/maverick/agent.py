@@ -900,8 +900,8 @@ class Agent:
                             continue
 
                         try:
-                            from .verifier import verify_proposal
-                            verdict = await verify_proposal(
+                            from .verifier import verify_final
+                            verdict = await verify_final(
                                 self.brief, final, self.ctx.llm, self.ctx.budget,
                                 proposer_model=self.model,
                             )
