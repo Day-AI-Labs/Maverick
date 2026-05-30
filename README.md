@@ -4,14 +4,22 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org)
 
-An open-source AI agent that runs locally on your machine.
+**An open-source AI agent that runs on your machine, works for hours, and won't blow your budget.**
 
-Maverick combines two projects into one safest-by-default assistant:
+Hand Maverick a goal. Its orchestrator decomposes it, spawns specialist sub-agents — researcher, coder, writer, verifier — that work in parallel, checks their output, and returns a result. Every step runs under a hard spending cap and through a safety layer, on the models *you* choose.
 
-- **Maverick Agent**: a recursive multi-agent swarm optimised for long-horizon work (hours, not minutes).
-- **Agent Shield**: a safety layer with F1 0.988 prompt-injection detection (full SDK) plus a built-in 20-pattern fallback that ships with Maverick.
+- 🧠 **Long-horizon swarm.** Recursive multi-agent coordination built for hours-long tasks, not one-shot replies.
+- 🛡️ **Safe by default.** Agent Shield screens every prompt, tool call, and output — the full SDK scores F1 0.988 on prompt-injection, and a built-in rule set ships out of the box (fail-open, never a hard dependency).
+- 🎛️ **Your models, your budget.** 12 providers, routable per role (plan on Opus, summarise on Haiku). Set a dollar + wall-clock + tool-call cap the kernel refuses to exceed — no surprise bills.
+- 💻 **Runs anywhere.** Desktop app, one-line script, Docker, VPS, or a phone companion across 11 channels. MIT-licensed, no telemetry, no paid tier.
 
-The wizard walks you through every choice. Deploy on desktop, in Docker, on a VPS, or as a phone companion (via any of 9 channels).
+```bash
+pipx install 'maverick-agent[installer]'
+maverick init                        # four questions, safe defaults
+maverick start "Research the top 3 CRMs for a 5-person startup and write a recommendation"
+```
+
+Prefer no terminal? Grab the [**double-click desktop installer**](#install). New here? See [`docs/getting-started.md`](./docs/getting-started.md).
 
 ## Status
 
@@ -23,12 +31,12 @@ Alpha, but **installable today**: all six packages are on [PyPI](https://pypi.or
 |---|---|---|
 | Install | **Native installer (`.exe` / `.dmg` / `.AppImage`)**, one-line bootstrap (`install.ps1` / `install.sh`), pipx, or from source | Code-signed bundles + auto-update |
 | GUI | Native installer app + local web dashboard (`maverick dashboard`) + chat at `/chat` | Native Tauri shell for the agent itself + iOS/Android |
-| Sandbox | Local subprocess, Docker, SSH, Podman, devcontainer | Firecracker, Modal, Daytona |
+| Sandbox | Local subprocess, Docker, SSH, Podman, devcontainer, Firecracker, Kubernetes | Modal, Daytona |
 | AI providers | Anthropic (full), OpenAI, OpenRouter, Ollama, Gemini, DeepSeek, Bedrock, Azure, xAI, Moonshot, TGI, vLLM (per-role routable) | Cohere |
 | Channels | Telegram, Discord, Slack, Signal, Email, Matrix, Bluesky, Mastodon (ready); WhatsApp, SMS, iMessage (scaffolds) | Push notifications, voice |
-| Safety | Shield wired at 3 chokepoints; agent-shield SDK if installed, else 20 builtin rules | Agent-shield full ~115 patterns |
+| Safety | Shield wired at 3 chokepoints; agent-shield SDK if installed, else a built-in rule set | Agent-shield full ~115 patterns |
 | Distribution | PyPI (6 packages), GHCR image, PyInstaller binaries, **native installers on Releases** | Code signing; Homebrew tap |
-| Tests | 1000+ tests, ruff + pytest on Py 3.10/3.11/3.12 | Integration suite + benchmark RESULTS.md |
+| Tests | 2000+ tests, ruff + pytest on Py 3.10/3.11/3.12 | Integration suite + benchmark RESULTS.md |
 
 ## Install
 
@@ -128,9 +136,10 @@ packages/
                        model (SQLite + FTS5 + schema v8), 12 LLM providers, 7
                        sandboxes, MCP client, skills, templates, persona,
                        background runner, budget tracking
-  maverick-shield/     Agent Shield integration + 20-pattern builtin fallback
-  maverick-channels/   9 channel adapters: Telegram, Discord, Slack, Signal,
-                       Email, Matrix (ready) + WhatsApp, SMS, iMessage (scaffold)
+  maverick-shield/     Agent Shield integration + built-in fallback rule set
+  maverick-channels/   11 channel adapters: Telegram, Discord, Slack, Signal,
+                       Email, Matrix, Bluesky, Mastodon (ready) + WhatsApp,
+                       SMS, iMessage (scaffold)
   maverick-dashboard/  Local FastAPI web UI + REST API at /api/v1 + OpenAPI
                        docs at /docs. Live progress streaming via short-poll.
   maverick-mcp/        MCP server (stdio JSON-RPC) -- exposes Maverick to Claude
@@ -175,7 +184,7 @@ Why this and not a separate `@maverick/core` port?
 | **Wedge** | Long-horizon depth + true multi-agent coordination |
 | **Safety** | First-class. Every input, tool call, and output passes through Agent Shield. |
 | **Control** | You pick the models. Per-role. Multi-provider. |
-| **Deploy** | Desktop / Docker / VPS / Phone (9 channels) |
+| **Deploy** | Desktop / Docker / VPS / Phone (11 channels) |
 | **Privacy** | All detection runs locally. Your data never leaves your machine unless you choose a cloud LLM. |
 
 ## License
