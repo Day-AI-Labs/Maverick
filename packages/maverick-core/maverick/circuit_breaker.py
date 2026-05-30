@@ -79,6 +79,9 @@ class CircuitBreaker:
         self._state = CircuitState.CLOSED
         self._stats = _Stats()
         self._lock = threading.Lock()
+        # HALF_OPEN admits exactly one probe at a time; concurrent callers
+        # fast-fail until it resolves (cleared by record_success/failure).
+        self._probe_in_flight = False
 
     @property
     def state(self) -> CircuitState:
@@ -100,10 +103,12 @@ class CircuitBreaker:
             self._stats.consecutive_failures = 0
             self._stats.total_successes += 1
             self._state = CircuitState.CLOSED
+            self._probe_in_flight = False
 
     def record_failure(self) -> None:
         with self._lock:
             now = time.time()
+            self._probe_in_flight = False
             self._stats.consecutive_failures += 1
             self._stats.total_failures += 1
             self._stats.last_failure_at = now
@@ -126,6 +131,15 @@ class CircuitBreaker:
                     f"(opened {time.time() - self._stats.opened_at:.1f}s ago, "
                     f"cooldown {self.cooldown_seconds:.0f}s)"
                 )
+            if self._state is CircuitState.HALF_OPEN:
+                # Let exactly ONE caller probe the dependency; everyone else
+                # fast-fails (the old code admitted ALL concurrent callers in
+                # HALF_OPEN, re-storming the dead service on cooldown expiry).
+                if self._probe_in_flight:
+                    raise CircuitOpen(
+                        f"circuit {self.key!r} HALF_OPEN: a probe is already in flight"
+                    )
+                self._probe_in_flight = True
         try:
             result = fn()
         except Exception:
@@ -138,6 +152,7 @@ class CircuitBreaker:
         with self._lock:
             self._stats = _Stats()
             self._state = CircuitState.CLOSED
+            self._probe_in_flight = False
 
     def snapshot(self) -> dict:
         with self._lock:
