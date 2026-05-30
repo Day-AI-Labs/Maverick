@@ -29,18 +29,25 @@ COPY pyproject.toml ./
 COPY packages/maverick-core/pyproject.toml ./packages/maverick-core/
 COPY packages/maverick-shield/pyproject.toml ./packages/maverick-shield/
 COPY packages/maverick-channels/pyproject.toml ./packages/maverick-channels/
+COPY packages/maverick-dashboard/pyproject.toml ./packages/maverick-dashboard/
+COPY packages/maverick-mcp/pyproject.toml ./packages/maverick-mcp/
 COPY apps/installer-cli/pyproject.toml ./apps/installer-cli/
 
 # Copy package sources.
 COPY packages/maverick-core ./packages/maverick-core
 COPY packages/maverick-shield ./packages/maverick-shield
 COPY packages/maverick-channels ./packages/maverick-channels
+COPY packages/maverick-dashboard ./packages/maverick-dashboard
+COPY packages/maverick-mcp ./packages/maverick-mcp
 COPY apps/installer-cli ./apps/installer-cli
 
-# Install everything.
+# Install everything. dashboard + mcp are needed so `maverick dashboard`
+# and `maverick mcp` work in the image instead of exiting 2.
 RUN pip install ./packages/maverick-core \
     && pip install ./packages/maverick-shield \
     && pip install ./packages/maverick-channels \
+    && pip install ./packages/maverick-dashboard \
+    && pip install ./packages/maverick-mcp \
     && pip install ./apps/installer-cli
 
 WORKDIR /workspace
