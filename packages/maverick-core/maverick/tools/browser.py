@@ -15,12 +15,11 @@ Persistent browser context across actions: the tool keeps a single
 chromium instance alive in a module-level handle. Closed at the end
 of the goal via ``close_browser()``.
 
-Session persistence: cookies + localStorage are saved to disk
-(``~/.maverick/browser/state.json`` by default, mode 0600) after each
-navigation, on the ``save_session`` action, and at interpreter exit,
-then reloaded when the next context starts -- so logins survive
-restarts and crashes. Override the path with ``MAVERICK_BROWSER_STATE``
-(per-task profiles) or disable with ``MAVERICK_BROWSER_NO_PERSIST=1``.
+Session persistence: cookies + localStorage are saved to disk only when
+``MAVERICK_BROWSER_STATE`` explicitly points at a per-task profile file.
+When enabled, the state file is mode 0600, checkpointed after navigation,
+on the ``save_session`` action, and at interpreter exit, then reloaded
+when the next context starts. Disable with ``MAVERICK_BROWSER_NO_PERSIST=1``.
 
 Safety:
   - All navigations are allow-listed by default to ``http(s)://`` URLs.
@@ -59,8 +58,11 @@ _DEFAULT_STATE_PATH = Path.home() / ".maverick" / "browser" / "state.json"
 
 
 def _persist_enabled() -> bool:
-    """On by default; opt out with MAVERICK_BROWSER_NO_PERSIST=1."""
-    return os.environ.get("MAVERICK_BROWSER_NO_PERSIST") != "1"
+    """Persistence is opt-in via an explicit per-task state file."""
+    return (
+        os.environ.get("MAVERICK_BROWSER_NO_PERSIST") != "1"
+        and bool(os.environ.get("MAVERICK_BROWSER_STATE"))
+    )
 
 
 def _state_path() -> Path:

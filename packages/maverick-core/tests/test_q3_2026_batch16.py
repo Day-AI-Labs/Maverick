@@ -1,8 +1,8 @@
 """Q3 2026 batch 16.
 
-  - Browser session persistence: cookies + localStorage saved to disk
-    via storage_state and restored on the next context, surviving
-    restarts/crashes. Tested with mocked sessions (no real chromium).
+  - Browser session persistence: cookies + localStorage are saved to disk
+    via storage_state only for explicit per-task profiles and restored on
+    the next context. Tested with mocked sessions (no real chromium).
 """
 from __future__ import annotations
 
@@ -31,19 +31,27 @@ def test_state_path_override(monkeypatch, tmp_path):
     assert _state_path() == target
 
 
-def test_persist_enabled_toggle(monkeypatch):
+def test_persist_enabled_requires_explicit_state(monkeypatch, tmp_path):
     monkeypatch.delenv("MAVERICK_BROWSER_NO_PERSIST", raising=False)
+    monkeypatch.delenv("MAVERICK_BROWSER_STATE", raising=False)
+    assert _persist_enabled() is False
+
+    monkeypatch.setenv("MAVERICK_BROWSER_STATE", str(tmp_path / "profile.json"))
     assert _persist_enabled() is True
+
     monkeypatch.setenv("MAVERICK_BROWSER_NO_PERSIST", "1")
     assert _persist_enabled() is False
 
 
-def test_restore_arg_none_when_missing(monkeypatch, tmp_path):
+def test_restore_arg_requires_explicit_state(monkeypatch, tmp_path):
     target = tmp_path / "nope.json"
-    monkeypatch.setenv("MAVERICK_BROWSER_STATE", str(target))
+    monkeypatch.delenv("MAVERICK_BROWSER_STATE", raising=False)
     monkeypatch.delenv("MAVERICK_BROWSER_NO_PERSIST", raising=False)
-    assert _restore_state_arg() is None  # file does not exist yet
+    monkeypatch.setattr(browser_mod, "_DEFAULT_STATE_PATH", target)
     target.write_text("{}")
+    assert _restore_state_arg() is None  # implicit global profile is never restored
+
+    monkeypatch.setenv("MAVERICK_BROWSER_STATE", str(target))
     assert _restore_state_arg() == str(target)
     monkeypatch.setenv("MAVERICK_BROWSER_NO_PERSIST", "1")
     assert _restore_state_arg() is None  # disabled wins even when file exists
@@ -81,6 +89,14 @@ def test_save_state_noop_without_context(monkeypatch, tmp_path):
     monkeypatch.setenv("MAVERICK_BROWSER_STATE", str(tmp_path / "s.json"))
     sess = _BrowserSession()
     assert sess.save_state() is False  # no context started
+
+
+def test_save_state_noop_without_explicit_state(monkeypatch):
+    monkeypatch.delenv("MAVERICK_BROWSER_STATE", raising=False)
+    monkeypatch.delenv("MAVERICK_BROWSER_NO_PERSIST", raising=False)
+    sess = _BrowserSession()
+    sess._context = _FakeContext()
+    assert sess.save_state() is False
 
 
 def test_save_state_noop_when_disabled(monkeypatch, tmp_path):
