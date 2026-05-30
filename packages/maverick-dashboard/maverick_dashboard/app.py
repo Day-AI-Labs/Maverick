@@ -160,6 +160,10 @@ _AUTH_EXEMPT = {
     # the dashboard bearer / same-origin checks (external senders have
     # neither), so it must bypass the centralized middleware.
     "/webhook/start",
+    # Linear/Jira issue-assigned webhooks authenticate the same way (their
+    # own HMAC signature), so they bypass the bearer/same-origin checks too.
+    "/webhook/linear",
+    "/webhook/jira",
 }
 
 # Safe methods skip the CSRF check (browsers send Origin/Referer
@@ -835,6 +839,77 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
         except (TypeError, ValueError):
             raise HTTPException(status_code=400, detail="budget must be a number")
     bg.add_task(run_goal_in_thread, goal_id, max_dollars)
+    return JSONResponse({"goal_id": goal_id}, status_code=201)
+
+
+@app.post("/webhook/linear")
+async def webhook_linear(request: Request, bg: BackgroundTasks) -> JSONResponse:
+    """Linear issue-assigned webhook -> goal. Signature in ``Linear-Signature``."""
+    return await _handle_issue_webhook("linear", "Linear-Signature", request, bg)
+
+
+@app.post("/webhook/jira")
+async def webhook_jira(request: Request, bg: BackgroundTasks) -> JSONResponse:
+    """Jira issue-assigned webhook -> goal. Signature in ``X-Hub-Signature``."""
+    return await _handle_issue_webhook("jira", "X-Hub-Signature", request, bg)
+
+
+async def _handle_issue_webhook(
+    provider: str, sig_header: str, request: Request, bg: BackgroundTasks,
+) -> JSONResponse:
+    """Shared handler for inbound issue-assigned webhooks (Linear/Jira).
+
+    HMAC-signed like ``/webhook/start`` (fail-closed: no secret -> 401, bad
+    signature -> 403). When the payload isn't an issue assigned to the
+    configured bot, acknowledge with ``{"ignored": true}`` instead of
+    spawning a goal. On a real assignment, create a goal from the issue and
+    enqueue the run, returning ``{"goal_id": <int>}``.
+    """
+    from maverick.issue_webhooks import (
+        build_brief,
+        parse_issue_event,
+        verify_signature,
+    )
+    from maverick.webhooks import inbound_secret
+
+    secret = inbound_secret()
+    if not secret:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "inbound webhooks are not configured. Set a [webhooks] "
+                "secret in ~/.maverick/config.toml or MAVERICK_WEBHOOK_SECRET."
+            ),
+        )
+    body = await request.body()
+    signature = request.headers.get(sig_header) or ""
+    if not verify_signature(body, signature, secret):
+        raise HTTPException(status_code=403, detail="bad webhook signature")
+
+    try:
+        payload = json.loads(body or b"{}")
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="body must be valid JSON")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="body must be a JSON object")
+
+    event = parse_issue_event(provider, payload)
+    if event is None:
+        # Wrong event type, unassigned, or assigned to someone other than the
+        # bot -- acknowledge without driving the swarm.
+        return JSONResponse({"ignored": True}, status_code=200)
+
+    if not _any_provider_key_set():
+        raise HTTPException(
+            status_code=400,
+            detail="No LLM provider key configured. Run 'maverick init'.",
+        )
+    check_goal_rate_limit()
+    w = _world()
+    title = f"{event.issue_id}: {event.title}".strip()
+    goal_id = w.create_goal(title[:200], build_brief(event)[:8000])
+    from maverick.runner import run_goal_in_thread
+    bg.add_task(run_goal_in_thread, goal_id, None)
     return JSONResponse({"goal_id": goal_id}, status_code=201)
 
 
