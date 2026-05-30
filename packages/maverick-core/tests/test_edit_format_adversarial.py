@@ -31,7 +31,7 @@ def _init_repo(tmp_path: Path, files: dict[str, str]) -> Path:
     for path, content in files.items():
         full = tmp_path / path
         full.parent.mkdir(parents=True, exist_ok=True)
-        full.write_text(content)
+        full.write_text(content, encoding="utf-8")  # not the cp1252 default on Windows
     subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
     subprocess.run(
         ["git", "-C", str(tmp_path), "commit", "-q", "-m", "seed"], check=True,

@@ -168,6 +168,10 @@ class TestSymlinkBypass:
     """Wave 12 hardening: symlink to .git or tests/ must still be
     blocked by the resolved-path check."""
 
+    @pytest.mark.skipif(
+        os.name == "nt",
+        reason="creating a symlink requires admin/Developer Mode on Windows (WinError 1314)",
+    )
     def test_symlink_to_dotgit_blocked_in_read_file(self, tmp_path, opaque_mode):
         import os as _os
         from maverick.tools.fs import read_file
@@ -186,6 +190,10 @@ class TestSymlinkBypass:
         )
         assert "ref:" not in out
 
+    @pytest.mark.skipif(
+        os.name == "nt",
+        reason="creating a symlink requires admin/Developer Mode on Windows (WinError 1314)",
+    )
     def test_symlink_to_tests_blocked_in_view(self, tmp_path, opaque_mode):
         import os as _os
         from maverick.tools.str_edit import str_replace_editor
