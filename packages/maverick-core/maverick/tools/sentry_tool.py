@@ -22,7 +22,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -205,7 +205,7 @@ def _run(args: dict[str, Any]) -> str:
             iid = (args.get("issue_id") or "").strip()
             if not iid:
                 return "ERROR: resolve requires issue_id"
-            return _op_resolve(iid, bool(args.get("confirm")))
+            return _op_resolve(iid, as_bool(args.get("confirm")))
         if op == "releases":
             return _op_releases(limit)
     except RuntimeError as e:

@@ -25,7 +25,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -198,19 +198,19 @@ def _run(args: dict[str, Any]) -> str:
         if op == "record_create":
             return _op_record_create(
                 (args.get("sobject") or "").strip(),
-                fields, bool(args.get("confirm")), version,
+                fields, as_bool(args.get("confirm")), version,
             )
         if op == "record_update":
             return _op_record_update(
                 (args.get("sobject") or "").strip(),
                 (args.get("id") or "").strip(),
-                fields, bool(args.get("confirm")), version,
+                fields, as_bool(args.get("confirm")), version,
             )
         if op == "record_delete":
             return _op_record_delete(
                 (args.get("sobject") or "").strip(),
                 (args.get("id") or "").strip(),
-                bool(args.get("confirm")), version,
+                as_bool(args.get("confirm")), version,
             )
     except RuntimeError as e:
         return f"ERROR: {e}"

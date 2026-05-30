@@ -30,7 +30,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -164,9 +164,9 @@ def _run(args: dict[str, Any]) -> str:
             return _op_get(bucket, key)
         if op == "put":
             return _op_put(bucket, key, args.get("body") or "",
-                            bool(args.get("confirm")))
+                            as_bool(args.get("confirm")))
         if op == "delete":
-            return _op_delete(bucket, key, bool(args.get("confirm")))
+            return _op_delete(bucket, key, as_bool(args.get("confirm")))
         if op == "presign":
             return _op_presign(bucket, key, int(args.get("expires") or 3600))
     except Exception as e:

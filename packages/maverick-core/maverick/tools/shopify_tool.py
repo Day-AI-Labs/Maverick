@@ -24,7 +24,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -289,7 +289,7 @@ def _run(args: dict[str, Any]) -> str:
                 int(args.get("order_id") or 0),
                 int(args.get("amount_cents") or 0),
                 (args.get("currency") or "").strip(),
-                bool(args.get("confirm")),
+                as_bool(args.get("confirm")),
             )
     except RuntimeError as e:
         return f"ERROR: {e}"

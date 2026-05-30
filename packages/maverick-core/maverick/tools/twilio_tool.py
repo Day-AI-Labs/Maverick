@@ -21,7 +21,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ def _op_sms_send(args: dict) -> str:
         return "ERROR: sms_send requires to and body"
     if not src:
         return "ERROR: sms_send requires from_ or TWILIO_FROM_NUMBER"
-    if not bool(args.get("confirm")):
+    if not as_bool(args.get("confirm")):
         return "DRY RUN: would send SMS. Re-run with confirm=true."
     code, data = _post("/Messages.json", {"To": to, "From": src, "Body": body})
     if code >= 400 or not isinstance(data, dict):
@@ -137,7 +137,7 @@ def _op_call_create(args: dict) -> str:
         return "ERROR: call_create requires to and twiml_url"
     if not src:
         return "ERROR: call_create requires from_ or TWILIO_FROM_NUMBER"
-    if not bool(args.get("confirm")):
+    if not as_bool(args.get("confirm")):
         return "DRY RUN: would create call. Re-run with confirm=true."
     code, data = _post("/Calls.json", {"To": to, "From": src, "Url": twiml})
     if code >= 400 or not isinstance(data, dict):

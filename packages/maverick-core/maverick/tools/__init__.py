@@ -19,6 +19,17 @@ from typing import Any, Awaitable, Callable, Optional, Union
 def _env_true(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
+
+def as_bool(value: Any) -> bool:
+    """Strict confirm gate for destructive or costly tool ops.
+
+    Only a real boolean ``True`` authorises a live action. ``bool("false")``
+    is ``True`` in Python, so a stringy confirm (from a non-conforming MCP
+    client or a loose LLM) must fail closed to a dry run rather than fire a
+    refund / delete / send. Shared so every gated tool decides the same way.
+    """
+    return value is True
+
 ToolFn = Callable[[dict[str, Any]], Union[str, Awaitable[str]]]
 
 

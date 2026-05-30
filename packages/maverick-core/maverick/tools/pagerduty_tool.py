@@ -21,7 +21,7 @@ import logging
 import os
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -202,18 +202,18 @@ def _run(args: dict[str, Any]) -> str:
             iid = (args.get("id") or "").strip()
             if not iid:
                 return "ERROR: acknowledge requires id"
-            return _set_status(iid, "acknowledged", bool(args.get("confirm")))
+            return _set_status(iid, "acknowledged", as_bool(args.get("confirm")))
         if op == "resolve":
             iid = (args.get("id") or "").strip()
             if not iid:
                 return "ERROR: resolve requires id"
-            return _set_status(iid, "resolved", bool(args.get("confirm")))
+            return _set_status(iid, "resolved", as_bool(args.get("confirm")))
         if op == "trigger":
             return _op_trigger(
                 (args.get("routing_key") or "").strip(),
                 (args.get("summary") or "").strip(),
                 (args.get("severity") or "").strip(),
-                bool(args.get("confirm")),
+                as_bool(args.get("confirm")),
             )
         if op == "on_call":
             return _op_on_call((args.get("escalation_policy_id") or "").strip(), limit)

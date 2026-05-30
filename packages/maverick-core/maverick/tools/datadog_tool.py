@@ -19,7 +19,7 @@ import os
 import time
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ def _op_submit_event(args: dict) -> str:
     text = (args.get("text") or "").strip()
     if not title or not text:
         return "ERROR: submit_event requires title and text"
-    if not bool(args.get("confirm")):
+    if not as_bool(args.get("confirm")):
         return "DRY RUN: would submit Datadog event. Re-run with confirm=true."
     body = {
         "title": title,
@@ -112,7 +112,7 @@ def _op_submit_metric(args: dict) -> str:
     metric = (args.get("metric") or "").strip()
     if not metric or "value" not in args:
         return "ERROR: submit_metric requires metric and value"
-    if not bool(args.get("confirm")):
+    if not as_bool(args.get("confirm")):
         return "DRY RUN: would submit Datadog metric. Re-run with confirm=true."
     body = {"series": [{
         "metric": metric,
