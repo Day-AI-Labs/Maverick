@@ -58,6 +58,27 @@ def is_session_provider(name: str) -> bool:
     return _canonical(name) in _SESSION_PROVIDERS
 
 
+def _session_providers_enabled() -> bool:
+    """Session providers drive a vendor's *consumer* chat UI with captured
+    login cookies -- against that vendor's Terms of Service, with real
+    account-ban risk for the user. The capability is OFF unless explicitly
+    opted into, so it can never run by accident. Enable with
+    ``MAVERICK_ENABLE_SESSION_PROVIDERS=1`` or ``[session_providers] enabled
+    = true`` in ``~/.maverick/config.toml``.
+    """
+    import os
+    if os.environ.get("MAVERICK_ENABLE_SESSION_PROVIDERS", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }:
+        return True
+    try:
+        from ..config import load_config
+        sec = (load_config() or {}).get("session_providers") or {}
+        return bool(sec.get("enabled", False))
+    except Exception:
+        return False
+
+
 def get_session_client(name: str, *, simulate_tools: bool = False) -> Any:
     """Lazy-instantiate the named session client.
 
@@ -65,7 +86,19 @@ def get_session_client(name: str, *, simulate_tools: bool = False) -> Any:
     ``SimulatedToolCallClient`` so callers can pass ``tools=[...]``
     even though the underlying consumer-chat endpoint has no native
     tool support.
+
+    Gated behind an explicit opt-in (see ``_session_providers_enabled``):
+    these drive consumer chat UIs against the vendor's ToS, so they must
+    never run unless the operator turned them on.
     """
+    if not _session_providers_enabled():
+        raise RuntimeError(
+            f"session provider {name!r} is disabled. Session providers drive "
+            "a vendor's consumer chat UI with captured login cookies, which "
+            "violates their ToS and can get your account banned. To opt in, "
+            "set MAVERICK_ENABLE_SESSION_PROVIDERS=1 (or [session_providers] "
+            "enabled = true in ~/.maverick/config.toml)."
+        )
     canon = _canonical(name)
     inner: Any
     if canon == "chatgpt-session":

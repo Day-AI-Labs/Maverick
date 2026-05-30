@@ -1916,7 +1916,14 @@ def run(fast: bool = False, resume: bool = False) -> int:
     # (they're secrets; the only safe place is ~/.maverick/.env).
     extra_envs = set(web_search_envs) | set(notify_envs)
     keys = collect_api_keys(providers, channel_envs | extra_envs)
-    collect_browser_sessions(providers)
+    captured_sessions = collect_browser_sessions(providers)
+    if captured_sessions:
+        console.print(
+            "\n[yellow]Note:[/yellow] session providers are OFF by default "
+            "(automating a vendor's consumer UI can risk your account). To "
+            "use the session(s) you just captured, set "
+            "[bold]MAVERICK_ENABLE_SESSION_PROVIDERS=1[/bold]."
+        )
 
     console.print()
     if not _q_confirm("Write config and finish?", default=True):

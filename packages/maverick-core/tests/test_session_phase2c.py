@@ -10,6 +10,13 @@ from unittest.mock import patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _enable_session_providers(monkeypatch):
+    # The session-provider factory is gated off by default (ToS/ban risk);
+    # these tests exercise it, so opt in for the whole module.
+    monkeypatch.setenv("MAVERICK_ENABLE_SESSION_PROVIDERS", "1")
+
+
 # ---------- shared fakes ----------
 
 class _FakeResponse:

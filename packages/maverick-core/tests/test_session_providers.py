@@ -16,6 +16,13 @@ from unittest.mock import patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _enable_session_providers(monkeypatch):
+    # The session-provider factory is gated off by default (ToS/ban risk);
+    # these tests exercise it, so opt in for the whole module.
+    monkeypatch.setenv("MAVERICK_ENABLE_SESSION_PROVIDERS", "1")
+
+
 # ---------- cookie_store ----------
 
 def test_cookie_store_round_trip(tmp_path, monkeypatch):
