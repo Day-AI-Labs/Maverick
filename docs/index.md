@@ -28,7 +28,7 @@ hosted platforms gate behind subscriptions.
 ## Quick start
 
 ```bash
-pip install maverick-agent
+pipx install 'maverick-agent[installer]'
 maverick init                # interactive wizard (3 minutes)
 maverick start "review my latest commit"
 ```

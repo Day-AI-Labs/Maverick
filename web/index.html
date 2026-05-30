@@ -143,7 +143,7 @@
     <a href="#what">What</a>
     <a href="#install">Install</a>
     <a href="#audience">Who</a>
-    <a href="https://github.com/cdayAI/maverick">GitHub</a>
+    <a href="https://github.com/cdayAI/Maverick">GitHub</a>
   </nav>
 </header>
 
@@ -152,7 +152,7 @@
     <h1>An open-source AI agent for your machine.</h1>
     <p class="lead">Recursive multi-agent swarm + safety layer. Pick your models. Set a budget. Run it locally.</p>
     <div class="cta-row">
-      <a id="primary-download" class="btn primary" href="https://github.com/cdayAI/maverick/releases/latest">Download</a>
+      <a id="primary-download" class="btn primary" href="https://github.com/cdayAI/Maverick/releases/latest">Download</a>
       <a class="btn secondary" href="#install">Install from PyPI</a>
     </div>
     <p class="platform-note" id="platform-note">Detecting your platform…</p>
@@ -171,7 +171,7 @@
       </div>
       <div class="feature">
         <h3>Real safety, not vibes</h3>
-        <p>Agent Shield scans every prompt, tool call, and output. Strict / balanced / permissive / off. F1 0.988 on prompt-injection.</p>
+        <p>Agent Shield scans every prompt, tool call, and output. Strict / balanced / permissive / off. F1 0.988 with the full Shield SDK (the bundled fallback is lighter).</p>
       </div>
       <div class="feature">
         <h3>Budget is mandatory</h3>
@@ -196,7 +196,7 @@ maverick init</pre>
 
     <div class="terminal" aria-label="Terminal session example">
       <span class="prompt">$</span> pipx install 'maverick-agent[installer]'<br>
-      <span class="out">  installed package maverick-agent 0.1.1 / maverick-installer 0.1.1</span><br>
+      <span class="out">  installed package maverick-agent 0.1.3 / maverick-installer 0.1.3</span><br>
       <span class="prompt">$</span> maverick init<br>
       <span class="out">  How do you want to set this up?</span><br>
       <span class="out">    consumer  Four questions, safe defaults. About a minute.</span><br>
@@ -232,9 +232,9 @@ maverick init</pre>
 <footer>
   <p>
     MIT licensed.
-    <a href="https://github.com/cdayAI/maverick">Source on GitHub</a> ·
-    <a href="https://github.com/cdayAI/maverick/blob/main/docs/getting-started.md">Docs</a> ·
-    <a href="https://github.com/cdayAI/maverick/issues">Issues</a>
+    <a href="https://github.com/cdayAI/Maverick">Source on GitHub</a> ·
+    <a href="https://github.com/cdayAI/Maverick/blob/main/docs/getting-started.md">Docs</a> ·
+    <a href="https://github.com/cdayAI/Maverick/issues">Issues</a>
   </p>
 </footer>
 
@@ -258,11 +258,11 @@ maverick init</pre>
       label = "Download for Linux";
     }
     if (asset) {
-      dl.href = "https://github.com/cdayAI/maverick/releases/latest/download/" + asset;
+      dl.href = "https://github.com/cdayAI/Maverick/releases/latest/download/" + asset;
       dl.textContent = label;
-      if (note) note.textContent = "Detected " + label.replace("Download for ", "") + ". All builds at github.com/cdayAI/maverick/releases.";
+      if (note) note.textContent = "Detected " + label.replace("Download for ", "") + ". All builds at github.com/cdayAI/Maverick/releases.";
     } else if (note) {
-      note.textContent = "All builds at github.com/cdayAI/maverick/releases.";
+      note.textContent = "All builds at github.com/cdayAI/Maverick/releases.";
     }
   })();
 </script>

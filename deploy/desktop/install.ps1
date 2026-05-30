@@ -184,9 +184,10 @@ if (Test-Path (Join-Path $SrcDir '.git')) {
   git clone --depth 1 --branch $Ref "https://github.com/$Repo" $SrcDir
 }
 
-# 5. Install agent + wizard into one pipx venv. We inject the wizard
-#    from source (apps/installer-cli) rather than the [installer] extra
-#    because maverick-installer is not published to PyPI.
+# 5. Install agent + wizard into one pipx venv. maverick-installer is
+#    published to PyPI as of v0.1.3, so the [installer] extra resolves
+#    from PyPI; we inject the wizard from source (apps/installer-cli) as a
+#    pre-publish fallback and to pin it to this checkout.
 Write-Step "Installing the agent + setup wizard (this can take a minute) ..."
 Py -m pipx install --force (Join-Path $SrcDir 'packages\maverick-core')
 Py -m pipx inject --force maverick-agent (Join-Path $SrcDir 'apps\installer-cli')
