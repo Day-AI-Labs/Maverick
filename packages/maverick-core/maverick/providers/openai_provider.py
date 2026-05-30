@@ -33,6 +33,19 @@ _MODELS_WANTING_MAX_COMPLETION_TOKENS = (
     "gpt-4o", "gpt-4.1", "o1", "o3", "o4", "gpt-5",
 )
 
+# Models with OpenAI automatic prompt caching (gpt-4.1 / o-series / gpt-5).
+# The read side already credits usage.prompt_tokens_details.cached_tokens;
+# these get the write-side cache-friendly ordering below.
+_MODELS_WITH_AUTO_PROMPT_CACHE = (
+    "gpt-4.1", "o1", "o3", "o4", "gpt-5",
+)
+
+# OpenAI's automatic prompt cache only engages when the stable prefix is
+# at least ~1024 tokens. Below this it's a no-op, so the reordering work
+# isn't worth doing. Heuristic estimate: 4 chars/token (matches the
+# Anthropic provider's estimator).
+_MIN_AUTO_CACHE_TOKENS = 1024
+
 # Map OpenAI finish_reason to Anthropic stop_reason vocab.
 _FINISH_REASON_MAP = {
     "stop":         "end_turn",
@@ -98,6 +111,26 @@ class OpenAIClient:
     @staticmethod
     def _wants_max_completion(model: str) -> bool:
         return any(model.startswith(prefix) for prefix in _MODELS_WANTING_MAX_COMPLETION_TOKENS)
+
+    @staticmethod
+    def _has_auto_prompt_cache(model: str) -> bool:
+        return any(model.startswith(prefix) for prefix in _MODELS_WITH_AUTO_PROMPT_CACHE)
+
+    @staticmethod
+    def _cache_friendly_tools(tools: Optional[list[dict]]) -> Optional[list[dict]]:
+        """Stable tool ordering for OpenAI's automatic prompt cache.
+
+        OpenAI auto-caches the longest common prefix of a request (system
+        + tools + leading messages). The tools array is part of that
+        prefix, so a non-deterministic order silently busts the cache on
+        every call. Sorting by name makes the prefix byte-identical across
+        calls so the cache actually hits — same reasoning as the Anthropic
+        provider's ``_cached_tools``. Coerce the key via str() so a
+        malformed tool name=None doesn't blow sorted() with TypeError.
+        """
+        if not tools:
+            return tools
+        return sorted(tools, key=lambda t: str(t.get("name") or ""))
 
     @staticmethod
     def _to_openai_messages(system: str, anthropic_messages: list[dict]) -> list[dict]:
@@ -248,6 +281,22 @@ class OpenAIClient:
         model: Optional[str],
     ) -> dict[str, Any]:
         chosen_model = model or self.DEFAULT_MODEL
+        # Write-side prompt-cache friendliness for gpt-4.1 / o-series / gpt-5,
+        # which auto-cache the longest common prefix (>= ~1024 tokens) of a
+        # request. The stable prefix (system + tools schema) must lead and be
+        # byte-identical across calls for the cache to hit; the volatile user
+        # turn already trails since _to_openai_messages keeps system first and
+        # appends history in order. The one source of cache-busting we control
+        # is tool ordering, so sort it to a stable order. Skipped when the
+        # prefix is too small to cache (heuristic 4 chars/token estimate) or
+        # the model has no auto-cache, to keep behaviour unchanged elsewhere.
+        sys_tok = len(system or "") // 4
+        tools_tok = sum(len(str(t)) for t in (tools or [])) // 4
+        if (
+            self._has_auto_prompt_cache(chosen_model)
+            and sys_tok + tools_tok >= _MIN_AUTO_CACHE_TOKENS
+        ):
+            tools = self._cache_friendly_tools(tools)
         kwargs: dict[str, Any] = {
             "model": chosen_model,
             "messages": self._to_openai_messages(system, messages),
