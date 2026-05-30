@@ -1074,9 +1074,10 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
     # ~/.maverick/audit/*.ndjson -- an Art.17 gap (scrub_user was dead
     # code, never called). Done BEFORE recording the erase event below so
     # that event (which hashes the subject) isn't itself scrubbed.
-    # If [audit] sign is enabled this breaks the hash-chain; Step 6 below
-    # re-anchors it so `maverick audit verify` passes again (leaving PII in
-    # place would violate Art.17).
+    # If [audit] sign is enabled scrub_user verifies the chain before mutating
+    # it and re-anchors only the files it changed (leaving PII in place would
+    # violate Art.17, but blindly re-signing old tampering would destroy audit
+    # evidence).
     audit_scrubbed = 0
     try:
         from .audit import scrub_user
@@ -1089,11 +1090,21 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
             err=True,
         )
 
+    # Scrubbing may have re-anchored signed audit files, so drop any cached
+    # signer before appending the erase marker. The compatibility hook is safe:
+    # it refuses to rewrite already-broken chains unless the erase helper
+    # verified them before mutation.
+    from . import audit
+
+    try:
+        audit.reanchor_after_erase()
+    except Exception as e:  # pragma: no cover - defensive
+        click.echo(f"⚠ audit re-anchor failed: {e}", err=True)
+
     # GDPR Art. 30: record that an erasure happened, but hash the subject so
     # the audit trail itself never re-leaks the identity we just erased.
     import hashlib
 
-    from . import audit
     audit.record(
         "erase",
         channel=channel,
@@ -1104,16 +1115,6 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         attachments=removed_attachments,
         audit_lines_scrubbed=audit_scrubbed,
     )
-
-    # Step 6: scrubbing rows above broke the signed Ed25519 hash-chain at
-    # each erasure point -- a break `maverick audit verify` can't tell apart
-    # from tampering. Re-anchor the chain so it verifies clean again; the
-    # signed `erase` marker just recorded documents that the cut was
-    # authorized. No-op when signing is off; never fails the erasure.
-    try:
-        audit.reanchor_after_erase()
-    except Exception as e:  # pragma: no cover - defensive
-        click.echo(f"⚠ audit re-anchor failed: {e}", err=True)
 
     click.echo(
         f"erased {len(convs)} conversation(s), {removed_turns} turn(s), "

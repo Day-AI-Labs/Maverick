@@ -4,6 +4,7 @@ The writer is fail-safe: any exception writing the audit log is logged
 to the regular Python logger and swallowed. The agent kernel must never
 crash because of an audit-path bug.
 """
+
 from __future__ import annotations
 
 import json
@@ -34,9 +35,11 @@ def _resolve_signing(explicit: Optional[bool]) -> bool:
         return bool(explicit)
     if "MAVERICK_AUDIT_SIGN" in os.environ:
         from .._envparse import env_bool
+
         return env_bool("MAVERICK_AUDIT_SIGN", False)
     try:
         from ..config import load_config
+
         return bool(((load_config() or {}).get("audit") or {}).get("sign", False))
     except Exception:
         return False
@@ -140,6 +143,7 @@ class AuditLog:
         if self._signer is None or self._signer_path != path:
             try:
                 from .signing import AuditSigner
+
                 self._signer = AuditSigner(path)
                 self._signer_path = path
             except ImportError:
@@ -156,14 +160,13 @@ class AuditLog:
         return self._signer
 
     def reanchor_after_erase(self) -> int:
-        """Re-chain + re-sign every audit file after a GDPR erase mutated rows.
+        """Refresh signed audit files after a GDPR erase.
 
-        A scrub/delete leaves the hash-chain broken at the erase points,
-        indistinguishable from tampering. This re-anchors each day file so
-        ``verify_chain`` passes again (the caller's signed ``erase`` marker
-        records that the cut was authorized), and drops the cached signer so
-        the next ``record()`` resumes from the rewritten head instead of a
-        stale in-memory hash.
+        Erase helpers verify each signed file before mutating it and re-anchor
+        only those modified files. This compatibility hook therefore only
+        attempts safe/idempotent re-anchors: ``reanchor_file`` refuses to
+        rewrite a chain that is not already clean unless the caller explicitly
+        supplies proof that the pre-erase file was verified.
 
         No-op (returns 0) when signing is disabled -- an unsigned log has no
         chain to repair. Never raises: a re-anchor failure must not undo a
@@ -185,7 +188,7 @@ class AuditLog:
                 return 0
             for path in sorted(self.audit_dir.glob("*.ndjson")):
                 try:
-                    n = reanchor_file(path, force=True)
+                    n = reanchor_file(path)
                 except Exception as e:  # pragma: no cover - defensive
                     log.warning("audit: reanchor failed for %s: %s", path, e)
                     continue
@@ -216,6 +219,7 @@ class AuditLog:
     def grep(self, pattern: str, day: Optional[str] = None) -> list[dict[str, Any]]:
         """Crude regex grep over the day's events."""
         import re
+
         rx = re.compile(pattern)
         if day is None:
             day = datetime.now(timezone.utc).strftime("%Y-%m-%d")

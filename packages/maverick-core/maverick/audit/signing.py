@@ -22,6 +22,7 @@ Key management:
 
 Optional [audit-signing] extra (cryptography>=42.0).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -64,14 +65,15 @@ def _key_paths_for_id(key_id: str) -> tuple[Path, Path] | tuple[None, None]:
 
 @dataclass
 class ChainBreak:
-    line_no: int       # 1-indexed
-    reason: str        # 'bad_hash' | 'bad_signature' | 'chain_mismatch' | 'malformed'
+    line_no: int  # 1-indexed
+    reason: str  # 'bad_hash' | 'bad_signature' | 'chain_mismatch' | 'malformed'
     detail: str
 
 
 def _have_crypto() -> bool:
     try:
         from cryptography.hazmat.primitives.asymmetric import ed25519  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -282,14 +284,14 @@ def verify_chain(path: Path, pubkey_hex: Optional[str] = None) -> list[ChainBrea
                 breaks.append(ChainBreak(n, "malformed", "missing hash/sig/key_id"))
                 continue
             if row_prev != prev:
-                breaks.append(ChainBreak(
-                    n, "chain_mismatch",
-                    f"row prev={row_prev[:12]}... expected {prev[:12] or '(empty)'}",
-                ))
-            payload_for_hash = {
-                k: v for k, v in data.items()
-                if k not in ("hash", "sig")
-            }
+                breaks.append(
+                    ChainBreak(
+                        n,
+                        "chain_mismatch",
+                        f"row prev={row_prev[:12]}... expected {prev[:12] or '(empty)'}",
+                    )
+                )
+            payload_for_hash = {k: v for k, v in data.items() if k not in ("hash", "sig")}
             expected_hash = hashlib.sha256(
                 json.dumps(payload_for_hash, sort_keys=True, default=str).encode("utf-8")
             ).hexdigest()
@@ -313,7 +315,7 @@ def verify_chain(path: Path, pubkey_hex: Optional[str] = None) -> list[ChainBrea
     return breaks
 
 
-def reanchor_file(path: Path, *, force: bool = False) -> int:
+def reanchor_file(path: Path, *, force: bool = False, preverified: bool = False) -> int:
     """Re-chain + re-sign every row of a signed audit file, in place.
 
     A GDPR erase tombstones or removes rows but does NOT recompute the
@@ -323,6 +325,11 @@ def reanchor_file(path: Path, *, force: bool = False) -> int:
     verifies clean again, preserving row content and order. The caller writes
     a signed ``erase`` marker first so a verifier holding the trusted pubkey
     can see the cut was authorized.
+
+    By default, re-anchoring first verifies the existing file and refuses to
+    rewrite a broken chain. Callers that just performed an authorized erase
+    may pass ``preverified=True`` only after verifying the original file before
+    mutating it; this prevents a routine erase from laundering older tampering.
 
     ``force`` re-signs even rows that currently carry no signature (e.g. a
     file whose every signed row was tombstoned by the erase). Without it, a
@@ -367,6 +374,15 @@ def reanchor_file(path: Path, *, force: bool = False) -> int:
 
     if not any_signed and not force:
         return -1
+    if not preverified:
+        breaks = verify_chain(path)
+        if breaks:
+            log.warning(
+                "audit reanchor: refusing to rewrite %s; chain is not clean (%s)",
+                path,
+                breaks[0],
+            )
+            return -1
 
     priv_bytes, _pub, key_id = _load_or_create_keypair()
     signer = ed25519.Ed25519PrivateKey.from_private_bytes(priv_bytes)
@@ -382,10 +398,7 @@ def reanchor_file(path: Path, *, force: bool = False) -> int:
         # Strip the old chain fields, then rebuild them exactly as
         # AuditSigner.write does (hash over payload incl. prev_hash + key_id,
         # sort_keys=True; sig over the hash bytes).
-        payload = {
-            k: v for k, v in val.items()
-            if k not in ("hash", "sig", "prev_hash", "key_id")
-        }
+        payload = {k: v for k, v in val.items() if k not in ("hash", "sig", "prev_hash", "key_id")}
         payload["prev_hash"] = prev
         payload["key_id"] = key_id
         row_hash = hashlib.sha256(

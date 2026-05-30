@@ -22,6 +22,7 @@ Matching: an event matches a user iff its payload contains
 ``channel`` AND ``user_id`` keys equal to the args (or
 ``channel:user_id`` appears in any string field).
 """
+
 from __future__ import annotations
 
 import json
@@ -56,20 +57,64 @@ def _tombstone(event: dict, channel: str, user_id: str) -> dict:
 
 
 def _process_file(
-    path: Path, channel: str, user_id: str, *, delete: bool,
+    path: Path,
+    channel: str,
+    user_id: str,
+    *,
+    delete: bool,
 ) -> tuple[int, int]:
     """Walk a single audit-log file. Returns (matched, written)."""
     if not path.exists() or path.is_dir():
         return 0, 0
-    tmp = path.with_suffix(".ndjson.erasetmp")
+    try:
+        original = path.read_text(encoding="utf-8")
+    except OSError as e:
+        log.warning("audit erase: %s: %s", path, e)
+        return 0, 0
+
+    rows: list[tuple[str, dict | None]] = []
     matched = 0
+    any_signed = False
+    for raw in original.splitlines(keepends=True):
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError:
+            rows.append((raw, None))
+            continue
+        if event.get("sig") and event.get("hash") and event.get("key_id"):
+            any_signed = True
+        if _event_matches(event, channel, user_id):
+            matched += 1
+        rows.append((raw, event))
+
+    if matched == 0:
+        return 0, len(rows)
+
+    # If this is a signed audit file, validate it before making the authorized
+    # erase mutation. Re-anchoring after the rewrite may only bless changes we
+    # just made to a previously clean chain, never unrelated old tampering.
+    if any_signed:
+        try:
+            from .signing import verify_chain
+
+            breaks = verify_chain(path)
+        except Exception as e:  # pragma: no cover - defensive/crypto missing
+            log.warning("audit erase: could not verify %s before rewrite: %s", path, e)
+            return 0, len(rows)
+        if breaks:
+            log.warning(
+                "audit erase: refusing to rewrite %s; signed chain is not clean (%s)",
+                path,
+                breaks[0],
+            )
+            return 0, len(rows)
+
+    tmp = path.with_suffix(".ndjson.erasetmp")
     written = 0
     try:
-        with open(path, encoding="utf-8") as src, open(tmp, "w", encoding="utf-8") as dst:
-            for raw in src:
-                try:
-                    event = json.loads(raw)
-                except json.JSONDecodeError:
+        with open(tmp, "w", encoding="utf-8") as dst:
+            for raw, event in rows:
+                if event is None:
                     dst.write(raw)
                     written += 1
                     continue
@@ -77,7 +122,6 @@ def _process_file(
                     dst.write(raw)
                     written += 1
                     continue
-                matched += 1
                 if delete:
                     continue
                 dst.write(json.dumps(_tombstone(event, channel, user_id), default=str) + "\n")
@@ -92,6 +136,13 @@ def _process_file(
             os.chmod(path, mode)
         except OSError:
             pass
+        if any_signed:
+            try:
+                from .signing import reanchor_file
+
+                reanchor_file(path, force=True, preverified=True)
+            except Exception as e:  # pragma: no cover - defensive/crypto missing
+                log.warning("audit erase: could not reanchor %s after rewrite: %s", path, e)
     except OSError as e:
         log.warning("audit erase: %s: %s", path, e)
         if tmp.exists():
@@ -120,7 +171,10 @@ def scrub_user(
         total_scanned += w
     log.info(
         "audit erase (scrub): channel=%s user_id=%s matched=%d scanned=%d",
-        channel, user_id, total_matched, total_scanned,
+        channel,
+        user_id,
+        total_matched,
+        total_scanned,
     )
     return total_matched, total_scanned
 
@@ -142,7 +196,10 @@ def delete_user(
         total_scanned += w
     log.info(
         "audit erase (delete): channel=%s user_id=%s matched=%d scanned=%d",
-        channel, user_id, total_matched, total_scanned,
+        channel,
+        user_id,
+        total_matched,
+        total_scanned,
     )
     return total_matched, total_scanned
 
