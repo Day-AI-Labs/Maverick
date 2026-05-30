@@ -21,6 +21,12 @@ logging.basicConfig(
 # advertises that, but our initialize response is on the current one.
 PROTOCOL_VERSION = "2025-11-25"
 PROTOCOL_VERSION_FALLBACK = "2024-11-05"
+# Spec revisions we can negotiate. Our behaviour is a superset of the older
+# specs, so we accept the intermediate revisions too. MCP rule: echo the
+# client's requested version if we support it, else respond with our latest.
+SUPPORTED_PROTOCOL_VERSIONS = (
+    PROTOCOL_VERSION_FALLBACK, "2025-03-26", "2025-06-18", PROTOCOL_VERSION,
+)
 SERVER_NAME = "maverick"
 SERVER_VERSION = "0.2.0"
 
@@ -134,11 +140,12 @@ class MCPServer:
 
     def handle_initialize(self, params: dict) -> dict:
         self._initialized = True
-        # Negotiate down if the client only speaks the older spec.
+        # MCP negotiation: echo the client's requested version if we support
+        # it, else respond with our latest. The old `< "2025-11-25"`
+        # lexicographic check downgraded EVERY pre-latest client -- including
+        # modern ones like "2025-06-18" -- all the way to "2024-11-05".
         client_ver = params.get("protocolVersion", "")
-        version = PROTOCOL_VERSION
-        if client_ver and client_ver < "2025-11-25":
-            version = PROTOCOL_VERSION_FALLBACK
+        version = client_ver if client_ver in SUPPORTED_PROTOCOL_VERSIONS else PROTOCOL_VERSION
         return {
             "protocolVersion": version,
             "capabilities": {
