@@ -106,6 +106,13 @@ def _op_run(args: dict) -> str:
     model = (args.get("model") or "").strip()
     if not model:
         return "ERROR: run requires model"
+    # owner/name[:version] -- reject anything that could traverse to a
+    # different API path (model is interpolated into /models/{model}).
+    owner_name = model.split(":", 1)[0]
+    parts = owner_name.split("/")
+    if (len(parts) != 2 or not all(parts) or ".." in owner_name
+            or not all(c.isalnum() or c in "_.-" for p in parts for c in p)):
+        return f"ERROR: invalid model {model!r} (expected owner/name[:version])"
     inp = args.get("input") if isinstance(args.get("input"), dict) else {}
     version = _resolve_version(model)
     if not version:

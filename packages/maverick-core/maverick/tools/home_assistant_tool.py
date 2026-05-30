@@ -92,10 +92,16 @@ def _op_states(args: dict) -> str:
     )
 
 
+def _safe_seg(s: str) -> bool:
+    """HA entity_ids / domains / services are [A-Za-z0-9_.-]; reject slashes
+    and '..' so a value can't traverse the REST API path."""
+    return bool(s) and ".." not in s and all(c.isalnum() or c in "_.-" for c in s)
+
+
 def _op_state_get(args: dict) -> str:
     eid = (args.get("entity_id") or "").strip()
-    if not eid:
-        return "ERROR: state_get requires entity_id"
+    if not _safe_seg(eid):
+        return "ERROR: state_get requires a valid entity_id"
     code, data = _get(f"/api/states/{eid}")
     if code == 404:
         return f"entity {eid} not found"
@@ -113,8 +119,8 @@ def _op_state_get(args: dict) -> str:
 def _op_call_service(args: dict) -> str:
     domain = (args.get("domain") or "").strip()
     service = (args.get("service") or "").strip()
-    if not domain or not service:
-        return "ERROR: call_service requires domain and service"
+    if not _safe_seg(domain) or not _safe_seg(service):
+        return "ERROR: call_service requires a valid domain and service"
     if not args.get("confirm"):
         return (
             f"DRY RUN: would call {domain}.{service}. "
@@ -130,8 +136,8 @@ def _op_call_service(args: dict) -> str:
 
 def _op_history(args: dict) -> str:
     eid = (args.get("entity_id") or "").strip()
-    if not eid:
-        return "ERROR: history requires entity_id"
+    if not _safe_seg(eid):
+        return "ERROR: history requires a valid entity_id"
     # HA's history endpoint defaults to last 24h. ``hours`` is reserved
     # in the schema for future use once we hand-build the start_time
     # query — current API takes no explicit window.

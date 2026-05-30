@@ -122,6 +122,8 @@ def _list_inbox(args: dict[str, Any]) -> str:
     if not user or not pw:
         return "ERROR: list_inbox requires EMAIL_USER + EMAIL_APP_PASSWORD"
     folder = args.get("folder") or "INBOX"
+    if any(ord(c) < 0x20 for c in folder):
+        return "ERROR: invalid folder name (control character)"
     limit = max(1, min(int(args.get("limit") or 20), 200))
     criterion = "UNSEEN" if args.get("unread_only") else "ALL"
 
@@ -162,9 +164,11 @@ def _fetch(args: dict[str, Any]) -> str:
     if not user or not pw:
         return "ERROR: fetch requires EMAIL_USER + EMAIL_APP_PASSWORD"
     uid = (args.get("uid") or "").strip()
-    if not uid:
-        return "ERROR: fetch requires uid"
+    if not uid.isdigit():
+        return "ERROR: fetch requires a numeric uid"
     folder = args.get("folder") or "INBOX"
+    if any(ord(c) < 0x20 for c in folder):
+        return "ERROR: invalid folder name (control character)"
 
     try:
         with imaplib.IMAP4_SSL(host) as m:
