@@ -66,6 +66,7 @@ def test_bluesky_channel_env_vars():
     "pick_retention",
     "pick_persona",
     "pick_notifications",
+    "pick_webhooks",
 ])
 def test_new_pick_exists(name):
     from maverick_installer import wizard
@@ -182,6 +183,16 @@ def test_write_config_emits_notifications(tmp_path: Path, monkeypatch):
     assert parsed["notifications"]["topic"] == "alerts"
 
 
+def test_write_config_emits_webhooks(tmp_path: Path, monkeypatch):
+    parsed = _write_full_config(
+        tmp_path, monkeypatch,
+        webhooks={"outbound": ["https://a.example", "https://b.example"],
+                  "secret": "${MAVERICK_WEBHOOK_SECRET}"},
+    )
+    assert parsed["webhooks"]["outbound"] == ["https://a.example", "https://b.example"]
+    assert parsed["webhooks"]["secret"] == "${MAVERICK_WEBHOOK_SECRET}"
+
+
 def test_write_config_emits_web_search_capability(tmp_path: Path, monkeypatch):
     parsed = _write_full_config(
         tmp_path, monkeypatch, web_search_enabled=True,
@@ -193,7 +204,7 @@ def test_write_config_omits_empty_optional_sections(tmp_path: Path, monkeypatch)
     """Unspecified optionals should not emit empty sections."""
     parsed = _write_full_config(tmp_path, monkeypatch)
     for sec in ("mcp_servers", "plugins", "security", "rate_limits",
-                "retention", "persona", "notifications"):
+                "retention", "persona", "notifications", "webhooks"):
         assert sec not in parsed, f"{sec} should be absent"
 
 
@@ -270,6 +281,14 @@ def test_pick_notifications_skipped(monkeypatch):
     _StubQ(monkeypatch)
     from maverick_installer.wizard import pick_notifications
     cfg, envs = pick_notifications()
+    assert cfg == {}
+    assert envs == []
+
+
+def test_pick_webhooks_skipped(monkeypatch):
+    _StubQ(monkeypatch)
+    from maverick_installer.wizard import pick_webhooks
+    cfg, envs = pick_webhooks()
     assert cfg == {}
     assert envs == []
 

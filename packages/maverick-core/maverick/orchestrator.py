@@ -36,8 +36,22 @@ def _build_shield() -> Optional[Any]:
         return None
 
 
+def _fire_webhook(event: str, payload: dict[str, Any]) -> None:
+    """Emit a run-lifecycle webhook, never raising into the run loop.
+
+    ``webhooks.fire`` is a silent no-op when no ``[webhooks] outbound``
+    is configured, so this stays free for users who haven't opted in.
+    """
+    try:
+        from .webhooks import fire
+        fire(event, payload)
+    except Exception as e:  # pragma: no cover -- webhooks never block a run
+        log.debug("webhook %s skipped: %s", event, e)
+
+
 def _end_episode_with_spend(
     world: WorldModel, episode_id: int, summary: str, outcome: str, budget: Budget,
+    goal_id: Optional[int] = None,
 ) -> None:
     try:
         world.end_episode(
@@ -49,6 +63,12 @@ def _end_episode_with_spend(
         )
     except TypeError:
         world.end_episode(episode_id, summary, outcome)
+    _fire_webhook("episode_finished", {
+        "goal_id": goal_id,
+        "episode_id": episode_id,
+        "outcome": outcome,
+        "cost_dollars": budget.dollars,
+    })
 
 
 async def run_goal(
@@ -77,6 +97,7 @@ async def run_goal(
 
     world.set_goal_status(goal_id, "active")
     episode_id = world.start_episode(goal_id)
+    _fire_webhook("goal_created", {"goal_id": goal_id, "title": goal.title})
     blackboard = Blackboard()
     blackboard.attach_world(world, goal_id)  # persist every post for live streaming
     sandbox = sandbox or LocalBackend()
@@ -174,8 +195,12 @@ async def run_goal(
         try:
             result = await root.run()
         except BudgetExceeded as e:
-            _end_episode_with_spend(world, episode_id, f"budget: {e}", "failure", budget)
+            _end_episode_with_spend(world, episode_id, f"budget: {e}", "failure", budget, goal_id)
             world.set_goal_status(goal_id, "blocked", result=f"budget exceeded: {e}")
+            _fire_webhook("goal_finished", {
+                "goal_id": goal_id, "status": "blocked",
+                "result": f"budget exceeded: {e}",
+            })
             # Sentence-style error so a non-engineer can read it.
             return (
                 f"Stopped: this goal hit your spending or time limit "
@@ -186,9 +211,13 @@ async def run_goal(
 
         if result.blocked_on_user:
             _end_episode_with_spend(
-                world, episode_id, "blocked awaiting user", "interrupted", budget,
+                world, episode_id, "blocked awaiting user", "interrupted", budget, goal_id,
             )
             world.set_goal_status(goal_id, "blocked")
+            _fire_webhook("goal_finished", {
+                "goal_id": goal_id, "status": "blocked",
+                "result": "blocked awaiting user",
+            })
             qs = world.open_questions(goal_id)
             if not qs:
                 return (
@@ -213,14 +242,25 @@ async def run_goal(
                 or "--- a/" in result.final_patch
             ):
                 _end_episode_with_spend(
-                    world, episode_id, result.final_patch, "success", budget,
+                    world, episode_id, result.final_patch, "success", budget, goal_id,
                 )
                 world.set_goal_status(
                     goal_id, "done", result=result.final_patch,
                 )
+                _fire_webhook("final_emitted", {
+                    "goal_id": goal_id,
+                    "patch_size_bytes": len(result.final_patch.encode("utf-8")),
+                })
+                _fire_webhook("goal_finished", {
+                    "goal_id": goal_id, "status": "done",
+                    "result": result.final_patch,
+                })
                 return result.final_patch
-            _end_episode_with_spend(world, episode_id, result.error, "failure", budget)
+            _end_episode_with_spend(world, episode_id, result.error, "failure", budget, goal_id)
             world.set_goal_status(goal_id, "blocked", result=result.error)
+            _fire_webhook("goal_finished", {
+                "goal_id": goal_id, "status": "blocked", "result": result.error,
+            })
             return (
                 f"Stopped: the assistant ran into an error and couldn't finish.\n"
                 f"Detail: {result.error}\n"
@@ -236,8 +276,15 @@ async def run_goal(
         # `final` is kept as a fallback for non-coding-mode goals where
         # the answer is prose.
         summary = result.final_patch or result.final or "(no answer)"
-        _end_episode_with_spend(world, episode_id, summary, "success", budget)
+        _end_episode_with_spend(world, episode_id, summary, "success", budget, goal_id)
         world.set_goal_status(goal_id, "done", result=summary)
+        _fire_webhook("final_emitted", {
+            "goal_id": goal_id,
+            "patch_size_bytes": len(summary.encode("utf-8")),
+        })
+        _fire_webhook("goal_finished", {
+            "goal_id": goal_id, "status": "done", "result": summary,
+        })
 
         # Trajectory donation (Karpathy data-engine analog). Default OFF;
         # only fires when the user opted into [telemetry] donate_trajectories
