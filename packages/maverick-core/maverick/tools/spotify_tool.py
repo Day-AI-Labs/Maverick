@@ -97,10 +97,16 @@ def _op_search(args: dict) -> str:
     return "\n".join(out) or "no matches"
 
 
+def _safe_id(value: str) -> bool:
+    """Spotify IDs are Base62 (letters + digits); reject anything else so a
+    value can't traverse to a different API path."""
+    return bool(value) and value.isalnum()
+
+
 def _op_track_get(args: dict) -> str:
     tid = (args.get("track_id") or "").strip()
-    if not tid:
-        return "ERROR: track_get requires track_id"
+    if not _safe_id(tid):
+        return "ERROR: track_get requires a valid track_id"
     code, data = _get(f"/tracks/{tid}")
     if code == 404:
         return f"track {tid} not found"
@@ -133,8 +139,8 @@ def _op_playlists(args: dict) -> str:
 
 def _op_playlist_get(args: dict) -> str:
     pid = (args.get("playlist_id") or "").strip()
-    if not pid:
-        return "ERROR: playlist_get requires playlist_id"
+    if not _safe_id(pid):
+        return "ERROR: playlist_get requires a valid playlist_id"
     code, data = _get(f"/playlists/{pid}")
     if code == 404:
         return f"playlist {pid} not found"

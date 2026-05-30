@@ -34,7 +34,7 @@ class BedrockClient(OpenAIClient):
             base_url
             or f"https://bedrock-runtime.{region}.amazonaws.com/openai/v1"
         )
-        super().__init__(api_key=key, base_url=url)
+        super().__init__(api_key=key, base_url=url, allow_openai_env_fallback=False)
         model = os.environ.get("BEDROCK_MODEL_ID", "").strip()
         if model:
             self.DEFAULT_MODEL = model
