@@ -155,21 +155,27 @@ def _install_fake_openai(monkeypatch):
 
 
 class TestThirdPartyProvidersDoNotFallbackToOpenAIKey:
+    # When a third-party (OpenAI-compatible) provider has no key of its own,
+    # we must NOT hand the OpenAI SDK api_key=None, because the SDK would then
+    # read OPENAI_API_KEY from the environment and send it to the provider's
+    # base_url. These providers set allow_openai_env_fallback=False, so the
+    # client now fails closed with RuntimeError instead of constructing a
+    # client that silently leaks the OpenAI key.
     def test_moonshot_does_not_use_openai_env_key(self, monkeypatch):
         _install_fake_openai(monkeypatch)
         monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-should-not-leak")
         monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
         from maverick.providers.moonshot_provider import MoonshotClient
-        client = MoonshotClient()
-        assert client._sync.api_key is None
+        with pytest.raises(RuntimeError, match="requires a non-empty API key"):
+            MoonshotClient()
 
     def test_deepseek_does_not_use_openai_env_key(self, monkeypatch):
         _install_fake_openai(monkeypatch)
         monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-should-not-leak")
         monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
         from maverick.providers.deepseek_provider import DeepSeekClient
-        client = DeepSeekClient()
-        assert client._sync.api_key is None
+        with pytest.raises(RuntimeError, match="requires a non-empty API key"):
+            DeepSeekClient()
 
     def test_xai_does_not_use_openai_env_key(self, monkeypatch):
         _install_fake_openai(monkeypatch)
@@ -177,5 +183,5 @@ class TestThirdPartyProvidersDoNotFallbackToOpenAIKey:
         monkeypatch.delenv("XAI_API_KEY", raising=False)
         monkeypatch.delenv("GROK_API_KEY", raising=False)
         from maverick.providers.xai_provider import XaiClient
-        client = XaiClient()
-        assert client._sync.api_key is None
+        with pytest.raises(RuntimeError, match="requires a non-empty API key"):
+            XaiClient()

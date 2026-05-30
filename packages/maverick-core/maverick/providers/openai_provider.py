@@ -82,6 +82,11 @@ class OpenAIClient:
         # all pass their key through here. Matches AnthropicClient.
         if key is not None:
             key = key.strip() or None
+        if key is None and not allow_openai_env_fallback:
+            raise RuntimeError(
+                "OpenAI-compatible provider requires a non-empty API key; "
+                "refusing to fall back to OPENAI_API_KEY for this base_url."
+            )
         from .base import llm_http_timeout
         kw: dict = {"api_key": key, "base_url": base_url}
         timeout = llm_http_timeout()

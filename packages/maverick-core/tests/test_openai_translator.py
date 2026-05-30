@@ -9,6 +9,8 @@ import json
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from maverick.providers.openai_provider import (
     OpenAIClient,
     _extract_tool_result_text,
@@ -207,11 +209,13 @@ class TestProviderApiKeyIsolation:
         monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
-        OpenRouterClient()
-
-        assert captures[0][0] is None
-        assert captures[1][0] is None
-        assert captures[0][1] == "https://openrouter.ai/api/v1"
+        # With no OpenRouter key, the client must NOT silently fall back to
+        # OPENAI_API_KEY (which would ship the user's OpenAI key to
+        # openrouter.ai). It now fails closed with RuntimeError rather than
+        # constructing a leaky client.
+        with pytest.raises(RuntimeError, match="requires a non-empty API key"):
+            OpenRouterClient()
+        assert captures == []
 
     def test_openrouter_prefers_openrouter_env(self, monkeypatch):
         captures = []
