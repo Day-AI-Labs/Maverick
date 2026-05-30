@@ -113,6 +113,26 @@ def test_write_config_emits_plugins(tmp_path: Path, monkeypatch):
     assert parsed["plugins"]["enabled"] == ["weather", "github-issues"]
 
 
+def test_write_config_roundtrips_backslash_paths_and_allowlist(tmp_path: Path, monkeypatch):
+    """A Windows backslash workdir must round-trip (escaped TOML basic string)
+    and a channel allowed_user_ids must emit as an ARRAY. Regression: the raw
+    f'{k} = "{v}"' emit turned C:\\Users... into an invalid \\U escape (config
+    unreadable on Windows) and rendered a list as a quoted string."""
+    parsed = _write_full_config(
+        tmp_path, monkeypatch,
+        sandbox={"backend": "local", "workdir": r"C:\Users\me\maverick ws", "timeout": 60},
+        channels={"discord": {
+            "enabled": True,
+            "bot_token": "${DISCORD_BOT_TOKEN}",
+            "allowed_user_ids": ["111", "222"],
+        }},
+    )
+    # Round-trips without TOMLDecodeError and preserves the backslashes.
+    assert parsed["sandbox"]["workdir"] == r"C:\Users\me\maverick ws"
+    # The allowlist is a TOML array, not a stringified list.
+    assert parsed["channels"]["discord"]["allowed_user_ids"] == ["111", "222"]
+
+
 def test_write_config_emits_tool_acl(tmp_path: Path, monkeypatch):
     parsed = _write_full_config(
         tmp_path, monkeypatch,

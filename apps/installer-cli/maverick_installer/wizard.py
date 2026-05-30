@@ -516,6 +516,21 @@ def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]
     channels: dict[str, dict[str, Any]] = {}
     envs: set[str] = set()
 
+    # Channels that gate inbound on a per-sender allowlist (default-deny) and
+    # REFUSE to start without one. A wizard-only setup must collect the
+    # allowlist or these silently fail to initialize (server.py logs and
+    # continues). Maps channel -> the prompt for its sender id(s).
+    allowlist_prompts = {
+        "telegram": "Allowed Telegram user IDs (numeric, comma-separated)",
+        "discord":  "Allowed Discord user IDs (numeric, comma-separated)",
+        "slack":    "Allowed Slack user IDs (e.g. U0123ABC, comma-separated)",
+        "signal":   "Allowed Signal numbers (E.164, comma-separated)",
+        "matrix":   "Allowed Matrix user IDs (e.g. @you:server, comma-separated)",
+        "email":    "Allowed sender email addresses (comma-separated)",
+        "bluesky":  "Allowed Bluesky handles/DIDs (comma-separated)",
+        "mastodon": "Allowed Mastodon acct handles (comma-separated)",
+    }
+
     for ch_id in picked_ids:
         info = next((c for c in CHANNELS if c[0] == ch_id), None)
         if info is None:
@@ -589,6 +604,31 @@ def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]
             cfg["port"] = _safe_int(_q_text("  Webhook port", default="8766"), default=8766)
         elif ch_id == "imessage":
             cfg["poll_interval"] = 5
+
+        # Collect the per-sender allowlist for channels that require one
+        # (otherwise the channel raises ValueError on startup).
+        if ch_id in allowlist_prompts:
+            raw = _q_text(
+                "  " + allowlist_prompts[ch_id] + " (required to start)",
+                default="",
+            )
+            ids = [x.strip() for x in raw.split(",") if x.strip()]
+            if ids:
+                cfg["allowed_user_ids"] = ids
+            else:
+                console.print(
+                    "  [yellow]No allowlist entered — this channel will refuse "
+                    "to start until you set allowed_user_ids in config.toml.[/yellow]"
+                )
+        elif ch_id == "voice":
+            raw = _q_text(
+                "  Allowed caller numbers (E.164, comma-separated; "
+                "blank = any authenticated caller)",
+                default="",
+            )
+            callers = [x.strip() for x in raw.split(",") if x.strip()]
+            if callers:
+                cfg["allowed_callers"] = callers
 
         channels[ch_id] = cfg
 
@@ -1236,6 +1276,19 @@ def _capture_gemini_session() -> bool:
 
 # ---------- write + verify ----------
 
+def _toml_str(v: Any) -> str:
+    """Render a value as a TOML basic string with proper escaping.
+
+    Windows paths (e.g. a sandbox workdir ``C:\\Users\\x\\ws``) contain
+    backslashes; emitted raw into a ``"..."`` basic string, ``\\U`` is parsed
+    as a unicode escape and the config.toml the wizard just wrote can't be read
+    back (``TOMLDecodeError: Invalid hex value``). Escape backslashes and
+    double-quotes so the round-trip holds on every platform.
+    """
+    s = str(v).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{s}"'
+
+
 def _emit_kv(lines: list[str], k: str, v: Any) -> None:
     """Append one TOML key=value line, type-dispatched."""
     if isinstance(v, bool):
@@ -1243,10 +1296,10 @@ def _emit_kv(lines: list[str], k: str, v: Any) -> None:
     elif isinstance(v, (int, float)):
         lines.append(f"{k} = {v}")
     elif isinstance(v, list):
-        rendered = ", ".join(f'"{x}"' for x in v)
+        rendered = ", ".join(_toml_str(x) for x in v)
         lines.append(f"{k} = [{rendered}]")
     else:
-        lines.append(f'{k} = "{v}"')
+        lines.append(f"{k} = {_toml_str(v)}")
 
 
 def write_config(
@@ -1323,31 +1376,23 @@ def write_config(
     for ch_id, cfg in channels.items():
         lines.append(f"[channels.{ch_id}]")
         for k, v in cfg.items():
-            if isinstance(v, bool):
-                lines.append(f"{k} = {str(v).lower()}")
-            elif isinstance(v, (int, float)):
-                lines.append(f"{k} = {v}")
-            else:
-                lines.append(f'{k} = "{v}"')
+            # _emit_kv handles lists (e.g. the allowed_user_ids array) and
+            # escapes string values; the old inline branch emitted a list as
+            # a quoted string and didn't escape backslash paths.
+            _emit_kv(lines, k, v)
         lines.append("")
 
     lines.append("[budget]")
     for k, v in budget.items():
-        lines.append(f"{k} = {v}")
+        _emit_kv(lines, k, v)
     lines.append("")
     lines.append("[safety]")
     for k, v in safety.items():
-        if isinstance(v, bool):
-            lines.append(f"{k} = {str(v).lower()}")
-        else:
-            lines.append(f'{k} = "{v}"')
+        _emit_kv(lines, k, v)
     lines.append("")
     lines.append("[sandbox]")
     for k, v in sandbox.items():
-        if isinstance(v, (int, float)) and not isinstance(v, bool):
-            lines.append(f"{k} = {v}")
-        else:
-            lines.append(f'{k} = "{v}"')
+        _emit_kv(lines, k, v)
 
     if capabilities:
         lines.append("")
