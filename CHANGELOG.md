@@ -4,6 +4,20 @@ All notable changes to Maverick. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Post-0.1.4 security fixes found by the adversarial pre-launch audit.
+
+### Security
+- Bumped dependency floors past known CVEs on the network-facing surfaces:
+  `pillow>=12.2.0` (5 CVEs incl. PYSEC-2026-165), `python-multipart>=0.0.27`
+  (CVE-2026-42561), `requests>=2.33.0` (CVE-2026-25645), `starlette>=1.0.1`
+  (PYSEC-2026-161), `urllib3>=2.7.0` (PYSEC-2026-142/141). starlette is
+  declared directly where the dashboard imports it; requests/urllib3 are
+  floored in the Twilio (`sms`/`whatsapp`) extras that pull them in.
+- The CI `pip-audit` job is now blocking, so a new advisory fails the build
+  and prompts a floor bump instead of shipping silently.
+
 ## [0.1.4] -- 2026-05-30
 
 The launch-hardening pass that landed just after the 0.1.3 tag was cut.

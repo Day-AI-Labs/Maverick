@@ -19,9 +19,12 @@ telegram = ["python-telegram-bot>=21.0"]
 discord  = ["discord.py>=2.4"]
 slack    = ["slack_sdk>=3.27"]
 matrix   = ["matrix-nio>=0.24"]
-whatsapp = ["fastapi>=0.110", "uvicorn>=0.27", "twilio>=9.0", "python-multipart>=0.0.27"]
-sms      = ["fastapi>=0.110", "uvicorn>=0.27", "twilio>=9.0", "python-multipart>=0.0.27"]
-voice    = ["fastapi>=0.110", "uvicorn>=0.27", "httpx>=0.27"]
+# starlette>=1.0.1 fixes PYSEC-2026-161 (FastAPI HTTP/multipart parser on
+# the untrusted Twilio webhook surface). requests>=2.33.0 / urllib3>=2.7.0
+# patch CVE-2026-25645 / PYSEC-2026-142,141 -- both enter via twilio.
+whatsapp = ["fastapi>=0.110", "uvicorn>=0.27", "twilio>=9.0", "python-multipart>=0.0.27", "starlette>=1.0.1", "requests>=2.33.0", "urllib3>=2.7.0"]
+sms      = ["fastapi>=0.110", "uvicorn>=0.27", "twilio>=9.0", "python-multipart>=0.0.27", "starlette>=1.0.1", "requests>=2.33.0", "urllib3>=2.7.0"]
+voice    = ["fastapi>=0.110", "uvicorn>=0.27", "httpx>=0.27", "starlette>=1.0.1"]
 bluesky  = ["httpx>=0.27"]
 mastodon = ["httpx>=0.27"]
 all = [
@@ -34,6 +37,9 @@ all = [
     "twilio>=9.0",
     "python-multipart>=0.0.27",
     "httpx>=0.27",
+    "starlette>=1.0.1",
+    "requests>=2.33.0",
+    "urllib3>=2.7.0",
 ]
 
 [project.urls]

@@ -21,6 +21,9 @@ dependencies = [
 http = [
     "fastapi>=0.110",
     "uvicorn>=0.27",
+    # FastAPI's HTTP/multipart parser on the untrusted MCP-over-HTTP
+    # surface; 1.0.1 fixes PYSEC-2026-161.
+    "starlette>=1.0.1",
 ]
 
 [project.urls]
