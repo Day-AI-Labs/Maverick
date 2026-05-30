@@ -1403,6 +1403,8 @@ def write_config(
             lines.append('kind = "session"')
         if prov == "ollama":
             lines.append('base_url = "http://localhost:11434"')
+        if prov == "openai_compatible":
+            lines.append('base_url = "${OPENAI_COMPATIBLE_BASE_URL}"')
         lines.append("")
     if role_models:
         lines.append("[models]")

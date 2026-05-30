@@ -113,6 +113,14 @@ PROVIDERS: dict[str, dict] = {
             {"id": "tgi",                  "notes": "Whatever model your TGI server serves; URL via TGI_BASE_URL env."},
         ],
     },
+    "openai_compatible": {
+        "status": "ready",
+        "label": "OpenAI-compatible endpoint (LM Studio / llama.cpp / Together / Groq)",
+        "env": "OPENAI_COMPATIBLE_API_KEY",
+        "models": [
+            {"id": "openai-compatible", "notes": "Set base_url to your endpoint; model id is whatever it serves."},
+        ],
+    },
     "chatgpt-session": {
         "status": "ready",
         "label": "ChatGPT browser session (use your Plus subscription, no API key)",

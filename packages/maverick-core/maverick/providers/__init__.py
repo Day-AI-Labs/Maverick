@@ -30,6 +30,7 @@ _PROVIDER_ALIASES = {
     "vllm":       (),
     "azure":      ("azure-openai",),
     "bedrock":    ("aws-bedrock",),
+    "openai_compatible": ("openai-compatible", "custom"),
 }
 
 
@@ -83,6 +84,9 @@ def get_provider_client(name: str, api_key: Optional[str] = None) -> Any:
     if canon == "bedrock":
         from .bedrock_provider import BedrockClient
         return BedrockClient(api_key=api_key)
+    if canon == "openai_compatible":
+        from .openai_compatible_provider import OpenAICompatibleClient
+        return OpenAICompatibleClient(api_key=api_key)
     raise ValueError(
         f"unknown provider {name!r}. Available: "
         + ", ".join(KNOWN_PROVIDERS)
@@ -92,7 +96,7 @@ def get_provider_client(name: str, api_key: Optional[str] = None) -> Any:
 KNOWN_PROVIDERS = (
     "anthropic", "openai", "moonshot", "xai", "gemini",
     "deepseek", "openrouter", "ollama", "tgi", "vllm",
-    "azure", "bedrock",
+    "azure", "bedrock", "openai_compatible",
 )
 
 
