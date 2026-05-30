@@ -23,8 +23,8 @@ jobs:
       built: ${{ steps.list.outputs.dirs }}
       names: ${{ steps.names.outputs.names }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install build tools
@@ -67,7 +67,7 @@ jobs:
           names=$(ls dist-all/*.whl | sed 's#.*/##; s/-[0-9].*//' | sort -u)
           echo "names=$(printf '%s\n' $names | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist-all/
@@ -90,7 +90,7 @@ jobs:
     environment:
       name: pypi
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist-all/
@@ -115,8 +115,8 @@ jobs:
       contents: write     # release attach
       id-token: write     # Sigstore OIDC
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
@@ -161,7 +161,7 @@ jobs:
         # Runs only when the release never appeared, so the signatures are
         # still retrievable. Never fails the job.
         if: steps.attach.outputs.uploaded == 'false'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: signatures
           path: signatures/*.cosign.bundle
