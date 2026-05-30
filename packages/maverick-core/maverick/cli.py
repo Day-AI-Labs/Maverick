@@ -1090,15 +1090,17 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
             err=True,
         )
 
-    # GDPR Art. 30: record that an erasure happened, but hash the subject so
-    # the audit trail itself never re-leaks the identity we just erased.
-    import hashlib
+    # GDPR Art. 30: record that an erasure happened without deriving a stable
+    # identifier from the subject. Low-entropy user IDs (phone numbers, short
+    # handles, numeric IDs) are enumerable, so even a truncated hash can
+    # re-identify the erased person if audit logs are read.
+    import secrets
 
     from . import audit
     audit.record(
         "erase",
         channel=channel,
-        user_hash=hashlib.sha256(user.encode()).hexdigest()[:16],
+        erasure_id=secrets.token_hex(8),
         conversations=len(convs),
         turns=removed_turns,
         goals=len(goal_ids),

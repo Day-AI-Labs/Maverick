@@ -32,10 +32,9 @@ def test_tool_registry_emits_tool_metric(monkeypatch):
     assert ("tool_calls", {"tool": "boom", "status": "error"}) in calls
 
 
-# --- privacy: `maverick erase` must append an audit event (hashed subject) ---
+# --- privacy: `maverick erase` must append an audit event without subject-derived data ---
 
-def test_erase_emits_hashed_audit_event(tmp_path, monkeypatch):
-    import hashlib
+def test_erase_emits_non_subject_derived_audit_event(tmp_path, monkeypatch):
     import os
 
     os.environ.pop("MAVERICK_DB", None)
@@ -69,9 +68,13 @@ def test_erase_emits_hashed_audit_event(tmp_path, monkeypatch):
     assert erase_events, "no erase audit event emitted"
     ev = erase_events[0]
     assert ev["channel"] == "telegram"
-    # Subject is hashed, never stored in plaintext (Art. 30 without re-leaking).
+    # Subject is never stored or deterministically derived (Art. 30 without
+    # enabling offline dictionary recovery of low-entropy user IDs).
     assert "u123" not in str(ev)
-    assert ev["user_hash"] == hashlib.sha256(b"u123").hexdigest()[:16]
+    assert "user_hash" not in ev
+    assert isinstance(ev["erasure_id"], str)
+    assert len(ev["erasure_id"]) == 16
+    int(ev["erasure_id"], 16)
 
 
 def test_erase_cascades_subgoals_without_fk_abort(tmp_path, monkeypatch):

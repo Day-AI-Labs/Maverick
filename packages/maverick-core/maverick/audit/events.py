@@ -19,7 +19,7 @@ Payload shapes (kind -> required fields, all events also carry
   consent_prompt:    action:str, risk:str (low|medium|high|critical)
   consent_result:    decision:str (approve|deny|timeout)
   secret_redacted:   tool_name:str, pattern:str, count:int
-  erase:             channel:str, user_hash:str (sha256[:16], never plaintext)
+  erase:             channel:str, erasure_id:str (random token, never subject-derived)
   halt:              source:str (file|signal|manual), detail:str|None
 """
 from __future__ import annotations
