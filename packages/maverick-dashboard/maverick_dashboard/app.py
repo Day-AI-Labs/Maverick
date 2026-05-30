@@ -126,6 +126,25 @@ _DEFAULT_CSP = (
     "object-src 'none'"
 )
 
+# The plan-tree page pulls Cytoscape.js from jsdelivr (SRI-pinned in the
+# template). Allow that one host on script-src for this page only; every
+# other directive stays as locked-down as _DEFAULT_CSP. connect-src stays
+# 'self' — the live poll only ever fetches our own /api/v1 endpoint.
+_PLAN_TREE_CSP = (
+    "default-src 'self'; "
+    "img-src 'self' data:; "
+    "style-src 'self' 'unsafe-inline'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'none'; "
+    "form-action 'self'; "
+    "object-src 'none'"
+)
+
+# /goals/{id}/plan — the only page that loads the Cytoscape CDN script.
+_PLAN_TREE_PATH_RE = re.compile(r"^/goals/\d+/plan/?$")
+
 
 @app.middleware("http")
 async def persist_theme(request: Request, call_next):
@@ -341,7 +360,13 @@ async def security_headers(request: Request, call_next):
     #   - object-src 'none', base-uri 'none' → kill plugin + <base> tricks
     # This matters because the dashboard renders agent-produced text;
     # if any of it ever reaches an HTML sink, CSP is the backstop.
-    csp = _DOCS_CSP if request.url.path in {"/docs", "/redoc"} else _DEFAULT_CSP
+    path = request.url.path
+    if path in {"/docs", "/redoc"}:
+        csp = _DOCS_CSP
+    elif _PLAN_TREE_PATH_RE.match(path):
+        csp = _PLAN_TREE_CSP
+    else:
+        csp = _DEFAULT_CSP
     response.headers.setdefault("Content-Security-Policy", csp)
     return response
 

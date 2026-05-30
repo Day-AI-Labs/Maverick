@@ -2,28 +2,28 @@
 {% block title %}Plan tree · {{ goal.title }} · Maverick{% endblock %}
 {% block content %}
 <style>
+  #plan-tree {
+    width: 100%; height: 560px; border-radius: 6px;
+    background: var(--bg); border: 1px solid var(--border);
+  }
+  .legend { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center; }
+  .legend span { font-size: 0.85em; color: var(--muted); }
+  .legend .live { margin-left: auto; }
+  /* Static fallback when JS is disabled. */
   .tree { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
   .tree ul { list-style: none; padding-left: 1.5rem; border-left: 1px solid var(--border); margin: 0; }
   .tree > ul { padding-left: 0; border-left: 0; }
   .tree li { position: relative; padding: 0.35rem 0 0.35rem 1rem; }
-  .tree li::before {
-    content: ""; position: absolute; top: 1rem; left: -1px;
-    width: 0.75rem; height: 1px; background: var(--border);
-  }
-  .tree > ul > li::before { display: none; }
   .tree .node {
     display: inline-flex; align-items: center; gap: 0.5rem;
     padding: 0.25rem 0.5rem; border-radius: 4px; background: var(--panel);
     border: 1px solid var(--border);
   }
-  .tree .node:hover { border-color: var(--accent); }
   .tree .nid { color: var(--muted); }
   .tree .title { color: var(--text); }
   .tree .cost { color: var(--muted); font-size: 0.85em; margin-left: 0.5rem; }
-  .legend { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
-  .legend span { font-size: 0.85em; color: var(--muted); }
 </style>
-<p class="muted"><a href="/goals">← all goals</a></p>
+<p class="muted"><a href="/goals">← all goals</a> · <a href="/goals/{{ goal.id }}/trajectory">trajectory</a></p>
 <h2>Goal #{{ goal.id }}: {{ goal.title }}</h2>
 <div class="panel">
   <div class="legend">
@@ -32,18 +32,127 @@
     <span><span class="badge failure">failed</span></span>
     <span><span class="badge blocked">blocked</span></span>
     <span><span class="badge pending">pending</span></span>
+    <span class="live" id="plan-tree-status" aria-live="polite">loading…</span>
   </div>
-  <div class="tree">
-    {# Tree HTML is pre-rendered in Python because Jinja macros can't
-       recurse with dict args (unhashable). #}
-    {{ tree_html | safe }}
-  </div>
+  <div id="plan-tree" role="img"
+       aria-label="Interactive plan tree for goal {{ goal.id }}"></div>
+  <noscript>
+    <div class="tree">
+      {# Server-rendered fallback for clients without JS. Tree HTML is
+         pre-rendered in Python because Jinja macros can't recurse with
+         dict args (unhashable). #}
+      {{ tree_html | safe }}
+    </div>
+  </noscript>
 </div>
 
 <p class="muted">
-  Plan tree updates as the swarm spawns / completes sub-goals.
-  Refresh to see live state, or use
+  Plan tree updates live as the swarm spawns / completes sub-goals.
+  You can also run
   <code>maverick monitor --goal-id {{ goal.id }}</code> in your terminal
   for a TUI view.
 </p>
+
+<script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"
+        integrity="sha384-IWROdLKRsN1UuJywMlWl7/blXQ8GEooN2n7dzTxfEPd7ybYIKCUJ2Ol/1Gpf3YV4"
+        crossorigin="anonymous"></script>
+<script>
+  // Interactive plan-tree: fetch /api/v1/goals/{id}/tree, render with
+  // Cytoscape, and poll for live updates while the goal is running.
+  (function() {
+    const GOAL_ID = {{ goal.id }};
+    const API = "/api/v1/goals/" + GOAL_ID + "/tree";
+    const POLL_MS = 4000;
+    const TERMINAL = ["done", "succeeded", "failed", "cancelled"];
+    const container = document.getElementById("plan-tree");
+    const statusEl = document.getElementById("plan-tree-status");
+    if (!container || typeof cytoscape === "undefined") {
+      if (statusEl) statusEl.textContent = "static view";
+      return;
+    }
+
+    // Map a goal status to a node colour (theme-driven CSS vars).
+    const css = getComputedStyle(document.body);
+    function colour(status) {
+      const v = (n) => (css.getPropertyValue(n) || "").trim() || "#888";
+      if (status === "active" || status === "in_progress") return v("--accent");
+      if (status === "done" || status === "succeeded") return v("--accent");
+      if (status === "failed" || status === "failure") return v("--danger");
+      if (status === "blocked") return v("--warn");
+      return v("--muted");
+    }
+
+    // Flatten the nested tree into Cytoscape node/edge elements.
+    function toElements(root) {
+      const els = [];
+      (function walk(n) {
+        if (!n || n.id === undefined) return;
+        const cost = n.dollars ? "  $" + Number(n.dollars).toFixed(4) : "";
+        els.push({ data: {
+          id: String(n.id),
+          label: "#" + n.id + "  " + (n.title || "(untitled)") + cost,
+          status: n.status || "",
+        }});
+        (n.children || []).forEach((c) => {
+          els.push({ data: { id: n.id + "->" + c.id, source: String(n.id), target: String(c.id) } });
+          walk(c);
+        });
+      })(root);
+      return els;
+    }
+
+    const cy = cytoscape({
+      container: container,
+      elements: [],
+      style: [
+        { selector: "node", style: {
+          "label": "data(label)", "font-size": "11px", "color": css.getPropertyValue("--text").trim() || "#ddd",
+          "background-color": (ele) => colour(ele.data("status")),
+          "text-valign": "center", "text-halign": "right", "text-margin-x": 6,
+          "width": 14, "height": 14,
+        }},
+        { selector: "edge", style: {
+          "width": 1.5, "line-color": css.getPropertyValue("--border").trim() || "#444",
+          "curve-style": "bezier", "target-arrow-shape": "triangle",
+          "target-arrow-color": css.getPropertyValue("--border").trim() || "#444",
+        }},
+      ],
+      layout: { name: "breadthfirst", directed: true, padding: 20, spacingFactor: 1.1 },
+      wheelSensitivity: 0.2,
+    });
+
+    cy.on("tap", "node", (ev) => {
+      window.location.href = "/goals#" + ev.target.id();
+    });
+
+    let timer = null;
+    async function refresh() {
+      try {
+        const r = await fetch(API, { headers: { "Accept": "application/json" } });
+        if (!r.ok) { statusEl.textContent = "error " + r.status; return null; }
+        const tree = await r.json();
+        cy.elements().remove();
+        cy.add(toElements(tree));
+        cy.layout({ name: "breadthfirst", directed: true, padding: 20 }).run();
+        return tree.status || "";
+      } catch (e) {
+        statusEl.textContent = "offline";
+        return null;
+      }
+    }
+
+    async function tick() {
+      const status = await refresh();
+      if (status === null) { timer = setTimeout(tick, POLL_MS); return; }
+      if (TERMINAL.indexOf(status) !== -1) {
+        statusEl.textContent = "done — " + status;
+        return; // stop polling once the root goal is terminal
+      }
+      statusEl.textContent = "live · " + (status || "running");
+      timer = setTimeout(tick, POLL_MS);
+    }
+    tick();
+    window.addEventListener("beforeunload", () => { if (timer) clearTimeout(timer); });
+  })();
+</script>
 {% endblock %}
