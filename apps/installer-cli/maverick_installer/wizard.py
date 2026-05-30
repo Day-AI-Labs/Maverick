@@ -980,6 +980,34 @@ def pick_notifications() -> tuple[dict[str, Any], list[str]]:
     return {}, []
 
 
+def pick_webhooks() -> tuple[dict[str, Any], list[str]]:
+    """Outbound run-lifecycle webhooks. Returns (config, env_vars_needed).
+
+    Distinct from pick_notifications (a single run-end ping): these are
+    signed POSTs fired on every lifecycle event (goal_created,
+    goal_finished, episode_finished, final_emitted) to one or more
+    endpoints, for integrations (Zapier, custom receivers, dashboards).
+    """
+    if not _q_confirm(
+        "POST run events to your own endpoint(s)? (signed lifecycle webhooks)",
+        default=False,
+    ):
+        return {}, []
+    raw = _q_text(
+        "  Endpoint URL(s), comma-separated",
+        default="",
+    ).strip()
+    urls = [u.strip() for u in raw.split(",") if u.strip()]
+    if not urls:
+        return {}, []
+    cfg: dict[str, Any] = {"outbound": urls}
+    envs: list[str] = []
+    if _q_confirm("  Sign payloads with an HMAC secret?", default=True):
+        cfg["secret"] = "${MAVERICK_WEBHOOK_SECRET}"
+        envs.append("MAVERICK_WEBHOOK_SECRET")
+    return cfg, envs
+
+
 def collect_api_keys(providers: list[str], channel_envs: set[str]) -> dict[str, str]:
     keys: dict[str, str] = {}
     needed: list[str] = []
@@ -1328,6 +1356,7 @@ def write_config(
     retention: dict[str, int] | None = None,
     persona: dict[str, str] | None = None,
     notifications: dict[str, Any] | None = None,
+    webhooks: dict[str, Any] | None = None,
     web_search_enabled: bool = False,
 ) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -1461,6 +1490,12 @@ def write_config(
         lines.append("")
         lines.append("[notifications]")
         for k, v in notifications.items():
+            _emit_kv(lines, k, v)
+
+    if webhooks:
+        lines.append("")
+        lines.append("[webhooks]")
+        for k, v in webhooks.items():
             _emit_kv(lines, k, v)
 
     # Config has no secrets today but does carry the deployment
@@ -1928,9 +1963,13 @@ def run(fast: bool = False, resume: bool = False) -> int:
     state["_notifications_pair"] = [notifications, notify_envs]
     _save_partial(state)
 
+    webhooks, webhook_envs = state.get("_webhooks_pair") or pick_webhooks()
+    state["_webhooks_pair"] = [webhooks, webhook_envs]
+    _save_partial(state)
+
     # Keys/sessions are never persisted to disk in the partial state
     # (they're secrets; the only safe place is ~/.maverick/.env).
-    extra_envs = set(web_search_envs) | set(notify_envs)
+    extra_envs = set(web_search_envs) | set(notify_envs) | set(webhook_envs)
     keys = collect_api_keys(providers, channel_envs | extra_envs)
     captured_sessions = collect_browser_sessions(providers)
     if captured_sessions:
@@ -1960,6 +1999,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
         retention=retention,
         persona=persona,
         notifications=notifications,
+        webhooks=webhooks,
         web_search_enabled=web_search_enabled,
     )
     _clear_partial()
