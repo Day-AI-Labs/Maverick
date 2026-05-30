@@ -44,3 +44,42 @@ def test_stringy_false_does_not_enable(tmp_path, monkeypatch):
     monkeypatch.setenv("MAVERICK_ENABLE_SESSION_PROVIDERS", "false")
     with pytest.raises(RuntimeError, match="disabled"):
         get_session_client("claude-session")
+
+
+def _write_config(path, enabled_value):
+    path.write_text(f"[session_providers]\nenabled = {enabled_value}\n")
+
+
+@pytest.mark.parametrize("enabled_value", ['"false"', '"0"', '"no"'])
+def test_config_stringy_false_does_not_enable(tmp_path, monkeypatch, enabled_value):
+    # Quoted config strings must not be parsed with Python truthiness.
+    cfg = tmp_path / "config.toml"
+    _write_config(cfg, enabled_value)
+    monkeypatch.delenv("MAVERICK_ENABLE_SESSION_PROVIDERS", raising=False)
+    monkeypatch.setenv("MAVERICK_CONFIG", str(cfg))
+    with pytest.raises(RuntimeError, match="disabled"):
+        get_session_client("claude-session")
+
+
+def test_config_interpolated_false_does_not_enable(tmp_path, monkeypatch):
+    # load_config interpolates env vars inside strings; "false" must stay off.
+    cfg = tmp_path / "config.toml"
+    _write_config(cfg, '"${MAVERICK_ENABLE_SESSION_PROVIDERS}"')
+    monkeypatch.setenv("MAVERICK_CONFIG", str(cfg))
+    monkeypatch.setenv("MAVERICK_ENABLE_SESSION_PROVIDERS", "false")
+    with pytest.raises(RuntimeError, match="disabled"):
+        get_session_client("claude-session")
+
+
+def test_config_string_true_opt_in_passes_the_gate(tmp_path, monkeypatch):
+    # Interpolated/quoted true values remain an explicit opt-in.
+    cfg = tmp_path / "config.toml"
+    _write_config(cfg, '"true"')
+    monkeypatch.delenv("MAVERICK_ENABLE_SESSION_PROVIDERS", raising=False)
+    monkeypatch.setenv("MAVERICK_CONFIG", str(cfg))
+    try:
+        get_session_client("claude-session")
+    except RuntimeError as e:
+        assert "disabled" not in str(e)
+    except Exception:
+        pass  # downstream (missing session/creds) -- gate was cleared

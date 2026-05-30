@@ -58,6 +58,20 @@ def is_session_provider(name: str) -> bool:
     return _canonical(name) in _SESSION_PROVIDERS
 
 
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _explicit_opt_in(value: Any) -> bool:
+    """Return True only for explicit session-provider opt-in values."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in _TRUE_VALUES
+    if isinstance(value, int):
+        return value == 1
+    return False
+
+
 def _session_providers_enabled() -> bool:
     """Session providers drive a vendor's *consumer* chat UI with captured
     login cookies -- against that vendor's Terms of Service, with real
@@ -67,14 +81,12 @@ def _session_providers_enabled() -> bool:
     = true`` in ``~/.maverick/config.toml``.
     """
     import os
-    if os.environ.get("MAVERICK_ENABLE_SESSION_PROVIDERS", "").strip().lower() in {
-        "1", "true", "yes", "on",
-    }:
+    if _explicit_opt_in(os.environ.get("MAVERICK_ENABLE_SESSION_PROVIDERS", "")):
         return True
     try:
         from ..config import load_config
         sec = (load_config() or {}).get("session_providers") or {}
-        return bool(sec.get("enabled", False))
+        return _explicit_opt_in(sec.get("enabled", False))
     except Exception:
         return False
 
