@@ -24,6 +24,31 @@ _Pre-public-launch audit of the Maverick monorepo. Two parallel audit phases
 
 ---
 
+## Wave 2 — additional fixes landed this session (beyond the first 9 branches)
+
+Several items first logged under "Remaining" were then implemented and verified:
+
+| Issue | Sev | Branch | Verified by |
+|-------|-----|--------|-------------|
+| **Channel per-sender allowlists** — slack/signal/matrix had NO identity gate; voice only a shared bearer. Any reachable user drove the swarm. | high | `fix/channel-authz` (7e3e9f6) | 19 channel tests; signal require + voice allow/deny webhook run here; `is_allowed` default-deny pinned |
+| **Wizard never collected the required allowlist** — discord/telegram/etc. silently failed to start from a wizard-only setup | high | `fix/wizard-allowlist` (a66b177) | 3 `pick_channels` tests |
+| **Wizard wrote unreadable config on Windows** — backslash paths became invalid `\U` TOML escapes; lists emitted as strings | high | `fix/wizard-allowlist` (a66b177) | 21 `write_config` tests fixed + new backslash/array round-trip test |
+| **Windows session loading wholly broken** — `cookie_store.load_session` enforced `0600`, which NTFS can't represent, so every load raised | high | `fix/config-home-isolation` (6cd37c9) | session tests 50→53 pass; guarded on `os.name=='nt'` |
+| **Test isolation / real-home pollution** — `Path.home()` ignored `$HOME` on Windows; suite read+wrote the dev's real `~/.maverick` | med | `fix/config-home-isolation` (6cd37c9) | autouse home fixture; full core suite **64→20** failures, no new regressions |
+| **`load_config` crashed on corrupt config.toml** | med | `fix/config-home-isolation` (6cd37c9) | new `test_corrupt_config_fails_soft_to_empty_dict` |
+
+**Coding-mode `sandbox.exec()` routing (high, architecturally significant):** NOT
+implemented — written up for sign-off in `docs/proposals/coding-mode-sandbox-routing.md`
+(it changes behavior across every sandbox backend; the default `local` path is
+unaffected, so it's a fast-follow, not a v0.1.3 blocker).
+
+Still genuinely remaining (precise specs unchanged below): preflight wiring,
+best_of_n budget rollup, audit signed-chain re-anchoring, circuit_breaker
+HALF_OPEN, MCP protocol-version downgrade + wizard MCP-register, default-sandbox
+host-exec doc, install-script tag pinning doc, CSP nonces, the ~20 Windows-only
+POSIX-chmod/symlink/path-sep **test** cosmetics, and the pre-existing
+`test_integration_swe_smoke` failure (confirmed failing on clean main).
+
 ## Fixed — branch, evidence
 
 ### Launch-blockers

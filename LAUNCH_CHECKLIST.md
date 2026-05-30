@@ -58,15 +58,18 @@ _Human-only steps left after the automated hardening pass. Order matters._
 
 ## Opening the PRs (gh is NOT authenticated in this session)
 
-I committed 12 verified branches locally but **could not push or open PRs** (no
-`gh` auth, and I won't risk a hanging credential prompt). To publish them:
+I committed 14 verified fix branches + 1 docs branch locally but **could not push
+or open PRs** (no `gh` auth, and I won't risk a hanging credential prompt). To
+publish them:
 
 ```bash
 gh auth login                      # once
 for b in fix/vps-installer-blocker fix/killswitch-runtime fix/mcp-http-transport \
          fix/dep-metadata fix/compute-sympy fix/cli-command-collisions \
          fix/provider-pricing fix/gdpr-erase fix/dashboard-cost-utc \
-         fix/desktop-typecheck fix/docs-accuracy fix/release-pipeline; do
+         fix/desktop-typecheck fix/docs-accuracy fix/release-pipeline \
+         fix/channel-authz fix/wizard-allowlist fix/config-home-isolation \
+         chore/launch-audit-docs; do
   git push -u origin "$b"
   gh pr create --draft --base main --head "$b" --fill   # title/body from the commit
 done
