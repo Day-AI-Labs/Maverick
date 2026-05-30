@@ -1,6 +1,6 @@
 # Maverick — Launch Readiness Assessment
 
-_What actually has to be true to ship a public v0.1.3 launch, the critical path,
+_What actually has to be true to ship a public v0.1.4 launch, the critical path,
 and a go/no-go. Companion to `LAUNCH_AUDIT.md` (the issue log) and
 `LAUNCH_CHECKLIST.md` (the step list)._
 
@@ -26,7 +26,7 @@ items below are the real gate, not code.
 3. **GitHub Pages source → "GitHub Actions"** (repo Settings → Pages) + create the
    `github-pages` and `pypi` environments. Without it the docs site 404s and the
    publish job can't run.
-4. **Cut `v0.1.3`** → fans out to publish.yml (PyPI), release.yml (Docker +
+4. **Cut `v0.1.4`** → fans out to publish.yml (PyPI), release.yml (Docker +
    PyInstaller binaries + GitHub Release), desktop.yml (unsigned bundles attached).
 5. **Smoke the published artifacts** (see "Pre-launch smoke" below) before
    announcing.
@@ -36,7 +36,7 @@ items below are the real gate, not code.
 - **The release pipeline on a real tag.** All workflow YAML parses and the logic
   was reviewed (race fixed, desktop-attach added, Docker now installs all 6), but
   GitHub Actions was never exercised — no tag was pushed (that's yours). **Do a
-  dry run on a throwaway pre-release tag (e.g. `v0.1.3-rc1`) first.**
+  dry run on a throwaway pre-release tag (e.g. `v0.1.4-rc1`) first.**
 - **CI matrix 3.10/3.11/3.12 on Linux.** Local is Python 3.13 / Windows only. The
   ~20 local test failures are all Windows-only mechanisms (POSIX chmod, symlink
   privilege, `Path.home()`, cp1252) that pass on the Ubuntu CI matrix — reasoned,
@@ -49,7 +49,7 @@ items below are the real gate, not code.
 ```bash
 # In a CLEAN venv, after PyPI publish:
 pip install 'maverick-agent[installer]'      # resolves only if installer published
-maverick version                              # shows 0.1.3 for all installed pkgs
+maverick version                              # shows 0.1.4 for all installed pkgs
 maverick --help                               # all subcommands present
 maverick init --fast                          # wizard writes a readable config.toml
 maverick start "say hello"                    # one real run end-to-end (needs a key)
