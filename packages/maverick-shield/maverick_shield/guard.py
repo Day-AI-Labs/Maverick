@@ -19,7 +19,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from .builtin_rules import scan as builtin_scan
+from .builtin_rules import SEVERITY_ORDER, scan as builtin_scan
+from .output_policy import scan_output as output_policy_scan
 
 log = logging.getLogger(__name__)
 
@@ -146,5 +147,31 @@ class Shield:
         payload = f"tool={tool_name} args={args!r}"
         return self._scan_via_backend(payload)
 
-    def scan_output(self, text: str) -> ShieldVerdict:
-        return self._scan_via_backend(text)
+    def scan_output(self, text: str, known_prompt: str | None = None) -> ShieldVerdict:
+        verdict = self._scan_via_backend(text)
+        # Output-side detectors the input rule pack can't see: verbatim
+        # system-prompt regurgitation and refusal-then-leak. Fail-open.
+        if self.backend == self.BACKEND_NONE:
+            return verdict
+        try:
+            policy = output_policy_scan(text, known_prompt=known_prompt)
+        except Exception as e:  # pragma: no cover -- detector bug must not block
+            log.error("Shield output-policy scan failed (fail-open): %s", e)
+            return verdict
+        if not policy.blocked:
+            return verdict
+        threshold_idx = SEVERITY_ORDER.get(self.block_threshold, SEVERITY_ORDER["high"])
+        if SEVERITY_ORDER.get(policy.severity, -1) < threshold_idx:
+            return verdict
+        if not verdict.allowed:
+            return ShieldVerdict.block(
+                severity=_max_severity(verdict.severity, policy.severity),
+                reason="; ".join(verdict.reasons + policy.reasons),
+            )
+        return ShieldVerdict.block(
+            severity=policy.severity, reason="; ".join(policy.reasons),
+        )
+
+
+def _max_severity(a: str, b: str) -> str:
+    return a if SEVERITY_ORDER.get(a, -1) >= SEVERITY_ORDER.get(b, -1) else b
