@@ -309,6 +309,47 @@ def test_simulator_renders_tools_to_prompt():
     assert "do math" in captured_system["s"]
 
 
+def test_simulator_parses_tool_call_back_to_tool_use():
+    """The payoff of the markdown protocol (issue #315): a session model that
+    emits a ``<tool ...>`` block comes back as a real ``tool_use`` response, so
+    tool-using roles DO work on session providers. The raw adapters reject
+    ``tools=[...]`` with NotImplementedError, but the LLM facade auto-wraps
+    them in this simulator (llm.py: get_session_client(simulate_tools=True)),
+    which strips tools before the adapter and parses the call back out -- so
+    that guard is unreachable on the wrapped runtime path."""
+    from maverick.llm import LLMResponse
+    from maverick.session_providers.tool_simulator import SimulatedToolCallClient
+
+    class _Inner:
+        DEFAULT_MODEL = "x"
+
+        def __init__(self):
+            self.saw_tools = "unset"
+
+        def complete(self, **kw):
+            self.saw_tools = kw.get("tools")
+            return LLMResponse(
+                text='Let me add those.\n<tool name="calc">{"x": 2, "y": 3}</tool>',
+                thinking=None, tool_calls=[], stop_reason="end_turn",
+            )
+
+    inner = _Inner()
+    resp = SimulatedToolCallClient(inner).complete(
+        system="base", messages=[],
+        tools=[{"name": "calc", "description": "add", "input_schema": {"properties": {}}}],
+    )
+    # The raw adapter never sees tools -- that's what makes its
+    # NotImplementedError a dead guard on the wrapped path.
+    assert inner.saw_tools is None
+    # The markdown tool block is parsed back into a real tool_use response.
+    assert resp.stop_reason == "tool_use"
+    assert [c.name for c in resp.tool_calls] == ["calc"]
+    assert resp.tool_calls[0].input == {"x": 2, "y": 3}
+    # Prose preserved; the tool block is stripped from the visible text.
+    assert "Let me add those." in resp.text
+    assert "<tool" not in resp.text
+
+
 def test_simulator_parses_named_tool_calls():
     """Model emits <tool name="calc">{"a":1}</tool> -> parsed into ToolCall."""
     from maverick.llm import LLMResponse
