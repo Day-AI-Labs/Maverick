@@ -187,6 +187,47 @@ class JobQueue:
                 )
             return cur.rowcount == 1
 
+    def reclaim_stale(
+        self,
+        lease_seconds: float,
+        *,
+        now: Optional[float] = None,
+        max_attempts: int = 5,
+    ) -> int:
+        """Requeue jobs stuck in 'running' past the lease TTL.
+
+        ``claim()`` flips a job to 'running' and bumps ``updated_at``. If the
+        worker process then dies before ``complete()``/``fail()`` (a hard
+        crash, OOM, or ``kill -9`` — none of which run ``run_once``'s
+        ``except`` path), the row stays 'running' forever: ``claim()`` only
+        ever looks at 'pending' rows, so no worker re-claims it and the job
+        is silently orphaned. Run this on worker start to recover them.
+
+        A job whose ``updated_at`` is older than ``now - lease_seconds`` is
+        considered abandoned. Pick a ``lease_seconds`` larger than the
+        longest expected job runtime so a still-running job in a live worker
+        is not stolen. Abandoned jobs already at/over ``max_attempts`` are
+        marked 'failed' (poison-pill guard, mirroring ``fail()``'s terminal
+        path) so a job that reliably crashes the *process* can't be requeued
+        forever; the rest go back to 'pending' with ``run_at = now`` so
+        they're immediately eligible. ``attempts`` is preserved (not reset)
+        so the cap is reached. Returns the number of rows transitioned.
+        """
+        n = now if now is not None else time.time()
+        cutoff = n - float(lease_seconds)
+        with self._lock, self._conn() as c:
+            failed = c.execute(
+                "UPDATE jobs SET status='failed', last_error=?, updated_at=? "
+                "WHERE status='running' AND updated_at < ? AND attempts >= ?",
+                ("lease expired (worker presumed crashed)", n, cutoff, max_attempts),
+            ).rowcount
+            requeued = c.execute(
+                "UPDATE jobs SET status='pending', run_at=?, updated_at=? "
+                "WHERE status='running' AND updated_at < ? AND attempts < ?",
+                (n, n, cutoff, max_attempts),
+            ).rowcount
+        return int(failed) + int(requeued)
+
     def get(self, job_id: int) -> Optional[Job]:
         with self._conn() as c:
             row = c.execute(

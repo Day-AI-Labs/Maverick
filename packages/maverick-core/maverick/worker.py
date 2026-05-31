@@ -54,11 +54,16 @@ class Worker:
         idle_sleep: float = 2.0,
         max_attempts: int = 5,
         retry_after: float = 60.0,
+        reclaim_lease: float = 3600.0,
     ) -> None:
         self.queue = queue or JobQueue(db_path=db_path)
         self.idle_sleep = float(idle_sleep)
         self.max_attempts = int(max_attempts)
         self.retry_after = float(retry_after)
+        # Jobs stuck 'running' longer than this (a prior worker crashed
+        # mid-job) are requeued on start. Keep it above the longest expected
+        # job runtime so a live worker's in-flight job is never stolen.
+        self.reclaim_lease = float(reclaim_lease)
         self._handlers: dict[str, Handler] = {}
         self._stop = threading.Event()
         self._install_builtin_handlers()
@@ -125,6 +130,14 @@ class Worker:
         self._wire_signals()
         log.info("worker: started; polling %s every %.1fs",
                  self.queue.db_path, self.idle_sleep)
+        # Recover jobs orphaned in 'running' by a previously-crashed worker
+        # before draining the queue, so they aren't stuck forever.
+        reclaimed = self.queue.reclaim_stale(
+            self.reclaim_lease, max_attempts=self.max_attempts,
+        )
+        if reclaimed:
+            log.info("worker: reclaimed %d stale job(s) from a prior crash",
+                     reclaimed)
         while not self._stop.is_set():
             ran = False
             try:
