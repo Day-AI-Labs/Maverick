@@ -16,12 +16,14 @@ pip install --no-deps -e ./packages/maverick-dashboard
 pip install --no-deps -e ./packages/maverick-mcp
 pip install --no-deps -e ./apps/installer-cli
 pip install pytest pytest-asyncio fastapi uvicorn jinja2 questionary rich
+pip install pre-commit ruff && pre-commit install
 
 pytest -q
 ```
 
 Make sure `maverick --help` works and `maverick doctor` prints a
-status table.
+status table. `pre-commit install` wires the lint gate (below) to run on
+every commit, so you catch a ruff failure locally instead of in CI.
 
 ## Project shape
 
@@ -68,6 +70,36 @@ or non-technical users can't reach it.
 - Use the `FakeLLM` fixture in `packages/maverick-core/tests/conftest.py`
   for any test that touches the agent loop -- never burn API credits in CI.
 - Tests run via `pytest -vvs --tb=long` in CI on Python 3.10/3.11/3.12.
+
+## Continuous integration (read before merging)
+
+**A PR is not mergeable until every required check is green.** Don't merge
+on a red or still-running pipeline -- a single broken check on `main`
+blocks everyone. The required checks are:
+
+| Check            | What it runs                                                        |
+| ---------------- | ------------------------------------------------------------------- |
+| `lint`           | `ruff check .` (whole repo) + a grep rejecting bare `import tomllib` |
+| `lint-pr-title`  | Conventional-Commit PR title (see below)                            |
+| `test (3.10/.11/.12)` | the full `pytest` suite on each interpreter                     |
+| `audit`          | `pip-audit` against the dependency graph                            |
+| `docker`         | the deploy image builds                                             |
+
+Two recurring foot-guns, both enforced by CI:
+
+1. **`ruff check .` runs on the whole repo, not just your diff.** An unused
+   import you orphaned in another file fails lint for *everyone*. Run
+   `pre-commit run --all-files` (or just `ruff check .`) before you push --
+   `pre-commit install` makes this automatic on commit.
+2. **`import tomllib` needs the 3.10 fallback.** `tomllib` is 3.11+ stdlib;
+   importing it bare breaks the 3.10 leg of the matrix. Use the
+   `try/except ModuleNotFoundError: import tomli as tomllib` pattern from
+   `CLAUDE.md`.
+
+**PR titles** must be Conventional Commits (`feat:`, `fix:`, `docs:`,
+`refactor:`, `test:`, `chore:`, `perf:`, `ci:`) **and the subject after the
+prefix must start with a letter** -- not a digit, quote, or backtick
+(`feat: 2027 roadmap` fails; `feat: add the 2027 roadmap` passes).
 
 ## Adding a provider
 
