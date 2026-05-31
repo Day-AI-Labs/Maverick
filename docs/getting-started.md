@@ -27,15 +27,22 @@ maverick init
 
 ## First run
 
+Fastest path — one command does setup (if needed) and runs a first goal
+live in your terminal:
+
 ```bash
-maverick init
+maverick onboard
 ```
 
-The wizard takes ~2 minutes. It writes `~/.maverick/config.toml` and `~/.maverick/.env`.
+It runs the ~2-minute wizard the first time (writing `~/.maverick/config.toml`
+and `~/.maverick/.env`), then runs a small goal **in this terminal** so you
+watch the swarm decompose, work, and verify in real time. Pass your own
+task to skip the demo: `maverick onboard "Summarize README.md in 5 bullets"`.
 
-Then:
+Prefer to do it in two steps:
 
 ```bash
+maverick init        # ~2 minutes; safe defaults
 maverick start "Plan a 2-week trip to Japan. Write the itinerary to trip.md."
 ```
 

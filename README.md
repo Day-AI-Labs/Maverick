@@ -15,6 +15,15 @@ Hand Maverick a goal. Its orchestrator decomposes it, spawns specialist sub-agen
 
 ```bash
 pipx install 'maverick-agent[installer]'
+maverick onboard                     # set up (if needed) + run your first goal, live
+```
+
+`maverick onboard` is the fastest path: it runs the four-question setup if
+you haven't yet, then immediately runs a goal **in your terminal** so you
+watch the swarm decompose, work, and verify in real time — instead of
+being handed a command to copy-paste. Already set up? Drive it directly:
+
+```bash
 maverick init                        # four questions, safe defaults
 maverick start "Research the top 3 CRMs for a 5-person startup and write a recommendation"
 ```

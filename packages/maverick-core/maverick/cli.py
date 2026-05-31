@@ -118,6 +118,98 @@ def init(fast: bool, resume: bool) -> None:
 
 
 @main.command()
+@click.argument("title", required=False)
+@click.option("--model", "model_override", default=None,
+              help="Model for the first goal (default: a fast, cheap model).")
+@click.pass_context
+def onboard(ctx, title, model_override) -> None:
+    """Set up Maverick (if needed) and run your first goal end-to-end.
+
+    The one-command path from nothing to "I watched the swarm work":
+    if no provider key is configured it launches the consumer wizard,
+    then it runs a goal in THIS terminal — so you see the agents think
+    in real time and get a result, instead of being handed a command to
+    copy-paste. Pass your own TITLE, or omit it for a tiny demo goal.
+    """
+    # Default to a fast, cheap model for the first-run experience so the
+    # demo finishes in seconds for well under a cent. The consumer wizard
+    # uses the same pairing.
+    demo_goal = "Write me a haiku about Tuesday."
+    demo_model = "anthropic:claude-haiku-4-5"
+
+    # 1. Ensure a provider key exists; if not, run setup (consumer flow).
+    have_key = any(os.environ.get(v) for v in _PROVIDER_ENV_VARS)
+    if not have_key:
+        from .config import config_path
+        if not config_path().exists():
+            click.echo("No setup found — let's get you running first.\n")
+            try:
+                from maverick_installer.wizard import run as run_wizard
+            except ImportError:
+                click.echo(
+                    "Install the wizard:  "
+                    "pipx inject maverick-agent maverick-installer",
+                    err=True,
+                )
+                sys.exit(2)
+            rc = run_wizard()
+            if rc != 0:
+                sys.exit(rc)
+        # Re-check: the wizard writes config, but the key reaches the run
+        # via env. If it still isn't visible, point the user at the export.
+        if not any(os.environ.get(v) for v in _PROVIDER_ENV_VARS):
+            click.echo(
+                "\nSetup saved. Add your API key to the environment, then "
+                "re-run `maverick onboard`:\n"
+                "  export ANTHROPIC_API_KEY=sk-ant-...",
+                err=True,
+            )
+            sys.exit(2)
+
+    # 2. Run the first goal in-terminal, reusing start's streaming poller.
+    goal_title = title or demo_goal
+    chosen_model = model_override or ctx.obj.get("model") or demo_model
+    k = _kernel()
+    world = open_world(ctx.obj["db"])
+    goal_id = world.create_goal(goal_title, "")
+    click.echo(f"\ngoal #{goal_id}: {goal_title}\n")
+    llm = k.LLM(model=chosen_model)
+    from .budget import budget_from_config
+    bud = budget_from_config(
+        defaults={"max_dollars": 1.0, "max_wall_seconds": 600.0},
+    )
+    sandbox = k.build_sandbox(workdir=None, backend=None)
+
+    import threading
+    stop_poll = threading.Event()
+    if click.get_text_stream("stderr").isatty() and not os.environ.get("MAVERICK_NO_PROGRESS"):
+        poller = threading.Thread(
+            target=_stream_progress, args=(world.path, goal_id, stop_poll),
+            daemon=True,
+        )
+        poller.start()
+    else:
+        poller = None
+
+    try:
+        result = k.run_goal_sync(llm, world, bud, goal_id, sandbox=sandbox, max_depth=2)
+    finally:
+        stop_poll.set()
+        if poller is not None:
+            poller.join(timeout=2.0)
+        world.close()
+
+    click.echo("")
+    click.echo(result)
+    click.echo(
+        "\n" + click.style("That's the swarm.", bold=True)
+        + " Next:\n"
+        "  maverick start \"<your goal>\"      run any task\n"
+        "  maverick dashboard                 web UI at http://127.0.0.1:8765"
+    )
+
+
+@main.command()
 def doctor() -> None:
     """Diagnose your Maverick installation."""
     from .health import diagnose

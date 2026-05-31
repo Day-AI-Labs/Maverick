@@ -1904,7 +1904,9 @@ def run_consumer() -> int:
     if keys:
         console.print(Panel.fit(
             f"[bold green]Setup complete, {user_name}.[/bold green]\n\n"
-            "Try your first goal:\n"
+            "See the swarm work right now:\n"
+            "  [bold]maverick onboard[/bold]   runs a first goal live in this terminal\n\n"
+            "Or run your own:\n"
             f"  [bold]maverick start \"{CONSUMER_DEMO_GOAL}\" --model {CONSUMER_DEMO_MODEL}[/bold]\n\n"
             "Then:\n"
             "  [bold]maverick dashboard[/bold]   web UI at http://127.0.0.1:8765",
