@@ -151,41 +151,59 @@ async def test_run_checkpoints_each_step(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="scripted-crash"):
         await agent.run()
 
-    # A checkpoint was committed at the turn boundary; latest step >= 1.
+    # A checkpoint was committed at the turn boundary under the STABLE id
+    # (not the random agent.name), keyed by the context's episode_id.
     cp = ckpt_mod.Checkpointer(world)
-    saved = cp.latest(gid, agent.name)
+    saved = cp.latest(gid, agent.checkpoint_id, episode_id=ctx.episode_id)
     assert saved is not None
     assert saved.step_seq >= 1, "expected a mid-run checkpoint past step 0"
 
 
 @pytest.mark.asyncio
-async def test_resume_continues_from_checkpoint(tmp_path, monkeypatch):
+async def test_resume_works_without_pinning_name(tmp_path, monkeypatch):
+    """Production-shape resume: a FRESH agent (new random name) must resume
+    from the prior checkpoint via the stable checkpoint_id — this is the bug
+    Phase-1 keying had (it only worked when the test pinned agent.name)."""
     monkeypatch.setenv("MAVERICK_DURABLE", "1")
     ctx, world, gid = _mk_ctx(tmp_path, _ScriptedLLM([]))
 
-    # Pre-seed a checkpoint as if a prior run reached step 5 with spend.
-    agent_id = "orchestrator-0-deadbe"
+    # Seed a checkpoint under the stable id a depth-0 researcher would use.
     b = Budget(max_dollars=1.0)
     b.tool_calls = 5
     b.dollars = 0.30
     cp = ckpt_mod.Checkpointer(world)
-    cp.save(goal_id=gid, agent_id=agent_id, step_seq=5,
-            messages=[{"role": "user", "content": "prior work"}], budget=b)
+    cp.save(goal_id=gid, agent_id="researcher-0", episode_id=ctx.episode_id,
+            step_seq=5, messages=[{"role": "user", "content": "prior work"}],
+            budget=b)
 
-    # A fresh agent with the SAME name resumes: first LLM turn finalizes.
-    llm = _ScriptedLLM([
-        _resp(text="FINAL: resumed and done"),
-    ])
+    # Fresh agent — random name, NOT pinned. Resume must still match.
+    llm = _ScriptedLLM([_resp(text="FINAL: resumed and done")])
     ctx.llm = llm
     agent = Agent(ctx=ctx, role="researcher", brief="do it", depth=0)
-    agent.name = agent_id  # pin the id so resume matches the seeded checkpoint
+    assert agent.name != "researcher-0"  # random suffix differs
 
     result = await agent.run()
     assert result.final and "resumed and done" in result.final
-    # Resumed: only ONE new LLM call was needed (continued, didn't redo steps).
-    assert llm.calls == 1
-    # Budget was restored from the checkpoint (spend carried over).
-    assert ctx.budget.tool_calls >= 5
+    assert llm.calls == 1  # continued, didn't redo the 5 prior steps
+    assert ctx.budget.tool_calls >= 5  # budget restored
+
+
+@pytest.mark.asyncio
+async def test_episode_scoping_no_cross_resume(tmp_path, monkeypatch):
+    """A checkpoint under episode 1 must NOT be picked up when resuming
+    episode 2 (the best-of-N safety property: same goal_id, distinct episodes)."""
+    monkeypatch.setenv("MAVERICK_DURABLE", "1")
+    world = WorldModel(tmp_path / "w.db")
+    gid = world.create_goal("g", "")
+    cp = ckpt_mod.Checkpointer(world)
+    cp.save(goal_id=gid, agent_id="orchestrator-0", episode_id=1, step_seq=7,
+            messages=[{"role": "user", "content": "attempt-1"}], budget=Budget())
+
+    # Episode 2 has no checkpoint -> latest() returns None (no cross-resume).
+    assert cp.latest(gid, "orchestrator-0", episode_id=2) is None
+    # Episode 1 still resolves.
+    got = cp.latest(gid, "orchestrator-0", episode_id=1)
+    assert got is not None and got.step_seq == 7
 
 
 @pytest.mark.asyncio
@@ -200,4 +218,4 @@ async def test_disabled_does_not_checkpoint(tmp_path, monkeypatch):
     assert result.final and "done" in result.final
     # No checkpoints table writes when disabled.
     cp = ckpt_mod.Checkpointer(world)
-    assert cp.latest(gid, agent.name) is None
+    assert cp.latest(gid, agent.checkpoint_id, episode_id=ctx.episode_id) is None

@@ -32,6 +32,7 @@ _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS checkpoints (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     goal_id     INTEGER NOT NULL,
+    episode_id  INTEGER NOT NULL DEFAULT 0,
     agent_id    TEXT NOT NULL,
     step_seq    INTEGER NOT NULL,
     created_at  REAL NOT NULL,
@@ -41,9 +42,13 @@ CREATE TABLE IF NOT EXISTS checkpoints (
     meta        TEXT NOT NULL DEFAULT '{}'
 )
 """
+# The lookup key is (goal_id, episode_id, agent_id): episode_id discriminates
+# best-of-N attempts (each attempt is a fresh episode under one goal_id), so a
+# resumed attempt never picks up a sibling attempt's checkpoint. agent_id is a
+# STABLE id (e.g. "orchestrator-0"), not the per-process random Agent.name.
 _CREATE_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_checkpoints_lookup "
-    "ON checkpoints(goal_id, agent_id, step_seq DESC)"
+    "ON checkpoints(goal_id, episode_id, agent_id, step_seq DESC)"
 )
 
 
@@ -77,6 +82,7 @@ def _keep_last() -> int:
 @dataclass
 class Checkpoint:
     goal_id: int
+    episode_id: int
     agent_id: str
     step_seq: int
     messages: list[dict]
@@ -116,6 +122,7 @@ class Checkpointer:
         step_seq: int,
         messages: list[dict],
         budget: Any,
+        episode_id: int = 0,
         meta: dict | None = None,
     ) -> bool:
         """Commit a checkpoint at the turn boundary. Returns True on success."""
@@ -132,27 +139,28 @@ class Checkpointer:
             with self._world._writing() as conn:
                 conn.execute(
                     "INSERT INTO checkpoints"
-                    "(goal_id, agent_id, step_seq, created_at, messages, budget, meta) "
-                    "VALUES(?, ?, ?, ?, ?, ?, ?)",
-                    (goal_id, agent_id, step_seq, time.time(),
+                    "(goal_id, episode_id, agent_id, step_seq, created_at, "
+                    " messages, budget, meta) "
+                    "VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+                    (goal_id, episode_id, agent_id, step_seq, time.time(),
                      payload_messages, payload_budget, payload_meta),
                 )
-            self._prune(goal_id, agent_id)
+            self._prune(goal_id, episode_id, agent_id)
             return True
         except Exception as e:  # pragma: no cover -- never block a run
             log.warning("checkpoint: save failed (continuing uncheckpointed): %s", e)
             return False
 
-    def latest(self, goal_id: int, agent_id: str) -> Checkpoint | None:
-        """Return the most recent checkpoint for (goal, agent), or None."""
+    def latest(self, goal_id: int, agent_id: str, episode_id: int = 0) -> Checkpoint | None:
+        """Return the most recent checkpoint for (goal, episode, agent), or None."""
         if goal_id is None or not self._ensure():
             return None
         try:
             row = self._world.conn.execute(
-                "SELECT goal_id, agent_id, step_seq, messages, budget, meta "
-                "FROM checkpoints WHERE goal_id = ? AND agent_id = ? "
+                "SELECT goal_id, episode_id, agent_id, step_seq, messages, budget, meta "
+                "FROM checkpoints WHERE goal_id = ? AND episode_id = ? AND agent_id = ? "
                 "ORDER BY step_seq DESC LIMIT 1",
-                (goal_id, agent_id),
+                (goal_id, episode_id, agent_id),
             ).fetchone()
         except Exception as e:  # pragma: no cover
             log.warning("checkpoint: latest() failed: %s", e)
@@ -161,26 +169,29 @@ class Checkpointer:
             return None
         try:
             return Checkpoint(
-                goal_id=row[0], agent_id=row[1], step_seq=row[2],
-                messages=json.loads(row[3]), budget=json.loads(row[4]),
-                meta=json.loads(row[5]),
+                goal_id=row[0], episode_id=row[1], agent_id=row[2], step_seq=row[3],
+                messages=json.loads(row[4]), budget=json.loads(row[5]),
+                meta=json.loads(row[6]),
             )
         except (TypeError, ValueError) as e:
-            log.warning("checkpoint: corrupt record for goal=%s agent=%s: %s",
-                        goal_id, agent_id, e)
+            log.warning("checkpoint: corrupt record for goal=%s ep=%s agent=%s: %s",
+                        goal_id, episode_id, agent_id, e)
             return None
 
-    def _prune(self, goal_id: int, agent_id: str) -> None:
+    def _prune(self, goal_id: int, episode_id: int, agent_id: str) -> None:
         keep = _keep_last()
         try:
             with self._world._writing() as conn:
                 conn.execute(
-                    "DELETE FROM checkpoints WHERE goal_id = ? AND agent_id = ? "
+                    "DELETE FROM checkpoints "
+                    "WHERE goal_id = ? AND episode_id = ? AND agent_id = ? "
                     "AND id NOT IN ("
-                    "  SELECT id FROM checkpoints WHERE goal_id = ? AND agent_id = ? "
+                    "  SELECT id FROM checkpoints "
+                    "  WHERE goal_id = ? AND episode_id = ? AND agent_id = ? "
                     "  ORDER BY step_seq DESC LIMIT ?"
                     ")",
-                    (goal_id, agent_id, goal_id, agent_id, keep),
+                    (goal_id, episode_id, agent_id,
+                     goal_id, episode_id, agent_id, keep),
                 )
         except Exception as e:  # pragma: no cover
             log.debug("checkpoint: prune failed (non-fatal): %s", e)
