@@ -1,0 +1,67 @@
+# Maverick on GitLab CI -- reusable template.
+#
+# Runs a Maverick agent goal inside a GitLab pipeline (e.g. to review a
+# merge request), mirroring the GitHub `agent-on-pr.yml` reusable workflow.
+# Vendor this file into your repo and include it locally, or include it
+# remotely:
+#
+#     include:
+#       - local: 'ci/maverick.gitlab-ci.yml'
+#     # or:
+#       - remote: 'https://raw.githubusercontent.com/cdayAI/Maverick/main/deploy/gitlab-ci/maverick.gitlab-ci.yml'
+#
+# Required CI/CD variable (Settings -> CI/CD -> Variables, masked):
+#   ANTHROPIC_API_KEY   your Anthropic key (or set OPENAI_API_KEY and change the model)
+#
+# Optional overrides (defaults below):
+#   MAVERICK_GOAL, MAVERICK_MODEL, MAVERICK_MAX_DOLLARS
+#
+# The agent runs with consent auto-deny (no interactive prompts hang CI)
+# and a hard budget cap; nothing destructive is auto-approved.
+
+variables:
+  MAVERICK_MODEL: "anthropic:claude-sonnet-4-6"
+  MAVERICK_MAX_DOLLARS: "1.00"
+  MAVERICK_GOAL: "Review the changes on this branch for logic bugs, missing edge cases, and security issues."
+
+maverick:
+  stage: test
+  image: python:3.12-slim
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+  variables:
+    # CI is non-interactive: never block on a consent TTY prompt.
+    MAVERICK_CONSENT_MODE: "auto-deny"
+    MAVERICK_FETCH_RESPECT_ROBOTS: "1"
+  before_script:
+    - python -m pip install --upgrade pip
+    - pip install 'maverick-agent[all]'
+  script:
+    - mkdir -p ~/.maverick
+    - |
+      cat > ~/.maverick/config.toml <<EOF
+      [providers.anthropic]
+      api_key = "${ANTHROPIC_API_KEY}"
+
+      [models]
+      orchestrator = "${MAVERICK_MODEL}"
+      coder        = "${MAVERICK_MODEL}"
+      researcher   = "${MAVERICK_MODEL}"
+
+      [budget]
+      max_dollars = ${MAVERICK_MAX_DOLLARS}
+      max_tool_calls = 200
+
+      [safety]
+      profile = "balanced"
+      scan_input = true
+      scan_tool_calls = true
+      scan_output = true
+
+      [sandbox]
+      backend = "local"
+      workdir = "${CI_PROJECT_DIR}"
+      timeout = 60
+      EOF
+    - maverick start "$MAVERICK_GOAL"
