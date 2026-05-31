@@ -36,7 +36,16 @@ a = Analysis(
         'asyncio.queues',
         'asyncio.subprocess',
         'multipart',
-    ] + collect_submodules('maverick'),
+    ] + collect_submodules('maverick')
+      # The maverick_* siblings are separate top-level packages imported only
+      # inside function bodies (cli.py: `from maverick_dashboard...`), which
+      # PyInstaller's static analysis doesn't follow -- so collect_submodules('maverick')
+      # alone shipped a binary where `maverick dashboard/mcp` failed at runtime.
+      + collect_submodules('maverick_dashboard')
+      + collect_submodules('maverick_mcp')
+      + collect_submodules('maverick_channels')
+      + collect_submodules('maverick_shield')
+      + collect_submodules('maverick_installer'),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
