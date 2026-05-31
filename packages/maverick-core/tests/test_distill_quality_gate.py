@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from maverick.blackboard import Blackboard
 from maverick.skills import distill
 
