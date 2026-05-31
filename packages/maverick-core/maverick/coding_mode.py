@@ -1614,6 +1614,30 @@ class Candidate:
     error: str = ""
 
 
+def _changed_files_in_patch(patch: str) -> frozenset[str]:
+    """Set of file paths a unified diff touches.
+
+    Parses ``diff --git a/x b/x`` headers (falling back to ``+++ b/x``),
+    stripping the ``a/``/``b/`` prefix. Used for self-consistency voting
+    across best-of-N candidates. Returns an empty set for a non-diff or
+    empty string.
+    """
+    files: set[str] = set()
+    for line in (patch or "").splitlines():
+        if line.startswith("diff --git "):
+            # `diff --git a/foo b/foo` -> take the b/ path (last token).
+            parts = line.split()
+            if len(parts) >= 4 and parts[-1].startswith("b/"):
+                files.add(parts[-1][2:])
+        elif line.startswith("+++ "):
+            target = line[4:].strip().split("\t")[0]
+            if target.startswith("b/"):
+                files.add(target[2:])
+            elif target not in ("/dev/null", ""):
+                files.add(target)
+    return frozenset(files)
+
+
 def select_best_candidate(candidates: list[Candidate]) -> Optional[Candidate]:
     """Pick the candidate with the highest test score; tiebreak by
     proximity to median patch length (Occam, but not "smallest at all
@@ -1646,12 +1670,35 @@ def select_best_candidate(candidates: list[Candidate]) -> Optional[Candidate]:
         return None
     all_zero = all(c.score == 0.0 for c in usable)
     if all_zero:
-        # Prefer the LAST (typically most-thought) attempt that produced
-        # any non-empty patch; ladder ordering is cheap→warm→Opus.
-        # Wave 12 hardening: deterministic final tiebreaker (patch text)
-        # in case two attempts share index AND length (e.g., the BoN
-        # ladder retried the same model and produced identical patches).
-        usable.sort(key=lambda c: (-c.index, -len(c.patch), c.patch))
+        # No ground-truth tests scored these (the common case for real,
+        # non-benchmark coding tasks). Self-consistency: among N
+        # independent attempts, the patch whose CHANGED-FILE SET agrees
+        # with the plurality of other attempts is more likely correct
+        # than a lone outlier (majority voting, the standard
+        # no-ground-truth selector). consensus = how many OTHER usable
+        # candidates touch the exact same file set. Strict refinement:
+        # when every attempt touches a distinct file set, all consensus
+        # counts are 0 and ordering reduces to the prior
+        # (-index, -len, patch) rule. Disable with MAVERICK_BON_CONSENSUS=0.
+        if os.environ.get("MAVERICK_BON_CONSENSUS", "1") != "0":
+            file_sets = [_changed_files_in_patch(c.patch) for c in usable]
+            consensus = {
+                id(c): sum(
+                    1 for j, other in enumerate(usable)
+                    if i != j and file_sets[i] and file_sets[i] == file_sets[j]
+                )
+                for i, c in enumerate(usable)
+            }
+        else:
+            consensus = {id(c): 0 for c in usable}
+        # Prefer higher consensus; then the LAST (typically most-thought)
+        # attempt; then larger patch; then patch text for determinism.
+        # Wave 12 hardening: the index/length/text tiebreak handles the
+        # case where the BoN ladder retried the same model and produced
+        # identical patches.
+        usable.sort(key=lambda c: (
+            -consensus[id(c)], -c.index, -len(c.patch), c.patch,
+        ))
         return usable[0]
     # Higher score first; among ties, prefer the median-length patch
     # (the "Occam without bias toward no-ops" tie-break).
