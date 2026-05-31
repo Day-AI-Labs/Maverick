@@ -17,7 +17,7 @@ import os
 import time
 from typing import Any
 
-from . import Tool
+from . import Tool, as_bool
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ def _op_invoke(args: dict) -> str:
         return "ERROR: invoke requires function_name"
     itype = (args.get("invocation_type") or "RequestResponse").strip()
     payload = args.get("payload") if isinstance(args.get("payload"), dict) else {}
-    if itype != "DryRun" and not args.get("confirm"):
+    if itype != "DryRun" and not as_bool(args.get("confirm")):
         return (
             f"DRY RUN: would invoke {name} ({itype}). "
             "Re-run with confirm=true OR invocation_type=DryRun."
