@@ -201,6 +201,12 @@ class _StubAgent:
         self.name = "tester-0-abc123"
 
 
+def _fake_tool(name: str, result: str) -> Tool:
+    async def fn(args):
+        return result
+    return Tool(name=name, description=name, input_schema={"type": "object"}, fn=fn)
+
+
 @pytest.fixture
 def stub_agent():
     return _StubAgent(FakeLLM())
@@ -296,6 +302,39 @@ class TestLearnTool:
         out = await tool.fn({"op": "find_api", "need": "call the stripe api"})
         assert "openapi_runner" in out
 
+    @pytest.mark.asyncio
+    async def test_find_api_with_base_url_lists_ops(self, stub_agent, monkeypatch):
+        from maverick import self_learning as sl
+        spec = "https://api.example.com/openapi.json"
+        monkeypatch.setattr(sl, "probe_openapi_spec", lambda base, **kw: spec)
+        stub_agent.tools.register(_fake_tool("openapi_runner", "GET /widgets — list widgets"))
+        from maverick.tools.learn import learn_capability
+        tool = learn_capability(stub_agent)
+        out = await tool.fn({"op": "find_api", "need": "widgets api",
+                             "base_url": "https://api.example.com"})
+        assert spec in out
+        assert "GET /widgets" in out          # ops preview surfaced
+        assert sl.history()[0].kind == "api"   # recorded to the ledger
+
+    @pytest.mark.asyncio
+    async def test_find_api_via_web_search(self, stub_agent, monkeypatch):
+        from maverick import self_learning as sl
+        spec = "https://api.example.com/openapi.json"
+        stub_agent.tools.register(_fake_tool("web_search", f"docs at {spec}"))
+        monkeypatch.setattr(sl, "discover_openapi_spec",
+                            lambda **kw: spec if "openapi.json" in kw.get("search_text", "") else None)
+        from maverick.tools.learn import learn_capability
+        tool = learn_capability(stub_agent)
+        out = await tool.fn({"op": "find_api", "need": "example api"})
+        assert spec in out
+
+    @pytest.mark.asyncio
+    async def test_find_api_no_spec_suggests_web_search(self, stub_agent):
+        from maverick.tools.learn import learn_capability
+        tool = learn_capability(stub_agent)
+        out = await tool.fn({"op": "find_api", "need": "obscure api"})
+        assert "web_search" in out  # no web_search tool loaded -> hint to enable it
+
 
 class TestPreflight:
     @pytest.mark.asyncio
@@ -330,3 +369,77 @@ class TestPreflight:
 
         got = await sl.preflight(BoomLLM(), "anything", Budget(), Blackboard())
         assert got == []
+
+
+# --- OpenAPI spec discovery (pure functions) --------------------------------
+
+_SPEC_JSON = '{"openapi": "3.0.0", "info": {"title": "X"}, "paths": {"/p": {}}}'
+
+
+class _FakeResp:
+    def __init__(self, status, body):
+        self.status = status
+        self._body = body.encode()
+
+    def read(self, n=-1):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _opener(mapping):
+    """Build an opener over {url: (status, body)}; unknown urls 404."""
+    def opener(url, *, timeout=None):
+        status, body = mapping.get(url, (404, ""))
+        return _FakeResp(status, body)
+    return opener
+
+
+class TestApiDiscovery:
+    def test_is_openapi_text(self):
+        from maverick import self_learning as sl
+        assert sl._is_openapi_text(_SPEC_JSON) is True
+        assert sl._is_openapi_text('{"openapi": "3.0.0"}') is False  # no paths
+        assert sl._is_openapi_text('{"hello": "world"}') is False
+        assert sl._is_openapi_text("openapi: 3.0.0\npaths: {}\n") is True  # yaml
+        assert sl._is_openapi_text("not a spec") is False
+
+    def test_validate_spec_url(self):
+        from maverick import self_learning as sl
+        op = _opener({"https://api.x.com/openapi.json": (200, _SPEC_JSON)})
+        assert sl.validate_spec_url("https://api.x.com/openapi.json", opener=op)
+        assert sl.validate_spec_url("https://api.x.com/missing.json", opener=op) is None
+        assert sl.validate_spec_url("ftp://x", opener=op) is None  # scheme guard
+
+    def test_probe_finds_well_known_under_origin(self):
+        from maverick import self_learning as sl
+        op = _opener({"https://api.x.com/openapi.json": (200, _SPEC_JSON)})
+        # Given a deep page URL, probing should still find the origin's spec.
+        assert sl.probe_openapi_spec("https://api.x.com/docs/guide", opener=op) == \
+            "https://api.x.com/openapi.json"
+
+    def test_probe_returns_none_when_absent(self):
+        from maverick import self_learning as sl
+        assert sl.probe_openapi_spec("https://api.x.com", opener=_opener({})) is None
+
+    def test_discover_from_search_text(self):
+        from maverick import self_learning as sl
+        spec = "https://api.x.com/v3/api-docs"
+        text = f"Try the API. Spec lives at {spec} (json)."
+        op = _opener({spec: (200, _SPEC_JSON)})
+        assert sl.discover_openapi_spec(search_text=text, opener=op) == spec
+
+    def test_discover_prefers_base_url(self):
+        from maverick import self_learning as sl
+        op = _opener({"https://api.x.com/swagger.json": (200, _SPEC_JSON)})
+        assert sl.discover_openapi_spec(
+            base_url="https://api.x.com", opener=op,
+        ) == "https://api.x.com/swagger.json"
+
+    def test_discover_none_when_nothing_matches(self):
+        from maverick import self_learning as sl
+        assert sl.discover_openapi_spec(search_text="no urls here", opener=_opener({})) is None
