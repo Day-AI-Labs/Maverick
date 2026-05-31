@@ -6,7 +6,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.1.5] -- 2026-05-31
+## [0.1.6] -- 2026-05-31
 
 Post-0.1.4 hardening, plus the cross-language MCP client surface (the
 council's "drive Maverick from any language over MCP" decision) and the
