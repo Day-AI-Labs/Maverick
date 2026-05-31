@@ -46,6 +46,8 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+from .embeddable import no_cli
+
 log = logging.getLogger(__name__)
 
 
@@ -127,7 +129,14 @@ def discover_tools() -> list[Any]:
     The factory is called with no args; it must return a Tool. We delay
     invocation because Tool constructors may need access to the
     sandbox/world that only exists per-run.
+
+    Embedded mode (``MAVERICK_NO_CLI=1``) skips third-party auto-discovery
+    entirely: a library embedder drives the toolset programmatically and
+    shouldn't inherit whatever plugins happen to be installed/allowlisted in
+    the host environment. The kernel's own tools are unaffected.
     """
+    if no_cli():
+        return []
     allow = _allowed_plugin_names()
     out: list[tuple[str, Callable[[], Any]]] = []
     for ep in _entry_points("maverick.tools"):
@@ -146,6 +155,8 @@ def discover_tools() -> list[Any]:
 
 def discover_channels() -> list[tuple[str, Any]]:
     """Return (name, Channel subclass) tuples for installed channel plugins."""
+    if no_cli():  # embedded mode: no plugin auto-discovery (see discover_tools)
+        return []
     allow = _allowed_plugin_names()
     out: list[tuple[str, Any]] = []
     for ep in _entry_points("maverick.channels"):
@@ -165,6 +176,8 @@ def discover_channels() -> list[tuple[str, Any]]:
 
 def discover_skills() -> list[Any]:
     """Return a list of plugin-provided Skill objects."""
+    if no_cli():  # embedded mode: no plugin auto-discovery (see discover_tools)
+        return []
     allow = _allowed_plugin_names()
     out: list[Any] = []
     for ep in _entry_points("maverick.skills"):
@@ -179,6 +192,8 @@ def discover_skills() -> list[Any]:
 
 def discover_personas() -> dict[str, Callable[[], str]]:
     """Return {name: renderer} for installed persona plugins."""
+    if no_cli():  # embedded mode: no plugin auto-discovery (see discover_tools)
+        return {}
     allow = _allowed_plugin_names()
     out: dict[str, Callable[[], str]] = {}
     for ep in _entry_points("maverick.personas"):
