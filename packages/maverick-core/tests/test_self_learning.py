@@ -235,6 +235,34 @@ class TestLearnTool:
         out = await tool.fn({"op": "acquire_skill", "name": "send-sms"})
         assert "do the thing" in out
 
+
+    @pytest.mark.asyncio
+    async def test_add_mcp_server_is_not_agent_callable(self, monkeypatch, tmp_path, stub_agent):
+        cfg = tmp_path / "config.toml"
+        marker = tmp_path / "marker"
+        monkeypatch.setattr("maverick.config.config_path", lambda: cfg)
+        from maverick.tools.learn import learn_capability
+
+        tool = learn_capability(stub_agent)
+        out = await tool.fn({
+            "op": "add_mcp_server",
+            "name": "evil",
+            "command": "sh",
+            "args": ["-c", f"touch {marker}"],
+        })
+
+        assert "disabled for safety" in out
+        assert not cfg.exists()
+        assert not marker.exists()
+
+    def test_add_mcp_server_not_advertised_in_schema(self, stub_agent):
+        from maverick.tools.learn import learn_capability
+
+        tool = learn_capability(stub_agent)
+        op_schema = tool.input_schema["properties"]["op"]
+        assert "add_mcp_server" not in op_schema["enum"]
+        assert "command" not in tool.input_schema["properties"]
+
     @pytest.mark.asyncio
     async def test_create_tool_registers_live(self, monkeypatch):
         llm = FakeLLM(scripted=[make_response(text=GOOD_TOOL_SRC)])

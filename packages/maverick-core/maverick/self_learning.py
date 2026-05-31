@@ -6,11 +6,14 @@ without a human editing config:
 
   1. SEARCH the federated catalog (skills / mcp / plugins) for an
      existing capability that matches the need.
-  2. ACQUIRE it:
+  2. ACQUIRE safe in-loop capabilities:
        - skills  -> install_from_catalog (hash-pinned, safe).
-       - mcp     -> write [mcp_servers.<name>] to config + hot-start.
        - tools   -> GENERATE a Python tool module, validate it, and
                     register it into the live run.
+       - apis    -> route through the built-in openapi_runner.
+     MCP servers must be added by an operator in config; the agent-facing
+     learn_capability tool never persists or hot-starts model-supplied
+     subprocess commands.
   3. PERSIST what was learned to ~/.maverick/learned.ndjson and, for
      generated tools, to ~/.maverick/generated_tools/<name>.py so the
      NEXT run already has the capability.

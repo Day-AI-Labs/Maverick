@@ -9,8 +9,8 @@ Ops:
                       catalog that match a need, plus already-loaded tools.
   - acquire_skill   : install a catalog skill by name (hash-verified) and
                       return its steps so they're usable immediately.
-  - add_mcp_server  : persist + hot-start an MCP server; its tools register
-                      live as ``mcp_<server>__<tool>``.
+  - add_mcp_server  : disabled for agent-driven self-learning; MCP
+                      servers must be configured by an operator.
   - create_tool     : GENERATE a Python tool from a spec, validate it, and
                       register it live (full-autonomy; gated by settings).
   - find_api        : guidance for driving an arbitrary REST API via the
@@ -62,8 +62,8 @@ def learn_capability(agent: Agent) -> Tool:
             return (
                 f"Catalog matches for {need!r}:\n{_fmt_candidates(cands)}\n\n"
                 f"Already-loaded tools that may fit: {', '.join(local) or '(none)'}\n\n"
-                "Next: acquire_skill <name> for a [skill]; add_mcp_server for an "
-                "[mcp]; or create_tool to build a new one."
+                "Next: acquire_skill <name> for a [skill], or create_tool to "
+                "build a new one. MCP servers must be configured by an operator."
             )
 
         if op == "acquire_skill":
@@ -80,42 +80,10 @@ def learn_capability(agent: Agent) -> Tool:
             )
 
         if op == "add_mcp_server":
-            if not st.get("add_mcp_servers", True):
-                return "ERROR: adding MCP servers is disabled ([self_learning] add_mcp_servers=false)"
-            name = (args.get("name") or "").strip()
-            command = (args.get("command") or "").strip()
-            if not name or not command:
-                return "ERROR: 'name' and 'command' are required for add_mcp_server"
-            try:
-                spec = self_learning.add_mcp_server(
-                    name, command,
-                    args=args.get("args") or [],
-                    env=args.get("env") or {},
-                    need=need,
-                )
-            except Exception as e:
-                return f"ERROR: invalid MCP server spec: {e}"
-            # Hot-start so the server's tools are live this turn.
-            try:
-                from ..mcp_client import MCPClient
-                from ..mcp_tools import tools_from_mcp
-                client = MCPClient(spec)
-                await client.start()
-            except Exception as e:
-                return (
-                    f"Saved [mcp_servers.{name}] to config, but it failed to "
-                    f"start now ({e}). It will be retried on the next run."
-                )
-            registered = []
-            for t in tools_from_mcp(client):
-                agent.tools.register(t)
-                registered.append(t.name)
-            ctx.mcp_clients.append(client)  # children spawned later inherit it
-            bb.post(agent.name, "observation",
-                    f"learned MCP server {name}: {len(registered)} tool(s)")
             return (
-                f"MCP server {name!r} started. New tools available now: "
-                f"{', '.join(registered) or '(none exposed)'}"
+                "ERROR: agent-driven MCP server acquisition is disabled for safety. "
+                "Ask an operator to add a trusted [mcp_servers.<name>] block to "
+                "the Maverick config and restart the run."
             )
 
         if op == "create_tool":
@@ -164,16 +132,15 @@ def learn_capability(agent: Agent) -> Tool:
 
         return (
             "ERROR: unknown op. Use one of: search, acquire_skill, "
-            "add_mcp_server, create_tool, find_api"
+            "create_tool, find_api"
         )
 
     return Tool(
         name="learn_capability",
         description=(
             "Acquire a NEW capability when you lack the skill/tool/integration "
-            "to do the task. op=search to find existing skills/MCP servers; "
-            "op=acquire_skill to install one; op=add_mcp_server to wire in an "
-            "external MCP server (hot-loaded); op=create_tool to generate a new "
+            "to do the task. op=search to find existing skills; "
+            "op=acquire_skill to install one; op=create_tool to generate a new "
             "tool from a description (persists for future runs); op=find_api to "
             "drive a REST API via openapi_runner. Prefer search before create."
         ),
@@ -183,8 +150,7 @@ def learn_capability(agent: Agent) -> Tool:
                 "op": {
                     "type": "string",
                     "enum": [
-                        "search", "acquire_skill", "add_mcp_server",
-                        "create_tool", "find_api",
+                        "search", "acquire_skill", "create_tool", "find_api",
                     ],
                 },
                 "need": {
@@ -194,12 +160,8 @@ def learn_capability(agent: Agent) -> Tool:
                 "name": {
                     "type": "string",
                     "description": "Catalog skill name (acquire_skill), or id for "
-                                   "the new MCP server / tool.",
+                                   "the new generated tool.",
                 },
-                "command": {"type": "string", "description": "add_mcp_server: server launch command."},
-                "args": {"type": "array", "items": {"type": "string"},
-                         "description": "add_mcp_server: command args."},
-                "env": {"type": "object", "description": "add_mcp_server: env vars for the server."},
                 "spec": {
                     "type": "string",
                     "description": "create_tool: detailed description of what the "
