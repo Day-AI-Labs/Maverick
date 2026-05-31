@@ -1,12 +1,31 @@
 """self-consistency SWE-bench baseline: majority vote + the run wrapper.
 
 A fake `anthropic` module is injected via sys.modules so these run with
-or without the real SDK installed and never make a network call.
+or without the real SDK installed and never make a network call. swe_bench
+is loaded by path (like test_swe_bench_harness) so the test works without
+benchmarks/ being on sys.path.
 """
+import importlib.util
 import sys
 import types
+from pathlib import Path
 
-from swe_bench import _majority_patch, run_sonnet_self_consistency_n8
+
+def _load_swe_bench():
+    if "swe_bench" not in sys.modules:
+        spec = importlib.util.spec_from_file_location(
+            "swe_bench", Path(__file__).resolve().parent / "swe_bench.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["swe_bench"] = module
+        spec.loader.exec_module(module)
+    return sys.modules["swe_bench"]
+
+
+_sb = _load_swe_bench()
+_majority_patch = _sb._majority_patch
+run_sonnet_self_consistency_n8 = _sb.run_sonnet_self_consistency_n8
+
 
 # ---- _majority_patch ----
 
@@ -54,8 +73,6 @@ class _Resp:
 
 
 def _fake_anthropic(scripted):
-    """Build a fake `anthropic` module whose Anthropic().messages.create
-    returns the scripted patches in order (cycling)."""
     seq = list(scripted)
     state = {"i": 0}
 
