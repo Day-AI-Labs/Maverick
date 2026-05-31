@@ -1,7 +1,8 @@
 name: Bump Homebrew formula
 
 # When a release is published, pin deploy/homebrew/maverick.rb to the
-# freshly published maverick-agent sdist on PyPI (url + sha256) and open a PR.
+# freshly published maverick-agent sdist on PyPI (url + sha256), generate
+# hash-locked dependency requirements, and open a PR.
 # Decoupled from publish.yml so a PyPI propagation lag can't fail the release.
 
 on:
@@ -32,7 +33,7 @@ jobs:
           VERSION: ${{ github.event.inputs.version || github.event.release.tag_name }}
         run: |
           python - <<'PY'
-          import json, os, re, time, urllib.request, pathlib
+          import json, os, pathlib, re, subprocess, sys, tempfile, time, urllib.request
 
           version = os.environ["VERSION"].lstrip("v")
           api = f"https://pypi.org/pypi/maverick-agent/{version}/json"
@@ -53,12 +54,66 @@ jobs:
           sdist = next(u for u in data["urls"] if u["packagetype"] == "sdist")
           url, sha = sdist["url"], sdist["digests"]["sha256"]
 
+          with tempfile.TemporaryDirectory() as tmp:
+              tmp_path = pathlib.Path(tmp)
+              input_path = tmp_path / "requirements.in"
+              output_path = tmp_path / "requirements.txt"
+              input_path.write_text(f"maverick-agent[installer]=={version}\n")
+              subprocess.run(
+                  [
+                      sys.executable,
+                      "-m",
+                      "pip",
+                      "install",
+                      "pip-tools>=7.4",
+                  ],
+                  check=True,
+              )
+              subprocess.run(
+                  [
+                      sys.executable,
+                      "-m",
+                      "piptools",
+                      "compile",
+                      "--generate-hashes",
+                      "--allow-unsafe",
+                      "--resolver=backtracking",
+                      "--output-file",
+                      str(output_path),
+                      str(input_path),
+                  ],
+                  check=True,
+              )
+              requirements = output_path.read_text()
+
+          # Homebrew already downloads and verifies maverick-agent as the formula
+          # source. Keep only its resolved dependencies in the hash-locked
+          # requirements file so install does not fetch maverick-agent from PyPI.
+          blocks = re.split(r"(?m)(?=^[A-Za-z0-9_.-]+[<=>!~; \[])", requirements)
+          dependency_blocks = []
+          for block in blocks:
+              requirement = block.lstrip().splitlines()[0] if block.lstrip() else ""
+              name = re.split(r"[<=>!~; \[]", requirement, maxsplit=1)[0]
+              if name.lower().replace("_", "-") == "maverick-agent":
+                  continue
+              dependency_blocks.append(block)
+          requirements = "".join(dependency_blocks).strip() + "\n"
+
           path = pathlib.Path("deploy/homebrew/maverick.rb")
           text = path.read_text()
           text = re.sub(r'url "[^"]*"', f'url "{url}"', text, count=1)
           text = re.sub(r'sha256 "[0-9a-f]{64}"', f'sha256 "{sha}"', text, count=1)
+          text = re.sub(
+              r"(?s)__END__\n.*",
+              "__END__\n" + requirements,
+              text,
+              count=1,
+          )
           path.write_text(text)
-          print(f"Pinned maverick.rb to {version}\n  url={url}\n  sha256={sha}")
+          print(
+              f"Pinned maverick.rb to {version} with hash-locked dependencies"
+              f"\n  url={url}\n  sha256={sha}"
+          )
           PY
 
       - uses: peter-evans/create-pull-request@v6
@@ -68,7 +123,8 @@ jobs:
           commit-message: "chore: bump Homebrew formula to the published sdist"
           body: |
             Automated by `homebrew-bump.yml`: pins `deploy/homebrew/maverick.rb`
-            to the just-published `maverick-agent` sdist (url + sha256).
+            to the just-published `maverick-agent` sdist (url + sha256) and
+            refreshes the embedded hash-locked dependency requirements.
 
             After merge, sync the formula to the `homebrew-tap` repo.
           add-paths: deploy/homebrew/maverick.rb

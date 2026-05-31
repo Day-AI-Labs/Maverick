@@ -27,7 +27,8 @@ to the tap repo on release:
 2. **Each release:** [`/.github/workflows/homebrew-bump.yml`](../../.github/workflows/homebrew-bump.yml)
    runs when a GitHub Release is published. It resolves the freshly
    published `maverick-agent` sdist from PyPI, rewrites the formula's `url`
-   and `sha256`, and opens a PR here. Merge it, then copy the updated
+   and `sha256`, generates hash-locked requirements for the installer
+   dependency set, and opens a PR here. Merge it, then copy the updated
    formula to the tap repo (or point the action at the tap repo once it
    exists).
 
@@ -37,10 +38,12 @@ installable against a hand-typed checksum.
 
 ## Notes
 
-- This is a **personal tap**, not homebrew-core, so the formula resolves
-  its dependency tree from PyPI at install time instead of vendoring every
-  transitive `resource`. That keeps it maintainable; homebrew-core would
-  require the full pinned resource list.
+- This is a **personal tap**, not homebrew-core, so the formula keeps the
+  dependency list in an embedded, hash-locked `requirements.txt` section
+  rather than vendoring every transitive `resource` block by hand. The
+  formula installs the Homebrew-downloaded, checksum-verified sdist with
+  `--no-deps` and installs only the hashed binary dependency artifacts listed in
+  that generated requirements section.
 - **Needs a macOS `brew install --build-from-source maverick` smoke test**
   before the tap is announced — that can't run in this repo's Linux CI.
 - Pinned to a real release (not `main`), so `brew upgrade` tracks tagged
