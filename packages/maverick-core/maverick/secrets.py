@@ -49,6 +49,14 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     )),
     # JWT (three base64url segments separated by dots, common shape)
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b")),
+    # Credential carried in a URL query string (?access_token=..., &api_key=...,
+    # presigned-URL ?sig=..., webhook ?token=...). The env_secret pattern only
+    # matches uppercase KEY=value at line start, so these slipped through into
+    # logs / audit / replay exports verbatim. Group 1 keeps the "?key=" prefix.
+    ("url_secret", re.compile(
+        r"(?i)([?&](?:access_token|api_key|apikey|auth_token|token|secret|"
+        r"password|passwd|sig|signature|client_secret)=)([^&#\s\"']+)",
+    )),
 ]
 
 
@@ -63,9 +71,7 @@ def scrub(text: str) -> str:
         return text
     out = text
     for kind, pat in _PATTERNS:
-        if kind == "bearer":
-            out = pat.sub(lambda m: m.group(1) + f"[REDACTED:{kind}]", out)
-        elif kind == "env_secret":
+        if kind in ("bearer", "env_secret", "url_secret"):
             out = pat.sub(lambda m: m.group(1) + f"[REDACTED:{kind}]", out)
         else:
             out = pat.sub(f"[REDACTED:{kind}]", out)
