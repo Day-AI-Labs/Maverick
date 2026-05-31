@@ -1844,7 +1844,7 @@ def watch(ctx, path: str, run: bool, max_dollars: float) -> None:
             world = open_world(ctx.obj["db"])
             llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
             sandbox = k.build_sandbox(workdir=str(p.parent if p.is_file() else p))
-            title = (m.text or m.follow_lines[0] if m.follow_lines else "").strip()[:80]
+            title = (m.text or (m.follow_lines[0] if m.follow_lines else "")).strip()[:80]
             goal_text = m.to_goal()
             allowed, reason = _watch_goal_allowed(goal_text)
             if not allowed:

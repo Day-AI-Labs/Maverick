@@ -27,6 +27,8 @@ log = logging.getLogger(__name__)
 # Keys are exact model ids; lookups fall back to family prefix.
 _MODEL_CONTEXT_LIMITS: dict[str, int] = {
     # Anthropic
+    "claude-opus-4-8":    200_000,   # current default (MODEL_OPUS)
+    "claude-opus-4-8-fast": 200_000,
     "claude-opus-4-7":    200_000,
     "claude-sonnet-4-6":  200_000,
     "claude-haiku-4-5":   200_000,

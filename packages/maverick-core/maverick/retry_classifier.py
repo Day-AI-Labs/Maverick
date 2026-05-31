@@ -60,7 +60,7 @@ POLICIES: dict[ErrorClass, RetryPolicy] = {
 # Lower-cased patterns to substring-match against str(exception).
 _PATTERNS: list[tuple[ErrorClass, re.Pattern]] = [
     (ErrorClass.RATE_LIMIT,        re.compile(r"\b429\b|rate.?limit|too many requests|quota", re.IGNORECASE)),
-    (ErrorClass.AUTH,              re.compile(r"\b401\b|unauthorized|invalid.api.key|authentication", re.IGNORECASE)),
+    (ErrorClass.AUTH,              re.compile(r"\b401\b|\b403\b|unauthorized|forbidden|invalid.api.key|authentication", re.IGNORECASE)),
     # "refus" alone is too broad (e.g. "Connection refused" is a
     # network error, not a content filter). Require a content-related
     # marker.
