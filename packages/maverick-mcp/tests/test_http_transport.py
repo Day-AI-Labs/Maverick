@@ -22,6 +22,16 @@ class TestHTTPTransport:
         app = build_app(MCPServer())
         return TestClient(app)
 
+    def test_a2a_agent_card_served_when_enabled(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_A2A_ENABLED", "1")
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        client = self._client()
+        resp = client.get("/.well-known/agent-card.json")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["name"] == "Maverick"
+        assert body["protocolVersion"] == "1.0"
+
     def test_initialize_returns_capabilities(self, monkeypatch):
         monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
         client = self._client()

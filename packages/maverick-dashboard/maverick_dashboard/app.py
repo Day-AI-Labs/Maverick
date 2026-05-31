@@ -29,6 +29,8 @@ from fastapi.responses import (
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from maverick import a2a
+
 from .api import router as api_router
 
 log = logging.getLogger(__name__)
@@ -101,6 +103,7 @@ app = FastAPI(
     version="0.1.0",
 )
 app.include_router(api_router)
+a2a.mount(app)
 
 _DOCS_CSP = (
     "default-src 'self'; "
@@ -175,6 +178,7 @@ async def _reclaim_orphans() -> None:
 _AUTH_EXEMPT = {
     "/healthz", "/livez", "/readyz",
     "/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect",
+    "/.well-known/agent-card.json", "/.well-known/agent.json",
     # /webhook/start authenticates with its own HMAC signature instead of
     # the dashboard bearer / same-origin checks (external senders have
     # neither), so it must bypass the centralized middleware.
