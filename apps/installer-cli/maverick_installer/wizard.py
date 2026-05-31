@@ -162,7 +162,11 @@ def _q_secret(message: str) -> str:
         import getpass
 
         return getpass.getpass(f"{message}: ").strip()
-    return questionary.password(message).ask() or ""
+    # Route through _ask so Ctrl-C / Ctrl-D / non-TTY (questionary returns
+    # None) raises KeyboardInterrupt and aborts the wizard, like every other
+    # prompt. The old `.ask() or ""` swallowed the abort into "", which
+    # callers read as "skip this key" -- so Ctrl-C silently continued.
+    return _ask(questionary.password(message)) or ""
 
 
 def _q_checkbox(message: str, choices: list[str], default: list[str] | None = None) -> list[str]:
