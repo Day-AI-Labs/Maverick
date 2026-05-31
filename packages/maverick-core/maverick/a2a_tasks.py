@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import ipaddress
 import logging
 import os
 import uuid
@@ -38,6 +39,9 @@ from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timezone
 from threading import Lock
 from typing import Any
+from urllib.parse import urlparse
+
+from .tools._ssrf import BlockedHost, safe_async_client
 
 log = logging.getLogger(__name__)
 
@@ -68,6 +72,47 @@ def _message_text(message: dict) -> str:
     parts = message.get("parts") or []
     chunks = [p.get("text", "") for p in parts if p.get("kind") == "text"]
     return "\n".join(c for c in chunks if c).strip()
+
+
+def _is_blocked_ip_literal(hostname: str) -> bool:
+    """Return True when ``hostname`` is itself a non-public IP address."""
+    try:
+        ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        return False
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def _validated_push_url(cfg: dict) -> str:
+    """Validate and normalize an A2A push webhook URL.
+
+    Push notifications are server-side callbacks to caller-controlled URLs, so
+    only HTTPS webhooks with a syntactically valid, non-literal-private host are
+    accepted. DNS-backed private/metadata targets are checked again immediately
+    before delivery with a resolve-once pinned HTTP client.
+    """
+    url = str((cfg or {}).get("url") or "").strip()
+    if not url:
+        raise _RpcError(_INVALID_PARAMS, "pushNotificationConfig.url required")
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise _RpcError(
+            _INVALID_PARAMS,
+            "pushNotificationConfig.url must be an https URL with a host",
+        )
+    if _is_blocked_ip_literal(parsed.hostname):
+        raise _RpcError(
+            _INVALID_PARAMS,
+            "pushNotificationConfig.url host must be public",
+        )
+    return url
 
 
 def _bounded_float(value: Any, *, default: float, ceiling: Any) -> float:
@@ -350,9 +395,8 @@ class TaskEngine:
         task = self._tasks.get((params or {}).get("taskId", ""))
         if task is None:
             raise _RpcError(_TASK_NOT_FOUND, "task not found")
-        cfg = (params or {}).get("pushNotificationConfig") or {}
-        if not cfg.get("url"):
-            raise _RpcError(_INVALID_PARAMS, "pushNotificationConfig.url required")
+        cfg = dict((params or {}).get("pushNotificationConfig") or {})
+        cfg["url"] = _validated_push_url(cfg)
         task.push_config = cfg
         return {"taskId": task.id, "pushNotificationConfig": cfg}
 
@@ -368,39 +412,23 @@ class TaskEngine:
         cfg = task.push_config
         if not cfg or task.state not in TERMINAL_STATES:
             return
-        url = cfg.get("url") or ""
-        # The push URL is supplied by the (authenticated) caller, and we make
-        # a server-side request to it -- a classic SSRF vector. Refuse non-
-        # http(s) schemes and hosts that resolve to a private/loopback/link-
-        # local/metadata address (honors MAVERICK_FETCH_ALLOW_PRIVATE=1).
         try:
-            from urllib.parse import urlparse
-
-            from .tools.http_fetch import is_blocked_host
-            parsed = urlparse(url)
-            if parsed.scheme not in ("http", "https") or not parsed.hostname:
-                log.warning("a2a push notify refused for %s: bad url %r", task.id, url)
-                return
-            if is_blocked_host(parsed.hostname):
-                log.warning(
-                    "a2a push notify refused for %s: %r resolves to a non-public "
-                    "address (SSRF guard)", task.id, parsed.hostname,
-                )
-                return
-        except Exception as e:  # pragma: no cover - defensive
-            log.warning("a2a push notify url validation failed for %s: %s", task.id, e)
-            return
-        try:
-            import httpx
-        except Exception:  # pragma: no cover
+            url = _validated_push_url(cfg)
+        except _RpcError as e:
+            log.warning("a2a push notify refused for %s: %s", task.id, e.message)
             return
         headers = {}
         tok = cfg.get("token")
         if tok:
             headers["Authorization"] = f"Bearer {tok}"
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with safe_async_client(url, timeout=15.0) as client:
                 await client.post(url, headers=headers, json=task.to_dict())
+        except BlockedHost as e:
+            log.warning(
+                "a2a push notify refused for %s: non-public host (SSRF guard): %s",
+                task.id, e,
+            )
         except Exception as e:  # pragma: no cover
             log.warning("a2a push notify failed for %s: %s", task.id, e)
 

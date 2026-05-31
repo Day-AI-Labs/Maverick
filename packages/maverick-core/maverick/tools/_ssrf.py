@@ -83,6 +83,32 @@ def resolve_pinned_ip(host: str) -> str:
     return ips[0]
 
 
+class _AsyncPinnedTransport:
+    """Async httpx transport wrapper pinned to a pre-validated IP."""
+
+    def __init__(self, host: str, host_header: str, ip: str, inner: Any):
+        self._host = host
+        self._host_header = host_header
+        self._ip = ip
+        self._inner = inner
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if request.url.host == self._host:
+            request.headers["Host"] = self._host_header
+            request.extensions = {**request.extensions, "sni_hostname": self._host}
+            request.url = request.url.copy_with(host=self._ip)
+        return await self._inner.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
+
+    async def __aenter__(self) -> _AsyncPinnedTransport:
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        await self.aclose()
+
+
 class _PinnedTransport:
     """httpx transport wrapper that connects to a pre-validated IP.
 
@@ -135,6 +161,28 @@ def safe_client(url: str, **client_kwargs: Any) -> httpx.Client:
     return httpx.Client(**client_kwargs)
 
 
+def safe_async_client(url: str, **client_kwargs: Any) -> httpx.AsyncClient:
+    """Return an ``httpx.AsyncClient`` pinned to a validated public IP.
+
+    Like ``safe_client``, but for async callers. Redirects default to disabled;
+    callers must re-validate any redirect target before following it.
+    """
+    import httpx
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise BlockedHost(f"scheme {parsed.scheme!r} not allowed")
+    host = parsed.hostname or ""
+    ip = resolve_pinned_ip(host)
+    host_header = host if not parsed.port else f"{host}:{parsed.port}"
+    transport = _AsyncPinnedTransport(
+        host, host_header, ip, httpx.AsyncHTTPTransport()
+    )
+    client_kwargs.setdefault("follow_redirects", False)
+    client_kwargs["transport"] = transport
+    return httpx.AsyncClient(**client_kwargs)
+
+
 def safe_get(url: str, **kwargs: Any) -> httpx.Response:
     """SSRF-safe ``httpx.get``: validates + pins the host, then fetches.
 
@@ -153,5 +201,6 @@ __all__ = [
     "BlockedHost",
     "resolve_pinned_ip",
     "safe_client",
+    "safe_async_client",
     "safe_get",
 ]

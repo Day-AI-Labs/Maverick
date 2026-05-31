@@ -93,34 +93,42 @@ def test_cancel_pending_task():
 def test_push_to_private_url_is_refused(monkeypatch):
     """An authenticated caller must not be able to make the server POST the
     task to an internal/metadata address (SSRF via pushNotificationConfig)."""
-    posted = []
-
-    class _FakeAsyncClient:
-        def __init__(self, *a, **k):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        async def post(self, url, **kw):
-            posted.append(url)
-
-    import httpx
-    monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
+    clients = []
 
     eng = TaskEngine(runner=_fake_runner)
     t = asyncio.run(eng.send(_msg("x")))
     tid = t["id"]
-    # Register a push webhook pointing at the cloud-metadata endpoint.
-    eng.set_push_config({
-        "taskId": tid,
-        "pushNotificationConfig": {"url": "http://169.254.169.254/latest/meta-data"},
-    })
+
+    # Plain HTTP and literal metadata/private targets are rejected at config
+    # registration time, before they can become stored callbacks.
+    with pytest.raises(_RpcError):
+        eng.set_push_config({
+            "taskId": tid,
+            "pushNotificationConfig": {
+                "url": "http://169.254.169.254/latest/meta-data",
+            },
+        })
+    with pytest.raises(_RpcError):
+        eng.set_push_config({
+            "taskId": tid,
+            "pushNotificationConfig": {
+                "url": "https://169.254.169.254/latest/meta-data",
+            },
+        })
+
+    # DNS-backed private targets are refused at delivery time by the pinned
+    # SSRF-safe client, and no outbound POST is attempted.
+    import maverick.a2a_tasks as a2at
+    from maverick.tools._ssrf import BlockedHost
+
+    def blocked_client(url, **kw):
+        clients.append(url)
+        raise BlockedHost("metadata.local resolves to 169.254.169.254")
+
+    monkeypatch.setattr(a2at, "safe_async_client", blocked_client)
+    eng._tasks[tid].push_config = {"url": "https://metadata.local/cb"}
     asyncio.run(eng._fire_push(eng._tasks[tid]))
-    assert posted == []  # blocked by the SSRF guard, never sent
+    assert clients == ["https://metadata.local/cb"]
 
 
 def test_push_to_public_url_is_sent(monkeypatch):
@@ -139,11 +147,8 @@ def test_push_to_public_url_is_sent(monkeypatch):
         async def post(self, url, **kw):
             posted.append(url)
 
-    import httpx
-    monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
-    # Don't do real DNS for the public host; force the guard to allow it.
-    import maverick.tools.http_fetch as hf
-    monkeypatch.setattr(hf, "is_blocked_host", lambda h: False)
+    import maverick.a2a_tasks as a2at
+    monkeypatch.setattr(a2at, "safe_async_client", _FakeAsyncClient)
 
     eng = TaskEngine(runner=_fake_runner)
     t = asyncio.run(eng.send(_msg("x")))
