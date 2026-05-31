@@ -39,7 +39,7 @@ def _fmt_candidates(cands: list) -> str:
     return "\n".join(lines)
 
 
-def learn_capability(agent: "Agent") -> Tool:
+def learn_capability(agent: Agent) -> Tool:
     ctx = agent.ctx
 
     async def fn(args: dict) -> str:
