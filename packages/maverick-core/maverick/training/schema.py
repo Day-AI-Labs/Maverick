@@ -15,7 +15,6 @@ of that record, ready for PRM training.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -26,10 +25,10 @@ class TrainingStep:
     action_type: str        # "tool_call" | "think" | "spawn" | "final"
     action_name: str        # tool name, or "" for think
     observation_hash: str   # hash of the prior observation (no raw)
-    error: Optional[str] = None
+    error: str | None = None
     # Per-step labels (PRM training target).
-    promise_label: Optional[float] = None
-    progress_label: Optional[float] = None
+    promise_label: float | None = None
+    progress_label: float | None = None
 
 
 @dataclass
@@ -43,7 +42,7 @@ class TrainingTrajectory:
     schema_version: int = 1
     trajectory_id: str = ""
     task_brief_hash: str = ""
-    task_family: Optional[str] = None    # benchmark name when known
+    task_family: str | None = None    # benchmark name when known
     model_id: str = ""
     outcome: str = ""
     terminal_reward: float = 0.0

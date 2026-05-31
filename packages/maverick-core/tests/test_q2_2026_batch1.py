@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -212,6 +211,7 @@ def test_clipboard_read_via_pyperclip(monkeypatch):
     with patch.dict("sys.modules", {"pyperclip": fake_pyperclip}):
         # Force reload to pick up the mock.
         import importlib
+
         import maverick.tools.clipboard as _clip_mod
         importlib.reload(_clip_mod)
         out = _clip_mod.clipboard().fn({"op": "read"})

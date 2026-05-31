@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------- tool_output nonce makes close-tag unforgeable ----------
 
 @pytest.mark.asyncio
@@ -217,6 +216,7 @@ def test_is_processed_message_handles_null_goal_id(tmp_path):
 def test_prune_processed_messages(tmp_path):
     """Twilio dedup rows accumulate forever without explicit pruning."""
     import time as _time
+
     from maverick.world_model import WorldModel
 
     wm = WorldModel(tmp_path / "w.db")

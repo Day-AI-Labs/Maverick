@@ -620,6 +620,7 @@ def test_plaid_accounts_renders(monkeypatch):
 
 def test_workflow_runs_simple_dag():
     from unittest.mock import MagicMock
+
     from maverick.workflow import Step, Workflow
 
     reg = MagicMock()

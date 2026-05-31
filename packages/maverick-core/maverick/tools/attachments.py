@@ -8,12 +8,10 @@ pick up text content. Images are embedded as vision blocks separately
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from . import Tool
 
 
-def list_attachments_tool(world, goal_id: Optional[int]) -> Tool:
+def list_attachments_tool(world, goal_id: int | None) -> Tool:
     def fn(_args: dict) -> str:
         if goal_id is None:
             return "(no goal context; no attachments)"

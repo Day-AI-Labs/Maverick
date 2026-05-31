@@ -19,10 +19,9 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from .budget import Budget
-
 
 # Latest Claude family as of 2026-05.
 MODEL_OPUS = "claude-opus-4-8"
@@ -116,7 +115,7 @@ class ToolCall:
 @dataclass
 class LLMResponse:
     text: str
-    thinking: Optional[str]
+    thinking: str | None
     tool_calls: list[ToolCall]
     stop_reason: str
     cache_creation_tokens: int = 0
@@ -130,10 +129,10 @@ class LLMResponse:
     # but corrupts multi-block interleaved thinking (Opus 4.7).
     # Now: store the original (text, signature) pairs so agent.py
     # can reconstruct multiple thinking blocks faithfully.
-    thinking_blocks: list[tuple[str, Optional[str]]] = None  # type: ignore
+    thinking_blocks: list[tuple[str, str | None]] = None  # type: ignore
     # Legacy field kept for back-compat with mocks; equals
     # thinking_blocks[0][1] if thinking_blocks present.
-    thinking_signature: Optional[str] = None
+    thinking_signature: str | None = None
     # May 28 fix: the model's output blocks in their ORIGINAL order,
     # already in Anthropic content-block dict form (thinking /
     # redacted_thinking / text / tool_use, interleaved as returned).
@@ -144,7 +143,7 @@ class LLMResponse:
     # turn faithfully. agent.py replays these verbatim when present;
     # None for providers that don't emit interleaved thinking (they
     # fall back to the bucketed reconstruction).
-    content_blocks: Optional[list[dict]] = None
+    content_blocks: list[dict] | None = None
 
     def __post_init__(self):
         if self.thinking_blocks is None:
@@ -204,7 +203,7 @@ def _parse_spec(spec: str) -> tuple[str, str]:
     return "anthropic", spec
 
 
-def _configured_provider_api_key(provider: str) -> Optional[str]:
+def _configured_provider_api_key(provider: str) -> str | None:
     """Return a provider api_key from config, normalized for client use."""
     from .config import get_provider_config
 
@@ -217,7 +216,7 @@ def _configured_provider_api_key(provider: str) -> Optional[str]:
     return str(key).strip() if key else None
 
 
-def _provider_api_key(provider: str, anthropic_api_key: Optional[str]) -> Optional[str]:
+def _provider_api_key(provider: str, anthropic_api_key: str | None) -> str | None:
     """Return the explicit API key override for provider-client creation."""
     if provider == "anthropic" and anthropic_api_key:
         return anthropic_api_key
@@ -277,7 +276,7 @@ class LLM:
     Drop-in replacement for the previous anthropic-only LLM class.
     """
 
-    def __init__(self, model: str = DEFAULT_MODEL, api_key: Optional[str] = None):
+    def __init__(self, model: str = DEFAULT_MODEL, api_key: str | None = None):
         self.model = model
         self._anthropic_api_key = api_key  # legacy back-compat
         self._clients: dict[str, Any] = {}
@@ -320,11 +319,11 @@ class LLM:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
         on_delta=None,
     ) -> LLMResponse:
         provider, model_id = _parse_spec(model or self.model)
@@ -344,9 +343,13 @@ class LLM:
             pass
         try:
             from .observability import (
-                trace_span as _trace_span,
-                gen_ai_span_name as _gen_ai_span_name,
                 gen_ai_attributes as _gen_ai_attributes,
+            )
+            from .observability import (
+                gen_ai_span_name as _gen_ai_span_name,
+            )
+            from .observability import (
+                trace_span as _trace_span,
             )
         except ImportError:  # pragma: no cover
             import contextlib
@@ -394,11 +397,11 @@ class LLM:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
     ) -> LLMResponse:
         provider, model_id = _parse_spec(model or self.model)
         _run_preflight(model_id, system, messages, tools, max_tokens)
@@ -414,9 +417,13 @@ class LLM:
             pass
         try:
             from .observability import (
-                trace_span as _trace_span,
-                gen_ai_span_name as _gen_ai_span_name,
                 gen_ai_attributes as _gen_ai_attributes,
+            )
+            from .observability import (
+                gen_ai_span_name as _gen_ai_span_name,
+            )
+            from .observability import (
+                trace_span as _trace_span,
             )
         except ImportError:  # pragma: no cover
             import contextlib

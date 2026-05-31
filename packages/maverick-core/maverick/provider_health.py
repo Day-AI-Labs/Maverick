@@ -18,8 +18,6 @@ import threading
 import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field
-from typing import Optional
-
 
 _WINDOW = 200  # last-N samples per (provider, model) for percentiles
 _DEFAULT_TIMEOUT_S = 60.0
@@ -35,12 +33,12 @@ class ProviderStat:
     last_seen: float = 0.0
     latencies_ms: deque = field(default_factory=lambda: deque(maxlen=_WINDOW))
 
-    def p50(self) -> Optional[float]:
+    def p50(self) -> float | None:
         if not self.latencies_ms:
             return None
         return float(statistics.median(self.latencies_ms))
 
-    def p95(self) -> Optional[float]:
+    def p95(self) -> float | None:
         if not self.latencies_ms:
             return None
         # Plain percentile on small samples; statistics.quantiles needs >=2.
@@ -79,7 +77,7 @@ class ProviderHealth:
         # OrderedDict for O(1) LRU eviction (move_to_end on use,
         # popitem(last=False) to drop the least-recently-used key) instead
         # of an O(N) min()-scan under the lock on every cold-key insert.
-        self._stats: "OrderedDict[tuple[str, str], ProviderStat]" = OrderedDict()
+        self._stats: OrderedDict[tuple[str, str], ProviderStat] = OrderedDict()
         self._lock = threading.Lock()
 
     def _key(self, provider: str, model: str) -> tuple[str, str]:
@@ -125,7 +123,7 @@ class ProviderHealth:
             self._stats.clear()
 
 
-_singleton: Optional[ProviderHealth] = None
+_singleton: ProviderHealth | None = None
 _singleton_lock = threading.Lock()
 
 

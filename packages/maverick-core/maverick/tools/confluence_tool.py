@@ -54,7 +54,7 @@ def _config() -> tuple[str, str, str]:
 
 def _headers() -> dict[str, str]:
     _u, user, tok = _config()
-    raw = f"{user}:{tok}".encode("utf-8")
+    raw = f"{user}:{tok}".encode()
     return {
         "Authorization": "Basic " + base64.b64encode(raw).decode("ascii"),
         "Content-Type": "application/json",

@@ -98,6 +98,7 @@ def test_acl_overlay_filters_registry(monkeypatch, tmp_path):
     runtime_overrides.disable_tool("shell")
 
     from unittest.mock import MagicMock
+
     from maverick.tools import base_registry
     reg = base_registry(world=MagicMock(), sandbox=MagicMock(__class__=type("Local", (), {})))
     names = {t.name for t in reg.all()}

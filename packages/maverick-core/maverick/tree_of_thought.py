@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
 from .budget import Budget, BudgetExceeded
 from .llm import LLM
@@ -58,7 +57,7 @@ class ToTResult:
 
 def _draft_candidate(
     llm: LLM, goal_text: str, *, budget: Budget,
-    model: Optional[str], max_tokens: int = 1500,
+    model: str | None, max_tokens: int = 1500,
 ) -> PlanCandidate:
     resp = llm.complete(
         system=_PLANNER_SYSTEM,
@@ -72,7 +71,7 @@ def _draft_candidate(
 
 def _score_candidates(
     llm: LLM, goal_text: str, candidates: list[PlanCandidate],
-    *, budget: Budget, model: Optional[str],
+    *, budget: Budget, model: str | None,
 ) -> tuple[list[float], int, str]:
     import json
     numbered = "\n\n".join(
@@ -120,8 +119,8 @@ def plan_tree_of_thought(
     goal_text: str,
     *,
     n: int = 3,
-    budget: Optional[Budget] = None,
-    model: Optional[str] = None,
+    budget: Budget | None = None,
+    model: str | None = None,
     per_candidate_max_tokens: int = 1500,
 ) -> ToTResult:
     """Generate N candidate plans, score them, return the winner.

@@ -19,7 +19,6 @@ from pathlib import Path
 
 from . import Tool
 
-
 _MAX_TOP_ENTRIES = 80
 _MAX_NESTED_PER_DIR = 30
 _MAX_OUTPUT_BYTES = 8000  # Wave 9 council H7: hard token cap
@@ -178,4 +177,5 @@ def repo_map(sandbox) -> Tool:
         ),
         input_schema={"type": "object", "properties": {}},
         fn=fn,
+        parallel_safe=True,
     )

@@ -23,11 +23,10 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from urllib.parse import urlparse
 from typing import Any
+from urllib.parse import urlparse
 
 from . import Tool
-
 
 
 def _scrub() -> dict:

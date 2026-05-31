@@ -136,7 +136,7 @@ def _op_insight_get(insight_id: int) -> str:
     summary = (
         f"#{data.get('id')}  {data.get('name', '')}\n"
         f"  description: {(data.get('description') or '')[:200]}\n"
-        f"  filters: {str((data.get('filters') or {}))[:300]}\n"
+        f"  filters: {str(data.get('filters') or {})[:300]}\n"
         f"  last_refresh: {data.get('last_refresh')}\n"
     )
     if isinstance(result, list) and result:

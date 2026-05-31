@@ -20,7 +20,7 @@ import queue
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -31,14 +31,14 @@ class Message:
     recipient: str
     payload: Any
     ts: float = field(default_factory=time.time)
-    correlation_id: Optional[str] = None  # threads request/response
+    correlation_id: str | None = None  # threads request/response
 
 
-_inboxes: dict[str, "queue.Queue[Message]"] = {}
+_inboxes: dict[str, queue.Queue[Message]] = {}
 _inboxes_lock = threading.Lock()
 
 
-def _get_inbox(agent_id: str) -> "queue.Queue[Message]":
+def _get_inbox(agent_id: str) -> queue.Queue[Message]:
     """Get-or-create the inbox for an agent."""
     with _inboxes_lock:
         q = _inboxes.get(agent_id)
@@ -53,8 +53,8 @@ def send(
     recipient: str,
     payload: Any,
     *,
-    correlation_id: Optional[str] = None,
-    goal_id: Optional[int] = None,
+    correlation_id: str | None = None,
+    goal_id: int | None = None,
 ) -> bool:
     """Deliver a message to ``recipient``'s inbox. Non-blocking.
 
@@ -89,8 +89,8 @@ def recv(
     agent_id: str,
     *,
     timeout: float = 0.0,
-    correlation_id: Optional[str] = None,
-) -> Optional[Message]:
+    correlation_id: str | None = None,
+) -> Message | None:
     """Pull one message from ``agent_id``'s inbox.
 
     ``timeout`` 0 = non-blocking. >0 = block up to that many seconds.
@@ -121,7 +121,7 @@ def peek(agent_id: str) -> int:
     return inbox.qsize()
 
 
-def clear(agent_id: Optional[str] = None) -> None:
+def clear(agent_id: str | None = None) -> None:
     """Drop all messages. ``agent_id`` None = nuke every inbox."""
     with _inboxes_lock:
         if agent_id is None:

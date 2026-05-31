@@ -26,7 +26,6 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -199,9 +198,9 @@ def _dashboard_timeout() -> float:
 def _decide_via_dashboard(
     action: str,
     risk: str,
-    scope: Optional[str],
-    detail: Optional[str],
-) -> Optional[ConsentDecision]:
+    scope: str | None,
+    detail: str | None,
+) -> ConsentDecision | None:
     """Park the action in the world model and poll for a dashboard decision.
 
     Returns a ConsentDecision once the operator approves/denies via the
@@ -234,7 +233,7 @@ def _decide_via_dashboard(
     return None  # timed out: caller falls back
 
 
-def _format_prompt(action: str, risk: str, scope: Optional[str], detail: Optional[str]) -> str:
+def _format_prompt(action: str, risk: str, scope: str | None, detail: str | None) -> str:
     risk_tag = {"low": "?", "medium": "!", "high": "!!", "critical": "!!!"}.get(risk, "?")
     parts = [
         f"\n[CONSENT {risk_tag}] {action}",
@@ -250,8 +249,8 @@ def _format_prompt(action: str, risk: str, scope: Optional[str], detail: Optiona
 def _emit(
     decision: ConsentDecision,
     action: str,
-    scope: Optional[str],
-    detail: Optional[str],
+    scope: str | None,
+    detail: str | None,
 ) -> ConsentDecision:
     """Log the consent decision to the audit log (fail-safe)."""
     try:

@@ -10,8 +10,6 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
-
 
 # Names matching this pattern are stripped from the child shell's env.
 # Catches STRIPE_API_KEY, PLAID_SECRET, CLOUDFLARE_API_TOKEN,
@@ -33,7 +31,7 @@ _ALWAYS_STRIP_ENV = (
 )
 
 
-def scrub_env(source: Optional[dict] = None) -> dict:
+def scrub_env(source: dict | None = None) -> dict:
     """Return a copy of the environment with secrets removed.
 
     The default LocalBackend runs model-driven shell commands on the host,
@@ -66,11 +64,11 @@ class ExecResult:
 
 
 class LocalBackend:
-    def __init__(self, workdir: Optional[Path] = None, timeout: float = 60.0):
+    def __init__(self, workdir: Path | None = None, timeout: float = 60.0):
         self.workdir = workdir or Path.cwd()
         self.timeout = timeout
 
-    def exec(self, cmd: str, timeout: Optional[float] = None) -> ExecResult:
+    def exec(self, cmd: str, timeout: float | None = None) -> ExecResult:
         # Wave 10: per-call `timeout` kwarg lets the test runner override
         # the default 60s (too short for real pytest on SWE-bench
         # instances). Falls back to self.timeout when unset, preserving

@@ -25,7 +25,6 @@ Env:
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 from .openai_provider import OpenAIClient
 
@@ -33,7 +32,7 @@ from .openai_provider import OpenAIClient
 class AzureOpenAIClient(OpenAIClient):
     DEFAULT_MODEL = "azure-deployment"
 
-    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
+    def __init__(self, api_key: str | None = None, base_url: str | None = None):
         try:
             from openai import AsyncAzureOpenAI, AzureOpenAI
         except ImportError as e:

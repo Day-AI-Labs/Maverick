@@ -6,7 +6,6 @@ import re
 
 from . import Tool
 
-
 # Wave 10 (S2): in benchmark opaque mode, refuse git subcommands that
 # can leak the gold patch (the SWE-bench evaluator pre-applies the
 # bug commit to HEAD; the fix is reachable via `git log -p`, `git

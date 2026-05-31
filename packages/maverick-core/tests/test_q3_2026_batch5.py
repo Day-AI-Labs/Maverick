@@ -6,7 +6,6 @@ import json
 import platform
 from unittest.mock import MagicMock
 
-
 # ---------- Android tool ----------
 
 def test_android_requires_op():

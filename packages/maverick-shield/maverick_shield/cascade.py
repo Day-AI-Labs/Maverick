@@ -22,8 +22,8 @@ import logging
 import os
 import re
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Optional
 
 log = logging.getLogger(__name__)
 
@@ -122,11 +122,11 @@ class CascadedShield:
     """
     base: object
     deep_threshold: float = 0.3
-    deep_scan_input: Optional[Callable] = None
-    deep_scan_output: Optional[Callable] = None
+    deep_scan_input: Callable | None = None
+    deep_scan_output: Callable | None = None
 
     @classmethod
-    def from_config(cls) -> "CascadedShield":
+    def from_config(cls) -> CascadedShield:
         from .guard import Shield  # local import to avoid cycle
         return cls(base=Shield.from_config())
 

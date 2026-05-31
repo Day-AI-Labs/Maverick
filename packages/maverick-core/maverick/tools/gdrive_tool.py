@@ -155,7 +155,7 @@ def _op_create(args: dict) -> str:
         f"Content-Type: {mime}\r\n\r\n"
         f"{content}\r\n"
         f"--{boundary}--"
-    ).encode("utf-8")
+    ).encode()
     r = httpx.post(
         f"{_UPLOAD}/files",
         headers={

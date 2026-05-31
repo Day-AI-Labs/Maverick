@@ -19,7 +19,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from .builtin_rules import SEVERITY_ORDER, scan as builtin_scan
+from .builtin_rules import SEVERITY_ORDER
+from .builtin_rules import scan as builtin_scan
 from .output_policy import scan_output as output_policy_scan
 
 log = logging.getLogger(__name__)
@@ -40,11 +41,11 @@ class ShieldVerdict:
     raw: Any = None
 
     @classmethod
-    def allow(cls) -> "ShieldVerdict":
+    def allow(cls) -> ShieldVerdict:
         return cls(allowed=True, severity="none", reasons=[])
 
     @classmethod
-    def block(cls, severity: str, reason: str, raw: Any = None) -> "ShieldVerdict":
+    def block(cls, severity: str, reason: str, raw: Any = None) -> ShieldVerdict:
         return cls(allowed=False, severity=severity, reasons=[reason], raw=raw)
 
 
@@ -100,7 +101,7 @@ class Shield:
         return self.backend != self.BACKEND_NONE
 
     @classmethod
-    def from_config(cls) -> "Shield":
+    def from_config(cls) -> Shield:
         try:
             from maverick.config import get_safety
             safety = get_safety()

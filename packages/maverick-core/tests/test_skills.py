@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 from maverick.skills import (
     Skill,
     _safe_name,
@@ -13,7 +12,6 @@ from maverick.skills import (
     relevant_skills,
     remove_skill,
 )
-
 
 SKILL_BODY = (
     "---\n"

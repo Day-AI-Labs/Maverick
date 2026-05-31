@@ -33,7 +33,6 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from .local import ExecResult
 
@@ -52,7 +51,7 @@ class FirecrackerBackend:
     image: str = "ubuntu:24.04-maverick"
     timeout: float = 60.0
     provider: str = "local"
-    api_key: Optional[str] = None
+    api_key: str | None = None
     network: str = "egress-deny"   # egress-deny | egress-allow | bridge=<name>
 
     def __post_init__(self):
@@ -77,7 +76,7 @@ class FirecrackerBackend:
                 f"Firecracker provider must be 'local' or 'e2b', got {self.provider!r}"
             )
 
-    def exec(self, cmd: str, timeout: Optional[float] = None) -> ExecResult:
+    def exec(self, cmd: str, timeout: float | None = None) -> ExecResult:
         # Wave 11: per-call timeout propagated to underlying providers
         # via a temporary self.timeout swap. Both _exec_e2b and
         # _exec_local read self.timeout; restore on exit.
@@ -117,13 +116,25 @@ class FirecrackerBackend:
         """
         if shutil.which("firectl"):
             return self._firectl(cmd)
+        # No firectl: by default fall back to docker (read-only + no-network)
+        # so the run still completes, but an operator who configured
+        # `provider = "firecracker"` for hard isolation may not want a silent
+        # downgrade. MAVERICK_FIRECRACKER_STRICT=1 makes that case fail closed.
+        if os.environ.get("MAVERICK_FIRECRACKER_STRICT", "").strip().lower() in {"1", "true", "yes", "on"}:
+            raise RuntimeError(
+                "Firecracker local backend: firectl not on PATH and "
+                "MAVERICK_FIRECRACKER_STRICT is set, so refusing to downgrade "
+                "to docker. Install firectl for microVM isolation, or unset "
+                "MAVERICK_FIRECRACKER_STRICT to allow the docker fallback."
+            )
         # Scaffold fallback: docker with read-only + no-network.
         # Operator sees a log line so they know they're not getting
         # full microVM isolation.
         log.warning(
             "Firecracker local backend: firectl not on PATH; falling "
             "back to `docker --network=none --read-only` for this run. "
-            "Install firectl for full microVM isolation."
+            "Install firectl for full microVM isolation (or set "
+            "MAVERICK_FIRECRACKER_STRICT=1 to fail closed instead)."
         )
         return self._docker_fallback(cmd)
 

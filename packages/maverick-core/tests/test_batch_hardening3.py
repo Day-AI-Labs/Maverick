@@ -1,6 +1,5 @@
 """Tests for the third batch of pre-launch hardening fixes."""
 import pytest
-
 from maverick.circuit_breaker import CircuitBreaker, CircuitOpen, CircuitState
 
 

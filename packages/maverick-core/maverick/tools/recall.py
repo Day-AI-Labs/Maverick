@@ -20,10 +20,10 @@ import logging
 import math
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
-from . import Tool
 from ..world_model import DEFAULT_DB, WorldModel
+from . import Tool
 
 log = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ def _format_match(g, score: float) -> str:
 def _rank_with_embeddings(
     query: str,
     goals: list,
-) -> Optional[list[tuple[float, Any]]]:
+) -> list[tuple[float, Any]] | None:
     """Use fastembed if available. Returns None if model can't load."""
     try:
         from ..skill_embeddings import _have_fastembed, embed
@@ -147,7 +147,7 @@ def recall_past_goals(
     db_path: Path = DEFAULT_DB,
     num_results: int = 5,
     include_running: bool = False,
-    world: Optional[WorldModel] = None,
+    world: WorldModel | None = None,
 ) -> list[tuple[float, Any]]:
     """Library entry point. Returns scored matches.
 

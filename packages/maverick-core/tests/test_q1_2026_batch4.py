@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ---------- embeddable ----------
 
 def test_embeddable_no_cli_default_false(monkeypatch):

@@ -161,8 +161,8 @@ class TestTokenOverlapNoisePrefixBypass:
 
 class TestAnthropicProviderRobust:
     def test_resp_usage_none_does_not_crash(self):
-        from maverick.providers.anthropic_provider import AnthropicClient
         from maverick.budget import Budget
+        from maverick.providers.anthropic_provider import AnthropicClient
 
         client = AnthropicClient.__new__(AnthropicClient)
 
@@ -178,8 +178,8 @@ class TestAnthropicProviderRobust:
         assert budget.dollars == 0.0
 
     def test_string_usage_values_dont_crash(self):
-        from maverick.providers.anthropic_provider import AnthropicClient
         from maverick.budget import Budget
+        from maverick.providers.anthropic_provider import AnthropicClient
 
         client = AnthropicClient.__new__(AnthropicClient)
 
@@ -200,8 +200,8 @@ class TestAnthropicProviderRobust:
         assert budget.input_tokens == 100
 
     def test_string_usage_garbage_does_not_crash(self):
-        from maverick.providers.anthropic_provider import AnthropicClient
         from maverick.budget import Budget
+        from maverick.providers.anthropic_provider import AnthropicClient
 
         client = AnthropicClient.__new__(AnthropicClient)
 

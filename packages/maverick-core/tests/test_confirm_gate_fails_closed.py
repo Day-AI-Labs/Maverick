@@ -11,7 +11,6 @@ from __future__ import annotations
 import pathlib
 
 import pytest
-
 from maverick.tools import as_bool
 
 _TOOLS_DIR = pathlib.Path(__file__).resolve().parents[1] / "maverick" / "tools"

@@ -6,8 +6,8 @@ configures a desktop install and auto-detects Docker — local if the
 daemon isn't up. These tests pin that behaviour. The full 4-question
 flow is covered in test_bridge_consumer_flow.py.
 """
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 

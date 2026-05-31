@@ -20,7 +20,6 @@ import sys
 import time
 from typing import Any
 
-
 _goal_id_var: contextvars.ContextVar[int | None] = contextvars.ContextVar(
     "maverick_goal_id", default=None,
 )

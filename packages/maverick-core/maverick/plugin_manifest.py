@@ -41,7 +41,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ def _load_toml(path: Path) -> dict[str, Any]:
     return tomllib.loads(path.read_text(encoding="utf-8"))
 
 
-def parse(path: Path) -> Optional[PluginManifest]:
+def parse(path: Path) -> PluginManifest | None:
     """Parse a ``maverick-plugin.toml``. Returns None on missing/invalid file."""
     if not path.exists() or not path.is_file():
         return None
@@ -104,7 +104,7 @@ def parse(path: Path) -> Optional[PluginManifest]:
     return parse_dict(data, source=str(path))
 
 
-def parse_dict(data: dict[str, Any], *, source: str = "<inline>") -> Optional[PluginManifest]:
+def parse_dict(data: dict[str, Any], *, source: str = "<inline>") -> PluginManifest | None:
     """Parse a pre-loaded mapping. Useful for tests."""
     section = data.get("plugin") or data
     name = section.get("name")

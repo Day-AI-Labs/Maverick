@@ -8,7 +8,6 @@ auto-approved (CLAUDE.md rule 3). Non-budget failures still soft-pass.
 import asyncio
 
 import pytest
-
 from maverick.budget import Budget, BudgetExceeded
 from maverick.reviewer import review_diff
 

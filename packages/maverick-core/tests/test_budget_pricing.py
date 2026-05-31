@@ -9,7 +9,7 @@ tests pin the corrected math.
 from __future__ import annotations
 
 from maverick.budget import Budget
-from maverick.llm import MODEL_OPUS, MODEL_SONNET, MODEL_HAIKU
+from maverick.llm import MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
 
 
 def test_opus_priced_at_opus_rate():
@@ -165,6 +165,7 @@ def test_record_tokens_thread_safe():
     lose updates. Without the lock, `self.dollars += ...` races and
     silently undercounts (it's a load-then-store, not atomic)."""
     import threading
+
     from maverick.llm import MODEL_SONNET
 
     b = Budget(

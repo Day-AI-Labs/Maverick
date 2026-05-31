@@ -15,7 +15,6 @@ from maverick.tools.browser import (
     browser,
 )
 
-
 # ---------- path / toggle helpers (pure) ----------
 
 def test_state_path_default(monkeypatch):

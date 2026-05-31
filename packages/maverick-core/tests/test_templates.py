@@ -2,14 +2,12 @@
 from __future__ import annotations
 
 import pytest
-
 from maverick.templates import (
     Template,
     _substitute,
     list_templates,
     load_template,
 )
-
 
 TEMPLATE_BODY = """---
 title: Research {{ topic }}

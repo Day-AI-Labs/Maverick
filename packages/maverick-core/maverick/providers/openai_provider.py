@@ -19,7 +19,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from ..budget import Budget
 from ..llm import LLMResponse, ToolCall
@@ -76,12 +77,12 @@ class OpenAIClient:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         allow_openai_env_fallback: bool = True,
     ):
         try:
-            from openai import OpenAI, AsyncOpenAI
+            from openai import AsyncOpenAI, OpenAI
         except ImportError as e:
             raise ImportError(
                 "openai SDK not installed. Run: pip install 'maverick[openai]'"
@@ -117,7 +118,7 @@ class OpenAIClient:
         return any(model.startswith(prefix) for prefix in _MODELS_WITH_AUTO_PROMPT_CACHE)
 
     @staticmethod
-    def _cache_friendly_tools(tools: Optional[list[dict]]) -> Optional[list[dict]]:
+    def _cache_friendly_tools(tools: list[dict] | None) -> list[dict] | None:
         """Stable tool ordering for OpenAI's automatic prompt cache.
 
         OpenAI auto-caches the longest common prefix of a request (system
@@ -202,7 +203,7 @@ class OpenAIClient:
         return out
 
     @staticmethod
-    def _to_openai_tools(anthropic_tools: Optional[list[dict]]) -> Optional[list[dict]]:
+    def _to_openai_tools(anthropic_tools: list[dict] | None) -> list[dict] | None:
         if not anthropic_tools:
             return None
         return [
@@ -220,8 +221,8 @@ class OpenAIClient:
     @staticmethod
     def _from_response(
         resp: Any,
-        budget: Optional[Budget],
-        model: Optional[str] = None,
+        budget: Budget | None,
+        model: str | None = None,
     ) -> LLMResponse:
         choice = resp.choices[0]
         text = choice.message.content or ""
@@ -276,9 +277,9 @@ class OpenAIClient:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]],
+        tools: list[dict] | None,
         max_tokens: int,
-        model: Optional[str],
+        model: str | None,
     ) -> dict[str, Any]:
         chosen_model = model or self.DEFAULT_MODEL
         # Write-side prompt-cache friendliness for gpt-4.1 / o-series / gpt-5,
@@ -315,12 +316,12 @@ class OpenAIClient:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
-        on_delta: Optional[Callable[[str], None]] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
+        on_delta: Callable[[str], None] | None = None,
     ) -> LLMResponse:
         # on_delta accepted for Provider-protocol parity; this client doesn't
         # stream token deltas (the Anthropic client does). Ignored, not error.
@@ -334,11 +335,11 @@ class OpenAIClient:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
     ) -> LLMResponse:
         if thinking_budget:
             log.debug("OpenAI provider ignores thinking_budget=%s", thinking_budget)

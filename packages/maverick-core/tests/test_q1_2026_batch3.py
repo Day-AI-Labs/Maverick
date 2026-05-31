@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ---------- preflight ----------
 
 def test_preflight_context_limit_known_model():
@@ -196,8 +195,9 @@ def test_wizard_run_default_still_interactive(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     # We can't actually drive an interactive session in tests, but
     # we can verify the function signature accepts the kwarg.
-    from maverick_installer.wizard import run
     import inspect
+
+    from maverick_installer.wizard import run
     sig = inspect.signature(run)
     assert "fast" in sig.parameters
     assert sig.parameters["fast"].default is False

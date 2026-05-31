@@ -16,7 +16,6 @@ def _have_fastapi() -> bool:
 class TestHTTPTransport:
     def _client(self):
         from fastapi.testclient import TestClient
-
         from maverick_mcp.http_transport import build_app
         from maverick_mcp.server import MCPServer
         app = build_app(MCPServer())

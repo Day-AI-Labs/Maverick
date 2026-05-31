@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import inspect
 import os
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Optional, Union
+from typing import Any
 
 
 def _env_true(name: str) -> bool:
@@ -97,7 +98,7 @@ def safe_media_args(raw: Any) -> list[str]:
     return safe
 
 
-ToolFn = Callable[[dict[str, Any]], Union[str, Awaitable[str]]]
+ToolFn = Callable[[dict[str, Any]], str | Awaitable[str]]
 
 
 @dataclass
@@ -106,6 +107,17 @@ class Tool:
     description: str
     input_schema: dict[str, Any]
     fn: ToolFn
+    # When True, the agent loop may run this tool CONCURRENTLY with the
+    # other tool calls in the same model turn (asyncio.gather). Only set
+    # it on side-effect-free, idempotent reads (read_file, list_dir,
+    # repo_map, dep_graph). Anything that writes the workspace, shells
+    # out, spawns children, sends a message, or holds a remote rate limit
+    # must stay False so it executes serially. The loop only parallelises
+    # a turn when EVERY call in it is parallel_safe, so the default of
+    # False is always safe — it just forgoes the speedup. Not part of
+    # ``to_anthropic()``: it must never alter the tool catalog the model
+    # sees (that would bust the prompt cache).
+    parallel_safe: bool = False
 
     def to_anthropic(self) -> dict[str, Any]:
         return {
@@ -190,14 +202,14 @@ class ToolRegistry:
 def base_registry(
     world,
     sandbox,
-    mcp_clients: Optional[list] = None,
-    goal_id: Optional[int] = None,
+    mcp_clients: list | None = None,
+    goal_id: int | None = None,
     enable_computer_use: bool = False,
     enable_browser: bool = False,
     enable_web_search: bool = False,
     enable_mobile_tools: bool = False,
-    channel: Optional[str] = None,
-    user_id: Optional[str] = None,
+    channel: str | None = None,
+    user_id: str | None = None,
     budget: Any = None,
 ) -> ToolRegistry:
     """Build the base tool set (no spawn tools).
@@ -247,42 +259,29 @@ def base_registry(
     # apply-fail failures by side-stepping hand-authored diffs.
     reg.register(str_replace_editor(sandbox))
 
-    from .recall import recall
-    from .http_fetch import http_fetch
-    from .pdf_reader import read_pdf
-    from .view_image import view_image
-    from .view_video import view_video
-    from .dep_graph import dep_graph
-    from .ast_edit import ast_edit
-    from .clipboard import clipboard
-    from .preview_diff import preview_diff
-    from .kv_memory import kv_memory
     from .a11y import a11y
     from .airtable_tool import airtable_tool
     from .android import android
     from .apply_patch import apply_patch
     from .arxiv import arxiv
     from .asana_tool import asana_tool
+    from .ast_edit import ast_edit
     from .bitbucket_tool import bitbucket_tool
+    from .budget_status import budget_status
     from .calendar_tool import calendar_tool
     from .calendly_tool import calendly_tool
-    from .cloudflare_tool import cloudflare_tool
     from .clickup_tool import clickup_tool
+    from .clipboard import clipboard
+    from .cloudflare_tool import cloudflare_tool
     from .compute import compute
-    from .sql_query import sql_query
     from .confluence_tool import confluence_tool
-    from .dropbox_tool import dropbox_tool
-    from .gmail_tool import gmail_tool
-    from .msgraph_tool import msgraph_tool
-    from .newsapi_tool import newsapi_tool
-    from .replicate_tool import replicate_tool
-    from .trello_tool import trello_tool
-    from .wolfram_tool import wolfram_tool
     from .currency import currency
     from .datadog_tool import datadog_tool
+    from .dep_graph import dep_graph
     from .diagnose import diagnose
     from .discord_bot import discord_bot
     from .dns_lookup import dns_lookup
+    from .dropbox_tool import dropbox_tool
     from .dynamodb_tool import dynamodb_tool
     from .elasticsearch_tool import elasticsearch_tool
     from .email_tool import email_tool
@@ -295,17 +294,22 @@ def base_registry(
     from .git_advanced import git_advanced
     from .github_actions import github_actions
     from .gitlab import gitlab
+    from .gmail_tool import gmail_tool
     from .hackernews import hackernews
     from .home_assistant_tool import home_assistant_tool
+    from .http_fetch import http_fetch
     from .hubspot_tool import hubspot_tool
     from .huggingface import huggingface
     from .imagemagick_tool import imagemagick_tool
     from .ios_sim import ios_sim
     from .jira import jira
+    from .kv_memory import kv_memory
     from .lambda_tool import lambda_tool
     from .linear import linear
     from .mixpanel_tool import mixpanel_tool
     from .mongodb_tool import mongodb_tool
+    from .msgraph_tool import msgraph_tool
+    from .newsapi_tool import newsapi_tool
     from .notify import notify_tool
     from .notion import notion
     from .ocr import ocr
@@ -313,11 +317,15 @@ def base_registry(
     from .pagerduty_tool import pagerduty_tool
     from .pandas_query import pandas_query
     from .pandoc_tool import pandoc_tool
+    from .pdf_reader import read_pdf
     from .plaid_tool import plaid_tool
     from .plausible_tool import plausible_tool
     from .posthog_tool import posthog_tool
+    from .preview_diff import preview_diff
+    from .recall import recall
     from .reddit_tool import reddit_tool
     from .redis_tool import redis_tool
+    from .replicate_tool import replicate_tool
     from .s3_tool import s3_tool
     from .salesforce_tool import salesforce_tool
     from .semantic_scholar import semantic_scholar
@@ -328,12 +336,17 @@ def base_registry(
     from .sns_tool import sns_tool
     from .spend_report import spend_report
     from .spotify_tool import spotify_tool
+    from .sql_query import sql_query
     from .stripe_tool import stripe_tool
     from .test_impact import test_impact
     from .translate import translate
+    from .trello_tool import trello_tool
     from .twilio_tool import twilio_tool
     from .vercel_tool import vercel_tool
+    from .view_image import view_image
+    from .view_video import view_video
     from .wikipedia import wikipedia
+    from .wolfram_tool import wolfram_tool
     from .youtube import youtube
     from .zoom_tool import zoom_tool
     reg.register(recall())
@@ -368,6 +381,7 @@ def base_registry(
         reg.register(android())
         reg.register(ios_sim())
     reg.register(spend_report())
+    reg.register(budget_status(budget=budget))
     reg.register(test_impact())
     reg.register(youtube())
     reg.register(notion())

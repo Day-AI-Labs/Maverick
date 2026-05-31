@@ -31,7 +31,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # Realistic recorded LLM response — model emits reasoning then FINAL.
 # Whitespace + indentation matters: SEARCH/REPLACE is byte-exact.
 RECORDED_FINAL_RESPONSE = """Target: `foo/bar.py:do_thing` — the unconditional default \
@@ -292,7 +291,7 @@ class TestCsvRoundTrip:
     def test_fetch_to_manifest_to_row_pipeline(self, tmp_path):
         """The full chain: simulated HF row → manifest line → harness
         consumes it without losing fields."""
-        from importlib.util import spec_from_file_location, module_from_spec
+        from importlib.util import module_from_spec, spec_from_file_location
         p = (Path(__file__).resolve().parents[3]
              / "benchmarks" / "fetch_swe_bench_verified.py")
         spec = spec_from_file_location("fetch_v", p)

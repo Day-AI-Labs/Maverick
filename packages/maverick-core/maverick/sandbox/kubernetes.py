@@ -36,7 +36,6 @@ import subprocess
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from .local import ExecResult
 
@@ -47,7 +46,7 @@ log = logging.getLogger(__name__)
 class KubernetesBackend:
     image: str = "python:3.12-slim"
     namespace: str = "default"
-    context: Optional[str] = None
+    context: str | None = None
     workdir: Path = Path("/workspaces/repo")
     timeout: float = 120.0
     allow_network: bool = False
@@ -78,7 +77,7 @@ class KubernetesBackend:
                 "~/.maverick/config.toml."
             ) from e
 
-    def exec(self, cmd: str, timeout: Optional[float] = None) -> ExecResult:
+    def exec(self, cmd: str, timeout: float | None = None) -> ExecResult:
         effective = self.timeout if timeout is None else timeout
         pod_name = f"maverick-sb-{uuid.uuid4().hex[:12]}"
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from maverick.safety.rate_limiter import (
     _Limiter,
     apply_to_registry,

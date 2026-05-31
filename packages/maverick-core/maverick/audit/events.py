@@ -25,8 +25,7 @@ Payload shapes (kind -> required fields, all events also carry
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
-
+from typing import Any
 
 SCHEMA_VERSION = 1
 
@@ -53,7 +52,7 @@ class AuditEvent:
     ts: float
     kind: str
     agent: str = "system"
-    goal_id: Optional[int] = None
+    goal_id: int | None = None
     payload: dict[str, Any] = field(default_factory=dict)
     schema_version: int = SCHEMA_VERSION
 

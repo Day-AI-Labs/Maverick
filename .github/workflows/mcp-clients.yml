@@ -1,0 +1,48 @@
+name: MCP clients
+
+# Executes the cross-language MCP client examples against a live `maverick mcp`
+# stdio server. The Python contract test (test_client_quickstart_contract.py)
+# checks the documented tool surface; this proves the clients actually connect
+# and round-trip -- it's what catches a broken `maverick mcp` entry point or an
+# SDK/protocol drift that doc checks can't.
+#
+# Only the no-LLM flow runs (initialize -> tools/list -> maverick_facts_get);
+# maverick_start needs a provider key + budget and is out of scope for CI.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/maverick-core/**'
+      - 'packages/maverick-mcp/**'
+      - 'examples/clients/**'
+      - 'docs/clients/**'
+      - '.github/workflows/mcp-clients.yml'
+  pull_request:
+    paths:
+      - 'packages/maverick-core/**'
+      - 'packages/maverick-mcp/**'
+      - 'examples/clients/**'
+      - 'docs/clients/**'
+      - '.github/workflows/mcp-clients.yml'
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Maverick (kernel + MCP server)
+        run: |
+          pip install -e ./packages/maverick-core
+          pip install --no-deps -e ./packages/maverick-mcp
+      - name: Run the TypeScript MCP client end-to-end
+        working-directory: examples/clients/typescript
+        run: |
+          npm ci
+          npm run check

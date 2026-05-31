@@ -43,7 +43,6 @@ import subprocess
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from .local import ExecResult
 
@@ -73,7 +72,7 @@ class DevcontainerSpec:
     container_env: dict[str, str] = field(default_factory=dict)
 
 
-def _find_devcontainer_json(project_dir: Path) -> Optional[Path]:
+def _find_devcontainer_json(project_dir: Path) -> Path | None:
     candidates = [
         project_dir / ".devcontainer" / "devcontainer.json",
         project_dir / "devcontainer.json",
@@ -129,7 +128,7 @@ class DevcontainerBackend:
     project_dir: Path
     timeout: float = 60.0
     allow_network: bool = True
-    spec_override: Optional[DevcontainerSpec] = None
+    spec_override: DevcontainerSpec | None = None
 
     def __post_init__(self) -> None:
         self.project_dir = Path(self.project_dir).resolve()
@@ -158,7 +157,7 @@ class DevcontainerBackend:
                 "Install Docker or change [sandbox] backend in ~/.maverick/config.toml."
             ) from e
 
-    def exec(self, cmd: str, timeout: Optional[float] = None) -> ExecResult:
+    def exec(self, cmd: str, timeout: float | None = None) -> ExecResult:
         effective = self.timeout if timeout is None else timeout
         container_name = f"maverick-devc-{uuid.uuid4().hex}"
         args = [

@@ -6,7 +6,6 @@ fix so regressions are obvious.
 """
 from __future__ import annotations
 
-
 # ---- D2: extract_unified_diff supports `diff --git` headers + renames ----
 
 class TestExtractUnifiedDiffGitFormat:
@@ -51,9 +50,10 @@ class TestExtractUnifiedDiffGitFormat:
 
 class TestValidatePatchNewFile:
     def test_dev_null_minus_passes_header_check(self, tmp_path):
-        from maverick.coding_mode import validate_patch
         # Construct a tiny git repo so the function can attempt git apply.
         import subprocess
+
+        from maverick.coding_mode import validate_patch
         subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
         subprocess.run(["git", "-C", str(tmp_path), "config", "commit.gpgsign", "false"], check=True)
         subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "t@t"], check=True)

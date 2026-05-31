@@ -12,7 +12,6 @@ import io
 import sys
 
 import pytest
-
 from maverick_channels import IncomingMessage
 from maverick_channels.cli import CLIChannel
 

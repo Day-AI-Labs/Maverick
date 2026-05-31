@@ -9,7 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from maverick import skills
 
 ed25519 = pytest.importorskip(
@@ -50,7 +49,7 @@ def _make_skill(*, sig: str | None = None, pubkey: str | None = None) -> str:
 
 def _sign(priv: ed25519.Ed25519PrivateKey) -> str:
     # Must match skills._canonical_signed_bytes: name + "\n" + stripped body.
-    msg = f"{_NAME}\n{_BODY.strip()}".encode("utf-8")
+    msg = f"{_NAME}\n{_BODY.strip()}".encode()
     return priv.sign(msg).hex()
 
 

@@ -21,7 +21,8 @@ import asyncio
 import logging
 import random
 import time
-from typing import Awaitable, Callable, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
 
 from ._envparse import env_float, env_int
 

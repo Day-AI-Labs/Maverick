@@ -11,7 +11,6 @@ from unittest.mock import patch
 
 from maverick.safety import scan_remote_content
 
-
 # ---------- scan_remote_content ----------
 
 def test_scan_strips_zero_width_and_bidi_unicode():
@@ -102,7 +101,7 @@ def test_http_fetch_annotates_malicious_fixture(monkeypatch):
 
 def test_http_fetch_strips_hidden_unicode_and_warns(monkeypatch):
     # Zero-width space hidden in otherwise benign text.
-    body = "<p>buy now​ for cheap</p>".encode("utf-8")
+    body = "<p>buy now​ for cheap</p>".encode()
     out = _run_fetch_with_body(body, monkeypatch)
     assert "​" not in out
     assert "hidden unicode" in out.lower()

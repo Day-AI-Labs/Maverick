@@ -19,8 +19,6 @@ import hashlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
-
 
 DEFAULT_ROOT = Path.home() / ".maverick" / "attachments"
 
@@ -57,7 +55,7 @@ class Stored:
     path: Path
 
 
-def _root_for_goal(goal_id: int, root: Optional[Path] = None) -> Path:
+def _root_for_goal(goal_id: int, root: Path | None = None) -> Path:
     base = root or DEFAULT_ROOT
     return base / str(goal_id)
 
@@ -69,7 +67,7 @@ def store(
     data: bytes,
     *,
     existing_total: int = 0,
-    root: Optional[Path] = None,
+    root: Path | None = None,
 ) -> Stored:
     """Validate + persist a single attachment. Returns the on-disk record.
 

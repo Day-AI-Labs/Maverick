@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Optional
 
 from .llm import MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
 
@@ -25,7 +24,7 @@ from .llm import MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET
 class RouteSignal:
     """Per-call info the router uses to escalate."""
     role: str = ""
-    verifier_confidence: Optional[float] = None
+    verifier_confidence: float | None = None
     tool_call_depth: int = 0
     prior_attempt: int = 0           # 0 = first try, 1 = retry, etc.
     requires_thinking: bool = False  # caller knows the task needs reasoning

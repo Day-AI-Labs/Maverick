@@ -12,10 +12,7 @@ import sys
 import types
 
 import pytest
-
-
 from maverick.providers import KNOWN_PROVIDERS, get_provider_client
-
 
 # All non-anthropic providers route through the OpenAI SDK (directly, or
 # via openai-compatible base_url). If the optional `openai` extra isn't

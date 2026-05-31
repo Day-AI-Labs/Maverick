@@ -25,8 +25,8 @@ import logging
 import os
 import threading
 from collections import OrderedDict
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 _MAX_READ_ENTRIES = 64
 _MAX_READ_BYTES = 8 * 1024 * 1024  # 8 MiB
 
-_read_cache: "OrderedDict[str, tuple[float, int, str]]" = OrderedDict()
+_read_cache: OrderedDict[str, tuple[float, int, str]] = OrderedDict()
 _read_cache_bytes = 0
 _read_lock = threading.RLock()
 
@@ -45,7 +45,7 @@ def read_file_cached(
     encoding: str = "utf-8",
     *,
     errors: str = "replace",
-) -> Optional[str]:
+) -> str | None:
     """Return the file contents, served from cache when possible.
 
     Returns None if the file doesn't exist or can't be read. Errors
@@ -113,7 +113,7 @@ def read_cache_stats() -> dict:
 # ---------- repo_map cache ----------
 
 _MAX_REPO_ENTRIES = 16
-_repo_cache: "OrderedDict[str, tuple[str, str]]" = OrderedDict()
+_repo_cache: OrderedDict[str, tuple[str, str]] = OrderedDict()
 _repo_lock = threading.RLock()
 
 

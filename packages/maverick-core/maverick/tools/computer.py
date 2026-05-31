@@ -27,7 +27,7 @@ import io
 import logging
 import os
 import time
-from typing import Any, Optional
+from typing import Any
 
 from . import Tool
 
@@ -101,7 +101,7 @@ def _screenshot_png_b64() -> str:
         return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
-def _clamp_coordinate(pyautogui, coord: Optional[list]) -> tuple[int, int] | None:
+def _clamp_coordinate(pyautogui, coord: list | None) -> tuple[int, int] | None:
     if not coord:
         return None
     if len(coord) != 2:

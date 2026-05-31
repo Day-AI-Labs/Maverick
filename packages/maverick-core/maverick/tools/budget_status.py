@@ -14,7 +14,6 @@ from typing import Any
 
 from . import Tool
 
-
 _BUDGET_STATUS_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {},

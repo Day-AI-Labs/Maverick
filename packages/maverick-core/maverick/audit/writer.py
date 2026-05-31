@@ -14,7 +14,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from .events import AuditEvent, EventKind
 
@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 DEFAULT_AUDIT_DIR = Path.home() / ".maverick" / "audit"
 
 
-def _resolve_signing(explicit: Optional[bool]) -> bool:
+def _resolve_signing(explicit: bool | None) -> bool:
     """Whether to sign + hash-chain audit rows. Opt-in.
 
     Precedence: explicit arg > MAVERICK_AUDIT_SIGN env > [audit] sign in
@@ -60,14 +60,14 @@ class AuditLog:
     edits, not an attacker who can also write the key dir.
     """
 
-    def __init__(self, audit_dir: Path = DEFAULT_AUDIT_DIR, *, sign: Optional[bool] = None):
+    def __init__(self, audit_dir: Path = DEFAULT_AUDIT_DIR, *, sign: bool | None = None):
         self.audit_dir = audit_dir
         self._lock = threading.Lock()
-        self._current_path: Optional[Path] = None
-        self._current_day: Optional[str] = None
+        self._current_path: Path | None = None
+        self._current_day: str | None = None
         self._signing_enabled = _resolve_signing(sign)
         self._signer: Any = None
-        self._signer_path: Optional[Path] = None
+        self._signer_path: Path | None = None
 
     def _path_for(self, day_str: str) -> Path:
         return self.audit_dir / f"{day_str}.ndjson"
@@ -196,7 +196,7 @@ class AuditLog:
                     total += n
             return total
 
-    def tail(self, n: int = 50, day: Optional[str] = None) -> list[dict[str, Any]]:
+    def tail(self, n: int = 50, day: str | None = None) -> list[dict[str, Any]]:
         """Return the last ``n`` events from ``day`` (default today)."""
         if day is None:
             day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -216,7 +216,7 @@ class AuditLog:
                 continue
         return out
 
-    def grep(self, pattern: str, day: Optional[str] = None) -> list[dict[str, Any]]:
+    def grep(self, pattern: str, day: str | None = None) -> list[dict[str, Any]]:
         """Crude regex grep over the day's events."""
         import re
 
@@ -265,7 +265,7 @@ def _redact_event(payload: dict[str, Any]) -> dict[str, Any]:
     return _walk(payload)
 
 
-_default: Optional[AuditLog] = None
+_default: AuditLog | None = None
 _default_lock = threading.Lock()
 
 
@@ -282,7 +282,7 @@ def record(
     kind: str,
     *,
     agent: str = "system",
-    goal_id: Optional[int] = None,
+    goal_id: int | None = None,
     **payload: Any,
 ) -> bool:
     """Module-level shortcut for the default audit log."""

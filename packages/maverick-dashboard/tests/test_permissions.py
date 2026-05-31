@@ -10,7 +10,7 @@ def _client():
 
 
 def _isolate(monkeypatch, tmp_path):
-    from maverick import world_model, runtime_overrides
+    from maverick import runtime_overrides, world_model
     monkeypatch.setattr(world_model, "DEFAULT_DB", tmp_path / "world.db")
     monkeypatch.setattr(runtime_overrides, "OVERRIDES_PATH", tmp_path / "ro.toml")
     monkeypatch.setenv("MAVERICK_CONFIG", str(tmp_path / "config.toml"))

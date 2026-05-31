@@ -10,9 +10,7 @@ Each test pins a behavior the prior code didn't enforce:
 from __future__ import annotations
 
 import pytest
-
 from maverick import plugins
-
 
 # ---------- plugin allowlist ----------
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------- Self-reviewer parsing ----------
 
 class TestReviewerParse:

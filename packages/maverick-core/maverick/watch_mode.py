@@ -21,10 +21,9 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Optional
-
 
 MARKER_RE = re.compile(
     r"""
@@ -60,7 +59,7 @@ class Match:
 def scan_text(
     text: str,
     *,
-    path: Optional[Path] = None,
+    path: Path | None = None,
 ) -> Iterator[Match]:
     """Yield every AI marker found in `text`."""
     lines = text.splitlines()

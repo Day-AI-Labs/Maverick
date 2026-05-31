@@ -20,7 +20,6 @@ import logging
 import re
 import time
 import uuid
-from typing import Optional
 
 from ..budget import Budget
 from ..llm import LLMResponse
@@ -60,12 +59,12 @@ def _sapisid_hash(sapisid: str, origin: str = _BASE_URL) -> str:
     The SHA1 is hex-encoded.
     """
     ts = str(int(time.time()))
-    raw = f"{ts} {sapisid} {origin}".encode("utf-8")
+    raw = f"{ts} {sapisid} {origin}".encode()
     digest = hashlib.sha1(raw).hexdigest()
     return f"SAPISIDHASH {ts}_{digest}"
 
 
-def _extract_token(html: str, key: str) -> Optional[str]:
+def _extract_token(html: str, key: str) -> str | None:
     """Pull a JS-assigned token (e.g. SNlM0e -> 'at' token) out of the
     Gemini app HTML on first load."""
     m = re.search(rf'"{re.escape(key)}":"([^"]+)"', html)
@@ -130,7 +129,7 @@ class GeminiSessionClient:
     PROVIDER_KEY = "gemini-session"
     DEFAULT_MODEL = "gemini-3-pro"
 
-    def __init__(self, session: Optional[dict] = None):
+    def __init__(self, session: dict | None = None):
         try:
             import httpx  # noqa: F401
         except ImportError as e:
@@ -206,11 +205,11 @@ class GeminiSessionClient:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
     ) -> LLMResponse:
         if tools:
             raise NotImplementedError(
@@ -260,11 +259,11 @@ class GeminiSessionClient:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
     ) -> LLMResponse:
         if tools:
             raise NotImplementedError("Gemini session does not support tool-use.")

@@ -25,7 +25,6 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +62,7 @@ _PRICING: list[tuple[str, str, int, float, float]] = [
 ]
 
 
-def price_for_model(model_id: str) -> Optional[tuple[float, float]]:
+def price_for_model(model_id: str) -> tuple[float, float] | None:
     """Return (in_per_mtok, out_per_mtok) for a model_id from the router's
     pricing table, or None if it isn't listed.
 
@@ -159,7 +158,7 @@ def _avg_price(in_rate: float, out_rate: float, *, output_heavy: bool) -> float:
     return (in_rate + out_rate) / 2.0
 
 
-def pick(signal: CostSignal) -> Optional[str]:
+def pick(signal: CostSignal) -> str | None:
     """Return ``"provider:model_id"`` or ``None`` to use the default.
 
     Returning None means: defer to the legacy ``model_for_role()``

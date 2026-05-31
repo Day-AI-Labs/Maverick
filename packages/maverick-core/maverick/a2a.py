@@ -21,7 +21,7 @@ deliberate follow-up -- discovery is the correct, low-risk first increment.
 from __future__ import annotations
 
 import os
-from typing import Any, Optional
+from typing import Any
 
 A2A_PROTOCOL_VERSION = "1.0"
 
@@ -46,7 +46,7 @@ def a2a_enabled() -> bool:
     return bool(val)
 
 
-def _base_url(override: Optional[str] = None) -> str:
+def _base_url(override: str | None = None) -> str:
     url = (
         override
         or os.environ.get("MAVERICK_A2A_BASE_URL")
@@ -90,7 +90,7 @@ _SKILLS: list[dict[str, Any]] = [
 ]
 
 
-def build_agent_card(base_url: Optional[str] = None) -> dict[str, Any]:
+def build_agent_card(base_url: str | None = None) -> dict[str, Any]:
     """Return an A2A v1.0-shaped Agent Card for this Maverick instance.
 
     Pure function -- no I/O beyond reading the version/base-url config -- so

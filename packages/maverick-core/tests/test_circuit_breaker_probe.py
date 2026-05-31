@@ -10,7 +10,6 @@ import asyncio
 import threading
 
 import pytest
-
 from maverick.circuit_breaker import CircuitBreaker, CircuitOpen, CircuitState
 
 

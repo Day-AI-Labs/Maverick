@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import json
 
-
 # ---------- _docker_available ----------
 
 def test_docker_available_no_binary(monkeypatch):
     import shutil as _shutil
+
     from maverick_installer import wizard
     monkeypatch.setattr(_shutil, "which", lambda _x: None)
     assert wizard._docker_available() is False
@@ -15,8 +15,9 @@ def test_docker_available_no_binary(monkeypatch):
 
 def test_docker_available_binary_but_daemon_down(monkeypatch):
     import shutil as _shutil
-    from maverick_installer import wizard
     import subprocess as _sp
+
+    from maverick_installer import wizard
     monkeypatch.setattr(_shutil, "which", lambda _x: "/usr/bin/docker")
     def _raise(*a, **kw):
         raise _sp.CalledProcessError(1, ["docker", "version"])
@@ -26,8 +27,9 @@ def test_docker_available_binary_but_daemon_down(monkeypatch):
 
 def test_docker_available_happy_path(monkeypatch):
     import shutil as _shutil
-    from maverick_installer import wizard
     import subprocess as _sp
+
+    from maverick_installer import wizard
     monkeypatch.setattr(_shutil, "which", lambda _x: "/usr/bin/docker")
     monkeypatch.setattr(
         _sp, "run",
@@ -72,6 +74,7 @@ def test_validation_cache_miss_for_different_key(tmp_path, monkeypatch):
 
 def test_validation_cache_expires_after_ttl(tmp_path, monkeypatch):
     import time as _time
+
     from maverick_installer import wizard
     monkeypatch.setattr(wizard, "CONFIG_DIR", tmp_path)
     monkeypatch.setattr(wizard, "VALIDATION_CACHE_PATH", tmp_path / "validation-cache.json")
@@ -86,6 +89,7 @@ def test_validation_cache_expires_after_ttl(tmp_path, monkeypatch):
 
 def test_validation_cache_persists_at_chmod_600(tmp_path, monkeypatch):
     import stat as _stat
+
     from maverick_installer import wizard
     monkeypatch.setattr(wizard, "CONFIG_DIR", tmp_path)
     monkeypatch.setattr(wizard, "VALIDATION_CACHE_PATH", tmp_path / "validation-cache.json")

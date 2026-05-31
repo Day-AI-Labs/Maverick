@@ -6,7 +6,6 @@ path at the C layer in downstream consumers (and other control chars
 enable log/terminal injection).
 """
 import pytest
-
 from maverick.attachments import AttachmentRejected, store
 
 

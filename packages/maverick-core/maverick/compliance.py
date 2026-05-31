@@ -16,8 +16,6 @@ track via the world model's conversations.last_seen vs created_at).
 from __future__ import annotations
 
 import os
-from typing import Optional
-
 
 # Default text. Can be overridden via:
 #   MAVERICK_AI_DISCLOSURE="<your custom text>"
@@ -54,7 +52,7 @@ def first_turn_disclosure(
     world,
     channel: str,
     user_id: str,
-) -> Optional[str]:
+) -> str | None:
     """Return the AI disclosure string for the user's first turn, or None.
 
     "First turn" = no prior conversation row OR the conversation has

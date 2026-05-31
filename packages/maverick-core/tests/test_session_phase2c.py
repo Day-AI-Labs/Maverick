@@ -75,7 +75,7 @@ def _stub_session(tmp_path, monkeypatch, provider: str, cookies: dict, extra: di
 # ---------- registry ----------
 
 def test_phase2c_aliases():
-    from maverick.session_providers import is_session_provider, KNOWN_SESSION_PROVIDERS
+    from maverick.session_providers import KNOWN_SESSION_PROVIDERS, is_session_provider
     for p in ("kimi-session", "grok-session", "gemini-session"):
         assert p in KNOWN_SESSION_PROVIDERS
     assert is_session_provider("kimi")
@@ -268,8 +268,8 @@ def test_gemini_session_rejects_tool_use(tmp_path, monkeypatch):
 
 def test_simulator_passes_through_when_no_tools():
     """No tools -> wrapper is a pure pass-through."""
-    from maverick.session_providers.tool_simulator import SimulatedToolCallClient
     from maverick.llm import LLMResponse
+    from maverick.session_providers.tool_simulator import SimulatedToolCallClient
 
     class _Inner:
         DEFAULT_MODEL = "x"
@@ -286,8 +286,8 @@ def test_simulator_passes_through_when_no_tools():
 
 def test_simulator_renders_tools_to_prompt():
     """With tools, the wrapper augments system prompt with markdown protocol."""
-    from maverick.session_providers.tool_simulator import SimulatedToolCallClient
     from maverick.llm import LLMResponse
+    from maverick.session_providers.tool_simulator import SimulatedToolCallClient
 
     captured_system: dict = {}
 
@@ -311,8 +311,8 @@ def test_simulator_renders_tools_to_prompt():
 
 def test_simulator_parses_named_tool_calls():
     """Model emits <tool name="calc">{"a":1}</tool> -> parsed into ToolCall."""
-    from maverick.session_providers.tool_simulator import SimulatedToolCallClient
     from maverick.llm import LLMResponse
+    from maverick.session_providers.tool_simulator import SimulatedToolCallClient
 
     class _Inner:
         DEFAULT_MODEL = "x"
@@ -340,8 +340,8 @@ def test_simulator_parses_named_tool_calls():
 
 def test_simulator_parses_inline_tool_calls():
     """Older protocol: <tool>name({"a":1})</tool> also parsed."""
-    from maverick.session_providers.tool_simulator import SimulatedToolCallClient
     from maverick.llm import LLMResponse
+    from maverick.session_providers.tool_simulator import SimulatedToolCallClient
 
     class _Inner:
         DEFAULT_MODEL = "x"
@@ -363,8 +363,8 @@ def test_simulator_parses_inline_tool_calls():
 
 def test_simulator_handles_malformed_json():
     """Malformed tool args don't crash; the call is dropped."""
-    from maverick.session_providers.tool_simulator import SimulatedToolCallClient
     from maverick.llm import LLMResponse
+    from maverick.session_providers.tool_simulator import SimulatedToolCallClient
 
     class _Inner:
         DEFAULT_MODEL = "x"
@@ -389,8 +389,8 @@ def test_simulator_auto_wraps_via_llm_facade(tmp_path, monkeypatch):
     NotImplementedError thanks to auto-wrapping in _get_client."""
     _stub_session(tmp_path, monkeypatch, "chatgpt-session",
                   {"__Secure-next-auth.session-token": "t"})
-    from maverick.session_providers.tool_simulator import SimulatedToolCallClient
     from maverick.llm import LLM
+    from maverick.session_providers.tool_simulator import SimulatedToolCallClient
 
     llm = LLM(model="chatgpt-session:gpt-4o")
     client = llm._get_client("chatgpt-session")

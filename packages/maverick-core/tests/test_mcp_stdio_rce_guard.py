@@ -21,10 +21,9 @@ from __future__ import annotations
 
 import inspect
 
-import pytest
-
-import maverick.mcp_client as mc
 import maverick.config as config
+import maverick.mcp_client as mc
+import pytest
 
 
 def test_shell_metacharacter_in_command_rejected():

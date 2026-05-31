@@ -7,15 +7,13 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Optional
 
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from maverick.runner import (
     DEFAULT_MAX_DEPTH,
     DEFAULT_MAX_DOLLARS,
     DEFAULT_MAX_WALL_SECONDS,
 )
-
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 log = logging.getLogger(__name__)
@@ -29,16 +27,16 @@ class GoalIn(BaseModel):
     max_dollars: float = Field(5.0, ge=0.0, le=100.0)
     max_wall_seconds: float = Field(3600.0, ge=1.0, le=86400.0)
     max_depth: int = Field(3, ge=1, le=5)
-    template: Optional[str] = None
-    params: Optional[dict[str, str]] = None
+    template: str | None = None
+    params: dict[str, str] | None = None
 
 
 class GoalOut(BaseModel):
     id: int
     status: str
     title: str
-    description: Optional[str] = None
-    result: Optional[str] = None
+    description: str | None = None
+    result: str | None = None
 
 
 class GoalEventOut(BaseModel):
@@ -51,7 +49,7 @@ class GoalEventOut(BaseModel):
 
 class GoalEventsResponse(BaseModel):
     status: str
-    result: Optional[str]
+    result: str | None
     next_id: int
     events: list[GoalEventOut]
 
@@ -166,7 +164,7 @@ async def create_goal(payload: GoalIn, bg: BackgroundTasks) -> GoalOut:
 
 @router.get("/goals", response_model=list[GoalOut])
 async def list_goals(
-    status: Optional[str] = None,
+    status: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[GoalOut]:
@@ -249,8 +247,8 @@ async def upload_attachment(goal_id: int, file: UploadFile = File(...)) -> Attac
         raise HTTPException(status_code=404, detail="no such goal")
 
     from maverick.attachments import (
-        AttachmentRejected,
         MAX_FILE_BYTES,
+        AttachmentRejected,
         store,
     )
 
@@ -531,7 +529,7 @@ async def goal_open_questions(goal_id: int) -> dict:
 async def list_plugins() -> dict:
     """Discovered + allow-listed plugins, broken out by kind."""
     try:
-        from maverick.plugins import _entry_points, _allowed_plugin_names
+        from maverick.plugins import _allowed_plugin_names, _entry_points
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"plugin discovery failed: {e}")
     allow = _allowed_plugin_names()
@@ -576,8 +574,8 @@ async def list_mcp_servers() -> dict:
 async def list_tools() -> dict:
     """Tools the agent currently has registered (post-ACL, post-rate-limit)."""
     try:
-        from maverick.tools import base_registry
         from maverick.sandbox import build_sandbox
+        from maverick.tools import base_registry
         from maverick.world_model import DEFAULT_DB, WorldModel
         wm = WorldModel(DEFAULT_DB)
         sb = build_sandbox()
@@ -609,16 +607,17 @@ async def list_channels() -> dict:
 
 
 @router.get("/audit/tail")
-async def audit_tail(n: int = 100, day: Optional[str] = None) -> dict:
+async def audit_tail(n: int = 100, day: str | None = None) -> dict:
     """Tail the audit log (NDJSON at ~/.maverick/audit/YYYY-MM-DD.ndjson)."""
     from maverick.audit import default_audit_log
+
     from maverick_dashboard.app import safe_audit_day
     n = max(1, min(int(n or 100), 1000))
     return {"events": default_audit_log().tail(n, day=safe_audit_day(day))}
 
 
 @router.get("/audit/grep")
-async def audit_grep(pattern: str, day: Optional[str] = None) -> dict:
+async def audit_grep(pattern: str, day: str | None = None) -> dict:
     """Search recent audit events for the given literal pattern.
 
     Intentionally uses bounded, literal (case-insensitive) matching rather
@@ -631,6 +630,7 @@ async def audit_grep(pattern: str, day: Optional[str] = None) -> dict:
     if len(pattern) > 200:
         raise HTTPException(status_code=400, detail="pattern too long")
     from maverick.audit import default_audit_log
+
     from maverick_dashboard.app import safe_audit_day
     events = default_audit_log().tail(1000, day=safe_audit_day(day))
     needle = pattern.lower()

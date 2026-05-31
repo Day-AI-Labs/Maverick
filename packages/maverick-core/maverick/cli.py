@@ -67,8 +67,9 @@ def _kernel():
     never need any of it. Call this at the top of any command that does.
     """
     import types
+
     from .budget import Budget
-    from .llm import LLM, DEFAULT_MODEL
+    from .llm import DEFAULT_MODEL, LLM
     from .orchestrator import run_goal_sync
     from .sandbox import build_sandbox
     from .secrets import scrub
@@ -232,6 +233,72 @@ def budget(ctx) -> None:
         )
 
 
+@main.command("runs")
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit machine-readable JSON (array of run objects).")
+@click.option("-n", "--limit", default=50, type=int, help="Max runs to show.")
+@click.option("--goal", "goal_id", default=None, type=int,
+              help="Only runs for this goal id.")
+@click.pass_context
+def runs(ctx, as_json: bool, limit: int, goal_id) -> None:
+    """List recent runs (episodes) with cost, status, and timing.
+
+    A "run" is one episode of the agent loop against a goal. ``--json``
+    emits a stable array (one object per run) — this is the contract the
+    VS Code extension's runs view consumes, so keep the field names
+    stable.
+    """
+    world = open_world(ctx.obj["db"])
+    try:
+        episodes = world.list_episodes(limit=limit, goal_id=goal_id)
+        goal_cache = {}
+        records = []
+        for e in episodes:
+            if e.goal_id not in goal_cache:
+                goal_cache[e.goal_id] = world.get_goal(e.goal_id)
+            g = goal_cache[e.goal_id]
+            duration = (
+                round(e.ended_at - e.started_at, 3)
+                if e.ended_at is not None else None
+            )
+            records.append({
+                "episode_id": e.id,
+                "goal_id": e.goal_id,
+                "goal_title": g.title if g else None,
+                "goal_status": g.status if g else None,
+                "outcome": e.outcome,            # None while the run is live
+                "running": e.ended_at is None,
+                "started_at": e.started_at,
+                "ended_at": e.ended_at,
+                "duration_s": duration,
+                "cost_dollars": e.cost_dollars,
+                "input_tokens": e.input_tokens,
+                "output_tokens": e.output_tokens,
+                "tool_calls": e.tool_calls,
+            })
+    finally:
+        world.close()
+
+    if as_json:
+        import json as _json
+        click.echo(_json.dumps(records, default=str))
+        return
+
+    if not records:
+        click.echo("no runs yet.")
+        return
+    click.echo(click.style(f"Recent runs ({len(records)})", bold=True))
+    for r in records:
+        state = "running" if r["running"] else (r["outcome"] or "done")
+        title = (r["goal_title"] or "")[:48]
+        click.echo(
+            f"  ep #{r['episode_id']:<4} goal {r['goal_id']:<4} "
+            f"[{state:<10}] ${r['cost_dollars']:.4f}  "
+            f"in={r['input_tokens']:,} out={r['output_tokens']:,} "
+            f"tools={r['tool_calls']}  {title}"
+        )
+
+
 @main.command()
 @click.option("--host", default="127.0.0.1")
 @click.option("--port", default=8765, type=int)
@@ -257,8 +324,14 @@ def dashboard(host: str, port: int, token) -> None:
 
 
 @main.command()
-def mcp() -> None:
-    """Start the MCP server on stdio.
+@click.option("--http", "use_http", is_flag=True,
+              help="Serve over Streamable HTTP instead of stdio.")
+@click.option("--host", default="127.0.0.1", show_default=True,
+              help="Bind host (with --http).")
+@click.option("--port", default=8771, type=int, show_default=True,
+              help="Port (with --http).")
+def mcp(use_http: bool, host: str, port: int) -> None:
+    """Start the MCP server on stdio (or --http).
 
     This is Maverick's official cross-language surface. Any MCP-speaking
     client (TypeScript, Go, Rust, .NET, JVM, plus every IDE-side MCP
@@ -267,11 +340,23 @@ def mcp() -> None:
     docs/clients/typescript-quickstart.md for a 20-line example.
     """
     try:
-        from maverick_mcp.server import main as mcp_main
+        from maverick_mcp.server import MCPServer
     except ImportError:
         click.echo("Install: pip install maverick-mcp-server", err=True)
         sys.exit(2)
-    mcp_main()
+    if use_http:
+        try:
+            from maverick_mcp.http_transport import serve
+        except ImportError:
+            click.echo("Install: pip install 'maverick-mcp-server[http]'", err=True)
+            sys.exit(2)
+        serve(host=host, port=port)
+    else:
+        # Run the stdio server directly. Going through server.main() would
+        # re-parse sys.argv and reject the `mcp` subcommand token (the bug
+        # that made `maverick mcp` -- the command every quickstart uses --
+        # exit before serving).
+        MCPServer().run()
 
 
 @main.command()
@@ -376,6 +461,7 @@ def start(
     try:
         if coding_mode and best_of_n > 1:
             import asyncio as _asyncio
+
             from .orchestrator import run_goal_best_of_n
             result = _asyncio.run(run_goal_best_of_n(
                 llm, world, bud, goal_id,
@@ -573,6 +659,90 @@ def template_show(name: str) -> None:
 
 
 @main.command()
+@click.option("--idle-sleep", default=2.0, show_default=True,
+              help="Seconds to wait when the queue is empty.")
+def worker(idle_sleep: float) -> None:
+    """Run the background job worker.
+
+    Drains the job queue (``~/.maverick/jobs.db``) and runs jobs armed with
+    ``maverick schedule add``. Runs until interrupted (Ctrl-C / SIGTERM).
+    """
+    from .worker import Worker
+    w = Worker(idle_sleep=idle_sleep)
+    click.echo(f"worker: draining {w.queue.db_path} (Ctrl-C to stop)")
+    w.run_forever()
+
+
+@main.group()
+def schedule() -> None:
+    """Schedule recurring jobs via cron (run them with `maverick worker`)."""
+
+
+@schedule.command("add")
+@click.argument("cron_expr")
+@click.argument("kind")
+@click.option("--payload", default=None,
+              help='JSON object for the job handler, e.g. \'{"goal_id": 5}\'.')
+def schedule_add(cron_expr: str, kind: str, payload: str | None) -> None:
+    """Arm a recurring job: 5-field CRON_EXPR firing job KIND.
+
+    Example: maverick schedule add "0 9 * * *" run_goal --payload '{"goal_id": 5}'
+    """
+    import json
+
+    from .job_queue import JobQueue
+    from .scheduler import CronError, next_run, schedule_cron
+    try:
+        next_run(cron_expr)  # validate up front
+    except CronError as e:
+        click.echo(f"ERROR: bad cron expression: {e}", err=True)
+        sys.exit(2)
+    data: dict = {}
+    if payload:
+        try:
+            data = json.loads(payload)
+        except ValueError as e:
+            click.echo(f"ERROR: --payload must be valid JSON: {e}", err=True)
+            sys.exit(2)
+        if not isinstance(data, dict):
+            click.echo("ERROR: --payload must be a JSON object.", err=True)
+            sys.exit(2)
+    data["__cron__"] = cron_expr
+    job_id, run_at = schedule_cron(JobQueue(), cron_expr, kind, data)
+    from datetime import datetime
+    when = datetime.fromtimestamp(run_at).strftime("%Y-%m-%d %H:%M:%S")
+    click.echo(f"scheduled job {job_id} (kind={kind}); next run {when}")
+
+
+@schedule.command("list")
+def schedule_list() -> None:
+    """List armed recurring schedules (pending cron jobs)."""
+    from datetime import datetime
+
+    from .job_queue import JobQueue
+    jobs = [j for j in JobQueue().list(status="pending") if j.payload.get("__cron__")]
+    if not jobs:
+        click.echo("no scheduled jobs.")
+        return
+    for j in jobs:
+        when = datetime.fromtimestamp(j.run_at).strftime("%Y-%m-%d %H:%M:%S")
+        click.echo(f"  [{j.id}] {j.payload['__cron__']!r} kind={j.kind} next={when}")
+
+
+@schedule.command("rm")
+@click.argument("job_id", type=int)
+def schedule_rm(job_id: int) -> None:
+    """Cancel a scheduled (pending) job by id."""
+    from .job_queue import JobQueue
+    if JobQueue().cancel(job_id):
+        click.echo(f"cancelled job {job_id}")
+    else:
+        click.echo(f"no pending job {job_id} (already running/done, or unknown).",
+                   err=True)
+        sys.exit(1)
+
+
+@main.command()
 @click.option("--max-depth", default=3, type=int)
 @click.option("--verbose", "-v", is_flag=True)
 def serve(max_depth: int, verbose: bool) -> None:
@@ -750,7 +920,7 @@ def plugin_new(name: str, kind: str, dest: str) -> None:
     factory the contributor can ``pip install -e .`` and exercise
     immediately.
     """
-    from .plugin_scaffold import scaffold, ScaffoldError
+    from .plugin_scaffold import ScaffoldError, scaffold
     try:
         files = scaffold(name, kind, dest=Path(dest))
     except ScaffoldError as e:
@@ -1366,6 +1536,7 @@ def audit() -> None:
 def audit_tail(num: int, day: str | None) -> None:
     """Print the last N audit events."""
     import json as _json
+
     from .audit import default_audit_log
     for ev in default_audit_log().tail(num, day=day):
         click.echo(_json.dumps(ev, default=str))
@@ -1377,6 +1548,7 @@ def audit_tail(num: int, day: str | None) -> None:
 def audit_grep(pattern: str, day: str | None) -> None:
     """Regex grep over today's audit log."""
     import json as _json
+
     from .audit import default_audit_log
     for ev in default_audit_log().grep(pattern, day=day):
         click.echo(_json.dumps(ev, default=str))
@@ -1551,6 +1723,7 @@ def logs_cmd(pattern: str | None, num: int, day: str | None) -> None:
     Equivalent to `maverick audit grep <pattern>` or `audit tail -n N`.
     """
     import json as _json
+
     from .audit import default_audit_log
     al = default_audit_log()
     rows = al.grep(pattern, day=day) if pattern else al.tail(num, day=day)
@@ -1569,6 +1742,7 @@ def cache_group() -> None:
 def cache_stats_cmd() -> None:
     """Show cache sizes."""
     import json as _json
+
     from .cache import stats
     click.echo(_json.dumps(stats(), default=str, indent=2))
 
@@ -1582,6 +1756,7 @@ def cache_stats_cmd() -> None:
 def cache_purge_cmd(scopes: tuple[str, ...]) -> None:
     """Purge cache(s)."""
     import json as _json
+
     from .cache import purge
     report = purge(scopes or ("all",))
     click.echo(_json.dumps(report, default=str, indent=2))
@@ -1610,6 +1785,7 @@ def retention_enforce_cmd(
 ) -> None:
     """Apply retention rules to the audit log and world model."""
     import json as _json
+
     from .audit.retention import enforce
     # CLI overrides take precedence if any are set; otherwise read config.
     cfg: dict | None = None

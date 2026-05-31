@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-
 from maverick_dashboard.app import app
-
 
 # Same-origin default: mutating /api/v1 requests in no-token (loopback) mode
 # must carry a matching Origin, the CSRF contract the dashboard enforces
@@ -160,6 +158,7 @@ class TestAttachments:
 
     def test_upload_reads_with_size_cap(self, monkeypatch):
         import asyncio
+
         from maverick_dashboard import api as api_mod
 
         class _World:

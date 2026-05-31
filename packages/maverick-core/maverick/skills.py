@@ -12,10 +12,8 @@ from __future__ import annotations
 import logging
 import re
 import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from .blackboard import Blackboard
 from .budget import Budget
@@ -69,11 +67,11 @@ class Skill:
     tools_needed: list[str]
     body: str
     path: Path
-    sig: Optional[str] = None
-    pubkey: Optional[str] = None
+    sig: str | None = None
+    pubkey: str | None = None
 
     @classmethod
-    def parse(cls, text: str, path: Path) -> "Skill":
+    def parse(cls, text: str, path: Path) -> Skill:
         m = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.DOTALL)
         if not m:
             raise ValueError("missing YAML frontmatter")
@@ -219,16 +217,16 @@ def install_skill(
     return _validate_and_write(content, skills_dir)
 
 
-def _canonical_signed_bytes(parsed: "Skill") -> bytes:
+def _canonical_signed_bytes(parsed: Skill) -> bytes:
     """Bytes an Ed25519 publisher signs over: ``name`` + canonical body.
 
     Binding the name in too means a signature can't be lifted onto a
     different-named skill. The body is the post-frontmatter markdown,
     stripped (matching ``Skill.parse``)."""
-    return f"{parsed.name}\n{parsed.body}".encode("utf-8")
+    return f"{parsed.name}\n{parsed.body}".encode()
 
 
-def _verify_skill_signature(parsed: "Skill") -> None:
+def _verify_skill_signature(parsed: Skill) -> None:
     """Enforce the ``[skills]`` signing policy on a parsed skill.
 
     - ``require_signed``: reject any skill without ``sig`` + ``pubkey``.
@@ -352,7 +350,7 @@ def install_from_catalog(
     name: str,
     skills_dir: Path = SKILLS_DIR,
     *,
-    indexes: "Optional[list[str]]" = None,
+    indexes: list[str] | None = None,
 ) -> Skill:
     """Install a skill by name from the federated catalog.
 
@@ -377,8 +375,11 @@ def install_from_catalog(
 
 
 def _fetch_url(url: str) -> str:
+    # Route through the shared SSRF guard so a user-supplied https:// skill
+    # source can't be pointed at an internal/metadata address.
+    from .tools.http_fetch import guarded_urlopen
     try:
-        with urllib.request.urlopen(url, timeout=INSTALL_TIMEOUT) as resp:
+        with guarded_urlopen(url, timeout=INSTALL_TIMEOUT) as resp:
             if resp.status != 200:
                 raise ValueError(f"HTTP {resp.status} from {url}")
             chunks: list[bytes] = []
@@ -411,9 +412,9 @@ def distill(
     summary: str,
     blackboard: Blackboard,
     llm: LLM,
-    budget: Optional[Budget] = None,
+    budget: Budget | None = None,
     skills_dir: Path = SKILLS_DIR,
-) -> Optional[Skill]:
+) -> Skill | None:
     skills_dir.mkdir(parents=True, exist_ok=True)
     trajectory = blackboard.render(200)
     prompt = (

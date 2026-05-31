@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import pytest
-
 from maverick.attachments import (
     MAX_FILE_BYTES,
     MAX_GOAL_BYTES,

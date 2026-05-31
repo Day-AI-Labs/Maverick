@@ -1,0 +1,128 @@
+"""Wire the cron scheduler + job worker into the CLI.
+
+The scheduler engine (maverick.scheduler) and the worker existed but had no
+entry point: nothing imported the scheduler, there was no `maverick worker`
+or `maverick schedule` command, and the worker never re-armed recurring
+jobs. These tests cover the wiring: JobQueue.cancel, the worker re-arm
+(first-claim only), and the three CLI commands.
+"""
+from __future__ import annotations
+
+from click.testing import CliRunner
+
+# ---------- JobQueue.cancel ----------
+
+def test_cancel_removes_pending_job(tmp_path):
+    from maverick.job_queue import JobQueue
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    jid = q.enqueue("noop", {}, run_at=1000.0)
+    assert q.cancel(jid) is True
+    assert q.get(jid) is None
+
+
+def test_cancel_running_or_unknown_returns_false(tmp_path):
+    from maverick.job_queue import JobQueue
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    jid = q.enqueue("noop", {}, run_at=1000.0)
+    q.claim(now=1000.0)  # -> running, no longer cancellable
+    assert q.cancel(jid) is False
+    assert q.cancel(999999) is False
+
+
+# ---------- worker re-arm ----------
+
+def test_maybe_rearm_only_on_first_attempt(tmp_path):
+    from maverick.job_queue import Job, JobQueue
+    from maverick.worker import Worker
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    w = Worker(queue=q)
+    cron = "*/5 * * * *"
+
+    def _armed():
+        return [j for j in q.list(status="pending") if j.payload.get("__cron__")]
+
+    w._maybe_rearm(Job(id=1, kind="noop", payload={"__cron__": cron},
+                       run_at=0, status="running", attempts=1))
+    assert len(_armed()) == 1
+
+    # A retry (attempts > 1) must NOT enqueue another occurrence.
+    w._maybe_rearm(Job(id=1, kind="noop", payload={"__cron__": cron},
+                       run_at=0, status="running", attempts=2))
+    assert len(_armed()) == 1
+
+    # A non-cron job is never re-armed.
+    w._maybe_rearm(Job(id=2, kind="noop", payload={},
+                       run_at=0, status="running", attempts=1))
+    assert len(_armed()) == 1
+
+
+def test_worker_run_once_rearms_recurring_job(tmp_path):
+    from maverick.job_queue import JobQueue
+    from maverick.worker import Worker
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    cron = "*/5 * * * *"
+    # Past run_at so it's claimable now; carries its cron in the payload.
+    jid = q.enqueue("noop", {"__cron__": cron}, run_at=1000.0)
+
+    w = Worker(queue=q, idle_sleep=0.0)
+    w.register("noop", lambda job: None)
+    assert w.run_once() is True
+
+    assert q.get(jid).status == "done"            # this occurrence ran
+    pend = [j for j in q.list(status="pending") if j.payload.get("__cron__")]
+    assert len(pend) == 1 and pend[0].id != jid    # next occurrence armed
+
+
+# ---------- CLI: maverick schedule / worker ----------
+
+def test_cli_registers_worker_and_schedule():
+    from maverick.cli import main
+    assert "worker" in main.commands
+    assert "schedule" in main.commands
+    assert set(main.commands["schedule"].commands) >= {"add", "list", "rm"}
+
+
+def test_schedule_add_list_rm_roundtrip(tmp_path, monkeypatch):
+    import re
+
+    from maverick.cli import main
+    monkeypatch.setattr("maverick.job_queue.DEFAULT_DB", tmp_path / "jobs.db")
+    r = CliRunner()
+
+    add = r.invoke(main, ["schedule", "add", "*/5 * * * *", "run_goal",
+                          "--payload", '{"goal_id": 5}'])
+    assert add.exit_code == 0, add.output
+    assert "scheduled job" in add.output
+
+    listed = r.invoke(main, ["schedule", "list"])
+    assert listed.exit_code == 0
+    assert "run_goal" in listed.output and "*/5 * * * *" in listed.output
+
+    jid = re.search(r"scheduled job (\d+)", add.output).group(1)
+    rm = r.invoke(main, ["schedule", "rm", jid])
+    assert rm.exit_code == 0 and "cancelled" in rm.output
+
+    empty = r.invoke(main, ["schedule", "list"])
+    assert "no scheduled jobs" in empty.output
+
+
+def test_schedule_add_rejects_bad_cron(tmp_path, monkeypatch):
+    from maverick.cli import main
+    monkeypatch.setattr("maverick.job_queue.DEFAULT_DB", tmp_path / "jobs.db")
+    res = CliRunner().invoke(main, ["schedule", "add", "not a cron", "run_goal"])
+    assert res.exit_code == 2
+    assert "bad cron" in res.output
+
+
+def test_worker_command_runs_forever(tmp_path, monkeypatch):
+    from maverick.cli import main
+    monkeypatch.setattr("maverick.job_queue.DEFAULT_DB", tmp_path / "jobs.db")
+    ran = {"forever": False}
+
+    def _fake_run_forever(self):
+        ran["forever"] = True
+
+    monkeypatch.setattr("maverick.worker.Worker.run_forever", _fake_run_forever)
+    res = CliRunner().invoke(main, ["worker", "--idle-sleep", "0"])
+    assert res.exit_code == 0, res.output
+    assert ran["forever"] is True

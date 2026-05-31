@@ -33,7 +33,6 @@ from .fs import (
     _safe_resolve,
 )
 
-
 _MAX_VIEW_BYTES = 12000
 
 

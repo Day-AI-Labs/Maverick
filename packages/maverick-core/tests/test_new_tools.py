@@ -6,7 +6,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ---------- web_search ----------
 
 class _FakeHttpxResponse:

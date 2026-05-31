@@ -12,8 +12,7 @@ ffmpeg -i /etc/passwd = arbitrary file read). PR3 adds:
 from __future__ import annotations
 
 import pytest
-
-from maverick.tools import scrub_child_env, safe_media_args
+from maverick.tools import safe_media_args, scrub_child_env
 
 
 def test_scrub_child_env_strips_secrets(monkeypatch):

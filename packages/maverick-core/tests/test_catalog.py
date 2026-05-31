@@ -5,9 +5,7 @@ import hashlib
 import json
 
 import pytest
-
 from maverick import catalog
-
 
 _SKILL_BODY = """---
 name: summarize-url
@@ -139,7 +137,14 @@ def test_fetch_index_caches(monkeypatch, tmp_path):
         calls["n"] += 1
         return _Resp()
 
-    monkeypatch.setattr(catalog.urllib.request, "urlopen", _urlopen)
+    # catalog now fetches through maverick.tools.http_fetch.guarded_urlopen
+    # (shared SSRF guard); patch the real urlopen it calls and neutralize the
+    # host check so the test stays hermetic.
+    import urllib.request
+
+    from maverick.tools import http_fetch
+    monkeypatch.setattr(http_fetch, "is_blocked_host", lambda _h: False)
+    monkeypatch.setattr(urllib.request, "urlopen", _urlopen)
     url = "https://a/skills/index.json"
     catalog._fetch_index_raw(url)
     catalog._fetch_index_raw(url)  # second call should hit the cache

@@ -33,10 +33,10 @@ import logging
 import sqlite3
 import threading
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Optional
 
 log = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ class JobQueue:
     workers don't double-claim.
     """
 
-    def __init__(self, db_path: Optional[Path] = None) -> None:
+    def __init__(self, db_path: Path | None = None) -> None:
         self.db_path = Path(db_path or DEFAULT_DB).expanduser()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
@@ -108,7 +108,7 @@ class JobQueue:
         kind: str,
         payload: dict | None = None,
         *,
-        run_at: Optional[float] = None,
+        run_at: float | None = None,
     ) -> int:
         now = time.time()
         rid = run_at if run_at is not None else now
@@ -120,7 +120,7 @@ class JobQueue:
             )
             return int(cur.lastrowid)
 
-    def claim(self, *, now: Optional[float] = None) -> Optional[Job]:
+    def claim(self, *, now: float | None = None) -> Job | None:
         """Atomically pick the next ready pending job + mark it 'running'."""
         n = now if now is not None else time.time()
         with self._lock, self._conn() as c:
@@ -160,7 +160,7 @@ class JobQueue:
         job_id: int,
         error: str,
         *,
-        retry_after: Optional[float] = 60.0,
+        retry_after: float | None = 60.0,
         max_attempts: int = 5,
     ) -> bool:
         """Either reschedule (retry_after seconds) or mark 'failed' permanently."""
@@ -191,7 +191,7 @@ class JobQueue:
         self,
         lease_seconds: float,
         *,
-        now: Optional[float] = None,
+        now: float | None = None,
         max_attempts: int = 5,
     ) -> int:
         """Requeue jobs stuck in 'running' past the lease TTL.
@@ -228,7 +228,20 @@ class JobQueue:
             ).rowcount
         return int(failed) + int(requeued)
 
-    def get(self, job_id: int) -> Optional[Job]:
+    def cancel(self, job_id: int) -> bool:
+        """Delete a *pending* job (e.g. an armed schedule).
+
+        Only 'pending' rows are removable -- a 'running' job is left for the
+        worker to finish, and 'done'/'failed' rows are history. Returns True
+        if a row was deleted.
+        """
+        with self._lock, self._conn() as c:
+            cur = c.execute(
+                "DELETE FROM jobs WHERE id=? AND status='pending'", (job_id,),
+            )
+            return cur.rowcount == 1
+
+    def get(self, job_id: int) -> Job | None:
         with self._conn() as c:
             row = c.execute(
                 "SELECT * FROM jobs WHERE id=?", (job_id,),

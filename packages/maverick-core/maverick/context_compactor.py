@@ -28,8 +28,8 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, Optional
 
 log = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class CompactResult:
     dropped: list[dict]
     tokens_before: int
     tokens_after: int
-    kept_marker: Optional[str]
+    kept_marker: str | None
 
 
 def estimate_tokens(messages: Iterable[dict]) -> int:
@@ -99,7 +99,7 @@ def compact(
     target_tokens: int,
     preserve_tail: int = 4,
     use_embeddings: bool = False,
-    embed_model: Optional[str] = None,
+    embed_model: str | None = None,
 ) -> CompactResult:
     """Return a compacted message list under ``target_tokens``.
 
@@ -197,7 +197,7 @@ def _score_by_jaccard(head: list[dict], query: str) -> list[tuple[float, int, di
 
 
 def _score_by_embedding(
-    head: list[dict], query: str, model_name: Optional[str],
+    head: list[dict], query: str, model_name: str | None,
 ) -> list[tuple[float, int, dict]]:
     """Embedding-based ranking. Raises ImportError if fastembed missing."""
     from fastembed import TextEmbedding

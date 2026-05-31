@@ -38,7 +38,7 @@ def test_adv_crlf_search_replace_applies(tmp_path):
     """LLM output with CRLF line endings must apply against a LF file.
     Without normalization, this was the #1 cause of 'corrupt patch'
     on Windows-origin sources."""
-    from maverick.edit_format import parse_blocks, apply_blocks
+    from maverick.edit_format import apply_blocks, parse_blocks
     repo = _init_repo(tmp_path, {
         "src/foo.py": "def f():\n    return 1\n",
     })
@@ -64,7 +64,7 @@ def test_adv_crlf_search_replace_applies(tmp_path):
 def test_adv_new_file_via_empty_search(tmp_path):
     """Pro's `--- /dev/null` instances need this. Wave 10 fix was
     in validate_patch; here we lock the SR-format equivalent."""
-    from maverick.edit_format import parse_blocks, apply_blocks
+    from maverick.edit_format import apply_blocks, parse_blocks
     repo = _init_repo(tmp_path, {"src/foo.py": "x = 1\n"})
     text = (
         "src/bar.py\n"
@@ -87,7 +87,7 @@ def test_adv_atomic_rollback_on_mixed_fail(tmp_path):
     """Pro instances average 4.1 files. We must not leave the workdir
     half-edited when one of N blocks fails — that confuses downstream
     test runs and creates phantom partial fixes."""
-    from maverick.edit_format import parse_blocks, apply_blocks
+    from maverick.edit_format import apply_blocks, parse_blocks
     repo = _init_repo(tmp_path, {
         "src/a.py": "a = 1\n",
         "src/b.py": "b = 2\n",

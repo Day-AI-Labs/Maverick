@@ -10,7 +10,6 @@ path -- enabling MAVERICK_COST_ROUTING did nothing. These tests pin that:
 """
 from __future__ import annotations
 
-
 import pytest
 
 
@@ -29,7 +28,7 @@ def _clean(monkeypatch):
 
 
 def test_off_by_default_uses_role_defaults(_clean):
-    from maverick.llm import model_for_role, ROLE_MODELS
+    from maverick.llm import ROLE_MODELS, model_for_role
     # No routing flag -> the static ROLE_MODELS default.
     assert model_for_role("coder") == ROLE_MODELS["coder"]
     assert model_for_role("orchestrator") == ROLE_MODELS["orchestrator"]

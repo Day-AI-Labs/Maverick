@@ -37,7 +37,7 @@ without touching the kernel.
 from __future__ import annotations
 
 import logging
-from typing import Iterable
+from collections.abc import Iterable
 
 log = logging.getLogger(__name__)
 

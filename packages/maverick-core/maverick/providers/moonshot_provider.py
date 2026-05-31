@@ -15,7 +15,6 @@ cross-provider billing).
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 from .openai_provider import OpenAIClient
 
@@ -23,7 +22,7 @@ from .openai_provider import OpenAIClient
 class MoonshotClient(OpenAIClient):
     DEFAULT_MODEL = "kimi-k2"
 
-    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
+    def __init__(self, api_key: str | None = None, base_url: str | None = None):
         key = api_key or os.environ.get("MOONSHOT_API_KEY")
         url = base_url or os.environ.get(
             "MOONSHOT_BASE_URL", "https://api.moonshot.ai/v1",

@@ -9,15 +9,13 @@ Default base_url is ``http://localhost:11434/v1``. Override via
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from .openai_provider import OpenAIClient
 
 
 class OllamaClient(OpenAIClient):
     DEFAULT_MODEL = "llama3.3:70b"
 
-    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
+    def __init__(self, api_key: str | None = None, base_url: str | None = None):
         super().__init__(
             api_key=api_key or "ollama",  # placeholder; Ollama ignores it
             base_url=base_url or "http://localhost:11434/v1",

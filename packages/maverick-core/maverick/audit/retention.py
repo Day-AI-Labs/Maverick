@@ -18,7 +18,6 @@ import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from .writer import DEFAULT_AUDIT_DIR
 
@@ -34,7 +33,7 @@ def _config() -> dict:
         return {}
 
 
-def _cutoff_for_days(days: int, *, now: Optional[float] = None) -> float:
+def _cutoff_for_days(days: int, *, now: float | None = None) -> float:
     now = now if now is not None else time.time()
     return now - max(1, int(days)) * 86400.0
 
@@ -44,7 +43,7 @@ def purge_audit_files(
     days: int,
     audit_dir: Path = DEFAULT_AUDIT_DIR,
     dry_run: bool = False,
-    now: Optional[float] = None,
+    now: float | None = None,
 ) -> dict:
     """Remove ``YYYY-MM-DD.ndjson`` files older than ``days``.
 
@@ -124,9 +123,9 @@ def _purge_table_by_time(
 def purge_world_episodes(
     *,
     days: int,
-    db_path: Optional[Path] = None,
+    db_path: Path | None = None,
     dry_run: bool = False,
-    now: Optional[float] = None,
+    now: float | None = None,
 ) -> dict:
     """Delete ``episodes`` rows ended before ``days`` ago."""
     if days is None or int(days) <= 0:
@@ -144,9 +143,9 @@ def purge_world_episodes(
 def purge_world_events(
     *,
     days: int,
-    db_path: Optional[Path] = None,
+    db_path: Path | None = None,
     dry_run: bool = False,
-    now: Optional[float] = None,
+    now: float | None = None,
 ) -> dict:
     """Delete ``goal_events`` rows older than ``days``."""
     if days is None or int(days) <= 0:
@@ -163,11 +162,11 @@ def purge_world_events(
 
 def enforce(
     *,
-    config: Optional[dict] = None,
+    config: dict | None = None,
     dry_run: bool = False,
     audit_dir: Path = DEFAULT_AUDIT_DIR,
-    db_path: Optional[Path] = None,
-    now: Optional[float] = None,
+    db_path: Path | None = None,
+    now: float | None = None,
 ) -> dict:
     """Apply every configured retention rule. Returns a per-rule report."""
     cfg = config if config is not None else _config()

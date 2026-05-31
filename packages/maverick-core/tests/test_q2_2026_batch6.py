@@ -4,8 +4,6 @@ from __future__ import annotations
 import time
 from unittest.mock import MagicMock
 
-
-
 # ---------- calendar tool ----------
 
 def test_calendar_requires_op():
@@ -260,6 +258,7 @@ def test_reflexion_file_perms_600(tmp_path):
     """File should be created with mode 0600."""
     import os
     import stat
+
     from maverick.reflexion import record
     p = tmp_path / "perm.ndjson"
     record("g", "k", "m", "r", path=p)

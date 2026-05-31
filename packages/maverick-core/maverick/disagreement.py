@@ -27,7 +27,6 @@ import os
 import re
 from collections import Counter
 
-
 # Tunables (env-driven).
 ALPHA = float(os.environ.get("MAVERICK_FANOUT_ALPHA", "4.0"))
 FANOUT_MIN = int(os.environ.get("MAVERICK_FANOUT_MIN", "1"))

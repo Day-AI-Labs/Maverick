@@ -8,13 +8,14 @@ don't need to inherit from anything.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Optional, Protocol
+from collections.abc import Callable
+from typing import Any, Protocol
 
 from ..budget import Budget
 from ..llm import LLMResponse
 
 
-def llm_http_timeout() -> Optional[Any]:
+def llm_http_timeout() -> Any | None:
     """Bounded HTTP timeout for provider SDK clients.
 
     Without this the anthropic/openai SDKs use a ~10-min per-request
@@ -43,23 +44,23 @@ class Provider(Protocol):
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
-        on_delta: Optional[Callable[[str], None]] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
+        on_delta: Callable[[str], None] | None = None,
     ) -> LLMResponse: ...
 
     async def complete_async(
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
     ) -> LLMResponse: ...
 
 

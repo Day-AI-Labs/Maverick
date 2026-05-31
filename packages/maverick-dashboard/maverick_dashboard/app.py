@@ -17,19 +17,21 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (
-    HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
     StreamingResponse,
 )
 from fastapi.templating import Jinja2Templates
-from starlette.exceptions import HTTPException as StarletteHTTPException
-
 from maverick import a2a
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .api import router as api_router
 
@@ -56,7 +58,7 @@ templates.env.globals.setdefault("theme", "dark")
 _VALID_THEMES = {"dark", "light", "solarized", "hicontrast"}
 
 
-def _resolve_theme(request: "Request") -> str:
+def _resolve_theme(request: Request) -> str:
     """Pick the theme from ``?theme=`` query param, cookie, config, then dark."""
     q = (request.query_params.get("theme") or "").strip().lower()
     if q in _VALID_THEMES:
@@ -77,7 +79,7 @@ def _resolve_theme(request: "Request") -> str:
 
 # Context processor: every template gets the `theme` variable for the
 # body class + the theme switcher links.
-def _theme_context(request: "Request") -> dict:
+def _theme_context(request: Request) -> dict:
     return {"theme": _resolve_theme(request)}
 
 
@@ -432,7 +434,7 @@ def _any_provider_key_set() -> bool:
 # could spawn unbounded goals, each costing real money. This is an
 # in-process sliding-window limiter (no new dependency) shared by both
 # goal-creating routes. Cap is generous and configurable.
-_goal_times: "deque[float]" = deque()
+_goal_times: deque[float] = deque()
 _goal_rl_lock = threading.Lock()
 
 
@@ -555,7 +557,7 @@ async def providers_page(request: Request) -> HTMLResponse:
 _AUDIT_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def safe_audit_day(day: Optional[str]) -> Optional[str]:
+def safe_audit_day(day: str | None) -> str | None:
     """Validate a ``?day=`` value as YYYY-MM-DD before it reaches the
     audit log's path builder.
 
@@ -585,11 +587,42 @@ async def audit_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/safety", response_class=HTMLResponse)
+async def safety_page(request: Request) -> HTMLResponse:
+    """Shield activity: what the safety layer blocked, by stage and reason."""
+    from collections import Counter
+
+    from maverick.audit import default_audit_log
+    try:
+        n = max(1, min(int(request.query_params.get("n") or 1000), 5000))
+    except (TypeError, ValueError):
+        n = 1000
+    day = safe_audit_day(request.query_params.get("day"))
+    blocks = [
+        e for e in default_audit_log().tail(n, day=day)
+        if e.get("kind") == "shield_block"
+    ]
+    by_stage = Counter((e.get("stage") or "unknown") for e in blocks)
+    top_reasons = Counter((e.get("reason") or "unknown") for e in blocks).most_common(10)
+    recent = list(reversed(blocks))[:100]
+    return templates.TemplateResponse(
+        request, "safety.html",
+        {
+            "total": len(blocks),
+            "by_stage": dict(by_stage),
+            "top_reasons": top_reasons,
+            "events": recent,
+            "n": n,
+            "day": day,
+        },
+    )
+
+
 @app.get("/plugins", response_class=HTMLResponse)
 async def plugins_page(request: Request) -> HTMLResponse:
     """Discovered + enabled plugins."""
     try:
-        from maverick.plugins import _entry_points, _allowed_plugin_names
+        from maverick.plugins import _allowed_plugin_names, _entry_points
     except Exception:
         return templates.TemplateResponse(
             request, "plugins.html",
@@ -639,8 +672,8 @@ async def tools_page(request: Request) -> HTMLResponse:
     tools: list[dict] = []
     error = None
     try:
-        from maverick.tools import base_registry
         from maverick.sandbox import build_sandbox
+        from maverick.tools import base_registry
         from maverick.world_model import DEFAULT_DB, WorldModel
         wm = WorldModel(DEFAULT_DB)
         sb = build_sandbox()
@@ -706,8 +739,8 @@ def _permissions_snapshot() -> dict:
     # Live registry = the true set of tools after ACL + rate-limit +
     # overlay filtering. A tool present here is genuinely callable.
     try:
-        from maverick.tools import base_registry
         from maverick.sandbox import build_sandbox
+        from maverick.tools import base_registry
         from maverick.world_model import DEFAULT_DB, WorldModel
         wm = WorldModel(DEFAULT_DB)
         reg = base_registry(world=wm, sandbox=build_sandbox())
@@ -1159,7 +1192,7 @@ async def trajectory_page(request: Request, goal_id: int) -> HTMLResponse:
 
 
 @app.get("/api/v1/cost.csv")
-async def cost_csv(month: Optional[str] = None) -> StreamingResponse:
+async def cost_csv(month: str | None = None) -> StreamingResponse:
     """CSV rollup of episode spend, streamed.
 
     Council perf finding: prior version fetched up to 100k episodes
@@ -1176,8 +1209,8 @@ async def cost_csv(month: Optional[str] = None) -> StreamingResponse:
     import io as _io
 
     w = _world()
-    start_ts: Optional[float] = None
-    end_ts: Optional[float] = None
+    start_ts: float | None = None
+    end_ts: float | None = None
     if month:
         try:
             start = _dt.datetime.strptime(month, "%Y-%m").replace(
@@ -1371,7 +1404,7 @@ async def livez() -> dict:
 @app.get("/healthz")
 async def healthz() -> JSONResponse:
     """Deep health: DB writable, LLM provider key present, runner alive."""
-    from maverick.runner import _run_semaphore, MAX_CONCURRENT_GOALS
+    from maverick.runner import MAX_CONCURRENT_GOALS, _run_semaphore
     checks: dict[str, str] = {}
     overall_ok = True
 
@@ -1416,7 +1449,7 @@ async def readyz() -> JSONResponse:
 @app.get("/metrics", response_class=PlainTextResponse)
 async def metrics() -> PlainTextResponse:
     """Prometheus text format. Gated by the same bearer as /api/v1."""
-    from maverick.runner import _run_semaphore, MAX_CONCURRENT_GOALS
+    from maverick.runner import MAX_CONCURRENT_GOALS, _run_semaphore
     try:
         from maverick.world_model import DEFAULT_DB, WorldModel
         wm = WorldModel(DEFAULT_DB)

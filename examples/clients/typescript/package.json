@@ -1,0 +1,17 @@
+{
+  "name": "maverick-mcp-ts-example",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Runnable example + CI smoke: drive Maverick over MCP from TypeScript.",
+  "scripts": {
+    "check": "tsx client.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}

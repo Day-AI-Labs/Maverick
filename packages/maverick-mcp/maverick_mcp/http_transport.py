@@ -6,10 +6,12 @@ For hosted Maverick — VPS deployments, multi-tenant setups, MCP
 gateways like Composio / MintMCP / Cloudflare — clients need an HTTP
 endpoint.
 
-This module ships the Streamable HTTP transport per MCP 2025-11-25:
-single POST endpoint that accepts JSON-RPC requests and returns
-JSON-RPC responses, with optional Server-Sent Events for streaming
-results (long-running tools, sampling).
+This module ships a single POST endpoint that accepts JSON-RPC
+requests and returns JSON-RPC responses synchronously. The MCP
+2025-11-25 Streamable HTTP spec also allows Server-Sent Events for
+streaming results (long-running tools, sampling); that SSE path is
+NOT implemented yet — every request gets one blocking JSON-RPC
+response. Clients that need streaming should not assume it here.
 
 Usage::
 
@@ -33,8 +35,6 @@ import asyncio
 import hmac
 import logging
 import os
-from typing import Optional
-
 
 log = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ except ImportError:
     JSONResponse = StreamingResponse = None  # type: ignore
 
 
-def _check_bearer(authorization: Optional[str]) -> bool:
+def _check_bearer(authorization: str | None) -> bool:
     """Bearer-token gate for network HTTP transport.
 
     Unlike stdio, HTTP requests are network-reachable; token auth is
@@ -65,7 +65,7 @@ def _check_bearer(authorization: Optional[str]) -> bool:
     return hmac.compare_digest(expected, given)
 
 
-def build_app(server) -> "FastAPI":
+def build_app(server) -> FastAPI:
     """Wrap an MCPServer instance in a Streamable HTTP transport.
 
     `server` is an instance of `maverick_mcp.server.MCPServer`. We
@@ -91,8 +91,8 @@ def build_app(server) -> "FastAPI":
 
     @app.post("/mcp")
     async def mcp_endpoint(
-        request: "Request",
-        authorization: Optional[str] = Header(None),
+        request: Request,
+        authorization: str | None = Header(None),
     ):
         if not _check_bearer(authorization):
             raise HTTPException(status_code=401, detail="invalid bearer")

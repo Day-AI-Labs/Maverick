@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional, Set
 
 from .base import Channel, IncomingMessage
 
@@ -33,9 +32,9 @@ class TelegramChannel(Channel):
     def __init__(
         self,
         handler,
-        token: Optional[str] = None,
-        allowed_user_ids: Optional[set[str]] = None,
-        allowed_chat_ids: Optional[set[str]] = None,
+        token: str | None = None,
+        allowed_user_ids: set[str] | None = None,
+        allowed_chat_ids: set[str] | None = None,
     ):
         super().__init__(handler)
         if not _HAVE_TELEGRAM:
@@ -46,7 +45,7 @@ class TelegramChannel(Channel):
         self.token = token or os.environ.get("TELEGRAM_BOT_TOKEN")
         if not self.token:
             raise ValueError("TELEGRAM_BOT_TOKEN not set")
-        self._app: Optional[Application] = None
+        self._app: Application | None = None
         self.allowed_user_ids = self._normalize_allowlist(
             allowed_user_ids,
             env_name="TELEGRAM_ALLOWED_USER_IDS",
@@ -61,13 +60,13 @@ class TelegramChannel(Channel):
             )
 
     @staticmethod
-    def _normalize_allowlist(values: Optional[set[str]], env_name: str) -> Set[str]:
+    def _normalize_allowlist(values: set[str] | None, env_name: str) -> set[str]:
         if values is not None:
             return {str(v).strip() for v in values if str(v).strip()}
         raw = os.environ.get(env_name, "")
         return {item.strip() for item in raw.split(",") if item.strip()}
 
-    def _is_authorized(self, update: "Update") -> bool:
+    def _is_authorized(self, update: Update) -> bool:
         user_id = str(update.effective_user.id) if update.effective_user else ""
         chat_id = str(update.effective_chat.id) if update.effective_chat else ""
         if self.allowed_user_ids and user_id in self.allowed_user_ids:
@@ -76,7 +75,7 @@ class TelegramChannel(Channel):
             return True
         return False
 
-    async def _on_message(self, update: "Update", _ctx: "ContextTypes.DEFAULT_TYPE") -> None:
+    async def _on_message(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.message.text:
             return
         if not self._is_authorized(update):

@@ -55,6 +55,7 @@ def test_run_tool_redacts_secret_in_output():
     import asyncio
     import tempfile
     from pathlib import Path
+
     from maverick.agent import Agent
     from maverick.blackboard import Blackboard
     from maverick.budget import Budget

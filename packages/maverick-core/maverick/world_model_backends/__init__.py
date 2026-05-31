@@ -16,7 +16,6 @@ from .postgres import (  # noqa: F401
     open_postgres_world,
 )
 
-
 __all__ = [
     "PostgresWorldModel",
     "PGGoal",

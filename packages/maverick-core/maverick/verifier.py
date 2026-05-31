@@ -30,7 +30,6 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Optional
 
 from .budget import Budget, BudgetExceeded
 from .llm import LLM, model_for_role
@@ -75,11 +74,11 @@ class VerifierVerdict:
     raw: str = ""
 
     @classmethod
-    def reject(cls, reason: str) -> "VerifierVerdict":
+    def reject(cls, reason: str) -> VerifierVerdict:
         return cls(confidence=0.0, accepts=False, critique=reason, issues=[reason])
 
     @classmethod
-    def accept_unconditionally(cls) -> "VerifierVerdict":
+    def accept_unconditionally(cls) -> VerifierVerdict:
         """For trivial cases where verification adds no value (e.g. empty
         brief, sub-second tasks). Skips the LLM call."""
         return cls(confidence=1.0, accepts=True, critique="", issues=[])
@@ -135,10 +134,10 @@ async def verify_proposal(
     brief: str,
     proposal: str,
     llm: LLM,
-    budget: Optional[Budget] = None,
+    budget: Budget | None = None,
     *,
     max_tokens: int = 1024,
-    proposer_model: Optional[str] = None,
+    proposer_model: str | None = None,
 ) -> VerifierVerdict:
     """Ask the verifier role to judge a proposer's final answer.
 
@@ -200,10 +199,10 @@ async def verify_proposal_ensemble(
     brief: str,
     proposal: str,
     llm: LLM,
-    budget: Optional[Budget] = None,
+    budget: Budget | None = None,
     *,
-    proposer_model: Optional[str] = None,
-    panel: Optional[list[str]] = None,
+    proposer_model: str | None = None,
+    panel: list[str] | None = None,
     weighted: bool = True,
 ) -> VerifierVerdict:
     """Run N verifiers across distinct model families and combine.
@@ -307,9 +306,9 @@ async def verify_final(
     brief: str,
     proposal: str,
     llm: LLM,
-    budget: Optional[Budget] = None,
+    budget: Budget | None = None,
     *,
-    proposer_model: Optional[str] = None,
+    proposer_model: str | None = None,
 ) -> VerifierVerdict:
     """Verify a FINAL answer using whichever verifier the operator chose.
 
@@ -327,7 +326,7 @@ async def verify_final(
     )
 
 
-def _combine(verdicts: list["VerifierVerdict"], *, weighted: bool) -> "VerifierVerdict":
+def _combine(verdicts: list[VerifierVerdict], *, weighted: bool) -> VerifierVerdict:
     """Combine N individual verdicts into one ensemble verdict."""
     if not verdicts:
         return VerifierVerdict.reject("no verifiers ran")
@@ -395,7 +394,7 @@ def _same_family(a: str, b: str) -> bool:
 # Preferred cross-family verifier per source family. Read from env if
 # the operator wants to override. The fallback chain ends with the
 # original model (no swap) when no peer is configured.
-def _cross_family_fallback(model: str) -> Optional[str]:
+def _cross_family_fallback(model: str) -> str | None:
     """Pick a verifier from a different provider family.
 
     Uses only explicit env override; no implicit provider swap is performed.

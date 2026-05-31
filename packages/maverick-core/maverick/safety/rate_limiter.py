@@ -26,7 +26,8 @@ import re
 import threading
 import time
 from collections import deque
-from typing import Any, Awaitable, Callable, Union
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ def _resolve_limit(
     return None
 
 
-ToolFn = Callable[[dict[str, Any]], Union[str, Awaitable[str]]]
+ToolFn = Callable[[dict[str, Any]], str | Awaitable[str]]
 
 
 def _wrap_fn(name: str, limiter: _Limiter, fn: ToolFn) -> ToolFn:
@@ -150,6 +151,7 @@ def apply_to_registry(reg, limits: dict[str, tuple[int, float]] | None = None) -
             description=tool.description,
             input_schema=tool.input_schema,
             fn=_wrap_fn(name, limiter, tool.fn),
+            parallel_safe=tool.parallel_safe,
         )
         wrapped += 1
     if wrapped:

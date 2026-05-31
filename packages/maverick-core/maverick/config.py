@@ -32,7 +32,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 try:
     import tomllib  # Python 3.11+
@@ -78,7 +78,7 @@ def config_path() -> Path:
     return _default_config_path()
 
 
-def load_config(path: Optional[Path] = None) -> dict:
+def load_config(path: Path | None = None) -> dict:
     p = path or config_path()
     if not p.exists():
         return {}
@@ -97,7 +97,7 @@ def load_config(path: Optional[Path] = None) -> dict:
         return {}
 
 
-def get_role_model(role: str) -> Optional[str]:
+def get_role_model(role: str) -> str | None:
     """Return the model spec ("provider:model-id") for a role, or None."""
     cfg = load_config()
     spec = cfg.get("models", {}).get(role)

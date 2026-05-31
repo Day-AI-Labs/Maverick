@@ -1,7 +1,6 @@
 """Q2 2026 UI batch: plan-tree, trajectory replay, cost CSV."""
 from __future__ import annotations
 
-
 import pytest
 
 # Skip the module entirely if FastAPI isn't installed.

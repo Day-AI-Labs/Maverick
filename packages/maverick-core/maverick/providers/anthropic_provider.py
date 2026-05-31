@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 import anthropic
 
@@ -171,7 +172,7 @@ def _add_messages_cache_breakpoint(messages: list[dict]) -> list[dict]:
 class AnthropicClient:
     DEFAULT_MODEL = "claude-sonnet-4-6"
 
-    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
+    def __init__(self, api_key: str | None = None, base_url: str | None = None):
         # May 26 council fix (long-tail audit #1): strip whitespace.
         # `export ANTHROPIC_API_KEY=$(cat key.txt)` is a common source of
         # trailing newline; without strip, every API call 401s and the
@@ -190,10 +191,10 @@ class AnthropicClient:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]],
+        tools: list[dict] | None,
         max_tokens: int,
-        thinking_budget: Optional[int],
-        model: Optional[str],
+        thinking_budget: int | None,
+        model: str | None,
     ) -> dict[str, Any]:
         # Wave 10: cache the most recent stable user message so repeated
         # tool-use turns hit the cache for the history (40-55% input
@@ -318,8 +319,8 @@ class AnthropicClient:
     def _parse_response(
         self,
         resp: Any,
-        budget: Optional[Budget],
-        model: Optional[str] = None,
+        budget: Budget | None,
+        model: str | None = None,
     ) -> LLMResponse:
         text_parts: list[str] = []
         thinking_parts: list[str] = []
@@ -331,7 +332,7 @@ class AnthropicClient:
         # text but keeping only the first signature broke the
         # second turn (Anthropic rejects the assistant message
         # because the signature doesn't match the text).
-        thinking_blocks: list[tuple[str, Optional[str]]] = []
+        thinking_blocks: list[tuple[str, str | None]] = []
         # May 28 fix: capture blocks in their ORIGINAL order. Anthropic
         # rejects a rearranged thinking-block sequence ("the latest
         # assistant message ... cannot be modified"), which the old
@@ -433,12 +434,12 @@ class AnthropicClient:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
-        on_delta: Optional[Callable[[str], None]] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
+        on_delta: Callable[[str], None] | None = None,
     ) -> LLMResponse:
         kwargs = self._build_request(system, messages, tools, max_tokens, thinking_budget, model)
         if on_delta is None:
@@ -461,11 +462,11 @@ class AnthropicClient:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
     ) -> LLMResponse:
         kwargs = self._build_request(system, messages, tools, max_tokens, thinking_budget, model)
         resp = await async_retry(lambda: self.aclient.messages.create(**kwargs))

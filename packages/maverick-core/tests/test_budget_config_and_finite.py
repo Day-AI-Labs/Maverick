@@ -15,9 +15,7 @@ from __future__ import annotations
 import math
 
 import pytest
-
 from maverick.budget import Budget, BudgetExceeded, budget_from_config
-
 
 # ---- non-finite caps are coerced to a safe default, never run uncapped ----
 

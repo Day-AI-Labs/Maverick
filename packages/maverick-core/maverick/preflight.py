@@ -18,7 +18,6 @@ path. Keep it dumb.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +83,7 @@ def estimate_tokens(text: str) -> int:
 def estimate_messages_tokens(
     system: str,
     messages: list[dict],
-    tools: Optional[list[dict]] = None,
+    tools: list[dict] | None = None,
 ) -> int:
     """Sum estimated tokens for a full request."""
     import json
@@ -135,7 +134,7 @@ def preflight(
     model: str,
     system: str,
     messages: list[dict],
-    tools: Optional[list[dict]] = None,
+    tools: list[dict] | None = None,
     max_tokens: int = 4096,
     safety_margin: int = 1024,
     strict: bool = True,

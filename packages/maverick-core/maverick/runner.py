@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Optional
 
 from ._envparse import env_float, env_int
 
@@ -47,10 +46,10 @@ DEFAULT_MAX_DEPTH = env_int("MAVERICK_DEFAULT_MAX_DEPTH", 3)
 
 def run_goal_in_thread(
     goal_id: int,
-    max_dollars: Optional[float] = None,
-    max_wall_seconds: Optional[float] = None,
+    max_dollars: float | None = None,
+    max_wall_seconds: float | None = None,
     max_depth: int = DEFAULT_MAX_DEPTH,
-) -> Optional[str]:
+) -> str | None:
     """Synchronously run a goal under the global concurrency semaphore.
 
     Designed to be passed to ``fastapi.BackgroundTasks.add_task`` or any
@@ -133,10 +132,10 @@ def run_goal_in_thread(
 
 def run_goal_in_background(
     goal_id: int,
-    max_dollars: Optional[float] = None,
-    max_wall_seconds: Optional[float] = None,
+    max_dollars: float | None = None,
+    max_wall_seconds: float | None = None,
     max_depth: int = DEFAULT_MAX_DEPTH,
-) -> Optional[str]:
+) -> str | None:
     """Alias for run_goal_in_thread. Reserved for future change to a
     proper task queue (Celery / arq / RQ) without breaking callers."""
     return run_goal_in_thread(

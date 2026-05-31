@@ -6,7 +6,6 @@ is the single funnel; precedence is defaults < [budget] config < explicit
 override, with None treated as "unset" and malformed config skipped.
 """
 import pytest
-
 from maverick.budget import Budget, budget_from_config
 
 

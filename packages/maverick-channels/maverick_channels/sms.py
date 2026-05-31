@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
 
@@ -45,9 +44,9 @@ class SMSChannel(Channel):
     def __init__(
         self,
         handler,
-        account_sid: Optional[str] = None,
-        auth_token: Optional[str] = None,
-        from_number: Optional[str] = None,
+        account_sid: str | None = None,
+        auth_token: str | None = None,
+        from_number: str | None = None,
         port: int = 8766,
         allowed_user_ids=None,
     ):
@@ -82,7 +81,7 @@ class SMSChannel(Channel):
 
     async def _handle_webhook(
         self,
-        request: "Request",
+        request: Request,
         From: str = Form(...),  # noqa: N803
         Body: str = Form(...),  # noqa: N803
         MessageSid: str = Form(""),  # noqa: N803 -- Twilio dedup key

@@ -33,7 +33,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 _SESSION_PROVIDERS = {
     "chatgpt-session":  ("chatgpt", "openai-session"),
     "claude-session":   ("claude", "anthropic-session", "claude-ai"),

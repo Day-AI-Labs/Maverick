@@ -11,8 +11,7 @@ DeepSeek/xAI clients translate the format on the fly.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
-
+from typing import Any
 
 # Each entry: (canonical name, list of accepted aliases).
 # Aliases let users type the brand name they know (kimi → moonshot,
@@ -45,7 +44,7 @@ def _canonical(name: str) -> str:
     return lower
 
 
-def get_provider_client(name: str, api_key: Optional[str] = None) -> Any:
+def get_provider_client(name: str, api_key: str | None = None) -> Any:
     """Lazy-import and instantiate the named provider client."""
     canon = _canonical(name)
     if canon == "anthropic":

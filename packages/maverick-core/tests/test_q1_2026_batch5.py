@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-
 # ---------- hooks: load_from_entry_points ----------
 
 def test_hooks_load_from_entry_points_empty():

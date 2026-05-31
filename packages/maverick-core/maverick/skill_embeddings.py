@@ -13,7 +13,6 @@ import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +46,7 @@ def _get_model():
         return None
 
 
-def embed(texts: list[str]) -> Optional[list[list[float]]]:
+def embed(texts: list[str]) -> list[list[float]] | None:
     model = _get_model()
     if model is None or not texts:
         return None
@@ -146,7 +145,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
 
 def relevant_skills_embed(
     goal: str, all_skills: list, max_n: int = 3, threshold: float = 0.35,
-) -> Optional[list]:
+) -> list | None:
     if not _have_fastembed():
         return None
     if not all_skills:

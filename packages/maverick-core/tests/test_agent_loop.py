@@ -4,7 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from maverick.agent import Agent, AgentResult
 from maverick.blackboard import Blackboard
 from maverick.budget import Budget, BudgetExceeded

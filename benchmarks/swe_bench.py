@@ -36,9 +36,8 @@ import re
 import sys
 import threading
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-
 
 PIPELINES = (
     "maverick",
@@ -269,6 +268,7 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
         return _dry_run_row(instance_id, "maverick")
 
     import asyncio
+
     from maverick.budget import Budget
     from maverick.coding_mode import extract_unified_diff
     from maverick.orchestrator import run_goal_best_of_n, run_goal_sync
@@ -338,7 +338,7 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
         try:
             sandbox = build_sandbox()
             sandbox_workdir = Path(sandbox.workdir).resolve()
-            from maverick.tools.fs import _safe_resolve, _is_opaque_blocked_resolved
+            from maverick.tools.fs import _is_opaque_blocked_resolved, _safe_resolve
             seen: set[str] = set()
             chunks: list[str] = []
             for tid in fail_ids[:5]:  # at most 5 distinct files
@@ -531,8 +531,8 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
     trace_dir = os.environ.get("MAVERICK_TRACE_DIR")
     if trace_dir:
         try:
-            from pathlib import Path as _Path
             from dataclasses import asdict as _asdict
+            from pathlib import Path as _Path
             tp = _Path(trace_dir)
             tp.mkdir(parents=True, exist_ok=True)
             safe_id = instance_id.replace("/", "_")

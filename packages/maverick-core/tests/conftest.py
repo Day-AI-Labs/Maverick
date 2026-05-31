@@ -12,10 +12,8 @@ OpenAI translator without burning API credits in CI.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 import pytest
-
 from maverick.llm import LLMResponse, ToolCall  # noqa: F401 - re-exported for tests
 
 
@@ -68,11 +66,11 @@ class FakeLLM:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
+        tools: list[dict] | None = None,
         budget=None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
     ) -> LLMResponse:
         self._record(
             system=system, messages=messages, tools=tools,
@@ -84,11 +82,11 @@ class FakeLLM:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
+        tools: list[dict] | None = None,
         budget=None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
         on_delta=None,
     ) -> LLMResponse:
         self._record(
@@ -100,8 +98,8 @@ class FakeLLM:
 
 def make_response(
     text: str = "",
-    tool_calls: Optional[list[ToolCall]] = None,
-    thinking: Optional[str] = None,
+    tool_calls: list[ToolCall] | None = None,
+    thinking: str | None = None,
     stop_reason: str = "end_turn",
 ) -> LLMResponse:
     return LLMResponse(

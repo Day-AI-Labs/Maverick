@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import pytest
-
-from maverick.secrets import scrub
 from maverick.cli import _sanitize_progress_content
+from maverick.secrets import scrub
 
 
 class TestSecretScrubbing:

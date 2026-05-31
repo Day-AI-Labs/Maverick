@@ -6,7 +6,6 @@ import sys
 import types
 from unittest.mock import MagicMock
 
-
 # ---------- test_impact ----------
 
 def _seed_repo(tmp_path):

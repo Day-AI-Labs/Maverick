@@ -17,7 +17,6 @@ The base URL is
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 from .openai_provider import OpenAIClient
 
@@ -25,7 +24,7 @@ from .openai_provider import OpenAIClient
 class BedrockClient(OpenAIClient):
     DEFAULT_MODEL = "anthropic.claude-sonnet-4-20250514-v1:0"
 
-    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
+    def __init__(self, api_key: str | None = None, base_url: str | None = None):
         region = os.environ.get("AWS_REGION", "").strip()
         if not region:
             raise RuntimeError("Bedrock requires AWS_REGION (e.g. us-east-1).")

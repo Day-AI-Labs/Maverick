@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
 
@@ -31,7 +30,7 @@ except ImportError:
 class DiscordChannel(Channel):
     name = "discord"
 
-    def __init__(self, handler, token: Optional[str] = None, allowed_user_ids=None):
+    def __init__(self, handler, token: str | None = None, allowed_user_ids=None):
         super().__init__(handler)
         if not _HAVE_DISCORD:
             raise ImportError(

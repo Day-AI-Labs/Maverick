@@ -27,7 +27,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 
 def run_one(
@@ -35,7 +34,7 @@ def run_one(
     max_dollars: float,
     max_wall_seconds: float,
     tag: str,
-    db_path: Optional[Path] = None,
+    db_path: Path | None = None,
 ) -> dict:
     """Run a single benchmark. Returns a metrics dict."""
     spec = benchmark_path.read_text(encoding="utf-8")

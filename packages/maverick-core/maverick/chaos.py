@@ -32,9 +32,9 @@ import logging
 import os
 import random
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Iterator
 
 log = logging.getLogger(__name__)
 
@@ -108,7 +108,7 @@ class ChaosController:
             self._state.rates = {}
 
     @contextmanager
-    def active(self, **rates: int) -> Iterator["ChaosController"]:
+    def active(self, **rates: int) -> Iterator[ChaosController]:
         """Scope chaos to a `with` block; restore prior state on exit."""
         with self._lock:
             prior_active = self._state.active

@@ -12,7 +12,6 @@ modules) -- this module verifies the disabled state.
 from __future__ import annotations
 
 import pytest
-
 from maverick.session_providers import get_session_client
 
 

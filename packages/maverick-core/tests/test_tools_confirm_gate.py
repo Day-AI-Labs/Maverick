@@ -10,7 +10,6 @@ import asyncio
 import inspect
 
 import pytest
-
 from maverick.tools import as_bool
 from maverick.tools.s3_tool import s3_tool
 from maverick.tools.shopify_tool import shopify_tool

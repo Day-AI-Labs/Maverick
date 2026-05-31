@@ -202,7 +202,9 @@ class TestApplyBlocks:
 
     def test_render_diff_after_apply(self, tmp_path):
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks, render_diff,
+            SearchReplaceBlock,
+            apply_blocks,
+            render_diff,
         )
         repo = _make_git_repo(tmp_path)
         blk = SearchReplaceBlock(
@@ -222,7 +224,9 @@ class TestApplyBlocks:
         unrelated untracked files (scratch files, secrets, build artifacts).
         """
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks, render_diff,
+            SearchReplaceBlock,
+            apply_blocks,
+            render_diff,
         )
         repo = _make_git_repo(tmp_path)
         # Unrelated untracked file with sensitive contents.
@@ -244,7 +248,9 @@ class TestApplyBlocks:
         file must still appear via intent-to-add.
         """
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks, render_diff,
+            SearchReplaceBlock,
+            apply_blocks,
+            render_diff,
         )
         repo = _make_git_repo(tmp_path)
         # Unrelated untracked secret that must NOT leak.
@@ -268,7 +274,9 @@ class TestApplyBlocks:
         SEARCH/REPLACE paths such as `:(glob)*`.
         """
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks, render_diff,
+            SearchReplaceBlock,
+            apply_blocks,
+            render_diff,
         )
         repo = _make_git_repo(tmp_path)
         # Unrelated untracked secret must not be matched by `:(glob)*`.
@@ -294,7 +302,9 @@ class TestApplyBlocks:
         skip untracked entirely (the secure default for salvage paths).
         """
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks, render_diff,
+            SearchReplaceBlock,
+            apply_blocks,
+            render_diff,
         )
         repo = _make_git_repo(tmp_path)
         (repo / "scratch.txt").write_text("ignore me\n")
@@ -316,7 +326,9 @@ class TestApplyBlocks:
 class TestRepairPrompt:
     def test_repair_prompt_includes_block_path_and_reason(self, tmp_path):
         from maverick.edit_format import (
-            SearchReplaceBlock, ApplyResult, repair_prompt_for_failure,
+            ApplyResult,
+            SearchReplaceBlock,
+            repair_prompt_for_failure,
         )
         result = ApplyResult(
             ok=False,

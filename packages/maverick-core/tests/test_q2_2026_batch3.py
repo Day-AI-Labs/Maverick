@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ---------- TGI provider ----------
 
 class _FakeOpenAIClient:

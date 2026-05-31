@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable
 
 
 def normalize_allowlist(values, env_name: str) -> set:

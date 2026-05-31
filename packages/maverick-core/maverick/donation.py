@@ -33,7 +33,6 @@ import logging
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from .secrets import scrub
 
@@ -55,7 +54,7 @@ class TrajectoryRecord:
     schema_version: int = 1
     ts: float = field(default_factory=time.time)
     task_brief_hash: str = ""
-    task_brief_text: Optional[str] = None  # only when donate_text=true
+    task_brief_text: str | None = None  # only when donate_text=true
     model_id: str = ""
     tools_used: list[str] = field(default_factory=list)
     action_sequence: list[str] = field(default_factory=list)
@@ -125,8 +124,8 @@ def should_donate(
 def write_record(
     record: TrajectoryRecord,
     *,
-    outbox: Optional[Path] = None,
-) -> Optional[Path]:
+    outbox: Path | None = None,
+) -> Path | None:
     """Persist a record to the local outbox, with scrubbing.
 
     Returns the written path, or None if donations are disabled OR the
@@ -173,7 +172,7 @@ def write_record(
         return None
 
 
-def list_pending(outbox: Optional[Path] = None) -> list[Path]:
+def list_pending(outbox: Path | None = None) -> list[Path]:
     """Return the outbox files awaiting upload, for `maverick donate-status`."""
     out_dir = outbox or DEFAULT_OUTBOX
     if not out_dir.exists():
@@ -181,7 +180,7 @@ def list_pending(outbox: Optional[Path] = None) -> list[Path]:
     return sorted(out_dir.glob("*.json"))
 
 
-def clear_outbox(outbox: Optional[Path] = None) -> int:
+def clear_outbox(outbox: Path | None = None) -> int:
     """Delete every pending record. Returns count removed."""
     out_dir = outbox or DEFAULT_OUTBOX
     if not out_dir.exists():

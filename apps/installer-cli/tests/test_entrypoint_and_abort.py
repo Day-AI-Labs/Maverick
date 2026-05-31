@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------- entry point flag parsing ----------
 
 def test_main_passes_fast_flag(monkeypatch):

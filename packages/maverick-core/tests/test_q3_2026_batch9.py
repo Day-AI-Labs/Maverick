@@ -7,7 +7,6 @@ import time
 import types
 from unittest.mock import MagicMock
 
-
 # ---------- OpenAPI runner ----------
 
 _TINY_OAS = {

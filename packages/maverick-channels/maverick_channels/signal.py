@@ -18,7 +18,6 @@ import asyncio
 import json
 import logging
 import shutil
-from typing import Optional
 
 from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
 
@@ -32,7 +31,7 @@ class SignalChannel(Channel):
         self,
         handler,
         phone_number: str,
-        signal_cli_path: Optional[str] = None,
+        signal_cli_path: str | None = None,
         allowed_user_ids=None,
     ):
         super().__init__(handler)
@@ -54,14 +53,14 @@ class SignalChannel(Channel):
                 "signal-cli not found on PATH. Install from "
                 "https://github.com/AsamK/signal-cli"
             )
-        self._proc: Optional[asyncio.subprocess.Process] = None
+        self._proc: asyncio.subprocess.Process | None = None
         self._req_id = 0
 
     def _next_id(self) -> int:
         self._req_id += 1
         return self._req_id
 
-    async def _send_rpc(self, method: str, params: Optional[dict] = None) -> None:
+    async def _send_rpc(self, method: str, params: dict | None = None) -> None:
         if self._proc is None or self._proc.stdin is None:
             raise RuntimeError("signal-cli not running")
         req = {"jsonrpc": "2.0", "method": method, "id": self._next_id()}

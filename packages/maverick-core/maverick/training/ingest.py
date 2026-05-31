@@ -24,8 +24,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 from ..prm import HeuristicPRM, StepContext
 from .schema import TrainingStep, TrainingTrajectory, to_klear_jsonl

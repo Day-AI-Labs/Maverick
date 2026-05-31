@@ -19,7 +19,6 @@ import subprocess
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from .local import ExecResult
 
@@ -33,7 +32,7 @@ class DockerBackend:
     # Fork-bomb guard. Generous enough for real builds (pip/npm/pytest
     # spawn plenty of children) while still bounding a runaway agent.
     # Set to 0/None to disable (not recommended).
-    pids_limit: Optional[int] = 512
+    pids_limit: int | None = 512
 
     def __post_init__(self) -> None:
         self.workdir = Path(self.workdir)
@@ -52,7 +51,7 @@ class DockerBackend:
                 "change [sandbox] backend to 'local' in ~/.maverick/config.toml."
             ) from e
 
-    def exec(self, cmd: str, timeout: Optional[float] = None) -> ExecResult:
+    def exec(self, cmd: str, timeout: float | None = None) -> ExecResult:
         # Wave 11: per-call `timeout` matches LocalBackend so the shell
         # tool can plumb a longer cap for pytest/npm test/etc. Falls
         # back to self.timeout (default 60 s).

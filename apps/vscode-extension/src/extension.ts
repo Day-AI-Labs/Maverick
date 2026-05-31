@@ -72,22 +72,44 @@ function runCliStream(args: string[], onLine: (line: string) => void): Promise<n
   });
 }
 
+// One run = one episode, as emitted by `maverick runs --json`. Keep in
+// sync with the record built in maverick/cli.py::runs.
+interface RunRecord {
+  episode_id: number;
+  goal_id: number;
+  goal_title: string | null;
+  goal_status: string | null;
+  outcome: string | null;
+  running: boolean;
+  started_at: number | null;
+  ended_at: number | null;
+  duration_s: number | null;
+  cost_dollars: number;
+  input_tokens: number;
+  output_tokens: number;
+  tool_calls: number;
+}
+
 class RunItem extends vscode.TreeItem {
-  constructor(
-    public readonly id: number,
-    label: string,
-    public readonly status: string,
-    public readonly dollars: number,
-  ) {
-    super(`#${id} ${label}`, vscode.TreeItemCollapsibleState.None);
-    this.description = `${status} · $${dollars.toFixed(4)}`;
+  constructor(public readonly run: RunRecord) {
+    const title = run.goal_title ?? `goal ${run.goal_id}`;
+    super(`#${run.episode_id} ${title}`, vscode.TreeItemCollapsibleState.None);
+    const state = run.running ? "running" : run.outcome ?? "done";
+    const dur = run.duration_s != null ? `${run.duration_s.toFixed(1)}s` : "—";
+    this.description = `${state} · $${run.cost_dollars.toFixed(4)}`;
     this.tooltip = new vscode.MarkdownString(
-      `**Goal #${id}**\n\nStatus: \`${status}\`\n\nCost: \`$${dollars.toFixed(4)}\``,
+      `**Episode #${run.episode_id}** (goal #${run.goal_id})\n\n` +
+      `Goal: ${title}\n\n` +
+      `State: \`${state}\`\n\n` +
+      `Cost: \`$${run.cost_dollars.toFixed(4)}\`\n\n` +
+      `Tokens: \`${run.input_tokens} in / ${run.output_tokens} out\`\n\n` +
+      `Tool calls: \`${run.tool_calls}\`\n\n` +
+      `Duration: \`${dur}\``,
     );
     this.iconPath = new vscode.ThemeIcon(
-      status === "succeeded" || status === "done" ? "check"
-      : status === "failed" || status === "blocked" ? "error"
-      : status === "in_progress" || status === "running" ? "sync"
+      run.running ? "sync"
+      : state === "completed" || state === "succeeded" || state === "done" ? "check"
+      : state === "failed" || state === "blocked" || state === "error" ? "error"
       : "circle-outline",
     );
     this.contextValue = "maverickRun";
@@ -107,27 +129,24 @@ class RunsProvider implements vscode.TreeDataProvider<RunItem> {
   }
 
   async getChildren(): Promise<RunItem[]> {
+    let out: string;
     try {
-      // Parse `maverick cost` to get totals (used as a probe) +
-      // `maverick logs --day` for the recent run list. For v0.1 we
-      // just use `cost` to confirm the CLI works; richer parsing
-      // lands when `maverick runs --json` exists.
-      const out = await runCliCapture(["cost"]);
-      const dollarsMatch = /Dollars:\s+\$([0-9.]+)/.exec(out);
-      const epsMatch = /Episodes:\s+(\d+)/.exec(out);
-      if (!dollarsMatch || !epsMatch) {
-        return [new RunItem(0, "(no runs yet)", "pending", 0)];
-      }
-      // Placeholder: a single summary tile. Full per-run parsing is
-      // the next iteration -- needs a new `maverick runs --json` cmd.
-      const total = parseFloat(dollarsMatch[1]);
-      const eps = parseInt(epsMatch[1], 10);
-      return [new RunItem(eps, `lifetime: ${eps} run(s)`, "summary", total)];
+      out = await runCliCapture(["runs", "--json"]);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       vscode.window.showErrorMessage(`Maverick CLI failed: ${msg}`);
       return [];
     }
+    let rows: RunRecord[];
+    try {
+      rows = JSON.parse(out.trim() || "[]") as RunRecord[];
+    } catch {
+      vscode.window.showErrorMessage(
+        "Maverick: could not parse `maverick runs --json` output.",
+      );
+      return [];
+    }
+    return rows.map((r) => new RunItem(r));
   }
 }
 

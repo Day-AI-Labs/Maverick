@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Optional
 
 from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
 
@@ -37,8 +36,8 @@ class SlackChannel(Channel):
     def __init__(
         self,
         handler,
-        app_token: Optional[str] = None,
-        bot_token: Optional[str] = None,
+        app_token: str | None = None,
+        bot_token: str | None = None,
         allowed_user_ids=None,
     ):
         super().__init__(handler)

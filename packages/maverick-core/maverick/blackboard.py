@@ -15,7 +15,7 @@ import json
 import threading
 import time
 from dataclasses import asdict, dataclass
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -31,7 +31,7 @@ class Blackboard:
     def __init__(self):
         self.entries: list[Entry] = []
         self._world = None
-        self._goal_id: Optional[int] = None
+        self._goal_id: int | None = None
         # Guards entries against a runner thread and the event loop touching
         # the same blackboard. (NOTE: this does not serialize same-thread
         # gather() coroutines against each other — the deeper swarm-shares-

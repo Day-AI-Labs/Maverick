@@ -14,8 +14,9 @@ LLM instances or full Agent objects both fit.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any
 
 from .budget import Budget, BudgetExceeded
 
@@ -57,7 +58,7 @@ class DebateParticipant:
     name: str
     persona: str
     llm_complete: Callable[..., Any]
-    model: Optional[str] = None
+    model: str | None = None
 
 
 def _build_messages_for_turn(
@@ -103,7 +104,7 @@ def _judge(
     participants: list[str],
     *,
     budget: Budget,
-    model: Optional[str],
+    model: str | None,
 ) -> tuple[str, str, str]:
     import json
     convo = "\n\n".join(f"[{t.speaker}]\n{t.text}" for t in transcript)
@@ -146,8 +147,8 @@ def run_debate(
     *,
     judge_complete: Callable[..., Any],
     rounds: int = 2,
-    budget: Optional[Budget] = None,
-    judge_model: Optional[str] = None,
+    budget: Budget | None = None,
+    judge_model: str | None = None,
 ) -> DebateResult:
     """Round-robin debate with N participants for N_ROUNDS rounds.
 

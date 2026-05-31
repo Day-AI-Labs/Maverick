@@ -25,8 +25,6 @@ import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
-
 
 CODER_CODING_MODE_TEMPLATE = """You are a coding agent solving a real software-engineering task on an
 existing codebase. Your goal is to resolve the issue described in
@@ -391,7 +389,7 @@ def _mask_fenced_code(text: str) -> str:
     return ''.join(out)
 
 
-def find_final_marker_end(text: str) -> Optional[int]:
+def find_final_marker_end(text: str) -> int | None:
     """Return the offset right after the last `FINAL:` marker in `text`
     that is NOT inside a fenced code block, or None if no such marker
     exists.
@@ -416,7 +414,7 @@ def has_final_marker(text: str) -> bool:
     return find_final_marker_end(text) is not None
 
 
-def extract_unified_diff(text: str) -> Optional[str]:
+def extract_unified_diff(text: str) -> str | None:
     """Extract the unified diff from an LLM reply, or None.
 
     Wave 10 rewrite: normalise CRLF, accept `diff --git` headers
@@ -1384,6 +1382,25 @@ _FAILURE_PATTERNS = [
     )),
     ("SyntaxError",      re.compile(r"\bSyntaxError\b|invalid syntax")),
     ("IndentationError", re.compile(r"\bIndentationError\b")),
+    # --- Polyglot classes (Rust / Go / TypeScript). Listed after the Python
+    # exception names -- whose tokens never appear in these toolchains' output
+    # -- and before the generic Timeout catch-all, so Python classification is
+    # byte-identical and a timeout still wins for any language. ---
+    ("RustCompileError", re.compile(
+        r"error\[E\d{4}\]|mismatched types|"
+        r"cannot find (?:value|function|type|macro|trait|module)\b"
+    )),
+    ("RustPanic", re.compile(
+        r"panicked at |thread '[^']*' panicked|assertion (?:`[^`]*` )?failed"
+    )),
+    ("GoBuildError", re.compile(
+        r"\.go:\d+:\d+:|undefined: \w|(?:not enough|too many) arguments\b"
+    )),
+    ("GoPanic", re.compile(r"^panic: ", re.M)),
+    ("TypeScriptError", re.compile(
+        r"error TS\d+|Cannot find name |is not assignable to|"
+        r"Property '[^']+' does not exist|Expected \d+ arguments?, but got \d+"
+    )),
     ("Timeout",          re.compile(r"\bTIMEOUT\b|exit 124|TimeoutExpired")),
 ]
 
@@ -1434,6 +1451,35 @@ _FAILURE_HINTS = {
         "Indentation mismatch. Match the file's prevailing indent style "
         "(read the existing function with `read_file`); never mix tabs "
         "and spaces."
+    ),
+    "RustCompileError": (
+        "Rust didn't compile, so `cargo test` never ran. Read the "
+        "`error[E####]` code and the `^^^` span: usual causes are a wrong "
+        "path in a `use`, a renamed/moved item, a borrow/lifetime error, or "
+        "`mismatched types`. Fix exactly the type or path the compiler names."
+    ),
+    "RustPanic": (
+        "A Rust test panicked: a failed `assert!`/`assert_eq!`, or "
+        "`.unwrap()`/`.expect()` on `None`/`Err`. Trace the panic message "
+        "back to the production path the test exercises -- the value produced "
+        "differs from what the test asserts."
+    ),
+    "GoBuildError": (
+        "Go didn't build, so `go test` never ran. The `file.go:line:col` "
+        "location points at the token: usually an `undefined:` symbol, a type "
+        "mismatch, or the wrong argument count. Fix the symbol or signature "
+        "the compiler names."
+    ),
+    "GoPanic": (
+        "A Go test hit a runtime `panic:` -- often a nil-pointer dereference "
+        "or an out-of-range index/slice. Read the stack to the production "
+        "frame and guard the nil or bounds case the test triggers."
+    ),
+    "TypeScriptError": (
+        "TypeScript type-checking failed (`error TS####`). `Cannot find name` "
+        "= missing import or typo; `Property '...' does not exist` = wrong "
+        "object shape; `is not assignable` / `Expected N arguments` = a "
+        "signature mismatch. Fix the type or import the compiler names."
     ),
     "Timeout": (
         "The test ran longer than the budget. Your fix likely introduces "
@@ -1610,11 +1656,11 @@ class Candidate:
     patch: str
     score: float
     apply_check_passed: bool
-    test_result: Optional["TestRunResult"] = None
+    test_result: TestRunResult | None = None
     error: str = ""
 
 
-def select_best_candidate(candidates: list[Candidate]) -> Optional[Candidate]:
+def select_best_candidate(candidates: list[Candidate]) -> Candidate | None:
     """Pick the candidate with the highest test score; tiebreak by
     proximity to median patch length (Occam, but not "smallest at all
     costs" — see Wave 12 council finding F1).
@@ -1699,9 +1745,9 @@ async def evaluate_candidate(
         cand.score = 0.5
         return cand
 
+    import shutil as _shutil
     import subprocess as _subprocess
     import tempfile as _tempfile
-    import shutil as _shutil
 
     wt_root = Path(_tempfile.mkdtemp(prefix=f"maverick-cand-{index}-"))
     wt_path = wt_root / "wt"

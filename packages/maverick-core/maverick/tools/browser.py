@@ -34,11 +34,11 @@ import ipaddress
 import logging
 import os
 import re
-from urllib.parse import urlparse
 import threading
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
+from urllib.parse import urlparse
 
 from . import Tool
 from .http_fetch import _scan_fetched
@@ -71,7 +71,7 @@ def _state_path() -> Path:
     return Path(os.path.expanduser(override)) if override else _DEFAULT_STATE_PATH
 
 
-def _restore_state_arg() -> Optional[str]:
+def _restore_state_arg() -> str | None:
     """storage_state path to seed a new context with, or None for a fresh one."""
     if not _persist_enabled():
         return None
@@ -199,7 +199,7 @@ class _BrowserSession:
             self._page = self._context = self._browser = self._playwright = None
 
 
-_session: Optional[_BrowserSession] = None
+_session: _BrowserSession | None = None
 _session_lock = threading.Lock()
 
 

@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -182,6 +181,7 @@ def test_file_cache_read_round_trip(tmp_path):
 
 def test_file_cache_invalidates_on_mtime_change(tmp_path):
     import time as _time
+
     from maverick.file_cache import clear_read_cache, read_file_cached
     clear_read_cache()
     f = tmp_path / "f.txt"

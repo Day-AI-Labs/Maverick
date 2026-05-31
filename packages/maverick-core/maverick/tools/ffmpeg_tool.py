@@ -23,7 +23,6 @@ from typing import Any
 from . import Tool
 
 
-
 def _scrub() -> dict:
     """Child env with secrets stripped (shared tools.scrub_child_env)."""
     from . import scrub_child_env

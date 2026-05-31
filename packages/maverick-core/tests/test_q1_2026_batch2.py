@@ -1,9 +1,7 @@
 """Q1 2026 batch 2: consent, tool_acl, budget_status, plugin_manifest, webhooks."""
 from __future__ import annotations
 
-
 import pytest
-
 
 # ---------- consent ----------
 
@@ -103,8 +101,9 @@ def test_tool_acl_apply_to_registry(tmp_path, monkeypatch):
         '[security]\ndenied_tools = ["computer", "browser"]\n'
     )
     # Force reload of the cached default config path.
-    import maverick.config as cfg_mod
     import importlib
+
+    import maverick.config as cfg_mod
     importlib.reload(cfg_mod)
 
     from maverick.tools import base_registry
@@ -136,6 +135,7 @@ def test_tool_acl_blocks_late_registered_tools(tmp_path, monkeypatch):
         '[security]\nallowed_tools = ["read_file"]\n'
     )
     import importlib
+
     import maverick.config as cfg_mod
     importlib.reload(cfg_mod)
 

@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------- semantic_scholar tool ----------
 
 def test_semantic_scholar_requires_op():

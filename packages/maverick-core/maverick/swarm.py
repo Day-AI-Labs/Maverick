@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import os
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from .blackboard import Blackboard
 from .budget import Budget
@@ -54,13 +54,13 @@ class SwarmContext:
     goal_id: int
     max_depth: int = 3
     use_skills: bool = field(default_factory=_default_use_skills)
-    shield: Optional[Any] = None
+    shield: Any | None = None
     mcp_clients: list = field(default_factory=list)
-    channel: Optional[str] = None
-    user_id: Optional[str] = None
+    channel: str | None = None
+    user_id: str | None = None
     max_total_spawns: int = field(default_factory=_default_max_total_spawns)
     _spawns_used: int = 0
-    _workdir_lock: Optional[asyncio.Lock] = field(default=None, repr=False)
+    _workdir_lock: asyncio.Lock | None = field(default=None, repr=False)
 
     @property
     def workdir_lock(self) -> asyncio.Lock:

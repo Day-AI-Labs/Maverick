@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import inspect
 
-from maverick import observability as obs
 from maverick import llm as llm_mod
+from maverick import observability as obs
 
 
 def test_span_name_is_operation_space_model():

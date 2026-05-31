@@ -15,6 +15,7 @@ import ipaddress
 import logging
 import re
 import socket
+import urllib.request
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -156,6 +157,37 @@ def is_blocked_host(hostname: str) -> bool:
     if os.environ.get("MAVERICK_FETCH_ALLOW_PRIVATE") == "1":
         return False
     return _is_private_ip(hostname or "")
+
+
+def guarded_urlopen(url: str, *, timeout: float, allow_http: bool = False):
+    """``urllib.request.urlopen`` with scheme + SSRF host checks.
+
+    The shared guarded fetch for paths that pull a user- or model-supplied
+    URL outside the http_fetch tool (skill install, catalog index). Enforces
+    https (http only when ``allow_http``) and refuses hosts resolving to a
+    private/loopback/link-local/reserved address via ``is_blocked_host``
+    (honoring ``MAVERICK_FETCH_ALLOW_PRIVATE=1``) before opening the
+    connection. Returns the response, so callers use it as
+    ``with guarded_urlopen(url, timeout=...) as resp:``.
+
+    Residual: the host is resolved here and again by ``urlopen``, so a fast
+    DNS rebind between the two is not stopped (the same limitation this tool
+    already carries; resolve-once-pin-IP is tracked separately). The win is
+    closing the previously *unguarded* skill/catalog fetch paths.
+    """
+    parsed = urlparse(url)
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ("https", "http"):
+        raise ValueError(f"unsupported URL scheme {scheme!r} for {url!r}")
+    if scheme == "http" and not allow_http:
+        raise ValueError(f"insecure http:// not allowed for {url!r}; use https://")
+    if is_blocked_host(parsed.hostname or ""):
+        raise ValueError(
+            f"refusing to fetch {url!r}: {parsed.hostname!r} resolves to a "
+            "private/loopback/link-local/reserved address (SSRF guard). "
+            "Set MAVERICK_FETCH_ALLOW_PRIVATE=1 to override."
+        )
+    return urllib.request.urlopen(url, timeout=timeout)  # noqa: S310 (scheme+host checked)
 
 
 def _check_robots(url: str, user_agent: str = "Maverick") -> bool:

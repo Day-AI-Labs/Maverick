@@ -7,7 +7,6 @@ message-flattening and budget-estimation logic.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from ..budget import Budget, BudgetExceeded
 
@@ -47,7 +46,7 @@ def stringify_messages(system: str, messages: list[dict]) -> str:
 def approx_record_budget(
     prompt: str,
     output: str,
-    budget: Optional[Budget],
+    budget: Budget | None,
     model: str,
 ) -> None:
     """Best-effort token accounting from char counts (~4 chars/token).

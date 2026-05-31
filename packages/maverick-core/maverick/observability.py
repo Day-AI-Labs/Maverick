@@ -28,7 +28,8 @@ import contextlib
 import logging
 import os
 import threading
-from typing import Any, Iterator, Optional
+from collections.abc import Iterator
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -130,7 +131,7 @@ def _initialize() -> None:
 def trace_span(
     name: str,
     *,
-    attributes: Optional[dict[str, Any]] = None,
+    attributes: dict[str, Any] | None = None,
 ) -> Iterator[Any]:
     """Context manager that opens a span (no-op when off)."""
     _initialize()
@@ -151,7 +152,7 @@ def record_metric(
     name: str,
     value: float = 1.0,
     *,
-    labels: Optional[dict[str, str]] = None,
+    labels: dict[str, str] | None = None,
 ) -> None:
     """Bump a known counter / observe a histogram / set a gauge."""
     _initialize()
@@ -199,10 +200,10 @@ def gen_ai_attributes(
     request_model: str,
     *,
     operation: str = "chat",
-    max_tokens: Optional[int] = None,
-    response_model: Optional[str] = None,
-    input_tokens: Optional[int] = None,
-    output_tokens: Optional[int] = None,
+    max_tokens: int | None = None,
+    response_model: str | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
 ) -> dict[str, Any]:
     """Build an OTel GenAI-semconv attribute dict for an LLM span.
 

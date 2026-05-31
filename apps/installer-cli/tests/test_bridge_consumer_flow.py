@@ -7,7 +7,6 @@ don't need a real subprocess.
 """
 from __future__ import annotations
 
-
 try:
     import tomllib  # 3.11+
 except ModuleNotFoundError:  # Python 3.10

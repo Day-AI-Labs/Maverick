@@ -61,9 +61,10 @@ def test_catalog_install_requires_opt_in(monkeypatch):
     monkeypatch.delenv("MAVERICK_ALLOW_SKILL_INSTALL", raising=False)
     monkeypatch.delenv("MAVERICK_DASHBOARD_TOKEN", raising=False)
 
+    from pathlib import Path
+
     import maverick.skills as sk
     from maverick.skills import Skill
-    from pathlib import Path
     called = {}
 
     def _fake_install(name, *a, **kw):

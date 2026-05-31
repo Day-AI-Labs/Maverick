@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 MAX_SWARM_FANOUT = env_int("MAVERICK_MAX_SWARM_FANOUT", 8)
 
 
-def spawn_subagent_tool(parent: "Agent") -> Tool:
+def spawn_subagent_tool(parent: Agent) -> Tool:
     async def fn(args: dict) -> str:
         role = args["role"]
         task = args["task"]
@@ -53,6 +53,13 @@ def spawn_subagent_tool(parent: "Agent") -> Tool:
             max_steps=parent.max_steps,
         )
         result = await child.run()
+        from ..hooks import HookEvent
+        from ..hooks import emit as _emit_hook
+        await _emit_hook(
+            HookEvent.SUBAGENT_STOP,
+            goal_id=parent.ctx.goal_id, agent_role=child.role,
+            extra={"name": child.name, "final": result.final or ""},
+        )
         if result.final:
             return result.final
         if result.blocked_on_user:
@@ -78,7 +85,7 @@ def spawn_subagent_tool(parent: "Agent") -> Tool:
     )
 
 
-def spawn_swarm_tool(parent: "Agent") -> Tool:
+def spawn_swarm_tool(parent: Agent) -> Tool:
     async def fn(args: dict) -> str:
         from ..agent import Agent
 
@@ -125,6 +132,17 @@ def spawn_swarm_tool(parent: "Agent") -> Tool:
         )
 
         results = await asyncio.gather(*(c.run() for c in children), return_exceptions=True)
+
+        # SubagentStop hooks: one per child that completed without raising.
+        from ..hooks import HookEvent
+        from ..hooks import emit as _emit_hook
+        for child, res in zip(children, results):
+            if not isinstance(res, Exception):
+                await _emit_hook(
+                    HookEvent.SUBAGENT_STOP,
+                    goal_id=parent.ctx.goal_id, agent_role=child.role,
+                    extra={"name": child.name, "final": res.final or ""},
+                )
 
         # Karpathy SOTA-review item: measure disagreement across the
         # children's FINAL answers and record it on the blackboard so

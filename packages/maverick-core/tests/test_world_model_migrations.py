@@ -20,7 +20,6 @@ import time
 
 from maverick.world_model import SCHEMA_VERSION, WorldModel
 
-
 V1_SCHEMA = """
 CREATE TABLE schema_version (version INTEGER PRIMARY KEY);
 INSERT INTO schema_version(version) VALUES(1);

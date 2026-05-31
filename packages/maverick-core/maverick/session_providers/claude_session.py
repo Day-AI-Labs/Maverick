@@ -25,7 +25,6 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from typing import Optional
 
 from ..budget import Budget
 from ..llm import LLMResponse
@@ -97,7 +96,7 @@ class ClaudeSessionClient:
     PROVIDER_KEY = "claude-session"
     DEFAULT_MODEL = "claude-sonnet-4-6"
 
-    def __init__(self, session: Optional[dict] = None):
+    def __init__(self, session: dict | None = None):
         try:
             import httpx  # noqa: F401
         except ImportError as e:
@@ -213,11 +212,11 @@ class ClaudeSessionClient:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
     ) -> LLMResponse:
         if tools:
             raise NotImplementedError(
@@ -268,11 +267,11 @@ class ClaudeSessionClient:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
     ) -> LLMResponse:
         if tools:
             raise NotImplementedError(

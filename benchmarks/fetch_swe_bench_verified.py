@@ -28,9 +28,8 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
-
 
 # SWE-bench instance ids look like `<org>__<repo>-<number>`, e.g.
 # `django__django-12345`. Restrict to alphanumerics, `_`, `-`, and `.`

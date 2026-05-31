@@ -15,7 +15,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pytest
-
 from maverick import plugins
 
 
@@ -137,8 +136,8 @@ def test_installed_plugins_snapshot(monkeypatch):
 
 def test_base_registry_loads_plugin_tools(monkeypatch, tmp_path):
     """Plugin tool factories are invoked when building the agent registry."""
-    from maverick.tools import Tool, base_registry
     from maverick.sandbox import LocalBackend
+    from maverick.tools import Tool, base_registry
     from maverick.world_model import WorldModel
 
     sentinel = Tool(

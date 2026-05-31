@@ -5,7 +5,6 @@ import sys
 import types
 from unittest.mock import MagicMock
 
-
 # ---------- MongoDB ----------
 
 def test_mongodb_requires_op():

@@ -267,4 +267,5 @@ def dep_graph(sandbox) -> Tool:
         ),
         input_schema=_DEP_GRAPH_SCHEMA,
         fn=_run_dep_graph_factory(sandbox),
+        parallel_safe=True,
     )

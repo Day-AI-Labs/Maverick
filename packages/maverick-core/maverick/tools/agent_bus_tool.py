@@ -13,9 +13,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from . import Tool
 from .. import agent_bus
-
+from . import Tool
 
 MAX_RECV_TIMEOUT_SECONDS = 5.0
 

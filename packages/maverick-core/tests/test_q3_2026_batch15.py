@@ -8,7 +8,6 @@ from __future__ import annotations
 import maverick.tools.view_video as vv
 from maverick.tools.view_video import _evenly_spaced, view_video
 
-
 # ---------- pure helpers ----------
 
 def test_evenly_spaced_midpoints():

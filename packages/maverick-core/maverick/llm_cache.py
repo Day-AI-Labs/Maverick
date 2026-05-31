@@ -26,10 +26,11 @@ import os
 import sqlite3
 import threading
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ def cache_key(
     messages: list[dict] | None,
     tools: list[dict] | None,
     max_tokens: int,
-    thinking_budget: Optional[int] = None,
+    thinking_budget: int | None = None,
 ) -> str:
     """Stable SHA-256 of the inputs that uniquely identify a completion."""
     payload = {
@@ -103,7 +104,7 @@ class LLMCache:
 
     def __init__(
         self,
-        db_path: Optional[Path] = None,
+        db_path: Path | None = None,
         *,
         ttl_seconds: float = DEFAULT_TTL_S,
         max_rows: int = 5000,
@@ -133,7 +134,7 @@ class LLMCache:
         with self._conn() as c:
             c.executescript(_SCHEMA)
 
-    def lookup(self, key: str, *, now: Optional[float] = None) -> Optional[CachedResponse]:
+    def lookup(self, key: str, *, now: float | None = None) -> CachedResponse | None:
         n = now if now is not None else time.time()
         with self._lock, self._conn() as c:
             row = c.execute(
@@ -194,7 +195,7 @@ class LLMCache:
                     (self.max_rows,),
                 )
 
-    def purge_expired(self, *, now: Optional[float] = None) -> int:
+    def purge_expired(self, *, now: float | None = None) -> int:
         if not self.ttl_seconds:
             return 0
         n = now if now is not None else time.time()
@@ -223,10 +224,10 @@ class LLMCache:
 
 
 _singleton_lock = threading.Lock()
-_singleton: Optional[LLMCache] = None
+_singleton: LLMCache | None = None
 
 
-def get(db_path: Optional[Path] = None) -> LLMCache:
+def get(db_path: Path | None = None) -> LLMCache:
     """Lazy global singleton.
 
     Call with an explicit ``db_path`` only the first time to override

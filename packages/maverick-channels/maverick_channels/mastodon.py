@@ -15,7 +15,6 @@ import asyncio
 import logging
 import os
 import re
-from typing import Optional, Set
 
 from .base import Channel, Handler, IncomingMessage
 
@@ -46,9 +45,9 @@ class MastodonChannel(Channel):
         self,
         handler: Handler,
         *,
-        instance: Optional[str] = None,
-        access_token: Optional[str] = None,
-        allowed_user_ids: Optional[set[str]] = None,
+        instance: str | None = None,
+        access_token: str | None = None,
+        allowed_user_ids: set[str] | None = None,
         poll_interval: float = _POLL_INTERVAL_SEC,
     ):
         super().__init__(handler)
@@ -68,12 +67,12 @@ class MastodonChannel(Channel):
                 "Set MASTODON_ALLOWED_USER_IDS to restrict access"
             )
         self.poll_interval = poll_interval
-        self._last_seen_id: Optional[str] = None
+        self._last_seen_id: str | None = None
         self._running = False
         self._stop_event = asyncio.Event()
 
     @staticmethod
-    def _normalize_allowlist(values: Optional[set[str]], env_name: str) -> Set[str]:
+    def _normalize_allowlist(values: set[str] | None, env_name: str) -> set[str]:
         if values is not None:
             return {str(v).strip() for v in values if str(v).strip()}
         raw = os.environ.get(env_name, "")

@@ -26,7 +26,6 @@ import json
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -55,7 +54,7 @@ class CostTracker:
         self.results_path = results_path
         self._start: float = 0.0
 
-    def __enter__(self) -> "CostTracker":
+    def __enter__(self) -> CostTracker:
         self._start = time.monotonic()
         return self
 
@@ -102,7 +101,7 @@ def cost_tracker(
 def pareto_frontier(
     rows: list[TaskRow],
     *,
-    pipelines: Optional[list[str]] = None,
+    pipelines: list[str] | None = None,
 ) -> list[tuple[str, float, float]]:
     """Return (pipeline, total_cost, success_rate) for each pipeline.
 

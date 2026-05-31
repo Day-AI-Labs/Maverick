@@ -28,7 +28,6 @@ import platform
 import sqlite3
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
 
@@ -70,7 +69,7 @@ class iMessageChannel(Channel):  # noqa: N801 - product spelling
         if not self.allowed_user_ids:
             raise ValueError("Set IMESSAGE_ALLOWED_USER_IDS to restrict access")
         self.poll_interval = poll_interval
-        self._last_rowid: Optional[int] = None
+        self._last_rowid: int | None = None
         self._stop = False
 
     async def start(self) -> None:

@@ -10,7 +10,6 @@ for availability and falls back to the paste flow if not installed.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +55,7 @@ def playwright_available() -> bool:
     return True
 
 
-def auto_capture(provider: str, timeout_seconds: int = 300) -> Optional[dict]:
+def auto_capture(provider: str, timeout_seconds: int = 300) -> dict | None:
     """Open a browser, wait for user to log in, return captured cookies.
 
     Returns None if Playwright isn't installed (caller should fall back

@@ -19,8 +19,8 @@ from __future__ import annotations
 import html
 import json
 import logging
+from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Iterable, Iterator, Optional
 
 from .secrets import scrub
 
@@ -72,11 +72,10 @@ _HTML_TAIL = "\n</body></html>\n"
 def _iter_audit_files() -> Iterator[Path]:
     if not _AUDIT_DIR.exists():
         return
-    for p in sorted(_AUDIT_DIR.glob("*.ndjson")):
-        yield p
+    yield from sorted(_AUDIT_DIR.glob("*.ndjson"))
 
 
-def _iter_events_for_goal(goal_id: int, files: Optional[Iterable[Path]] = None) -> Iterator[dict]:
+def _iter_events_for_goal(goal_id: int, files: Iterable[Path] | None = None) -> Iterator[dict]:
     files = files if files is not None else _iter_audit_files()
     for path in files:
         try:

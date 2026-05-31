@@ -389,7 +389,9 @@ def test_circuit_breaker_starts_closed():
 
 def test_circuit_breaker_opens_after_failures():
     from maverick.circuit_breaker import (
-        CircuitBreaker, CircuitOpen, CircuitState,
+        CircuitBreaker,
+        CircuitOpen,
+        CircuitState,
     )
 
     def _boom():

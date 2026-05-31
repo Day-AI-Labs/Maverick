@@ -16,7 +16,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ---------- audit log ----------
 
 def test_audit_log_writes_ndjson(tmp_path, monkeypatch):

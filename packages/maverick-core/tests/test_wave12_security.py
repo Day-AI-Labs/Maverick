@@ -174,6 +174,7 @@ class TestSymlinkBypass:
     )
     def test_symlink_to_dotgit_blocked_in_read_file(self, tmp_path, opaque_mode):
         import os as _os
+
         from maverick.tools.fs import read_file
         (tmp_path / ".git").mkdir()
         (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
@@ -196,6 +197,7 @@ class TestSymlinkBypass:
     )
     def test_symlink_to_tests_blocked_in_view(self, tmp_path, opaque_mode):
         import os as _os
+
         from maverick.tools.str_edit import str_replace_editor
         (tmp_path / "tests").mkdir()
         (tmp_path / "tests" / "test_foo.py").write_text(
@@ -342,11 +344,12 @@ class TestGoldPatchEmptyEnvSentinel:
     should pop+cache, NOT be treated as 'not yet read'."""
 
     def test_empty_env_is_popped_and_cached(self, monkeypatch):
+        import os as _os
+
         from maverick.coding_mode import (
             get_gold_patch,
             reset_gold_patch_cache,
         )
-        import os as _os
         reset_gold_patch_cache()
         monkeypatch.setenv("MAVERICK_GOLD_PATCH", "")
         out = get_gold_patch()

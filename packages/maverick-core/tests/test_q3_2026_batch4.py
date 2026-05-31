@@ -6,7 +6,6 @@ import sys
 import types
 from unittest.mock import MagicMock
 
-
 # ---------- Kubernetes sandbox ----------
 
 def test_k8s_missing_kubectl(monkeypatch):

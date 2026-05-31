@@ -15,7 +15,6 @@ import math
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 class BudgetExceeded(Exception):
@@ -36,7 +35,7 @@ _CACHE_WRITE_MULT_5M = 1.25
 _CACHE_WRITE_MULT_1H = 2.0
 
 
-def _cache_write_mult_from_ttl(ttl: Optional[str]) -> float:
+def _cache_write_mult_from_ttl(ttl: str | None) -> float:
     """Map Anthropic cache TTL string to the write surcharge multiplier.
 
     Wave 12 hardening: strip + lowercase before matching so trailing
@@ -64,7 +63,7 @@ def _cache_write_mult_from_ttl(ttl: Optional[str]) -> float:
     return _CACHE_WRITE_MULT_5M
 
 
-def _lookup_price(model: Optional[str]) -> tuple[float, float]:
+def _lookup_price(model: str | None) -> tuple[float, float]:
     """Return (in_per_mtok, out_per_mtok) for a model id. Falls back to Sonnet."""
     if not model:
         return _FALLBACK_PRICE_IN, _FALLBACK_PRICE_OUT
@@ -117,10 +116,10 @@ class Budget:
         in_tok: int,
         out_tok: int,
         *,
-        model: Optional[str] = None,
+        model: str | None = None,
         cache_read_tok: int = 0,
         cache_write_tok: int = 0,
-        cache_write_ttl: Optional[str] = None,
+        cache_write_ttl: str | None = None,
     ) -> None:
         """Add usage from one LLM call.
 
@@ -172,7 +171,7 @@ class Budget:
             self.tool_calls += 1
             self.check()
 
-    def absorb(self, other: "Budget") -> None:
+    def absorb(self, other: Budget) -> None:
         """Roll another Budget's consumption into this one atomically and
         enforce caps.
 
@@ -272,7 +271,7 @@ _BUDGET_KEY_TYPES = {
 }
 
 
-def budget_from_config(*, defaults: Optional[dict] = None, **overrides) -> "Budget":
+def budget_from_config(*, defaults: dict | None = None, **overrides) -> Budget:
     """Build a Budget that honors the ``[budget]`` section of config.toml.
 
     Precedence, lowest to highest:

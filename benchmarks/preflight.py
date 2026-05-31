@@ -28,7 +28,6 @@ import socket
 import sys
 from pathlib import Path
 
-
 # ANSI colors that no-op on Windows older terminals (colorama not used
 # because we don't want a new dep just for this script).
 _RED = "\033[31m" if sys.stdout.isatty() else ""

@@ -40,10 +40,9 @@ from __future__ import annotations
 
 import difflib
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Optional
-
 
 # Block header markers. The dividers must each occupy their own line.
 # We accept 5 or more characters of each marker so model variations
@@ -227,7 +226,7 @@ def _whitespace_collapse(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-def _find_with_fuzzy(content: str, needle: str) -> tuple[Optional[int], Optional[int], str]:
+def _find_with_fuzzy(content: str, needle: str) -> tuple[int | None, int | None, str]:
     """Locate `needle` in `content` with the fuzzy ladder.
 
     Returns (start, end, match_kind) or (None, None, ""). The match_kind
@@ -551,7 +550,7 @@ def apply_blocks(blocks: list[SearchReplaceBlock], workdir: Path,
 
 
 def render_diff(workdir: Path,
-                paths: Optional[Iterable[str]] = None) -> str:
+                paths: Iterable[str] | None = None) -> str:
     """Run `git diff` against `workdir` and return the unified diff.
 
     Called after `apply_blocks` succeeds to produce the diff payload for

@@ -25,7 +25,6 @@ import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from .budget import Budget, BudgetExceeded
 from .llm import LLM, model_for_role
@@ -78,12 +77,12 @@ class ReviewVerdict:
     raw: str = ""
 
     @classmethod
-    def empty_pass(cls) -> "ReviewVerdict":
+    def empty_pass(cls) -> ReviewVerdict:
         """Used when there's no diff to review (no changes since goal start)."""
         return cls(approves=True, confidence=1.0, comments=[])
 
     @classmethod
-    def reject(cls, reason: str) -> "ReviewVerdict":
+    def reject(cls, reason: str) -> ReviewVerdict:
         return cls(
             approves=False,
             confidence=0.0,
@@ -174,10 +173,10 @@ async def review_diff(
     brief: str,
     diff: str,
     llm: LLM,
-    budget: Optional[Budget] = None,
+    budget: Budget | None = None,
     *,
     max_tokens: int = 2048,
-    proposer_model: Optional[str] = None,
+    proposer_model: str | None = None,
 ) -> ReviewVerdict:
     """Run the reviewer over a diff. Conservative: any parsing failure
     -> reject (treats the failure as a blocker comment).

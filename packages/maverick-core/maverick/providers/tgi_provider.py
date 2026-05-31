@@ -15,7 +15,6 @@ config.toml [models].
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 from .openai_provider import OpenAIClient
 
@@ -23,7 +22,7 @@ from .openai_provider import OpenAIClient
 class TGIClient(OpenAIClient):
     DEFAULT_MODEL = "tgi"
 
-    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
+    def __init__(self, api_key: str | None = None, base_url: str | None = None):
         key = api_key or os.environ.get("TGI_API_KEY") or "tgi-no-auth"
         url = (
             base_url

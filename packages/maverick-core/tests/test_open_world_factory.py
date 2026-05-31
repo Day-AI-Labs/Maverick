@@ -10,7 +10,6 @@ import importlib.util
 
 import pytest
 
-
 _HAS_PSYCOPG = importlib.util.find_spec("psycopg") is not None
 
 

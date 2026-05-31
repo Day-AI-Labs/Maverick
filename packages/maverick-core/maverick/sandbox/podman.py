@@ -30,7 +30,6 @@ import subprocess
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from .local import ExecResult
 
@@ -42,7 +41,7 @@ class PodmanBackend:
     timeout: float = 60.0
     allow_network: bool = False
     # Fork-bomb guard; generous enough for real builds. 0/None disables.
-    pids_limit: Optional[int] = 512
+    pids_limit: int | None = 512
 
     def __post_init__(self) -> None:
         self.workdir = Path(self.workdir)
@@ -62,7 +61,7 @@ class PodmanBackend:
                 "~/.maverick/config.toml."
             ) from e
 
-    def exec(self, cmd: str, timeout: Optional[float] = None) -> ExecResult:
+    def exec(self, cmd: str, timeout: float | None = None) -> ExecResult:
         effective = self.timeout if timeout is None else timeout
         container_name = f"maverick-sandbox-{uuid.uuid4().hex}"
         # `:Z` relabels the SELinux context for the mount so rootless

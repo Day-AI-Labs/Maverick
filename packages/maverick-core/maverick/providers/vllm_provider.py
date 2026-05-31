@@ -23,7 +23,6 @@ when serving a single model, but the user should still override via
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 from .openai_provider import OpenAIClient
 
@@ -31,7 +30,7 @@ from .openai_provider import OpenAIClient
 class VLLMClient(OpenAIClient):
     DEFAULT_MODEL = "vllm"
 
-    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
+    def __init__(self, api_key: str | None = None, base_url: str | None = None):
         key = api_key or os.environ.get("VLLM_API_KEY") or "vllm-no-auth"
         url = (
             base_url

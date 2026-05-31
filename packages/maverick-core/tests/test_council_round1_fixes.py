@@ -10,13 +10,12 @@ import subprocess
 
 import pytest
 
-
 # --- REL-1: the worker must not mark a failed/blocked goal as a done job ---
 
 def test_worker_marks_blocked_goal_as_failed_job(tmp_path, monkeypatch):
+    import maverick.runner as runner
     from maverick.job_queue import JobQueue
     from maverick.worker import Worker
-    import maverick.runner as runner
 
     monkeypatch.setattr(runner, "run_goal_in_thread", lambda gid: "blocked")
     q = JobQueue(db_path=tmp_path / "jobs.db")
@@ -28,9 +27,9 @@ def test_worker_marks_blocked_goal_as_failed_job(tmp_path, monkeypatch):
 
 
 def test_worker_retries_when_goal_could_not_start(tmp_path, monkeypatch):
+    import maverick.runner as runner
     from maverick.job_queue import JobQueue
     from maverick.worker import Worker
-    import maverick.runner as runner
 
     monkeypatch.setattr(runner, "run_goal_in_thread", lambda gid: None)
     q = JobQueue(db_path=tmp_path / "jobs.db")
@@ -42,9 +41,9 @@ def test_worker_retries_when_goal_could_not_start(tmp_path, monkeypatch):
 
 
 def test_worker_completes_when_goal_done(tmp_path, monkeypatch):
+    import maverick.runner as runner
     from maverick.job_queue import JobQueue
     from maverick.worker import Worker
-    import maverick.runner as runner
 
     monkeypatch.setattr(runner, "run_goal_in_thread", lambda gid: "done")
     q = JobQueue(db_path=tmp_path / "jobs.db")
@@ -58,6 +57,7 @@ def test_worker_completes_when_goal_done(tmp_path, monkeypatch):
 
 def test_runner_refuses_when_no_concurrency_slot(monkeypatch):
     import threading
+
     import maverick.runner as runner
 
     drained = threading.BoundedSemaphore(1)
@@ -114,9 +114,9 @@ def test_is_private_ip_allows_public_literal():
 def test_run_goal_scans_initial_goal_text(tmp_path, monkeypatch):
     import asyncio
 
+    import maverick.orchestrator as orch
     from maverick.budget import Budget
     from maverick.world_model import WorldModel
-    import maverick.orchestrator as orch
 
     class _Verdict:
         allowed = False

@@ -7,7 +7,6 @@ import time
 import types
 from unittest.mock import MagicMock
 
-
 # ---------- Podman sandbox ----------
 
 def test_podman_verify_missing(tmp_path, monkeypatch):
@@ -76,9 +75,9 @@ def test_build_sandbox_constructs_podman(monkeypatch, tmp_path):
         "subprocess.run",
         lambda args, *a, **k: MagicMock(returncode=0, stdout=b"", stderr=b""),
     )
-    from maverick.sandbox import build_sandbox
     # Monkeypatch config so backend = "podman" without writing a real file.
     import maverick.config as cfg
+    from maverick.sandbox import build_sandbox
 
     def _fake_cfg():
         return {"sandbox": {"backend": "podman", "workdir": str(tmp_path),
@@ -354,7 +353,7 @@ def test_cost_router_picks_cheapest_available(monkeypatch):
     import maverick.config as cfg
     monkeypatch.setattr(cfg, "load_config", lambda: {})
 
-    from maverick.cost_router import CostSignal, TIER_CHEAP, pick
+    from maverick.cost_router import TIER_CHEAP, CostSignal, pick
     spec = pick(CostSignal(tier=TIER_CHEAP))
     assert spec is not None
     assert spec.startswith("deepseek:")
@@ -398,7 +397,7 @@ def test_cost_router_avoids_high_error_provider(monkeypatch):
         ph.record("deepseek", "deepseek-chat",
                   latency_ms=100, error=True)
     try:
-        from maverick.cost_router import CostSignal, TIER_CHEAP, pick
+        from maverick.cost_router import TIER_CHEAP, CostSignal, pick
         spec = pick(CostSignal(tier=TIER_CHEAP))
         assert spec is not None
         # Errored model itself should not be the pick (within-brand

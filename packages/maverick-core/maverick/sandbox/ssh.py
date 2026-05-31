@@ -19,7 +19,6 @@ import shlex
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from .local import ExecResult
 
@@ -54,7 +53,7 @@ class SSHBackend:
                 "Check your SSH config / keys."
             )
 
-    def exec(self, cmd: str, timeout: Optional[float] = None) -> ExecResult:
+    def exec(self, cmd: str, timeout: float | None = None) -> ExecResult:
         effective = self.timeout if timeout is None else timeout
         remote = f"mkdir -p {shlex.quote(str(self.workdir))} && " \
                  f"cd {shlex.quote(str(self.workdir))} && {cmd}"

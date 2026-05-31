@@ -10,7 +10,6 @@ API key env var: DEEPSEEK_API_KEY.
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 from .openai_provider import OpenAIClient
 
@@ -18,7 +17,7 @@ from .openai_provider import OpenAIClient
 class DeepSeekClient(OpenAIClient):
     DEFAULT_MODEL = "deepseek-chat"
 
-    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
+    def __init__(self, api_key: str | None = None, base_url: str | None = None):
         key = api_key or os.environ.get("DEEPSEEK_API_KEY")
         url = base_url or os.environ.get(
             "DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1",

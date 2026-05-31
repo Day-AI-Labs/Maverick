@@ -6,7 +6,6 @@ import time
 import types
 from unittest.mock import MagicMock
 
-
 # ---------- Worker daemon ----------
 
 def test_worker_runs_one_job(tmp_path):

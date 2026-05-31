@@ -23,7 +23,7 @@ import json
 import logging
 import re
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from ..budget import Budget
 from ..llm import LLMResponse, ToolCall
@@ -128,7 +128,7 @@ class SimulatedToolCallClient:
     def _augment(
         self,
         system: str,
-        tools: Optional[list[dict]],
+        tools: list[dict] | None,
     ) -> str:
         if not tools:
             return system
@@ -143,11 +143,11 @@ class SimulatedToolCallClient:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
     ) -> LLMResponse:
         augmented_system = self._augment(system, tools)
         resp = self._inner.complete(
@@ -180,11 +180,11 @@ class SimulatedToolCallClient:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
     ) -> LLMResponse:
         augmented_system = self._augment(system, tools)
         resp = await self._inner.complete_async(

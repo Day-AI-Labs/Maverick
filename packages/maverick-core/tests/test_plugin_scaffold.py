@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from maverick.plugin_scaffold import (
     VALID_KINDS,
     ScaffoldError,
@@ -14,7 +13,6 @@ from maverick.plugin_scaffold import (
     validate_kind,
     validate_name,
 )
-
 
 # ---------- validation ----------
 

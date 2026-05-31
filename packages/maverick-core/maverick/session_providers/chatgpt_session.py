@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from typing import Optional
 
 from ..budget import Budget
 from ..llm import LLMResponse
@@ -86,7 +85,7 @@ class ChatGPTSessionClient:
     PROVIDER_KEY = "chatgpt-session"
     DEFAULT_MODEL = "gpt-4o"
 
-    def __init__(self, session: Optional[dict] = None):
+    def __init__(self, session: dict | None = None):
         try:
             import httpx  # noqa: F401
         except ImportError as e:
@@ -109,7 +108,7 @@ class ChatGPTSessionClient:
             )
         return "; ".join(f"{k}={v}" for k, v in cookies.items())
 
-    def _auth_headers(self, access_token: Optional[str] = None) -> dict:
+    def _auth_headers(self, access_token: str | None = None) -> dict:
         headers = dict(_BASE_HEADERS)
         headers["Cookie"] = self._cookie_header()
         if access_token:
@@ -170,11 +169,11 @@ class ChatGPTSessionClient:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
     ) -> LLMResponse:
         if tools:
             raise NotImplementedError(
@@ -223,11 +222,11 @@ class ChatGPTSessionClient:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
     ) -> LLMResponse:
         if tools:
             raise NotImplementedError(

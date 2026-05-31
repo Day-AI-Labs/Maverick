@@ -8,7 +8,6 @@ default (outward-facing surface); opt in via MAVERICK_A2A_ENABLED=1.
 from __future__ import annotations
 
 import pytest
-
 from maverick import a2a
 
 

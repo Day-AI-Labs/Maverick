@@ -10,7 +10,6 @@ import sys
 from types import SimpleNamespace
 
 import pytest
-
 from maverick.providers.openai_provider import (
     OpenAIClient,
     _extract_tool_result_text,

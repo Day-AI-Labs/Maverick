@@ -10,9 +10,8 @@ import os
 
 def test_erase_calls_audit_scrub_user(tmp_path, monkeypatch):
     os.environ.pop("MAVERICK_DB", None)
-    from click.testing import CliRunner
-
     import maverick.audit as audit_mod
+    from click.testing import CliRunner
     from maverick import cli as cli_mod
     from maverick.world_model import WorldModel
 

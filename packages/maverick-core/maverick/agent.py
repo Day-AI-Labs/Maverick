@@ -10,7 +10,6 @@ import os
 import secrets as _secrets
 import uuid
 from dataclasses import dataclass
-from typing import Optional
 
 from . import killswitch
 from ._envparse import env_int
@@ -20,7 +19,6 @@ from .swarm import SwarmContext
 from .tools import ToolRegistry, base_registry
 from .tools.agent_bus_tool import recv_from_agent, send_to_agent
 from .tools.spawn import spawn_subagent_tool, spawn_swarm_tool
-
 
 WORKER_SYSTEM_TEMPLATE = """You are a specialist agent in Maverick, a long-horizon multi-agent swarm.
 
@@ -65,9 +63,9 @@ External MCP tools (if any) appear as `mcp_<server>__<tool>`."""
 
 @dataclass
 class AgentResult:
-    final: Optional[str] = None
+    final: str | None = None
     blocked_on_user: bool = False
-    error: Optional[str] = None
+    error: str | None = None
     role: str = ""
     name: str = ""
     # Verifier signals (only populated on the orchestrator's FINAL).
@@ -79,7 +77,7 @@ class AgentResult:
     # of re-extracting from prose at orchestrator.py:364 — the prior
     # path silently dropped SR-only candidates that produced a perfect
     # rendered diff but had no `--- a/` substring in `result`.
-    final_patch: Optional[str] = None
+    final_patch: str | None = None
 
 
 class Agent:
@@ -88,9 +86,9 @@ class Agent:
         ctx: SwarmContext,
         role: str,
         brief: str,
-        model_override: Optional[str] = None,
+        model_override: str | None = None,
         depth: int = 0,
-        parent: Optional["Agent"] = None,
+        parent: Agent | None = None,
         max_steps: int = 25,
     ):
         self.ctx = ctx
@@ -142,7 +140,8 @@ class Agent:
         # rejects -> Wave 8 contributes negative value. (council code
         # reviewer finding #1)
         try:
-            from .coding_mode import CODER_CODING_MODE_TEMPLATE, from_env as _cm_from_env
+            from .coding_mode import CODER_CODING_MODE_TEMPLATE
+            from .coding_mode import from_env as _cm_from_env
             _coding_cfg = _cm_from_env()
         except Exception:
             _coding_cfg = None
@@ -179,7 +178,7 @@ class Agent:
 
         return base
 
-    def _thinking_budget(self) -> Optional[int]:
+    def _thinking_budget(self) -> int | None:
         if self.role in ("orchestrator", "revisor"):
             return 8000
         return None
@@ -202,13 +201,18 @@ class Agent:
         4.1 / 57% of Gemini failures on Pro per Scale's Table 4).
         """
         from pathlib import Path as _Path
+
         from .coding_mode import (
             _ast_check_python_files,
             extract_unified_diff,
         )
         from .edit_format import (
-            ApplyResult, ApplySummary, SearchReplaceBlock, apply_blocks,
-            parse_blocks, render_diff,
+            ApplyResult,
+            ApplySummary,
+            SearchReplaceBlock,
+            apply_blocks,
+            parse_blocks,
+            render_diff,
         )
 
         workdir = _Path(getattr(self.ctx.sandbox, "workdir", "."))
@@ -326,8 +330,8 @@ class Agent:
             except Exception:
                 pass
             return
-        from pathlib import Path as _Path
         import subprocess as _sub
+        from pathlib import Path as _Path
         workdir = _Path(getattr(sandbox, "workdir", "."))
         try:
             _sub.run(
@@ -404,7 +408,8 @@ class Agent:
         # PreToolUse hooks: any registered hook can BLOCK the call by
         # returning a non-zero exit code (shell hook) or a falsy value
         # (Python callable). Modeled on Claude Code's hook surface.
-        from .hooks import HookContext, HookEvent, dispatch as _dispatch_hooks
+        from .hooks import HookContext, HookEvent
+        from .hooks import dispatch as _dispatch_hooks
         pre_ctx = HookContext(
             event=HookEvent.PRE_TOOL_USE,
             tool_name=name, tool_args=args,
@@ -466,6 +471,38 @@ class Agent:
             f"{output}\n"
             f"</tool_output {nonce}>"
         )
+
+    def _is_parallel_safe(self, name: str) -> bool:
+        """Whether ``name`` may execute concurrently with the other tool
+        calls in the same turn. Reads the tool's ``parallel_safe`` flag;
+        unknown tools (and any tool missing the attribute, e.g. a plugin
+        built against an older Tool dataclass) default to False — serial.
+        """
+        try:
+            return bool(getattr(self.tools.get(name), "parallel_safe", False))
+        except KeyError:
+            return False
+
+    @staticmethod
+    def _make_tool_result(tool_use_id: str, output: str) -> dict:
+        """Build a tool_result block, flagging errors for the model.
+
+        May 26 council fix (API audit #4): set ``is_error: true`` on
+        tool_results that surface an error. Per Anthropic docs, this
+        tells Claude the tool failed so it can recover instead of
+        treating the error string as a normal output. Our tool registry
+        prefixes errors with "ERROR: " and the shield emits
+        "BLOCKED by Shield".
+        """
+        stripped = (output or "").lstrip()
+        tr: dict = {
+            "type": "tool_result",
+            "tool_use_id": tool_use_id,
+            "content": output,
+        }
+        if stripped.startswith("ERROR") or stripped.startswith("BLOCKED by Shield"):
+            tr["is_error"] = True
+        return tr
 
     async def run(self) -> AgentResult:
         bb = self.ctx.blackboard
@@ -675,6 +712,8 @@ class Agent:
                     try:
                         from .coding_mode import (
                             from_env as _cm_from_env,
+                        )
+                        from .coding_mode import (
                             validate_patch,
                         )
                         coding_cfg = _cm_from_env()
@@ -848,6 +887,7 @@ class Agent:
                                 and (coding_cfg.fail_to_pass or coding_cfg.pass_to_pass)):
                             async with self.ctx.workdir_lock:
                                 from pathlib import Path as _Path
+
                                 from .coding_mode import run_failing_tests
                                 workdir = _Path(getattr(self.ctx.sandbox, "workdir", "."))
                                 # Wave 11: reuse the patch produced by the
@@ -1071,6 +1111,15 @@ class Agent:
                     self.ctx.world.append_message(
                         self.ctx.goal_id, f"agent:{self.name}", final
                     )
+                    # Stop hooks: the agent has decided on FINAL. Post-style
+                    # (non-blocking) -- observers/loggers, cannot veto.
+                    from .hooks import HookEvent
+                    from .hooks import emit as _emit_hook
+                    await _emit_hook(
+                        HookEvent.STOP,
+                        goal_id=self.ctx.goal_id, agent_role=self.role,
+                        extra={"name": self.name, "final": final},
+                    )
                     return AgentResult(
                         final=final, role=self.role, name=self.name,
                         verifier_confidence=verdict.confidence if verdict else 1.0,
@@ -1086,46 +1135,73 @@ class Agent:
                     error="empty response with no tools", role=self.role, name=self.name
                 )
 
+            # Tool-call boundary: honour a halt that arrived while the
+            # model was producing this turn (e.g. the user hit Halt
+            # during a long think) before executing any tool.
+            try:
+                killswitch.check()
+            except killswitch.Halted as e:
+                bb.post(self.name, "error", f"halted: {e}")
+                return AgentResult(
+                    error=f"halted: {e}", role=self.role, name=self.name,
+                )
+
+            # Frontier-loop optimization: when the model emits 2+ tool
+            # calls in one turn and EVERY one is parallel-safe (pure,
+            # idempotent reads — read_file / list_dir / repo_map /
+            # dep_graph), run them concurrently with asyncio.gather. This
+            # is the dominant localization pattern ("read these 5 files")
+            # and collapses N serial awaits into one round-trip's worth of
+            # latency. A turn containing ANY stateful tool (shell, write,
+            # spawn, ask_user, a rate-limited network tool) falls through
+            # to the serial path below, so side-effect ordering and the
+            # ask_user block-on-user semantics are unchanged. Disable with
+            # MAVERICK_PARALLEL_TOOLS=0.
+            run_parallel = (
+                len(resp.tool_calls) > 1
+                and os.environ.get("MAVERICK_PARALLEL_TOOLS", "1") != "0"
+                and all(self._is_parallel_safe(tc.name) for tc in resp.tool_calls)
+            )
+
             tool_results: list[dict] = []
             blocked = False
-            for tc in resp.tool_calls:
-                # Tool-call boundary: honour a halt that arrived while the
-                # model was producing this turn (e.g. the user hit Halt
-                # during a long think) before executing the next tool.
-                try:
-                    killswitch.check()
-                except killswitch.Halted as e:
-                    bb.post(self.name, "error", f"halted: {e}")
-                    return AgentResult(
-                        error=f"halted: {e}", role=self.role, name=self.name,
+            if run_parallel:
+                import asyncio as _asyncio
+                # Account every call up front; record_tool_call mirrors
+                # the serial path (one per tool, same count).
+                for tc in resp.tool_calls:
+                    self.ctx.budget.record_tool_call()
+                outputs = await _asyncio.gather(
+                    *(self._run_tool(tc.name, tc.input) for tc in resp.tool_calls)
+                )
+                # Preserve original call order in the results (matched by
+                # tool_use_id, but ordering keeps traces readable).
+                for tc, output in zip(resp.tool_calls, outputs):
+                    bb.post(
+                        self.name, "observation",
+                        f"tool={tc.name} -> {output[:500]}",
                     )
-                self.ctx.budget.record_tool_call()
-                output = await self._run_tool(tc.name, tc.input)
-                if tc.name == "ask_user":
-                    blocked = True
-                bb.post(
-                    self.name, "observation",
-                    f"tool={tc.name} -> {output[:500]}",
-                )
-                # May 26 council fix (API audit #4): set `is_error: true`
-                # on tool_results that surface an error. Per Anthropic
-                # docs, this tells Claude the tool failed so it can
-                # recover instead of treating the error string as a
-                # normal output. Our tool registry prefixes errors with
-                # "ERROR: " and the shield emits "BLOCKED by Shield".
-                stripped = (output or "").lstrip()
-                tool_is_error = (
-                    stripped.startswith("ERROR")
-                    or stripped.startswith("BLOCKED by Shield")
-                )
-                tr_block: dict = {
-                    "type": "tool_result",
-                    "tool_use_id": tc.id,
-                    "content": output,
-                }
-                if tool_is_error:
-                    tr_block["is_error"] = True
-                tool_results.append(tr_block)
+                    tool_results.append(self._make_tool_result(tc.id, output))
+            else:
+                for tc in resp.tool_calls:
+                    # Per-tool halt check: a serial turn may run a long
+                    # shell command; honour a halt that lands mid-turn.
+                    try:
+                        killswitch.check()
+                    except killswitch.Halted as e:
+                        bb.post(self.name, "error", f"halted: {e}")
+                        return AgentResult(
+                            error=f"halted: {e}", role=self.role, name=self.name,
+                        )
+                    self.ctx.budget.record_tool_call()
+                    output = await self._run_tool(tc.name, tc.input)
+                    if tc.name == "ask_user":
+                        blocked = True
+                    bb.post(
+                        self.name, "observation",
+                        f"tool={tc.name} -> {output[:500]}",
+                    )
+                    tool_results.append(self._make_tool_result(tc.id, output))
 
             messages.append({"role": "user", "content": tool_results})
 
@@ -1142,6 +1218,7 @@ class Agent:
         # if there are uncommitted changes.
         try:
             from pathlib import Path as _Path
+
             from .edit_format import render_diff
             workdir = _Path(getattr(self.ctx.sandbox, "workdir", "."))
             if (workdir / ".git").exists():

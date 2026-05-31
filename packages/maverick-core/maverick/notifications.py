@@ -26,7 +26,6 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +45,7 @@ def _get_executor():
     return _executor
 
 
-def _resolve_env_ref(value: Optional[str]) -> Optional[str]:
+def _resolve_env_ref(value: str | None) -> str | None:
     """Resolve `${ENV_VAR}` references in config strings."""
     if not value:
         return value
@@ -148,8 +147,8 @@ def notify(
     *,
     title: str = "Maverick",
     priority: str = "default",
-    category: Optional[str] = None,
-    backends: Optional[list[str]] = None,
+    category: str | None = None,
+    backends: list[str] | None = None,
     async_dispatch: bool = True,
 ) -> int:
     """Send a notification. Returns the number of backends fired.

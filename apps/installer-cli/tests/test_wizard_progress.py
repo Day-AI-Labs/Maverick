@@ -2,7 +2,6 @@
 the _step_indicator formatter, and the Step N/M lines surfacing in run()."""
 from __future__ import annotations
 
-
 # ---------- STEPS list ----------
 
 def test_steps_list_is_ordered_and_unique():
@@ -42,8 +41,9 @@ def test_step_indicator_no_breadcrumb_when_done_empty():
 
 def test_run_prints_step_indicators(monkeypatch):
     import io
-    from rich.console import Console
+
     from maverick_installer import wizard
+    from rich.console import Console
 
     # Use a no-color console so Rich doesn't fragment "Step N/M" with
     # inline ANSI codes, which would break the substring assertions.

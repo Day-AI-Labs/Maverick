@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class ChromaStore:
     def __init__(
         self,
         collection: str = "maverick",
-        path: Optional[Path] = None,
+        path: Path | None = None,
         embedding_function: Any = None,
     ):
         try:
@@ -67,8 +67,8 @@ class ChromaStore:
         self,
         documents: list[str],
         *,
-        ids: Optional[list[str]] = None,
-        metadatas: Optional[list[dict]] = None,
+        ids: list[str] | None = None,
+        metadatas: list[dict] | None = None,
     ) -> None:
         """Index a batch of documents. ids auto-generated if not provided."""
         if not documents:

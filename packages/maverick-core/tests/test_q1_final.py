@@ -7,7 +7,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -387,6 +386,7 @@ def test_wizard_resume_loads_partial_state(tmp_path, monkeypatch):
 
 def test_wizard_run_accepts_resume_flag():
     import inspect
+
     from maverick_installer.wizard import run
     sig = inspect.signature(run)
     assert "resume" in sig.parameters

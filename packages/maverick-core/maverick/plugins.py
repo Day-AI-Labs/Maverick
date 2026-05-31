@@ -43,12 +43,13 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 log = logging.getLogger(__name__)
 
 
-def _allowed_plugin_names() -> Optional[set[str]]:
+def _allowed_plugin_names() -> set[str] | None:
     """Return the set of enabled plugin names, or None if all are enabled.
 
     Resolution order:
@@ -104,7 +105,7 @@ def _entry_points(group: str):
     return eps
 
 
-def _load(ep, what: str) -> Optional[Any]:
+def _load(ep, what: str) -> Any | None:
     """Resolve an entry point's target with logging on failure."""
     try:
         return ep.load()
@@ -113,7 +114,7 @@ def _load(ep, what: str) -> Optional[Any]:
         return None
 
 
-def _is_allowed(ep_name: str, allowlist: Optional[set[str]]) -> bool:
+def _is_allowed(ep_name: str, allowlist: set[str] | None) -> bool:
     """allowlist=None means 'all allowed' (the wildcard case)."""
     if allowlist is None:
         return True

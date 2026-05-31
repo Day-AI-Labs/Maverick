@@ -33,7 +33,6 @@ import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -247,7 +246,7 @@ class AuditSigner:
         return self._pub_bytes.hex()
 
 
-def verify_chain(path: Path, pubkey_hex: Optional[str] = None) -> list[ChainBreak]:
+def verify_chain(path: Path, pubkey_hex: str | None = None) -> list[ChainBreak]:
     """Walk every line; verify chain links + signatures.
 
     If ``pubkey_hex`` is None, the verifier looks up each row's

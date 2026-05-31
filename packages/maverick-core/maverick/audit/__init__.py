@@ -29,7 +29,6 @@ from .writer import (  # noqa: F401
     record,
 )
 
-
 __all__ = [
     "AuditEvent",
     "EventKind",

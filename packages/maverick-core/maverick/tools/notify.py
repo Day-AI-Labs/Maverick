@@ -15,7 +15,6 @@ from typing import Any
 
 from . import Tool
 
-
 _NOTIFY_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {

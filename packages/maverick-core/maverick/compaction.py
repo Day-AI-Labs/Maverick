@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import os
 
-
 # Tunables.
 MAX_TOOL_OUTPUT_BYTES = int(os.environ.get("MAVERICK_COMPACT_MAX_TOOL_BYTES", str(2 * 1024)))
 KEEP_RECENT_TURNS = int(os.environ.get("MAVERICK_COMPACT_KEEP_RECENT", "4"))

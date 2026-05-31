@@ -18,7 +18,6 @@ from typing import Any
 
 from . import Tool
 
-
 _DIAG_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {},
@@ -89,6 +88,42 @@ def _check_sandbox() -> list[str]:
     return out
 
 
+# Coding-language toolchains the agent can build/test against, probed by the
+# binary it invokes. Only the `local` sandbox runs on the host toolchain;
+# container backends get it from their image (see build_sandbox's
+# image-by-language selection), so this check is informational, never fatal.
+_TOOLCHAINS = [
+    ("python", "python3"),
+    ("rust", "cargo"),
+    ("go", "go"),
+    ("node/ts", "node"),
+]
+
+
+def _check_toolchains() -> list[str]:
+    present = [name for name, binary in _TOOLCHAINS if shutil.which(binary)]
+    out = [f"  ✓ coding toolchains on PATH: {', '.join(present) or '(none)'}"]
+    try:
+        from ..config import get_sandbox
+        backend = get_sandbox().get("backend", "local")
+    except Exception:
+        backend = "local"
+    if backend == "local":
+        missing = [n for n, b in _TOOLCHAINS if not shutil.which(b)]
+        if missing:
+            out.append(
+                "    ! local sandbox runs on host toolchains; without "
+                f"{', '.join(missing)} the agent can't build/test those "
+                "languages -- install them or use a container sandbox"
+            )
+    else:
+        out.append(
+            f"    ({backend} sandbox provides the toolchain from its image; "
+            "set [sandbox] language or MAVERICK_LANGUAGE to choose it)"
+        )
+    return out
+
+
 def _check_shield() -> list[str]:
     try:
         import maverick_shield  # noqa: F401
@@ -107,6 +142,7 @@ def _run(args: dict[str, Any]) -> str:
     lines.extend(_check_provider_keys())
     lines.extend(_check_config_dir())
     lines.extend(_check_sandbox())
+    lines.extend(_check_toolchains())
     lines.extend(_check_shield())
     return "\n".join(lines)
 
@@ -117,9 +153,9 @@ def diagnose() -> Tool:
         description=(
             "Run a self-diagnosis on the Maverick install: Python "
             "version, configured provider keys, sandbox readiness, "
-            "config dir, shield availability. Use when something "
-            "feels off (e.g. unexpected ERROR responses) before "
-            "asking the user."
+            "coding-language toolchains (rust/go/node), config dir, "
+            "shield availability. Use when something feels off (e.g. "
+            "unexpected ERROR responses) before asking the user."
         ),
         input_schema=_DIAG_SCHEMA,
         fn=_run,

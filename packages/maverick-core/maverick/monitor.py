@@ -20,7 +20,6 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from .world_model import DEFAULT_DB, Goal, WorldModel
 
@@ -61,7 +60,7 @@ def _fetch_subgoals(world: WorldModel, parent_id: int) -> list[Goal]:
     return [Goal(**dict(r)) for r in rows]
 
 
-def _resolve_active_goal(world: WorldModel) -> Optional[Goal]:
+def _resolve_active_goal(world: WorldModel) -> Goal | None:
     """Pick the most-recently-touched non-terminal goal as 'active'."""
     row = world.conn.execute(
         "SELECT id, parent_id, title, description, status, created_at, "
@@ -79,7 +78,7 @@ def _resolve_active_goal(world: WorldModel) -> Optional[Goal]:
     return Goal(**dict(row)) if row else None
 
 
-def snapshot(world: WorldModel, goal_id: Optional[int] = None) -> Optional[MonitorState]:
+def snapshot(world: WorldModel, goal_id: int | None = None) -> MonitorState | None:
     """Read a complete monitor snapshot for ``goal_id`` (or active goal)."""
     if goal_id is None:
         goal = _resolve_active_goal(world)
@@ -172,7 +171,7 @@ def render(state: MonitorState) -> str:
 
 def monitor_loop(
     db_path: Path = DEFAULT_DB,
-    goal_id: Optional[int] = None,
+    goal_id: int | None = None,
     interval_seconds: float = 1.5,
 ) -> int:
     """Run a live monitor in the terminal.
@@ -212,7 +211,7 @@ def monitor_loop(
         world.close()
 
 
-def _monitor_loop_plain(db_path: Path, goal_id: Optional[int], interval: float) -> int:
+def _monitor_loop_plain(db_path: Path, goal_id: int | None, interval: float) -> int:
     """Fallback when rich isn't installed: print snapshot every N seconds.
 
     Less pretty but works in any terminal. ANSI escape codes for clear.

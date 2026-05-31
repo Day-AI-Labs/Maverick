@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------- Firecracker sandbox ----------
 
 class TestFirecrackerBackend:
@@ -111,9 +110,10 @@ class TestHeuristicPRM:
 class TestRemotePRMFallback:
     def test_falls_back_when_no_httpx(self, monkeypatch):
         """Without httpx the remote PRM degrades to heuristic, never blocks."""
-        from maverick.prm import RemotePRM, StepContext
         # Force ImportError on httpx.
         import sys
+
+        from maverick.prm import RemotePRM, StepContext
         monkeypatch.setitem(sys.modules, "httpx", None)
         prm = RemotePRM(endpoint="http://localhost:8888")
         out = prm.score(StepContext(
@@ -224,6 +224,7 @@ class TestIngest:
 
     def test_load_donations_reads_json(self, tmp_path):
         import json
+
         from maverick.training.ingest import load_donations
         (tmp_path / "a.json").write_text(json.dumps({"x": 1}))
         (tmp_path / "b.json").write_text(json.dumps({"x": 2}))

@@ -33,7 +33,6 @@ import hmac
 import logging
 import os
 from dataclasses import dataclass
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -50,8 +49,8 @@ class IssueEvent:
 
 def verify_signature(
     body: bytes,
-    signature_header: Optional[str],
-    secret: Optional[str],
+    signature_header: str | None,
+    secret: str | None,
 ) -> bool:
     """HMAC-SHA256 verification of a Linear/Jira webhook signature.
 
@@ -97,7 +96,7 @@ def _is_bot(assignee_candidates: list[str], provider: str) -> bool:
     return bot in candidates
 
 
-def _parse_linear(payload: dict) -> Optional[IssueEvent]:
+def _parse_linear(payload: dict) -> IssueEvent | None:
     # Linear fires {type, action, data}. Issue assignment is a
     # type=="Issue" update carrying an assignee object/id on data.
     if payload.get("type") != "Issue":
@@ -137,7 +136,7 @@ def _flatten_adf(desc) -> str:
     return out
 
 
-def _parse_jira(payload: dict) -> Optional[IssueEvent]:
+def _parse_jira(payload: dict) -> IssueEvent | None:
     # Jira fires {webhookEvent, issue:{key, fields}}. An assignment is an
     # issue_updated whose fields.assignee is the bot.
     if payload.get("webhookEvent") not in (
@@ -162,7 +161,7 @@ def _parse_jira(payload: dict) -> Optional[IssueEvent]:
     )
 
 
-def parse_issue_event(provider: str, payload: dict) -> Optional[IssueEvent]:
+def parse_issue_event(provider: str, payload: dict) -> IssueEvent | None:
     """Normalize a Linear/Jira webhook to an ``IssueEvent``.
 
     Returns ``None`` for events we don't act on: non-assignment events,

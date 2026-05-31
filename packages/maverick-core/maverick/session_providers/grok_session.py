@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from typing import Optional
 
 from ..budget import Budget
 from ..llm import LLMResponse
@@ -89,7 +88,7 @@ class GrokSessionClient:
     PROVIDER_KEY = "grok-session"
     DEFAULT_MODEL = "grok-4-latest"
 
-    def __init__(self, session: Optional[dict] = None):
+    def __init__(self, session: dict | None = None):
         try:
             import httpx  # noqa: F401
         except ImportError as e:
@@ -143,11 +142,11 @@ class GrokSessionClient:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
     ) -> LLMResponse:
         if tools:
             raise NotImplementedError(
@@ -196,11 +195,11 @@ class GrokSessionClient:
         self,
         system: str,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
-        budget: Optional[Budget] = None,
+        tools: list[dict] | None = None,
+        budget: Budget | None = None,
         max_tokens: int = 4096,
-        thinking_budget: Optional[int] = None,
-        model: Optional[str] = None,
+        thinking_budget: int | None = None,
+        model: str | None = None,
     ) -> LLMResponse:
         if tools:
             raise NotImplementedError("Grok session does not support tool-use.")

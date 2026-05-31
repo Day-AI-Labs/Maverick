@@ -29,8 +29,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
-
 
 USER_TEMPLATES = Path.home() / ".maverick" / "templates"
 
@@ -51,10 +49,10 @@ class Template:
     budget_dollars: float = 5.0
     budget_wall_seconds: float = 3600.0
     params: list[str] = field(default_factory=list)
-    path: Optional[Path] = None
+    path: Path | None = None
 
     @classmethod
-    def parse(cls, text: str, name: str, path: Optional[Path] = None) -> "Template":
+    def parse(cls, text: str, name: str, path: Path | None = None) -> Template:
         """Parse a template file. YAML frontmatter is optional."""
         m = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.DOTALL)
         if m:

@@ -132,7 +132,8 @@ class TestEmptyBodies:
     def test_empty_replace_deletes_block(self, tmp_path):
         """Empty REPLACE section means "remove these lines"."""
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks,
+            SearchReplaceBlock,
+            apply_blocks,
         )
         repo = _init_repo(tmp_path, {
             "foo.py": "header\nDELETE ME\nfooter\n",
@@ -150,7 +151,8 @@ class TestEmptyBodies:
         """Empty SEARCH on an EXISTING file is the create-new-file
         signal -- but the file already exists. Should refuse cleanly."""
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks,
+            SearchReplaceBlock,
+            apply_blocks,
         )
         repo = _init_repo(tmp_path, {"foo.py": "x = 1\n"})
         blk = SearchReplaceBlock(
@@ -169,7 +171,8 @@ class TestMultipleBlocksSameFile:
         """Two SR blocks on the same file should each apply in order.
         This is critical for multi-hunk patches on a single file."""
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks,
+            SearchReplaceBlock,
+            apply_blocks,
         )
         repo = _init_repo(tmp_path, {
             "foo.py": "line1\nline2\nline3\nline4\n",
@@ -187,7 +190,8 @@ class TestMultipleBlocksSameFile:
         not the original. This is how multi-edit pipelines must behave
         — block 2 can reference text introduced by block 1."""
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks,
+            SearchReplaceBlock,
+            apply_blocks,
         )
         repo = _init_repo(tmp_path, {"foo.py": "original\n"})
         blocks = [
@@ -208,7 +212,8 @@ class TestMultipleBlocksSameFile:
         """If block 1 mutates the file such that block 2's SEARCH no
         longer matches, atomic=True should roll the whole thing back."""
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks,
+            SearchReplaceBlock,
+            apply_blocks,
         )
         repo = _init_repo(tmp_path, {"foo.py": "before\nmiddle\nafter\n"})
         original = (repo / "foo.py").read_text()
@@ -233,7 +238,8 @@ class TestFuzzyMatchAmbiguity:
     def test_exact_match_wins_over_fuzzy(self, tmp_path):
         """If exact match succeeds, the fuzzy ladder shouldn't fire."""
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks,
+            SearchReplaceBlock,
+            apply_blocks,
         )
         # Two near-duplicates; exact match is unique on the second.
         repo = _init_repo(tmp_path, {
@@ -252,7 +258,8 @@ class TestFuzzyMatchAmbiguity:
     def test_fuzzy_rstrip_when_exact_fails(self, tmp_path):
         """File has trailing whitespace; model trimmed -> rstrip ladder."""
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks,
+            SearchReplaceBlock,
+            apply_blocks,
         )
         repo = _init_repo(tmp_path, {"foo.py": "x = 1   \n"})
         blk = SearchReplaceBlock(
@@ -269,7 +276,8 @@ class TestFuzzyMatchAmbiguity:
 class TestPathEdgeCases:
     def test_path_with_subdirs(self, tmp_path):
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks,
+            SearchReplaceBlock,
+            apply_blocks,
         )
         repo = _init_repo(tmp_path, {"a/b/c.py": "x = 1\n"})
         blk = SearchReplaceBlock(
@@ -282,7 +290,8 @@ class TestPathEdgeCases:
     def test_path_with_dot_prefix(self, tmp_path):
         """Path like `./foo.py` should resolve same as `foo.py`."""
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks,
+            SearchReplaceBlock,
+            apply_blocks,
         )
         repo = _init_repo(tmp_path, {"foo.py": "x = 1\n"})
         blk = SearchReplaceBlock(
@@ -300,7 +309,8 @@ class TestContentEdgeCases:
     def test_unicode_content(self, tmp_path):
         """Non-ASCII content must be preserved byte-perfectly."""
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks,
+            SearchReplaceBlock,
+            apply_blocks,
         )
         repo = _init_repo(tmp_path, {"foo.py": "x = '日本語'\n"})
         blk = SearchReplaceBlock(
@@ -315,7 +325,8 @@ class TestContentEdgeCases:
     def test_very_long_line(self, tmp_path):
         """A single ~5kb line should apply without issue."""
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks,
+            SearchReplaceBlock,
+            apply_blocks,
         )
         long_line = "a" * 5000
         repo = _init_repo(tmp_path, {"foo.py": f"x = '{long_line}'\n"})
@@ -330,7 +341,8 @@ class TestContentEdgeCases:
     def test_trailing_no_newline_preserved(self, tmp_path):
         """File without trailing newline -> we don't accidentally add one."""
         from maverick.edit_format import (
-            SearchReplaceBlock, apply_blocks,
+            SearchReplaceBlock,
+            apply_blocks,
         )
         repo = _init_repo(tmp_path, {"foo.py": "x = 1"})  # no \n
         # The apply path normalises search/replace to have trailing \n,

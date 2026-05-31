@@ -28,6 +28,7 @@ import json
 import logging
 import threading
 from typing import Any
+from urllib.parse import urlparse
 
 from . import Tool
 

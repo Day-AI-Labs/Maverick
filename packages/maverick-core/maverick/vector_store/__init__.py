@@ -10,8 +10,8 @@ Currently:
   - QdrantStore (``maverick-agent[qdrant]``) — local persistent or
     remote Qdrant cluster; uses qdrant-client's built-in fastembed.
 """
-from .chroma_store import ChromaStore, DEFAULT_PATH  # noqa: F401
-from .qdrant_store import QdrantStore, DEFAULT_PATH as QDRANT_DEFAULT_PATH  # noqa: F401
-
+from .chroma_store import DEFAULT_PATH, ChromaStore  # noqa: F401
+from .qdrant_store import DEFAULT_PATH as QDRANT_DEFAULT_PATH
+from .qdrant_store import QdrantStore  # noqa: F401
 
 __all__ = ["ChromaStore", "DEFAULT_PATH", "QdrantStore", "QDRANT_DEFAULT_PATH"]

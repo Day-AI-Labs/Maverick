@@ -29,7 +29,7 @@ import logging
 import os
 import threading
 import time
-from typing import Any, Optional
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ _thread_lock = threading.Lock()
 _executor = None  # type: ignore[var-annotated]
 
 
-def _load_config_outbound() -> tuple[list[str], Optional[str]]:
+def _load_config_outbound() -> tuple[list[str], str | None]:
     try:
         from .config import load_config
         cfg = load_config()
@@ -93,8 +93,8 @@ def fire(
     event: str,
     payload: dict[str, Any],
     *,
-    urls: Optional[list[str]] = None,
-    secret: Optional[str] = None,
+    urls: list[str] | None = None,
+    secret: str | None = None,
     timeout: float = 5.0,
 ) -> int:
     """Dispatch ``event`` to all configured webhook URLs.
@@ -146,7 +146,7 @@ def verify_signature(body: bytes, signature: str, secret: str) -> bool:
     return hmac.compare_digest(signature, expected)
 
 
-def inbound_secret() -> Optional[str]:
+def inbound_secret() -> str | None:
     """Resolve the HMAC secret used to authenticate inbound webhooks.
 
     Shares the ``[webhooks] secret`` knob with the outbound dispatcher so

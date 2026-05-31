@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from maverick import config, verifier
 from maverick.verifier import VerifierVerdict
 

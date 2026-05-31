@@ -16,7 +16,6 @@ import types
 from pathlib import Path
 
 import pytest
-
 from maverick.budget import Budget
 from maverick.orchestrator import run_goal
 from maverick.sandbox import LocalBackend

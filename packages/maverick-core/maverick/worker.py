@@ -24,8 +24,8 @@ import logging
 import signal
 import threading
 import traceback
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from .job_queue import Job, JobQueue
 
@@ -48,9 +48,9 @@ class GoalRunFailed(Exception):
 class Worker:
     def __init__(
         self,
-        queue: Optional[JobQueue] = None,
+        queue: JobQueue | None = None,
         *,
-        db_path: Optional[Path] = None,
+        db_path: Path | None = None,
         idle_sleep: float = 2.0,
         max_attempts: int = 5,
         retry_after: float = 60.0,
@@ -98,11 +98,34 @@ class Worker:
             raise UnknownJobKind(job.kind)
         handler(job)
 
+    def _maybe_rearm(self, job: Job) -> None:
+        """Re-arm a recurring (cron) job's next occurrence.
+
+        ``maverick schedule add`` stores the cron expression in
+        ``payload['__cron__']``. We re-arm on the FIRST claim only
+        (``attempts == 1``) so a retry of a failed run doesn't enqueue
+        duplicate future occurrences; the next occurrence is independent of
+        this run's outcome, matching cron. Best-effort: a bad expression
+        logs and is skipped rather than killing the worker.
+        """
+        if job.attempts != 1:
+            return
+        expr = job.payload.get("__cron__")
+        if not expr:
+            return
+        try:
+            from .scheduler import schedule_cron
+            _jid, run_at = schedule_cron(self.queue, expr, job.kind, job.payload)
+            log.info("worker: re-armed cron job kind=%s next=%.0f", job.kind, run_at)
+        except Exception:
+            log.exception("worker: failed to re-arm cron job %d (%r)", job.id, expr)
+
     def run_once(self) -> bool:
         """Process at most one job. Returns True if a job ran."""
         job = self.queue.claim()
         if job is None:
             return False
+        self._maybe_rearm(job)
         log.info("worker: claimed job %d kind=%s (attempt %d)",
                  job.id, job.kind, job.attempts)
         try:

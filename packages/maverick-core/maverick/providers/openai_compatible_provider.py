@@ -23,7 +23,6 @@ last-resort label.
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 from .openai_provider import OpenAIClient
 
@@ -31,7 +30,7 @@ from .openai_provider import OpenAIClient
 class OpenAICompatibleClient(OpenAIClient):
     DEFAULT_MODEL = "openai-compatible"
 
-    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
+    def __init__(self, api_key: str | None = None, base_url: str | None = None):
         from ..config import get_provider_config
 
         cfg = get_provider_config("openai_compatible")

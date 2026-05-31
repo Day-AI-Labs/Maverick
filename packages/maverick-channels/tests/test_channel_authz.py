@@ -14,7 +14,6 @@ is dependency-free and always exercised.
 from __future__ import annotations
 
 import pytest
-
 from maverick_channels.base import is_allowed, normalize_allowlist
 
 
@@ -134,7 +133,6 @@ def test_sms_webhook_rejects_unauthorized_sender():
     """End-to-end: a signature-valid POST from a non-allowlisted number is
     refused (403) and never reaches the handler; an allowlisted number runs."""
     from fastapi.testclient import TestClient
-
     from maverick_channels.sms import SMSChannel
 
     seen = []
@@ -174,7 +172,6 @@ def test_sms_webhook_rejects_unauthorized_sender():
 @pytest.mark.skipif(not _have_twilio(), reason="fastapi+twilio not installed")
 def test_whatsapp_webhook_rejects_unauthorized_sender():
     from fastapi.testclient import TestClient
-
     from maverick_channels.whatsapp import WhatsAppChannel
 
     seen = []
@@ -225,7 +222,6 @@ def _have_voice_deps() -> bool:
 @pytest.mark.skipif(not _have_voice_deps(), reason="fastapi+httpx not installed")
 def test_voice_allowlist_blocks_unauthorized_caller(monkeypatch):
     from fastapi.testclient import TestClient
-
     from maverick_channels.voice import VoiceChannel
 
     seen = []
@@ -263,7 +259,6 @@ def test_voice_allowlist_blocks_unauthorized_caller(monkeypatch):
 def test_voice_without_allowlist_allows_any_authenticated_caller(monkeypatch):
     """Back-compat: with no allowlist, the bearer is the gate (any caller)."""
     from fastapi.testclient import TestClient
-
     from maverick_channels.voice import VoiceChannel
 
     async def _handler(_):

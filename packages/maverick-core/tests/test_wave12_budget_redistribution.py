@@ -8,7 +8,6 @@ so a crashed attempt 0 wasted (N-1)/N of the parent budget.
 from __future__ import annotations
 
 import pytest
-
 from maverick.budget import Budget
 from maverick.orchestrator import run_goal_best_of_n
 from maverick.sandbox import LocalBackend

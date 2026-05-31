@@ -8,13 +8,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, Optional
+from typing import Any
 
 from .agent import Agent
 from .blackboard import Blackboard
 from .budget import Budget, BudgetExceeded
-from .llm import LLM
-from .llm import model_for_role
+from .llm import LLM, model_for_role
 from .mcp_client import load_mcp_specs_from_config, start_mcp_clients, stop_mcp_clients
 from .sandbox import LocalBackend
 from .skills import distill
@@ -24,7 +23,7 @@ from .world_model import WorldModel
 log = logging.getLogger(__name__)
 
 
-def _build_shield() -> Optional[Any]:
+def _build_shield() -> Any | None:
     try:
         from maverick_shield import Shield
         return Shield.from_config()
@@ -51,7 +50,7 @@ def _fire_webhook(event: str, payload: dict[str, Any]) -> None:
 
 def _end_episode_with_spend(
     world: WorldModel, episode_id: int, summary: str, outcome: str, budget: Budget,
-    goal_id: Optional[int] = None,
+    goal_id: int | None = None,
 ) -> None:
     try:
         world.end_episode(
@@ -71,17 +70,43 @@ def _end_episode_with_spend(
     })
 
 
+def _maybe_record_reflexion(
+    goal: Any, *, failure_class: str, failure_msg: str, blackboard
+) -> None:
+    """Persist a postmortem when a run fails, so the NEXT similar goal
+    recalls the lesson. No-op unless reflexion is enabled. Never raises —
+    a failed reflection write must not perturb the failure path.
+    """
+    try:
+        from . import reflexion
+        if not reflexion.enabled():
+            return
+        goal_text = f"{getattr(goal, 'title', '')}\n{getattr(goal, 'description', '') or ''}"
+        tools_used = reflexion.tools_from_blackboard(blackboard)
+        reflexion.record(
+            goal_text=goal_text,
+            failure_class=failure_class,
+            failure_msg=failure_msg,
+            reflection=reflexion.synthesize_reflection(
+                failure_class, failure_msg, tools_used,
+            ),
+            tools_used=tools_used,
+        )
+    except Exception as e:  # pragma: no cover -- reflexion never blocks a run
+        log.debug("reflexion record skipped: %s", e)
+
+
 async def run_goal(
     llm: LLM,
     world: WorldModel,
     budget: Budget,
     goal_id: int,
-    sandbox: Optional[Any] = None,
+    sandbox: Any | None = None,
     max_depth: int = 3,
-    conversation_id: Optional[int] = None,
-    channel: Optional[str] = None,
-    user_id: Optional[str] = None,
-    orchestrator_model_override: Optional[str] = None,
+    conversation_id: int | None = None,
+    channel: str | None = None,
+    user_id: str | None = None,
+    orchestrator_model_override: str | None = None,
 ) -> str:
     goal = world.get_goal(goal_id)
     if not goal:
@@ -101,6 +126,12 @@ async def run_goal(
     blackboard.attach_world(world, goal_id)  # persist every post for live streaming
     sandbox = sandbox or LocalBackend()
     shield = _build_shield()
+
+    # Load operator-/plugin-supplied lifecycle hooks (idempotent) and fire
+    # SessionStart once. Without this the [[hooks]] config section and the
+    # maverick.hooks entry-point group are inert. See maverick.hooks.
+    from . import hooks as _hooks
+    await _hooks.ensure_loaded()
 
     # Chokepoint #1: scan the initial goal text before the orchestrator
     # acts on it. The channel server scans inbound messages, but the
@@ -130,6 +161,23 @@ async def run_goal(
                 return f"BLOCKED: goal input rejected by Shield ({reason})"
         except Exception:  # pragma: no cover
             log.exception("scan_input on goal text failed (fail-open)")
+
+    # UserPromptSubmit hooks: let operators gate or annotate the incoming
+    # goal text before the orchestrator acts on it. A hook returning a falsy
+    # value blocks the goal, mirroring the Shield input chokepoint above.
+    prompt_text = f"{goal.title}\n{goal.description or ''}"
+    if not await _hooks.emit(
+        _hooks.HookEvent.USER_PROMPT_SUBMIT,
+        goal_id=goal_id, agent_role="orchestrator",
+        extra={"prompt": prompt_text, "title": goal.title},
+    ):
+        world.set_goal_status(goal_id, "blocked", result="input blocked by hook")
+        try:
+            world.end_episode(episode_id, "input blocked by UserPromptSubmit hook", "blocked")
+        except Exception:  # pragma: no cover
+            pass
+        log.warning("goal #%s blocked by UserPromptSubmit hook", goal_id)
+        return "BLOCKED: goal input rejected by a UserPromptSubmit hook"
 
     _fire_webhook("goal_created", {"goal_id": goal_id, "title": goal.title})
 
@@ -208,6 +256,23 @@ async def run_goal(
             "synthesize their findings, verify, and respond with FINAL:."
         )
 
+        # Reflexion (opt-in): prepend lessons learned from prior FAILED
+        # runs on similar goals so the orchestrator avoids repeating the
+        # same dead ends. Recall is jaccard-ranked over goal text; the
+        # block is empty (and this is a no-op) when reflexion is disabled
+        # or there are no similar prior failures.
+        try:
+            from . import reflexion
+            if reflexion.enabled():
+                recalled = reflexion.recall(
+                    f"{goal.title}\n{goal.description or ''}"
+                )
+                ctx_block = reflexion.format_context(recalled)
+                if ctx_block:
+                    brief = brief + "\n" + ctx_block
+        except Exception as e:  # pragma: no cover -- recall never blocks a run
+            log.debug("reflexion recall skipped: %s", e)
+
         root = Agent(
             ctx=ctx,
             role="orchestrator",
@@ -220,6 +285,10 @@ async def run_goal(
             result = await root.run()
         except BudgetExceeded as e:
             _end_episode_with_spend(world, episode_id, f"budget: {e}", "failure", budget, goal_id)
+            _maybe_record_reflexion(
+                goal, failure_class="budget", failure_msg=str(e),
+                blackboard=blackboard,
+            )
             world.set_goal_status(goal_id, "blocked", result=f"budget exceeded: {e}")
             _fire_webhook("goal_finished", {
                 "goal_id": goal_id, "status": "blocked",
@@ -281,6 +350,15 @@ async def run_goal(
                 })
                 return result.final_patch
             _end_episode_with_spend(world, episode_id, result.error, "failure", budget, goal_id)
+            _maybe_record_reflexion(
+                goal,
+                failure_class=(
+                    "max_steps" if "max_steps" in (result.error or "")
+                    else "agent_error"
+                ),
+                failure_msg=result.error or "",
+                blackboard=blackboard,
+            )
             world.set_goal_status(goal_id, "blocked", result=result.error)
             _fire_webhook("goal_finished", {
                 "goal_id": goal_id, "status": "blocked", "result": result.error,
@@ -421,13 +499,13 @@ def run_goal_sync(*args, **kwargs) -> str:
 
 
 async def run_goal_best_of_n(
-    llm: "LLM",
-    world: "WorldModel",
-    budget: "Budget",
+    llm: LLM,
+    world: WorldModel,
+    budget: Budget,
     goal_id: int,
-    sandbox: Optional[Any] = None,
+    sandbox: Any | None = None,
     max_depth: int = 3,
-    conversation_id: Optional[int] = None,
+    conversation_id: int | None = None,
     n: int = 4,
 ) -> str:
     """Coding-mode best-of-N: run N independent attempts, pick the one
@@ -444,8 +522,10 @@ async def run_goal_best_of_n(
         Candidate,
         evaluate_candidate,
         extract_unified_diff,
-        from_env as _cm_from_env,
         select_best_candidate,
+    )
+    from .coding_mode import (
+        from_env as _cm_from_env,
     )
 
     cfg = _cm_from_env()
@@ -588,9 +668,9 @@ async def run_goal_best_of_n(
     best = select_best_candidate(candidates)
     if best is None or not best.patch:
         return (
-            "Stopped: none of the {n} attempts produced an applyable patch.\n"
-            "[{summary}]"
-        ).format(n=len(candidates), summary=budget.summary())
+            f"Stopped: none of the {len(candidates)} attempts produced an applyable patch.\n"
+            f"[{budget.summary()}]"
+        )
 
     test_note = (
         f"\n\n[best of {len(candidates)}; score={best.score:.2f}]"

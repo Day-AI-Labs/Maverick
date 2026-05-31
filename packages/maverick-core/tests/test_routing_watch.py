@@ -1,8 +1,8 @@
 """Cascaded routing + Watch Mode tests."""
 from __future__ import annotations
 
-from pathlib import Path
 import types
+from pathlib import Path
 
 from maverick.cli import _watch_goal_allowed
 from maverick.llm import MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET

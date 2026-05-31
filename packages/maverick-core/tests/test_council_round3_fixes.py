@@ -38,9 +38,8 @@ def test_erase_emits_non_subject_derived_audit_event(tmp_path, monkeypatch):
     import os
 
     os.environ.pop("MAVERICK_DB", None)
-    from click.testing import CliRunner
-
     import maverick.audit as audit_mod
+    from click.testing import CliRunner
     from maverick import cli as cli_mod
     from maverick.world_model import WorldModel
 
@@ -86,9 +85,8 @@ def test_erase_cascades_subgoals_without_fk_abort(tmp_path, monkeypatch):
     import os
 
     os.environ.pop("MAVERICK_DB", None)
-    from click.testing import CliRunner
-
     import maverick.audit as audit_mod
+    from click.testing import CliRunner
     from maverick import cli as cli_mod
     from maverick.world_model import WorldModel
 

@@ -4,14 +4,13 @@ from __future__ import annotations
 import hashlib
 import hmac
 
-
 from maverick.github_app import (
     SLASH_TRIGGER,
+    _trigger_labels,
     build_brief,
     parse_webhook,
     slugify,
     verify_signature,
-    _trigger_labels,
 )
 
 

@@ -182,11 +182,10 @@ class MCPServer:
                 # surface "start a research run" / "plan a trip" without
                 # the user typing the prompt themselves.
                 "prompts": {"listChanged": False},
-                # Elicitation: server can ask the user a follow-up question
-                # (replaces our ask_user tool in 2025-11-25-aware clients).
-                # We declare it; the actual call falls back to tool-result
-                # when the client doesn't support it.
-                "elicitation": {},
+                # Elicitation (server-initiated follow-up questions) is not
+                # wired yet — clients use the ask_user tool instead. Don't
+                # advertise the capability until a handler exists, or
+                # 2025-11-25-aware clients will wait on a request we never send.
             },
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
         }

@@ -41,10 +41,8 @@ import hmac
 import json
 import logging
 import time
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -80,7 +78,7 @@ class CatalogEntry:
     install_count: int = 0
 
     @classmethod
-    def from_dict(cls, kind: str, d: dict) -> "CatalogEntry":
+    def from_dict(cls, kind: str, d: dict) -> CatalogEntry:
         if not d.get("name") or not d.get("source"):
             raise CatalogError(f"catalog entry missing name/source: {d!r}")
         return cls(
@@ -122,7 +120,7 @@ def _cache_path(url: str) -> Path:
     return _CACHE_DIR / f"{h}.json"
 
 
-def _fetch_index_raw(url: str) -> Optional[dict]:
+def _fetch_index_raw(url: str) -> dict | None:
     """Fetch + parse one index JSON, with a 6h on-disk cache.
 
     Returns None (not raise) on any network/parse failure so an
@@ -140,8 +138,11 @@ def _fetch_index_raw(url: str) -> Optional[dict]:
     if not url.startswith("https://"):
         log.warning("catalog: refusing non-https index url %s", url)
         return None
+    # Shared SSRF guard: a configured index URL must not resolve to a
+    # private/loopback/link-local/metadata address.
+    from .tools.http_fetch import guarded_urlopen
     try:
-        with urllib.request.urlopen(url, timeout=FETCH_TIMEOUT) as resp:  # noqa: S310 (https enforced above)
+        with guarded_urlopen(url, timeout=FETCH_TIMEOUT) as resp:
             if resp.status != 200:
                 return None
             data = json.loads(resp.read(2_000_000).decode("utf-8"))
@@ -162,7 +163,7 @@ def _fetch_index_raw(url: str) -> Optional[dict]:
     return data
 
 
-def load_catalog(kind: str, *, indexes: Optional[list[str]] = None) -> list[CatalogEntry]:
+def load_catalog(kind: str, *, indexes: list[str] | None = None) -> list[CatalogEntry]:
     """Return merged catalog entries for ``kind`` across all indexes.
 
     Earlier indexes win on name collision. Malformed entries are
@@ -188,7 +189,7 @@ def load_catalog(kind: str, *, indexes: Optional[list[str]] = None) -> list[Cata
     return sorted(seen.values(), key=lambda e: e.name)
 
 
-def resolve(name: str, kind: str, *, indexes: Optional[list[str]] = None) -> Optional[CatalogEntry]:
+def resolve(name: str, kind: str, *, indexes: list[str] | None = None) -> CatalogEntry | None:
     """Find a single entry by name, or None."""
     for entry in load_catalog(kind, indexes=indexes):
         if entry.name == name:

@@ -6,9 +6,7 @@ registered, and templates render with empty data.
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
-
 from maverick_dashboard.app import app
-
 
 client = TestClient(app)
 

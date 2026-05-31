@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------- Cross-family verifier guard ----------
 
 class TestCrossFamilyVerifier:
@@ -115,8 +114,9 @@ class TestMCPInputSanitization:
 class TestMCPPinSha256:
     def test_pin_verification_passes_on_match(self, tmp_path):
         """When the pin hash matches the actual executable, start proceeds."""
-        from maverick.mcp_client import MCPServerSpec, _verify_command_pin
         import hashlib
+
+        from maverick.mcp_client import MCPServerSpec, _verify_command_pin
         exe = tmp_path / "mcp-tool"
         exe.write_bytes(b"#!/bin/sh\necho 'ok'\n")
         exe.chmod(0o755)
@@ -129,7 +129,9 @@ class TestMCPPinSha256:
 
     def test_pin_mismatch_raises(self, tmp_path):
         from maverick.mcp_client import (
-            MCPClientError, MCPServerSpec, _verify_command_pin,
+            MCPClientError,
+            MCPServerSpec,
+            _verify_command_pin,
         )
         exe = tmp_path / "mcp-tool"
         exe.write_bytes(b"#!/bin/sh\necho 'ok'\n")
@@ -154,6 +156,7 @@ class TestMCPPinSha256:
         """On POSIX, backslash is not a path separator, so command
         resolution must go through PATH lookup semantics."""
         import hashlib
+
         from maverick.mcp_client import MCPServerSpec, _verify_command_pin
 
         exe = tmp_path / "resolved-tool"
@@ -328,6 +331,7 @@ class TestHooks:
         /bin/sh interpreter).
         """
         import sys
+
         from maverick import hooks
         from maverick.hooks import HookContext, HookEvent
         py = sys.executable

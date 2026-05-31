@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 
-
 from maverick import donation
 from maverick.donation import (
     TrajectoryRecord,

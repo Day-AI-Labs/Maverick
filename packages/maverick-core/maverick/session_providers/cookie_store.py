@@ -15,8 +15,6 @@ import os
 import stat
 import time
 from pathlib import Path
-from typing import Optional
-
 
 DEFAULT_DIR = Path.home() / ".maverick" / "sessions"
 
@@ -52,7 +50,7 @@ def save_session(provider: str, blob: dict) -> Path:
     return path
 
 
-def load_session(provider: str) -> Optional[dict]:
+def load_session(provider: str) -> dict | None:
     """Read the blob for ``provider``, or None if no session is stored.
 
     Raises PermissionError if the file isn't mode 0o600 -- a stricter

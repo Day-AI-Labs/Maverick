@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}safety · Maverick{% endblock %}
+{% block content %}
+  <h2>safety</h2>
+  <p class="muted">
+    What Agent Shield blocked — denied inputs, tool calls, and outputs, read
+    from the local audit log (<code>shield_block</code> events).
+  </p>
+
+  <div class="panel">
+    <form method="get" action="/safety" style="display: flex; gap: 1rem; align-items: end; flex-wrap: wrap;">
+      <label>
+        <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">events scanned</div>
+        <input type="number" name="n" value="{{ n }}" min="1" max="5000"
+               style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+      </label>
+      <label>
+        <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">day (YYYY-MM-DD)</div>
+        <input type="text" name="day" value="{{ day or '' }}" placeholder="today"
+               style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+      </label>
+      <button type="submit"
+              style="padding: 0.45rem 1rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">
+        load
+      </button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top: 0;">Blocks {% if day %}on {{ day }}{% else %}today{% endif %}</h3>
+    <p style="font-size: 2rem; margin: 0.2rem 0;">{{ total }}</p>
+    <div class="muted" style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+      <span>input: <strong>{{ by_stage.get('input', 0) }}</strong></span>
+      <span>tool: <strong>{{ by_stage.get('tool', 0) }}</strong></span>
+      <span>output: <strong>{{ by_stage.get('output', 0) }}</strong></span>
+    </div>
+  </div>
+
+  {% if top_reasons %}
+  <div class="panel">
+    <h3 style="margin-top: 0;">Top reasons</h3>
+    <table>
+      <thead><tr><th scope="col">reason</th><th scope="col">count</th></tr></thead>
+      <tbody>
+      {% for reason, count in top_reasons %}
+        <tr><td>{{ reason }}</td><td>{{ count }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <h3 style="margin-top: 0;">Recent blocks</h3>
+    {% if events %}
+      <table>
+        <thead>
+          <tr><th scope="col">ts</th><th scope="col">stage</th><th scope="col">reason</th><th scope="col">score</th></tr>
+        </thead>
+        <tbody>
+        {% for ev in events %}
+          <tr>
+            <td class="muted" style="white-space: nowrap;">{{ ev.ts | datetime }}</td>
+            <td><code>{{ ev.stage or '-' }}</code></td>
+            <td>{{ ev.reason or '-' }}</td>
+            <td class="muted">
+              {% set s = ev.score | default(none) %}
+              {% if s is not none %}{{ "%.2f" | format(s) }}{% else %}-{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">
+        No shield blocks for the selected day — nothing was denied. Maverick records
+        these as <code>shield_block</code> events in
+        <code>~/.maverick/audit/YYYY-MM-DD.ndjson</code>.
+      </p>
+    {% endif %}
+  </div>
+{% endblock %}

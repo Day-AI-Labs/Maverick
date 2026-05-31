@@ -169,7 +169,9 @@ def test_enforce_full_config(tmp_path: Path):
 @pytest.mark.parametrize("days", [None, 0, -5])
 def test_purge_helpers_disabled_with_bad_days(tmp_path: Path, days):
     from maverick.audit.retention import (
-        purge_audit_files, purge_world_episodes, purge_world_events,
+        purge_audit_files,
+        purge_world_episodes,
+        purge_world_events,
     )
     db = tmp_path / "world.db"
     _seed_world_db(db)

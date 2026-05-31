@@ -21,7 +21,6 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -48,7 +47,7 @@ class Halted(Exception):
 
 
 _state_lock = threading.Lock()
-_in_process_halt: Optional[tuple[str, str]] = None  # (reason, source)
+_in_process_halt: tuple[str, str] | None = None  # (reason, source)
 _last_file_check_ts: float = 0.0
 _last_file_present: bool = False
 

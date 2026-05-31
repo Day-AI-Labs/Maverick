@@ -32,7 +32,6 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +71,7 @@ def record(
     failure_msg: str,
     reflection: str,
     *,
-    tools_used: Optional[list[str]] = None,
+    tools_used: list[str] | None = None,
     path: Path = DEFAULT_PATH,
 ) -> bool:
     """Append a Reflexion. Returns True on success.
@@ -214,6 +213,63 @@ def format_context(reflexions: list[tuple[float, Reflexion]]) -> str:
     return "\n".join(lines)
 
 
+def enabled() -> bool:
+    """Whether the cross-run reflexion learning loop is active.
+
+    Off by default — the agent kernel must run without extra persisted
+    state (CLAUDE.md rule 1 spirit). Turn it on with ``MAVERICK_REFLEXION=1``
+    or ``[reflexion] enable = true`` in ``~/.maverick/config.toml``.
+    """
+    if os.environ.get("MAVERICK_REFLEXION", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }:
+        return True
+    try:
+        from .config import load_config
+        return bool(load_config().get("reflexion", {}).get("enable", False))
+    except Exception:  # pragma: no cover -- config never blocks a run
+        return False
+
+
+def tools_from_blackboard(blackboard) -> list[str]:
+    """Tool names a run invoked, parsed from the blackboard's observation
+    posts (``tool=<name> -> ...``). Order-preserving + de-duplicated.
+    Best-effort: any error yields an empty list.
+    """
+    seen: list[str] = []
+    try:
+        for e in getattr(blackboard, "entries", []) or []:
+            if getattr(e, "kind", None) != "observation":
+                continue
+            m = re.match(r"tool=(\S+)", getattr(e, "content", "") or "")
+            if m and m.group(1) not in seen:
+                seen.append(m.group(1))
+    except Exception:  # pragma: no cover
+        pass
+    return seen
+
+
+def synthesize_reflection(
+    failure_class: str, failure_msg: str, tools_used: list[str]
+) -> str:
+    """Build a one-paragraph postmortem WITHOUT an extra LLM call.
+
+    The failure path may itself be budget-exhausted, so we synthesize a
+    deterministic lesson from the classified failure + the tools the run
+    actually reached for. Cheap, never raises, and good enough to steer
+    the next similar run away from the same dead end.
+    """
+    tools = ", ".join(tools_used[:8]) if tools_used else "no tools"
+    msg = (failure_msg or "").strip().splitlines()
+    head = msg[0][:200] if msg else "(no message)"
+    return (
+        f"Previous attempt failed ({failure_class}): {head}. "
+        f"Tools reached for: {tools}. "
+        "Next time, plan the approach before spending budget, and verify "
+        "the failing step in isolation before scaling it up."
+    )
+
+
 __all__ = [
     "Reflexion",
     "DEFAULT_PATH",
@@ -222,4 +278,7 @@ __all__ = [
     "list_recent",
     "clear",
     "format_context",
+    "enabled",
+    "tools_from_blackboard",
+    "synthesize_reflection",
 ]

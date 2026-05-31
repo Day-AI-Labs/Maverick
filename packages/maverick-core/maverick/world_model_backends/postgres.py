@@ -28,9 +28,9 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Iterator, Optional
 
 log = logging.getLogger(__name__)
 
@@ -96,14 +96,14 @@ SCHEMA: list[str] = [
 class PGGoal:
     """Mirror of maverick.world_model.Goal — same fields for drop-in compat."""
     id: int
-    parent_id: Optional[int]
+    parent_id: int | None
     title: str
-    description: Optional[str]
+    description: str | None
     status: str
     created_at: float
     updated_at: float
-    deadline: Optional[float]
-    result: Optional[str]
+    deadline: float | None
+    result: str | None
 
 
 class PostgresWorldModel:
@@ -113,7 +113,7 @@ class PostgresWorldModel:
     actually configures the postgres backend.
     """
 
-    def __init__(self, dsn: Optional[str] = None):
+    def __init__(self, dsn: str | None = None):
         try:
             import psycopg  # noqa: F401
         except ImportError as e:
@@ -138,7 +138,7 @@ class PostgresWorldModel:
         self._lock = threading.RLock()
         self._migrate()
 
-    def __enter__(self) -> "PostgresWorldModel":
+    def __enter__(self) -> PostgresWorldModel:
         return self
 
     def __exit__(self, *exc) -> None:
@@ -175,7 +175,7 @@ class PostgresWorldModel:
 
     # ----- goal methods -----
 
-    def create_goal(self, title: str, description: str = "", parent_id: Optional[int] = None) -> int:
+    def create_goal(self, title: str, description: str = "", parent_id: int | None = None) -> int:
         now = time.time()
         with self._tx() as cur:
             cur.execute(
@@ -187,7 +187,7 @@ class PostgresWorldModel:
             row = cur.fetchone()
         return int(row[0])
 
-    def get_goal(self, goal_id: int) -> Optional[PGGoal]:
+    def get_goal(self, goal_id: int) -> PGGoal | None:
         with self._tx() as cur:
             cur.execute(
                 "SELECT id, parent_id, title, description, status, "
@@ -199,7 +199,7 @@ class PostgresWorldModel:
             return None
         return PGGoal(*row)
 
-    def set_goal_status(self, goal_id: int, status: str, *, result: Optional[str] = None) -> None:
+    def set_goal_status(self, goal_id: int, status: str, *, result: str | None = None) -> None:
         now = time.time()
         with self._tx() as cur:
             cur.execute(
@@ -287,7 +287,7 @@ class PostgresWorldModel:
             pass
 
 
-def open_postgres_world(dsn: Optional[str] = None) -> PostgresWorldModel:
+def open_postgres_world(dsn: str | None = None) -> PostgresWorldModel:
     """Open a Postgres world model. Convenience wrapper that resolves DSN."""
     return PostgresWorldModel(dsn=dsn)
 

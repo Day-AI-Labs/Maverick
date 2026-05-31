@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---- #1: orchestrator gets coding-mode template ----
 
 class TestOrchestratorGetsCodingModeTemplate:

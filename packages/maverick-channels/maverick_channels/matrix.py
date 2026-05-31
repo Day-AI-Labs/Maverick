@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
 
@@ -40,7 +39,7 @@ class MatrixChannel(Channel):
         handler,
         homeserver: str,
         user_id: str,
-        access_token: Optional[str] = None,
+        access_token: str | None = None,
         allowed_user_ids=None,
     ):
         super().__init__(handler)
@@ -64,7 +63,7 @@ class MatrixChannel(Channel):
         self._client.access_token = self.access_token
         self._client.add_event_callback(self._on_message, RoomMessageText)
 
-    async def _on_message(self, room: "MatrixRoom", event: "RoomMessageText") -> None:
+    async def _on_message(self, room: MatrixRoom, event: RoomMessageText) -> None:
         if event.sender == self.user_id:
             return
         if not is_allowed(event.sender, self.allowed_user_ids):

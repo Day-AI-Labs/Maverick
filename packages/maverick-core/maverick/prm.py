@@ -29,7 +29,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Optional, Protocol
+from typing import Protocol
 
 log = logging.getLogger(__name__)
 
@@ -40,10 +40,10 @@ class StepContext:
     goal_id: int
     step_index: int
     role: str               # orchestrator | researcher | coder | ...
-    tool_name: Optional[str] = None
-    tool_succeeded: Optional[bool] = None
+    tool_name: str | None = None
+    tool_succeeded: bool | None = None
     is_final: bool = False
-    error: Optional[str] = None
+    error: str | None = None
     prior_step_score: float = 0.5
 
 
@@ -114,7 +114,7 @@ class RemotePRM:
     """
     name = "remote"
 
-    def __init__(self, endpoint: str, api_key: Optional[str] = None):
+    def __init__(self, endpoint: str, api_key: str | None = None):
         self.endpoint = endpoint.rstrip("/")
         self.api_key = api_key
         self._fallback = HeuristicPRM()

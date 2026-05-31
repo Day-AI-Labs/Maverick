@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import datetime as _dt
 import logging
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -111,7 +110,7 @@ def parse_cron(expr: str) -> tuple[set[int], set[int], set[int], set[int], set[i
     return minute, hour, dom, mon, dow
 
 
-def next_run(expr: str, *, after: Optional[float] = None) -> float:
+def next_run(expr: str, *, after: float | None = None) -> float:
     """Return the next epoch timestamp matching ``expr`` strictly after
     ``after`` (default: now). Searches up to ~4 years forward.
 
@@ -170,7 +169,7 @@ def next_run(expr: str, *, after: Optional[float] = None) -> float:
 
 
 def schedule_cron(queue, expr: str, kind: str, payload: dict | None = None,
-                  *, after: Optional[float] = None) -> tuple[int, float]:
+                  *, after: float | None = None) -> tuple[int, float]:
     """Enqueue ``kind`` at the next time matching ``expr``.
 
     Returns ``(job_id, run_at)``. Pair with a worker that calls

@@ -14,7 +14,6 @@ import json
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-
 from maverick_dashboard.app import app
 
 # /webhook/start authenticates via HMAC, not the dashboard bearer / Origin,

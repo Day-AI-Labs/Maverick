@@ -16,11 +16,18 @@ target-version = "py310"
 
 [tool.ruff.lint]
 # E/F/W: pycodestyle errors, pyflakes (real bugs), pycodestyle warnings.
-# I (isort) intentionally dropped -- it kept generating cosmetic noise on a
-# clean codebase. Re-enable as its own focused cleanup PR with --fix.
-# B (bugbear) and UP (pyupgrade) also off until we commit to those styles.
-select = ["E", "F", "W"]
-ignore = ["E501"]  # line length
+# I  (isort):     imports sorted (applied repo-wide with --fix).
+# UP (pyupgrade): modern 3.10+ idioms -- PEP 604 unions (`X | None`), PEP 585
+#                 builtins (`list`/`dict`), f-strings, etc. target-version
+#                 py310 keeps every rewrite 3.10-safe.
+# B (bugbear) still off: its findings (B904 raise-from, B905 zip strict) are a
+# style commitment with no autofix; defer to its own focused PR.
+select = ["E", "F", "W", "I", "UP"]
+ignore = [
+    "E501",   # line length
+    "UP036",  # "outdated" version blocks -- ours are intentional runtime
+              # "Python 3.10+ required" guards (installer/preflight), not dead code.
+]
 
 [tool.pytest.ini_options]
 testpaths = ["packages", "apps", "benchmarks"]

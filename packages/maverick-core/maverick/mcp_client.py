@@ -16,7 +16,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -50,10 +50,10 @@ class MCPServerSpec:
     # the actual command resolves to a different hash. Defends the
     # supply-chain attack class shipped to STDIO MCP in April 2026
     # (CVE-2026-30615 et al). Default None = no pin (legacy behavior).
-    pin_sha256: Optional[str] = None
+    pin_sha256: str | None = None
 
     @classmethod
-    def from_config(cls, name: str, cfg: dict) -> "MCPServerSpec":
+    def from_config(cls, name: str, cfg: dict) -> MCPServerSpec:
         spec = cls(
             name=name,
             command=cfg["command"],
@@ -76,7 +76,7 @@ _DENY_CHARS = ("\n", "\r", "\0")
 _DENY_SHELL_METAS = (";", "|", "&", "$(", "`", ">", "<")
 
 
-def _validate_subprocess_inputs(spec: "MCPServerSpec") -> None:
+def _validate_subprocess_inputs(spec: MCPServerSpec) -> None:
     """Defend against the CVE-2026-30615 STDIO Trifecta and friends.
 
     Hostile MCP server listings embedded newlines / shell metas in
@@ -148,7 +148,7 @@ def _command_looks_like_path(command: str, on_windows: bool | None = None) -> bo
     return "/" in command or (on_windows and "\\" in command)
 
 
-def _verify_command_pin(spec: "MCPServerSpec") -> None:
+def _verify_command_pin(spec: MCPServerSpec) -> None:
     """If spec.pin_sha256 is set, hash the resolved executable and refuse
     to spawn on mismatch. Resolution uses shutil.which for argv[0].
     Treat backslash as a path separator only on Windows so verifier
@@ -196,10 +196,10 @@ class MCPClient:
     def __init__(self, spec: MCPServerSpec, timeout: float = DEFAULT_TIMEOUT):
         self.spec = spec
         self.timeout = timeout
-        self._proc: Optional[asyncio.subprocess.Process] = None
+        self._proc: asyncio.subprocess.Process | None = None
         self._req_id = 0
         self._lock = asyncio.Lock()
-        self._stderr_task: Optional[asyncio.Task] = None
+        self._stderr_task: asyncio.Task | None = None
         self.tools: list[dict[str, Any]] = []
 
     def _next_id(self) -> int:
@@ -369,7 +369,7 @@ def _content_to_str(content: Any) -> str:
 async def start_mcp_clients(specs: list[MCPServerSpec]) -> list[MCPClient]:
     clients = [MCPClient(spec) for spec in specs]
 
-    async def _try_start(c: MCPClient) -> Optional[MCPClient]:
+    async def _try_start(c: MCPClient) -> MCPClient | None:
         try:
             await c.start()
             return c

@@ -6,12 +6,10 @@ sub-tasks) or pause. The user answers later via `maverick answer`.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from . import Tool
 
 
-def ask_user(world, goal_id: Optional[int] = None) -> Tool:
+def ask_user(world, goal_id: int | None = None) -> Tool:
     """Build the ask_user tool, scoped to a goal so /goals/<id> can list
     its open questions and `maverick answer` resolves them correctly."""
 

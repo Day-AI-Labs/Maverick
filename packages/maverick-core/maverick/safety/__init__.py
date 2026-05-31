@@ -37,9 +37,10 @@ from .tool_risk import tool_risk, tools_exceeding  # noqa: F401
 from .unicode_filter import (  # noqa: F401
     UnicodeScanResult,
     has_dangerous_unicode,
+)
+from .unicode_filter import (
     normalize as unicode_normalize,
 )
-
 
 __all__ = [
     "redact", "scan", "SecretMatch",

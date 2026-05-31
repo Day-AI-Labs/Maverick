@@ -19,7 +19,6 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -37,10 +36,10 @@ class QdrantStore:
     def __init__(
         self,
         collection: str = "maverick",
-        path: Optional[Path] = None,
-        url: Optional[str] = None,
-        api_key: Optional[str] = None,
-        embedding_model: Optional[str] = None,
+        path: Path | None = None,
+        url: str | None = None,
+        api_key: str | None = None,
+        embedding_model: str | None = None,
     ):
         try:
             from qdrant_client import QdrantClient  # noqa: F401
@@ -80,8 +79,8 @@ class QdrantStore:
         self,
         documents: list[str],
         *,
-        ids: Optional[list[str]] = None,
-        metadatas: Optional[list[dict]] = None,
+        ids: list[str] | None = None,
+        metadatas: list[dict] | None = None,
     ) -> None:
         """Index a batch of documents. ids auto-generated if not provided.
 
