@@ -1876,10 +1876,12 @@ def run_fast() -> int:
         "workdir": str(Path.home() / "maverick-workspace"),
         "timeout": 60,
     }
+    denied_tools = ["computer", "browser"]
     if backend == "local":
+        denied_tools.extend(["shell", "write_file", "apply_patch", "str_replace_editor"])
         console.print(
             "[yellow]![/yellow] Docker daemon not detected — using the "
-            "[bold]local[/bold] sandbox (runs shell on this machine). "
+            "[bold]local[/bold] sandbox with host-mutating tools disabled. "
             "Run [bold]maverick init[/bold] to switch to docker once it's up."
         )
     capabilities = {"computer_use": False, "browser": False}
@@ -1891,6 +1893,7 @@ def run_fast() -> int:
     write_config(
         deployment, providers, role_models, channels, safety, budget,
         sandbox, keys, capabilities,
+        tool_acl={"denied_tools": denied_tools},
     )
     smoke_test()
     console.print()

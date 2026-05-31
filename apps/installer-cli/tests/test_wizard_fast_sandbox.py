@@ -29,18 +29,34 @@ def _stub_fast(monkeypatch, tmp_path: Path, *, docker: bool):
     return wizard
 
 
+def _config(tmp_path: Path) -> dict:
+    return tomllib.loads((tmp_path / ".maverick" / "config.toml").read_text())
+
+
 def _backend(tmp_path: Path) -> str:
-    cfg = tomllib.loads((tmp_path / ".maverick" / "config.toml").read_text())
-    return cfg["sandbox"]["backend"]
+    return _config(tmp_path)["sandbox"]["backend"]
+
+
+def _denied_tools(tmp_path: Path) -> set[str]:
+    return set(_config(tmp_path)["security"]["denied_tools"])
 
 
 def test_fast_setup_falls_back_to_local_when_docker_down(monkeypatch, tmp_path):
     wizard = _stub_fast(monkeypatch, tmp_path, docker=False)
     assert wizard.run_fast() == 0
     assert _backend(tmp_path) == "local"
+    assert _denied_tools(tmp_path) >= {
+        "computer",
+        "browser",
+        "shell",
+        "write_file",
+        "apply_patch",
+        "str_replace_editor",
+    }
 
 
 def test_fast_setup_uses_docker_when_daemon_up(monkeypatch, tmp_path):
     wizard = _stub_fast(monkeypatch, tmp_path, docker=True)
     assert wizard.run_fast() == 0
     assert _backend(tmp_path) == "docker"
+    assert _denied_tools(tmp_path) == {"computer", "browser"}
