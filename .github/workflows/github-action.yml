@@ -1,0 +1,56 @@
+name: GitHub Action
+
+# Smoke-tests the composite action in deploy/github-action against itself.
+# The full swarm needs a provider key + budget (out of scope for CI), so this
+# exercises the dry-run path: it proves action.yml is well-formed, Maverick
+# installs, and the command-resolution logic runs for both the freeform-goal
+# and template entry points -- the parts that break without an LLM.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/github-action/**'
+      - '.github/workflows/github-action.yml'
+  pull_request:
+    paths:
+      - 'deploy/github-action/**'
+      - '.github/workflows/github-action.yml'
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Freeform goal (dry-run)
+        id: freeform
+        uses: ./deploy/github-action
+        with:
+          goal: "Smoke test -- do not run"
+          max-dollars: "0.01"
+          dry-run: "true"
+
+      - name: Template + params (dry-run)
+        uses: ./deploy/github-action
+        with:
+          template: code-review
+          params: |
+            branch=main
+          dry-run: "true"
+
+      - name: Missing goal AND template (must fail)
+        id: missing
+        continue-on-error: true
+        uses: ./deploy/github-action
+        with:
+          dry-run: "true"
+
+      - name: Assert the missing-input case was rejected
+        shell: bash
+        run: |
+          if [ "${{ steps.missing.outcome }}" != "failure" ]; then
+            echo "::error::action should fail when neither goal nor template is provided"
+            exit 1
+          fi
+          echo "OK: missing-input correctly rejected"

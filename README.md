@@ -164,6 +164,21 @@ Each is a 20-line program: spawn `maverick mcp`, list tools, call one.
 Why this and not a separate `@maverick/core` port?
 [Language Bindings — Council Decision](./docs/ROADMAP.md#language-bindings--council-decision-may-2026).
 
+## Run Maverick in CI
+
+Run the swarm inside any repo's GitHub Actions — on a PR, a schedule, or on
+demand — under a hard spend cap:
+
+```yaml
+- uses: cdayAI/maverick/deploy/github-action@v0.1.6
+  with:
+    goal: "Summarize this PR and flag anything risky."
+    max-dollars: "0.50"
+    anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+See [docs/github-action.md](./docs/github-action.md).
+
 ## Vision
 
 | Axis | Maverick |

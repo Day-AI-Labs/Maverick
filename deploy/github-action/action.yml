@@ -1,0 +1,167 @@
+name: "Maverick swarm"
+description: "Run a Maverick agent swarm on a goal (or a goal template) inside a GitHub workflow, under a hard spend cap."
+author: "Maverick"
+
+branding:
+  icon: "cpu"
+  color: "purple"
+
+inputs:
+  goal:
+    description: "Freeform goal — the TITLE passed to `maverick start`. Provide this OR `template`."
+    required: false
+    default: ""
+  description:
+    description: "Optional longer description for a freeform goal."
+    required: false
+    default: ""
+  template:
+    description: "Name of a bundled or user-installed goal template (e.g. code-review, write-tests). Use instead of `goal`."
+    required: false
+    default: ""
+  params:
+    description: "Template parameters, one `key=value` per line. Only used with `template`."
+    required: false
+    default: ""
+  max-dollars:
+    description: "Hard spend cap in USD — the swarm refuses to exceed it. A template's own budget is used if this is blank."
+    required: false
+    default: "1.0"
+  max-wall-seconds:
+    description: "Optional wall-clock cap in seconds."
+    required: false
+    default: ""
+  model:
+    description: "Override the default model (e.g. claude-sonnet-4-6). Passed as `maverick --model`."
+    required: false
+    default: ""
+  sandbox:
+    description: "Sandbox backend for model-generated shell. A CI runner is already an ephemeral VM, so `local` is the default."
+    required: false
+    default: "local"
+  anthropic-api-key:
+    description: "Anthropic key, exported as ANTHROPIC_API_KEY. For another provider, leave this blank and set that provider's env var on the job — it is inherited here."
+    required: false
+    default: ""
+  version:
+    description: "maverick-agent version to install from PyPI (e.g. 0.1.6). Default: latest. Pin this for reproducible runs."
+    required: false
+    default: ""
+  python-version:
+    description: "Python version to set up."
+    required: false
+    default: "3.12"
+  step-summary:
+    description: "Write the swarm's final answer to the GitHub job summary."
+    required: false
+    default: "true"
+  dry-run:
+    description: "Install Maverick and print the resolved command, but do NOT run the swarm (no LLM calls, no spend). Useful for wiring/smoke tests."
+    required: false
+    default: "false"
+
+outputs:
+  result:
+    description: "The swarm's final answer (also written to result-file)."
+    value: ${{ steps.run.outputs.result }}
+  result-file:
+    description: "Path to a file containing the full run output."
+    value: ${{ steps.run.outputs.result-file }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Maverick
+      shell: bash
+      env:
+        IN_VERSION: ${{ inputs.version }}
+      run: |
+        set -o pipefail
+        if [ -n "$IN_VERSION" ]; then
+          python -m pip install "maverick-agent==$IN_VERSION"
+        else
+          python -m pip install "maverick-agent"
+        fi
+        maverick version || maverick --help
+
+    - name: Run the swarm
+      id: run
+      shell: bash
+      # Every input is passed through the environment and referenced as a
+      # quoted shell variable -- never interpolated inline as ${{ ... }} into
+      # the script body -- so a goal/param containing shell metacharacters
+      # can't inject commands (GitHub Actions script-injection class).
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        IN_GOAL: ${{ inputs.goal }}
+        IN_DESC: ${{ inputs.description }}
+        IN_TEMPLATE: ${{ inputs.template }}
+        IN_PARAMS: ${{ inputs.params }}
+        IN_MAX_DOLLARS: ${{ inputs.max-dollars }}
+        IN_MAX_WALL: ${{ inputs.max-wall-seconds }}
+        IN_MODEL: ${{ inputs.model }}
+        IN_SANDBOX: ${{ inputs.sandbox }}
+        IN_SUMMARY: ${{ inputs.step-summary }}
+        IN_DRY_RUN: ${{ inputs.dry-run }}
+      run: |
+        set -o pipefail
+
+        # Global options go before the subcommand: `maverick --model X start ...`
+        pre=()
+        [ -n "$IN_MODEL" ] && pre+=( --model "$IN_MODEL" )
+
+        args=( start )
+        if [ -n "$IN_TEMPLATE" ]; then
+          args+=( --template "$IN_TEMPLATE" )
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            args+=( --param "$line" )
+          done <<< "$IN_PARAMS"
+        else
+          if [ -z "$IN_GOAL" ]; then
+            echo "::error::Provide either 'goal' or 'template'."
+            exit 1
+          fi
+          args+=( "$IN_GOAL" )
+          [ -n "$IN_DESC" ] && args+=( --description "$IN_DESC" )
+        fi
+        [ -n "$IN_MAX_DOLLARS" ] && args+=( --max-dollars "$IN_MAX_DOLLARS" )
+        [ -n "$IN_MAX_WALL" ]    && args+=( --max-wall-seconds "$IN_MAX_WALL" )
+        [ -n "$IN_SANDBOX" ]     && args+=( --sandbox "$IN_SANDBOX" )
+
+        printf 'maverick'; printf ' %q' "${pre[@]}" "${args[@]}"; printf '\n'
+
+        if [ "$IN_DRY_RUN" = "true" ]; then
+          echo "dry-run: not invoking the swarm (no LLM calls, no spend)."
+          exit 0
+        fi
+
+        out_file="$(mktemp)"
+        echo "result-file=$out_file" >> "$GITHUB_OUTPUT"
+
+        maverick "${pre[@]}" "${args[@]}" 2>&1 | tee "$out_file"
+        status=${PIPESTATUS[0]}
+
+        # Multiline-safe step output (heredoc form).
+        {
+          echo "result<<__MAVERICK_EOF__"
+          cat "$out_file"
+          echo "__MAVERICK_EOF__"
+        } >> "$GITHUB_OUTPUT"
+
+        if [ "$IN_SUMMARY" = "true" ]; then
+          {
+            echo "## Maverick run"
+            echo ""
+            echo '```'
+            cat "$out_file"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+        exit "$status"
