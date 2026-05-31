@@ -178,6 +178,20 @@ async def run_goal(
     if not goal:
         return f"no such goal: {goal_id}"
 
+    # Emergency stop: if a HALT file is present, refuse to start the goal with a
+    # clear message + the right next step. Otherwise the agent loop trips the
+    # killswitch mid-run, surfacing a confusing generic 'ran into an error'
+    # with bad advice ('resume' -- which just halts again).
+    try:
+        from . import killswitch
+        killswitch.check()
+    except killswitch.Halted:
+        world.set_goal_status(goal_id, "blocked", result="halted")
+        return (
+            "Stopped: Maverick is halted (a HALT file is present).\n"
+            "Run `maverick unhalt` to clear it, then try again."
+        )
+
     # Bind trace context so every log line emitted in this task is
     # automatically tagged with goal_id (+ conversation_id when set).
     try:
@@ -558,6 +572,19 @@ async def run_goal(
                     f"(${budget.dollars:.2f}, {budget.elapsed():.0f}s elapsed).\n"
                     f"Resume with a higher cap: "
                     f"maverick resume #{goal_id} --max-dollars <higher>"
+                )
+            # A halt tripped mid-run surfaces as result.error too. Give the
+            # clear unhalt instruction rather than the generic error (whose
+            # 'resume' advice would just halt again).
+            if "halt" in (result.error or "").lower():
+                _end_episode_with_spend(world, episode_id, "halted", "interrupted", budget, goal_id)
+                world.set_goal_status(goal_id, "blocked", result="halted")
+                _fire_webhook("goal_finished", {
+                    "goal_id": goal_id, "status": "blocked", "result": "halted",
+                })
+                return (
+                    "Stopped: Maverick was halted mid-run (a HALT file is present).\n"
+                    f"Run `maverick unhalt` to clear it, then `maverick resume #{goal_id}`."
                 )
             _end_episode_with_spend(world, episode_id, result.error, "failure", budget, goal_id)
             _maybe_record_reflexion(
