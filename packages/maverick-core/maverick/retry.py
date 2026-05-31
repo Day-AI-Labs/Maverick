@@ -103,6 +103,24 @@ def _is_retryable_status_error(exc: Exception) -> bool:
     return status == 429 or 500 <= status < 600
 
 
+# Error classes the taxonomy says must never be retried, even when the
+# exception's type/status looked transient: a 401 surfaced as an
+# APIStatusError, a content-filter refusal, or a context-overflow won't be
+# fixed by waiting. Consulting retry_classifier here is what makes
+# threat-model.md's "retry_classifier marks auth errors terminal" true.
+_TERMINAL_CLASSES = frozenset({
+    "auth", "content_filter", "context_overflow",
+})
+
+
+def _is_terminal(exc: Exception) -> bool:
+    try:
+        from .retry_classifier import classify
+        return classify(exc).value in _TERMINAL_CLASSES
+    except Exception:  # pragma: no cover - classifier must never break retry
+        return False
+
+
 def sync_retry(fn: Callable[[], T]) -> T:
     """Run a sync callable, retrying transient provider errors."""
     retryable = _retryable_exception_classes()
@@ -111,7 +129,7 @@ def sync_retry(fn: Callable[[], T]) -> T:
         try:
             return fn()
         except retryable as e:
-            if not _is_retryable_status_error(e):
+            if not _is_retryable_status_error(e) or _is_terminal(e):
                 raise
             last = e
             if attempt == MAX_ATTEMPTS - 1:
@@ -134,7 +152,7 @@ async def async_retry(fn: Callable[[], Awaitable[T]]) -> T:
         try:
             return await fn()
         except retryable as e:
-            if not _is_retryable_status_error(e):
+            if not _is_retryable_status_error(e) or _is_terminal(e):
                 raise
             last = e
             if attempt == MAX_ATTEMPTS - 1:

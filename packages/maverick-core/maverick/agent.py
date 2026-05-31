@@ -115,6 +115,16 @@ class Agent:
         # without permitting repeated reject/revise loops.
         self._verifier_revision_used = False
 
+        # Process-reward model: scores each step's promise/progress. Resolved
+        # from env (MAVERICK_PRM=null|heuristic|remote); default NullPRM is a
+        # no-op, so this is off unless an operator opts in. Scores are emitted
+        # to the blackboard (kind="prm") as an observability signal — the loop
+        # does not gate on them, so a misconfigured PRM can't stall a run.
+        from .prm import build_from_env
+        self._prm = build_from_env()
+        self._prm_enabled = type(self._prm).__name__ != "NullPRM"
+        self._last_step_score = 0.5
+
     def _build_tools(self) -> ToolRegistry:
         reg = base_registry(
             self.ctx.world,
@@ -532,6 +542,43 @@ class Agent:
         if stripped.startswith("ERROR") or stripped.startswith("BLOCKED by Shield"):
             tr["is_error"] = True
         return tr
+
+    def _score_step(
+        self,
+        *,
+        step_index: int,
+        tool_name: str | None = None,
+        tool_succeeded: bool | None = None,
+        is_final: bool = False,
+        error: str | None = None,
+    ) -> None:
+        """Score one step via the PRM and post the result to the blackboard.
+
+        No-op unless a non-Null PRM is configured. Never raises: a scoring
+        failure is observability noise, not a reason to fail the agent loop.
+        """
+        if not self._prm_enabled:
+            return
+        try:
+            from .prm import StepContext
+            reward = self._prm.score(StepContext(
+                goal_id=self.ctx.goal_id or 0,
+                step_index=step_index,
+                role=self.role,
+                tool_name=tool_name,
+                tool_succeeded=tool_succeeded,
+                is_final=is_final,
+                error=error,
+                prior_step_score=self._last_step_score,
+            ))
+            self._last_step_score = reward.promise
+            self.ctx.blackboard.post(
+                self.name, "prm",
+                f"step={step_index} promise={reward.promise:.2f} "
+                f"progress={reward.progress:+.2f} conf={reward.confidence:.2f}",
+            )
+        except Exception as e:  # pragma: no cover - PRM must never break the loop
+            log.debug("PRM scoring skipped: %s", e)
 
     async def run(self) -> AgentResult:
         bb = self.ctx.blackboard
@@ -1149,6 +1196,7 @@ class Agent:
                         goal_id=self.ctx.goal_id, agent_role=self.role,
                         extra={"name": self.name, "final": final},
                     )
+                    self._score_step(step_index=step, is_final=True)
                     return AgentResult(
                         final=final, role=self.role, name=self.name,
                         verifier_confidence=verdict.confidence if verdict else 1.0,
@@ -1210,6 +1258,13 @@ class Agent:
                         self.name, "observation",
                         f"tool={tc.name} -> {output[:500]}",
                     )
+                    self._score_step(
+                        step_index=step,
+                        tool_name=tc.name,
+                        tool_succeeded=not (output or "").lstrip().startswith(
+                            ("ERROR", "BLOCKED by Shield")
+                        ),
+                    )
                     tool_results.append(self._make_tool_result(tc.id, output))
             else:
                 for tc in resp.tool_calls:
@@ -1229,6 +1284,13 @@ class Agent:
                     bb.post(
                         self.name, "observation",
                         f"tool={tc.name} -> {output[:500]}",
+                    )
+                    self._score_step(
+                        step_index=step,
+                        tool_name=tc.name,
+                        tool_succeeded=not (output or "").lstrip().startswith(
+                            ("ERROR", "BLOCKED by Shield")
+                        ),
                     )
                     tool_results.append(self._make_tool_result(tc.id, output))
 
