@@ -125,6 +125,18 @@ class Agent:
         self._prm_enabled = type(self._prm).__name__ != "NullPRM"
         self._last_step_score = 0.5
 
+    @property
+    def checkpoint_id(self) -> str:
+        """Stable identity for durable checkpointing, distinct from ``name``.
+
+        ``name`` carries a per-process random suffix (for blackboard / agent-bus
+        uniqueness), so it can't key a checkpoint that must survive a
+        fresh-process resume. The depth-0 agent is the single orchestrator of
+        its episode, so ``"{role}-0"`` is stable and unique within
+        (goal_id, episode_id). Phase 2 will extend this for spawned children.
+        """
+        return f"{self.role}-{self.depth}"
+
     def _build_tools(self) -> ToolRegistry:
         # Honor [capabilities] from config: these gate the optional
         # high-impact tools (computer_use / browser / web_search / mobile).
@@ -632,12 +644,17 @@ class Agent:
         # (the swarm-tree case is Phase 2; see docs/specs/durable-execution.md).
         start_step = 0
         ckpt = None
+        ep_id = getattr(self.ctx, "episode_id", 0) or 0
         if self.depth == 0 and self.ctx.goal_id is not None:
             try:
                 from . import checkpoint as _ckpt_mod
                 if _ckpt_mod.enabled():
                     ckpt = _ckpt_mod.Checkpointer(self.ctx.world)
-                    saved = ckpt.latest(self.ctx.goal_id, self.name)
+                    # Resume keys on a STABLE id, not self.name (a per-process
+                    # random uuid that never matched on a fresh-process resume).
+                    saved = ckpt.latest(
+                        self.ctx.goal_id, self.checkpoint_id, episode_id=ep_id,
+                    )
                     if saved is not None and saved.messages:
                         messages = saved.messages
                         start_step = saved.step_seq
@@ -658,9 +675,9 @@ class Agent:
             if ckpt is not None:
                 try:
                     ckpt.save(
-                        goal_id=self.ctx.goal_id, agent_id=self.name,
-                        step_seq=step, messages=messages, budget=self.ctx.budget,
-                        meta={"role": self.role},
+                        goal_id=self.ctx.goal_id, agent_id=self.checkpoint_id,
+                        episode_id=ep_id, step_seq=step, messages=messages,
+                        budget=self.ctx.budget, meta={"role": self.role},
                     )
                 except Exception as e:  # pragma: no cover
                     log.debug("checkpoint save skipped: %s", e)

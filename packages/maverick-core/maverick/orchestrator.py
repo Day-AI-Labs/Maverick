@@ -269,7 +269,7 @@ async def run_goal(
             llm=llm, world=world, budget=budget, blackboard=blackboard,
             sandbox=sandbox, goal_id=goal_id, max_depth=max_depth,
             shield=shield, mcp_clients=mcp_clients,
-            channel=channel, user_id=user_id,
+            channel=channel, user_id=user_id, episode_id=episode_id,
         )
 
         # Facts are persisted, user/REST/MCP-settable strings that get

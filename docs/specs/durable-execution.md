@@ -173,6 +173,13 @@ lands when the durable loop exists to hang it on.
   restored budget; `[durable]` config knob (off by default, fail-open);
   `orchestrator` clears checkpoints on normal completion. See
   `maverick/checkpoint.py` + `tests/test_durable_checkpoint.py`.
+- **Phase 1.1 — episode-scoped, stable keying.** ✅ *Shipped.* Fixed a keying
+  bug: Phase 1 keyed on `Agent.name` (a per-process random uuid), so a
+  fresh-process resume never matched and silently warm-restarted. Now keys on
+  `(goal_id, episode_id, checkpoint_id)` where `checkpoint_id = "{role}-{depth}"`
+  (stable) and `episode_id` is threaded through `SwarmContext` — so best-of-N
+  attempts (same `goal_id`, distinct episodes) never cross-resume. Production
+  resume now works without test-only name pinning.
 - **Phase 2 — swarm tree.** Per-agent records + parent re-gather; rewind/fork.
 - **Phase 3 — pluggable backend + sandbox-snapshot hook** (interface only).
 - **Phase 4 — deterministic replay** (record tool outputs + seeds; `maverick
