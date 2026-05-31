@@ -166,6 +166,10 @@ class Workflow:
                 log.warning("workflow step %s failed: %s", step.name, err)
                 if stop_on_error:
                     break
+                # Don't expose a failed step's (empty) output to a downstream
+                # ${step.out} placeholder -- the dependent would silently run on
+                # a blanked argument instead of being skipped.
+                continue
             outputs[step.name] = sr.output
         return result
 

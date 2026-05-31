@@ -84,6 +84,11 @@ def run_one(
         "benchmark": str(benchmark_path),
         "tag": tag,
         "agent": "maverick",
+        # Provenance: this harness can only measure Maverick (it shells out
+        # to `maverick start`). Comparator rows for other agents are hand-
+        # added, so they MUST be marked source=manual to stay honest -- a
+        # reader can't otherwise tell a measured row from a typed-in one.
+        "source": "measured",
         "wall_seconds": round(wall_seconds, 2),
         "cost_dollars": round(cost, 4),
         "input_tokens": in_tokens,
@@ -100,7 +105,7 @@ def append_results(row: dict, results_path: Path) -> None:
     JSON because RESULTS.md is the human-readable artifact.
     """
     cols = [
-        "benchmark", "tag", "agent", "wall_seconds", "cost_dollars",
+        "benchmark", "tag", "agent", "source", "wall_seconds", "cost_dollars",
         "input_tokens", "output_tokens", "tool_calls", "outcome",
     ]
     if not results_path.exists():

@@ -10,6 +10,10 @@ Each row is one run of one benchmark. Columns:
 - `benchmark`: path under `benchmarks/`
 - `tag`: release tag the run was at (e.g. `v0.1.0`)
 - `agent`: `maverick`, `openclaw`, `hermes`, `autogen`, or a single-shot baseline
+- `source`: `measured` (auto-written by this harness) or `manual` (hand-added
+  comparator row). The harness only measures Maverick; any other-agent row is
+  hand-added and **must** be marked `manual` so measured and typed-in numbers
+  are never confused.
 - `wall_seconds`: end-to-end clock time
 - `cost_dollars`: total API spend (sum across all agents in the swarm)
 - `input_tokens`, `output_tokens`: aggregate token usage
@@ -50,6 +54,6 @@ writes only Maverick's row.
 
 ## Results table
 
-| benchmark | tag | agent | wall_seconds | cost_dollars | input_tokens | output_tokens | tool_calls | outcome |
-|---|---|---|---|---|---|---|---|---|
-| benchmarks/longhorizon/research-report.md | local-smoke | maverick | 0.1 | 0.0 | 0 | 0 | 0 | dry-run |
+| benchmark | tag | agent | source | wall_seconds | cost_dollars | input_tokens | output_tokens | tool_calls | outcome |
+|---|---|---|---|---|---|---|---|---|---|
+| benchmarks/longhorizon/research-report.md | local-smoke | maverick | measured | 0.1 | 0.0 | 0 | 0 | 0 | dry-run |

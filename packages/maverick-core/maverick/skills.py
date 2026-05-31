@@ -438,10 +438,14 @@ def distill(
             text = text[len("markdown") :]
         text = text.strip()
     try:
-        m = re.search(r"^name:\s*(\S+)", text, re.MULTILINE)
-        name = _safe_name(m.group(1)) if m else "skill"
-        path = skills_dir / f"{name}.md"
-        path.write_text(text, encoding="utf-8")
-        return Skill.parse(text, path)
-    except Exception:
+        # Route distilled skills through the SAME validation + shield scan
+        # as install_skill (#396 quality gate). A skill distilled from a
+        # trajectory can inherit injected content from tool output, and its
+        # body is later concatenated into future agents' system prompts via
+        # render_for_prompt -- so it must be frontmatter-validated and
+        # shield-scanned, and (unlike the old raw write_text) must NOT land
+        # on disk if it fails. _validate_and_write parses before writing.
+        return _validate_and_write(text, skills_dir)
+    except Exception as e:
+        log.warning("distilled skill rejected (not written): %s", e)
         return None

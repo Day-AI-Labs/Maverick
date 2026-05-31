@@ -1054,6 +1054,12 @@ def resume(ctx, goal_id, max_depth: int, max_dollars, max_wall_seconds) -> None:
             click.echo("no active or blocked goal to resume.")
             return
         goal_id = g.id
+    elif not world.get_goal(goal_id):
+        # An explicit --goal-id that doesn't exist is a user error: report it
+        # and exit non-zero. Otherwise the run prints run_goal's "no such goal"
+        # and still exits 0, which a script can't detect (export exits 2 here).
+        click.echo(f"no such goal #{goal_id}. See `maverick status`.", err=True)
+        sys.exit(2)
     open_qs = world.open_questions(goal_id)
     if open_qs:
         click.echo(f"cannot resume goal #{goal_id}: {len(open_qs)} open question(s).")

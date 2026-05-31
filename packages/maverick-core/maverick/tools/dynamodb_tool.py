@@ -53,7 +53,11 @@ def _client():
     )
 
 
-def _serialize(obj: Any) -> Any:
+def _serialize(obj: Any, _depth: int = 0) -> Any:
+    # Depth cap: a DynamoDB item is external data; a deeply-nested one would
+    # blow the stack. Real nesting is shallow (service cap ~32).
+    if _depth > 64:
+        return str(obj)
     if isinstance(obj, Decimal):
         return float(obj) if obj % 1 else int(obj)
     if isinstance(obj, set):
@@ -61,9 +65,9 @@ def _serialize(obj: Any) -> Any:
     if isinstance(obj, bytes):
         return obj.decode("utf-8", errors="replace")
     if isinstance(obj, dict):
-        return {k: _serialize(v) for k, v in obj.items()}
+        return {k: _serialize(v, _depth + 1) for k, v in obj.items()}
     if isinstance(obj, list):
-        return [_serialize(v) for v in obj]
+        return [_serialize(v, _depth + 1) for v in obj]
     return obj
 
 

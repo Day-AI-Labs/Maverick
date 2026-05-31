@@ -1571,6 +1571,7 @@ def write_config(
     web_search_enabled: bool = False,
     skills: dict[str, Any] | None = None,
     self_learning: dict[str, Any] | None = None,
+    deployment: str | None = None,
 ) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -1642,6 +1643,12 @@ def write_config(
         "# Maverick config. Regenerate with:  maverick init",
         "",
     ]
+    if deployment:
+        # Record the chosen deployment topology (laptop / vps / ...) for
+        # provenance + so a later `maverick init` can default to it.
+        lines.append("[deployment]")
+        lines.append(f"type = {_toml_str(str(deployment))}")
+        lines.append("")
     for prov in providers:
         info = catalog.PROVIDERS.get(prov, {})
         lines.append(f"[providers.{prov}]")

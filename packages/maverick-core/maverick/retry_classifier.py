@@ -115,7 +115,9 @@ def next_delay(exc: BaseException, *, attempts_so_far: int) -> float:
     pol = policy_for(exc)
     if not pol.retry:
         return 0.0
-    delay = pol.initial_delay_seconds * (pol.backoff_multiplier ** attempts_so_far)
+    # Clamp the exponent before the power: attempts_so_far is caller-supplied
+    # and unbounded, and 2.0 ** big raises OverflowError before the min() clamp.
+    delay = pol.initial_delay_seconds * (pol.backoff_multiplier ** min(attempts_so_far, 32))
     return min(delay, pol.max_delay_seconds)
 
 

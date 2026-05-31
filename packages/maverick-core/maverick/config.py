@@ -113,6 +113,19 @@ def get_budget_overrides() -> dict:
     return load_config().get("budget", {})
 
 
+def get_capabilities() -> dict:
+    """Return the [capabilities] section (computer_use / browser / web_search /
+    mobile_tools). These gate the optional high-impact tools in
+    ``tools.base_registry``; all default off."""
+    cfg = load_config().get("capabilities", {}) or {}
+    return {
+        "computer_use": bool(cfg.get("computer_use", False)),
+        "browser": bool(cfg.get("browser", False)),
+        "web_search": bool(cfg.get("web_search", False)),
+        "mobile_tools": bool(cfg.get("mobile_tools", False)),
+    }
+
+
 def get_safety() -> dict:
     """Return safety section with sensible defaults filled in."""
     cfg = load_config().get("safety", {})
@@ -174,4 +187,22 @@ def get_self_learning() -> dict:
         "create_tools": bool(cfg.get("create_tools", True)),
         "add_mcp_servers": bool(cfg.get("add_mcp_servers", True)),
         "max_acquisitions": max(1, max_acq),
+    }
+
+
+def get_durable() -> dict:
+    """Return the ``[durable]`` section with defaults filled in.
+
+    Durable execution (checkpoint/resume) is OFF by default so the kernel
+    keeps current warm-restart behavior out of the box. ``keep_last`` caps how
+    many checkpoints are retained per agent for rewind/history.
+    """
+    cfg = load_config().get("durable", {})
+    try:
+        keep = int(cfg.get("keep_last", 5))
+    except (TypeError, ValueError):
+        keep = 5
+    return {
+        "enabled": bool(cfg.get("enabled", False)),
+        "keep_last": max(1, keep),
     }

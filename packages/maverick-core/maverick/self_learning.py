@@ -430,6 +430,129 @@ def load_generated_tools() -> list[Any]:
 
 
 # --------------------------------------------------------------------------
+# discover: REST APIs (OpenAPI specs)
+# --------------------------------------------------------------------------
+# Well-known locations a service tends to publish its OpenAPI/Swagger doc.
+WELL_KNOWN_SPEC_PATHS = (
+    "/openapi.json", "/openapi.yaml", "/swagger.json", "/v3/api-docs",
+    "/api-docs", "/swagger/v1/swagger.json", "/.well-known/openapi.json",
+)
+SPEC_FETCH_TIMEOUT = 10.0
+MAX_SPEC_BYTES = 5_000_000
+_URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
+
+
+def _default_opener(url: str, *, timeout: float):
+    # Route through the shared SSRF guard so a model-supplied URL can't be
+    # pointed at an internal/metadata address.
+    from .tools.http_fetch import guarded_urlopen
+    return guarded_urlopen(url, timeout=timeout)
+
+
+def _fetch_text(url: str, *, opener=None, timeout: float = SPEC_FETCH_TIMEOUT) -> str | None:
+    opener = opener or _default_opener
+    try:
+        with opener(url, timeout=timeout) as resp:
+            if getattr(resp, "status", 200) != 200:
+                return None
+            return resp.read(MAX_SPEC_BYTES).decode("utf-8", errors="replace")
+    except Exception as e:  # pragma: no cover -- network/parse never blocks
+        log.debug("self_learning: fetch %s failed: %s", url, e)
+        return None
+
+
+def _is_openapi_text(text: str | None) -> bool:
+    """True iff ``text`` is an OpenAPI/Swagger document.
+
+    Matches what ``openapi_runner`` will actually accept: a JSON object with
+    an ``openapi``/``swagger`` key AND ``paths``. YAML specs are detected by
+    a cheap structural check on the head (openapi_runner parses them when
+    pyyaml is installed).
+    """
+    if not text:
+        return False
+    try:
+        data = json.loads(text)
+        return (
+            isinstance(data, dict)
+            and ("openapi" in data or "swagger" in data)
+            and "paths" in data
+        )
+    except (json.JSONDecodeError, ValueError):
+        head = text[:2000]
+        return bool(re.search(r"^\s*(openapi|swagger)\s*:", head, re.MULTILINE))
+
+
+def validate_spec_url(url: str, *, opener=None) -> str | None:
+    """Return ``url`` if it serves an OpenAPI/Swagger doc, else None."""
+    if not url.startswith(("http://", "https://")):
+        return None
+    return url if _is_openapi_text(_fetch_text(url, opener=opener)) else None
+
+
+def probe_openapi_spec(base_url: str, *, opener=None) -> str | None:
+    """Probe well-known spec locations under ``base_url``; return the first hit.
+
+    Tries the URL itself first (it may already be a spec doc), then the
+    well-known paths under both the given URL and its bare origin.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    base = (base_url or "").rstrip("/")
+    if not base:
+        return None
+    direct = validate_spec_url(base, opener=opener)
+    if direct:
+        return direct
+    parts = urlsplit(base)
+    roots = [base]
+    if parts.scheme and parts.netloc:
+        origin = urlunsplit((parts.scheme, parts.netloc, "", "", ""))
+        if origin not in roots:
+            roots.append(origin)
+    for root in roots:
+        for path in WELL_KNOWN_SPEC_PATHS:
+            hit = validate_spec_url(root + path, opener=opener)
+            if hit:
+                return hit
+    return None
+
+
+def _extract_urls(text: str, *, limit: int = 10) -> list[str]:
+    seen: list[str] = []
+    for u in _URL_RE.findall(text or ""):
+        u = u.rstrip(".,);")
+        if u not in seen:
+            seen.append(u)
+    return seen[:limit]
+
+
+def discover_openapi_spec(
+    *, base_url: str = "", search_text: str = "", opener=None, max_candidates: int = 6,
+) -> str | None:
+    """Find an OpenAPI spec URL from a base URL and/or web-search result text.
+
+    1. If ``base_url`` is given, probe its well-known spec locations.
+    2. Otherwise scan ``search_text`` for URLs and accept the first that
+       serves a spec; failing that, probe the first candidate's origin.
+
+    Returns the spec URL or None. Every fetch goes through the SSRF guard.
+    Request count is bounded by ``max_candidates`` + the well-known probe.
+    """
+    if base_url:
+        hit = probe_openapi_spec(base_url, opener=opener)
+        if hit:
+            return hit
+    candidates = _extract_urls(search_text)[:max_candidates]
+    for u in candidates:
+        if validate_spec_url(u, opener=opener):
+            return u
+    if candidates:
+        return probe_openapi_spec(candidates[0], opener=opener)
+    return None
+
+
+# --------------------------------------------------------------------------
 # pre-flight gap analysis (orchestrator-driven)
 # --------------------------------------------------------------------------
 _NEEDS_SYSTEM = """You analyse a task and list capabilities a general assistant might LACK to do it.
@@ -504,5 +627,6 @@ __all__ = [
     "enabled", "settings", "Learned", "record", "history",
     "Candidate", "search_capabilities", "acquire_skill", "add_mcp_server",
     "write_generated_tool", "load_generated_tools", "preflight",
+    "validate_spec_url", "probe_openapi_spec", "discover_openapi_spec",
     "LEARNED_PATH", "GENERATED_TOOLS_DIR", "TOOL_AUTHOR_SYSTEM",
 ]

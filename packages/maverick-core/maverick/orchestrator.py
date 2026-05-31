@@ -463,6 +463,16 @@ async def run_goal(
 
         try:
             result = await root.run()
+            # Durable execution: the root loop returned normally (it is no
+            # longer mid-step), so any checkpoints are stale — drop them. A
+            # crash that kills the process BEFORE this leaves them in place
+            # for `maverick resume` to pick up. Fail-open.
+            try:
+                from . import checkpoint as _ckpt_mod
+                if _ckpt_mod.enabled():
+                    _ckpt_mod.Checkpointer(world).clear(goal_id)
+            except Exception:  # pragma: no cover -- never block completion
+                pass
         except BudgetExceeded as e:
             _end_episode_with_spend(world, episode_id, f"budget: {e}", "failure", budget, goal_id)
             _maybe_record_reflexion(

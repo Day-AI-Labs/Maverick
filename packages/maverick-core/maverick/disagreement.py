@@ -1,38 +1,22 @@
-"""Proposer disagreement signals → adaptive test-time compute.
+"""Proposer disagreement signal: normalized answer entropy.
 
-Karpathy SOTA-review item: ``max_depth=3, max_fanout=8`` static is
-"the single most embarrassing line in the repo". Replace with:
+``answer_entropy(answers)`` returns a normalized Shannon entropy in [0, 1]
+over hash-clustered answers (0 = all identical, 1 = every answer unique).
+The spawn machinery computes it after a parallel fan-out and posts it to the
+blackboard, so the orchestrator's verify branch and the trajectory-donation
+selector can read how much the proposers diverged.
 
-    fanout = clip(1, 32, ceil(alpha * entropy(proposer_distribution)))
-    depth  = early_stop_on(verifier_confidence > tau OR
-                           delta_reward < epsilon for 2 steps)
-
-This module gives the spawn machinery two helpers:
-
-* ``adaptive_fanout(answers, requested, *, alpha=...)`` returns the
-  number of sibling proposers to actually run, scaled by the
-  disagreement entropy across a small "preview" sampling.
-* ``answers_disagree(answers, threshold=...)`` flips True when the
-  proposals don't cluster -- the orchestrator should pay more compute
-  here.
-
-Entropy estimation is intentionally cheap: we compute a normalized
-hash-cluster entropy over the first ~256 chars of each answer. Real
-production would use an embedding model; that's a v0.3 follow-up.
+Estimation is intentionally cheap: a normalized hash-cluster entropy over the
+first ~256 chars of each answer. Real production would use an embedding model;
+that's a v0.3 follow-up. (Acting on the signal -- adaptive re-fan-out on high
+disagreement -- is deliberately deferred to that follow-up; today the signal is
+observability only.)
 """
 from __future__ import annotations
 
 import math
-import os
 import re
 from collections import Counter
-
-# Tunables (env-driven).
-ALPHA = float(os.environ.get("MAVERICK_FANOUT_ALPHA", "4.0"))
-FANOUT_MIN = int(os.environ.get("MAVERICK_FANOUT_MIN", "1"))
-FANOUT_MAX = int(os.environ.get("MAVERICK_FANOUT_MAX", "32"))
-DISAGREEMENT_THRESHOLD = float(os.environ.get("MAVERICK_DISAGREEMENT_THRESHOLD", "0.5"))
-
 
 _NORM_RE = re.compile(r"\s+")
 
@@ -59,44 +43,3 @@ def answer_entropy(answers: list[str]) -> float:
     # Normalize by max entropy log(n) (when all unique).
     h_max = math.log(n)
     return h / h_max if h_max > 0 else 0.0
-
-
-def adaptive_fanout(
-    answers: list[str],
-    requested: int,
-    *,
-    alpha: float = ALPHA,
-    minimum: int = FANOUT_MIN,
-    maximum: int = FANOUT_MAX,
-) -> int:
-    """Compute the actual fan-out to run.
-
-    With no prior samples (cold start), runs at least 2 proposers so
-    we have a disagreement signal next time. With prior samples, scale
-    fanout up when entropy is high, down when answers agree.
-
-    `requested` is the LLM-asked fan-out; we may run more or fewer.
-    """
-    if not answers:
-        # Cold start: at least 2, capped at the caller's request.
-        return max(minimum, min(2, max(requested, 2), maximum))
-    ent = answer_entropy(answers)
-    target = math.ceil(alpha * ent * max(requested, 1))
-    # Ensure we never run fewer than the proposer asked for IF it
-    # asked for a single answer (the simple case). When the proposer
-    # asked for many, we trust entropy to scale us.
-    if requested <= 1:
-        return max(minimum, min(maximum, max(target, 1)))
-    return max(minimum, min(maximum, target))
-
-
-def answers_disagree(
-    answers: list[str],
-    *,
-    threshold: float = DISAGREEMENT_THRESHOLD,
-) -> bool:
-    """Convenience predicate: do the answers disagree enough to merit
-    spending more compute? Used as the trajectory-donation selection
-    signal too (the cases where the swarm learned something the solo
-    agent couldn't are the cases worth feeding back)."""
-    return answer_entropy(answers) >= threshold

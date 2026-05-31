@@ -120,3 +120,43 @@ def add_known_leaked_brief(brief: str) -> None:
     """Allow harness code or operators to extend the leaked-brief set."""
     h = hashlib.sha256(brief.strip().encode("utf-8")).hexdigest()[:16]
     _KNOWN_LEAKED_BRIEFS.add(h)
+
+
+def load_leaked_briefs_from_file(path: str) -> int:
+    """Populate the leaked-brief set from a newline-delimited file.
+
+    Each non-empty, non-comment (``#``) line is either a raw brief (hashed
+    here) or a precomputed 16-char hex hash. Returns the count added. This
+    is how operators wire a persistent, community-maintained corpus: the
+    in-repo default is intentionally empty (we ship no fabricated leak
+    data), but the mechanism is no longer inert.
+    """
+    added = 0
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.readlines()
+    except OSError:
+        return 0
+    for line in lines:
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if len(s) == 16 and all(c in "0123456789abcdef" for c in s.lower()):
+            _KNOWN_LEAKED_BRIEFS.add(s.lower())
+        else:
+            add_known_leaked_brief(s)
+        added += 1
+    return added
+
+
+# Wire a persistent source at import if the operator points us at one.
+# Keeps the in-repo set empty (no fabricated data) while making the
+# corpus check actually reachable in real runs.
+def _load_env_source() -> None:
+    import os
+    path = os.environ.get("MAVERICK_LEAKED_BRIEFS_FILE")
+    if path:
+        load_leaked_briefs_from_file(path)
+
+
+_load_env_source()

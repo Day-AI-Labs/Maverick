@@ -37,6 +37,9 @@ def test_dry_run_produces_row(harness, tmp_path, monkeypatch):
     )
 
     assert row["agent"] == "maverick"
+    # Provenance: auto-measured rows are tagged so they can't be confused
+    # with hand-added comparator rows (#320).
+    assert row["source"] == "measured"
     assert row["outcome"] == "dry-run"
     assert row["wall_seconds"] >= 0
     assert row["cost_dollars"] == 0.0
@@ -46,6 +49,7 @@ def test_append_results_creates_table(harness, tmp_path):
     out = tmp_path / "RESULTS.md"
     row = {
         "benchmark": "x.md", "tag": "v0.1", "agent": "maverick",
+        "source": "measured",
         "wall_seconds": 0.5, "cost_dollars": 0.01,
         "input_tokens": 100, "output_tokens": 50, "tool_calls": 2,
         "outcome": "success",
@@ -55,7 +59,8 @@ def test_append_results_creates_table(harness, tmp_path):
     content = out.read_text()
     assert "Maverick benchmark results" in content
     assert "| benchmark |" in content
-    assert "| x.md | v0.1 | maverick | 0.5 |" in content
+    assert "| source |" in content
+    assert "| x.md | v0.1 | maverick | measured | 0.5 |" in content
 
 
 def test_append_is_idempotent_per_table_creation(harness, tmp_path):

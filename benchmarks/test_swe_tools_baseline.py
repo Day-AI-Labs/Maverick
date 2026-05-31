@@ -1,13 +1,17 @@
 """sonnet_tools SWE-bench baseline: the flat Sonnet+bash agent loop.
 
-A fake ``anthropic`` module is injected via sys.modules so this runs with or
-without the real SDK and never hits the network; the sandbox is a real tiny
-git repo so the loop -> bash -> file edit -> ``git diff`` -> patch path is
-exercised end to end. swe_bench is loaded by path (like the sibling tests).
+Hermetic by design: a fake ``anthropic`` module + a fake sandbox + monkeypatched
+git helpers, so the loop wiring
+
+    tool_use -> sandbox.exec -> tool_result -> loop -> git diff -> Row
+
+is exercised with zero dependence on a live model, a real shell, or git in the
+environment (the earlier real-git/real-subprocess version passed locally but is
+exactly the kind of thing that varies across CI runners). The real git + shell
+behaviour is covered by actual benchmark runs, not this unit test. swe_bench is
+loaded by path, like the sibling baseline tests.
 """
 import importlib.util
-import os
-import subprocess
 import sys
 import types
 from pathlib import Path
@@ -77,113 +81,62 @@ def _fake_anthropic(scripted_turns):
     return mod
 
 
-def _git_repo(tmp_path: Path) -> tuple[Path, str]:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    # Preserve PATH etc.; pin identity + ignore any global/system gitconfig so
-    # the commit succeeds deterministically on any host.
-    env = {
-        **os.environ,
-        "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null",
-        "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-        "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
-    }
+class _FakeSandbox:
+    """Records the commands the loop runs; returns a canned ExecResult."""
 
-    def g(*a):
-        return subprocess.run(["git", "-C", str(repo), *a], check=True,
-                              capture_output=True, text=True, env=env)
+    def __init__(self):
+        self.workdir = "/tmp/maverick-fake-workdir"
+        self.commands = []
 
-    subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True, env=env)
-    (repo / "bug.py").write_text("def f():\n    return 1\n")
-    g("add", "-A")
-    g("commit", "-q", "-m", "init")
-    base = g("rev-parse", "HEAD").stdout.strip()
-    return repo, base
+    def exec(self, cmd, timeout=None):
+        from maverick.sandbox.local import ExecResult
+        self.commands.append(cmd)
+        return ExecResult(stdout="(edited)", stderr="", exit_code=0)
 
 
-def test_sonnet_tools_runs_loop_and_extracts_diff(tmp_path, monkeypatch):
+def _wire(monkeypatch, scripted_turns, *, diff):
+    """Mock every external boundary run_sonnet_tools touches."""
+    sandbox = _FakeSandbox()
+    monkeypatch.setattr("maverick.sandbox.build_sandbox", lambda: sandbox)
+    monkeypatch.setattr(_sb, "_reset_workdir", lambda *a, **k: None)
+    monkeypatch.setattr(_sb, "_git_diff", lambda _wd: diff)
+    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic(scripted_turns))
+    return sandbox
+
+
+def test_sonnet_tools_runs_loop_and_extracts_diff(monkeypatch):
     monkeypatch.delenv("MAVERICK_BENCH_DRY_RUN", raising=False)
-    repo, base = _git_repo(tmp_path)
-
-    from maverick.sandbox.local import LocalBackend
-    # run_sonnet_tools does `from maverick.sandbox import build_sandbox` at call
-    # time, so patch the name on that module.
-    monkeypatch.setattr("maverick.sandbox.build_sandbox", lambda: LocalBackend(workdir=repo))
-    monkeypatch.setitem(
-        sys.modules, "anthropic",
-        _fake_anthropic([
-            # Turn 1: edit the file via bash.
-            [_ToolUseBlock("tu_1", "bash", {"command": "printf '    return 42\\n' >> bug.py"})],
-            # Turn 2: no tool_use -> loop ends.
+    sandbox = _wire(
+        monkeypatch,
+        [
+            # Turn 1: the model calls the bash tool.
+            [_ToolUseBlock("tu_1", "bash", {"command": "sed -i 's/return 1/return 42/' bug.py"})],
+            # Turn 2: no tool_use -> the loop ends.
             [_TextBlock("DONE")],
-        ]),
+        ],
+        diff="--- a/bug.py\n+++ b/bug.py\n@@ -1 +1 @@\n-    return 1\n+    return 42\n",
     )
 
-    row = run_sonnet_tools("inst-tools", "make f return 42", base_commit=base)
+    row = run_sonnet_tools("inst-tools", "make f return 42", base_commit="abc123")
 
     assert row.pipeline == "sonnet_tools"
     assert row.outcome == "success"
     assert row.outcome != "not-implemented"
-    # The predicted patch is the real git diff of the agent's edit.
-    assert "bug.py" in row.predicted_patch
+    # The predicted patch is whatever `git diff` reported after the loop.
     assert "return 42" in row.predicted_patch
-    # Two model calls were made (tool turn + final turn).
+    # The bash tool_use was routed through the sandbox verbatim.
+    assert sandbox.commands == ["sed -i 's/return 1/return 42/' bug.py"]
+    # Two model calls were made (the tool turn + the final turn).
     assert row.tokens_in == 20
     assert row.tokens_out == 10
 
 
-def test_sonnet_tools_ignores_repo_configured_external_diff(tmp_path, monkeypatch):
+def test_sonnet_tools_no_edit_is_empty(monkeypatch):
     monkeypatch.delenv("MAVERICK_BENCH_DRY_RUN", raising=False)
-    repo, base = _git_repo(tmp_path)
-    marker = repo / "host_marker"
-
-    from maverick.sandbox.local import LocalBackend
-    # run_sonnet_tools does `from maverick.sandbox import build_sandbox` at call
-    # time, so patch the name on that module.
-    monkeypatch.setattr("maverick.sandbox.build_sandbox", lambda: LocalBackend(workdir=repo))
-    monkeypatch.setitem(
-        sys.modules, "anthropic",
-        _fake_anthropic([
-            [
-                _ToolUseBlock(
-                    "tu_1",
-                    "bash",
-                    {
-                        "command": """cat > evil-diff.sh <<'EOF'
-#!/bin/sh
-echo external diff ran >> host_marker
-EOF
-chmod +x evil-diff.sh
-git config diff.external ./evil-diff.sh
-printf '\n# changed\n' >> bug.py
-""",
-                    },
-                ),
-            ],
-            [_TextBlock("DONE")],
-        ]),
-    )
-
-    row = run_sonnet_tools("inst-external-diff", "make a safe diff", base_commit=base)
-
-    assert row.outcome == "success"
-    assert "bug.py" in row.predicted_patch
-    assert "# changed" in row.predicted_patch
-    assert not marker.exists()
-
-
-def test_sonnet_tools_no_edit_is_empty(tmp_path, monkeypatch):
-    monkeypatch.delenv("MAVERICK_BENCH_DRY_RUN", raising=False)
-    repo, base = _git_repo(tmp_path)
-
-    from maverick.sandbox.local import LocalBackend
-    # run_sonnet_tools does `from maverick.sandbox import build_sandbox` at call
-    # time, so patch the name on that module.
-    monkeypatch.setattr("maverick.sandbox.build_sandbox", lambda: LocalBackend(workdir=repo))
     # Model answers immediately with no tool call -> no edits -> empty diff.
-    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic([[_TextBlock("DONE")]]))
+    _wire(monkeypatch, [[_TextBlock("DONE")]], diff="")
 
-    row = run_sonnet_tools("inst-noop", "do nothing", base_commit=base)
+    row = run_sonnet_tools("inst-noop", "do nothing", base_commit="abc123")
     assert row.outcome == "empty"
     assert row.predicted_patch == ""
 

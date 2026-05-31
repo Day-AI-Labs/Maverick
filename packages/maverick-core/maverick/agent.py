@@ -126,6 +126,17 @@ class Agent:
         self._last_step_score = 0.5
 
     def _build_tools(self) -> ToolRegistry:
+        # Honor [capabilities] from config: these gate the optional
+        # high-impact tools (computer_use / browser / web_search / mobile).
+        # Without this, enabling them in config (or the wizard) was a no-op --
+        # base_registry's enable_* flags defaulted off and nothing set them.
+        # The [security] ACL still applies on top (a capability can be enabled
+        # but a tool still denied).
+        try:
+            from .config import get_capabilities
+            caps = get_capabilities()
+        except Exception:  # pragma: no cover -- never block tool build on config
+            caps = {}
         reg = base_registry(
             self.ctx.world,
             self.ctx.sandbox,
@@ -134,6 +145,10 @@ class Agent:
             channel=self.ctx.channel,
             user_id=self.ctx.user_id,
             budget=self.ctx.budget,
+            enable_computer_use=bool(caps.get("computer_use", False)),
+            enable_browser=bool(caps.get("browser", False)),
+            enable_web_search=bool(caps.get("web_search", False)),
+            enable_mobile_tools=bool(caps.get("mobile_tools", False)),
         )
         # Cross-agent bus tools, bound to this agent's id so send records
         # the right sender and recv drains the right inbox.
@@ -610,7 +625,46 @@ class Agent:
             first_content = brief_text
         messages: list[dict] = [{"role": "user", "content": first_content}]
 
-        for step in range(self.max_steps):
+        # Durable execution (Phase 1): resume a crashed single-agent run from
+        # its last committed step instead of re-running from step 0. Off by
+        # default, fail-open — any error here leaves `messages`/`start_step`
+        # untouched, i.e. today's warm-restart behavior. Scoped to depth-0
+        # (the swarm-tree case is Phase 2; see docs/specs/durable-execution.md).
+        start_step = 0
+        ckpt = None
+        if self.depth == 0 and self.ctx.goal_id is not None:
+            try:
+                from . import checkpoint as _ckpt_mod
+                if _ckpt_mod.enabled():
+                    ckpt = _ckpt_mod.Checkpointer(self.ctx.world)
+                    saved = ckpt.latest(self.ctx.goal_id, self.name)
+                    if saved is not None and saved.messages:
+                        messages = saved.messages
+                        start_step = saved.step_seq
+                        try:
+                            self.ctx.budget = _ckpt_mod.restore_budget(saved.budget)
+                        except Exception:
+                            pass
+                        bb.post(self.name, "plan",
+                                f"resumed from checkpoint at step {start_step}")
+            except Exception as e:  # pragma: no cover -- never block a run
+                log.debug("checkpoint resume skipped: %s", e)
+
+        for step in range(start_step, self.max_steps):
+            # Durable checkpoint at the turn boundary: commit the resumable
+            # loop state (step index, messages, budget snapshot) BEFORE the
+            # next LLM call, so a crash mid-step loses at most one step's work.
+            # Fail-open: a store error never stops the run.
+            if ckpt is not None:
+                try:
+                    ckpt.save(
+                        goal_id=self.ctx.goal_id, agent_id=self.name,
+                        step_seq=step, messages=messages, budget=self.ctx.budget,
+                        meta={"role": self.role},
+                    )
+                except Exception as e:  # pragma: no cover
+                    log.debug("checkpoint save skipped: %s", e)
+
             # Turn-boundary safety gate. Evaluate the global killswitch
             # (`maverick halt`, the dashboard Halt button, or the HALT
             # file) and the wall-clock/token/tool caps BEFORE the next LLM

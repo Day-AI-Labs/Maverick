@@ -93,8 +93,12 @@ def _db_for(args: dict[str, Any]):
     return _client()[name], None
 
 
-def _serialize(obj: Any) -> Any:
+def _serialize(obj: Any, _depth: int = 0) -> Any:
     """ObjectId / datetime / bytes -> JSON-safe."""
+    # Depth cap: a document is external data; a deeply-nested one would blow the
+    # stack here. Real BSON nesting is shallow (server cap 100).
+    if _depth > 64:
+        return str(obj)
     try:
         from bson import ObjectId
     except ImportError:
@@ -107,9 +111,9 @@ def _serialize(obj: Any) -> Any:
     if isinstance(obj, bytes):
         return obj.decode("utf-8", errors="replace")
     if isinstance(obj, dict):
-        return {k: _serialize(v) for k, v in obj.items()}
+        return {k: _serialize(v, _depth + 1) for k, v in obj.items()}
     if isinstance(obj, list):
-        return [_serialize(v) for v in obj]
+        return [_serialize(v, _depth + 1) for v in obj]
     return obj
 
 

@@ -167,9 +167,12 @@ lands when the durable loop exists to hang it on.
 
 ## 8. Phasing
 
-- **Phase 1 — linear single-agent crash-resume.** `checkpoints` table; checkpoint
-  at turn boundary; resume a non-spawning agent from its last step with restored
-  budget. Smallest shippable slice; covers chat/REPL + shallow goals.
+- **Phase 1 — linear single-agent crash-resume.** ✅ *Shipped.* `checkpoints`
+  table (own table, no schema-version migration); checkpoint at the turn
+  boundary in `Agent.run()`; depth-0 resume from the last committed step with
+  restored budget; `[durable]` config knob (off by default, fail-open);
+  `orchestrator` clears checkpoints on normal completion. See
+  `maverick/checkpoint.py` + `tests/test_durable_checkpoint.py`.
 - **Phase 2 — swarm tree.** Per-agent records + parent re-gather; rewind/fork.
 - **Phase 3 — pluggable backend + sandbox-snapshot hook** (interface only).
 - **Phase 4 — deterministic replay** (record tool outputs + seeds; `maverick
