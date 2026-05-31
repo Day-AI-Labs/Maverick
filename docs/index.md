@@ -65,5 +65,6 @@ You can support the project via
 - [Deployment](deployment.md) — desktop / docker / VPS / phone modes
 - [Safety](safety.md) — shield, audit log, kill switches, consent
 - [Plugins](plugins.md) — extending the tool / channel / skill surface
+- [Self-learning](self-learning.md) — acquire skills, tools, MCP servers, and APIs on demand
 - [Roadmap](ROADMAP.md) — 36-month plan, all open
 - [Contributing](CONTRIBUTING.md) — how to send PRs

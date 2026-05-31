@@ -148,3 +148,28 @@ def get_sandbox() -> dict:
         "workdir": cfg.get("workdir", "~/maverick-workspace"),
         "timeout": cfg.get("timeout", 60),
     }
+
+
+def get_self_learning() -> dict:
+    """Return the ``[self_learning]`` section with defaults filled in.
+
+    The whole feature is off by default (``enable = false``) so the kernel
+    keeps current behavior out of the box. When enabled, the sub-toggles
+    default ON (the operator has already accepted the trust decision):
+    ``preflight`` pre-acquires catalog skills before a run; ``create_tools``
+    lets the agent generate + run new tools; ``add_mcp_servers`` lets it
+    wire in external MCP servers. ``max_acquisitions`` caps how many
+    capabilities a single run may auto-acquire.
+    """
+    cfg = load_config().get("self_learning", {})
+    try:
+        max_acq = int(cfg.get("max_acquisitions", 5))
+    except (TypeError, ValueError):
+        max_acq = 5
+    return {
+        "enable": bool(cfg.get("enable", False)),
+        "preflight": bool(cfg.get("preflight", True)),
+        "create_tools": bool(cfg.get("create_tools", True)),
+        "add_mcp_servers": bool(cfg.get("add_mcp_servers", True)),
+        "max_acquisitions": max(1, max_acq),
+    }

@@ -132,6 +132,16 @@ class Agent:
         if self.depth < self.ctx.max_depth:
             reg.register(spawn_subagent_tool(self))
             reg.register(spawn_swarm_tool(self))
+        # Self-learning: bound to this agent so it can hot-register a newly
+        # acquired tool / MCP server into THIS run's live registry. Off
+        # unless [self_learning] enable is set (kernel rule 1).
+        try:
+            from . import self_learning
+            if self_learning.enabled():
+                from .tools.learn import learn_capability
+                reg.register(learn_capability(self))
+        except Exception as e:  # pragma: no cover -- never block tool build
+            log.debug("self_learning tool registration skipped: %s", e)
         return reg
 
     def _build_system(self) -> str:

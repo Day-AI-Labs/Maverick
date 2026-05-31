@@ -521,6 +521,19 @@ def base_registry(
     except Exception:  # pragma: no cover -- importlib quirks
         pass
 
+    # Self-learning: tools the agent generated for itself on a prior run
+    # live in ~/.maverick/generated_tools/ and load like first-class tools.
+    # Only consulted when [self_learning] enable is set — generated tools
+    # execute in-process, so the kernel never imports them by default.
+    try:
+        from .. import self_learning
+        if self_learning.enabled():
+            for t in self_learning.load_generated_tools():
+                reg.register(t)
+    except Exception as e:  # pragma: no cover -- never block the registry
+        import logging as _logging
+        _logging.getLogger(__name__).warning("generated tools load: %s", e)
+
     # Second rate-limit pass to cover plugin-registered tools. Earlier
     # pass already wrapped core + MCP tools; double-wrapping is avoided
     # because apply_to_registry walks the current dict snapshot.

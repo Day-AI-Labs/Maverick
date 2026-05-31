@@ -304,6 +304,32 @@ async def run_goal(
             "synthesize their findings, verify, and respond with FINAL:."
         )
 
+        # Self-learning pre-flight (opt-in): analyse the goal for capability
+        # gaps and pre-acquire matching catalog skills before the swarm
+        # starts, so the agent's first turn already has them. Off by default;
+        # MCP/tool creation stays agent-driven via the learn_capability tool.
+        try:
+            from . import self_learning
+            if self_learning.enabled() and self_learning.settings()["preflight"]:
+                acquired = await self_learning.preflight(
+                    llm, f"{goal.title}\n{goal.description or ''}", budget,
+                    blackboard,
+                    max_acquisitions=self_learning.settings()["max_acquisitions"],
+                )
+                if acquired:
+                    brief = brief + (
+                        "\n\nSelf-learning pre-acquired these skills for this "
+                        "goal: " + ", ".join(acquired) + ". If you still lack a "
+                        "capability, call learn_capability."
+                    )
+                elif self_learning.settings()["create_tools"]:
+                    brief = brief + (
+                        "\n\nIf you lack a skill, tool, or integration for this "
+                        "goal, use the learn_capability tool to acquire or build it."
+                    )
+        except Exception as e:  # pragma: no cover -- never blocks a run
+            log.debug("self-learning preflight skipped: %s", e)
+
         # Reflexion (opt-in): prepend lessons learned from prior FAILED
         # runs on similar goals so the orchestrator avoids repeating the
         # same dead ends. Recall is jaccard-ranked over goal text; the

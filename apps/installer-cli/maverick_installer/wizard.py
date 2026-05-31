@@ -71,6 +71,7 @@ STEPS: list[tuple[str, str]] = [
     ("budget", "Budget"),
     ("sandbox", "Sandbox"),
     ("capabilities", "Capabilities"),
+    ("self_learning", "Self-learning"),
     ("web_search", "Web search"),
     ("mcp_servers", "MCP servers"),
     ("plugins", "Plugins"),
@@ -775,6 +776,46 @@ def pick_capabilities() -> dict[str, bool]:
     return {
         "computer_use": use_computer,
         "browser": use_browser,
+    }
+
+
+def pick_self_learning() -> dict[str, Any]:
+    """Opt-in to self-learning: acquire/build new capabilities on demand.
+
+    Off by default. When on, the agent can install catalog skills, wire in
+    MCP servers, and GENERATE + run new tools when it hits a capability gap.
+    Generating and executing fresh code is a real trust decision, so this
+    ships disabled and we say so plainly. Returns a dict written under
+    ``[self_learning]``.
+    """
+    console.print()
+    console.print(
+        "[dim]Self-learning lets the agent close capability gaps on its own: "
+        "install skills, wire in MCP servers, even write & run new tools. "
+        "It generates and executes fresh code in-process, so it's OFF by "
+        "default.[/dim]"
+    )
+    enable = _q_confirm("Enable self-learning?", default=False)
+    if not enable:
+        return {"enable": False}
+    create_tools = _q_confirm(
+        "  Allow the agent to GENERATE and run new tools (full autonomy)?",
+        default=True,
+    )
+    add_mcp = _q_confirm(
+        "  Allow the agent to add + start external MCP servers?",
+        default=True,
+    )
+    preflight = _q_confirm(
+        "  Pre-acquire likely skills before each run (one extra LLM call)?",
+        default=True,
+    )
+    return {
+        "enable": True,
+        "preflight": preflight,
+        "create_tools": create_tools,
+        "add_mcp_servers": add_mcp,
+        "max_acquisitions": 5,
     }
 
 
@@ -1484,6 +1525,7 @@ def write_config(
     a2a: dict[str, Any] | None = None,
     web_search_enabled: bool = False,
     skills: dict[str, Any] | None = None,
+    self_learning: dict[str, Any] | None = None,
 ) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -1565,6 +1607,14 @@ def write_config(
         lines.append("")
         lines.append("[skills]")
         for k, v in skills.items():
+            _emit_kv(lines, k, v)
+
+    if self_learning:
+        # Self-learning. enable gates the whole feature; sub-toggles let the
+        # agent install skills, add MCP servers, and generate+run new tools.
+        lines.append("")
+        lines.append("[self_learning]")
+        for k, v in self_learning.items():
             _emit_kv(lines, k, v)
 
     if capabilities:
@@ -2107,6 +2157,11 @@ def run(fast: bool = False, resume: bool = False) -> int:
     _save_partial(state)
 
     _announce()
+    self_learning = state.get("self_learning") or pick_self_learning()
+    state["self_learning"] = self_learning
+    _save_partial(state)
+
+    _announce()
     web_search_enabled, web_search_envs = (
         state.get("_web_search_pair") or pick_web_search()
     )
@@ -2197,6 +2252,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
         a2a=a2a_cfg,
         web_search_enabled=web_search_enabled,
         skills=signed_skills if (signed_skills.get("trusted_pubkeys") or signed_skills.get("require_signed")) else None,
+        self_learning=self_learning if self_learning.get("enable") else None,
     )
     _clear_partial()
     ok = smoke_test()

@@ -1024,6 +1024,31 @@ def skills() -> None:
             click.echo(f"    trigger: {t}")
 
 
+@main.command()
+@click.option("--limit", type=int, default=50, show_default=True,
+              help="Max entries to show.")
+def learned(limit: int) -> None:
+    """List capabilities the swarm acquired via self-learning."""
+    import datetime as _dt
+
+    from . import self_learning
+    items = self_learning.history(limit=limit)
+    if not items:
+        click.echo(
+            "no learned capabilities yet "
+            f"(ledger: {self_learning.LEARNED_PATH}).\n"
+            "Enable self-learning with [self_learning] enable = true "
+            "or MAVERICK_SELF_LEARNING=1."
+        )
+        return
+    for e in items:
+        when = _dt.datetime.fromtimestamp(e.ts).strftime("%Y-%m-%d %H:%M")
+        mark = "" if e.outcome == "acquired" else f" [{e.outcome}]"
+        click.echo(f"  {when}  [{e.kind}] {e.name}{mark}")
+        if e.need:
+            click.echo(f"    for: {e.need}")
+
+
 @main.group()
 def plugin() -> None:
     """Scaffold + manage Maverick plugins."""

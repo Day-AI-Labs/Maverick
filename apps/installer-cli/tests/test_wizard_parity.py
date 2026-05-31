@@ -67,6 +67,7 @@ def test_bluesky_channel_env_vars():
     "pick_persona",
     "pick_notifications",
     "pick_webhooks",
+    "pick_self_learning",
 ])
 def test_new_pick_exists(name):
     from maverick_installer import wizard
@@ -136,6 +137,20 @@ def test_write_config_emits_plugins(tmp_path: Path, monkeypatch):
         tmp_path, monkeypatch, plugins=["weather", "github-issues"],
     )
     assert parsed["plugins"]["enabled"] == ["weather", "github-issues"]
+
+
+def test_write_config_emits_self_learning(tmp_path: Path, monkeypatch):
+    parsed = _write_full_config(
+        tmp_path, monkeypatch,
+        self_learning={
+            "enable": True, "preflight": True, "create_tools": True,
+            "add_mcp_servers": False, "max_acquisitions": 3,
+        },
+    )
+    assert parsed["self_learning"]["enable"] is True
+    assert parsed["self_learning"]["create_tools"] is True
+    assert parsed["self_learning"]["add_mcp_servers"] is False
+    assert parsed["self_learning"]["max_acquisitions"] == 3
 
 
 def test_write_config_roundtrips_backslash_paths_and_allowlist(tmp_path: Path, monkeypatch):
@@ -235,7 +250,8 @@ def test_write_config_omits_empty_optional_sections(tmp_path: Path, monkeypatch)
     """Unspecified optionals should not emit empty sections."""
     parsed = _write_full_config(tmp_path, monkeypatch)
     for sec in ("mcp_servers", "plugins", "security", "rate_limits",
-                "retention", "persona", "notifications", "webhooks", "a2a"):
+                "retention", "persona", "notifications", "webhooks", "a2a",
+                "self_learning"):
         assert sec not in parsed, f"{sec} should be absent"
 
 
