@@ -80,6 +80,7 @@ STEPS: list[tuple[str, str]] = [
     ("persona", "Persona"),
     ("notifications", "Notifications"),
     ("webhooks", "Webhooks"),
+    ("a2a", "A2A"),
 ]
 
 
@@ -1411,6 +1412,28 @@ def _emit_kv(lines: list[str], k: str, v: Any) -> None:
         lines.append(f"{k} = {_toml_str(v)}")
 
 
+def pick_a2a() -> tuple[dict[str, Any], list[str]]:
+    """Expose Maverick to other agents over A2A. Returns (config, envs).
+
+    Off by default: A2A is an outward-facing surface (other agents can
+    discover this instance and delegate budget-spending goals to it). When
+    enabled we require a bearer token (MAVERICK_A2A_TOKEN) so the task
+    endpoint isn't open; the agent card + task endpoint mount on the
+    dashboard at /a2a/v1.
+    """
+    if not _q_confirm(
+        "Expose this agent over A2A so other agents can delegate goals to it?",
+        default=False,
+    ):
+        return {}, []
+    console.print(
+        "  [dim]A2A serves an agent card at /.well-known/agent-card.json and a "
+        "task endpoint at /a2a/v1 (on `maverick dashboard`). Budget is clamped "
+        "to operator caps; a bearer token is required.[/dim]"
+    )
+    return {"enabled": True}, ["MAVERICK_A2A_TOKEN"]
+
+
 def write_config(
     deployment: str,
     providers: list[str],
@@ -1430,6 +1453,7 @@ def write_config(
     persona: dict[str, str] | None = None,
     notifications: dict[str, Any] | None = None,
     webhooks: dict[str, Any] | None = None,
+    a2a: dict[str, Any] | None = None,
     web_search_enabled: bool = False,
     skills: dict[str, Any] | None = None,
 ) -> None:
@@ -1580,6 +1604,12 @@ def write_config(
         lines.append("")
         lines.append("[webhooks]")
         for k, v in webhooks.items():
+            _emit_kv(lines, k, v)
+
+    if a2a:
+        lines.append("")
+        lines.append("[a2a]")
+        for k, v in a2a.items():
             _emit_kv(lines, k, v)
 
     # Config has no secrets today but does carry the deployment
@@ -2095,9 +2125,17 @@ def run(fast: bool = False, resume: bool = False) -> int:
     state["_webhooks_pair"] = [webhooks, webhook_envs]
     _save_partial(state)
 
+    _announce()
+    a2a_cfg, a2a_envs = state.get("_a2a_pair") or pick_a2a()
+    state["_a2a_pair"] = [a2a_cfg, a2a_envs]
+    _save_partial(state)
+
     # Keys/sessions are never persisted to disk in the partial state
     # (they're secrets; the only safe place is ~/.maverick/.env).
-    extra_envs = set(web_search_envs) | set(notify_envs) | set(webhook_envs)
+    extra_envs = (
+        set(web_search_envs) | set(notify_envs) | set(webhook_envs)
+        | set(a2a_envs)
+    )
     keys = collect_api_keys(providers, channel_envs | extra_envs)
     captured_sessions = collect_browser_sessions(providers)
     if captured_sessions:
@@ -2128,6 +2166,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
         persona=persona,
         notifications=notifications,
         webhooks=webhooks,
+        a2a=a2a_cfg,
         web_search_enabled=web_search_enabled,
         skills=signed_skills if (signed_skills.get("trusted_pubkeys") or signed_skills.get("require_signed")) else None,
     )
