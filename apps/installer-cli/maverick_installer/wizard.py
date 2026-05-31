@@ -1582,13 +1582,38 @@ def write_config(
     def _backup(path) -> None:
         try:
             if os.path.exists(path):
-                import shutil
                 bak = str(path) + ".bak"
-                shutil.copy2(path, bak)
+                tmp = bak + ".tmp"
                 try:
-                    os.chmod(bak, 0o600)
-                except OSError:
+                    os.unlink(tmp)
+                except FileNotFoundError:
                     pass
+                fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                try:
+                    with open(path, "rb") as src, os.fdopen(fd, "wb") as dst:
+                        fd = -1
+                        shutil.copyfileobj(src, dst)
+                    try:
+                        st = os.stat(path)
+                        os.utime(tmp, (st.st_atime, st.st_mtime))
+                    except OSError:
+                        pass
+                    try:
+                        os.chmod(tmp, 0o600)
+                    except OSError:
+                        pass
+                    os.replace(tmp, bak)
+                    try:
+                        os.chmod(bak, 0o600)
+                    except OSError:
+                        pass
+                finally:
+                    if fd != -1:
+                        os.close(fd)
+                    try:
+                        os.unlink(tmp)
+                    except FileNotFoundError:
+                        pass
         except OSError:
             pass
 
