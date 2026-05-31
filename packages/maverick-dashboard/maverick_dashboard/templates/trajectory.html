@@ -36,6 +36,16 @@
     border-radius: 4px; padding: 0.4rem 0.8rem; cursor: pointer;
   }
   .controls button:hover { border-color: var(--accent); }
+  .filters {
+    display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+  .filters label { color: var(--muted); font-size: 0.85em; }
+  .filters select {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    border-radius: 4px; padding: 0.3rem 0.5rem;
+  }
+  .filters select:hover { border-color: var(--accent); }
 </style>
 <p class="muted"><a href="/goals">← all goals</a> · <a href="/goals/{{ goal.id }}/plan">plan tree</a></p>
 <h2>Trajectory · Goal #{{ goal.id }}: {{ goal.title }}</h2>
@@ -50,9 +60,25 @@
     <button id="rev-end" type="button" aria-label="Jump to end" title="Jump to end">⇥</button>
     <span id="counter" class="muted" aria-live="polite">{{ events|length }} / {{ events|length }} events</span>
   </div>
+  <div class="filters" role="group" aria-label="Trajectory filters">
+    <label for="filter-agent">Agent</label>
+    <select id="filter-agent" class="filter-agent" aria-label="Filter by agent">
+      <option value="">All agents</option>
+      {% for agent in events | map(attribute="agent") | unique | sort %}
+        <option value="{{ agent }}">{{ agent }}</option>
+      {% endfor %}
+    </select>
+    <label for="filter-severity">Severity</label>
+    <select id="filter-severity" class="filter-severity" aria-label="Filter by severity">
+      <option value="">All severities</option>
+      {% for kind in events | map(attribute="kind") | unique | sort %}
+        <option value="{{ kind }}">{{ kind }}</option>
+      {% endfor %}
+    </select>
+  </div>
   <ul class="timeline" id="timeline">
     {% for ev in events %}
-      <li data-idx="{{ loop.index0 }}" class="{{ ev.kind }}">
+      <li data-idx="{{ loop.index0 }}" data-agent="{{ ev.agent }}" data-kind="{{ ev.kind }}" class="{{ ev.kind }}">
         <span class="ev-meta">
           [{{ ev.ts | datetime }}]
           <span class="ev-agent">{{ ev.agent }}</span>
@@ -74,15 +100,25 @@
     const items = Array.from(tl.querySelectorAll("li"));
     const scrub = document.getElementById("scrub");
     const counter = document.getElementById("counter");
+    const agentFilter = document.getElementById("filter-agent");
+    const sevFilter = document.getElementById("filter-severity");
     const total = items.length;
 
     function apply(n) {
+      const agent = agentFilter.value;
+      const sev = sevFilter.value;
       items.forEach((li, i) => {
-        li.style.display = i < n ? "" : "none";
+        const matches =
+          (!agent || li.dataset.agent === agent) &&
+          (!sev || li.dataset.kind === sev);
+        li.style.display = i < n && matches ? "" : "none";
       });
       counter.textContent = `${n} / ${total} events`;
     }
-    scrub.addEventListener("input", () => apply(parseInt(scrub.value, 10)));
+    function refresh() { apply(parseInt(scrub.value, 10)); }
+    scrub.addEventListener("input", refresh);
+    agentFilter.addEventListener("change", refresh);
+    sevFilter.addEventListener("change", refresh);
     document.getElementById("step-back").onclick = () => {
       scrub.value = Math.max(0, parseInt(scrub.value, 10) - 1);
       scrub.dispatchEvent(new Event("input"));
@@ -102,7 +138,7 @@
     document.addEventListener("keydown", (e) => {
       const tag = (e.target.tagName || "").toLowerCase();
       if (tag === "input" && e.target.id !== "scrub") return;
-      if (tag === "textarea") return;
+      if (tag === "textarea" || tag === "select") return;
       if (e.key === "ArrowLeft") { document.getElementById("step-back").click(); }
       else if (e.key === "ArrowRight") { document.getElementById("step-fwd").click(); }
       else if (e.key === "Home") { document.getElementById("rev-all").click(); }
