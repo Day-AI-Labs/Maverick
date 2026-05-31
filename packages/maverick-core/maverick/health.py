@@ -28,20 +28,27 @@ def _row(marker: str, label: str, detail: str = "", fix: str = "") -> None:
 
 
 def _check_config() -> dict:
-    from .config import config_path, load_config
+    # tomllib (with config.py's 3.10 tomli fallback) is reused for the
+    # validity probe below.
+    from .config import config_path, load_config, tomllib
     p = config_path()
     if not p.exists():
         _row(RED, "config", f"{p} not found",
              fix="run  maverick init")
         return {}
+    # Parse directly: load_config() fails SOFT (returns {} + logs a warning) on
+    # a syntax error, so checking validity through it always reported GREEN --
+    # a corrupt config that silently drops every user setting went unflagged by
+    # the very tool meant to catch it.
     try:
-        cfg = load_config(p)
-        _row(GREEN, "config", str(p))
-        return cfg
+        with open(p, "rb") as f:
+            tomllib.load(f)
     except Exception as e:
-        _row(RED, "config", f"parse error: {e}",
-             fix=f"edit {p} -- check TOML syntax, or back it up + re-run `maverick init`")
+        _row(RED, "config", f"invalid TOML -- your settings are being IGNORED ({e})",
+             fix=f"edit {p} -- fix the TOML syntax, or back it up + re-run `maverick init`")
         return {}
+    _row(GREEN, "config", str(p))
+    return load_config(p)
 
 
 def _check_anthropic() -> None:
