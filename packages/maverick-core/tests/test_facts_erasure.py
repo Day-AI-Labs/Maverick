@@ -1,35 +1,59 @@
-"""GDPR: `maverick erase` scrubs global facts that embed the subject id, and
-`export-user` includes them. Facts are global key/value pairs with no
-per-user attribution, so matching is a best-effort substring on the user id;
-the removed keys are reported so a false positive is visible.
+"""GDPR fact export/erase only touches explicitly user-scoped global facts.
+
+Facts are global key/value pairs with no per-user attribution.  A raw
+substring search on user ids is unsafe because short/common ids can match
+unrelated operator knowledge such as API tokens or other users' data.
 """
 from __future__ import annotations
 
 import json
 
 
-def test_facts_matching_by_key_or_value(tmp_path):
+def test_facts_matching_requires_user_scoped_key_prefix(tmp_path):
     from maverick.world_model import WorldModel
     w = WorldModel(tmp_path / "world.db")
-    w.upsert_fact("u123_phone", "+1555")      # key contains token
-    w.upsert_fact("note", "owner is u123")    # value contains token
-    w.upsert_fact("office", "123 Main St")    # unrelated (no 'u123')
-    assert set(w.facts_matching("u123")) == {"u123_phone", "note"}
+    w.upsert_fact("user:u123:phone", "+1555")       # explicit subject scope
+    w.upsert_fact("u123_phone", "+1555")            # legacy substring in key
+    w.upsert_fact("note", "owner is u123")          # legacy substring in value
+    w.upsert_fact("office", "123 Main St")          # unrelated
+    assert w.facts_matching("u123") == {"user:u123:phone": "+1555"}
     w.close()
 
 
 def test_delete_facts_matching_returns_keys_and_keeps_others(tmp_path):
     from maverick.world_model import WorldModel
     w = WorldModel(tmp_path / "world.db")
+    w.upsert_fact("user:u123:phone", "+1555")
+    w.upsert_fact("user:u123:note", "owner is u123")
     w.upsert_fact("u123_phone", "+1555")
     w.upsert_fact("note", "owner is u123")
     w.upsert_fact("office", "123 Main St")
     removed = w.delete_facts_matching("u123")
-    assert removed == ["note", "u123_phone"]   # sorted
-    assert set(w.get_facts()) == {"office"}     # unrelated kept
+    assert removed == ["user:u123:note", "user:u123:phone"]   # sorted
+    assert set(w.get_facts()) == {"u123_phone", "note", "office"}
     # Empty token is a no-op (never nukes the whole table).
     assert w.delete_facts_matching("") == []
-    assert set(w.get_facts()) == {"office"}
+    assert set(w.get_facts()) == {"u123_phone", "note", "office"}
+    w.close()
+
+
+def test_fact_subject_token_is_delimiter_safe():
+    from maverick.cli import _fact_subject_token
+
+    assert _fact_subject_token("sms", "+1") == "sms:%2B1"
+    assert _fact_subject_token("telegram", "a:b") == "telegram:a%3Ab"
+
+
+def test_short_user_id_does_not_match_unrelated_fact_substrings(tmp_path):
+    from maverick.world_model import WorldModel
+    w = WorldModel(tmp_path / "world.db")
+    w.upsert_fact("api_token", "SECRET-999")
+    w.upsert_fact("team_password", "do-not-disclose")
+    w.upsert_fact("incident_note", "call alice")
+    w.upsert_fact("user:a:preference", "ok")
+    assert w.facts_matching("a") == {"user:a:preference": "ok"}
+    assert w.delete_facts_matching("a") == ["user:a:preference"]
+    assert set(w.get_facts()) == {"api_token", "team_password", "incident_note"}
     w.close()
 
 
@@ -38,13 +62,14 @@ def _setup_subject_db(tmp_path):
     db = tmp_path / "world.db"
     w = WorldModel(db)
     w.get_or_create_conversation("telegram", "u123")  # erase needs a conv
-    w.upsert_fact("u123_addr", "secret place")        # matches subject
-    w.upsert_fact("global_cfg", "keep me")             # unrelated
+    w.upsert_fact("user:telegram:u123:addr", "secret place")  # explicit scope
+    w.upsert_fact("u123_addr", "legacy secret place")        # substring only; keep
+    w.upsert_fact("global_cfg", "keep me")            # unrelated
     w.close()
     return db
 
 
-def test_erase_scrubs_facts_containing_subject(tmp_path, monkeypatch):
+def test_erase_scrubs_only_user_scoped_facts(tmp_path, monkeypatch):
     import maverick.audit as audit_mod
     from click.testing import CliRunner
     from maverick import cli as cli_mod
@@ -60,16 +85,17 @@ def test_erase_scrubs_facts_containing_subject(tmp_path, monkeypatch):
     ])
     assert res.exit_code == 0, res.output
     assert "1 fact(s) scrubbed" in res.output
-    assert "u123_addr" in res.output  # the removed key is reported
+    assert "user:telegram:u123:addr" in res.output  # the removed key is reported
 
     w = WorldModel(db)
     facts = w.get_facts()
     w.close()
-    assert "u123_addr" not in facts               # scrubbed
-    assert facts.get("global_cfg") == "keep me"   # unrelated kept
+    assert "user:telegram:u123:addr" not in facts
+    assert facts.get("u123_addr") == "legacy secret place"  # substring not scrubbed
+    assert facts.get("global_cfg") == "keep me"             # unrelated kept
 
 
-def test_export_user_includes_matching_facts(tmp_path):
+def test_export_user_includes_only_user_scoped_facts(tmp_path):
     from click.testing import CliRunner
     from maverick import cli as cli_mod
 
@@ -79,4 +105,4 @@ def test_export_user_includes_matching_facts(tmp_path):
     ])
     assert res.exit_code == 0, res.output
     data = json.loads(res.output)
-    assert data["facts"] == {"u123_addr": "secret place"}
+    assert data["facts"] == {"user:telegram:u123:addr": "secret place"}

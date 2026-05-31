@@ -750,24 +750,25 @@ class WorldModel:
         return {r["key"]: r["value"] for r in rows}
 
     def facts_matching(self, token: str) -> dict[str, str]:
-        """Facts whose key OR value contains ``token`` (substring match).
+        """Facts explicitly scoped to ``token`` by key prefix.
 
-        Facts are global key/value pairs with no per-user attribution, so
-        this is a deliberately best-effort match used by GDPR export/erase
-        to catch operator-set facts that embed a subject identifier (e.g. a
-        phone number or handle). The facts table is small, so filtering in
-        Python is simpler and avoids LIKE-escaping the token.
+        Facts are global key/value pairs with no per-user attribution.  To
+        avoid disclosing or deleting unrelated global facts, GDPR export/erase
+        only considers facts whose key is deliberately namespaced as
+        ``user:<token>:<name>``.  Values are never searched and arbitrary
+        substrings are ignored because short/common user ids can otherwise
+        match unrelated secrets or other users' data.
         """
         if not token:
             return {}
-        return {k: v for k, v in self.get_facts().items() if token in k or token in v}
+        prefix = f"user:{token}:"
+        return {k: v for k, v in self.get_facts().items() if k.startswith(prefix)}
 
     def delete_facts_matching(self, token: str) -> list[str]:
-        """Delete facts matching ``token`` (see :meth:`facts_matching`).
+        """Delete explicitly user-scoped facts (see :meth:`facts_matching`).
 
         Returns the keys removed so the caller can report exactly what was
-        scrubbed -- a false positive on shared operator knowledge is then
-        visible rather than silent.
+        scrubbed.
         """
         keys = sorted(self.facts_matching(token).keys())
         if keys:

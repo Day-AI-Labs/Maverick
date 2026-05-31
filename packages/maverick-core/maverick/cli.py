@@ -8,6 +8,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 import click
 
@@ -33,6 +34,11 @@ _PROVIDER_ENV_VARS = (
     "OPENROUTER_API_KEY", "MOONSHOT_API_KEY", "DEEPSEEK_API_KEY",
     "XAI_API_KEY",
 )
+
+
+def _fact_subject_token(channel: str, user: str) -> str:
+    """Stable, delimiter-safe token for explicitly user-scoped facts."""
+    return f"{quote(channel, safe='')}:{quote(user, safe='')}"
 
 
 def _has_configured_provider() -> bool:
@@ -1502,12 +1508,13 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         except OSError:
             pass
 
-    # Step 4b: scrub global facts that embed the subject's identifier. Facts
-    # are global key/value pairs with no per-user attribution, so this is a
-    # best-effort substring match -- an operator may have stored the
-    # subject's data in a fact. The removed keys are reported below so a
-    # false positive on shared operator knowledge is visible, not silent.
-    scrubbed_fact_keys = world.delete_facts_matching(user)
+    # Step 4b: scrub explicitly user-scoped global facts. Facts are global
+    # key/value pairs with no per-user attribution, so erase only touches
+    # facts deliberately keyed as user:<channel>:<user_id>:<name>. Arbitrary
+    # substring matching is unsafe for short/common user ids because it can
+    # delete unrelated operator knowledge or other users' data.
+    fact_subject = _fact_subject_token(channel, user)
+    scrubbed_fact_keys = world.delete_facts_matching(fact_subject)
 
     # Step 4c: the optional LLM cache (MAVERICK_LLM_CACHE=1) is content-
     # addressed on the full prompt -- system + messages include the user's
@@ -1588,8 +1595,8 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
     )
     if scrubbed_fact_keys:
         click.echo(
-            "  facts removed (global key/value, matched on the user id -- "
-            f"review if unexpected): {', '.join(scrubbed_fact_keys)}"
+            "  facts removed (global key/value, scoped with user:<channel>:<user_id>: "
+            f"prefix): {', '.join(scrubbed_fact_keys)}"
         )
 
 
@@ -1616,9 +1623,11 @@ def export_user(ctx, channel: str, user: str, output) -> None:
         "channel": channel,
         "user_id": user,
         "conversations": [],
-        # Global facts that embed the subject id (best-effort substring match;
-        # facts have no per-user attribution). GDPR Art. 15 completeness.
-        "facts": world.facts_matching(user),
+        # Explicitly user-scoped global facts. Facts have no per-user
+        # attribution, so export only includes keys deliberately namespaced as
+        # user:<channel>:<user_id>:<name> rather than arbitrary substring
+        # matches.
+        "facts": world.facts_matching(_fact_subject_token(channel, user)),
     }
     for c in convs:
         turns = world.recent_turns(c.id, limit=10_000)
