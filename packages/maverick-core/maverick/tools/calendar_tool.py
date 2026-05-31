@@ -205,12 +205,19 @@ def _find_slot(args: dict[str, Any]) -> str:
     for ev in events:
         try:
             vobj = ev.icalendar_component
-            s = vobj.get("dtstart").dt
-            e = vobj.get("dtend").dt if vobj.get("dtend") else (s + timedelta(hours=1))
-            if hasattr(s, "tzinfo") and s.tzinfo is None:
-                s = s.replace(tzinfo=timezone.utc)
-            if hasattr(e, "tzinfo") and e.tzinfo is None:
-                e = e.replace(tzinfo=timezone.utc)
+            # All-day events expose dtstart/dtend as datetime.date (not
+            # datetime): no tzinfo, and not comparable with the tz-aware
+            # datetimes in the slot walk below. The old hasattr() check left a
+            # bare date in `busy`, raising TypeError and crashing find_slot for
+            # any calendar with an all-day event. Normalize date -> aware
+            # midnight UTC and naive datetime -> aware.
+            def _aware(x: object) -> datetime:
+                if isinstance(x, datetime):
+                    return x if x.tzinfo else x.replace(tzinfo=timezone.utc)
+                return datetime(x.year, x.month, x.day, tzinfo=timezone.utc)  # type: ignore[attr-defined]
+            s = _aware(vobj.get("dtstart").dt)
+            e = (_aware(vobj.get("dtend").dt)
+                 if vobj.get("dtend") else s + timedelta(hours=1))
             busy.append((s, e))
         except Exception:
             continue
