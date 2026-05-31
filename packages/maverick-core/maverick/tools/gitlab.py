@@ -67,9 +67,12 @@ def _config() -> tuple[str, str]:
 def _client():
     import httpx
     base, tok = _config()
+    # follow_redirects=False: PRIVATE-TOKEN is a custom auth header that httpx
+    # does NOT strip on a cross-host redirect, so a 30x off a (user-set,
+    # possibly self-hosted) GITLAB_URL would leak the PAT to another host.
     return base, httpx.Client(
         headers={"PRIVATE-TOKEN": tok, "Accept": "application/json"},
-        timeout=30.0, follow_redirects=True,
+        timeout=30.0, follow_redirects=False,
     )
 
 
