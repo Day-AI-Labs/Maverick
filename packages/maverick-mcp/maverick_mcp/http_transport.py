@@ -49,12 +49,12 @@ _DEFAULT_MAX_PROGRESS_EVENTS = 240
 
 
 try:
-    from fastapi import FastAPI, Header, HTTPException, Request
+    from fastapi import FastAPI, Header, HTTPException, Request, Response
     from fastapi.responses import JSONResponse, StreamingResponse
     _HAVE_FASTAPI = True
 except ImportError:
     _HAVE_FASTAPI = False
-    FastAPI = Header = HTTPException = Request = None  # type: ignore
+    FastAPI = Header = HTTPException = Request = Response = None  # type: ignore
     JSONResponse = StreamingResponse = None  # type: ignore
 
 
@@ -207,11 +207,16 @@ def build_app(server) -> FastAPI:
     ):
         if not _check_bearer(authorization):
             raise HTTPException(status_code=401, detail="invalid bearer")
+        # Bounded read (size cap) + parse; rejects oversized / malformed /
+        # non-object bodies with a clean error instead of a 500.
         body = await _read_limited_json(request, HTTPException)
         if not isinstance(body, dict):
             raise HTTPException(status_code=400, detail="body must be a JSON object")
-        is_notification = "id" not in body
         request_id = body.get("id")
+        # Match the stdio transport: a JSON-RPC notification is a message
+        # with no id (or id == null). Keying on `"id" not in body` diverged
+        # from stdio, which treats {"id": null} as a notification.
+        is_notification = request_id is None
         method = body.get("method", "")
         params = body.get("params", {}) or {}
         if not isinstance(params, dict):
@@ -264,11 +269,14 @@ def build_app(server) -> FastAPI:
             result = await asyncio.to_thread(_dispatch, server, method, params)
         except Exception as e:
             if is_notification:
-                return JSONResponse({}, status_code=204)
+                # 204 must carry no body; JSONResponse({}) writes "{}" which
+                # strict proxies (e.g. Cloudflare) reject as a protocol violation.
+                return Response(status_code=204)
             return JSONResponse(_error_envelope(request_id, e))
 
         if is_notification:
-            return JSONResponse({}, status_code=204)
+            # 204 must carry no body (see above).
+            return Response(status_code=204)
         return JSONResponse(_result_envelope(request_id, result))
 
     @app.get("/healthz")

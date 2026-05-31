@@ -150,7 +150,11 @@ def _op_history(channel: str, limit: int) -> str:
 
 
 def _op_react(channel: str, message_id: str, emoji: str) -> str:
-    enc = urllib.parse.quote(emoji, safe="")
+    # Keep ':' literal: custom emoji are passed as name:id and Discord's
+    # reaction endpoint wants that colon unencoded (quote(safe="") turned it
+    # into %3A, 400ing every custom-emoji reaction). Unicode emoji contain no
+    # ':' so this is a no-op for them.
+    enc = urllib.parse.quote(emoji, safe=":")
     code, data = _put(
         f"/channels/{channel}/messages/{message_id}/reactions/{enc}/@me",
     )

@@ -756,19 +756,28 @@ class Agent:
                         workdir = _Path(getattr(self.ctx.sandbox, "workdir", "."))
                         # Wave 11: prefer SEARCH/REPLACE over unified-diff.
                         from .edit_format import repair_prompt_for_failure
-                        patch, sr_summary = self._extract_and_apply_patch(final)
-                        # Reset workdir AFTER capturing the diff so the
-                        # verifier branch (and downstream evaluators) see
-                        # HEAD when they re-apply.
-                        if sr_summary is not None:
-                            self._reset_workdir()
-                            try:
-                                self.ctx.blackboard.post(
-                                    self.name, "tool_signal",
-                                    "search_replace_used=1",
-                                )
-                            except Exception:
-                                pass
+                        # Serialize the apply->reset on the SHARED sandbox.workdir
+                        # with the same lock the verifier branch below uses.
+                        # require_apply_check runs for every coding-mode agent
+                        # regardless of depth/role, so concurrent coder children
+                        # under spawn_swarm would otherwise interleave apply +
+                        # `git reset --hard` on one git tree and corrupt each
+                        # other's edits. (Sequential with the verifier branch's
+                        # own `async with`, so no nested/reentrant acquire.)
+                        async with self.ctx.workdir_lock:
+                            patch, sr_summary = self._extract_and_apply_patch(final)
+                            # Reset workdir AFTER capturing the diff so the
+                            # verifier branch (and downstream evaluators) see
+                            # HEAD when they re-apply.
+                            if sr_summary is not None:
+                                self._reset_workdir()
+                                try:
+                                    self.ctx.blackboard.post(
+                                        self.name, "tool_signal",
+                                        "search_replace_used=1",
+                                    )
+                                except Exception:
+                                    pass
                         if patch is None and sr_summary is not None:
                             self._patch_validated = True
                             bb.post(

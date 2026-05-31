@@ -146,17 +146,25 @@ class VoiceChannel(Channel):
             raise HTTPException(status_code=400, detail="invalid JSON body")
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="expected a JSON object")
-        ev_type = payload.get("message", {}).get("type", "")
+        # Coerce nested fields to dicts: a body like {"message": "x"} would make
+        # the chained .get() raise AttributeError -> unhandled 500 (and Vapi
+        # retries non-2xx, amplifying load).
+        msg_data = payload.get("message")
+        if not isinstance(msg_data, dict):
+            msg_data = {}
+        ev_type = msg_data.get("type", "")
 
         if ev_type == "transcript":
-            msg_data = payload.get("message", {})
             transcript = msg_data.get("transcript", "")
             role = msg_data.get("role", "user")
             if role != "user" or not transcript:
                 return Response(content="{}", media_type="application/json")
-            call = payload.get("call", {}) or {}
+            call = payload.get("call")
+            call = call if isinstance(call, dict) else {}
+            customer = call.get("customer")
+            customer = customer if isinstance(customer, dict) else {}
             user_id = (
-                call.get("customer", {}).get("number")
+                customer.get("number")
                 or call.get("id")
                 or "voice-unknown"
             )

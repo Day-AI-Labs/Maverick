@@ -108,7 +108,11 @@ def _spec_passes_shield(name: str, spec: dict, shield) -> bool:
     try:
         v = shield.scan_input(payload)
         return bool(v.allowed)
-    except Exception:  # pragma: no cover
+    except Exception as e:  # pragma: no cover
+        # Fail-open per repo rules, but NOT silently: this is the chokepoint
+        # that keeps a hostile MCP server's tool description/schema out of the
+        # agent's catalog, so a scan error that lets it through must be logged.
+        log.warning("mcp tool %r shield scan errored (fail-open): %s", name, e)
         return True
 
 

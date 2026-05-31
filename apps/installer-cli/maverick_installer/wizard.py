@@ -167,7 +167,11 @@ def _q_secret(message: str) -> str:
         import getpass
 
         return getpass.getpass(f"{message}: ").strip()
-    return questionary.password(message).ask() or ""
+    # Route through _ask so Ctrl-C / Ctrl-D / non-TTY (questionary returns
+    # None) raises KeyboardInterrupt and aborts the wizard, like every other
+    # prompt. The old `.ask() or ""` swallowed the abort into "", which
+    # callers read as "skip this key" -- so Ctrl-C silently continued.
+    return _ask(questionary.password(message)) or ""
 
 
 def _q_checkbox(message: str, choices: list[str], default: list[str] | None = None) -> list[str]:
@@ -1572,7 +1576,24 @@ def write_config(
 ) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Re-running the wizard truncates config.toml / .env. The loader explicitly
+    # supports hand-editing, so back up any existing file first (0o600) instead
+    # of silently destroying a user's manual edits.
+    def _backup(path) -> None:
+        try:
+            if os.path.exists(path):
+                import shutil
+                bak = str(path) + ".bak"
+                shutil.copy2(path, bak)
+                try:
+                    os.chmod(bak, 0o600)
+                except OSError:
+                    pass
+        except OSError:
+            pass
+
     if keys:
+        _backup(ENV_FILE)
         # Atomic + perm-from-creation: previous version was
         # ``write_text(...)`` followed by ``chmod(0o600)``, which left
         # the file world-readable (0o644) for one syscall. Open with
@@ -1760,6 +1781,7 @@ def write_config(
     # topology and provider names. chmod 600 so multi-user hosts don't
     # leak it to other accounts.
     config_body = "\n".join(lines) + "\n"
+    _backup(CONFIG_FILE)
     fd = os.open(
         CONFIG_FILE,
         os.O_CREAT | os.O_WRONLY | os.O_TRUNC,
@@ -2242,35 +2264,50 @@ def run(fast: bool = False, resume: bool = False) -> int:
     state["_web_search_pair"] = [web_search_enabled, web_search_envs]
     _save_partial(state)
 
+    # NOTE: these steps use the `is None` sentinel (not `or`) because a
+    # legitimately-declined answer is falsy ({}/[]); the `or` pattern treated
+    # "I chose nothing" as "unanswered" and re-prompted it on --resume.
     _announce()
-    mcp_servers = state.get("mcp_servers") or pick_mcp_servers()
-    state["mcp_servers"] = mcp_servers
-    _save_partial(state)
+    mcp_servers = state.get("mcp_servers")
+    if mcp_servers is None:
+        mcp_servers = pick_mcp_servers()
+        state["mcp_servers"] = mcp_servers
+        _save_partial(state)
 
     _announce()
-    plugins = state.get("plugins") or pick_plugins()
-    state["plugins"] = plugins
-    _save_partial(state)
+    plugins = state.get("plugins")
+    if plugins is None:
+        plugins = pick_plugins()
+        state["plugins"] = plugins
+        _save_partial(state)
 
     _announce()
-    tool_acl = state.get("tool_acl") or pick_tool_acl(channels)
-    state["tool_acl"] = tool_acl
-    _save_partial(state)
+    tool_acl = state.get("tool_acl")
+    if tool_acl is None:
+        tool_acl = pick_tool_acl(channels)
+        state["tool_acl"] = tool_acl
+        _save_partial(state)
 
     _announce()
-    rate_limits = state.get("rate_limits") or pick_rate_limits(channels)
-    state["rate_limits"] = rate_limits
-    _save_partial(state)
+    rate_limits = state.get("rate_limits")
+    if rate_limits is None:
+        rate_limits = pick_rate_limits(channels)
+        state["rate_limits"] = rate_limits
+        _save_partial(state)
 
     _announce()
-    retention = state.get("retention") or pick_retention()
-    state["retention"] = retention
-    _save_partial(state)
+    retention = state.get("retention")
+    if retention is None:
+        retention = pick_retention()
+        state["retention"] = retention
+        _save_partial(state)
 
     _announce()
-    persona = state.get("persona") or pick_persona()
-    state["persona"] = persona
-    _save_partial(state)
+    persona = state.get("persona")
+    if persona is None:
+        persona = pick_persona()
+        state["persona"] = persona
+        _save_partial(state)
 
     _announce()
     notifications, notify_envs = state.get("_notifications_pair") or pick_notifications()

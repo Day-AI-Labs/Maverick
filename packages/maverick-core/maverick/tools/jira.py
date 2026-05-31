@@ -68,8 +68,11 @@ def _auth_header(user: str, tok: str) -> dict:
 def _client():
     import httpx
     url, user, tok = _config()
+    # follow_redirects=False: the Basic-auth header is a client default, which
+    # httpx does NOT strip on a cross-host redirect (only auth= is stripped),
+    # so a 30x off JIRA_URL would replay the API token to another host.
     return url, httpx.Client(
-        headers=_auth_header(user, tok), timeout=30.0, follow_redirects=True,
+        headers=_auth_header(user, tok), timeout=30.0, follow_redirects=False,
     )
 
 

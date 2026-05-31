@@ -361,6 +361,15 @@ class WorldModel:
         # mutation so each commit() bounds exactly one logical write.
         self._write_lock = threading.RLock()
         self._write_depth = 0
+        # Create the DB file 0o600 BEFORE sqlite opens it: connect() would
+        # otherwise create it at the umask (often 0644) for a window before the
+        # chmod below, briefly exposing all conversation content to co-tenants.
+        if str(path) != ":memory:" and not path.exists():
+            try:
+                _fd = os.open(str(path), os.O_WRONLY | os.O_CREAT, 0o600)
+                os.close(_fd)
+            except OSError:
+                pass
         self.conn = sqlite3.connect(path, check_same_thread=False, timeout=10.0)
         try:
             os.chmod(path, 0o600)
@@ -391,6 +400,15 @@ class WorldModel:
                     raise
                 time.sleep(min(0.05, remaining))
         self.conn.execute(f"PRAGMA busy_timeout = {DEFAULT_BUSY_TIMEOUT_MS}")
+        # WAL/SHM sidecars hold uncommitted conversation content; lock them to
+        # 0o600 too (best-effort -- they may not exist until the first write,
+        # so this is re-attempted; the 0o700 parent dir covers the gap).
+        if str(path) != ":memory:":
+            for _suffix in ("-wal", "-shm"):
+                try:
+                    os.chmod(path.parent / (path.name + _suffix), 0o600)
+                except OSError:
+                    pass
         # synchronous=NORMAL under WAL is safe + much faster than FULL.
         self.conn.execute("PRAGMA synchronous = NORMAL")
         # May 26 council fix (long-tail audit #4): bound WAL file

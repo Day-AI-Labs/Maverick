@@ -225,3 +225,32 @@ def test_mastodon_send_shapes_direct_status(monkeypatch):
     assert form["status"] == "@owner@host ping"
     assert form["visibility"] == "direct"
     assert posts[0]["headers"]["Authorization"] == "Bearer tok"
+
+
+@pytest.mark.skipif(not _have_deps(), reason="httpx not installed")
+def test_mastodon_cursor_uses_numeric_not_lexicographic_max(monkeypatch):
+    """Regression: the since_id cursor used a string max(), so across an
+    id digit-length boundary "9999999" sorted after "10000001" and the
+    cursor moved backwards, re-delivering notifications. It must advance
+    to the numeric max."""
+    from maverick_channels.mastodon import MastodonChannel
+
+    batch = [
+        {"id": "9999999", "account": {"acct": "owner@host"},
+         "status": {"id": "9999999", "content": "<p>old</p>"}},
+        {"id": "10000001", "account": {"acct": "owner@host"},
+         "status": {"id": "10000001", "content": "<p>new</p>"}},
+    ]
+
+    def _responder(method, url, params):
+        if url.endswith("/api/v1/notifications"):
+            return _FakeResponse(json_data=batch)
+        return _FakeResponse()
+
+    calls = []
+    _install_fake_httpx(monkeypatch, calls, _responder)
+    chan = MastodonChannel(handler=_noop, instance="mastodon.social",
+                           access_token="tok", allowed_user_ids={"owner@host"})
+    asyncio.run(chan._poll_once())
+    # Numeric max is 10000001; a lexicographic max would wrongly pick 9999999.
+    assert chan._last_seen_id == "10000001"

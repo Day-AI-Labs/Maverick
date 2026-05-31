@@ -899,9 +899,13 @@ async def run_goal_best_of_n(
         cand = await evaluate_candidate(patch, workdir, cfg, sandbox, i)
         candidates.append(cand)
 
-        if cand.score >= 0.99:
-            # Early exit: a candidate that passes ALL tests is as good
-            # as it gets; don't pay for the remaining N-1 attempts.
+        if cand.test_result is not None and cand.test_result.all_pass:
+            # Early exit only when ALL tests genuinely pass. The old
+            # `score >= 0.99` fired on a count-pooled partial score too: with a
+            # large PASS_TO_PASS suite a candidate that resolves NONE of the
+            # FAIL_TO_PASS tests still clears 0.99, so best-of-N stopped early
+            # on a candidate that didn't fix the issue. all_pass requires every
+            # FAIL_TO_PASS and PASS_TO_PASS test to pass (and >=1 test to run).
             log.info("best-of-N early exit at attempt %d: all tests pass", i)
             break
         if cap_reached:

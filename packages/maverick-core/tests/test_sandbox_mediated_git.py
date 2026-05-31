@@ -182,6 +182,15 @@ def test_coding_branch_wraps_critical_section_in_lock():
     reset_at = src.rindex("self._reset_workdir()")
     assert lock_at < apply_at
     assert lock_at < reset_at
+    # BOTH workdir-mutating sites must be locked: the require_apply_check
+    # apply (which runs for every coding-mode agent, incl. concurrent coder
+    # children) AND the verifier apply. The first lock must enclose the
+    # require_apply_check _extract_and_apply_patch call.
+    assert src.count("async with self.ctx.workdir_lock:") >= 2
+    extract_at = src.index("self._extract_and_apply_patch(", lock_at)
+    assert lock_at < extract_at < src.index(
+        "async with self.ctx.workdir_lock:", lock_at + 1,
+    )
 
 
 def test_search_replace_exec_sandbox_uses_disposable_worktree(tmp_path, fake_llm):

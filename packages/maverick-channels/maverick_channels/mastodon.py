@@ -115,7 +115,12 @@ class MastodonChannel(Channel):
             resp.raise_for_status()
             notifs = resp.json() or []
         if notifs:
-            self._last_seen_id = max(n["id"] for n in notifs)
+            # Mastodon notification ids are numeric snowflakes returned as
+            # strings of varying length; a plain max() compares them
+            # lexicographically, so "9999999" > "10000001" and the cursor
+            # moves backwards across a digit-length boundary, re-delivering
+            # (or skipping) notifications. Compare numerically.
+            self._last_seen_id = max(notifs, key=lambda n: int(n["id"]))["id"]
         return notifs
 
     async def _dispatch(self, notif: dict) -> None:

@@ -48,7 +48,12 @@ def anon_enabled() -> bool:
     try:
         from .config import load_config
         cfg = (load_config() or {}).get("privacy") or {}
-        return bool(cfg.get("anonymous"))
+        val = cfg.get("anonymous")
+        # A TOML string "false"/"no" is truthy under bool(); honor it the way
+        # a2a_enabled does so an explicit off-string disables anon mode.
+        if isinstance(val, str):
+            return val.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(val)
     except Exception:
         return False
 

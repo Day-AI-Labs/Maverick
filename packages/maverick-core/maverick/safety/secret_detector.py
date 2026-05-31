@@ -69,7 +69,8 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     )),
     # Authorization: Bearer <token> headers (require a token-ish length to
     # avoid flagging the literal word "Bearer").
-    ("bearer_header",      re.compile(r"(?i)\bAuthorization\s*:\s*Bearer\s+[A-Za-z0-9._-]{12,}")),
+    # Bearer token charset includes +/= so base64 tokens are fully covered.
+    ("bearer_header",      re.compile(r"(?i)\bAuthorization\s*:\s*Bearer\s+[A-Za-z0-9._\-+/=]{12,}")),
     # .env-style KEY=value lines whose name contains TOKEN/KEY/SECRET/
     # PASSWORD/PASS/CREDENTIAL. The module's docstring advertised "generic
     # high-entropy" coverage but no such rule existed, so a generically

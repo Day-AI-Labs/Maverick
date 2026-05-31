@@ -114,6 +114,10 @@ def _score_candidates(
     *, budget: Budget, model: str | None,
 ) -> tuple[list[float], int, str]:
     import json
+    if not candidates:
+        # Guard the malformed-JSON fallback's max(range(0), ...), which
+        # would raise ValueError on an empty candidate list.
+        return [], 0, "no candidates"
     numbered = "\n\n".join(
         f"### Plan {i}\n{c.text}" for i, c in enumerate(candidates)
     )

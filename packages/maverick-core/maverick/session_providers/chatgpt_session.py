@@ -73,9 +73,18 @@ def _parse_sse_response(stream_text: str) -> str:
             continue
         msg = event.get("message") or {}
         content = msg.get("content") or {}
+        # Only accept assistant TEXT frames. ChatGPT's stream interleaves
+        # thoughts / moderation / status frames, and emits trailing assistant
+        # frames with an empty part (parts=[""]); the old code accepted any
+        # string part, so an empty trailing frame clobbered the real answer.
+        author_role = (msg.get("author") or {}).get("role")
         parts = content.get("parts") or []
-        if parts and isinstance(parts[0], str):
-            last_text = parts[0]
+        if (
+            author_role in (None, "assistant")
+            and content.get("content_type") in (None, "text")
+            and parts and isinstance(parts[0], str) and parts[0]
+        ):
+            last_text = "".join(p for p in parts if isinstance(p, str))
     return last_text
 
 

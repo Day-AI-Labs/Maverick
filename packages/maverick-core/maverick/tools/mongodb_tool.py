@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from typing import Any
 
 from . import Tool, as_bool
@@ -66,7 +67,19 @@ def _config() -> tuple[str, str]:
     return uri, db
 
 
+# One MongoClient is built per _run() and closed in its finally (see below).
+# The old code built a fresh MongoClient -- a connection pool plus background
+# topology-monitor threads -- on every _op_* via _db_for and never closed it,
+# leaking sockets + threads per tool call. The active client is stashed
+# thread-locally so the _op_* helpers reuse it without signature changes.
+_TL = threading.local()
+
+
 def _client():
+    cur = getattr(_TL, "client", None)
+    if cur is not None:
+        return cur
+    # Fallback (e.g. a helper called directly outside _run): build a one-off.
     from pymongo import MongoClient
     uri, _db = _config()
     return MongoClient(uri, serverSelectionTimeoutMS=5000)
@@ -221,6 +234,16 @@ def _run(args: dict[str, Any]) -> str:
             "ERROR: pymongo not installed. "
             "Run: pip install 'maverick-agent[mongodb]'"
         )
+    # Build ONE client for this call and close it in finally so we don't leak a
+    # pool + monitor threads per op.
+    try:
+        from pymongo import MongoClient
+        uri, _db = _config()
+        _TL.client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+    except RuntimeError as e:
+        return f"ERROR: {e}"
+    except Exception as e:
+        return f"ERROR: MongoDB request failed: {type(e).__name__}: {e}"
     try:
         if op == "collections":
             return _op_collections(args)
@@ -240,6 +263,12 @@ def _run(args: dict[str, Any]) -> str:
         return f"ERROR: {e}"
     except Exception as e:
         return f"ERROR: MongoDB request failed: {type(e).__name__}: {e}"
+    finally:
+        try:
+            _TL.client.close()
+        except Exception:
+            pass
+        _TL.client = None
     return f"ERROR: unknown op {op!r}"
 
 

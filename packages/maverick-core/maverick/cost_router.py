@@ -49,11 +49,15 @@ _PRICING: list[tuple[str, str, int, float, float]] = [
     ("openai",    "gpt-5-nano",                 TIER_CHEAP,   0.50,  2.50),
     ("openai",    "gpt-5",                      TIER_BASE,    3.00, 12.00),
     ("openai",    "gpt-5-pro",                  TIER_PREMIUM, 8.00, 40.00),
-    # DeepSeek
-    ("deepseek",  "deepseek-chat",              TIER_CHEAP,   0.14,  0.28),
+    # DeepSeek. Rates kept in sync with llm.MODEL_PRICES (the billing source of
+    # truth): the router used to score deepseek-chat at 0.14/0.28 while Budget
+    # billed it at 0.27/1.10, so cost-aware routing optimized against a number
+    # ~4x below the real output cost.
+    ("deepseek",  "deepseek-chat",              TIER_CHEAP,   0.27,  1.10),
     ("deepseek",  "deepseek-reasoner",          TIER_BASE,    0.55,  2.19),
-    # Moonshot / Kimi
-    ("moonshot",  "moonshot-v1-128k",           TIER_BASE,    1.20,  3.60),
+    # Moonshot / Kimi. moonshot-v1-128k is flat-rate (1.20/1.20) per MODEL_PRICES;
+    # the router's 1.20/3.60 over-penalized output 3x.
+    ("moonshot",  "moonshot-v1-128k",           TIER_BASE,    1.20,  1.20),
     # xAI
     ("xai",       "grok-4",                     TIER_BASE,    3.00, 15.00),
     # Gemini

@@ -195,3 +195,61 @@ class TestHTTPTransport:
         }, headers={"Authorization": "Bearer s3cr3t"})
         # No "id" -> notification -> 204
         assert resp.status_code == 204
+
+
+@pytest.mark.skipif(not _have_fastapi(), reason="fastapi not installed")
+class TestHTTPNotifications:
+    def _client(self):
+        from fastapi.testclient import TestClient
+        from maverick_mcp.http_transport import build_app
+        from maverick_mcp.server import MCPServer
+        return TestClient(build_app(MCPServer()))
+
+    def test_notification_returns_204_with_no_body(self, monkeypatch):
+        # A JSON-RPC notification (no id) must get 204 No Content with an
+        # empty body -- JSONResponse({}) wrote "{}" which strict proxies
+        # reject as a 204-with-body protocol violation.
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        client = self._client()
+        resp = client.post("/mcp", json={
+            "jsonrpc": "2.0", "method": "notifications/initialized",
+        }, headers={"Authorization": "Bearer s3cr3t"})
+        assert resp.status_code == 204
+        assert resp.content == b""
+
+    def test_id_null_treated_as_notification_like_stdio(self, monkeypatch):
+        # {"id": null} is a notification per JSON-RPC; HTTP keyed on
+        # "id" not in body and diverged from the stdio transport.
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        client = self._client()
+        resp = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": None, "method": "notifications/initialized",
+        }, headers={"Authorization": "Bearer s3cr3t"})
+        assert resp.status_code == 204
+        assert resp.content == b""
+
+
+@pytest.mark.skipif(not _have_fastapi(), reason="fastapi not installed")
+class TestHTTPMalformedBody:
+    def _client(self):
+        from fastapi.testclient import TestClient
+        from maverick_mcp.http_transport import build_app
+        from maverick_mcp.server import MCPServer
+        return TestClient(build_app(MCPServer()))
+
+    def test_non_object_body_returns_400_not_500(self, monkeypatch):
+        # A top-level JSON array (valid JSON, not an object) made body.get(...)
+        # raise AttributeError -> 500 stack trace. Must be a clean 400.
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        client = self._client()
+        resp = client.post("/mcp", json=[1, 2, 3],
+                           headers={"Authorization": "Bearer s3cr3t"})
+        assert resp.status_code == 400
+
+    def test_malformed_json_returns_400_not_500(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        client = self._client()
+        resp = client.post("/mcp", content=b"{not json",
+                           headers={"Authorization": "Bearer s3cr3t",
+                                    "Content-Type": "application/json"})
+        assert resp.status_code == 400

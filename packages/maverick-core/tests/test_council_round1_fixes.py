@@ -10,20 +10,39 @@ import subprocess
 
 import pytest
 
-# --- REL-1: the worker must not mark a failed/blocked goal as a done job ---
+# --- REL-1: the worker must not mark a CRASHED goal as a done job, but must
+# also NOT retry a deliberately-stopped ('blocked') goal (budget cap /
+# killswitch / awaiting-user) -- retrying re-runs the whole swarm, re-spends
+# budget, and defeats the killswitch. run_goal_in_thread returns 'error' for a
+# genuine crash (retryable) and 'blocked' for a deliberate stop (terminal). ---
 
-def test_worker_marks_blocked_goal_as_failed_job(tmp_path, monkeypatch):
+def test_worker_marks_crashed_goal_as_failed_job(tmp_path, monkeypatch):
     import maverick.runner as runner
     from maverick.job_queue import JobQueue
     from maverick.worker import Worker
 
-    monkeypatch.setattr(runner, "run_goal_in_thread", lambda gid: "blocked")
+    monkeypatch.setattr(runner, "run_goal_in_thread", lambda gid: "error")
     q = JobQueue(db_path=tmp_path / "jobs.db")
     w = Worker(queue=q, retry_after=0.0, max_attempts=1)
     jid = q.enqueue("run_goal", {"goal_id": 1})
     assert w.run_once() is True
     # max_attempts=1 -> the single failure is terminal: 'failed', NOT 'done'.
     assert q.get(jid).status == "failed"
+
+
+def test_worker_does_not_retry_deliberately_blocked_goal(tmp_path, monkeypatch):
+    import maverick.runner as runner
+    from maverick.job_queue import JobQueue
+    from maverick.worker import Worker
+
+    # 'blocked' = budget cap / killswitch / awaiting user -- a deliberate stop.
+    monkeypatch.setattr(runner, "run_goal_in_thread", lambda gid: "blocked")
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    w = Worker(queue=q, retry_after=0.0, max_attempts=5)
+    jid = q.enqueue("run_goal", {"goal_id": 1})
+    assert w.run_once() is True
+    # The job is completed (not requeued) so the swarm is not re-run / re-spent.
+    assert q.get(jid).status == "done"
 
 
 def test_worker_retries_when_goal_could_not_start(tmp_path, monkeypatch):

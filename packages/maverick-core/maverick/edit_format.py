@@ -331,11 +331,17 @@ def _find_with_fuzzy(content: str, needle: str) -> tuple[int | None, int | None,
     # code) lands the edit at the wrong place.
     needle_lines = _spanned_lines(needle)
     content_lines = content.split("\n")
+    # Compare against the needle WITHOUT its trailing newline: parse_blocks
+    # appends a "\n" to every search body, but the candidate windows built by
+    # "\n".join(...) have none, so every ratio carried a constant trailing-
+    # newline penalty that depressed scores (rejecting good matches) and could
+    # perturb the ambiguity ordering. Put both sides on equal footing.
+    needle_cmp = needle.rstrip("\n")
     best_ratio = 0.0
     best_start = best_end = -1
     for i in range(0, max(0, len(content_lines) - needle_lines + 1)):
         window = "\n".join(content_lines[i:i + needle_lines])
-        ratio = difflib.SequenceMatcher(None, window, needle).ratio()
+        ratio = difflib.SequenceMatcher(None, window, needle_cmp).ratio()
         if ratio > best_ratio:
             best_ratio = ratio
             best_start = sum(len(ln) + 1 for ln in content_lines[:i])
@@ -345,7 +351,7 @@ def _find_with_fuzzy(content: str, needle: str) -> tuple[int | None, int | None,
         near_count = 0
         for i in range(0, max(0, len(content_lines) - needle_lines + 1)):
             window = "\n".join(content_lines[i:i + needle_lines])
-            r = difflib.SequenceMatcher(None, window, needle).ratio()
+            r = difflib.SequenceMatcher(None, window, needle_cmp).ratio()
             if r >= best_ratio - 0.02:
                 near_count += 1
                 if near_count >= 2:

@@ -323,8 +323,14 @@ def config(action: str) -> None:
         click.echo(str(p))
         return
     if action == "edit":
-        editor = os.environ.get("EDITOR", "nano")
-        os.execvp(editor, [editor, str(p)])
+        import shlex
+        # EDITOR is commonly set with args (e.g. "code --wait"); execvp treats
+        # the whole string as one binary name and fails. Split it.
+        parts = shlex.split(os.environ.get("EDITOR", "nano")) or ["nano"]
+        try:
+            os.execvp(parts[0], parts + [str(p)])
+        except OSError as e:
+            raise click.ClickException(f"could not launch editor {parts[0]!r}: {e}")
         return
     if not p.exists():
         click.echo(f"No config at {p}. Run:  maverick init", err=True)
@@ -1676,7 +1682,16 @@ def export_user(ctx, channel: str, user: str, output) -> None:
 
     payload = json.dumps(data, indent=2, default=str)
     if output:
-        Path(output).write_text(payload, encoding="utf-8")
+        # A GDPR export carries the subject's full conversation content.
+        # Create it 0o600 (not the umask's world-readable 0644) so a
+        # co-tenant can't read it, and fail cleanly instead of dumping a
+        # traceback on a bad/unwritable path.
+        try:
+            fd = os.open(str(output), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload)
+        except OSError as e:
+            raise click.ClickException(f"could not write {output}: {e}")
         click.echo(f"exported to {output}")
     else:
         click.echo(payload)
@@ -1954,9 +1969,18 @@ def cost(ctx, month: str | None, model: str | None, csv_out: bool) -> None:
         world.close()
     if month:
         import datetime as _dt
-        start = _dt.datetime.strptime(month, "%Y-%m").timestamp()
-        # End-of-month: add ~31 days and trim by month.
-        end = start + 31 * 86_400
+        try:
+            m_start = _dt.datetime.strptime(month, "%Y-%m")
+        except ValueError:
+            raise click.ClickException("--month must be YYYY-MM (e.g. 2026-05)")
+        start = m_start.timestamp()
+        # True next-month boundary (a fixed +31 days over-counted short months,
+        # e.g. Feb pulled in early March).
+        end = _dt.datetime(
+            m_start.year + (m_start.month == 12),
+            (m_start.month % 12) + 1,
+            1,
+        ).timestamp()
         episodes = [
             e for e in episodes
             if start <= (e.started_at or 0) < end
@@ -2024,7 +2048,10 @@ def export_goal(ctx, goal_id: int, output: str | None) -> None:
     finally:
         world.close()
     out_path = Path(output) if output else Path(f"goal-{goal_id}.json")
-    out_path.write_text(_json.dumps(bundle, default=str, indent=2))
+    try:
+        out_path.write_text(_json.dumps(bundle, default=str, indent=2))
+    except OSError as e:
+        raise click.ClickException(f"could not write {out_path}: {e}")
     click.echo(f"wrote {out_path}")
 
 

@@ -47,12 +47,28 @@ _APPLY_PATCH_SCHEMA: dict[str, Any] = {
 }
 
 
-_PATH_RE = re.compile(r"^\+\+\+ [ab]/([^\n\t]+)", re.MULTILINE)
+# Extract paths from BOTH sides plus rename/copy headers. The old `+++ [ab]/`
+# only regex extracted nothing from deletions (target on `--- a/...`, with
+# `+++ /dev/null`), renames/copies (paths on `rename to`/`copy to`), or
+# `--no-prefix` diffs -- so for those shapes _files_in_patch returned [] and the
+# traversal check was skipped entirely.
+_PATH_RE = re.compile(r"^(?:\+\+\+|---) (?:[ab]/)?(.+)$", re.MULTILINE)
+_RENAME_RE = re.compile(r"^(?:rename|copy) (?:from|to) (.+)$", re.MULTILINE)
 
 
 def _files_in_patch(text: str) -> list[str]:
-    """Pull out the +++ paths so we can sanity-check + report them."""
-    return _PATH_RE.findall(text)
+    """Pull out every referenced path so we can traversal-check + report them."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for m in _PATH_RE.findall(text) + _RENAME_RE.findall(text):
+        # Strip a trailing tab+timestamp (`--- a/x.py\t2024-...`) and skip the
+        # /dev/null sentinel used for add/delete; dedupe (--- and +++ name the
+        # same file on a modify).
+        p = m.strip().split("\t", 1)[0].strip()
+        if p and p != "/dev/null" and p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
 
 
 def _is_safe_path(rel: str, workdir: Path) -> bool:

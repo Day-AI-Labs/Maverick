@@ -97,7 +97,11 @@ def _op_resize(args: dict, sandbox) -> str:
         return f"ERROR: {e}"
     w = int(args.get("width") or 0)
     h = int(args.get("height") or 0)
-    geom = f"{w if w else ''}x{h if h else ''}" or "100%"
+    # When neither dimension is given the f-string is "x" (truthy), so the
+    # old `or "100%"` fallback never fired and ImageMagick got "-resize x".
+    geom = f"{w if w else ''}x{h if h else ''}"
+    if geom == "x":
+        geom = "100%"
     cmd = [b] if b != "magick" else ["magick", "convert"]
     code, _o, stderr = _run_cmd(cmd + [src, "-resize", geom, dst])
     if code != 0:

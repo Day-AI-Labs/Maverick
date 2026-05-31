@@ -426,6 +426,7 @@ class MCPServer:
         from maverick.budget import Budget
         from maverick.llm import LLM
         from maverick.orchestrator import run_goal_sync
+        from maverick.sandbox import build_sandbox
         from maverick.world_model import WorldModel
         w = WorldModel()
         goal_id = args.get("goal_id")
@@ -434,7 +435,34 @@ class MCPServer:
             if not g:
                 return "no active or blocked goal to resume"
             goal_id = g.id
-        return run_goal_sync(LLM(), w, Budget(), int(goal_id))
+        else:
+            try:
+                goal_id = int(goal_id)
+            except (TypeError, ValueError):
+                raise _ProtocolError(-32602, f"invalid goal_id: {goal_id!r}")
+        # Clamp to the same operator ceilings as _tool_start. Over HTTP the
+        # budget is client-controlled; a bare Budget() let a resume bypass
+        # the MAVERICK_MCP_MAX_* caps that _tool_start enforces.
+        max_dollars = _bounded_float(
+            args.get("max_dollars", 5.0),
+            default=5.0,
+            ceiling=os.environ.get("MAVERICK_MCP_MAX_DOLLARS", 5.0),
+        )
+        max_wall = _bounded_float(
+            args.get("max_wall_seconds", 3600),
+            default=3600.0,
+            ceiling=os.environ.get("MAVERICK_MCP_MAX_WALL_SECONDS", 3600.0),
+        )
+        max_depth = _bounded_int(
+            args.get("max_depth", 3),
+            default=3,
+            ceiling=os.environ.get("MAVERICK_MCP_MAX_DEPTH", 3),
+        )
+        budget = Budget(max_dollars=max_dollars, max_wall_seconds=max_wall)
+        return run_goal_sync(
+            LLM(), w, budget, goal_id,
+            sandbox=build_sandbox(), max_depth=max_depth,
+        )
 
     def _tool_answer(self, args: dict) -> str:
         from maverick.world_model import WorldModel

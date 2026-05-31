@@ -124,14 +124,15 @@ def _run(sandbox, args: dict[str, Any]) -> str:
         if st.st_mtime <= since_ts:
             continue
         changes.append((st.st_mtime, st.st_size, p))
-        if len(changes) > max_files:
-            truncated = True
-            break
 
     if not changes:
         return f"no changes since {since_ts:.3f}"
 
+    # Sort by mtime FIRST, then truncate -- the old early-break truncated by
+    # arbitrary directory-walk order before sorting, so a truncated result
+    # could omit the actually-most-recent change.
     changes.sort(key=lambda r: r[0], reverse=True)
+    truncated = len(changes) > max_files
     lines = [f"{len(changes)} file(s) changed since {since_ts:.3f}:"]
     for mtime, size, path in changes[:max_files]:
         try:

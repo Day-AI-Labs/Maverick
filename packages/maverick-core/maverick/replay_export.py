@@ -22,7 +22,20 @@ import logging
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
+from .safety.pii_detector import redact as _pii_redact
 from .secrets import scrub
+
+
+def _sanitize(text: str) -> str:
+    """Strip secrets AND PII before the bundle leaves the machine.
+
+    The export is shared with support/reviewers, so secret-scrubbing alone
+    was insufficient -- emails, SSNs, phone numbers, and credit-card numbers
+    in tool args/results/prompts were written verbatim. Both replace matches
+    with ``[REDACTED:<kind>]`` (no quotes/newlines), so the result stays
+    valid JSON.
+    """
+    return _pii_redact(scrub(text))[0]
 
 log = logging.getLogger(__name__)
 
@@ -120,10 +133,11 @@ def _render_event(ev: dict) -> str:
                                                        "goal_id", "hash",
                                                        "prev_hash", "sig",
                                                        "key_id")}
-    # Scrub secrets: audit bodies carry tool args/results/prompts that may
-    # contain API keys, bearer tokens, or .env values. The export is a file
-    # the user shares with support/reviewers, so it must not leak them.
-    body_text = scrub(json.dumps(body, indent=2, default=str))
+    # Strip secrets AND PII: audit bodies carry tool args/results/prompts
+    # that may contain API keys, bearer tokens, .env values, or user PII
+    # (emails, SSNs, cards). The export is a file the user shares with
+    # support/reviewers, so it must not leak any of them.
+    body_text = _sanitize(json.dumps(body, indent=2, default=str))
     return (
         f'<div class="ev">'
         f'<div class="meta">'
@@ -156,11 +170,11 @@ def export_json(goal_id: int, out_path: Path) -> int:
     events = list(_iter_events_for_goal(goal_id))
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    # Scrub secrets from the serialized bundle. scrub() replaces values
-    # with [REDACTED:kind] (no quotes/newlines), so the result stays valid
-    # JSON.
+    # Strip secrets AND PII from the serialized bundle. Both redactors
+    # replace values with [REDACTED:kind] (no quotes/newlines), so the
+    # result stays valid JSON.
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write(scrub(json.dumps(
+        f.write(_sanitize(json.dumps(
             {"goal_id": goal_id, "events": events}, indent=2, default=str,
         )))
     _restrict_perms(out_path)

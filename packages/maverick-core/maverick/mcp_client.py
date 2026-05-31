@@ -259,10 +259,16 @@ class MCPClient:
                 line = await self._proc.stderr.readline()
                 if not line:
                     return
-                # A hostile / buggy MCP server can echo bearer tokens or
-                # .env values to stderr; scrub before they hit the log.
-                log.debug("MCP[%s] stderr: %s", self.spec.name,
-                          scrub(line.decode("utf-8", errors="replace").rstrip()))
+                try:
+                    # A hostile / buggy MCP server can echo bearer tokens or
+                    # .env values to stderr; scrub before they hit the log.
+                    log.debug("MCP[%s] stderr: %s", self.spec.name,
+                              scrub(line.decode("utf-8", errors="replace").rstrip()))
+                except Exception:  # noqa: BLE001
+                    # Never let a scrub/logging error kill the drain task --
+                    # if it dies the ~64KB stderr pipe fills and the child
+                    # blocks mid tool-call, the exact deadlock this prevents.
+                    pass
         except asyncio.CancelledError:
             return
 

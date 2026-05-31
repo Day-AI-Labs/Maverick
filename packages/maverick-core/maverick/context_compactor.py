@@ -242,9 +242,16 @@ def compact(
         tail, target_tokens - marker_budget,
     )
 
-    kept_by_idx: dict[int, dict] = {}
-    used = 0
+    # Always preserve system messages regardless of relevance score --
+    # the documented contract ("Always preserve the system context") and
+    # because dropping the system prompt corrupts the run. They are kept
+    # unconditionally and not subject to the budget cull below.
+    forced_idx = {i for i, m in enumerate(head) if m.get("role") == "system"}
+    kept_by_idx: dict[int, dict] = {i: head[i] for i in forced_idx}
+    used = sum(_approx_tokens(_message_text(head[i])) for i in forced_idx)
     for score, idx, msg in scored:
+        if idx in kept_by_idx:
+            continue
         cost = _approx_tokens(_message_text(msg))
         if used + cost > budget_remaining:
             continue

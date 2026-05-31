@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from typing import Any
 
 from . import Tool
@@ -57,7 +58,14 @@ _REDIS_SCHEMA: dict[str, Any] = {
 }
 
 
-def _client():
+# One client (connection pool) is built per _run() and closed in its finally.
+# The old code built a fresh redis.Redis on every _op_* and never closed it,
+# leaking a pool/socket per tool call toward the fd / maxclients limit. The
+# active client is stashed thread-locally so the _op_* helpers reuse it.
+_TL = threading.local()
+
+
+def _build_client():
     import redis
     url = os.environ.get("REDIS_URL", "").strip()
     if url:
@@ -75,6 +83,11 @@ def _client():
         socket_connect_timeout=5,
         socket_timeout=10,
     )
+
+
+def _client():
+    cur = getattr(_TL, "client", None)
+    return cur if cur is not None else _build_client()
 
 
 def _op_get(key: str) -> str:
@@ -157,13 +170,18 @@ def _run(args: dict[str, Any]) -> str:
             "ERROR: redis not installed. "
             "Run: pip install 'maverick-agent[redis]'"
         )
+    needs_confirm = {"set", "delete", "lpush", "publish"}
+    if op in needs_confirm and args.get("confirm") is not True:
+        return (
+            f"DRY RUN: op={op!r} would mutate Redis. "
+            "Re-run with confirm=true."
+        )
+    # Build ONE client for this call and close it in finally (no per-op leak).
     try:
-        needs_confirm = {"set", "delete", "lpush", "publish"}
-        if op in needs_confirm and args.get("confirm") is not True:
-            return (
-                f"DRY RUN: op={op!r} would mutate Redis. "
-                "Re-run with confirm=true."
-            )
+        _TL.client = _build_client()
+    except Exception as e:
+        return f"ERROR: Redis request failed: {type(e).__name__}: {e}"
+    try:
         if op == "get":
             return _op_get((args.get("key") or "").strip())
         if op == "set":
@@ -196,6 +214,12 @@ def _run(args: dict[str, Any]) -> str:
             return _op_info((args.get("section") or "").strip())
     except Exception as e:
         return f"ERROR: Redis request failed: {type(e).__name__}: {e}"
+    finally:
+        try:
+            _TL.client.close()
+        except Exception:
+            pass
+        _TL.client = None
     return f"ERROR: unknown op {op!r}"
 
 

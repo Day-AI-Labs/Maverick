@@ -26,10 +26,20 @@ from __future__ import annotations
 
 import os
 
+
 # Tunables.
-MAX_TOOL_OUTPUT_BYTES = int(os.environ.get("MAVERICK_COMPACT_MAX_TOOL_BYTES", str(2 * 1024)))
-KEEP_RECENT_TURNS = int(os.environ.get("MAVERICK_COMPACT_KEEP_RECENT", "4"))
-DIGEST_EVERY = int(os.environ.get("MAVERICK_COMPACT_DIGEST_EVERY", "10"))
+def _env_int(name: str, default: int) -> int:
+    # A non-numeric env value used to raise ValueError at import, killing the
+    # compaction path with an opaque traceback instead of using the default.
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+MAX_TOOL_OUTPUT_BYTES = _env_int("MAVERICK_COMPACT_MAX_TOOL_BYTES", 2 * 1024)
+KEEP_RECENT_TURNS = _env_int("MAVERICK_COMPACT_KEEP_RECENT", 4)
+DIGEST_EVERY = _env_int("MAVERICK_COMPACT_DIGEST_EVERY", 10)
 
 
 def _block_size(block: dict) -> int:

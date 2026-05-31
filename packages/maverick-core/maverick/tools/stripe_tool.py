@@ -98,11 +98,22 @@ def _post(path: str, data: dict) -> tuple[int, Any]:
         return r.status_code, {"error": r.text[:300]}
 
 
+# Stripe uses the currency's smallest unit, but for zero-decimal currencies
+# that unit IS the whole unit (¥5000 is returned as 5000, not 500000), so
+# dividing by 100 under-reports them 100x.
+_ZERO_DECIMAL = {
+    "bif", "clp", "djf", "gnf", "jpy", "kmf", "krw", "mga", "pyg", "rwf",
+    "ugx", "vnd", "vuv", "xaf", "xof", "xpf",
+}
+
+
 def _money(cents: int | str | None, currency: str = "usd") -> str:
     try:
         v = int(cents or 0)
     except (TypeError, ValueError):
         return "?"
+    if currency.lower() in _ZERO_DECIMAL:
+        return f"{v:,} {currency.upper()}"
     return f"{v/100:,.2f} {currency.upper()}"
 
 

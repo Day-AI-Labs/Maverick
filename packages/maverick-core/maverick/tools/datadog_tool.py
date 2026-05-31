@@ -117,7 +117,12 @@ def _op_submit_metric(args: dict) -> str:
     body = {"series": [{
         "metric": metric,
         "type": 3,  # gauge
-        "points": [[int(time.time()), float(args.get("value"))]],
+        # v2 /api/v2/series requires point objects, not the v1 [ts, val]
+        # array form -- the array shape 400s against the v2 endpoint.
+        "points": [{
+            "timestamp": int(time.time()),
+            "value": float(args.get("value")),
+        }],
         "tags": [str(t) for t in (args.get("tags") or [])],
     }]}
     code, data = _post("/api/v2/series", body)

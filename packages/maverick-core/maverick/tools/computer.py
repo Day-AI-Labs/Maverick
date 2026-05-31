@@ -236,11 +236,15 @@ def _run_computer_action(args: dict[str, Any]) -> str:
     if action == "scroll":
         direction = args.get("scroll_direction") or "down"
         amount = int(args.get("scroll_amount") or 3)
-        # pyautogui.scroll: positive=up, negative=down.
-        delta = {"up": amount, "down": -amount, "left": 0, "right": 0}[direction]
+        # pyautogui.scroll: positive=up, negative=down. Horizontal uses
+        # hscroll -- the old map sent delta 0 for left/right, so the scroll was
+        # a silent no-op while the tool reported success.
         if coord:
             pyautogui.moveTo(coord[0], coord[1])
-        pyautogui.scroll(delta)
+        if direction in ("up", "down"):
+            pyautogui.scroll(amount if direction == "up" else -amount)
+        else:
+            pyautogui.hscroll(-amount if direction == "left" else amount)
         log.info("computer.scroll %s %d", direction, amount)
         return f"scrolled {direction} {amount}"
 
