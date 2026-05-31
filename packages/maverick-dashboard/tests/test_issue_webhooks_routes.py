@@ -151,6 +151,21 @@ def test_linear_non_assign_event_ignored(_configured, _no_real_run):
     assert _no_real_run == []
 
 
+def test_linear_missing_bot_id_fails_closed(monkeypatch, _no_real_run):
+    monkeypatch.setenv("MAVERICK_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+    monkeypatch.delenv("MAVERICK_BOT_LINEAR_ID", raising=False)
+
+    body = json.dumps(_linear_assigned(assignee_id="some-human")).encode()
+    resp = client.post(
+        "/webhook/linear", content=body,
+        headers={"Linear-Signature": _sign(body)},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ignored"] is True
+    assert _no_real_run == []
+
+
 # ----- Jira -----
 
 def test_jira_valid_signature_assigned_to_bot_creates_goal(_configured, _no_real_run):
@@ -185,6 +200,21 @@ def test_jira_invalid_signature_rejected(_configured, _no_real_run):
 
 def test_jira_assigned_to_someone_else_ignored(_configured, _no_real_run):
     body = json.dumps(_jira_assigned(account_id="other-human")).encode()
+    resp = client.post(
+        "/webhook/jira", content=body,
+        headers={"X-Hub-Signature": "sha256=" + _sign(body)},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ignored"] is True
+    assert _no_real_run == []
+
+
+def test_jira_missing_bot_id_fails_closed(monkeypatch, _no_real_run):
+    monkeypatch.setenv("MAVERICK_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+    monkeypatch.delenv("MAVERICK_BOT_JIRA_ACCOUNT_ID", raising=False)
+
+    body = json.dumps(_jira_assigned(account_id="some-human")).encode()
     resp = client.post(
         "/webhook/jira", content=body,
         headers={"X-Hub-Signature": "sha256=" + _sign(body)},

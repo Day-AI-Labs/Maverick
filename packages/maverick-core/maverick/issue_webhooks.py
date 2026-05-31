@@ -23,9 +23,8 @@ Who is "the bot": set ``MAVERICK_BOT_LINEAR_ID`` (Linear user id) and/or
 ``MAVERICK_BOT_JIRA_ACCOUNT_ID`` (Jira accountId, or the bot's email).
 Matching is case-insensitive and also accepts the assignee's email so an
 operator can configure either. With no bot id configured the receiver
-fails open per CLAUDE.md (optional feature): ANY assignment triggers,
-with a warning, so a misconfigured deploy still works for single-bot
-setups.
+fails closed: a signed tracker event alone must not be enough to trigger
+Maverick unless the assignee matches an explicitly configured bot.
 """
 from __future__ import annotations
 
@@ -81,25 +80,20 @@ def _bot_id(provider: str) -> str:
 
 
 def _is_bot(assignee_candidates: list[str], provider: str) -> bool:
-    """True if the issue is assigned to the configured bot.
-
-    Fail-open (optional feature, CLAUDE.md rule 1): with no bot id
-    configured, treat any non-empty assignment as the bot's so a
-    single-bot deploy works out of the box — but warn so it's visible.
-    """
+    """True if the issue is assigned to the explicitly configured bot."""
     candidates = {c.strip().lower() for c in assignee_candidates if c and c.strip()}
     if not candidates:
         return False
     bot = _bot_id(provider)
     if not bot:
         log.warning(
-            "no bot id configured for %s inbound webhook "
-            "(set %s); treating any assignment as the bot's",
+            "no bot id configured for %s inbound webhook (set %s); "
+            "ignoring assignment",
             provider,
             "MAVERICK_BOT_LINEAR_ID" if provider == "linear"
             else "MAVERICK_BOT_JIRA_ACCOUNT_ID",
         )
-        return True
+        return False
     return bot in candidates
 
 

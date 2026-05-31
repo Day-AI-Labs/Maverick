@@ -61,10 +61,9 @@ class TestParseLinear:
         monkeypatch.setenv("MAVERICK_BOT_LINEAR_ID", "bot-1")
         assert parse_issue_event("linear", self._payload("human-2")) is None
 
-    def test_no_bot_configured_fails_open(self, monkeypatch):
+    def test_no_bot_configured_fails_closed(self, monkeypatch):
         monkeypatch.delenv("MAVERICK_BOT_LINEAR_ID", raising=False)
-        ev = parse_issue_event("linear", self._payload("anyone"))
-        assert ev is not None  # fail-open: any assignment triggers
+        assert parse_issue_event("linear", self._payload("anyone")) is None
 
     def test_unassigned_returns_none(self, monkeypatch):
         monkeypatch.delenv("MAVERICK_BOT_LINEAR_ID", raising=False)
@@ -115,6 +114,10 @@ class TestParseJira:
         payload = self._payload("acct-1")
         payload["issue"]["fields"]["assignee"]["emailAddress"] = "bot@example.com"
         assert parse_issue_event("jira", payload) is not None
+
+    def test_no_bot_configured_fails_closed(self, monkeypatch):
+        monkeypatch.delenv("MAVERICK_BOT_JIRA_ACCOUNT_ID", raising=False)
+        assert parse_issue_event("jira", self._payload("acct-1")) is None
 
     def test_wrong_event_returns_none(self, monkeypatch):
         monkeypatch.setenv("MAVERICK_BOT_JIRA_ACCOUNT_ID", "acct-1")
