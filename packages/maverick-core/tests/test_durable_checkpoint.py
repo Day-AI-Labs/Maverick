@@ -153,7 +153,7 @@ async def test_run_checkpoints_each_step(tmp_path, monkeypatch):
 
     # A checkpoint was committed at the turn boundary; latest step >= 1.
     cp = ckpt_mod.Checkpointer(world)
-    saved = cp.latest(gid, agent.name)
+    saved = cp.latest(gid, agent.checkpoint_agent_id)
     assert saved is not None
     assert saved.step_seq >= 1, "expected a mid-run checkpoint past step 0"
 
@@ -164,7 +164,7 @@ async def test_resume_continues_from_checkpoint(tmp_path, monkeypatch):
     ctx, world, gid = _mk_ctx(tmp_path, _ScriptedLLM([]))
 
     # Pre-seed a checkpoint as if a prior run reached step 5 with spend.
-    agent_id = "orchestrator-0-deadbe"
+    agent_id = "researcher-0"
     b = Budget(max_dollars=1.0)
     b.tool_calls = 5
     b.dollars = 0.30
@@ -172,13 +172,14 @@ async def test_resume_continues_from_checkpoint(tmp_path, monkeypatch):
     cp.save(goal_id=gid, agent_id=agent_id, step_seq=5,
             messages=[{"role": "user", "content": "prior work"}], budget=b)
 
-    # A fresh agent with the SAME name resumes: first LLM turn finalizes.
+    # A fresh agent has a new runtime name but the same durable checkpoint id.
     llm = _ScriptedLLM([
         _resp(text="FINAL: resumed and done"),
     ])
     ctx.llm = llm
     agent = Agent(ctx=ctx, role="researcher", brief="do it", depth=0)
-    agent.name = agent_id  # pin the id so resume matches the seeded checkpoint
+    assert agent.name != agent_id
+    assert agent.checkpoint_agent_id == agent_id
 
     result = await agent.run()
     assert result.final and "resumed and done" in result.final
@@ -200,4 +201,4 @@ async def test_disabled_does_not_checkpoint(tmp_path, monkeypatch):
     assert result.final and "done" in result.final
     # No checkpoints table writes when disabled.
     cp = ckpt_mod.Checkpointer(world)
-    assert cp.latest(gid, agent.name) is None
+    assert cp.latest(gid, agent.checkpoint_agent_id) is None

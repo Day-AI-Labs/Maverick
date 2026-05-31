@@ -105,6 +105,10 @@ class Agent:
         # to override globally via MAVERICK_MAX_STEPS, default 25.
         self.max_steps = env_int("MAVERICK_MAX_STEPS", max_steps)
         self.name = f"{role}-{depth}-{uuid.uuid4().hex[:6]}"
+        # Durable checkpoints must be discoverable across process restarts.
+        # ``self.name`` intentionally stays unique for logs/tool bus identity,
+        # so checkpoint persistence uses a deterministic per-goal root-agent id.
+        self.checkpoint_agent_id = f"{role}-{depth}"
 
         self.tools = self._build_tools()
         self.system = self._build_system()
@@ -637,7 +641,7 @@ class Agent:
                 from . import checkpoint as _ckpt_mod
                 if _ckpt_mod.enabled():
                     ckpt = _ckpt_mod.Checkpointer(self.ctx.world)
-                    saved = ckpt.latest(self.ctx.goal_id, self.name)
+                    saved = ckpt.latest(self.ctx.goal_id, self.checkpoint_agent_id)
                     if saved is not None and saved.messages:
                         messages = saved.messages
                         start_step = saved.step_seq
@@ -658,7 +662,7 @@ class Agent:
             if ckpt is not None:
                 try:
                     ckpt.save(
-                        goal_id=self.ctx.goal_id, agent_id=self.name,
+                        goal_id=self.ctx.goal_id, agent_id=self.checkpoint_agent_id,
                         step_seq=step, messages=messages, budget=self.ctx.budget,
                         meta={"role": self.role},
                     )
