@@ -6,6 +6,7 @@ without patching the kernel.
 """
 from __future__ import annotations
 
+import logging
 import os
 import secrets as _secrets
 import uuid
@@ -19,6 +20,8 @@ from .swarm import SwarmContext
 from .tools import ToolRegistry, base_registry
 from .tools.agent_bus_tool import recv_from_agent, send_to_agent
 from .tools.spawn import spawn_subagent_tool, spawn_swarm_tool
+
+log = logging.getLogger(__name__)
 
 WORKER_SYSTEM_TEMPLATE = """You are a specialist agent in Maverick, a long-horizon multi-agent swarm.
 
@@ -129,6 +132,16 @@ class Agent:
         if self.depth < self.ctx.max_depth:
             reg.register(spawn_subagent_tool(self))
             reg.register(spawn_swarm_tool(self))
+        # Self-learning: bound to this agent so it can hot-register a newly
+        # acquired tool / MCP server into THIS run's live registry. Off
+        # unless [self_learning] enable is set (kernel rule 1).
+        try:
+            from . import self_learning
+            if self_learning.enabled():
+                from .tools.learn import learn_capability
+                reg.register(learn_capability(self))
+        except Exception as e:  # pragma: no cover -- never block tool build
+            log.debug("self_learning tool registration skipped: %s", e)
         return reg
 
     def _build_system(self) -> str:
@@ -238,10 +251,13 @@ class Agent:
                     prefix="maverick-sr-worktree-"
                 )
                 candidate = _Path(temp_root.name) / "worktree"
+                hooks_dir = _Path(temp_root.name) / "hooks"
                 try:
+                    hooks_dir.mkdir(mode=0o700)
                     wt = _sub.run(
                         [
-                            "git", "-C", str(workdir), "worktree", "add",
+                            "git", "-c", f"core.hooksPath={hooks_dir}",
+                            "-C", str(workdir), "worktree", "add",
                             "--detach", "--quiet", str(candidate), "HEAD",
                         ],
                         capture_output=True, timeout=60,
@@ -448,8 +464,21 @@ class Agent:
                         f"⚠ Tool output BLOCKED by Shield ({out_verdict.severity}): "
                         f"{'; '.join(out_verdict.reasons)}. Result withheld."
                     )
-            except Exception:  # pragma: no cover -- shield must never block tools on its own bug
-                pass
+            except Exception as e:  # shield must never block tools on its own bug
+                # Fail-open, but NOT silently: a scanner that reliably throws
+                # on a crafted output would otherwise disable output gating for
+                # that call with zero trace. Surface it so the bypass is
+                # observable (warn + blackboard), per the "warn, don't fail
+                # silent" contract.
+                log.warning(
+                    "shield.scan_output raised on tool=%s output (fail-open): %s: %s",
+                    name, type(e).__name__, e,
+                )
+                self.ctx.blackboard.post(
+                    self.name, "warning",
+                    f"tool={name} shield output-scan errored (fail-open): "
+                    f"{type(e).__name__}",
+                )
         # Defense-in-depth: redact secrets in tool output BEFORE it returns to
         # the model / blackboard / channel. `cat .env`, a DB row, or an API
         # response can carry a key the shield's scan_output doesn't classify

@@ -16,6 +16,12 @@ function getCli(): string {
   return vscode.workspace.getConfiguration("maverick").get<string>("cliPath", "maverick");
 }
 
+const TERMINAL_CONTROL_RE = /(?:\x1B\][^\x07\x1B]*(?:\x07|\x1B\\|$))|(?:\x1B\[[0-?]*[ -/]*[@-~])|(?:\x1B[@-Z\\-_])|[\x00-\x1F\x7F-\x9F]/g;
+
+function stripTerminalControl(text: string): string {
+  return text.replace(TERMINAL_CONTROL_RE, "");
+}
+
 function getCwd(): string | undefined {
   const useWs = vscode.workspace.getConfiguration("maverick").get<boolean>("workspaceCwd", true);
   if (!useWs) return undefined;
@@ -92,20 +98,23 @@ interface RunRecord {
 
 class RunItem extends vscode.TreeItem {
   constructor(public readonly run: RunRecord) {
-    const title = run.goal_title ?? `goal ${run.goal_id}`;
+    const title = stripTerminalControl(run.goal_title ?? `goal ${run.goal_id}`);
     super(`#${run.episode_id} ${title}`, vscode.TreeItemCollapsibleState.None);
     const state = run.running ? "running" : run.outcome ?? "done";
     const dur = run.duration_s != null ? `${run.duration_s.toFixed(1)}s` : "—";
     this.description = `${state} · $${run.cost_dollars.toFixed(4)}`;
-    this.tooltip = new vscode.MarkdownString(
-      `**Episode #${run.episode_id}** (goal #${run.goal_id})\n\n` +
-      `Goal: ${title}\n\n` +
-      `State: \`${state}\`\n\n` +
-      `Cost: \`$${run.cost_dollars.toFixed(4)}\`\n\n` +
-      `Tokens: \`${run.input_tokens} in / ${run.output_tokens} out\`\n\n` +
-      `Tool calls: \`${run.tool_calls}\`\n\n` +
-      `Duration: \`${dur}\``,
+    const tooltip = new vscode.MarkdownString();
+    tooltip.appendMarkdown(`**Episode #${run.episode_id}** (goal #${run.goal_id})\n\n`);
+    tooltip.appendMarkdown("Goal: ");
+    tooltip.appendText(title);
+    tooltip.appendMarkdown(
+      `\n\nState: \`${state}\`` +
+      `\n\nCost: \`$${run.cost_dollars.toFixed(4)}\`` +
+      `\n\nTokens: \`${run.input_tokens} in / ${run.output_tokens} out\`` +
+      `\n\nTool calls: \`${run.tool_calls}\`` +
+      `\n\nDuration: \`${dur}\``,
     );
+    this.tooltip = tooltip;
     this.iconPath = new vscode.ThemeIcon(
       run.running ? "sync"
       : state === "completed" || state === "succeeded" || state === "done" ? "check"

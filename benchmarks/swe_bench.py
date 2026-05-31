@@ -631,7 +631,7 @@ def run_sonnet_single(instance_id: str, brief: str, **_kwargs) -> Row:
         cost_dollars=budget.dollars,
         tokens_in=budget.input_tokens,
         tokens_out=budget.output_tokens,
-        predicted_patch=text[:50_000],
+        predicted_patch=_sanitize_patch_for_csv(text[:50_000]),
         outcome="success" if text else "empty",
     )
 
@@ -653,18 +653,86 @@ def run_sonnet_tools(instance_id: str, brief: str, **_kwargs) -> Row:
     return row
 
 
+def _majority_patch(patches: list[str]) -> str:
+    """Self-consistency vote: return the most common patch among samples.
+
+    Buckets by a whitespace-normalized key so cosmetically-identical
+    diffs collapse together, then returns the verbatim text of the
+    largest bucket (first sample seen in it). Ties go to the bucket whose
+    first sample appeared earliest. Empty input -> "".
+    """
+    buckets: dict[str, list[str]] = {}
+    order: list[str] = []
+    for p in patches:
+        key = "\n".join(line.rstrip() for line in p.strip().splitlines())
+        if key not in buckets:
+            buckets[key] = []
+            order.append(key)
+        buckets[key].append(p)
+    if not buckets:
+        return ""
+    best = max(order, key=lambda k: len(buckets[k]))
+    return buckets[best][0]
+
+
 def run_sonnet_self_consistency_n8(instance_id: str, brief: str, **_kwargs) -> Row:
-    """Baseline #3: 8 single-shot calls; pick the most common patch.
+    """Baseline #3: N single-shot calls; pick the most common patch.
 
     Tests test-time compute (the cheap version) without any agent
     structure. If self-consistency-N=8 beats Maverick at the same
-    dollar budget, the swarm machinery is pure overhead.
+    dollar budget, the swarm machinery is pure overhead. N is overridable
+    via MAVERICK_BENCH_SC_N (default 8); samples use temperature 1.0 for
+    diversity.
     """
     if os.environ.get("MAVERICK_BENCH_DRY_RUN") == "1":
         return _dry_run_row(instance_id, "sonnet_self_consistency_n8")
-    row = _dry_run_row(instance_id, "sonnet_self_consistency_n8")
-    row.outcome = "not-implemented"
-    return row
+
+    import anthropic
+    from maverick.budget import Budget
+    from maverick.llm import MODEL_SONNET
+
+    try:
+        n = max(1, int(os.environ.get("MAVERICK_BENCH_SC_N", "8") or "8"))
+    except ValueError:
+        n = 8
+    start = time.monotonic()
+    client = anthropic.Anthropic()
+    budget = Budget(max_dollars=8.0)
+    prompt = (
+        f"You are solving SWE-bench instance {instance_id}.\n\n"
+        f"{brief}\n\n"
+        "Respond ONLY with a unified diff (git-format patch) that fixes "
+        "the issue. No prose, no explanation, just the patch starting "
+        "with `--- a/...`."
+    )
+    patches: list[str] = []
+    for _ in range(n):
+        resp = client.messages.create(
+            model=MODEL_SONNET,
+            max_tokens=4096,
+            temperature=1.0,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = "\n".join(
+            b.text for b in resp.content if getattr(b, "type", None) == "text"
+        )
+        budget.record_tokens(
+            resp.usage.input_tokens, resp.usage.output_tokens, model=MODEL_SONNET,
+        )
+        if text.strip():
+            patches.append(text)
+    chosen = _majority_patch(patches)
+    return Row(
+        instance_id=instance_id,
+        pipeline="sonnet_self_consistency_n8",
+        model_id=MODEL_SONNET,
+        wall_seconds=time.monotonic() - start,
+        cost_dollars=budget.dollars,
+        tokens_in=budget.input_tokens,
+        tokens_out=budget.output_tokens,
+        predicted_patch=_sanitize_patch_for_csv(chosen[:50_000]),
+        outcome="success" if chosen else "empty",
+    )
 
 
 _PIPELINE_FNS = {

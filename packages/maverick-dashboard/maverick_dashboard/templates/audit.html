@@ -15,6 +15,16 @@
         <input type="text" name="day" value="{{ day or '' }}" placeholder="today"
                style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
       </label>
+      <label>
+        <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">kind</div>
+        <select name="kind"
+                style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);">
+          <option value="">(all)</option>
+          {% for k in kinds %}
+          <option value="{{ k }}"{% if k == kind %} selected{% endif %}>{{ k }}</option>
+          {% endfor %}
+        </select>
+      </label>
       <button type="submit"
               style="padding: 0.45rem 1rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">
         load

@@ -81,6 +81,36 @@ def test_plugin_allowlist_wildcard(monkeypatch):
     assert {n for n, _ in plugins.discover_tools()} == {"a", "b"}
 
 
+def test_hook_entry_points_require_plugin_allowlist(monkeypatch, tmp_path):
+    """Hook entry points use the same explicit plugin allowlist as tools.
+
+    With plugins disabled by default, merely installing a package that
+    declares `entry_points."maverick.hooks"` must not import or execute it.
+    """
+    from maverick.hooks import clear, load_from_entry_points
+
+    monkeypatch.delenv("MAVERICK_PLUGINS_ALLOW", raising=False)
+    monkeypatch.setenv("MAVERICK_CONFIG", str(tmp_path / "nonexistent.toml"))
+    clear()
+
+    executed = []
+
+    class _HookEP:
+        name = "attacker"
+
+        def load(self):
+            executed.append("imported")
+            return lambda: []
+
+    monkeypatch.setattr(
+        "importlib.metadata.entry_points",
+        lambda group=None: [_HookEP()] if group == "maverick.hooks" else [],
+    )
+
+    assert load_from_entry_points() == 0
+    assert executed == []
+
+
 # ---------- tool-output scan ----------
 
 @pytest.mark.asyncio
@@ -187,6 +217,58 @@ async def test_tool_output_wrapped_when_allowed(tmp_path):
     nonce = m.group(1)
     assert "harmless output" in result
     assert f"</tool_output {nonce}>" in result
+
+
+@pytest.mark.asyncio
+async def test_tool_output_shield_error_fails_open_but_is_observable(tmp_path, caplog):
+    """A shield whose scan_output raises must fail-open (output still flows)
+    but NOT silently: it logs a warning and posts to the blackboard, so the
+    bypass is observable rather than a clean hole."""
+    import logging
+
+    from maverick.agent import Agent
+    from maverick.blackboard import Blackboard
+    from maverick.budget import Budget
+    from maverick.sandbox import LocalBackend
+    from maverick.swarm import SwarmContext
+    from maverick.tools import Tool, ToolRegistry
+    from maverick.world_model import WorldModel
+
+    class _ThrowingShield:
+        def scan_tool_call(self, name, args):
+            class V:
+                allowed = True
+                severity = "low"
+                reasons: list[str] = []
+            return V()
+
+        def scan_output(self, text):
+            raise RuntimeError("scanner blew up")
+
+    world = WorldModel(tmp_path / "w.db")
+    gid = world.create_goal("test", "")
+    bb = Blackboard()
+    ctx = SwarmContext(
+        llm=None, world=world, budget=Budget(),
+        blackboard=bb, sandbox=LocalBackend(workdir=tmp_path),
+        goal_id=gid, max_depth=1, shield=_ThrowingShield(),
+    )
+    agent = Agent(ctx=ctx, role="researcher", brief="x")
+    reg = ToolRegistry()
+    reg.register(Tool(
+        name="benign", description="x", input_schema={"type": "object"},
+        fn=lambda _: "harmless output",
+    ))
+    agent.tools = reg
+
+    with caplog.at_level(logging.WARNING):
+        result = await agent._run_tool("benign", {})
+
+    # Fail-open: the tool output is still returned (not blocked by the bug).
+    assert "harmless output" in result
+    # Observable: a warning was logged AND posted to the blackboard.
+    assert any("fail-open" in r.message for r in caplog.records)
+    assert any("output-scan errored" in e.content for e in bb.entries)
 
 
 # ---------- channel idempotency ----------

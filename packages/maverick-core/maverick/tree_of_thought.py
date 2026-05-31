@@ -16,12 +16,52 @@ it for goals that would otherwise need expensive replans on failure.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 
 from .budget import Budget, BudgetExceeded
 from .llm import LLM
 
 log = logging.getLogger(__name__)
+
+_TRUE = {"1", "true", "yes", "on"}
+
+
+def enabled() -> bool:
+    """Whether tree-of-thought planning is active.
+
+    Off by default — the kernel plans single-shot unless asked otherwise.
+    Turn it on with ``MAVERICK_TREE_OF_THOUGHT=1`` or
+    ``[planning] mode = "tree_of_thought"`` in ``~/.maverick/config.toml``.
+    """
+    if (os.environ.get("MAVERICK_TREE_OF_THOUGHT") or "").strip().lower() in _TRUE:
+        return True
+    try:
+        from .config import load_config
+        mode = str(load_config().get("planning", {}).get("mode", "")).strip().lower()
+        return mode == "tree_of_thought"
+    except Exception:  # pragma: no cover -- config never blocks a run
+        return False
+
+
+def candidate_count(default: int = 3) -> int:
+    """How many candidate plans to fork (``[planning] candidates``, default 3).
+
+    More candidates cost more (each is a bounded LLM call) but widen the
+    search; clamped to >= 1.
+    """
+    raw: object = os.environ.get("MAVERICK_TOT_CANDIDATES")
+    if raw is None:
+        try:
+            from .config import load_config
+            raw = load_config().get("planning", {}).get("candidates", default)
+        except Exception:  # pragma: no cover
+            raw = default
+    try:
+        n = int(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return n if n >= 1 else default
 
 
 _PLANNER_SYSTEM = (

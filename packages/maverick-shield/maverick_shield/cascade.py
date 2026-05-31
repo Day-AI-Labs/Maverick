@@ -117,8 +117,10 @@ class CascadedShield:
         shield.scan_input(text)   # cheap probe -> base scan if flagged
 
     `base` is the existing Shield (or any object exposing scan_input /
-    scan_tool_call / scan_output). When probe says "clean", we short-
-    circuit allow without paying the deep-scan cost.
+    scan_tool_call / scan_output). The base scan ALWAYS runs (it is the
+    cheap regex floor); the cheap probe only decides whether to additionally
+    pay for the optional expensive deep scanner on a base-allowed input. The
+    cascade is therefore never weaker than the base it wraps.
     """
     base: object
     deep_threshold: float = 0.3
@@ -138,46 +140,36 @@ class CascadedShield:
     def enabled(self) -> bool:
         return getattr(self.base, "enabled", True)
 
-    def scan_input(self, text: str):
-        probe = cheap_probe(text)
-        if probe.flagged or probe.score >= self.deep_threshold:
-            verdict = (
-                self.deep_scan_input(text) if self.deep_scan_input
-                else self.base.scan_input(text)
-            )
-            # Cascade reasons annotate the verdict.
-            if probe.reasons and getattr(verdict, "reasons", None) is not None:
-                try:
-                    verdict.reasons = list(verdict.reasons) + [
-                        f"cheap-probe: {r}" for r in probe.reasons
-                    ]
-                except Exception:  # pragma: no cover
-                    pass
-            return verdict
-        # Probe says clean -> short-circuit accept.
-        from .guard import ShieldVerdict
-        return ShieldVerdict(allowed=True, severity="info", reasons=[])
+    def _probe(self, text):
+        """Run the cheap probe on NFKC-normalised, invisible-stripped text so
+        fullwidth/zero-width obfuscation can't hide a signal. Never raises:
+        the base scan is the security floor, the probe only gates the optional
+        expensive judge."""
+        try:
+            if not isinstance(text, str):
+                return ProbeSignal(flagged=False, score=0.0, reasons=[])
+            return cheap_probe(normalize_for_probe(text))
+        except Exception:  # pragma: no cover - probe must never break the scan
+            return ProbeSignal(flagged=False, score=0.0, reasons=[])
 
-    def scan_tool_call(self, tool_name: str, args: dict):
-        # Tool calls always go through the base scanner because the
-        # call pattern (tool name + args) is small + structured; no
-        # cheap-probe step saves measurable compute.
-        return self.base.scan_tool_call(tool_name, args)
+    def _cascade(self, text, base_verdict, deep_scan):
+        """Combine the base verdict with an optional probe-gated deep scan.
 
-    def scan_output(self, text: str, known_prompt: str | None = None):
-        probe = cheap_probe(text)
-        # The EXPENSIVE deep (LLM) output scan stays gated on the cheap probe,
-        # but the cheap base output-policy detectors (verbatim system-prompt
-        # regurgitation, refusal-then-leak, exfil) must ALWAYS run: they catch
-        # benign-LOOKING prose the regex probe can't, so gating them behind the
-        # probe silently disabled the entire output-policy layer. Also forward
-        # known_prompt -- the prior signature omitted it, so any caller passing
-        # it raised TypeError (swallowed by the agent's fail-open) and
-        # regurgitation detection never received the prompt.
-        if (probe.flagged or probe.score >= self.deep_threshold) and self.deep_scan_output:
-            verdict = self.deep_scan_output(text)
+        Invariant: the cascade is NEVER weaker than the base. The base scan
+        always runs and a base BLOCK is terminal. The cheap probe only decides
+        whether to additionally invoke the expensive deep scanner (LLM judge)
+        on inputs the base allowed -- which can only tighten the verdict. The
+        previous design short-circuited to ALLOW on a clean probe and skipped
+        the base entirely, so enabling the cascade allow-listed attacks the
+        base layer blocks. That is fixed here.
+        """
+        probe = self._probe(text)
+        if base_verdict.allowed and deep_scan is not None and (
+            probe.flagged or probe.score >= self.deep_threshold
+        ):
+            verdict = deep_scan(text)
         else:
-            verdict = self.base.scan_output(text, known_prompt=known_prompt)
+            verdict = base_verdict
         if probe.reasons and getattr(verdict, "reasons", None) is not None:
             try:
                 verdict.reasons = list(verdict.reasons) + [
@@ -186,6 +178,27 @@ class CascadedShield:
             except Exception:  # pragma: no cover
                 pass
         return verdict
+
+    def scan_input(self, text: str):
+        return self._cascade(text, self.base.scan_input(text), self.deep_scan_input)
+
+    def scan_tool_call(self, tool_name: str, args: dict):
+        # Tool calls always go through the base scanner because the
+        # call pattern (tool name + args) is small + structured; no
+        # cheap-probe step saves measurable compute.
+        return self.base.scan_tool_call(tool_name, args)
+
+    def scan_output(self, text: str, known_prompt: str | None = None):
+        # Forward known_prompt to the base scanner so its output-policy
+        # regurgitation detector runs (a system-prompt-leak the input-tuned
+        # cheap probe cannot flag). The base scan is always the floor;
+        # _cascade only lets the optional deep scanner TIGHTEN a base-allowed
+        # verdict, so the cascade is never weaker than the base.
+        return self._cascade(
+            text,
+            self.base.scan_output(text, known_prompt=known_prompt),
+            self.deep_scan_output,
+        )
 
 
 def cascade_enabled() -> bool:

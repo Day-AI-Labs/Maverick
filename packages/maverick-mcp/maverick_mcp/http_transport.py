@@ -7,11 +7,16 @@ gateways like Composio / MintMCP / Cloudflare — clients need an HTTP
 endpoint.
 
 This module ships a single POST endpoint that accepts JSON-RPC
-requests and returns JSON-RPC responses synchronously. The MCP
-2025-11-25 Streamable HTTP spec also allows Server-Sent Events for
-streaming results (long-running tools, sampling); that SSE path is
-NOT implemented yet — every request gets one blocking JSON-RPC
-response. Clients that need streaming should not assume it here.
+requests. When the client sends ``Accept: text/event-stream``, the
+response is a Server-Sent Events stream (MCP 2025-11-25 Streamable
+HTTP): for a long-running request the server emits
+``notifications/progress`` events while the work runs, then the final
+JSON-RPC response, then closes. Without that Accept header it returns a
+single blocking ``application/json`` response, exactly as before.
+
+Not yet implemented: server-initiated ``sampling`` (the server asking
+the client's LLM to complete) — that needs a bidirectional channel and
+is a separate follow-up.
 
 Usage::
 
@@ -33,10 +38,14 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import logging
 import os
 
 log = logging.getLogger(__name__)
+
+_MAX_PROGRESS_TOKEN_CHARS = 128
+_DEFAULT_MAX_PROGRESS_EVENTS = 240
 
 
 try:
@@ -47,6 +56,41 @@ except ImportError:
     _HAVE_FASTAPI = False
     FastAPI = Header = HTTPException = Request = Response = None  # type: ignore
     JSONResponse = StreamingResponse = None  # type: ignore
+
+
+# JSON-RPC requests are small control messages. Cap the body so an
+# (authenticated) client can't force the server to buffer an arbitrarily
+# large payload in memory before dispatch. Override via MAVERICK_MCP_MAX_BODY.
+def _max_body_bytes() -> int:
+    try:
+        return max(1024, int(os.environ.get("MAVERICK_MCP_MAX_BODY", str(2 * 1024 * 1024))))
+    except ValueError:
+        return 2 * 1024 * 1024
+
+
+async def _read_limited_json(request, http_exc):
+    """Read + parse the JSON body with a hard size cap.
+
+    Rejects oversized requests via Content-Length up front, then streams with
+    the same cap so a chunked/lengthless request can't bypass it.
+    """
+    cap = _max_body_bytes()
+    declared = request.headers.get("content-length")
+    if declared:
+        try:
+            if int(declared) > cap:
+                raise http_exc(status_code=413, detail="request body too large")
+        except ValueError:
+            raise http_exc(status_code=400, detail="invalid Content-Length")
+    buf = bytearray()
+    async for chunk in request.stream():
+        buf.extend(chunk)
+        if len(buf) > cap:
+            raise http_exc(status_code=413, detail="request body too large")
+    try:
+        return json.loads(buf or b"{}")
+    except (ValueError, UnicodeDecodeError):
+        raise http_exc(status_code=400, detail="body must be valid JSON")
 
 
 def _check_bearer(authorization: str | None) -> bool:
@@ -63,6 +107,73 @@ def _check_bearer(authorization: str | None) -> bool:
         return False
     given = authorization[len("Bearer "):].strip()
     return hmac.compare_digest(expected, given)
+
+
+def _result_envelope(request_id, result: dict) -> dict:
+    return {"jsonrpc": "2.0", "id": request_id, "result": result}
+
+
+def _error_envelope(request_id, exc: Exception) -> dict:
+    from .server import _ProtocolError
+    if isinstance(exc, _ProtocolError):
+        code, message = exc.code, exc.message
+    else:
+        code, message = -32603, f"internal error: {exc}"
+    return {"jsonrpc": "2.0", "id": request_id,
+            "error": {"code": code, "message": message}}
+
+
+def _sse(obj: dict) -> str:
+    """Format a JSON-RPC message as one SSE event."""
+    return f"data: {json.dumps(obj)}\n\n"
+
+
+def _heartbeat_seconds() -> float:
+    """Progress-heartbeat cadence for SSE streams. Override via
+    MAVERICK_MCP_SSE_HEARTBEAT (seconds)."""
+    try:
+        return max(0.01, float(os.environ.get("MAVERICK_MCP_SSE_HEARTBEAT", "15")))
+    except ValueError:
+        return 15.0
+
+
+def _max_progress_events() -> int:
+    """Maximum number of progress events sent on one SSE response."""
+    try:
+        return max(0, int(os.environ.get(
+            "MAVERICK_MCP_SSE_MAX_PROGRESS_EVENTS",
+            str(_DEFAULT_MAX_PROGRESS_EVENTS),
+        )))
+    except ValueError:
+        return _DEFAULT_MAX_PROGRESS_EVENTS
+
+
+def _progress_token(params: dict, http_exc):
+    """Return a bounded MCP progressToken or reject unsafe values.
+
+    Progress tokens are echoed in every progress notification, so keep them
+    scalar and small enough that heartbeats cannot amplify large request data.
+    """
+    meta = params.get("_meta") or {}
+    if not isinstance(meta, dict):
+        raise http_exc(status_code=400, detail="params._meta must be a JSON object")
+    token = meta.get("progressToken")
+    if token is None:
+        return None
+    if isinstance(token, bool) or not isinstance(token, (str, int, float)):
+        raise http_exc(
+            status_code=400,
+            detail="params._meta.progressToken must be a string or number",
+        )
+    if len(str(token)) > _MAX_PROGRESS_TOKEN_CHARS:
+        raise http_exc(
+            status_code=400,
+            detail=(
+                "params._meta.progressToken must be "
+                f"{_MAX_PROGRESS_TOKEN_CHARS} characters or fewer"
+            ),
+        )
+    return token
 
 
 def build_app(server) -> FastAPI:
@@ -96,23 +207,11 @@ def build_app(server) -> FastAPI:
     ):
         if not _check_bearer(authorization):
             raise HTTPException(status_code=401, detail="invalid bearer")
-        # Parse defensively: a malformed body (JSONDecodeError) or a non-object
-        # body (top-level array/string -> AttributeError on .get) would 500 with
-        # a stack trace. Return a clean JSON-RPC error instead.
-        try:
-            body = await request.json()
-        except Exception:
-            return JSONResponse(
-                {"jsonrpc": "2.0", "id": None,
-                 "error": {"code": -32700, "message": "parse error"}},
-                status_code=400,
-            )
+        # Bounded read (size cap) + parse; rejects oversized / malformed /
+        # non-object bodies with a clean error instead of a 500.
+        body = await _read_limited_json(request, HTTPException)
         if not isinstance(body, dict):
-            return JSONResponse(
-                {"jsonrpc": "2.0", "id": None,
-                 "error": {"code": -32600, "message": "invalid request"}},
-                status_code=400,
-            )
+            raise HTTPException(status_code=400, detail="body must be a JSON object")
         request_id = body.get("id")
         # Match the stdio transport: a JSON-RPC notification is a message
         # with no id (or id == null). Keying on `"id" not in body` diverged
@@ -120,37 +219,65 @@ def build_app(server) -> FastAPI:
         is_notification = request_id is None
         method = body.get("method", "")
         params = body.get("params", {}) or {}
+        if not isinstance(params, dict):
+            raise HTTPException(status_code=400, detail="params must be a JSON object")
+        accepts_sse = "text/event-stream" in (request.headers.get("accept") or "")
 
-        # Route via the existing MCPServer dispatcher. The dispatch is
-        # SYNCHRONOUS and the swarm tools call run_goal_sync() -> asyncio.run,
-        # which raises "asyncio.run() cannot be called from a running event
-        # loop" if invoked inline under FastAPI's loop. Run it in a worker
-        # thread so it gets its own loop; this fixes maverick_start /
-        # maverick_resume over HTTP (they were completely broken).
+        # Streamable HTTP: when the client accepts SSE and this is a real
+        # request (not a fire-and-forget notification), stream progress
+        # while the work runs, then the final JSON-RPC response. Dispatch
+        # always goes to a worker thread -- the swarm tools call
+        # run_goal_sync() -> asyncio.run, which can't run inline under
+        # FastAPI's loop.
+        if accepts_sse and not is_notification:
+            progress_token = _progress_token(params, HTTPException)
+            max_progress_events = _max_progress_events()
+
+            async def _stream():
+                task = asyncio.create_task(
+                    asyncio.to_thread(_dispatch, server, method, params)
+                )
+                interval = _heartbeat_seconds()
+                progress = 0
+                while not task.done():
+                    done, _pending = await asyncio.wait({task}, timeout=interval)
+                    if task in done:
+                        break
+                    # Progress notifications are only valid when the client
+                    # supplied a token to correlate them (per spec).
+                    if progress_token is not None and progress < max_progress_events:
+                        progress += 1
+                        yield _sse({
+                            "jsonrpc": "2.0",
+                            "method": "notifications/progress",
+                            "params": {
+                                "progressToken": progress_token,
+                                "progress": progress,
+                                "message": "working",
+                            },
+                        })
+                try:
+                    yield _sse(_result_envelope(request_id, task.result()))
+                except Exception as e:
+                    yield _sse(_error_envelope(request_id, e))
+
+            return StreamingResponse(_stream(), media_type="text/event-stream")
+
+        # Blocking JSON path (default). Dispatch runs in a worker thread
+        # for the same asyncio.run reason as above.
         try:
             result = await asyncio.to_thread(_dispatch, server, method, params)
         except Exception as e:
-            from .server import _ProtocolError
-            if isinstance(e, _ProtocolError):
-                code, message = e.code, e.message
-            else:
-                code, message = -32603, f"internal error: {e}"
             if is_notification:
                 # 204 must carry no body; JSONResponse({}) writes "{}" which
-                # strict proxies (e.g. Cloudflare, a named deploy target)
-                # reject as a protocol violation.
+                # strict proxies (e.g. Cloudflare) reject as a protocol violation.
                 return Response(status_code=204)
-            return JSONResponse({
-                "jsonrpc": "2.0", "id": request_id,
-                "error": {"code": code, "message": message},
-            })
+            return JSONResponse(_error_envelope(request_id, e))
 
         if is_notification:
             # 204 must carry no body (see above).
             return Response(status_code=204)
-        return JSONResponse({
-            "jsonrpc": "2.0", "id": request_id, "result": result,
-        })
+        return JSONResponse(_result_envelope(request_id, result))
 
     @app.get("/healthz")
     async def healthz():

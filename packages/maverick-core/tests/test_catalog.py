@@ -133,18 +133,19 @@ def test_fetch_index_caches(monkeypatch, tmp_path):
         def __exit__(self, *a): return False
         def read(self, _n=-1): return json.dumps(_index([_entry()])).encode()
 
-    def _urlopen(url, timeout=0):
+    def _open(self, url, timeout=0):
         calls["n"] += 1
         return _Resp()
 
     # catalog now fetches through maverick.tools.http_fetch.guarded_urlopen
-    # (shared SSRF guard); patch the real urlopen it calls and neutralize the
-    # host check so the test stays hermetic.
+    # (shared SSRF guard), which uses a custom opener that revalidates every
+    # redirect hop; patch the opener's open() and neutralize the host check so
+    # the test stays hermetic.
     import urllib.request
 
     from maverick.tools import http_fetch
     monkeypatch.setattr(http_fetch, "is_blocked_host", lambda _h: False)
-    monkeypatch.setattr(urllib.request, "urlopen", _urlopen)
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", _open)
     url = "https://a/skills/index.json"
     catalog._fetch_index_raw(url)
     catalog._fetch_index_raw(url)  # second call should hit the cache

@@ -43,14 +43,17 @@ def test_docker_available_happy_path(monkeypatch):
 def test_pick_sandbox_defaults_docker_when_unavailable(monkeypatch):
     from maverick_installer import wizard
     monkeypatch.setattr(wizard, "_docker_available", lambda: False)
-    captured = {}
+    defaults = []
     def fake_select(message, choices, default=None):
-        captured["default"] = default
+        defaults.append(default)
         return default
     monkeypatch.setattr(wizard, "_q_select", fake_select)
     monkeypatch.setattr(wizard, "_q_text", lambda *a, **kw: "/tmp/ws")
     wizard.pick_sandbox()
-    assert captured["default"].startswith("docker")
+    # The backend prompt is first; its default stays docker even when the
+    # daemon is down (security-first). A container backend then asks a second
+    # question (the coding language), so assert on the first prompt, not last.
+    assert defaults[0].startswith("docker")
 
 
 # ---------- validation cache ----------

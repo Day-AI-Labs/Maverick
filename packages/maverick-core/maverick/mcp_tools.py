@@ -10,11 +10,21 @@ mcp_client.
 from __future__ import annotations
 
 import logging
+import re
 
 from .mcp_client import MCPClient
 from .tools import Tool
 
 log = logging.getLogger(__name__)
+
+# A tool name comes from the external MCP server's `tools/list` response, so
+# it is attacker-controlled if that server is hostile/compromised (the same
+# threat MCPClient.pin_sha256 guards against). Constrain it to an identifier
+# charset so it can't (a) inject newlines/control chars into log lines, or
+# (b) smuggle the `__` namespace separator to collide with / shadow another
+# server's `mcp_<server>__<tool>` entry in the registry. Matches the MCP
+# spec's recommended tool-name shape.
+_VALID_TOOL_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 
 
 def tools_from_mcp(client: MCPClient) -> list[Tool]:
@@ -32,6 +42,15 @@ def tools_from_mcp(client: MCPClient) -> list[Tool]:
     for spec in client.tools:
         name = spec.get("name")
         if not name:
+            continue
+        if not isinstance(name, str) or not _VALID_TOOL_NAME.match(name) or "__" in name:
+            # %r escapes any control chars, so the rejection log itself can't
+            # be used to forge log lines.
+            log.warning(
+                "mcp tool from %s rejected: invalid name %r "
+                "(must match [A-Za-z0-9_.-], <=128 chars, no '__')",
+                client.spec.name, name,
+            )
             continue
         if not _spec_passes_shield(name, spec, shield):
             log.warning(

@@ -22,8 +22,10 @@ class TestScanToolCallNestedArgs:
         assert not v.allowed
 
     def test_arg_strings_collects_nested_leaves(self):
-        from maverick_shield.guard import _arg_strings
-        leaves = _arg_strings({"a": ["x", {"b": "y"}], "c": 3})
+        # main's guard uses _collect_arg_strings (same nested-leaf collection;
+        # this PR's _arg_strings was reconciled into it on merge).
+        from maverick_shield.guard import _collect_arg_strings
+        leaves = _collect_arg_strings({"a": ["x", {"b": "y"}], "c": 3})
         assert "x" in leaves and "y" in leaves
 
 

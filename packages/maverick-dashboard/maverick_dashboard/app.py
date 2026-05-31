@@ -581,9 +581,16 @@ async def audit_page(request: Request) -> HTMLResponse:
         n = 200
     day = safe_audit_day(request.query_params.get("day"))
     events = default_audit_log().tail(n, day=day)
+    # Distinct kinds in this tail (for the filter dropdown), computed before
+    # filtering so every available kind stays selectable; then optionally
+    # narrow to one kind (e.g. shield_block, tool_call).
+    kinds = sorted({str(e.get("kind")) for e in events if e.get("kind")})
+    kind = (request.query_params.get("kind") or "").strip()
+    if kind:
+        events = [e for e in events if e.get("kind") == kind]
     return templates.TemplateResponse(
         request, "audit.html",
-        {"events": events, "n": n, "day": day},
+        {"events": events, "n": n, "day": day, "kind": kind, "kinds": kinds},
     )
 
 

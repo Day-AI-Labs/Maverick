@@ -52,7 +52,9 @@ CHANNELS: list[tuple[str, str, list[str]]] = [
     ("matrix",   "Matrix (federated)",                  ["MATRIX_ACCESS_TOKEN"]),
     ("bluesky",  "Bluesky (AT Protocol)",               ["BLUESKY_HANDLE", "BLUESKY_PASSWORD"]),
     ("mastodon", "Mastodon (any instance)",             ["MASTODON_ACCESS_TOKEN"]),
-    ("voice",    "Voice (Vapi Voice in/out)",           ["VAPI_API_KEY", "VAPI_WEBHOOK_TOKEN"]),
+    # Voice API key is provider-specific (VAPI/RETELL/BLAND), resolved in the
+    # voice block below; only the webhook token is static here.
+    ("voice",    "Voice (Vapi/Retell/Bland)",            ["VAPI_WEBHOOK_TOKEN"]),
     ("whatsapp", "WhatsApp (Twilio, needs webhook)",    ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]),
     ("sms",      "SMS (Twilio, needs webhook)",         ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]),
     ("imessage", "iMessage (macOS only)",               []),
@@ -71,6 +73,8 @@ STEPS: list[tuple[str, str]] = [
     ("budget", "Budget"),
     ("sandbox", "Sandbox"),
     ("capabilities", "Capabilities"),
+    ("self_learning", "Self-learning"),
+    ("advanced", "Advanced reasoning"),
     ("web_search", "Web search"),
     ("mcp_servers", "MCP servers"),
     ("plugins", "Plugins"),
@@ -80,6 +84,7 @@ STEPS: list[tuple[str, str]] = [
     ("persona", "Persona"),
     ("notifications", "Notifications"),
     ("webhooks", "Webhooks"),
+    ("a2a", "A2A"),
 ]
 
 
@@ -635,6 +640,10 @@ def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]
                 "retell": "RETELL_API_KEY",
                 "bland": "BLAND_API_KEY",
             }.get(provider, "VAPI_API_KEY")
+            # Collect the provider-specific key so the wizard actually prompts
+            # for it; otherwise a retell/bland config references ${RETELL_API_KEY}
+            # / ${BLAND_API_KEY} that the user was never asked to enter.
+            envs.add(key_env)
             cfg["api_key"] = "${" + key_env + "}"
             # Inbound webhook auth is Vapi-shaped today; keep the token ref.
             cfg["webhook_token"] = "${VAPI_WEBHOOK_TOKEN}"
@@ -781,6 +790,81 @@ def pick_capabilities() -> dict[str, bool]:
     }
 
 
+def pick_self_learning() -> dict[str, Any]:
+    """Opt-in to self-learning: acquire/build new capabilities on demand.
+
+    Off by default. When on, the agent can install catalog skills, wire in
+    MCP servers, and GENERATE + run new tools when it hits a capability gap.
+    Generating and executing fresh code is a real trust decision, so this
+    ships disabled and we say so plainly. Returns a dict written under
+    ``[self_learning]``.
+    """
+    console.print()
+    console.print(
+        "[dim]Self-learning lets the agent close capability gaps on its own: "
+        "install skills, wire in MCP servers, even write & run new tools. "
+        "It generates and executes fresh code in-process, so it's OFF by "
+        "default.[/dim]"
+    )
+    enable = _q_confirm("Enable self-learning?", default=False)
+    if not enable:
+        return {"enable": False}
+    create_tools = _q_confirm(
+        "  Allow the agent to GENERATE and run new tools (full autonomy)?",
+        default=True,
+    )
+    add_mcp = _q_confirm(
+        "  Allow the agent to add + start external MCP servers?",
+        default=True,
+    )
+    preflight = _q_confirm(
+        "  Pre-acquire likely skills before each run (one extra LLM call)?",
+        default=True,
+    )
+    return {
+        "enable": True,
+        "preflight": preflight,
+        "create_tools": create_tools,
+        "add_mcp_servers": add_mcp,
+        "max_acquisitions": 5,
+    }
+
+
+def pick_advanced() -> dict[str, bool]:
+    """Opt-in to advanced reasoning features that ship off by default.
+
+    Each trades extra tokens/latency for quality on hard or long-running
+    goals. All editable later in ~/.maverick/config.toml.
+    """
+    console.print()
+    return {
+        "cost_aware": _q_confirm(
+            "Cost-aware routing? Use the cheapest capable model per role to cut spend.",
+            default=False,
+        ),
+        "tree_of_thought": _q_confirm(
+            "Tree-of-thought planning? Draft a few plans and let a critic pick the "
+            "best before working (more tokens up front, fewer dead ends).",
+            default=False,
+        ),
+        "compact_history": _q_confirm(
+            "Compact long conversations? Keep the most relevant older turns under a "
+            "token budget instead of just the last few.",
+            default=False,
+        ),
+        "reflexion": _q_confirm(
+            "Reflexion learning? Remember lessons from failed runs and recall them "
+            "on the next similar goal.",
+            default=False,
+        ),
+        "verify_ensemble": _q_confirm(
+            "Ensemble verification? Cross-check final answers with a panel of models "
+            "(slower, stronger).",
+            default=False,
+        ),
+    }
+
+
 def _docker_available() -> bool:
     """Return True iff the `docker` binary is on PATH AND the daemon
     responds. Used to pick a safe sandbox default in consumer mode and
@@ -795,6 +879,13 @@ def _docker_available() -> bool:
         return True
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
         return False
+
+
+# Container backends pick their image from the coding language (see
+# sandbox._IMAGE_BY_LANGUAGE). local/ssh run model shell on the host toolchain
+# and devcontainer reuses the user's own image, so the language hint only
+# changes anything for these three.
+_LANGUAGE_BACKENDS = {"docker", "podman", "kubernetes"}
 
 
 def pick_sandbox() -> dict[str, Any]:
@@ -816,7 +907,28 @@ def pick_sandbox() -> dict[str, Any]:
     )
     backend = pick.split()[0]
     workdir = _q_text("  Workspace directory", default=str(Path.home() / "maverick-workspace"))
-    return {"backend": backend, "workdir": workdir, "timeout": 60}
+    cfg: dict[str, Any] = {"backend": backend, "workdir": workdir, "timeout": 60}
+    # Non-Python coders get a toolchain image that can actually run their tests
+    # (cargo/go test, the JS runner, ...). Python is the default image, so we
+    # only write [sandbox] language when it's something else -- existing and
+    # Python configs stay byte-identical.
+    if backend in _LANGUAGE_BACKENDS:
+        languages = [
+            "python     - python:3.12-slim (default)",
+            "javascript - node:22 (JavaScript / TypeScript)",
+            "go         - golang:1",
+            "rust       - rust:1",
+            "java       - eclipse-temurin:21 (Java / Kotlin)",
+            "ruby       - ruby:3",
+        ]
+        lang = _q_select(
+            "  What do you mostly code in? (sets the container's toolchain)",
+            languages,
+            default=languages[0],
+        ).split()[0]
+        if lang != "python":
+            cfg["language"] = lang
+    return cfg
 
 
 # ---------- new wizard steps (council parity pass) ----------
@@ -1415,6 +1527,28 @@ def _emit_kv(lines: list[str], k: str, v: Any) -> None:
         lines.append(f"{k} = {_toml_str(v)}")
 
 
+def pick_a2a() -> tuple[dict[str, Any], list[str]]:
+    """Expose Maverick to other agents over A2A. Returns (config, envs).
+
+    Off by default: A2A is an outward-facing surface (other agents can
+    discover this instance and delegate budget-spending goals to it). When
+    enabled we require a bearer token (MAVERICK_A2A_TOKEN) so the task
+    endpoint isn't open; the agent card + task endpoint mount on the
+    dashboard at /a2a/v1.
+    """
+    if not _q_confirm(
+        "Expose this agent over A2A so other agents can delegate goals to it?",
+        default=False,
+    ):
+        return {}, []
+    console.print(
+        "  [dim]A2A serves an agent card at /.well-known/agent-card.json and a "
+        "task endpoint at /a2a/v1 (on `maverick dashboard`). Budget is clamped "
+        "to operator caps; a bearer token is required.[/dim]"
+    )
+    return {"enabled": True}, ["MAVERICK_A2A_TOKEN"]
+
+
 def write_config(
     deployment: str,
     providers: list[str],
@@ -1426,6 +1560,7 @@ def write_config(
     keys: dict[str, str],
     capabilities: dict[str, bool] | None = None,
     *,
+    advanced: dict[str, bool] | None = None,
     mcp_servers: dict[str, dict[str, Any]] | None = None,
     plugins: list[str] | None = None,
     tool_acl: dict[str, Any] | None = None,
@@ -1434,8 +1569,10 @@ def write_config(
     persona: dict[str, str] | None = None,
     notifications: dict[str, Any] | None = None,
     webhooks: dict[str, Any] | None = None,
+    a2a: dict[str, Any] | None = None,
     web_search_enabled: bool = False,
     skills: dict[str, Any] | None = None,
+    self_learning: dict[str, Any] | None = None,
 ) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -1536,6 +1673,14 @@ def write_config(
         for k, v in skills.items():
             _emit_kv(lines, k, v)
 
+    if self_learning:
+        # Self-learning. enable gates the whole feature; sub-toggles let the
+        # agent install skills, add MCP servers, and generate+run new tools.
+        lines.append("")
+        lines.append("[self_learning]")
+        for k, v in self_learning.items():
+            _emit_kv(lines, k, v)
+
     if capabilities:
         lines.append("")
         lines.append("[capabilities]")
@@ -1545,6 +1690,29 @@ def write_config(
             # web_search is wired through enable_web_search at kernel
             # boot; reflect the wizard's pick under [capabilities].
             lines.append("web_search = true")
+
+    if advanced:
+        # Advanced reasoning toggles -> the kernel's config sections. Each is
+        # off unless the wizard wrote it, matching the modules' own defaults.
+        if advanced.get("cost_aware") or advanced.get("verify_ensemble"):
+            lines.append("")
+            lines.append("[routing]")
+            if advanced.get("cost_aware"):
+                lines.append("cost_aware = true")
+            if advanced.get("verify_ensemble"):
+                lines.append("verify_ensemble = true")
+        if advanced.get("tree_of_thought"):
+            lines.append("")
+            lines.append("[planning]")
+            lines.append('mode = "tree_of_thought"')
+        if advanced.get("compact_history"):
+            lines.append("")
+            lines.append("[context]")
+            lines.append("compact = true")
+        if advanced.get("reflexion"):
+            lines.append("")
+            lines.append("[reflexion]")
+            lines.append("enable = true")
 
     if mcp_servers:
         for name, cfg in mcp_servers.items():
@@ -1601,6 +1769,12 @@ def write_config(
         lines.append("")
         lines.append("[webhooks]")
         for k, v in webhooks.items():
+            _emit_kv(lines, k, v)
+
+    if a2a:
+        lines.append("")
+        lines.append("[a2a]")
+        for k, v in a2a.items():
             _emit_kv(lines, k, v)
 
     # Config has no secrets today but does carry the deployment
@@ -1730,10 +1904,12 @@ def run_fast() -> int:
         "workdir": str(Path.home() / "maverick-workspace"),
         "timeout": 60,
     }
+    denied_tools = ["computer", "browser"]
     if backend == "local":
+        denied_tools.extend(["shell", "write_file", "apply_patch", "str_replace_editor"])
         console.print(
             "[yellow]![/yellow] Docker daemon not detected — using the "
-            "[bold]local[/bold] sandbox (runs shell on this machine). "
+            "[bold]local[/bold] sandbox with host-mutating tools disabled. "
             "Run [bold]maverick init[/bold] to switch to docker once it's up."
         )
     capabilities = {"computer_use": False, "browser": False}
@@ -1745,6 +1921,7 @@ def run_fast() -> int:
     write_config(
         deployment, providers, role_models, channels, safety, budget,
         sandbox, keys, capabilities,
+        tool_acl={"denied_tools": denied_tools},
     )
     smoke_test()
     console.print()
@@ -2071,6 +2248,16 @@ def run(fast: bool = False, resume: bool = False) -> int:
     _save_partial(state)
 
     _announce()
+    self_learning = state.get("self_learning") or pick_self_learning()
+    state["self_learning"] = self_learning
+    _save_partial(state)
+
+    _announce()
+    advanced = state.get("advanced") or pick_advanced()
+    state["advanced"] = advanced
+    _save_partial(state)
+
+    _announce()
     web_search_enabled, web_search_envs = (
         state.get("_web_search_pair") or pick_web_search()
     )
@@ -2132,9 +2319,17 @@ def run(fast: bool = False, resume: bool = False) -> int:
     state["_webhooks_pair"] = [webhooks, webhook_envs]
     _save_partial(state)
 
+    _announce()
+    a2a_cfg, a2a_envs = state.get("_a2a_pair") or pick_a2a()
+    state["_a2a_pair"] = [a2a_cfg, a2a_envs]
+    _save_partial(state)
+
     # Keys/sessions are never persisted to disk in the partial state
     # (they're secrets; the only safe place is ~/.maverick/.env).
-    extra_envs = set(web_search_envs) | set(notify_envs) | set(webhook_envs)
+    extra_envs = (
+        set(web_search_envs) | set(notify_envs) | set(webhook_envs)
+        | set(a2a_envs)
+    )
     keys = collect_api_keys(providers, channel_envs | extra_envs)
     captured_sessions = collect_browser_sessions(providers)
     if captured_sessions:
@@ -2157,6 +2352,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
     write_config(
         deployment, providers, role_models, channels, safety, budget, sandbox,
         keys, capabilities,
+        advanced=advanced,
         mcp_servers=mcp_servers,
         plugins=plugins,
         tool_acl=tool_acl,
@@ -2165,8 +2361,10 @@ def run(fast: bool = False, resume: bool = False) -> int:
         persona=persona,
         notifications=notifications,
         webhooks=webhooks,
+        a2a=a2a_cfg,
         web_search_enabled=web_search_enabled,
         skills=signed_skills if (signed_skills.get("trusted_pubkeys") or signed_skills.get("require_signed")) else None,
+        self_learning=self_learning if self_learning.get("enable") else None,
     )
     _clear_partial()
     ok = smoke_test()

@@ -11,6 +11,7 @@ Respects:
 """
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import logging
 import re
@@ -159,21 +160,11 @@ def is_blocked_host(hostname: str) -> bool:
     return _is_private_ip(hostname or "")
 
 
-def guarded_urlopen(url: str, *, timeout: float, allow_http: bool = False):
-    """``urllib.request.urlopen`` with scheme + SSRF host checks.
+def _check_url_allowed(url: str, *, allow_http: bool) -> None:
+    """Raise ``ValueError`` if ``url``'s scheme or host fails the SSRF guard.
 
-    The shared guarded fetch for paths that pull a user- or model-supplied
-    URL outside the http_fetch tool (skill install, catalog index). Enforces
-    https (http only when ``allow_http``) and refuses hosts resolving to a
-    private/loopback/link-local/reserved address via ``is_blocked_host``
-    (honoring ``MAVERICK_FETCH_ALLOW_PRIVATE=1``) before opening the
-    connection. Returns the response, so callers use it as
-    ``with guarded_urlopen(url, timeout=...) as resp:``.
-
-    Residual: the host is resolved here and again by ``urlopen``, so a fast
-    DNS rebind between the two is not stopped (the same limitation this tool
-    already carries; resolve-once-pin-IP is tracked separately). The win is
-    closing the previously *unguarded* skill/catalog fetch paths.
+    Factored out of ``guarded_urlopen`` so the same scheme + host checks can
+    be re-run on every redirect hop, not just the entry URL.
     """
     parsed = urlparse(url)
     scheme = (parsed.scheme or "").lower()
@@ -187,7 +178,147 @@ def guarded_urlopen(url: str, *, timeout: float, allow_http: bool = False):
             "private/loopback/link-local/reserved address (SSRF guard). "
             "Set MAVERICK_FETCH_ALLOW_PRIVATE=1 to override."
         )
-    return urllib.request.urlopen(url, timeout=timeout)  # noqa: S310 (scheme+host checked)
+
+
+class _RevalidatingRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Re-run the SSRF scheme/host guard on every redirect target.
+
+    The stock handler follows 3xx redirects transparently, so a URL that
+    passes the front-door check could 302 to ``http://169.254.169.254/...``
+    (cloud metadata) or ``http://127.0.0.1`` and the guard would never see
+    the redirect target. We re-validate the ``Location`` before allowing the
+    redirect; a blocked target raises and aborts the fetch.
+    """
+
+    def __init__(self, *, allow_http: bool) -> None:
+        super().__init__()
+        self._allow_http = allow_http
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # ``newurl`` is already resolved to an absolute URL by urllib.
+        _check_url_allowed(newurl, allow_http=self._allow_http)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _resolve_pinned(host: str) -> str:
+    """Resolve ``host`` ONCE, validate every returned address, and return a
+    single pinned IP literal to connect to.
+
+    This closes the resolve-then-reconnect TOCTOU (DNS rebinding): the IP
+    returned here is the exact IP the socket is opened to, with no second
+    name resolution by the connection layer. Honors
+    ``MAVERICK_FETCH_ALLOW_PRIVATE=1`` (which skips validation and returns the
+    hostname unchanged, preserving the override's existing behavior). Fails
+    CLOSED otherwise — a resolution failure or any blocked address in the
+    result set raises ``ValueError`` rather than letting the connection layer
+    re-resolve to an unvalidated address.
+    """
+    import os
+    if os.environ.get("MAVERICK_FETCH_ALLOW_PRIVATE") == "1":
+        return host
+    try:
+        addrs = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as e:
+        raise ValueError(
+            f"refusing to fetch {host!r}: DNS resolution failed ({e}). "
+            "Set MAVERICK_FETCH_ALLOW_PRIVATE=1 to override."
+        ) from e
+    pinned: str | None = None
+    for _fam, _stype, _proto, _name, sockaddr in addrs:
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            raise ValueError(
+                f"refusing to fetch {host!r}: resolves to blocked address "
+                f"{ip_str} (SSRF guard). Set MAVERICK_FETCH_ALLOW_PRIVATE=1 "
+                "to override."
+            )
+        if pinned is None:
+            pinned = ip_str
+    if pinned is None:
+        raise ValueError(f"refusing to fetch {host!r}: no usable address resolved")
+    return pinned
+
+
+def _make_pinned_connect(connect):
+    """Wrap an ``http.client`` connection's ``connect`` so the socket is opened
+    to the validated pinned IP for ``self.host`` instead of letting the
+    connection layer re-resolve the name. ``self.host`` is left untouched so
+    the ``Host`` header, TLS SNI, and certificate verification still use the
+    real hostname."""
+    def _connect(self):
+        ip = _resolve_pinned(self.host)
+        if ip == self.host:
+            # Override path (allow-private): no pinning, normal resolution.
+            return connect(self)
+        orig_create = self._create_connection
+
+        def _create(address, *a, **k):
+            # Replace the (hostname, port) target with the pinned IP; the
+            # port and all other args are preserved.
+            return orig_create((ip, address[1]), *a, **k)
+
+        self._create_connection = _create
+        try:
+            return connect(self)
+        finally:
+            self._create_connection = orig_create
+    return _connect
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    connect = _make_pinned_connect(http.client.HTTPConnection.connect)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    connect = _make_pinned_connect(http.client.HTTPSConnection.connect)
+
+
+class _PinnedHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_PinnedHTTPConnection, req)
+
+
+class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(
+            _PinnedHTTPSConnection, req,
+            context=self._context, check_hostname=self._check_hostname,
+        )
+
+
+def guarded_urlopen(url: str, *, timeout: float, allow_http: bool = False):
+    """``urllib.request.urlopen`` with scheme + SSRF host checks, redirect
+    revalidation, and DNS-rebind-proof connection pinning.
+
+    The shared guarded fetch for paths that pull a user- or model-supplied
+    URL outside the http_fetch tool (skill install, catalog index). Enforces
+    https (http only when ``allow_http``) and refuses hosts resolving to a
+    private/loopback/link-local/reserved address (honoring
+    ``MAVERICK_FETCH_ALLOW_PRIVATE=1``). The host check is re-run on every
+    redirect hop, and the connection is opened to the exact IP validated by
+    ``_resolve_pinned`` — the name is resolved once and that IP is pinned for
+    the socket, so a fast DNS rebind between check and connect cannot redirect
+    the request onto an internal address. Returns the response, so callers use
+    it as ``with guarded_urlopen(url, timeout=...) as resp:``.
+    """
+    _check_url_allowed(url, allow_http=allow_http)
+    opener = urllib.request.build_opener(
+        _PinnedHTTPHandler,
+        _PinnedHTTPSHandler,
+        _RevalidatingRedirectHandler(allow_http=allow_http),
+    )
+    return opener.open(url, timeout=timeout)  # noqa: S310 (scheme+host checked, redirects revalidated, IP pinned)
 
 
 def _check_robots(url: str, user_agent: str = "Maverick") -> bool:
@@ -271,9 +402,16 @@ def _run_fetch(args: dict[str, Any]) -> str:
     max_bytes = int(args.get("max_bytes") or 200_000)
     render = (args.get("render") or "markdown").lower()
 
+    # Connect to the IP we validated above, not a freshly-resolved one:
+    # closes the DNS-rebinding TOCTOU between the _is_private_ip() check
+    # and the request (a rebinding resolver could otherwise swap in a
+    # private/metadata address for the connection lookup).
+    from ._ssrf import BlockedHost, safe_client
     try:
-        with httpx.Client(timeout=30.0, follow_redirects=False) as client:
+        with safe_client(url, timeout=30.0) as client:
             resp = client.request(method, url, headers=headers, content=body)
+    except BlockedHost as e:
+        return f"ERROR: refusing to fetch {url!r}: {e}"
     except httpx.HTTPError as e:
         return f"ERROR: {type(e).__name__}: {e}"
 

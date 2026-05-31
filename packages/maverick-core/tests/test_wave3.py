@@ -46,6 +46,35 @@ class TestSecretScrubbing:
         text = "Just regular text with no secrets in it."
         assert scrub(text) == text
 
+    def test_pem_private_key_redacted(self):
+        text = (
+            "key:\n-----BEGIN RSA PRIVATE KEY-----\n"
+            "MIIEpAIBAAKCAQEAabc123\nLINE2\n"
+            "-----END RSA PRIVATE KEY-----\nrest"
+        )
+        out = scrub(text)
+        assert "MIIEpAIBAAKCAQEAabc123" not in out
+        assert "[REDACTED:private_key]" in out
+        assert out.endswith("rest")
+
+    def test_url_credentials_redacted(self):
+        text = "DB at postgres://admin:s3cretPw@db.example.com:5432/app now"
+        out = scrub(text)
+        assert "s3cretPw" not in out
+        assert "[REDACTED:url_credentials]" in out
+        # Host + scheme + user stay readable for debugging.
+        assert "postgres://admin:" in out and "@db.example.com:5432/app" in out
+
+    def test_url_without_credentials_untouched(self):
+        # A plain URL (no user:pass@) must not be mangled.
+        text = "see https://example.com/path?x=1"
+        assert scrub(text) == text
+
+    def test_stripe_key_redacted(self):
+        text = "stripe: sk_live_abcdef 0123456789ABCDEFGH".replace(" ", "")
+        out = scrub(text)
+        assert "[REDACTED:stripe_key]" in out
+
     def test_github_token_redacted(self):
         text = "GITHUB_TOKEN=ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
         out = scrub(text)

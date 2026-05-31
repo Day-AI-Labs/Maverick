@@ -1,0 +1,47 @@
+name: MCP client (Java)
+
+# Executes the Java/JVM MCP client example against a live `maverick mcp` stdio
+# server. Mirrors .github/workflows/mcp-clients.yml (TypeScript + Go); kept as a
+# separate workflow because the JVM toolchain (setup-java + Maven) is heavier
+# and the Java client is a later addition (council target #5).
+#
+# Only the no-LLM flow runs (initialize -> tools/list -> maverick_facts_get);
+# maverick_start needs a provider key + budget and is out of scope for CI.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/maverick-core/**'
+      - 'packages/maverick-mcp/**'
+      - 'examples/clients/**'
+      - 'docs/clients/**'
+      - '.github/workflows/mcp-client-java.yml'
+  pull_request:
+    paths:
+      - 'packages/maverick-core/**'
+      - 'packages/maverick-mcp/**'
+      - 'examples/clients/**'
+      - 'docs/clients/**'
+      - '.github/workflows/mcp-client-java.yml'
+
+jobs:
+  java:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+          cache: "maven"
+      - name: Install Maverick (kernel + MCP server)
+        run: |
+          pip install -e ./packages/maverick-core
+          pip install --no-deps -e ./packages/maverick-mcp
+      - name: Run the Java MCP client end-to-end
+        working-directory: examples/clients/java
+        run: mvn -q compile exec:java

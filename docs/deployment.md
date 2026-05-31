@@ -78,9 +78,9 @@ maverick serve
 | Signal   | ready    | Install signal-cli, register your number | no |
 | Email    | ready    | IMAP + SMTP credentials (Gmail app password works) | no |
 | Matrix   | ready    | Homeserver URL + user_id + access token | no |
-| WhatsApp | scaffold | Twilio Business API + public HTTPS endpoint | YES |
-| SMS      | scaffold | Twilio + public HTTPS endpoint | YES |
-| iMessage | scaffold | macOS only + Full Disk Access permission | no |
+| WhatsApp | ready    | Twilio Business API + public HTTPS endpoint | YES |
+| SMS      | ready    | Twilio + public HTTPS endpoint | YES |
+| iMessage | ready    | macOS only + Full Disk Access permission | no |
 
 Multiple channels can be enabled at once; each runs in its own async task.
 

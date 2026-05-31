@@ -65,3 +65,22 @@ def test_runs_human_output(tmp_path):
     assert res.exit_code == 0, res.output
     assert "Recent runs" in res.output
     assert "running" in res.output  # the live episode
+
+
+def test_runs_human_output_strips_terminal_controls(tmp_path):
+    db = tmp_path / "wm.db"
+    wm = WorldModel(db)
+    gid = wm.create_goal("\x1b]0;PWNED\x07safe [link](https://attacker.invalid)\x1b[31m")
+    ep = wm.start_episode(gid)
+    wm.end_episode(ep, summary="done", outcome="completed")
+    wm.close()
+
+    json_res = CliRunner().invoke(cli_mod.main, ["--db", str(db), "runs", "--json"])
+    assert json_res.exit_code == 0, json_res.output
+    assert json.loads(json_res.output)[0]["goal_title"].startswith("\x1b]0;PWNED")
+
+    res = CliRunner().invoke(cli_mod.main, ["--db", str(db), "runs"])
+    assert res.exit_code == 0, res.output
+    assert "\x1b" not in res.output
+    assert "\x07" not in res.output
+    assert "safe [link](https://attacker.invalid)" in res.output

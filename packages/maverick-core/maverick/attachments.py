@@ -114,6 +114,13 @@ def store(
     sha256 = hashlib.sha256(data).hexdigest()
     dest_dir = _root_for_goal(goal_id, root)
     dest_dir.mkdir(parents=True, exist_ok=True)
+    # Attachment bytes can be private (uploaded docs, screenshots). The
+    # default umask often leaves them world-readable on a shared host, so
+    # lock the goal dir + file to the owner.
+    try:
+        os.chmod(dest_dir, 0o700)
+    except OSError:
+        pass
     # SHA-prefix the on-disk name so two attachments with the same
     # filename don't collide and so a re-upload of the same bytes is a
     # no-op (idempotent).
@@ -121,6 +128,10 @@ def store(
     dest = dest_dir / f"{sha256[:16]}-{safe_name}"
     if not dest.exists():
         dest.write_bytes(data)
+        try:
+            os.chmod(dest, 0o600)
+        except OSError:
+            pass
 
     return Stored(
         filename=filename,

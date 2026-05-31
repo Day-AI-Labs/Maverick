@@ -116,25 +116,30 @@ class FirecrackerBackend:
         """
         if shutil.which("firectl"):
             return self._firectl(cmd)
-        # No firectl: by default fall back to docker (read-only + no-network)
-        # so the run still completes, but an operator who configured
-        # `provider = "firecracker"` for hard isolation may not want a silent
-        # downgrade. MAVERICK_FIRECRACKER_STRICT=1 makes that case fail closed.
-        if os.environ.get("MAVERICK_FIRECRACKER_STRICT", "").strip().lower() in {"1", "true", "yes", "on"}:
+        # No firectl: an operator who configured `provider = "firecracker"`
+        # asked for hard microVM isolation, so silently downgrading to a Docker
+        # namespace boundary defeats that choice. Fail CLOSED by default; the
+        # operator must explicitly opt into the weaker fallback with
+        # MAVERICK_FIRECRACKER_STRICT=0 (previously the downgrade was the
+        # default and only STRICT=1 failed closed, so the secure posture
+        # depended on remembering to set an env var).
+        if os.environ.get("MAVERICK_FIRECRACKER_STRICT", "1").strip().lower() not in {"0", "false", "no", "off"}:
             raise RuntimeError(
-                "Firecracker local backend: firectl not on PATH and "
-                "MAVERICK_FIRECRACKER_STRICT is set, so refusing to downgrade "
-                "to docker. Install firectl for microVM isolation, or unset "
-                "MAVERICK_FIRECRACKER_STRICT to allow the docker fallback."
+                "Firecracker local backend: firectl not on PATH, so microVM "
+                "isolation is unavailable. Refusing to silently downgrade to "
+                "Docker (which is a weaker boundary than you selected). Install "
+                "firectl for microVM isolation, or set "
+                "MAVERICK_FIRECRACKER_STRICT=0 to explicitly allow the Docker "
+                "fallback."
             )
-        # Scaffold fallback: docker with read-only + no-network.
-        # Operator sees a log line so they know they're not getting
+        # Operator explicitly opted into the downgrade (STRICT=0). Use a
+        # hardened docker invocation and log so they know they're not getting
         # full microVM isolation.
         log.warning(
-            "Firecracker local backend: firectl not on PATH; falling "
-            "back to `docker --network=none --read-only` for this run. "
-            "Install firectl for full microVM isolation (or set "
-            "MAVERICK_FIRECRACKER_STRICT=1 to fail closed instead)."
+            "Firecracker local backend: firectl not on PATH and "
+            "MAVERICK_FIRECRACKER_STRICT=0; falling back to a hardened "
+            "`docker --network=none --read-only` for this run. Install "
+            "firectl for full microVM isolation."
         )
         return self._docker_fallback(cmd)
 
@@ -188,10 +193,17 @@ class FirecrackerBackend:
         )
 
     def _docker_fallback(self, cmd: str) -> ExecResult:
-        """Best-effort sandbox when firectl isn't available."""
+        """Best-effort sandbox when firectl isn't available.
+
+        Applies the same containment the regular ``DockerBackend`` uses
+        (``--cap-drop ALL`` + ``--security-opt no-new-privileges`` + a pids
+        cap) so the fallback isn't *weaker* than the normal Docker path."""
         args = [
             "docker", "run", "--rm",
             "--network=none", "--read-only",
+            "--cap-drop", "ALL",
+            "--security-opt", "no-new-privileges",
+            "--pids-limit", "512",
             "--tmpfs", "/tmp",
             # This fallback stands in for hard VM isolation, so it must be at
             # least as contained as the plain Docker backend: drop all caps,

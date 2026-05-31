@@ -6,15 +6,19 @@ contract every IDE-side MCP client uses — you talk to `maverick mcp`
 over stdio JSON-RPC.
 
 We don't ship a separate `maverick-rs` crate; you talk to the Python
-kernel via the standard Rust MCP SDK.
+kernel via the official [Rust MCP SDK](https://github.com/modelcontextprotocol/rust-sdk)
+(the `rmcp` crate).
 
 ## Prereqs
 
 ```bash
 pip install maverick-agent maverick-mcp-server
-cargo add mcp-sdk    # community crate; pin to a published version
-cargo add tokio --features full
+# Official Rust MCP SDK; pin a published version for reproducible builds.
+# The client role and the child-process stdio transport are not on by default.
+cargo add rmcp@1.7.0 --features client,transport-child-process
+cargo add tokio --features macros,rt-multi-thread,process,io-util
 cargo add serde_json
+cargo add anyhow
 ```
 
 Set `ANTHROPIC_API_KEY` (or whichever provider key the kernel needs).
@@ -22,30 +26,45 @@ Set `ANTHROPIC_API_KEY` (or whichever provider key the kernel needs).
 ## Quickstart
 
 ```rust
-// quickstart.rs
-use mcp_sdk::{client::Client, transport::StdioTransport};
-use serde_json::json;
+// src/main.rs
+use anyhow::Result;
+use rmcp::{
+    model::CallToolRequestParams,
+    object,
+    transport::{ConfigureCommandExt, TokioChildProcess},
+    ServiceExt,
+};
 use tokio::process::Command;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Spawn `maverick mcp` as a child; SDK wires stdio JSON-RPC.
-    let mut cmd = Command::new("maverick");
-    cmd.arg("mcp");
-    let transport = StdioTransport::from_command(cmd).await?;
-    let mut client = Client::new("rust-quickstart", "0.1.0");
-    client.connect(transport).await?;
-
-    let tools = client.list_tools().await?;
-    println!("Maverick exposes {} tools", tools.tools.len());
-
-    // maverick_start runs the swarm and returns the final answer.
-    let out = client
-        .call_tool("maverick_start", json!({ "title": "Say hello from Rust", "max_dollars": 0.25 }))
+async fn main() -> Result<()> {
+    // Spawn `maverick mcp` as a child process; rmcp wires up stdio JSON-RPC and
+    // performs the MCP initialize handshake. `()` is the (no-op) client handler.
+    let client = ()
+        .serve(TokioChildProcess::new(Command::new("maverick").configure(
+            |cmd| {
+                cmd.arg("mcp");
+            },
+        ))?)
         .await?;
-    println!("{}", out.text());
 
-    client.close().await?;
+    let tools = client.list_all_tools().await?;
+    println!("Maverick exposes {} tools", tools.len());
+
+    // maverick_start runs the swarm and returns the final answer (long-running).
+    let res = client
+        .call_tool(
+            CallToolRequestParams::new("maverick_start")
+                .with_arguments(object!({ "title": "Say hello from Rust", "max_dollars": 0.25 })),
+        )
+        .await?;
+    for content in &res.content {
+        if let Some(text) = content.as_text() {
+            println!("{}", text.text);
+        }
+    }
+
+    client.cancel().await?;
     Ok(())
 }
 ```
@@ -68,11 +87,18 @@ want to ship a Python interpreter. The right Rust unit is a thin
 
 ## SDK status
 
-The Rust MCP SDK ecosystem is still consolidating; pin the crate
-version + audit the dep, or implement the wire protocol by hand —
-the spec is small enough to fit in ~150 lines of Rust.
+`rmcp` is the official Rust MCP SDK from the Model Context Protocol
+project. It's async (tokio) and ships a child-process stdio transport
+(`TokioChildProcess`) plus the client role behind feature flags. Pin a
+specific version and enable only the features you need; if the API
+drifts across releases, the wire protocol it speaks does not.
 
 ## See also
 
+- [Runnable example + CI smoke](../../examples/clients/rust/) — the executable
+  version of this quickstart, run in CI against a live `maverick mcp`.
 - [TypeScript client quickstart](./typescript-quickstart.md)
 - [Go client quickstart](./go-quickstart.md)
+- [C# / .NET client quickstart](./csharp-quickstart.md)
+- [Java / JVM client quickstart](./java-quickstart.md)
+- [docs/ROADMAP.md → Language Bindings — Council Decision](../ROADMAP.md)

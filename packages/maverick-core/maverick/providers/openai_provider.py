@@ -85,7 +85,7 @@ class OpenAIClient:
             from openai import AsyncOpenAI, OpenAI
         except ImportError as e:
             raise ImportError(
-                "openai SDK not installed. Run: pip install 'maverick[openai]'"
+                "openai SDK not installed. Run: pip install 'maverick-agent[openai]'"
             ) from e
         key = api_key
         if key is None and allow_openai_env_fallback:

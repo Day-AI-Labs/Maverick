@@ -85,6 +85,23 @@ def _run_git(sandbox, workdir: Path, args: list[str], *, timeout: int = 30) -> t
     )
 
 
+def _reject_option_like(*values: str) -> str | None:
+    """Return an error string if any value begins with ``-``.
+
+    ``shlex.quote`` (in ``_run_git``) blocks shell metacharacters but the
+    quoted token is still delivered to ``git`` as a single argument, and git
+    treats any arg starting with ``-`` as an option. Without this guard an
+    LLM-controlled ref/path like ``--output=/home/user/.ssh/authorized_keys``
+    smuggles a git option (e.g. ``git show --output=...`` writes an arbitrary
+    file). Legitimate refs/paths never start with ``-`` (a file named ``-x``
+    is addressable as ``./-x``), so reject leading-dash values outright.
+    """
+    for v in values:
+        if v.startswith("-"):
+            return f"ERROR: refusing option-like argument {v!r} (must not start with '-')"
+    return None
+
+
 def _shape(code: int, out: str, err: str, *, label: str) -> str:
     if code == 0:
         return f"[{label}] OK\n{out}".rstrip() if out else f"[{label}] OK"
@@ -108,12 +125,18 @@ def _make_run(sandbox):
             return _shape(*_run_git(sandbox, workdir, ["bisect", "start"]), label="bisect start")
         if op == "bisect_good":
             ref = (args.get("ref") or "HEAD").strip()
+            if err := _reject_option_like(ref):
+                return err
             return _shape(*_run_git(sandbox, workdir, ["bisect", "good", ref]), label=f"bisect good {ref}")
         if op == "bisect_bad":
             ref = (args.get("ref") or "HEAD").strip()
+            if err := _reject_option_like(ref):
+                return err
             return _shape(*_run_git(sandbox, workdir, ["bisect", "bad", ref]), label=f"bisect bad {ref}")
         if op == "bisect_skip":
             ref = (args.get("ref") or "HEAD").strip()
+            if err := _reject_option_like(ref):
+                return err
             return _shape(*_run_git(sandbox, workdir, ["bisect", "skip", ref]), label="bisect skip")
         if op == "bisect_reset":
             return _shape(*_run_git(sandbox, workdir, ["bisect", "reset"]), label="bisect reset")
@@ -124,6 +147,8 @@ def _make_run(sandbox):
             branch = (args.get("branch") or "").strip()
             if not onto or not upstream:
                 return "ERROR: rebase_onto requires onto and upstream"
+            if err := _reject_option_like(onto, upstream, branch):
+                return err
             git_args = ["rebase", "--onto", onto, upstream]
             if branch:
                 git_args.append(branch)
@@ -133,6 +158,8 @@ def _make_run(sandbox):
             commit = (args.get("commit") or "").strip()
             if not commit:
                 return "ERROR: cherry_pick requires commit"
+            if err := _reject_option_like(commit):
+                return err
             return _shape(*_run_git(sandbox, workdir, ["cherry-pick", commit]), label=f"cherry-pick {commit}")
 
         if op == "worktree_add":
@@ -140,6 +167,8 @@ def _make_run(sandbox):
             branch = (args.get("branch") or "").strip()
             if not path:
                 return "ERROR: worktree_add requires path"
+            if err := _reject_option_like(path, branch):
+                return err
             git_args = ["worktree", "add", path]
             if branch:
                 git_args.append(branch)
@@ -148,6 +177,8 @@ def _make_run(sandbox):
             path = (args.get("path") or "").strip()
             if not path:
                 return "ERROR: worktree_remove requires path"
+            if err := _reject_option_like(path):
+                return err
             return _shape(*_run_git(sandbox, workdir, ["worktree", "remove", path]), label="worktree remove")
         if op == "worktree_list":
             return _shape(*_run_git(sandbox, workdir, ["worktree", "list"]), label="worktree list")
@@ -155,12 +186,16 @@ def _make_run(sandbox):
         if op == "log_oneline":
             limit = max(1, min(int(args.get("limit") or 30), 500))
             since = (args.get("since_ref") or "").strip()
+            if since and (err := _reject_option_like(since)):
+                return err
             git_args = ["log", "--oneline", f"-n{limit}"]
             if since:
                 git_args.append(f"{since}..HEAD")
             return _shape(*_run_git(sandbox, workdir, git_args), label="log")
         if op == "show_commit":
             commit = (args.get("commit") or "HEAD").strip()
+            if err := _reject_option_like(commit):
+                return err
             return _shape(*_run_git(sandbox, workdir, ["show", "--stat", commit]), label=f"show {commit}")
         if op == "blame_line":
             path = (args.get("path") or "").strip()
@@ -168,8 +203,9 @@ def _make_run(sandbox):
             if not path or line is None:
                 return "ERROR: blame_line requires path and line"
             line = int(line)
+            # `--` terminates options so a path can't be read as a flag.
             return _shape(
-                *_run_git(sandbox, workdir, ["blame", "-L", f"{line},{line}", path]),
+                *_run_git(sandbox, workdir, ["blame", "-L", f"{line},{line}", "--", path]),
                 label=f"blame {path}:{line}",
             )
 

@@ -25,6 +25,31 @@ from .output_policy import scan_output as output_policy_scan
 
 log = logging.getLogger(__name__)
 
+
+def _collect_arg_strings(value: Any) -> list[str]:
+    """Recursively collect every string leaf from a tool-args structure.
+
+    Used so ``scan_tool_call`` can scan the bare argument values (preserving
+    their real boundaries) instead of ``repr(args)``, whose quoting can break
+    rule anchors. Dict keys are included too, since an injection can hide in a
+    key name.
+    """
+    out: list[str] = []
+    if isinstance(value, str):
+        out.append(value)
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            if isinstance(k, str):
+                out.append(k)
+            out.extend(_collect_arg_strings(v))
+    elif isinstance(value, (list, tuple, set)):
+        for item in value:
+            out.extend(_collect_arg_strings(item))
+    elif value is not None:
+        out.append(str(value))
+    return out
+
+
 try:  # pragma: no cover
     from agent_shield import AgentShield
     _HAVE_SDK = True
@@ -32,30 +57,9 @@ except ImportError:
     _HAVE_SDK = False
     AgentShield = None  # type: ignore
 
-
-def _arg_strings(obj: Any) -> list[str]:
-    """Recursively collect every string leaf of a tool-args structure.
-
-    Used so scan_tool_call sees the actual command/path tokens even when a
-    payload is split across a list or nested dict, which repr(args) would
-    bury behind quotes/commas.
-    """
-    if isinstance(obj, str):
-        return [obj]
-    if isinstance(obj, bytes):
-        return [obj.decode("utf-8", "replace")]
-    if isinstance(obj, dict):
-        out: list[str] = []
-        for k, v in obj.items():
-            out.append(str(k))
-            out.extend(_arg_strings(v))
-        return out
-    if isinstance(obj, (list, tuple, set)):
-        out = []
-        for v in obj:
-            out.extend(_arg_strings(v))
-        return out
-    return [str(obj)]
+# Emit the "SDK not installed" advisory at most once per process (a Shield is
+# constructed on every goal run / chat turn, which would otherwise spam it).
+_WARNED_SDK_MISSING = False
 
 
 @dataclass
@@ -87,15 +91,20 @@ class Shield:
         block_threshold: str = "high",
         backend: str = "auto",
         warn_if_missing: bool = True,
+        scan_input: bool = True,
+        scan_tool_calls: bool = True,
+        scan_output: bool = True,
     ):
-        # Normalize: profile/threshold/backend come from user-typed TOML, and
-        # the comparisons below (== "off"/"strict"/"none") plus the severity
-        # lookup are case-sensitive -- "Off"/"NONE" silently failed to apply.
-        profile = (profile or "balanced").strip().lower()
-        block_threshold = (block_threshold or "high").strip().lower()
-        backend = (backend or "auto").strip().lower()
         self.profile = profile
         self.block_threshold = block_threshold
+        # Per-sink enable flags ([safety] scan_input/scan_tool_calls/
+        # scan_output). Enforced centrally here so every call site honors the
+        # config — previously these keys existed but no consumer read them, so
+        # a user who set scan_tool_calls=false got no effect. All default True;
+        # disabling a sink is the user's explicit choice on their own instance.
+        self._scan_input_enabled = scan_input
+        self._scan_tool_calls_enabled = scan_tool_calls
+        self._scan_output_enabled = scan_output
 
         if backend == "none" or profile == "off":
             self.backend = self.BACKEND_NONE
@@ -120,7 +129,11 @@ class Shield:
         # Built-in fallback
         self._sdk = None
         self.backend = self.BACKEND_BUILTIN
-        if warn_if_missing and not _HAVE_SDK:
+        # A Shield is built once per goal run, so warning every time spams the
+        # CLI output (and every `chat` turn). Warn once per process.
+        global _WARNED_SDK_MISSING
+        if warn_if_missing and not _HAVE_SDK and not _WARNED_SDK_MISSING:
+            _WARNED_SDK_MISSING = True
             log.warning(
                 "Shield: agent-shield SDK not installed; using built-in rules "
                 "(~20 high-impact patterns vs. ~115 in the full SDK). "
@@ -140,9 +153,26 @@ class Shield:
             safety = {"profile": "balanced", "block_threshold": "high"}
         if safety.get("profile") == "off":
             return cls(profile="off", backend="none", warn_if_missing=False)
-        return cls(profile=safety["profile"], block_threshold=safety["block_threshold"])
+        return cls(
+            profile=safety["profile"],
+            block_threshold=safety["block_threshold"],
+            scan_input=safety.get("scan_input", True),
+            scan_tool_calls=safety.get("scan_tool_calls", True),
+            scan_output=safety.get("scan_output", True),
+        )
 
     def _scan_via_backend(self, text: str) -> ShieldVerdict:
+        # Coerce non-str input to text BEFORE scanning. Previously a bytes /
+        # dict / None payload made the builtin regex `re.search` raise
+        # TypeError, which the except-clauses below swallowed into a fail-OPEN
+        # allow -- so `scan_input(b"ignore all previous instructions")` slipped
+        # a live payload straight through. Decode/stringify so the content is
+        # actually inspected.
+        if not isinstance(text, str):
+            if isinstance(text, (bytes, bytearray)):
+                text = bytes(text).decode("utf-8", errors="replace")
+            else:
+                text = str(text)
         if self.backend == self.BACKEND_NONE:
             return ShieldVerdict.allow()
         if self.backend == self.BACKEND_SDK:
@@ -173,18 +203,28 @@ class Shield:
             return ShieldVerdict.allow()
 
     def scan_input(self, text: str) -> ShieldVerdict:
+        if not self._scan_input_enabled:
+            return ShieldVerdict.allow()
         return self._scan_via_backend(text)
 
     def scan_tool_call(self, tool_name: str, args: dict) -> ShieldVerdict:
-        # Scan every string leaf of args, not repr(args). repr() inserts quotes
-        # and commas between tokens, so a dangerous payload split across a list
-        # or nested dict (e.g. {"argv": ["rm","-rf","/"]}) never matched the
-        # plain-text rules (`rm\s+-rf\s+/`). Joining the leaves with spaces puts
-        # them back on a scannable line.
-        payload = f"tool={tool_name} " + " ".join(_arg_strings(args))
+        if not self._scan_tool_calls_enabled:
+            return ShieldVerdict.allow()
+        # Scan the raw string leaves of ``args`` rather than ``repr(args)``.
+        # repr() wraps each value in quotes, so a payload like
+        # ``{'cmd': 'rm -rf /'}`` rendered the command as ``'rm -rf /'`` —
+        # the closing quote immediately after ``/`` defeated rules whose
+        # anchor expects ``/`` to be followed by whitespace/EOL/slash (e.g.
+        # ``rm_rf_root``), letting the exact destructive commands the rules
+        # target slip through this chokepoint. Joining the bare leaf strings
+        # with newlines preserves each value's real boundaries.
+        leaves = _collect_arg_strings(args)
+        payload = "\n".join([f"tool={tool_name}", *leaves])
         return self._scan_via_backend(payload)
 
     def scan_output(self, text: str, known_prompt: str | None = None) -> ShieldVerdict:
+        if not self._scan_output_enabled:
+            return ShieldVerdict.allow()
         verdict = self._scan_via_backend(text)
         # Output-side detectors the input rule pack can't see: verbatim
         # system-prompt regurgitation and refusal-then-leak. Fail-open.

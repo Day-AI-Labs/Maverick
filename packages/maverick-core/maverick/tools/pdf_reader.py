@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any
 
 from . import Tool
-from .http_fetch import is_blocked_host
 
 log = logging.getLogger(__name__)
 
@@ -71,36 +70,34 @@ def _parse_pages(spec: str, total: int) -> list[int]:
 def _load_bytes(source: str) -> bytes | None:
     """Get PDF bytes from a workspace-local path or safe URL."""
     if source.startswith(("http://", "https://")):
-        from urllib.parse import urlparse
-
-        parsed = urlparse(source)
-        if parsed.hostname and is_blocked_host(parsed.hostname):
-            return None
         try:
-            import httpx
+            import httpx  # noqa: F401  (presence check; safe_get imports it)
         except ImportError:
             return None
-        # Cap the download: `source` is a model-supplied URL, so reading
-        # resp.content unbounded lets a multi-GB (or endless) body exhaust
-        # memory. Reject an oversized Content-Length up front and stream with a
-        # hard byte ceiling.
+        from ._ssrf import BlockedHost, safe_client
+        # Combine both defenses: safe_client pins the connection to the
+        # validated public IP (SSRF / DNS-rebinding), AND we stream with a
+        # hard byte ceiling so a model-supplied URL can't exhaust memory with
+        # a multi-GB / endless body.
         _MAX = 100 * 1024 * 1024  # 100 MiB
         try:
-            with httpx.stream(
-                "GET", source, timeout=30.0, follow_redirects=False,
-            ) as resp:
-                resp.raise_for_status()
-                clen = resp.headers.get("content-length")
-                if clen is not None and clen.isdigit() and int(clen) > _MAX:
-                    log.warning("pdf fetch refused: %s bytes > cap", clen)
-                    return None
-                buf = bytearray()
-                for chunk in resp.iter_bytes():
-                    buf += chunk
-                    if len(buf) > _MAX:
-                        log.warning("pdf fetch refused: body exceeded cap")
+            with safe_client(source, timeout=30.0) as client:
+                with client.stream("GET", source) as resp:
+                    resp.raise_for_status()
+                    clen = resp.headers.get("content-length")
+                    if clen is not None and clen.isdigit() and int(clen) > _MAX:
+                        log.warning("pdf fetch refused: %s bytes > cap", clen)
                         return None
-                return bytes(buf)
+                    buf = bytearray()
+                    for chunk in resp.iter_bytes():
+                        buf += chunk
+                        if len(buf) > _MAX:
+                            log.warning("pdf fetch refused: body exceeded cap")
+                            return None
+                    return bytes(buf)
+        except BlockedHost as e:
+            log.warning("pdf fetch refused: %s", e)
+            return None
         except Exception as e:
             log.warning("pdf fetch failed: %s", e)
             return None

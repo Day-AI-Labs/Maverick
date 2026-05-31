@@ -10,6 +10,8 @@ source of truth.
 """
 from __future__ import annotations
 
+import importlib.util
+import logging
 import os
 from pathlib import Path
 
@@ -32,6 +34,8 @@ __all__ = [
     "ExecResult",
     "build_sandbox",
 ]
+
+log = logging.getLogger(__name__)
 
 Sandbox = (
     LocalBackend | DockerBackend | PodmanBackend | DevcontainerBackend
@@ -74,10 +78,49 @@ def _resolve_image(full_cfg: dict) -> str:
     explicit = full_cfg.get("image")
     if explicit:
         return explicit
-    lang = (
-        full_cfg.get("language") or os.environ.get("MAVERICK_LANGUAGE", "")
-    ).strip().lower()
+    lang_value = full_cfg.get("language") or os.environ.get("MAVERICK_LANGUAGE", "")
+    if not isinstance(lang_value, str):
+        return _DEFAULT_IMAGE
+    lang = lang_value.strip().lower()
     return _IMAGE_BY_LANGUAGE.get(lang, _DEFAULT_IMAGE)
+
+
+_LOCAL_WARNING_EMITTED = False
+
+
+def _warn_local_unsandboxed() -> None:
+    """Warn (once per process) that the agent will run model-generated shell
+    directly on the host with no container isolation.
+
+    The local backend executes ``shell=True`` commands on this machine, so a
+    prompt-injected agent gets host code execution. The Shield is the only
+    screen, and it is fail-open (optional dependency) -- escalate the message
+    when it isn't installed. Suppress with MAVERICK_SUPPRESS_SANDBOX_WARNING=1
+    (e.g. when the operator has deliberately accepted host execution, or for
+    quiet test runs). The wizard already defaults real installs to a container
+    backend when one is available; this catches CLI / embedder / hand-edited
+    configs that land on the unisolated default.
+    """
+    global _LOCAL_WARNING_EMITTED
+    if _LOCAL_WARNING_EMITTED:
+        return
+    if os.environ.get("MAVERICK_SUPPRESS_SANDBOX_WARNING") == "1":
+        _LOCAL_WARNING_EMITTED = True
+        return
+    _LOCAL_WARNING_EMITTED = True
+    shield_present = importlib.util.find_spec("maverick_shield") is not None
+    msg = (
+        "sandbox backend is 'local': model-generated shell runs directly on "
+        "this host with NO container isolation. A prompt-injected agent can "
+        "execute arbitrary code here. For untrusted goals, set [sandbox] "
+        "backend = \"docker\" (or podman) in ~/.maverick/config.toml."
+    )
+    if not shield_present:
+        msg += (
+            " maverick-shield is NOT installed, so tool calls are not screened "
+            "either (fail-open). This is the least-protected configuration."
+        )
+    log.warning("%s Silence with MAVERICK_SUPPRESS_SANDBOX_WARNING=1.", msg)
 
 
 def build_sandbox(
@@ -158,4 +201,5 @@ def build_sandbox(
             timeout=timeout,
             ssh_args=full_cfg.get("ssh_args", []),
         )
+    _warn_local_unsandboxed()
     return LocalBackend(workdir=wd, timeout=timeout)

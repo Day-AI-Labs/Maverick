@@ -224,3 +224,35 @@ def test_search_replace_exec_sandbox_uses_disposable_worktree(tmp_path, fake_llm
         check=True, capture_output=True, text=True,
     )
     assert status.stdout == ""
+
+
+def test_search_replace_exec_sandbox_disables_worktree_hooks(tmp_path, fake_llm):
+    """Host-side disposable worktree creation must not run repo hooks."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_git_repo(repo)
+
+    marker = tmp_path / "hook-ran"
+    hook = repo / ".git" / "hooks" / "post-checkout"
+    hook.write_text(f"#!/bin/sh\necho exploited > {marker}\n", encoding="utf-8")
+    hook.chmod(0o755)
+
+    sandbox = RecordingSandbox(repo)
+    agent = _agent(_ctx(tmp_path, sandbox, fake_llm))
+    final = (
+        "FINAL:\n"
+        "f.txt\n"
+        "<<<<<<< SEARCH\n"
+        "base\n"
+        "=======\n"
+        "changed\n"
+        ">>>>>>> REPLACE\n"
+    )
+
+    patch, summary = agent._extract_and_apply_patch(final)
+
+    assert summary is not None and summary.ok
+    assert patch is not None
+    assert "-base" in patch
+    assert "+changed" in patch
+    assert not marker.exists()

@@ -43,6 +43,12 @@ def test_unknown_or_unset_language_falls_back_to_python(monkeypatch):
     assert _resolve_image({}) == _DEFAULT_IMAGE
 
 
+def test_non_string_config_language_falls_back_to_python(monkeypatch):
+    monkeypatch.setenv("MAVERICK_LANGUAGE", "rust")
+    for lang in (1, True, ["rust"]):
+        assert _resolve_image({"language": lang}) == _DEFAULT_IMAGE
+
+
 def test_local_backend_unaffected_by_language(monkeypatch, tmp_path):
     """The default (local) backend uses the host toolchain, so the language
     hint must not change which backend you get."""

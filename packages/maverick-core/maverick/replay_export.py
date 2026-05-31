@@ -161,6 +161,7 @@ def export_html(goal_id: int, out_path: Path) -> int:
             f.write(_render_event(ev))
             f.write("\n")
         f.write(_HTML_TAIL)
+    _restrict_perms(out_path)
     return len(events)
 
 
@@ -176,7 +177,22 @@ def export_json(goal_id: int, out_path: Path) -> int:
         f.write(_sanitize(json.dumps(
             {"goal_id": goal_id, "events": events}, indent=2, default=str,
         )))
+    _restrict_perms(out_path)
     return len(events)
+
+
+def _restrict_perms(path: Path) -> None:
+    """Lock an exported bundle to the owner (0o600).
+
+    Replay bundles carry the run's prompts/results -- even after scrub() they
+    can hold private (non-secret) content. The default umask often leaves them
+    world-readable on a shared host; this closes that local-disclosure path.
+    """
+    try:
+        import os
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
 
 
 __all__ = ["export_html", "export_json"]

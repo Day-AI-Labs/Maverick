@@ -12,6 +12,7 @@ behavior keep working.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -43,9 +44,18 @@ class Blackboard:
         self._world = world
         self._goal_id = goal_id
 
+    # Hard cap on retained entries so a long run (or an agent posting in a
+    # loop) can't grow this list without bound. Reads only ever take a
+    # bounded tail / filtered subset, so dropping the oldest entries past the
+    # cap is safe. Override via MAVERICK_BLACKBOARD_MAX_ENTRIES.
+    _MAX_ENTRIES = max(100, int(os.environ.get("MAVERICK_BLACKBOARD_MAX_ENTRIES", "5000")))
+
     def post(self, agent: str, kind: str, content: str, **meta: Any) -> None:
         with self._lock:
             self.entries.append(Entry(time.time(), agent, kind, content, meta))
+            if len(self.entries) > self._MAX_ENTRIES:
+                # Trim the oldest in one slice (amortised O(1) per post).
+                del self.entries[: len(self.entries) - self._MAX_ENTRIES]
         # Mirror to world.goal_events for live dashboard streaming. Best-effort:
         # if the world model write fails (e.g., disk full), the in-memory
         # blackboard still works for the agent loop.

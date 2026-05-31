@@ -9,8 +9,11 @@ connection). ``__init__`` now arms ``busy_timeout`` before the WAL switch and
 retries the switch on a transient lock; these hammer that path with a barrier
 so all threads open simultaneously.
 """
+import sqlite3
 import threading
 
+import pytest
+from maverick import world_model as world_model_module
 from maverick.world_model import WorldModel
 
 
@@ -46,3 +49,44 @@ def test_concurrent_first_open_of_fresh_db(tmp_path):
     """Even with no pre-existing file, concurrent first-opens must not lock."""
     errors = _hammer_opens(tmp_path / "fresh.db", 16)
     assert not errors, f"concurrent first-opens raised: {errors[:3]}"
+
+
+def test_wal_retry_uses_short_busy_timeout(monkeypatch, tmp_path):
+    """A sustained lock must not multiply the normal 5s busy timeout by retries."""
+
+    class LockedConnection:
+        def __init__(self):
+            self.current_busy_timeout_ms = None
+            self.wal_attempt_busy_timeouts: list[int | None] = []
+            self.row_factory = None
+
+        def execute(self, sql, *args):
+            normalized = sql.strip().lower()
+            if normalized.startswith("pragma busy_timeout ="):
+                self.current_busy_timeout_ms = int(normalized.rsplit("=", 1)[1])
+                return self
+            if normalized == "pragma journal_mode = wal":
+                self.wal_attempt_busy_timeouts.append(self.current_busy_timeout_ms)
+                fake_clock["now"] += (self.current_busy_timeout_ms or 0) / 1000
+                raise sqlite3.OperationalError("database is locked")
+            return self
+
+    fake_clock = {"now": 0.0}
+    conn = LockedConnection()
+
+    monkeypatch.setattr(world_model_module.sqlite3, "connect", lambda *args, **kwargs: conn)
+    monkeypatch.setattr(world_model_module, "WAL_SWITCH_BUSY_TIMEOUT_MS", 10)
+    monkeypatch.setattr(world_model_module, "WAL_SWITCH_RETRY_SECONDS", 0.12)
+    monkeypatch.setattr(world_model_module.time, "monotonic", lambda: fake_clock["now"])
+    monkeypatch.setattr(
+        world_model_module.time,
+        "sleep",
+        lambda seconds: fake_clock.__setitem__("now", fake_clock["now"] + seconds),
+    )
+
+    with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+        WorldModel(path=tmp_path / "world.db")
+
+    assert conn.wal_attempt_busy_timeouts
+    assert set(conn.wal_attempt_busy_timeouts) == {10}
+    assert fake_clock["now"] < 0.2

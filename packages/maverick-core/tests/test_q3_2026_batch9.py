@@ -80,21 +80,39 @@ def test_openapi_describe_unknown(tmp_path):
     assert "not found" in out
 
 
+def _patch_safe_client(monkeypatch, response, captured):
+    """Stand in for maverick.tools._ssrf.safe_client (which pins the
+    connection to a validated public IP). Captures the request and returns
+    ``response`` so the offline unit tests don't do real DNS / sockets."""
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def request(self, method, url, **kw):
+            captured["method"] = method
+            captured["url"] = url
+            captured["kw"] = kw
+            captured["body"] = kw.get("json")
+            return response
+
+        def get(self, url, **kw):
+            captured["url"] = url
+            captured["kw"] = kw
+            return response
+
+    import maverick.tools._ssrf as _ssrf
+    monkeypatch.setattr(_ssrf, "safe_client", lambda url, **kw: _Client())
+
+
 def test_openapi_call_substitutes_path_param(tmp_path, monkeypatch):
     captured = {"url": None}
-
-    def _fake_request(method, url, **kw):
-        captured["url"] = url
-        captured["method"] = method
-        captured["kw"] = kw
-        m = MagicMock()
-        m.status_code = 200
-        m.text = '{"id": 7, "name": "Fido"}'
-        return m
-
-    fake_httpx = types.ModuleType("httpx")
-    fake_httpx.request = _fake_request
-    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.text = '{"id": 7, "name": "Fido"}'
+    _patch_safe_client(monkeypatch, resp, captured)
     from maverick.tools.openapi_runner import openapi_runner
     out = openapi_runner().fn({
         "op": "call", "spec": _write_spec(tmp_path),
@@ -106,8 +124,7 @@ def test_openapi_call_substitutes_path_param(tmp_path, monkeypatch):
 
 
 def test_openapi_call_missing_required_path_param(tmp_path, monkeypatch):
-    fake_httpx = types.ModuleType("httpx")
-    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+    # Missing path param is rejected before any fetch, so no client needed.
     from maverick.tools.openapi_runner import openapi_runner
     out = openapi_runner().fn({
         "op": "call", "spec": _write_spec(tmp_path),
@@ -118,17 +135,10 @@ def test_openapi_call_missing_required_path_param(tmp_path, monkeypatch):
 
 def test_openapi_call_sends_body(tmp_path, monkeypatch):
     captured = {"body": None}
-
-    def _fake_request(method, url, **kw):
-        captured["body"] = kw.get("json")
-        m = MagicMock()
-        m.status_code = 201
-        m.text = "{}"
-        return m
-
-    fake_httpx = types.ModuleType("httpx")
-    fake_httpx.request = _fake_request
-    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+    resp = MagicMock()
+    resp.status_code = 201
+    resp.text = "{}"
+    _patch_safe_client(monkeypatch, resp, captured)
     from maverick.tools.openapi_runner import openapi_runner
     out = openapi_runner().fn({
         "op": "call", "spec": _write_spec(tmp_path),
@@ -139,15 +149,15 @@ def test_openapi_call_sends_body(tmp_path, monkeypatch):
 
 
 def test_openapi_call_blocks_private_base_url(tmp_path, monkeypatch):
-    fake_httpx = types.ModuleType("httpx")
-    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+    # No client patch: safe_client must resolve 127.0.0.1, see it's
+    # non-public, and refuse before any connection (works offline).
     from maverick.tools.openapi_runner import openapi_runner
     out = openapi_runner().fn({
         "op": "call", "spec": _write_spec(tmp_path),
         "op_id": "getPet", "params": {"petId": 7},
         "base_url": "http://127.0.0.1:8080",
     })
-    assert "refusing private/loopback address" in out
+    assert "refusing to fetch" in out and "127.0.0.1" in out
 
 
 # ---------- OCR tool ----------
@@ -206,9 +216,10 @@ def test_ocr_extract_blocks_path_escape():
 
 
 def test_ocr_extract_url_blocks_private():
+    # safe_get resolves 127.0.0.1, sees it's non-public, and refuses (offline).
     from maverick.tools.ocr import ocr
     out = ocr().fn({"op": "extract_url", "url": "http://127.0.0.1:8000/a.png"})
-    assert "refusing private/loopback address" in out
+    assert "refusing to fetch" in out and "127.0.0.1" in out
 
 
 def test_ocr_extract_url_uses_workspace_tempfile(tmp_path, monkeypatch):
@@ -221,9 +232,9 @@ def test_ocr_extract_url_uses_workspace_tempfile(tmp_path, monkeypatch):
         headers = {"content-type": "image/png"}
         content = b"\x89PNG\r\n\x1a\n"
 
-    fake_httpx = types.ModuleType("httpx")
-    fake_httpx.get = lambda *a, **k: _Resp()
-    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+    # Patch the SSRF-safe fetcher (pins the connection) rather than httpx.
+    import maverick.tools._ssrf as _ssrf
+    monkeypatch.setattr(_ssrf, "safe_get", lambda url, **kw: _Resp())
 
     from maverick.tools.ocr import ocr
     out = ocr().fn({"op": "extract_url", "url": "http://example.com/a.png"})

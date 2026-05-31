@@ -1,0 +1,49 @@
+name: MCP client (C#)
+
+# Executes the C# / .NET MCP client example against a live `maverick mcp`
+# stdio server. The Python contract test (test_client_quickstart_contract.py)
+# checks the documented tool surface; this proves the .NET client actually
+# connects and round-trips -- it's what catches a broken `maverick mcp` entry
+# point or an SDK/protocol drift that doc checks can't.
+#
+# Only the no-LLM flow runs (initialize -> tools/list -> maverick_facts_get);
+# maverick_start needs a provider key + budget and is out of scope for CI.
+#
+# Lives in its own workflow (not mcp-clients.yml) so the .NET toolchain only
+# spins up when the C# surface or the MCP server changes.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/maverick-core/**'
+      - 'packages/maverick-mcp/**'
+      - 'examples/clients/csharp/**'
+      - 'docs/clients/csharp-quickstart.md'
+      - '.github/workflows/mcp-client-csharp.yml'
+  pull_request:
+    paths:
+      - 'packages/maverick-core/**'
+      - 'packages/maverick-mcp/**'
+      - 'examples/clients/csharp/**'
+      - 'docs/clients/csharp-quickstart.md'
+      - '.github/workflows/mcp-client-csharp.yml'
+
+jobs:
+  csharp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Install Maverick (kernel + MCP server)
+        run: |
+          pip install -e ./packages/maverick-core
+          pip install --no-deps -e ./packages/maverick-mcp
+      - name: Run the C# MCP client end-to-end
+        working-directory: examples/clients/csharp
+        run: dotnet run

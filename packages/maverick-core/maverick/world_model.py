@@ -23,6 +23,9 @@ from typing import Any
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
 SCHEMA_VERSION = 9
+DEFAULT_BUSY_TIMEOUT_MS = 5000
+WAL_SWITCH_BUSY_TIMEOUT_MS = 50
+WAL_SWITCH_RETRY_SECONDS = 5.0
 
 
 SCHEMA = """
@@ -373,23 +376,30 @@ class WorldModel:
         except OSError:
             pass
         self.conn.row_factory = sqlite3.Row
-        # Arm the busy handler BEFORE switching journal mode: switching to WAL
-        # needs a brief exclusive lock, and when a second connection opens the
-        # same DB concurrently (the dashboard and the agent each open one) the
-        # switch can surface "database is locked" instead of waiting unless
-        # busy_timeout is already set.
-        self.conn.execute("PRAGMA busy_timeout = 5000")
+        # Arm a short busy handler BEFORE switching journal mode: switching to
+        # WAL needs a brief exclusive lock, and when a second connection opens
+        # the same DB concurrently (the dashboard and the agent each open one)
+        # the switch can surface "database is locked" instead of waiting unless
+        # busy_timeout is already set. Keep this timeout small because it is
+        # paid on every retry below; restore the normal write timeout after WAL
+        # is enabled.
+        self.conn.execute(f"PRAGMA busy_timeout = {WAL_SWITCH_BUSY_TIMEOUT_MS}")
         # WAL must be set before any other operation that creates pages. The
         # switch can still race a same-process connection -- SQLITE_LOCKED
         # bypasses the busy handler -- so retry briefly (<=5s) on a locked DB.
-        for _attempt in range(100):
+        deadline = time.monotonic() + WAL_SWITCH_RETRY_SECONDS
+        while True:
             try:
                 self.conn.execute("PRAGMA journal_mode = WAL")
                 break
             except sqlite3.OperationalError as e:
-                if "locked" not in str(e).lower() or _attempt == 99:
+                if "locked" not in str(e).lower():
                     raise
-                time.sleep(0.05)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                time.sleep(min(0.05, remaining))
+        self.conn.execute(f"PRAGMA busy_timeout = {DEFAULT_BUSY_TIMEOUT_MS}")
         # WAL/SHM sidecars hold uncommitted conversation content; lock them to
         # 0o600 too (best-effort -- they may not exist until the first write,
         # so this is re-attempted; the 0o700 parent dir covers the gap).
@@ -757,6 +767,34 @@ class WorldModel:
         rows = self._read_all("SELECT key, value FROM facts ORDER BY updated_at DESC")
         return {r["key"]: r["value"] for r in rows}
 
+    def facts_matching(self, token: str) -> dict[str, str]:
+        """Facts explicitly scoped to ``token`` by key prefix.
+
+        Facts are global key/value pairs with no per-user attribution.  To
+        avoid disclosing or deleting unrelated global facts, GDPR export/erase
+        only considers facts whose key is deliberately namespaced as
+        ``user:<token>:<name>``.  Values are never searched and arbitrary
+        substrings are ignored because short/common user ids can otherwise
+        match unrelated secrets or other users' data.
+        """
+        if not token:
+            return {}
+        prefix = f"user:{token}:"
+        return {k: v for k, v in self.get_facts().items() if k.startswith(prefix)}
+
+    def delete_facts_matching(self, token: str) -> list[str]:
+        """Delete explicitly user-scoped facts (see :meth:`facts_matching`).
+
+        Returns the keys removed so the caller can report exactly what was
+        scrubbed.
+        """
+        keys = sorted(self.facts_matching(token).keys())
+        if keys:
+            ph = ",".join("?" * len(keys))
+            with self._writing() as conn:
+                conn.execute(f"DELETE FROM facts WHERE key IN ({ph})", keys)
+        return keys
+
     # ----- questions -----
     def ask(self, question: str, goal_id: int | None = None) -> int:
         with self._writing() as conn:
@@ -766,12 +804,16 @@ class WorldModel:
             )
             return cur.lastrowid
 
-    def answer(self, question_id: int, answer: str) -> None:
+    def answer(self, question_id: int, answer: str) -> bool:
+        """Record an answer to a question. Returns False if no question with
+        that id exists, so callers can flag a typo'd id instead of reporting
+        a false success."""
         with self._writing() as conn:
-            conn.execute(
+            cur = conn.execute(
                 "UPDATE questions SET answer = ?, answered_at = ? WHERE id = ?",
                 (answer, time.time(), question_id),
             )
+            return cur.rowcount > 0
 
     def open_questions(self, goal_id: int | None = None) -> list[Question]:
         if goal_id is not None:

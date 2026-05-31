@@ -411,7 +411,8 @@ class TestForbiddenPathPrecision:
 
     def test_real_test_files_still_blocked(self):
         from maverick.coding_mode import defensive_validate
-        for path in ("test_foo.py", "tests.py", "test.py",
-                     "foo_test.py", "foo_tests.py", "tests/x.py"):
+        for path in ("test_foo.py", "tests.py", "test.py", "testfoo.py",
+                     "pkg/testfoo.py", "foo_test.py", "foo_tests.py",
+                     "tests/x.py"):
             result = defensive_validate(self._patch(path))
             assert not result.ok, f"{path} should be blocked"

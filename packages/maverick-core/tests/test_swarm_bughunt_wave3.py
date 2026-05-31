@@ -1,8 +1,6 @@
 """Regression tests for bug-hunt wave-3 fixes."""
 from __future__ import annotations
 
-import pytest
-
 
 class TestRedditPrefixStrip:
     def test_subreddit_name_not_char_stripped(self, monkeypatch):

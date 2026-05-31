@@ -7,7 +7,9 @@ import logging
 import os
 import re
 import sys
+import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 import click
 
@@ -19,6 +21,18 @@ import click
 # are stdlib (sqlite3, dataclasses, pathlib) and the DEFAULT_DB
 # constant is used in the click option default below.
 from .world_model import DEFAULT_DB, open_world  # noqa: E402  -- cheap stdlib chain
+
+_TERMINAL_CONTROL_RE = re.compile(
+    r"(?:\x1b\][^\x07\x1b]*(?:\x07|\x1b\\|$))"
+    r"|(?:\x1b\[[0-?]*[ -/]*[@-~])"
+    r"|(?:\x1b[@-Z\\-_])"
+    r"|[\x00-\x1f\x7f-\x9f]"
+)
+
+
+def _strip_terminal_control(text: str) -> str:
+    """Remove terminal control bytes before rendering untrusted text."""
+    return _TERMINAL_CONTROL_RE.sub("", text)
 
 
 def _default_model() -> str:
@@ -35,17 +49,51 @@ _PROVIDER_ENV_VARS = (
 )
 
 
+def _fact_subject_token(channel: str, user: str) -> str:
+    """Stable, delimiter-safe token for explicitly user-scoped facts."""
+    return f"{quote(channel, safe='')}:{quote(user, safe='')}"
+
+
+def _has_configured_provider() -> bool:
+    """True if config.toml configures a usable provider.
+
+    A consumer who set up a local / OpenAI-compatible model (LM Studio,
+    llama.cpp, Ollama, vLLM, a private proxy) keeps the key -- or no key at
+    all -- in ``[providers.<name>]`` rather than a well-known env var. Such a
+    provider is reachable when it has a non-empty ``api_key`` (config
+    interpolates ``${VAR}`` to "" when unset, so an empty one doesn't count)
+    or a ``base_url`` (self-hosted endpoints need no key).
+    """
+    try:
+        from .config import load_config
+        providers = (load_config() or {}).get("providers") or {}
+    except Exception:  # pragma: no cover -- never block on a config read
+        return False
+    for pcfg in providers.values():
+        if not isinstance(pcfg, dict):
+            continue
+        if str(pcfg.get("api_key", "")).strip():
+            return True
+        if str(pcfg.get("base_url", "")).strip():
+            return True
+    return False
+
+
 def _require_llm_key() -> str:
     """Council UX/capabilities fix: don't sys.exit(2) on missing ANTHROPIC_API_KEY.
 
     First, check every supported provider's env var; return the first
     one set (the LLM facade dispatches on model id, not env var, so any
-    valid provider config is fine). If none, print an actionable error
+    valid provider config is fine). Then accept a provider configured in
+    config.toml (local / OpenAI-compatible models keep credentials there,
+    not in a well-known env var). If neither, print an actionable error
     that points at ``maverick init`` and exit cleanly.
     """
     for var in _PROVIDER_ENV_VARS:
         if os.environ.get(var):
             return var
+    if _has_configured_provider():
+        return "config"
     click.echo(
         "Maverick can't reach an LLM. No provider key is set.\n"
         "\n"
@@ -374,7 +422,7 @@ def runs(ctx, as_json: bool, limit: int, goal_id) -> None:
     click.echo(click.style(f"Recent runs ({len(records)})", bold=True))
     for r in records:
         state = "running" if r["running"] else (r["outcome"] or "done")
-        title = (r["goal_title"] or "")[:48]
+        title = _strip_terminal_control(r["goal_title"] or "")[:48]
         click.echo(
             f"  ep #{r['episode_id']:<4} goal {r['goal_id']:<4} "
             f"[{state:<10}] ${r['cost_dollars']:.4f}  "
@@ -641,6 +689,12 @@ def chat(ctx, max_depth: int, max_dollars: float, workdir) -> None:
     world = open_world(ctx.obj["db"])
     llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
     sandbox = k.build_sandbox(workdir=workdir)
+    # Thread turns through a conversation scoped to this REPL process.
+    # Do not use a fixed (channel, user_id) key here: conversations are
+    # persistent, so a global CLI key would replay prior chat sessions into
+    # unrelated future prompts.
+    session_user_id = f"local:{uuid.uuid4().hex}"
+    conversation = world.get_or_create_conversation("cli", session_user_id)
     click.echo(click.style("Maverick chat. Type 'exit' to leave.", fg="cyan"))
     click.echo(click.style(
         "Multi-line: end a line with \\ or wrap a block in \"\"\".",
@@ -701,12 +755,16 @@ def chat(ctx, max_depth: int, max_dollars: float, workdir) -> None:
 
         title = full.splitlines()[0][:80]
         goal_id = world.create_goal(title, full)
+        # Record the user's turn so run_goal threads it (and the assistant's
+        # reply, which run_goal appends) into the next turn's context.
+        world.append_turn(conversation.id, "user", full, goal_id=goal_id)
         click.echo(click.style(f"  ... goal #{goal_id}", fg="bright_black"))
         from .budget import budget_from_config
         bud = budget_from_config(max_dollars=max_dollars)
         try:
             result = k.run_goal_sync(llm, world, bud, goal_id,
-                                   sandbox=sandbox, max_depth=max_depth)
+                                   sandbox=sandbox, max_depth=max_depth,
+                                   conversation_id=conversation.id)
         except Exception as e:
             click.echo(click.style(f"  ✗ {e}", fg="red"))
             continue
@@ -743,6 +801,55 @@ def template_show(name: str) -> None:
     click.echo(f"budget: ${t.budget_dollars} / {t.budget_wall_seconds}s")
     click.echo(f"params: {', '.join(t.params) or '(none)'}\n")
     click.echo(t.body)
+
+
+@main.command()
+@click.argument("question")
+@click.option("--rounds", default=2, show_default=True, type=int,
+              help="Number of debate rounds before the judge decides.")
+@click.option("--max-dollars", default=1.0, show_default=True, type=float,
+              help="Spend cap for the whole debate.")
+@click.option("--for", "for_stance", default=None,
+              help="Stance the proponent defends (default: 'yes / sound').")
+@click.option("--against", "against_stance", default=None,
+              help="Stance the skeptic defends (default: 'no / flawed').")
+@click.pass_context
+def debate(ctx, question: str, rounds: int, max_dollars: float,
+           for_stance: str | None, against_stance: str | None) -> None:
+    """Run a two-sided debate on QUESTION and print the judged verdict.
+
+    Two LLM debaters -- a proponent and a skeptic -- argue for ROUNDS rounds,
+    then an impartial judge declares a winner. Useful for pressure-testing a
+    decision before you commit to it.
+    """
+    from .budget import Budget
+    from .debate import DebateParticipant, run_debate
+    k = _kernel()
+    llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
+    participants = [
+        DebateParticipant(
+            name="Proponent",
+            persona=for_stance or "the answer is YES / the proposal is sound",
+            llm_complete=llm.complete,
+        ),
+        DebateParticipant(
+            name="Skeptic",
+            persona=against_stance or "the answer is NO / the proposal is flawed",
+            llm_complete=llm.complete,
+        ),
+    ]
+    result = run_debate(
+        question, participants, judge_complete=llm.complete,
+        rounds=rounds, budget=Budget(max_dollars=max_dollars),
+    )
+    for t in result.transcript:
+        click.echo(f"\n[{t.speaker}]\n{t.text}")
+    click.echo("\n" + "=" * 48)
+    click.echo(f"Winner: {result.winner}")
+    click.echo(f"Why: {result.judge_reason}")
+    if result.key_argument:
+        click.echo(f"Key argument: {result.key_argument}")
+    click.echo(f"\n[{result.rounds_completed} round(s), ${result.total_dollars:.4f}]")
 
 
 @main.command()
@@ -883,6 +990,14 @@ def history(ctx, limit: int) -> None:
 def status(ctx) -> None:
     """Show recent goals and open questions."""
     world = open_world(ctx.obj["db"])
+    # Self-heal: a CLI run killed mid-flight (or pre-fix crash) leaves goals
+    # stranded in 'active'/'pending'. The dashboard reclaims these on startup,
+    # but a CLI-only user never triggers that -- so do it here, where the
+    # ghosts are seen. Only touches rows older than the reclaim age window.
+    try:
+        world.reclaim_orphan_goals()
+    except Exception:  # pragma: no cover -- never block `status` on cleanup
+        pass
     goals = world.list_goals()
     if not goals:
         click.echo("no goals yet. start one with `maverick start \"...\"`")
@@ -904,7 +1019,13 @@ def status(ctx) -> None:
 def answer(ctx, question_id: int, answer: tuple[str, ...]) -> None:
     """Answer a pending question."""
     world = open_world(ctx.obj["db"])
-    world.answer(question_id, " ".join(answer))
+    if not world.answer(question_id, " ".join(answer)):
+        click.echo(
+            f"no such question #{question_id}. "
+            "See open questions with `maverick status`.",
+            err=True,
+        )
+        sys.exit(1)
     click.echo(f"answered #{question_id}")
 
 
@@ -942,7 +1063,12 @@ def resume(ctx, goal_id, max_depth: int, max_dollars, max_wall_seconds) -> None:
         max_dollars=max_dollars,
         max_wall_seconds=max_wall_seconds,
     )
-    result = k.run_goal_sync(llm, world, bud, goal_id, max_depth=max_depth)
+    # Honor the configured [sandbox] backend on resume too -- without this,
+    # resume always fell back to run_goal's default local backend, ignoring a
+    # user who configured docker/podman (a quiet safety + consistency gap).
+    sandbox = k.build_sandbox()
+    result = k.run_goal_sync(llm, world, bud, goal_id,
+                             sandbox=sandbox, max_depth=max_depth)
     click.echo(result)
 
 
@@ -962,7 +1088,11 @@ def fact(ctx, key: str, value: tuple[str, ...]) -> None:
 def facts(ctx) -> None:
     """List known facts."""
     world = open_world(ctx.obj["db"])
-    for k, v in world.get_facts().items():
+    items = world.get_facts()
+    if not items:
+        click.echo('no facts yet. set one with `maverick fact <key> "<value>"`')
+        return
+    for k, v in items.items():
         click.echo(f"  {k}: {v}")
 
 
@@ -980,9 +1110,62 @@ def skills() -> None:
             click.echo(f"    trigger: {t}")
 
 
+@main.command()
+@click.option("--limit", type=int, default=50, show_default=True,
+              help="Max entries to show.")
+def learned(limit: int) -> None:
+    """List capabilities the swarm acquired via self-learning."""
+    import datetime as _dt
+
+    from . import self_learning
+    items = self_learning.history(limit=limit)
+    if not items:
+        click.echo(
+            "no learned capabilities yet "
+            f"(ledger: {self_learning.LEARNED_PATH}).\n"
+            "Enable self-learning with [self_learning] enable = true "
+            "or MAVERICK_SELF_LEARNING=1."
+        )
+        return
+    for e in items:
+        when = _dt.datetime.fromtimestamp(e.ts).strftime("%Y-%m-%d %H:%M")
+        mark = "" if e.outcome == "acquired" else f" [{e.outcome}]"
+        click.echo(f"  {when}  [{e.kind}] {e.name}{mark}")
+        if e.need:
+            click.echo(f"    for: {e.need}")
+
+
 @main.group()
 def plugin() -> None:
     """Scaffold + manage Maverick plugins."""
+
+
+@plugin.command("list")
+def plugin_list() -> None:
+    """List active plugins (tools, channels, skills, personas) + the allowlist."""
+    from .plugins import _allowed_plugin_names, installed_plugins
+    try:
+        slots = installed_plugins()
+    except Exception as e:  # pragma: no cover -- discovery must never crash the CLI
+        click.echo(f"plugin discovery failed: {e}", err=True)
+        sys.exit(1)
+    if not any(slots.values()):
+        click.echo("no active plugins. scaffold one with `maverick plugin new <name>`.")
+    else:
+        for slot, names in slots.items():
+            if names:
+                click.echo(f"  {slot}: {', '.join(names)}")
+    # Plugins load only when allowlisted (a security default); show it so a
+    # user whose installed plugin isn't appearing knows why.
+    allow = _allowed_plugin_names()
+    if allow is None:
+        click.echo('\nallowlist: ALL enabled ([plugins] enabled = ["*"])')
+    else:
+        listed = ", ".join(sorted(allow)) if allow else "(none)"
+        click.echo(
+            f"\nallowlist: {listed} "
+            "-- enable more via [plugins] enabled in ~/.maverick/config.toml"
+        )
 
 
 @plugin.command("new")
@@ -1317,6 +1500,16 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
             world.conn.execute(f"DELETE FROM messages    WHERE goal_id IN ({gph})", gids)
             world.conn.execute(f"DELETE FROM questions   WHERE goal_id IN ({gph})", gids)
             world.conn.execute(f"DELETE FROM attachments WHERE goal_id IN ({gph})", gids)
+            # facts.source_episode_id REFERENCES episodes(id): a fact the agent
+            # distilled from this user's run carries their PII in `value` AND
+            # holds an FK to the episode we're about to delete. Leaving it both
+            # (a) violated Art.17 (PII survived erasure) and (b) tripped the
+            # deferred-FK check at COMMIT once the user had any fact, aborting
+            # the whole erase. Delete those facts before the episodes.
+            world.conn.execute(
+                f"DELETE FROM facts WHERE source_episode_id IN "
+                f"(SELECT id FROM episodes WHERE goal_id IN ({gph}))", gids,
+            )
             world.conn.execute(f"DELETE FROM episodes    WHERE goal_id IN ({gph})", gids)
             world.conn.execute(
                 f"DELETE FROM processed_messages WHERE goal_id IN ({gph})", gids,
@@ -1341,6 +1534,33 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
             removed_attachments += 1
         except OSError:
             pass
+
+    # Step 4b: scrub explicitly user-scoped global facts. Facts are global
+    # key/value pairs with no per-user attribution, so erase only touches
+    # facts deliberately keyed as user:<channel>:<user_id>:<name>. Arbitrary
+    # substring matching is unsafe for short/common user ids because it can
+    # delete unrelated operator knowledge or other users' data.
+    fact_subject = _fact_subject_token(channel, user)
+    scrubbed_fact_keys = world.delete_facts_matching(fact_subject)
+
+    # Step 4c: the optional LLM cache (MAVERICK_LLM_CACHE=1) is content-
+    # addressed on the full prompt -- system + messages include the user's
+    # goal text and the model's replies, so the cache retains exactly the
+    # PII we just erased. It can't be purged by subject (the key is a hash of
+    # content, not tied to a user), so clear it wholesale; it's a perf cache,
+    # safe to drop. Only when the DB already exists, so a single erase on a
+    # cache-disabled install doesn't create an empty cache file. Best-effort.
+    try:
+        from .llm_cache import DEFAULT_DB as _llm_cache_db
+        if _llm_cache_db.exists():
+            from .llm_cache import LLMCache
+            LLMCache().clear()
+    except Exception as exc:  # pragma: no cover - defensive
+        click.echo(
+            f"warning: erased the database but could not clear the LLM cache "
+            f"({type(exc).__name__}: {exc}); it may retain prior prompts.",
+            err=True,
+        )
 
     # Step 5: scrub the subject from PRIOR audit-log lines. Audit payloads
     # (goal_start / tool_call / channel events) carry channel:user_id, so
@@ -1390,14 +1610,21 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         goals=len(goal_ids),
         attachments=removed_attachments,
         audit_lines_scrubbed=audit_scrubbed,
+        facts_scrubbed=len(scrubbed_fact_keys),
     )
 
     click.echo(
         f"erased {len(convs)} conversation(s), {removed_turns} turn(s), "
         f"{len(goal_ids)} goal(s) and all linked rows, "
         f"{removed_attachments} attachment file(s), "
-        f"{audit_scrubbed} audit event(s) scrubbed"
+        f"{audit_scrubbed} audit event(s) scrubbed, "
+        f"{len(scrubbed_fact_keys)} fact(s) scrubbed"
     )
+    if scrubbed_fact_keys:
+        click.echo(
+            "  facts removed (global key/value, scoped with user:<channel>:<user_id>: "
+            f"prefix): {', '.join(scrubbed_fact_keys)}"
+        )
 
 
 @main.command("export-user")
@@ -1423,6 +1650,11 @@ def export_user(ctx, channel: str, user: str, output) -> None:
         "channel": channel,
         "user_id": user,
         "conversations": [],
+        # Explicitly user-scoped global facts. Facts have no per-user
+        # attribution, so export only includes keys deliberately namespaced as
+        # user:<channel>:<user_id>:<name> rather than arbitrary substring
+        # matches.
+        "facts": world.facts_matching(_fact_subject_token(channel, user)),
     }
     for c in convs:
         turns = world.recent_turns(c.id, limit=10_000)

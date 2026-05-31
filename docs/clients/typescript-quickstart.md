@@ -111,5 +111,7 @@ that kernel without giving up features.
 
 - [Go client quickstart](./go-quickstart.md)
 - [Rust client quickstart](./rust-quickstart.md)
+- [C# / .NET client quickstart](./csharp-quickstart.md)
+- [Java / JVM client quickstart](./java-quickstart.md)
 - `packages/maverick-mcp/README.md` — what tools are exposed + how
   to wire into Claude Code / Cursor / Continue / Zed

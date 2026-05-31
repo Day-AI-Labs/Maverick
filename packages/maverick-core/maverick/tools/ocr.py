@@ -27,7 +27,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 from . import Tool
-from .http_fetch import _is_private_ip
 
 
 def _scrub() -> dict:
@@ -144,14 +143,15 @@ def _op_extract_url(url: str, lang: str, backend: str, hf_model: str) -> str:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         return f"ERROR: invalid URL: {url!r}"
-    if os.environ.get("MAVERICK_FETCH_ALLOW_PRIVATE") != "1" and _is_private_ip(parsed.hostname):
+    from ._ssrf import BlockedHost, safe_get
+    try:
+        # Pins the connection to the validated public IP (no rebinding window).
+        r = safe_get(url, timeout=30.0)
+    except BlockedHost as e:
         return (
-            f"ERROR: refusing private/loopback address {parsed.hostname!r}. "
+            f"ERROR: refusing to fetch {parsed.hostname!r}: {e}. "
             "Set MAVERICK_FETCH_ALLOW_PRIVATE=1 to override."
         )
-    import httpx
-    try:
-        r = httpx.get(url, timeout=30.0, follow_redirects=False)
     except Exception as e:
         return f"ERROR: fetch failed: {type(e).__name__}: {e}"
     if r.status_code >= 400:

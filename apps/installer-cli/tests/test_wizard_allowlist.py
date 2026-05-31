@@ -31,6 +31,24 @@ def test_pick_channels_voice_collects_optional_callers(monkeypatch):
     assert channels["voice"]["allowed_callers"] == ["+12025550111"]
 
 
+def test_pick_channels_voice_collects_provider_specific_api_key(monkeypatch):
+    from maverick_installer import wizard
+
+    monkeypatch.setattr(wizard, "_q_checkbox", lambda msg, choices: ["voice  - Voice"])
+    # voice prompts: provider, phone_number, assistant_id, port, allowed_callers.
+    answers = iter(["retell", "", "", "8770", ""])
+    monkeypatch.setattr(wizard, "_q_text", lambda msg, default="": next(answers))
+
+    channels, envs = wizard.pick_channels("vps")
+
+    assert channels["voice"]["api_key"] == "${RETELL_API_KEY}"
+    # the chosen provider's key is collected for the secret prompt; the stale
+    # always-VAPI catalog entry no longer leaks in for non-vapi providers.
+    assert "RETELL_API_KEY" in envs
+    assert "VAPI_API_KEY" not in envs
+    assert "VAPI_WEBHOOK_TOKEN" in envs
+
+
 def test_pick_channels_no_allowlist_channel_unaffected(monkeypatch):
     """imessage has no allowlist requirement -> no allowed_user_ids key added."""
     from maverick_installer import wizard
