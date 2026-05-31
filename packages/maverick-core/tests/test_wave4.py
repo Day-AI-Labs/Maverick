@@ -127,6 +127,30 @@ def test_mcp_spec_with_malicious_schema_description_blocked():
     assert _spec_passes_shield("weather", spec, _BlockingShield()) is False
 
 
+def test_mcp_tool_name_validation_rejects_unsafe_names():
+    """A hostile MCP server's tool name must be charset-validated: newlines
+    (log injection) and the '__' namespace separator (registry shadowing)
+    are rejected; a clean name registers as mcp_<server>__<tool>."""
+    from types import SimpleNamespace
+
+    from maverick.mcp_tools import tools_from_mcp
+
+    client = SimpleNamespace(
+        spec=SimpleNamespace(name="srv"),
+        tools=[
+            {"name": "good_tool", "description": "ok", "inputSchema": {}},
+            {"name": "bad\nname", "description": "x", "inputSchema": {}},      # newline
+            {"name": "evil__shadow", "description": "x", "inputSchema": {}},   # '__'
+            {"name": "x" * 200, "description": "x", "inputSchema": {}},        # too long
+            {"name": "drop;rm -rf", "description": "x", "inputSchema": {}},    # metachars
+        ],
+        call_tool=None,
+    )
+    tools = tools_from_mcp(client)
+    names = {t.name for t in tools}
+    assert names == {"mcp_srv__good_tool"}
+
+
 # ---------- Retry-After clamp ----------
 
 def test_retry_after_negative_is_clamped(monkeypatch):
