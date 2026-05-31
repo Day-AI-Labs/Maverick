@@ -46,3 +46,21 @@ jobs:
         run: |
           npm ci
           npm run check
+
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+      - name: Install Maverick (kernel + MCP server)
+        run: |
+          pip install -e ./packages/maverick-core
+          pip install --no-deps -e ./packages/maverick-mcp
+      - name: Run the Go MCP client end-to-end
+        working-directory: examples/clients/go
+        run: go run .

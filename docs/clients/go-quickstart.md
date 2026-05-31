@@ -24,47 +24,45 @@ Set `ANTHROPIC_API_KEY` (or whichever provider key the kernel needs).
 package main
 
 import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "log"
-    "os/exec"
+	"context"
+	"fmt"
+	"log"
+	"os/exec"
 
-    "github.com/modelcontextprotocol/go-sdk/client"
-    "github.com/modelcontextprotocol/go-sdk/transport"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func main() {
-    ctx := context.Background()
+	ctx := context.Background()
 
-    // Start `maverick mcp` as a subprocess; the SDK manages stdio.
-    cmd := exec.CommandContext(ctx, "maverick", "mcp")
-    tr, err := transport.NewStdioFromCmd(cmd)
-    if err != nil {
-        log.Fatal(err)
-    }
+	// Start `maverick mcp` as a subprocess; the SDK manages stdio.
+	client := mcp.NewClient(&mcp.Implementation{Name: "go-quickstart", Version: "0.1.0"}, nil)
+	transport := &mcp.CommandTransport{Command: exec.Command("maverick", "mcp")}
+	session, err := client.Connect(ctx, transport, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer session.Close()
 
-    c, err := client.New(ctx, tr, client.Info{Name: "go-quickstart", Version: "0.1.0"})
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer c.Close()
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Maverick exposes %d tools\n", len(tools.Tools))
 
-    tools, err := c.ListTools(ctx)
-    if err != nil {
-        log.Fatal(err)
-    }
-    fmt.Printf("Maverick exposes %d tools\n", len(tools.Tools))
-
-    // maverick_start runs the swarm and returns the final answer.
-    out, err := c.CallTool(ctx, client.CallToolParams{
-        Name:      "maverick_start",
-        Arguments: json.RawMessage(`{"title": "Say hello from Go", "max_dollars": 0.25}`),
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
-    fmt.Println(string(out.Content))
+	// maverick_start runs the swarm and returns the final answer (long-running).
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "maverick_start",
+		Arguments: map[string]any{"title": "Say hello from Go", "max_dollars": 0.25},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, c := range res.Content {
+		if tc, ok := c.(*mcp.TextContent); ok {
+			fmt.Println(tc.Text)
+		}
+	}
 }
 ```
 
@@ -81,6 +79,8 @@ does not — you can also implement the JSON-RPC handshake by hand in
 
 ## See also
 
+- [Runnable example + CI smoke](../../examples/clients/go/) — the executable
+  version of this quickstart, run in CI against a live `maverick mcp`.
 - [TypeScript client quickstart](./typescript-quickstart.md)
 - [Rust client quickstart](./rust-quickstart.md)
 - [docs/ROADMAP.md → Language Bindings — Council Decision](../ROADMAP.md)
