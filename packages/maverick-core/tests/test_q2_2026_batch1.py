@@ -95,6 +95,34 @@ def test_agent_bus_send_tool_requires_args():
     assert "payload is required" in tool.fn({"to_id": "bob"})
 
 
+def test_agent_bus_recv_tool_bounds_timeout(monkeypatch):
+    from maverick.tools.agent_bus_tool import MAX_RECV_TIMEOUT_SECONDS, recv_from_agent
+
+    observed: dict[str, float] = {}
+
+    def fake_recv(agent_id: str, *, timeout: float = 0.0, correlation_id=None):
+        observed["agent_id"] = agent_id
+        observed["timeout"] = timeout
+        return None
+
+    monkeypatch.setattr("maverick.tools.agent_bus_tool.agent_bus.recv", fake_recv)
+    tool = recv_from_agent("bob")
+
+    assert tool.input_schema["properties"]["timeout"]["maximum"] == MAX_RECV_TIMEOUT_SECONDS
+    assert "(no messages)" in tool.fn({"timeout": 31_536_000})
+    assert observed == {"agent_id": "bob", "timeout": MAX_RECV_TIMEOUT_SECONDS}
+
+
+def test_agent_bus_recv_tool_rejects_non_finite_timeout(monkeypatch):
+    from maverick.tools.agent_bus_tool import recv_from_agent
+
+    recv = MagicMock(return_value=None)
+    monkeypatch.setattr("maverick.tools.agent_bus_tool.agent_bus.recv", recv)
+
+    assert "timeout must be a finite number" in recv_from_agent("bob").fn({"timeout": "inf"})
+    recv.assert_not_called()
+
+
 # ---------- kv_memory ----------
 
 @pytest.fixture

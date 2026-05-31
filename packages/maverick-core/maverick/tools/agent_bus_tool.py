@@ -10,10 +10,14 @@ The bus itself is per-process and in-memory; see ``agent_bus.py``.
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from . import Tool
 from .. import agent_bus
+
+
+MAX_RECV_TIMEOUT_SECONDS = 5.0
 
 
 _SEND_SCHEMA: dict[str, Any] = {
@@ -35,7 +39,12 @@ _RECV_SCHEMA: dict[str, Any] = {
     "properties": {
         "timeout": {
             "type": "number",
-            "description": "Seconds to block waiting for a message (default 0 = non-blocking).",
+            "minimum": 0,
+            "maximum": MAX_RECV_TIMEOUT_SECONDS,
+            "description": (
+                "Seconds to block waiting for a message (default 0 = non-blocking; "
+                f"maximum {MAX_RECV_TIMEOUT_SECONDS:g})."
+            ),
         },
     },
 }
@@ -71,7 +80,11 @@ def recv_from_agent(agent_id: str) -> Tool:
     """Factory: ``recv_from_agent`` reading the current agent's inbox."""
 
     def _run(args: dict[str, Any]) -> str:
-        timeout = float(args.get("timeout") or 0.0)
+        raw_timeout = args.get("timeout") or 0.0
+        timeout = float(raw_timeout)
+        if not math.isfinite(timeout):
+            return "ERROR: timeout must be a finite number"
+        timeout = min(max(0.0, timeout), MAX_RECV_TIMEOUT_SECONDS)
         msg = agent_bus.recv(agent_id, timeout=timeout)
         if msg is None:
             return "(no messages)"
