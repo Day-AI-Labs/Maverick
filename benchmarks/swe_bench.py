@@ -60,6 +60,11 @@ class Row:
     verifier_confidence: float = 0.0
     disagreement_entropy: float = 0.0
     outcome: str = ""        # success / failure / budget / error
+    # Contamination guard flags (';'-joined kinds, "" = clean). Surfaced
+    # as a CSV column so a headline number always carries its caveat --
+    # contamination_guard's whole point is that flagged numbers must be
+    # reported with a caveat or excluded.
+    contamination: str = ""
     extra: dict = field(default_factory=dict)
 
 
@@ -124,6 +129,56 @@ def _sanitize_patch_for_csv(diff: str) -> str:
     if leader in ("=", "+", "-", "@"):
         cleaned = "'" + cleaned
     return cleaned
+
+
+_CONTAM_MOD = None
+
+
+def _contamination_guard():
+    """Lazy-load _common/contamination_guard.py by path (no sys.path
+    assumptions; mirrors how the benchmark tests import it). Cached."""
+    global _CONTAM_MOD
+    if _CONTAM_MOD is None:
+        import importlib.util
+        from pathlib import Path as _P
+        path = _P(__file__).parent / "_common" / "contamination_guard.py"
+        spec = importlib.util.spec_from_file_location("benchmarks_contam", path)
+        mod = importlib.util.module_from_spec(spec)
+        # @dataclass resolves its module via sys.modules[cls.__module__];
+        # register before exec_module or ContaminationFlag construction
+        # raises "'NoneType' object has no attribute '__dict__'".
+        sys.modules["benchmarks_contam"] = mod
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        _CONTAM_MOD = mod
+    return _CONTAM_MOD
+
+
+def _contamination_summary(
+    *,
+    instance_id: str,
+    brief: str,
+    predicted_patch: str,
+    gold_patch: str,
+    model_id: str,
+    publication_date: str = "",
+) -> str:
+    """Run the contamination guard and return a ';'-joined list of flag
+    kinds ("" = clean). Never raises -- a guard failure must not fail the
+    benchmark row."""
+    try:
+        flags = _contamination_guard().check(
+            task_id=instance_id,
+            brief=brief,
+            predicted_patch=predicted_patch,
+            gold_patch=gold_patch,
+            model_id=model_id,
+            benchmark_publication_date=publication_date,
+        )
+        return ";".join(f.kind for f in flags)
+    except Exception as e:  # pragma: no cover - guard is best-effort
+        print(f"warning: contamination guard failed for {instance_id}: {e}",
+              file=sys.stderr)
+        return ""
 
 
 def _redact_url_userinfo(text: str) -> str:
@@ -557,6 +612,18 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
     except Exception:
         reported_model = getattr(llm, "model", "")
 
+    # Run the guard on the RAW diff (the sanitizer may prepend a `'` to
+    # neutralize CSV formula-injection, which would mask a byte-for-byte
+    # match against the raw gold patch).
+    contamination = _contamination_summary(
+        instance_id=instance_id,
+        brief=brief,
+        predicted_patch=diff,
+        gold_patch=gold_patch,
+        model_id=reported_model,
+        publication_date=str(kwargs.get("publication_date", "") or ""),
+    )
+
     return Row(
         instance_id=instance_id,
         pipeline="maverick",
@@ -584,6 +651,7 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
         outcome=(last_outcome if diff else "no-diff") or (
             "success" if diff else "no-diff"
         ),
+        contamination=contamination,
         extra=extra_payload,
     )
 
@@ -1135,6 +1203,9 @@ def main() -> int:
                 "base_commit": inst.get("base_commit", "") or "",
                 "requirements": inst.get("requirements", "") or "",
                 "interface": inst.get("interface", "") or "",
+                # Lets the contamination guard fire its train-cutoff-vs-
+                # publication check when the manifest carries the date.
+                "publication_date": inst.get("publication_date", "") or "",
             }
             for pipeline in pipelines:
                 if _TERMINATE_REQUESTED:
