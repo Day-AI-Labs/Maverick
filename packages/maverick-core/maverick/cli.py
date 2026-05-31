@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import sys
+import uuid
 from pathlib import Path
 from urllib.parse import quote
 
@@ -683,10 +684,12 @@ def chat(ctx, max_depth: int, max_dollars: float, workdir) -> None:
     world = open_world(ctx.obj["db"])
     llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
     sandbox = k.build_sandbox(workdir=workdir)
-    # Thread every turn through one conversation so the swarm has prior-turn
-    # context -- otherwise `chat` is amnesiac (each message was an isolated
-    # goal with no history). Mirrors the channel server's pattern.
-    conversation = world.get_or_create_conversation("cli", "local")
+    # Thread turns through a conversation scoped to this REPL process.
+    # Do not use a fixed (channel, user_id) key here: conversations are
+    # persistent, so a global CLI key would replay prior chat sessions into
+    # unrelated future prompts.
+    session_user_id = f"local:{uuid.uuid4().hex}"
+    conversation = world.get_or_create_conversation("cli", session_user_id)
     click.echo(click.style("Maverick chat. Type 'exit' to leave.", fg="cyan"))
     click.echo(click.style(
         "Multi-line: end a line with \\ or wrap a block in \"\"\".",

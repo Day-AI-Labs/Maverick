@@ -138,7 +138,54 @@ def test_chat_threads_conversation_across_turns(tmp_path: Path, monkeypatch):
 
     # Both user turns were recorded, so run_goal can thread them as history.
     conv_id = seen[0][1]
-    turns = open_world(db).recent_turns(conv_id, limit=10)
+    world = open_world(db)
+    turns = world.recent_turns(conv_id, limit=10)
     user_msgs = [t.content for t in turns if t.role == "user"]
     assert "the code is BANANA42" in user_msgs
     assert "what is the code" in user_msgs
+
+    # The CLI conversation key is session-scoped, not the persistent global
+    # ("cli", "local") row that would leak turns across future chat runs.
+    conv = next(c for c in world.list_conversations("cli") if c.id == conv_id)
+    assert conv.user_id.startswith("local:")
+    assert conv.user_id != "local"
+
+
+def test_chat_starts_new_conversation_for_each_repl_session(tmp_path: Path, monkeypatch):
+    import maverick.cli as cli
+    import maverick.orchestrator as orch
+    from click.testing import CliRunner
+
+    monkeypatch.setattr(cli, "_require_llm_key", lambda: "test")
+
+    seen: list[int] = []
+
+    def fake_run_goal_sync(llm, world, bud, goal_id, **kwargs):
+        seen.append(kwargs.get("conversation_id"))
+        return "DONE."
+
+    monkeypatch.setattr(orch, "run_goal_sync", fake_run_goal_sync)
+
+    db = tmp_path / "world.db"
+    runner = CliRunner()
+
+    first = runner.invoke(
+        cli.main, ["--db", str(db), "chat"], input="SESSION1_SECRET\nexit\n",
+    )
+    assert first.exit_code == 0, first.output
+
+    second = runner.invoke(
+        cli.main, ["--db", str(db), "chat"], input="unrelated later task\nexit\n",
+    )
+    assert second.exit_code == 0, second.output
+
+    assert len(seen) == 2
+    assert seen[0] is not None
+    assert seen[1] is not None
+    assert seen[0] != seen[1]
+
+    world = cli.open_world(db)
+    second_turns = world.recent_turns(seen[1], limit=10)
+    second_contents = [t.content for t in second_turns]
+    assert "unrelated later task" in second_contents
+    assert "SESSION1_SECRET" not in second_contents
