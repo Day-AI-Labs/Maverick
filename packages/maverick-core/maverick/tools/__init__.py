@@ -113,21 +113,20 @@ def sandbox_run(
     lets tests swap the backend (CLAUDE.md rule #4). This routes the command
     through ``sandbox.exec()`` instead.
 
-    The argv is shell-quoted with ``shlex.join`` before handing it to
-    ``exec()`` (which runs ``sh -c``). When ``stdin`` is given it is fed via a
-    base64 pipe so arbitrary text reaches the process without shell-quoting
-    hazards. When no sandbox is wired in, falls back to a scrubbed-env
-    ``subprocess.run`` so behavior is preserved for sandbox-less callers.
+    Through a sandbox, the argv is shell-quoted with ``shlex.join`` and handed
+    to ``exec()`` (which runs ``sh -c``); ``stdin`` is fed via a base64 pipe so
+    arbitrary text reaches the process without shell-quoting hazards. When no
+    sandbox is wired in, falls back to a scrubbed-env ``subprocess.run`` of the
+    raw argv list (no shell interpolation -- the chokepoint guard forbids that
+    outside the sandbox backends), passing ``stdin`` directly.
     """
-    import shlex
-
-    cmd = shlex.join(argv)
-    if stdin is not None:
-        import base64
-        b64 = base64.b64encode(stdin.encode("utf-8")).decode("ascii")
-        cmd = f"printf %s {shlex.quote(b64)} | base64 -d | {cmd}"
-
     if sandbox is not None and hasattr(sandbox, "exec"):
+        import shlex
+        cmd = shlex.join(argv)
+        if stdin is not None:
+            import base64
+            b64 = base64.b64encode(stdin.encode("utf-8")).decode("ascii")
+            cmd = f"printf %s {shlex.quote(b64)} | base64 -d | {cmd}"
         try:
             res = sandbox.exec(cmd, timeout=timeout)
         except TypeError:
@@ -138,8 +137,8 @@ def sandbox_run(
     import subprocess
     try:
         r = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True,
-            timeout=timeout, env=scrub_child_env(),
+            argv, capture_output=True, text=True,
+            timeout=timeout, env=scrub_child_env(), input=stdin,
         )
         return r.returncode, r.stdout, r.stderr
     except subprocess.TimeoutExpired:
