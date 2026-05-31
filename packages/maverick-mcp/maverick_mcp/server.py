@@ -91,6 +91,34 @@ TOOLS: list[dict[str, Any]] = [
         "name": "maverick_status",
         "description": "List recent goals and any open questions.",
         "inputSchema": {"type": "object", "properties": {}},
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "goals": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "status": {"type": "string"},
+                            "title": {"type": "string"},
+                        },
+                    },
+                },
+                "open_questions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "goal_id": {"type": "integer"},
+                            "question": {"type": "string"},
+                        },
+                    },
+                },
+            },
+            "required": ["goals", "open_questions"],
+        },
     },
     {
         "name": "maverick_resume",
@@ -125,6 +153,22 @@ TOOLS: list[dict[str, Any]] = [
         "name": "maverick_skills_list",
         "description": "List installed / distilled skills.",
         "inputSchema": {"type": "object", "properties": {}},
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "skills": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "triggers": {"type": "array", "items": {"type": "string"}},
+                        },
+                    },
+                },
+            },
+            "required": ["skills"],
+        },
     },
     {
         "name": "maverick_fact_set",
@@ -142,6 +186,13 @@ TOOLS: list[dict[str, Any]] = [
         "name": "maverick_facts_get",
         "description": "Get all known facts.",
         "inputSchema": {"type": "object", "properties": {}},
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "facts": {"type": "object", "additionalProperties": {"type": "string"}},
+            },
+            "required": ["facts"],
+        },
     },
 ]
 
@@ -344,10 +395,23 @@ class MCPServer:
                     "isError": True,
                     "content": [{"type": "text", "text": f"⚠ Output blocked: {'; '.join(verdict.reasons)}"}],
                 }
-        return {
+        response: dict[str, Any] = {
             "isError": False,
             "content": [{"type": "text", "text": result}],
         }
+        # Tools that declare an outputSchema (the read-only query tools) also
+        # return structuredContent, so typed cross-language clients get parsed
+        # JSON instead of re-parsing the text block. Additive + best-effort:
+        # the text block stays for back-compat, and a structured-form failure
+        # never fails the call.
+        if "outputSchema" in tool_spec:
+            try:
+                structured = self._structured_result(name)
+            except Exception:  # pragma: no cover -- structured form is best-effort
+                structured = None
+            if structured is not None:
+                response["structuredContent"] = structured
+        return response
 
     def _dispatch_tool(self, name: str, args: dict) -> str:
         if name == "maverick_start":
@@ -367,6 +431,36 @@ class MCPServer:
         if name == "maverick_facts_get":
             return self._tool_facts_get()
         raise _ProtocolError(-32602, f"unknown tool {name!r}")
+
+    def _structured_result(self, name: str) -> dict | None:
+        """Structured form of a query tool's result, matching its outputSchema.
+
+        Re-derives from the world model so the text handlers in _dispatch_tool
+        stay untouched; returns None for tools without an outputSchema."""
+        from maverick.world_model import WorldModel
+        if name == "maverick_status":
+            w = WorldModel()
+            return {
+                "goals": [
+                    {"id": g.id, "status": g.status, "title": g.title}
+                    for g in w.list_goals()[-10:]
+                ],
+                "open_questions": [
+                    {"id": q.id, "goal_id": q.goal_id, "question": q.question}
+                    for q in w.open_questions()
+                ],
+            }
+        if name == "maverick_skills_list":
+            from maverick.skills import load_skills
+            return {
+                "skills": [
+                    {"name": s.name, "triggers": list(s.triggers)}
+                    for s in load_skills()
+                ],
+            }
+        if name == "maverick_facts_get":
+            return {"facts": dict(WorldModel().get_facts())}
+        return None
 
     def _tool_start(self, args: dict) -> str:
         from maverick.budget import Budget
