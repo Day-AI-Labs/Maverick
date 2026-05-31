@@ -77,6 +77,25 @@ class KubernetesBackend:
                 "~/.maverick/config.toml."
             ) from e
 
+    def _delete_pod(self, pod_name: str) -> None:
+        """Best-effort force-delete a pod; never raises.
+
+        ``kubectl run --rm`` deletes the pod only on a clean exit. Any other
+        outcome -- a timeout, a kubectl crash, the process being killed, or
+        an unexpected exception mid-run -- can orphan the pod and leak
+        cluster resources, so we always issue an explicit delete on the way
+        out. ``--ignore-not-found`` makes the common (already-removed-by-rm)
+        case a no-op.
+        """
+        try:
+            subprocess.run(
+                [*self._kubectl_prefix(), "delete", "pod", pod_name,
+                 "--ignore-not-found=true", "--grace-period=0", "--force"],
+                capture_output=True, timeout=10,
+            )
+        except Exception:
+            pass
+
     def exec(self, cmd: str, timeout: float | None = None) -> ExecResult:
         effective = self.timeout if timeout is None else timeout
         pod_name = f"maverick-sb-{uuid.uuid4().hex[:12]}"
@@ -108,6 +127,10 @@ class KubernetesBackend:
             "sh", "-c", wrapped,
         ]
 
+        # Always force-delete the pod on the way out: --rm only fires on a
+        # clean exit, so a timeout, a kubectl crash, or any other exception
+        # would otherwise leak the pod. The finally runs the explicit delete
+        # for every path (success, non-zero exit, timeout, unexpected error).
         try:
             result = subprocess.run(
                 args, capture_output=True, text=True, timeout=effective,
@@ -118,16 +141,6 @@ class KubernetesBackend:
                 exit_code=result.returncode,
             )
         except subprocess.TimeoutExpired as e:
-            # Best-effort cleanup; ignore errors (incl. a hung kubectl
-            # that would otherwise raise over the TIMEOUT result).
-            try:
-                subprocess.run(
-                    [*self._kubectl_prefix(), "delete", "pod", pod_name,
-                     "--ignore-not-found=true", "--grace-period=0", "--force"],
-                    capture_output=True, timeout=10,
-                )
-            except Exception:
-                pass
             stdout = e.stdout or ""
             if isinstance(stdout, bytes):
                 stdout = stdout.decode("utf-8", errors="replace")
@@ -136,6 +149,8 @@ class KubernetesBackend:
                 stderr=f"TIMEOUT after {effective}s",
                 exit_code=124,
             )
+        finally:
+            self._delete_pod(pod_name)
 
 
 __all__ = ["KubernetesBackend"]
