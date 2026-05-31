@@ -69,21 +69,46 @@ jobs:
                   ],
                   check=True,
               )
-              subprocess.run(
-                  [
-                      sys.executable,
-                      "-m",
-                      "piptools",
-                      "compile",
-                      "--generate-hashes",
-                      "--allow-unsafe",
-                      "--resolver=backtracking",
-                      "--output-file",
-                      str(output_path),
-                      str(input_path),
-                  ],
-                  check=True,
-              )
+              # The JSON metadata check above can succeed a minute or two
+              # before the package is resolvable via pip's simple index, so
+              # `piptools compile` (which actually resolves + downloads
+              # maverick-agent and its deps) can still 404 on propagation lag.
+              # Retry it on that transient failure instead of failing the bump.
+              compile_cmd = [
+                  sys.executable,
+                  "-m",
+                  "piptools",
+                  "compile",
+                  "--generate-hashes",
+                  "--allow-unsafe",
+                  "--resolver=backtracking",
+                  "--output-file",
+                  str(output_path),
+                  str(input_path),
+              ]
+              last_err = None
+              for attempt in range(10):
+                  proc = subprocess.run(compile_cmd, capture_output=True, text=True)
+                  if proc.returncode == 0:
+                      last_err = None
+                      break
+                  combined = (proc.stdout or "") + (proc.stderr or "")
+                  # Only retry the propagation-lag signature; a real resolution
+                  # error (bad pin, conflicting deps) should fail fast.
+                  if "No matching distribution found" in combined or "404" in combined:
+                      last_err = combined
+                      print(f"deps not resolvable yet; retry {attempt + 1}/10")
+                      time.sleep(15)
+                      continue
+                  # Non-transient failure: surface it immediately.
+                  sys.stderr.write(combined)
+                  raise SystemExit(f"piptools compile failed: {proc.returncode}")
+              if last_err is not None:
+                  sys.stderr.write(last_err)
+                  raise SystemExit(
+                      f"maverick-agent[installer]=={version} deps not resolvable "
+                      "on PyPI after retries"
+                  )
               requirements = output_path.read_text()
 
           # Homebrew already downloads and verifies maverick-agent as the formula
