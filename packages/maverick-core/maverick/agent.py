@@ -1257,9 +1257,30 @@ class Agent:
                 # the serial path (one per tool, same count).
                 for tc in resp.tool_calls:
                     self.ctx.budget.record_tool_call()
+                # return_exceptions=True: tools.run swallows its own errors, but
+                # the shield scan / PreToolUse hooks inside _run_tool can still
+                # raise. Without this, one such raise propagates out of gather,
+                # discards the sibling results, and leaves the assistant turn's
+                # tool_use blocks with no matching tool_results -> the next API
+                # call 400s. Convert a raised exception into an error
+                # tool_result so every tool_use is still answered -- but
+                # re-raise control-flow signals (budget/halt) so a stop isn't
+                # silently downgraded to a tool error.
                 outputs = await _asyncio.gather(
-                    *(self._run_tool(tc.name, tc.input) for tc in resp.tool_calls)
+                    *(self._run_tool(tc.name, tc.input) for tc in resp.tool_calls),
+                    return_exceptions=True,
                 )
+                from . import killswitch as _ks
+                from .budget import BudgetExceeded as _BE
+                _norm: list[str] = []
+                for o in outputs:
+                    if isinstance(o, (_BE, _ks.Halted)):
+                        raise o
+                    _norm.append(
+                        o if isinstance(o, str)
+                        else f"ERROR: tool raised {type(o).__name__}: {o}"
+                    )
+                outputs = _norm
                 # Preserve original call order in the results (matched by
                 # tool_use_id, but ordering keeps traces readable).
                 for tc, output in zip(resp.tool_calls, outputs):
