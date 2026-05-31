@@ -56,8 +56,11 @@ the pipeline made reproducible rather than faking a result.
 `reflexion.py`, `prm.py` (process reward model), `tree_of_thought.py`, and
 `debate.py` were imported **nowhere** outside their own tests. The
 capability was built but never connected to the live loop — pure
-aspiration. (`reflexion` is now wired; see below. `prm`, `tree_of_thought`,
-and `debate` remain shelfware — wiring or deleting them is backlog item 6.)
+aspiration. Now wired (all opt-in, off by default): `reflexion` (failed
+runs teach the next), `tree_of_thought` (planning pre-pass), and `debate`
+(best-of-N tie-breaker) — see below. `prm` (process reward model) remains
+the last unwired primitive; integrating it as a step-scorer is backlog
+item 6.
 
 ### 3. Serial tool execution within a turn
 
@@ -107,6 +110,17 @@ plans, scores them with a critic, and prepends the winning plan to its
 brief. The synchronous planner runs in a worker thread so its N+1 calls
 don't block the event loop. Off by default (`mode = "single"`). Adds
 `config.get_planning()`. Covered by `tests/test_tot_wiring.py`.
+
+### Debate tie-break in best-of-N selection
+
+`debate.py` was imported nowhere. It is now an opt-in tie-breaker in
+`run_goal_best_of_n`: when the top candidates are tied on score (exactly
+where the heuristic selector is weakest), two sub-agents argue which patch
+is the better fix and a judge picks the winner, overriding the heuristic.
+Bounded (top-3 tied candidates, one round, on a slice of remaining
+budget) and best-effort (a draw or any failure keeps the heuristic pick).
+Off by default; enable with `MAVERICK_BON_DEBATE=1`. Covered by
+`tests/test_debate_tiebreak.py`.
 
 ### Self-consistency voting in best-of-N selection
 

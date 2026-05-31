@@ -538,6 +538,73 @@ def run_goal_sync(*args, **kwargs) -> str:
     return asyncio.run(run_goal(*args, **kwargs))
 
 
+async def _maybe_debate_tiebreak(
+    llm: "LLM",
+    goal_id: int,
+    world: "WorldModel",
+    candidates: list,
+    best: Any,
+    budget: Budget,
+) -> Optional[Any]:
+    """Debate-driven tie-break among score-tied best-of-N candidates.
+
+    No-op (returns None) unless MAVERICK_BON_DEBATE=1. Finds the usable
+    candidates tied with ``best`` on score; if 2+ tie, runs a round-robin
+    debate (each side argues its patch is the better fix) plus a judge,
+    and returns the candidate the judge picks. Returns None when there's
+    no tie, debate is disabled, budget is gone, or anything fails — the
+    caller then keeps the heuristic selection. Bounded: at most the top 3
+    tied candidates, one debate round, on a slice of remaining budget.
+    """
+    if os.environ.get("MAVERICK_BON_DEBATE", "0") != "1":
+        return None
+    try:
+        usable = [c for c in candidates if c.apply_check_passed and not c.error]
+        tied = [c for c in usable if c.score == best.score and c.patch.strip()]
+        # Deterministic order: attempt index. Cap at 3 to bound tokens.
+        tied = sorted(tied, key=lambda c: c.index)[:3]
+        if len(tied) < 2:
+            return None
+        if budget.dollars >= budget.max_dollars * 0.98:
+            return None
+
+        from .debate import DebateParticipant, run_debate
+
+        goal = world.get_goal(goal_id)
+        goal_text = f"{getattr(goal, 'title', '')}\n{getattr(goal, 'description', '') or ''}"
+        patches_block = "\n\n".join(
+            f"### candidate-{c.index} patch\n```diff\n{c.patch}\n```"
+            for c in tied
+        )
+        question = (
+            f"GOAL:\n{goal_text}\n\n"
+            f"Competing candidate patches for this goal:\n\n{patches_block}\n\n"
+            "Which patch is the more correct and complete fix? Argue for "
+            "your assigned candidate, citing concrete behavior."
+        )
+        participants = [
+            DebateParticipant(
+                name=f"candidate-{c.index}",
+                persona=f"candidate-{c.index}'s patch is the best fix for the goal",
+                llm_complete=llm.complete,
+            )
+            for c in tied
+        ]
+        result = await asyncio.to_thread(
+            run_debate,
+            question, participants,
+            judge_complete=llm.complete,
+            rounds=1,
+            budget=budget,
+        )
+        by_name = {f"candidate-{c.index}": c for c in tied}
+        winner = by_name.get(result.winner)
+        return winner  # None on a draw / unknown winner -> keep heuristic
+    except Exception as e:  # pragma: no cover -- debate never blocks selection
+        log.debug("debate tie-break skipped: %s", e)
+        return None
+
+
 async def run_goal_best_of_n(
     llm: "LLM",
     world: "WorldModel",
@@ -709,6 +776,18 @@ async def run_goal_best_of_n(
             "Stopped: none of the {n} attempts produced an applyable patch.\n"
             "[{summary}]"
         ).format(n=len(candidates), summary=budget.summary())
+
+    # Opt-in debate tie-break: when the top candidates are TIED on score
+    # (the selector then falls back to heuristics like patch length /
+    # attempt order), have two sub-agents argue which patch is the better
+    # fix and let a judge decide. This replaces a blind heuristic with a
+    # reasoned choice on exactly the cases where the heuristic is weakest.
+    # Off by default; enable with MAVERICK_BON_DEBATE=1.
+    debated = await _maybe_debate_tiebreak(
+        llm, goal_id, world, candidates, best, budget,
+    )
+    if debated is not None:
+        best = debated
 
     test_note = (
         f"\n\n[best of {len(candidates)}; score={best.score:.2f}]"
