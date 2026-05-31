@@ -14,7 +14,6 @@ Scoped to the current goal so memory doesn't leak across runs. Use the
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 
 from . import Tool
@@ -74,13 +73,14 @@ def _run_factory(world, goal_id: int | None):
                     "Store a summary or a file path instead."
                 )
             scoped = _scoped_key(goal_id, user_key)
-            # Upsert: delete existing for this scoped key, insert.
-            world.conn.execute("DELETE FROM facts WHERE key=?", (scoped,))
-            world.conn.execute(
-                "INSERT INTO facts(key, value, updated_at) VALUES(?, ?, ?)",
-                (scoped, value, time.time()),
-            )
-            world.conn.commit()
+            # Atomic upsert through the locked WorldModel API. The prior
+            # DELETE-then-INSERT on world.conn was (a) non-atomic -- a crash
+            # or a concurrent commit between the two statements wiped the
+            # existing value entirely -- and (b) bypassed WorldModel's write
+            # lock, so it could flush another thread's half-written
+            # transaction. upsert_fact does an ON CONFLICT upsert under
+            # _writing().
+            world.upsert_fact(scoped, value)
             return f"set {user_key!r} ({len(value)} bytes)"
         if op == "get":
             user_key = (args.get("key") or "").strip()
