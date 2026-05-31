@@ -28,6 +28,25 @@ maverick init                        # four questions, safe defaults
 maverick start "Research the top 3 CRMs for a 5-person startup and write a recommendation"
 ```
 
+Here's what one run looks like — the swarm decomposing, working in
+parallel, and verifying its own output before it answers:
+
+```console
+$ maverick start "Audit this repo's auth code for missing rate limiting, then write the fix and a test."
+
+goal #1 created
+orchestrator   planning → 3 independent sub-tasks, fanning out
+  ├─ researcher  locating auth entry points… found api/login.py:42, api/token.py:18
+  ├─ researcher  checking for existing rate limits… none on /login or /token/refresh
+  └─ coder       drafting a fixed-window limiter in api/ratelimit.py
+orchestrator   synthesizing → patch touches 3 files (+58 −4)
+  verifier     running the new test… tests/test_ratelimit.py::test_blocks_6th_attempt PASSED
+  verifier     accepted (confidence 0.91)
+
+DONE.  Added api/ratelimit.py + wired it into login/refresh; new test passes.
+[$0.14 · 71s · 12 tool calls]
+```
+
 Prefer no terminal? Grab the [**double-click desktop installer**](#install). New here? See [`docs/getting-started.md`](./docs/getting-started.md).
 
 ## Status

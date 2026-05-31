@@ -573,9 +573,30 @@ def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]
             "[bold]Phone-companion mode:[/bold] pick the channels your phone will use.\n"
         )
 
-    choices = [f"{ch_id:9} - {label}" for ch_id, label, _ in CHANNELS]
+    # Scaffold channels accept config but the runtime isn't wired yet.
+    # Show only READY channels by default so a non-technical user isn't
+    # offered adapters that silently won't work; gate the scaffolds behind
+    # an explicit confirm (#433). They remain reachable for forward-compatible
+    # config, but you have to ask.
+    scaffold_ids = {"whatsapp", "sms", "imessage"}
+    ready = [c for c in CHANNELS if c[0] not in scaffold_ids]
+    scaffold = [c for c in CHANNELS if c[0] in scaffold_ids]
+
+    choices = [f"{ch_id:9} - {label}" for ch_id, label, _ in ready]
     picked = _q_checkbox("Which channels do you want to enable?", choices)
     picked_ids = [p.split()[0] for p in picked]
+
+    if scaffold and _q_confirm(
+        "Show experimental channels? (WhatsApp / SMS / iMessage — config is "
+        "accepted but the runtime isn't wired yet)",
+        default=False,
+    ):
+        exp_choices = [
+            f"{ch_id:9} - {label}  (experimental — not wired yet)"
+            for ch_id, label, _ in scaffold
+        ]
+        exp_picked = _q_checkbox("Experimental channels to enable", exp_choices)
+        picked_ids += [p.split()[0] for p in exp_picked]
 
     channels: dict[str, dict[str, Any]] = {}
     envs: set[str] = set()
