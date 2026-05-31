@@ -95,7 +95,10 @@ async def test_winning_plan_reaches_prompt_when_enabled(monkeypatch, tmp_path: P
     assert called.get("goal_text", "").startswith("Build feature X")
     assert called["n"] == 3
     assert called["budget"] is not None              # shared budget passed through
-    assert "TOT-SENTINEL-PLAN" in _prompt_blob(fake_llm)  # injected into the brief
+    prompt = _prompt_blob(fake_llm)
+    assert "TOT-SENTINEL-PLAN" in prompt  # injected into the brief
+    assert "untrusted model output" in prompt
+    assert "<tree_of_thought_plan>" in prompt
 
 
 @pytest.mark.asyncio
@@ -119,3 +122,52 @@ async def test_planner_not_invoked_when_disabled(monkeypatch, tmp_path: Path, fa
         goal_id=gid, sandbox=LocalBackend(workdir=tmp_path), max_depth=1,
     )
     assert calls["n"] == 0
+
+
+@pytest.mark.asyncio
+async def test_winning_plan_is_scanned_and_redacted_when_blocked(
+    monkeypatch, tmp_path: Path, fake_llm,
+):
+    monkeypatch.setenv("MAVERICK_TREE_OF_THOUGHT", "1")
+
+    class _Shield:
+        def __init__(self):
+            self.outputs: list[str] = []
+
+        def scan_input(self, text):
+            return type("Verdict", (), {"allowed": True, "reasons": []})()
+
+        def scan_output(self, text):
+            self.outputs.append(text)
+            allowed = "TOT-BLOCKME" not in (text or "")
+            return type(
+                "Verdict", (),
+                {"allowed": allowed, "reasons": [] if allowed else ["tot-policy"]},
+            )()
+
+    shield = _Shield()
+    monkeypatch.setattr("maverick.orchestrator._build_shield", lambda: shield)
+
+    def _fake_plan(llm, goal_text, *, n=3, budget=None, **kw):
+        return ToTResult(
+            winning_plan="safe preface\nTOT-BLOCKME\nunsafe restatement",
+            candidates=[], scores=[], winning_index=0,
+            critic_reason="stub", total_dollars=0.0,
+        )
+
+    monkeypatch.setattr(tree_of_thought, "plan_tree_of_thought", _fake_plan)
+    fake_llm.scripted = [
+        LLMResponse(text="FINAL: done", thinking=None, stop_reason="end_turn", tool_calls=[]),
+    ]
+
+    world = WorldModel(path=tmp_path / "world.db")
+    gid = world.create_goal("Build feature X", "with tests")
+    await run_goal(
+        llm=fake_llm, world=world, budget=Budget(max_dollars=1.0),
+        goal_id=gid, sandbox=LocalBackend(workdir=tmp_path), max_depth=1,
+    )
+
+    prompt = _prompt_blob(fake_llm)
+    assert any("TOT-BLOCKME" in output for output in shield.outputs)
+    assert "TOT-BLOCKME" not in prompt
+    assert "[redacted by Shield: tot-policy]" in prompt
