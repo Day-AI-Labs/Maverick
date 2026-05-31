@@ -150,6 +150,7 @@ def apply_to_registry(reg, limits: dict[str, tuple[int, float]] | None = None) -
             description=tool.description,
             input_schema=tool.input_schema,
             fn=_wrap_fn(name, limiter, tool.fn),
+            parallel_safe=tool.parallel_safe,
         )
         wrapped += 1
     if wrapped:

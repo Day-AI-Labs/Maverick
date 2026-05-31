@@ -178,4 +178,5 @@ def repo_map(sandbox) -> Tool:
         ),
         input_schema={"type": "object", "properties": {}},
         fn=fn,
+        parallel_safe=True,
     )

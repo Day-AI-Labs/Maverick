@@ -194,6 +194,7 @@ def read_file(sandbox) -> Tool:
             "required": ["path"],
         },
         fn=fn,
+        parallel_safe=True,
     )
 
 
@@ -275,4 +276,5 @@ def list_dir(sandbox) -> Tool:
             "properties": {"path": {"type": "string", "default": "."}},
         },
         fn=fn,
+        parallel_safe=True,
     )

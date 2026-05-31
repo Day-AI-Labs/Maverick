@@ -467,6 +467,38 @@ class Agent:
             f"</tool_output {nonce}>"
         )
 
+    def _is_parallel_safe(self, name: str) -> bool:
+        """Whether ``name`` may execute concurrently with the other tool
+        calls in the same turn. Reads the tool's ``parallel_safe`` flag;
+        unknown tools (and any tool missing the attribute, e.g. a plugin
+        built against an older Tool dataclass) default to False — serial.
+        """
+        try:
+            return bool(getattr(self.tools.get(name), "parallel_safe", False))
+        except KeyError:
+            return False
+
+    @staticmethod
+    def _make_tool_result(tool_use_id: str, output: str) -> dict:
+        """Build a tool_result block, flagging errors for the model.
+
+        May 26 council fix (API audit #4): set ``is_error: true`` on
+        tool_results that surface an error. Per Anthropic docs, this
+        tells Claude the tool failed so it can recover instead of
+        treating the error string as a normal output. Our tool registry
+        prefixes errors with "ERROR: " and the shield emits
+        "BLOCKED by Shield".
+        """
+        stripped = (output or "").lstrip()
+        tr: dict = {
+            "type": "tool_result",
+            "tool_use_id": tool_use_id,
+            "content": output,
+        }
+        if stripped.startswith("ERROR") or stripped.startswith("BLOCKED by Shield"):
+            tr["is_error"] = True
+        return tr
+
     async def run(self) -> AgentResult:
         bb = self.ctx.blackboard
         bb.post(self.name, "plan", f"role={self.role} depth={self.depth} brief={self.brief}")
@@ -1086,46 +1118,73 @@ class Agent:
                     error="empty response with no tools", role=self.role, name=self.name
                 )
 
+            # Tool-call boundary: honour a halt that arrived while the
+            # model was producing this turn (e.g. the user hit Halt
+            # during a long think) before executing any tool.
+            try:
+                killswitch.check()
+            except killswitch.Halted as e:
+                bb.post(self.name, "error", f"halted: {e}")
+                return AgentResult(
+                    error=f"halted: {e}", role=self.role, name=self.name,
+                )
+
+            # Frontier-loop optimization: when the model emits 2+ tool
+            # calls in one turn and EVERY one is parallel-safe (pure,
+            # idempotent reads — read_file / list_dir / repo_map /
+            # dep_graph), run them concurrently with asyncio.gather. This
+            # is the dominant localization pattern ("read these 5 files")
+            # and collapses N serial awaits into one round-trip's worth of
+            # latency. A turn containing ANY stateful tool (shell, write,
+            # spawn, ask_user, a rate-limited network tool) falls through
+            # to the serial path below, so side-effect ordering and the
+            # ask_user block-on-user semantics are unchanged. Disable with
+            # MAVERICK_PARALLEL_TOOLS=0.
+            run_parallel = (
+                len(resp.tool_calls) > 1
+                and os.environ.get("MAVERICK_PARALLEL_TOOLS", "1") != "0"
+                and all(self._is_parallel_safe(tc.name) for tc in resp.tool_calls)
+            )
+
             tool_results: list[dict] = []
             blocked = False
-            for tc in resp.tool_calls:
-                # Tool-call boundary: honour a halt that arrived while the
-                # model was producing this turn (e.g. the user hit Halt
-                # during a long think) before executing the next tool.
-                try:
-                    killswitch.check()
-                except killswitch.Halted as e:
-                    bb.post(self.name, "error", f"halted: {e}")
-                    return AgentResult(
-                        error=f"halted: {e}", role=self.role, name=self.name,
+            if run_parallel:
+                import asyncio as _asyncio
+                # Account every call up front; record_tool_call mirrors
+                # the serial path (one per tool, same count).
+                for tc in resp.tool_calls:
+                    self.ctx.budget.record_tool_call()
+                outputs = await _asyncio.gather(
+                    *(self._run_tool(tc.name, tc.input) for tc in resp.tool_calls)
+                )
+                # Preserve original call order in the results (matched by
+                # tool_use_id, but ordering keeps traces readable).
+                for tc, output in zip(resp.tool_calls, outputs):
+                    bb.post(
+                        self.name, "observation",
+                        f"tool={tc.name} -> {output[:500]}",
                     )
-                self.ctx.budget.record_tool_call()
-                output = await self._run_tool(tc.name, tc.input)
-                if tc.name == "ask_user":
-                    blocked = True
-                bb.post(
-                    self.name, "observation",
-                    f"tool={tc.name} -> {output[:500]}",
-                )
-                # May 26 council fix (API audit #4): set `is_error: true`
-                # on tool_results that surface an error. Per Anthropic
-                # docs, this tells Claude the tool failed so it can
-                # recover instead of treating the error string as a
-                # normal output. Our tool registry prefixes errors with
-                # "ERROR: " and the shield emits "BLOCKED by Shield".
-                stripped = (output or "").lstrip()
-                tool_is_error = (
-                    stripped.startswith("ERROR")
-                    or stripped.startswith("BLOCKED by Shield")
-                )
-                tr_block: dict = {
-                    "type": "tool_result",
-                    "tool_use_id": tc.id,
-                    "content": output,
-                }
-                if tool_is_error:
-                    tr_block["is_error"] = True
-                tool_results.append(tr_block)
+                    tool_results.append(self._make_tool_result(tc.id, output))
+            else:
+                for tc in resp.tool_calls:
+                    # Per-tool halt check: a serial turn may run a long
+                    # shell command; honour a halt that lands mid-turn.
+                    try:
+                        killswitch.check()
+                    except killswitch.Halted as e:
+                        bb.post(self.name, "error", f"halted: {e}")
+                        return AgentResult(
+                            error=f"halted: {e}", role=self.role, name=self.name,
+                        )
+                    self.ctx.budget.record_tool_call()
+                    output = await self._run_tool(tc.name, tc.input)
+                    if tc.name == "ask_user":
+                        blocked = True
+                    bb.post(
+                        self.name, "observation",
+                        f"tool={tc.name} -> {output[:500]}",
+                    )
+                    tool_results.append(self._make_tool_result(tc.id, output))
 
             messages.append({"role": "user", "content": tool_results})
 

@@ -71,6 +71,32 @@ def _end_episode_with_spend(
     })
 
 
+def _maybe_record_reflexion(
+    goal: Any, *, failure_class: str, failure_msg: str, blackboard
+) -> None:
+    """Persist a postmortem when a run fails, so the NEXT similar goal
+    recalls the lesson. No-op unless reflexion is enabled. Never raises —
+    a failed reflection write must not perturb the failure path.
+    """
+    try:
+        from . import reflexion
+        if not reflexion.enabled():
+            return
+        goal_text = f"{getattr(goal, 'title', '')}\n{getattr(goal, 'description', '') or ''}"
+        tools_used = reflexion.tools_from_blackboard(blackboard)
+        reflexion.record(
+            goal_text=goal_text,
+            failure_class=failure_class,
+            failure_msg=failure_msg,
+            reflection=reflexion.synthesize_reflection(
+                failure_class, failure_msg, tools_used,
+            ),
+            tools_used=tools_used,
+        )
+    except Exception as e:  # pragma: no cover -- reflexion never blocks a run
+        log.debug("reflexion record skipped: %s", e)
+
+
 async def run_goal(
     llm: LLM,
     world: WorldModel,
@@ -208,6 +234,23 @@ async def run_goal(
             "synthesize their findings, verify, and respond with FINAL:."
         )
 
+        # Reflexion (opt-in): prepend lessons learned from prior FAILED
+        # runs on similar goals so the orchestrator avoids repeating the
+        # same dead ends. Recall is jaccard-ranked over goal text; the
+        # block is empty (and this is a no-op) when reflexion is disabled
+        # or there are no similar prior failures.
+        try:
+            from . import reflexion
+            if reflexion.enabled():
+                recalled = reflexion.recall(
+                    f"{goal.title}\n{goal.description or ''}"
+                )
+                ctx_block = reflexion.format_context(recalled)
+                if ctx_block:
+                    brief = brief + "\n" + ctx_block
+        except Exception as e:  # pragma: no cover -- recall never blocks a run
+            log.debug("reflexion recall skipped: %s", e)
+
         root = Agent(
             ctx=ctx,
             role="orchestrator",
@@ -220,6 +263,10 @@ async def run_goal(
             result = await root.run()
         except BudgetExceeded as e:
             _end_episode_with_spend(world, episode_id, f"budget: {e}", "failure", budget, goal_id)
+            _maybe_record_reflexion(
+                goal, failure_class="budget", failure_msg=str(e),
+                blackboard=blackboard,
+            )
             world.set_goal_status(goal_id, "blocked", result=f"budget exceeded: {e}")
             _fire_webhook("goal_finished", {
                 "goal_id": goal_id, "status": "blocked",
@@ -281,6 +328,15 @@ async def run_goal(
                 })
                 return result.final_patch
             _end_episode_with_spend(world, episode_id, result.error, "failure", budget, goal_id)
+            _maybe_record_reflexion(
+                goal,
+                failure_class=(
+                    "max_steps" if "max_steps" in (result.error or "")
+                    else "agent_error"
+                ),
+                failure_msg=result.error or "",
+                blackboard=blackboard,
+            )
             world.set_goal_status(goal_id, "blocked", result=result.error)
             _fire_webhook("goal_finished", {
                 "goal_id": goal_id, "status": "blocked", "result": result.error,

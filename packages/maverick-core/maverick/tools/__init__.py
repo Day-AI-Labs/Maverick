@@ -106,6 +106,17 @@ class Tool:
     description: str
     input_schema: dict[str, Any]
     fn: ToolFn
+    # When True, the agent loop may run this tool CONCURRENTLY with the
+    # other tool calls in the same model turn (asyncio.gather). Only set
+    # it on side-effect-free, idempotent reads (read_file, list_dir,
+    # repo_map, dep_graph). Anything that writes the workspace, shells
+    # out, spawns children, sends a message, or holds a remote rate limit
+    # must stay False so it executes serially. The loop only parallelises
+    # a turn when EVERY call in it is parallel_safe, so the default of
+    # False is always safe — it just forgoes the speedup. Not part of
+    # ``to_anthropic()``: it must never alter the tool catalog the model
+    # sees (that would bust the prompt cache).
+    parallel_safe: bool = False
 
     def to_anthropic(self) -> dict[str, Any]:
         return {
