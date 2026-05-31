@@ -148,3 +148,20 @@ def get_sandbox() -> dict:
         "workdir": cfg.get("workdir", "~/maverick-workspace"),
         "timeout": cfg.get("timeout", 60),
     }
+
+
+def get_planning() -> dict:
+    """Return the ``[planning]`` section with defaults filled in.
+
+    ``mode`` is ``"single"`` (the historical behavior — one plan, no
+    pre-pass) or ``"tree_of_thought"`` (fork ``tot_n`` candidate plans,
+    score with a critic, dispatch the winner). ``tot_n`` and
+    ``tot_max_tokens`` bound the extra spend. Defaults keep ToT off so
+    the kernel's out-of-the-box behavior is unchanged.
+    """
+    cfg = load_config().get("planning", {})
+    return {
+        "mode": str(cfg.get("mode", "single")),
+        "tot_n": int(cfg.get("tot_n", 3)),
+        "tot_max_tokens": int(cfg.get("tot_max_tokens", 1500)),
+    }

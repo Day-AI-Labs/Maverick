@@ -97,6 +97,53 @@ def _maybe_record_reflexion(
         log.debug("reflexion record skipped: %s", e)
 
 
+async def _maybe_plan_tree_of_thought(
+    llm: "LLM", goal_text: str, budget: Budget, blackboard
+) -> Optional[str]:
+    """Opt-in tree-of-thought planning pre-pass.
+
+    When ``[planning] mode = "tree_of_thought"`` (or
+    ``MAVERICK_PLANNING=tree_of_thought``), fork N candidate plans, score
+    them with a critic, and return the winning plan to inject into the
+    orchestrator brief. Off by default — returns None. Best-effort: any
+    failure (including budget exhaustion mid-planning, which the main loop
+    then surfaces via its own ``budget.check()``) yields None so the run
+    proceeds with the plain brief.
+
+    The planner uses the synchronous ``llm.complete``; we run it in a
+    worker thread so the N+1 calls don't block the event loop.
+    """
+    try:
+        from .config import get_planning
+        mode = os.environ.get("MAVERICK_PLANNING") or get_planning().get("mode", "single")
+        if mode != "tree_of_thought":
+            return None
+        cfg = get_planning()
+        from .tree_of_thought import plan_tree_of_thought
+        result = await asyncio.to_thread(
+            plan_tree_of_thought,
+            llm, goal_text,
+            n=int(cfg.get("tot_n", 3)),
+            budget=budget,
+            model=model_for_role("orchestrator"),
+            per_candidate_max_tokens=int(cfg.get("tot_max_tokens", 1500)),
+        )
+        if result and result.winning_plan:
+            try:
+                blackboard.post(
+                    "orchestrator", "plan",
+                    f"tree-of-thought selected plan {result.winning_index} "
+                    f"of {len(result.candidates)} "
+                    f"(scores={result.scores}): {result.critic_reason}",
+                )
+            except Exception:  # pragma: no cover
+                pass
+            return result.winning_plan
+    except Exception as e:  # pragma: no cover -- planning never blocks a run
+        log.debug("tree-of-thought planning skipped: %s", e)
+    return None
+
+
 async def run_goal(
     llm: LLM,
     world: WorldModel,
@@ -250,6 +297,21 @@ async def run_goal(
                     brief = brief + "\n" + ctx_block
         except Exception as e:  # pragma: no cover -- recall never blocks a run
             log.debug("reflexion recall skipped: %s", e)
+
+        # Opt-in tree-of-thought planning pre-pass: fork N candidate plans,
+        # score them, and prepend the winner to the brief. No-op (returns
+        # None) unless [planning] mode = "tree_of_thought".
+        tot_plan = await _maybe_plan_tree_of_thought(
+            llm, f"{goal.title}\n{goal.description or ''}", budget, blackboard,
+        )
+        if tot_plan:
+            brief = (
+                brief
+                + "\n\n## Selected plan (tree-of-thought)\n"
+                + "Follow this vetted plan unless you find a concrete reason "
+                + "to deviate:\n\n"
+                + tot_plan
+            )
 
         root = Agent(
             ctx=ctx,
