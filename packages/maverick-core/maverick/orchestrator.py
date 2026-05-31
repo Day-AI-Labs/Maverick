@@ -516,8 +516,21 @@ async def run_goal(
         }
         if auto_distill:
             try:
-                skill = distill(goal.title, summary, blackboard, llm, budget=budget)
-                skill_note = f"\n\n[distilled skill: {skill.name}]" if skill else ""
+                # Quality gate: only distill from a run the verifier was
+                # confident in. A low-confidence "success" written to a
+                # skill becomes a standing instruction recalled into every
+                # future similar run — the learning loop's poison vector.
+                skill = distill(
+                    goal.title, summary, blackboard, llm, budget=budget,
+                    confidence=result.verifier_confidence,
+                )
+                if skill:
+                    skill_note = f"\n\n[distilled skill: {skill.name}]"
+                else:
+                    skill_note = (
+                        "\n\n[skill distill skipped: run confidence below "
+                        "MAVERICK_DISTILL_MIN_CONFIDENCE]"
+                    )
             except BudgetExceeded:
                 skill_note = "\n\n[skill distill skipped: budget]"
             except Exception as e:

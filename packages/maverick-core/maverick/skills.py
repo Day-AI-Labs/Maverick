@@ -10,6 +10,7 @@ v0.1.6 security hardening (council review):
 from __future__ import annotations
 
 import logging
+import os
 import re
 import urllib.error
 import urllib.request
@@ -71,6 +72,9 @@ class Skill:
     path: Path
     sig: Optional[str] = None
     pubkey: Optional[str] = None
+    # Provenance: the run's verifier confidence at distill time. 1.0 for
+    # skills written before this field existed / installed from a catalog.
+    distilled_confidence: float = 1.0
 
     @classmethod
     def parse(cls, text: str, path: Path) -> "Skill":
@@ -97,6 +101,10 @@ class Skill:
                     meta[k] = []
         sig = meta.get("sig")
         pubkey = meta.get("pubkey")
+        try:
+            conf = float(meta.get("distilled_confidence", 1.0))
+        except (TypeError, ValueError):
+            conf = 1.0
         return cls(
             name=meta.get("name", path.stem),
             triggers=meta.get("triggers", []) if isinstance(meta.get("triggers"), list) else [],
@@ -105,6 +113,7 @@ class Skill:
             path=path,
             sig=sig if isinstance(sig, str) else None,
             pubkey=pubkey if isinstance(pubkey, str) else None,
+            distilled_confidence=conf,
         )
 
 
@@ -413,7 +422,38 @@ def distill(
     llm: LLM,
     budget: Optional[Budget] = None,
     skills_dir: Path = SKILLS_DIR,
+    *,
+    confidence: float = 1.0,
+    min_confidence: Optional[float] = None,
 ) -> Optional[Skill]:
+    """Distill a successful trajectory into a reusable SKILL.md.
+
+    Quality gate: a distilled skill is recalled into EVERY future run on a
+    similar goal, so a low-quality "success" that gets written becomes a
+    standing instruction — the learning loop's poison vector. ``confidence``
+    is the run's verifier confidence; when it's below ``min_confidence``
+    (default ``MAVERICK_DISTILL_MIN_CONFIDENCE`` or 0.75) we skip writing
+    and return None. Pass ``confidence=1.0`` (the default) to preserve the
+    old always-write behavior for callers that have their own gate.
+
+    The accepted confidence is recorded in the skill's frontmatter
+    (``distilled_confidence``) as provenance for future quality-weighted
+    retrieval / decay.
+    """
+    if min_confidence is None:
+        try:
+            min_confidence = float(
+                os.environ.get("MAVERICK_DISTILL_MIN_CONFIDENCE", "0.75")
+            )
+        except ValueError:
+            min_confidence = 0.75
+    if confidence < min_confidence:
+        log.info(
+            "skill distill skipped: confidence %.2f < min %.2f",
+            confidence, min_confidence,
+        )
+        return None
+
     skills_dir.mkdir(parents=True, exist_ok=True)
     trajectory = blackboard.render(200)
     prompt = (
@@ -439,8 +479,31 @@ def distill(
     try:
         m = re.search(r"^name:\s*(\S+)", text, re.MULTILINE)
         name = _safe_name(m.group(1)) if m else "skill"
+        # Record provenance: stamp the accepted confidence into the
+        # frontmatter so quality-weighted retrieval / decay can read it.
+        # Insert as a top-level scalar after the opening `---` line.
+        text = _stamp_confidence(text, confidence)
         path = skills_dir / f"{name}.md"
         path.write_text(text, encoding="utf-8")
         return Skill.parse(text, path)
     except Exception:
         return None
+
+
+def _stamp_confidence(text: str, confidence: float) -> str:
+    """Insert/replace a ``distilled_confidence`` scalar in the frontmatter.
+
+    No-op (returns text unchanged) when there's no leading ``---`` block.
+    """
+    if not text.startswith("---"):
+        return text
+    if re.search(r"^distilled_confidence:", text, re.MULTILINE):
+        return re.sub(
+            r"^distilled_confidence:.*$",
+            f"distilled_confidence: {confidence:.2f}",
+            text, count=1, flags=re.MULTILINE,
+        )
+    # Insert right after the opening `---\n`.
+    return text.replace(
+        "---\n", f"---\ndistilled_confidence: {confidence:.2f}\n", 1,
+    )
