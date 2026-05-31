@@ -114,6 +114,25 @@ class Agent:
         # without permitting repeated reject/revise loops.
         self._verifier_revision_used = False
 
+        # Process Reward Model: scores each step for promise/progress so a
+        # doomed trajectory can be abandoned before it burns the whole
+        # budget (the AgentPRM compute-efficiency win). Default backend is
+        # NullPRM — when it's selected, scoring is skipped entirely and the
+        # loop behaves exactly as before. Activate with MAVERICK_PRM=
+        # heuristic|remote. `prm_window` trailing steps must average below
+        # `prm_floor` promise to trigger early abandonment.
+        try:
+            from . import prm as _prm
+            self._prm = _prm.build_from_env()
+        except Exception:  # pragma: no cover -- PRM never blocks construction
+            self._prm = None
+        self._prm_promises: list[float] = []
+        self._prm_window = env_int("MAVERICK_PRM_WINDOW", 4)
+        try:
+            self._prm_floor = float(os.environ.get("MAVERICK_PRM_FLOOR", "-0.3"))
+        except ValueError:
+            self._prm_floor = -0.3
+
     def _build_tools(self) -> ToolRegistry:
         reg = base_registry(
             self.ctx.world,
@@ -477,6 +496,49 @@ class Agent:
             return bool(getattr(self.tools.get(name), "parallel_safe", False))
         except KeyError:
             return False
+
+    def _prm_active(self) -> bool:
+        """Whether a non-null PRM backend is configured. NullPRM (the
+        default) means scoring is skipped and the loop is unchanged."""
+        return self._prm is not None and getattr(self._prm, "name", "null") != "null"
+
+    def _score_step(
+        self, step_index: int, *, tool_name=None, tool_succeeded=None,
+        is_final=False, error=None,
+    ) -> bool:
+        """Score one step with the PRM and record its promise. Returns
+        True when the trajectory should be ABANDONED — the trailing
+        ``prm_window`` promises average below ``prm_floor``. No-op (returns
+        False) when the PRM is null/inactive. Never raises into the loop.
+        """
+        if not self._prm_active():
+            return False
+        try:
+            from .prm import StepContext
+            prior = self._prm_promises[-1] if self._prm_promises else 0.5
+            reward = self._prm.score(StepContext(
+                goal_id=self.ctx.goal_id or 0,
+                step_index=step_index,
+                role=self.role,
+                tool_name=tool_name,
+                tool_succeeded=tool_succeeded,
+                is_final=is_final,
+                error=error,
+                prior_step_score=prior,
+            ))
+            self._prm_promises.append(reward.promise)
+            self.ctx.blackboard.post(
+                self.name, "prm",
+                f"step={step_index} promise={reward.promise:.2f} "
+                f"progress={reward.progress:.2f}",
+            )
+            if len(self._prm_promises) >= self._prm_window:
+                window = self._prm_promises[-self._prm_window:]
+                if sum(window) / len(window) < self._prm_floor:
+                    return True
+        except Exception:  # pragma: no cover -- PRM never blocks the loop
+            return False
+        return False
 
     @staticmethod
     def _make_tool_result(tool_use_id: str, output: str) -> dict:
@@ -1190,6 +1252,30 @@ class Agent:
 
             if blocked:
                 return AgentResult(blocked_on_user=True, role=self.role, name=self.name)
+
+            # PRM step scoring + early abandonment. A step "errored" if any
+            # tool_result was flagged is_error. No-op unless a non-null PRM
+            # backend is configured (MAVERICK_PRM=heuristic|remote).
+            step_errored = any(tr.get("is_error") for tr in tool_results)
+            last_tool = resp.tool_calls[-1].name if resp.tool_calls else None
+            if self._score_step(
+                step,
+                tool_name=last_tool,
+                tool_succeeded=(not step_errored) if last_tool else None,
+                error="tool error" if step_errored else None,
+            ):
+                bb.post(
+                    self.name, "error",
+                    f"abandoned: PRM promise below floor ({self._prm_floor}) "
+                    f"over last {self._prm_window} steps",
+                )
+                return AgentResult(
+                    error=(
+                        f"abandoned by PRM: sustained low promise over "
+                        f"{self._prm_window} steps"
+                    ),
+                    role=self.role, name=self.name,
+                )
 
         # Wave 12 hotfix: when the agent loop exhausts max_steps without
         # emitting FINAL, the workdir may STILL contain edits made via
