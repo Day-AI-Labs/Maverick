@@ -141,14 +141,30 @@ class CascadedShield:
         return getattr(self.base, "enabled", True)
 
     def _probe(self, text):
-        """Run the cheap probe on NFKC-normalised, invisible-stripped text so
-        fullwidth/zero-width obfuscation can't hide a signal. Never raises:
-        the base scan is the security floor, the probe only gates the optional
-        expensive judge."""
+        """Run the cheap probe on raw and normalised text.
+
+        The raw pass preserves signals that depend on Unicode smuggling
+        characters being present. The normalised pass catches payloads hidden
+        with fullwidth/zero-width obfuscation. Never raises: the base scan is
+        the security floor, the probe only gates the optional expensive judge.
+        """
         try:
             if not isinstance(text, str):
                 return ProbeSignal(flagged=False, score=0.0, reasons=[])
-            return cheap_probe(normalize_for_probe(text))
+
+            raw_signal = cheap_probe(text)
+            normalized = normalize_for_probe(text)
+            if normalized == text:
+                return raw_signal
+
+            normalized_signal = cheap_probe(normalized)
+            reasons = list(dict.fromkeys(raw_signal.reasons + normalized_signal.reasons))
+            score = max(raw_signal.score, normalized_signal.score)
+            return ProbeSignal(
+                flagged=raw_signal.flagged or normalized_signal.flagged,
+                score=score,
+                reasons=reasons,
+            )
         except Exception:  # pragma: no cover - probe must never break the scan
             return ProbeSignal(flagged=False, score=0.0, reasons=[])
 

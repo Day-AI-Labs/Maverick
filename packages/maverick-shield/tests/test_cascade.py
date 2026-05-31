@@ -145,6 +145,47 @@ class TestCascadedShieldWrapper:
         # The probe reasons are annotated onto the verdict.
         assert any("cheap-probe" in r for r in v.reasons)
 
+    def test_unicode_tag_probe_triggers_deep_scan(self):
+        """Regression: tag characters must survive the probe path enough to
+        invoke a configured deep scanner when the base scanner allows.
+        """
+        from maverick_shield.guard import ShieldVerdict
+
+        calls: list[tuple[str, str]] = []
+        payload = "Hello \U000E0049gnore world"
+
+        class _Base:
+            backend = "test"
+            enabled = True
+
+            def scan_input(self, t):
+                return ShieldVerdict(allowed=True, severity="info", reasons=[])
+
+            def scan_output(self, t, known_prompt=None):
+                return ShieldVerdict(allowed=True, severity="info", reasons=[])
+
+        def deep_input(t):
+            calls.append(("input", t))
+            return ShieldVerdict(allowed=False, severity="high", reasons=["deep-input"])
+
+        def deep_output(t):
+            calls.append(("output", t))
+            return ShieldVerdict(allowed=False, severity="high", reasons=["deep-output"])
+
+        c = CascadedShield(
+            base=_Base(),
+            deep_scan_input=deep_input,
+            deep_scan_output=deep_output,
+        )
+
+        input_verdict = c.scan_input(payload)
+        output_verdict = c.scan_output(payload)
+
+        assert input_verdict.allowed is False
+        assert output_verdict.allowed is False
+        assert calls == [("input", payload), ("output", payload)]
+        assert any("unicode tag chars" in r for r in input_verdict.reasons)
+
     def test_tool_calls_bypass_probe(self):
         """Tool calls don't benefit from probe; go straight to base."""
         from maverick_shield.guard import ShieldVerdict
