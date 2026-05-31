@@ -182,7 +182,6 @@ def test_wizard_run_accepts_fast_flag(tmp_path, monkeypatch):
     # Config got written.
     assert wizard.CONFIG_FILE.exists()
     body = wizard.CONFIG_FILE.read_text()
-    assert 'target = "desktop"' in body
     assert "[providers.anthropic]" in body
     assert "[safety]" in body
     assert "[sandbox]" in body

@@ -106,7 +106,6 @@ def _write_full_config(tmp_path: Path, monkeypatch, **overrides) -> dict:
     monkeypatch.setattr(wizard, "CONFIG_FILE", tmp_path / "config.toml")
     monkeypatch.setattr(wizard, "ENV_FILE", tmp_path / ".env")
     base = dict(
-        deployment="laptop",
         providers=["anthropic"],
         role_models={},
         channels={},

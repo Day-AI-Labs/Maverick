@@ -33,7 +33,6 @@ def test_env_file_created_at_0600(tmp_path: Path, monkeypatch):
     with patch("maverick_installer.wizard.os.open", side_effect=_watching_open):
         from maverick_installer.wizard import write_config
         write_config(
-            deployment="laptop",
             providers=["anthropic"],
             role_models={},
             channels={},
@@ -69,7 +68,6 @@ def test_env_file_overwrites_existing(tmp_path: Path, monkeypatch):
 
     from maverick_installer.wizard import write_config
     write_config(
-        deployment="laptop",
         providers=["openai"],
         role_models={},
         channels={},

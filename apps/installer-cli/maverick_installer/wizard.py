@@ -1,7 +1,6 @@
 """Maverick interactive installer.
 
 Configures Maverick for a fresh install. Sets up:
-  - deployment target
   - AI providers and per-role models
   - channels (Telegram, Discord, Slack, Signal, WhatsApp, SMS, Email,
     Matrix, iMessage)
@@ -1550,7 +1549,6 @@ def pick_a2a() -> tuple[dict[str, Any], list[str]]:
 
 
 def write_config(
-    deployment: str,
     providers: list[str],
     role_models: dict[str, str],
     channels: dict[str, dict[str, Any]],
@@ -1642,9 +1640,6 @@ def write_config(
 
     lines = [
         "# Maverick config. Regenerate with:  maverick init",
-        "",
-        "[deploy]",
-        f'target = "{deployment}"',
         "",
     ]
     for prov in providers:
@@ -1802,8 +1797,8 @@ def write_config(
         for k, v in a2a.items():
             _emit_kv(lines, k, v)
 
-    # Config has no secrets today but does carry the deployment
-    # topology and provider names. chmod 600 so multi-user hosts don't
+    # Config has no secrets today but does carry provider names and
+    # runtime settings. chmod 600 so multi-user hosts don't
     # leak it to other accounts.
     config_body = "\n".join(lines) + "\n"
     _backup(CONFIG_FILE)
@@ -1831,7 +1826,7 @@ def smoke_test() -> bool:
     try:
         from maverick.config import load_config
         cfg = load_config()
-        assert cfg.get("deploy", {}).get("target"), "deploy target missing"
+        assert cfg.get("sandbox", {}).get("backend"), "sandbox backend missing"
         console.print("[green]✓[/green] Config readable")
     except Exception as e:
         console.print(f"[red]✗[/red] Config read failed: {e}")
@@ -1903,7 +1898,6 @@ def run_fast() -> int:
         "[bold]Fast setup:[/bold] using safe defaults. "
         "Run `maverick init` (no --fast) anytime to customize.\n"
     )
-    deployment = "desktop"
     providers = ["anthropic"]
     role_models: dict[str, str] = {}  # use ROLE_MODELS defaults
     channels: dict[str, Any] = {}
@@ -1944,7 +1938,7 @@ def run_fast() -> int:
     if os.environ.get("ANTHROPIC_API_KEY"):
         keys["ANTHROPIC_API_KEY"] = os.environ["ANTHROPIC_API_KEY"]
     write_config(
-        deployment, providers, role_models, channels, safety, budget,
+        providers, role_models, channels, safety, budget,
         sandbox, keys, capabilities,
         tool_acl={"denied_tools": denied_tools},
     )
@@ -2070,7 +2064,6 @@ def write_consumer_config(
     if backend == "local":
         denied_tools.extend(["shell", "write_file", "apply_patch", "str_replace_editor"])
     write_config(
-        "desktop",                 # deployment
         ["anthropic"],             # providers
         {},                        # role_models -> kernel defaults
         {},                        # channels -> none in consumer mode
@@ -2375,7 +2368,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
         return 0
 
     write_config(
-        deployment, providers, role_models, channels, safety, budget, sandbox,
+        providers, role_models, channels, safety, budget, sandbox,
         keys, capabilities,
         advanced=advanced,
         mcp_servers=mcp_servers,
