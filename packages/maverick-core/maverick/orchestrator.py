@@ -256,10 +256,32 @@ async def run_goal(
                     + "\n"
                 )
 
+        # Thread answered clarifying questions back in, so a resumed goal
+        # KNOWS what it already asked + the user's reply. Without this the
+        # agent re-asks the same question on every `maverick resume`, leaving
+        # the goal blocked forever -- the human-in-the-loop flow never closes.
+        qa_block = ""
+        try:
+            answered = [
+                q for q in world.all_questions(goal_id)
+                if getattr(q, "answer", None)
+            ]
+        except Exception:  # pragma: no cover -- never block a run on this
+            answered = []
+        if answered:
+            qa_lines = [
+                f"  Q: {q.question}\n  A: {q.answer}" for q in answered
+            ]
+            qa_block = (
+                "\nYou already asked the user these question(s); use their "
+                "answers and do NOT ask again:\n" + "\n".join(qa_lines) + "\n"
+            )
+
         brief = (
             f"Top-level goal: {goal.title}\n"
             f"Description: {goal.description or '(none)'}\n"
-            f"{history_block}\n"
+            f"{history_block}"
+            f"{qa_block}\n"
             f"Known facts about the user:\n{facts_block}\n\n"
             "Decompose into sub-tasks, spawn workers (parallel where possible), "
             "synthesize their findings, verify, and respond with FINAL:."

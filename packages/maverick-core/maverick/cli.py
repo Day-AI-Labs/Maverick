@@ -973,7 +973,12 @@ def resume(ctx, goal_id, max_depth: int, max_dollars, max_wall_seconds) -> None:
         max_dollars=max_dollars,
         max_wall_seconds=max_wall_seconds,
     )
-    result = k.run_goal_sync(llm, world, bud, goal_id, max_depth=max_depth)
+    # Honor the configured [sandbox] backend on resume too -- without this,
+    # resume always fell back to run_goal's default local backend, ignoring a
+    # user who configured docker/podman (a quiet safety + consistency gap).
+    sandbox = k.build_sandbox()
+    result = k.run_goal_sync(llm, world, bud, goal_id,
+                             sandbox=sandbox, max_depth=max_depth)
     click.echo(result)
 
 
