@@ -86,6 +86,9 @@ def build_app(server) -> "FastAPI":
         version="0.2.0",
     )
 
+    from maverick import a2a
+    a2a.mount(app)
+
     @app.post("/mcp")
     async def mcp_endpoint(
         request: "Request",
