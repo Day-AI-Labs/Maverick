@@ -1103,6 +1103,14 @@ class Agent:
                     self.ctx.world.append_message(
                         self.ctx.goal_id, f"agent:{self.name}", final
                     )
+                    # Stop hooks: the agent has decided on FINAL. Post-style
+                    # (non-blocking) -- observers/loggers, cannot veto.
+                    from .hooks import HookEvent, emit as _emit_hook
+                    await _emit_hook(
+                        HookEvent.STOP,
+                        goal_id=self.ctx.goal_id, agent_role=self.role,
+                        extra={"name": self.name, "final": final},
+                    )
                     return AgentResult(
                         final=final, role=self.role, name=self.name,
                         verifier_confidence=verdict.confidence if verdict else 1.0,

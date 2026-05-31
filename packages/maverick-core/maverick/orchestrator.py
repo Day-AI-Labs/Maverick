@@ -128,6 +128,12 @@ async def run_goal(
     sandbox = sandbox or LocalBackend()
     shield = _build_shield()
 
+    # Load operator-/plugin-supplied lifecycle hooks (idempotent) and fire
+    # SessionStart once. Without this the [[hooks]] config section and the
+    # maverick.hooks entry-point group are inert. See maverick.hooks.
+    from . import hooks as _hooks
+    await _hooks.ensure_loaded()
+
     # Chokepoint #1: scan the initial goal text before the orchestrator
     # acts on it. The channel server scans inbound messages, but the
     # primary `maverick start "..."` / MCP `maverick_start` / chat paths
@@ -156,6 +162,23 @@ async def run_goal(
                 return f"BLOCKED: goal input rejected by Shield ({reason})"
         except Exception:  # pragma: no cover
             log.exception("scan_input on goal text failed (fail-open)")
+
+    # UserPromptSubmit hooks: let operators gate or annotate the incoming
+    # goal text before the orchestrator acts on it. A hook returning a falsy
+    # value blocks the goal, mirroring the Shield input chokepoint above.
+    prompt_text = f"{goal.title}\n{goal.description or ''}"
+    if not await _hooks.emit(
+        _hooks.HookEvent.USER_PROMPT_SUBMIT,
+        goal_id=goal_id, agent_role="orchestrator",
+        extra={"prompt": prompt_text, "title": goal.title},
+    ):
+        world.set_goal_status(goal_id, "blocked", result="input blocked by hook")
+        try:
+            world.end_episode(episode_id, "input blocked by UserPromptSubmit hook", "blocked")
+        except Exception:  # pragma: no cover
+            pass
+        log.warning("goal #%s blocked by UserPromptSubmit hook", goal_id)
+        return "BLOCKED: goal input rejected by a UserPromptSubmit hook"
 
     _fire_webhook("goal_created", {"goal_id": goal_id, "title": goal.title})
 

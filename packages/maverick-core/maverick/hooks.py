@@ -118,7 +118,9 @@ def unregister(spec: HookSpec) -> None:
 
 def clear() -> None:
     """Drop all registered hooks. Used in tests + on session restart."""
+    global _loaded
     _registry.clear()
+    _loaded = False
 
 
 def load_from_config() -> None:
@@ -146,6 +148,58 @@ def load_from_config() -> None:
             matcher=entry.get("matcher", "*"),
             timeout_ms=int(entry.get("timeout_ms", 5000)),
         )
+
+
+_loaded = False
+
+
+async def ensure_loaded() -> None:
+    """Load operator- and plugin-supplied hooks once per process.
+
+    Nothing in the kernel ever called ``load_from_config()`` /
+    ``load_from_entry_points()``, so the ``[[hooks]]`` config section and the
+    ``maverick.hooks`` entry-point group were inert -- only hooks registered
+    programmatically via :func:`register` ever fired. The orchestrator calls
+    this on entry so configured and plugin-contributed hooks actually run.
+
+    Idempotent: the load happens once even across many goals in one process,
+    fires ``SessionStart`` once after loading, and arms a best-effort
+    ``SessionEnd`` at interpreter shutdown.
+    """
+    global _loaded
+    if _loaded:
+        return
+    _loaded = True
+    try:
+        load_from_config()
+    except Exception:  # pragma: no cover -- fail-open per kernel rule 1
+        log.debug("hooks: load_from_config failed", exc_info=True)
+    try:
+        load_from_entry_points()
+    except Exception:  # pragma: no cover
+        log.debug("hooks: load_from_entry_points failed", exc_info=True)
+    import atexit
+    atexit.register(_emit_session_end)
+    await emit(HookEvent.SESSION_START)
+
+
+async def emit(event: HookEvent, **fields: Any) -> bool:
+    """Build a :class:`HookContext` for a non-tool lifecycle event and dispatch
+    it. Returns the :func:`dispatch` allow flag (only meaningful for blocking
+    events such as ``UserPromptSubmit``). Keeps call sites to one line."""
+    return await dispatch(HookContext(event=event, **fields))
+
+
+def _emit_session_end() -> None:
+    """Best-effort ``SessionEnd`` at interpreter shutdown. No-op when no
+    ``SessionEnd`` hook is registered, so we never spin up an event loop for
+    nothing; failures during teardown are swallowed."""
+    if not any(s.event == HookEvent.SESSION_END for s in _registry):
+        return
+    try:
+        asyncio.run(emit(HookEvent.SESSION_END))
+    except Exception:  # pragma: no cover -- shutdown is best-effort
+        pass
 
 
 async def dispatch(ctx: HookContext) -> bool:
