@@ -110,7 +110,6 @@ def test_existing_env_backup_created_at_0600(tmp_path: Path, monkeypatch):
         from maverick_installer.wizard import write_config
 
         write_config(
-            deployment="laptop",
             providers=["anthropic"],
             role_models={},
             channels={},
