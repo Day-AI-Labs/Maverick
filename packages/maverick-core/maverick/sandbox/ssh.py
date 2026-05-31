@@ -18,7 +18,7 @@ from __future__ import annotations
 import shlex
 import subprocess
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import PurePosixPath
 
 from .local import ExecResult
 
@@ -26,13 +26,17 @@ from .local import ExecResult
 @dataclass
 class SSHBackend:
     host: str
-    workdir: Path = Path("~/maverick-workspace")
+    # The workdir lives on the REMOTE host, which is POSIX -- use
+    # PurePosixPath, never the platform Path: on a Windows client
+    # ``str(Path("/home/me/ws"))`` becomes ``\home\me\ws`` and we would ship
+    # a broken backslash path to the (Linux) remote.
+    workdir: PurePosixPath = PurePosixPath("~/maverick-workspace")
     timeout: float = 60.0
     ssh_args: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if isinstance(self.workdir, str):
-            self.workdir = Path(self.workdir)
+            self.workdir = PurePosixPath(self.workdir)
         self._verify_ssh()
 
     def _verify_ssh(self) -> None:
