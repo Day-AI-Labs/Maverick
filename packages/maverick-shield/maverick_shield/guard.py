@@ -91,9 +91,20 @@ class Shield:
         block_threshold: str = "high",
         backend: str = "auto",
         warn_if_missing: bool = True,
+        scan_input: bool = True,
+        scan_tool_calls: bool = True,
+        scan_output: bool = True,
     ):
         self.profile = profile
         self.block_threshold = block_threshold
+        # Per-sink enable flags ([safety] scan_input/scan_tool_calls/
+        # scan_output). Enforced centrally here so every call site honors the
+        # config — previously these keys existed but no consumer read them, so
+        # a user who set scan_tool_calls=false got no effect. All default True;
+        # disabling a sink is the user's explicit choice on their own instance.
+        self._scan_input_enabled = scan_input
+        self._scan_tool_calls_enabled = scan_tool_calls
+        self._scan_output_enabled = scan_output
 
         if backend == "none" or profile == "off":
             self.backend = self.BACKEND_NONE
@@ -142,7 +153,13 @@ class Shield:
             safety = {"profile": "balanced", "block_threshold": "high"}
         if safety.get("profile") == "off":
             return cls(profile="off", backend="none", warn_if_missing=False)
-        return cls(profile=safety["profile"], block_threshold=safety["block_threshold"])
+        return cls(
+            profile=safety["profile"],
+            block_threshold=safety["block_threshold"],
+            scan_input=safety.get("scan_input", True),
+            scan_tool_calls=safety.get("scan_tool_calls", True),
+            scan_output=safety.get("scan_output", True),
+        )
 
     def _scan_via_backend(self, text: str) -> ShieldVerdict:
         if self.backend == self.BACKEND_NONE:
@@ -175,9 +192,13 @@ class Shield:
             return ShieldVerdict.allow()
 
     def scan_input(self, text: str) -> ShieldVerdict:
+        if not self._scan_input_enabled:
+            return ShieldVerdict.allow()
         return self._scan_via_backend(text)
 
     def scan_tool_call(self, tool_name: str, args: dict) -> ShieldVerdict:
+        if not self._scan_tool_calls_enabled:
+            return ShieldVerdict.allow()
         # Scan the raw string leaves of ``args`` rather than ``repr(args)``.
         # repr() wraps each value in quotes, so a payload like
         # ``{'cmd': 'rm -rf /'}`` rendered the command as ``'rm -rf /'`` —
@@ -191,6 +212,8 @@ class Shield:
         return self._scan_via_backend(payload)
 
     def scan_output(self, text: str, known_prompt: str | None = None) -> ShieldVerdict:
+        if not self._scan_output_enabled:
+            return ShieldVerdict.allow()
         verdict = self._scan_via_backend(text)
         # Output-side detectors the input rule pack can't see: verbatim
         # system-prompt regurgitation and refusal-then-leak. Fail-open.

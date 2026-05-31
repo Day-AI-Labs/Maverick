@@ -238,3 +238,59 @@ class TestIngest:
         (tmp_path / "good.json").write_text('{"x": 1}')
         records = list(load_donations(tmp_path))
         assert records == [{"x": 1}]
+
+
+class TestFirecrackerStrictDefault:
+    """Firecracker fails CLOSED by default when firectl is absent (no silent
+    downgrade to a weaker Docker boundary); the hardened fallback is only
+    reached when the operator opts in with MAVERICK_FIRECRACKER_STRICT=0."""
+
+    def _backend(self, monkeypatch, tmp_path):
+        import shutil
+        from pathlib import Path
+
+        from maverick.sandbox.firecracker import FirecrackerBackend
+        # Construct successfully (firecracker binary 'present').
+        monkeypatch.setattr(shutil, "which", lambda c: "/usr/bin/firecracker")
+        return FirecrackerBackend(workdir=Path(tmp_path), provider="local")
+
+    def test_fails_closed_by_default_without_firectl(self, monkeypatch, tmp_path):
+        import shutil
+
+        import pytest
+        b = self._backend(monkeypatch, tmp_path)
+        monkeypatch.delenv("MAVERICK_FIRECRACKER_STRICT", raising=False)
+        monkeypatch.setattr(shutil, "which", lambda c: None)  # firectl absent
+        with pytest.raises(RuntimeError, match="microVM isolation is unavailable"):
+            b._exec_local("echo hi")
+
+    def test_strict_zero_allows_hardened_fallback(self, monkeypatch, tmp_path):
+        import shutil
+        b = self._backend(monkeypatch, tmp_path)
+        monkeypatch.setenv("MAVERICK_FIRECRACKER_STRICT", "0")
+        monkeypatch.setattr(shutil, "which", lambda c: None)
+        called = {}
+        monkeypatch.setattr(b, "_docker_fallback", lambda cmd: called.setdefault("cmd", cmd))
+        b._exec_local("echo hi")
+        assert called["cmd"] == "echo hi"
+
+    def test_docker_fallback_is_hardened(self, monkeypatch, tmp_path):
+        import subprocess
+        b = self._backend(monkeypatch, tmp_path)
+        captured = {}
+
+        class _P:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        def _fake_run(args, **kw):
+            captured["args"] = args
+            return _P()
+
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+        b._docker_fallback("echo hi")
+        args = captured["args"]
+        assert "--cap-drop" in args and "ALL" in args
+        assert "no-new-privileges" in args
+        assert "--network=none" in args and "--read-only" in args
