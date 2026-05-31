@@ -363,17 +363,18 @@ def test_cost_router_picks_cheapest_available(monkeypatch):
 def test_cost_router_falls_back_when_no_provider_configured(monkeypatch):
     monkeypatch.setenv("MAVERICK_COST_ROUTING", "1")
     for k in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY",
-              "MOONSHOT_API_KEY", "XAI_API_KEY", "GEMINI_API_KEY"):
+              "MOONSHOT_API_KEY", "XAI_API_KEY", "GROK_API_KEY",
+              "GEMINI_API_KEY", "GOOGLE_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     import maverick.config as cfg
     monkeypatch.setattr(cfg, "load_config", lambda: {})
 
     from maverick.cost_router import CostSignal, pick
-    # When nothing's configured, picker still returns a spec (best
-    # by raw price), so the orchestrator at least has something to try.
+    # When no provider has usable credentials, the picker returns None so
+    # model_for_role() defers to the role defaults. Picking a provider we
+    # have no key for would only blow up later at client construction.
     spec = pick(CostSignal())
-    assert spec is not None
-    assert ":" in spec
+    assert spec is None
 
 
 def test_cost_router_avoids_high_error_provider(monkeypatch):
