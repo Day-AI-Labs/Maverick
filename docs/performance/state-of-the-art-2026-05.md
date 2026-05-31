@@ -155,19 +155,54 @@ unit-tested offline (`benchmarks/test_moat.py`); a real run needs an API
 key. Per this audit's own standard, `MOAT_RESULTS.md` is not committed
 with placeholder numbers.
 
+### Thread-offloaded concurrency for sync tool reads
+
+The agent loop already gathers a turn's `parallel_safe` calls
+concurrently, but sync tool functions (network/file reads) ran
+back-to-back on the event loop, so the gather bought them nothing.
+`ToolRegistry.run` now offloads non-coroutine tool fns via
+`asyncio.to_thread`, so concurrently-gathered sync reads truly overlap.
+The idempotent network read tools — `http_fetch`, `arxiv`, `wikipedia`,
+`semantic_scholar`, `hackernews` — are now `parallel_safe` and join that
+path. Off-switch: `MAVERICK_TOOL_THREAD_OFFLOAD=0`. Covered by
+`tests/test_parallel_net_tools.py`.
+
+### Speculative-execution primitive + speculative finalization
+
+`maverick/speculative.py` is a small reusable primitive: `speculate(coro)`
+starts a coroutine eagerly and returns a handle to `await result()` or
+`cancel()` later, and `run_independent(*coros)` fans out best-effort side
+effects without one failure aborting the others. `run_goal` uses it to run
+the post-FINAL trajectory-donation and conversation-turn writes as
+background threads that overlap with skill distillation, then joins them
+before returning. Off-switch: `MAVERICK_SPECULATIVE_FINALIZE=0`. Covered by
+`tests/test_speculative.py` and `tests/test_speculative_finalize.py`.
+
+This primitive is deliberately the foundation for **true streaming
+speculative verification** (the literal backlog item 10): the eventual
+implementation does `spec = speculate(verify_final(...))` the instant a
+FINAL marker is seen mid-stream, keeps generating, then `await
+spec.result()` — hiding the verifier round-trip behind the generation
+tail. That step is deferred because it requires adding streaming to
+`complete_async` and detecting the marker inside the thinking-block /
+tool_use replay logic in `agent.py` — the kernel's most fragile,
+hard-won code — and should land only when it can be benchmark-validated
+against regressions (gated on backlog item 5's spend discipline).
+
 ## Backlog (highest leverage first)
 
-Items 6 (wire the reasoning modules) and 7 (make the moat measurable) are
-done — see "Shipped in this pass." Remaining:
+Items 6 (wire the reasoning modules), 7 (measure the moat), 9 (parallelise
+network reads), and the *foundation* for 10 (speculative-execution
+primitive + speculative finalization) are done — see "Shipped in this
+pass." Remaining:
 
 5. **Publish SWE-bench Verified numbers** on a tagged release; add a CI
    regression gate against a committed baseline (item 1). Now the #1 gap.
 8. **Run the moat benchmark for real** and commit `MOAT_RESULTS.md` from a
    keyed run, so the differentiator has published figures (depends on #5's
    spend discipline).
-9. **Extend parallelism to network reads.** Per-host concurrency caps would
-   let idempotent network tools (arxiv, wikipedia, http_fetch) join the
-   parallel path safely (item 3 follow-on).
-10. **Speculative verification.** Start the verifier against the
-    in-progress FINAL while the proposer is still streaming, to hide
-    verification latency on long answers.
+10b. **True streaming speculative verification.** Stream `complete_async`,
+   detect the FINAL marker mid-generation, and `speculate(verify_final(...))`
+   so the verifier overlaps the generation tail. Builds on
+   `maverick/speculative.py`; deferred until benchmark-validatable (see the
+   speculative-finalization note above).

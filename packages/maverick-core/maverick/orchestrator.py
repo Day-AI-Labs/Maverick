@@ -449,39 +449,62 @@ async def run_goal(
             "goal_id": goal_id, "status": "done", "result": summary,
         })
 
-        # Trajectory donation (Karpathy data-engine analog). Default OFF;
-        # only fires when the user opted into [telemetry] donate_trajectories
-        # AND the selection gate (disagreement_high + verifier_confident
-        # + success) passes. Never raises -- a bad donation must never
-        # affect the goal result.
-        try:
-            from .donation import TrajectoryRecord, hash_brief, write_record
-            entropy = getattr(ctx, "last_disagreement", 0.0)
-            record = TrajectoryRecord(
-                task_brief_hash=hash_brief(goal.title + (goal.description or "")),
-                task_brief_text=(goal.title + "\n" + (goal.description or "")),
-                model_id=getattr(llm, "model", ""),
-                tools_used=sorted({e.kind for e in blackboard.entries
-                                   if e.kind == "observation"}),
-                outcome="success",
-                reward=1.0 if result.verifier_confidence >= 0.75 else result.verifier_confidence,
-                verifier_confidence=result.verifier_confidence,
-                verifier_critique=result.verifier_critique,
-                disagreement_entropy=float(entropy or 0.0),
-                wall_seconds=budget.elapsed(),
-                cost_dollars=budget.dollars,
-                tokens_in=budget.input_tokens,
-                tokens_out=budget.output_tokens,
-            )
-            write_record(record)
-        except Exception as e:  # pragma: no cover
-            log.debug("trajectory donation skipped: %s", e)
+        # Post-FINAL side effects (trajectory donation + conversation-turn
+        # write) are independent, best-effort, and never affect the result.
+        # Run them as background threads via the speculative primitive so
+        # they overlap with skill distillation below (a potentially
+        # expensive LLM call when auto-distill is enabled) instead of
+        # serializing after it. Each closure swallows its own errors, so
+        # awaiting them later never raises. Disable the overlap with
+        # MAVERICK_SPECULATIVE_FINALIZE=0 (falls back to inline calls).
+        def _donate_side_effect() -> None:
+            # Trajectory donation (Karpathy data-engine analog). Default OFF;
+            # only fires when the user opted into [telemetry] donate_trajectories
+            # AND the selection gate (disagreement_high + verifier_confident
+            # + success) passes. Never raises -- a bad donation must never
+            # affect the goal result.
+            try:
+                from .donation import TrajectoryRecord, hash_brief, write_record
+                entropy = getattr(ctx, "last_disagreement", 0.0)
+                record = TrajectoryRecord(
+                    task_brief_hash=hash_brief(goal.title + (goal.description or "")),
+                    task_brief_text=(goal.title + "\n" + (goal.description or "")),
+                    model_id=getattr(llm, "model", ""),
+                    tools_used=sorted({e.kind for e in blackboard.entries
+                                       if e.kind == "observation"}),
+                    outcome="success",
+                    reward=1.0 if result.verifier_confidence >= 0.75 else result.verifier_confidence,
+                    verifier_confidence=result.verifier_confidence,
+                    verifier_critique=result.verifier_critique,
+                    disagreement_entropy=float(entropy or 0.0),
+                    wall_seconds=budget.elapsed(),
+                    cost_dollars=budget.dollars,
+                    tokens_in=budget.input_tokens,
+                    tokens_out=budget.output_tokens,
+                )
+                write_record(record)
+            except Exception as e:  # pragma: no cover
+                log.debug("trajectory donation skipped: %s", e)
 
-        if conversation_id is not None:
+        def _conversation_side_effect() -> None:
+            if conversation_id is None:
+                return
             try:
                 world.append_turn(conversation_id, "assistant", summary, goal_id=goal_id)
             except Exception as e:  # pragma: no cover -- never block on history
                 log.warning("conversation turn write failed: %s", e)
+
+        _speculative_finalize = os.getenv(
+            "MAVERICK_SPECULATIVE_FINALIZE", "1",
+        ).strip().lower() not in {"0", "false", "no", "off"}
+        _bg_specs = []
+        if _speculative_finalize:
+            from .speculative import speculate
+            _bg_specs.append(speculate(asyncio.to_thread(_donate_side_effect)))
+            _bg_specs.append(speculate(asyncio.to_thread(_conversation_side_effect)))
+        else:
+            _donate_side_effect()
+            _conversation_side_effect()
 
         # Security hardening: disable automatic closed-loop distillation by
         # default. Trajectories can contain untrusted goal/tool/workspace text
@@ -501,6 +524,13 @@ async def run_goal(
                 skill_note = f"\n\n[skill distill error: {e}]"
         else:
             skill_note = "\n\n[skill distill disabled: set MAVERICK_AUTO_DISTILL=1 to enable]"
+
+        # Join the speculative side-effect tasks before returning so they
+        # complete within the goal's lifetime (and before the world model /
+        # event loop tears down). Their closures swallow their own errors,
+        # so result() never raises here.
+        for _spec in _bg_specs:
+            await _spec.result()
 
         # Wave 12 hotfix: in coding mode the orchestrator's return value
         # IS the benchmark CSV's `predicted_patch` after extract_unified_diff.
