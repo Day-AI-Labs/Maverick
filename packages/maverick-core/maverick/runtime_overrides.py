@@ -47,10 +47,36 @@ def _load() -> dict:
         return {}
 
 
+_announced: set[str] = set()
+
+
 def denied_tools() -> set[str]:
-    """Tools the dashboard has disabled. Unioned into the ACL deny-list."""
+    """Tools the dashboard has disabled. Unioned into the ACL deny-list.
+
+    Re-validates each name against the same charset the writer enforces, so a
+    hand-edited / corrupt override file can't push junk or oversized entries
+    into ACL resolution. Logs once (per distinct denial set) that the override
+    file is actively restricting tools -- this file influences the security
+    ACL but lives outside config.toml, so its effect should not be silent.
+    """
     sec = (_load().get("security") or {})
-    return set(sec.get("denied_tools") or [])
+    raw = sec.get("denied_tools") or []
+    valid = {str(n) for n in raw if isinstance(n, str) and _VALID_TOOL_NAME.match(n)}
+    dropped = [n for n in raw if not (isinstance(n, str) and _VALID_TOOL_NAME.match(n))]
+    if dropped:
+        log.warning(
+            "runtime_overrides: ignoring %d invalid denied_tools entr(y/ies) in %s: %r",
+            len(dropped), OVERRIDES_PATH, dropped[:10],
+        )
+    if valid:
+        key = ",".join(sorted(valid))
+        if key not in _announced:
+            _announced.add(key)
+            log.info(
+                "runtime_overrides: %s is denying %d tool(s) via the dashboard "
+                "overlay: %s", OVERRIDES_PATH, len(valid), ", ".join(sorted(valid)),
+            )
+    return valid
 
 
 def _write_denied(names: set[str]) -> None:
