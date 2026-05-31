@@ -739,6 +739,33 @@ class WorldModel:
         rows = self._read_all("SELECT key, value FROM facts ORDER BY updated_at DESC")
         return {r["key"]: r["value"] for r in rows}
 
+    def facts_matching(self, token: str) -> dict[str, str]:
+        """Facts whose key OR value contains ``token`` (substring match).
+
+        Facts are global key/value pairs with no per-user attribution, so
+        this is a deliberately best-effort match used by GDPR export/erase
+        to catch operator-set facts that embed a subject identifier (e.g. a
+        phone number or handle). The facts table is small, so filtering in
+        Python is simpler and avoids LIKE-escaping the token.
+        """
+        if not token:
+            return {}
+        return {k: v for k, v in self.get_facts().items() if token in k or token in v}
+
+    def delete_facts_matching(self, token: str) -> list[str]:
+        """Delete facts matching ``token`` (see :meth:`facts_matching`).
+
+        Returns the keys removed so the caller can report exactly what was
+        scrubbed -- a false positive on shared operator knowledge is then
+        visible rather than silent.
+        """
+        keys = sorted(self.facts_matching(token).keys())
+        if keys:
+            ph = ",".join("?" * len(keys))
+            with self._writing() as conn:
+                conn.execute(f"DELETE FROM facts WHERE key IN ({ph})", keys)
+        return keys
+
     # ----- questions -----
     def ask(self, question: str, goal_id: int | None = None) -> int:
         with self._writing() as conn:

@@ -1336,6 +1336,13 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         except OSError:
             pass
 
+    # Step 4b: scrub global facts that embed the subject's identifier. Facts
+    # are global key/value pairs with no per-user attribution, so this is a
+    # best-effort substring match -- an operator may have stored the
+    # subject's data in a fact. The removed keys are reported below so a
+    # false positive on shared operator knowledge is visible, not silent.
+    scrubbed_fact_keys = world.delete_facts_matching(user)
+
     # Step 5: scrub the subject from PRIOR audit-log lines. Audit payloads
     # (goal_start / tool_call / channel events) carry channel:user_id, so
     # without this the identity we just erased stayed readable in
@@ -1384,14 +1391,21 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         goals=len(goal_ids),
         attachments=removed_attachments,
         audit_lines_scrubbed=audit_scrubbed,
+        facts_scrubbed=len(scrubbed_fact_keys),
     )
 
     click.echo(
         f"erased {len(convs)} conversation(s), {removed_turns} turn(s), "
         f"{len(goal_ids)} goal(s) and all linked rows, "
         f"{removed_attachments} attachment file(s), "
-        f"{audit_scrubbed} audit event(s) scrubbed"
+        f"{audit_scrubbed} audit event(s) scrubbed, "
+        f"{len(scrubbed_fact_keys)} fact(s) scrubbed"
     )
+    if scrubbed_fact_keys:
+        click.echo(
+            "  facts removed (global key/value, matched on the user id -- "
+            f"review if unexpected): {', '.join(scrubbed_fact_keys)}"
+        )
 
 
 @main.command("export-user")
@@ -1417,6 +1431,9 @@ def export_user(ctx, channel: str, user: str, output) -> None:
         "channel": channel,
         "user_id": user,
         "conversations": [],
+        # Global facts that embed the subject id (best-effort substring match;
+        # facts have no per-user attribution). GDPR Art. 15 completeness.
+        "facts": world.facts_matching(user),
     }
     for c in convs:
         turns = world.recent_turns(c.id, limit=10_000)
