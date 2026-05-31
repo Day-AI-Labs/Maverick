@@ -1,4 +1,4 @@
-"""`maverick skills` maintenance surface: list (with decay stats) + evict.
+"""`maverick skill stats` / `maverick skill evict`: the curation surface.
 
 Driven with click's CliRunner; skills + stats are seeded under the test's
 isolated HOME (the autouse fixture points Path.home() at tmp_path).
@@ -21,35 +21,32 @@ def _seed_skill(name: str, confidence: float = 1.0) -> None:
     )
 
 
-def test_skills_group_registered():
-    assert "skills" in main.commands
-    assert set(main.commands["skills"].commands) == {"list", "evict"}
+def test_curation_subcommands_registered():
+    skill = main.commands["skill"]
+    assert "stats" in skill.commands
+    assert "evict" in skill.commands
 
 
-def test_list_empty_library():
+def test_stats_empty_library():
     runner = CliRunner()
-    result = runner.invoke(main, ["skills", "list"])
-    assert result.exit_code == 0
-    assert "No distilled skills yet" in result.output
+    result = runner.invoke(main, ["skill", "stats"])
+    assert result.exit_code == 0, result.output
+    assert "no skills yet" in result.output
 
 
-def test_list_shows_skill_and_stats(tmp_path, monkeypatch):
+def test_stats_shows_skill_and_track_record(tmp_path, monkeypatch):
     stats = tmp_path / "stats.json"
     monkeypatch.setattr(ss, "DEFAULT_PATH", stats)
     _seed_skill("deploy-app", confidence=0.9)
-    # Give it a losing track record so decay < 1.0.
     for _ in range(4):
         ss.record_use(["deploy-app"], path=stats)
         ss.record_outcome(["deploy-app"], success=False, path=stats)
 
     runner = CliRunner()
-    result = runner.invoke(main, ["skills", "list"])
+    result = runner.invoke(main, ["skill", "stats"])
     assert result.exit_code == 0, result.output
     assert "deploy-app" in result.output
-    # Header + the row's columns are present.
     assert "decay" in result.output
-    # 4 losses recorded.
-    assert " 4 " in result.output or "4" in result.output
 
 
 def test_evict_dry_run_lists_candidates(tmp_path, monkeypatch):
@@ -61,7 +58,7 @@ def test_evict_dry_run_lists_candidates(tmp_path, monkeypatch):
         ss.record_outcome(["loser"], success=False, path=stats)
 
     runner = CliRunner()
-    result = runner.invoke(main, ["skills", "evict"])
+    result = runner.invoke(main, ["skill", "evict"])
     assert result.exit_code == 0, result.output
     assert "loser" in result.output
     assert "--yes to remove" in result.output
@@ -81,10 +78,9 @@ def test_evict_yes_removes(tmp_path, monkeypatch):
         ss.record_outcome(["keeper"], success=True, path=stats)
 
     runner = CliRunner()
-    result = runner.invoke(main, ["skills", "evict", "--yes"])
+    result = runner.invoke(main, ["skill", "evict", "--yes"])
     assert result.exit_code == 0, result.output
     assert "removed: loser" in result.output
-    # The chronic loser is gone; the winner is untouched.
     assert not (SKILLS_DIR / "loser.md").exists()
     assert (SKILLS_DIR / "keeper.md").exists()
 
@@ -94,6 +90,6 @@ def test_evict_no_candidates(tmp_path, monkeypatch):
     monkeypatch.setattr(ss, "DEFAULT_PATH", stats)
     _seed_skill("untried")
     runner = CliRunner()
-    result = runner.invoke(main, ["skills", "evict"])
+    result = runner.invoke(main, ["skill", "evict"])
     assert result.exit_code == 0
-    assert "No eviction candidates" in result.output
+    assert "no eviction candidates" in result.output

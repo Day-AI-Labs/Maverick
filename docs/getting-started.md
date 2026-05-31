@@ -50,14 +50,14 @@ Watch the swarm work. When done:
 
 ```bash
 maverick status        # what's currently active or blocked
-maverick skills list   # skills the swarm distilled, with their track record
+maverick skills        # skills the swarm distilled or installed
 maverick facts         # what it learned about you
 ```
 
 Over time the skill library curates itself: each skill's recall ranking
-decays if it keeps riding along with failed runs. See what's pulling its
-weight with `maverick skills list`, and prune chronic non-performers with
-`maverick skills evict` (dry-run by default; add `--yes` to remove).
+decays if it keeps riding along with failed runs. Inspect each skill's
+track record with `maverick skill stats`, and prune chronic non-performers
+with `maverick skill evict` (dry-run by default; add `--yes` to remove).
 
 ## Pausing / resuming
 
