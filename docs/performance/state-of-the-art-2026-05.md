@@ -98,6 +98,17 @@ those lessons into the orchestrator brief. Off by default; enable with
 `MAVERICK_REFLEXION=1` or `[reflexion] enable = true`. Covered by
 `tests/test_reflexion_wiring.py`.
 
+### Self-consistency voting in best-of-N selection
+
+`select_best_candidate` previously broke all-zero-score ties (the common
+case when no ground-truth tests are available) by preferring the
+last/largest attempt. It now applies majority voting first: among N
+independent rollouts, the patch whose changed-file set agrees with the
+plurality of other attempts is preferred over a lone outlier. It is a
+strict refinement — when every attempt touches a distinct file set the
+prior ordering is unchanged. Off-switch: `MAVERICK_BON_CONSENSUS=0`.
+Covered by `tests/test_bon_consensus.py`.
+
 ## Backlog (highest leverage first)
 
 5. **Publish SWE-bench Verified numbers** on a tagged release; add a CI
