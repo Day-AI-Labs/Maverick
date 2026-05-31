@@ -52,7 +52,9 @@ CHANNELS: list[tuple[str, str, list[str]]] = [
     ("matrix",   "Matrix (federated)",                  ["MATRIX_ACCESS_TOKEN"]),
     ("bluesky",  "Bluesky (AT Protocol)",               ["BLUESKY_HANDLE", "BLUESKY_PASSWORD"]),
     ("mastodon", "Mastodon (any instance)",             ["MASTODON_ACCESS_TOKEN"]),
-    ("voice",    "Voice (Vapi Voice in/out)",           ["VAPI_API_KEY", "VAPI_WEBHOOK_TOKEN"]),
+    # Voice API key is provider-specific (VAPI/RETELL/BLAND), resolved in the
+    # voice block below; only the webhook token is static here.
+    ("voice",    "Voice (Vapi/Retell/Bland)",            ["VAPI_WEBHOOK_TOKEN"]),
     ("whatsapp", "WhatsApp (Twilio, needs webhook)",    ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]),
     ("sms",      "SMS (Twilio, needs webhook)",         ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]),
     ("imessage", "iMessage (macOS only)",               []),
@@ -634,6 +636,10 @@ def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]
                 "retell": "RETELL_API_KEY",
                 "bland": "BLAND_API_KEY",
             }.get(provider, "VAPI_API_KEY")
+            # Collect the provider-specific key so the wizard actually prompts
+            # for it; otherwise a retell/bland config references ${RETELL_API_KEY}
+            # / ${BLAND_API_KEY} that the user was never asked to enter.
+            needed.add(key_env)
             cfg["api_key"] = "${" + key_env + "}"
             # Inbound webhook auth is Vapi-shaped today; keep the token ref.
             cfg["webhook_token"] = "${VAPI_WEBHOOK_TOKEN}"
