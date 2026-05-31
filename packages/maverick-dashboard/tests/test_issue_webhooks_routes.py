@@ -209,3 +209,23 @@ def test_no_secret_configured_fails_closed(monkeypatch, _no_real_run):
     )
     assert resp.status_code == 401
     assert _no_real_run == []
+
+
+def test_linear_oversized_content_length_rejected_before_signature_check(
+    _configured, _no_real_run, monkeypatch,
+):
+    import maverick.issue_webhooks as iw
+    from maverick_dashboard import app as app_mod
+
+    def fail_verify(*args, **kwargs):
+        raise AssertionError("signature verification should not run for oversized bodies")
+
+    monkeypatch.setattr(iw, "verify_signature", fail_verify)
+    body = b"x" * (app_mod._MAX_WEBHOOK_BODY_BYTES + 1)
+    resp = client.post(
+        "/webhook/linear",
+        content=body,
+        headers={"Linear-Signature": "invalid"},
+    )
+    assert resp.status_code == 413
+    assert _no_real_run == []

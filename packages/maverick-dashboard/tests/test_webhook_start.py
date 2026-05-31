@@ -6,11 +6,13 @@ monkeypatched so no real LLM call happens.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from maverick_dashboard.app import app
@@ -128,3 +130,53 @@ def test_missing_title_rejected(_configured, _no_real_run):
     )
     assert resp.status_code == 400
     assert _no_real_run == []
+
+
+def test_oversized_content_length_rejected_before_signature_check(
+    _configured, _no_real_run, monkeypatch,
+):
+    import maverick.webhooks as wh
+    from maverick_dashboard import app as app_mod
+
+    def fail_verify(*args, **kwargs):
+        raise AssertionError("signature verification should not run for oversized bodies")
+
+    monkeypatch.setattr(wh, "verify_signature", fail_verify)
+    body = b"x" * (app_mod._MAX_WEBHOOK_BODY_BYTES + 1)
+    resp = client.post(
+        "/webhook/start",
+        content=body,
+        headers={"X-Maverick-Signature": "sha256=invalid"},
+    )
+    assert resp.status_code == 413
+    assert _no_real_run == []
+
+
+def test_missing_signature_rejected_without_reading_body(_configured, _no_real_run, monkeypatch):
+    from maverick_dashboard import app as app_mod
+
+    async def fail_read(request):
+        raise AssertionError("body should not be read when signature is missing")
+
+    monkeypatch.setattr(app_mod, "_read_limited_webhook_body", fail_read)
+    resp = client.post("/webhook/start", content=b"x")
+    assert resp.status_code == 403
+    assert _no_real_run == []
+
+
+def test_lengthless_webhook_body_stream_is_bounded():
+    from maverick_dashboard import app as app_mod
+
+    class ChunkedRequest:
+        headers = {}
+
+        async def stream(self):
+            yield b"x" * app_mod._MAX_WEBHOOK_BODY_BYTES
+            yield b"x"
+
+    async def read():
+        await app_mod._read_limited_webhook_body(ChunkedRequest())
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(read())
+    assert exc.value.status_code == 413

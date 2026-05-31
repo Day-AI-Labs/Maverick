@@ -185,6 +185,37 @@ _AUTH_EXEMPT = {
     "/webhook/jira",
 }
 
+
+# Inbound webhook bodies are intentionally small JSON payloads.  Enforce
+# this before HMAC verification so unauthenticated callers cannot force the
+# dashboard to buffer or hash arbitrarily large request bodies.
+_MAX_WEBHOOK_BODY_BYTES = 256 * 1024
+
+
+async def _read_limited_webhook_body(request: Request) -> bytes:
+    """Read a webhook request body with a hard size cap.
+
+    ``Content-Length`` lets us reject obviously oversized requests before
+    reading any body bytes.  For chunked or otherwise lengthless requests,
+    stream incrementally and abort as soon as the cap is exceeded instead of
+    using ``request.body()``, which buffers the entire body before returning.
+    """
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            declared = int(content_length)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="invalid Content-Length")
+        if declared > _MAX_WEBHOOK_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="webhook body too large")
+
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > _MAX_WEBHOOK_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="webhook body too large")
+    return bytes(body)
+
 # Safe methods skip the CSRF check (browsers send Origin/Referer
 # inconsistently on GETs from address bars and bookmarks).
 _CSRF_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -825,8 +856,10 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
                 "secret in ~/.maverick/config.toml or MAVERICK_WEBHOOK_SECRET."
             ),
         )
-    body = await request.body()
     signature = request.headers.get("X-Maverick-Signature") or ""
+    if not signature:
+        raise HTTPException(status_code=403, detail="bad webhook signature")
+    body = await _read_limited_webhook_body(request)
     if not verify_signature(body, signature, secret):
         raise HTTPException(status_code=403, detail="bad webhook signature")
 
@@ -906,8 +939,10 @@ async def _handle_issue_webhook(
                 "secret in ~/.maverick/config.toml or MAVERICK_WEBHOOK_SECRET."
             ),
         )
-    body = await request.body()
     signature = request.headers.get(sig_header) or ""
+    if not signature:
+        raise HTTPException(status_code=403, detail="bad webhook signature")
+    body = await _read_limited_webhook_body(request)
     if not verify_signature(body, signature, secret):
         raise HTTPException(status_code=403, detail="bad webhook signature")
 
