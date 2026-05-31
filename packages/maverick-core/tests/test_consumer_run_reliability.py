@@ -104,3 +104,41 @@ def test_shield_sdk_missing_warns_once(caplog):
         guard.Shield(warn_if_missing=True)
     hits = [r for r in caplog.records if "agent-shield SDK not installed" in r.getMessage()]
     assert len(hits) == 1
+
+
+# ---------- chat threads conversation memory across turns ----------
+
+def test_chat_threads_conversation_across_turns(tmp_path: Path, monkeypatch):
+    import maverick.cli as cli
+    import maverick.orchestrator as orch
+    from click.testing import CliRunner
+    from maverick.world_model import open_world
+
+    monkeypatch.setattr(cli, "_require_llm_key", lambda: "test")
+
+    seen: list = []
+
+    def fake_run_goal_sync(llm, world, bud, goal_id, **kwargs):
+        seen.append((goal_id, kwargs.get("conversation_id")))
+        return "DONE."
+
+    monkeypatch.setattr(orch, "run_goal_sync", fake_run_goal_sync)
+
+    db = tmp_path / "world.db"
+    result = CliRunner().invoke(
+        cli.main, ["--db", str(db), "chat"],
+        input="the code is BANANA42\nwhat is the code\nexit\n",
+    )
+    assert result.exit_code == 0, result.output
+
+    # Both turns ran under the SAME, non-None conversation id.
+    assert len(seen) == 2
+    conv_ids = {c for _, c in seen}
+    assert None not in conv_ids and len(conv_ids) == 1
+
+    # Both user turns were recorded, so run_goal can thread them as history.
+    conv_id = seen[0][1]
+    turns = open_world(db).recent_turns(conv_id, limit=10)
+    user_msgs = [t.content for t in turns if t.role == "user"]
+    assert "the code is BANANA42" in user_msgs
+    assert "what is the code" in user_msgs
