@@ -108,6 +108,11 @@ class OpenAIClient:
             kw["timeout"] = timeout
         self._sync = OpenAI(**kw)
         self._async = AsyncOpenAI(**kw)
+        # Expose the resolved endpoint for introspection (doctor / logs) and so
+        # the OpenAI-compatible subclasses (vllm / tgi / bedrock /
+        # openai_compatible) and their tests can read where they're actually
+        # pointed. ``None`` means the OpenAI SDK's own default base_url.
+        self.base_url = base_url
 
     @staticmethod
     def _wants_max_completion(model: str) -> bool:
