@@ -22,7 +22,6 @@ import click
 # constant is used in the click option default below.
 from .world_model import DEFAULT_DB, open_world  # noqa: E402  -- cheap stdlib chain
 
-
 _TERMINAL_CONTROL_RE = re.compile(
     r"(?:\x1b\][^\x07\x1b]*(?:\x07|\x1b\\|$))"
     r"|(?:\x1b\[[0-?]*[ -/]*[@-~])"
