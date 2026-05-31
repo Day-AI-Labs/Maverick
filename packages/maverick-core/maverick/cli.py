@@ -1055,7 +1055,11 @@ def fact(ctx, key: str, value: tuple[str, ...]) -> None:
 def facts(ctx) -> None:
     """List known facts."""
     world = open_world(ctx.obj["db"])
-    for k, v in world.get_facts().items():
+    items = world.get_facts()
+    if not items:
+        click.echo('no facts yet. set one with `maverick fact <key> "<value>"`')
+        return
+    for k, v in items.items():
         click.echo(f"  {k}: {v}")
 
 
@@ -1076,6 +1080,34 @@ def skills() -> None:
 @main.group()
 def plugin() -> None:
     """Scaffold + manage Maverick plugins."""
+
+
+@plugin.command("list")
+def plugin_list() -> None:
+    """List active plugins (tools, channels, skills, personas) + the allowlist."""
+    from .plugins import _allowed_plugin_names, installed_plugins
+    try:
+        slots = installed_plugins()
+    except Exception as e:  # pragma: no cover -- discovery must never crash the CLI
+        click.echo(f"plugin discovery failed: {e}", err=True)
+        sys.exit(1)
+    if not any(slots.values()):
+        click.echo("no active plugins. scaffold one with `maverick plugin new <name>`.")
+    else:
+        for slot, names in slots.items():
+            if names:
+                click.echo(f"  {slot}: {', '.join(names)}")
+    # Plugins load only when allowlisted (a security default); show it so a
+    # user whose installed plugin isn't appearing knows why.
+    allow = _allowed_plugin_names()
+    if allow is None:
+        click.echo('\nallowlist: ALL enabled ([plugins] enabled = ["*"])')
+    else:
+        listed = ", ".join(sorted(allow)) if allow else "(none)"
+        click.echo(
+            f"\nallowlist: {listed} "
+            "-- enable more via [plugins] enabled in ~/.maverick/config.toml"
+        )
 
 
 @plugin.command("new")
