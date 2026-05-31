@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import os
 import re
@@ -57,6 +58,73 @@ def _require_llm_key() -> str:
     sys.exit(2)
 
 
+def _humanize_run_error(e: Exception) -> str:
+    """Map an operational run failure to a one-line, actionable message.
+
+    Sandbox/provider errors used to reach the user as a raw traceback. The
+    failures a consumer actually hits -- no Docker daemon, a rejected or
+    typo'd key, a dropped connection, exhausted credits -- each get a plain
+    sentence and a next step instead.
+    """
+    name = type(e).__name__.lower()
+    msg = str(e).strip()
+    low = msg.lower()
+    # Sandbox backends already raise an actionable RuntimeError, e.g.
+    # "Docker not available. ... change [sandbox] backend to 'local'".
+    if isinstance(e, RuntimeError) and (
+        "not available" in low or "docker" in low or "podman" in low
+        or "sandbox" in low
+    ):
+        return f"Couldn't start the sandbox.\n  {msg}"
+    if "authentication" in name or "invalid x-api-key" in low or "401" in msg:
+        return (
+            "Your LLM API key was rejected (401).\n"
+            "  Check the key in ~/.maverick/.env or your shell, then retry.\n"
+            "  Diagnose with:  maverick doctor"
+        )
+    if "ratelimit" in name or "429" in msg:
+        return ("The LLM provider rate-limited this run (429). "
+                "Wait a moment and retry.")
+    if ("connection" in name or "timeout" in name
+            or "connect" in low or "network" in low):
+        return ("Couldn't reach the LLM provider. Check your network "
+                "connection, then retry.")
+    if "quota" in low or "credit" in low or "insufficient" in low or "billing" in low:
+        return (f"The LLM provider refused the request: {msg}\n"
+                "  Check your plan / billing, then retry.")
+    # Anything unanticipated: a short line, not a 20-frame stack trace.
+    return (
+        "The run stopped on an unexpected error.\n"
+        f"  {type(e).__name__}: {msg}\n"
+        "  Re-run with MAVERICK_DEBUG=1 for the full traceback, "
+        "or check `maverick doctor`."
+    )
+
+
+def _humane_errors(fn):
+    """Wrap a run-driving command so operational failures print a friendly
+    message and exit non-zero instead of dumping a traceback (and exiting 0).
+
+    Set ``MAVERICK_DEBUG=1`` to bypass and re-raise the original exception.
+    Use as the innermost decorator (closest to ``def``).
+    """
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except (SystemExit, click.ClickException, click.Abort):
+            raise
+        except KeyboardInterrupt:
+            click.echo("\nInterrupted.", err=True)
+            sys.exit(130)
+        except Exception as e:  # noqa: BLE001 -- top-level humane boundary
+            if os.environ.get("MAVERICK_DEBUG"):
+                raise
+            click.echo(_humanize_run_error(e), err=True)
+            sys.exit(1)
+    return wrapper
+
+
 def _kernel():
     """Lazy-import the agent-runtime modules into a single namespace.
 
@@ -79,7 +147,17 @@ def _kernel():
     )
 
 
-@click.group()
+@click.group(epilog=(
+    "New here? Start with these four:\n"
+    "\n"
+    "\b\n"
+    "  maverick init            set up (API key, sandbox, budget)\n"
+    "  maverick start \"...\"      run a task\n"
+    "  maverick chat            talk to it interactively\n"
+    "  maverick doctor          check your setup\n"
+    "\n"
+    "The other commands are for power users; most people never need them."
+))
 @click.option("--db", default=str(DEFAULT_DB), help="World model database path.")
 @click.option("--model", default=None, help="LLM model id (default: from config).")
 @click.pass_context
@@ -369,7 +447,8 @@ def mcp(use_http: bool, host: str, port: int) -> None:
 @click.option("--max-depth", default=3, type=int)
 @click.option("--workdir", default=None)
 @click.option("--sandbox", "sandbox_backend", default=None,
-              type=click.Choice(["local", "docker", "ssh", "firecracker"]))
+              type=click.Choice(["local", "docker", "podman", "devcontainer",
+                                 "kubernetes", "ssh", "firecracker"]))
 @click.option("--coding-mode", is_flag=True,
               help="Strict diff-only worker prompts + git apply --check "
                    "self-validation. Use for SWE-bench-style runs.")
@@ -382,6 +461,7 @@ def mcp(use_http: bool, host: str, port: int) -> None:
 @click.option("--pass-to-pass", default=None,
               help="||-separated pytest node IDs that must KEEP passing.")
 @click.pass_context
+@_humane_errors
 def start(
     ctx, title, description, template_name, params,
     max_dollars, max_wall_seconds, max_depth, workdir, sandbox_backend,
@@ -543,6 +623,7 @@ def _stream_progress(db_path, goal_id: int, stop) -> None:
 @click.option("--max-dollars", default=2.0, type=float)
 @click.option("--workdir", default=None)
 @click.pass_context
+@_humane_errors
 def chat(ctx, max_depth: int, max_dollars: float, workdir) -> None:
     """Interactive chat REPL. Each turn becomes a goal.
 
@@ -829,6 +910,7 @@ def answer(ctx, question_id: int, answer: tuple[str, ...]) -> None:
 @click.option("--max-wall-seconds", type=float, default=None,
               help="Raise the wall-clock cap for this resume.")
 @click.pass_context
+@_humane_errors
 def resume(ctx, goal_id, max_depth: int, max_dollars, max_wall_seconds) -> None:
     """Resume a blocked goal."""
     _require_llm_key()
@@ -1229,6 +1311,16 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
             world.conn.execute(f"DELETE FROM messages    WHERE goal_id IN ({gph})", gids)
             world.conn.execute(f"DELETE FROM questions   WHERE goal_id IN ({gph})", gids)
             world.conn.execute(f"DELETE FROM attachments WHERE goal_id IN ({gph})", gids)
+            # facts.source_episode_id REFERENCES episodes(id): a fact the agent
+            # distilled from this user's run carries their PII in `value` AND
+            # holds an FK to the episode we're about to delete. Leaving it both
+            # (a) violated Art.17 (PII survived erasure) and (b) tripped the
+            # deferred-FK check at COMMIT once the user had any fact, aborting
+            # the whole erase. Delete those facts before the episodes.
+            world.conn.execute(
+                f"DELETE FROM facts WHERE source_episode_id IN "
+                f"(SELECT id FROM episodes WHERE goal_id IN ({gph}))", gids,
+            )
             world.conn.execute(f"DELETE FROM episodes    WHERE goal_id IN ({gph})", gids)
             world.conn.execute(
                 f"DELETE FROM processed_messages WHERE goal_id IN ({gph})", gids,
@@ -1253,6 +1345,25 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
             removed_attachments += 1
         except OSError:
             pass
+
+    # Step 4b: the optional LLM cache (MAVERICK_LLM_CACHE=1) is content-
+    # addressed on the full prompt -- system + messages include the user's
+    # goal text and the model's replies, so the cache retains exactly the
+    # PII we just erased. It can't be purged by subject (the key is a hash of
+    # content, not tied to a user), so clear it wholesale; it's a perf cache,
+    # safe to drop. Only when the DB already exists, so a single erase on a
+    # cache-disabled install doesn't create an empty cache file. Best-effort.
+    try:
+        from .llm_cache import DEFAULT_DB as _llm_cache_db
+        if _llm_cache_db.exists():
+            from .llm_cache import LLMCache
+            LLMCache().clear()
+    except Exception as exc:  # pragma: no cover - defensive
+        click.echo(
+            f"warning: erased the database but could not clear the LLM cache "
+            f"({type(exc).__name__}: {exc}); it may retain prior prompts.",
+            err=True,
+        )
 
     # Step 5: scrub the subject from PRIOR audit-log lines. Audit payloads
     # (goal_start / tool_call / channel events) carry channel:user_id, so
@@ -1468,6 +1579,7 @@ def _watch_goal_allowed(goal_text: str) -> tuple[bool, str | None]:
 @click.option("--run", is_flag=True, help="Spawn a goal per match (default: print only).")
 @click.option("--max-dollars", default=2.0, type=float)
 @click.pass_context
+@_humane_errors
 def watch(ctx, path: str, run: bool, max_dollars: float) -> None:
     """Scan a file or directory for `# AI: <task>` markers and (optionally)
     run each as a goal. One-shot scan; for a long-running watcher use

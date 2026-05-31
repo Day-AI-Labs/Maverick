@@ -99,4 +99,5 @@ drifts across releases, the wire protocol it speaks does not.
   version of this quickstart, run in CI against a live `maverick mcp`.
 - [TypeScript client quickstart](./typescript-quickstart.md)
 - [Go client quickstart](./go-quickstart.md)
+- [C# / .NET client quickstart](./csharp-quickstart.md)
 - [docs/ROADMAP.md → Language Bindings — Council Decision](../ROADMAP.md)

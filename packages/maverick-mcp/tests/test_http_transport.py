@@ -162,6 +162,30 @@ class TestHTTPTransport:
         assert resp.status_code == 200
         assert resp.json()["transport"] == "http"
 
+    def test_oversized_body_rejected(self, monkeypatch):
+        """A body over the cap is rejected (413) before dispatch -- post-auth
+        memory-DoS guard."""
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        monkeypatch.setenv("MAVERICK_MCP_MAX_BODY", "2048")
+        client = self._client()
+        huge = "x" * 5000
+        resp = client.post(
+            "/mcp",
+            content=b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"pad":"'
+            + huge.encode() + b'"}}',
+            headers={"Authorization": "Bearer s3cr3t", "Content-Type": "application/json"},
+        )
+        assert resp.status_code == 413
+
+    def test_body_cap_does_not_block_normal_requests(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        monkeypatch.setenv("MAVERICK_MCP_MAX_BODY", "2048")
+        client = self._client()
+        resp = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {},
+        }, headers={"Authorization": "Bearer s3cr3t"})
+        assert resp.status_code == 200
+
     def test_notification_returns_204(self, monkeypatch):
         monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
         client = self._client()

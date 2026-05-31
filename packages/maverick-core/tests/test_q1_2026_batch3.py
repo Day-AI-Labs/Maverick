@@ -173,6 +173,9 @@ def test_wizard_run_accepts_fast_flag(tmp_path, monkeypatch):
     wizard.CONFIG_DIR = tmp_path / ".maverick"
     wizard.CONFIG_FILE = wizard.CONFIG_DIR / "config.toml"
     wizard.ENV_FILE = wizard.CONFIG_DIR / ".env"
+    # Fast setup now picks the sandbox by Docker availability; pin it up so
+    # this test deterministically exercises the full docker-config path.
+    monkeypatch.setattr(wizard, "_docker_available", lambda: True)
 
     rc = wizard.run(fast=True)
     assert rc == 0

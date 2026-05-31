@@ -32,7 +32,7 @@ packages/
   maverick-core/       Python agent kernel (recursive swarm, world model,
                        multi-provider LLM dispatch, skills, sandboxes)
   maverick-shield/     Agent Shield integration with builtin fallback rules
-  maverick-channels/   9 channel adapters (Telegram, Discord, Slack, ...)
+  maverick-channels/   12 channel adapters (Telegram, Discord, Slack, ...)
   maverick-dashboard/  FastAPI local web UI (goals/skills/facts/spend)
   maverick-mcp/        Model Context Protocol server (stdio JSON-RPC)
 apps/

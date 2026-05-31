@@ -49,6 +49,7 @@ class SMSChannel(Channel):
         from_number: str | None = None,
         port: int = 8766,
         allowed_user_ids=None,
+        bind_host: str | None = None,
     ):
         super().__init__(handler)
         if not _HAVE_DEPS:
@@ -73,6 +74,13 @@ class SMSChannel(Channel):
                 "Set SMS_ALLOWED_USER_IDS to restrict who can drive the agent"
             )
         self.port = port
+        # Bind loopback by default: Twilio reaches this through a reverse
+        # proxy (see deploy/vps/Caddyfile), so the listener itself needn't be
+        # exposed to the LAN/internet. Binding 0.0.0.0 widened the attack
+        # surface (signature-validation bugs, unauthenticated request floods)
+        # for no benefit. Override with SMS_BIND_HOST=0.0.0.0 if a deploy
+        # genuinely needs Twilio to hit the port directly.
+        self.bind_host = bind_host or os.environ.get("SMS_BIND_HOST", "127.0.0.1")
         self._twilio = TwilioClient(self.account_sid, self.auth_token)
         self._validator = RequestValidator(self.auth_token)
         self._app = FastAPI()
@@ -139,9 +147,9 @@ class SMSChannel(Channel):
 
     async def start(self) -> None:
         import uvicorn
-        log.info("SMS channel listening on :%d", self.port)
+        log.info("SMS channel listening on %s:%d", self.bind_host, self.port)
         config = uvicorn.Config(
-            self._app, host="0.0.0.0", port=self.port, log_level="info"  # noqa: S104
+            self._app, host=self.bind_host, port=self.port, log_level="info",
         )
         self._uvicorn_server = uvicorn.Server(config)
         await self._uvicorn_server.serve()

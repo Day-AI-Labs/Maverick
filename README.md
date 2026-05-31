@@ -11,7 +11,7 @@ Hand Maverick a goal. Its orchestrator decomposes it, spawns specialist sub-agen
 - 🧠 **Long-horizon swarm.** Recursive multi-agent coordination built for hours-long tasks, not one-shot replies.
 - 🛡️ **Safe by default.** Agent Shield screens every prompt, tool call, and output — the full SDK scores F1 0.988 on prompt-injection, and a built-in rule set ships out of the box (fail-open, never a hard dependency).
 - 🎛️ **Your models, your budget.** 12 providers, routable per role (plan on Opus, summarise on Haiku). Set a dollar + wall-clock + tool-call cap the kernel refuses to exceed — no surprise bills.
-- 💻 **Runs anywhere.** Desktop app, one-line script, Docker, VPS, or a phone companion across 11 channels. MIT-licensed, no telemetry, no paid tier.
+- 💻 **Runs anywhere.** Desktop app, one-line script, Docker, VPS, or a phone companion across 12 channels. MIT-licensed, no telemetry, no paid tier.
 
 ```bash
 pipx install 'maverick-agent[installer]'
@@ -123,8 +123,8 @@ packages/
                        sandboxes, MCP client, skills, templates, persona,
                        background runner, budget tracking
   maverick-shield/     Agent Shield integration + built-in fallback rule set
-  maverick-channels/   11 channel adapters: Telegram, Discord, Slack, Signal,
-                       Email, Matrix, Bluesky, Mastodon (ready) + WhatsApp,
+  maverick-channels/   12 channel adapters: Telegram, Discord, Slack, Signal,
+                       Email, Matrix, Bluesky, Mastodon, Voice (ready) + WhatsApp,
                        SMS, iMessage (scaffold)
   maverick-dashboard/  Local FastAPI web UI + REST API at /api/v1 + OpenAPI
                        docs at /docs. Live progress streaming via short-poll.
@@ -170,7 +170,7 @@ Why this and not a separate `@maverick/core` port?
 | **Wedge** | Long-horizon depth + true multi-agent coordination |
 | **Safety** | First-class. Every input, tool call, and output passes through Agent Shield. |
 | **Control** | You pick the models. Per-role. Multi-provider. |
-| **Deploy** | Desktop / Docker / VPS / Phone (11 channels) |
+| **Deploy** | Desktop / Docker / VPS / Phone (12 channels) |
 | **Privacy** | All detection runs locally. Your data never leaves your machine unless you choose a cloud LLM. |
 
 ## License

@@ -1668,8 +1668,9 @@ def run_fast() -> int:
     """``maverick init --fast``: zero-question setup with sensible defaults.
 
     Skips every prompt. Writes a minimal config that runs on Anthropic
-    Claude (BYOK via ANTHROPIC_API_KEY env), Docker sandbox, balanced
-    safety, $5/run cap. Users can `maverick init` later to customize.
+    Claude (BYOK via ANTHROPIC_API_KEY env), the Docker sandbox when its
+    daemon is up (else local), balanced safety, $5/run cap. Users can
+    `maverick init` later to customize.
     """
     welcome()
     if not preflight():
@@ -1697,11 +1698,22 @@ def run_fast() -> int:
         "max_wall_seconds": 3600.0,
         "max_tool_calls": 500,
     }
+    # Prefer the isolated Docker sandbox, but fall back to local when the
+    # daemon isn't up -- otherwise fast-setup writes a docker config that the
+    # very next `maverick start` can't run (the user never chose docker, yet
+    # hits "Docker not available"). Mirrors write_consumer_config.
+    backend = "docker" if _docker_available() else "local"
     sandbox = {
-        "backend": "docker",
+        "backend": backend,
         "workdir": str(Path.home() / "maverick-workspace"),
         "timeout": 60,
     }
+    if backend == "local":
+        console.print(
+            "[yellow]![/yellow] Docker daemon not detected — using the "
+            "[bold]local[/bold] sandbox (runs shell on this machine). "
+            "Run [bold]maverick init[/bold] to switch to docker once it's up."
+        )
     capabilities = {"computer_use": False, "browser": False}
     # Pick up the API key from the env if it's already there;
     # otherwise the wizard's later run can populate ~/.maverick/.env.

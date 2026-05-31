@@ -215,9 +215,9 @@ def apply_to_registry(
         from .tool_risk import tools_exceeding
         denied = denied | tools_exceeding(current, max_risk)
 
-    if not allowed and not denied:
+    if not allowed and not denied and not max_risk:
         return
-    reg.set_acl(allowed=allowed, denied=denied)
+    reg.set_acl(allowed=allowed, denied=denied, max_risk=max_risk)
     keep = filter_tools(current, allowed=allowed, denied=denied)
     drop = current - keep
     for name in drop:

@@ -18,6 +18,19 @@ import re
 # Each entry: (kind, regex). Order matters -- longer / more specific
 # patterns run first so they don't get partially matched by generic ones.
 _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    # PEM private-key block (RSA / EC / OPENSSH / generic). Redact the whole
+    # block -- runs first so its base64 body isn't partially matched by the
+    # key/jwt patterns below.
+    ("private_key", re.compile(
+        r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----.*?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----",
+        re.DOTALL,
+    )),
+    # Credentials embedded in a URL / connection string
+    # (scheme://user:password@host -- postgres://, redis://, mongodb://, ...).
+    # Redacts only the password segment, keeping the rest readable.
+    ("url_credentials", re.compile(
+        r"([a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]+:)([^\s/@]+)(@)",
+    )),
     # Anthropic API key (sk-ant-...)
     ("anthropic_key", re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}\b")),
     # Stripe secret/restricted key (sk_live_, sk_test_, rk_live_, rk_test_).
@@ -58,10 +71,12 @@ def scrub(text: str) -> str:
         return text
     out = text
     for kind, pat in _PATTERNS:
-        if kind == "bearer":
-            out = pat.sub(lambda m: m.group(1) + f"[REDACTED:{kind}]", out)
-        elif kind == "env_secret":
-            out = pat.sub(lambda m: m.group(1) + f"[REDACTED:{kind}]", out)
+        if kind in ("bearer", "env_secret"):
+            # Keep the prefix (header name / KEY=), redact the value.
+            out = pat.sub(lambda m, k=kind: m.group(1) + f"[REDACTED:{k}]", out)
+        elif kind == "url_credentials":
+            # Keep scheme://user: and the trailing @, redact the password.
+            out = pat.sub(lambda m: m.group(1) + "[REDACTED:url_credentials]" + m.group(3), out)
         else:
             out = pat.sub(f"[REDACTED:{kind}]", out)
     return out

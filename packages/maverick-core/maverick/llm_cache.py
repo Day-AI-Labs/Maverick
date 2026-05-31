@@ -133,6 +133,14 @@ class LLMCache:
     def _ensure_schema(self) -> None:
         with self._conn() as c:
             c.executescript(_SCHEMA)
+        # The cache stores full prompts (system + messages) and completions --
+        # private content. Keep the DB owner-only; the default umask often
+        # leaves it world-readable on a shared host.
+        try:
+            import os
+            os.chmod(self.db_path, 0o600)
+        except OSError:
+            pass
 
     def lookup(self, key: str, *, now: float | None = None) -> CachedResponse | None:
         n = now if now is not None else time.time()

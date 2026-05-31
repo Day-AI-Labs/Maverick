@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any
 
 from . import Tool
-from .http_fetch import is_blocked_host
 
 log = logging.getLogger(__name__)
 
@@ -71,19 +70,19 @@ def _parse_pages(spec: str, total: int) -> list[int]:
 def _load_bytes(source: str) -> bytes | None:
     """Get PDF bytes from a workspace-local path or safe URL."""
     if source.startswith(("http://", "https://")):
-        from urllib.parse import urlparse
-
-        parsed = urlparse(source)
-        if parsed.hostname and is_blocked_host(parsed.hostname):
-            return None
         try:
-            import httpx
+            import httpx  # noqa: F401  (presence check; safe_get imports it)
         except ImportError:
             return None
+        from ._ssrf import BlockedHost, safe_get
         try:
-            resp = httpx.get(source, timeout=30.0, follow_redirects=False)
+            # Pins the connection to the validated public IP (no rebinding).
+            resp = safe_get(source, timeout=30.0)
             resp.raise_for_status()
             return resp.content
+        except BlockedHost as e:
+            log.warning("pdf fetch refused: %s", e)
+            return None
         except Exception as e:
             log.warning("pdf fetch failed: %s", e)
             return None

@@ -80,6 +80,20 @@ def test_timeout_still_wins_for_any_language():
     assert name == "Timeout"
 
 
+def test_timeout_wins_over_polyglot_diagnostics():
+    mixed_outputs = [
+        "error[E0308]: mismatched types\nTIMEOUT after 600s\nexit 124",
+        "thread 'tests::it_adds' panicked at src/lib.rs:10:5:\nTIMEOUT after 600s",
+        "./calc.go:12:6: undefined: Helper\nTIMEOUT after 600s",
+        "panic: runtime error: index out of range\nexit 124",
+        "src/index.ts(5,7): error TS2304: Cannot find name 'foo'.\nTIMEOUT after 600s",
+    ]
+    for out in mixed_outputs:
+        name, hint = classify_failure(out)
+        assert name == "Timeout"
+        assert "longer than the budget" in hint
+
+
 def test_clean_output_is_other():
     assert classify_failure("ok. 5 passed") == ("other", "")
     assert classify_failure("") == ("other", "")

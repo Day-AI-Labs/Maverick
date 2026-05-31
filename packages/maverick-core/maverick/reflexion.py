@@ -32,6 +32,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -50,6 +51,8 @@ class Reflexion:
     failure_msg: str
     reflection: str
     tools_used: list[str] = field(default_factory=list)
+    channel: str | None = None
+    user_id: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -72,6 +75,8 @@ def record(
     reflection: str,
     *,
     tools_used: list[str] | None = None,
+    channel: str | None = None,
+    user_id: str | None = None,
     path: Path = DEFAULT_PATH,
 ) -> bool:
     """Append a Reflexion. Returns True on success.
@@ -86,6 +91,8 @@ def record(
         failure_msg=failure_msg or "",
         reflection=reflection or "",
         tools_used=list(tools_used or []),
+        channel=channel,
+        user_id=user_id,
     )
     with _lock:
         try:
@@ -108,12 +115,44 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b)
 
 
+def _scope_matches(
+    entry: Reflexion, *, channel: str | None, user_id: str | None
+) -> bool:
+    """Return whether a persisted entry belongs to the requested scope.
+
+    Reflexions can contain user-originated goal text. Keep scoped memories
+    from crossing channel/user boundaries; unscoped CLI runs continue to share
+    only with other unscoped runs.
+    """
+    return entry.channel == channel and entry.user_id == user_id
+
+
+def _sanitize_text(text: str, *, shield: Any | None = None) -> str:
+    """Redact secrets and drop Shield-blocked persisted prompt snippets."""
+    safe = str(text or "")
+    try:
+        from .safety.secret_detector import redact as _redact
+        safe, _ = _redact(safe)
+    except Exception:  # pragma: no cover
+        pass
+    if shield is not None:
+        try:
+            verdict = shield.scan_input(safe)
+            if not getattr(verdict, "allowed", True):
+                return "[redacted by Shield]"
+        except Exception:  # pragma: no cover
+            pass
+    return safe
+
+
 def recall(
     goal_text: str,
     *,
     k: int = 3,
     path: Path = DEFAULT_PATH,
     min_score: float = 0.05,
+    channel: str | None = None,
+    user_id: str | None = None,
 ) -> list[tuple[float, Reflexion]]:
     """Return the top-k most similar prior reflections.
 
@@ -136,9 +175,12 @@ def recall(
                         k: data.get(k) for k in (
                             "ts", "goal_text", "failure_class",
                             "failure_msg", "reflection", "tools_used",
+                            "channel", "user_id",
                         )
                     })
                 except TypeError:
+                    continue
+                if not _scope_matches(entry, channel=channel, user_id=user_id):
                     continue
                 score = _jaccard(qt, _tokens(entry.goal_text))
                 if score >= min_score:
@@ -170,6 +212,7 @@ def list_recent(
                         k: data.get(k) for k in (
                             "ts", "goal_text", "failure_class",
                             "failure_msg", "reflection", "tools_used",
+                            "channel", "user_id",
                         )
                     }))
                 except TypeError:
@@ -191,8 +234,10 @@ def clear(path: Path = DEFAULT_PATH) -> bool:
         return False
 
 
-def format_context(reflexions: list[tuple[float, Reflexion]]) -> str:
-    """Render reflexions as a system-prompt addendum for the orchestrator."""
+def format_context(
+    reflexions: list[tuple[float, Reflexion]], *, shield: Any | None = None
+) -> str:
+    """Render redacted reflexions as an orchestrator prompt addendum."""
     if not reflexions:
         return ""
     lines = [
@@ -204,11 +249,12 @@ def format_context(reflexions: list[tuple[float, Reflexion]]) -> str:
         "",
     ]
     for score, r in reflexions:
-        lines.append(
-            f"- ({r.failure_class}, score {score:.2f}) {r.goal_text[:120]}"
-        )
+        goal_text = _sanitize_text(r.goal_text, shield=shield)[:120]
+        failure_class = _sanitize_text(r.failure_class, shield=shield)[:80]
+        lines.append(f"- ({failure_class}, score {score:.2f}) {goal_text}")
         if r.reflection:
-            lines.append(f"  └─ lesson: {r.reflection[:300]}")
+            reflection = _sanitize_text(r.reflection, shield=shield)[:300]
+            lines.append(f"  └─ lesson: {reflection}")
     lines.append("")
     return "\n".join(lines)
 
