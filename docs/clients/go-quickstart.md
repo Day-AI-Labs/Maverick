@@ -83,4 +83,5 @@ does not — you can also implement the JSON-RPC handshake by hand in
   version of this quickstart, run in CI against a live `maverick mcp`.
 - [TypeScript client quickstart](./typescript-quickstart.md)
 - [Rust client quickstart](./rust-quickstart.md)
+- [Java / JVM client quickstart](./java-quickstart.md)
 - [docs/ROADMAP.md → Language Bindings — Council Decision](../ROADMAP.md)
