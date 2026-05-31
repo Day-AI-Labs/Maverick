@@ -27,11 +27,57 @@ extra is installed.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
+
+_TRUE = {"1", "true", "yes", "on"}
+
+
+def enabled() -> bool:
+    """Whether conversation-history compaction is active.
+
+    Off by default — the orchestrator includes the last 10 turns verbatim.
+    Turn it on with ``MAVERICK_COMPACT_HISTORY=1`` or ``[context] compact =
+    true`` to instead include a larger window compacted to a token budget,
+    keeping the most relevant older turns (better long-conversation recall).
+    """
+    if (os.environ.get("MAVERICK_COMPACT_HISTORY") or "").strip().lower() in _TRUE:
+        return True
+    try:
+        from .config import load_config
+        return bool(load_config().get("context", {}).get("compact", False))
+    except Exception:  # pragma: no cover -- config never blocks a run
+        return False
+
+
+def _positive_int_config(key: str, env: str, default: int) -> int:
+    raw: object = os.environ.get(env)
+    if raw is None:
+        try:
+            from .config import load_config
+            raw = load_config().get("context", {}).get(key, default)
+        except Exception:  # pragma: no cover
+            raw = default
+    try:
+        n = int(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return n if n >= 1 else default
+
+
+def target_tokens(default: int = 1500) -> int:
+    """Token budget to compact history toward (``[context] history_tokens``)."""
+    return _positive_int_config("history_tokens", "MAVERICK_HISTORY_TOKENS", default)
+
+
+def window(default: int = 50) -> int:
+    """How many recent turns to consider before compaction
+    (``[context] history_window``)."""
+    return _positive_int_config("history_window", "MAVERICK_HISTORY_WINDOW", default)
 
 
 _TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_]+")

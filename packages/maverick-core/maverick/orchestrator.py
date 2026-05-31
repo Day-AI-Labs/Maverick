@@ -236,19 +236,36 @@ async def run_goal(
         # each turn here and drop any that the shield now flags.
         history_block = ""
         if conversation_id is not None:
-            turns = world.recent_turns(conversation_id, limit=10)
+            # Compaction (opt-in via [context] compact / MAVERICK_COMPACT_HISTORY):
+            # pull a larger window and compact it to a token budget so a long
+            # conversation keeps the most relevant older turns, not just the
+            # last 10. Default: the last 10 turns, each truncated to 300 chars
+            # (unchanged behaviour).
+            from . import context_compactor as _cc
+            if _cc.enabled():
+                _turns = world.recent_turns(conversation_id, limit=_cc.window())
+                _msgs = [{"role": t.role, "content": t.content} for t in _turns]
+                _kept = _cc.compact(_msgs, target_tokens=_cc.target_tokens()).messages
+                pairs = [
+                    (str(m.get("role") or "user"), str(m.get("content") or ""))
+                    for m in _kept
+                ]
+            else:
+                pairs = [
+                    (t.role, t.content[:300])
+                    for t in world.recent_turns(conversation_id, limit=10)
+                ]
             history_lines: list[str] = []
-            for t in turns:
-                content = t.content[:300]
+            for role, content in pairs:
                 if shield is not None:
                     try:
-                        v = shield.scan_input(content) if t.role == "user" else shield.scan_output(content)
+                        v = shield.scan_input(content) if role == "user" else shield.scan_output(content)
                         if not v.allowed:
-                            history_lines.append(f"  {t.role}: [redacted by Shield]")
+                            history_lines.append(f"  {role}: [redacted by Shield]")
                             continue
                     except Exception:  # pragma: no cover
                         pass
-                history_lines.append(f"  {t.role}: {content}")
+                history_lines.append(f"  {role}: {content}")
             if history_lines:
                 history_block = (
                     "\nPrior conversation (most recent last):\n"
