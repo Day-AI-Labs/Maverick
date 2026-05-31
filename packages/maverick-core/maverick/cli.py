@@ -573,6 +573,90 @@ def template_show(name: str) -> None:
 
 
 @main.command()
+@click.option("--idle-sleep", default=2.0, show_default=True,
+              help="Seconds to wait when the queue is empty.")
+def worker(idle_sleep: float) -> None:
+    """Run the background job worker.
+
+    Drains the job queue (``~/.maverick/jobs.db``) and runs jobs armed with
+    ``maverick schedule add``. Runs until interrupted (Ctrl-C / SIGTERM).
+    """
+    from .worker import Worker
+    w = Worker(idle_sleep=idle_sleep)
+    click.echo(f"worker: draining {w.queue.db_path} (Ctrl-C to stop)")
+    w.run_forever()
+
+
+@main.group()
+def schedule() -> None:
+    """Schedule recurring jobs via cron (run them with `maverick worker`)."""
+
+
+@schedule.command("add")
+@click.argument("cron_expr")
+@click.argument("kind")
+@click.option("--payload", default=None,
+              help='JSON object for the job handler, e.g. \'{"goal_id": 5}\'.')
+def schedule_add(cron_expr: str, kind: str, payload: str | None) -> None:
+    """Arm a recurring job: 5-field CRON_EXPR firing job KIND.
+
+    Example: maverick schedule add "0 9 * * *" run_goal --payload '{"goal_id": 5}'
+    """
+    import json
+
+    from .job_queue import JobQueue
+    from .scheduler import CronError, next_run, schedule_cron
+    try:
+        next_run(cron_expr)  # validate up front
+    except CronError as e:
+        click.echo(f"ERROR: bad cron expression: {e}", err=True)
+        sys.exit(2)
+    data: dict = {}
+    if payload:
+        try:
+            data = json.loads(payload)
+        except ValueError as e:
+            click.echo(f"ERROR: --payload must be valid JSON: {e}", err=True)
+            sys.exit(2)
+        if not isinstance(data, dict):
+            click.echo("ERROR: --payload must be a JSON object.", err=True)
+            sys.exit(2)
+    data["__cron__"] = cron_expr
+    job_id, run_at = schedule_cron(JobQueue(), cron_expr, kind, data)
+    from datetime import datetime
+    when = datetime.fromtimestamp(run_at).strftime("%Y-%m-%d %H:%M:%S")
+    click.echo(f"scheduled job {job_id} (kind={kind}); next run {when}")
+
+
+@schedule.command("list")
+def schedule_list() -> None:
+    """List armed recurring schedules (pending cron jobs)."""
+    from datetime import datetime
+
+    from .job_queue import JobQueue
+    jobs = [j for j in JobQueue().list(status="pending") if j.payload.get("__cron__")]
+    if not jobs:
+        click.echo("no scheduled jobs.")
+        return
+    for j in jobs:
+        when = datetime.fromtimestamp(j.run_at).strftime("%Y-%m-%d %H:%M:%S")
+        click.echo(f"  [{j.id}] {j.payload['__cron__']!r} kind={j.kind} next={when}")
+
+
+@schedule.command("rm")
+@click.argument("job_id", type=int)
+def schedule_rm(job_id: int) -> None:
+    """Cancel a scheduled (pending) job by id."""
+    from .job_queue import JobQueue
+    if JobQueue().cancel(job_id):
+        click.echo(f"cancelled job {job_id}")
+    else:
+        click.echo(f"no pending job {job_id} (already running/done, or unknown).",
+                   err=True)
+        sys.exit(1)
+
+
+@main.command()
 @click.option("--max-depth", default=3, type=int)
 @click.option("--verbose", "-v", is_flag=True)
 def serve(max_depth: int, verbose: bool) -> None:

@@ -228,6 +228,19 @@ class JobQueue:
             ).rowcount
         return int(failed) + int(requeued)
 
+    def cancel(self, job_id: int) -> bool:
+        """Delete a *pending* job (e.g. an armed schedule).
+
+        Only 'pending' rows are removable -- a 'running' job is left for the
+        worker to finish, and 'done'/'failed' rows are history. Returns True
+        if a row was deleted.
+        """
+        with self._lock, self._conn() as c:
+            cur = c.execute(
+                "DELETE FROM jobs WHERE id=? AND status='pending'", (job_id,),
+            )
+            return cur.rowcount == 1
+
     def get(self, job_id: int) -> Optional[Job]:
         with self._conn() as c:
             row = c.execute(
