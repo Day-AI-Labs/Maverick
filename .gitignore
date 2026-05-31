@@ -76,6 +76,9 @@ Cargo.lock
 .DS_Store
 Thumbs.db
 
+# Claude Code agent worktrees (transient; created by background sub-agents)
+.claude/worktrees/
+
 # Secrets / local config
 .env
 .env.local

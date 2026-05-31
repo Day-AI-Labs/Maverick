@@ -22,6 +22,10 @@ from .world_model import WorldModel
 
 log = logging.getLogger(__name__)
 
+# The "skill distill disabled" opt-in hint is a standing setting, not a
+# per-goal event -- show it at most once per process (see run_goal).
+_WARNED_DISTILL_DISABLED = False
+
 
 def _build_shield() -> Any | None:
     try:
@@ -71,7 +75,9 @@ def _end_episode_with_spend(
 
 
 def _maybe_record_reflexion(
-    goal: Any, *, failure_class: str, failure_msg: str, blackboard
+    goal: Any, *, failure_class: str, failure_msg: str, blackboard,
+    shield: Any | None = None, channel: str | None = None,
+    user_id: str | None = None,
 ) -> None:
     """Persist a postmortem when a run fails, so the NEXT similar goal
     recalls the lesson. No-op unless reflexion is enabled. Never raises —
@@ -82,6 +88,7 @@ def _maybe_record_reflexion(
         if not reflexion.enabled():
             return
         goal_text = f"{getattr(goal, 'title', '')}\n{getattr(goal, 'description', '') or ''}"
+        goal_text = reflexion._sanitize_text(goal_text, shield=shield)
         tools_used = reflexion.tools_from_blackboard(blackboard)
         reflexion.record(
             goal_text=goal_text,
@@ -91,6 +98,8 @@ def _maybe_record_reflexion(
                 failure_class, failure_msg, tools_used,
             ),
             tools_used=tools_used,
+            channel=channel,
+            user_id=user_id,
         )
     except Exception as e:  # pragma: no cover -- reflexion never blocks a run
         log.debug("reflexion record skipped: %s", e)
@@ -265,9 +274,11 @@ async def run_goal(
             from . import reflexion
             if reflexion.enabled():
                 recalled = reflexion.recall(
-                    f"{goal.title}\n{goal.description or ''}"
+                    f"{goal.title}\n{goal.description or ''}",
+                    channel=channel,
+                    user_id=user_id,
                 )
-                ctx_block = reflexion.format_context(recalled)
+                ctx_block = reflexion.format_context(recalled, shield=shield)
                 if ctx_block:
                     brief = brief + "\n" + ctx_block
         except Exception as e:  # pragma: no cover -- recall never blocks a run
@@ -287,7 +298,8 @@ async def run_goal(
             _end_episode_with_spend(world, episode_id, f"budget: {e}", "failure", budget, goal_id)
             _maybe_record_reflexion(
                 goal, failure_class="budget", failure_msg=str(e),
-                blackboard=blackboard,
+                blackboard=blackboard, shield=shield, channel=channel,
+                user_id=user_id,
             )
             world.set_goal_status(goal_id, "blocked", result=f"budget exceeded: {e}")
             _fire_webhook("goal_finished", {
@@ -301,6 +313,23 @@ async def run_goal(
                 f"Resume with a higher cap: "
                 f"maverick resume #{goal_id} --max-dollars <higher>"
             )
+        except Exception as e:
+            # Anything else escaping the swarm (LLM auth/network errors, a
+            # sandbox exec failure) used to leave the goal row stuck 'active'
+            # forever -- a ghost in `status` and the dashboard. Mark it failed
+            # and close the episode, then re-raise so the caller can present
+            # the error (the CLI turns it into a one-line message).
+            try:
+                _end_episode_with_spend(
+                    world, episode_id, f"error: {e}", "failure", budget, goal_id,
+                )
+            except Exception:  # pragma: no cover
+                pass
+            try:
+                world.set_goal_status(goal_id, "blocked", result=f"internal error: {e}")
+            except Exception:  # pragma: no cover
+                pass
+            raise
 
         if result.blocked_on_user:
             _end_episode_with_spend(
@@ -357,7 +386,8 @@ async def run_goal(
                     else "agent_error"
                 ),
                 failure_msg=result.error or "",
-                blackboard=blackboard,
+                blackboard=blackboard, shield=shield, channel=channel,
+                user_id=user_id,
             )
             world.set_goal_status(goal_id, "blocked", result=result.error)
             _fire_webhook("goal_finished", {
@@ -460,7 +490,14 @@ async def run_goal(
             except Exception as e:
                 skill_note = f"\n\n[skill distill error: {e}]"
         else:
-            skill_note = "\n\n[skill distill disabled: set MAVERICK_AUTO_DISTILL=1 to enable]"
+            # Show the opt-in hint once per process, not on every run / chat
+            # turn (it's a standing setting, not a per-goal event).
+            global _WARNED_DISTILL_DISABLED
+            if _WARNED_DISTILL_DISABLED:
+                skill_note = ""
+            else:
+                _WARNED_DISTILL_DISABLED = True
+                skill_note = "\n\n[skill distill disabled: set MAVERICK_AUTO_DISTILL=1 to enable]"
 
         # Wave 12 hotfix: in coding mode the orchestrator's return value
         # IS the benchmark CSV's `predicted_patch` after extract_unified_diff.

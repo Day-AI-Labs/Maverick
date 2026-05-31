@@ -1,0 +1,45 @@
+name: MCP client (Rust)
+
+# Executes the runnable Rust MCP client example against a live `maverick mcp`
+# stdio server. Companion to mcp-clients.yml (TypeScript + Go): the Python
+# contract test (test_client_quickstart_contract.py) checks the documented tool
+# surface; this proves the Rust client actually connects and round-trips -- it's
+# what catches a broken `maverick mcp` entry point or an rmcp/protocol drift that
+# doc checks can't.
+#
+# Only the no-LLM flow runs (initialize -> tools/list -> maverick_facts_get);
+# maverick_start needs a provider key + budget and is out of scope for CI.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/maverick-core/**'
+      - 'packages/maverick-mcp/**'
+      - 'examples/clients/**'
+      - 'docs/clients/**'
+      - '.github/workflows/mcp-client-rust.yml'
+  pull_request:
+    paths:
+      - 'packages/maverick-core/**'
+      - 'packages/maverick-mcp/**'
+      - 'examples/clients/**'
+      - 'docs/clients/**'
+      - '.github/workflows/mcp-client-rust.yml'
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Maverick (kernel + MCP server)
+        run: |
+          pip install -e ./packages/maverick-core
+          pip install --no-deps -e ./packages/maverick-mcp
+      - name: Run the Rust MCP client end-to-end
+        working-directory: examples/clients/rust
+        run: cargo run --locked

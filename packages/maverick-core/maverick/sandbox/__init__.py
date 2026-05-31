@@ -78,9 +78,10 @@ def _resolve_image(full_cfg: dict) -> str:
     explicit = full_cfg.get("image")
     if explicit:
         return explicit
-    lang = (
-        full_cfg.get("language") or os.environ.get("MAVERICK_LANGUAGE", "")
-    ).strip().lower()
+    lang_value = full_cfg.get("language") or os.environ.get("MAVERICK_LANGUAGE", "")
+    if not isinstance(lang_value, str):
+        return _DEFAULT_IMAGE
+    lang = lang_value.strip().lower()
     return _IMAGE_BY_LANGUAGE.get(lang, _DEFAULT_IMAGE)
 
 

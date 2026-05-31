@@ -35,17 +35,46 @@ _PROVIDER_ENV_VARS = (
 )
 
 
+def _has_configured_provider() -> bool:
+    """True if config.toml configures a usable provider.
+
+    A consumer who set up a local / OpenAI-compatible model (LM Studio,
+    llama.cpp, Ollama, vLLM, a private proxy) keeps the key -- or no key at
+    all -- in ``[providers.<name>]`` rather than a well-known env var. Such a
+    provider is reachable when it has a non-empty ``api_key`` (config
+    interpolates ``${VAR}`` to "" when unset, so an empty one doesn't count)
+    or a ``base_url`` (self-hosted endpoints need no key).
+    """
+    try:
+        from .config import load_config
+        providers = (load_config() or {}).get("providers") or {}
+    except Exception:  # pragma: no cover -- never block on a config read
+        return False
+    for pcfg in providers.values():
+        if not isinstance(pcfg, dict):
+            continue
+        if str(pcfg.get("api_key", "")).strip():
+            return True
+        if str(pcfg.get("base_url", "")).strip():
+            return True
+    return False
+
+
 def _require_llm_key() -> str:
     """Council UX/capabilities fix: don't sys.exit(2) on missing ANTHROPIC_API_KEY.
 
     First, check every supported provider's env var; return the first
     one set (the LLM facade dispatches on model id, not env var, so any
-    valid provider config is fine). If none, print an actionable error
+    valid provider config is fine). Then accept a provider configured in
+    config.toml (local / OpenAI-compatible models keep credentials there,
+    not in a well-known env var). If neither, print an actionable error
     that points at ``maverick init`` and exit cleanly.
     """
     for var in _PROVIDER_ENV_VARS:
         if os.environ.get(var):
             return var
+    if _has_configured_provider():
+        return "config"
     click.echo(
         "Maverick can't reach an LLM. No provider key is set.\n"
         "\n"
@@ -877,6 +906,14 @@ def history(ctx, limit: int) -> None:
 def status(ctx) -> None:
     """Show recent goals and open questions."""
     world = open_world(ctx.obj["db"])
+    # Self-heal: a CLI run killed mid-flight (or pre-fix crash) leaves goals
+    # stranded in 'active'/'pending'. The dashboard reclaims these on startup,
+    # but a CLI-only user never triggers that -- so do it here, where the
+    # ghosts are seen. Only touches rows older than the reclaim age window.
+    try:
+        world.reclaim_orphan_goals()
+    except Exception:  # pragma: no cover -- never block `status` on cleanup
+        pass
     goals = world.list_goals()
     if not goals:
         click.echo("no goals yet. start one with `maverick start \"...\"`")
@@ -1346,7 +1383,14 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         except OSError:
             pass
 
-    # Step 4b: the optional LLM cache (MAVERICK_LLM_CACHE=1) is content-
+    # Step 4b: scrub global facts that embed the subject's identifier. Facts
+    # are global key/value pairs with no per-user attribution, so this is a
+    # best-effort substring match -- an operator may have stored the
+    # subject's data in a fact. The removed keys are reported below so a
+    # false positive on shared operator knowledge is visible, not silent.
+    scrubbed_fact_keys = world.delete_facts_matching(user)
+
+    # Step 4c: the optional LLM cache (MAVERICK_LLM_CACHE=1) is content-
     # addressed on the full prompt -- system + messages include the user's
     # goal text and the model's replies, so the cache retains exactly the
     # PII we just erased. It can't be purged by subject (the key is a hash of
@@ -1413,14 +1457,21 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         goals=len(goal_ids),
         attachments=removed_attachments,
         audit_lines_scrubbed=audit_scrubbed,
+        facts_scrubbed=len(scrubbed_fact_keys),
     )
 
     click.echo(
         f"erased {len(convs)} conversation(s), {removed_turns} turn(s), "
         f"{len(goal_ids)} goal(s) and all linked rows, "
         f"{removed_attachments} attachment file(s), "
-        f"{audit_scrubbed} audit event(s) scrubbed"
+        f"{audit_scrubbed} audit event(s) scrubbed, "
+        f"{len(scrubbed_fact_keys)} fact(s) scrubbed"
     )
+    if scrubbed_fact_keys:
+        click.echo(
+            "  facts removed (global key/value, matched on the user id -- "
+            f"review if unexpected): {', '.join(scrubbed_fact_keys)}"
+        )
 
 
 @main.command("export-user")
@@ -1446,6 +1497,9 @@ def export_user(ctx, channel: str, user: str, output) -> None:
         "channel": channel,
         "user_id": user,
         "conversations": [],
+        # Global facts that embed the subject id (best-effort substring match;
+        # facts have no per-user attribution). GDPR Art. 15 completeness.
+        "facts": world.facts_matching(user),
     }
     for c in convs:
         turns = world.recent_turns(c.id, limit=10_000)

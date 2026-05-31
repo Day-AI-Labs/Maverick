@@ -1,0 +1,106 @@
+"""Reliability fixes surfaced by dogfooding the consumer run path.
+
+- A config-only provider (local / OpenAI-compatible model, key in config not a
+  well-known env var) must not be wrongly blocked by the key gate.
+- A run that errors must mark its goal failed, not leave a ghost stuck
+  'active' forever.
+- The "shield SDK missing" and "skill distill disabled" advisories must not
+  spam every run / chat turn.
+"""
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+import pytest
+
+# ---------- A: provider key gate accepts config-configured providers ----------
+
+def test_has_configured_provider_detects_base_url(monkeypatch):
+    from maverick import cli
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda: {"providers": {"openai_compatible": {"base_url": "http://127.0.0.1:1234/v1"}}},
+    )
+    assert cli._has_configured_provider() is True
+
+
+def test_has_configured_provider_detects_api_key(monkeypatch):
+    from maverick import cli
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda: {"providers": {"anthropic": {"api_key": "sk-real"}}},
+    )
+    assert cli._has_configured_provider() is True
+
+
+def test_has_configured_provider_false_for_empty_interpolated_key(monkeypatch):
+    # config interpolates ${UNSET} to "" -- an empty key is NOT availability.
+    from maverick import cli
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda: {"providers": {"anthropic": {"api_key": ""}}},
+    )
+    assert cli._has_configured_provider() is False
+
+
+def test_require_llm_key_accepts_config_provider(monkeypatch):
+    from maverick import cli
+    for var in cli._PROVIDER_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(cli, "_has_configured_provider", lambda: True)
+    assert cli._require_llm_key() == "config"
+
+
+def test_require_llm_key_blocks_when_nothing_configured(monkeypatch):
+    from maverick import cli
+    for var in cli._PROVIDER_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(cli, "_has_configured_provider", lambda: False)
+    with pytest.raises(SystemExit):
+        cli._require_llm_key()
+
+
+# ---------- B: an erroring run marks its goal failed (no ghost) ----------
+
+@pytest.mark.asyncio
+async def test_run_goal_marks_goal_failed_on_unexpected_error(tmp_path: Path):
+    from maverick.budget import Budget
+    from maverick.orchestrator import run_goal
+    from maverick.sandbox import LocalBackend
+    from maverick.world_model import WorldModel
+
+    class BoomLLM:
+        model = "fake:boom"
+
+        async def complete_async(self, **kwargs):
+            raise RuntimeError("simulated provider failure")
+
+        def complete(self, **kwargs):
+            raise RuntimeError("simulated provider failure")
+
+    world = WorldModel(tmp_path / "world.db")
+    gid = world.create_goal("do a thing", "")
+    with pytest.raises(RuntimeError):
+        await run_goal(
+            BoomLLM(), world, Budget(max_dollars=1.0), gid,
+            sandbox=LocalBackend(workdir=tmp_path), max_depth=1,
+        )
+    # The goal must NOT be left 'active' -- it is marked terminal.
+    assert world.get_goal(gid).status == "blocked"
+
+
+# ---------- C: advisories warn at most once per process ----------
+
+def test_shield_sdk_missing_warns_once(caplog):
+    from maverick_shield import guard
+
+    if guard._HAVE_SDK:
+        pytest.skip("agent-shield SDK installed; advisory not emitted")
+    guard._WARNED_SDK_MISSING = False
+    with caplog.at_level(logging.WARNING, logger="maverick_shield.guard"):
+        guard.Shield(warn_if_missing=True)
+        guard.Shield(warn_if_missing=True)
+        guard.Shield(warn_if_missing=True)
+    hits = [r for r in caplog.records if "agent-shield SDK not installed" in r.getMessage()]
+    assert len(hits) == 1
