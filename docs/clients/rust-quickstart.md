@@ -100,4 +100,5 @@ drifts across releases, the wire protocol it speaks does not.
 - [TypeScript client quickstart](./typescript-quickstart.md)
 - [Go client quickstart](./go-quickstart.md)
 - [C# / .NET client quickstart](./csharp-quickstart.md)
+- [Java / JVM client quickstart](./java-quickstart.md)
 - [docs/ROADMAP.md → Language Bindings — Council Decision](../ROADMAP.md)
