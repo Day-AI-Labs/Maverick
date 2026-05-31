@@ -19,6 +19,21 @@ Each recipe is:
 | [Issue triage](./issue-triage.md)      | Inbox of GitHub issues you want to label and group |
 | [Research deep-dive](./research.md)    | Pick a paper / library / topic and produce a 1-page brief |
 
+## Quick hits (under 60 seconds)
+
+Single-shot recipes that finish in well under a minute, budget-capped
+below $1. Great for muscle-memory tasks you'd otherwise do by hand.
+
+| Recipe | When to use |
+|--------|-------------|
+| [Commit message](./commit-message.md)   | Write a Conventional-Commits message for the staged diff |
+| [Explain an error](./explain-error.md)  | Paste a stack trace; get the root cause + most likely fix |
+| [Regex builder](./regex-builder.md)     | Describe a pattern in English; get a tested regex back |
+| [Changelog entry](./changelog-entry.md) | Turn a commit range into one user-facing CHANGELOG line |
+| [Docstring pass](./docstring-pass.md)   | Add/fix docstrings on one file's public functions |
+| [Test naming](./test-naming.md)         | Rename vague tests to describe what they assert |
+| [Env-var audit](./env-audit.md)         | Diff env vars read by code against what's documented |
+
 ## Submitting your own
 
 PRs welcome. Criteria:

@@ -68,6 +68,7 @@ STEPS: list[tuple[str, str]] = [
     ("role_models", "Models"),
     ("channels", "Channels"),
     ("safety", "Safety"),
+    ("signed_skills", "Signed skills"),
     ("budget", "Budget"),
     ("sandbox", "Sandbox"),
     ("capabilities", "Capabilities"),
@@ -709,6 +710,26 @@ def pick_safety() -> dict[str, Any]:
         "scan_tool_calls": profile != "off",
         "scan_output": profile != "off",
     }
+
+
+def pick_signed_skills() -> dict[str, Any]:
+    """Optional Ed25519 signing policy for installed skills.
+
+    Returns a dict written under ``[skills]``. Defaults keep current
+    behavior (no trusted publishers, unsigned skills allowed)."""
+    console.print()
+    console.print(
+        "[dim]Signed skills: a publisher can sign a SKILL.md with an Ed25519 "
+        "key. Paste trusted publisher public keys (hex) to verify against; "
+        "leave blank to skip.[/dim]"
+    )
+    raw = _q_text("  Trusted skill publisher pubkeys (comma-separated hex)", default="")
+    trusted = [k.strip() for k in raw.split(",") if k.strip()]
+    require = _q_confirm(
+        "  Reject unsigned skills (only install signed + trusted ones)?",
+        default=False,
+    )
+    return {"trusted_pubkeys": trusted, "require_signed": require}
 
 
 def pick_budget() -> dict[str, float]:
@@ -1399,6 +1420,7 @@ def write_config(
     notifications: dict[str, Any] | None = None,
     webhooks: dict[str, Any] | None = None,
     web_search_enabled: bool = False,
+    skills: dict[str, Any] | None = None,
 ) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -1473,6 +1495,14 @@ def write_config(
     lines.append("[sandbox]")
     for k, v in sandbox.items():
         _emit_kv(lines, k, v)
+
+    if skills:
+        # Signed-skill policy. trusted_pubkeys = hex Ed25519 publisher keys
+        # a signed SKILL.md must match; require_signed rejects unsigned ones.
+        lines.append("")
+        lines.append("[skills]")
+        for k, v in skills.items():
+            _emit_kv(lines, k, v)
 
     if capabilities:
         lines.append("")
@@ -1976,6 +2006,11 @@ def run(fast: bool = False, resume: bool = False) -> int:
     _save_partial(state)
 
     _announce()
+    signed_skills = state.get("signed_skills") or pick_signed_skills()
+    state["signed_skills"] = signed_skills
+    _save_partial(state)
+
+    _announce()
     budget = state.get("budget") or pick_budget()
     state["budget"] = budget
     _save_partial(state)
@@ -2071,6 +2106,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
         notifications=notifications,
         webhooks=webhooks,
         web_search_enabled=web_search_enabled,
+        skills=signed_skills if (signed_skills.get("trusted_pubkeys") or signed_skills.get("require_signed")) else None,
     )
     _clear_partial()
     ok = smoke_test()

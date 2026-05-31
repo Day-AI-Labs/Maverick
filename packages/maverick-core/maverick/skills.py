@@ -69,6 +69,8 @@ class Skill:
     tools_needed: list[str]
     body: str
     path: Path
+    sig: Optional[str] = None
+    pubkey: Optional[str] = None
 
     @classmethod
     def parse(cls, text: str, path: Path) -> "Skill":
@@ -93,12 +95,16 @@ class Skill:
                     meta[k] = v
                 else:
                     meta[k] = []
+        sig = meta.get("sig")
+        pubkey = meta.get("pubkey")
         return cls(
             name=meta.get("name", path.stem),
             triggers=meta.get("triggers", []) if isinstance(meta.get("triggers"), list) else [],
             tools_needed=meta.get("tools_needed", []) if isinstance(meta.get("tools_needed"), list) else [],
             body=body.strip(),
             path=path,
+            sig=sig if isinstance(sig, str) else None,
+            pubkey=pubkey if isinstance(pubkey, str) else None,
         )
 
 
@@ -213,6 +219,63 @@ def install_skill(
     return _validate_and_write(content, skills_dir)
 
 
+def _canonical_signed_bytes(parsed: "Skill") -> bytes:
+    """Bytes an Ed25519 publisher signs over: ``name`` + canonical body.
+
+    Binding the name in too means a signature can't be lifted onto a
+    different-named skill. The body is the post-frontmatter markdown,
+    stripped (matching ``Skill.parse``)."""
+    return f"{parsed.name}\n{parsed.body}".encode("utf-8")
+
+
+def _verify_skill_signature(parsed: "Skill") -> None:
+    """Enforce the ``[skills]`` signing policy on a parsed skill.
+
+    - ``require_signed``: reject any skill without ``sig`` + ``pubkey``.
+    - signed skill: its ``pubkey`` must be a trusted publisher (when
+      ``trusted_pubkeys`` is non-empty) and the Ed25519 signature must
+      verify over the canonical bytes; otherwise reject.
+
+    Fail-open if ``cryptography`` is absent (CLAUDE.md rule 1): we can't
+    verify, so we warn and fall through to current behavior rather than
+    breaking the kernel.
+    """
+    from . import config as _config
+    from .audit import signing
+
+    cfg = _config.get_skills()
+    trusted = cfg["trusted_pubkeys"]
+    signed = bool(parsed.sig and parsed.pubkey)
+
+    if not signed:
+        if cfg["require_signed"]:
+            raise ValueError(
+                "skill rejected: require_signed is set but the SKILL.md has no "
+                "'sig'/'pubkey' frontmatter."
+            )
+        return
+
+    if not signing._have_crypto():
+        log.warning(
+            "cryptography not installed; cannot verify skill signature -- "
+            "failing open (install 'maverick-agent[audit-signing]' to enforce)."
+        )
+        return
+
+    if trusted and parsed.pubkey not in trusted:
+        raise ValueError(
+            "skill rejected: signed by an untrusted publisher key "
+            f"{parsed.pubkey[:16]!r} (not in [skills].trusted_pubkeys)."
+        )
+
+    if not signing.verify_ed25519(
+        parsed.pubkey, parsed.sig, _canonical_signed_bytes(parsed)
+    ):
+        raise ValueError(
+            "skill rejected: Ed25519 signature does not verify over the skill body."
+        )
+
+
 def _validate_and_write(content: str, skills_dir: Path) -> Skill:
     """Parse + shield-scan skill content, then write it. Shared by
     ``install_skill`` (free-text source) and ``install_from_catalog``
@@ -223,6 +286,11 @@ def _validate_and_write(content: str, skills_dir: Path) -> Skill:
     skills_dir.mkdir(parents=True, exist_ok=True)
     tmp_path = skills_dir / ".validating"
     parsed = Skill.parse(content, tmp_path)
+
+    # Signed-skill policy: enforce [skills].require_signed / trusted_pubkeys
+    # BEFORE the shield scan and BEFORE writing. Rejects forged or untrusted
+    # signatures; fail-open if cryptography is missing.
+    _verify_skill_signature(parsed)
 
     # Council finding (Tier 0): the body markdown gets concatenated into
     # the agent's system prompt via render_for_prompt. A `gh:` skill

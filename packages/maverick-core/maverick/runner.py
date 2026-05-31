@@ -83,8 +83,8 @@ def run_goal_in_thread(
         from .llm import LLM
         from .orchestrator import run_goal_sync
         from .sandbox import build_sandbox
-        from .world_model import DEFAULT_DB, WorldModel
-        world = WorldModel(DEFAULT_DB)
+        from .world_model import DEFAULT_DB, open_world
+        world = open_world(DEFAULT_DB)
         llm = LLM()
         sandbox = build_sandbox()
         # Precedence: explicit caller arg > [budget] config > the

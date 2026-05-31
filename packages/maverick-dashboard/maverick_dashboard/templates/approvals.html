@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}approvals · Maverick{% endblock %}
+{% block content %}
+  <h2>approval queue</h2>
+
+  <div class="panel">
+    <p class="muted">
+      High-risk actions an agent has parked for your decision. Populated
+      when a goal runs with <code>MAVERICK_CONSENT_MODE=dashboard</code>:
+      the agent waits here until you approve or deny.
+    </p>
+  </div>
+
+  <div class="panel">
+    {% if approvals %}
+      <table>
+        <thead><tr>
+          <th scope="col">action</th><th scope="col">risk</th>
+          <th scope="col">scope</th><th scope="col">detail</th>
+          <th scope="col">decision</th>
+        </tr></thead>
+        <tbody>
+        {% for a in approvals %}
+          <tr data-id="{{ a.id }}">
+            <td><code>{{ a.action }}</code></td>
+            <td><span class="badge {{ 'blocked' if a.risk in ('high', 'critical') else 'pending' }}">{{ a.risk }}</span></td>
+            <td>{{ a.scope or '—' }}</td>
+            <td class="muted">{{ a.detail or '' }}</td>
+            <td>
+              <button class="approval-btn" data-id="{{ a.id }}" data-action="approve">Approve</button>
+              <button class="approval-btn" data-id="{{ a.id }}" data-action="deny">Deny</button>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No pending approvals.</p>
+    {% endif %}
+  </div>
+
+  <p id="approval-msg" role="status" aria-live="polite" class="muted" style="min-height: 1em;"></p>
+
+  <style>
+    button.approval-btn { padding: 0.35rem 0.85rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-size: 0.85rem; margin-right: 0.4rem; }
+    button.approval-btn:hover { border-color: var(--accent); }
+    button.approval-btn[disabled] { opacity: 0.6; cursor: not-allowed; }
+  </style>
+
+  <script>
+    (function() {
+      const msg = document.getElementById('approval-msg');
+      document.querySelectorAll('button.approval-btn').forEach(function(btn) {
+        btn.addEventListener('click', async function() {
+          const id = btn.dataset.id;
+          const action = btn.dataset.action;  // "approve" | "deny"
+          document.querySelectorAll('tr[data-id="' + id + '"] button.approval-btn')
+            .forEach(function(b) { b.disabled = true; });
+          msg.style.color = 'var(--muted)';
+          msg.textContent = (action === 'approve' ? 'Approving #' : 'Denying #') + id + '…';
+          try {
+            const r = await fetch('/api/v1/approvals/' + encodeURIComponent(id) + '/' + action, {
+              method: 'POST',
+            });
+            if (r.ok || r.status === 204) {
+              msg.style.color = 'var(--accent)';
+              msg.textContent = '#' + id + ' ' + action + 'd. Reloading…';
+              setTimeout(function() { window.location.reload(); }, 700);
+            } else {
+              const j = await r.json().catch(function() { return {}; });
+              document.querySelectorAll('tr[data-id="' + id + '"] button.approval-btn')
+                .forEach(function(b) { b.disabled = false; });
+              msg.style.color = 'var(--danger)';
+              msg.textContent = (j.detail || ('Failed: ' + r.status));
+            }
+          } catch (e) {
+            document.querySelectorAll('tr[data-id="' + id + '"] button.approval-btn')
+              .forEach(function(b) { b.disabled = false; });
+            msg.style.color = 'var(--danger)';
+            msg.textContent = String(e);
+          }
+        });
+      });
+    })();
+  </script>
+{% endblock %}

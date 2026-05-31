@@ -20,10 +20,16 @@ Per-user (the channel-side user id):
 
     [security.users."tg:12345"]
     allowed_tools = ["shell", "read_file", "write_file"]   # this user is trusted
+    max_risk = "low"   # also cap this user to low-risk tools (see tool_risk)
 
 Composition rule: for a (channel, user) pair, we intersect the
 configured allow-lists and union the deny-lists. The most-restrictive
 wins, so anyone with both channel-allow and user-deny gets the deny.
+
+A ``max_risk`` ceiling (low/medium/high) can be set at the global,
+channel, or user layer; tools whose risk exceeds the tightest configured
+ceiling are dropped too. See ``tool_risk`` for the risk classification.
+Default: no ceiling, so behaviour is unchanged unless configured.
 
 This lets a deployment lock down what an agent can do per-context
 without touching the kernel.
@@ -75,6 +81,43 @@ def _load_lists_for_user(user_id: str) -> tuple[set[str], set[str]]:
     users = (cfg.get("security") or {}).get("users") or {}
     sec = users.get(user_id) or {}
     return set(sec.get("allowed_tools") or []), set(sec.get("denied_tools") or [])
+
+
+def resolve_max_risk(
+    *,
+    channel: str | None = None,
+    user_id: str | None = None,
+) -> str | None:
+    """Most-restrictive ``max_risk`` ceiling across global + channel + user.
+
+    Layers: ``[security].max_risk``, ``[security.channels.<channel>].max_risk``,
+    ``[security.users."<user_id>"].max_risk``. The lowest (tightest)
+    configured ceiling wins. Returns ``None`` when no layer sets one, i.e.
+    no cap -- behaviour is unchanged unless a ceiling is configured.
+    """
+    try:
+        from ..config import load_config
+        cfg = load_config() or {}
+    except Exception:
+        return None
+    from .tool_risk import RISK_LEVELS, risk_rank
+
+    sec = cfg.get("security") or {}
+    candidates: list[str] = []
+    g = sec.get("max_risk")
+    if isinstance(g, str) and g in RISK_LEVELS:
+        candidates.append(g)
+    if channel:
+        c = ((sec.get("channels") or {}).get(channel) or {}).get("max_risk")
+        if isinstance(c, str) and c in RISK_LEVELS:
+            candidates.append(c)
+    if user_id:
+        u = ((sec.get("users") or {}).get(user_id) or {}).get("max_risk")
+        if isinstance(u, str) and u in RISK_LEVELS:
+            candidates.append(u)
+    if not candidates:
+        return None
+    return min(candidates, key=risk_rank)
 
 
 def resolve_lists(
@@ -163,10 +206,18 @@ def apply_to_registry(
     (just pass the channel + user id; the registry mutates in place).
     """
     allowed, denied = resolve_lists(channel=channel, user_id=user_id)
+    current = {t.name for t in reg.all()}
+
+    # Per-identity max-risk ceiling: drop tools whose risk exceeds it by
+    # unioning them into the deny-set. No ceiling configured -> no-op.
+    max_risk = resolve_max_risk(channel=channel, user_id=user_id)
+    if max_risk:
+        from .tool_risk import tools_exceeding
+        denied = denied | tools_exceeding(current, max_risk)
+
     if not allowed and not denied:
         return
     reg.set_acl(allowed=allowed, denied=denied)
-    current = {t.name for t in reg.all()}
     keep = filter_tools(current, allowed=allowed, denied=denied)
     drop = current - keep
     for name in drop:

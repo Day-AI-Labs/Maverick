@@ -79,6 +79,25 @@ def _have_crypto() -> bool:
         return False
 
 
+def verify_ed25519(pubkey_hex: str, sig_hex: str, message: bytes) -> bool:
+    """Return True iff ``sig_hex`` is a valid Ed25519 signature over
+    ``message`` under ``pubkey_hex`` (both hex-encoded raw keys/sigs).
+
+    Returns False on any verification failure or malformed input. Raises
+    ImportError if ``cryptography`` is not installed -- callers that want
+    fail-open behavior must guard with ``_have_crypto()`` first.
+    """
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    try:
+        pub = ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex))
+        pub.verify(bytes.fromhex(sig_hex), message)
+        return True
+    except (InvalidSignature, ValueError):
+        return False
+
+
 def _generate_keypair() -> tuple[bytes, bytes, str]:
     """Return (private_key_bytes, public_key_bytes, key_id)."""
     if not _have_crypto():
@@ -440,4 +459,11 @@ def reanchor_file(path: Path, *, force: bool = False, preverified: bool = False)
     return resigned
 
 
-__all__ = ["AuditSigner", "verify_chain", "ChainBreak", "KEY_DIR", "reanchor_file"]
+__all__ = [
+    "AuditSigner",
+    "verify_chain",
+    "verify_ed25519",
+    "ChainBreak",
+    "KEY_DIR",
+    "reanchor_file",
+]

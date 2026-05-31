@@ -27,7 +27,13 @@ from .pii_detector import redact as pii_redact  # noqa: F401
 from .pii_detector import scan as pii_scan  # noqa: F401
 from .remote_scan import RemoteScanResult, scan_remote_content  # noqa: F401
 from .secret_detector import SecretMatch, redact, scan  # noqa: F401
-from .tool_acl import apply_to_registry, filter_tools, resolve_lists  # noqa: F401
+from .tool_acl import (  # noqa: F401
+    apply_to_registry,
+    filter_tools,
+    resolve_lists,
+    resolve_max_risk,
+)
+from .tool_risk import tool_risk, tools_exceeding  # noqa: F401
 from .unicode_filter import (  # noqa: F401
     UnicodeScanResult,
     has_dangerous_unicode,
@@ -40,7 +46,8 @@ __all__ = [
     "pii_redact", "pii_scan", "PIIMatch",
     "ConsentDecision", "ConsentDenied", "require_consent",
     "grant_persistent", "revoke", "list_grants",
-    "filter_tools", "apply_to_registry",
+    "filter_tools", "apply_to_registry", "resolve_max_risk",
+    "tool_risk", "tools_exceeding",
     "UnicodeScanResult", "unicode_normalize", "has_dangerous_unicode",
     "RemoteScanResult", "scan_remote_content",
 ]

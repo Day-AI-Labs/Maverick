@@ -29,7 +29,7 @@ from .config import load_config
 from .llm import LLM
 from .orchestrator import run_goal
 from .sandbox import build_sandbox
-from .world_model import WorldModel
+from .world_model import WorldModel, open_world
 
 log = logging.getLogger(__name__)
 
@@ -329,7 +329,7 @@ def build_from_config() -> Server:
             "ANTHROPIC_API_KEY not set. Add it to ~/.maverick/.env or export it."
         )
 
-    world = WorldModel()
+    world = open_world()
     llm = LLM()
     sandbox_cfg = cfg.get("sandbox", {})
     backend = sandbox_cfg.get("backend")

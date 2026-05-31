@@ -17,7 +17,7 @@ import click
 # actually need them. `world_model` stays at module top — its imports
 # are stdlib (sqlite3, dataclasses, pathlib) and the DEFAULT_DB
 # constant is used in the click option default below.
-from .world_model import DEFAULT_DB, WorldModel  # noqa: E402  -- cheap stdlib chain
+from .world_model import DEFAULT_DB, open_world  # noqa: E402  -- cheap stdlib chain
 
 
 def _default_model() -> str:
@@ -209,7 +209,7 @@ def config(action: str) -> None:
 @click.pass_context
 def budget(ctx) -> None:
     """Show total spend + per-run cost history."""
-    world = WorldModel(ctx.obj["db"])
+    world = open_world(ctx.obj["db"])
     total = world.total_spend()
     click.echo(click.style("Total spend", bold=True))
     click.echo(f"  ${total['dollars']:.4f}  across {total['runs']} run(s)")
@@ -342,7 +342,7 @@ def start(
         sys.exit(2)
 
     k = _kernel()
-    world = WorldModel(ctx.obj["db"])
+    world = open_world(ctx.obj["db"])
     goal_id = world.create_goal(title, description)
     click.echo(f"goal #{goal_id} created: {title}")
     llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
@@ -422,7 +422,7 @@ def _stream_progress(db_path, goal_id: int, stop) -> None:
     main thread (SQLite WAL handles concurrent reads + one writer).
     """
     try:
-        wm = WorldModel(db_path)
+        wm = open_world(db_path)
     except Exception:
         return
     seen = 0
@@ -465,7 +465,7 @@ def chat(ctx, max_depth: int, max_dollars: float, workdir) -> None:
     """
     _require_llm_key()
     k = _kernel()
-    world = WorldModel(ctx.obj["db"])
+    world = open_world(ctx.obj["db"])
     llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
     sandbox = k.build_sandbox(workdir=workdir)
     click.echo(click.style("Maverick chat. Type 'exit' to leave.", fg="cyan"))
@@ -609,7 +609,7 @@ def history(ctx, limit: int) -> None:
     Registered as ``history`` (not ``logs``): a second ``@main.command("logs")``
     for the audit log silently shadowed this one. ``logs`` now unambiguously
     means the audit log; this goal/episode view is ``maverick history``."""
-    world = WorldModel(ctx.obj["db"])
+    world = open_world(ctx.obj["db"])
     goals = world.list_goals()
     if not goals:
         click.echo("no goals yet.")
@@ -625,7 +625,7 @@ def history(ctx, limit: int) -> None:
 @click.pass_context
 def status(ctx) -> None:
     """Show recent goals and open questions."""
-    world = WorldModel(ctx.obj["db"])
+    world = open_world(ctx.obj["db"])
     goals = world.list_goals()
     if not goals:
         click.echo("no goals yet. start one with `maverick start \"...\"`")
@@ -646,7 +646,7 @@ def status(ctx) -> None:
 @click.pass_context
 def answer(ctx, question_id: int, answer: tuple[str, ...]) -> None:
     """Answer a pending question."""
-    world = WorldModel(ctx.obj["db"])
+    world = open_world(ctx.obj["db"])
     world.answer(question_id, " ".join(answer))
     click.echo(f"answered #{question_id}")
 
@@ -662,7 +662,7 @@ def answer(ctx, question_id: int, answer: tuple[str, ...]) -> None:
 def resume(ctx, goal_id, max_depth: int, max_dollars, max_wall_seconds) -> None:
     """Resume a blocked goal."""
     _require_llm_key()
-    world = WorldModel(ctx.obj["db"])
+    world = open_world(ctx.obj["db"])
     if goal_id is None:
         g = world.active_goal()
         if not g:
@@ -694,7 +694,7 @@ def resume(ctx, goal_id, max_depth: int, max_dollars, max_wall_seconds) -> None:
 @click.pass_context
 def fact(ctx, key: str, value: tuple[str, ...]) -> None:
     """Set a fact in the world model."""
-    world = WorldModel(ctx.obj["db"])
+    world = open_world(ctx.obj["db"])
     world.upsert_fact(key, " ".join(value))
     click.echo(f"set {key}")
 
@@ -703,7 +703,7 @@ def fact(ctx, key: str, value: tuple[str, ...]) -> None:
 @click.pass_context
 def facts(ctx) -> None:
     """List known facts."""
-    world = WorldModel(ctx.obj["db"])
+    world = open_world(ctx.obj["db"])
     for k, v in world.get_facts().items():
         click.echo(f"  {k}: {v}")
 
@@ -978,7 +978,7 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
     GDPR Art. 17 right-to-erasure: removes conversations, turns,
     attachments on disk, and the conversation row itself. (First line kept
     abbreviation-free so Click's short help isn't truncated at "Art.".)"""
-    world = WorldModel(ctx.obj["db"])
+    world = open_world(ctx.obj["db"])
     convs = [
         c for c in world.list_conversations(channel)
         if c.user_id == user
@@ -1156,7 +1156,7 @@ def export_user(ctx, channel: str, user: str, output) -> None:
     duplicate Click command name silently shadowed this one, making the
     data-subject export unreachable from the CLI."""
     import json
-    world = WorldModel(ctx.obj["db"])
+    world = open_world(ctx.obj["db"])
     convs = [
         c for c in world.list_conversations(channel)
         if c.user_id == user
@@ -1211,7 +1211,7 @@ def gc(ctx, days: int, events_days: int, yes: bool) -> None:
     Tier 1 council finding: retention was "forever" by default; this
     command (plus the systemd timer in deploy/vps/) enforces a policy.
     """
-    world = WorldModel(ctx.obj["db"])
+    world = open_world(ctx.obj["db"])
     if not yes:
         click.echo(
             f"This will prune conversations idle > {days}d and "
@@ -1327,7 +1327,7 @@ def watch(ctx, path: str, run: bool, max_dollars: float) -> None:
                 )
                 continue
             k = _kernel()
-            world = WorldModel(ctx.obj["db"])
+            world = open_world(ctx.obj["db"])
             llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
             sandbox = k.build_sandbox(workdir=str(p.parent if p.is_file() else p))
             title = (m.text or m.follow_lines[0] if m.follow_lines else "").strip()[:80]
@@ -1460,7 +1460,7 @@ def unhalt() -> None:
 @click.pass_context
 def cost(ctx, month: str | None, model: str | None, csv_out: bool) -> None:
     """Summarize spend across the world model."""
-    world = WorldModel(ctx.obj["db"])
+    world = open_world(ctx.obj["db"])
     try:
         episodes = world.list_episodes(limit=100_000 if csv_out else 10_000)
     finally:
@@ -1519,7 +1519,7 @@ def export_goal(ctx, goal_id: int, output: str | None) -> None:
     was logged to events.
     """
     import json as _json
-    world = WorldModel(ctx.obj["db"])
+    world = open_world(ctx.obj["db"])
     try:
         goal = world.get_goal(goal_id)
         if goal is None:

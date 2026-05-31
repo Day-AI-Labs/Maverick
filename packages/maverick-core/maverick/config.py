@@ -125,6 +125,22 @@ def get_safety() -> dict:
     }
 
 
+def get_skills() -> dict:
+    """Return the ``[skills]`` section with signing defaults filled in.
+
+    ``trusted_pubkeys`` is a list of hex-encoded Ed25519 publisher keys; a
+    signed skill is only accepted if its ``pubkey`` is in this list (when
+    the list is non-empty). ``require_signed`` rejects unsigned skills.
+    Both default off so the kernel keeps current behavior out of the box.
+    """
+    cfg = load_config().get("skills", {})
+    pubkeys = cfg.get("trusted_pubkeys", [])
+    return {
+        "trusted_pubkeys": [str(k) for k in pubkeys] if isinstance(pubkeys, list) else [],
+        "require_signed": bool(cfg.get("require_signed", False)),
+    }
+
+
 def get_sandbox() -> dict:
     cfg = load_config().get("sandbox", {})
     return {

@@ -702,6 +702,20 @@ async def permissions_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/approvals", response_class=HTMLResponse)
+async def approvals_page(request: Request) -> HTMLResponse:
+    """Pending high-risk actions awaiting approve/deny.
+
+    Populated when an agent runs with ``MAVERICK_CONSENT_MODE=dashboard``:
+    ``safety.consent.require_consent`` parks each gated action here and
+    polls for the decision this page writes back.
+    """
+    return templates.TemplateResponse(
+        request, "approvals.html",
+        {"approvals": _world().pending_approvals()},
+    )
+
+
 @app.get("/cache", response_class=HTMLResponse)
 async def cache_page(request: Request) -> HTMLResponse:
     """In-process cache stats + purge buttons."""

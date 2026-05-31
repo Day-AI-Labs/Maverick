@@ -154,6 +154,15 @@ def require_consent(
         if raise_on_deny:
             raise ConsentDenied(action)
         return d
+    if mode == "dashboard":
+        d = _decide_via_dashboard(action, risk, scope, detail)
+        if d is not None:
+            d = _emit(d, action, scope, detail)
+            if not d.granted and raise_on_deny:
+                raise ConsentDenied(action)
+            return d
+        # Dashboard unavailable -> fall through to the interactive/non-tty
+        # path below (fail-open: the kernel never *requires* the dashboard).
     # 3) Interactive prompt (or non-tty deny).
     if not sys.stdin.isatty():
         d = _emit(ConsentDecision(False, "non-tty-deny", risk, ts), action, scope, detail)
@@ -173,6 +182,56 @@ def require_consent(
     if not granted and raise_on_deny:
         raise ConsentDenied(action)
     return d
+
+
+def _dashboard_timeout() -> float:
+    """How long (seconds) to wait for a dashboard approval before giving up.
+
+    A timeout falls through to the interactive/non-tty path (fail-open),
+    so a dashboard that's never opened doesn't wedge the agent forever.
+    """
+    try:
+        return max(0.0, float(os.environ.get("MAVERICK_CONSENT_DASHBOARD_TIMEOUT", "300")))
+    except ValueError:
+        return 300.0
+
+
+def _decide_via_dashboard(
+    action: str,
+    risk: str,
+    scope: Optional[str],
+    detail: Optional[str],
+) -> Optional[ConsentDecision]:
+    """Park the action in the world model and poll for a dashboard decision.
+
+    Returns a ConsentDecision once the operator approves/denies via the
+    dashboard /approvals page, or ``None`` if the world model is
+    unavailable or the wait times out -- the caller then falls back to
+    the interactive/non-tty path (fail-open per the kernel contract).
+    """
+    try:
+        from ..world_model import DEFAULT_DB, WorldModel
+        wm = WorldModel(DEFAULT_DB)
+    except Exception as e:  # world model missing/unwritable -> fail-open
+        log.warning("consent: dashboard mode unavailable, falling back: %s", e)
+        return None
+    try:
+        approval_id = wm.create_approval(action, risk=risk, scope=scope, detail=detail)
+    except Exception as e:
+        log.warning("consent: cannot queue approval, falling back: %s", e)
+        return None
+
+    deadline = time.time() + _dashboard_timeout()
+    while time.time() < deadline:
+        try:
+            row = wm.get_approval(approval_id)
+        except Exception:
+            return None
+        if row is not None and row.status != "pending":
+            granted = row.status == "approved"
+            return ConsentDecision(granted, "dashboard", risk, time.time())
+        time.sleep(1.0)
+    return None  # timed out: caller falls back
 
 
 def _format_prompt(action: str, risk: str, scope: Optional[str], detail: Optional[str]) -> str:
