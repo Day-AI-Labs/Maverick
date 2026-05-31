@@ -499,12 +499,29 @@ class Agent:
             f"</tool_output {nonce}>"
         )
 
+    # Defense-in-depth: tools that mutate the shared sandbox workdir, spawn
+    # children, block on the user, or message other agents must NEVER run on
+    # the concurrent (asyncio.gather) path — concurrent writes corrupt the
+    # single shared git tree, and ask_user's block-on-user semantics assume
+    # serial handling. ``parallel_safe`` is an opt-in flag a tool author
+    # sets; this denylist is the backstop so a future contributor who
+    # mis-flags a mutating tool (parallel_safe=True) can't silently corrupt
+    # the workdir. Kept in sync with the core mutating/spawn/blocking tools.
+    _NEVER_PARALLEL = frozenset({
+        "write_file", "shell", "str_replace_editor", "apply_patch",
+        "ast_edit", "spawn_subagent", "spawn_swarm", "ask_user",
+        "send_to_agent", "recv_from_agent",
+    })
+
     def _is_parallel_safe(self, name: str) -> bool:
         """Whether ``name`` may execute concurrently with the other tool
-        calls in the same turn. Reads the tool's ``parallel_safe`` flag;
-        unknown tools (and any tool missing the attribute, e.g. a plugin
+        calls in the same turn. A tool qualifies only if it both declares
+        ``parallel_safe`` AND is not on the ``_NEVER_PARALLEL`` backstop.
+        Unknown tools (and any tool missing the attribute, e.g. a plugin
         built against an older Tool dataclass) default to False — serial.
         """
+        if name in self._NEVER_PARALLEL:
+            return False
         try:
             return bool(getattr(self.tools.get(name), "parallel_safe", False))
         except KeyError:

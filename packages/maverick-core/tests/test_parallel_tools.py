@@ -91,6 +91,24 @@ class TestParallelToolExecution:
             assert reg.get(name).parallel_safe is False, name
 
     @pytest.mark.asyncio
+    async def test_denylist_overrides_misflagged_tool(self, ctx, fake_llm):
+        # Backstop: a mutating tool that is WRONGLY flagged parallel_safe
+        # must still be treated as serial-only, so a concurrent gather can't
+        # corrupt the shared workdir. Register a fake "write_file" (a name on
+        # _NEVER_PARALLEL) with parallel_safe=True and confirm the agent
+        # refuses to parallelise it.
+        tracker = _Tracker()
+        agent = Agent(ctx=ctx, role="researcher", brief="x")
+        # Even with parallel_safe=True on a denylisted name, _is_parallel_safe
+        # must return False.
+        bad = tracker.tool("write_file", parallel_safe=True)
+        agent.tools.register(bad)
+        assert agent._is_parallel_safe("write_file") is False
+        # And a genuinely safe read still qualifies.
+        agent.tools.register(tracker.tool("safe_reader", parallel_safe=True))
+        assert agent._is_parallel_safe("safe_reader") is True
+
+    @pytest.mark.asyncio
     async def test_all_parallel_safe_run_concurrently(self, ctx, fake_llm):
         tracker = _Tracker()
         fake_llm.scripted = _two_calls("p1", "p2")
