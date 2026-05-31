@@ -213,10 +213,15 @@ async def dispatch(ctx: HookContext) -> bool:
             continue
         start = time.monotonic()
         try:
-            ok = await _run_one(spec, ctx)
+            ok = await _run_one(spec, ctx, is_blocking=is_blocking)
         except Exception as e:
+            # A hook *bug* (exception) stays isolated/fail-open per the
+            # module contract -- a broken hook must not wedge the run. The
+            # attacker-triggerable bypass we close is the TIMEOUT path (a
+            # large/slow tool arg tripping the deadline), handled in
+            # _run_one where a blocking hook fails closed.
             log.warning("hook %s/%s raised: %s", spec.event.value, spec.matcher, e)
-            ok = True  # fail-open on hook bugs
+            ok = True
         ctx.duration_ms = (time.monotonic() - start) * 1000
         if is_blocking and not ok:
             allowed = False
@@ -227,7 +232,7 @@ async def dispatch(ctx: HookContext) -> bool:
     return allowed
 
 
-async def _run_one(spec: HookSpec, ctx: HookContext) -> bool:
+async def _run_one(spec: HookSpec, ctx: HookContext, *, is_blocking: bool = False) -> bool:
     if spec.callable is not None:
         result = spec.callable(ctx)
         if asyncio.iscoroutine(result):
@@ -238,7 +243,14 @@ async def _run_one(spec: HookSpec, ctx: HookContext) -> bool:
     # Shell command. Pass context as JSON on stdin so the hook can
     # parse without parsing argv quirks.
     import json
-    env = dict(os.environ)
+
+    from .sandbox.local import scrub_env
+
+    # Hooks are operator-defined but still child processes that fire on every
+    # tool call with model-influenced payloads. Don't hand them the kernel's
+    # provider keys / tokens; strip secret-shaped vars (same deny-by-pattern
+    # policy as the sandbox shell), keep PATH/HOME/etc.
+    env = scrub_env()
     env["MAVERICK_HOOK_EVENT"] = spec.event.value
     env["MAVERICK_HOOK_TOOL"] = ctx.tool_name or ""
     payload = json.dumps({
@@ -268,14 +280,23 @@ async def _run_one(spec: HookSpec, ctx: HookContext) -> bool:
                 proc.kill()
             except ProcessLookupError:
                 pass
-            log.warning("hook %s timed out (>%dms)", spec.command, spec.timeout_ms)
-            return True  # timeouts don't block
+            log.warning(
+                "hook %s timed out (>%dms)%s", spec.command, spec.timeout_ms,
+                " — BLOCKING the action (fail-closed)" if is_blocking else "",
+            )
+            # A blocking hook that can't finish hasn't vetted the action, so
+            # it must block, not wave it through (a slow/large tool arg could
+            # otherwise be used to trip the timeout and bypass the guard).
+            return not is_blocking
         if stdout:
             log.debug("hook %s stdout: %s", spec.command, stdout.decode(errors="replace")[:500])
         if stderr:
             log.info("hook %s stderr: %s", spec.command, stderr.decode(errors="replace")[:500])
         return proc.returncode == 0
     except FileNotFoundError:
+        # Missing hook binary stays fail-open per the module's "hooks are
+        # isolated/best-effort" contract (it's loudly logged). Only the
+        # timeout path fails closed for blocking hooks.
         log.warning("hook command not found: %s", spec.command)
         return True  # missing hook doesn't block
 

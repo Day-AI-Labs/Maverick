@@ -90,6 +90,72 @@ def test_cancel_pending_task():
     assert eng.cancel({"id": t.id})["status"]["state"] == "canceled"
 
 
+def test_push_to_private_url_is_refused(monkeypatch):
+    """An authenticated caller must not be able to make the server POST the
+    task to an internal/metadata address (SSRF via pushNotificationConfig)."""
+    posted = []
+
+    class _FakeAsyncClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, **kw):
+            posted.append(url)
+
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
+
+    eng = TaskEngine(runner=_fake_runner)
+    t = asyncio.run(eng.send(_msg("x")))
+    tid = t["id"]
+    # Register a push webhook pointing at the cloud-metadata endpoint.
+    eng.set_push_config({
+        "taskId": tid,
+        "pushNotificationConfig": {"url": "http://169.254.169.254/latest/meta-data"},
+    })
+    asyncio.run(eng._fire_push(eng._tasks[tid]))
+    assert posted == []  # blocked by the SSRF guard, never sent
+
+
+def test_push_to_public_url_is_sent(monkeypatch):
+    posted = []
+
+    class _FakeAsyncClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, **kw):
+            posted.append(url)
+
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
+    # Don't do real DNS for the public host; force the guard to allow it.
+    import maverick.tools.http_fetch as hf
+    monkeypatch.setattr(hf, "is_blocked_host", lambda h: False)
+
+    eng = TaskEngine(runner=_fake_runner)
+    t = asyncio.run(eng.send(_msg("x")))
+    tid = t["id"]
+    eng.set_push_config({
+        "taskId": tid,
+        "pushNotificationConfig": {"url": "https://hooks.example.com/cb"},
+    })
+    asyncio.run(eng._fire_push(eng._tasks[tid]))
+    assert posted == ["https://hooks.example.com/cb"]
+
+
 def test_push_config_set_and_get():
     eng = TaskEngine(runner=_fake_runner)
     t = eng._new_task(_msg("x"))
