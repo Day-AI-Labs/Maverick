@@ -15,8 +15,11 @@ auto-injected into context). That keeps token usage bounded.
 """
 from __future__ import annotations
 
+import threading
+from collections import OrderedDict
 from pathlib import Path
 
+from ..file_cache import _workdir_signature
 from . import Tool
 
 _MAX_TOP_ENTRIES = 80
@@ -36,8 +39,12 @@ _IGNORE_DIRS = {
 # accumulate ~2000 entries (60MB+) in this dict. Also: cache key
 # now includes workdir mtime so the cache invalidates when files
 # change. Cap at 64 entries.
-_CACHE: dict[str, str] = {}
+_CACHE: OrderedDict[str, str] = OrderedDict()
 _CACHE_MAX = 64
+# The tool is parallel_safe, so this module cache is hit from multiple threads
+# (FastAPI threadpool + agent threads). Guard every access -- an unlocked dict
+# raised "dict changed size during iteration" during eviction under concurrency.
+_CACHE_LOCK = threading.Lock()
 
 
 def _inside_workspace(root: Path, candidate: Path) -> bool:
@@ -52,7 +59,8 @@ def _inside_workspace(root: Path, candidate: Path) -> bool:
 def clear_repo_map_cache() -> None:
     """Invalidate the repo_map cache. Called by the harness between
     instances when the workdir is reset to a different commit."""
-    _CACHE.clear()
+    with _CACHE_LOCK:
+        _CACHE.clear()
 
 
 def _detect_languages(root: Path) -> list[str]:
@@ -83,12 +91,16 @@ def repo_map(sandbox) -> Tool:
         if not root.exists():
             return f"ERROR: workdir {root} does not exist"
 
-        cache_key = str(root.resolve())
-        if cache_key in _CACHE:
-            return (
-                _CACHE[cache_key]
-                + "\n\n(cached; repo unchanged since first call this run)"
-            )
+        # Key includes a workdir signature so the cache actually invalidates
+        # when files change (the old key was the path alone -> stale forever,
+        # contradicting the comment above).
+        cache_key = f"{root.resolve()}::{_workdir_signature(root)}"
+        with _CACHE_LOCK:
+            cached = _CACHE.get(cache_key)
+            if cached is not None:
+                _CACHE.move_to_end(cache_key)  # true LRU
+        if cached is not None:
+            return cached + "\n\n(cached; repo unchanged since first call this run)"
 
         lines: list[str] = [f"Repo map for {root}:"]
 
@@ -155,16 +167,13 @@ def repo_map(sandbox) -> Tool:
                 f"\n\n... [truncated to {_MAX_OUTPUT_BYTES}B; "
                 f"use `list_dir` for specifics]"
             )
-        # LRU eviction: drop oldest entry when over cap. dict preserves
-        # insertion order in 3.7+ so popitem(last=False) gives FIFO.
-        if len(_CACHE) >= _CACHE_MAX:
-            # Pop oldest entry to bound memory.
-            try:
-                oldest = next(iter(_CACHE))
-                del _CACHE[oldest]
-            except (StopIteration, KeyError):
-                pass
-        _CACHE[cache_key] = text
+        # LRU eviction under the lock: OrderedDict.popitem(last=False) drops
+        # the least-recently-used entry (move_to_end on hit keeps it true LRU).
+        with _CACHE_LOCK:
+            _CACHE[cache_key] = text
+            _CACHE.move_to_end(cache_key)
+            while len(_CACHE) > _CACHE_MAX:
+                _CACHE.popitem(last=False)
         return text
 
     return Tool(

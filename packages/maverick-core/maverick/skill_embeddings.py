@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +21,7 @@ CACHE_PATH = Path.home() / ".maverick" / "skill_embeddings.json"
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 _model = None  # lazy singleton
+_model_lock = threading.Lock()  # guard the (expensive) lazy ONNX model load
 
 
 def _have_fastembed() -> bool:
@@ -34,16 +36,22 @@ def _get_model():
     global _model
     if _model is not None:
         return _model
-    try:
-        from fastembed import TextEmbedding
-    except ImportError:
-        return None
-    try:
-        _model = TextEmbedding(model_name=MODEL_NAME)
-        return _model
-    except Exception as e:  # pragma: no cover
-        log.error("failed to load embedding model: %s", e)
-        return None
+    # Double-checked lock: without it, concurrent first calls (FastAPI
+    # threadpool) each construct a TextEmbedding -- an expensive ONNX model
+    # load -- and clobber _model.
+    with _model_lock:
+        if _model is not None:
+            return _model
+        try:
+            from fastembed import TextEmbedding
+        except ImportError:
+            return None
+        try:
+            _model = TextEmbedding(model_name=MODEL_NAME)
+            return _model
+        except Exception as e:  # pragma: no cover
+            log.error("failed to load embedding model: %s", e)
+            return None
 
 
 def embed(texts: list[str]) -> list[list[float]] | None:

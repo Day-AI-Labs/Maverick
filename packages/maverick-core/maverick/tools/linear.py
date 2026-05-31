@@ -74,9 +74,13 @@ def _post(query: str, variables: dict | None = None) -> dict:
 
 
 def _search(query: str, limit: int) -> str:
+    # Linear's issueSearch takes a top-level `query: String` term for
+    # full-text search. The old `filter: {searchableContent: ...}` is not a
+    # valid IssueFilter field, so the GraphQL document was rejected and every
+    # search raised "Linear API error".
     q = """
     query Search($q: String!, $n: Int!) {
-      issueSearch(filter: {searchableContent: {contains: $q}}, first: $n) {
+      issueSearch(query: $q, first: $n) {
         nodes { identifier title state { name } url priority }
       }
     }

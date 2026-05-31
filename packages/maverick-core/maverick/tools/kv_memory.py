@@ -117,10 +117,13 @@ def _run_factory(world, goal_id: int | None):
             q = (args.get("query") or "").strip()
             if not q:
                 return "ERROR: search requires query"
-            like = f"%{q}%"
+            # Escape LIKE wildcards so a query containing % or _ is matched as a
+            # literal substring (otherwise "a_b" matched "axb", "%" matched all).
+            esc = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            like = f"%{esc}%"
             rows = world.conn.execute(
                 "SELECT key, value FROM facts WHERE key LIKE ? "
-                "AND (key LIKE ? OR value LIKE ?) "
+                "AND (key LIKE ? ESCAPE '\\' OR value LIKE ? ESCAPE '\\') "
                 "ORDER BY updated_at DESC LIMIT ?",
                 (prefix_like, like, like, cap),
             ).fetchall()

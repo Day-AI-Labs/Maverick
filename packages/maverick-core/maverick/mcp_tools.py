@@ -71,7 +71,7 @@ def _try_shield():
         return None
 
 
-def _collect_schema_strings(node, out: list[str]) -> None:
+def _collect_schema_strings(node, out: list[str], _depth: int = 0) -> None:
     """Walk a JSON Schema dict and collect every string leaf.
 
     A hostile MCP server can put attack text in description / title /
@@ -79,6 +79,12 @@ def _collect_schema_strings(node, out: list[str]) -> None:
     verbatim. Shield must inspect the full string-leaf set, not just
     the top-level description field.
     """
+    # Depth cap: the schema is parsed from a hostile MCP server's wire data,
+    # so a ~990-deep nested object (which json.loads still accepts) would blow
+    # the Python stack here (RecursionError) during connect. Real schemas are
+    # shallow; stop descending past a generous bound.
+    if _depth > 64:
+        return
     if isinstance(node, dict):
         for k, v in node.items():
             if isinstance(v, str) and k in (
@@ -86,13 +92,13 @@ def _collect_schema_strings(node, out: list[str]) -> None:
             ):
                 out.append(v)
             elif isinstance(v, (dict, list)):
-                _collect_schema_strings(v, out)
+                _collect_schema_strings(v, out, _depth + 1)
     elif isinstance(node, list):
         for item in node:
             if isinstance(item, str):
                 out.append(item)
             else:
-                _collect_schema_strings(item, out)
+                _collect_schema_strings(item, out, _depth + 1)
 
 
 def _spec_passes_shield(name: str, spec: dict, shield) -> bool:

@@ -65,7 +65,9 @@ def purge_audit_files(
         except ValueError:
             kept += 1
             continue
-        if day < cutoff_day:
+        # <= : the day-file dated exactly `days` ago is expired and must be
+        # purged. Strict < kept it, making the window days+1.
+        if day <= cutoff_day:
             removed.append(path.name)
             if not dry_run:
                 try:

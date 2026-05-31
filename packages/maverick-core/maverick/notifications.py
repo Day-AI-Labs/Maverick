@@ -79,6 +79,12 @@ def _send_ntfy(title: str, body: str, priority: str, server: str, topic: str) ->
         "Priority": prio_map.get(priority, "3"),
     }
     try:
+        # ntfy topics are [A-Za-z0-9_-]; reject anything else so a typo/hostile
+        # topic with '/'/'..'/'?'/'#' can't post to a different path on the server.
+        import re as _re
+        if not _re.fullmatch(r"[A-Za-z0-9_-]+", topic or ""):
+            log.warning("notify ntfy: invalid topic %r (allowed: A-Za-z0-9_-)", topic)
+            return False
         url = f"{server.rstrip('/')}/{topic}"
         resp = httpx.post(url, content=body.encode("utf-8"), headers=headers, timeout=10.0)
         return resp.status_code < 400
@@ -120,7 +126,12 @@ def _send_discord(title: str, body: str, url: str) -> bool:
         import httpx
         resp = httpx.post(
             url,
-            json={"content": f"**{title}**\n{body}"},
+            # allowed_mentions parse:[] so an agent-controlled title/body
+            # containing @everyone/@here can't trigger a mass ping.
+            json={
+                "content": f"**{title}**\n{body}",
+                "allowed_mentions": {"parse": []},
+            },
             timeout=10.0,
         )
         return resp.status_code < 400

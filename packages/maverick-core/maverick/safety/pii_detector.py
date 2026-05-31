@@ -40,7 +40,21 @@ _IPV4 = re.compile(
     r"(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b"
 )
 _IPV6 = re.compile(
-    r"\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b"
+    # Full AND ::-compressed forms -- the old pattern required 8 written
+    # hextets, so it missed every real-world compressed address (2001:db8::1,
+    # fe80::1, ::1), i.e. IPv6 PII was essentially never redacted.
+    r"(?:"
+    r"(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}"
+    r"|(?:[0-9a-fA-F]{1,4}:){1,7}:"
+    r"|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}"
+    r"|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}"
+    r"|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}"
+    r"|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}"
+    r"|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}"
+    r"|[0-9a-fA-F]{1,4}:(?::[0-9a-fA-F]{1,4}){1,6}"
+    r"|:(?::[0-9a-fA-F]{1,4}){1,7}"
+    r"|::"
+    r")"
 )
 # Credit card candidates (13-19 digits with optional spaces / dashes).
 _CC = re.compile(
@@ -107,7 +121,11 @@ def scan(text: str) -> list[PIIMatch]:
             seen.add(sp)
             out.append(PIIMatch(
                 kind="credit_card", span=sp,
-                value_preview="****" + re.sub(r"[^\d]", "", m.group(0))[-4:],
+                # Constant placeholder -- do NOT embed the real last-4 digits.
+                # PIIMatch previews are persisted to the audit log, and card
+                # last-4 is regulated cardholder data; storing it defeats the
+                # redaction (every other kind uses a non-revealing preview).
+                value_preview="****",
             ))
 
     return out

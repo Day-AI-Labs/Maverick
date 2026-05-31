@@ -168,20 +168,26 @@ def test_hf_image_classify_requires_url():
 
 
 def test_hf_image_classify_blocks_private_ip(monkeypatch):
+    # Now routed through the IP-pinning _ssrf.safe_get (closes the TOCTOU
+    # rebind window); a blocked host surfaces as BlockedHost.
+    import maverick.tools._ssrf as ssrf
     from maverick.tools.huggingface import huggingface
-    monkeypatch.setattr("maverick.tools.huggingface.is_blocked_host", lambda _h: True)
+
+    def _boom(url, **k):
+        raise ssrf.BlockedHost("127.0.0.1 is loopback")
+
+    monkeypatch.setattr(ssrf, "safe_get", _boom)
     out = huggingface().fn({"op": "image_classify", "model": "x", "url": "http://127.0.0.1/a.png"})
     assert "refusing" in out
 
 
 def test_hf_image_classify_rejects_redirects(monkeypatch):
+    import maverick.tools._ssrf as ssrf
     resp = MagicMock()
     resp.status_code = 302
     resp.content = b""
     resp.headers = {"content-type": "text/plain"}
-    fake_httpx = types.ModuleType("httpx")
-    fake_httpx.get = MagicMock(return_value=resp)
-    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+    monkeypatch.setattr(ssrf, "safe_get", lambda url, **k: resp)
     from maverick.tools.huggingface import huggingface
     out = huggingface().fn({"op": "image_classify", "model": "x", "url": "https://example.com/i.png"})
     assert "image fetch 302" in out

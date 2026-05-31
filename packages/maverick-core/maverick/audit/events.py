@@ -57,11 +57,16 @@ class AuditEvent:
     schema_version: int = SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
+        # Strip reserved keys from payload before the spread: a payload key
+        # named v/ts/kind/agent/goal_id would otherwise clobber the canonical
+        # structural field, losing it and corrupting the signed-hash input.
+        _reserved = {"v", "ts", "kind", "agent", "goal_id"}
+        safe_payload = {k: val for k, val in self.payload.items() if k not in _reserved}
         return {
             "v": self.schema_version,
             "ts": self.ts,
             "kind": self.kind,
             "agent": self.agent,
             "goal_id": self.goal_id,
-            **self.payload,
+            **safe_payload,
         }

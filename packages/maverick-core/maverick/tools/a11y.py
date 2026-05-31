@@ -67,7 +67,9 @@ def _ensure_runner(runner: str) -> str | None:
 def _run_pa11y(target: str) -> tuple[int, str, str]:
     try:
         r = subprocess.run(
-            ["pa11y", "--reporter", "json", target],
+            # `--` ends option parsing so a target beginning with `-` is treated
+            # as a path, not an injected pa11y flag (e.g. --config=/tmp/evil.js).
+            ["pa11y", "--reporter", "json", "--", target],
             capture_output=True, text=True, timeout=120, env=_scrub(),
         )
         return r.returncode, r.stdout or "", r.stderr or ""

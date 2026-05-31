@@ -24,7 +24,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 from . import Tool
-from .http_fetch import is_blocked_host
 
 log = logging.getLogger(__name__)
 
@@ -136,14 +135,16 @@ def _op_image_classify(model: str, url: str) -> str:
         return f"ERROR: only http/https supported; got scheme={parsed.scheme!r}"
     if not parsed.netloc:
         return "ERROR: missing host in URL"
-    if is_blocked_host(parsed.hostname or ""):
+    # safe_get pins the validated IP, closing the DNS-rebinding TOCTOU window
+    # that is_blocked_host()+httpx.get() leaves open (separate resolutions).
+    from ._ssrf import BlockedHost, safe_get
+    try:
+        r = safe_get(url, timeout=30.0)
+    except BlockedHost as e:
         return (
-            f"ERROR: refusing to fetch private/loopback/reserved address "
-            f"{parsed.hostname!r}. Set MAVERICK_FETCH_ALLOW_PRIVATE=1 to override."
+            f"ERROR: refusing to fetch private/loopback/reserved address ({e}). "
+            "Set MAVERICK_FETCH_ALLOW_PRIVATE=1 to override."
         )
-
-    import httpx
-    r = httpx.get(url, timeout=30.0, follow_redirects=False)
     if r.status_code >= 300:
         return f"ERROR: image fetch {r.status_code}: {url}"
     if len(r.content) > _MAX_IMAGE_FETCH_BYTES:

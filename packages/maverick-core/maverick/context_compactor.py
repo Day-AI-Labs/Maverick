@@ -101,12 +101,23 @@ def _message_text(msg: dict) -> str:
         for block in content:
             if isinstance(block, dict):
                 t = block.get("text") or block.get("content") or ""
-                if isinstance(t, str):
+                if isinstance(t, str) and t:
                     parts.append(t)
                 elif isinstance(t, list):
                     for inner in t:
                         if isinstance(inner, dict):
                             parts.append(str(inner.get("text") or ""))
+                else:
+                    # tool_use carries its args under `input` (no text/content),
+                    # and a structured tool_result may have a dict content; the
+                    # old code counted these as 0 tokens, so token estimates
+                    # under-counted multi-KB tool args and the cap was exceeded.
+                    import json as _json
+                    payload = block.get("input")
+                    if payload is not None:
+                        parts.append(_json.dumps(payload, default=str))
+                    elif not isinstance(t, str):
+                        parts.append(_json.dumps(t, default=str))
             elif isinstance(block, str):
                 parts.append(block)
         return " ".join(parts)

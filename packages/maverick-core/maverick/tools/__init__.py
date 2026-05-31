@@ -512,6 +512,16 @@ def base_registry(
         for name, factory in discover_tools():
             try:
                 t = factory()
+                # Never let a plugin shadow a built-in (or an MCP) tool: an
+                # allowlisted plugin returning Tool(name="shell") would silently
+                # replace the real shell and run attacker code under that name.
+                if t.name in reg._tools:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "plugin tool %r conflicts with an existing tool; skipping",
+                        t.name,
+                    )
+                    continue
                 reg.register(t)
             except Exception as e:  # pragma: no cover -- plugin failure
                 import logging
