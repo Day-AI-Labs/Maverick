@@ -56,11 +56,10 @@ the pipeline made reproducible rather than faking a result.
 `reflexion.py`, `prm.py` (process reward model), `tree_of_thought.py`, and
 `debate.py` were imported **nowhere** outside their own tests. The
 capability was built but never connected to the live loop — pure
-aspiration. Now wired (all opt-in, off by default): `reflexion` (failed
-runs teach the next), `tree_of_thought` (planning pre-pass), and `debate`
-(best-of-N tie-breaker) — see below. `prm` (process reward model) remains
-the last unwired primitive; integrating it as a step-scorer is backlog
-item 6.
+aspiration. **All four are now wired** (opt-in, off by default):
+`reflexion` (failed runs teach the next), `tree_of_thought` (planning
+pre-pass), `debate` (best-of-N tie-breaker), and `prm` (per-step scoring
+with early abandonment) — see below. This gap is closed.
 
 ### 3. Serial tool execution within a turn
 
@@ -133,19 +132,42 @@ strict refinement — when every attempt touches a distinct file set the
 prior ordering is unchanged. Off-switch: `MAVERICK_BON_CONSENSUS=0`.
 Covered by `tests/test_bon_consensus.py`.
 
+### Process reward model, wired in
+
+`prm.py` was the last unwired primitive. It is now an opt-in per-step
+scorer in the `Agent` loop: each step is scored for promise/progress, and
+a trajectory whose trailing-window promise stays below a floor is
+abandoned before it burns the whole budget (the AgentPRM
+compute-efficiency win). Default backend is `NullPRM` — scoring is skipped
+entirely and the loop is unchanged. Activate with
+`MAVERICK_PRM=heuristic|remote`; tune with `MAVERICK_PRM_WINDOW` /
+`MAVERICK_PRM_FLOOR`. Covered by `tests/test_prm_wiring.py`.
+
+### Compounding-moat benchmark
+
+`benchmarks/moat.py` makes Maverick's core differentiator *measurable*:
+it runs each task pair cold (fresh world model, learning off — the
+stateless baseline) then warm (same world model, learning on) and reports
+the cost / tool-call / wall deltas plus cold-vs-warm success rates. A moat
+is "demonstrated" only when the warm phase is cheaper **and** no less
+reliable. The measurement logic takes an injected runner, so it is fully
+unit-tested offline (`benchmarks/test_moat.py`); a real run needs an API
+key. Per this audit's own standard, `MOAT_RESULTS.md` is not committed
+with placeholder numbers.
+
 ## Backlog (highest leverage first)
 
+Items 6 (wire the reasoning modules) and 7 (make the moat measurable) are
+done — see "Shipped in this pass." Remaining:
+
 5. **Publish SWE-bench Verified numbers** on a tagged release; add a CI
-   regression gate against a committed baseline (item 1).
-6. **Wire or delete the remaining reasoning modules.** Integrate the PRM as
-   a step-scorer in best-of-N selection, or remove `prm`/`tree_of_thought`/
-   `debate` to stop advertising capability the loop doesn't use (item 2).
-7. **Make the compounding moat measurable.** A "repeat-task" benchmark that
-   reports cost/quality delta on the second run with world-model + skills +
-   reflexion enabled (item 4).
-8. **Extend parallelism to network reads.** Per-host concurrency caps would
+   regression gate against a committed baseline (item 1). Now the #1 gap.
+8. **Run the moat benchmark for real** and commit `MOAT_RESULTS.md` from a
+   keyed run, so the differentiator has published figures (depends on #5's
+   spend discipline).
+9. **Extend parallelism to network reads.** Per-host concurrency caps would
    let idempotent network tools (arxiv, wikipedia, http_fetch) join the
    parallel path safely (item 3 follow-on).
-9. **Speculative verification.** Start the verifier against the
-   in-progress FINAL while the proposer is still streaming, to hide
-   verification latency on long answers.
+10. **Speculative verification.** Start the verifier against the
+    in-progress FINAL while the proposer is still streaming, to hide
+    verification latency on long answers.
