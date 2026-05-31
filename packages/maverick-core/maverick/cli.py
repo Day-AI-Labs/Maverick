@@ -232,6 +232,72 @@ def budget(ctx) -> None:
         )
 
 
+@main.command("runs")
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit machine-readable JSON (array of run objects).")
+@click.option("-n", "--limit", default=50, type=int, help="Max runs to show.")
+@click.option("--goal", "goal_id", default=None, type=int,
+              help="Only runs for this goal id.")
+@click.pass_context
+def runs(ctx, as_json: bool, limit: int, goal_id) -> None:
+    """List recent runs (episodes) with cost, status, and timing.
+
+    A "run" is one episode of the agent loop against a goal. ``--json``
+    emits a stable array (one object per run) — this is the contract the
+    VS Code extension's runs view consumes, so keep the field names
+    stable.
+    """
+    world = open_world(ctx.obj["db"])
+    try:
+        episodes = world.list_episodes(limit=limit, goal_id=goal_id)
+        goal_cache = {}
+        records = []
+        for e in episodes:
+            if e.goal_id not in goal_cache:
+                goal_cache[e.goal_id] = world.get_goal(e.goal_id)
+            g = goal_cache[e.goal_id]
+            duration = (
+                round(e.ended_at - e.started_at, 3)
+                if e.ended_at is not None else None
+            )
+            records.append({
+                "episode_id": e.id,
+                "goal_id": e.goal_id,
+                "goal_title": g.title if g else None,
+                "goal_status": g.status if g else None,
+                "outcome": e.outcome,            # None while the run is live
+                "running": e.ended_at is None,
+                "started_at": e.started_at,
+                "ended_at": e.ended_at,
+                "duration_s": duration,
+                "cost_dollars": e.cost_dollars,
+                "input_tokens": e.input_tokens,
+                "output_tokens": e.output_tokens,
+                "tool_calls": e.tool_calls,
+            })
+    finally:
+        world.close()
+
+    if as_json:
+        import json as _json
+        click.echo(_json.dumps(records, default=str))
+        return
+
+    if not records:
+        click.echo("no runs yet.")
+        return
+    click.echo(click.style(f"Recent runs ({len(records)})", bold=True))
+    for r in records:
+        state = "running" if r["running"] else (r["outcome"] or "done")
+        title = (r["goal_title"] or "")[:48]
+        click.echo(
+            f"  ep #{r['episode_id']:<4} goal {r['goal_id']:<4} "
+            f"[{state:<10}] ${r['cost_dollars']:.4f}  "
+            f"in={r['input_tokens']:,} out={r['output_tokens']:,} "
+            f"tools={r['tool_calls']}  {title}"
+        )
+
+
 @main.command()
 @click.option("--host", default="127.0.0.1")
 @click.option("--port", default=8765, type=int)
