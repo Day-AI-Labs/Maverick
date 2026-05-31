@@ -74,3 +74,55 @@ In scope:
   backend.
 - Rotate `ANTHROPIC_API_KEY` etc. on a schedule. Maverick reads from
   `~/.maverick/.env` (chmod 600).
+
+## Execution posture (read this first)
+
+The single most important thing to understand about Maverick's security:
+
+> **By default, the agent executes model-generated shell commands. With the
+> default `local` sandbox backend, those commands run directly on the host,
+> and the safety Shield is an optional dependency that fails *open* if not
+> installed.** A successful prompt injection on that configuration is host
+> code execution.
+
+This is a deliberate design trade-off (fast local iteration, no hard
+dependency on the shield), not an oversight — but it means **the operator
+chooses the blast radius**. Defense in depth, from outermost to innermost:
+
+1. **Sandbox backend** — the real containment boundary. `local` = your host;
+   `docker`/`podman` run each command in a throwaway container
+   (`--network=none`, `--cap-drop=ALL`, `--security-opt=no-new-privileges`,
+   `--pids-limit`); `firecracker`/`kubernetes`/`ssh` isolate further. The
+   setup wizard defaults real installs to a container when one is available,
+   and the kernel logs a one-time warning when it runs on `local` (louder
+   when the shield is absent). **For any untrusted goal, use a container
+   backend.**
+2. **Agent Shield** (`maverick-shield`) — screens prompts, tool calls, and
+   output. Optional and fail-open by design, so it is a *floor*, not a
+   guarantee. Treat it as one layer, never the only one.
+3. **Tool ACL + budget + killswitch** — `[tool_acl] denied_tools`, the
+   `Budget` cap, and `~/.maverick/HALT` bound what a run can do and spend.
+
+The consumer wizard (`maverick init`, "consumer" mode) fails closed: when no
+container is available it **denies** the host-mutating tools (`shell`,
+`write_file`, `apply_patch`) and runs the strictest shield profile.
+
+## Security-relevant configuration
+
+| Setting (env / config)                    | Effect                                                                 |
+|-------------------------------------------|------------------------------------------------------------------------|
+| `[sandbox] backend`                       | Execution isolation. `docker`/`podman` strongly recommended for untrusted goals. |
+| `[sandbox] pids_limit` (default 512)      | Fork-bomb cap for container backends.                                  |
+| `MAVERICK_SUPPRESS_SANDBOX_WARNING=1`     | Silences the unsandboxed-host warning (only set if you accept host execution). |
+| `MAVERICK_DASHBOARD_TOKEN`                | Required for any non-loopback / proxied dashboard access (fail-closed). |
+| `MAVERICK_PLUGINS_ALLOW`                  | Allowlist for plugin entry points (default empty = none auto-load).    |
+| `MAVERICK_FETCH_ALLOW_PRIVATE=1`          | Disables the SSRF guard's private/metadata-IP block (do not set in prod). |
+| `MAVERICK_MCP_TOKEN` / `MAVERICK_MCP_MAX_BODY` | Bearer auth (fail-closed) + request-body cap for the MCP HTTP transport. |
+| `MAVERICK_A2A_TOKEN`                      | Bearer auth for the A2A task endpoint (off unless A2A is enabled).     |
+| `[webhooks] secret` / `MAVERICK_WEBHOOK_SECRET` | HMAC secret for inbound webhooks; with no secret the receivers fail closed (401). |
+| `SMS_BIND_HOST` / `WHATSAPP_BIND_HOST`    | Channel webhook bind address (default `127.0.0.1`; front with a proxy). |
+| `*_ALLOWED_USER_IDS` (per channel)        | Mandatory default-deny sender allowlist for chat channels.             |
+
+When in doubt, prefer the more restrictive setting: a container backend, an
+explicit dashboard token, an empty plugin allowlist, and per-channel sender
+allowlists.

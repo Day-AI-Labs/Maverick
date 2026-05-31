@@ -462,6 +462,32 @@ async def run_goal(
                     "result": result.final_patch,
                 })
                 return result.final_patch
+            # A budget / wall-clock exhaustion inside the agent surfaces as
+            # result.error (the agent swallows BudgetExceeded so spawned
+            # children can return gracefully), which otherwise loses the
+            # helpful "raise the cap" guidance and shows a generic error.
+            # Re-check the budget and, if that's the cause, emit the same
+            # message as the BudgetExceeded handler above.
+            try:
+                budget.check()
+            except BudgetExceeded as be:
+                _end_episode_with_spend(world, episode_id, f"budget: {be}", "failure", budget, goal_id)
+                _maybe_record_reflexion(
+                    goal, failure_class="budget", failure_msg=str(be),
+                    blackboard=blackboard, shield=shield, channel=channel,
+                    user_id=user_id,
+                )
+                world.set_goal_status(goal_id, "blocked", result=f"budget exceeded: {be}")
+                _fire_webhook("goal_finished", {
+                    "goal_id": goal_id, "status": "blocked",
+                    "result": f"budget exceeded: {be}",
+                })
+                return (
+                    f"Stopped: this goal hit your spending or time limit "
+                    f"(${budget.dollars:.2f}, {budget.elapsed():.0f}s elapsed).\n"
+                    f"Resume with a higher cap: "
+                    f"maverick resume #{goal_id} --max-dollars <higher>"
+                )
             _end_episode_with_spend(world, episode_id, result.error, "failure", budget, goal_id)
             _maybe_record_reflexion(
                 goal,

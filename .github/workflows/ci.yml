@@ -32,6 +32,25 @@ jobs:
             echo "Use the try/except fallback documented in CLAUDE.md."
             exit 1
           fi
+      - name: Confine `shell=True` to the sandbox backends (CLAUDE.md rule 4)
+        # Security boundary: tools must never call subprocess with shell=True
+        # directly -- model-generated input goes through sandbox.exec(), the
+        # single chokepoint that applies the configured backend AND the
+        # secret-scrubbed env. A shell=True anywhere else is a command-
+        # injection / unsandboxed-exec foothold. The only legitimate
+        # occurrence is the LocalBackend itself under maverick/sandbox/.
+        run: |
+          hits="$(grep -rn --include='*.py' 'shell=True' apps packages \
+                  | grep -v '/sandbox/' | grep -v '/tests/' || true)"
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo ""
+            echo "ERROR: shell=True outside maverick/sandbox/. Route shell through"
+            echo "sandbox.exec() (CLAUDE.md rule 4), or move the call into a sandbox"
+            echo "backend. If genuinely required, add it to this grep's allowlist"
+            echo "with a justification."
+            exit 1
+          fi
 
   audit:
     runs-on: ubuntu-latest

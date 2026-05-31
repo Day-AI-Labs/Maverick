@@ -11,6 +11,7 @@ Respects:
 """
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import logging
 import re
@@ -199,30 +200,125 @@ class _RevalidatingRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+def _resolve_pinned(host: str) -> str:
+    """Resolve ``host`` ONCE, validate every returned address, and return a
+    single pinned IP literal to connect to.
+
+    This closes the resolve-then-reconnect TOCTOU (DNS rebinding): the IP
+    returned here is the exact IP the socket is opened to, with no second
+    name resolution by the connection layer. Honors
+    ``MAVERICK_FETCH_ALLOW_PRIVATE=1`` (which skips validation and returns the
+    hostname unchanged, preserving the override's existing behavior). Fails
+    CLOSED otherwise — a resolution failure or any blocked address in the
+    result set raises ``ValueError`` rather than letting the connection layer
+    re-resolve to an unvalidated address.
+    """
+    import os
+    if os.environ.get("MAVERICK_FETCH_ALLOW_PRIVATE") == "1":
+        return host
+    try:
+        addrs = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as e:
+        raise ValueError(
+            f"refusing to fetch {host!r}: DNS resolution failed ({e}). "
+            "Set MAVERICK_FETCH_ALLOW_PRIVATE=1 to override."
+        ) from e
+    pinned: str | None = None
+    for _fam, _stype, _proto, _name, sockaddr in addrs:
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            raise ValueError(
+                f"refusing to fetch {host!r}: resolves to blocked address "
+                f"{ip_str} (SSRF guard). Set MAVERICK_FETCH_ALLOW_PRIVATE=1 "
+                "to override."
+            )
+        if pinned is None:
+            pinned = ip_str
+    if pinned is None:
+        raise ValueError(f"refusing to fetch {host!r}: no usable address resolved")
+    return pinned
+
+
+def _make_pinned_connect(connect):
+    """Wrap an ``http.client`` connection's ``connect`` so the socket is opened
+    to the validated pinned IP for ``self.host`` instead of letting the
+    connection layer re-resolve the name. ``self.host`` is left untouched so
+    the ``Host`` header, TLS SNI, and certificate verification still use the
+    real hostname."""
+    def _connect(self):
+        ip = _resolve_pinned(self.host)
+        if ip == self.host:
+            # Override path (allow-private): no pinning, normal resolution.
+            return connect(self)
+        orig_create = self._create_connection
+
+        def _create(address, *a, **k):
+            # Replace the (hostname, port) target with the pinned IP; the
+            # port and all other args are preserved.
+            return orig_create((ip, address[1]), *a, **k)
+
+        self._create_connection = _create
+        try:
+            return connect(self)
+        finally:
+            self._create_connection = orig_create
+    return _connect
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    connect = _make_pinned_connect(http.client.HTTPConnection.connect)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    connect = _make_pinned_connect(http.client.HTTPSConnection.connect)
+
+
+class _PinnedHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_PinnedHTTPConnection, req)
+
+
+class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(
+            _PinnedHTTPSConnection, req,
+            context=self._context, check_hostname=self._check_hostname,
+        )
+
+
 def guarded_urlopen(url: str, *, timeout: float, allow_http: bool = False):
-    """``urllib.request.urlopen`` with scheme + SSRF host checks.
+    """``urllib.request.urlopen`` with scheme + SSRF host checks, redirect
+    revalidation, and DNS-rebind-proof connection pinning.
 
     The shared guarded fetch for paths that pull a user- or model-supplied
     URL outside the http_fetch tool (skill install, catalog index). Enforces
     https (http only when ``allow_http``) and refuses hosts resolving to a
-    private/loopback/link-local/reserved address via ``is_blocked_host``
-    (honoring ``MAVERICK_FETCH_ALLOW_PRIVATE=1``) before opening the
-    connection. The check is re-run on every redirect hop via a custom
-    opener, so a public URL cannot 302 the fetch onto an internal address.
-    Returns the response, so callers use it as
-    ``with guarded_urlopen(url, timeout=...) as resp:``.
-
-    Residual: the host is resolved here and again by ``urlopen``, so a fast
-    DNS rebind between the two is not stopped (the same limitation this tool
-    already carries; resolve-once-pin-IP is tracked separately). The win is
-    closing the previously *unguarded* skill/catalog fetch paths AND the
-    redirect-follow bypass of the host check.
+    private/loopback/link-local/reserved address (honoring
+    ``MAVERICK_FETCH_ALLOW_PRIVATE=1``). The host check is re-run on every
+    redirect hop, and the connection is opened to the exact IP validated by
+    ``_resolve_pinned`` — the name is resolved once and that IP is pinned for
+    the socket, so a fast DNS rebind between check and connect cannot redirect
+    the request onto an internal address. Returns the response, so callers use
+    it as ``with guarded_urlopen(url, timeout=...) as resp:``.
     """
     _check_url_allowed(url, allow_http=allow_http)
     opener = urllib.request.build_opener(
-        _RevalidatingRedirectHandler(allow_http=allow_http)
+        _PinnedHTTPHandler,
+        _PinnedHTTPSHandler,
+        _RevalidatingRedirectHandler(allow_http=allow_http),
     )
-    return opener.open(url, timeout=timeout)  # noqa: S310 (scheme+host checked, redirects revalidated)
+    return opener.open(url, timeout=timeout)  # noqa: S310 (scheme+host checked, redirects revalidated, IP pinned)
 
 
 def _check_robots(url: str, user_agent: str = "Maverick") -> bool:

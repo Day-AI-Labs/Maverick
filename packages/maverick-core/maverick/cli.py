@@ -777,6 +777,55 @@ def template_show(name: str) -> None:
 
 
 @main.command()
+@click.argument("question")
+@click.option("--rounds", default=2, show_default=True, type=int,
+              help="Number of debate rounds before the judge decides.")
+@click.option("--max-dollars", default=1.0, show_default=True, type=float,
+              help="Spend cap for the whole debate.")
+@click.option("--for", "for_stance", default=None,
+              help="Stance the proponent defends (default: 'yes / sound').")
+@click.option("--against", "against_stance", default=None,
+              help="Stance the skeptic defends (default: 'no / flawed').")
+@click.pass_context
+def debate(ctx, question: str, rounds: int, max_dollars: float,
+           for_stance: str | None, against_stance: str | None) -> None:
+    """Run a two-sided debate on QUESTION and print the judged verdict.
+
+    Two LLM debaters -- a proponent and a skeptic -- argue for ROUNDS rounds,
+    then an impartial judge declares a winner. Useful for pressure-testing a
+    decision before you commit to it.
+    """
+    from .budget import Budget
+    from .debate import DebateParticipant, run_debate
+    k = _kernel()
+    llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
+    participants = [
+        DebateParticipant(
+            name="Proponent",
+            persona=for_stance or "the answer is YES / the proposal is sound",
+            llm_complete=llm.complete,
+        ),
+        DebateParticipant(
+            name="Skeptic",
+            persona=against_stance or "the answer is NO / the proposal is flawed",
+            llm_complete=llm.complete,
+        ),
+    ]
+    result = run_debate(
+        question, participants, judge_complete=llm.complete,
+        rounds=rounds, budget=Budget(max_dollars=max_dollars),
+    )
+    for t in result.transcript:
+        click.echo(f"\n[{t.speaker}]\n{t.text}")
+    click.echo("\n" + "=" * 48)
+    click.echo(f"Winner: {result.winner}")
+    click.echo(f"Why: {result.judge_reason}")
+    if result.key_argument:
+        click.echo(f"Key argument: {result.key_argument}")
+    click.echo(f"\n[{result.rounds_completed} round(s), ${result.total_dollars:.4f}]")
+
+
+@main.command()
 @click.option("--idle-sleep", default=2.0, show_default=True,
               help="Seconds to wait when the queue is empty.")
 def worker(idle_sleep: float) -> None:

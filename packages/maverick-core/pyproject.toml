@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 # `maverick` (see [tool.setuptools.packages.find]) and the CLI entry
 # point stays `maverick` (see [project.scripts]).
 name = "maverick-agent"
-version = "0.1.5"
+version = "0.1.6"
 description = "Recursive multi-agent swarm for long-horizon work"
 requires-python = ">=3.10"
 license = { text = "MIT" }

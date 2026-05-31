@@ -6,16 +6,20 @@ call ``require_consent(action, risk_level)`` which:
   1. Checks the consent ledger -- a previously-granted consent for the
      same (action, scope) returns immediately.
   2. Checks ``MAVERICK_CONSENT_MODE`` env var:
-        - "auto-approve"   -> grant + log
-        - "auto-deny"      -> deny + log
-        - "ask" (default)  -> ask the user; in non-tty contexts, deny
+        - "auto-approve" (default) -> grant + log (no friction out of the box)
+        - "auto-deny"              -> deny + log
+        - "ask"                    -> ask the user; in non-tty contexts, deny
+        - "dashboard"              -> park in the approvals queue + poll
   3. Logs an audit event for prompt + result.
 
 Threading: prompts serialize through a lock so two parallel agents
 don't both pop a prompt simultaneously on the same TTY.
 
-Note: this is the *primitive*. Tools wire it in themselves; we don't
-auto-intercept every shell command (that's the agent shield's job).
+Note: this is the *primitive*. Tools wire it in themselves (the ``shell``
+tool does). The default mode is ``auto-approve`` so gating is strictly
+opt-in -- an operator turns it on via ``MAVERICK_CONSENT_MODE`` -- which
+keeps the out-of-the-box behavior unchanged while making the approvals
+queue / dashboard actually reachable.
 """
 from __future__ import annotations
 
@@ -53,7 +57,10 @@ _prompt_lock = threading.Lock()
 
 
 def _resolve_mode() -> str:
-    return (os.environ.get("MAVERICK_CONSENT_MODE") or "ask").strip().lower()
+    # Default 'auto-approve': gating is opt-in, so wiring require_consent into
+    # tools (e.g. shell) does not change out-of-the-box behavior. Operators
+    # set MAVERICK_CONSENT_MODE=ask/dashboard/auto-deny to actually gate.
+    return (os.environ.get("MAVERICK_CONSENT_MODE") or "auto-approve").strip().lower()
 
 
 def _ledger_lines() -> list[str]:

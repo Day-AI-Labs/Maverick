@@ -23,14 +23,25 @@ def test_consent_auto_deny_mode(tmp_path, monkeypatch):
     assert d.source == "auto"
 
 
-def test_consent_non_tty_denies(tmp_path, monkeypatch):
+def test_consent_ask_mode_non_tty_denies(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.delenv("MAVERICK_CONSENT_MODE", raising=False)
-    # In pytest, sys.stdin.isatty() is False (captured stdin).
+    # 'ask' mode in a non-tty context (pytest captures stdin) denies.
+    monkeypatch.setenv("MAVERICK_CONSENT_MODE", "ask")
     from maverick.safety.consent import require_consent
     d = require_consent("test-action")
     assert d.granted is False
     assert d.source == "non-tty-deny"
+
+
+def test_consent_default_is_opt_in_auto_approve(tmp_path, monkeypatch):
+    # With no MAVERICK_CONSENT_MODE set, gating is OFF (auto-approve) so wiring
+    # require_consent into tools doesn't change out-of-the-box behavior.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_CONSENT_MODE", raising=False)
+    from maverick.safety.consent import require_consent
+    d = require_consent("test-action")
+    assert d.granted is True
+    assert d.source == "auto"
 
 
 def test_consent_raise_on_deny(tmp_path, monkeypatch):

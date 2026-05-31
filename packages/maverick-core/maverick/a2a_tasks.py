@@ -43,6 +43,16 @@ log = logging.getLogger(__name__)
 
 TERMINAL_STATES = {"completed", "failed", "canceled", "rejected"}
 
+
+def _max_tasks() -> int:
+    try:
+        return max(16, int(os.environ.get("MAVERICK_A2A_MAX_TASKS", "1000")))
+    except ValueError:
+        return 1000
+
+
+_MAX_TASKS = _max_tasks()
+
 # JSON-RPC error codes used by the engine (-32000..-32099 is the
 # server-defined range; the standard codes like parse/invalid-request are
 # emitted as literals at the HTTP boundary in a2a.py).
@@ -239,7 +249,14 @@ class TaskEngine:
         user_message["taskId"] = task.id
         user_message["contextId"] = task.context_id
         with self._lock:
+            # Bound the in-memory task store so an authenticated client can't
+            # grow it without limit (memory DoS). Evict the oldest tasks past
+            # the cap -- dict preserves insertion order, so popping the front
+            # drops the least-recently-created. Override via
+            # MAVERICK_A2A_MAX_TASKS.
             self._tasks[task.id] = task
+            while len(self._tasks) > _MAX_TASKS:
+                self._tasks.pop(next(iter(self._tasks)))
         return task
 
     async def _run(self, task: _Task) -> None:

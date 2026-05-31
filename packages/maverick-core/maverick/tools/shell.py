@@ -217,6 +217,22 @@ def shell(sandbox) -> Tool:
                     "PYTHONPATH to include the worktree explicitly. "
                     "(Override by setting MAVERICK_BENCHMARK_OPAQUE=0.)"
                 )
+        # Opt-in destructive-action gate. Under the default 'auto-approve'
+        # consent mode this is a no-op (granted + logged), so behavior is
+        # unchanged out of the box. An operator who sets MAVERICK_CONSENT_MODE
+        # to ask / dashboard / auto-deny gets every shell command gated --
+        # parked in the approvals queue for the dashboard, prompted in a tty,
+        # or denied non-interactively. The denial surfaces as a tool result so
+        # the agent can react, exactly like any other tool error.
+        from ..safety import ConsentDenied, require_consent
+        try:
+            require_consent(
+                "shell", risk="high", scope=cmd[:120], detail=cmd,
+                raise_on_deny=True,
+            )
+        except ConsentDenied:
+            return "⚠ Shell command denied by consent policy (MAVERICK_CONSENT_MODE)."
+
         # Wave 11 (D5 follow-up): the shell tool used to always fall back to
         # `sandbox.timeout` (60 s on LocalBackend) which kills pytest runs
         # on real SWE-bench repos. Detect long-running commands and pass
