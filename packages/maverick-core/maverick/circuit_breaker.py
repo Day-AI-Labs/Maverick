@@ -61,7 +61,8 @@ class _Stats:
     total_failures: int = 0
     total_successes: int = 0
     last_failure_at: float = 0.0
-    opened_at: float = 0.0
+    opened_at: float = 0.0          # wall clock, for snapshot/display only
+    opened_mono: float = 0.0        # monotonic, for the cooldown duration math
 
 
 class CircuitBreaker:
@@ -87,15 +88,17 @@ class CircuitBreaker:
     @property
     def state(self) -> CircuitState:
         with self._lock:
-            self._tick(now=time.time())
+            self._tick()
             return self._state
 
-    def _tick(self, *, now: float) -> None:
-        # If we're OPEN and cooldown has elapsed, drop to HALF_OPEN
-        # so the very next call() probes the dependency.
+    def _tick(self) -> None:
+        # If we're OPEN and cooldown has elapsed, drop to HALF_OPEN so the very
+        # next call() probes the dependency. Measured on the monotonic clock so
+        # an NTP/DST step can't keep the breaker OPEN forever (backward jump) or
+        # trip it HALF_OPEN early and re-storm a dead service (forward jump).
         if (
             self._state is CircuitState.OPEN
-            and now - self._stats.opened_at >= self.cooldown_seconds
+            and time.monotonic() - self._stats.opened_mono >= self.cooldown_seconds
         ):
             self._state = CircuitState.HALF_OPEN
 
@@ -109,6 +112,7 @@ class CircuitBreaker:
     def record_failure(self) -> None:
         with self._lock:
             now = time.time()
+            now_mono = time.monotonic()
             self._probe_in_flight = False
             self._stats.consecutive_failures += 1
             self._stats.total_failures += 1
@@ -117,16 +121,18 @@ class CircuitBreaker:
                 # Probe failed → reopen with fresh cooldown.
                 self._state = CircuitState.OPEN
                 self._stats.opened_at = now
+                self._stats.opened_mono = now_mono
                 return
             if self._stats.consecutive_failures >= self.failure_threshold:
                 self._state = CircuitState.OPEN
                 self._stats.opened_at = now
+                self._stats.opened_mono = now_mono
 
     def call(self, fn: Callable[[], T]) -> T:
         """Run ``fn`` if allowed; raise ``CircuitOpen`` otherwise."""
         probe_started = False
         with self._lock:
-            self._tick(now=time.time())
+            self._tick()
             if self._state is CircuitState.OPEN:
                 raise CircuitOpen(
                     f"circuit {self.key!r} OPEN "
@@ -163,7 +169,7 @@ class CircuitBreaker:
 
     def snapshot(self) -> dict:
         with self._lock:
-            self._tick(now=time.time())
+            self._tick()
             return {
                 "key": self.key,
                 "state": self._state.value,
