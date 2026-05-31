@@ -132,16 +132,29 @@ class ToolRegistry:
         self._tools: dict[str, Tool] = {}
         self._acl_allowed: set[str] = set()
         self._acl_denied: set[str] = set()
+        self._acl_max_risk: str | None = None
 
-    def set_acl(self, *, allowed: set[str] | None = None, denied: set[str] | None = None) -> None:
+    def set_acl(
+        self,
+        *,
+        allowed: set[str] | None = None,
+        denied: set[str] | None = None,
+        max_risk: str | None = None,
+    ) -> None:
         self._acl_allowed = set(allowed or set())
         self._acl_denied = set(denied or set())
+        self._acl_max_risk = max_risk
 
     def _acl_allows(self, name: str) -> bool:
         if self._acl_allowed and name not in self._acl_allowed:
             return False
         if self._acl_denied and name in self._acl_denied:
             return False
+        if self._acl_max_risk:
+            from ..safety.tool_risk import risk_rank, tool_risk
+
+            if risk_rank(tool_risk(name)) > risk_rank(self._acl_max_risk):
+                return False
         return True
 
     def register(self, tool: Tool) -> None:

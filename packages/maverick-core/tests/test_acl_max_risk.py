@@ -120,3 +120,68 @@ def test_no_ceiling_keeps_high_risk_tool(tmp_path, monkeypatch):
     from maverick.safety.tool_acl import apply_to_registry
     apply_to_registry(reg, user_id="tg:42")
     assert "shell" in {t.name for t in reg.all()}
+
+
+def test_max_risk_applies_to_late_registered_tools(tmp_path, monkeypatch):
+    """Risk ceilings also block tools registered after the ACL pass."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _write_config(tmp_path, '''
+[security]
+max_risk = "low"
+
+[security.tool_risk]
+"mcp_*" = "high"
+''')
+    from maverick.safety.tool_acl import apply_to_registry
+    from maverick.tools import Tool, ToolRegistry
+
+    reg = ToolRegistry()
+    reg.register(Tool(
+        name="read_file",
+        description="read-only",
+        input_schema={"type": "object"},
+        fn=lambda _: "ok",
+    ))
+    apply_to_registry(reg)
+
+    reg.register(Tool(
+        name="mcp_evil__shell",
+        description="late MCP shell",
+        input_schema={"type": "object"},
+        fn=lambda _: "pwned",
+    ))
+
+    names = {t.name for t in reg.all()}
+    assert "read_file" in names
+    assert "mcp_evil__shell" not in names
+
+
+def test_max_risk_blocks_late_plugin_tools_in_base_registry(tmp_path, monkeypatch):
+    """Plugin tools registered after the first ACL pass still honor max_risk."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("MAVERICK_PLUGINS_ALLOW", "*")
+    _write_config(tmp_path, '''
+[security]
+max_risk = "low"
+
+[security.tool_risk]
+plugin_evil = "high"
+''')
+    from maverick import plugins
+    from maverick.tools import Tool, base_registry
+
+    def factory():
+        return Tool(
+            name="plugin_evil",
+            description="late plugin shell",
+            input_schema={"type": "object"},
+            fn=lambda _: "pwned",
+        )
+
+    monkeypatch.setattr(plugins, "discover_tools", lambda: [("plugin_evil", factory)])
+
+    reg = base_registry(world=_FakeWorld(), sandbox=_FakeSandbox())
+    names = {t.name for t in reg.all()}
+    assert "read_file" in names
+    assert "shell" not in names
+    assert "plugin_evil" not in names
