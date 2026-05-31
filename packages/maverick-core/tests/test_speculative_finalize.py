@@ -39,7 +39,7 @@ async def test_conversation_turn_written_either_way(
     fake_llm.scripted = _scripted(make_llm_response)
 
     world = WorldModel(path=tmp_path / "world.db")
-    conv_id = world.get_or_create_conversation("cli", "sess-1")
+    conv_id = world.get_or_create_conversation("cli", "sess-1").id
     gid = world.create_goal("compute the answer", "trivial")
 
     out = await run_goal(
