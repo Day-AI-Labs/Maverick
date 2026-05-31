@@ -33,7 +33,7 @@ Alpha, but **installable today**: all six packages are on [PyPI](https://pypi.or
 | GUI | Native installer app + local web dashboard (`maverick dashboard`) + chat at `/chat` | Native Tauri shell for the agent itself + iOS/Android |
 | Sandbox | Local subprocess, Docker, SSH, Podman, devcontainer, Firecracker, Kubernetes | Modal, Daytona |
 | AI providers | Anthropic (full), OpenAI, OpenRouter, Ollama, Gemini, DeepSeek, Bedrock, Azure, xAI, Moonshot, TGI, vLLM (per-role routable) | Cohere |
-| Channels | Telegram, Discord, Slack, Signal, Email, Matrix, Bluesky, Mastodon (ready); WhatsApp, SMS, iMessage (scaffolds) | Push notifications, voice |
+| Channels | All 12 wired — Telegram, Discord, Slack, Signal, Email, Matrix, Bluesky, Mastodon, Voice; WhatsApp/SMS (need Twilio), iMessage (macOS-only) | Push notifications |
 | Safety | Shield wired at 3 chokepoints; agent-shield SDK if installed, else a built-in rule set | Agent-shield full ~115 patterns |
 | Distribution | PyPI (6 packages), GHCR image, PyInstaller binaries, **native installers on Releases** | Code signing; Homebrew tap |
 | Tests | 2000+ tests, ruff + pytest on Py 3.10/3.11/3.12 | Integration suite + benchmark RESULTS.md |
@@ -124,8 +124,8 @@ packages/
                        background runner, budget tracking
   maverick-shield/     Agent Shield integration + built-in fallback rule set
   maverick-channels/   12 channel adapters: Telegram, Discord, Slack, Signal,
-                       Email, Matrix, Bluesky, Mastodon, Voice (ready) + WhatsApp,
-                       SMS, iMessage (scaffold)
+                       Email, Matrix, Bluesky, Mastodon, Voice, WhatsApp, SMS,
+                       iMessage (WhatsApp/SMS need Twilio; iMessage is macOS-only)
   maverick-dashboard/  Local FastAPI web UI + REST API at /api/v1 + OpenAPI
                        docs at /docs. Live progress streaming via short-poll.
   maverick-mcp/        MCP server (stdio JSON-RPC) -- exposes Maverick to Claude
