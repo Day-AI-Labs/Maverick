@@ -219,3 +219,96 @@ async def test_disabled_does_not_checkpoint(tmp_path, monkeypatch):
     # No checkpoints table writes when disabled.
     cp = ckpt_mod.Checkpointer(world)
     assert cp.latest(gid, agent.checkpoint_id, episode_id=ctx.episode_id) is None
+
+
+# ---------- Phase 2: swarm-tree (spawn_swarm) ----------
+
+def test_clear_agent_scoped(tmp_path):
+    world = WorldModel(tmp_path / "w.db")
+    gid = world.create_goal("g", "")
+    cp = ckpt_mod.Checkpointer(world)
+    cp.save(goal_id=gid, agent_id="child-A", episode_id=3, step_seq=1,
+            messages=[{"x": 1}], budget=Budget())
+    cp.save(goal_id=gid, agent_id="child-B", episode_id=3, step_seq=1,
+            messages=[{"x": 2}], budget=Budget())
+    cp.clear_agent(gid, "child-A", episode_id=3)
+    assert cp.latest(gid, "child-A", episode_id=3) is None   # cleared
+    assert cp.latest(gid, "child-B", episode_id=3) is not None  # sibling intact
+
+
+def test_child_checkpoint_id_is_explicit_and_stable(tmp_path):
+    # A spawned child gets an explicit checkpoint_id; the property returns it
+    # verbatim (not the role-depth default, not the random name).
+    ctx, _w, _g = _mk_ctx(tmp_path, _ScriptedLLM([]))
+    child = Agent(ctx=ctx, role="researcher", brief="t", depth=1,
+                  checkpoint_id="orchestrator-0.s2.0.deadbeef")
+    assert child.checkpoint_id == "orchestrator-0.s2.0.deadbeef"
+    # A depth-0 agent with no override falls back to role-depth.
+    root = Agent(ctx=ctx, role="orchestrator", brief="t", depth=0)
+    assert root.checkpoint_id == "orchestrator-0"
+
+
+@pytest.mark.asyncio
+async def test_spawn_swarm_child_keeps_checkpoint_on_crash_clears_on_success(tmp_path, monkeypatch):
+    """A swarm with one child that finishes and one that crashes: the finished
+    child's checkpoint is cleared after gather; the crashed child's is kept so
+    it can resume. The parent re-runs the swarm step (Phase-2 coarse boundary),
+    but each child resumes its own loop."""
+    monkeypatch.setenv("MAVERICK_DURABLE", "1")
+
+    # Per-child scripted LLMs keyed by the child's brief (task), so child A
+    # finalizes immediately and child B crashes (empty script).
+    scripts = {
+        "task-A": _ScriptedLLM([_resp(text="FINAL: A done")]),
+        "task-B": _ScriptedLLM([]),  # crashes on first call
+    }
+
+    class _RoutingLLM:
+        """Routes complete_async to a per-child script based on the brief in
+        the system/messages. Falls back to a finalize for the parent."""
+        def __init__(self):
+            self.parent_calls = 0
+
+        async def complete_async(self, **kwargs):
+            msgs = kwargs.get("messages") or []
+            # Route to a child script ONLY by the child's FIRST user message
+            # (its brief). The parent's later turns also mention the tasks (in
+            # the spawn tool_call + results), so match messages[0] only.
+            first = str(msgs[0]) if msgs else ""
+            for key, script in scripts.items():
+                if key in first:
+                    return await script.complete_async(**kwargs)
+            # Parent orchestrator turn: spawn the swarm on the first call,
+            # finalize on the second.
+            from maverick.llm import ToolCall as _TC
+            self.parent_calls += 1
+            if self.parent_calls == 1:
+                return _resp(stop_reason="tool_use", tool_calls=[_TC(
+                    id="s1", name="spawn_swarm",
+                    input={"agents": [
+                        {"role": "researcher", "task": "task-A"},
+                        {"role": "researcher", "task": "task-B"},
+                    ]},
+                )])
+            return _resp(text="FINAL: parent done")
+
+    ctx, world, gid = _mk_ctx(tmp_path, _RoutingLLM())
+    # Allow the orchestrator to spawn (depth 0 -> children at depth 1).
+    object.__setattr__(ctx, "max_depth", 2)
+    agent = Agent(ctx=ctx, role="orchestrator", brief="coordinate", depth=0)
+
+    # The swarm runs; child B raises inside gather (return_exceptions=True), so
+    # the parent's spawn_swarm returns a summary and the run continues.
+    await agent.run()
+
+    # There should be a kept checkpoint for the crashed child (task-B) and none
+    # for the finished child (task-A).
+    rows = world.conn.execute(
+        "SELECT agent_id FROM checkpoints WHERE goal_id = ? AND episode_id = ?",
+        (gid, ctx.episode_id),
+    ).fetchall()
+    ids = {r[0] for r in rows}
+    kept_b = {i for i in ids if ".1." in i}   # child index 1 == task-B
+    cleared_a = {i for i in ids if ".0." in i}  # child index 0 == task-A
+    assert kept_b, f"crashed child B should keep a checkpoint; got {ids}"
+    assert not cleared_a, f"finished child A checkpoint should be cleared; got {ids}"

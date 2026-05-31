@@ -112,17 +112,31 @@ def spawn_swarm_tool(parent: Agent) -> Tool:
                 f"ERROR: per-goal spawn cap ({parent.ctx.max_total_spawns}) reached"
             )
 
-        children = [
-            Agent(
+        # Durable execution (Phase 2): give each child a STABLE checkpoint id so
+        # a crash mid-swarm lets each child resume its own loop instead of the
+        # whole swarm re-running. Key = parent id + spawn-step + index + a short
+        # brief hash, so an identical re-spawn matches the prior child while a
+        # DIVERGENT re-spawn (resume re-decides; continuation, not replay) gets a
+        # different key and starts fresh — both correct. (Skipping a fully
+        # completed child entirely is a further optimization that needs
+        # spawn-intent replay; deferred, see docs/specs/durable-execution.md.)
+        import hashlib as _hashlib
+        _spawn_step = getattr(parent, "_current_step", 0)
+        children = []
+        for _i, spec in enumerate(agents_spec):
+            _bh = _hashlib.sha1(
+                f"{spec['role']}|{spec['task']}".encode()
+            ).hexdigest()[:8]
+            _cid = f"{parent.checkpoint_id}.s{_spawn_step}.{_i}.{_bh}"
+            children.append(Agent(
                 ctx=parent.ctx,
                 role=spec["role"],
                 brief=spec["task"],
                 depth=parent.depth + 1,
                 parent=parent,
                 max_steps=parent.max_steps,
-            )
-            for spec in agents_spec
-        ]
+                checkpoint_id=_cid,
+            ))
 
         parent.ctx.blackboard.post(
             parent.name,
@@ -132,6 +146,24 @@ def spawn_swarm_tool(parent: Agent) -> Tool:
         )
 
         results = await asyncio.gather(*(c.run() for c in children), return_exceptions=True)
+
+        # Phase 2: children that returned (not raised) are done — their finals
+        # land in the parent's history, so their checkpoints are now stale.
+        # Drop them so a later identical re-spawn doesn't wrongly resume a
+        # finished child. A child that RAISED keeps its checkpoint for resume.
+        # Fail-open: checkpoint cleanup never affects the swarm result.
+        try:
+            from .. import checkpoint as _ckpt_mod
+            if _ckpt_mod.enabled():
+                _cp = _ckpt_mod.Checkpointer(parent.ctx.world)
+                _ep = getattr(parent.ctx, "episode_id", 0) or 0
+                for child, res in zip(children, results):
+                    if not isinstance(res, Exception):
+                        _cp.clear_agent(
+                            parent.ctx.goal_id, child.checkpoint_id, episode_id=_ep,
+                        )
+        except Exception:  # pragma: no cover -- cleanup is best-effort
+            pass
 
         # SubagentStop hooks: one per child that completed without raising.
         from ..hooks import HookEvent

@@ -180,7 +180,20 @@ lands when the durable loop exists to hang it on.
   (stable) and `episode_id` is threaded through `SwarmContext` — so best-of-N
   attempts (same `goal_id`, distinct episodes) never cross-resume. Production
   resume now works without test-only name pinning.
-- **Phase 2 — swarm tree.** Per-agent records + parent re-gather; rewind/fork.
+- **Phase 2 — swarm tree.** ✅ *Shipped.* Spawned `spawn_swarm` children now
+  checkpoint independently under a stable id (`{parent}.s{spawn_step}.{index}.
+  {brief-hash}`), so a crash mid-swarm lets **each child resume its own loop**
+  instead of the whole swarm re-running. Children that return are cleared after
+  `gather` (their finals are in the parent's history); a child that **raised**
+  keeps its checkpoint. Children don't restore the shared budget (only the
+  depth-0 owner does). **Soundness:** resume is continuation-not-replay, so a
+  re-spawn may differ — an *identical* re-spawn matches each child's key and
+  resumes mid-loop; a *divergent* re-spawn gets new keys and starts fresh, with
+  stale checkpoints orphaned (then pruned/cleared). Both are correct.
+  **Deferred:** *skipping* a fully-completed child entirely (memoizing its
+  final across a parent re-decision) needs spawn-intent replay; not done — the
+  parent still re-runs the swarm step, just without re-running finished
+  children's full loops. See `tools/spawn.py` + `test_durable_checkpoint.py`.
 - **Phase 3 — pluggable backend + sandbox-snapshot hook** (interface only).
 - **Phase 4 — deterministic replay** (record tool outputs + seeds; `maverick
   replay <id>`), which also serves the audit-log + eval-harness work.

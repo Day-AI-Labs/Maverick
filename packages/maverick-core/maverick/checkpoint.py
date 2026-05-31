@@ -206,6 +206,21 @@ class Checkpointer:
         except Exception as e:  # pragma: no cover
             log.debug("checkpoint: clear failed (non-fatal): %s", e)
 
+    def clear_agent(self, goal_id: int, agent_id: str, episode_id: int = 0) -> None:
+        """Drop checkpoints for one (goal, episode, agent) — e.g. a swarm child
+        that finished, whose checkpoint is now stale."""
+        if goal_id is None or not self._ensure():
+            return
+        try:
+            with self._world._writing() as conn:
+                conn.execute(
+                    "DELETE FROM checkpoints "
+                    "WHERE goal_id = ? AND episode_id = ? AND agent_id = ?",
+                    (goal_id, episode_id, agent_id),
+                )
+        except Exception as e:  # pragma: no cover
+            log.debug("checkpoint: clear_agent failed (non-fatal): %s", e)
+
 
 # ----- Budget (de)serialization -----
 # Budget is a dataclass of plain int/float counters + caps; snapshot the

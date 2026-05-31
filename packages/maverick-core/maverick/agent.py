@@ -93,6 +93,7 @@ class Agent:
         depth: int = 0,
         parent: Agent | None = None,
         max_steps: int = 25,
+        checkpoint_id: str | None = None,
     ):
         self.ctx = ctx
         self.role = role
@@ -105,6 +106,12 @@ class Agent:
         # to override globally via MAVERICK_MAX_STEPS, default 25.
         self.max_steps = env_int("MAVERICK_MAX_STEPS", max_steps)
         self.name = f"{role}-{depth}-{uuid.uuid4().hex[:6]}"
+        # Phase 2: spawned children pass an explicit stable checkpoint_id
+        # (parent's id + spawn-step + position) so each child resumes its own
+        # loop. Depth-0 falls back to the role-depth default.
+        self._checkpoint_id_override = checkpoint_id
+        # Current step in run()'s loop; read by spawn_swarm to key child ids.
+        self._current_step = 0
 
         self.tools = self._build_tools()
         self.system = self._build_system()
@@ -133,9 +140,11 @@ class Agent:
         uniqueness), so it can't key a checkpoint that must survive a
         fresh-process resume. The depth-0 agent is the single orchestrator of
         its episode, so ``"{role}-0"`` is stable and unique within
-        (goal_id, episode_id). Phase 2 will extend this for spawned children.
+        (goal_id, episode_id). Spawned children (Phase 2) pass an explicit
+        override keyed by parent + spawn-step + position so each child resumes
+        its own loop.
         """
-        return f"{self.role}-{self.depth}"
+        return self._checkpoint_id_override or f"{self.role}-{self.depth}"
 
     def _build_tools(self) -> ToolRegistry:
         # Honor [capabilities] from config: these gate the optional
@@ -645,7 +654,16 @@ class Agent:
         start_step = 0
         ckpt = None
         ep_id = getattr(self.ctx, "episode_id", 0) or 0
-        if self.depth == 0 and self.ctx.goal_id is not None:
+        # Checkpoint the depth-0 orchestrator (Phase 1) AND any agent given an
+        # explicit checkpoint_id — i.e. a spawned swarm child (Phase 2). A child
+        # resumes its OWN loop (messages + step); only the depth-0 owner of the
+        # shared budget restores it (a child restoring would clobber the swarm's
+        # shared counter).
+        _is_checkpointed = (
+            self.ctx.goal_id is not None
+            and (self.depth == 0 or self._checkpoint_id_override is not None)
+        )
+        if _is_checkpointed:
             try:
                 from . import checkpoint as _ckpt_mod
                 if _ckpt_mod.enabled():
@@ -658,16 +676,20 @@ class Agent:
                     if saved is not None and saved.messages:
                         messages = saved.messages
                         start_step = saved.step_seq
-                        try:
-                            self.ctx.budget = _ckpt_mod.restore_budget(saved.budget)
-                        except Exception:
-                            pass
+                        if self.depth == 0:
+                            try:
+                                self.ctx.budget = _ckpt_mod.restore_budget(saved.budget)
+                            except Exception:
+                                pass
                         bb.post(self.name, "plan",
                                 f"resumed from checkpoint at step {start_step}")
             except Exception as e:  # pragma: no cover -- never block a run
                 log.debug("checkpoint resume skipped: %s", e)
 
         for step in range(start_step, self.max_steps):
+            # Expose the current step so spawn_swarm can key child checkpoint
+            # ids by (parent, spawn-step, index) — stable across resume.
+            self._current_step = step
             # Durable checkpoint at the turn boundary: commit the resumable
             # loop state (step index, messages, budget snapshot) BEFORE the
             # next LLM call, so a crash mid-step loses at most one step's work.
