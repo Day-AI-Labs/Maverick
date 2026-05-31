@@ -251,6 +251,43 @@ def test_gemini_session_extracts_at_token(tmp_path, monkeypatch):
     assert out.text == "the-answer"
 
 
+def test_gemini_parse_handles_varied_content_shapes():
+    """The candidate text may arrive as a str, a nested list, or a dict;
+    all must yield the text, not '' or a stringified list (issue #454)."""
+    import json
+
+    from maverick.session_providers.gemini_session import _parse_stream_response
+
+    def _body(candidates):
+        inner = json.dumps([None, None, None, None, candidates])
+        outer = json.dumps([[None, None, inner]])
+        return ")]}'\n" + str(len(outer)) + "\n" + outer
+
+    # Plain string (the common shape) — regression guard.
+    assert _parse_stream_response(_body([["u", ["plain"]]])) == "plain"
+    # Dict-shaped multimodal text frame — previously dropped to ''.
+    assert _parse_stream_response(_body([["u", [{"text": "from-dict"}]]])) == "from-dict"
+    # Deeper nested list — previously stringified as "['x']".
+    assert _parse_stream_response(_body([["u", [[["deep"]]]]])) == "deep"
+
+
+def test_gemini_parse_tolerates_malformed_chunks():
+    """Metadata-only / truncated / non-JSON chunks must not crash the parser."""
+    import json
+
+    from maverick.session_providers.gemini_session import _parse_stream_response
+
+    assert _parse_stream_response("") == ""
+    # Inner candidate path missing entirely (metadata-only frame).
+    outer = json.dumps([[None, None, json.dumps([None, None])]])
+    assert _parse_stream_response(")]}'\n" + str(len(outer)) + "\n" + outer) == ""
+    # obj[0][2] is null (not a JSON string) — must skip, not raise.
+    outer = json.dumps([[None, None, None]])
+    assert _parse_stream_response(")]}'\n" + str(len(outer)) + "\n" + outer) == ""
+    # Garbage between chunks is skipped line-by-line.
+    assert _parse_stream_response(")]}'\nnot-json\n123\n") == ""
+
+
 def test_gemini_session_rejects_tool_use(tmp_path, monkeypatch):
     _stub_session(
         tmp_path, monkeypatch, "gemini-session",

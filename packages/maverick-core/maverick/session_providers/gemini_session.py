@@ -71,6 +71,28 @@ def _extract_token(html: str, key: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _extract_text(node: object) -> str:
+    """Pull the model text out of Gemini's candidate-content node.
+
+    The text usually arrives as a plain string, but richer responses nest it
+    as a one-element list (``["text"]``), a deeper nested list, or a dict with
+    a ``text`` key (multimodal frames). Walk those shapes instead of assuming
+    a string — the old code returned ``""`` for the dict shape (dropping the
+    whole answer) and stringified a nested list as ``"['x']"``.
+    """
+    if isinstance(node, str):
+        return node
+    if isinstance(node, dict):
+        val = node.get("text")
+        return val if isinstance(val, str) else ""
+    if isinstance(node, list):
+        for item in node:
+            text = _extract_text(item)
+            if text:
+                return text
+    return ""
+
+
 def _parse_stream_response(stream_text: str) -> str:
     """Gemini's StreamGenerate emits ``)]}\\\\n`` chunked JSON arrays.
 
@@ -111,12 +133,9 @@ def _parse_stream_response(stream_text: str) -> str:
                         if isinstance(cand, list) and len(cand) > 1:
                             content = cand[1]
                             if isinstance(content, list) and content:
-                                first = content[0]
-                                if isinstance(first, str):
-                                    pieces.append(first)
-                                    break
-                                if isinstance(first, list) and first:
-                                    pieces.append(str(first[0]))
+                                text = _extract_text(content[0])
+                                if text:
+                                    pieces.append(text)
                                     break
         except (json.JSONDecodeError, IndexError, TypeError):
             continue
