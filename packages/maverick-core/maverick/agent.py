@@ -207,36 +207,106 @@ class Agent:
             extract_unified_diff,
         )
         from .edit_format import (
-            ApplyResult, SearchReplaceBlock, apply_blocks, parse_blocks,
-            render_diff,
+            ApplyResult, ApplySummary, SearchReplaceBlock, apply_blocks,
+            parse_blocks, render_diff,
         )
 
         workdir = _Path(getattr(self.ctx.sandbox, "workdir", "."))
         blocks = parse_blocks(final)
         if blocks:
-            summary = apply_blocks(blocks, workdir, atomic=True)
-            if not summary.ok:
-                return None, summary
-            touched_paths = sorted(summary.files_touched)
-            syntax_errors = _ast_check_python_files(workdir, touched_paths)
-            if syntax_errors:
-                # Roll back the SR application so the next attempt sees
-                # HEAD, then synthesise a failure summary the caller
-                # can convert into a repair prompt.
-                self._reset_workdir()
-                summary.results.append(ApplyResult(
-                    ok=False,
-                    block=SearchReplaceBlock(
-                        path="<syntax check>", search="", replace="",
-                    ),
-                    reason=(
-                        "Python syntax errors after applying: "
-                        + "; ".join(syntax_errors)
-                    ),
-                ))
-                return None, summary
-            patch = render_diff(workdir, paths=touched_paths)
-            return patch, summary
+            import subprocess as _sub
+            import tempfile as _tempfile
+
+            sandbox = self.ctx.sandbox
+            has_exec = sandbox is not None and hasattr(sandbox, "exec")
+            apply_workdir = workdir
+            temp_root = None
+            used_temp_worktree = False
+
+            if has_exec:
+                # SEARCH/REPLACE application is necessarily host-local
+                # because it rewrites files via pathlib.  Do it in a
+                # disposable git worktree so exec-backed sandboxes (ssh,
+                # k8s, firecracker/E2B) cannot leave attacker-influenced
+                # edits behind in a host checkout while _reset_workdir()
+                # resets a different backend filesystem.
+                temp_root = _tempfile.TemporaryDirectory(
+                    prefix="maverick-sr-worktree-"
+                )
+                candidate = _Path(temp_root.name) / "worktree"
+                try:
+                    wt = _sub.run(
+                        [
+                            "git", "-C", str(workdir), "worktree", "add",
+                            "--detach", "--quiet", str(candidate), "HEAD",
+                        ],
+                        capture_output=True, timeout=60,
+                    )
+                    if wt.returncode != 0:
+                        raise RuntimeError(
+                            wt.stderr.decode("utf-8", errors="replace")
+                        )
+                    apply_workdir = candidate
+                    used_temp_worktree = True
+                except Exception as exc:
+                    temp_root.cleanup()
+                    summary = ApplySummary()
+                    summary.results.append(ApplyResult(
+                        ok=False,
+                        block=SearchReplaceBlock(
+                            path="<sandboxed search/replace>",
+                            search="", replace="",
+                        ),
+                        reason=(
+                            "SEARCH/REPLACE requires a disposable local git "
+                            f"worktree when sandbox.exec is available: {exc}"
+                        ),
+                    ))
+                    return None, summary
+
+            try:
+                summary = apply_blocks(blocks, apply_workdir, atomic=True)
+                if not summary.ok:
+                    return None, summary
+                touched_paths = sorted(summary.files_touched)
+                syntax_errors = _ast_check_python_files(
+                    apply_workdir, touched_paths
+                )
+                if syntax_errors:
+                    # Roll back the SR application so the next attempt sees
+                    # HEAD, then synthesise a failure summary the caller
+                    # can convert into a repair prompt.  Disposable
+                    # worktrees are cleaned below; only reset the real
+                    # workdir on the legacy no-exec path.
+                    if not used_temp_worktree:
+                        self._reset_workdir()
+                    summary.results.append(ApplyResult(
+                        ok=False,
+                        block=SearchReplaceBlock(
+                            path="<syntax check>", search="", replace="",
+                        ),
+                        reason=(
+                            "Python syntax errors after applying: "
+                            + "; ".join(syntax_errors)
+                        ),
+                    ))
+                    return None, summary
+                patch = render_diff(apply_workdir, paths=touched_paths)
+                return patch, summary
+            finally:
+                if used_temp_worktree:
+                    try:
+                        _sub.run(
+                            [
+                                "git", "-C", str(workdir), "worktree",
+                                "remove", "--force", str(apply_workdir),
+                            ],
+                            capture_output=True, timeout=30,
+                        )
+                    except Exception:
+                        pass
+                if temp_root is not None:
+                    temp_root.cleanup()
         return extract_unified_diff(final), None
 
     def _reset_workdir(self) -> None:

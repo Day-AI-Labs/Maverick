@@ -183,3 +183,36 @@ def test_coding_branch_wraps_critical_section_in_lock():
     reset_at = src.rindex("self._reset_workdir()")
     assert lock_at < apply_at
     assert lock_at < reset_at
+
+
+def test_search_replace_exec_sandbox_uses_disposable_worktree(tmp_path, fake_llm):
+    """SEARCH/REPLACE extraction must not write to the host checkout when
+    reset/apply are mediated through an exec-backed sandbox."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_git_repo(repo)
+
+    sandbox = RecordingSandbox(repo)
+    agent = _agent(_ctx(tmp_path, sandbox, fake_llm))
+    final = (
+        "FINAL:\n"
+        "f.txt\n"
+        "<<<<<<< SEARCH\n"
+        "base\n"
+        "=======\n"
+        "changed\n"
+        ">>>>>>> REPLACE\n"
+    )
+
+    patch, summary = agent._extract_and_apply_patch(final)
+
+    assert summary is not None and summary.ok
+    assert patch is not None
+    assert "-base" in patch
+    assert "+changed" in patch
+    assert (repo / "f.txt").read_text() == "base\n"
+    status = subprocess.run(
+        ["git", "-C", str(repo), "status", "--short"],
+        check=True, capture_output=True, text=True,
+    )
+    assert status.stdout == ""
