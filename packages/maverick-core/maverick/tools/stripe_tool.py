@@ -150,14 +150,43 @@ def _op_customer_search(email: str) -> str:
     )
 
 
+def _list_paginated(path: str, params: dict, limit: int) -> tuple[int, Any, list[dict]]:
+    """Follow Stripe's cursor pagination (``has_more`` + ``starting_after``)
+    until ``limit`` objects are collected.
+
+    Stripe caps ``limit`` at 100 per page, so a request for more than 100 (or
+    one that legitimately spans pages) must follow the cursor. Returns
+    ``(status_code, error_payload, rows)``; ``rows`` is capped at ``limit`` and
+    the loop is bounded by a hard page cap.
+    """
+    rows: list[dict] = []
+    starting_after: str | None = None
+    max_pages = max(1, (limit // 100) + 2)
+    for _ in range(max_pages):
+        p = dict(params)
+        p["limit"] = min(100, max(1, limit - len(rows)))
+        if starting_after:
+            p["starting_after"] = starting_after
+        code, data = _get(path, p)
+        if code >= 400:
+            return code, data, rows
+        batch = data.get("data") or []
+        rows.extend(batch)
+        if len(rows) >= limit or not data.get("has_more") or not batch:
+            break
+        starting_after = batch[-1].get("id")
+        if not starting_after:
+            break
+    return 200, {}, rows[:limit]
+
+
 def _op_charges(limit: int, customer: str) -> str:
-    params: dict = {"limit": limit}
+    params: dict = {}
     if customer:
         params["customer"] = customer
-    code, data = _get("charges", params)
+    code, err, rows = _list_paginated("charges", params, limit)
     if code >= 400:
-        return f"ERROR: charges ({code}): {data.get('error', {})}"
-    rows = data.get("data") or []
+        return f"ERROR: charges ({code}): {err.get('error', {})}"
     if not rows:
         return "no charges"
     lines = []
@@ -175,10 +204,9 @@ def _op_charges(limit: int, customer: str) -> str:
 def _op_subscriptions(customer: str) -> str:
     if not customer:
         return "ERROR: subscriptions requires customer"
-    code, data = _get("subscriptions", {"customer": customer, "limit": 25})
+    code, err, rows = _list_paginated("subscriptions", {"customer": customer}, 100)
     if code >= 400:
-        return f"ERROR: subscriptions ({code}): {data.get('error', {})}"
-    rows = data.get("data") or []
+        return f"ERROR: subscriptions ({code}): {err.get('error', {})}"
     if not rows:
         return f"no subscriptions for {customer}"
     lines = []

@@ -183,6 +183,34 @@ def test_stripe_charges_renders(monkeypatch):
     assert "REFUNDED" in out  # ch_2 marker
 
 
+def test_stripe_charges_follows_cursor(monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test")
+
+    def _charge(cid):
+        return {"id": cid, "status": "succeeded", "amount": 100,
+                "currency": "usd", "description": "x", "refunded": False}
+
+    def _resp(rows, has_more):
+        r = MagicMock()
+        r.status_code = 200
+        r.json = MagicMock(return_value={"data": rows, "has_more": has_more})
+        return r
+
+    get = MagicMock(side_effect=[
+        _resp([_charge("ch_1")], True),
+        _resp([_charge("ch_2")], False),
+    ])
+    fake_httpx = types.ModuleType("httpx")
+    fake_httpx.get = get
+    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+    from maverick.tools.stripe_tool import stripe_tool
+    out = stripe_tool().fn({"op": "charges", "limit": 50})
+    assert "ch_1" in out and "ch_2" in out
+    assert get.call_count == 2
+    # Second page is cursored on the last id of the first.
+    assert get.call_args_list[1].kwargs["params"]["starting_after"] == "ch_1"
+
+
 # ---------- Currency tool ----------
 
 def test_currency_requires_op():
