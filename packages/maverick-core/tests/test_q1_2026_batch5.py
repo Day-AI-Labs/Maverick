@@ -7,16 +7,17 @@ from unittest.mock import patch
 
 # ---------- hooks: load_from_entry_points ----------
 
-def test_hooks_load_from_entry_points_empty():
+def test_hooks_load_from_entry_points_empty(monkeypatch, tmp_path):
     """No matching entry points -> 0 hooks registered, no errors."""
     from maverick.hooks import clear, load_from_entry_points
     clear()
+    monkeypatch.delenv("MAVERICK_PLUGINS_ALLOW", raising=False)
+    monkeypatch.setenv("MAVERICK_CONFIG", str(tmp_path / "nonexistent.toml"))
     n = load_from_entry_points()
-    # In the test env there are no third-party plugins; expect 0.
-    assert n >= 0  # must not raise
+    assert n == 0  # must not raise
 
 
-def test_hooks_load_from_entry_points_registers_specs():
+def test_hooks_load_from_entry_points_registers_specs(monkeypatch):
     """An entry-point factory returning HookSpec objects gets registered."""
     from maverick.hooks import (
         HookEvent,
@@ -26,6 +27,7 @@ def test_hooks_load_from_entry_points_registers_specs():
         load_from_entry_points,
     )
     clear()
+    monkeypatch.setenv("MAVERICK_PLUGINS_ALLOW", "*")
 
     def _register() -> list[HookSpec]:
         return [
@@ -47,10 +49,11 @@ def test_hooks_load_from_entry_points_registers_specs():
     assert (HookEvent.POST_TOOL_USE, "shell") in names
 
 
-def test_hooks_load_from_entry_points_accepts_tuples():
+def test_hooks_load_from_entry_points_accepts_tuples(monkeypatch):
     """Factory returning (event, callable) tuples works too."""
     from maverick.hooks import HookEvent, clear, installed, load_from_entry_points
     clear()
+    monkeypatch.setenv("MAVERICK_PLUGINS_ALLOW", "*")
 
     def _register():
         return [
@@ -69,10 +72,11 @@ def test_hooks_load_from_entry_points_accepts_tuples():
     assert any(s.event == HookEvent.SESSION_START for s in installed())
 
 
-def test_hooks_load_from_entry_points_isolates_broken_plugin():
+def test_hooks_load_from_entry_points_isolates_broken_plugin(monkeypatch):
     """A plugin that raises on load() doesn't disable other plugins."""
     from maverick.hooks import HookEvent, HookSpec, clear, installed, load_from_entry_points
     clear()
+    monkeypatch.setenv("MAVERICK_PLUGINS_ALLOW", "*")
 
     class _BrokenEP:
         name = "broken"
@@ -92,10 +96,11 @@ def test_hooks_load_from_entry_points_isolates_broken_plugin():
     assert len(installed()) == 1
 
 
-def test_hooks_load_from_entry_points_isolates_broken_factory_call():
+def test_hooks_load_from_entry_points_isolates_broken_factory_call(monkeypatch):
     """A factory that raises when called doesn't crash the loader."""
     from maverick.hooks import HookEvent, HookSpec, clear, installed, load_from_entry_points
     clear()
+    monkeypatch.setenv("MAVERICK_PLUGINS_ALLOW", "*")
 
     def _broken_factory():
         raise ValueError("factory crashed")
@@ -120,10 +125,11 @@ def test_hooks_load_from_entry_points_isolates_broken_factory_call():
     assert len(installed()) == 1
 
 
-def test_hooks_load_from_entry_points_ignores_invalid_items():
+def test_hooks_load_from_entry_points_ignores_invalid_items(monkeypatch):
     """Items that aren't HookSpec / (event, fn) get warned + dropped."""
     from maverick.hooks import HookEvent, HookSpec, clear, installed, load_from_entry_points
     clear()
+    monkeypatch.setenv("MAVERICK_PLUGINS_ALLOW", "*")
 
     def _register():
         return [
