@@ -142,3 +142,31 @@ class TestContaminationGuard:
             predicted_patch="x", model_id="claude-opus-4-7",
         )
         assert any(f.kind == "brief_in_leaked_corpus" for f in flags)
+
+    def test_leaked_briefs_loaded_from_corpus_file(self, contam_mod, tmp_path, monkeypatch):
+        """The corpus file is the wired source (issue #320): a brief listed
+        there -- raw or as a precomputed hash -- is loaded and flagged, so the
+        guard is no longer a hardcoded-empty no-op."""
+        precomputed = contam_mod._hash_brief("a precomputed multi-line brief")
+        corpus = tmp_path / "leaked.txt"
+        corpus.write_text(
+            "# a comment\n\nthis brief leaked verbatim\n" + precomputed + "\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("MAVERICK_LEAKED_BRIEFS_FILE", str(corpus))
+
+        loaded = contam_mod._load_leaked_briefs()
+        assert contam_mod._hash_brief("this brief leaked verbatim") in loaded
+        assert precomputed in loaded
+
+        monkeypatch.setattr(contam_mod, "_KNOWN_LEAKED_BRIEFS", loaded)
+        flags = contam_mod.check(
+            task_id="t", brief="this brief leaked verbatim",
+            predicted_patch="x", model_id="claude-opus-4-7",
+        )
+        assert any(f.kind == "brief_in_leaked_corpus" for f in flags)
+
+    def test_missing_corpus_is_empty_noop(self, contam_mod, tmp_path, monkeypatch):
+        """A missing corpus file -> empty set (guard no-ops, never crashes)."""
+        monkeypatch.setenv("MAVERICK_LEAKED_BRIEFS_FILE", str(tmp_path / "nope.txt"))
+        assert contam_mod._load_leaked_briefs() == set()

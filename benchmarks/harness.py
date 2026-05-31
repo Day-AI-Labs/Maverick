@@ -100,7 +100,7 @@ def append_results(row: dict, results_path: Path) -> None:
     JSON because RESULTS.md is the human-readable artifact.
     """
     cols = [
-        "benchmark", "tag", "agent", "wall_seconds", "cost_dollars",
+        "benchmark", "tag", "agent", "source", "wall_seconds", "cost_dollars",
         "input_tokens", "output_tokens", "tool_calls", "outcome",
     ]
     if not results_path.exists():
@@ -108,11 +108,19 @@ def append_results(row: dict, results_path: Path) -> None:
         divider = "|" + "|".join(["---"] * len(cols)) + "|\n"
         results_path.write_text(
             "# Maverick benchmark results\n\n"
-            "Auto-appended by `benchmarks/harness.py`. Each row is one run.\n\n"
+            "Auto-appended by `benchmarks/harness.py`: every harness-written row "
+            "is one real run, marked `source = auto`. Comparator rows for other "
+            "agents (OpenClaw, Hermes) are NOT measured here -- add them by hand "
+            "and mark them `source = manual`, so auto vs. hand-filled is obvious.\n\n"
             + header + divider,
             encoding="utf-8",
         )
-    line = "| " + " | ".join(str(row.get(c, "")) for c in cols) + " |\n"
+    # Harness-written rows are auto-measured unless the caller overrides `source`.
+    cells = [
+        (str(row.get("source") or "auto") if c == "source" else str(row.get(c, "")))
+        for c in cols
+    ]
+    line = "| " + " | ".join(cells) + " |\n"
     with results_path.open("a", encoding="utf-8") as f:
         f.write(line)
 

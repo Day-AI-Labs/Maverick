@@ -22,7 +22,9 @@ reported with a caveat or excluded.
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -95,7 +97,7 @@ def check(
     # SWE-bench Verified instance briefs (placeholder; expand as the
     # community surfaces more).
     if brief:
-        h = hashlib.sha256(brief.strip().encode("utf-8")).hexdigest()[:16]
+        h = _hash_brief(brief)
         if h in _KNOWN_LEAKED_BRIEFS:
             flags.append(ContaminationFlag(
                 severity="medium",
@@ -109,14 +111,47 @@ def check(
     return flags
 
 
-# Community-maintained set of brief hashes known to leak into training
-# data (e.g. found in GitHub issues / PRs that pre-date the benchmark
-# split). Add IDs as you find them; this is intentionally short until
-# we have a real lookup service.
-_KNOWN_LEAKED_BRIEFS: set[str] = set()
+def _hash_brief(brief: str) -> str:
+    """The 16-hex-char key used for leaked-brief lookups."""
+    return hashlib.sha256(brief.strip().encode("utf-8")).hexdigest()[:16]
+
+
+def _leaked_briefs_corpus_path() -> Path:
+    """Where the known-leaked-brief corpus lives. Operators / CI can point
+    this at their own list via MAVERICK_LEAKED_BRIEFS_FILE."""
+    override = os.environ.get("MAVERICK_LEAKED_BRIEFS_FILE")
+    return Path(override) if override else Path(__file__).with_name("leaked_briefs.txt")
+
+
+def _load_leaked_briefs() -> set[str]:
+    """Load the leaked-brief corpus so the guard is data-driven instead of a
+    hardcoded-empty no-op. Each non-blank, non-``#`` line is either a
+    16-hex-char ``_hash_brief`` value or a raw single-line brief (we hash it).
+    A missing/unreadable corpus -> empty set (the guard then no-ops, as before,
+    but the source is now wired: populating the file makes the check fire)."""
+    try:
+        lines = _leaked_briefs_corpus_path().read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return set()
+    hashes: set[str] = set()
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if len(line) == 16 and all(c in "0123456789abcdef" for c in line.lower()):
+            hashes.add(line.lower())
+        else:
+            hashes.add(_hash_brief(line))
+    return hashes
+
+
+# Brief hashes known to leak into training data (e.g. surfaced in GitHub
+# issues / PRs that pre-date the benchmark split). Loaded from the
+# community-maintained corpus file at import; extend that file (or point
+# MAVERICK_LEAKED_BRIEFS_FILE at your own), or add at runtime below.
+_KNOWN_LEAKED_BRIEFS: set[str] = _load_leaked_briefs()
 
 
 def add_known_leaked_brief(brief: str) -> None:
     """Allow harness code or operators to extend the leaked-brief set."""
-    h = hashlib.sha256(brief.strip().encode("utf-8")).hexdigest()[:16]
-    _KNOWN_LEAKED_BRIEFS.add(h)
+    _KNOWN_LEAKED_BRIEFS.add(_hash_brief(brief))

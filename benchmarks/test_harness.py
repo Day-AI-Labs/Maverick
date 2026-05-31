@@ -55,7 +55,7 @@ def test_append_results_creates_table(harness, tmp_path):
     content = out.read_text()
     assert "Maverick benchmark results" in content
     assert "| benchmark |" in content
-    assert "| x.md | v0.1 | maverick | 0.5 |" in content
+    assert "| x.md | v0.1 | maverick | auto | 0.5 |" in content
 
 
 def test_append_is_idempotent_per_table_creation(harness, tmp_path):
@@ -74,3 +74,25 @@ def test_append_is_idempotent_per_table_creation(harness, tmp_path):
     assert content.count("| benchmark |") == 1
     assert "a.md" in content
     assert "b.md" in content
+
+
+def test_append_results_marks_source_auto_vs_manual(harness, tmp_path):
+    """Harness rows are source=auto; a hand-filled comparator row keeps its
+    own source, so auto vs. manual is visible in the output (issue #320)."""
+    out = tmp_path / "RESULTS.md"
+    harness.append_results(
+        {"benchmark": "x.md", "tag": "v1", "agent": "maverick",
+         "wall_seconds": 1, "cost_dollars": 0.1, "input_tokens": 10,
+         "output_tokens": 5, "tool_calls": 1, "outcome": "success"},
+        out,
+    )
+    harness.append_results(
+        {"benchmark": "x.md", "tag": "v1", "agent": "openclaw", "source": "manual",
+         "wall_seconds": 2, "cost_dollars": 0.2, "input_tokens": 20,
+         "output_tokens": 10, "tool_calls": 3, "outcome": "success"},
+        out,
+    )
+    content = out.read_text()
+    assert "| source |" in content            # new column present in header
+    assert "| maverick | auto |" in content   # harness row -> auto
+    assert "| openclaw | manual |" in content  # hand-filled comparator -> manual

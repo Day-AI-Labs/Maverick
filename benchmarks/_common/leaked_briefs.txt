@@ -1,0 +1,16 @@
+# Known-leaked benchmark briefs (contamination guard corpus).
+#
+# contamination_guard.check() flags a run when the task brief appears here --
+# i.e. the brief is known to have leaked into a model's training data (e.g.
+# via a GitHub issue/PR that pre-dates the benchmark split), so any pass on
+# it is suspect.
+#
+# Format: one entry per line; blank lines and lines starting with '#' are
+# ignored. Each entry is either:
+#   - a 16-hex-char  sha256(brief.strip())[:16]  hash, or
+#   - a raw single-line brief (it is hashed the same way on load).
+#
+# This list is community-maintained and intentionally starts empty -- add
+# entries as leaks are confirmed, point MAVERICK_LEAKED_BRIEFS_FILE at your
+# own corpus, or call add_known_leaked_brief() at runtime. The guard loads
+# this file at import, so it fires as soon as a matching brief is listed.
