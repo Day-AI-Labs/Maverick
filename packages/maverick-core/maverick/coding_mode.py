@@ -1382,10 +1382,13 @@ _FAILURE_PATTERNS = [
     )),
     ("SyntaxError",      re.compile(r"\bSyntaxError\b|invalid syntax")),
     ("IndentationError", re.compile(r"\bIndentationError\b")),
+    # --- Timeout remains ahead of polyglot classes because classification is
+    # first-match-wins; timed-out tool runs should get timeout guidance even
+    # when they also emitted Rust / Go / TypeScript diagnostics first. ---
+    ("Timeout",          re.compile(r"\bTIMEOUT\b|exit 124|TimeoutExpired")),
     # --- Polyglot classes (Rust / Go / TypeScript). Listed after the Python
-    # exception names -- whose tokens never appear in these toolchains' output
-    # -- and before the generic Timeout catch-all, so Python classification is
-    # byte-identical and a timeout still wins for any language. ---
+    # exception names and Timeout so Python classification is byte-identical
+    # and a timeout still wins for any language. ---
     ("RustCompileError", re.compile(
         r"error\[E\d{4}\]|mismatched types|"
         r"cannot find (?:value|function|type|macro|trait|module)\b"
@@ -1401,7 +1404,6 @@ _FAILURE_PATTERNS = [
         r"error TS\d+|Cannot find name |is not assignable to|"
         r"Property '[^']+' does not exist|Expected \d+ arguments?, but got \d+"
     )),
-    ("Timeout",          re.compile(r"\bTIMEOUT\b|exit 124|TimeoutExpired")),
 ]
 
 # In OPAQUE mode we surface only the CLASS, not the assertion body, so
