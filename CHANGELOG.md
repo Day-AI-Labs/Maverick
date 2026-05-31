@@ -6,7 +6,27 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Post-0.1.4 security fixes found by the adversarial pre-launch audit.
+## [0.1.5] -- 2026-05-31
+
+Post-0.1.4 hardening, plus the cross-language MCP client surface (the
+council's "drive Maverick from any language over MCP" decision) and the
+polyglot sandbox / coding-mode work.
+
+### Added
+- **Cross-language MCP clients.** Runnable example clients and quickstarts for
+  **TypeScript / JavaScript, Go, Rust, C# / .NET, and Java / JVM** -- each one
+  exercised in CI against a live `maverick mcp` (initialize -> tools/list -> a
+  no-LLM tool call). Maverick stays a single Python kernel; any MCP-speaking
+  language drives it over stdio JSON-RPC. See `docs/clients/*-quickstart.md`.
+- **Per-language sandbox toolchains.** Container backends now pick their image
+  from `[sandbox] language` (rust -> rust:1, go -> golang:1, JS/TS -> node:22,
+  Java/Kotlin -> eclipse-temurin:21, ruby -> ruby:3; Python is the default),
+  and the installer wizard asks which language you code in -- so `cargo test` /
+  `go test` / the JS runner actually run instead of failing on python:3.12-slim.
+  coding-mode gained Rust/Go/TypeScript failure-pattern hints, and
+  `maverick doctor` reports a missing language toolchain.
+- **Agent-to-Agent (A2A) task endpoint** with push-notification config, an
+  installer wizard step, and docs.
 
 ### Security
 - **SMS and WhatsApp now enforce a per-sender allowlist** (default-deny),
