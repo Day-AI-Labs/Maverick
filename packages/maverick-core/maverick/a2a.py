@@ -14,9 +14,10 @@ Off by default: the card is an outward-facing description of a local agent,
 so an operator opts in via ``MAVERICK_A2A_ENABLED=1`` or ``[a2a] enabled =
 true``. When off, no route is registered.
 
-Scope: this is the discovery half of A2A. The task-lifecycle endpoint
-(``message/send`` mapping to ``run_goal``, with streaming + auth) is a
-deliberate follow-up -- discovery is the correct, low-risk first increment.
+Scope: this module is the discovery half of A2A (the Agent Card). The
+task lifecycle — ``message/send`` / ``message/stream`` / ``tasks/*`` with
+auth, budget caps, and push notifications — lives in ``a2a_tasks`` and is
+wired onto ``/a2a/v1`` by ``mount()`` below.
 """
 from __future__ import annotations
 
@@ -111,10 +112,11 @@ def build_agent_card(base_url: str | None = None) -> dict[str, Any]:
             "url": "https://github.com/cdayAI/Maverick",
         },
         "capabilities": {
-            # Discovery-only for now; flip these on when the task endpoint ships.
-            "streaming": False,
-            "pushNotifications": False,
-            "stateTransitionHistory": False,
+            # Backed by the task endpoint (a2a_tasks): message/stream over
+            # SSE, push-notification webhooks, and a recorded status-history.
+            "streaming": True,
+            "pushNotifications": True,
+            "stateTransitionHistory": True,
         },
         "defaultInputModes": ["text/plain"],
         "defaultOutputModes": ["text/plain"],
@@ -137,3 +139,83 @@ def mount(app: Any) -> None:
     # Canonical A2A v1.0 location, plus the pre-1.0 alias some clients still probe.
     app.add_api_route("/.well-known/agent-card.json", _agent_card, methods=["GET"])
     app.add_api_route("/.well-known/agent.json", _agent_card, methods=["GET"])
+
+    _mount_task_endpoint(app)
+
+
+def _mount_task_endpoint(app: Any) -> None:
+    """Register the A2A JSON-RPC task endpoint at ``POST /a2a/v1``.
+
+    Imports FastAPI lazily so the kernel still imports without it; this
+    runs only when the dashboard (which has FastAPI) mounts A2A.
+    """
+    import json as _json
+
+    from starlette.responses import JSONResponse, StreamingResponse
+
+    from .a2a_tasks import STREAM_METHODS, TaskEngine, _RpcError
+
+    engine = TaskEngine()
+
+    def _rpc_result(req_id: Any, result: Any) -> dict[str, Any]:
+        return {"jsonrpc": "2.0", "id": req_id, "result": result}
+
+    def _rpc_error(req_id: Any, code: int, message: str) -> dict[str, Any]:
+        return {"jsonrpc": "2.0", "id": req_id,
+                "error": {"code": code, "message": message}}
+
+    def _sse(obj: dict[str, Any]) -> str:
+        return f"data: {_json.dumps(obj)}\n\n"
+
+    # Registered as a raw Starlette route (not add_api_route): the handler
+    # takes the Request directly, so FastAPI doesn't try to resolve the
+    # stringized `from __future__` annotations against this module's globals
+    # (where the locally-imported Request wouldn't be found -> 422).
+    async def _a2a_rpc(request):
+        authorization = request.headers.get("authorization")
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse(_rpc_error(None, -32700, "parse error"))
+        if not isinstance(body, dict):
+            return JSONResponse(_rpc_error(None, -32600, "invalid request"))
+        req_id = body.get("id")
+        method = body.get("method")
+        params = body.get("params") or {}
+
+        auth_err = engine.auth_error(authorization)
+        if auth_err is not None:
+            return JSONResponse(
+                _rpc_error(req_id, auth_err["code"], auth_err["message"]),
+                status_code=401,
+            )
+
+        if method in STREAM_METHODS:
+            async def _gen():
+                try:
+                    async for event in engine.stream(params):
+                        yield _sse(_rpc_result(req_id, event))
+                except _RpcError as e:
+                    yield _sse(_rpc_error(req_id, e.code, e.message))
+            return StreamingResponse(_gen(), media_type="text/event-stream")
+
+        try:
+            if method == "message/send":
+                result = await engine.send(params)
+            elif method == "tasks/get":
+                result = engine.get(params)
+            elif method == "tasks/cancel":
+                result = engine.cancel(params)
+            elif method == "tasks/pushNotificationConfig/set":
+                result = engine.set_push_config(params)
+            elif method == "tasks/pushNotificationConfig/get":
+                result = engine.get_push_config(params)
+            else:
+                return JSONResponse(
+                    _rpc_error(req_id, -32601, f"method not found: {method}")
+                )
+        except _RpcError as e:
+            return JSONResponse(_rpc_error(req_id, e.code, e.message))
+        return JSONResponse(_rpc_result(req_id, result))
+
+    app.add_route("/a2a/v1", _a2a_rpc, methods=["POST"])

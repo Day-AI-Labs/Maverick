@@ -238,10 +238,13 @@ class Agent:
                     prefix="maverick-sr-worktree-"
                 )
                 candidate = _Path(temp_root.name) / "worktree"
+                hooks_dir = _Path(temp_root.name) / "hooks"
                 try:
+                    hooks_dir.mkdir(mode=0o700)
                     wt = _sub.run(
                         [
-                            "git", "-C", str(workdir), "worktree", "add",
+                            "git", "-c", f"core.hooksPath={hooks_dir}",
+                            "-C", str(workdir), "worktree", "add",
                             "--detach", "--quiet", str(candidate), "HEAD",
                         ],
                         capture_output=True, timeout=60,

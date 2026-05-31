@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import logging
 import os
 
@@ -47,6 +48,41 @@ except ImportError:
     _HAVE_FASTAPI = False
     FastAPI = Header = HTTPException = Request = None  # type: ignore
     JSONResponse = StreamingResponse = None  # type: ignore
+
+
+# JSON-RPC requests are small control messages. Cap the body so an
+# (authenticated) client can't force the server to buffer an arbitrarily
+# large payload in memory before dispatch. Override via MAVERICK_MCP_MAX_BODY.
+def _max_body_bytes() -> int:
+    try:
+        return max(1024, int(os.environ.get("MAVERICK_MCP_MAX_BODY", str(2 * 1024 * 1024))))
+    except ValueError:
+        return 2 * 1024 * 1024
+
+
+async def _read_limited_json(request, http_exc):
+    """Read + parse the JSON body with a hard size cap.
+
+    Rejects oversized requests via Content-Length up front, then streams with
+    the same cap so a chunked/lengthless request can't bypass it.
+    """
+    cap = _max_body_bytes()
+    declared = request.headers.get("content-length")
+    if declared:
+        try:
+            if int(declared) > cap:
+                raise http_exc(status_code=413, detail="request body too large")
+        except ValueError:
+            raise http_exc(status_code=400, detail="invalid Content-Length")
+    buf = bytearray()
+    async for chunk in request.stream():
+        buf.extend(chunk)
+        if len(buf) > cap:
+            raise http_exc(status_code=413, detail="request body too large")
+    try:
+        return json.loads(buf or b"{}")
+    except (ValueError, UnicodeDecodeError):
+        raise http_exc(status_code=400, detail="body must be valid JSON")
 
 
 def _check_bearer(authorization: str | None) -> bool:
@@ -96,7 +132,9 @@ def build_app(server) -> FastAPI:
     ):
         if not _check_bearer(authorization):
             raise HTTPException(status_code=401, detail="invalid bearer")
-        body = await request.json()
+        body = await _read_limited_json(request, HTTPException)
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=400, detail="body must be a JSON object")
         is_notification = "id" not in body
         request_id = body.get("id")
         method = body.get("method", "")

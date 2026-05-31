@@ -271,9 +271,16 @@ def _run_fetch(args: dict[str, Any]) -> str:
     max_bytes = int(args.get("max_bytes") or 200_000)
     render = (args.get("render") or "markdown").lower()
 
+    # Connect to the IP we validated above, not a freshly-resolved one:
+    # closes the DNS-rebinding TOCTOU between the _is_private_ip() check
+    # and the request (a rebinding resolver could otherwise swap in a
+    # private/metadata address for the connection lookup).
+    from ._ssrf import BlockedHost, safe_client
     try:
-        with httpx.Client(timeout=30.0, follow_redirects=False) as client:
+        with safe_client(url, timeout=30.0) as client:
             resp = client.request(method, url, headers=headers, content=body)
+    except BlockedHost as e:
+        return f"ERROR: refusing to fetch {url!r}: {e}"
     except httpx.HTTPError as e:
         return f"ERROR: {type(e).__name__}: {e}"
 

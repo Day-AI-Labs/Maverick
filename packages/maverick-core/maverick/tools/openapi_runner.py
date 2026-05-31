@@ -26,13 +26,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
 from typing import Any
-from urllib.parse import urlparse
 
 from . import Tool
-from .http_fetch import _is_private_ip
 
 log = logging.getLogger(__name__)
 
@@ -70,25 +67,16 @@ _spec_lock = threading.Lock()
 _spec_cache: dict[str, dict] = {}
 
 
-def _validate_remote_url(url: str) -> None:
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        raise RuntimeError(f"invalid URL: {url!r}")
-    if os.environ.get("MAVERICK_FETCH_ALLOW_PRIVATE") != "1" and _is_private_ip(parsed.hostname):
-        raise RuntimeError(
-            f"refusing private/loopback address {parsed.hostname!r}. "
-            "Set MAVERICK_FETCH_ALLOW_PRIVATE=1 to override."
-        )
-
-
 def _load_spec(source: str) -> dict:
     with _spec_lock:
         if source in _spec_cache:
             return _spec_cache[source]
     if source.startswith(("http://", "https://")):
-        _validate_remote_url(source)
-        import httpx
-        r = httpx.get(source, timeout=30.0, follow_redirects=False)
+        from ._ssrf import safe_client
+        # safe_client validates the host and pins the connection to the
+        # resolved public IP (closes the DNS-rebinding TOCTOU).
+        with safe_client(source, timeout=30.0) as client:
+            r = client.get(source)
         r.raise_for_status()
         text = r.text
     else:
@@ -209,17 +197,17 @@ def _op_call(
     url = (base or "") + out_path
     if not url.startswith(("http://", "https://")):
         return "ERROR: no base URL and op has no absolute servers[0]"
-    _validate_remote_url(url)
     req_kwargs = {
         "headers": headers or {},
         "params": query,
-        "timeout": 60.0,
-        "follow_redirects": False,
     }
     if body is not None and method in {"POST", "PUT", "PATCH"}:
         req_kwargs["json"] = body
-    import httpx
-    r = httpx.request(method, url, **req_kwargs)
+    from ._ssrf import safe_client
+    # Validate + pin the connection to the resolved public IP so a rebinding
+    # resolver can't redirect the call to an internal/metadata address.
+    with safe_client(url, timeout=60.0) as client:
+        r = client.request(method, url, **req_kwargs)
     text = r.text or ""
     truncated = text[:3000] + (" ... (truncated)" if len(text) > 3000 else "")
     return f"HTTP {r.status_code}\n{truncated}"
@@ -258,6 +246,9 @@ def _run(args: dict[str, Any]) -> str:
     except RuntimeError as e:
         return f"ERROR: {e}"
     except Exception as e:
+        from ._ssrf import BlockedHost
+        if isinstance(e, BlockedHost):
+            return f"ERROR: refusing to fetch (blocked host): {e}"
         return f"ERROR: openapi request failed: {type(e).__name__}: {e}"
     return f"ERROR: unknown op {op!r}"
 

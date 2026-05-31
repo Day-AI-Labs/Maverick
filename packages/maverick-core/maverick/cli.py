@@ -1311,6 +1311,16 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
             world.conn.execute(f"DELETE FROM messages    WHERE goal_id IN ({gph})", gids)
             world.conn.execute(f"DELETE FROM questions   WHERE goal_id IN ({gph})", gids)
             world.conn.execute(f"DELETE FROM attachments WHERE goal_id IN ({gph})", gids)
+            # facts.source_episode_id REFERENCES episodes(id): a fact the agent
+            # distilled from this user's run carries their PII in `value` AND
+            # holds an FK to the episode we're about to delete. Leaving it both
+            # (a) violated Art.17 (PII survived erasure) and (b) tripped the
+            # deferred-FK check at COMMIT once the user had any fact, aborting
+            # the whole erase. Delete those facts before the episodes.
+            world.conn.execute(
+                f"DELETE FROM facts WHERE source_episode_id IN "
+                f"(SELECT id FROM episodes WHERE goal_id IN ({gph}))", gids,
+            )
             world.conn.execute(f"DELETE FROM episodes    WHERE goal_id IN ({gph})", gids)
             world.conn.execute(
                 f"DELETE FROM processed_messages WHERE goal_id IN ({gph})", gids,
@@ -1342,6 +1352,25 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
     # subject's data in a fact. The removed keys are reported below so a
     # false positive on shared operator knowledge is visible, not silent.
     scrubbed_fact_keys = world.delete_facts_matching(user)
+
+    # Step 4c: the optional LLM cache (MAVERICK_LLM_CACHE=1) is content-
+    # addressed on the full prompt -- system + messages include the user's
+    # goal text and the model's replies, so the cache retains exactly the
+    # PII we just erased. It can't be purged by subject (the key is a hash of
+    # content, not tied to a user), so clear it wholesale; it's a perf cache,
+    # safe to drop. Only when the DB already exists, so a single erase on a
+    # cache-disabled install doesn't create an empty cache file. Best-effort.
+    try:
+        from .llm_cache import DEFAULT_DB as _llm_cache_db
+        if _llm_cache_db.exists():
+            from .llm_cache import LLMCache
+            LLMCache().clear()
+    except Exception as exc:  # pragma: no cover - defensive
+        click.echo(
+            f"warning: erased the database but could not clear the LLM cache "
+            f"({type(exc).__name__}: {exc}); it may retain prior prompts.",
+            err=True,
+        )
 
     # Step 5: scrub the subject from PRIOR audit-log lines. Audit payloads
     # (goal_start / tool_call / channel events) carry channel:user_id, so

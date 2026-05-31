@@ -81,6 +81,36 @@ def test_plugin_allowlist_wildcard(monkeypatch):
     assert {n for n, _ in plugins.discover_tools()} == {"a", "b"}
 
 
+def test_hook_entry_points_require_plugin_allowlist(monkeypatch, tmp_path):
+    """Hook entry points use the same explicit plugin allowlist as tools.
+
+    With plugins disabled by default, merely installing a package that
+    declares `entry_points."maverick.hooks"` must not import or execute it.
+    """
+    from maverick.hooks import clear, load_from_entry_points
+
+    monkeypatch.delenv("MAVERICK_PLUGINS_ALLOW", raising=False)
+    monkeypatch.setenv("MAVERICK_CONFIG", str(tmp_path / "nonexistent.toml"))
+    clear()
+
+    executed = []
+
+    class _HookEP:
+        name = "attacker"
+
+        def load(self):
+            executed.append("imported")
+            return lambda: []
+
+    monkeypatch.setattr(
+        "importlib.metadata.entry_points",
+        lambda group=None: [_HookEP()] if group == "maverick.hooks" else [],
+    )
+
+    assert load_from_entry_points() == 0
+    assert executed == []
+
+
 # ---------- tool-output scan ----------
 
 @pytest.mark.asyncio

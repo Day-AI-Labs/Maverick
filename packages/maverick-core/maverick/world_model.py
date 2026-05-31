@@ -23,6 +23,9 @@ from typing import Any
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
 SCHEMA_VERSION = 9
+DEFAULT_BUSY_TIMEOUT_MS = 5000
+WAL_SWITCH_BUSY_TIMEOUT_MS = 50
+WAL_SWITCH_RETRY_SECONDS = 5.0
 
 
 SCHEMA = """
@@ -364,23 +367,30 @@ class WorldModel:
         except OSError:
             pass
         self.conn.row_factory = sqlite3.Row
-        # Arm the busy handler BEFORE switching journal mode: switching to WAL
-        # needs a brief exclusive lock, and when a second connection opens the
-        # same DB concurrently (the dashboard and the agent each open one) the
-        # switch can surface "database is locked" instead of waiting unless
-        # busy_timeout is already set.
-        self.conn.execute("PRAGMA busy_timeout = 5000")
+        # Arm a short busy handler BEFORE switching journal mode: switching to
+        # WAL needs a brief exclusive lock, and when a second connection opens
+        # the same DB concurrently (the dashboard and the agent each open one)
+        # the switch can surface "database is locked" instead of waiting unless
+        # busy_timeout is already set. Keep this timeout small because it is
+        # paid on every retry below; restore the normal write timeout after WAL
+        # is enabled.
+        self.conn.execute(f"PRAGMA busy_timeout = {WAL_SWITCH_BUSY_TIMEOUT_MS}")
         # WAL must be set before any other operation that creates pages. The
         # switch can still race a same-process connection -- SQLITE_LOCKED
         # bypasses the busy handler -- so retry briefly (<=5s) on a locked DB.
-        for _attempt in range(100):
+        deadline = time.monotonic() + WAL_SWITCH_RETRY_SECONDS
+        while True:
             try:
                 self.conn.execute("PRAGMA journal_mode = WAL")
                 break
             except sqlite3.OperationalError as e:
-                if "locked" not in str(e).lower() or _attempt == 99:
+                if "locked" not in str(e).lower():
                     raise
-                time.sleep(0.05)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                time.sleep(min(0.05, remaining))
+        self.conn.execute(f"PRAGMA busy_timeout = {DEFAULT_BUSY_TIMEOUT_MS}")
         # synchronous=NORMAL under WAL is safe + much faster than FULL.
         self.conn.execute("PRAGMA synchronous = NORMAL")
         # May 26 council fix (long-tail audit #4): bound WAL file

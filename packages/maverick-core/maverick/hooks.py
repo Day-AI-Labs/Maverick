@@ -295,8 +295,11 @@ def load_from_entry_points() -> int:
 
     The referenced object MUST be a callable that takes no arguments
     and returns a list of (event, callable) tuples, or a list of
-    HookSpec objects. We call each one, register what it returned,
-    and isolate failures (one broken plugin doesn't disable the rest).
+    HookSpec objects. Like other plugin entry-point groups, hook plugins
+    are only imported when explicitly allowlisted via
+    ``MAVERICK_PLUGINS_ALLOW`` or ``[plugins].enabled``. We call each
+    allowed factory, register what it returned, and isolate failures (one
+    broken plugin doesn't disable the rest).
 
     Returns the number of hooks registered.
     """
@@ -309,8 +312,14 @@ def load_from_entry_points() -> int:
     except TypeError:  # pragma: no cover -- py<3.10 API differences
         eps = entry_points().get("maverick.hooks", [])  # type: ignore[assignment]
 
+    from .plugins import _allowed_plugin_names, _is_allowed
+
+    allow = _allowed_plugin_names()
     registered = 0
     for ep in eps:
+        if not _is_allowed(ep.name, allow):
+            log.debug("hook plugin %s not in allowlist; skipping", ep.name)
+            continue
         try:
             register_fn = ep.load()
         except Exception as e:
