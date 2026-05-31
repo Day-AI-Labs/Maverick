@@ -368,6 +368,28 @@ class TaskEngine:
         cfg = task.push_config
         if not cfg or task.state not in TERMINAL_STATES:
             return
+        url = cfg.get("url") or ""
+        # The push URL is supplied by the (authenticated) caller, and we make
+        # a server-side request to it -- a classic SSRF vector. Refuse non-
+        # http(s) schemes and hosts that resolve to a private/loopback/link-
+        # local/metadata address (honors MAVERICK_FETCH_ALLOW_PRIVATE=1).
+        try:
+            from urllib.parse import urlparse
+
+            from .tools.http_fetch import is_blocked_host
+            parsed = urlparse(url)
+            if parsed.scheme not in ("http", "https") or not parsed.hostname:
+                log.warning("a2a push notify refused for %s: bad url %r", task.id, url)
+                return
+            if is_blocked_host(parsed.hostname):
+                log.warning(
+                    "a2a push notify refused for %s: %r resolves to a non-public "
+                    "address (SSRF guard)", task.id, parsed.hostname,
+                )
+                return
+        except Exception as e:  # pragma: no cover - defensive
+            log.warning("a2a push notify url validation failed for %s: %s", task.id, e)
+            return
         try:
             import httpx
         except Exception:  # pragma: no cover
@@ -378,7 +400,7 @@ class TaskEngine:
             headers["Authorization"] = f"Bearer {tok}"
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                await client.post(cfg["url"], headers=headers, json=task.to_dict())
+                await client.post(url, headers=headers, json=task.to_dict())
         except Exception as e:  # pragma: no cover
             log.warning("a2a push notify failed for %s: %s", task.id, e)
 

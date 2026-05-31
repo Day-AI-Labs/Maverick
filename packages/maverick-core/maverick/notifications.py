@@ -72,7 +72,10 @@ def _send_ntfy(title: str, body: str, priority: str, server: str, topic: str) ->
         return False
     prio_map = {"low": "1", "default": "3", "high": "4", "max": "5"}
     headers = {
-        "Title": title,
+        # The title is agent-controlled (the notify tool lets the model set
+        # it). Strip CR/LF so it can't inject extra ntfy control headers /
+        # split the header block.
+        "Title": title.replace("\r", " ").replace("\n", " "),
         "Priority": prio_map.get(priority, "3"),
     }
     try:
