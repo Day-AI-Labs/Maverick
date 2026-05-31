@@ -32,6 +32,10 @@ except ImportError:
     _HAVE_SDK = False
     AgentShield = None  # type: ignore
 
+# Emit the "SDK not installed" advisory at most once per process (a Shield is
+# constructed on every goal run / chat turn, which would otherwise spam it).
+_WARNED_SDK_MISSING = False
+
 
 @dataclass
 class ShieldVerdict:
@@ -89,7 +93,11 @@ class Shield:
         # Built-in fallback
         self._sdk = None
         self.backend = self.BACKEND_BUILTIN
-        if warn_if_missing and not _HAVE_SDK:
+        # A Shield is built once per goal run, so warning every time spams the
+        # CLI output (and every `chat` turn). Warn once per process.
+        global _WARNED_SDK_MISSING
+        if warn_if_missing and not _HAVE_SDK and not _WARNED_SDK_MISSING:
+            _WARNED_SDK_MISSING = True
             log.warning(
                 "Shield: agent-shield SDK not installed; using built-in rules "
                 "(~20 high-impact patterns vs. ~115 in the full SDK). "

@@ -22,6 +22,10 @@ from .world_model import WorldModel
 
 log = logging.getLogger(__name__)
 
+# The "skill distill disabled" opt-in hint is a standing setting, not a
+# per-goal event -- show it at most once per process (see run_goal).
+_WARNED_DISTILL_DISABLED = False
+
 
 def _build_shield() -> Any | None:
     try:
@@ -309,6 +313,23 @@ async def run_goal(
                 f"Resume with a higher cap: "
                 f"maverick resume #{goal_id} --max-dollars <higher>"
             )
+        except Exception as e:
+            # Anything else escaping the swarm (LLM auth/network errors, a
+            # sandbox exec failure) used to leave the goal row stuck 'active'
+            # forever -- a ghost in `status` and the dashboard. Mark it failed
+            # and close the episode, then re-raise so the caller can present
+            # the error (the CLI turns it into a one-line message).
+            try:
+                _end_episode_with_spend(
+                    world, episode_id, f"error: {e}", "failure", budget, goal_id,
+                )
+            except Exception:  # pragma: no cover
+                pass
+            try:
+                world.set_goal_status(goal_id, "blocked", result=f"internal error: {e}")
+            except Exception:  # pragma: no cover
+                pass
+            raise
 
         if result.blocked_on_user:
             _end_episode_with_spend(
@@ -469,7 +490,14 @@ async def run_goal(
             except Exception as e:
                 skill_note = f"\n\n[skill distill error: {e}]"
         else:
-            skill_note = "\n\n[skill distill disabled: set MAVERICK_AUTO_DISTILL=1 to enable]"
+            # Show the opt-in hint once per process, not on every run / chat
+            # turn (it's a standing setting, not a per-goal event).
+            global _WARNED_DISTILL_DISABLED
+            if _WARNED_DISTILL_DISABLED:
+                skill_note = ""
+            else:
+                _WARNED_DISTILL_DISABLED = True
+                skill_note = "\n\n[skill distill disabled: set MAVERICK_AUTO_DISTILL=1 to enable]"
 
         # Wave 12 hotfix: in coding mode the orchestrator's return value
         # IS the benchmark CSV's `predicted_patch` after extract_unified_diff.
