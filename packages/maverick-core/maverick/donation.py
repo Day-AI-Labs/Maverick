@@ -143,11 +143,15 @@ def write_record(
     if not _text_donations_enabled():
         record.task_brief_text = None
 
-    # Scrub every text field that could carry secrets.
+    # Scrub every text field that could carry secrets -- including list-of-str
+    # fields (tools_used / action_sequence), which the str-only loop skipped,
+    # breaking the module's "every text field is scrubbed" contract.
     payload = asdict(record)
     for k, v in list(payload.items()):
         if isinstance(v, str):
             payload[k] = scrub(v)
+        elif isinstance(v, list):
+            payload[k] = [scrub(x) if isinstance(x, str) else x for x in v]
 
     try:
         out_dir = outbox or DEFAULT_OUTBOX

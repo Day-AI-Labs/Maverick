@@ -16,7 +16,7 @@ import logging
 import os
 import re
 
-from .base import Channel, Handler, IncomingMessage
+from .base import Channel, Handler, IncomingMessage, is_allowed
 
 log = logging.getLogger(__name__)
 
@@ -128,7 +128,9 @@ class MastodonChannel(Channel):
         account = notif.get("account") or {}
         text = _strip_html(status.get("content", ""))
         user_id = account.get("acct") or account.get("username") or "anonymous"
-        if user_id not in self.allowed_user_ids:
+        # Shared default-deny helper (normalizes + hard-rejects "anonymous"),
+        # matching the other adapters.
+        if not is_allowed(user_id, self.allowed_user_ids):
             log.warning("unauthorized mastodon access: user_id=%s", user_id)
             return
         msg = IncomingMessage(

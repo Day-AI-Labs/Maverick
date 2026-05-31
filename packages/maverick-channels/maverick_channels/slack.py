@@ -63,6 +63,16 @@ class SlackChannel(Channel):
         self._stop_event = asyncio.Event()
 
     async def _on_request(self, client, req):
+        # Ack IMMEDIATELY, before doing any work. Slack redelivers an event
+        # (up to ~3x) if the Socket Mode ack doesn't arrive within ~3s, and the
+        # handler below runs a full agent swarm that routinely takes far longer
+        # -- so acking at the end caused Slack to redeliver and the agent to run
+        # (and bill) 2-3x per message. Acking first trades at-least-once for
+        # at-most-once delivery, which is the right call for an expensive,
+        # side-effecting handler.
+        await client.send_socket_mode_response(
+            SocketModeResponse(envelope_id=req.envelope_id)
+        )
         if req.type == "events_api":
             event = req.payload.get("event", {})
             if event.get("type") == "message" and "bot_id" not in event:
@@ -85,9 +95,6 @@ class SlackChannel(Channel):
                         log.exception("handler error")
                         reply = "⚠ An internal error occurred."
                     await self._web.chat_postMessage(channel=event["channel"], text=reply)
-        await client.send_socket_mode_response(
-            SocketModeResponse(envelope_id=req.envelope_id)
-        )
 
     async def start(self) -> None:
         await self._sm.connect()

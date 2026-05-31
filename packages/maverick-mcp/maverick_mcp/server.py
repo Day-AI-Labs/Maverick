@@ -6,7 +6,6 @@ import logging
 import math
 import os
 import sys
-import traceback
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -570,12 +569,17 @@ class MCPServer:
                 if not is_notification:
                     self._send_error(request_id, e.code, e.message)
             except Exception as e:
-                log.exception("handler error")
+                log.exception("handler error")  # full traceback stays server-side
                 if not is_notification:
-                    self._send_error(
-                        request_id, -32603,
-                        f"internal error: {type(e).__name__}: {e}\n{traceback.format_exc()}",
-                    )
+                    # Do NOT ship the traceback to the client: frames/locals/args
+                    # can carry secrets (DSNs, tokens, credentialed URLs). Send a
+                    # scrubbed one-line message; the server log keeps the detail.
+                    try:
+                        from maverick.secrets import scrub
+                        detail = scrub(f"{type(e).__name__}: {e}")
+                    except Exception:  # pragma: no cover
+                        detail = type(e).__name__
+                    self._send_error(request_id, -32603, f"internal error: {detail}")
 
 
 def main() -> None:
