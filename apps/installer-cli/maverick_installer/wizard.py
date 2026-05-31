@@ -71,6 +71,7 @@ STEPS: list[tuple[str, str]] = [
     ("budget", "Budget"),
     ("sandbox", "Sandbox"),
     ("capabilities", "Capabilities"),
+    ("advanced", "Advanced reasoning"),
     ("web_search", "Web search"),
     ("mcp_servers", "MCP servers"),
     ("plugins", "Plugins"),
@@ -778,6 +779,41 @@ def pick_capabilities() -> dict[str, bool]:
     }
 
 
+def pick_advanced() -> dict[str, bool]:
+    """Opt-in to advanced reasoning features that ship off by default.
+
+    Each trades extra tokens/latency for quality on hard or long-running
+    goals. All editable later in ~/.maverick/config.toml.
+    """
+    console.print()
+    return {
+        "cost_aware": _q_confirm(
+            "Cost-aware routing? Use the cheapest capable model per role to cut spend.",
+            default=False,
+        ),
+        "tree_of_thought": _q_confirm(
+            "Tree-of-thought planning? Draft a few plans and let a critic pick the "
+            "best before working (more tokens up front, fewer dead ends).",
+            default=False,
+        ),
+        "compact_history": _q_confirm(
+            "Compact long conversations? Keep the most relevant older turns under a "
+            "token budget instead of just the last few.",
+            default=False,
+        ),
+        "reflexion": _q_confirm(
+            "Reflexion learning? Remember lessons from failed runs and recall them "
+            "on the next similar goal.",
+            default=False,
+        ),
+        "verify_ensemble": _q_confirm(
+            "Ensemble verification? Cross-check final answers with a panel of models "
+            "(slower, stronger).",
+            default=False,
+        ),
+    }
+
+
 def _docker_available() -> bool:
     """Return True iff the `docker` binary is on PATH AND the daemon
     responds. Used to pick a safe sandbox default in consumer mode and
@@ -1473,6 +1509,7 @@ def write_config(
     keys: dict[str, str],
     capabilities: dict[str, bool] | None = None,
     *,
+    advanced: dict[str, bool] | None = None,
     mcp_servers: dict[str, dict[str, Any]] | None = None,
     plugins: list[str] | None = None,
     tool_acl: dict[str, Any] | None = None,
@@ -1576,6 +1613,29 @@ def write_config(
             # web_search is wired through enable_web_search at kernel
             # boot; reflect the wizard's pick under [capabilities].
             lines.append("web_search = true")
+
+    if advanced:
+        # Advanced reasoning toggles -> the kernel's config sections. Each is
+        # off unless the wizard wrote it, matching the modules' own defaults.
+        if advanced.get("cost_aware") or advanced.get("verify_ensemble"):
+            lines.append("")
+            lines.append("[routing]")
+            if advanced.get("cost_aware"):
+                lines.append("cost_aware = true")
+            if advanced.get("verify_ensemble"):
+                lines.append("verify_ensemble = true")
+        if advanced.get("tree_of_thought"):
+            lines.append("")
+            lines.append("[planning]")
+            lines.append('mode = "tree_of_thought"')
+        if advanced.get("compact_history"):
+            lines.append("")
+            lines.append("[context]")
+            lines.append("compact = true")
+        if advanced.get("reflexion"):
+            lines.append("")
+            lines.append("[reflexion]")
+            lines.append("enable = true")
 
     if mcp_servers:
         for name, cfg in mcp_servers.items():
@@ -2107,6 +2167,11 @@ def run(fast: bool = False, resume: bool = False) -> int:
     _save_partial(state)
 
     _announce()
+    advanced = state.get("advanced") or pick_advanced()
+    state["advanced"] = advanced
+    _save_partial(state)
+
+    _announce()
     web_search_enabled, web_search_envs = (
         state.get("_web_search_pair") or pick_web_search()
     )
@@ -2186,6 +2251,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
     write_config(
         deployment, providers, role_models, channels, safety, budget, sandbox,
         keys, capabilities,
+        advanced=advanced,
         mcp_servers=mcp_servers,
         plugins=plugins,
         tool_acl=tool_acl,
