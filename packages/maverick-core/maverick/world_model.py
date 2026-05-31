@@ -178,6 +178,20 @@ CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
     INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
 END;
 
+-- External-content FTS5 requires the delete/update triggers too, or the
+-- shadow index drifts out of sync with `messages` on any DELETE/UPDATE
+-- (purge already deletes messages), leaving search matching stale/missing rows.
+CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, content)
+    VALUES('delete', old.id, old.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, content)
+    VALUES('delete', old.id, old.content);
+    INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+END;
+
 -- Q1 2026 index audit (schema v8): cover the hot queries identified
 -- in docs/performance/world-model-indexes.md. These are duplicated in
 -- MIGRATIONS[8] so existing databases pick them up on next open.
@@ -887,10 +901,17 @@ class WorldModel:
             )
 
     def search_messages(self, query: str, limit: int = 10) -> list[dict]:
+        # Quote the user text as a single FTS5 string literal (escaping
+        # embedded quotes). Passing it raw let an unbalanced quote / leading
+        # `*` / `NEAR` / `-` raise sqlite3.OperationalError: fts5 syntax error
+        # and crash the search on ordinary natural-language input.
+        if not query or not query.strip():
+            return []
+        fts_query = '"' + query.replace('"', '""') + '"'
         rows = self._read_all(
             "SELECT m.* FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid "
             "WHERE messages_fts MATCH ? ORDER BY m.ts DESC LIMIT ?",
-            (query, limit),
+            (fts_query, limit),
         )
         return [dict(r) for r in rows]
 
