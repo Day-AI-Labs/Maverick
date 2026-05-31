@@ -85,7 +85,9 @@ class TestInstallSkill:
             def read(self, n: int = -1) -> bytes:
                 return b"x" * (300 * 1024)
 
-        with patch("urllib.request.urlopen", return_value=FakeResp()):
+        # guarded_urlopen fetches through a custom opener (to revalidate
+        # redirect hops against the SSRF guard), so patch the opener's open().
+        with patch("urllib.request.OpenerDirector.open", return_value=FakeResp()):
             with pytest.raises(ValueError, match="too large"):
                 install_skill("https://example.com/skill.md", skills_dir=tmp_path / "skills")
 

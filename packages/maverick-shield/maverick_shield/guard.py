@@ -25,6 +25,31 @@ from .output_policy import scan_output as output_policy_scan
 
 log = logging.getLogger(__name__)
 
+
+def _collect_arg_strings(value: Any) -> list[str]:
+    """Recursively collect every string leaf from a tool-args structure.
+
+    Used so ``scan_tool_call`` can scan the bare argument values (preserving
+    their real boundaries) instead of ``repr(args)``, whose quoting can break
+    rule anchors. Dict keys are included too, since an injection can hide in a
+    key name.
+    """
+    out: list[str] = []
+    if isinstance(value, str):
+        out.append(value)
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            if isinstance(k, str):
+                out.append(k)
+            out.extend(_collect_arg_strings(v))
+    elif isinstance(value, (list, tuple, set)):
+        for item in value:
+            out.extend(_collect_arg_strings(item))
+    elif value is not None:
+        out.append(str(value))
+    return out
+
+
 try:  # pragma: no cover
     from agent_shield import AgentShield
     _HAVE_SDK = True
@@ -145,7 +170,16 @@ class Shield:
         return self._scan_via_backend(text)
 
     def scan_tool_call(self, tool_name: str, args: dict) -> ShieldVerdict:
-        payload = f"tool={tool_name} args={args!r}"
+        # Scan the raw string leaves of ``args`` rather than ``repr(args)``.
+        # repr() wraps each value in quotes, so a payload like
+        # ``{'cmd': 'rm -rf /'}`` rendered the command as ``'rm -rf /'`` —
+        # the closing quote immediately after ``/`` defeated rules whose
+        # anchor expects ``/`` to be followed by whitespace/EOL/slash (e.g.
+        # ``rm_rf_root``), letting the exact destructive commands the rules
+        # target slip through this chokepoint. Joining the bare leaf strings
+        # with newlines preserves each value's real boundaries.
+        leaves = _collect_arg_strings(args)
+        payload = "\n".join([f"tool={tool_name}", *leaves])
         return self._scan_via_backend(payload)
 
     def scan_output(self, text: str, known_prompt: str | None = None) -> ShieldVerdict:

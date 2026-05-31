@@ -159,21 +159,11 @@ def is_blocked_host(hostname: str) -> bool:
     return _is_private_ip(hostname or "")
 
 
-def guarded_urlopen(url: str, *, timeout: float, allow_http: bool = False):
-    """``urllib.request.urlopen`` with scheme + SSRF host checks.
+def _check_url_allowed(url: str, *, allow_http: bool) -> None:
+    """Raise ``ValueError`` if ``url``'s scheme or host fails the SSRF guard.
 
-    The shared guarded fetch for paths that pull a user- or model-supplied
-    URL outside the http_fetch tool (skill install, catalog index). Enforces
-    https (http only when ``allow_http``) and refuses hosts resolving to a
-    private/loopback/link-local/reserved address via ``is_blocked_host``
-    (honoring ``MAVERICK_FETCH_ALLOW_PRIVATE=1``) before opening the
-    connection. Returns the response, so callers use it as
-    ``with guarded_urlopen(url, timeout=...) as resp:``.
-
-    Residual: the host is resolved here and again by ``urlopen``, so a fast
-    DNS rebind between the two is not stopped (the same limitation this tool
-    already carries; resolve-once-pin-IP is tracked separately). The win is
-    closing the previously *unguarded* skill/catalog fetch paths.
+    Factored out of ``guarded_urlopen`` so the same scheme + host checks can
+    be re-run on every redirect hop, not just the entry URL.
     """
     parsed = urlparse(url)
     scheme = (parsed.scheme or "").lower()
@@ -187,7 +177,52 @@ def guarded_urlopen(url: str, *, timeout: float, allow_http: bool = False):
             "private/loopback/link-local/reserved address (SSRF guard). "
             "Set MAVERICK_FETCH_ALLOW_PRIVATE=1 to override."
         )
-    return urllib.request.urlopen(url, timeout=timeout)  # noqa: S310 (scheme+host checked)
+
+
+class _RevalidatingRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Re-run the SSRF scheme/host guard on every redirect target.
+
+    The stock handler follows 3xx redirects transparently, so a URL that
+    passes the front-door check could 302 to ``http://169.254.169.254/...``
+    (cloud metadata) or ``http://127.0.0.1`` and the guard would never see
+    the redirect target. We re-validate the ``Location`` before allowing the
+    redirect; a blocked target raises and aborts the fetch.
+    """
+
+    def __init__(self, *, allow_http: bool) -> None:
+        super().__init__()
+        self._allow_http = allow_http
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # ``newurl`` is already resolved to an absolute URL by urllib.
+        _check_url_allowed(newurl, allow_http=self._allow_http)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def guarded_urlopen(url: str, *, timeout: float, allow_http: bool = False):
+    """``urllib.request.urlopen`` with scheme + SSRF host checks.
+
+    The shared guarded fetch for paths that pull a user- or model-supplied
+    URL outside the http_fetch tool (skill install, catalog index). Enforces
+    https (http only when ``allow_http``) and refuses hosts resolving to a
+    private/loopback/link-local/reserved address via ``is_blocked_host``
+    (honoring ``MAVERICK_FETCH_ALLOW_PRIVATE=1``) before opening the
+    connection. The check is re-run on every redirect hop via a custom
+    opener, so a public URL cannot 302 the fetch onto an internal address.
+    Returns the response, so callers use it as
+    ``with guarded_urlopen(url, timeout=...) as resp:``.
+
+    Residual: the host is resolved here and again by ``urlopen``, so a fast
+    DNS rebind between the two is not stopped (the same limitation this tool
+    already carries; resolve-once-pin-IP is tracked separately). The win is
+    closing the previously *unguarded* skill/catalog fetch paths AND the
+    redirect-follow bypass of the host check.
+    """
+    _check_url_allowed(url, allow_http=allow_http)
+    opener = urllib.request.build_opener(
+        _RevalidatingRedirectHandler(allow_http=allow_http)
+    )
+    return opener.open(url, timeout=timeout)  # noqa: S310 (scheme+host checked, redirects revalidated)
 
 
 def _check_robots(url: str, user_agent: str = "Maverick") -> bool:

@@ -67,6 +67,19 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     # Authorization: Bearer <token> headers (require a token-ish length to
     # avoid flagging the literal word "Bearer").
     ("bearer_header",      re.compile(r"(?i)\bAuthorization\s*:\s*Bearer\s+[A-Za-z0-9._-]{12,}")),
+    # .env-style KEY=value lines whose name contains TOKEN/KEY/SECRET/
+    # PASSWORD/PASS/CREDENTIAL. The module's docstring advertised "generic
+    # high-entropy" coverage but no such rule existed, so a generically
+    # named secret (INTERNAL_API_TOKEN=..., DB_PASSWORD=...) was written to
+    # the audit log and fed back to the model in plaintext. Mirrors the
+    # `env_secret` rule in maverick.secrets so both redactors agree. Only the
+    # value (named group ``val``) is redacted, keeping the var name readable.
+    ("env_secret",         re.compile(
+        r"(?:^|\n)\s*(?:export\s+)?[A-Z][A-Z0-9_]*"
+        r"(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z0-9_]*\s*=\s*"
+        r"(?P<val>[^\s\n]+)",
+        re.MULTILINE,
+    )),
 ]
 
 
@@ -78,11 +91,14 @@ def scan(text: str) -> list[SecretMatch]:
     seen_spans: set[tuple[int, int]] = set()
     for name, pat in _PATTERNS:
         for m in pat.finditer(text):
-            span = m.span()
+            # Patterns may redact only a value sub-group (named ``val``),
+            # e.g. ``env_secret`` keeps the ``NAME=`` prefix visible.
+            grp = "val" if "val" in m.re.groupindex else 0
+            span = m.span(grp)
             if span in seen_spans:
                 continue
             seen_spans.add(span)
-            raw = m.group(0)
+            raw = m.group(grp)
             preview = raw[:6] + "..." if len(raw) > 12 else "..."
             matches.append(SecretMatch(name=name, span=span, value_preview=preview))
     return matches

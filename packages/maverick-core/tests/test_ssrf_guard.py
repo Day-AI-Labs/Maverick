@@ -40,12 +40,15 @@ def test_guarded_urlopen_allows_public_host(monkeypatch):
 
     seen = {}
 
-    def _fake_urlopen(url, timeout=None):
+    # guarded_urlopen now fetches through a custom opener (so it can
+    # revalidate every redirect hop against the SSRF guard), so patch the
+    # opener's open() rather than urllib.request.urlopen.
+    def _fake_open(self, url, timeout=None):
         seen["url"] = url
         return object()
 
     monkeypatch.setattr(http_fetch, "is_blocked_host", lambda _h: False)
-    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", _fake_open)
 
     out = http_fetch.guarded_urlopen("https://example.com/data", timeout=5)
     assert out is not None
