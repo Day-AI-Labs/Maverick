@@ -426,7 +426,7 @@ def base_registry(
     reg.register(compute())
     reg.register(sql_query(sandbox))
     reg.register(email_tool())
-    reg.register(pandas_query())
+    reg.register(pandas_query(sandbox))
     reg.register(git_advanced(sandbox))
     reg.register(calendar_tool())
     reg.register(file_watcher(sandbox))

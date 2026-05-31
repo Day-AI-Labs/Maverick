@@ -294,6 +294,38 @@ def test_pandas_query_rejects_bad_where(tmp_path):
     assert "bad where clause" in out
 
 
+def test_pandas_query_confines_path_to_sandbox_workspace(tmp_path):
+    """With a sandbox wired in, an absolute path outside workdir is refused
+    before any file is read (no arbitrary host-file read). Needs no pandas:
+    the path check happens before load."""
+    class _SB:
+        workdir = tmp_path / "ws"
+
+    (tmp_path / "ws").mkdir()
+    secret = tmp_path / "secret.csv"
+    secret.write_text("col\nvalue\n")
+
+    from maverick.tools.pandas_query import pandas_query
+    tool = pandas_query(_SB())
+    out = tool.fn({"op": "head", "source": str(secret)})
+    assert "escapes the workspace" in out
+    # A traversal attempt is likewise refused.
+    assert "escapes the workspace" in tool.fn({"op": "head", "source": "../secret.csv"})
+
+
+@pytest.mark.skipif(not _HAS_PANDAS, reason="pandas not installed")
+def test_pandas_query_caps_oversized_input(tmp_path, monkeypatch):
+    """A file larger than the load cap is truncated, not read in full."""
+    import maverick.tools.pandas_query as pq
+    monkeypatch.setattr(pq, "_MAX_LOAD_ROWS", 5)
+    csv_path = tmp_path / "big.csv"
+    rows = "\n".join(f"r{i},{i}" for i in range(50))
+    csv_path.write_text("name,val\n" + rows + "\n")
+
+    out = pq.pandas_query().fn({"op": "head", "source": str(csv_path), "n": 100})
+    assert "truncated to the first 5 rows" in out
+
+
 # ---------- git_advanced ----------
 
 def test_git_advanced_requires_repo(tmp_path):
