@@ -95,6 +95,14 @@ class Shield:
         scan_tool_calls: bool = True,
         scan_output: bool = True,
     ):
+        # Normalize: profile/threshold/backend come from user-typed TOML, and
+        # the comparisons below (== "off"/"none", the {"strict": ...} sensitivity
+        # lookup) plus SEVERITY_ORDER are case-sensitive -- a config like
+        # profile = "Off" or "Strict" otherwise silently misapplies (safety
+        # stays on, or "Strict" falls through to medium sensitivity).
+        profile = (profile or "balanced").strip().lower()
+        block_threshold = (block_threshold or "high").strip().lower()
+        backend = (backend or "auto").strip().lower()
         self.profile = profile
         self.block_threshold = block_threshold
         # Per-sink enable flags ([safety] scan_input/scan_tool_calls/

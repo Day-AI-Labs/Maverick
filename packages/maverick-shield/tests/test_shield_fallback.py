@@ -107,3 +107,41 @@ def test_scan_output_flag_disables_output_scan():
 def test_flags_default_on_still_scan():
     sh = Shield(backend="builtin")
     assert not sh.scan_tool_call("shell", {"cmd": "rm -rf /"}).allowed
+
+
+# ---------- case/whitespace-insensitive config normalization ----------
+# profile/block_threshold/backend come from user-typed TOML and are compared
+# against lowercase literals (== "off"/"none", the {"strict": ...} sensitivity
+# lookup, SEVERITY_ORDER). Without normalization a config like profile = "Off"
+# or "Strict" silently misapplies (safety stays on; "Strict" falls through to
+# medium sensitivity). Normalize once in __init__ so every downstream read hits.
+
+def test_uppercase_profile_off_disables_shield():
+    s = Shield(profile="OFF", warn_if_missing=False)
+    assert not s.enabled
+    assert s.scan_input("<|im_start|>jailbreak").allowed
+
+
+def test_mixed_case_backend_none_disables_shield():
+    s = Shield(backend="None", warn_if_missing=False)
+    assert not s.enabled
+
+
+def test_profile_off_tolerates_surrounding_whitespace():
+    s = Shield(profile="  Off  ", warn_if_missing=False)
+    assert not s.enabled
+
+
+def test_profile_and_threshold_stored_normalized():
+    # The stored values feed case-sensitive lookups ({"strict": ...}.get(profile),
+    # SEVERITY_ORDER[block_threshold]); they must be lowercased so a user-typed
+    # "Strict"/"HIGH" resolves instead of silently defaulting.
+    s = Shield(profile="Strict", block_threshold="HIGH", warn_if_missing=False)
+    assert s.profile == "strict"
+    assert s.block_threshold == "high"
+
+
+def test_none_profile_defaults_to_balanced():
+    s = Shield(profile=None, warn_if_missing=False)  # type: ignore[arg-type]
+    assert s.profile == "balanced"
+    assert s.enabled
