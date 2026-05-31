@@ -6,6 +6,7 @@ import logging
 import math
 import os
 import sys
+from contextvars import ContextVar
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -29,6 +30,14 @@ SUPPORTED_PROTOCOL_VERSIONS = (
 )
 SERVER_NAME = "maverick"
 SERVER_VERSION = "0.2.0"
+
+# Per-tool-call structured output for side-effectful tools. HTTP requests share
+# one MCPServer instance and dispatch concurrently in worker threads, so this
+# must not be stored on self. ContextVar keeps the value request-local while
+# preserving the existing text-returning tool handler shape.
+_STRUCTURED_OVERRIDE: ContextVar[dict[str, Any] | None] = ContextVar(
+    "maverick_mcp_structured_override", default=None,
+)
 
 
 def _bounded_float(value: Any, *, default: float, ceiling: float) -> float:
@@ -398,45 +407,48 @@ class MCPServer:
         if missing:
             raise _ProtocolError(-32602, f"missing required argument(s) for {name}: {missing}")
         # Side-effectful action tools (start/resume) can't be re-derived, so
-        # they stash their structured result here during dispatch; reset per
-        # call so a prior call's value can't leak.
-        self._structured_override = None
+        # they stash their structured result in request-local context during
+        # dispatch. Reset per call so a prior call's value can't leak.
+        structured_token = _STRUCTURED_OVERRIDE.set(None)
         try:
-            result = self._dispatch_tool(name, arguments)
-        except Exception as e:
-            return {
-                "isError": True,
-                "content": [{"type": "text", "text": f"{type(e).__name__}: {e}"}],
-            }
-        if self._shield is not None:
-            verdict = self._shield.scan_output(result)
-            if not verdict.allowed:
+            try:
+                result = self._dispatch_tool(name, arguments)
+            except Exception as e:
                 return {
                     "isError": True,
-                    "content": [{"type": "text", "text": f"⚠ Output blocked: {'; '.join(verdict.reasons)}"}],
+                    "content": [{"type": "text", "text": f"{type(e).__name__}: {e}"}],
                 }
-        response: dict[str, Any] = {
-            "isError": False,
-            "content": [{"type": "text", "text": result}],
-        }
-        # Tools that declare an outputSchema (the read-only query tools) also
-        # return structuredContent, so typed cross-language clients get parsed
-        # JSON instead of re-parsing the text block. Additive + best-effort:
-        # the text block stays for back-compat, and a structured-form failure
-        # never fails the call.
-        if "outputSchema" in tool_spec:
-            try:
-                # Action tools stash their structured result during dispatch
-                # (can't be re-derived); query tools re-derive from the world
-                # model.
-                structured = self._structured_override
-                if structured is None:
-                    structured = self._structured_result(name)
-            except Exception:  # pragma: no cover -- structured form is best-effort
-                structured = None
-            if structured is not None:
-                response["structuredContent"] = structured
-        return response
+            if self._shield is not None:
+                verdict = self._shield.scan_output(result)
+                if not verdict.allowed:
+                    return {
+                        "isError": True,
+                        "content": [{"type": "text", "text": f"⚠ Output blocked: {'; '.join(verdict.reasons)}"}],
+                    }
+            response: dict[str, Any] = {
+                "isError": False,
+                "content": [{"type": "text", "text": result}],
+            }
+            # Tools that declare an outputSchema (the read-only query tools) also
+            # return structuredContent, so typed cross-language clients get parsed
+            # JSON instead of re-parsing the text block. Additive + best-effort:
+            # the text block stays for back-compat, and a structured-form failure
+            # never fails the call.
+            if "outputSchema" in tool_spec:
+                try:
+                    # Action tools stash their structured result during dispatch
+                    # (can't be re-derived); query tools re-derive from the world
+                    # model.
+                    structured = _STRUCTURED_OVERRIDE.get()
+                    if structured is None:
+                        structured = self._structured_result(name)
+                except Exception:  # pragma: no cover -- structured form is best-effort
+                    structured = None
+                if structured is not None:
+                    response["structuredContent"] = structured
+            return response
+        finally:
+            _STRUCTURED_OVERRIDE.reset(structured_token)
 
     def _dispatch_tool(self, name: str, args: dict) -> str:
         if name == "maverick_start":
@@ -528,7 +540,7 @@ class MCPServer:
         answer = run_goal_sync(
             llm, world, budget, goal_id, sandbox=sandbox, max_depth=max_depth,
         )
-        self._structured_override = {"goal_id": goal_id, "answer": answer}
+        _STRUCTURED_OVERRIDE.set({"goal_id": goal_id, "answer": answer})
         return answer
 
     def _tool_status(self) -> str:
@@ -583,7 +595,7 @@ class MCPServer:
             LLM(), w, budget, goal_id,
             sandbox=build_sandbox(), max_depth=max_depth,
         )
-        self._structured_override = {"goal_id": goal_id, "answer": answer}
+        _STRUCTURED_OVERRIDE.set({"goal_id": goal_id, "answer": answer})
         return answer
 
     def _tool_answer(self, args: dict) -> str:

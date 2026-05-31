@@ -9,10 +9,13 @@ and carries the right code. The `isError` envelope is only for tool
 from __future__ import annotations
 
 import math
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import pytest
 from maverick_mcp.server import (
+    _STRUCTURED_OVERRIDE,
     PROTOCOL_VERSION,
     TOOLS,
     MCPServer,
@@ -299,6 +302,49 @@ class TestStructuredOutput:
         assert isinstance(st["structuredContent"]["goals"], list)
         sk = s.handle_tools_call({"name": "maverick_skills_list", "arguments": {}})
         assert isinstance(sk["structuredContent"]["skills"], list)
+
+    def test_structured_override_is_request_local(self, monkeypatch):
+        """Concurrent calls must not share start/resume structuredContent."""
+        s = MCPServer()
+        first_scanned = threading.Event()
+        second_done = threading.Event()
+
+        def fake_dispatch(_name, args):
+            if args["title"] == "first":
+                _STRUCTURED_OVERRIDE.set({"goal_id": 1, "answer": "TEXT_A"})
+                return "TEXT_A"
+            assert first_scanned.wait(timeout=5)
+            _STRUCTURED_OVERRIDE.set({"goal_id": 2, "answer": "TEXT_B"})
+            return "TEXT_B"
+
+        def fake_scan_output(text):
+            if text == "TEXT_A":
+                first_scanned.set()
+                assert second_done.wait(timeout=5)
+            return SimpleNamespace(allowed=True, reasons=[])
+
+        monkeypatch.setattr(s, "_dispatch_tool", fake_dispatch)
+        s._shield = SimpleNamespace(scan_output=fake_scan_output)
+
+        def call(title):
+            out = s.handle_tools_call({
+                "name": "maverick_start",
+                "arguments": {"title": title},
+            })
+            if title == "second":
+                second_done.set()
+            return out
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first_future = executor.submit(call, "first")
+            second_future = executor.submit(call, "second")
+            first_out = first_future.result(timeout=5)
+            second_out = second_future.result(timeout=5)
+
+        assert first_out["content"][0]["text"] == "TEXT_A"
+        assert first_out["structuredContent"] == {"goal_id": 1, "answer": "TEXT_A"}
+        assert second_out["content"][0]["text"] == "TEXT_B"
+        assert second_out["structuredContent"] == {"goal_id": 2, "answer": "TEXT_B"}
 
     def test_action_tool_has_no_structured_content(self, isolated_wm):
         out = MCPServer().handle_tools_call(
