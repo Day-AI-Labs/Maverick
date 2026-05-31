@@ -7,6 +7,9 @@ inputs through, and that `backend="none"` is the explicit kill switch.
 """
 from __future__ import annotations
 
+import sys
+import types
+
 from maverick_shield import Shield, ShieldVerdict
 
 
@@ -144,4 +147,47 @@ def test_profile_and_threshold_stored_normalized():
 def test_none_profile_defaults_to_balanced():
     s = Shield(profile=None, warn_if_missing=False)  # type: ignore[arg-type]
     assert s.profile == "balanced"
+    assert s.enabled
+
+
+def test_non_string_profile_is_coerced_without_crashing():
+    s = Shield(profile=True, warn_if_missing=False)
+    assert s.profile == "true"
+    assert s.enabled
+
+
+def test_non_string_threshold_is_coerced_without_crashing():
+    s = Shield(block_threshold=1, warn_if_missing=False)
+    assert s.block_threshold == "1"
+    assert s.scan_input("summarize the latest news about open-source AI").allowed
+
+
+def test_non_string_backend_is_coerced_without_crashing():
+    s = Shield(backend=True, warn_if_missing=False)
+    assert s.backend == Shield.BACKEND_BUILTIN
+
+
+def test_falsy_non_string_config_values_keep_defaults():
+    s = Shield(profile=False, block_threshold=0, backend=False, warn_if_missing=False)
+    assert s.profile == "balanced"
+    assert s.block_threshold == "high"
+    assert s.enabled
+
+
+def test_from_config_tolerates_non_string_safety_values(monkeypatch):
+    maverick_module = types.ModuleType("maverick")
+    config_module = types.ModuleType("maverick.config")
+
+    def get_safety():
+        return {"profile": True, "block_threshold": 1}
+
+    config_module.get_safety = get_safety
+    maverick_module.config = config_module
+    monkeypatch.setitem(sys.modules, "maverick", maverick_module)
+    monkeypatch.setitem(sys.modules, "maverick.config", config_module)
+
+    s = Shield.from_config()
+
+    assert s.profile == "true"
+    assert s.block_threshold == "1"
     assert s.enabled
