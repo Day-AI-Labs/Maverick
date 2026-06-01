@@ -83,3 +83,31 @@ def test_events_round_trip(world):
     # since_id filter excludes events at/below the cursor.
     after = world.goal_events(gid, since_id=e1)
     assert [e.content for e in after] == ["ran ls"]
+
+
+def test_facts_upsert_overwrites(world):
+    world.upsert_fact("pg:color", "blue")
+    world.upsert_fact("pg:color", "green")  # ON CONFLICT(key) -> update
+    assert world.get_facts().get("pg:color") == "green"
+
+
+def test_facts_matching_is_prefix_scoped(world):
+    world.upsert_fact("user:alice:email", "a@x.com")
+    world.upsert_fact("user:alice:phone", "555")
+    world.upsert_fact("user:bob:email", "b@x.com")
+    world.upsert_fact("global:tz", "UTC")  # not user-scoped
+
+    assert set(world.facts_matching("alice")) == {"user:alice:email", "user:alice:phone"}
+    assert world.facts_matching("") == {}  # empty token matches nothing
+
+
+def test_delete_facts_matching_scoped(world):
+    world.upsert_fact("user:carol:email", "c@x.com")
+    world.upsert_fact("user:carol:ssn", "secret")
+    world.upsert_fact("user:dave:email", "d@x.com")
+
+    deleted = world.delete_facts_matching("carol")
+    assert deleted == ["user:carol:email", "user:carol:ssn"]  # sorted keys
+    remaining = world.get_facts()
+    assert "user:carol:email" not in remaining
+    assert remaining.get("user:dave:email") == "d@x.com"  # other users untouched
