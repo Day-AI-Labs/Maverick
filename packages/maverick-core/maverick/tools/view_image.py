@@ -60,21 +60,31 @@ def _load_image(source: str) -> tuple[bytes, str] | None:
     """Return (image_bytes, mime_type) for the source, or None on failure."""
     if source.startswith(("http://", "https://")):
         try:
-            import httpx  # noqa: F401  (presence check; safe_get imports it)
+            import httpx  # noqa: F401  (presence check; safe_client imports it)
         except ImportError:
             return None
-        from ._ssrf import BlockedHost, safe_get
+        from ._ssrf import BlockedHost, safe_client
+        # safe_client pins the connection to the validated public IP (SSRF /
+        # DNS-rebinding); stream with a hard ceiling so a model-supplied URL to
+        # a multi-GB resource can't be fully buffered into memory BEFORE the cap
+        # rejects it (the old safe_get materialized resp.content first).
+        _MAX = 20 * 1024 * 1024  # 20 MiB
         try:
-            # Pins the connection to the validated public IP (no rebinding).
-            resp = safe_get(source, timeout=30.0)
-            resp.raise_for_status()
-            # Cap the in-memory body (then base64-encoded for the vision model):
-            # a model-supplied URL to a multi-GB resource is an unbounded blowup.
-            if len(resp.content) > 20 * 1024 * 1024:
-                log.warning("image fetch refused: %d bytes > 20 MiB cap", len(resp.content))
-                return None
-            mime = (resp.headers.get("content-type") or _guess_mime(source)).split(";")[0].strip()
-            return resp.content, mime
+            with safe_client(source, timeout=30.0) as client:
+                with client.stream("GET", source) as resp:
+                    resp.raise_for_status()
+                    clen = resp.headers.get("content-length")
+                    if clen is not None and clen.isdigit() and int(clen) > _MAX:
+                        log.warning("image fetch refused: %s bytes > 20 MiB cap", clen)
+                        return None
+                    buf = bytearray()
+                    for chunk in resp.iter_bytes():
+                        buf += chunk
+                        if len(buf) > _MAX:
+                            log.warning("image fetch refused: body exceeded 20 MiB cap")
+                            return None
+                    mime = (resp.headers.get("content-type") or _guess_mime(source)).split(";")[0].strip()
+                    return bytes(buf), mime
         except BlockedHost as e:
             log.warning("image fetch refused: %s", e)
             return None
