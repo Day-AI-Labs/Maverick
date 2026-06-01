@@ -72,9 +72,22 @@ def _get(path: str, params: dict | None = None) -> tuple[int, Any]:
         return r.status_code, r.text[:500]
 
 
-def _put(path: str, body: dict) -> tuple[int, Any]:
+def _from_email() -> str:
+    """The requester email for write ops. PagerDuty's PUT /incidents requires a
+    ``From`` header identifying a valid user; with an account-level token (not a
+    user token) it's mandatory, else the API 400s 'Requester User Not Found'."""
+    return (
+        os.environ.get("PAGERDUTY_FROM", "")
+        or os.environ.get("PAGERDUTY_USER_EMAIL", "")
+    ).strip()
+
+
+def _put(path: str, body: dict, *, from_email: str | None = None) -> tuple[int, Any]:
     import httpx
-    r = httpx.put(f"https://api.pagerduty.com{path}", headers=_headers(),
+    headers = _headers()
+    if from_email:
+        headers["From"] = from_email
+    r = httpx.put(f"https://api.pagerduty.com{path}", headers=headers,
                   json=body, timeout=30.0)
     try:
         return r.status_code, r.json()
@@ -120,9 +133,18 @@ def _op_incident_get(iid: str) -> str:
 def _set_status(iid: str, status: str, confirm: bool) -> str:
     if not confirm:
         return f"DRY RUN: would set {iid} -> {status}. Re-run with confirm=true."
+    from_email = _from_email()
+    if not from_email:
+        return (
+            "ERROR: acknowledge/resolve requires a requester email. Set "
+            "PAGERDUTY_FROM (or PAGERDUTY_USER_EMAIL) to a valid PagerDuty "
+            "user's email — the REST API rejects the status PUT without a "
+            "'From' header when using an account-level token."
+        )
     code, data = _put(
         f"/incidents/{iid}",
         {"incident": {"type": "incident_reference", "status": status}},
+        from_email=from_email,
     )
     if code >= 400 or not isinstance(data, dict):
         return f"ERROR: status update ({code}): {data}"

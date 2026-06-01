@@ -75,6 +75,33 @@ def test_pagerduty_trigger_dry_run(monkeypatch):
     assert "DRY RUN" in out
 
 
+def test_pagerduty_acknowledge_sends_from_header(monkeypatch):
+    # Issue #475: the status PUT needs a `From` header (requester email) or the
+    # REST API 400s 'Requester User Not Found' with an account-level token.
+    monkeypatch.setenv("PAGERDUTY_API_TOKEN", "tok")
+    monkeypatch.setenv("PAGERDUTY_FROM", "oncall@example.com")
+    put = MagicMock(return_value=_resp(200, {"incident": {"status": "acknowledged"}}))
+    _fake_httpx(monkeypatch, put=put)
+    from maverick.tools.pagerduty_tool import pagerduty_tool
+    out = pagerduty_tool().fn({"op": "acknowledge", "id": "PQ1", "confirm": True})
+    assert "acknowledged" in out
+    # The From header was sent on the PUT.
+    headers = put.call_args.kwargs["headers"]
+    assert headers.get("From") == "oncall@example.com"
+
+
+def test_pagerduty_acknowledge_errors_without_from(monkeypatch):
+    monkeypatch.delenv("PAGERDUTY_FROM", raising=False)
+    monkeypatch.delenv("PAGERDUTY_USER_EMAIL", raising=False)
+    monkeypatch.setenv("PAGERDUTY_API_TOKEN", "tok")
+    put = MagicMock()
+    _fake_httpx(monkeypatch, put=put)
+    from maverick.tools.pagerduty_tool import pagerduty_tool
+    out = pagerduty_tool().fn({"op": "acknowledge", "id": "PQ1", "confirm": True})
+    assert "requester email" in out.lower()
+    put.assert_not_called()  # no doomed request fired
+
+
 # ---------- Salesforce ----------
 
 def test_salesforce_requires_op():

@@ -349,9 +349,42 @@ def test_confluence_page_create_dry_run(monkeypatch):
     _fake_httpx(monkeypatch, post=MagicMock())
     from maverick.tools.confluence_tool import confluence_tool
     out = confluence_tool().fn({
-        "op": "page_create", "space_id": "ENG", "title": "New",
+        "op": "page_create", "space_key": "ENG", "title": "New",
     })
     assert "DRY RUN" in out
+
+
+def _confluence_env(monkeypatch):
+    monkeypatch.setenv("CONFLUENCE_URL", "https://x.atlassian.net/wiki")
+    monkeypatch.setenv("CONFLUENCE_USER", "u@x")
+    monkeypatch.setenv("CONFLUENCE_API_TOKEN", "tok")
+
+
+def test_confluence_page_create_sends_space_key(monkeypatch):
+    # Issue #475: the v1 content API keys space by KEY (space.key). Confirm the
+    # space_key arg lands in payload["space"]["key"].
+    _confluence_env(monkeypatch)
+    post = MagicMock(return_value=_resp(200, {"id": "999", "title": "New"}))
+    _fake_httpx(monkeypatch, post=post)
+    from maverick.tools.confluence_tool import confluence_tool
+    confluence_tool().fn({
+        "op": "page_create", "space_key": "ENG", "title": "New",
+        "body": "<p>hi</p>", "confirm": True,
+    })
+    payload = post.call_args.kwargs["json"]
+    assert payload["space"]["key"] == "ENG"
+
+
+def test_confluence_page_create_accepts_legacy_space_id(monkeypatch):
+    # Back-compat: the old `space_id` arg still works (treated as the key).
+    _confluence_env(monkeypatch)
+    post = MagicMock(return_value=_resp(200, {"id": "999", "title": "New"}))
+    _fake_httpx(monkeypatch, post=post)
+    from maverick.tools.confluence_tool import confluence_tool
+    confluence_tool().fn({
+        "op": "page_create", "space_id": "ENG", "title": "New", "confirm": True,
+    })
+    assert post.call_args.kwargs["json"]["space"]["key"] == "ENG"
 
 
 # ---------- Gmail ----------
