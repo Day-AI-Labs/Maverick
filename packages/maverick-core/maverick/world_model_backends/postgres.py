@@ -89,6 +89,8 @@ SCHEMA: list[str] = [
       updated_at    DOUBLE PRECISION NOT NULL
     );
     """,
+    # Idempotent add to mirror the SQLite facts table's episode attribution.
+    "ALTER TABLE facts ADD COLUMN IF NOT EXISTS source_episode_id INTEGER;",
 ]
 
 
@@ -277,6 +279,46 @@ class PostgresWorldModel:
             )
             rows = cur.fetchall()
         return [GoalEvent(*r) for r in rows]
+
+    # ----- facts (global key/value memory) -----
+
+    def upsert_fact(self, key: str, value: str, episode_id: int | None = None) -> None:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO facts(key, value, source_episode_id, updated_at) "
+                "VALUES(%s, %s, %s, %s) "
+                "ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, "
+                "source_episode_id = EXCLUDED.source_episode_id, "
+                "updated_at = EXCLUDED.updated_at",
+                (key, value, episode_id, time.time()),
+            )
+
+    def get_facts(self) -> dict[str, str]:
+        with self._tx() as cur:
+            cur.execute("SELECT key, value FROM facts ORDER BY updated_at DESC")
+            rows = cur.fetchall()
+        return {r[0]: r[1] for r in rows}
+
+    def facts_matching(self, token: str) -> dict[str, str]:
+        """Facts explicitly scoped to ``token`` by ``user:<token>:`` key prefix.
+
+        Mirrors the SQLite backend: only deliberately namespaced keys are
+        considered (never values, never arbitrary substrings), so GDPR
+        export/erase can't disclose or delete unrelated global facts.
+        """
+        if not token:
+            return {}
+        prefix = f"user:{token}:"
+        return {k: v for k, v in self.get_facts().items() if k.startswith(prefix)}
+
+    def delete_facts_matching(self, token: str) -> list[str]:
+        """Delete user-scoped facts (see :meth:`facts_matching`); return the keys."""
+        keys = sorted(self.facts_matching(token).keys())
+        if keys:
+            ph = ",".join(["%s"] * len(keys))
+            with self._tx() as cur:
+                cur.execute(f"DELETE FROM facts WHERE key IN ({ph})", keys)
+        return keys
 
     # ----- close -----
 
