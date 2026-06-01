@@ -77,7 +77,15 @@ Self-learning honors the same chokepoints as the rest of the kernel:
 - **Off by default** — no extra persisted state until you opt in.
 - **Budget** — the generation LLM call is metered against the run's
   [budget](configuration.md); `max_acquisitions` bounds churn per run.
-- **Shield** — generated tool source is scanned through the
+- **Static audit** — generated tool source is parsed and checked against a
+  stdlib-only allowlist *before* it is imported: disallowed imports
+  (`os`, `subprocess`, `socket`, …), banned builtins (`eval`/`exec`/`open`/
+  `__import__`), and the dunder sandbox-escape chain are rejected. The source
+  is re-audited every time a persisted tool is loaded, so on-disk tampering is
+  caught too. This is a guardrail, not a true sandbox (a determined adversary
+  could still evade an AST allowlist) — sandboxed validation/execution is a
+  planned follow-up.
+- **Shield** — generated tool source is also scanned through the
   [Shield](safety.md) (when installed) before it is ever imported;
   blocked source is rejected.
 - **Catalog trust** — `acquire_skill` only installs curated,

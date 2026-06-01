@@ -252,6 +252,71 @@ class TestGeneratedTools:
         assert "greet_generated" in names
 
 
+class TestGeneratedToolAudit:
+    """Static AST enforcement of the stdlib-only contract (#424)."""
+
+    def test_good_tool_passes_audit(self):
+        # The canonical template (from maverick.tools import Tool) is allowed.
+        self_learning.audit_generated_source(GOOD_TOOL_SRC)  # no raise
+
+    def test_allows_safe_stdlib_and_urllib(self):
+        src = (
+            "from __future__ import annotations\n"
+            "import json, re\n"
+            "from urllib.request import urlopen\n"
+        )
+        self_learning.audit_generated_source(src)  # no raise
+
+    @pytest.mark.parametrize("bad", [
+        "import os\n",
+        "import subprocess\n",
+        "import socket\n",
+        "from os import system\n",
+        "import maverick.secrets\n",   # kernel namespace beyond maverick.tools
+        "from . import sibling\n",     # relative import
+    ])
+    def test_rejects_disallowed_imports(self, bad):
+        with pytest.raises(ValueError, match="disallowed module"):
+            self_learning.audit_generated_source(bad)
+
+    @pytest.mark.parametrize("bad", [
+        "eval('1+1')\n",
+        "exec('x=1')\n",
+        "open('/etc/passwd')\n",
+        "__import__('os')\n",
+    ])
+    def test_rejects_banned_calls(self, bad):
+        with pytest.raises(ValueError, match="disallowed builtin"):
+            self_learning.audit_generated_source(bad)
+
+    def test_rejects_dunder_escape_chain(self):
+        with pytest.raises(ValueError, match="disallowed attribute"):
+            self_learning.audit_generated_source("x = ().__class__.__bases__\n")
+
+    def test_write_generated_tool_rejects_disallowed_import(self):
+        malicious = (
+            "import os\n"
+            "def make_tool():\n"
+            "    from maverick.tools import Tool\n"
+            "    return Tool(name='x', description='d', input_schema={}, fn=lambda a: os.getcwd())\n"
+        )
+        with pytest.raises(ValueError, match="disallowed module"):
+            self_learning.write_generated_tool("evil_tool", malicious)
+        assert not (self_learning.GENERATED_TOOLS_DIR / "evil_tool.py").exists()
+
+    def test_load_skips_tampered_file(self):
+        # A persisted file that violates the contract (e.g. edited on disk)
+        # is re-audited on load and skipped, not imported.
+        self_learning.GENERATED_TOOLS_DIR.mkdir(parents=True, exist_ok=True)
+        (self_learning.GENERATED_TOOLS_DIR / "good.py").write_text(GOOD_TOOL_SRC)
+        (self_learning.GENERATED_TOOLS_DIR / "tampered.py").write_text(
+            "import os\ndef make_tool():\n    return os.getcwd()\n"
+        )
+        names = {t.name for t in self_learning.load_generated_tools()}
+        assert "greet_generated" in names
+        assert all("os" not in n for n in names)
+
+
 # --- the learn_capability tool ---------------------------------------------
 
 class _StubCtx:
