@@ -219,6 +219,27 @@ def test_translate_deepl_path(monkeypatch):
     assert "api-free.deepl.com" in url
 
 
+def test_translate_mixed_case_backend_routes_to_deepl(monkeypatch):
+    # #439: a model-supplied backend like "DeepL" must route to deepl, not
+    # silently fall through to libretranslate.
+    monkeypatch.setenv("DEEPL_API_KEY", "abc:fx")
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json = MagicMock(return_value={"translations": [
+        {"text": "Hola", "detected_source_language": "EN"},
+    ]})
+    fake_httpx = types.ModuleType("httpx")
+    fake_httpx.post = MagicMock(return_value=resp)
+    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+
+    from maverick.tools.translate import translate
+    out = translate().fn({"op": "translate", "text": "hi", "target": "es",
+                          "backend": "  DeepL  "})
+    assert "Hola" in out
+    # Routed to DeepL (not the libretranslate default).
+    assert "api-free.deepl.com" in fake_httpx.post.call_args.args[0]
+
+
 def test_translate_libre_fallback(monkeypatch):
     monkeypatch.delenv("DEEPL_API_KEY", raising=False)
     resp = MagicMock()
