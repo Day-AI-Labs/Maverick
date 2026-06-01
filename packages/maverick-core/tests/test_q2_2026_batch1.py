@@ -52,6 +52,59 @@ def test_agent_bus_correlation_id_filter():
     assert msg.payload == "right"
 
 
+def test_agent_bus_correlation_filter_preserves_nonmatching_in_order():
+    # Issue #480: a correlated recv must not DROP or REORDER the non-matching
+    # messages it skips over. The match sits behind two non-matching ones.
+    from maverick import agent_bus
+    agent_bus.clear()
+    agent_bus.send("a", "bob", "n1", correlation_id="other")
+    agent_bus.send("a", "bob", "hit", correlation_id="want")
+    agent_bus.send("a", "bob", "n2", correlation_id="other")
+    agent_bus.send("a", "bob", "n3", correlation_id="other")
+
+    got = agent_bus.recv("bob", correlation_id="want", timeout=0.5)
+    assert got is not None and got.payload == "hit"
+    # The three non-matching messages survive, in original FIFO order.
+    assert agent_bus.peek("bob") == 3
+    rest = [agent_bus.recv("bob").payload for _ in range(3)]
+    assert rest == ["n1", "n2", "n3"]
+
+
+def test_agent_bus_correlation_no_match_keeps_all():
+    # No message matches -> recv returns None and nothing is lost/reordered.
+    from maverick import agent_bus
+    agent_bus.clear()
+    for i in range(3):
+        agent_bus.send("a", "bob", f"m{i}", correlation_id="nope")
+    assert agent_bus.recv("bob", correlation_id="absent", timeout=0.2) is None
+    assert agent_bus.peek("bob") == 3
+    assert [agent_bus.recv("bob").payload for _ in range(3)] == ["m0", "m1", "m2"]
+
+
+def test_agent_bus_correlation_filter_no_drop_when_inbox_full():
+    # The core #480 bug: re-queueing via put_nowait into a full inbox silently
+    # dropped messages. Fill the inbox to capacity with non-matching messages
+    # plus one match; the held-buffer restore must not lose any.
+    import queue
+
+    from maverick import agent_bus
+    agent_bus.clear()
+    cap = 4
+    agent_bus._inboxes["bob"] = queue.Queue(maxsize=cap)
+    ib = agent_bus._inboxes["bob"]
+    ib.put_nowait(agent_bus.Message(sender="a", recipient="bob", payload="n1", correlation_id="o"))
+    ib.put_nowait(agent_bus.Message(sender="a", recipient="bob", payload="n2", correlation_id="o"))
+    ib.put_nowait(agent_bus.Message(sender="a", recipient="bob", payload="hit", correlation_id="w"))
+    ib.put_nowait(agent_bus.Message(sender="a", recipient="bob", payload="n3", correlation_id="o"))
+    assert ib.full()
+
+    got = agent_bus.recv("bob", correlation_id="w")
+    assert got is not None and got.payload == "hit"
+    # All three non-matching messages preserved (none dropped on restore).
+    assert agent_bus.peek("bob") == 3
+    assert [agent_bus.recv("bob").payload for _ in range(3)] == ["n1", "n2", "n3"]
+
+
 def test_agent_bus_peek():
     from maverick import agent_bus
     agent_bus.clear()
