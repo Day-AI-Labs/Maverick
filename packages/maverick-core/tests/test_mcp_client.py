@@ -175,6 +175,50 @@ class TestCallTool:
             asyncio.run(c.call_tool("t", {}))
         assert "boom" in str(ei.value)
 
+    def test_is_error_redacts_secret_before_exception(self, monkeypatch):
+        secret = "ghp_" + "A" * 36
+        c = self._client_returning(
+            monkeypatch,
+            {"isError": True, "content": [{"type": "text", "text": f"failed: {secret}"}]})
+        with pytest.raises(MCPClientError) as ei:
+            asyncio.run(c.call_tool("t", {}))
+        msg = str(ei.value)
+        assert secret not in msg
+        assert "[REDACTED:github_pat_classic]" in msg
+
+    def test_is_error_truncates_exception_detail(self, monkeypatch):
+        c = self._client_returning(
+            monkeypatch,
+            {"isError": True, "content": [{"type": "text", "text": "x" * 600}]})
+        with pytest.raises(MCPClientError) as ei:
+            asyncio.run(c.call_tool("t", {}))
+        msg = str(ei.value)
+        assert "[truncated 88 chars]" in msg
+        assert "x" * 600 not in msg
+
+    def test_wrapped_is_error_log_uses_redacted_exception(
+        self, monkeypatch, caplog
+    ):
+        from maverick.mcp_tools import _build_tool
+
+        secret = "ghp_" + "A" * 36
+        c = self._client_returning(
+            monkeypatch,
+            {
+                "isError": True,
+                "content": [{"type": "text", "text": f"failed: {secret}"}],
+            },
+        )
+        tool = _build_tool(c, "mcp_x__t", "t", {"description": "d"})
+        caplog.set_level("ERROR", logger="maverick.mcp_tools")
+
+        result = asyncio.run(tool.fn({}))
+
+        assert secret not in result
+        assert secret not in caplog.text
+        assert "[REDACTED:github_pat_classic]" in result
+        assert "[REDACTED:github_pat_classic]" in caplog.text
+
     def test_success_text_starting_with_error_is_not_an_error(self, monkeypatch):
         # The old "ERROR: " prefix made this verbatim success look like a
         # failure. It must now come back unchanged.
