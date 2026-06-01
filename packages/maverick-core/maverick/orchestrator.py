@@ -808,34 +808,63 @@ async def run_goal(
         # AND the selection gate (disagreement_high + verifier_confident
         # + success) passes. Never raises -- a bad donation must never
         # affect the goal result.
-        try:
-            from .donation import TrajectoryRecord, hash_brief, write_record
-            entropy = getattr(ctx, "last_disagreement", 0.0)
-            record = TrajectoryRecord(
-                task_brief_hash=hash_brief(goal.title + (goal.description or "")),
-                task_brief_text=(goal.title + "\n" + (goal.description or "")),
-                model_id=getattr(llm, "model", ""),
-                tools_used=sorted({e.kind for e in blackboard.entries
-                                   if e.kind == "observation"}),
-                outcome="success",
-                reward=1.0 if result.verifier_confidence >= 0.75 else result.verifier_confidence,
-                verifier_confidence=result.verifier_confidence,
-                verifier_critique=result.verifier_critique,
-                disagreement_entropy=float(entropy or 0.0),
-                wall_seconds=budget.elapsed(),
-                cost_dollars=budget.dollars,
-                tokens_in=budget.input_tokens,
-                tokens_out=budget.output_tokens,
-            )
-            write_record(record)
-        except Exception as e:  # pragma: no cover
-            log.debug("trajectory donation skipped: %s", e)
+        # The two finalize side effects (donation write to a file, conversation
+        # turn write to the world DB) are independent of each other and of skill
+        # distillation. Define them as closures that swallow their own errors --
+        # a bad donation/turn-write must never affect the goal result -- so they
+        # can optionally overlap distillation (a blocking LLM call) instead of
+        # running strictly before it.
+        def _donate() -> None:
+            try:
+                from .donation import TrajectoryRecord, hash_brief, write_record
+                entropy = getattr(ctx, "last_disagreement", 0.0)
+                record = TrajectoryRecord(
+                    task_brief_hash=hash_brief(goal.title + (goal.description or "")),
+                    task_brief_text=(goal.title + "\n" + (goal.description or "")),
+                    model_id=getattr(llm, "model", ""),
+                    tools_used=sorted({e.kind for e in blackboard.entries
+                                       if e.kind == "observation"}),
+                    outcome="success",
+                    reward=1.0 if result.verifier_confidence >= 0.75 else result.verifier_confidence,
+                    verifier_confidence=result.verifier_confidence,
+                    verifier_critique=result.verifier_critique,
+                    disagreement_entropy=float(entropy or 0.0),
+                    wall_seconds=budget.elapsed(),
+                    cost_dollars=budget.dollars,
+                    tokens_in=budget.input_tokens,
+                    tokens_out=budget.output_tokens,
+                )
+                write_record(record)
+            except Exception as e:  # pragma: no cover
+                log.debug("trajectory donation skipped: %s", e)
 
-        if conversation_id is not None:
+        def _write_turn() -> None:
+            if conversation_id is None:
+                return
             try:
                 world.append_turn(conversation_id, "assistant", summary, goal_id=goal_id)
             except Exception as e:  # pragma: no cover -- never block on history
                 log.warning("conversation turn write failed: %s", e)
+
+        # Overlap the side effects with distillation when enabled (default on).
+        # WorldModel uses check_same_thread=False + a write lock (built for the
+        # FastAPI threadpool), so the turn write is safe from a worker thread;
+        # the donation write touches only a file. Both are joined before
+        # run_goal returns (see below). MAVERICK_SPECULATIVE_FINALIZE=0 reverts
+        # to running them inline, before distillation.
+        _spec_finalize = os.getenv(
+            "MAVERICK_SPECULATIVE_FINALIZE", "1",
+        ).strip().lower() not in {"0", "false", "no", "off"}
+        _finalize_specs: list = []
+        if _spec_finalize:
+            from .speculative import speculate
+            _finalize_specs = [
+                speculate(asyncio.to_thread(_donate)),
+                speculate(asyncio.to_thread(_write_turn)),
+            ]
+        else:
+            _donate()
+            _write_turn()
 
         # Security hardening: disable automatic closed-loop distillation by
         # default. Trajectories can contain untrusted goal/tool/workspace text
@@ -862,6 +891,12 @@ async def run_goal(
             else:
                 _WARNED_DISTILL_DISABLED = True
                 skill_note = "\n\n[skill distill disabled: set MAVERICK_AUTO_DISTILL=1 to enable]"
+
+        # Join the speculative side effects before returning, so the turn /
+        # donation writes are guaranteed durable to any caller that reads them
+        # back. The closures swallow their own errors, so result() won't raise.
+        for _s in _finalize_specs:
+            await _s.result()
 
         # Wave 12 hotfix: in coding mode the orchestrator's return value
         # IS the benchmark CSV's `predicted_patch` after extract_unified_diff.
