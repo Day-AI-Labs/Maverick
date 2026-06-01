@@ -1253,8 +1253,9 @@ async def cost_csv(month: str | None = None) -> StreamingResponse:
                 nxt = start.replace(year=start.year + 1, month=1)
             else:
                 nxt = start.replace(month=start.month + 1)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=f"bad month: {e}")
+        except ValueError:
+            # Don't echo strptime's internals (e.g. "unconverted data remains").
+            raise HTTPException(status_code=400, detail="month must be YYYY-MM (e.g. 2026-04)")
         start_ts = start.timestamp()
         end_ts = nxt.timestamp()
 
@@ -1292,7 +1293,11 @@ async def cost_csv(month: str | None = None) -> StreamingResponse:
             buf.seek(0)
             buf.truncate(0)
 
-    return StreamingResponse(generate(), media_type="text/csv")
+    fname = f"maverick-cost-{month}.csv" if month else "maverick-cost-all.csv"
+    return StreamingResponse(
+        generate(), media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 @app.get("/api/goal/{goal_id}/events")
@@ -1454,7 +1459,12 @@ async def healthz() -> JSONResponse:
             checks["db"] = f"fail: {type(e).__name__}: {e}"
         overall_ok = False
 
-    if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY"):
+    # Use the same gate the goal-creation routes use (`_any_provider_key_set`):
+    # the dashboard accepts goals on any of the supported providers, so a
+    # Gemini-only / OpenRouter-only deploy is healthy. Checking only ANTHROPIC/
+    # OPENAI made /healthz + /readyz report 503 and got such a deploy pulled
+    # from rotation by k8s/LB probes.
+    if _any_provider_key_set():
         checks["llm_key"] = "ok"
     else:
         checks["llm_key"] = "missing"

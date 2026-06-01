@@ -614,11 +614,29 @@ class MCPServer:
 
     def _tool_answer(self, args: dict) -> str:
         from maverick.world_model import WorldModel
+        # A bad id is an invalid-params protocol error (-32602), not a tool
+        # execution error -- mirror _tool_resume so typed clients can tell them
+        # apart (the old `int(...)` surfaced an isError tool result instead).
+        try:
+            qid = int(args["question_id"])
+        except (TypeError, ValueError):
+            raise _ProtocolError(-32602, f"invalid question_id: {args.get('question_id')!r}")
+        answer = str(args["answer"])
+        # An answer to an open question is fed straight back into the agent loop
+        # as the user's reply -- equally attacker-influenced as a fact over the
+        # network-reachable HTTP transport. Scan it like _tool_fact_set does.
+        if self._shield is not None:
+            try:
+                v = self._shield.scan_input(answer)
+                if not getattr(v, "allowed", True):
+                    reasons = "; ".join(getattr(v, "reasons", []) or []) or "blocked by Shield"
+                    return f"⚠ answer rejected by Shield: {reasons}"
+            except Exception:  # pragma: no cover -- fail open (kernel rule 1)
+                pass
         w = WorldModel()
-        qid = int(args["question_id"])
-        w.answer(qid, str(args["answer"]))
+        w.answer(qid, answer)
         self._structured_override = {"question_id": qid}
-        return f"answered #{args['question_id']}"
+        return f"answered #{qid}"
 
     def _tool_skill_install(self, args: dict) -> str:
         from maverick.skills import install_skill
