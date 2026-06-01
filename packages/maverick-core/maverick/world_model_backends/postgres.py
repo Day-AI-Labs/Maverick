@@ -690,6 +690,75 @@ class PostgresWorldModel:
             cur.execute("DELETE FROM conversations WHERE last_seen < %s", (cutoff,))
             return cur.rowcount
 
+    def erase_conversations(self, conversation_ids: list[int]) -> tuple[set[int], list[str], int]:
+        """Erase conversations and goal-scoped rows for GDPR deletion.
+
+        This is the Postgres equivalent of the CLI's SQLite cascade: gather all
+        goals referenced by the selected conversations' turns, expand through
+        subgoals, collect attachment paths for post-commit unlinking, then
+        delete the database rows in one transaction using psycopg/Postgres SQL.
+        Returns ``(goal_ids, attachment_paths, removed_turns)``.
+        """
+        if not conversation_ids:
+            return set(), [], 0
+
+        conv_ids = [int(cid) for cid in conversation_ids]
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT DISTINCT goal_id FROM turns "
+                "WHERE conversation_id = ANY(%s) AND goal_id IS NOT NULL",
+                (conv_ids,),
+            )
+            root_goal_ids = [int(row[0]) for row in cur.fetchall()]
+
+            goal_ids: set[int] = set()
+            if root_goal_ids:
+                cur.execute(
+                    """
+                    WITH RECURSIVE goal_tree(id) AS (
+                        SELECT id FROM goals WHERE id = ANY(%s)
+                        UNION
+                        SELECT g.id FROM goals g
+                        JOIN goal_tree gt ON g.parent_id = gt.id
+                    )
+                    SELECT id FROM goal_tree
+                    """,
+                    (root_goal_ids,),
+                )
+                goal_ids = {int(row[0]) for row in cur.fetchall()}
+
+            attachment_paths: list[str] = []
+            gids = sorted(goal_ids)
+            if gids:
+                cur.execute("SELECT path FROM attachments WHERE goal_id = ANY(%s)", (gids,))
+                attachment_paths = [str(row[0]) for row in cur.fetchall()]
+
+            cur.execute("DELETE FROM turns WHERE conversation_id = ANY(%s)", (conv_ids,))
+            removed_turns = cur.rowcount
+
+            if gids:
+                cur.execute("DELETE FROM goal_events WHERE goal_id = ANY(%s)", (gids,))
+                cur.execute("DELETE FROM messages WHERE goal_id = ANY(%s)", (gids,))
+                cur.execute("DELETE FROM questions WHERE goal_id = ANY(%s)", (gids,))
+                cur.execute("DELETE FROM attachments WHERE goal_id = ANY(%s)", (gids,))
+                cur.execute(
+                    "DELETE FROM facts WHERE source_episode_id IN "
+                    "(SELECT id FROM episodes WHERE goal_id = ANY(%s))",
+                    (gids,),
+                )
+                cur.execute("DELETE FROM episodes WHERE goal_id = ANY(%s)", (gids,))
+                cur.execute("DELETE FROM processed_messages WHERE goal_id = ANY(%s)", (gids,))
+                # Postgres self-referential FKs are checked per statement by
+                # default, unlike the SQLite path that defers FK checks for the
+                # transaction. Break edges inside the soon-to-be-deleted tree so
+                # a single goal DELETE cannot fail on parent_id references.
+                cur.execute("UPDATE goals SET parent_id = NULL WHERE parent_id = ANY(%s)", (gids,))
+                cur.execute("DELETE FROM goals WHERE id = ANY(%s)", (gids,))
+
+            cur.execute("DELETE FROM conversations WHERE id = ANY(%s)", (conv_ids,))
+
+        return goal_ids, attachment_paths, removed_turns
+
     # ----- messages (goal-scoped log + full-text search) -----
 
     def append_message(self, goal_id: int, role: str, content: str) -> None:
