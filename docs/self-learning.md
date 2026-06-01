@@ -16,12 +16,16 @@ edit `~/.maverick/config.toml`:
 
 ```toml
 [self_learning]
-enable          = true   # master switch (default false)
-preflight       = true   # pre-acquire likely skills before each run
-create_tools    = true   # let the agent generate + run new tools
-add_mcp_servers = false  # legacy; agent-driven MCP subprocesses are disabled
+enable           = true  # master switch (default false)
+preflight        = true  # pre-acquire likely skills before each run
+create_tools     = true  # let the agent generate + run new tools
 max_acquisitions = 5     # cap on auto-acquisitions per run
 ```
+
+> Agent-driven MCP-server acquisition was removed in #392 (launching
+> model-supplied subprocesses is unsafe). MCP servers are operator-configured
+> via `[mcp_servers.<name>]`. An older config that still sets
+> `add_mcp_servers` is tolerated and ignored.
 
 Or for a one-off run: `MAVERICK_SELF_LEARNING=1 maverick start "..."`.
 The env var also force-*disables* (`MAVERICK_SELF_LEARNING=0`) over config.

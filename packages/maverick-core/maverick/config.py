@@ -157,11 +157,12 @@ def get_self_learning() -> dict:
     keeps current behavior out of the box. When enabled, the sub-toggles
     default ON (the operator has already accepted the trust decision):
     ``preflight`` pre-acquires catalog skills before a run; ``create_tools``
-    lets the agent generate + run new tools. ``add_mcp_servers`` is retained
-    for config compatibility but does not allow the agent-facing
-    ``learn_capability`` tool to persist or hot-start MCP subprocesses.
-    ``max_acquisitions`` caps how many capabilities a single run may
-    auto-acquire.
+    lets the agent generate + run new tools. ``max_acquisitions`` caps how
+    many capabilities a single run may auto-acquire.
+
+    Back-compat: a config that still carries the retired ``add_mcp_servers``
+    key is tolerated (it is simply ignored) — agent-driven MCP acquisition
+    was removed in #392, so the knob no longer does anything.
     """
     cfg = load_config().get("self_learning", {})
     try:
@@ -172,6 +173,5 @@ def get_self_learning() -> dict:
         "enable": bool(cfg.get("enable", False)),
         "preflight": bool(cfg.get("preflight", True)),
         "create_tools": bool(cfg.get("create_tools", True)),
-        "add_mcp_servers": bool(cfg.get("add_mcp_servers", True)),
         "max_acquisitions": max(1, max_acq),
     }
