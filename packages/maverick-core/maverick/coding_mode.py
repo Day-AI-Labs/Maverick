@@ -315,11 +315,13 @@ _VALID_DIFF_HEADER = re.compile(
 )
 _GIT_DIFF_HEADER = re.compile(r"^diff --git a/.+? b/.+?\s*$", re.MULTILINE)
 
-# Constrain the post-marker whitespace match to horizontal whitespace
-# (spaces/tabs) plus at most ONE newline. A greedy `\s*` could consume
-# multiple newlines worth of blank-line content, which is what the
-# fence-masking pass produces.
-_FINAL_MARKER_RE = re.compile(r"(?:^|\n)[ \t]*FINAL:[ \t]*\n?")
+# Match a structural FINAL marker only when FINAL: begins the line.
+# Unified-diff context lines use a leading space, so allowing indentation
+# here would let an unchanged source line like " FINAL:" masquerade as a
+# later marker and truncate an otherwise valid patch. Keep the trailing
+# whitespace match horizontal plus at most one newline; a greedy `\s*`
+# could consume multiple blank lines produced by the fence-masking pass.
+_FINAL_MARKER_RE = re.compile(r"(?:^|\n)FINAL:[ \t]*\n?")
 
 
 # A line that is "purely" a fence: optional leading whitespace, then
@@ -445,10 +447,11 @@ def extract_unified_diff(text: str) -> Optional[str]:
     # mixes line endings; `git apply` rejects CRLF inside hunks.
     work = text.replace("\r\n", "\n").replace("\r", "\n")
 
-    # Anchor FINAL: at line start; use the LAST occurrence OUTSIDE any
-    # fenced (``` / ~~~) code block. Skipping fences keeps attacker-
+    # Anchor FINAL: at the first column; use the LAST occurrence OUTSIDE
+    # any fenced (``` / ~~~) code block. Skipping fences keeps attacker-
     # controlled quoted content (file bodies, tool output) from
-    # redefining where the patch starts.
+    # redefining where the patch starts. Indented FINAL: lines are left
+    # alone because they may be unified-diff context.
     final_end = find_final_marker_end(work)
     if final_end is not None:
         work = work[final_end:]
