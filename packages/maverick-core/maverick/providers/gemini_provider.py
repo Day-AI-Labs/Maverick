@@ -28,3 +28,13 @@ class GeminiClient(OpenAIClient):
             # set -- that would send the OpenAI key to Google's endpoint.
             allow_openai_env_fallback=False,
         )
+
+    @staticmethod
+    def _has_auto_prompt_cache(model: str) -> bool:
+        # Gemini has implicit context caching, so opt every Gemini model into
+        # the same write-side stable-prefix + sorted-tools ordering the base
+        # class applies to OpenAI's auto-cache models. The base list is
+        # gpt/o-series only, so without this gemini-* fell through and the
+        # implicit cache never saw a byte-stable prefix (a non-deterministic
+        # tool order silently busts it every call).
+        return True
