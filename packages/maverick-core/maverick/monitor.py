@@ -26,6 +26,27 @@ from .world_model import DEFAULT_DB, Goal, WorldModel
 log = logging.getLogger(__name__)
 
 
+# Single source of truth for goal/sub-goal status -> Rich color. Two separate
+# inline maps used to drift: 'active' (the normal running state goals are set
+# to via world_model.set_goal_status('active')) was in neither, so a live goal
+# rendered uncolored; 'blocked' was missing from the plan-tree map. Centralize
+# so the main status line and the plan tree can't disagree again.
+_STATUS_COLORS = {
+    "pending": "yellow",
+    "active": "cyan",
+    "in_progress": "cyan",
+    "running": "cyan",
+    "succeeded": "green",
+    "done": "green",
+    "failed": "red",
+    "blocked": "red",
+}
+
+
+def _status_color(status: str) -> str:
+    return _STATUS_COLORS.get((status or "").lower(), "white")
+
+
 @dataclass
 class MonitorState:
     """Snapshot of one goal + its plan tree + recent activity."""
@@ -37,16 +58,7 @@ class MonitorState:
 
     @property
     def status_color(self) -> str:
-        m = {
-            "pending": "yellow",
-            "in_progress": "cyan",
-            "running": "cyan",
-            "succeeded": "green",
-            "done": "green",
-            "failed": "red",
-            "blocked": "red",
-        }
-        return m.get(self.goal.status.lower(), "white")
+        return _status_color(self.goal.status)
 
 
 def _fetch_subgoals(world: WorldModel, parent_id: int) -> list[Goal]:
@@ -139,10 +151,7 @@ def render(state: MonitorState) -> str:
     if state.children:
         parts.append("[bold]Plan tree[/bold]")
         for c in state.children:
-            cc = {
-                "pending": "yellow", "in_progress": "cyan", "running": "cyan",
-                "succeeded": "green", "done": "green", "failed": "red",
-            }.get(c.status.lower(), "white")
+            cc = _status_color(c.status)
             parts.append(f"  ├─ [{cc}]{c.status:>11}[/{cc}]  #{c.id} {c.title[:80]}")
         parts.append("")
 
