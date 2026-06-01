@@ -175,3 +175,32 @@ def test_ask_answer_open_questions(world):
 def test_answer_unknown_question_id_returns_false(world):
     # #394 parity: a typo'd id is reported, not a false success.
     assert world.answer(987_654_321, "nope") is False
+
+
+def test_approval_queue_lifecycle(world):
+    aid = world.create_approval("rm -rf /tmp/x", risk="high", scope="shell", detail="cleanup")
+    assert isinstance(aid, int)
+
+    a = world.get_approval(aid)
+    assert a is not None
+    assert a.action == "rm -rf /tmp/x"
+    assert a.risk == "high"
+    assert a.status == "pending"
+    assert a.decided_at is None
+
+    assert any(x.id == aid for x in world.pending_approvals())
+
+    assert world.decide_approval(aid, "approved") is True
+    decided = world.get_approval(aid)
+    assert decided.status == "approved"
+    assert decided.decided_at is not None
+    assert all(x.id != aid for x in world.pending_approvals())  # left the queue
+
+    # a second decision on an already-decided row is a no-op
+    assert world.decide_approval(aid, "denied") is False
+
+
+def test_decide_approval_rejects_bad_status(world):
+    aid = world.create_approval("do thing")
+    with pytest.raises(ValueError, match="approved.*denied"):
+        world.decide_approval(aid, "maybe")
