@@ -220,7 +220,10 @@ class AuditLog:
         """Crude regex grep over the day's events."""
         import re
 
-        rx = re.compile(pattern)
+        try:
+            rx = re.compile(pattern)
+        except re.error as e:
+            raise ValueError(f"invalid regex pattern {pattern!r}: {e}") from e
         if day is None:
             day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         path = self._path_for(day)

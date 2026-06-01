@@ -36,6 +36,10 @@ def _stub_wizard_io(monkeypatch, tmp_path: Path, key: str = "sk-ant-test"):
     """Wire all the IO primitives the consumer flow touches."""
     from maverick_installer import wizard
 
+    # The consumer flow is interactive; present an interactive stdin so run()'s
+    # non-TTY guard doesn't short-circuit the prompt flow under pytest.
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
     answers = iter([
         # user_name
         "Alex",
@@ -175,6 +179,7 @@ def test_run_consumer_routed_via_pick_mode(monkeypatch, tmp_path: Path):
 def test_run_resume_skips_mode_picker(monkeypatch, tmp_path: Path):
     """--resume implies an in-progress advanced flow; don't re-pick mode."""
     from maverick_installer import wizard
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     called = {"pick_mode": False, "run_consumer": False}
     monkeypatch.setattr(wizard, "pick_mode", lambda: (called.__setitem__("pick_mode", True) or "consumer"))
     monkeypatch.setattr(wizard, "run_consumer", lambda: (called.__setitem__("run_consumer", True) or 0))
@@ -183,3 +188,23 @@ def test_run_resume_skips_mode_picker(monkeypatch, tmp_path: Path):
     wizard.run(fast=False, resume=True)
     assert called["pick_mode"] is False
     assert called["run_consumer"] is False
+
+
+def test_run_aborts_with_guidance_when_not_a_tty(monkeypatch):
+    """Non-interactive stdin (CI / Docker / `... | maverick init`) must yield
+    actionable guidance and a clean exit, not questionary's terse 'Aborted!'."""
+    import io
+
+    from maverick_installer import wizard
+    from rich.console import Console
+
+    monkeypatch.setattr(
+        wizard, "console",
+        Console(file=io.StringIO(), force_terminal=False, no_color=True),
+    )
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    rc = wizard.run(fast=False, resume=False)
+    assert rc == 1
+    out = wizard.console.file.getvalue()
+    assert "interactive terminal" in out
+    assert "--fast" in out

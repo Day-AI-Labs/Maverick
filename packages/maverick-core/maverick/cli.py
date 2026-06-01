@@ -1162,6 +1162,9 @@ def resume(ctx, goal_id_arg, goal_id, max_depth: int, max_dollars, max_wall_seco
 @click.pass_context
 def fact(ctx, key: str, value: tuple[str, ...]) -> None:
     """Set a fact in the world model."""
+    if not key.strip():
+        click.echo("error: fact key cannot be empty", err=True)
+        sys.exit(2)
     world = open_world(ctx.obj["db"])
     world.upsert_fact(key, " ".join(value))
     click.echo(f"set {key}")
@@ -1987,7 +1990,12 @@ def audit_grep(pattern: str, day: str | None) -> None:
     import json as _json
 
     from .audit import default_audit_log
-    for ev in default_audit_log().grep(pattern, day=day):
+    try:
+        events = default_audit_log().grep(pattern, day=day)
+    except ValueError as e:
+        click.echo(f"error: {e}", err=True)
+        sys.exit(2)
+    for ev in events:
         click.echo(_json.dumps(ev, default=str))
 
 
@@ -2175,7 +2183,11 @@ def logs_cmd(pattern: str | None, num: int, day: str | None) -> None:
 
     from .audit import default_audit_log
     al = default_audit_log()
-    rows = al.grep(pattern, day=day) if pattern else al.tail(num, day=day)
+    try:
+        rows = al.grep(pattern, day=day) if pattern else al.tail(num, day=day)
+    except ValueError as e:
+        click.echo(f"error: {e}", err=True)
+        sys.exit(2)
     for r in rows[-num:]:
         click.echo(_json.dumps(r, default=str))
 

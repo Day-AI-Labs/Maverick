@@ -177,9 +177,11 @@ def test_coding_branch_wraps_critical_section_in_lock():
     src = inspect.getsource(Agent.run)
     assert "async with self.ctx.workdir_lock:" in src
     # The lock must enclose the apply/reset calls, not sit beside them.
+    # (Those calls are now off-loaded via asyncio.to_thread, so they read
+    # `to_thread(self._git_apply,` -- match the method name without "(".)
     lock_at = src.index("async with self.ctx.workdir_lock:")
-    apply_at = src.index("self._git_apply(", lock_at)
-    reset_at = src.rindex("self._reset_workdir()")
+    apply_at = src.index("self._git_apply", lock_at)
+    reset_at = src.rindex("self._reset_workdir")
     assert lock_at < apply_at
     assert lock_at < reset_at
     # BOTH workdir-mutating sites must be locked: the require_apply_check
@@ -187,10 +189,16 @@ def test_coding_branch_wraps_critical_section_in_lock():
     # children) AND the verifier apply. The first lock must enclose the
     # require_apply_check _extract_and_apply_patch call.
     assert src.count("async with self.ctx.workdir_lock:") >= 2
-    extract_at = src.index("self._extract_and_apply_patch(", lock_at)
+    extract_at = src.index("self._extract_and_apply_patch", lock_at)
     assert lock_at < extract_at < src.index(
         "async with self.ctx.workdir_lock:", lock_at + 1,
     )
+    # The blocking git/pytest work must be off-loaded with asyncio.to_thread so
+    # it doesn't freeze the event loop (and every other concurrent agent, the
+    # channel server, and the dashboard) while the lock is held.
+    assert "asyncio.to_thread(self._git_apply" in src
+    assert "asyncio.to_thread(self._reset_workdir)" in src
+    assert "run_failing_tests," in src and "asyncio.to_thread(" in src
 
 
 def test_search_replace_exec_sandbox_uses_disposable_worktree(tmp_path, fake_llm):

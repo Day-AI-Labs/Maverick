@@ -110,7 +110,9 @@ class TestLowCacheWarning:
         # Reset the once-per-process flag for this test.
         ap._LOW_CACHE_WARNING_EMITTED.clear()
         client = ap.AnthropicClient.__new__(ap.AnthropicClient)
-        with caplog.at_level(logging.WARNING, logger=ap.__name__):
+        # Emitted at DEBUG (not WARNING) so it doesn't bleed onto the consumer
+        # CLI's terminal mid-run; capture at DEBUG to assert it still fires.
+        with caplog.at_level(logging.DEBUG, logger=ap.__name__):
             client._build_request(
                 system="short system prompt",
                 messages=[{"role": "user", "content": "hi"}],
@@ -128,7 +130,7 @@ class TestLowCacheWarning:
         from maverick.providers import anthropic_provider as ap
         ap._LOW_CACHE_WARNING_EMITTED.clear()
         client = ap.AnthropicClient.__new__(ap.AnthropicClient)
-        with caplog.at_level(logging.WARNING, logger=ap.__name__):
+        with caplog.at_level(logging.DEBUG, logger=ap.__name__):
             for _ in range(5):
                 client._build_request(
                     system="short",

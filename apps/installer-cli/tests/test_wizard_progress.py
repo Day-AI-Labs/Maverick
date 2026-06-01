@@ -52,6 +52,10 @@ def test_run_prints_step_indicators(monkeypatch):
         Console(file=io.StringIO(), force_terminal=False, no_color=True),
     )
 
+    # Present an interactive stdin so run()'s non-TTY guard doesn't
+    # short-circuit the prompt flow under pytest.
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
     # Skip the mode picker / consumer branch and preflight.
     monkeypatch.setattr(wizard, "pick_mode", lambda: "advanced")
     monkeypatch.setattr(wizard, "preflight", lambda: True)

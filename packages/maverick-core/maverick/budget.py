@@ -27,6 +27,24 @@ class BudgetExceeded(Exception):
 _FALLBACK_PRICE_IN = 3.0
 _FALLBACK_PRICE_OUT = 15.0
 
+
+def _coerce_count(v: object) -> int:
+    """Coerce a usage count to a non-negative int.
+
+    Providers occasionally return None -- or even non-finite floats (NaN/Inf)
+    from a flaky gateway -- in ``usage``. ``int(float("nan") or 0)`` RAISES
+    (NaN is truthy, so ``or 0`` never fires), which used to crash billing
+    AFTER the call was already paid for, recording $0. Treat None/NaN/Inf/
+    garbage as 0.
+    """
+    try:
+        if isinstance(v, float) and not math.isfinite(v):
+            return 0
+        n = int(v or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return max(n, 0)
+
 # Anthropic cache multipliers (over the list input price).
 # Two TTLs: 5m default (1.25x write surcharge) and 1h (2.0x write surcharge).
 # Wave 12: prior code collapsed all writes to 1.25x; long-TTL writes were
@@ -148,10 +166,10 @@ class Budget:
         budget (non-cached only). Caching is a discount, so heavy
         caching should let you DO more work within the same input cap.
         """
-        in_tok = int(in_tok or 0)
-        out_tok = int(out_tok or 0)
-        cache_read_tok = int(cache_read_tok or 0)
-        cache_write_tok = int(cache_write_tok or 0)
+        in_tok = _coerce_count(in_tok)
+        out_tok = _coerce_count(out_tok)
+        cache_read_tok = _coerce_count(cache_read_tok)
+        cache_write_tok = _coerce_count(cache_write_tok)
         # Wave 12 (council F12b): make the accumulator atomic so a
         # future parallel best-of-N (or multi-agent swarm where two
         # agents share a Budget) can't lose updates. `+=` on float is

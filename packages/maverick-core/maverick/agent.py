@@ -6,6 +6,7 @@ without patching the kernel.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import secrets as _secrets
@@ -883,12 +884,18 @@ class Agent:
                         # other's edits. (Sequential with the verifier branch's
                         # own `async with`, so no nested/reentrant acquire.)
                         async with self.ctx.workdir_lock:
-                            patch, sr_summary = self._extract_and_apply_patch(final)
+                            # Offload blocking git/subprocess work to a thread so
+                            # it doesn't stall the event loop (freezing every other
+                            # concurrent sub-agent, the channel server, and the
+                            # dashboard) while the lock is held. Mirrors the
+                            # asyncio.to_thread wrap in tools/agent_bus_tool.py.
+                            patch, sr_summary = await asyncio.to_thread(
+                                self._extract_and_apply_patch, final)
                             # Reset workdir AFTER capturing the diff so the
                             # verifier branch (and downstream evaluators) see
                             # HEAD when they re-apply.
                             if sr_summary is not None:
-                                self._reset_workdir()
+                                await asyncio.to_thread(self._reset_workdir)
                                 try:
                                     self.ctx.blackboard.post(
                                         self.name, "tool_signal",
@@ -1053,11 +1060,12 @@ class Agent:
                                 # extract here.
                                 patch = getattr(self, "_final_patch", None)
                                 if patch is None:
-                                    patch, _ = self._extract_and_apply_patch(final)
+                                    patch, _ = await asyncio.to_thread(
+                                        self._extract_and_apply_patch, final)
                                     if patch is not None:
                                         # We applied to disk; reset for the
                                         # verifier's own apply.
-                                        self._reset_workdir()
+                                        await asyncio.to_thread(self._reset_workdir)
                                 if patch is None:
                                     if not getattr(self, "_patch_validated", False):
                                         self._patch_validated = True
@@ -1082,7 +1090,7 @@ class Agent:
                                         verifier_critique="no valid diff in FINAL",
                                     )
 
-                                apply_ok = self._git_apply(patch)
+                                apply_ok = await asyncio.to_thread(self._git_apply, patch)
 
                                 # Wave 10 (D10): only run tests when apply
                                 # succeeded. Running tests on HEAD when apply
@@ -1094,7 +1102,12 @@ class Agent:
                                     test_result = None  # type: ignore[assignment]
                                 else:
                                     try:
-                                        test_result = run_failing_tests(
+                                        # run_failing_tests shells out to pytest --
+                                        # minutes on SWE-bench. Off-load it so the
+                                        # whole event loop isn't frozen for the
+                                        # duration.
+                                        test_result = await asyncio.to_thread(
+                                            run_failing_tests,
                                             workdir,
                                             coding_cfg.fail_to_pass,
                                             coding_cfg.pass_to_pass,
@@ -1107,7 +1120,7 @@ class Agent:
                                         # tree. Without this, successive
                                         # revisions see corrupted state and
                                         # compound the error.
-                                        self._reset_workdir()
+                                        await asyncio.to_thread(self._reset_workdir)
 
                                 if not apply_ok:
                                     # Wave 10 (D10): tests were skipped because

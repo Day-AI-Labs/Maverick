@@ -22,7 +22,7 @@ import os
 from collections.abc import Callable
 from typing import Any
 
-from ..budget import Budget
+from ..budget import Budget, _coerce_count
 from ..llm import LLMResponse, ToolCall
 from ..retry import async_retry, sync_retry
 
@@ -310,17 +310,20 @@ class OpenAIClient:
             cache_read_tok = 0
             details = getattr(usage, "prompt_tokens_details", None)
             if details is not None:
-                cache_read_tok = int(getattr(details, "cached_tokens", 0) or 0)
+                cache_read_tok = _coerce_count(getattr(details, "cached_tokens", 0))
             if cache_read_tok == 0:
-                cache_read_tok = int(getattr(usage, "prompt_cache_hit_tokens", 0) or 0)
-            full_in = int(getattr(usage, "prompt_tokens", 0) or 0)
+                cache_read_tok = _coerce_count(getattr(usage, "prompt_cache_hit_tokens", 0))
+            # _coerce_count (not int()) so a flaky gateway returning NaN/Inf in
+            # `usage` can't raise here -- the call was already billed; a crash
+            # would discard the response AND record $0 spent.
+            full_in = _coerce_count(getattr(usage, "prompt_tokens", 0))
             billable_in = max(full_in - cache_read_tok, 0)
             # OpenAI/o-series/gpt-5 auto-cache discounts reads ~0.5x, not
             # Anthropic's 0.1x (the budget default) — bill the right rate.
             from ..budget import CACHE_READ_MULT_OPENAI
             budget.record_tokens(
                 billable_in,
-                int(getattr(usage, "completion_tokens", 0) or 0),
+                _coerce_count(getattr(usage, "completion_tokens", 0)),
                 model=model,
                 cache_read_tok=cache_read_tok,
                 cache_read_mult=CACHE_READ_MULT_OPENAI,
