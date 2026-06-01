@@ -102,7 +102,10 @@ class SlackChannel(Channel):
         await self._stop_event.wait()
 
     async def send(self, user_id: str, text: str) -> None:
-        await self._web.chat_postMessage(channel=user_id, text=text)
+        from .formatting import to_slack_mrkdwn
+        await self._web.chat_postMessage(
+            channel=user_id, text=to_slack_mrkdwn(text), mrkdwn=True,
+        )
 
     async def stop(self) -> None:
         self._stop_event.set()
