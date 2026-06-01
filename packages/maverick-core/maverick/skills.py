@@ -9,6 +9,7 @@ v0.1.6 security hardening (council review):
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 import urllib.error
@@ -218,12 +219,33 @@ def install_skill(
 
 
 def _canonical_signed_bytes(parsed: Skill) -> bytes:
-    """Bytes an Ed25519 publisher signs over: ``name`` + canonical body.
+    """Bytes an Ed25519 publisher signs over.
 
-    Binding the name in too means a signature can't be lifted onto a
-    different-named skill. The body is the post-frontmatter markdown,
-    stripped (matching ``Skill.parse``)."""
-    return f"{parsed.name}\n{parsed.body}".encode()
+    Binds ``name``, ``triggers``, ``tools_needed``, and the canonical body.
+    Previously only name+body were signed, so a signed skill's *activation
+    triggers* and *requested tools* could be altered without breaking the
+    signature -- e.g. re-pointing a trusted skill's triggers, or adding
+    ``shell`` to ``tools_needed`` -- while the sig still verified. Binding all
+    four closes that. Serialized as canonical JSON (sorted keys, compact
+    separators) so field boundaries are unambiguous (no value can shift content
+    into another field) and the encoding is deterministic. The body is the
+    post-frontmatter markdown, stripped (matching ``Skill.parse``).
+
+    NOTE: this changes the signed bytes, so signatures produced against the
+    old name+body form no longer verify. Publishers must re-sign with the new
+    canonical form (the skill catalog has no published signed skills yet).
+    """
+    return json.dumps(
+        {
+            "name": parsed.name,
+            "triggers": list(parsed.triggers),
+            "tools_needed": list(parsed.tools_needed),
+            "body": parsed.body,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
 
 
 def _verify_skill_signature(parsed: Skill) -> None:
@@ -268,7 +290,8 @@ def _verify_skill_signature(parsed: Skill) -> None:
         parsed.pubkey, parsed.sig, _canonical_signed_bytes(parsed)
     ):
         raise ValueError(
-            "skill rejected: Ed25519 signature does not verify over the skill body."
+            "skill rejected: Ed25519 signature does not verify over the skill's "
+            "signed fields (name/triggers/tools_needed/body)."
         )
 
 
