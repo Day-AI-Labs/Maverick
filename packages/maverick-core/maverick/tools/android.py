@@ -30,16 +30,10 @@ from __future__ import annotations
 import logging
 import shlex
 import shutil
-import subprocess
 from typing import Any
 
 from . import Tool
 
-
-def _scrub() -> dict:
-    """Child env with secrets stripped (shared tools.scrub_child_env)."""
-    from . import scrub_child_env
-    return scrub_child_env()
 log = logging.getLogger(__name__)
 
 
@@ -77,11 +71,12 @@ def _adb(args: list[str], *, device: str = "", timeout: float = 60.0) -> tuple[i
     if device:
         cmd.extend(["-s", device])
     cmd.extend(args)
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=_scrub())
-        return r.returncode, r.stdout or "", r.stderr or ""
-    except subprocess.TimeoutExpired:
-        return 124, "", f"TIMEOUT after {timeout}s"
+    # Host-bound: adb talks to a USB/emulator device on the host, which the
+    # sandbox container can't reach — so this is intentionally NOT routed
+    # through sandbox.exec (CLAUDE.md rule #4). See tools.host_exec.
+    from . import host_exec
+    code, out, err = host_exec(cmd, timeout=timeout)
+    return code, out or "", err or ""
 
 
 def _op_devices() -> str:
@@ -128,18 +123,21 @@ def _op_screenshot(device: str, out_path: str) -> str:
     if device:
         cmd.extend(["-s", device])
     cmd.extend(["exec-out", "screencap", "-p"])
-    try:
-        r = subprocess.run(cmd, capture_output=True, timeout=30, env=_scrub())
-    except subprocess.TimeoutExpired:
+    # Host-bound (see tools.host_exec): binary png bytes, so text=False.
+    from . import host_exec
+    code, raw, err = host_exec(cmd, timeout=30, text=False)
+    if code == 124:
         return "ERROR: screenshot TIMEOUT"
-    if r.returncode != 0:
-        return f"ERROR: screencap ({r.returncode}): {r.stderr.decode('utf-8', errors='replace')[:200]}"
+    if code != 0:
+        err_s = (err or b"").decode("utf-8", errors="replace") if isinstance(err, bytes) else str(err)
+        return f"ERROR: screencap ({code}): {err_s[:200]}"
+    png = raw or b""
     try:
         with open(out_path, "wb") as f:
-            f.write(r.stdout)
+            f.write(png)
     except OSError as e:
         return f"ERROR: write {out_path}: {e}"
-    return f"saved {len(r.stdout)} bytes to {out_path}"
+    return f"saved {len(png)} bytes to {out_path}"
 
 
 def _op_tap(device: str, x: int, y: int) -> str:

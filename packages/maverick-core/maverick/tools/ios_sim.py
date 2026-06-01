@@ -27,16 +27,10 @@ from __future__ import annotations
 import logging
 import platform
 import shutil
-import subprocess
 from typing import Any
 
 from . import Tool
 
-
-def _scrub() -> dict:
-    """Child env with secrets stripped (shared tools.scrub_child_env)."""
-    from . import scrub_child_env
-    return scrub_child_env()
 log = logging.getLogger(__name__)
 
 
@@ -70,11 +64,12 @@ def _xcrun_present() -> bool:
 
 def _simctl(args: list[str], *, timeout: float = 60.0) -> tuple[int, str, str]:
     cmd = ["xcrun", "simctl", *args]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=_scrub())
-        return r.returncode, r.stdout or "", r.stderr or ""
-    except subprocess.TimeoutExpired:
-        return 124, "", f"TIMEOUT after {timeout}s"
+    # Host-bound: the iOS simulator runs on the host (macOS), not in the
+    # sandbox container — so this is intentionally NOT routed through
+    # sandbox.exec (CLAUDE.md rule #4). See tools.host_exec.
+    from . import host_exec
+    code, out, err = host_exec(cmd, timeout=timeout)
+    return code, out or "", err or ""
 
 
 def _op_list(state: str) -> str:
