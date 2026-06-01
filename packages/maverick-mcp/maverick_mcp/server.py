@@ -28,7 +28,15 @@ SUPPORTED_PROTOCOL_VERSIONS = (
     PROTOCOL_VERSION_FALLBACK, "2025-03-26", "2025-06-18", PROTOCOL_VERSION,
 )
 SERVER_NAME = "maverick"
-SERVER_VERSION = "0.2.0"
+try:
+    from importlib.metadata import version as _pkg_version
+
+    # Keep serverInfo.version in lockstep with the published package version
+    # rather than a hand-bumped constant that drifts (was "0.2.0" while the
+    # package shipped 0.1.6).
+    SERVER_VERSION = _pkg_version("maverick-mcp-server")
+except Exception:  # pragma: no cover -- metadata is present once installed
+    SERVER_VERSION = "0.1.6"
 
 
 def _bounded_float(value: Any, *, default: float, ceiling: float) -> float:
