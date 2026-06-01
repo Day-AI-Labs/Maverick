@@ -158,6 +158,51 @@ def is_blocked_host(hostname: str) -> bool:
     return _is_private_ip(hostname or "")
 
 
+def ssrf_redirect_handler():
+    """Build an HTTPRedirectHandler that refuses unsafe redirect targets.
+
+    ``urllib.request.urlopen`` follows 30x redirects, but only the INITIAL
+    URL is SSRF-checked by callers — a redirect to a private/metadata host
+    (169.254.169.254, 127.0.0.1, ...) would be followed blindly (#477).
+    This re-runs ``is_blocked_host`` + a scheme check on every redirect
+    Location and refuses the unsafe ones.
+    """
+    import urllib.error
+    import urllib.request
+
+    class _Handler(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            parsed = urlparse(newurl)
+            # Only http(s); block redirects to file:, ftp:, etc.
+            if parsed.scheme not in ("http", "https"):
+                raise urllib.error.HTTPError(
+                    newurl, code,
+                    f"refusing redirect to non-http scheme: {parsed.scheme!r}",
+                    headers, fp,
+                )
+            if is_blocked_host(parsed.hostname or ""):
+                raise urllib.error.HTTPError(
+                    newurl, code,
+                    f"refusing redirect to blocked host: {parsed.hostname!r} "
+                    "(SSRF guard)",
+                    headers, fp,
+                )
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    return _Handler()
+
+
+def ssrf_safe_opener():
+    """An opener that re-validates redirect targets against the SSRF guard.
+
+    Use instead of bare ``urllib.request.urlopen`` for any fetch of a
+    user/model/catalog-supplied URL so a redirect can't reach an internal
+    host. The CALLER still validates the initial URL's scheme/host.
+    """
+    import urllib.request
+    return urllib.request.build_opener(ssrf_redirect_handler())
+
+
 def _check_robots(url: str, user_agent: str = "Maverick") -> bool:
     """Return True if robots.txt allows ``url`` for ``user_agent``."""
     try:
@@ -239,19 +284,35 @@ def _run_fetch(args: dict[str, Any]) -> str:
     max_bytes = int(args.get("max_bytes") or 200_000)
     render = (args.get("render") or "markdown").lower()
 
+    # Stream with a hard byte cap so `max_bytes` bounds the DOWNLOAD/memory,
+    # not just the returned slice (#477). Reading resp.content first pulled
+    # the entire body — a multi-GB response was a memory DoS. We stop
+    # consuming after max_bytes (+1 to detect truncation).
     try:
         with httpx.Client(timeout=30.0, follow_redirects=False) as client:
-            resp = client.request(method, url, headers=headers, content=body)
+            with client.stream(method, url, headers=headers, content=body) as resp:
+                content_type = (resp.headers.get("content-type") or "").lower()
+                status_code = resp.status_code
+                reason_phrase = resp.reason_phrase
+                final_url = resp.url
+                encoding = resp.encoding
+                buf = bytearray()
+                truncated = False
+                for chunk in resp.iter_bytes():
+                    buf.extend(chunk)
+                    if len(buf) > max_bytes:
+                        truncated = True
+                        del buf[max_bytes:]
+                        break
+                raw_bytes = bytes(buf)
     except httpx.HTTPError as e:
         return f"ERROR: {type(e).__name__}: {e}"
 
-    raw_bytes = resp.content[:max_bytes]
     try:
-        text = raw_bytes.decode(resp.encoding or "utf-8", errors="replace")
+        text = raw_bytes.decode(encoding or "utf-8", errors="replace")
     except (LookupError, UnicodeDecodeError):
         text = raw_bytes.decode("utf-8", errors="replace")
 
-    content_type = (resp.headers.get("content-type") or "").lower()
     looks_html = ("html" in content_type) or text.lstrip().startswith("<")
 
     if render == "raw" or not looks_html:
@@ -263,10 +324,13 @@ def _run_fetch(args: dict[str, Any]) -> str:
     else:  # markdown
         rendered = _to_markdown(text)
 
+    size_note = (
+        f"{len(raw_bytes)} bytes" + (" (truncated)" if truncated else "")
+    )
     header = (
-        f"HTTP {resp.status_code} {resp.reason_phrase} "
-        f"({content_type or 'unknown'}; {len(resp.content)} bytes)\n"
-        f"URL: {resp.url}\n"
+        f"HTTP {status_code} {reason_phrase} "
+        f"({content_type or 'unknown'}; {size_note})\n"
+        f"URL: {final_url}\n"
     )
     rendered, warning = _scan_fetched(rendered)
     return header + warning + "\n" + rendered

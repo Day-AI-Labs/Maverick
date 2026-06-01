@@ -250,12 +250,16 @@ def test_http_fetch_allow_private_override(monkeypatch):
         content = b"hello"
 
         def raise_for_status(self): pass
+        # http_fetch streams: act as the streaming-response context manager.
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def iter_bytes(self): yield self.content
 
     class _Client:
         def __init__(self, *a, **kw): pass
         def __enter__(self): return self
         def __exit__(self, *a): return False
-        def request(self, *a, **kw): return _Resp()
+        def stream(self, *a, **kw): return _Resp()
 
     import httpx
     with patch.object(httpx, "Client", _Client):
@@ -278,12 +282,16 @@ def test_http_fetch_markdown_render(monkeypatch):
         content = html.encode()
 
         def raise_for_status(self): pass
+        # http_fetch streams: act as the streaming-response context manager.
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def iter_bytes(self): yield self.content
 
     class _Client:
         def __init__(self, *a, **kw): pass
         def __enter__(self): return self
         def __exit__(self, *a): return False
-        def request(self, *a, **kw): return _Resp()
+        def stream(self, *a, **kw): return _Resp()
 
     import httpx
     with patch.object(httpx, "Client", _Client):

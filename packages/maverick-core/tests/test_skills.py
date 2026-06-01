@@ -87,7 +87,15 @@ class TestInstallSkill:
             def read(self, n: int = -1) -> bytes:
                 return b"x" * (300 * 1024)
 
-        with patch("urllib.request.urlopen", return_value=FakeResp()):
+        # _fetch_url now fetches via an SSRF-validating opener; patch the
+        # opener seam so the test intercepts the same network call.
+        class _Opener:
+            def open(self, url, timeout=0):
+                return FakeResp()
+        with patch(
+            "maverick.tools.http_fetch.ssrf_safe_opener",
+            return_value=_Opener(),
+        ):
             with pytest.raises(ValueError, match="too large"):
                 install_skill("https://example.com/skill.md", skills_dir=tmp_path / "skills")
 

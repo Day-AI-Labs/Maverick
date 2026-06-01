@@ -135,11 +135,18 @@ def test_fetch_index_caches(monkeypatch, tmp_path):
         def __exit__(self, *a): return False
         def read(self, _n=-1): return json.dumps(_index([_entry()])).encode()
 
-    def _urlopen(url, timeout=0):
+    def _open(url, timeout=0):
         calls["n"] += 1
         return _Resp()
 
-    monkeypatch.setattr(catalog.urllib.request, "urlopen", _urlopen)
+    # catalog now fetches via an SSRF-validating opener (build_opener);
+    # patch the opener it builds so the test intercepts the same seam.
+    class _Opener:
+        def open(self, url, timeout=0):
+            return _open(url, timeout)
+    monkeypatch.setattr(
+        "maverick.tools.http_fetch.ssrf_safe_opener", lambda: _Opener(),
+    )
     url = "https://a/skills/index.json"
     catalog._fetch_index_raw(url)
     catalog._fetch_index_raw(url)  # second call should hit the cache

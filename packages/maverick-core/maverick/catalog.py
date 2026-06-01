@@ -141,7 +141,15 @@ def _fetch_index_raw(url: str) -> Optional[dict]:
         log.warning("catalog: refusing non-https index url %s", url)
         return None
     try:
-        with urllib.request.urlopen(url, timeout=FETCH_TIMEOUT) as resp:  # noqa: S310 (https enforced above)
+        # SSRF-validating opener: a redirect can't bounce to a private/
+        # metadata host (#477). Fall back to the default opener if the
+        # tools package isn't importable.
+        try:
+            from .tools.http_fetch import ssrf_safe_opener
+            _opener = ssrf_safe_opener()
+        except Exception:  # pragma: no cover
+            _opener = urllib.request.build_opener()
+        with _opener.open(url, timeout=FETCH_TIMEOUT) as resp:  # noqa: S310 (https enforced above)
             if resp.status != 200:
                 return None
             data = json.loads(resp.read(2_000_000).decode("utf-8"))

@@ -414,8 +414,17 @@ def install_from_catalog(
 
 
 def _fetch_url(url: str) -> str:
+    # Use the SSRF-validating opener so a redirect can't bounce this fetch
+    # to a private/metadata host (#477). Fail-open import: if the tools
+    # package isn't importable, fall back to the default opener.
     try:
-        with urllib.request.urlopen(url, timeout=INSTALL_TIMEOUT) as resp:
+        from .tools.http_fetch import ssrf_safe_opener
+        opener = ssrf_safe_opener()
+        _open = lambda u, timeout: opener.open(u, timeout=timeout)  # noqa: E731
+    except Exception:  # pragma: no cover -- redirect guard is best-effort
+        _open = lambda u, timeout: urllib.request.urlopen(u, timeout=timeout)  # noqa: E731
+    try:
+        with _open(url, INSTALL_TIMEOUT) as resp:
             if resp.status != 200:
                 raise ValueError(f"HTTP {resp.status} from {url}")
             chunks: list[bytes] = []
