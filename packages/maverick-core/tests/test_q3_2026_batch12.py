@@ -359,8 +359,9 @@ def test_dynamodb_query_follows_last_evaluated_key(monkeypatch):
             calls["query"].append(k)
             if "ExclusiveStartKey" not in k:
                 return {"Items": [{"id": "1", "name": "alice"}],
+                        "ScannedCount": 1,
                         "LastEvaluatedKey": {"id": "1"}}
-            return {"Items": [{"id": "2", "name": "bob"}]}
+            return {"Items": [{"id": "2", "name": "bob"}], "ScannedCount": 1}
 
     class _Resource:
         def Table(self, name):
@@ -379,6 +380,66 @@ def test_dynamodb_query_follows_last_evaluated_key(monkeypatch):
     assert "alice" in out and "bob" in out and "count=2" in out
     assert len(calls["query"]) == 2
     assert calls["query"][1]["ExclusiveStartKey"] == {"id": "1"}
+
+
+def test_dynamodb_scan_pagination_obeys_total_read_budget(monkeypatch):
+    import types as _t
+
+    boto3 = _t.ModuleType("boto3")
+    calls = {"scan": []}
+
+    class _Table:
+        def scan(self, **k):
+            calls["scan"].append(k)
+            return {
+                "Items": [],
+                "ScannedCount": k["Limit"],
+                "LastEvaluatedKey": {"id": str(len(calls["scan"]))},
+            }
+
+    class _Resource:
+        def Table(self, name):
+            return _Table()
+
+    boto3.resource = lambda *a, **k: _Resource()
+    boto3.client = lambda *a, **k: None
+    monkeypatch.setitem(sys.modules, "boto3", boto3)
+
+    from maverick.tools.dynamodb_tool import dynamodb_tool
+    out = dynamodb_tool().fn({
+        "op": "scan", "table": "Users",
+        "filter_expression": "kind = :kind",
+        "expression_values": {":kind": "missing"}, "limit": 1000,
+    })
+    assert out == "no items"
+    assert len(calls["scan"]) == 1
+    assert sum(call["Limit"] for call in calls["scan"]) == 1000
+
+
+def test_dynamodb_scan_pagination_missing_scanned_count_fails_closed(monkeypatch):
+    import types as _t
+
+    boto3 = _t.ModuleType("boto3")
+    calls = {"scan": []}
+
+    class _Table:
+        def scan(self, **k):
+            calls["scan"].append(k)
+            return {"Items": [], "LastEvaluatedKey": {"id": str(len(calls["scan"]))}}
+
+    class _Resource:
+        def Table(self, name):
+            return _Table()
+
+    boto3.resource = lambda *a, **k: _Resource()
+    boto3.client = lambda *a, **k: None
+    monkeypatch.setitem(sys.modules, "boto3", boto3)
+
+    from maverick.tools.dynamodb_tool import dynamodb_tool
+    out = dynamodb_tool().fn({"op": "scan", "table": "Users", "limit": 1000})
+    assert out == "no items"
+    assert len(calls["scan"]) == 1
+    assert sum(call["Limit"] for call in calls["scan"]) == 1000
 
 
 # ---------- Vercel ----------

@@ -120,25 +120,33 @@ def _op_delete(args: dict) -> str:
 
 
 def _paginate(method, base_kwargs: dict, limit: int) -> list[dict]:
-    """Run a DynamoDB query/scan, following ``LastEvaluatedKey`` until ``limit``
-    items are collected.
+    """Run a DynamoDB query/scan without exceeding the requested read budget.
 
-    ``Limit`` is a per-page *scanned* cap, not a total, and a filtered page can
-    return fewer (or zero) items while more match — so a single call truncates.
-    Pass ``ExclusiveStartKey`` to continue; bounded by a hard page cap.
+    DynamoDB ``Limit`` is a per-request evaluated/scanned cap, not a total
+    matched-item cap. Keep separate read and page budgets so filtered requests
+    cannot multiply the requested work across continuation pages.
     """
     items: list[dict] = []
     start_key = None
-    max_pages = 100
+    remaining_read_budget = limit
+    max_pages = 10
     for _ in range(max_pages):
+        if remaining_read_budget <= 0 or len(items) >= limit:
+            break
+        page_limit = min(1000, remaining_read_budget, limit - len(items))
         kwargs = dict(base_kwargs)
-        kwargs["Limit"] = min(1000, max(1, limit - len(items)))
+        kwargs["Limit"] = page_limit
         if start_key is not None:
             kwargs["ExclusiveStartKey"] = start_key
         r = method(**kwargs)
         items.extend(r.get("Items") or [])
+        scanned = r.get("ScannedCount")
+        if isinstance(scanned, int) and scanned > 0:
+            remaining_read_budget -= min(scanned, page_limit)
+        else:
+            remaining_read_budget -= page_limit
         start_key = r.get("LastEvaluatedKey")
-        if len(items) >= limit or not start_key:
+        if not start_key:
             break
     return items[:limit]
 
