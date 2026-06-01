@@ -1,8 +1,13 @@
 """MCP client tests."""
 from __future__ import annotations
 
+import asyncio
+import json
+
+import pytest
 from maverick.mcp_client import (
     MCPClient,
+    MCPClientError,
     MCPServerSpec,
     _content_to_str,
     load_mcp_specs_from_config,
@@ -45,6 +50,19 @@ class TestContentToStr:
         # Non-text blocks fall through to JSON for round-trip preservation.
         out = _content_to_str(blocks)
         assert "image" in out
+
+    def test_text_resource_surfaces_its_text(self):
+        # An embedded text resource reads as its contents, not a JSON dump.
+        blocks = [{"type": "resource",
+                   "resource": {"uri": "file:///x", "text": "hello from file"}}]
+        assert _content_to_str(blocks) == "hello from file"
+
+    def test_binary_resource_falls_back_to_json(self):
+        # No `text` (a blob/uri) -> JSON so the uri isn't silently lost.
+        blocks = [{"type": "resource",
+                   "resource": {"uri": "file:///x", "blob": "QQ=="}}]
+        out = _content_to_str(blocks)
+        assert "file:///x" in out
 
     def test_none(self):
         assert _content_to_str(None) == ""
@@ -136,3 +154,71 @@ class TestStartLogging:
         assert "argv-secret" not in msg
         assert "postgres://user:pass@db/prod" not in msg
         assert "args=2" in msg
+
+
+class TestCallTool:
+    """call_tool surfaces tool errors as exceptions (not an "ERROR:" string)
+    and doesn't drop a server's structuredContent."""
+
+    @staticmethod
+    def _client_returning(monkeypatch, resp):
+        async def fake_request(self, method, params):
+            return resp
+        monkeypatch.setattr(MCPClient, "_request", fake_request)
+        return MCPClient(MCPServerSpec(name="x", command="true"))
+
+    def test_is_error_raises(self, monkeypatch):
+        c = self._client_returning(
+            monkeypatch,
+            {"isError": True, "content": [{"type": "text", "text": "boom"}]})
+        with pytest.raises(MCPClientError) as ei:
+            asyncio.run(c.call_tool("t", {}))
+        assert "boom" in str(ei.value)
+
+    def test_success_text_starting_with_error_is_not_an_error(self, monkeypatch):
+        # The old "ERROR: " prefix made this verbatim success look like a
+        # failure. It must now come back unchanged.
+        c = self._client_returning(
+            monkeypatch, {"content": [{"type": "text", "text": "ERROR: not really"}]})
+        assert asyncio.run(c.call_tool("t", {})) == "ERROR: not really"
+
+    def test_structured_only_result_falls_back_to_json(self, monkeypatch):
+        # A server that returns only structuredContent (no text block) still
+        # gets its data to the model instead of an empty string.
+        c = self._client_returning(
+            monkeypatch, {"content": [], "structuredContent": {"rows": 3}})
+        assert json.loads(asyncio.run(c.call_tool("t", {}))) == {"rows": 3}
+
+    def test_text_wins_when_both_present(self, monkeypatch):
+        c = self._client_returning(
+            monkeypatch,
+            {"content": [{"type": "text", "text": "hi"}],
+             "structuredContent": {"rows": 3}})
+        assert asyncio.run(c.call_tool("t", {})) == "hi"
+
+
+class TestTimeoutCancellation:
+    """On a request timeout the client emits notifications/cancelled so the
+    server stops working on an id it will never read a reply for."""
+
+    def test_timeout_emits_cancelled_for_the_request_id(self, monkeypatch):
+        sent: list[dict] = []
+
+        async def fake_send(self, payload):
+            sent.append(payload)
+
+        async def never(self, expected_id):
+            await asyncio.sleep(10)
+
+        monkeypatch.setattr(MCPClient, "_check_alive", lambda self: None)
+        monkeypatch.setattr(MCPClient, "_send", fake_send)
+        monkeypatch.setattr(MCPClient, "_read_response", never)
+        c = MCPClient(MCPServerSpec(name="x", command="true"), timeout=0.01)
+
+        with pytest.raises(asyncio.TimeoutError):
+            asyncio.run(c._request("tools/call", {"name": "t"}))
+
+        cancels = [p for p in sent if p.get("method") == "notifications/cancelled"]
+        assert len(cancels) == 1
+        # The cancel must target the same id the timed-out request used (1).
+        assert cancels[0]["params"] == {"requestId": 1, "reason": "client timeout"}
