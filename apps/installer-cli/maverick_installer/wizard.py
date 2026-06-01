@@ -2195,6 +2195,18 @@ def run_consumer() -> int:
 def run(fast: bool = False, resume: bool = False) -> int:
     if fast:
         return run_fast()
+    # A non-interactive stdin (CI, Docker build, `... | maverick init`) can't
+    # answer prompts -- questionary just prints "Input is not a terminal" and
+    # the first prompt aborts with a terse "Aborted!". Detect it up front and
+    # point at the paths that DO work without a TTY.
+    if not sys.stdin.isatty():
+        console.print(
+            "[yellow]maverick init needs an interactive terminal.[/yellow]\n"
+            "  - run it in a terminal, or\n"
+            "  - use  [bold]maverick init --fast[/bold]  for recommended defaults, or\n"
+            "  - edit  ~/.maverick/config.toml  by hand (see docs/configuration.md)."
+        )
+        return 1
     welcome()
     # Council round-2: mode picker on every launch. Consumer is default.
     # Skip the picker on --resume since it implies an in-progress
