@@ -101,6 +101,29 @@ def _screenshot_png_b64() -> str:
         return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+def _ocr_enabled() -> bool:
+    return os.environ.get("MAVERICK_COMPUTER_OCR", "").lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def _ocr_png_b64(b64: str) -> str:
+    """Best-effort OCR of a base64 PNG via pytesseract.
+
+    Returns "" on ANY failure (pytesseract/pillow not installed, no
+    tesseract binary on PATH, decode error). OCR is a fallback for when the
+    model can't see a DOM / accessibility tree, never a hard requirement.
+    """
+    try:
+        import pytesseract
+        from PIL import Image
+        img = Image.open(io.BytesIO(base64.b64decode(b64)))
+        return (pytesseract.image_to_string(img) or "").strip()
+    except Exception as e:  # pragma: no cover - fail-open
+        log.debug("computer-use OCR unavailable: %s", e)
+        return ""
+
+
 def _clamp_coordinate(pyautogui, coord: list | None) -> tuple[int, int] | None:
     if not coord:
         return None
@@ -140,7 +163,15 @@ def _run_computer_action(args: dict[str, Any]) -> str:
         log.info("computer.screenshot len=%d", len(b64))
         # Claude expects the screenshot as a tool_result image block.
         # The agent kernel translates this string back into a block.
-        return f"<screenshot mime=image/png base64>{b64}</screenshot>"
+        out = f"<screenshot mime=image/png base64>{b64}</screenshot>"
+        # Optional OCR fallback (MAVERICK_COMPUTER_OCR=1): attach recognized
+        # text next to the image for models/situations without a DOM. No-op
+        # if OCR deps are absent.
+        if _ocr_enabled():
+            text = _ocr_png_b64(b64)
+            if text:
+                out += f"\n<ocr>{text}</ocr>"
+        return out
 
     pyautogui = _ensure_pyautogui()
     pyautogui.FAILSAFE = False  # Don't crash on corner-of-screen mouse moves.
