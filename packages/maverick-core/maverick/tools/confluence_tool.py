@@ -7,7 +7,7 @@ family as Jira).
 ops:
   - search(cql, limit)                 — CQL query
   - page_get(page_id)                  — body flattened to text
-  - page_create(space_id, title, body, confirm)
+  - page_create(space_key, title, body, confirm)
   - page_update(page_id, title, body, version, confirm)
 """
 from __future__ import annotations
@@ -29,7 +29,14 @@ _CF_SCHEMA: dict[str, Any] = {
         "op": {"type": "string", "enum": ["search", "page_get", "page_create", "page_update"]},
         "cql": {"type": "string"},
         "page_id": {"type": "string"},
-        "space_id": {"type": "string"},
+        "space_key": {
+            "type": "string",
+            "description": (
+                "Confluence space KEY (e.g. 'ENG'), not the numeric id — the "
+                "v1 content API keys space by key. (Legacy 'space_id' alias "
+                "accepted.)"
+            ),
+        },
         "title": {"type": "string"},
         "body": {"type": "string", "description": "Storage-format/HTML body."},
         "version": {"type": "integer", "description": "Current version number (page_update)."},
@@ -137,11 +144,13 @@ def _op_page_get(args: dict) -> str:
 
 
 def _op_page_create(args: dict) -> str:
-    space = (args.get("space_id") or "").strip()
+    # The value is the space KEY (the v1 API keys space.key by key, not id).
+    # Prefer the renamed `space_key`; accept legacy `space_id` for back-compat.
+    space = (args.get("space_key") or args.get("space_id") or "").strip()
     title = (args.get("title") or "").strip()
     body = args.get("body") or ""
     if not space or not title:
-        return "ERROR: page_create requires space_id and title"
+        return "ERROR: page_create requires space_key and title"
     if not as_bool(args.get("confirm")):
         return f"DRY RUN: would create page {title!r}. Re-run with confirm=true."
     payload = {
