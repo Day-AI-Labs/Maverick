@@ -155,6 +155,11 @@ TOOLS: list[dict[str, Any]] = [
             },
             "required": ["question_id", "answer"],
         },
+        "outputSchema": {
+            "type": "object",
+            "properties": {"question_id": {"type": "integer"}},
+            "required": ["question_id"],
+        },
     },
     {
         "name": "maverick_skill_install",
@@ -163,6 +168,14 @@ TOOLS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {"source": {"type": "string"}},
             "required": ["source"],
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "path": {"type": "string"},
+            },
+            "required": ["name", "path"],
         },
     },
     {
@@ -196,6 +209,11 @@ TOOLS: list[dict[str, Any]] = [
                 "value": {"type": "string"},
             },
             "required": ["key", "value"],
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {"key": {"type": "string"}},
+            "required": ["key"],
         },
     },
     {
@@ -589,7 +607,9 @@ class MCPServer:
     def _tool_answer(self, args: dict) -> str:
         from maverick.world_model import WorldModel
         w = WorldModel()
-        w.answer(int(args["question_id"]), str(args["answer"]))
+        qid = int(args["question_id"])
+        w.answer(qid, str(args["answer"]))
+        self._structured_override = {"question_id": qid}
         return f"answered #{args['question_id']}"
 
     def _tool_skill_install(self, args: dict) -> str:
@@ -601,6 +621,7 @@ class MCPServer:
         # file read, the exact hole the REST API was hardened against. Local
         # users install skills with `maverick skill install` (trusted there).
         s = install_skill(args["source"], trusted_local=False)
+        self._structured_override = {"name": s.name, "path": str(s.path)}
         return f"installed: {s.name} -> {s.path}"
 
     def _tool_skills_list(self) -> str:
@@ -626,6 +647,7 @@ class MCPServer:
         from maverick.world_model import WorldModel
         w = WorldModel()
         w.upsert_fact(args["key"], args["value"])
+        self._structured_override = {"key": args["key"]}
         return f"set {args['key']}"
 
     def _tool_facts_get(self) -> str:
