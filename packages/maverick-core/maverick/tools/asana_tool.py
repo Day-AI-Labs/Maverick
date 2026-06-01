@@ -94,16 +94,39 @@ def _op_workspaces(_args: dict) -> str:
     return "\n".join(f"  {w.get('gid')}  {w.get('name')}" for w in rows) or "(none)"
 
 
+def _get_paginated(path: str, params: dict, limit: int) -> tuple[int, Any, list[dict]]:
+    """Follow Asana's offset pagination (``next_page.offset``) until ``limit``
+    rows are collected. Returns ``(code, error_payload, rows)``.
+
+    Asana caps ``limit`` at 100 per page and returns an opaque ``offset`` token
+    in ``next_page`` when more results exist; bounded by a hard page cap.
+    """
+    rows: list[dict] = []
+    offset: str | None = None
+    max_pages = max(1, (limit // 100) + 2)
+    for _ in range(max_pages):
+        p = dict(params)
+        p["limit"] = min(100, max(1, limit - len(rows)))
+        if offset:
+            p["offset"] = offset
+        code, data = _get(path, p)
+        if code >= 400 or not isinstance(data, dict):
+            return code, data, rows
+        rows.extend(data.get("data") or [])
+        offset = (data.get("next_page") or {}).get("offset")
+        if len(rows) >= limit or not offset:
+            break
+    return 200, {}, rows[:limit]
+
+
 def _op_projects(args: dict) -> str:
     wsg = (args.get("workspace_gid") or "").strip()
     if not wsg:
         return "ERROR: projects requires workspace_gid"
-    params = {"workspace": wsg,
-              "limit": max(1, min(int(args.get("limit") or 25), 100))}
-    code, data = _get("/projects", params)
-    if code >= 400 or not isinstance(data, dict):
-        return f"ERROR: projects ({code}): {data}"
-    rows = data.get("data") or []
+    limit = max(1, min(int(args.get("limit") or 25), 100))
+    code, err, rows = _get_paginated("/projects", {"workspace": wsg}, limit)
+    if code >= 400:
+        return f"ERROR: projects ({code}): {err}"
     return "\n".join(f"  {p.get('gid')}  {p.get('name')}" for p in rows) or "(none)"
 
 
@@ -111,16 +134,15 @@ def _op_tasks(args: dict) -> str:
     pgid = (args.get("project_gid") or "").strip()
     if not pgid:
         return "ERROR: tasks requires project_gid"
-    params: dict = {"limit": max(1, min(int(args.get("limit") or 25), 100))}
+    limit = max(1, min(int(args.get("limit") or 25), 100))
+    params: dict = {"opt_fields": "name,completed,assignee.name,due_on"}
     if args.get("assignee"):
         params["assignee"] = args["assignee"]
     if args.get("completed_since"):
         params["completed_since"] = args["completed_since"]
-    params["opt_fields"] = "name,completed,assignee.name,due_on"
-    code, data = _get(f"/projects/{pgid}/tasks", params)
-    if code >= 400 or not isinstance(data, dict):
-        return f"ERROR: tasks ({code}): {data}"
-    rows = data.get("data") or []
+    code, err, rows = _get_paginated(f"/projects/{pgid}/tasks", params, limit)
+    if code >= 400:
+        return f"ERROR: tasks ({code}): {err}"
     if not rows:
         return "no tasks"
     return "\n".join(

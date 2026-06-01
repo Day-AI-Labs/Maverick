@@ -91,16 +91,61 @@ def _money(amount: str | float | None, currency: str | None) -> str:
     return f"{v:,.2f} {(currency or '').upper()}"
 
 
+def _next_page_url(link_header: str | None) -> str | None:
+    """Extract the ``rel="next"`` URL from a Shopify RFC-5988 Link header.
+
+    Shopify paginates list endpoints with a cursor carried in the ``Link``
+    response header: ``<https://...?page_info=XYZ>; rel="next"``. Returns the
+    next-page URL, or None when there are no more pages.
+    """
+    if not link_header or not isinstance(link_header, str):
+        return None
+    for part in link_header.split(","):
+        seg = part.strip()
+        if 'rel="next"' in seg and seg.startswith("<"):
+            end = seg.find(">")
+            if end > 1:
+                return seg[1:end]
+    return None
+
+
+def _paginated_list(c, url: str, params: dict, key: str, limit: int) -> tuple[int, str, list[dict]]:
+    """GET ``url`` following the Link-header ``rel="next"`` cursor until
+    ``limit`` rows under ``key`` are collected. Returns (code, error, rows).
+
+    On follow-up requests Shopify only accepts ``limit`` + ``page_info`` (the
+    next-page URL already encodes the other filters), so we follow the full
+    URL it hands back. Bounded by a hard page cap.
+    """
+    rows: list[dict] = []
+    next_url: str | None = url
+    use_params: dict | None = dict(params)
+    max_pages = max(1, (limit // 250) + 2)
+    for _ in range(max_pages):
+        if use_params is not None:
+            use_params["limit"] = min(250, max(1, limit - len(rows)))
+        r = c.get(next_url, params=use_params)
+        if r.status_code >= 400:
+            return r.status_code, r.text[:300], rows
+        rows.extend(r.json().get(key) or [])
+        if len(rows) >= limit:
+            break
+        next_url = _next_page_url(r.headers.get("Link") or r.headers.get("link"))
+        if not next_url:
+            break
+        use_params = None  # the next-page URL already carries limit + page_info
+    return 200, "", rows[:limit]
+
+
 def _op_orders(limit: int, status: str) -> str:
     store, c = _client()
     with c:
-        r = c.get(
-            f"https://{store}/admin/api/{_API_VERSION}/orders.json",
-            params={"limit": limit, "status": status or "open"},
+        code, err, rows = _paginated_list(
+            c, f"https://{store}/admin/api/{_API_VERSION}/orders.json",
+            {"status": status or "open"}, "orders", limit,
         )
-        if r.status_code >= 400:
-            return f"ERROR: orders ({r.status_code}): {r.text[:300]}"
-        rows = (r.json().get("orders") or [])
+    if code >= 400:
+        return f"ERROR: orders ({code}): {err}"
     if not rows:
         return "no orders"
     out = []
@@ -139,15 +184,16 @@ def _op_order_get(order_id: int) -> str:
 
 def _op_products(limit: int, vendor: str) -> str:
     store, c = _client()
-    params: dict = {"limit": limit}
+    params: dict = {}
     if vendor:
         params["vendor"] = vendor
     with c:
-        r = c.get(f"https://{store}/admin/api/{_API_VERSION}/products.json",
-                  params=params)
-        if r.status_code >= 400:
-            return f"ERROR: products ({r.status_code}): {r.text[:300]}"
-        rows = (r.json().get("products") or [])
+        code, err, rows = _paginated_list(
+            c, f"https://{store}/admin/api/{_API_VERSION}/products.json",
+            params, "products", limit,
+        )
+    if code >= 400:
+        return f"ERROR: products ({code}): {err}"
     if not rows:
         return "no products"
     return "\n".join(

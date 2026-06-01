@@ -78,15 +78,32 @@ def _search(query: str, limit: int) -> str:
     # full-text search. The old `filter: {searchableContent: ...}` is not a
     # valid IssueFilter field, so the GraphQL document was rejected and every
     # search raised "Linear API error".
+    # issueSearch caps `first` at 100 and paginates with a Relay-style
+    # pageInfo cursor; follow `endCursor` until `limit` issues are collected,
+    # bounded by a hard page cap.
     q = """
-    query Search($q: String!, $n: Int!) {
-      issueSearch(query: $q, first: $n) {
+    query Search($q: String!, $n: Int!, $after: String) {
+      issueSearch(query: $q, first: $n, after: $after) {
         nodes { identifier title state { name } url priority }
+        pageInfo { hasNextPage endCursor }
       }
     }
     """
-    data = _post(q, {"q": query, "n": limit})
-    nodes = (data.get("issueSearch") or {}).get("nodes") or []
+    nodes: list[dict] = []
+    after: str | None = None
+    max_pages = max(1, (limit // 100) + 2)
+    for _ in range(max_pages):
+        n = min(100, max(1, limit - len(nodes)))
+        data = _post(q, {"q": query, "n": n, "after": after})
+        search = data.get("issueSearch") or {}
+        nodes.extend(search.get("nodes") or [])
+        page = search.get("pageInfo") or {}
+        if len(nodes) >= limit or not page.get("hasNextPage"):
+            break
+        after = page.get("endCursor")
+        if not after:
+            break
+    nodes = nodes[:limit]
     if not nodes:
         return "no matches"
     return "\n".join(

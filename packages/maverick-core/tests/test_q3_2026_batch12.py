@@ -106,6 +106,21 @@ def test_asana_task_complete_dry_run(monkeypatch):
     assert "DRY RUN" in out
 
 
+def test_asana_tasks_follows_offset(monkeypatch):
+    monkeypatch.setenv("ASANA_TOKEN", "tok")
+    page1 = {"data": [{"gid": "t1", "name": "one", "completed": False}],
+             "next_page": {"offset": "off-2"}}
+    page2 = {"data": [{"gid": "t2", "name": "two", "completed": False}],
+             "next_page": None}
+    get = MagicMock(side_effect=[_resp(200, page1), _resp(200, page2)])
+    _fake_httpx(monkeypatch, get=get)
+    from maverick.tools.asana_tool import asana_tool
+    out = asana_tool().fn({"op": "tasks", "project_gid": "P1", "limit": 50})
+    assert "t1" in out and "t2" in out
+    assert get.call_count == 2
+    assert get.call_args_list[1].kwargs["params"]["offset"] == "off-2"
+
+
 # ---------- ClickUp ----------
 
 def test_clickup_requires_op():
@@ -392,6 +407,20 @@ def test_gdrive_list_renders(monkeypatch):
     from maverick.tools.gdrive_tool import gdrive_tool
     out = gdrive_tool().fn({"op": "list"})
     assert "f1" in out and "Notes" in out
+
+
+def test_gdrive_list_follows_next_page_token(monkeypatch):
+    monkeypatch.setenv("GDRIVE_ACCESS_TOKEN", "tok")
+    page1 = {"files": [{"id": "f1", "name": "one", "mimeType": "text/plain"}],
+             "nextPageToken": "tok-2"}
+    page2 = {"files": [{"id": "f2", "name": "two", "mimeType": "text/plain"}]}
+    get = MagicMock(side_effect=[_resp(200, page1), _resp(200, page2)])
+    _fake_httpx(monkeypatch, get=get)
+    from maverick.tools.gdrive_tool import gdrive_tool
+    out = gdrive_tool().fn({"op": "list", "page_size": 50})
+    assert "f1" in out and "f2" in out
+    assert get.call_count == 2
+    assert get.call_args_list[1].kwargs["params"]["pageToken"] == "tok-2"
 
 
 def test_gdrive_create_dry_run(monkeypatch):

@@ -374,6 +374,34 @@ def test_linear_search_calls_graphql(monkeypatch):
     fake_httpx.post.assert_called_once()
 
 
+def test_linear_search_follows_pageinfo_cursor(monkeypatch):
+    monkeypatch.setenv("LINEAR_API_KEY", "lin_api_xxx")
+
+    def _page(ident, title, has_next, cursor):
+        r = MagicMock()
+        r.json = MagicMock(return_value={"data": {"issueSearch": {
+            "nodes": [{"identifier": ident, "title": title,
+                       "state": {"name": "Todo"}, "url": "https://x", "priority": 2}],
+            "pageInfo": {"hasNextPage": has_next, "endCursor": cursor},
+        }}})
+        r.raise_for_status = MagicMock()
+        return r
+
+    post = MagicMock(side_effect=[
+        _page("ENG-1", "first", True, "cur-2"),
+        _page("ENG-2", "second", False, None),
+    ])
+    fake_httpx = types.ModuleType("httpx")
+    fake_httpx.post = post
+    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+
+    from maverick.tools.linear import linear
+    out = linear().fn({"op": "search", "query": "crash", "limit": 50})
+    assert "ENG-1" in out and "ENG-2" in out
+    assert post.call_count == 2
+    assert post.call_args_list[1].kwargs["json"]["variables"]["after"] == "cur-2"
+
+
 def test_linear_create_requires_team():
     from maverick.tools.linear import linear
     out = linear().fn({"op": "create", "title": "x"})
