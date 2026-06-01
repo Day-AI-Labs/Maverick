@@ -12,7 +12,9 @@ import re
 
 DISCORD_LIMIT = 2000
 
-_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
+# Keep link text on one non-nested-bracket span so malformed strings with many
+# candidate ``[`` characters fail locally instead of rescanning long suffixes.
+_LINK_RE = re.compile(r"\[([^\[\]\r\n]+)\]\((https?://[^)\s]+)\)")
 _BOLD_STAR_RE = re.compile(r"\*\*(.+?)\*\*", re.S)
 _BOLD_UNDER_RE = re.compile(r"__(.+?)__", re.S)
 _HEADING_RE = re.compile(r"(?m)^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]*$")

@@ -18,6 +18,10 @@ def test_slack_bold_and_links_and_headings():
     assert to_slack_mrkdwn("## Heading") == "*Heading*"
 
 
+def test_slack_link_conversion_handles_malformed_many_open_brackets():
+    text = "[" * 20_000 + "(https://example.com/path)"
+    assert to_slack_mrkdwn(text) == text
+
 def test_slack_preserves_code_fences():
     src = "see **this**\n```\nx = a ** b  # not bold\n```\nand **that**"
     out = to_slack_mrkdwn(src)
