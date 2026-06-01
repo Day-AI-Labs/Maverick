@@ -245,3 +245,23 @@ def test_absorb_raises_when_aggregate_over_cap():
         parent.absorb(child)
     # Counters were added BEFORE the cap check -> parent reflects the spend.
     assert abs(parent.dollars - 18.0) < 0.001
+
+
+def test_cache_read_default_is_anthropic_tenth_rate():
+    # Default (no cache_read_mult) bills cache reads at 0.1x input rate.
+    b = Budget(max_dollars=1e9, max_input_tokens=10_000_000)
+    b.record_tokens(0, 0, model=MODEL_OPUS, cache_read_tok=1_000_000)
+    # Opus input = $5/Mtok -> 0.1x -> $0.50
+    assert abs(b.dollars - 0.5) < 1e-6
+
+
+def test_cache_read_openai_half_rate_is_5x_default():
+    # Issue #465: non-Anthropic cache reads are ~0.5x, not 0.1x. Passing the
+    # OpenAI multiplier bills 5x the Anthropic-default amount for the same read.
+    from maverick.budget import CACHE_READ_MULT_OPENAI
+    assert CACHE_READ_MULT_OPENAI == 0.5
+    b = Budget(max_dollars=1e9, max_input_tokens=10_000_000)
+    b.record_tokens(0, 0, model=MODEL_OPUS, cache_read_tok=1_000_000,
+                    cache_read_mult=CACHE_READ_MULT_OPENAI)
+    # 0.5x of $5/Mtok = $2.50 (5x the 0.1x default of $0.50).
+    assert abs(b.dollars - 2.5) < 1e-6

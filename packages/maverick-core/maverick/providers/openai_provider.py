@@ -315,11 +315,15 @@ class OpenAIClient:
                 cache_read_tok = int(getattr(usage, "prompt_cache_hit_tokens", 0) or 0)
             full_in = int(getattr(usage, "prompt_tokens", 0) or 0)
             billable_in = max(full_in - cache_read_tok, 0)
+            # OpenAI/o-series/gpt-5 auto-cache discounts reads ~0.5x, not
+            # Anthropic's 0.1x (the budget default) — bill the right rate.
+            from ..budget import CACHE_READ_MULT_OPENAI
             budget.record_tokens(
                 billable_in,
                 int(getattr(usage, "completion_tokens", 0) or 0),
                 model=model,
                 cache_read_tok=cache_read_tok,
+                cache_read_mult=CACHE_READ_MULT_OPENAI,
             )
         # Map finish_reason to Anthropic stop_reason vocab so consumers that
         # check Anthropic values (e.g., 'tool_use', 'end_turn') branch correctly.
