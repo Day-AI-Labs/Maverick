@@ -26,6 +26,7 @@ import base64
 import io
 import logging
 import os
+import tempfile
 import time
 from typing import Any
 
@@ -108,20 +109,40 @@ def _ocr_enabled() -> bool:
 
 
 def _ocr_png_b64(b64: str) -> str:
-    """Best-effort OCR of a base64 PNG via pytesseract.
+    """Best-effort OCR of a base64 PNG via sandboxed tesseract.
 
-    Returns "" on ANY failure (pytesseract/pillow not installed, no
-    tesseract binary on PATH, decode error). OCR is a fallback for when the
-    model can't see a DOM / accessibility tree, never a hard requirement.
+    Returns "" on ANY failure (bad base64, tesseract missing, timeout, or
+    subprocess error). OCR is a fallback for when the model can't see a DOM /
+    accessibility tree, never a hard requirement.
     """
+    tmp_path = ""
     try:
-        import pytesseract
-        from PIL import Image
-        img = Image.open(io.BytesIO(base64.b64decode(b64)))
-        return (pytesseract.image_to_string(img) or "").strip()
+        from . import sandbox_run
+
+        png = base64.b64decode(b64)
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp.write(png)
+            tmp_path = tmp.name
+
+        code, out, stderr = sandbox_run(
+            None, ["tesseract", tmp_path, "-", "-l", "eng", "--psm", "3"], timeout=120,
+        )
+        if code != 0:
+            log.debug(
+                "computer-use OCR tesseract failed (%s): %s",
+                code, (stderr or "").strip()[:300],
+            )
+            return ""
+        return (out or "").strip()
     except Exception as e:  # pragma: no cover - fail-open
         log.debug("computer-use OCR unavailable: %s", e)
         return ""
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 def _clamp_coordinate(pyautogui, coord: list | None) -> tuple[int, int] | None:
