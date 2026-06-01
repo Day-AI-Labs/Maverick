@@ -1,6 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Maverick · overview{% endblock %}
 {% block content %}
+  <div id="tour" class="panel" role="region" aria-label="Getting started"
+       style="display: none; border-left: 3px solid var(--accent); position: relative;">
+    <button id="tour-dismiss" type="button" aria-label="Dismiss getting-started tips"
+            style="position: absolute; top: 0.5rem; right: 0.65rem; background: none; border: 0; color: var(--muted); font-size: 1.1rem; cursor: pointer; line-height: 1;">&times;</button>
+    <h2 style="margin-top: 0;">New here? Three ways to run a goal</h2>
+    <ul class="muted" style="margin: 0.5rem 0 0; padding-left: 1.1rem; line-height: 1.7;">
+      <li><strong style="color: var(--text);">Chat</strong> — open <a href="/chat">/chat</a> for an interactive back-and-forth; the swarm streams its progress live.</li>
+      <li><strong style="color: var(--text);">REST API</strong> — <code>POST /api/v1/goals</code> with a JSON body to drive Maverick from your own code or scripts.</li>
+      <li><strong style="color: var(--text);">CLI</strong> — <code>maverick start "&lt;your goal&gt;"</code> in a terminal, or <code>maverick onboard</code> for a guided first run.</li>
+    </ul>
+    <p class="muted" style="margin: 0.75rem 0 0; font-size: 0.8rem;">
+      The plan-tree view on each goal shows how the orchestrator split the work across sub-agents.
+    </p>
+  </div>
+
   {% if counts.total == 0 %}
     <div class="panel" style="text-align: center; padding: 3rem 1.5rem;">
       <h2 style="font-size: 1.5rem; color: var(--text); text-transform: none; letter-spacing: 0; font-weight: 600; margin-bottom: 0.75rem;">Start your first goal</h2>
@@ -90,6 +105,26 @@
   {% endif %}
 
   <script>
+    // Dismissible getting-started tour: show unless the user closed it
+    // before (persisted in localStorage). No network, no external deps.
+    (function() {
+      var tour = document.getElementById('tour');
+      if (!tour) return;
+      var KEY = 'maverick.tourDismissed';
+      try {
+        if (localStorage.getItem(KEY) !== '1') tour.style.display = '';
+      } catch (e) {
+        tour.style.display = '';  // localStorage blocked -> still show once
+      }
+      var btn = document.getElementById('tour-dismiss');
+      if (btn) {
+        btn.addEventListener('click', function() {
+          tour.style.display = 'none';
+          try { localStorage.setItem(KEY, '1'); } catch (e) {}
+        });
+      }
+    })();
+
     // Replace absolute timestamps with relative time on the client.
     (function() {
       function rel(ts) {
