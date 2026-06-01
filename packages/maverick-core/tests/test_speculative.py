@@ -46,21 +46,28 @@ class TestSpeculation:
             await spec.result()
 
     @pytest.mark.asyncio
-    async def test_overlap_hides_latency(self):
-        # Two 0.1s sleeps started speculatively then awaited should finish
-        # in ~0.1s total, not ~0.2s — proving they overlapped.
-        async def slow(v):
-            await asyncio.sleep(0.1)
+    async def test_speculations_run_concurrently(self):
+        # Prove overlap STRUCTURALLY, not via wall-clock: a timing bound
+        # (elapsed < 0.18s) is flaky under loaded CI runners. Both tasks must
+        # be in-flight simultaneously -- each signals on entry, then waits on a
+        # shared release that is only set once BOTH have started. If speculate
+        # ran them sequentially, the second would never start (the first is
+        # parked on release), so awaiting both 'started' events would time out.
+        started = [asyncio.Event(), asyncio.Event()]
+        release = asyncio.Event()
+
+        async def task(i, v):
+            started[i].set()
+            await release.wait()
             return v
 
-        loop = asyncio.get_event_loop()
-        t0 = loop.time()
-        a = speculate(slow("a"))
-        b = speculate(slow("b"))
-        ra, rb = await a.result(), await b.result()
-        elapsed = loop.time() - t0
-        assert (ra, rb) == ("a", "b")
-        assert elapsed < 0.18
+        a = speculate(task(0, "a"))
+        b = speculate(task(1, "b"))
+        await asyncio.wait_for(
+            asyncio.gather(started[0].wait(), started[1].wait()), timeout=1.0,
+        )
+        release.set()
+        assert (await a.result(), await b.result()) == ("a", "b")
 
     @pytest.mark.asyncio
     async def test_cancel_is_safe_before_and_after_done(self):
