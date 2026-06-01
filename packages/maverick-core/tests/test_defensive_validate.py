@@ -184,7 +184,7 @@ class TestCheatingDetectorMinSize:
     independent correct fix matched 100% of gold tokens and got
     falsely rejected as cheating."""
 
-    def test_tiny_obvious_gold_does_not_trigger_false_positive(self):
+    def test_tiny_obvious_gold_still_rejects_verbatim_copy(self):
         from maverick.coding_mode import defensive_validate
         # Tiny gold — adding an empty-name guard. ~10 tokens.
         gold = (
@@ -197,11 +197,9 @@ class TestCheatingDetectorMinSize:
         # Agent independently produces the same fix.
         ours = gold
         result = defensive_validate(ours, gold_patch=gold)
-        # Should NOT be rejected — gold is too small for the cheating
-        # signal to be meaningful.
-        assert result.ok, (
-            "tiny gold patch should be exempt from cheating detection "
-            "to avoid false positives on obvious independent fixes"
+        # Even tiny gold patches should reject verbatim copies.
+        assert not result.ok, (
+            f"tiny verbatim copy should be rejected; warnings={result.warnings}"
         )
 
     def test_substantive_gold_still_catches_real_copy(self):
