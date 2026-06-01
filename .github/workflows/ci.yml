@@ -122,6 +122,41 @@ jobs:
       - name: Test
         run: pytest -vvs --tb=long
 
+  postgres:
+    # DB-backed tests for the Postgres world-model backend. The default `test`
+    # job has no Postgres, so test_postgres_world.py skips there; this job
+    # stands up a service + DSN so the backend is actually exercised in CI.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: maverick
+          POSTGRES_PASSWORD: maverick
+          POSTGRES_DB: maverick_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          set -x
+          pip install -e ./packages/maverick-core
+          pip install 'psycopg[binary]>=3.1'
+          pip install pytest pytest-asyncio
+      - name: Test PostgresWorldModel
+        env:
+          MAVERICK_PG_DSN: postgres://maverick:maverick@localhost:5432/maverick_test
+        run: pytest -vvs packages/maverick-core/tests/test_postgres_world.py
+
   docker:
     runs-on: ubuntu-latest
     steps:
