@@ -64,6 +64,11 @@ def _run_cmd(sandbox, cmd: list[str], *, timeout: float = 120.0) -> tuple[int, s
 
 def _safe_path(sandbox, user_path: str) -> str:
     if sandbox is None:
+        # No workspace to confine to, but still neutralize option-injection:
+        # a path like "-i" / "-write ..." would otherwise be parsed as a flag
+        # by the media binary. Reject leading-dash paths.
+        if user_path.startswith("-"):
+            raise ValueError(f"path {user_path!r} may not begin with '-'")
         return user_path
     workdir = Path(sandbox.workdir).resolve()
     candidate = (workdir / user_path).resolve()
@@ -149,9 +154,14 @@ def _op_identify(args: dict, sandbox) -> str:
 
 
 def _op_composite(args: dict, sandbox) -> str:
-    b = _magick_or_convert()
-    if not b:
-        return "ERROR: ImageMagick not on PATH."
+    # Compositing is `magick composite` on IM7 but a SEPARATE `composite`
+    # binary on IM6 -- `convert` (the IM6 fallback _magick_or_convert picks)
+    # does not composite, so resolve the right binary explicitly.
+    magick = _bin("magick")
+    composite_bin = magick or _bin("composite")
+    if not composite_bin:
+        return ("ERROR: ImageMagick compositing needs the IM7 'magick' or "
+                "IM6 'composite' binary on PATH.")
     base = (args.get("base_path") or "").strip()
     overlay = (args.get("overlay_path") or "").strip()
     dst = (args.get("output_path") or "").strip()
@@ -164,7 +174,7 @@ def _op_composite(args: dict, sandbox) -> str:
     except ValueError as e:
         return f"ERROR: {e}"
     geom = (args.get("geometry") or "+0+0").strip()
-    cmd = [b] if b != "magick" else ["magick", "composite"]
+    cmd = ["magick", "composite"] if magick else [composite_bin]
     code, _o, stderr = _run_cmd(
         sandbox, cmd + ["-geometry", geom, overlay, base, dst],
     )

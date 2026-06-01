@@ -55,6 +55,11 @@ def _run_cmd(sandbox, cmd: list[str], *, timeout: float = 600.0) -> tuple[int, s
 
 def _safe_path(sandbox, user_path: str) -> str:
     if sandbox is None:
+        # No workspace to confine to, but still neutralize option-injection:
+        # a path like "-i" / "-write ..." would otherwise be parsed as a flag
+        # by the media binary. Reject leading-dash paths.
+        if user_path.startswith("-"):
+            raise ValueError(f"path {user_path!r} may not begin with '-'")
         return user_path
     workdir = Path(sandbox.workdir).resolve()
     candidate = (workdir / user_path).resolve()
