@@ -101,6 +101,19 @@ SCHEMA: list[str] = [
       answered_at DOUBLE PRECISION
     );
     """,
+    """
+    CREATE TABLE IF NOT EXISTS approvals (
+      id           SERIAL PRIMARY KEY,
+      action       TEXT NOT NULL,
+      risk         TEXT NOT NULL DEFAULT 'medium',
+      scope        TEXT,
+      detail       TEXT,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      requested_at DOUBLE PRECISION NOT NULL,
+      decided_at   DOUBLE PRECISION
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_approvals_status ON approvals(status, id);",
 ]
 
 
@@ -454,6 +467,62 @@ class PostgresWorldModel:
             )
             rows = cur.fetchall()
         return [Question(*r) for r in rows]
+
+    # ----- approvals (high-risk action consent queue) -----
+
+    def create_approval(
+        self,
+        action: str,
+        *,
+        risk: str = "medium",
+        scope: str | None = None,
+        detail: str | None = None,
+    ) -> int:
+        """Park a high-risk action for out-of-band (dashboard) approval."""
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO approvals(action, risk, scope, detail, status, requested_at) "
+                "VALUES(%s, %s, %s, %s, 'pending', %s) RETURNING id",
+                (action, risk, scope, detail, time.time()),
+            )
+            row = cur.fetchone()
+        return int(row[0])
+
+    def get_approval(self, approval_id: int):
+        from ..world_model import Approval
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, action, risk, scope, detail, status, requested_at, "
+                "decided_at FROM approvals WHERE id = %s",
+                (approval_id,),
+            )
+            row = cur.fetchone()
+        return Approval(*row) if row else None
+
+    def pending_approvals(self) -> list:
+        from ..world_model import Approval
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, action, risk, scope, detail, status, requested_at, "
+                "decided_at FROM approvals WHERE status = 'pending' ORDER BY id"
+            )
+            rows = cur.fetchall()
+        return [Approval(*r) for r in rows]
+
+    def decide_approval(self, approval_id: int, status: str) -> bool:
+        """Flip a pending approval to 'approved'/'denied'. Returns True only if a
+        pending row transitioned (unknown id or already-decided -> False, so a
+        double-click is a no-op)."""
+        if status not in ("approved", "denied"):
+            raise ValueError("status must be 'approved' or 'denied'")
+        with self._tx() as cur:
+            cur.execute(
+                "UPDATE approvals SET status = %s, decided_at = %s "
+                "WHERE id = %s AND status = 'pending'",
+                (status, time.time(), approval_id),
+            )
+            affected = cur.rowcount
+        return affected > 0
 
     # ----- close -----
 
