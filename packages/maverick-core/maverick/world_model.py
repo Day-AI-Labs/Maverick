@@ -561,23 +561,30 @@ class WorldModel:
             return cur.rowcount
 
     def _init_schema_version(self) -> None:
-        # Council finding: two processes opening a brand-new world.db
-        # concurrently both saw 'no row' and both INSERTed with the same
-        # PRIMARY KEY, crashing one of them on IntegrityError. We now
-        # check-then-insert and swallow the IntegrityError if a
-        # concurrent process won the race. (Don't use INSERT OR IGNORE
-        # with a hardcoded VALUES(6) on an existing v1 DB -- it would
-        # create a second row at version=6 alongside the existing v1.)
-        import sqlite3 as _sqlite3
-        row = self.conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
-        if row is None:
-            try:
-                self.conn.execute(
-                    "INSERT INTO schema_version(version) VALUES(?)", (1,)
-                )
-            except _sqlite3.IntegrityError:
-                # Another process beat us to it; their row is fine.
-                pass
+        # Fast path: an already-initialized DB only needs a read. WAL readers
+        # never block a concurrent writer, so don't take a write lock on every
+        # open -- a second connection opening mid-write would otherwise hit
+        # "database is locked".
+        row = self.conn.execute(
+            "SELECT version FROM schema_version LIMIT 1"
+        ).fetchone()
+        if row is not None:
+            return
+        # Fresh DB: seed the single row. Concurrent first-opens raced -- the
+        # old check-then-insert keyed on version=1, but a *losing* connection
+        # ran its INSERT only AFTER the winner had migrated its row up to
+        # SCHEMA_VERSION, so version=1 was free again and it inserted a SECOND
+        # row (the try/except only caught a PK collision). Two rows then made
+        # the no-WHERE `UPDATE schema_version SET version=?` in
+        # _apply_migrations collide on the PK -- the intermittent fresh-open CI
+        # flake. Guard on table-emptiness in one atomic statement: the WHERE
+        # NOT EXISTS is re-checked under SQLite's single-writer lock, so a
+        # loser that saw an empty table above still inserts nothing once the
+        # winner's row is committed. At most one row, ever.
+        self.conn.execute(
+            "INSERT INTO schema_version(version) "
+            "SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM schema_version)"
+        )
 
     def _apply_migrations(self) -> None:
         current = self.conn.execute(
