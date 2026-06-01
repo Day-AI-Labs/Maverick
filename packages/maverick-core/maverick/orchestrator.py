@@ -201,6 +201,23 @@ def _maybe_recall_prior_work(world, goal, shield) -> str | None:
         return None
 
 
+def _record_skill_outcome(ctx: Any, *, success: bool) -> None:
+    """Attribute this run's outcome to the skills it recalled.
+
+    The skills used across the swarm are accumulated on ``ctx.skills_used``
+    (set by each agent at recall time). Closing the loop here lets a skill's
+    track record decay its future recall rank. Fully fail-safe — stats are an
+    optimization, never a correctness dependency, so any error is swallowed.
+    """
+    try:
+        names = sorted(getattr(ctx, "skills_used", None) or ())
+        if names:
+            from . import skill_stats
+            skill_stats.record_outcome(names, success=success)
+    except Exception:  # pragma: no cover -- stats never block a run
+        pass
+
+
 def _maybe_record_reflexion(
     goal: Any, *, failure_class: str, failure_msg: str, blackboard,
     shield: Any | None = None, channel: str | None = None,
@@ -713,6 +730,10 @@ async def run_goal(
                 user_id=user_id,
             )
             world.set_goal_status(goal_id, "blocked", result=result.error)
+            # Attribute the failure to the recalled skills, but NOT when the
+            # run was aborted for budget — that's a cap, not the skill's fault.
+            if not (result.error or "").startswith("budget exceeded:"):
+                _record_skill_outcome(ctx, success=False)
             _fire_webhook("goal_finished", {
                 "goal_id": goal_id, "status": "blocked", "result": result.error,
             })
@@ -773,6 +794,7 @@ async def run_goal(
             semantic_recall.index_goal(world.get_goal(goal_id))
         except Exception as e:  # pragma: no cover -- indexing never blocks a run
             log.debug("semantic index skipped: %s", e)
+        _record_skill_outcome(ctx, success=True)
         _fire_webhook("final_emitted", {
             "goal_id": goal_id,
             "patch_size_bytes": len(summary.encode("utf-8")),

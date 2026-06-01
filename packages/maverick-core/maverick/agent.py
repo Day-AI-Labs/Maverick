@@ -224,6 +224,16 @@ class Agent:
                 skills = relevant_skills(self.brief, load_skills())
                 if skills:
                     base = base + "\n\n" + render_for_prompt(skills)
+                    # Record the recall and remember the names so the
+                    # orchestrator can attribute this run's outcome to them
+                    # at finalize. Fully fail-safe: stats are an optimization.
+                    try:
+                        from . import skill_stats
+                        names = [s.name for s in skills]
+                        skill_stats.record_use(names)
+                        self.ctx.skills_used.update(names)
+                    except Exception:
+                        pass
             except (ImportError, FileNotFoundError, ValueError):
                 pass
 

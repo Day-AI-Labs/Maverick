@@ -71,6 +71,12 @@ class SwarmContext:
     # callers that don't checkpoint.
     episode_id: int = 0
     max_total_spawns: int = field(default_factory=_default_max_total_spawns)
+    # Names of skills recalled into any agent's prompt during this run. The
+    # orchestrator attributes the run's final outcome to them at finalize
+    # (see skill_stats.record_outcome) so the library curates itself. Shared
+    # across the swarm; mutated only on the single event loop, so a plain set
+    # is safe.
+    skills_used: set[str] = field(default_factory=set)
     _spawns_used: int = 0
     _workdir_lock: asyncio.Lock | None = field(default=None, repr=False)
 
