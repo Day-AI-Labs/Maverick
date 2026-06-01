@@ -114,6 +114,43 @@ def _walk_ops(spec: dict):
             yield method.upper(), path, op
 
 
+def _resolve_ref(spec: dict, node: Any, _seen: frozenset[str] = frozenset()) -> Any:
+    """Resolve an internal JSON Reference (``{"$ref": "#/..."}``) within ``spec``.
+
+    Returns the referenced object (following a chain transitively), or the node
+    unchanged when it isn't a ``$ref``, points outside the document, is
+    unresolvable, or would cycle. Never raises -- ref problems must not break
+    describe/call; an unresolved external ref just shows/sends as-is.
+    """
+    if not isinstance(node, dict):
+        return node
+    ref = node.get("$ref")
+    if not isinstance(ref, str) or not ref.startswith("#/") or ref in _seen:
+        return node
+    target: Any = spec
+    for part in ref[2:].split("/"):
+        part = part.replace("~1", "/").replace("~0", "~")  # JSON-pointer unescape
+        if isinstance(target, dict) and part in target:
+            target = target[part]
+        else:
+            return node  # unresolvable pointer: leave the node as-is
+    return _resolve_ref(spec, target, _seen | {ref})
+
+
+def _merged_parameters(spec: dict, path_item: dict, op: dict) -> list[dict]:
+    """Effective parameters for an operation: path-item-level + operation-level,
+    each ``$ref``-resolved, keyed by (name, location) with operation-level
+    overriding path-level (per the OpenAPI spec).
+    """
+    merged: dict[tuple, dict] = {}
+    for source in (path_item.get("parameters") or [], op.get("parameters") or []):
+        for raw in source:
+            p = _resolve_ref(spec, raw)
+            if isinstance(p, dict):
+                merged[(p.get("name"), p.get("in"))] = p
+    return list(merged.values())
+
+
 def _op_list(spec_src: str) -> str:
     spec = _load_spec(spec_src)
     rows: list[str] = []
@@ -141,18 +178,19 @@ def _op_describe(spec_src: str, op_id: str) -> str:
     if not found:
         return f"op {op_id!r} not found"
     method, path, op = found
+    path_item = (spec.get("paths") or {}).get(path) or {}
     lines = [f"{method} {path}",
              f"  summary: {op.get('summary', '')}"]
-    for p in op.get("parameters") or []:
+    for p in _merged_parameters(spec, path_item, op):
         loc = p.get("in", "?")
         name = p.get("name", "?")
         required = "*" if p.get("required") else ""
-        schema = (p.get("schema") or {}).get("type", "?")
+        schema = _resolve_ref(spec, p.get("schema") or {}).get("type", "?")
         lines.append(f"  param ({loc}): {name}{required} : {schema}")
-    body = op.get("requestBody")
+    body = _resolve_ref(spec, op.get("requestBody") or {})
     if body:
         content = (body.get("content") or {}).get("application/json") or {}
-        schema = content.get("schema") or {}
+        schema = _resolve_ref(spec, content.get("schema") or {})
         lines.append("  body (application/json): " + json.dumps(schema, default=str)[:400])
     return "\n".join(lines)
 
@@ -183,7 +221,8 @@ def _op_call(
     # Substitute path params from `params`.
     used: set[str] = set()
     out_path = path
-    for p in op.get("parameters") or []:
+    path_item = (spec.get("paths") or {}).get(path) or {}
+    for p in _merged_parameters(spec, path_item, op):
         if p.get("in") == "path":
             name = p.get("name", "")
             if name in params:
