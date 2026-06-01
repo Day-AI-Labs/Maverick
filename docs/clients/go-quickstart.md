@@ -70,6 +70,24 @@ func main() {
 go run quickstart.go
 ```
 
+## Typed results
+
+Besides the human-readable `res.Content` text, every tool returns
+`res.StructuredContent` — typed JSON matching the tool's `outputSchema`
+(`maverick_facts_get` → `{ "facts": {…} }`). Type-assert it to read
+parsed fields instead of re-parsing prose:
+
+```go
+if sc, ok := res.StructuredContent.(map[string]any); ok {
+	facts := sc["facts"]
+	_ = facts
+}
+```
+
+The shapes are identical across languages — see the
+[TypeScript quickstart](./typescript-quickstart.md) for the full
+per-tool table.
+
 ## SDK status
 
 The Go MCP SDK is community-maintained; pin a specific tag and audit

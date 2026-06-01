@@ -37,5 +37,15 @@ const res = await client.callTool({ name: "maverick_facts_get", arguments: {} })
 assert.ok(res.content, "maverick_facts_get returned no content");
 console.log("maverick_facts_get round-trip OK");
 
+// Every Maverick tool also returns structuredContent: typed JSON matching the
+// tool's outputSchema, so a typed client reads parsed fields instead of
+// re-parsing the human-readable text block. facts_get -> { facts: {...} }.
+assert.ok(res.structuredContent, "maverick_facts_get returned no structuredContent");
+assert.ok(
+  "facts" in res.structuredContent,
+  "structuredContent is missing the 'facts' key",
+);
+console.log("maverick_facts_get structuredContent OK:", JSON.stringify(res.structuredContent));
+
 await client.close();
 console.log("OK: TypeScript client drove Maverick over MCP end-to-end");

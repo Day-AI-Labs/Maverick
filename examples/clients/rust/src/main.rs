@@ -11,7 +11,7 @@
 //!
 //! Run locally:  cargo run
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use rmcp::{
     model::CallToolRequestParams,
     transport::{ConfigureCommandExt, TokioChildProcess},
@@ -48,6 +48,18 @@ async fn main() -> Result<()> {
         bail!("maverick_facts_get returned no content");
     }
     println!("maverick_facts_get round-trip OK");
+
+    // Every Maverick tool also returns structuredContent: typed JSON matching
+    // the tool's outputSchema, so a typed client reads parsed fields instead of
+    // re-parsing the text block. facts_get -> { facts: {...} }.
+    let structured = res
+        .structured_content
+        .as_ref()
+        .context("maverick_facts_get returned no structuredContent")?;
+    if structured.get("facts").is_none() {
+        bail!("structuredContent is missing the 'facts' key");
+    }
+    println!("maverick_facts_get structuredContent OK");
 
     client.cancel().await?;
     println!("OK: Rust client drove Maverick over MCP end-to-end");

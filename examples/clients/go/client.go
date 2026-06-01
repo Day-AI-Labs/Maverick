@@ -59,5 +59,18 @@ func main() {
 		log.Fatal("maverick_facts_get returned no content")
 	}
 	log.Println("maverick_facts_get round-trip OK")
+
+	// Every Maverick tool also returns structuredContent: typed JSON matching
+	// the tool's outputSchema, so a typed client reads parsed fields instead of
+	// re-parsing the text block. facts_get -> { facts: {...} }.
+	structured, ok := res.StructuredContent.(map[string]any)
+	if !ok {
+		log.Fatal("maverick_facts_get returned no structuredContent object")
+	}
+	if _, ok := structured["facts"]; !ok {
+		log.Fatal("structuredContent is missing the 'facts' key")
+	}
+	log.Println("maverick_facts_get structuredContent OK")
+
 	log.Println("OK: Go client drove Maverick over MCP end-to-end")
 }

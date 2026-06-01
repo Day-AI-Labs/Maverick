@@ -73,6 +73,23 @@ async fn main() -> Result<()> {
 cargo run --release
 ```
 
+## Typed results
+
+Besides the human-readable `res.content` text, every tool returns
+`res.structured_content: Option<Value>` — typed JSON matching the
+tool's `outputSchema` (`maverick_facts_get` → `{ "facts": {…} }`):
+
+```rust
+if let Some(structured) = &res.structured_content {
+    let facts = structured.get("facts");
+    let _ = facts;
+}
+```
+
+The shapes are identical across languages — see the
+[TypeScript quickstart](./typescript-quickstart.md) for the full
+per-tool table.
+
 ## Why no `maverick-rs` crate?
 
 Same reason there's no `maverick-go` or `maverick-ts`: porting a
