@@ -6,21 +6,32 @@
     <label for="goal-title" style="display: block; font-weight: 600; margin-bottom: 0.75rem;">
       What do you want Maverick to do?
     </label>
-    <form method="post" action="/chat/send" style="display: flex; gap: 0.5rem;">
-      <input
-        type="text"
-        id="goal-title"
-        name="title"
-        placeholder="Plan a 3-day trip to Lisbon under $1500"
-        required
-        autofocus
-        style="flex: 1; padding: 0.65rem 0.85rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px;"
-      />
-      <button
-        type="submit"
-        id="send-btn"
-        style="padding: 0.65rem 1.5rem; background: var(--accent); color: #fff; border: 0; border-radius: 6px; cursor: pointer; font-weight: 500;"
-      >Run</button>
+    <form method="post" action="/chat/send" style="display: flex; flex-direction: column; gap: 0.5rem;">
+      <div style="display: flex; gap: 0.5rem;">
+        <input
+          type="text"
+          id="goal-title"
+          name="title"
+          placeholder="Plan a 3-day trip to Lisbon under $1500"
+          required
+          autofocus
+          style="flex: 1; padding: 0.65rem 0.85rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px;"
+        />
+        <button
+          type="submit"
+          id="send-btn"
+          style="padding: 0.65rem 1.5rem; background: var(--accent); color: #fff; border: 0; border-radius: 6px; cursor: pointer; font-weight: 500;"
+        >Run</button>
+      </div>
+      <details>
+        <summary style="cursor: pointer; font-size: 0.85rem; color: var(--muted, #888);">Add details (optional)</summary>
+        <textarea
+          name="description"
+          rows="3"
+          placeholder="Extra context, constraints, links, or acceptance criteria for the agent."
+          style="width: 100%; box-sizing: border-box; margin-top: 0.4rem; padding: 0.5rem 0.85rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-family: inherit;"
+        ></textarea>
+      </details>
     </form>
     <p id="goal-error" role="alert" aria-live="assertive"
        style="display: none; margin: 0.75rem 0 0; color: var(--danger); font-size: 0.85rem;"></p>
