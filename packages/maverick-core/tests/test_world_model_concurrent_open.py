@@ -14,7 +14,7 @@ import threading
 
 import pytest
 from maverick import world_model as world_model_module
-from maverick.world_model import WorldModel
+from maverick.world_model import SCHEMA_VERSION, WorldModel
 
 
 def _hammer_opens(db, n: int) -> list[Exception]:
@@ -49,6 +49,26 @@ def test_concurrent_first_open_of_fresh_db(tmp_path):
     """Even with no pre-existing file, concurrent first-opens must not lock."""
     errors = _hammer_opens(tmp_path / "fresh.db", 16)
     assert not errors, f"concurrent first-opens raised: {errors[:3]}"
+
+
+def test_concurrent_first_open_leaves_single_schema_version_row(tmp_path):
+    """A concurrent first-open storm must leave exactly ONE schema_version row.
+
+    The loser of the seed race used to insert a duplicate row (version=1 was
+    free again once the winner had migrated its row up), and the no-WHERE
+    `UPDATE schema_version SET version=?` then collided on the PK -- the
+    intermittent IntegrityError CI flake. The seed is now empty-table-guarded.
+    """
+    db = tmp_path / "fresh.db"
+    errors = _hammer_opens(db, 16)
+    assert not errors, f"concurrent first-opens raised: {errors[:3]}"
+    wm = WorldModel(path=db)
+    try:
+        rows = wm.conn.execute("SELECT COUNT(*) FROM schema_version").fetchone()[0]
+        assert wm.schema_version == SCHEMA_VERSION  # migrated to head, intact
+    finally:
+        wm.close()
+    assert rows == 1, f"expected exactly one schema_version row, got {rows}"
 
 
 def test_wal_retry_uses_short_busy_timeout(monkeypatch, tmp_path):
