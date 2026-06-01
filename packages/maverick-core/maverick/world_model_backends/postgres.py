@@ -16,11 +16,9 @@ Or env:
 
 Behind ``maverick-agent[postgres]`` extra (pulls in ``psycopg[binary]``).
 
-Implementation scope: enough to pass the ``conn``-only paths the agent
-kernel uses (goals, episodes, events, attachments). For the small
-metadata tables that are write-heavy mostly used by channels, we
-defer to a future iteration -- this batch ships the shape + the
-hot-path methods.
+Implementation scope: enough to pass the world-model paths the agent
+kernel, channels, and CLI use (goals, episodes, events, facts,
+questions, conversations, attachments, and idempotency metadata).
 """
 from __future__ import annotations
 
@@ -30,7 +28,7 @@ import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Iterator, Optional
+from typing import Any, Iterator, Optional
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +87,86 @@ SCHEMA: list[str] = [
       updated_at    DOUBLE PRECISION NOT NULL
     );
     """,
+    "ALTER TABLE facts ADD COLUMN IF NOT EXISTS source_episode_id INTEGER REFERENCES episodes(id);",
+    """
+    CREATE TABLE IF NOT EXISTS questions (
+      id          SERIAL PRIMARY KEY,
+      goal_id     INTEGER REFERENCES goals(id),
+      question    TEXT NOT NULL,
+      asked_at    DOUBLE PRECISION NOT NULL,
+      answer      TEXT,
+      answered_at DOUBLE PRECISION
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_questions_goal_id ON questions(goal_id, id);",
+    """
+    CREATE TABLE IF NOT EXISTS messages (
+      id      SERIAL PRIMARY KEY,
+      goal_id INTEGER REFERENCES goals(id),
+      role    TEXT NOT NULL,
+      content TEXT NOT NULL,
+      ts      DOUBLE PRECISION NOT NULL
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_messages_ts ON messages(ts DESC);",
+    """
+    CREATE TABLE IF NOT EXISTS conversations (
+      id         SERIAL PRIMARY KEY,
+      channel    TEXT NOT NULL,
+      user_id    TEXT NOT NULL,
+      created_at DOUBLE PRECISION NOT NULL,
+      last_seen  DOUBLE PRECISION NOT NULL,
+      UNIQUE(channel, user_id)
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_conversations_last_seen ON conversations(last_seen);",
+    """
+    CREATE TABLE IF NOT EXISTS turns (
+      id              SERIAL PRIMARY KEY,
+      conversation_id INTEGER NOT NULL REFERENCES conversations(id),
+      goal_id         INTEGER REFERENCES goals(id),
+      role            TEXT NOT NULL,
+      content         TEXT NOT NULL,
+      ts              DOUBLE PRECISION NOT NULL
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_turns_conv_id ON turns(conversation_id, id);",
+    """
+    CREATE TABLE IF NOT EXISTS attachments (
+      id         SERIAL PRIMARY KEY,
+      goal_id    INTEGER NOT NULL REFERENCES goals(id),
+      filename   TEXT NOT NULL,
+      mime       TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      sha256     TEXT NOT NULL,
+      path       TEXT NOT NULL,
+      created_at DOUBLE PRECISION NOT NULL
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_attachments_goal_id ON attachments(goal_id);",
+    """
+    CREATE TABLE IF NOT EXISTS processed_messages (
+      id          SERIAL PRIMARY KEY,
+      channel     TEXT NOT NULL,
+      external_id TEXT NOT NULL,
+      goal_id     INTEGER REFERENCES goals(id),
+      seen_at     DOUBLE PRECISION NOT NULL,
+      UNIQUE(channel, external_id)
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS approvals (
+      id           SERIAL PRIMARY KEY,
+      action       TEXT NOT NULL,
+      risk         TEXT NOT NULL DEFAULT 'medium',
+      scope        TEXT,
+      detail       TEXT,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      requested_at DOUBLE PRECISION NOT NULL,
+      decided_at   DOUBLE PRECISION
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_approvals_status_id ON approvals(status, id);",
 ]
 
 
@@ -215,12 +293,60 @@ class PostgresWorldModel:
             cur.execute(
                 "SELECT id, parent_id, title, description, status, "
                 "created_at, updated_at, deadline, result FROM goals "
-                "WHERE status IN ('pending', 'in_progress', 'running') "
+                "WHERE status IN ('pending', 'in_progress', 'running', 'active') "
                 "ORDER BY updated_at DESC LIMIT %s",
                 (limit,),
             )
             rows = cur.fetchall()
         return [PGGoal(*r) for r in rows]
+
+    def list_goals(
+        self,
+        status: Optional[str] = None,
+        *,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        order: str = "asc",
+    ) -> list[PGGoal]:
+        direction = "DESC" if order.lower() == "desc" else "ASC"
+        sql = (
+            "SELECT id, parent_id, title, description, status, "
+            "created_at, updated_at, deadline, result FROM goals"
+        )
+        params: list[Any] = []
+        if status:
+            sql += " WHERE status=%s"
+            params.append(status)
+        sql += f" ORDER BY id {direction}"
+        if limit is not None:
+            sql += " LIMIT %s OFFSET %s"
+            params.extend((max(1, int(limit)), max(0, int(offset))))
+        with self._tx() as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+        return [PGGoal(*r) for r in rows]
+
+    def active_goal(self) -> Optional[PGGoal]:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, parent_id, title, description, status, "
+                "created_at, updated_at, deadline, result FROM goals "
+                "WHERE status IN ('active', 'blocked') "
+                "ORDER BY updated_at DESC LIMIT 1"
+            )
+            row = cur.fetchone()
+        return PGGoal(*row) if row else None
+
+    def reclaim_orphan_goals(self, *, max_age_seconds: float = 60.0) -> int:
+        cutoff = time.time() - max_age_seconds
+        with self._tx() as cur:
+            cur.execute(
+                "UPDATE goals SET status='blocked', updated_at=%s, "
+                "result=COALESCE(result, 'reclaimed after interrupted run') "
+                "WHERE status='active' AND updated_at < %s",
+                (time.time(), cutoff),
+            )
+            return int(cur.rowcount or 0)
 
     # ----- episodes -----
 
@@ -255,6 +381,45 @@ class PostgresWorldModel:
                  episode_id),
             )
 
+    def list_episodes(
+        self,
+        limit: int = 50,
+        goal_id: Optional[int] = None,
+    ) -> list:
+        from ..world_model import EpisodeSpend
+
+        select = (
+            "SELECT id, goal_id, started_at, ended_at, outcome, "
+            "COALESCE(cost_dollars, 0), COALESCE(input_tokens, 0), "
+            "COALESCE(output_tokens, 0), COALESCE(tool_calls, 0) FROM episodes"
+        )
+        if goal_id is not None:
+            sql = select + " WHERE goal_id=%s ORDER BY started_at DESC LIMIT %s"
+            params: tuple[Any, ...] = (goal_id, limit)
+        else:
+            sql = select + " ORDER BY started_at DESC LIMIT %s"
+            params = (limit,)
+        with self._tx() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+        return [EpisodeSpend(*r) for r in rows]
+
+    def total_spend(self) -> dict[str, float]:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT COALESCE(SUM(cost_dollars), 0), "
+                "COALESCE(SUM(input_tokens), 0), "
+                "COALESCE(SUM(output_tokens), 0), COUNT(*) "
+                "FROM episodes WHERE ended_at IS NOT NULL"
+            )
+            row = cur.fetchone()
+        return {
+            "dollars": row[0],
+            "input_tokens": row[1],
+            "output_tokens": row[2],
+            "runs": row[3],
+        }
+
     # ----- events -----
 
     def append_event(self, goal_id: int, agent: str, kind: str, content: str) -> int:
@@ -277,6 +442,313 @@ class PostgresWorldModel:
             )
             rows = cur.fetchall()
         return [GoalEvent(*r) for r in rows]
+
+    def prune_goal_events(self, older_than_seconds: float = 30 * 24 * 3600) -> int:
+        cutoff = time.time() - older_than_seconds
+        with self._tx() as cur:
+            cur.execute("DELETE FROM goal_events WHERE ts < %s", (cutoff,))
+            return int(cur.rowcount or 0)
+
+    # ----- facts -----
+
+    def upsert_fact(self, key: str, value: str, episode_id: Optional[int] = None) -> None:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO facts(key, value, source_episode_id, updated_at) "
+                "VALUES(%s, %s, %s, %s) "
+                "ON CONFLICT(key) DO UPDATE SET "
+                "value = EXCLUDED.value, "
+                "source_episode_id = EXCLUDED.source_episode_id, "
+                "updated_at = EXCLUDED.updated_at",
+                (key, value, episode_id, time.time()),
+            )
+
+    def get_facts(self) -> dict[str, str]:
+        with self._tx() as cur:
+            cur.execute("SELECT key, value FROM facts ORDER BY updated_at DESC")
+            rows = cur.fetchall()
+        return {str(r[0]): str(r[1]) for r in rows}
+
+    # ----- questions -----
+
+    def ask(self, question: str, goal_id: Optional[int] = None) -> int:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO questions(goal_id, question, asked_at) "
+                "VALUES(%s, %s, %s) RETURNING id",
+                (goal_id, question, time.time()),
+            )
+            row = cur.fetchone()
+        return int(row[0])
+
+    def answer(self, question_id: int, answer: str) -> None:
+        with self._tx() as cur:
+            cur.execute(
+                "UPDATE questions SET answer=%s, answered_at=%s WHERE id=%s",
+                (answer, time.time(), question_id),
+            )
+
+    def open_questions(self, goal_id: Optional[int] = None) -> list:
+        from ..world_model import Question
+
+        if goal_id is not None:
+            sql = (
+                "SELECT id, goal_id, question, asked_at, answer, answered_at "
+                "FROM questions WHERE answer IS NULL AND goal_id=%s ORDER BY id"
+            )
+            params: tuple[Any, ...] = (goal_id,)
+        else:
+            sql = (
+                "SELECT id, goal_id, question, asked_at, answer, answered_at "
+                "FROM questions WHERE answer IS NULL ORDER BY id"
+            )
+            params = ()
+        with self._tx() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+        return [Question(*r) for r in rows]
+
+    def all_questions(self, goal_id: int) -> list:
+        from ..world_model import Question
+
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, goal_id, question, asked_at, answer, answered_at "
+                "FROM questions WHERE goal_id=%s ORDER BY id",
+                (goal_id,),
+            )
+            rows = cur.fetchall()
+        return [Question(*r) for r in rows]
+
+    # ----- approvals -----
+
+    def create_approval(
+        self,
+        action: str,
+        *,
+        risk: str = "medium",
+        scope: Optional[str] = None,
+        detail: Optional[str] = None,
+    ) -> int:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO approvals(action, risk, scope, detail, status, requested_at) "
+                "VALUES(%s, %s, %s, %s, 'pending', %s) RETURNING id",
+                (action, risk, scope, detail, time.time()),
+            )
+            row = cur.fetchone()
+        return int(row[0])
+
+    def get_approval(self, approval_id: int):
+        from ..world_model import Approval
+
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, action, risk, scope, detail, status, requested_at, decided_at "
+                "FROM approvals WHERE id=%s",
+                (approval_id,),
+            )
+            row = cur.fetchone()
+        return Approval(*row) if row else None
+
+    def pending_approvals(self) -> list:
+        from ..world_model import Approval
+
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, action, risk, scope, detail, status, requested_at, decided_at "
+                "FROM approvals WHERE status='pending' ORDER BY id"
+            )
+            rows = cur.fetchall()
+        return [Approval(*r) for r in rows]
+
+    def decide_approval(self, approval_id: int, status: str) -> bool:
+        if status not in ("approved", "denied"):
+            raise ValueError("status must be 'approved' or 'denied'")
+        with self._tx() as cur:
+            cur.execute(
+                "UPDATE approvals SET status=%s, decided_at=%s "
+                "WHERE id=%s AND status='pending'",
+                (status, time.time(), approval_id),
+            )
+            return bool(cur.rowcount and cur.rowcount > 0)
+
+    # ----- messages -----
+
+    def append_message(self, goal_id: int, role: str, content: str) -> None:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO messages(goal_id, role, content, ts) VALUES(%s, %s, %s, %s)",
+                (goal_id, role, content, time.time()),
+            )
+
+    def search_messages(self, query: str, limit: int = 10) -> list[dict]:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, goal_id, role, content, ts FROM messages "
+                "WHERE content ILIKE %s ORDER BY ts DESC LIMIT %s",
+                (f"%{query}%", limit),
+            )
+            rows = cur.fetchall()
+        return [
+            {"id": r[0], "goal_id": r[1], "role": r[2], "content": r[3], "ts": r[4]}
+            for r in rows
+        ]
+
+    # ----- conversations -----
+
+    def get_or_create_conversation(self, channel: str, user_id: str):
+        from ..world_model import Conversation
+
+        now = time.time()
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO conversations(channel, user_id, created_at, last_seen) "
+                "VALUES(%s, %s, %s, %s) "
+                "ON CONFLICT(channel, user_id) DO UPDATE SET last_seen = EXCLUDED.last_seen "
+                "RETURNING id, channel, user_id, created_at, last_seen",
+                (channel, user_id, now, now),
+            )
+            row = cur.fetchone()
+        return Conversation(*row)
+
+    def append_turn(
+        self,
+        conversation_id: int,
+        role: str,
+        content: str,
+        goal_id: Optional[int] = None,
+    ) -> int:
+        if role not in ("user", "assistant"):
+            raise ValueError(f"role must be 'user' or 'assistant', got {role!r}")
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO turns(conversation_id, goal_id, role, content, ts) "
+                "VALUES(%s, %s, %s, %s, %s) RETURNING id",
+                (conversation_id, goal_id, role, content, time.time()),
+            )
+            row = cur.fetchone()
+        return int(row[0])
+
+    def recent_turns(self, conversation_id: int, limit: int = 20) -> list:
+        from ..world_model import Turn
+
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, conversation_id, goal_id, role, content, ts FROM ("
+                "SELECT id, conversation_id, goal_id, role, content, ts FROM turns "
+                "WHERE conversation_id=%s ORDER BY id DESC LIMIT %s"
+                ") recent ORDER BY id ASC",
+                (conversation_id, limit),
+            )
+            rows = cur.fetchall()
+        return [Turn(*r) for r in rows]
+
+    def list_conversations(self, channel: Optional[str] = None) -> list:
+        from ..world_model import Conversation
+
+        if channel:
+            sql = (
+                "SELECT id, channel, user_id, created_at, last_seen FROM conversations "
+                "WHERE channel=%s ORDER BY last_seen DESC"
+            )
+            params: tuple[Any, ...] = (channel,)
+        else:
+            sql = (
+                "SELECT id, channel, user_id, created_at, last_seen FROM conversations "
+                "ORDER BY last_seen DESC"
+            )
+            params = ()
+        with self._tx() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+        return [Conversation(*r) for r in rows]
+
+    def prune_conversations(self, idle_for_seconds: float = 90 * 24 * 3600) -> int:
+        cutoff = time.time() - idle_for_seconds
+        with self._tx() as cur:
+            cur.execute(
+                "DELETE FROM turns WHERE conversation_id IN "
+                "(SELECT id FROM conversations WHERE last_seen < %s)",
+                (cutoff,),
+            )
+            cur.execute("DELETE FROM conversations WHERE last_seen < %s", (cutoff,))
+            return int(cur.rowcount or 0)
+
+    # ----- channel dedup -----
+
+    def mark_message_processed(
+        self,
+        channel: str,
+        external_id: str,
+        goal_id: Optional[int] = None,
+    ) -> bool:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO processed_messages(channel, external_id, goal_id, seen_at) "
+                "VALUES(%s, %s, %s, %s) ON CONFLICT(channel, external_id) DO NOTHING "
+                "RETURNING id",
+                (channel, external_id, goal_id, time.time()),
+            )
+            return cur.fetchone() is not None
+
+    def lookup_processed_message(self, channel: str, external_id: str) -> Optional[int]:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT goal_id FROM processed_messages WHERE channel=%s AND external_id=%s",
+                (channel, external_id),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return int(row[0]) if row[0] is not None else 0
+
+    def is_processed_message(self, channel: str, external_id: str) -> bool:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT 1 FROM processed_messages "
+                "WHERE channel=%s AND external_id=%s LIMIT 1",
+                (channel, external_id),
+            )
+            return cur.fetchone() is not None
+
+    def prune_processed_messages(self, older_than_seconds: float = 30 * 24 * 3600) -> int:
+        cutoff = time.time() - older_than_seconds
+        with self._tx() as cur:
+            cur.execute("DELETE FROM processed_messages WHERE seen_at < %s", (cutoff,))
+            return int(cur.rowcount or 0)
+
+    # ----- attachments -----
+
+    def add_attachment(
+        self,
+        goal_id: int,
+        filename: str,
+        mime: str,
+        size_bytes: int,
+        sha256: str,
+        path: str,
+    ) -> int:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO attachments(goal_id, filename, mime, size_bytes, sha256, path, created_at) "
+                "VALUES(%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (goal_id, filename, mime, size_bytes, sha256, path, time.time()),
+            )
+            row = cur.fetchone()
+        return int(row[0])
+
+    def list_attachments(self, goal_id: int) -> list:
+        from ..world_model import Attachment
+
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, goal_id, filename, mime, size_bytes, sha256, path, created_at "
+                "FROM attachments WHERE goal_id=%s ORDER BY id",
+                (goal_id,),
+            )
+            rows = cur.fetchall()
+        return [Attachment(*r) for r in rows]
 
     # ----- close -----
 

@@ -63,3 +63,26 @@ def test_open_world_returns_real_postgres_model(monkeypatch):
 
     world = open_world()
     assert isinstance(world, PostgresWorldModel)
+
+
+def test_postgres_world_model_exposes_runtime_world_methods():
+    """Postgres backend must keep the server/orchestrator hot-path API."""
+    from maverick.world_model import WorldModel
+    from maverick.world_model_backends import PostgresWorldModel
+
+    runtime_methods = [
+        "get_facts",
+        "open_questions",
+        "get_or_create_conversation",
+        "append_turn",
+        "recent_turns",
+        "append_message",
+        "list_attachments",
+        "mark_message_processed",
+        "lookup_processed_message",
+        "is_processed_message",
+        "reclaim_orphan_goals",
+    ]
+    for name in runtime_methods:
+        assert hasattr(WorldModel, name), name
+        assert hasattr(PostgresWorldModel, name), name
