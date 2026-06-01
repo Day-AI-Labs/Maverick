@@ -27,13 +27,20 @@ from pathlib import Path
 
 MARKER_RE = re.compile(
     r"""
-    (?P<prefix>(?:\#|//|--|/\*|\*)\s*)  # comment leader
-    AI                                   # marker word
-    (?P<sep>[!?:])                       # !, ?, or :
+    (?:
+        (?:\#|/\*)\s*            # unambiguous comment starts (# , /*): anywhere,
+                                 #   so trailing markers (foo()  # AI! x) work.
+      | ^\s*(?://|--|\*)\s*      # ambiguous leaders (// -- *) ONLY at line start.
+                                 #   Mid-line they're operators (5 * AI!, 10 // AI?,
+                                 #   x -- AI!) and the unanchored pattern spawned
+                                 #   spurious goals from ordinary source code.
+    )
+    AI                           # marker word
+    (?P<sep>[!?:])               # !, ?, or :
     \s*
-    (?P<text>.*)                          # remainder of line
+    (?P<text>.*)                  # remainder of line
     """,
-    re.VERBOSE,
+    re.VERBOSE | re.MULTILINE,
 )
 
 

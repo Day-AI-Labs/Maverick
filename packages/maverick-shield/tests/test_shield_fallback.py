@@ -7,6 +7,9 @@ inputs through, and that `backend="none"` is the explicit kill switch.
 """
 from __future__ import annotations
 
+import sys
+import types
+
 from maverick_shield import Shield, ShieldVerdict
 
 
@@ -107,3 +110,84 @@ def test_scan_output_flag_disables_output_scan():
 def test_flags_default_on_still_scan():
     sh = Shield(backend="builtin")
     assert not sh.scan_tool_call("shell", {"cmd": "rm -rf /"}).allowed
+
+
+# ---------- case/whitespace-insensitive config normalization ----------
+# profile/block_threshold/backend come from user-typed TOML and are compared
+# against lowercase literals (== "off"/"none", the {"strict": ...} sensitivity
+# lookup, SEVERITY_ORDER). Without normalization a config like profile = "Off"
+# or "Strict" silently misapplies (safety stays on; "Strict" falls through to
+# medium sensitivity). Normalize once in __init__ so every downstream read hits.
+
+def test_uppercase_profile_off_disables_shield():
+    s = Shield(profile="OFF", warn_if_missing=False)
+    assert not s.enabled
+    assert s.scan_input("<|im_start|>jailbreak").allowed
+
+
+def test_mixed_case_backend_none_disables_shield():
+    s = Shield(backend="None", warn_if_missing=False)
+    assert not s.enabled
+
+
+def test_profile_off_tolerates_surrounding_whitespace():
+    s = Shield(profile="  Off  ", warn_if_missing=False)
+    assert not s.enabled
+
+
+def test_profile_and_threshold_stored_normalized():
+    # The stored values feed case-sensitive lookups ({"strict": ...}.get(profile),
+    # SEVERITY_ORDER[block_threshold]); they must be lowercased so a user-typed
+    # "Strict"/"HIGH" resolves instead of silently defaulting.
+    s = Shield(profile="Strict", block_threshold="HIGH", warn_if_missing=False)
+    assert s.profile == "strict"
+    assert s.block_threshold == "high"
+
+
+def test_none_profile_defaults_to_balanced():
+    s = Shield(profile=None, warn_if_missing=False)  # type: ignore[arg-type]
+    assert s.profile == "balanced"
+    assert s.enabled
+
+
+def test_non_string_profile_is_coerced_without_crashing():
+    s = Shield(profile=True, warn_if_missing=False)
+    assert s.profile == "true"
+    assert s.enabled
+
+
+def test_non_string_threshold_is_coerced_without_crashing():
+    s = Shield(block_threshold=1, warn_if_missing=False)
+    assert s.block_threshold == "1"
+    assert s.scan_input("summarize the latest news about open-source AI").allowed
+
+
+def test_non_string_backend_is_coerced_without_crashing():
+    s = Shield(backend=True, warn_if_missing=False)
+    assert s.backend == Shield.BACKEND_BUILTIN
+
+
+def test_falsy_non_string_config_values_keep_defaults():
+    s = Shield(profile=False, block_threshold=0, backend=False, warn_if_missing=False)
+    assert s.profile == "balanced"
+    assert s.block_threshold == "high"
+    assert s.enabled
+
+
+def test_from_config_tolerates_non_string_safety_values(monkeypatch):
+    maverick_module = types.ModuleType("maverick")
+    config_module = types.ModuleType("maverick.config")
+
+    def get_safety():
+        return {"profile": True, "block_threshold": 1}
+
+    config_module.get_safety = get_safety
+    maverick_module.config = config_module
+    monkeypatch.setitem(sys.modules, "maverick", maverick_module)
+    monkeypatch.setitem(sys.modules, "maverick.config", config_module)
+
+    s = Shield.from_config()
+
+    assert s.profile == "true"
+    assert s.block_threshold == "1"
+    assert s.enabled

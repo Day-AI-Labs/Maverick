@@ -21,6 +21,29 @@ from . import Tool
 
 log = logging.getLogger(__name__)
 
+# Hard cap on rows pulled into memory, regardless of the requested `n`. The
+# tool only ever renders the top `n` (<=200) rows or whole-frame summaries, so
+# reading a multi-GB file in full would OOM the process for no benefit. Loading
+# this many rows + 1 also lets us tell the caller the data was truncated.
+_MAX_LOAD_ROWS = 100_000
+
+
+def _safe_path(sandbox, user_path: str) -> Path:
+    """Resolve ``user_path`` confined to the sandbox workspace.
+
+    Without a sandbox the tool ran ``Path(expanduser(src))`` on any host path,
+    so the model could read ``/etc/passwd`` or ``~/.ssh/id_rsa``. When a
+    sandbox is wired in, resolve under ``sandbox.workdir`` and refuse anything
+    that escapes it.
+    """
+    if sandbox is None:
+        return Path(os.path.expanduser(user_path))
+    workdir = Path(sandbox.workdir).resolve()
+    candidate = Path(user_path)
+    candidate = (workdir / candidate).resolve() if not candidate.is_absolute() else candidate.resolve()
+    candidate.relative_to(workdir)  # raises ValueError if it escapes
+    return candidate
+
 
 _PANDAS_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -59,14 +82,19 @@ def _load(path: Path):
             "pandas not installed. Run: pip install 'maverick-agent[pandas]'"
         ) from e
     ext = path.suffix.lower()
+    # Read at most _MAX_LOAD_ROWS+1 so a huge file can't exhaust memory; the
+    # extra row lets callers detect truncation. csv/jsonl support streaming row
+    # caps natively; parquet/json are read then head-capped (pyarrow/json have
+    # no cheap nrows, but the cap still bounds what we keep in the frame).
+    cap = _MAX_LOAD_ROWS + 1
     if ext == ".csv":
-        return pd.read_csv(path)
-    if ext == ".parquet":
-        return pd.read_parquet(path)
-    if ext == ".json":
-        return pd.read_json(path)
+        return pd.read_csv(path, nrows=cap)
     if ext == ".jsonl":
-        return pd.read_json(path, lines=True)
+        return pd.read_json(path, lines=True, nrows=cap)
+    if ext == ".parquet":
+        return pd.read_parquet(path).head(cap)
+    if ext == ".json":
+        return pd.read_json(path).head(cap)
     raise ValueError(f"unsupported file extension: {ext}")
 
 
@@ -118,14 +146,17 @@ def _fmt(df, *, max_rows: int = 20) -> str:
         return str(df)
 
 
-def _run(args: dict[str, Any]) -> str:
+def _run(args: dict[str, Any], sandbox) -> str:
     op = args.get("op")
     src = (args.get("source") or "").strip()
     if not op:
         return "ERROR: op is required"
     if not src:
         return "ERROR: source is required"
-    path = Path(os.path.expanduser(src))
+    try:
+        path = _safe_path(sandbox, src)
+    except ValueError:
+        return f"ERROR: path escapes the workspace: {src!r}"
     if not path.exists() or not path.is_file():
         return f"ERROR: file not found: {src!r}"
 
@@ -135,6 +166,16 @@ def _run(args: dict[str, Any]) -> str:
         return f"ERROR: {e}"
     except Exception as e:
         return f"ERROR: cannot load {src!r}: {type(e).__name__}: {e}"
+
+    truncated = ""
+    try:
+        if len(df) > _MAX_LOAD_ROWS:
+            df = df.head(_MAX_LOAD_ROWS)
+            truncated = (
+                f"\n[note: input truncated to the first {_MAX_LOAD_ROWS:,} rows]"
+            )
+    except TypeError:  # df without len() — leave as-is
+        pass
 
     n = max(1, min(int(args.get("n") or 20), 200))
     where = args.get("where")
@@ -146,17 +187,17 @@ def _run(args: dict[str, Any]) -> str:
 
     try:
         if op == "head":
-            return _fmt(df, max_rows=n)
-        if op == "describe":
-            return df.describe(include="all").to_string()
-        if op == "value_counts":
+            out = _fmt(df, max_rows=n)
+        elif op == "describe":
+            out = df.describe(include="all").to_string()
+        elif op == "value_counts":
             col = (args.get("column") or "").strip()
             if not col:
                 return "ERROR: value_counts requires column"
-            return df[col].value_counts().head(n).to_string()
-        if op == "filter":
-            return _fmt(df, max_rows=n)
-        if op == "groupby":
+            out = df[col].value_counts().head(n).to_string()
+        elif op == "filter":
+            out = _fmt(df, max_rows=n)
+        elif op == "groupby":
             col = (args.get("column") or "").strip()
             agg_col = (args.get("agg_column") or "").strip()
             agg_fn = (args.get("agg") or "count").strip()
@@ -167,13 +208,15 @@ def _run(args: dict[str, Any]) -> str:
                 result = grouped.size().sort_values(ascending=False)
             else:
                 result = grouped[agg_col].agg(agg_fn).sort_values(ascending=False)
-            return result.head(n).to_string()
+            out = result.head(n).to_string()
+        else:
+            return f"ERROR: unknown op {op!r}"
     except Exception as e:
         return f"ERROR: {op} failed: {type(e).__name__}: {e}"
-    return f"ERROR: unknown op {op!r}"
+    return out + truncated
 
 
-def pandas_query() -> Tool:
+def pandas_query(sandbox=None) -> Tool:
     return Tool(
         name="pandas_query",
         description=(
@@ -186,5 +229,5 @@ def pandas_query() -> Tool:
             "'maverick-agent[pandas]'."
         ),
         input_schema=_PANDAS_SCHEMA,
-        fn=_run,
+        fn=lambda args: _run(args, sandbox),
     )

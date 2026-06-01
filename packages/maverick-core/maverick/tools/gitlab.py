@@ -67,9 +67,12 @@ def _config() -> tuple[str, str]:
 def _client():
     import httpx
     base, tok = _config()
+    # follow_redirects=False: PRIVATE-TOKEN is a custom auth header that httpx
+    # does NOT strip on a cross-host redirect, so a 30x off a (user-set,
+    # possibly self-hosted) GITLAB_URL would leak the PAT to another host.
     return base, httpx.Client(
         headers={"PRIVATE-TOKEN": tok, "Accept": "application/json"},
-        timeout=30.0, follow_redirects=True,
+        timeout=30.0, follow_redirects=False,
     )
 
 
@@ -77,15 +80,44 @@ def _enc(project: str) -> str:
     return urllib.parse.quote(project, safe="")
 
 
+def _paginated_get(client, url: str, params: dict, limit: int) -> list[dict]:
+    """GET ``url`` following GitLab's ``X-Next-Page`` header pagination until
+    ``limit`` items are collected.
+
+    GitLab caps ``per_page`` at 100, so a single page can't satisfy a request
+    that legitimately spans pages; this follows the ``X-Next-Page`` header
+    (empty when there are no more pages). Bounded by ``limit`` and a hard page
+    cap so a huge project can't loop unbounded.
+    """
+    items: list[dict] = []
+    page = 1
+    max_pages = max(1, (limit // 100) + 2)
+    for _ in range(max_pages):
+        p = dict(params)
+        p["per_page"] = min(100, max(1, limit - len(items)))
+        p["page"] = page
+        r = client.get(url, params=p)
+        r.raise_for_status()
+        batch = r.json()
+        if not isinstance(batch, list):
+            break
+        items.extend(batch)
+        if len(items) >= limit:
+            break
+        nxt = str(r.headers.get("X-Next-Page") or "").strip()
+        if not nxt.isdigit():
+            break
+        page = int(nxt)
+    return items[:limit]
+
+
 def _list_issues(project: str, state: str, limit: int) -> str:
     base, client = _client()
     with client:
-        r = client.get(
-            f"{base}/api/v4/projects/{_enc(project)}/issues",
-            params={"state": state, "per_page": limit},
+        items = _paginated_get(
+            client, f"{base}/api/v4/projects/{_enc(project)}/issues",
+            {"state": state}, limit,
         )
-        r.raise_for_status()
-        items = r.json()
     if not items:
         return "no issues"
     return "\n".join(
@@ -141,12 +173,10 @@ def _issue_comment(project: str, iid: int, body: str) -> str:
 def _mr_list(project: str, state: str, limit: int) -> str:
     base, client = _client()
     with client:
-        r = client.get(
-            f"{base}/api/v4/projects/{_enc(project)}/merge_requests",
-            params={"state": state, "per_page": limit},
+        items = _paginated_get(
+            client, f"{base}/api/v4/projects/{_enc(project)}/merge_requests",
+            {"state": state}, limit,
         )
-        r.raise_for_status()
-        items = r.json()
     if not items:
         return "no merge requests"
     return "\n".join(
@@ -189,16 +219,14 @@ def _mr_comment(project: str, iid: int, body: str) -> str:
 
 def _pipelines(project: str, ref: str, limit: int) -> str:
     base, client = _client()
-    params = {"per_page": limit}
+    params: dict = {}
     if ref:
         params["ref"] = ref
     with client:
-        r = client.get(
-            f"{base}/api/v4/projects/{_enc(project)}/pipelines",
-            params=params,
+        items = _paginated_get(
+            client, f"{base}/api/v4/projects/{_enc(project)}/pipelines",
+            params, limit,
         )
-        r.raise_for_status()
-        items = r.json()
     if not items:
         return "no pipelines"
     return "\n".join(

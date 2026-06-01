@@ -42,8 +42,10 @@ installable against a hand-typed checksum.
   dependency list in an embedded, hash-locked `requirements.txt` section
   rather than vendoring every transitive `resource` block by hand. The
   formula installs the Homebrew-downloaded, checksum-verified sdist with
-  `--no-deps` and installs only the hashed binary dependency artifacts listed in
-  that generated requirements section.
+  `--no-deps` first, then installs only the hashed binary dependency artifacts
+  listed in that generated requirements section. Installing the local sdist
+  first keeps packages such as `maverick-installer` from resolving
+  `maverick-agent` from PyPI while pip is in `--require-hashes` mode.
 - **Needs a macOS `brew install --build-from-source maverick` smoke test**
   before the tap is announced — that can't run in this repo's Linux CI.
 - Pinned to a real release (not `main`), so `brew upgrade` tracks tagged

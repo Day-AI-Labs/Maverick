@@ -8,6 +8,12 @@ Auth: none — uses the local ``adb`` binary. Authorization happens
 on the device (developer-mode + USB-debug prompt) once per host;
 nothing for Maverick to manage.
 
+Intentionally host-local: ``adb`` talks to a USB/network-attached
+device via the host's adb daemon, which a sandboxed container can't
+reach. This tool shells out directly (scrubbed env) rather than through
+``sandbox.exec`` — a deliberate exception to the "sandbox-mediate all
+shell" rule.
+
 ops:
   - devices()                          — list connected devices
   - shell(cmd)                         — run a shell command (defaults to first device)

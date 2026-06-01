@@ -13,17 +13,11 @@ from __future__ import annotations
 
 import logging
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
 from . import Tool
 
-
-def _scrub() -> dict:
-    """Child env with secrets stripped (shared tools.scrub_child_env)."""
-    from . import scrub_child_env
-    return scrub_child_env()
 log = logging.getLogger(__name__)
 
 
@@ -62,12 +56,10 @@ def _identify_bin() -> str | None:
     return _bin("magick", "identify")
 
 
-def _run_cmd(cmd: list[str], *, timeout: float = 120.0) -> tuple[int, str, str]:
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=_scrub())
-        return r.returncode, r.stdout, r.stderr
-    except subprocess.TimeoutExpired:
-        return 124, "", f"TIMEOUT after {timeout}s"
+def _run_cmd(sandbox, cmd: list[str], *, timeout: float = 120.0) -> tuple[int, str, str]:
+    """Run an ImageMagick argv through the sandbox chokepoint."""
+    from . import sandbox_run
+    return sandbox_run(sandbox, cmd, timeout=timeout)
 
 
 def _safe_path(sandbox, user_path: str) -> str:
@@ -97,9 +89,13 @@ def _op_resize(args: dict, sandbox) -> str:
         return f"ERROR: {e}"
     w = int(args.get("width") or 0)
     h = int(args.get("height") or 0)
-    geom = f"{w if w else ''}x{h if h else ''}" or "100%"
+    # When neither dimension is given the f-string is "x" (truthy), so the
+    # old `or "100%"` fallback never fired and ImageMagick got "-resize x".
+    geom = f"{w if w else ''}x{h if h else ''}"
+    if geom == "x":
+        geom = "100%"
     cmd = [b] if b != "magick" else ["magick", "convert"]
-    code, _o, stderr = _run_cmd(cmd + [src, "-resize", geom, dst])
+    code, _o, stderr = _run_cmd(sandbox, cmd + [src, "-resize", geom, dst])
     if code != 0:
         return f"ERROR: resize ({code}): {stderr.strip()[-300:]}"
     return f"wrote {dst} ({geom})"
@@ -121,7 +117,7 @@ def _op_convert(args: dict, sandbox) -> str:
     cmd = [b] if b != "magick" else ["magick", "convert"]
     from . import safe_media_args
     extra = safe_media_args(args.get("args"))
-    code, _o, stderr = _run_cmd(cmd + [src, *extra, dst])
+    code, _o, stderr = _run_cmd(sandbox, cmd + [src, *extra, dst])
     if code != 0:
         return f"ERROR: convert ({code}): {stderr.strip()[-300:]}"
     return f"wrote {dst}"
@@ -140,7 +136,7 @@ def _op_identify(args: dict, sandbox) -> str:
         return f"ERROR: {e}"
     cmd = [b] if b != "magick" else ["magick", "identify"]
     code, out, stderr = _run_cmd(
-        cmd + ["-format", "%w %h %m %b %f\n", src],
+        sandbox, cmd + ["-format", "%w %h %m %b %f\n", src],
     )
     if code != 0:
         return f"ERROR: identify ({code}): {stderr.strip()[-300:]}"
@@ -170,7 +166,7 @@ def _op_composite(args: dict, sandbox) -> str:
     geom = (args.get("geometry") or "+0+0").strip()
     cmd = [b] if b != "magick" else ["magick", "composite"]
     code, _o, stderr = _run_cmd(
-        cmd + ["-geometry", geom, overlay, base, dst],
+        sandbox, cmd + ["-geometry", geom, overlay, base, dst],
     )
     if code != 0:
         return f"ERROR: composite ({code}): {stderr.strip()[-300:]}"

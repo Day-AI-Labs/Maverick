@@ -227,8 +227,11 @@ def _decide_via_dashboard(
         log.warning("consent: cannot queue approval, falling back: %s", e)
         return None
 
-    deadline = time.time() + _dashboard_timeout()
-    while time.time() < deadline:
+    # monotonic for the elapsed-time window: a wall-clock jump must not collapse
+    # the human-approval window (timing out a risky-action prompt early) or
+    # extend it (stalling the agent). The decision record below keeps wall time.
+    deadline = time.monotonic() + _dashboard_timeout()
+    while time.monotonic() < deadline:
         try:
             row = wm.get_approval(approval_id)
         except Exception:

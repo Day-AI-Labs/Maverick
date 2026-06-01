@@ -60,6 +60,11 @@ def _allowed_plugin_names() -> set[str] | None:
       3. Default: empty set (no plugins loaded)
     """
     raw = os.environ.get("MAVERICK_PLUGINS_ALLOW")
+    # Treat an exported-but-blank env var as unset (common from CI/systemd/shell
+    # wrappers) so it falls through to the config allowlist instead of silently
+    # disabling every configured plugin.
+    if raw is not None and not raw.strip():
+        raw = None
     if raw is None:
         try:
             from .config import load_config

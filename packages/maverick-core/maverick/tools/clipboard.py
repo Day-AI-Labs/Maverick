@@ -4,6 +4,12 @@ Read from / write to the system clipboard. Useful for bridging between
 computer-use / browser / shell flows ("copy this from the page into
 the editor").
 
+Intentionally host-local: the clipboard is a host-desktop resource, so
+this tool shells out directly (with a scrubbed env) rather than through
+``sandbox.exec`` — a sandboxed container has no access to the user's
+clipboard. This is a deliberate exception to the "sandbox-mediate all
+shell" rule, not an oversight.
+
 Implementation strategy:
   1. ``pyperclip`` if installed (cross-platform, best UX)
   2. ``pbpaste`` / ``pbcopy`` (macOS)

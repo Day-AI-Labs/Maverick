@@ -98,6 +98,53 @@ def safe_media_args(raw: Any) -> list[str]:
     return safe
 
 
+def sandbox_run(
+    sandbox: Any,
+    argv: list[str],
+    *,
+    timeout: float = 120.0,
+    stdin: str | None = None,
+) -> tuple[int, str, str]:
+    """Run ``argv`` through the sandbox chokepoint; return (code, stdout, stderr).
+
+    Media tools (ffmpeg/imagemagick/pandoc/tesseract/pa11y...) historically
+    shelled out on the host with ``subprocess.run`` even when a sandbox was
+    wired in, bypassing the chokepoint that confines model-driven commands and
+    lets tests swap the backend (CLAUDE.md rule #4). This routes the command
+    through ``sandbox.exec()`` instead.
+
+    Through a sandbox, the argv is shell-quoted with ``shlex.join`` and handed
+    to ``exec()`` (which runs ``sh -c``); ``stdin`` is fed via a base64 pipe so
+    arbitrary text reaches the process without shell-quoting hazards. When no
+    sandbox is wired in, falls back to a scrubbed-env ``subprocess.run`` of the
+    raw argv list (no shell interpolation -- the chokepoint guard forbids that
+    outside the sandbox backends), passing ``stdin`` directly.
+    """
+    if sandbox is not None and hasattr(sandbox, "exec"):
+        import shlex
+        cmd = shlex.join(argv)
+        if stdin is not None:
+            import base64
+            b64 = base64.b64encode(stdin.encode("utf-8")).decode("ascii")
+            cmd = f"printf %s {shlex.quote(b64)} | base64 -d | {cmd}"
+        try:
+            res = sandbox.exec(cmd, timeout=timeout)
+        except TypeError:
+            # Backend without a per-call timeout kwarg.
+            res = sandbox.exec(cmd)
+        return res.exit_code, res.stdout, res.stderr
+
+    import subprocess
+    try:
+        r = subprocess.run(
+            argv, capture_output=True, text=True,
+            timeout=timeout, env=scrub_child_env(), input=stdin,
+        )
+        return r.returncode, r.stdout, r.stderr
+    except subprocess.TimeoutExpired:
+        return 124, "", f"TIMEOUT after {timeout}s"
+
+
 ToolFn = Callable[[dict[str, Any]], str | Awaitable[str]]
 
 
@@ -379,7 +426,7 @@ def base_registry(
     reg.register(compute())
     reg.register(sql_query(sandbox))
     reg.register(email_tool())
-    reg.register(pandas_query())
+    reg.register(pandas_query(sandbox))
     reg.register(git_advanced(sandbox))
     reg.register(calendar_tool())
     reg.register(file_watcher(sandbox))
@@ -402,13 +449,13 @@ def base_registry(
     reg.register(slack_bot())
     reg.register(stripe_tool())
     reg.register(currency())
-    reg.register(a11y())
+    reg.register(a11y(sandbox))
     reg.register(discord_bot())
     reg.register(hackernews())
     reg.register(dns_lookup())
     reg.register(geocode())
     reg.register(openapi_runner())
-    reg.register(ocr())
+    reg.register(ocr(sandbox))
     reg.register(posthog_tool())
     reg.register(shopify_tool())
     reg.register(mongodb_tool())
@@ -512,6 +559,16 @@ def base_registry(
         for name, factory in discover_tools():
             try:
                 t = factory()
+                # Never let a plugin shadow a built-in (or an MCP) tool: an
+                # allowlisted plugin returning Tool(name="shell") would silently
+                # replace the real shell and run attacker code under that name.
+                if t.name in reg._tools:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "plugin tool %r conflicts with an existing tool; skipping",
+                        t.name,
+                    )
+                    continue
                 reg.register(t)
             except Exception as e:  # pragma: no cover -- plugin failure
                 import logging

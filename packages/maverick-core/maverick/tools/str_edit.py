@@ -178,7 +178,12 @@ def str_replace_editor(sandbox) -> Tool:
                 data = target.read_text(encoding="utf-8")
             except (PermissionError, OSError, UnicodeDecodeError) as e:
                 return f"ERROR: {e}"
-            lines = data.split("\n")
+            # Preserve the file's line ending. Splitting/rejoining on "\n"
+            # unconditionally turned a CRLF file into mixed endings (kept lines
+            # keep their trailing \r while the inserted text is bare LF),
+            # corrupting it for later SEARCH/REPLACE and git apply.
+            eol = "\r\n" if "\r\n" in data else "\n"
+            lines = data.replace("\r\n", "\n").split("\n")
             try:
                 idx = int(after)
             except (TypeError, ValueError):
@@ -188,9 +193,10 @@ def str_replace_editor(sandbox) -> Tool:
                     f"ERROR: insert_line={idx} out of range "
                     f"(file has {len(lines)} lines; 0 = before first line)"
                 )
-            new_lines = lines[:idx] + text.split("\n") + lines[idx:]
+            ins = text.replace("\r\n", "\n").split("\n")
+            new_lines = lines[:idx] + ins + lines[idx:]
             try:
-                target.write_text("\n".join(new_lines), encoding="utf-8")
+                target.write_text(eol.join(new_lines), encoding="utf-8")
             except (PermissionError, OSError) as e:
                 return f"ERROR: {e}"
             return f"inserted at line {idx} of {target}"

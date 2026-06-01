@@ -108,6 +108,11 @@ class OpenAIClient:
             kw["timeout"] = timeout
         self._sync = OpenAI(**kw)
         self._async = AsyncOpenAI(**kw)
+        # Expose the resolved endpoint for introspection (doctor / logs) and so
+        # the OpenAI-compatible subclasses (vllm / tgi / bedrock /
+        # openai_compatible) and their tests can read where they're actually
+        # pointed. ``None`` means the OpenAI SDK's own default base_url.
+        self.base_url = base_url
 
     @staticmethod
     def _wants_max_completion(model: str) -> bool:
@@ -226,6 +231,10 @@ class OpenAIClient:
     ) -> LLMResponse:
         choice = resp.choices[0]
         text = choice.message.content or ""
+        # DeepSeek reasoner and Gemini-thinking (via the OpenAI-compat shim)
+        # return the chain-of-thought in a separate reasoning_content field,
+        # never in content. Hard-coding thinking=None discarded it entirely.
+        thinking = getattr(choice.message, "reasoning_content", None) or None
         tool_calls: list[ToolCall] = []
         if getattr(choice.message, "tool_calls", None):
             for tc in choice.message.tool_calls:
@@ -267,7 +276,7 @@ class OpenAIClient:
         stop_reason = _FINISH_REASON_MAP.get(raw_reason, raw_reason)
         return LLMResponse(
             text=text,
-            thinking=None,
+            thinking=thinking,
             tool_calls=tool_calls,
             stop_reason=stop_reason,
             raw=resp,

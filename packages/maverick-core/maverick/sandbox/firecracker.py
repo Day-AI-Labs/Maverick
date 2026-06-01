@@ -201,10 +201,13 @@ class FirecrackerBackend:
         args = [
             "docker", "run", "--rm",
             "--network=none", "--read-only",
+            "--tmpfs", "/tmp",
+            # This fallback stands in for hard VM isolation, so it must be at
+            # least as contained as the plain Docker backend: drop all caps,
+            # block privilege escalation, and cap pids.
             "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges",
             "--pids-limit", "512",
-            "--tmpfs", "/tmp",
             "-v", f"{self.workdir}:/work:ro",
             "-w", "/work",
             "python:3.12-slim",

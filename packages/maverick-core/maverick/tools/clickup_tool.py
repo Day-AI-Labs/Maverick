@@ -117,15 +117,23 @@ def _op_tasks(args: dict) -> str:
     lid = (args.get("list_id") or "").strip()
     if not lid:
         return "ERROR: tasks requires list_id"
-    params: dict = {
-        "archived": "true" if args.get("archived") else "false",
-        "page": 0,
-    }
-    code, data = _get(f"/list/{lid}/task", params)
-    if code >= 400 or not isinstance(data, dict):
-        return f"ERROR: tasks ({code}): {data}"
-    tasks = data.get("tasks") or []
     limit = max(1, min(int(args.get("limit") or 25), 100))
+    archived = "true" if args.get("archived") else "false"
+    # ClickUp paginates ~100 tasks per page with a `last_page` flag. Follow
+    # the page counter until we have `limit` tasks or the API says it's the
+    # last page; bound the loop so a huge list can't spin unbounded.
+    tasks: list[dict] = []
+    page = 0
+    max_pages = max(1, (limit // 100) + 2)
+    for _ in range(max_pages):
+        code, data = _get(f"/list/{lid}/task", {"archived": archived, "page": page})
+        if code >= 400 or not isinstance(data, dict):
+            return f"ERROR: tasks ({code}): {data}"
+        batch = data.get("tasks") or []
+        tasks.extend(batch)
+        if len(tasks) >= limit or data.get("last_page") or not batch:
+            break
+        page += 1
     if not tasks:
         return "no tasks"
     return "\n".join(

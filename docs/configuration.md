@@ -57,6 +57,13 @@ skills      = true
 world_model = true
 streaming   = true
 
+[durable]
+# Crash-resume: checkpoint a goal's loop state each step so `maverick resume`
+# continues from where a crash left off instead of starting over. Off by
+# default (a small write per step). keep_last bounds retained checkpoints.
+enabled   = false
+keep_last = 5
+
 [channels.telegram]
 enabled   = false
 bot_token = "${TELEGRAM_BOT_TOKEN}"

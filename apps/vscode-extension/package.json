@@ -86,8 +86,8 @@
         "maverick.cliPath": {
           "type": "string",
           "default": "maverick",
-          "scope": "machine-overridable",
-          "description": "Path to the `maverick` CLI executable."
+          "scope": "machine",
+          "description": "Path to the `maverick` CLI executable. Machine-scoped so a checked-in .vscode/settings.json in an untrusted repo cannot point it at an arbitrary executable."
         },
         "maverick.workspaceCwd": {
           "type": "boolean",

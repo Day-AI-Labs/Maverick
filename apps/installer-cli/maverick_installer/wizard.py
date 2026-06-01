@@ -1,7 +1,6 @@
 """Maverick interactive installer.
 
 Configures Maverick for a fresh install. Sets up:
-  - deployment target
   - AI providers and per-role models
   - channels (Telegram, Discord, Slack, Signal, WhatsApp, SMS, Email,
     Matrix, iMessage)
@@ -74,6 +73,7 @@ STEPS: list[tuple[str, str]] = [
     ("sandbox", "Sandbox"),
     ("capabilities", "Capabilities"),
     ("self_learning", "Self-learning"),
+    ("durable", "Durable execution"),
     ("advanced", "Advanced reasoning"),
     ("web_search", "Web search"),
     ("mcp_servers", "MCP servers"),
@@ -167,7 +167,11 @@ def _q_secret(message: str) -> str:
         import getpass
 
         return getpass.getpass(f"{message}: ").strip()
-    return questionary.password(message).ask() or ""
+    # Route through _ask so Ctrl-C / Ctrl-D / non-TTY (questionary returns
+    # None) raises KeyboardInterrupt and aborts the wizard, like every other
+    # prompt. The old `.ask() or ""` swallowed the abort into "", which
+    # callers read as "skip this key" -- so Ctrl-C silently continued.
+    return _ask(questionary.password(message)) or ""
 
 
 def _q_checkbox(message: str, choices: list[str], default: list[str] | None = None) -> list[str]:
@@ -820,6 +824,25 @@ def pick_self_learning() -> dict[str, Any]:
         "create_tools": create_tools,
         "max_acquisitions": 5,
     }
+
+
+def pick_durable() -> dict[str, Any]:
+    """Opt-in to durable execution (crash-resume via checkpoints).
+
+    Off by default. When on, a long-running goal checkpoints its loop state at
+    each step so ``maverick resume`` continues from where a crash left off
+    instead of re-running from the start. Returns a dict written under
+    ``[durable]``.
+    """
+    console.print()
+    console.print(
+        "[dim]Durable execution checkpoints a goal's progress so a crash or "
+        "restart resumes from the last step instead of starting over. Adds a "
+        "small write per step; OFF by default.[/dim]"
+    )
+    if not _q_confirm("Enable durable execution (crash-resume)?", default=False):
+        return {"enabled": False}
+    return {"enabled": True, "keep_last": 5}
 
 
 def pick_advanced() -> dict[str, bool]:
@@ -1542,7 +1565,6 @@ def pick_a2a() -> tuple[dict[str, Any], list[str]]:
 
 
 def write_config(
-    deployment: str,
     providers: list[str],
     role_models: dict[str, str],
     channels: dict[str, dict[str, Any]],
@@ -1565,10 +1587,54 @@ def write_config(
     web_search_enabled: bool = False,
     skills: dict[str, Any] | None = None,
     self_learning: dict[str, Any] | None = None,
+    durable: dict[str, Any] | None = None,
+    deployment: str | None = None,
 ) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Re-running the wizard truncates config.toml / .env. The loader explicitly
+    # supports hand-editing, so back up any existing file first (0o600) instead
+    # of silently destroying a user's manual edits.
+    def _backup(path) -> None:
+        try:
+            if os.path.exists(path):
+                bak = str(path) + ".bak"
+                tmp = bak + ".tmp"
+                try:
+                    os.unlink(tmp)
+                except FileNotFoundError:
+                    pass
+                fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                try:
+                    with open(path, "rb") as src, os.fdopen(fd, "wb") as dst:
+                        fd = -1
+                        shutil.copyfileobj(src, dst)
+                    try:
+                        st = os.stat(path)
+                        os.utime(tmp, (st.st_atime, st.st_mtime))
+                    except OSError:
+                        pass
+                    try:
+                        os.chmod(tmp, 0o600)
+                    except OSError:
+                        pass
+                    os.replace(tmp, bak)
+                    try:
+                        os.chmod(bak, 0o600)
+                    except OSError:
+                        pass
+                finally:
+                    if fd != -1:
+                        os.close(fd)
+                    try:
+                        os.unlink(tmp)
+                    except FileNotFoundError:
+                        pass
+        except OSError:
+            pass
+
     if keys:
+        _backup(ENV_FILE)
         # Atomic + perm-from-creation: previous version was
         # ``write_text(...)`` followed by ``chmod(0o600)``, which left
         # the file world-readable (0o644) for one syscall. Open with
@@ -1593,10 +1659,13 @@ def write_config(
     lines = [
         "# Maverick config. Regenerate with:  maverick init",
         "",
-        "[deploy]",
-        f'target = "{deployment}"',
-        "",
     ]
+    if deployment:
+        # Record the chosen deployment topology (laptop / vps / ...) for
+        # provenance + so a later `maverick init` can default to it.
+        lines.append("[deployment]")
+        lines.append(f"type = {_toml_str(str(deployment))}")
+        lines.append("")
     for prov in providers:
         info = catalog.PROVIDERS.get(prov, {})
         lines.append(f"[providers.{prov}]")
@@ -1654,6 +1723,14 @@ def write_config(
         lines.append("")
         lines.append("[self_learning]")
         for k, v in self_learning.items():
+            _emit_kv(lines, k, v)
+
+    if durable and durable.get("enabled"):
+        # Durable execution: checkpoint loop state so `maverick resume`
+        # continues from the last step after a crash. Off unless opted in.
+        lines.append("")
+        lines.append("[durable]")
+        for k, v in durable.items():
             _emit_kv(lines, k, v)
 
     if capabilities:
@@ -1752,10 +1829,11 @@ def write_config(
         for k, v in a2a.items():
             _emit_kv(lines, k, v)
 
-    # Config has no secrets today but does carry the deployment
-    # topology and provider names. chmod 600 so multi-user hosts don't
+    # Config has no secrets today but does carry provider names and
+    # runtime settings. chmod 600 so multi-user hosts don't
     # leak it to other accounts.
     config_body = "\n".join(lines) + "\n"
+    _backup(CONFIG_FILE)
     fd = os.open(
         CONFIG_FILE,
         os.O_CREAT | os.O_WRONLY | os.O_TRUNC,
@@ -1780,7 +1858,7 @@ def smoke_test() -> bool:
     try:
         from maverick.config import load_config
         cfg = load_config()
-        assert cfg.get("deploy", {}).get("target"), "deploy target missing"
+        assert cfg.get("sandbox", {}).get("backend"), "sandbox backend missing"
         console.print("[green]✓[/green] Config readable")
     except Exception as e:
         console.print(f"[red]✗[/red] Config read failed: {e}")
@@ -1852,7 +1930,6 @@ def run_fast() -> int:
         "[bold]Fast setup:[/bold] using safe defaults. "
         "Run `maverick init` (no --fast) anytime to customize.\n"
     )
-    deployment = "desktop"
     providers = ["anthropic"]
     role_models: dict[str, str] = {}  # use ROLE_MODELS defaults
     channels: dict[str, Any] = {}
@@ -1893,7 +1970,7 @@ def run_fast() -> int:
     if os.environ.get("ANTHROPIC_API_KEY"):
         keys["ANTHROPIC_API_KEY"] = os.environ["ANTHROPIC_API_KEY"]
     write_config(
-        deployment, providers, role_models, channels, safety, budget,
+        providers, role_models, channels, safety, budget,
         sandbox, keys, capabilities,
         tool_acl={"denied_tools": denied_tools},
     )
@@ -2019,7 +2096,6 @@ def write_consumer_config(
     if backend == "local":
         denied_tools.extend(["shell", "write_file", "apply_patch", "str_replace_editor"])
     write_config(
-        "desktop",                 # deployment
         ["anthropic"],             # providers
         {},                        # role_models -> kernel defaults
         {},                        # channels -> none in consumer mode
@@ -2227,6 +2303,11 @@ def run(fast: bool = False, resume: bool = False) -> int:
     _save_partial(state)
 
     _announce()
+    durable = state.get("durable") or pick_durable()
+    state["durable"] = durable
+    _save_partial(state)
+
+    _announce()
     advanced = state.get("advanced") or pick_advanced()
     state["advanced"] = advanced
     _save_partial(state)
@@ -2238,35 +2319,50 @@ def run(fast: bool = False, resume: bool = False) -> int:
     state["_web_search_pair"] = [web_search_enabled, web_search_envs]
     _save_partial(state)
 
+    # NOTE: these steps use the `is None` sentinel (not `or`) because a
+    # legitimately-declined answer is falsy ({}/[]); the `or` pattern treated
+    # "I chose nothing" as "unanswered" and re-prompted it on --resume.
     _announce()
-    mcp_servers = state.get("mcp_servers") or pick_mcp_servers()
-    state["mcp_servers"] = mcp_servers
-    _save_partial(state)
+    mcp_servers = state.get("mcp_servers")
+    if mcp_servers is None:
+        mcp_servers = pick_mcp_servers()
+        state["mcp_servers"] = mcp_servers
+        _save_partial(state)
 
     _announce()
-    plugins = state.get("plugins") or pick_plugins()
-    state["plugins"] = plugins
-    _save_partial(state)
+    plugins = state.get("plugins")
+    if plugins is None:
+        plugins = pick_plugins()
+        state["plugins"] = plugins
+        _save_partial(state)
 
     _announce()
-    tool_acl = state.get("tool_acl") or pick_tool_acl(channels)
-    state["tool_acl"] = tool_acl
-    _save_partial(state)
+    tool_acl = state.get("tool_acl")
+    if tool_acl is None:
+        tool_acl = pick_tool_acl(channels)
+        state["tool_acl"] = tool_acl
+        _save_partial(state)
 
     _announce()
-    rate_limits = state.get("rate_limits") or pick_rate_limits(channels)
-    state["rate_limits"] = rate_limits
-    _save_partial(state)
+    rate_limits = state.get("rate_limits")
+    if rate_limits is None:
+        rate_limits = pick_rate_limits(channels)
+        state["rate_limits"] = rate_limits
+        _save_partial(state)
 
     _announce()
-    retention = state.get("retention") or pick_retention()
-    state["retention"] = retention
-    _save_partial(state)
+    retention = state.get("retention")
+    if retention is None:
+        retention = pick_retention()
+        state["retention"] = retention
+        _save_partial(state)
 
     _announce()
-    persona = state.get("persona") or pick_persona()
-    state["persona"] = persona
-    _save_partial(state)
+    persona = state.get("persona")
+    if persona is None:
+        persona = pick_persona()
+        state["persona"] = persona
+        _save_partial(state)
 
     _announce()
     notifications, notify_envs = state.get("_notifications_pair") or pick_notifications()
@@ -2309,7 +2405,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
         return 0
 
     write_config(
-        deployment, providers, role_models, channels, safety, budget, sandbox,
+        providers, role_models, channels, safety, budget, sandbox,
         keys, capabilities,
         advanced=advanced,
         mcp_servers=mcp_servers,
@@ -2324,6 +2420,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
         web_search_enabled=web_search_enabled,
         skills=signed_skills if (signed_skills.get("trusted_pubkeys") or signed_skills.get("require_signed")) else None,
         self_learning=self_learning if self_learning.get("enable") else None,
+        durable=durable if durable.get("enabled") else None,
     )
     _clear_partial()
     ok = smoke_test()

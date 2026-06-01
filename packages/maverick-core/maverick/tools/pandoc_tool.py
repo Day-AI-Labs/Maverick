@@ -12,17 +12,11 @@ from __future__ import annotations
 
 import logging
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
 from . import Tool
 
-
-def _scrub() -> dict:
-    """Child env with secrets stripped (shared tools.scrub_child_env)."""
-    from . import scrub_child_env
-    return scrub_child_env()
 log = logging.getLogger(__name__)
 
 
@@ -81,43 +75,40 @@ def _op_convert(args: dict, sandbox) -> str:
         cmd.extend(["-f", str(args["from_"])])
     if args.get("to"):
         cmd.extend(["-t", str(args["to"])])
-    from . import safe_media_args
+    from . import safe_media_args, sandbox_run
     cmd.extend(safe_media_args(args.get("args")))
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=_scrub())
-    if r.returncode != 0:
-        return f"ERROR: pandoc ({r.returncode}): {r.stderr.strip()[-300:]}"
+    code, _out, stderr = sandbox_run(sandbox, cmd, timeout=120)
+    if code != 0:
+        return f"ERROR: pandoc ({code}): {stderr.strip()[-300:]}"
     return f"wrote {dst}"
 
 
-def _op_formats(_args: dict) -> str:
+def _op_formats(_args: dict, sandbox) -> str:
     err = _need_pandoc()
     if err:
         return err
-    in_ = subprocess.run(
-        ["pandoc", "--list-input-formats"], capture_output=True, text=True, env=_scrub(),
-    )
-    out = subprocess.run(
-        ["pandoc", "--list-output-formats"], capture_output=True, text=True, env=_scrub(),
-    )
+    from . import sandbox_run
+    _ci, in_out, _ie = sandbox_run(sandbox, ["pandoc", "--list-input-formats"], timeout=30)
+    _co, out_out, _oe = sandbox_run(sandbox, ["pandoc", "--list-output-formats"], timeout=30)
     return (
-        f"input formats:\n{in_.stdout.strip()}\n\n"
-        f"output formats:\n{out.stdout.strip()}"
+        f"input formats:\n{in_out.strip()}\n\n"
+        f"output formats:\n{out_out.strip()}"
     )
 
 
-def _string_convert(text: str, from_: str, to: str) -> str:
+def _string_convert(text: str, from_: str, to: str, sandbox) -> str:
     err = _need_pandoc()
     if err:
         return err
     if not text.strip():
         return "ERROR: text is required"
-    r = subprocess.run(
-        ["pandoc", "-f", from_, "-t", to],
-        input=text, capture_output=True, text=True, timeout=60, env=_scrub(),
+    from . import sandbox_run
+    code, out, stderr = sandbox_run(
+        sandbox, ["pandoc", "-f", from_, "-t", to], timeout=60, stdin=text,
     )
-    if r.returncode != 0:
-        return f"ERROR: pandoc ({r.returncode}): {r.stderr.strip()[-300:]}"
-    return r.stdout
+    if code != 0:
+        return f"ERROR: pandoc ({code}): {stderr.strip()[-300:]}"
+    return out
 
 
 def _run(args: dict[str, Any], sandbox) -> str:
@@ -128,11 +119,11 @@ def _run(args: dict[str, Any], sandbox) -> str:
         if op == "convert":
             return _op_convert(args, sandbox)
         if op == "formats":
-            return _op_formats(args)
+            return _op_formats(args, sandbox)
         if op == "markdown_to_html":
-            return _string_convert(args.get("text") or "", "markdown", "html")
+            return _string_convert(args.get("text") or "", "markdown", "html", sandbox)
         if op == "html_to_markdown":
-            return _string_convert(args.get("text") or "", "html", "markdown")
+            return _string_convert(args.get("text") or "", "html", "markdown", sandbox)
     except Exception as e:
         return f"ERROR: pandoc failed: {type(e).__name__}: {e}"
     return f"ERROR: unknown op {op!r}"

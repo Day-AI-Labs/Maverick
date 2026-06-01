@@ -46,20 +46,28 @@ def _run(args: dict[str, Any]) -> str:
         from ..notifications import notify
     except ImportError as e:
         return f"ERROR: notifications module unavailable: {e}"
+    # notify() backends use low/default/high/max; the tool exposes "urgent".
+    backend_priority = "max" if priority == "urgent" else priority
     try:
-        sent = notify(
-            f"{title}\n{body}".strip() if body else title,
-            priority=priority,
+        # notify() returns an int (count of backends fired) and takes the
+        # message as `body` with a separate `title` keyword. The old call
+        # jammed title+body into the positional body and then did len() on
+        # the int return -- so every successful send raised TypeError and
+        # was reported to the agent as an error.
+        count = notify(
+            body or title,
+            title=title,
+            priority=backend_priority,
             category=category,
         )
     except Exception as e:
         return f"ERROR: notify failed: {type(e).__name__}: {e}"
-    if not sent:
+    if not count:
         return (
             "no notification backend is configured. "
             "Set [notifications] backend in ~/.maverick/config.toml."
         )
-    return f"sent ({len(sent)} backend{'s' if len(sent) != 1 else ''})"
+    return f"sent ({count} backend{'s' if count != 1 else ''})"
 
 
 def notify_tool() -> Tool:

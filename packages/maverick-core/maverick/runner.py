@@ -111,6 +111,11 @@ def run_goal_in_thread(
                 world.set_goal_status(goal_id, "blocked", result="internal error")
             except Exception:  # pragma: no cover
                 log.exception("failed to reclaim goal #%s after crash", goal_id)
+            # A genuine crash IS retryable -- return a distinct signal. An
+            # intentional 'blocked' read back below (budget cap, killswitch
+            # halt, awaiting-user) is TERMINAL and must not be re-run, or the
+            # worker re-executes the whole swarm and re-spends budget.
+            return "error"
         # Read back the terminal status so the worker can decide retry.
         try:
             g = world.get_goal(goal_id)

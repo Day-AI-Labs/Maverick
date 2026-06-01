@@ -6,6 +6,11 @@ runtime (booted on the same Mac as Maverick) for QA / RPA tasks.
 Auth: none — uses local Xcode `xcrun simctl`. Mac-only by definition;
 the tool fails loudly with an actionable message on Linux / Windows.
 
+Intentionally host-local: the iOS Simulator runs on the host Mac, not
+inside any sandbox, so this tool shells out directly (scrubbed env)
+rather than through ``sandbox.exec`` — a deliberate exception to the
+"sandbox-mediate all shell" rule.
+
 ops:
   - list_devices(state)               — devices (booted/shutdown/all)
   - boot(device_id)

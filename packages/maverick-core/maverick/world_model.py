@@ -178,6 +178,20 @@ CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
     INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
 END;
 
+-- External-content FTS5 requires the delete/update triggers too, or the
+-- shadow index drifts out of sync with `messages` on any DELETE/UPDATE
+-- (purge already deletes messages), leaving search matching stale/missing rows.
+CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, content)
+    VALUES('delete', old.id, old.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, content)
+    VALUES('delete', old.id, old.content);
+    INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+END;
+
 -- Q1 2026 index audit (schema v8): cover the hot queries identified
 -- in docs/performance/world-model-indexes.md. These are duplicated in
 -- MIGRATIONS[8] so existing databases pick them up on next open.
@@ -361,6 +375,15 @@ class WorldModel:
         # mutation so each commit() bounds exactly one logical write.
         self._write_lock = threading.RLock()
         self._write_depth = 0
+        # Create the DB file 0o600 BEFORE sqlite opens it: connect() would
+        # otherwise create it at the umask (often 0644) for a window before the
+        # chmod below, briefly exposing all conversation content to co-tenants.
+        if str(path) != ":memory:" and not path.exists():
+            try:
+                _fd = os.open(str(path), os.O_WRONLY | os.O_CREAT, 0o600)
+                os.close(_fd)
+            except OSError:
+                pass
         self.conn = sqlite3.connect(path, check_same_thread=False, timeout=10.0)
         try:
             os.chmod(path, 0o600)
@@ -391,6 +414,15 @@ class WorldModel:
                     raise
                 time.sleep(min(0.05, remaining))
         self.conn.execute(f"PRAGMA busy_timeout = {DEFAULT_BUSY_TIMEOUT_MS}")
+        # WAL/SHM sidecars hold uncommitted conversation content; lock them to
+        # 0o600 too (best-effort -- they may not exist until the first write,
+        # so this is re-attempted; the 0o700 parent dir covers the gap).
+        if str(path) != ":memory:":
+            for _suffix in ("-wal", "-shm"):
+                try:
+                    os.chmod(path.parent / (path.name + _suffix), 0o600)
+                except OSError:
+                    pass
         # synchronous=NORMAL under WAL is safe + much faster than FULL.
         self.conn.execute("PRAGMA synchronous = NORMAL")
         # May 26 council fix (long-tail audit #4): bound WAL file
@@ -786,12 +818,16 @@ class WorldModel:
             )
             return cur.lastrowid
 
-    def answer(self, question_id: int, answer: str) -> None:
+    def answer(self, question_id: int, answer: str) -> bool:
+        """Record an answer to a question. Returns False if no question with
+        that id exists, so callers can flag a typo'd id instead of reporting
+        a false success."""
         with self._writing() as conn:
-            conn.execute(
+            cur = conn.execute(
                 "UPDATE questions SET answer = ?, answered_at = ? WHERE id = ?",
                 (answer, time.time(), question_id),
             )
+            return cur.rowcount > 0
 
     def open_questions(self, goal_id: int | None = None) -> list[Question]:
         if goal_id is not None:
@@ -865,10 +901,17 @@ class WorldModel:
             )
 
     def search_messages(self, query: str, limit: int = 10) -> list[dict]:
+        # Quote the user text as a single FTS5 string literal (escaping
+        # embedded quotes). Passing it raw let an unbalanced quote / leading
+        # `*` / `NEAR` / `-` raise sqlite3.OperationalError: fts5 syntax error
+        # and crash the search on ordinary natural-language input.
+        if not query or not query.strip():
+            return []
+        fts_query = '"' + query.replace('"', '""') + '"'
         rows = self._read_all(
             "SELECT m.* FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid "
             "WHERE messages_fts MATCH ? ORDER BY m.ts DESC LIMIT ?",
-            (query, limit),
+            (fts_query, limit),
         )
         return [dict(r) for r in rows]
 

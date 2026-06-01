@@ -129,7 +129,15 @@ def _save_keypair(priv: bytes, pub: bytes, key_id: str) -> Path:
         pass
     priv_path = KEY_DIR / f"{key_id}.key"
     pub_path = KEY_DIR / f"{key_id}.pub"
-    priv_path.write_bytes(priv)
+    # Create the private signing key (the audit chain's trust anchor) with the
+    # mode set AT creation. write_bytes() + a later chmod left a world-readable
+    # window during which another local user could read -- and then forge with
+    # -- the key. The dir chmod above is best-effort and may not apply.
+    fd = os.open(str(priv_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, priv)
+    finally:
+        os.close(fd)
     pub_path.write_bytes(pub)
     try:
         os.chmod(priv_path, 0o600)

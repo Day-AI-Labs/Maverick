@@ -65,7 +65,10 @@ class CostTracker:
         self.write()
 
     def note_sample(self) -> None:
-        self.row.samples_used += 0  # already 1 by default
+        # Count each additional sample (best-of-N / self-consistency). The old
+        # `+= 0` was a no-op, so samples_used was stuck at the default 1 and the
+        # Pareto cost-vs-samples analysis was wrong for every multi-sample run.
+        self.row.samples_used += 1
 
     def note_verifier_call(self) -> None:
         self.row.verifier_calls += 1

@@ -10,6 +10,7 @@ The bus itself is per-process and in-memory; see ``agent_bus.py``.
 """
 from __future__ import annotations
 
+import asyncio
 import math
 from typing import Any
 
@@ -78,13 +79,16 @@ def send_to_agent(agent_id: str) -> Tool:
 def recv_from_agent(agent_id: str) -> Tool:
     """Factory: ``recv_from_agent`` reading the current agent's inbox."""
 
-    def _run(args: dict[str, Any]) -> str:
+    async def _run(args: dict[str, Any]) -> str:
         raw_timeout = args.get("timeout") or 0.0
         timeout = float(raw_timeout)
         if not math.isfinite(timeout):
             return "ERROR: timeout must be a finite number"
         timeout = min(max(0.0, timeout), MAX_RECV_TIMEOUT_SECONDS)
-        msg = agent_bus.recv(agent_id, timeout=timeout)
+        # agent_bus.recv blocks on a threading.Queue for up to `timeout`
+        # seconds. Run it off the event loop so a blocking wait here doesn't
+        # stall every other concurrently-running agent/channel sharing it.
+        msg = await asyncio.to_thread(agent_bus.recv, agent_id, timeout=timeout)
         if msg is None:
             return "(no messages)"
         return f"from {msg.sender!r}: {msg.payload!r}"

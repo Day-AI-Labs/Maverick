@@ -95,6 +95,8 @@ def test_agent_bus_send_tool_requires_args():
 
 
 def test_agent_bus_recv_tool_bounds_timeout(monkeypatch):
+    import asyncio
+
     from maverick.tools.agent_bus_tool import MAX_RECV_TIMEOUT_SECONDS, recv_from_agent
 
     observed: dict[str, float] = {}
@@ -108,18 +110,62 @@ def test_agent_bus_recv_tool_bounds_timeout(monkeypatch):
     tool = recv_from_agent("bob")
 
     assert tool.input_schema["properties"]["timeout"]["maximum"] == MAX_RECV_TIMEOUT_SECONDS
-    assert "(no messages)" in tool.fn({"timeout": 31_536_000})
+    assert "(no messages)" in asyncio.run(tool.fn({"timeout": 31_536_000}))
     assert observed == {"agent_id": "bob", "timeout": MAX_RECV_TIMEOUT_SECONDS}
 
 
 def test_agent_bus_recv_tool_rejects_non_finite_timeout(monkeypatch):
+    import asyncio
+
     from maverick.tools.agent_bus_tool import recv_from_agent
 
     recv = MagicMock(return_value=None)
     monkeypatch.setattr("maverick.tools.agent_bus_tool.agent_bus.recv", recv)
 
-    assert "timeout must be a finite number" in recv_from_agent("bob").fn({"timeout": "inf"})
+    assert "timeout must be a finite number" in asyncio.run(
+        recv_from_agent("bob").fn({"timeout": "inf"})
+    )
     recv.assert_not_called()
+
+
+def test_agent_bus_recv_tool_does_not_block_event_loop():
+    """A blocking recv must not stall other coroutines on the same loop.
+
+    recv_from_agent offloads agent_bus.recv (a blocking threading.Queue wait)
+    to a worker thread, so a concurrent task keeps making progress while a
+    recv with a timeout is parked waiting for a message.
+    """
+    import asyncio
+    import time
+
+    from maverick import agent_bus
+    from maverick.tools.agent_bus_tool import recv_from_agent
+
+    agent_bus.clear()
+    tool = recv_from_agent("bob")
+
+    async def _drive():
+        ticks = 0
+
+        async def _ticker():
+            nonlocal ticks
+            for _ in range(20):
+                ticks += 1
+                await asyncio.sleep(0.01)
+
+        ticker = asyncio.create_task(_ticker())
+        # recv blocks ~0.3s waiting on an empty inbox; the ticker must keep
+        # advancing during that wait if recv is truly off the event loop.
+        start = time.monotonic()
+        out = await tool.fn({"timeout": 0.3})
+        elapsed = time.monotonic() - start
+        await ticker
+        return out, ticks, elapsed
+
+    out, ticks, elapsed = asyncio.run(_drive())
+    assert "(no messages)" in out
+    assert elapsed >= 0.25  # actually waited (didn't return early)
+    assert ticks >= 5       # the loop kept running concurrently during the wait
 
 
 # ---------- kv_memory ----------

@@ -147,11 +147,34 @@ runs:
         maverick "${pre[@]}" "${args[@]}" 2>&1 | tee "$out_file"
         status=${PIPESTATUS[0]}
 
-        # Multiline-safe step output (heredoc form).
+        # Multiline-safe step output (heredoc form). The delimiter must be
+        # unpredictable and absent from the untrusted Maverick output so the
+        # output cannot terminate the heredoc and inject additional outputs.
+        result_delimiter=""
+        for _ in {1..10}; do
+          if command -v uuidgen >/dev/null 2>&1; then
+            candidate="MAVERICK_EOF_$(uuidgen)"
+          elif command -v openssl >/dev/null 2>&1; then
+            candidate="MAVERICK_EOF_$(openssl rand -hex 16)"
+          else
+            candidate="MAVERICK_EOF_${RANDOM}_${RANDOM}_$$_$(date +%s%N)"
+          fi
+
+          if ! grep -Fxq -- "$candidate" "$out_file"; then
+            result_delimiter="$candidate"
+            break
+          fi
+        done
+
+        if [ -z "$result_delimiter" ]; then
+          echo "::error::Unable to choose a safe GitHub output delimiter."
+          exit 1
+        fi
+
         {
-          echo "result<<__MAVERICK_EOF__"
+          echo "result<<$result_delimiter"
           cat "$out_file"
-          echo "__MAVERICK_EOF__"
+          echo "$result_delimiter"
         } >> "$GITHUB_OUTPUT"
 
         if [ "$IN_SUMMARY" = "true" ]; then

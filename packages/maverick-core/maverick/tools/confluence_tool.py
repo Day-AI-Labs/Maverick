@@ -70,8 +70,10 @@ def _strip_html(text: str) -> str:
 def _get(path: str, params: dict | None = None) -> tuple[int, Any]:
     import httpx
     url, _u, _t = _config()
+    # follow_redirects=False: the Basic-auth header isn't stripped by httpx on
+    # a cross-host redirect, so a 30x off CONFLUENCE_URL would leak the token.
     r = httpx.get(f"{url}{path}", headers=_headers(),
-                  params=params or {}, timeout=30.0, follow_redirects=True)
+                  params=params or {}, timeout=30.0, follow_redirects=False)
     try:
         return r.status_code, r.json()
     except ValueError:

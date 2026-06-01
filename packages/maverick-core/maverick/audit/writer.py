@@ -252,14 +252,19 @@ def _redact_event(payload: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         return payload
 
-    def _walk(v: Any) -> Any:
+    def _walk(v: Any, depth: int = 0) -> Any:
+        # Depth cap: the payload carries arbitrary **kwargs (tool args/results)
+        # that can be model/tool-controlled and deeply nested; without a guard a
+        # deep value raises RecursionError inside the audit-write path.
+        if depth > 64:
+            return v if isinstance(v, (int, float, bool, type(None))) else str(v)
         if isinstance(v, str):
             redacted, _ = redact(v)
             return redacted
         if isinstance(v, dict):
-            return {k: _walk(vv) for k, vv in v.items()}
+            return {k: _walk(vv, depth + 1) for k, vv in v.items()}
         if isinstance(v, list):
-            return [_walk(vv) for vv in v]
+            return [_walk(vv, depth + 1) for vv in v]
         return v
 
     return _walk(payload)

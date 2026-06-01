@@ -178,8 +178,12 @@ async function startGoalCommand() {
   const out = getOutput();
   out.show(true);
   out.appendLine(`> maverick start "${goal}"`);
-  const code = await runCliStream(["start", goal], (line) => out.appendLine(line));
-  out.appendLine(`[exit ${code}]`);
+  try {
+    const code = await runCliStream(["start", goal], (line) => out.appendLine(line));
+    out.appendLine(`[exit ${code}]`);
+  } catch (e: unknown) {
+    vscode.window.showErrorMessage(`Maverick start failed: ${(e as Error).message}`);
+  }
 }
 
 async function statusCommand() {
@@ -221,12 +225,22 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("maverick.start", startGoalCommand),
     vscode.commands.registerCommand("maverick.status", statusCommand),
     vscode.commands.registerCommand("maverick.halt", async () => {
-      await runCliCapture(["halt"]);
-      vscode.window.showInformationMessage("Maverick halted.");
+      try {
+        await runCliCapture(["halt"]);
+        vscode.window.showInformationMessage("Maverick halted.");
+      } catch (e: unknown) {
+        // A silent failure here is dangerous: the user would believe the
+        // agent was halted when the CLI call actually failed.
+        vscode.window.showErrorMessage(`Maverick halt failed: ${(e as Error).message}`);
+      }
     }),
     vscode.commands.registerCommand("maverick.unhalt", async () => {
-      await runCliCapture(["unhalt"]);
-      vscode.window.showInformationMessage("Maverick resumed.");
+      try {
+        await runCliCapture(["unhalt"]);
+        vscode.window.showInformationMessage("Maverick resumed.");
+      } catch (e: unknown) {
+        vscode.window.showErrorMessage(`Maverick unhalt failed: ${(e as Error).message}`);
+      }
     }),
     vscode.commands.registerCommand("maverick.openExport", exportCommand),
     vscode.commands.registerCommand("maverick.refreshRuns", () => runs.refresh()),

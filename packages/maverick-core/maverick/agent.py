@@ -115,7 +115,40 @@ class Agent:
         # without permitting repeated reject/revise loops.
         self._verifier_revision_used = False
 
+        # Process-reward model: scores each step's promise/progress. Resolved
+        # from env (MAVERICK_PRM=null|heuristic|remote); default NullPRM is a
+        # no-op, so this is off unless an operator opts in. Scores are emitted
+        # to the blackboard (kind="prm") as an observability signal — the loop
+        # does not gate on them, so a misconfigured PRM can't stall a run.
+        from .prm import build_from_env
+        self._prm = build_from_env()
+        self._prm_enabled = type(self._prm).__name__ != "NullPRM"
+        self._last_step_score = 0.5
+
+    @property
+    def checkpoint_id(self) -> str:
+        """Stable identity for durable checkpointing, distinct from ``name``.
+
+        ``name`` carries a per-process random suffix (for blackboard / agent-bus
+        uniqueness), so it can't key a checkpoint that must survive a
+        fresh-process resume. The depth-0 agent is the single orchestrator of
+        its episode, so ``"{role}-0"`` is stable and unique within
+        (goal_id, episode_id). Phase 2 will extend this for spawned children.
+        """
+        return f"{self.role}-{self.depth}"
+
     def _build_tools(self) -> ToolRegistry:
+        # Honor [capabilities] from config: these gate the optional
+        # high-impact tools (computer_use / browser / web_search / mobile).
+        # Without this, enabling them in config (or the wizard) was a no-op --
+        # base_registry's enable_* flags defaulted off and nothing set them.
+        # The [security] ACL still applies on top (a capability can be enabled
+        # but a tool still denied).
+        try:
+            from .config import get_capabilities
+            caps = get_capabilities()
+        except Exception:  # pragma: no cover -- never block tool build on config
+            caps = {}
         reg = base_registry(
             self.ctx.world,
             self.ctx.sandbox,
@@ -124,6 +157,10 @@ class Agent:
             channel=self.ctx.channel,
             user_id=self.ctx.user_id,
             budget=self.ctx.budget,
+            enable_computer_use=bool(caps.get("computer_use", False)),
+            enable_browser=bool(caps.get("browser", False)),
+            enable_web_search=bool(caps.get("web_search", False)),
+            enable_mobile_tools=bool(caps.get("mobile_tools", False)),
         )
         # Cross-agent bus tools, bound to this agent's id so send records
         # the right sender and recv drains the right inbox.
@@ -533,6 +570,43 @@ class Agent:
             tr["is_error"] = True
         return tr
 
+    def _score_step(
+        self,
+        *,
+        step_index: int,
+        tool_name: str | None = None,
+        tool_succeeded: bool | None = None,
+        is_final: bool = False,
+        error: str | None = None,
+    ) -> None:
+        """Score one step via the PRM and post the result to the blackboard.
+
+        No-op unless a non-Null PRM is configured. Never raises: a scoring
+        failure is observability noise, not a reason to fail the agent loop.
+        """
+        if not self._prm_enabled:
+            return
+        try:
+            from .prm import StepContext
+            reward = self._prm.score(StepContext(
+                goal_id=self.ctx.goal_id or 0,
+                step_index=step_index,
+                role=self.role,
+                tool_name=tool_name,
+                tool_succeeded=tool_succeeded,
+                is_final=is_final,
+                error=error,
+                prior_step_score=self._last_step_score,
+            ))
+            self._last_step_score = reward.promise
+            self.ctx.blackboard.post(
+                self.name, "prm",
+                f"step={step_index} promise={reward.promise:.2f} "
+                f"progress={reward.progress:+.2f} conf={reward.confidence:.2f}",
+            )
+        except Exception as e:  # pragma: no cover - PRM must never break the loop
+            log.debug("PRM scoring skipped: %s", e)
+
     async def run(self) -> AgentResult:
         bb = self.ctx.blackboard
         bb.post(self.name, "plan", f"role={self.role} depth={self.depth} brief={self.brief}")
@@ -563,7 +637,51 @@ class Agent:
             first_content = brief_text
         messages: list[dict] = [{"role": "user", "content": first_content}]
 
-        for step in range(self.max_steps):
+        # Durable execution (Phase 1): resume a crashed single-agent run from
+        # its last committed step instead of re-running from step 0. Off by
+        # default, fail-open — any error here leaves `messages`/`start_step`
+        # untouched, i.e. today's warm-restart behavior. Scoped to depth-0
+        # (the swarm-tree case is Phase 2; see docs/specs/durable-execution.md).
+        start_step = 0
+        ckpt = None
+        ep_id = getattr(self.ctx, "episode_id", 0) or 0
+        if self.depth == 0 and self.ctx.goal_id is not None:
+            try:
+                from . import checkpoint as _ckpt_mod
+                if _ckpt_mod.enabled():
+                    ckpt = _ckpt_mod.Checkpointer(self.ctx.world)
+                    # Resume keys on a STABLE id, not self.name (a per-process
+                    # random uuid that never matched on a fresh-process resume).
+                    saved = ckpt.latest(
+                        self.ctx.goal_id, self.checkpoint_id, episode_id=ep_id,
+                    )
+                    if saved is not None and saved.messages:
+                        messages = saved.messages
+                        start_step = saved.step_seq
+                        try:
+                            self.ctx.budget = _ckpt_mod.restore_budget(saved.budget)
+                        except Exception:
+                            pass
+                        bb.post(self.name, "plan",
+                                f"resumed from checkpoint at step {start_step}")
+            except Exception as e:  # pragma: no cover -- never block a run
+                log.debug("checkpoint resume skipped: %s", e)
+
+        for step in range(start_step, self.max_steps):
+            # Durable checkpoint at the turn boundary: commit the resumable
+            # loop state (step index, messages, budget snapshot) BEFORE the
+            # next LLM call, so a crash mid-step loses at most one step's work.
+            # Fail-open: a store error never stops the run.
+            if ckpt is not None:
+                try:
+                    ckpt.save(
+                        goal_id=self.ctx.goal_id, agent_id=self.checkpoint_id,
+                        episode_id=ep_id, step_seq=step, messages=messages,
+                        budget=self.ctx.budget, meta={"role": self.role},
+                    )
+                except Exception as e:  # pragma: no cover
+                    log.debug("checkpoint save skipped: %s", e)
+
             # Turn-boundary safety gate. Evaluate the global killswitch
             # (`maverick halt`, the dashboard Halt button, or the HALT
             # file) and the wall-clock/token/tool caps BEFORE the next LLM
@@ -756,19 +874,28 @@ class Agent:
                         workdir = _Path(getattr(self.ctx.sandbox, "workdir", "."))
                         # Wave 11: prefer SEARCH/REPLACE over unified-diff.
                         from .edit_format import repair_prompt_for_failure
-                        patch, sr_summary = self._extract_and_apply_patch(final)
-                        # Reset workdir AFTER capturing the diff so the
-                        # verifier branch (and downstream evaluators) see
-                        # HEAD when they re-apply.
-                        if sr_summary is not None:
-                            self._reset_workdir()
-                            try:
-                                self.ctx.blackboard.post(
-                                    self.name, "tool_signal",
-                                    "search_replace_used=1",
-                                )
-                            except Exception:
-                                pass
+                        # Serialize the apply->reset on the SHARED sandbox.workdir
+                        # with the same lock the verifier branch below uses.
+                        # require_apply_check runs for every coding-mode agent
+                        # regardless of depth/role, so concurrent coder children
+                        # under spawn_swarm would otherwise interleave apply +
+                        # `git reset --hard` on one git tree and corrupt each
+                        # other's edits. (Sequential with the verifier branch's
+                        # own `async with`, so no nested/reentrant acquire.)
+                        async with self.ctx.workdir_lock:
+                            patch, sr_summary = self._extract_and_apply_patch(final)
+                            # Reset workdir AFTER capturing the diff so the
+                            # verifier branch (and downstream evaluators) see
+                            # HEAD when they re-apply.
+                            if sr_summary is not None:
+                                self._reset_workdir()
+                                try:
+                                    self.ctx.blackboard.post(
+                                        self.name, "tool_signal",
+                                        "search_replace_used=1",
+                                    )
+                                except Exception:
+                                    pass
                         if patch is None and sr_summary is not None:
                             self._patch_validated = True
                             bb.post(
@@ -1149,6 +1276,7 @@ class Agent:
                         goal_id=self.ctx.goal_id, agent_role=self.role,
                         extra={"name": self.name, "final": final},
                     )
+                    self._score_step(step_index=step, is_final=True)
                     return AgentResult(
                         final=final, role=self.role, name=self.name,
                         verifier_confidence=verdict.confidence if verdict else 1.0,
@@ -1200,15 +1328,43 @@ class Agent:
                 # the serial path (one per tool, same count).
                 for tc in resp.tool_calls:
                     self.ctx.budget.record_tool_call()
+                # return_exceptions=True: tools.run swallows its own errors, but
+                # the shield scan / PreToolUse hooks inside _run_tool can still
+                # raise. Without this, one such raise propagates out of gather,
+                # discards the sibling results, and leaves the assistant turn's
+                # tool_use blocks with no matching tool_results -> the next API
+                # call 400s. Convert a raised exception into an error
+                # tool_result so every tool_use is still answered -- but
+                # re-raise control-flow signals (budget/halt) so a stop isn't
+                # silently downgraded to a tool error.
                 outputs = await _asyncio.gather(
-                    *(self._run_tool(tc.name, tc.input) for tc in resp.tool_calls)
+                    *(self._run_tool(tc.name, tc.input) for tc in resp.tool_calls),
+                    return_exceptions=True,
                 )
+                from . import killswitch as _ks
+                from .budget import BudgetExceeded as _BE
+                _norm: list[str] = []
+                for o in outputs:
+                    if isinstance(o, (_BE, _ks.Halted)):
+                        raise o
+                    _norm.append(
+                        o if isinstance(o, str)
+                        else f"ERROR: tool raised {type(o).__name__}: {o}"
+                    )
+                outputs = _norm
                 # Preserve original call order in the results (matched by
                 # tool_use_id, but ordering keeps traces readable).
                 for tc, output in zip(resp.tool_calls, outputs):
                     bb.post(
                         self.name, "observation",
                         f"tool={tc.name} -> {output[:500]}",
+                    )
+                    self._score_step(
+                        step_index=step,
+                        tool_name=tc.name,
+                        tool_succeeded=not (output or "").lstrip().startswith(
+                            ("ERROR", "BLOCKED by Shield")
+                        ),
                     )
                     tool_results.append(self._make_tool_result(tc.id, output))
             else:
@@ -1229,6 +1385,13 @@ class Agent:
                     bb.post(
                         self.name, "observation",
                         f"tool={tc.name} -> {output[:500]}",
+                    )
+                    self._score_step(
+                        step_index=step,
+                        tool_name=tc.name,
+                        tool_succeeded=not (output or "").lstrip().startswith(
+                            ("ERROR", "BLOCKED by Shield")
+                        ),
                     )
                     tool_results.append(self._make_tool_result(tc.id, output))
 

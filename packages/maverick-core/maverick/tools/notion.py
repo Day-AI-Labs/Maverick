@@ -68,6 +68,37 @@ def _client():
     )
 
 
+def _paginate(c, url: str, body: dict, limit: int) -> tuple[int, str, list[dict]]:
+    """POST ``url`` repeatedly, following Notion's ``has_more``/``next_cursor``
+    cursor pagination until ``limit`` results are collected.
+
+    Returns ``(status_code, error_text, results)``. ``status_code`` is the
+    first failing code (with ``error_text``) or 200. Bounded by ``limit`` and
+    a hard page cap so a huge collection can't loop unbounded.
+    """
+    results: list[dict] = []
+    cursor: str | None = None
+    # limit <= 100 (caller-capped) and page_size <= 100, so this many pages is
+    # always enough to satisfy the request; the cap just bounds pathological loops.
+    max_pages = max(1, (limit // 100) + 2)
+    for _ in range(max_pages):
+        page_body = dict(body)
+        page_body["page_size"] = min(100, max(1, limit - len(results)))
+        if cursor:
+            page_body["start_cursor"] = cursor
+        r = c.post(url, json=page_body)
+        if r.status_code >= 400:
+            return r.status_code, r.text[:300], results
+        data = r.json()
+        results.extend(data.get("results") or [])
+        if len(results) >= limit or not data.get("has_more"):
+            break
+        cursor = data.get("next_cursor")
+        if not cursor:
+            break
+    return 200, "", results[:limit]
+
+
 def _flatten_rich_text(rich: list[dict] | None) -> str:
     if not rich:
         return ""
@@ -98,14 +129,11 @@ def _flatten_blocks(blocks: list[dict]) -> str:
 
 def _op_search(query: str, limit: int) -> str:
     with _client() as c:
-        r = c.post(
-            f"{_API_BASE}/search",
-            json={"query": query, "page_size": limit},
+        code, err, results = _paginate(
+            c, f"{_API_BASE}/search", {"query": query}, limit,
         )
-        if r.status_code >= 400:
-            return f"ERROR: search ({r.status_code}): {r.text[:300]}"
-        data = r.json()
-    results = data.get("results") or []
+    if code >= 400:
+        return f"ERROR: search ({code}): {err}"
     if not results:
         return "no matches"
     rows: list[str] = []
@@ -192,14 +220,11 @@ def _op_page_append(page_id: str, text: str) -> str:
 
 def _op_db_query(database_id: str, limit: int) -> str:
     with _client() as c:
-        r = c.post(
-            f"{_API_BASE}/databases/{database_id}/query",
-            json={"page_size": limit},
+        code, err, rows = _paginate(
+            c, f"{_API_BASE}/databases/{database_id}/query", {}, limit,
         )
-        if r.status_code >= 400:
-            return f"ERROR: db_query ({r.status_code}): {r.text[:300]}"
-        data = r.json()
-    rows = data.get("results") or []
+    if code >= 400:
+        return f"ERROR: db_query ({code}): {err}"
     if not rows:
         return "no rows"
     out: list[str] = []

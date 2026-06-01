@@ -98,9 +98,12 @@ def _op_list(args: dict) -> str:
     return "\n".join(out)
 
 
-def _extract_plain(payload: dict) -> str:
+def _extract_plain(payload: dict, _depth: int = 0) -> str:
     """Walk MIME parts for the first text/plain body."""
-    if not payload:
+    # Depth cap: the MIME tree mirrors the message structure, which the
+    # (untrusted) sender controls; a deeply-nested multipart email would
+    # otherwise blow the stack (RecursionError) on read. Real nesting is shallow.
+    if not payload or _depth > 30:
         return ""
     mime = payload.get("mimeType", "")
     body = payload.get("body") or {}
@@ -108,7 +111,7 @@ def _extract_plain(payload: dict) -> str:
         return base64.urlsafe_b64decode(
             body["data"] + "===").decode("utf-8", errors="replace")
     for part in payload.get("parts") or []:
-        text = _extract_plain(part)
+        text = _extract_plain(part, _depth + 1)
         if text:
             return text
     return ""

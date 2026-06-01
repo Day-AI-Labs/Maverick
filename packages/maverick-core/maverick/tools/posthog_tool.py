@@ -18,7 +18,9 @@ Auth:
     safe in clients).
   - insights / insight_get use ``POSTHOG_PERSONAL_API_KEY`` (read
     scope) + ``POSTHOG_PROJECT_ID``.
-  - Self-hosted: ``POSTHOG_HOST`` (default https://us.posthog.com).
+  - Self-hosted: ``POSTHOG_HOST`` (default https://us.posthog.com) sets the
+    API host; events ingest on the derived ``*.i.posthog.com`` host (override
+    with ``POSTHOG_INGESTION_HOST``).
 """
 from __future__ import annotations
 
@@ -49,7 +51,33 @@ _PH_SCHEMA: dict[str, Any] = {
 
 
 def _host() -> str:
+    """API host (insights/read endpoints): the app host, e.g. us.posthog.com."""
     return os.environ.get("POSTHOG_HOST", "https://us.posthog.com").rstrip("/")
+
+
+def _ingestion_host() -> str:
+    """Event-ingestion host for /capture/.
+
+    PostHog ingests events on a dedicated host (``us.i.posthog.com`` /
+    ``eu.i.posthog.com``), distinct from the app/API host. Posting events to
+    the app host is the documented wrong endpoint and silently drops them on
+    some deployments. Honour an explicit ``POSTHOG_INGESTION_HOST`` first;
+    otherwise derive the ingestion host from ``POSTHOG_HOST`` by inserting the
+    ``i`` subdomain for the standard cloud regions, falling back to the app
+    host itself for self-hosted instances (which ingest on the same host).
+    """
+    explicit = os.environ.get("POSTHOG_INGESTION_HOST", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    host = _host()
+    # Legacy single-region cloud host -> US ingestion.
+    if host == "https://app.posthog.com":
+        return "https://us.i.posthog.com"
+    for region in ("us", "eu"):
+        if host == f"https://{region}.posthog.com":
+            return f"https://{region}.i.posthog.com"
+    # Self-hosted: ingest on the same host (no i-subdomain split).
+    return host
 
 
 def _project_key() -> str:
@@ -76,7 +104,7 @@ def _op_capture(event: str, distinct_id: str, properties: dict) -> str:
         "properties": properties or {},
     }
     r = httpx.post(
-        f"{_host()}/capture/",
+        f"{_ingestion_host()}/capture/",
         json=payload, timeout=15.0, follow_redirects=True,
     )
     if r.status_code >= 400:

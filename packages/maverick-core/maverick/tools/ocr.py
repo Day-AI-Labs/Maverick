@@ -20,7 +20,6 @@ from __future__ import annotations
 import logging
 import os
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -28,11 +27,6 @@ from urllib.parse import urlparse
 
 from . import Tool
 
-
-def _scrub() -> dict:
-    """Child env with secrets stripped (shared tools.scrub_child_env)."""
-    from . import scrub_child_env
-    return scrub_child_env()
 log = logging.getLogger(__name__)
 
 
@@ -68,23 +62,22 @@ def _tesseract_present() -> bool:
     return shutil.which("tesseract") is not None
 
 
-def _run_tesseract(path: str, lang: str) -> str:
+def _run_tesseract(path: str, lang: str, sandbox) -> str:
     if not _tesseract_present():
         return (
             "ERROR: tesseract not on PATH. Install (apt: tesseract-ocr; "
             "brew: tesseract) or set OCR_BACKEND=hf."
         )
-    try:
-        # `-` for stdout, suppress info noise on stderr.
-        r = subprocess.run(
-            ["tesseract", path, "-", "-l", lang, "--psm", "3"],
-            capture_output=True, text=True, timeout=120, env=_scrub(),
-        )
-    except subprocess.TimeoutExpired:
+    from . import sandbox_run
+    # `-` for stdout, suppress info noise on stderr.
+    code, out, stderr = sandbox_run(
+        sandbox, ["tesseract", path, "-", "-l", lang, "--psm", "3"], timeout=120,
+    )
+    if code == 124:
         return "ERROR: tesseract TIMEOUT"
-    if r.returncode != 0:
-        return f"ERROR: tesseract ({r.returncode}): {(r.stderr or '').strip()[:300]}"
-    text = (r.stdout or "").strip()
+    if code != 0:
+        return f"ERROR: tesseract ({code}): {(stderr or '').strip()[:300]}"
+    text = (out or "").strip()
     return text if text else "(empty OCR result)"
 
 
@@ -120,10 +113,10 @@ def _run_hf(path: str, model: str) -> str:
     return str(data)[:3000]
 
 
-def _op_extract(path: str, lang: str, backend: str, hf_model: str) -> str:
+def _op_extract(path: str, lang: str, backend: str, hf_model: str, sandbox) -> str:
     if not path:
         return "ERROR: extract requires path"
-    workdir = Path.cwd().resolve()
+    workdir = Path(sandbox.workdir).resolve() if sandbox is not None else Path.cwd().resolve()
     candidate = Path(path)
     candidate = (workdir / candidate).resolve() if not candidate.is_absolute() else candidate.resolve()
     try:
@@ -134,10 +127,10 @@ def _op_extract(path: str, lang: str, backend: str, hf_model: str) -> str:
         return f"ERROR: file not found: {path}"
     if backend == "hf":
         return _run_hf(str(candidate), hf_model or "microsoft/trocr-base-printed")
-    return _run_tesseract(str(candidate), lang or "eng")
+    return _run_tesseract(str(candidate), lang or "eng", sandbox)
 
 
-def _op_extract_url(url: str, lang: str, backend: str, hf_model: str) -> str:
+def _op_extract_url(url: str, lang: str, backend: str, hf_model: str, sandbox) -> str:
     if not url:
         return "ERROR: extract_url requires url"
     parsed = urlparse(url)
@@ -163,11 +156,12 @@ def _op_extract_url(url: str, lang: str, backend: str, hf_model: str) -> str:
         "image/jpg": ".jpg", "image/tiff": ".tiff",
         "image/webp": ".webp", "application/pdf": ".pdf",
     }.get(ct, ".png")
-    with tempfile.NamedTemporaryFile(suffix=ext, delete=False, dir=Path.cwd()) as f:
+    tmp_dir = Path(sandbox.workdir) if sandbox is not None else Path.cwd()
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False, dir=tmp_dir) as f:
         f.write(r.content)
         tmp = f.name
     try:
-        return _op_extract(tmp, lang, backend, hf_model)
+        return _op_extract(tmp, lang, backend, hf_model, sandbox)
     finally:
         try:
             os.unlink(tmp)
@@ -175,7 +169,7 @@ def _op_extract_url(url: str, lang: str, backend: str, hf_model: str) -> str:
             pass
 
 
-def _run(args: dict[str, Any]) -> str:
+def _run(args: dict[str, Any], sandbox) -> str:
     op = args.get("op")
     if not op:
         return "ERROR: op is required"
@@ -192,18 +186,18 @@ def _run(args: dict[str, Any]) -> str:
     try:
         if op == "extract":
             return _op_extract(
-                (args.get("path") or "").strip(), lang, backend, hf_model,
+                (args.get("path") or "").strip(), lang, backend, hf_model, sandbox,
             )
         if op == "extract_url":
             return _op_extract_url(
-                (args.get("url") or "").strip(), lang, backend, hf_model,
+                (args.get("url") or "").strip(), lang, backend, hf_model, sandbox,
             )
     except Exception as e:
         return f"ERROR: ocr failed: {type(e).__name__}: {e}"
     return f"ERROR: unknown op {op!r}"
 
 
-def ocr() -> Tool:
+def ocr(sandbox=None) -> Tool:
     return Tool(
         name="ocr",
         description=(
@@ -215,5 +209,5 @@ def ocr() -> Tool:
             "tesseract codes like 'eng' / 'eng+deu'."
         ),
         input_schema=_OCR_SCHEMA,
-        fn=_run,
+        fn=lambda args: _run(args, sandbox),
     )

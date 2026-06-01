@@ -33,7 +33,6 @@ def test_env_file_created_at_0600(tmp_path: Path, monkeypatch):
     with patch("maverick_installer.wizard.os.open", side_effect=_watching_open):
         from maverick_installer.wizard import write_config
         write_config(
-            deployment="laptop",
             providers=["anthropic"],
             role_models={},
             channels={},
@@ -69,7 +68,6 @@ def test_env_file_overwrites_existing(tmp_path: Path, monkeypatch):
 
     from maverick_installer.wizard import write_config
     write_config(
-        deployment="laptop",
         providers=["openai"],
         role_models={},
         channels={},
@@ -84,3 +82,47 @@ def test_env_file_overwrites_existing(tmp_path: Path, monkeypatch):
     assert "STALE" not in env.read_text()
     if os.name != "nt":  # NTFS reports 0o666 regardless of the chmod
         assert stat.S_IMODE(env.stat().st_mode) == 0o600
+
+
+def test_existing_env_backup_created_at_0600(tmp_path: Path, monkeypatch):
+    """Backups of secret-bearing env files must never be created world-readable."""
+    monkeypatch.setattr("maverick_installer.wizard.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("maverick_installer.wizard.ENV_FILE", tmp_path / ".env")
+    monkeypatch.setattr("maverick_installer.wizard.CONFIG_FILE", tmp_path / "config.toml")
+
+    env = tmp_path / ".env"
+    env.write_text("ANTHROPIC_API_KEY=sk-old\n")
+    os.chmod(env, 0o644)
+
+    observed_backup_modes = []
+    real_open = os.open
+
+    def _watching_open(path, flags, mode=0o777):
+        fd = real_open(path, flags, mode)
+        if os.fspath(path).endswith(".bak.tmp"):
+            try:
+                observed_backup_modes.append(stat.S_IMODE(os.stat(path).st_mode))
+            except OSError:
+                pass
+        return fd
+
+    with patch("maverick_installer.wizard.os.open", side_effect=_watching_open):
+        from maverick_installer.wizard import write_config
+
+        write_config(
+            providers=["anthropic"],
+            role_models={},
+            channels={},
+            safety={"profile": "balanced"},
+            budget={"max_dollars": 5.0, "max_wall_seconds": 600, "max_tool_calls": 30},
+            sandbox={"backend": "local", "workdir": "~/maverick-workspace"},
+            keys={"ANTHROPIC_API_KEY": "sk-new"},
+            capabilities={},
+        )
+
+    backup = tmp_path / ".env.bak"
+    assert backup.read_text() == "ANTHROPIC_API_KEY=sk-old\n"
+    assert observed_backup_modes, "backup temp file was not created via os.open"
+    if os.name != "nt":  # NTFS reports 0o666 regardless of the chmod
+        assert all(m == 0o600 for m in observed_backup_modes)
+        assert stat.S_IMODE(backup.stat().st_mode) == 0o600

@@ -105,6 +105,15 @@ def _delete(path: str) -> tuple[int, Any]:
         return r.status_code, r.text[:300]
 
 
+def _seg(value: str) -> str:
+    """URL-quote a path segment so a hostile index/doc_id cannot traverse to
+    another ES endpoint (e.g. doc_id='../../_cluster/settings' or
+    index='_all'). quote(safe='') encodes '/', making traversal impossible;
+    legitimate ES index/doc names contain none of these reserved chars."""
+    from urllib.parse import quote
+    return quote(value, safe="")
+
+
 def _op_search(args: dict) -> str:
     index = (args.get("index") or "").strip()
     if not index:
@@ -114,7 +123,7 @@ def _op_search(args: dict) -> str:
     }
     limit = max(1, min(int(args.get("limit") or 10), 100))
     body = {**query, "size": limit}
-    code, data = _post(f"/{index}/_search", body)
+    code, data = _post(f"/{_seg(index)}/_search", body)
     if code >= 400 or not isinstance(data, dict):
         return f"ERROR: search ({code}): {data}"
     hits = (data.get("hits") or {}).get("hits") or []
@@ -140,7 +149,7 @@ def _op_get(args: dict) -> str:
     did = (args.get("doc_id") or "").strip()
     if not index or not did:
         return "ERROR: get requires index and doc_id"
-    code, data = _get(f"/{index}/_doc/{did}")
+    code, data = _get(f"/{_seg(index)}/_doc/{_seg(did)}")
     if code == 404:
         return f"doc {index}/{did} not found"
     if code >= 400 or not isinstance(data, dict):
@@ -156,7 +165,7 @@ def _op_index(args: dict) -> str:
         return "ERROR: index requires index, doc_id, body"
     if not as_bool(args.get("confirm")):
         return f"DRY RUN: would index {index}/{did}. Re-run with confirm=true."
-    code, data = _put(f"/{index}/_doc/{did}", body)
+    code, data = _put(f"/{_seg(index)}/_doc/{_seg(did)}", body)
     if code >= 400 or not isinstance(data, dict):
         return f"ERROR: index ({code}): {data}"
     return f"indexed {index}/{did} result={data.get('result')}"
@@ -169,7 +178,7 @@ def _op_delete(args: dict) -> str:
         return "ERROR: delete requires index and doc_id"
     if not as_bool(args.get("confirm")):
         return f"DRY RUN: would delete {index}/{did}. Re-run with confirm=true."
-    code, data = _delete(f"/{index}/_doc/{did}")
+    code, data = _delete(f"/{_seg(index)}/_doc/{_seg(did)}")
     if code >= 400 or not isinstance(data, dict):
         return f"ERROR: delete ({code}): {data}"
     return f"deleted {index}/{did} result={data.get('result')}"
@@ -179,7 +188,7 @@ def _op_indices(args: dict) -> str:
     prefix = (args.get("prefix") or "").strip()
     path = "/_cat/indices"
     if prefix:
-        path += f"/{prefix}*"
+        path += f"/{_seg(prefix)}*"
     code, data = _get(path, {"format": "json", "h": "index,docs.count,store.size"})
     if code >= 400 or not isinstance(data, list):
         return f"ERROR: indices ({code}): {data}"
@@ -199,7 +208,7 @@ def _op_count(args: dict) -> str:
     query = args.get("query") if isinstance(args.get("query"), dict) else {
         "query": {"match_all": {}},
     }
-    code, data = _post(f"/{index}/_count", query)
+    code, data = _post(f"/{_seg(index)}/_count", query)
     if code >= 400 or not isinstance(data, dict):
         return f"ERROR: count ({code}): {data}"
     return f"count={data.get('count')}"

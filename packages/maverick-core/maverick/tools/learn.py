@@ -13,8 +13,9 @@ Ops:
                       servers must be configured by an operator.
   - create_tool     : GENERATE a Python tool from a spec, validate it, and
                       register it live (full-autonomy; gated by settings).
-  - find_api        : guidance for driving an arbitrary REST API via the
-                      built-in ``openapi_runner`` tool.
+  - find_api        : discover an API's OpenAPI spec (probe a base_url or
+                      web-search) and surface its operations, ready to drive
+                      via the built-in ``openapi_runner`` tool.
 
 Gated entirely by ``self_learning.enabled()``; the kernel never registers
 this tool otherwise.
@@ -120,15 +121,51 @@ def learn_capability(agent: Agent) -> Tool:
             )
 
         if op == "find_api":
-            return (
-                "Use the built-in `openapi_runner` tool to call any REST API "
-                "from its OpenAPI spec without writing a new tool:\n"
-                "  1. Find the API's OpenAPI/Swagger spec URL (web_search if enabled).\n"
-                "  2. openapi_runner op=list_ops spec=<spec-url> to see operations.\n"
-                "  3. openapi_runner op=call spec=<spec-url> op_id=<id> params={...} "
-                "headers={...} for auth.\n"
-                f"Need: {need or '(unspecified)'}"
+            base_url = (args.get("base_url") or "").strip()
+            spec_url = None
+            if base_url:
+                spec_url = self_learning.probe_openapi_spec(base_url)
+            if not spec_url and any(t.name == "web_search" for t in agent.tools.all()):
+                try:
+                    hits = await agent.tools.run(
+                        "web_search",
+                        {"query": f"{need or base_url} OpenAPI specification json"},
+                    )
+                except Exception:
+                    hits = ""
+                spec_url = self_learning.discover_openapi_spec(search_text=hits or "")
+            if not spec_url:
+                return (
+                    "Could not auto-discover an OpenAPI spec"
+                    + (" (enable the web_search tool to let me search for one)"
+                       if not any(t.name == "web_search" for t in agent.tools.all())
+                       else "")
+                    + ".\nIf you know the service's base URL, retry with "
+                    "base_url=<https://host>. Or call any REST API yourself via "
+                    "the `openapi_runner` tool once you have a spec URL:\n"
+                    "  openapi_runner op=list_ops spec=<spec-url>\n"
+                    "  openapi_runner op=call spec=<spec-url> op_id=<id> "
+                    "params={...} headers={...}\n"
+                    f"Need: {need or '(unspecified)'}"
+                )
+            self_learning.record(need or base_url, "api", spec_url, source=spec_url)
+            bb.post(agent.name, "observation", f"found API spec: {spec_url}")
+            ops_preview = ""
+            if any(t.name == "openapi_runner" for t in agent.tools.all()):
+                try:
+                    ops_preview = await agent.tools.run(
+                        "openapi_runner", {"op": "list_ops", "spec": spec_url},
+                    )
+                except Exception:
+                    ops_preview = ""
+            msg = f"Found an OpenAPI spec for {need or base_url!r}:\n  {spec_url}\n\n"
+            if ops_preview and not ops_preview.startswith("ERROR"):
+                msg += f"Operations:\n{ops_preview}\n\n"
+            msg += (
+                f"Call it with the openapi_runner tool: op=call spec={spec_url} "
+                "op_id=<id> params={...} headers={...} (headers for auth)."
             )
+            return msg
 
         return (
             "ERROR: unknown op. Use one of: search, acquire_skill, "
@@ -142,7 +179,8 @@ def learn_capability(agent: Agent) -> Tool:
             "to do the task. op=search to find existing skills; "
             "op=acquire_skill to install one; op=create_tool to generate a new "
             "tool from a description (persists for future runs); op=find_api to "
-            "drive a REST API via openapi_runner. Prefer search before create."
+            "discover an API's OpenAPI spec (pass base_url or let it web-search) "
+            "and drive it via openapi_runner. Prefer search before create."
         ),
         input_schema={
             "type": "object",
@@ -166,6 +204,12 @@ def learn_capability(agent: Agent) -> Tool:
                     "type": "string",
                     "description": "create_tool: detailed description of what the "
                                    "tool should do and its inputs/outputs.",
+                },
+                "base_url": {
+                    "type": "string",
+                    "description": "find_api: the service's base URL (e.g. "
+                                   "https://api.example.com) to probe for an "
+                                   "OpenAPI spec. Optional — omit to web-search.",
                 },
             },
             "required": ["op"],

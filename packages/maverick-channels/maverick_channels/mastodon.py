@@ -16,7 +16,7 @@ import logging
 import os
 import re
 
-from .base import Channel, Handler, IncomingMessage
+from .base import Channel, Handler, IncomingMessage, is_allowed
 
 log = logging.getLogger(__name__)
 
@@ -115,7 +115,12 @@ class MastodonChannel(Channel):
             resp.raise_for_status()
             notifs = resp.json() or []
         if notifs:
-            self._last_seen_id = max(n["id"] for n in notifs)
+            # Mastodon notification ids are numeric snowflakes returned as
+            # strings of varying length; a plain max() compares them
+            # lexicographically, so "9999999" > "10000001" and the cursor
+            # moves backwards across a digit-length boundary, re-delivering
+            # (or skipping) notifications. Compare numerically.
+            self._last_seen_id = max(notifs, key=lambda n: int(n["id"]))["id"]
         return notifs
 
     async def _dispatch(self, notif: dict) -> None:
@@ -123,7 +128,9 @@ class MastodonChannel(Channel):
         account = notif.get("account") or {}
         text = _strip_html(status.get("content", ""))
         user_id = account.get("acct") or account.get("username") or "anonymous"
-        if user_id not in self.allowed_user_ids:
+        # Shared default-deny helper (normalizes + hard-rejects "anonymous"),
+        # matching the other adapters.
+        if not is_allowed(user_id, self.allowed_user_ids):
             log.warning("unauthorized mastodon access: user_id=%s", user_id)
             return
         msg = IncomingMessage(

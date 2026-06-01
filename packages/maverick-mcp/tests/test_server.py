@@ -255,3 +255,78 @@ class TestProtocol2025_11_25:
         s = MCPServer()
         with pytest.raises(_ProtocolError):
             s.handle_prompts_get({"name": "nonexistent", "arguments": {}})
+
+
+class TestStructuredOutput:
+    """The read-only query tools declare an outputSchema and return
+    structuredContent. Additive: the text block stays for back-compat."""
+
+    @pytest.fixture
+    def isolated_wm(self, tmp_path, monkeypatch):
+        # The handlers call WorldModel() with no args -> DEFAULT_DB
+        # (~/.maverick/world.db). Redirect that to a throwaway DB so these
+        # assertions are deterministic and never touch the real one.
+        import maverick.world_model as wm
+        real = wm.WorldModel
+        db = tmp_path / "w.db"
+        monkeypatch.setattr(
+            wm, "WorldModel",
+            lambda *a, **k: real(db) if not (a or k) else real(*a, **k),
+        )
+        return wm
+
+    def test_query_tools_declare_output_schema(self):
+        by_name = {t["name"]: t for t in TOOLS}
+        for n in ("maverick_status", "maverick_skills_list", "maverick_facts_get"):
+            schema = by_name[n].get("outputSchema")
+            assert schema and schema["type"] == "object"
+
+    def test_facts_get_returns_structured_content(self, isolated_wm):
+        isolated_wm.WorldModel().upsert_fact("project", "maverick")
+
+        out = MCPServer().handle_tools_call(
+            {"name": "maverick_facts_get", "arguments": {}})
+        assert out["isError"] is False
+        # back-compat: the text block is still present...
+        assert "project" in out["content"][0]["text"]
+        # ...and typed clients get parsed JSON matching the outputSchema.
+        assert out["structuredContent"] == {"facts": {"project": "maverick"}}
+
+    def test_status_and_skills_structured_shape(self, isolated_wm):
+        s = MCPServer()
+        st = s.handle_tools_call({"name": "maverick_status", "arguments": {}})
+        assert set(st["structuredContent"]) == {"goals", "open_questions"}
+        assert isinstance(st["structuredContent"]["goals"], list)
+        sk = s.handle_tools_call({"name": "maverick_skills_list", "arguments": {}})
+        assert isinstance(sk["structuredContent"]["skills"], list)
+
+    def test_action_tool_has_no_structured_content(self, isolated_wm):
+        out = MCPServer().handle_tools_call(
+            {"name": "maverick_fact_set", "arguments": {"key": "k", "value": "v"}})
+        assert out["isError"] is False
+        assert "structuredContent" not in out  # no outputSchema -> text only
+
+    def test_start_and_resume_declare_goal_id_schema(self):
+        by_name = {t["name"]: t for t in TOOLS}
+        for n in ("maverick_start", "maverick_resume"):
+            props = by_name[n]["outputSchema"]["properties"]
+            assert "goal_id" in props and "answer" in props
+
+    def test_start_exposes_goal_id_in_structured_content(self, isolated_wm, monkeypatch):
+        # start is side-effectful; mock the swarm so no provider key is needed.
+        import maverick.llm
+        import maverick.orchestrator
+        import maverick.sandbox
+        monkeypatch.setattr(maverick.llm, "LLM", lambda *a, **k: object())
+        monkeypatch.setattr(maverick.sandbox, "build_sandbox", lambda *a, **k: object())
+        monkeypatch.setattr(
+            maverick.orchestrator, "run_goal_sync",
+            lambda *a, **k: "the swarm's answer")
+
+        out = MCPServer().handle_tools_call(
+            {"name": "maverick_start", "arguments": {"title": "do a thing"}})
+        assert out["isError"] is False
+        assert out["content"][0]["text"] == "the swarm's answer"   # back-compat text
+        sc = out["structuredContent"]
+        assert isinstance(sc["goal_id"], int)   # the field clients need to chain
+        assert sc["answer"] == "the swarm's answer"

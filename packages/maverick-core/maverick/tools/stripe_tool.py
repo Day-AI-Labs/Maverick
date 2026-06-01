@@ -88,9 +88,15 @@ def _get(path: str, params: dict | None = None) -> tuple[int, Any]:
         return r.status_code, {"error": r.text[:300]}
 
 
-def _post(path: str, data: dict) -> tuple[int, Any]:
+def _post(path: str, data: dict, *, idempotency_key: str | None = None) -> tuple[int, Any]:
     import httpx
-    r = httpx.post(f"{_API}/{path}", headers=_headers(),
+    headers = _headers()
+    if idempotency_key:
+        # Stripe dedupes writes that carry the same Idempotency-Key, so a
+        # retried request (network blip, agent re-run) does not create a
+        # second object. https://stripe.com/docs/api/idempotent_requests
+        headers["Idempotency-Key"] = idempotency_key
+    r = httpx.post(f"{_API}/{path}", headers=headers,
                    data=data, timeout=30.0)
     try:
         return r.status_code, r.json()
@@ -98,11 +104,22 @@ def _post(path: str, data: dict) -> tuple[int, Any]:
         return r.status_code, {"error": r.text[:300]}
 
 
+# Stripe uses the currency's smallest unit, but for zero-decimal currencies
+# that unit IS the whole unit (¥5000 is returned as 5000, not 500000), so
+# dividing by 100 under-reports them 100x.
+_ZERO_DECIMAL = {
+    "bif", "clp", "djf", "gnf", "jpy", "kmf", "krw", "mga", "pyg", "rwf",
+    "ugx", "vnd", "vuv", "xaf", "xof", "xpf",
+}
+
+
 def _money(cents: int | str | None, currency: str = "usd") -> str:
     try:
         v = int(cents or 0)
     except (TypeError, ValueError):
         return "?"
+    if currency.lower() in _ZERO_DECIMAL:
+        return f"{v:,} {currency.upper()}"
     return f"{v/100:,.2f} {currency.upper()}"
 
 
@@ -133,14 +150,43 @@ def _op_customer_search(email: str) -> str:
     )
 
 
+def _list_paginated(path: str, params: dict, limit: int) -> tuple[int, Any, list[dict]]:
+    """Follow Stripe's cursor pagination (``has_more`` + ``starting_after``)
+    until ``limit`` objects are collected.
+
+    Stripe caps ``limit`` at 100 per page, so a request for more than 100 (or
+    one that legitimately spans pages) must follow the cursor. Returns
+    ``(status_code, error_payload, rows)``; ``rows`` is capped at ``limit`` and
+    the loop is bounded by a hard page cap.
+    """
+    rows: list[dict] = []
+    starting_after: str | None = None
+    max_pages = max(1, (limit // 100) + 2)
+    for _ in range(max_pages):
+        p = dict(params)
+        p["limit"] = min(100, max(1, limit - len(rows)))
+        if starting_after:
+            p["starting_after"] = starting_after
+        code, data = _get(path, p)
+        if code >= 400:
+            return code, data, rows
+        batch = data.get("data") or []
+        rows.extend(batch)
+        if len(rows) >= limit or not data.get("has_more") or not batch:
+            break
+        starting_after = batch[-1].get("id")
+        if not starting_after:
+            break
+    return 200, {}, rows[:limit]
+
+
 def _op_charges(limit: int, customer: str) -> str:
-    params: dict = {"limit": limit}
+    params: dict = {}
     if customer:
         params["customer"] = customer
-    code, data = _get("charges", params)
+    code, err, rows = _list_paginated("charges", params, limit)
     if code >= 400:
-        return f"ERROR: charges ({code}): {data.get('error', {})}"
-    rows = data.get("data") or []
+        return f"ERROR: charges ({code}): {err.get('error', {})}"
     if not rows:
         return "no charges"
     lines = []
@@ -158,10 +204,9 @@ def _op_charges(limit: int, customer: str) -> str:
 def _op_subscriptions(customer: str) -> str:
     if not customer:
         return "ERROR: subscriptions requires customer"
-    code, data = _get("subscriptions", {"customer": customer, "limit": 25})
+    code, err, rows = _list_paginated("subscriptions", {"customer": customer}, 100)
     if code >= 400:
-        return f"ERROR: subscriptions ({code}): {data.get('error', {})}"
-    rows = data.get("data") or []
+        return f"ERROR: subscriptions ({code}): {err.get('error', {})}"
     if not rows:
         return f"no subscriptions for {customer}"
     lines = []
@@ -198,7 +243,14 @@ def _op_refund_create(charge_id: str, amount_cents: int, reason: str,
         body["amount"] = amount_cents
     if reason:
         body["reason"] = reason
-    code, data = _post("refunds", body)
+    # Deterministic idempotency key from the refund intent: a retry of the
+    # SAME logical refund (same charge + amount + reason) is deduped by Stripe
+    # into one refund, while a genuinely different refund (different amount or
+    # reason) gets a distinct key and is allowed through.
+    import hashlib
+    fingerprint = f"{charge_id}:{amount_cents or 'full'}:{reason or ''}"
+    idem = "maverick-refund-" + hashlib.sha256(fingerprint.encode()).hexdigest()[:32]
+    code, data = _post("refunds", body, idempotency_key=idem)
     if code >= 400:
         return f"ERROR: refund_create ({code}): {data.get('error', {})}"
     return (

@@ -101,8 +101,11 @@ def _parse_frontmatter(front: str) -> dict:
             v = v.strip()
             current_key = k
             if v:
-                # Try numeric coercion for budget fields.
-                if k.startswith("budget_") and re.match(r"^[\d.]+$", v):
+                # Try numeric coercion for budget fields. The pattern must
+                # match a real number -- the old `^[\d.]+$` accepted things
+                # like "1.2.3" / "." / "5." that float() then choked on,
+                # raising an uncaught ValueError out of template parse.
+                if k.startswith("budget_") and re.match(r"^\d+(\.\d+)?$", v):
                     meta[k] = float(v)
                 else:
                     meta[k] = v

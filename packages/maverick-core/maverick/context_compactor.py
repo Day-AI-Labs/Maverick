@@ -101,12 +101,23 @@ def _message_text(msg: dict) -> str:
         for block in content:
             if isinstance(block, dict):
                 t = block.get("text") or block.get("content") or ""
-                if isinstance(t, str):
+                if isinstance(t, str) and t:
                     parts.append(t)
                 elif isinstance(t, list):
                     for inner in t:
                         if isinstance(inner, dict):
                             parts.append(str(inner.get("text") or ""))
+                else:
+                    # tool_use carries its args under `input` (no text/content),
+                    # and a structured tool_result may have a dict content; the
+                    # old code counted these as 0 tokens, so token estimates
+                    # under-counted multi-KB tool args and the cap was exceeded.
+                    import json as _json
+                    payload = block.get("input")
+                    if payload is not None:
+                        parts.append(_json.dumps(payload, default=str))
+                    elif not isinstance(t, str):
+                        parts.append(_json.dumps(t, default=str))
             elif isinstance(block, str):
                 parts.append(block)
         return " ".join(parts)
@@ -242,9 +253,16 @@ def compact(
         tail, target_tokens - marker_budget,
     )
 
-    kept_by_idx: dict[int, dict] = {}
-    used = 0
+    # Always preserve system messages regardless of relevance score --
+    # the documented contract ("Always preserve the system context") and
+    # because dropping the system prompt corrupts the run. They are kept
+    # unconditionally and not subject to the budget cull below.
+    forced_idx = {i for i, m in enumerate(head) if m.get("role") == "system"}
+    kept_by_idx: dict[int, dict] = {i: head[i] for i in forced_idx}
+    used = sum(_approx_tokens(_message_text(head[i])) for i in forced_idx)
     for score, idx, msg in scored:
+        if idx in kept_by_idx:
+            continue
         cost = _approx_tokens(_message_text(msg))
         if used + cost > budget_remaining:
             continue

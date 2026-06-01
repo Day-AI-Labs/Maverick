@@ -50,7 +50,7 @@ realises mid-task that it's missing something, it calls this tool:
 | `acquire_skill` | install a catalog skill by name (hash-verified) and inject its steps immediately |
 | `add_mcp_server` | disabled for agent-driven self-learning; ask an operator to add trusted `[mcp_servers.<name>]` config |
 | `create_tool` | generate a Python tool from a description, validate it, and register it live |
-| `find_api` | drive any REST API through the built-in `openapi_runner` (no new code) |
+| `find_api` | discover an API's OpenAPI spec (probe a `base_url` or web-search), list its operations, and drive it via the built-in `openapi_runner` (no new code) |
 
 Anything acquired is registered into the **live** tool registry, so the
 agent can use it on its very next turn — no restart.

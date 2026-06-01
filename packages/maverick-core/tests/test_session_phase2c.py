@@ -251,6 +251,43 @@ def test_gemini_session_extracts_at_token(tmp_path, monkeypatch):
     assert out.text == "the-answer"
 
 
+def test_gemini_parse_handles_varied_content_shapes():
+    """The candidate text may arrive as a str, a nested list, or a dict;
+    all must yield the text, not '' or a stringified list (issue #454)."""
+    import json
+
+    from maverick.session_providers.gemini_session import _parse_stream_response
+
+    def _body(candidates):
+        inner = json.dumps([None, None, None, None, candidates])
+        outer = json.dumps([[None, None, inner]])
+        return ")]}'\n" + str(len(outer)) + "\n" + outer
+
+    # Plain string (the common shape) — regression guard.
+    assert _parse_stream_response(_body([["u", ["plain"]]])) == "plain"
+    # Dict-shaped multimodal text frame — previously dropped to ''.
+    assert _parse_stream_response(_body([["u", [{"text": "from-dict"}]]])) == "from-dict"
+    # Deeper nested list — previously stringified as "['x']".
+    assert _parse_stream_response(_body([["u", [[["deep"]]]]])) == "deep"
+
+
+def test_gemini_parse_tolerates_malformed_chunks():
+    """Metadata-only / truncated / non-JSON chunks must not crash the parser."""
+    import json
+
+    from maverick.session_providers.gemini_session import _parse_stream_response
+
+    assert _parse_stream_response("") == ""
+    # Inner candidate path missing entirely (metadata-only frame).
+    outer = json.dumps([[None, None, json.dumps([None, None])]])
+    assert _parse_stream_response(")]}'\n" + str(len(outer)) + "\n" + outer) == ""
+    # obj[0][2] is null (not a JSON string) — must skip, not raise.
+    outer = json.dumps([[None, None, None]])
+    assert _parse_stream_response(")]}'\n" + str(len(outer)) + "\n" + outer) == ""
+    # Garbage between chunks is skipped line-by-line.
+    assert _parse_stream_response(")]}'\nnot-json\n123\n") == ""
+
+
 def test_gemini_session_rejects_tool_use(tmp_path, monkeypatch):
     _stub_session(
         tmp_path, monkeypatch, "gemini-session",
@@ -307,6 +344,47 @@ def test_simulator_renders_tools_to_prompt():
     assert "## Tools available" in captured_system["s"]
     assert "calc" in captured_system["s"]
     assert "do math" in captured_system["s"]
+
+
+def test_simulator_parses_tool_call_back_to_tool_use():
+    """The payoff of the markdown protocol (issue #315): a session model that
+    emits a ``<tool ...>`` block comes back as a real ``tool_use`` response, so
+    tool-using roles DO work on session providers. The raw adapters reject
+    ``tools=[...]`` with NotImplementedError, but the LLM facade auto-wraps
+    them in this simulator (llm.py: get_session_client(simulate_tools=True)),
+    which strips tools before the adapter and parses the call back out -- so
+    that guard is unreachable on the wrapped runtime path."""
+    from maverick.llm import LLMResponse
+    from maverick.session_providers.tool_simulator import SimulatedToolCallClient
+
+    class _Inner:
+        DEFAULT_MODEL = "x"
+
+        def __init__(self):
+            self.saw_tools = "unset"
+
+        def complete(self, **kw):
+            self.saw_tools = kw.get("tools")
+            return LLMResponse(
+                text='Let me add those.\n<tool name="calc">{"x": 2, "y": 3}</tool>',
+                thinking=None, tool_calls=[], stop_reason="end_turn",
+            )
+
+    inner = _Inner()
+    resp = SimulatedToolCallClient(inner).complete(
+        system="base", messages=[],
+        tools=[{"name": "calc", "description": "add", "input_schema": {"properties": {}}}],
+    )
+    # The raw adapter never sees tools -- that's what makes its
+    # NotImplementedError a dead guard on the wrapped path.
+    assert inner.saw_tools is None
+    # The markdown tool block is parsed back into a real tool_use response.
+    assert resp.stop_reason == "tool_use"
+    assert [c.name for c in resp.tool_calls] == ["calc"]
+    assert resp.tool_calls[0].input == {"x": 2, "y": 3}
+    # Prose preserved; the tool block is stripped from the visible text.
+    assert "Let me add those." in resp.text
+    assert "<tool" not in resp.text
 
 
 def test_simulator_parses_named_tool_calls():

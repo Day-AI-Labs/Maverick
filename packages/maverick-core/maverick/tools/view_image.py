@@ -68,6 +68,11 @@ def _load_image(source: str) -> tuple[bytes, str] | None:
             # Pins the connection to the validated public IP (no rebinding).
             resp = safe_get(source, timeout=30.0)
             resp.raise_for_status()
+            # Cap the in-memory body (then base64-encoded for the vision model):
+            # a model-supplied URL to a multi-GB resource is an unbounded blowup.
+            if len(resp.content) > 20 * 1024 * 1024:
+                log.warning("image fetch refused: %d bytes > 20 MiB cap", len(resp.content))
+                return None
             mime = (resp.headers.get("content-type") or _guess_mime(source)).split(";")[0].strip()
             return resp.content, mime
         except BlockedHost as e:

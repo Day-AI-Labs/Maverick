@@ -130,8 +130,11 @@ def _run(args: dict[str, Any]) -> str:
         arxiv_id = (args.get("arxiv_id") or "").strip()
         if not arxiv_id:
             return "ERROR: fetch requires arxiv_id"
-        # Normalize: strip any URL prefix or version suffix.
-        arxiv_id = arxiv_id.rsplit("/", 1)[-1]
+        # Normalize: strip only the arxiv.org URL prefix and any version
+        # suffix. A blind rsplit("/") mangled old-style ids like
+        # "math.GT/0309136" (which legitimately contain a slash) down to the
+        # bare number, breaking the fetch.
+        arxiv_id = re.sub(r"^https?://arxiv\.org/(?:abs|pdf)/", "", arxiv_id)
         arxiv_id = re.sub(r"v\d+$", "", arxiv_id)
         try:
             resp = httpx.get(

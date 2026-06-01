@@ -62,6 +62,13 @@ except ImportError:
 _WARNED_SDK_MISSING = False
 
 
+def _normalize_config_token(value: Any, default: str) -> str:
+    """Return a lowercase config token, tolerating hand-edited TOML types."""
+    if not value:
+        return default
+    return str(value).strip().lower() or default
+
+
 @dataclass
 class ShieldVerdict:
     allowed: bool
@@ -95,6 +102,16 @@ class Shield:
         scan_tool_calls: bool = True,
         scan_output: bool = True,
     ):
+        # Normalize: profile/threshold/backend come from user-typed TOML, and
+        # the comparisons below (== "off"/"none", the {"strict": ...} sensitivity
+        # lookup) plus SEVERITY_ORDER are case-sensitive -- a config like
+        # profile = "Off" or "Strict" otherwise silently misapplies (safety
+        # stays on, or "Strict" falls through to medium sensitivity). Coerce
+        # before strip/lower so truthy non-string TOML values (for example
+        # profile = true or block_threshold = 1) cannot crash Shield startup.
+        profile = _normalize_config_token(profile, "balanced")
+        block_threshold = _normalize_config_token(block_threshold, "high")
+        backend = _normalize_config_token(backend, "auto")
         self.profile = profile
         self.block_threshold = block_threshold
         # Per-sink enable flags ([safety] scan_input/scan_tool_calls/

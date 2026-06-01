@@ -36,14 +36,12 @@ _ANSWERS = ["", "Alex", "sk-ant-x", "", "$5"]  # name, key, workdir(blank), budg
 def test_bridge_uses_docker_when_daemon_available(monkeypatch, tmp_path):
     monkeypatch.setattr(wizard, "_docker_available", lambda: True)
     config = _run(monkeypatch, tmp_path, _ANSWERS)
-    assert config["deploy"]["target"] == "desktop"
     assert config["sandbox"]["backend"] == "docker"
 
 
 def test_bridge_falls_back_to_local_without_docker(monkeypatch, tmp_path):
     monkeypatch.setattr(wizard, "_docker_available", lambda: False)
     config = _run(monkeypatch, tmp_path, _ANSWERS)
-    assert config["deploy"]["target"] == "desktop"
     assert config["sandbox"]["backend"] == "local"
 
 

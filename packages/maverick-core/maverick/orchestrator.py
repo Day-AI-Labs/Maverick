@@ -178,6 +178,20 @@ async def run_goal(
     if not goal:
         return f"no such goal: {goal_id}"
 
+    # Emergency stop: if a HALT file is present, refuse to start the goal with a
+    # clear message + the right next step. Otherwise the agent loop trips the
+    # killswitch mid-run, surfacing a confusing generic 'ran into an error'
+    # with bad advice ('resume' -- which just halts again).
+    try:
+        from . import killswitch
+        killswitch.check()
+    except killswitch.Halted:
+        world.set_goal_status(goal_id, "blocked", result="halted")
+        return (
+            "Stopped: Maverick is halted (a HALT file is present).\n"
+            "Run `maverick unhalt` to clear it, then try again."
+        )
+
     # Bind trace context so every log line emitted in this task is
     # automatically tagged with goal_id (+ conversation_id when set).
     try:
@@ -255,7 +269,7 @@ async def run_goal(
             llm=llm, world=world, budget=budget, blackboard=blackboard,
             sandbox=sandbox, goal_id=goal_id, max_depth=max_depth,
             shield=shield, mcp_clients=mcp_clients,
-            channel=channel, user_id=user_id,
+            channel=channel, user_id=user_id, episode_id=episode_id,
         )
 
         # Facts are persisted, user/REST/MCP-settable strings that get
@@ -449,6 +463,16 @@ async def run_goal(
 
         try:
             result = await root.run()
+            # Durable execution: the root loop returned normally (it is no
+            # longer mid-step), so any checkpoints are stale — drop them. A
+            # crash that kills the process BEFORE this leaves them in place
+            # for `maverick resume` to pick up. Fail-open.
+            try:
+                from . import checkpoint as _ckpt_mod
+                if _ckpt_mod.enabled():
+                    _ckpt_mod.Checkpointer(world).clear(goal_id)
+            except Exception:  # pragma: no cover -- never block completion
+                pass
         except BudgetExceeded as e:
             _end_episode_with_spend(world, episode_id, f"budget: {e}", "failure", budget, goal_id)
             _maybe_record_reflexion(
@@ -558,6 +582,19 @@ async def run_goal(
                     f"(${budget.dollars:.2f}, {budget.elapsed():.0f}s elapsed).\n"
                     f"Resume with a higher cap: "
                     f"maverick resume #{goal_id} --max-dollars <higher>"
+                )
+            # A halt tripped mid-run surfaces as result.error too. Give the
+            # clear unhalt instruction rather than the generic error (whose
+            # 'resume' advice would just halt again).
+            if "halt" in (result.error or "").lower():
+                _end_episode_with_spend(world, episode_id, "halted", "interrupted", budget, goal_id)
+                world.set_goal_status(goal_id, "blocked", result="halted")
+                _fire_webhook("goal_finished", {
+                    "goal_id": goal_id, "status": "blocked", "result": "halted",
+                })
+                return (
+                    "Stopped: Maverick was halted mid-run (a HALT file is present).\n"
+                    f"Run `maverick unhalt` to clear it, then `maverick resume #{goal_id}`."
                 )
             _end_episode_with_spend(world, episode_id, result.error, "failure", budget, goal_id)
             _maybe_record_reflexion(
@@ -872,9 +909,13 @@ async def run_goal_best_of_n(
         cand = await evaluate_candidate(patch, workdir, cfg, sandbox, i)
         candidates.append(cand)
 
-        if cand.score >= 0.99:
-            # Early exit: a candidate that passes ALL tests is as good
-            # as it gets; don't pay for the remaining N-1 attempts.
+        if cand.test_result is not None and cand.test_result.all_pass:
+            # Early exit only when ALL tests genuinely pass. The old
+            # `score >= 0.99` fired on a count-pooled partial score too: with a
+            # large PASS_TO_PASS suite a candidate that resolves NONE of the
+            # FAIL_TO_PASS tests still clears 0.99, so best-of-N stopped early
+            # on a candidate that didn't fix the issue. all_pass requires every
+            # FAIL_TO_PASS and PASS_TO_PASS test to pass (and >=1 test to run).
             log.info("best-of-N early exit at attempt %d: all tests pass", i)
             break
         if cap_reached:

@@ -24,8 +24,17 @@ DEFAULT_ROOT = Path.home() / ".maverick" / "attachments"
 
 # 25 MiB per file, 100 MiB per goal. Tunable via env so a VPS deployment
 # can raise the cap without a code change.
-MAX_FILE_BYTES = int(os.environ.get("MAVERICK_ATTACH_MAX_FILE_BYTES", 25 * 1024 * 1024))
-MAX_GOAL_BYTES = int(os.environ.get("MAVERICK_ATTACH_MAX_GOAL_BYTES", 100 * 1024 * 1024))
+def _env_int(name: str, default: int) -> int:
+    # A non-numeric value used to raise ValueError at import time, killing the
+    # attachment path with an opaque traceback instead of using the default.
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+MAX_FILE_BYTES = _env_int("MAVERICK_ATTACH_MAX_FILE_BYTES", 25 * 1024 * 1024)
+MAX_GOAL_BYTES = _env_int("MAVERICK_ATTACH_MAX_GOAL_BYTES", 100 * 1024 * 1024)
 
 # Mime allowlist. Text + image families. PDF allowed (anthropic vision
 # supports it directly). Active deny for executables and archives.

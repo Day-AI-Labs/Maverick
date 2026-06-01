@@ -74,7 +74,7 @@ def _check_sandbox() -> list[str]:
         cfg = get_sandbox()
     except Exception:
         cfg = {}
-    backend = cfg.get("backend", "local")
+    backend = str(cfg.get("backend", "local") or "local").strip().lower()
     out = [f"  ✓ sandbox backend: {backend}"]
     if backend == "docker":
         if not shutil.which("docker"):
@@ -82,6 +82,18 @@ def _check_sandbox() -> list[str]:
     if backend == "podman":
         if not shutil.which("podman"):
             out.append("    ✗ podman binary not on PATH")
+    if backend == "devcontainer":
+        if not shutil.which("docker"):
+            out.append("    ✗ devcontainer needs the docker binary, not on PATH")
+    if backend == "kubernetes":
+        if not shutil.which("kubectl"):
+            out.append("    ✗ kubectl binary not on PATH")
+    if backend == "firecracker":
+        provider = str(cfg.get("provider", "local") or "local").strip().lower()
+        if provider == "local" and not shutil.which("firecracker"):
+            out.append("    ✗ firecracker binary not on PATH")
+        elif provider == "e2b" and not os.environ.get("E2B_API_KEY"):
+            out.append("    ✗ firecracker provider=e2b but E2B_API_KEY unset")
     if backend == "ssh":
         if not shutil.which("ssh"):
             out.append("    ✗ ssh binary not on PATH")
@@ -105,7 +117,7 @@ def _check_toolchains() -> list[str]:
     out = [f"  ✓ coding toolchains on PATH: {', '.join(present) or '(none)'}"]
     try:
         from ..config import get_sandbox
-        backend = get_sandbox().get("backend", "local")
+        backend = str(get_sandbox().get("backend", "local") or "local").strip().lower()
     except Exception:
         backend = "local"
     if backend == "local":

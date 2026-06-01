@@ -52,8 +52,9 @@ def render_persona_prompt() -> str:
     parts: list[str] = []
     if p["name"]:
         parts.append(f"You are {p['name']}.")
-    if p["style"] and p["style"] in STYLES:
-        parts.append(STYLES[p["style"]])
+    style = (p["style"] or "").strip().lower()
+    if style and style in STYLES:
+        parts.append(STYLES[style])
     if p["addendum"]:
         parts.append(p["addendum"])
     return "\n\n# Persona\n\n" + " ".join(parts)

@@ -160,21 +160,30 @@ def model_for_role(role: str) -> str:
     Resolution order:
       1. Per-role env override `MAVERICK_MODEL_OVERRIDE_<ROLE>` (set by
          best-of-N to swap models per attempt).
-      2. ``~/.maverick/config.toml`` -> ``[models]`` -> role
-      3. Cost-aware router (opt-in: `MAVERICK_COST_ROUTING=1` or
+      2. Global override `MAVERICK_MODEL_OVERRIDE` (set by the CLI's
+         `maverick --model <id>` flag) -- an explicit, run-wide choice that
+         beats config so the documented flag actually applies to every agent.
+      3. ``~/.maverick/config.toml`` -> ``[models]`` -> role
+      4. Cost-aware router (opt-in: `MAVERICK_COST_ROUTING=1` or
          `[routing] cost_aware = true`) -- among the user's configured
          providers, the cheapest one at the role's capability tier.
-      4. ``ROLE_MODELS`` defaults
-      5. ``DEFAULT_MODEL``
+      5. ``ROLE_MODELS`` defaults
+      6. ``DEFAULT_MODEL``
 
-    The user's explicit choices (1, 2) always win; the router only gets a
-    say when no model was pinned, and it returns None (defers to 4) unless
+    The user's explicit choices (1, 2, 3) always win; the router only gets a
+    say when no model was pinned, and it returns None (defers to 5) unless
     the operator opted in. This keeps "users own model choice" intact.
     """
     import os
     override = os.environ.get(f"MAVERICK_MODEL_OVERRIDE_{role.upper()}")
     if override:
         return override
+    # Global CLI override (`maverick --model <id>`): an explicit run-wide
+    # choice. Beats config so the flag isn't silently ignored by per-role
+    # config/defaults (which it was, before this).
+    global_override = os.environ.get("MAVERICK_MODEL_OVERRIDE")
+    if global_override:
+        return global_override
     try:
         from .config import get_role_model
         spec = get_role_model(role)
@@ -196,11 +205,21 @@ def model_for_role(role: str) -> str:
 
 
 def _parse_spec(spec: str) -> tuple[str, str]:
-    """Parse ``provider:model-id`` or bare ``model-id`` (= anthropic)."""
+    """Parse ``provider:model-id`` or bare ``model-id`` (= anthropic).
+
+    The provider half is canonicalized (lowercased, alias-resolved via the
+    provider registry) so a user-typed ``Anthropic:`` or an advertised alias
+    like ``claude:`` resolves the same as ``anthropic:`` -- not just for client
+    creation (which already canonicalizes) but for the case-sensitive API-key
+    lookup in ``_provider_api_key``, which would otherwise miss the key and
+    fail auth at call time.
+    """
     if ":" in spec:
         provider, model_id = spec.split(":", 1)
-        return provider, model_id
-    return "anthropic", spec
+    else:
+        provider, model_id = "anthropic", spec
+    from .providers import _canonical
+    return _canonical(provider), model_id
 
 
 def _configured_provider_api_key(provider: str) -> str | None:

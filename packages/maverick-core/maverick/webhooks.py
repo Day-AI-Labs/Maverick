@@ -51,6 +51,11 @@ def _load_config_outbound() -> tuple[list[str], str | None]:
     if isinstance(secret, str) and secret.startswith("${") and secret.endswith("}"):
         env_name = secret[2:-1]
         secret = os.environ.get(env_name) or None
+    # Coerce a non-string TOML value (e.g. `secret = 1234`) to str so _sign's
+    # secret.encode() and verify_signature don't raise AttributeError (which,
+    # for the outbound path, would break fire()'s never-raise contract).
+    if secret is not None and not isinstance(secret, str):
+        secret = str(secret)
     return urls, secret
 
 
@@ -73,20 +78,25 @@ def _get_executor():
 
 
 def _post(url: str, body: bytes, headers: dict[str, str], timeout: float) -> None:
+    from .secrets import scrub
+    # Outbound webhook URLs frequently carry credentials in the query string
+    # (?token=, ?api_key=, presigned ?sig=); scrub before logging so they don't
+    # land in the default-level logs / log aggregator verbatim.
+    safe_url = scrub(url)
     try:
         import httpx
     except ImportError:
-        log.warning("webhooks: httpx not installed; skipping %s", url)
+        log.warning("webhooks: httpx not installed; skipping %s", safe_url)
         return
     try:
         resp = httpx.post(url, content=body, headers=headers, timeout=timeout)
         if resp.status_code >= 400:
             log.warning(
                 "webhooks: %s returned %d: %s",
-                url, resp.status_code, resp.text[:200],
+                safe_url, resp.status_code, scrub(resp.text[:200]),
             )
     except Exception as e:
-        log.warning("webhooks: %s failed: %s: %s", url, type(e).__name__, e)
+        log.warning("webhooks: %s failed: %s: %s", safe_url, type(e).__name__, scrub(str(e)))
 
 
 def fire(

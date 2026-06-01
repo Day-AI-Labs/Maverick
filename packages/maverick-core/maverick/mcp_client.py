@@ -221,6 +221,12 @@ class MCPClient:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                # Raise the StreamReader buffer well above the 64 KB default:
+                # MCP tools/call results (file reads, search hits, base64
+                # images) and big tools/list responses routinely exceed 64 KB,
+                # and readline() raises LimitOverrunError on a longer line --
+                # crashing the request (or dropping the whole server at start).
+                limit=8 * 1024 * 1024,
             )
         except FileNotFoundError as e:
             raise MCPClientError(
@@ -259,10 +265,16 @@ class MCPClient:
                 line = await self._proc.stderr.readline()
                 if not line:
                     return
-                # A hostile / buggy MCP server can echo bearer tokens or
-                # .env values to stderr; scrub before they hit the log.
-                log.debug("MCP[%s] stderr: %s", self.spec.name,
-                          scrub(line.decode("utf-8", errors="replace").rstrip()))
+                try:
+                    # A hostile / buggy MCP server can echo bearer tokens or
+                    # .env values to stderr; scrub before they hit the log.
+                    log.debug("MCP[%s] stderr: %s", self.spec.name,
+                              scrub(line.decode("utf-8", errors="replace").rstrip()))
+                except Exception:  # noqa: BLE001
+                    # Never let a scrub/logging error kill the drain task --
+                    # if it dies the ~64KB stderr pipe fills and the child
+                    # blocks mid tool-call, the exact deadlock this prevents.
+                    pass
         except asyncio.CancelledError:
             return
 
@@ -310,6 +322,15 @@ class MCPClient:
             except json.JSONDecodeError:
                 log.debug("MCP %s non-JSON line: %s", self.spec.name, line[:200])
                 continue
+            # A JSON-RPC error with id:null (parse error / invalid request)
+            # never matches expected_id, so without this it would be skipped and
+            # the read would block until the timeout. Surface it immediately.
+            if msg.get("id") is None and "error" in msg:
+                err = msg["error"]
+                raise MCPClientError(
+                    f"MCP {self.spec.name!r} protocol error "
+                    f"{err.get('code')}: {err.get('message')}"
+                )
             # Drop notifications + responses for other requests.
             if msg.get("id") != expected_id:
                 continue
@@ -346,6 +367,12 @@ class MCPClient:
                 await asyncio.wait_for(self._proc.wait(), timeout=5)
             except asyncio.TimeoutError:  # pragma: no cover
                 self._proc.kill()
+                # Reap the killed child so it isn't left a zombie (the only
+                # handle is dropped on the next line).
+                try:
+                    await self._proc.wait()
+                except Exception:
+                    pass
         self._proc = None
 
 

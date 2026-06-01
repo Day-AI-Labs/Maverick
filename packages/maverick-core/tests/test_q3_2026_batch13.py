@@ -444,7 +444,8 @@ def test_ffmpeg_convert_calls_binary(monkeypatch):
         "output_path": "/tmp/b.mp4",
     })
     assert "wrote /tmp/b.mp4" in out
-    assert "ffmpeg" in captured["cmd"][0]
+    # Sandbox-less path runs a shell string through subprocess.run(shell=True).
+    assert "ffmpeg" in captured["cmd"]
 
 
 def test_ffmpeg_info_parses_ffprobe(monkeypatch):

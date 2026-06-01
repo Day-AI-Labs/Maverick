@@ -98,10 +98,12 @@ def recv(
     messages are re-queued.
     """
     inbox = _get_inbox(agent_id)
-    deadline = time.time() + max(0.0, timeout)
+    # monotonic: this is an elapsed-time deadline, so a wall-clock NTP/DST jump
+    # mustn't make recv block past (or return before) the requested timeout.
+    deadline = time.monotonic() + max(0.0, timeout)
     while True:
         try:
-            msg = inbox.get(block=timeout > 0, timeout=max(0.001, deadline - time.time()))
+            msg = inbox.get(block=timeout > 0, timeout=max(0.001, deadline - time.monotonic()))
         except queue.Empty:
             return None
         if correlation_id and msg.correlation_id != correlation_id:
@@ -109,7 +111,7 @@ def recv(
                 inbox.put_nowait(msg)  # re-queue
             except queue.Full:
                 pass  # drop -- inbox is at capacity
-            if time.time() >= deadline:
+            if time.monotonic() >= deadline:
                 return None
             continue
         return msg

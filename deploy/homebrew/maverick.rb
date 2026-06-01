@@ -27,13 +27,14 @@ class Maverick < Formula
   def install
     virtualenv_create(libexec, "python3.12")
 
+    # Install the Homebrew-downloaded, checksum-verified sdist first so the
+    # stripped, hash-locked dependency set can satisfy packages that declare a
+    # runtime dependency on maverick-agent without resolving it from PyPI.
+    system libexec/"bin/pip", "install", "--no-deps", "--no-build-isolation", buildpath
+
     requirements = libexec/"requirements.txt"
     requirements.write(File.read(__FILE__).split(/^__END__\n/, 2).fetch(1))
     system libexec/"bin/pip", "install", "--require-hashes", "--only-binary", ":all:", "-r", requirements
-
-    # Install the Homebrew-downloaded, checksum-verified sdist instead of
-    # resolving maverick-agent from PyPI again at install time.
-    system libexec/"bin/pip", "install", "--no-deps", "--no-build-isolation", buildpath
     bin.install_symlink Dir[libexec/"bin/maverick"]
   end
 

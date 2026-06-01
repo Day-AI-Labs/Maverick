@@ -145,9 +145,25 @@ def build_sandbox(
         cfg = {}
         full_cfg = {}
 
-    chosen = backend or cfg.get("backend", "local")
+    # Normalize the backend selector: it comes from user-typed TOML (or a CLI
+    # flag) and is matched case-sensitively against the literals below, so
+    # "Docker" / " docker " would otherwise fall through to the unsandboxed
+    # local backend -- silently giving NO container isolation to a user who
+    # explicitly asked for it. Lowercase + strip so the configured backend
+    # actually applies.
+    chosen = str(backend or cfg.get("backend") or "local").strip().lower()
     wd = Path(workdir or cfg.get("workdir", str(Path.cwd()))).expanduser()
-    timeout = float(cfg.get("timeout", 60))
+    # Coerce defensively: [sandbox] timeout is hand-editable, and a non-numeric
+    # ("fast") or non-positive value would otherwise raise here and crash the
+    # kernel at startup -- config.py's contract is to fall back to defaults on
+    # bad config, not abort. Warn + default so a typo doesn't take the agent down.
+    try:
+        timeout = float(cfg.get("timeout", 60))
+        if timeout <= 0:
+            raise ValueError("non-positive")
+    except (TypeError, ValueError):
+        log.warning("invalid [sandbox] timeout %r; using 60s", cfg.get("timeout"))
+        timeout = 60.0
 
     if chosen == "docker":
         image = _resolve_image(full_cfg)
@@ -200,6 +216,17 @@ def build_sandbox(
             workdir=Path(full_cfg.get("workdir", "~/maverick-workspace")),
             timeout=timeout,
             ssh_args=full_cfg.get("ssh_args", []),
+        )
+    if chosen != "local":
+        # The user asked for something other than local, but it matched no
+        # known backend. Don't silently degrade to an unsandboxed host shell --
+        # name the unrecognized value so a typo / unsupported backend is
+        # visible instead of quietly losing container isolation.
+        log.warning(
+            "unrecognized sandbox backend %r; falling back to local with NO "
+            "container isolation. Known backends: docker, podman, "
+            "devcontainer, kubernetes, firecracker, ssh, local.",
+            chosen,
         )
     _warn_local_unsandboxed()
     return LocalBackend(workdir=wd, timeout=timeout)

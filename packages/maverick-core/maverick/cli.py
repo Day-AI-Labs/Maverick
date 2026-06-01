@@ -214,6 +214,12 @@ def main(ctx: click.Context, db: str, model: str | None) -> None:
     ctx.ensure_object(dict)
     ctx.obj["db"] = Path(db)
     ctx.obj["model"] = model  # resolved lazily on first use
+    # `--model` is a run-wide override. The agents resolve their model via
+    # model_for_role(), not the LLM facade's default, so threading it through
+    # the env is what actually makes the flag apply to every agent (it was
+    # silently ignored before -- the LLM default got overridden per call).
+    if model:
+        os.environ["MAVERICK_MODEL_OVERRIDE"] = model
 
 
 @main.command()
@@ -323,8 +329,14 @@ def config(action: str) -> None:
         click.echo(str(p))
         return
     if action == "edit":
-        editor = os.environ.get("EDITOR", "nano")
-        os.execvp(editor, [editor, str(p)])
+        import shlex
+        # EDITOR is commonly set with args (e.g. "code --wait"); execvp treats
+        # the whole string as one binary name and fails. Split it.
+        parts = shlex.split(os.environ.get("EDITOR", "nano")) or ["nano"]
+        try:
+            os.execvp(parts[0], parts + [str(p)])
+        except OSError as e:
+            raise click.ClickException(f"could not launch editor {parts[0]!r}: {e}")
         return
     if not p.exists():
         click.echo(f"No config at {p}. Run:  maverick init", err=True)
@@ -1013,7 +1025,13 @@ def status(ctx) -> None:
 def answer(ctx, question_id: int, answer: tuple[str, ...]) -> None:
     """Answer a pending question."""
     world = open_world(ctx.obj["db"])
-    world.answer(question_id, " ".join(answer))
+    if not world.answer(question_id, " ".join(answer)):
+        click.echo(
+            f"no such question #{question_id}. "
+            "See open questions with `maverick status`.",
+            err=True,
+        )
+        sys.exit(1)
     click.echo(f"answered #{question_id}")
 
 
@@ -1036,6 +1054,12 @@ def resume(ctx, goal_id, max_depth: int, max_dollars, max_wall_seconds) -> None:
             click.echo("no active or blocked goal to resume.")
             return
         goal_id = g.id
+    elif not world.get_goal(goal_id):
+        # An explicit --goal-id that doesn't exist is a user error: report it
+        # and exit non-zero. Otherwise the run prints run_goal's "no such goal"
+        # and still exits 0, which a script can't detect (export exits 2 here).
+        click.echo(f"no such goal #{goal_id}. See `maverick status`.", err=True)
+        sys.exit(2)
     open_qs = world.open_questions(goal_id)
     if open_qs:
         click.echo(f"cannot resume goal #{goal_id}: {len(open_qs)} open question(s).")
@@ -1396,6 +1420,23 @@ def session_clear(provider: str) -> None:
         sys.exit(1)
 
 
+def _conversation_user_matches(conv_user_id: str, requested: str, channel: str) -> bool:
+    """Match a conversation's user_id for erase/export-user.
+
+    Most channels store externally supplied user ids and must match exactly:
+    identifiers such as Twilio WhatsApp ``whatsapp:+15551234567`` or Matrix
+    room ids naturally contain colons, so treating any ``<prefix>:`` as the
+    requested user can disclose or erase unrelated conversations.
+
+    The only family match Maverick currently needs is the local CLI chat
+    namespace: each REPL session is stored as ``local:<uuid>``, while the
+    documented GDPR subject is ``--channel cli --user local``.
+    """
+    if conv_user_id == requested:
+        return True
+    return channel == "cli" and requested == "local" and conv_user_id.startswith("local:")
+
+
 @main.command()
 @click.option("--channel", required=True, help="Channel name (e.g. telegram, sms).")
 @click.option("--user", required=True, help="The channel user_id to erase.")
@@ -1410,7 +1451,7 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
     world = open_world(ctx.obj["db"])
     convs = [
         c for c in world.list_conversations(channel)
-        if c.user_id == user
+        if _conversation_user_matches(c.user_id, user, channel)
     ]
     if not convs:
         click.echo(f"no conversation found for {channel}:{user}")
@@ -1632,7 +1673,7 @@ def export_user(ctx, channel: str, user: str, output) -> None:
     world = open_world(ctx.obj["db"])
     convs = [
         c for c in world.list_conversations(channel)
-        if c.user_id == user
+        if _conversation_user_matches(c.user_id, user, channel)
     ]
     data = {
         "channel": channel,
@@ -1670,7 +1711,16 @@ def export_user(ctx, channel: str, user: str, output) -> None:
 
     payload = json.dumps(data, indent=2, default=str)
     if output:
-        Path(output).write_text(payload, encoding="utf-8")
+        # A GDPR export carries the subject's full conversation content.
+        # Create it 0o600 (not the umask's world-readable 0644) so a
+        # co-tenant can't read it, and fail cleanly instead of dumping a
+        # traceback on a bad/unwritable path.
+        try:
+            fd = os.open(str(output), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload)
+        except OSError as e:
+            raise click.ClickException(f"could not write {output}: {e}")
         click.echo(f"exported to {output}")
     else:
         click.echo(payload)
@@ -1809,7 +1859,7 @@ def watch(ctx, path: str, run: bool, max_dollars: float) -> None:
             world = open_world(ctx.obj["db"])
             llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
             sandbox = k.build_sandbox(workdir=str(p.parent if p.is_file() else p))
-            title = (m.text or m.follow_lines[0] if m.follow_lines else "").strip()[:80]
+            title = (m.text or (m.follow_lines[0] if m.follow_lines else "")).strip()[:80]
             goal_text = m.to_goal()
             allowed, reason = _watch_goal_allowed(goal_text)
             if not allowed:
@@ -1948,9 +1998,18 @@ def cost(ctx, month: str | None, model: str | None, csv_out: bool) -> None:
         world.close()
     if month:
         import datetime as _dt
-        start = _dt.datetime.strptime(month, "%Y-%m").timestamp()
-        # End-of-month: add ~31 days and trim by month.
-        end = start + 31 * 86_400
+        try:
+            m_start = _dt.datetime.strptime(month, "%Y-%m")
+        except ValueError:
+            raise click.ClickException("--month must be YYYY-MM (e.g. 2026-05)")
+        start = m_start.timestamp()
+        # True next-month boundary (a fixed +31 days over-counted short months,
+        # e.g. Feb pulled in early March).
+        end = _dt.datetime(
+            m_start.year + (m_start.month == 12),
+            (m_start.month % 12) + 1,
+            1,
+        ).timestamp()
         episodes = [
             e for e in episodes
             if start <= (e.started_at or 0) < end
@@ -2018,7 +2077,10 @@ def export_goal(ctx, goal_id: int, output: str | None) -> None:
     finally:
         world.close()
     out_path = Path(output) if output else Path(f"goal-{goal_id}.json")
-    out_path.write_text(_json.dumps(bundle, default=str, indent=2))
+    try:
+        out_path.write_text(_json.dumps(bundle, default=str, indent=2))
+    except OSError as e:
+        raise click.ClickException(f"could not write {out_path}: {e}")
     click.echo(f"wrote {out_path}")
 
 

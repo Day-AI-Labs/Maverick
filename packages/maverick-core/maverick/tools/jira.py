@@ -68,24 +68,40 @@ def _auth_header(user: str, tok: str) -> dict:
 def _client():
     import httpx
     url, user, tok = _config()
+    # follow_redirects=False: the Basic-auth header is a client default, which
+    # httpx does NOT strip on a cross-host redirect (only auth= is stripped),
+    # so a 30x off JIRA_URL would replay the API token to another host.
     return url, httpx.Client(
-        headers=_auth_header(user, tok), timeout=30.0, follow_redirects=True,
+        headers=_auth_header(user, tok), timeout=30.0, follow_redirects=False,
     )
 
 
 def _search(jql: str, limit: int) -> str:
     url, client = _client()
+    # Atlassian removed the old POST /rest/api/3/search (May 2025) in favour of
+    # /search/jql, which paginates with an opaque nextPageToken instead of
+    # startAt/maxResults totals. Follow the token until `limit` issues are
+    # collected, bounded by a hard page cap.
+    issues: list[dict] = []
+    token: str | None = None
+    max_pages = max(1, (limit // 100) + 2)
     with client:
-        resp = client.post(
-            f"{url}/rest/api/3/search",
-            json={
-                "jql": jql, "maxResults": limit,
+        for _ in range(max_pages):
+            body: dict = {
+                "jql": jql,
+                "maxResults": min(100, max(1, limit - len(issues))),
                 "fields": ["summary", "status", "assignee", "priority"],
-            },
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    issues = data.get("issues") or []
+            }
+            if token:
+                body["nextPageToken"] = token
+            resp = client.post(f"{url}/rest/api/3/search/jql", json=body)
+            resp.raise_for_status()
+            data = resp.json()
+            issues.extend(data.get("issues") or [])
+            token = data.get("nextPageToken")
+            if len(issues) >= limit or not token:
+                break
+    issues = issues[:limit]
     if not issues:
         return "no matches"
     rows = []

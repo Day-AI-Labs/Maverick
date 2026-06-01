@@ -146,8 +146,9 @@ def spawn_swarm_tool(parent: Agent) -> Tool:
 
         # Karpathy SOTA-review item: measure disagreement across the
         # children's FINAL answers and record it on the blackboard so
-        # the orchestrator can decide whether to spend more compute
-        # (re-spawn with adaptive_fanout) or trust the consensus.
+        # the orchestrator can decide whether to spend more compute or
+        # trust the consensus. (Acting on it -- adaptive re-fan-out -- is
+        # a deferred follow-up; today this is an observability signal.)
         finals = [
             res.final for res in results
             if not isinstance(res, Exception) and res.final

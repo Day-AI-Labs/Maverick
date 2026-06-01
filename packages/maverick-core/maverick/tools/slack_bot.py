@@ -147,13 +147,26 @@ def _op_join(channel: str) -> str:
 
 
 def _op_history(channel: str, limit: int) -> str:
-    data = _get("conversations.history", {
-        "channel": channel, "limit": str(limit),
-    })
-    err = _check(data, "history")
-    if err:
-        return err
-    msgs = data.get("messages") or []
+    # Slack returns up to ~200 messages per page with a `has_more` flag and a
+    # `response_metadata.next_cursor`; follow the cursor until `limit` messages
+    # are collected, bounded by a hard page cap.
+    msgs: list[dict] = []
+    cursor: str | None = None
+    max_pages = max(1, (limit // 200) + 2)
+    for _ in range(max_pages):
+        params = {"channel": channel, "limit": str(min(200, max(1, limit - len(msgs))))}
+        if cursor:
+            params["cursor"] = cursor
+        data = _get("conversations.history", params)
+        err = _check(data, "history")
+        if err:
+            return err
+        batch = data.get("messages") or []
+        msgs.extend(batch)
+        cursor = ((data.get("response_metadata") or {}).get("next_cursor") or "").strip()
+        if len(msgs) >= limit or not data.get("has_more") or not cursor or not batch:
+            break
+    msgs = msgs[:limit]
     if not msgs:
         return "no messages"
     return "\n".join(

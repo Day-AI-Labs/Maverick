@@ -16,17 +16,11 @@ from __future__ import annotations
 import json
 import logging
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
 from . import Tool
 
-
-def _scrub() -> dict:
-    """Child env with secrets stripped (shared tools.scrub_child_env)."""
-    from . import scrub_child_env
-    return scrub_child_env()
 log = logging.getLogger(__name__)
 
 
@@ -53,12 +47,10 @@ def _need(bin_name: str) -> str | None:
     return f"ERROR: {bin_name} not on PATH. Install ffmpeg."
 
 
-def _run_cmd(cmd: list[str], *, timeout: float = 600.0) -> tuple[int, str, str]:
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=_scrub())
-        return r.returncode, r.stdout, r.stderr
-    except subprocess.TimeoutExpired:
-        return 124, "", f"TIMEOUT after {timeout}s"
+def _run_cmd(sandbox, cmd: list[str], *, timeout: float = 600.0) -> tuple[int, str, str]:
+    """Run an ffmpeg/ffprobe argv through the sandbox chokepoint."""
+    from . import sandbox_run
+    return sandbox_run(sandbox, cmd, timeout=timeout)
 
 
 def _safe_path(sandbox, user_path: str) -> str:
@@ -89,7 +81,7 @@ def _op_convert(args: dict, sandbox) -> str:
     from . import safe_media_args
     extra = safe_media_args(args.get("args"))
     cmd = ["ffmpeg", "-y", "-i", src, *extra, dst]
-    code, _out, stderr = _run_cmd(cmd, timeout=600)
+    code, _out, stderr = _run_cmd(sandbox, cmd, timeout=600)
     if code != 0:
         return f"ERROR: ffmpeg ({code}): {stderr.strip()[-500:]}"
     return f"wrote {dst}"
@@ -109,12 +101,14 @@ def _op_extract_audio(args: dict, sandbox) -> str:
     except ValueError as e:
         return f"ERROR: {e}"
     code, _out, stderr = _run_cmd(
+        sandbox,
         ["ffmpeg", "-y", "-i", src, "-vn", "-acodec", "copy", dst],
         timeout=600,
     )
     if code != 0:
         # Fallback: re-encode to mp3 if -acodec copy fails (mismatched container).
         code2, _out, stderr2 = _run_cmd(
+            sandbox,
             ["ffmpeg", "-y", "-i", src, "-vn", "-b:a", "192k", dst],
             timeout=600,
         )
@@ -142,7 +136,7 @@ def _op_thumbnail(args: dict, sandbox) -> str:
         "ffmpeg", "-y", "-ss", t, "-i", src,
         "-frames:v", "1", "-vf", f"scale={width}:-1", dst,
     ]
-    code, _out, stderr = _run_cmd(cmd, timeout=120)
+    code, _out, stderr = _run_cmd(sandbox, cmd, timeout=120)
     if code != 0:
         return f"ERROR: thumbnail ({code}): {stderr.strip()[-300:]}"
     return f"wrote thumbnail to {dst}"
@@ -160,6 +154,7 @@ def _op_info(args: dict, sandbox) -> str:
     except ValueError as e:
         return f"ERROR: {e}"
     code, out, stderr = _run_cmd(
+        sandbox,
         ["ffprobe", "-v", "error", "-print_format", "json",
          "-show_format", "-show_streams", src],
         timeout=30,

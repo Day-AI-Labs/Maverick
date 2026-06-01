@@ -150,6 +150,17 @@ def _configure_from_env(c: ChaosController) -> None:
     raw = os.environ.get("MAVERICK_CHAOS", "").strip()
     if not raw:
         return
+    # Safety gate: chaos injects real failures into live LLM/tool/sandbox calls.
+    # Only honor it under pytest or with an explicit opt-in, so a MAVERICK_CHAOS
+    # value that leaks into a deployed env (copied .env, inherited export) can't
+    # silently start failing real user requests.
+    if not (os.environ.get("PYTEST_CURRENT_TEST")
+            or os.environ.get("MAVERICK_CHAOS_ALLOW") == "1"):
+        log.error(
+            "MAVERICK_CHAOS is set (%r) but not under pytest and "
+            "MAVERICK_CHAOS_ALLOW != 1; refusing to inject failures.", raw,
+        )
+        return
     rates: dict[str, int] = {}
     for tok in raw.split(","):
         tok = tok.strip()

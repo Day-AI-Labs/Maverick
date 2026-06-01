@@ -66,7 +66,7 @@ def _render_posts(rows: list[dict]) -> str:
 
 
 def _op_subreddit(args: dict) -> str:
-    name = (args.get("name") or "").strip().lstrip("r/")
+    name = (args.get("name") or "").strip().removeprefix("r/")
     if not name:
         return "ERROR: subreddit requires name"
     sort = (args.get("sort") or "hot").strip()
@@ -82,7 +82,7 @@ def _op_subreddit(args: dict) -> str:
 
 
 def _op_post(args: dict) -> str:
-    pid = (args.get("post_id") or "").strip().lstrip("t3_")
+    pid = (args.get("post_id") or "").strip().removeprefix("t3_")
     if not pid:
         return "ERROR: post requires post_id"
     code, data = _get(f"https://www.reddit.com/comments/{pid}.json")
@@ -105,7 +105,7 @@ def _op_search(args: dict) -> str:
     q = (args.get("q") or "").strip()
     if not q:
         return "ERROR: search requires q"
-    sub = (args.get("subreddit") or "").strip().lstrip("r/")
+    sub = (args.get("subreddit") or "").strip().removeprefix("r/")
     limit = max(1, min(int(args.get("limit") or 25), 100))
     url = (
         f"https://www.reddit.com/r/{sub}/search.json"
@@ -118,7 +118,7 @@ def _op_search(args: dict) -> str:
 
 
 def _op_user(args: dict) -> str:
-    u = (args.get("username") or "").strip().lstrip("u/")
+    u = (args.get("username") or "").strip().removeprefix("u/")
     if not u:
         return "ERROR: user requires username"
     sort = (args.get("sort") or "new").strip()

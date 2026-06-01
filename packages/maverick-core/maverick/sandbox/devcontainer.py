@@ -165,6 +165,13 @@ class DevcontainerBackend:
             "--name", container_name,
             "-v", f"{self.project_dir}:{self.spec.workspace_folder}",
             "-w", self.spec.workspace_folder,
+            # Match DockerBackend's containment for a possibly prompt-injected
+            # agent: drop every Linux capability and block privilege
+            # escalation. Without these, devcontainer ran as root (the default
+            # remoteUser) against a writable host mount with full caps.
+            "--cap-drop", "ALL",
+            "--security-opt", "no-new-privileges",
+            "--pids-limit", "512",
         ]
         if self.spec.remote_user and self.spec.remote_user != "root":
             args.extend(["--user", self.spec.remote_user])

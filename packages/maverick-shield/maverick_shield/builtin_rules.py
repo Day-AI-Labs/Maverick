@@ -186,7 +186,10 @@ SEVERITY_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 
 def _threshold_to_min_severity(threshold: str) -> int:
-    return SEVERITY_ORDER.get(threshold, SEVERITY_ORDER["high"])
+    # Normalize: block_threshold comes from user-typed TOML. A non-lowercase or
+    # padded spelling ("Medium", " high ") missed the lookup and silently fell
+    # back to "high", strengthening the gate past the operator's intent.
+    return SEVERITY_ORDER.get(str(threshold).strip().lower(), SEVERITY_ORDER["high"])
 
 
 def scan(

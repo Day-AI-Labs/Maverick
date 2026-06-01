@@ -74,12 +74,27 @@ def _load_bytes(source: str) -> bytes | None:
             import httpx  # noqa: F401  (presence check; safe_get imports it)
         except ImportError:
             return None
-        from ._ssrf import BlockedHost, safe_get
+        from ._ssrf import BlockedHost, safe_client
+        # Combine both defenses: safe_client pins the connection to the
+        # validated public IP (SSRF / DNS-rebinding), AND we stream with a
+        # hard byte ceiling so a model-supplied URL can't exhaust memory with
+        # a multi-GB / endless body.
+        _MAX = 100 * 1024 * 1024  # 100 MiB
         try:
-            # Pins the connection to the validated public IP (no rebinding).
-            resp = safe_get(source, timeout=30.0)
-            resp.raise_for_status()
-            return resp.content
+            with safe_client(source, timeout=30.0) as client:
+                with client.stream("GET", source) as resp:
+                    resp.raise_for_status()
+                    clen = resp.headers.get("content-length")
+                    if clen is not None and clen.isdigit() and int(clen) > _MAX:
+                        log.warning("pdf fetch refused: %s bytes > cap", clen)
+                        return None
+                    buf = bytearray()
+                    for chunk in resp.iter_bytes():
+                        buf += chunk
+                        if len(buf) > _MAX:
+                            log.warning("pdf fetch refused: body exceeded cap")
+                            return None
+                    return bytes(buf)
         except BlockedHost as e:
             log.warning("pdf fetch refused: %s", e)
             return None

@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import atexit
 import base64
-import ipaddress
 import logging
 import os
 import re
@@ -246,20 +245,16 @@ def _is_safe_browser_url(url: str) -> bool:
     if host == "localhost" or host.endswith(".localhost"):
         return False
 
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        # Non-IP hostnames are allowed.
-        return True
+    # Resolve the host (via is_blocked_host -> getaddrinfo) rather than
+    # only testing a literal ipaddress.ip_address(host). The literal-only
+    # check let decimal (2130706433) and hex (0x7f000001) encodings of
+    # 127.0.0.1 -- which raise ValueError but resolve to loopback -- fall
+    # through as "allowed", an SSRF bypass that the sibling http_fetch
+    # guard already closes. Reuse it so both guards (and the
+    # MAVERICK_FETCH_ALLOW_PRIVATE escape hatch) stay consistent.
+    from .http_fetch import is_blocked_host
 
-    return not (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_multicast
-        or ip.is_reserved
-        or ip.is_unspecified
-    )
+    return not is_blocked_host(host)
 
 
 def _run_browser_action(args: dict[str, Any]) -> str:

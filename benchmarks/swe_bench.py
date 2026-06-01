@@ -60,6 +60,11 @@ class Row:
     verifier_confidence: float = 0.0
     disagreement_entropy: float = 0.0
     outcome: str = ""        # success / failure / budget / error
+    # Contamination guard flags (';'-joined kinds, "" = clean). Surfaced
+    # as a CSV column so a headline number always carries its caveat --
+    # contamination_guard's whole point is that flagged numbers must be
+    # reported with a caveat or excluded.
+    contamination: str = ""
     extra: dict = field(default_factory=dict)
 
 
@@ -124,6 +129,56 @@ def _sanitize_patch_for_csv(diff: str) -> str:
     if leader in ("=", "+", "-", "@"):
         cleaned = "'" + cleaned
     return cleaned
+
+
+_CONTAM_MOD = None
+
+
+def _contamination_guard():
+    """Lazy-load _common/contamination_guard.py by path (no sys.path
+    assumptions; mirrors how the benchmark tests import it). Cached."""
+    global _CONTAM_MOD
+    if _CONTAM_MOD is None:
+        import importlib.util
+        from pathlib import Path as _P
+        path = _P(__file__).parent / "_common" / "contamination_guard.py"
+        spec = importlib.util.spec_from_file_location("benchmarks_contam", path)
+        mod = importlib.util.module_from_spec(spec)
+        # @dataclass resolves its module via sys.modules[cls.__module__];
+        # register before exec_module or ContaminationFlag construction
+        # raises "'NoneType' object has no attribute '__dict__'".
+        sys.modules["benchmarks_contam"] = mod
+        spec.loader.exec_module(mod)  # type: ignore[union-attr]
+        _CONTAM_MOD = mod
+    return _CONTAM_MOD
+
+
+def _contamination_summary(
+    *,
+    instance_id: str,
+    brief: str,
+    predicted_patch: str,
+    gold_patch: str,
+    model_id: str,
+    publication_date: str = "",
+) -> str:
+    """Run the contamination guard and return a ';'-joined list of flag
+    kinds ("" = clean). Never raises -- a guard failure must not fail the
+    benchmark row."""
+    try:
+        flags = _contamination_guard().check(
+            task_id=instance_id,
+            brief=brief,
+            predicted_patch=predicted_patch,
+            gold_patch=gold_patch,
+            model_id=model_id,
+            benchmark_publication_date=publication_date,
+        )
+        return ";".join(f.kind for f in flags)
+    except Exception as e:  # pragma: no cover - guard is best-effort
+        print(f"warning: contamination guard failed for {instance_id}: {e}",
+              file=sys.stderr)
+        return ""
 
 
 def _redact_url_userinfo(text: str) -> str:
@@ -557,6 +612,18 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
     except Exception:
         reported_model = getattr(llm, "model", "")
 
+    # Run the guard on the RAW diff (the sanitizer may prepend a `'` to
+    # neutralize CSV formula-injection, which would mask a byte-for-byte
+    # match against the raw gold patch).
+    contamination = _contamination_summary(
+        instance_id=instance_id,
+        brief=brief,
+        predicted_patch=diff,
+        gold_patch=gold_patch,
+        model_id=reported_model,
+        publication_date=str(kwargs.get("publication_date", "") or ""),
+    )
+
     return Row(
         instance_id=instance_id,
         pipeline="maverick",
@@ -584,6 +651,7 @@ def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
         outcome=(last_outcome if diff else "no-diff") or (
             "success" if diff else "no-diff"
         ),
+        contamination=contamination,
         extra=extra_payload,
     )
 
@@ -636,21 +704,133 @@ def run_sonnet_single(instance_id: str, brief: str, **_kwargs) -> Row:
     )
 
 
-def run_sonnet_tools(instance_id: str, brief: str, **_kwargs) -> Row:
-    """Baseline #2: Sonnet with bash + read/write tools, no swarm.
+def _git_diff(workdir) -> str:
+    """The agent's edits to the working tree, as a unified diff. Empty on
+    any failure (no repo, git missing) -- the row's outcome reflects that."""
+    import os
+    import subprocess
 
-    Closer to Devin / Cursor. Same model as Maverick uses for workers
-    but flat (no orchestrator, no spawn, no verifier, no skills).
+    # The repository was just modified by model-controlled shell commands. Do
+    # not let untrusted repo/global Git configuration turn patch extraction into
+    # host command execution via diff.external, textconv filters, or inherited
+    # secret-bearing environment variables.
+    env = {
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "GIT_OPTIONAL_LOCKS": "0",
+        "PATH": os.environ.get("PATH", ""),
+    }
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(workdir), "diff", "--no-ext-diff", "--no-textconv"],
+            capture_output=True, text=True, timeout=60, env=env,
+        )
+        return out.stdout or ""
+    except (subprocess.SubprocessError, OSError):
+        return ""
+
+
+def run_sonnet_tools(instance_id: str, brief: str, **kwargs) -> Row:
+    """Baseline #2: Sonnet with a bash tool, no swarm.
+
+    Closer to Devin / Cursor: one flat agent loop -- the model explores and
+    edits the checked-out repo via bash, and its edits to the working tree
+    (captured as ``git diff``) are the predicted patch. Same worker model as
+    Maverick but flat: no orchestrator, no spawn, no verifier, no skills.
+
+    Turn ceiling is MAVERICK_BENCH_TOOLS_MAX_TURNS (default 20); the run also
+    stops if the per-instance dollar cap is hit.
     """
     if os.environ.get("MAVERICK_BENCH_DRY_RUN") == "1":
         return _dry_run_row(instance_id, "sonnet_tools")
-    # Full implementation: thin client that loops on tool_use blocks
-    # against a LocalBackend sandbox. Punted to follow-up commit; the
-    # surface area is large enough to warrant its own module under
-    # benchmarks/baselines/. Today returns dry-run-equivalent.
-    row = _dry_run_row(instance_id, "sonnet_tools")
-    row.outcome = "not-implemented"
-    return row
+
+    import anthropic
+    from maverick.budget import Budget
+    from maverick.llm import MODEL_SONNET
+    from maverick.sandbox import build_sandbox
+
+    start = time.monotonic()
+    sandbox = build_sandbox()
+    # Reset to the instance's base commit so we never edit a dirty tree or
+    # one left over from a prior instance (mirrors run_maverick).
+    _reset_workdir(sandbox.workdir, base_commit=str(kwargs.get("base_commit") or ""))
+
+    client = anthropic.Anthropic()
+    budget = Budget(max_dollars=3.0)
+    tools = [{
+        "name": "bash",
+        "description": (
+            "Run a shell command in the repository working directory and get "
+            "its combined stdout/stderr back. Use it to read files, search, "
+            "edit in place (sed/python/patch/tee), and run tests."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "description": "The shell command to run."},
+            },
+            "required": ["command"],
+        },
+    }]
+    system = (
+        "You are a software engineer fixing a bug in a git repository already "
+        "checked out in your working directory. Use the bash tool to explore, "
+        "edit files in place, and verify. Your edits to the working tree are the "
+        "deliverable -- they're captured as a git diff, so you do NOT need to "
+        "print a patch. Reply with DONE when the fix is complete."
+    )
+    messages: list[dict] = [
+        {"role": "user", "content": f"SWE-bench instance {instance_id}.\n\n{brief}"},
+    ]
+    try:
+        max_turns = max(1, int(os.environ.get("MAVERICK_BENCH_TOOLS_MAX_TURNS", "20") or "20"))
+    except ValueError:
+        max_turns = 20
+
+    for _turn in range(max_turns):
+        if budget.dollars >= budget.max_dollars:
+            break
+        resp = client.messages.create(
+            model=MODEL_SONNET, max_tokens=4096, system=system,
+            tools=tools, messages=messages,
+        )
+        budget.record_tokens(
+            resp.usage.input_tokens, resp.usage.output_tokens, model=MODEL_SONNET,
+        )
+        messages.append({"role": "assistant", "content": resp.content})
+        tool_uses = [b for b in resp.content if getattr(b, "type", None) == "tool_use"]
+        if not tool_uses:
+            break  # model gave a final answer -- stop
+        results = []
+        for tu in tool_uses:
+            cmd = tu.input.get("command", "") if isinstance(getattr(tu, "input", None), dict) else ""
+            if cmd:
+                res = sandbox.exec(cmd)
+                content = (res.stdout or "")
+                if res.stderr:
+                    content += f"\n[stderr]\n{res.stderr}"
+            else:
+                content = "error: bash tool called without a command"
+            results.append({
+                "type": "tool_result",
+                "tool_use_id": tu.id,
+                "content": content[:8000] or "(no output)",
+            })
+        messages.append({"role": "user", "content": results})
+
+    diff = _git_diff(sandbox.workdir)
+    return Row(
+        instance_id=instance_id,
+        pipeline="sonnet_tools",
+        model_id=MODEL_SONNET,
+        wall_seconds=time.monotonic() - start,
+        cost_dollars=budget.dollars,
+        tokens_in=budget.input_tokens,
+        tokens_out=budget.output_tokens,
+        predicted_patch=_sanitize_patch_for_csv(diff[:50_000]),
+        outcome="success" if diff.strip() else "empty",
+    )
 
 
 def _majority_patch(patches: list[str]) -> str:
@@ -1135,6 +1315,9 @@ def main() -> int:
                 "base_commit": inst.get("base_commit", "") or "",
                 "requirements": inst.get("requirements", "") or "",
                 "interface": inst.get("interface", "") or "",
+                # Lets the contamination guard fire its train-cutoff-vs-
+                # publication check when the manifest carries the date.
+                "publication_date": inst.get("publication_date", "") or "",
             }
             for pipeline in pipelines:
                 if _TERMINATE_REQUESTED:

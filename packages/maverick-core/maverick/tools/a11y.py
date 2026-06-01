@@ -23,16 +23,10 @@ from __future__ import annotations
 import json
 import logging
 import shutil
-import subprocess
 from typing import Any
 
 from . import Tool
 
-
-def _scrub() -> dict:
-    """Child env with secrets stripped (shared tools.scrub_child_env)."""
-    from . import scrub_child_env
-    return scrub_child_env()
 log = logging.getLogger(__name__)
 
 
@@ -64,26 +58,26 @@ def _ensure_runner(runner: str) -> str | None:
     return f"ERROR: {b} not found on PATH. Install with: {install}"
 
 
-def _run_pa11y(target: str) -> tuple[int, str, str]:
-    try:
-        r = subprocess.run(
-            ["pa11y", "--reporter", "json", target],
-            capture_output=True, text=True, timeout=120, env=_scrub(),
-        )
-        return r.returncode, r.stdout or "", r.stderr or ""
-    except subprocess.TimeoutExpired:
+def _run_pa11y(target: str, sandbox) -> tuple[int, str, str]:
+    from . import sandbox_run
+    # `--` ends option parsing so a target beginning with `-` is treated
+    # as a path, not an injected pa11y flag (e.g. --config=/tmp/evil.js).
+    code, out, err = sandbox_run(
+        sandbox, ["pa11y", "--reporter", "json", "--", target], timeout=120,
+    )
+    if code == 124:
         return 124, "", "pa11y TIMEOUT"
+    return code, out or "", err or ""
 
 
-def _run_axe(target: str) -> tuple[int, str, str]:
-    try:
-        r = subprocess.run(
-            ["axe", target, "--no-reporter", "--save", "/dev/stdout"],
-            capture_output=True, text=True, timeout=120, env=_scrub(),
-        )
-        return r.returncode, r.stdout or "", r.stderr or ""
-    except subprocess.TimeoutExpired:
+def _run_axe(target: str, sandbox) -> tuple[int, str, str]:
+    from . import sandbox_run
+    code, out, err = sandbox_run(
+        sandbox, ["axe", target, "--no-reporter", "--save", "/dev/stdout"], timeout=120,
+    )
+    if code == 124:
         return 124, "", "axe TIMEOUT"
+    return code, out or "", err or ""
 
 
 def _format_pa11y(stdout: str, max_issues: int) -> str:
@@ -133,16 +127,16 @@ def _format_axe(stdout: str, max_issues: int) -> str:
     return "\n".join(lines)
 
 
-def _op_check(target: str, runner: str, max_issues: int) -> str:
+def _op_check(target: str, runner: str, max_issues: int, sandbox) -> str:
     err = _ensure_runner(runner)
     if err:
         return err
     if runner == "axe":
-        code, out, err_out = _run_axe(target)
+        code, out, err_out = _run_axe(target, sandbox)
         if code != 0 and not out:
             return f"ERROR: axe ({code}): {err_out.strip()[:300]}"
         return _format_axe(out, max_issues)
-    code, out, err_out = _run_pa11y(target)
+    code, out, err_out = _run_pa11y(target, sandbox)
     # pa11y returns 2 when issues are found AND has stdout — that's
     # expected, not an error.
     if code not in (0, 2) and not out:
@@ -150,7 +144,7 @@ def _op_check(target: str, runner: str, max_issues: int) -> str:
     return _format_pa11y(out, max_issues)
 
 
-def _run(args: dict[str, Any]) -> str:
+def _run(args: dict[str, Any], sandbox) -> str:
     op = args.get("op")
     if not op:
         return "ERROR: op is required"
@@ -163,18 +157,18 @@ def _run(args: dict[str, Any]) -> str:
             url = (args.get("url") or "").strip()
             if not url:
                 return "ERROR: check requires url"
-            return _op_check(url, runner, max_issues)
+            return _op_check(url, runner, max_issues, sandbox)
         if op == "check_html":
             path = (args.get("path") or "").strip()
             if not path:
                 return "ERROR: check_html requires path"
-            return _op_check(path, runner, max_issues)
+            return _op_check(path, runner, max_issues, sandbox)
     except Exception as e:
         return f"ERROR: a11y failed: {type(e).__name__}: {e}"
     return f"ERROR: unknown op {op!r}"
 
 
-def a11y() -> Tool:
+def a11y(sandbox=None) -> Tool:
     return Tool(
         name="a11y",
         description=(
@@ -184,5 +178,5 @@ def a11y() -> Tool:
             "PATH (install via npm)."
         ),
         input_schema=_A11Y_SCHEMA,
-        fn=_run,
+        fn=lambda args: _run(args, sandbox),
     )

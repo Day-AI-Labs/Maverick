@@ -31,6 +31,8 @@ def test_k8s_exec_builds_kubectl_run(monkeypatch):
     def _fake_run(args, *a, **k):
         if args[:2] == ["kubectl", "version"]:
             return MagicMock(returncode=0, stdout=b"", stderr=b"")
+        if "delete" in args:  # ignore the always-on cleanup delete
+            return MagicMock(returncode=0, stdout="", stderr="")
         captured["args"] = args
         return MagicMock(returncode=0, stdout="ran\n", stderr="")
 
@@ -55,6 +57,8 @@ def test_k8s_passes_context(monkeypatch):
     def _fake_run(args, *a, **k):
         if args[:2] == ["kubectl", "version"]:
             return MagicMock(returncode=0, stdout=b"", stderr=b"")
+        if "delete" in args:  # ignore the always-on cleanup delete
+            return MagicMock(returncode=0, stdout="", stderr="")
         captured["args"] = args
         return MagicMock(returncode=0, stdout="", stderr="")
 
@@ -99,6 +103,80 @@ def test_k8s_disallow_network_fails_closed(monkeypatch):
     assert out.exit_code == 2
     assert "allow_network=false" in out.stderr
     assert calls["n"] == 1  # constructor verification only
+
+
+def _k8s_backend_recording_deletes(monkeypatch, run_behavior):
+    """Build a backend whose `run` delegates to `run_behavior` (after the
+    constructor's kubectl-version check) and record every `delete pod` call."""
+    deletes = []
+
+    def _fake_run(args, *a, **k):
+        if args[:2] == ["kubectl", "version"]:
+            return MagicMock(returncode=0, stdout=b"", stderr=b"")
+        if "delete" in args and "pod" in args:
+            deletes.append(args)
+            return MagicMock(returncode=0, stdout="", stderr="")
+        return run_behavior(args, *a, **k)
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+    from maverick.sandbox.kubernetes import KubernetesBackend
+    backend = KubernetesBackend(allow_network=True)
+    return backend, deletes
+
+
+def _assert_deleted_pod(deletes):
+    assert len(deletes) == 1, f"expected exactly one delete, got {deletes}"
+    args = deletes[0]
+    assert "delete" in args and "pod" in args
+    # The pod name is the argv right after "pod".
+    pod = args[args.index("pod") + 1]
+    assert pod.startswith("maverick-sb-")
+    assert "--force" in args and "--ignore-not-found=true" in args
+
+
+def test_k8s_deletes_pod_on_success(monkeypatch):
+    backend, deletes = _k8s_backend_recording_deletes(
+        monkeypatch, lambda args, *a, **k: MagicMock(returncode=0, stdout="ok\n", stderr=""),
+    )
+    out = backend.exec("echo hi")
+    assert out.exit_code == 0
+    _assert_deleted_pod(deletes)
+
+
+def test_k8s_deletes_pod_on_nonzero_exit(monkeypatch):
+    backend, deletes = _k8s_backend_recording_deletes(
+        monkeypatch, lambda args, *a, **k: MagicMock(returncode=7, stdout="", stderr="boom"),
+    )
+    out = backend.exec("false")
+    assert out.exit_code == 7
+    _assert_deleted_pod(deletes)
+
+
+def test_k8s_deletes_pod_on_timeout(monkeypatch):
+    import subprocess
+
+    def _timeout(args, *a, **k):
+        raise subprocess.TimeoutExpired(cmd=args, timeout=1)
+
+    backend, deletes = _k8s_backend_recording_deletes(monkeypatch, _timeout)
+    out = backend.exec("sleep 999")
+    assert out.exit_code == 124
+    _assert_deleted_pod(deletes)
+
+
+def test_k8s_deletes_pod_on_unexpected_error(monkeypatch):
+    def _boom(args, *a, **k):
+        raise OSError("kubectl killed")
+
+    backend, deletes = _k8s_backend_recording_deletes(monkeypatch, _boom)
+    try:
+        backend.exec("echo hi")
+    except OSError:
+        pass
+    else:
+        raise AssertionError("expected OSError to propagate")
+    # Pod is still cleaned up even though the error propagates.
+    _assert_deleted_pod(deletes)
 
 
 # ---------- HuggingFace tool ----------
@@ -168,20 +246,26 @@ def test_hf_image_classify_requires_url():
 
 
 def test_hf_image_classify_blocks_private_ip(monkeypatch):
+    # Now routed through the IP-pinning _ssrf.safe_get (closes the TOCTOU
+    # rebind window); a blocked host surfaces as BlockedHost.
+    import maverick.tools._ssrf as ssrf
     from maverick.tools.huggingface import huggingface
-    monkeypatch.setattr("maverick.tools.huggingface.is_blocked_host", lambda _h: True)
+
+    def _boom(url, **k):
+        raise ssrf.BlockedHost("127.0.0.1 is loopback")
+
+    monkeypatch.setattr(ssrf, "safe_get", _boom)
     out = huggingface().fn({"op": "image_classify", "model": "x", "url": "http://127.0.0.1/a.png"})
     assert "refusing" in out
 
 
 def test_hf_image_classify_rejects_redirects(monkeypatch):
+    import maverick.tools._ssrf as ssrf
     resp = MagicMock()
     resp.status_code = 302
     resp.content = b""
     resp.headers = {"content-type": "text/plain"}
-    fake_httpx = types.ModuleType("httpx")
-    fake_httpx.get = MagicMock(return_value=resp)
-    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+    monkeypatch.setattr(ssrf, "safe_get", lambda url, **k: resp)
     from maverick.tools.huggingface import huggingface
     out = huggingface().fn({"op": "image_classify", "model": "x", "url": "https://example.com/i.png"})
     assert "image fetch 302" in out

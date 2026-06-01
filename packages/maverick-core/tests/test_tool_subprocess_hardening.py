@@ -80,8 +80,12 @@ def test_benign_resize_args_survive(monkeypatch):
 
 
 def test_subprocess_tools_import_scrub_helper():
-    """Every direct-subprocess tool must reference the scrub helper (no raw
-    os.environ inheritance reintroduced)."""
+    """Every shell-out tool must keep the child env scrubbed of secrets.
+
+    Two acceptable ways now: (a) route through the sandbox chokepoint via
+    ``sandbox_run`` (which scrubs the env / mediates exec), or (b) for tools
+    that still shell out directly, reference the scrub helper. No tool may
+    reintroduce raw ``os.environ`` inheritance."""
     import pathlib
 
     import maverick.tools as T
@@ -89,6 +93,75 @@ def test_subprocess_tools_import_scrub_helper():
     for name in ["git_advanced", "preview_diff", "apply_patch", "ffmpeg_tool",
                  "imagemagick_tool", "pandoc_tool", "ocr", "a11y", "android", "ios_sim"]:
         src = (tdir / f"{name}.py").read_text()
-        assert ("scrub_child_env" in src) or ("scrub_env" in src), (
-            f"{name} no longer scrubs the child env"
+        assert (
+            "sandbox_run" in src
+            or "scrub_child_env" in src
+            or "scrub_env" in src
+            or "sandbox.exec" in src
+        ), f"{name} no longer scrubs the child env nor routes through the sandbox"
+
+
+class _RecordingSandbox:
+    """Minimal sandbox stub: records exec() commands, returns a canned result."""
+
+    def __init__(self, workdir, stdout="", exit_code=0):
+        from pathlib import Path
+        self.workdir = Path(workdir)
+        self.commands: list[str] = []
+        self._stdout = stdout
+        self._exit = exit_code
+
+    def exec(self, cmd, timeout=None):
+        from maverick.sandbox.local import ExecResult
+        self.commands.append(cmd)
+        return ExecResult(stdout=self._stdout, stderr="", exit_code=self._exit)
+
+
+def test_imagemagick_routes_command_through_sandbox_exec(tmp_path, monkeypatch):
+    """With a sandbox wired in, the tool must drive sandbox.exec, not the host."""
+    monkeypatch.setattr("shutil.which", lambda b: "/usr/bin/magick" if b == "magick" else None)
+
+    def _boom(*a, **k):
+        raise AssertionError("subprocess.run must not be called when a sandbox is wired in")
+
+    monkeypatch.setattr("subprocess.run", _boom)
+    from maverick.tools.imagemagick_tool import imagemagick_tool
+
+    sb = _RecordingSandbox(tmp_path)
+    out = imagemagick_tool(sb).fn({
+        "op": "resize", "input_path": "a.png", "output_path": "b.png", "width": 800,
+    })
+    assert "wrote" in out
+    assert len(sb.commands) == 1
+    assert "magick" in sb.commands[0] and "-resize" in sb.commands[0]
+
+
+def test_pandoc_string_op_feeds_stdin_through_sandbox(tmp_path, monkeypatch):
+    """markdown_to_html feeds text via the base64 stdin pipe, through the sandbox."""
+    monkeypatch.setattr("shutil.which", lambda b: "/usr/bin/pandoc")
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("must route through sandbox.exec")))
+    from maverick.tools.pandoc_tool import pandoc_tool
+
+    sb = _RecordingSandbox(tmp_path, stdout="<p>Hello</p>\n")
+    out = pandoc_tool(sb).fn({"op": "markdown_to_html", "text": "Hello"})
+    assert "<p>Hello</p>" in out
+    assert sb.commands and "base64 -d" in sb.commands[0] and "pandoc" in sb.commands[0]
+
+
+def test_media_tools_route_through_sandbox_chokepoint():
+    """The sandboxable media tools must mediate shell via ``sandbox_run``,
+    not call subprocess directly (CLAUDE.md rule #4). The host-local tools
+    (clipboard/android/ios_sim) are intentionally excluded — they drive
+    host-only resources and cannot run inside the sandbox."""
+    import pathlib
+
+    import maverick.tools as T
+    tdir = pathlib.Path(T.__file__).parent
+    for name in ["ffmpeg_tool", "imagemagick_tool", "pandoc_tool", "ocr", "a11y"]:
+        src = (tdir / f"{name}.py").read_text()
+        assert "sandbox_run" in src, f"{name} must route shell through sandbox_run"
+        # No leftover direct host subprocess invocation.
+        assert "subprocess.run(" not in src, (
+            f"{name} still calls subprocess.run directly; route via sandbox_run"
         )

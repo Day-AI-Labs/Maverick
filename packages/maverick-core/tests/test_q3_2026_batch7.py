@@ -129,6 +129,39 @@ def test_stripe_refund_with_confirm(monkeypatch):
     })
     assert "refunded re_xx" in out
     fake_httpx.post.assert_called_once()
+    # The refund carries an Idempotency-Key so a retry can't double-refund.
+    headers = fake_httpx.post.call_args.kwargs["headers"]
+    assert headers.get("Idempotency-Key", "").startswith("maverick-refund-")
+
+
+def test_stripe_refund_idempotency_key_is_intent_scoped(monkeypatch):
+    """Same refund intent -> same key (Stripe dedupes a retry); a different
+    amount -> different key (a genuinely distinct refund isn't blocked)."""
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test")
+    monkeypatch.setenv("MAVERICK_STRIPE_ENABLE_REFUNDS", "true")
+
+    def _run(amount):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json = MagicMock(return_value={
+            "id": "re_xx", "amount": amount, "currency": "usd", "charge": "ch_123",
+        })
+        post = MagicMock(return_value=resp)
+        fake_httpx = types.ModuleType("httpx")
+        fake_httpx.post = post
+        monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+        from maverick.tools.stripe_tool import stripe_tool
+        stripe_tool().fn({
+            "op": "refund_create", "charge_id": "ch_123",
+            "amount_cents": amount, "confirm": True,
+        })
+        return post.call_args.kwargs["headers"]["Idempotency-Key"]
+
+    key_a = _run(500)
+    key_a2 = _run(500)
+    key_b = _run(700)
+    assert key_a == key_a2      # retry of the same refund -> deduped
+    assert key_a != key_b       # different amount -> distinct refund allowed
 
 
 def test_stripe_charges_renders(monkeypatch):
@@ -148,6 +181,34 @@ def test_stripe_charges_renders(monkeypatch):
     out = stripe_tool().fn({"op": "charges"})
     assert "ch_1" in out and "10.00" in out
     assert "REFUNDED" in out  # ch_2 marker
+
+
+def test_stripe_charges_follows_cursor(monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test")
+
+    def _charge(cid):
+        return {"id": cid, "status": "succeeded", "amount": 100,
+                "currency": "usd", "description": "x", "refunded": False}
+
+    def _resp(rows, has_more):
+        r = MagicMock()
+        r.status_code = 200
+        r.json = MagicMock(return_value={"data": rows, "has_more": has_more})
+        return r
+
+    get = MagicMock(side_effect=[
+        _resp([_charge("ch_1")], True),
+        _resp([_charge("ch_2")], False),
+    ])
+    fake_httpx = types.ModuleType("httpx")
+    fake_httpx.get = get
+    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+    from maverick.tools.stripe_tool import stripe_tool
+    out = stripe_tool().fn({"op": "charges", "limit": 50})
+    assert "ch_1" in out and "ch_2" in out
+    assert get.call_count == 2
+    # Second page is cursored on the last id of the first.
+    assert get.call_args_list[1].kwargs["params"]["starting_after"] == "ch_1"
 
 
 # ---------- Currency tool ----------

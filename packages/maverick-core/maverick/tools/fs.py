@@ -258,6 +258,11 @@ def list_dir(sandbox) -> Tool:
             return f"ERROR: {target} not found"
         if not target.is_dir():
             return f"ERROR: {target} is not a directory"
+        # Mirror read_file's opaque-mode gate: list_dir was the unguarded twin,
+        # so list_dir(".git/refs/heads") / list_dir("tests") leaked the gold
+        # branch + the grader's FAIL_TO_PASS test filenames in benchmark mode.
+        if _is_opaque_blocked_resolved(sandbox, args.get("path", ".")):
+            return "ERROR: list_dir blocked in benchmark opaque mode (.git/tests)"
         entries = []
         try:
             for entry in sorted(target.iterdir()):

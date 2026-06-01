@@ -106,7 +106,6 @@ def _write_full_config(tmp_path: Path, monkeypatch, **overrides) -> dict:
     monkeypatch.setattr(wizard, "CONFIG_FILE", tmp_path / "config.toml")
     monkeypatch.setattr(wizard, "ENV_FILE", tmp_path / ".env")
     base = dict(
-        deployment="laptop",
         providers=["anthropic"],
         role_models={},
         channels={},
@@ -152,6 +151,25 @@ def test_write_config_emits_self_learning(tmp_path: Path, monkeypatch):
     assert parsed["self_learning"]["max_acquisitions"] == 3
     # The retired add_mcp_servers knob is no longer written.
     assert "add_mcp_servers" not in parsed["self_learning"]
+
+
+def test_write_config_emits_durable_when_enabled(tmp_path: Path, monkeypatch):
+    parsed = _write_full_config(
+        tmp_path, monkeypatch,
+        durable={"enabled": True, "keep_last": 5},
+    )
+    assert parsed["durable"]["enabled"] is True
+    assert parsed["durable"]["keep_last"] == 5
+
+
+def test_write_config_omits_durable_when_disabled(tmp_path: Path, monkeypatch):
+    # Off by default: a disabled durable dict writes no [durable] section,
+    # keeping the config minimal (the kernel defaults to off anyway).
+    parsed = _write_full_config(
+        tmp_path, monkeypatch,
+        durable={"enabled": False},
+    )
+    assert "durable" not in parsed
 
 
 def test_write_config_roundtrips_backslash_paths_and_allowlist(tmp_path: Path, monkeypatch):

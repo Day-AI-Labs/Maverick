@@ -58,6 +58,11 @@ class SwarmContext:
     mcp_clients: list = field(default_factory=list)
     channel: str | None = None
     user_id: str | None = None
+    # Durable execution: the episode this run belongs to. Discriminates
+    # best-of-N attempts (same goal_id, distinct episodes) so a resumed
+    # attempt doesn't pick up a sibling's checkpoint. Defaults to 0 for
+    # callers that don't checkpoint.
+    episode_id: int = 0
     max_total_spawns: int = field(default_factory=_default_max_total_spawns)
     _spawns_used: int = 0
     _workdir_lock: asyncio.Lock | None = field(default=None, repr=False)

@@ -17,7 +17,7 @@ import asyncio
 import logging
 import os
 
-from .base import Channel, Handler, IncomingMessage
+from .base import Channel, Handler, IncomingMessage, is_allowed
 
 log = logging.getLogger(__name__)
 
@@ -130,7 +130,10 @@ class BlueskyChannel(Channel):
         text = record.get("text", "")
         author = notif.get("author") or {}
         user_id = author.get("did") or author.get("handle") or "anonymous"
-        if user_id not in self.allowed_user_ids:
+        # Shared default-deny helper: normalizes + hard-rejects the "anonymous"
+        # sentinel, matching the other adapters (a raw `not in` let an
+        # unidentifiable sender through if "anonymous" were ever allowlisted).
+        if not is_allowed(user_id, self.allowed_user_ids):
             log.warning("unauthorized bluesky access: user_id=%s", user_id)
             return
         msg = IncomingMessage(

@@ -79,11 +79,13 @@ class Worker:
             # Sync run so the queue waits before claiming the next job.
             from .runner import run_goal_in_thread
             status = run_goal_in_thread(int(goal_id))
-            # A goal that ended 'blocked'/'failed' -- or couldn't start
-            # (None) -- must raise so run_once() routes it through
-            # queue.fail() and the retry/backoff path. Returning normally
-            # here would mark a crashed goal as a successful job.
-            if status is None or status in ("blocked", "failed", "error"):
+            # Retry only genuinely transient outcomes: couldn't start (None) or
+            # an internal crash ('error'/'failed'). A goal that ended 'blocked'
+            # is a DELIBERATE stop -- budget cap hit, killswitch armed, or
+            # awaiting user input -- and must NOT be retried, or run_once()
+            # re-executes the entire swarm and re-spends budget. Let those
+            # complete the job normally.
+            if status is None or status in ("error", "failed"):
                 raise GoalRunFailed(
                     f"goal {goal_id} terminal status={status!r}"
                 )

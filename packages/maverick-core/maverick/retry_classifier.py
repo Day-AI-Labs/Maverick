@@ -60,7 +60,7 @@ POLICIES: dict[ErrorClass, RetryPolicy] = {
 # Lower-cased patterns to substring-match against str(exception).
 _PATTERNS: list[tuple[ErrorClass, re.Pattern]] = [
     (ErrorClass.RATE_LIMIT,        re.compile(r"\b429\b|rate.?limit|too many requests|quota", re.IGNORECASE)),
-    (ErrorClass.AUTH,              re.compile(r"\b401\b|unauthorized|invalid.api.key|authentication", re.IGNORECASE)),
+    (ErrorClass.AUTH,              re.compile(r"\b401\b|\b403\b|unauthorized|forbidden|invalid.api.key|authentication", re.IGNORECASE)),
     # "refus" alone is too broad (e.g. "Connection refused" is a
     # network error, not a content filter). Require a content-related
     # marker.
@@ -115,7 +115,9 @@ def next_delay(exc: BaseException, *, attempts_so_far: int) -> float:
     pol = policy_for(exc)
     if not pol.retry:
         return 0.0
-    delay = pol.initial_delay_seconds * (pol.backoff_multiplier ** attempts_so_far)
+    # Clamp the exponent before the power: attempts_so_far is caller-supplied
+    # and unbounded, and 2.0 ** big raises OverflowError before the min() clamp.
+    delay = pol.initial_delay_seconds * (pol.backoff_multiplier ** min(attempts_so_far, 32))
     return min(delay, pol.max_delay_seconds)
 
 

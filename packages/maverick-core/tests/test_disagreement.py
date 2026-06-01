@@ -1,11 +1,7 @@
-"""Disagreement entropy + adaptive fanout."""
+"""Disagreement entropy."""
 from __future__ import annotations
 
-from maverick.disagreement import (
-    adaptive_fanout,
-    answer_entropy,
-    answers_disagree,
-)
+from maverick.disagreement import answer_entropy
 
 
 class TestAnswerEntropy:
@@ -36,41 +32,3 @@ class TestAnswerEntropy:
         """Same answer with different formatting should NOT be disagreement."""
         ent = answer_entropy(["the answer", "the answer\n\n", "  the answer  "])
         assert ent == 0.0
-
-
-class TestAdaptiveFanout:
-    def test_cold_start_at_least_two(self):
-        """No prior samples → run at least 2 to get a signal."""
-        out = adaptive_fanout([], requested=1)
-        assert out >= 2
-
-    def test_high_entropy_increases_fanout(self):
-        diverse = ["a", "b", "c", "d", "e"]
-        out_lo_req = adaptive_fanout(diverse, requested=1)
-        out_hi_req = adaptive_fanout(diverse, requested=4)
-        # With alpha=4.0 default, max entropy and requested=4 → 16 cap'd at FANOUT_MAX.
-        assert out_lo_req >= 1
-        assert out_hi_req > out_lo_req
-
-    def test_low_entropy_keeps_fanout_low(self):
-        same = ["one"] * 8
-        out = adaptive_fanout(same, requested=4, minimum=1)
-        # 0 entropy * anything ≈ 0 → clamped to minimum.
-        assert out == 1
-
-    def test_respects_max_clamp(self):
-        diverse = [str(i) for i in range(50)]
-        out = adaptive_fanout(diverse, requested=100, maximum=32)
-        assert out <= 32
-
-    def test_respects_min_clamp(self):
-        out = adaptive_fanout(["only"], requested=10, minimum=3)
-        assert out >= 1  # single answer = no entropy, min still respected
-
-
-class TestAnswersDisagree:
-    def test_clustered_returns_false(self):
-        assert answers_disagree(["yes", "yes", "yes"]) is False
-
-    def test_scattered_returns_true(self):
-        assert answers_disagree(["a", "b", "c", "d"]) is True
