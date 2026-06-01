@@ -1412,11 +1412,17 @@ def session_import(provider: str, token: str | None) -> None:
 def session_clear(provider: str) -> None:
     """Delete a stored session."""
     from .session_providers import cookie_store
-    removed = cookie_store.clear_session(provider)
+    # `session import chatgpt` stores under the canonical name
+    # ('chatgpt-session'), so accept the same short alias here -- otherwise
+    # `session clear chatgpt` reports "no session" right after a successful
+    # import. Unknown names pass through unchanged (the store is generic).
+    profile = _SESSION_IMPORT_PROFILES.get(provider)
+    name = profile["canon"] if profile else provider
+    removed = cookie_store.clear_session(name)
     if removed:
-        click.echo(f"Cleared session for {provider}")
+        click.echo(f"Cleared session for {name}")
     else:
-        click.echo(f"No session stored for {provider}", err=True)
+        click.echo(f"No session stored for {name}", err=True)
         sys.exit(1)
 
 
