@@ -316,10 +316,13 @@ class AnthropicClient:
         # so the provider actually honours it -- before this fix the env
         # var was set but read by nothing, and best-of-N produced
         # N identical answers.
-        # Thinking models reject explicit temperature; gate on
-        # thinking_budget being unset.
+        # Thinking models reject explicit temperature (400). Gate on whether
+        # `thinking` actually ended up in the request -- not on thinking_budget,
+        # which misses the adaptive-thinking auto-injected for Opus 4.7/4.8 just
+        # above (that path set thinking_budget=None yet still sends thinking, so
+        # the old gate let temperature through and the API 400'd).
         temp_str = os.environ.get("MAVERICK_TEMPERATURE")
-        if temp_str and not (thinking_budget and thinking_budget > 0):
+        if temp_str and "thinking" not in kwargs:
             try:
                 kwargs["temperature"] = float(temp_str)
             except ValueError:
