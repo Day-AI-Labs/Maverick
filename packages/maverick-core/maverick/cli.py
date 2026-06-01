@@ -660,6 +660,23 @@ def report_issue(ctx, goal_id: int, repo: str | None) -> None:
     click.echo(url)
 
 
+@main.command("share")
+@click.argument("goal_id", type=int)
+def share(goal_id: int) -> None:
+    """Share a run as a sanitized, private GitHub gist.
+
+    Exports the run's trajectory (secrets scrubbed) and uploads it as a
+    secret gist. Needs a GitHub token in GITHUB_TOKEN (or GH_TOKEN).
+    """
+    from .run_share import share_run
+    try:
+        url = share_run(goal_id)
+    except RuntimeError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(1)
+    click.echo(f"Shared run #{goal_id}: {url}")
+
+
 def _sanitize_progress_content(text: str, limit: int = 200) -> str:
     """Sanitize untrusted event content before printing to a TTY.
 
