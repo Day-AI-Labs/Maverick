@@ -127,19 +127,27 @@ def spawn_swarm_tool(parent: "Agent") -> Tool:
         results = await asyncio.gather(*(c.run() for c in children), return_exceptions=True)
 
         # Karpathy SOTA-review item: measure disagreement across the
-        # children's FINAL answers and record it on the blackboard so
-        # the orchestrator can decide whether to spend more compute
-        # (re-spawn with adaptive_fanout) or trust the consensus.
+        # children's FINAL answers and record it on the blackboard +
+        # context. The donation selector reads `last_disagreement` to keep
+        # only trajectories where the swarm genuinely explored alternatives.
+        # (disagreement.adaptive_fanout exists for an entropy-scaled
+        # re-spawn loop but is not yet wired into a spawn pass — tracked in
+        # the unwired-modules issue, not consumed here.)
         finals = [
             res.final for res in results
             if not isinstance(res, Exception) and res.final
         ]
         if len(finals) > 1:
-            from ..disagreement import answer_entropy
+            from ..disagreement import answer_entropy, answers_disagree
             entropy = answer_entropy(finals)
+            # answers_disagree() is the named threshold predicate (entropy
+            # >= MAVERICK_DISAGREEMENT_THRESHOLD): True means the branches
+            # explored genuinely different answers (worth more compute /
+            # donation-worthy), False means consensus.
+            verdict = "disagree" if answers_disagree(finals) else "consensus"
             parent.ctx.blackboard.post(
                 parent.name, "verify",
-                f"swarm disagreement entropy={entropy:.3f} across {len(finals)} answers",
+                f"swarm {verdict}: entropy={entropy:.3f} across {len(finals)} answers",
             )
             # Stamp on the context so the orchestrator's verify branch
             # and the donation selector can read it.

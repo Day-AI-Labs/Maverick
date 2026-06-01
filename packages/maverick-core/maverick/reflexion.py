@@ -8,7 +8,8 @@ Storage: ``~/.maverick/reflexions.ndjson`` (chmod 600), one JSON
 object per line. Each entry records:
   - ts            — when the failure happened
   - goal_text     — title + description of the goal
-  - failure_class — classified via maverick.retry_classifier
+  - failure_class — a coarse label for the failure (e.g. "budget",
+                    "max_steps", "agent_error"), assigned by the caller
   - failure_msg   — the exception's short message
   - reflection    — the agent's own one-paragraph postmortem
   - tools_used    — list of tools the agent ran before failing

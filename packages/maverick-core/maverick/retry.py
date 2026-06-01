@@ -102,6 +102,27 @@ def _is_retryable_status_error(exc: Exception) -> bool:
     return status == 429 or 500 <= status < 600
 
 
+def _is_terminal(exc: Exception) -> bool:
+    """Whether the error taxonomy marks this exception as non-retryable.
+
+    Wires in ``retry_classifier``: even when an error arrives as one of the
+    retryable provider exception TYPES (or carries no status code), a
+    content-filter / auth / context-overflow failure is terminal — retrying
+    it just burns attempts and money before failing anyway. The classifier
+    catches those by message when the status-code check can't. Fail-open:
+    any classifier error means "not known-terminal" so behaviour is
+    unchanged. Disable via MAVERICK_RETRY_CLASSIFY=0.
+    """
+    import os
+    if os.environ.get("MAVERICK_RETRY_CLASSIFY", "1") == "0":
+        return False
+    try:
+        from .retry_classifier import policy_for
+        return not policy_for(exc).retry
+    except Exception:  # pragma: no cover -- classifier never blocks retry
+        return False
+
+
 def sync_retry(fn: Callable[[], T]) -> T:
     """Run a sync callable, retrying transient provider errors."""
     retryable = _retryable_exception_classes()
@@ -110,7 +131,7 @@ def sync_retry(fn: Callable[[], T]) -> T:
         try:
             return fn()
         except retryable as e:
-            if not _is_retryable_status_error(e):
+            if not _is_retryable_status_error(e) or _is_terminal(e):
                 raise
             last = e
             if attempt == MAX_ATTEMPTS - 1:
@@ -133,7 +154,7 @@ async def async_retry(fn: Callable[[], Awaitable[T]]) -> T:
         try:
             return await fn()
         except retryable as e:
-            if not _is_retryable_status_error(e):
+            if not _is_retryable_status_error(e) or _is_terminal(e):
                 raise
             last = e
             if attempt == MAX_ATTEMPTS - 1:
