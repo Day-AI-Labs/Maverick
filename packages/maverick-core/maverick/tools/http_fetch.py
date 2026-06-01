@@ -406,22 +406,39 @@ def _run_fetch(args: dict[str, Any]) -> str:
     # closes the DNS-rebinding TOCTOU between the _is_private_ip() check
     # and the request (a rebinding resolver could otherwise swap in a
     # private/metadata address for the connection lookup).
+    #
+    # Stream with a hard byte ceiling instead of client.request(): the latter
+    # buffers the ENTIRE body into memory before we slice to max_bytes, so a
+    # model-supplied URL to a multi-GB / endless body could exhaust memory
+    # (max_bytes bounded only the returned text, not the download). Read at
+    # most max_bytes off the wire, then stop and mark the result truncated.
     from ._ssrf import BlockedHost, safe_client
     try:
         with safe_client(url, timeout=30.0) as client:
-            resp = client.request(method, url, headers=headers, content=body)
+            with client.stream(method, url, headers=headers, content=body) as resp:
+                status_code = resp.status_code
+                reason_phrase = resp.reason_phrase
+                resp_url = resp.url
+                encoding = resp.encoding
+                content_type = (resp.headers.get("content-type") or "").lower()
+                buf = bytearray()
+                truncated = False
+                for chunk in resp.iter_bytes():
+                    buf += chunk
+                    if len(buf) >= max_bytes:
+                        truncated = True
+                        break
     except BlockedHost as e:
         return f"ERROR: refusing to fetch {url!r}: {e}"
     except httpx.HTTPError as e:
         return f"ERROR: {type(e).__name__}: {e}"
 
-    raw_bytes = resp.content[:max_bytes]
+    raw_bytes = bytes(buf[:max_bytes])
     try:
-        text = raw_bytes.decode(resp.encoding or "utf-8", errors="replace")
+        text = raw_bytes.decode(encoding or "utf-8", errors="replace")
     except (LookupError, UnicodeDecodeError):
         text = raw_bytes.decode("utf-8", errors="replace")
 
-    content_type = (resp.headers.get("content-type") or "").lower()
     looks_html = ("html" in content_type) or text.lstrip().startswith("<")
 
     if render == "raw" or not looks_html:
@@ -433,10 +450,11 @@ def _run_fetch(args: dict[str, Any]) -> str:
     else:  # markdown
         rendered = _to_markdown(text)
 
+    size_note = f"{len(raw_bytes)}{'+' if truncated else ''} bytes"
     header = (
-        f"HTTP {resp.status_code} {resp.reason_phrase} "
-        f"({content_type or 'unknown'}; {len(resp.content)} bytes)\n"
-        f"URL: {resp.url}\n"
+        f"HTTP {status_code} {reason_phrase} "
+        f"({content_type or 'unknown'}; {size_note})\n"
+        f"URL: {resp_url}\n"
     )
     rendered, warning = _scan_fetched(rendered)
     return header + warning + "\n" + rendered
