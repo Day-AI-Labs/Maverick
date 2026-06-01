@@ -29,21 +29,25 @@ _FALLBACK_PRICE_OUT = 15.0
 
 
 def _coerce_count(v: object) -> int:
-    """Coerce a usage count to a non-negative int.
+    """Coerce a usage count to a non-negative int, failing closed on bad data.
 
-    Providers occasionally return None -- or even non-finite floats (NaN/Inf)
-    from a flaky gateway -- in ``usage``. ``int(float("nan") or 0)`` RAISES
-    (NaN is truthy, so ``or 0`` never fires), which used to crash billing
-    AFTER the call was already paid for, recording $0. Treat None/NaN/Inf/
-    garbage as 0.
+    Providers occasionally return ``None`` in ``usage`` on streaming refusals;
+    that remains a zero count for backwards-compatible null-safety. Non-finite,
+    unparseable, or negative counts are invalid accounting data. Raise
+    ``BudgetExceeded`` so the run stops instead of silently recording a paid
+    call as $0 and bypassing later budget checks.
     """
+    if v is None:
+        return 0
     try:
         if isinstance(v, float) and not math.isfinite(v):
-            return 0
+            raise ValueError("non-finite")
         n = int(v or 0)
-    except (TypeError, ValueError, OverflowError):
-        return 0
-    return max(n, 0)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise BudgetExceeded(f"invalid token usage count: {v!r}") from exc
+    if n < 0:
+        raise BudgetExceeded(f"invalid token usage count: negative value {n}")
+    return n
 
 # Anthropic cache multipliers (over the list input price).
 # Two TTLs: 5m default (1.25x write surcharge) and 1h (2.0x write surcharge).
@@ -156,10 +160,11 @@ class Budget:
         OpenAI/o-series/gpt-5 auto-cache). ``cache_write_tok`` at 1.25x (5m TTL)
         or 2.0x (1h TTL) — pass ``cache_write_ttl="1h"`` for a 1h breakpoint.
 
-        Wave 12 nullsafety: ``in_tok``/``out_tok``/cache counts coerce
-        to ``int(... or 0)`` — Anthropic occasionally returns ``None``
-        in ``usage`` on streaming refusals; the prior code raised
-        ``TypeError`` and the instance counted as $0 spent.
+        Wave 12 nullsafety: ``None`` usage counts coerce to zero — Anthropic
+        occasionally returns ``None`` in ``usage`` on streaming refusals; the
+        prior code raised ``TypeError`` and the instance counted as $0 spent.
+        Non-finite, unparseable, or negative counts now fail closed with
+        ``BudgetExceeded`` instead of silently recording a paid call as zero.
 
         Council finding: cache reads/writes accumulate in separate
         counters so ``max_input_tokens`` reflects the BILLABLE input
