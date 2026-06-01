@@ -227,6 +227,7 @@ shelf (vs Devin, Hermes, OpenClaw, Cline, Aider).
 - GitLab CI wrapper.
 - Voice channel (Twilio Voice in, TTS reply).
 - Generic inbound webhook (`POST /webhook/start` HMAC-signed).
+- **Wearable / smart-glasses channel — Even Realities G2 (BYOA bridge)**: thin self-hostable bridge (Cloudflare Worker *or* local edge service fronting `POST /webhook/start`) that exposes Maverick as the "bring-your-own-agent" backend for G2 glasses — on-device STT in, green-laser HUD out, with a quick-reply (<22 s) vs. ack-then-run split sized to the G2's ~30 s timeout and long-task results routed to a secondary channel. New `glasses` adapter in `maverick-channels` + wizard knob; see council note below.
 - Podman sandbox.
 - Devcontainer sandbox.
 - gRPC API surface (`StartGoal`/`StreamEpisode`/`Cancel`).
@@ -444,6 +445,84 @@ The MCP-surface + quickstart deliverables live under
 — Ecosystem** (Go + Rust quickstarts, MCP-client analytics). The
 binding decision itself is gated to **Q1 2027** based on measured
 non-Python MCP usage.
+
+---
+
+## Wearable Channel — Even Realities G2 (BYOA bridge) — Council Note (June 2026)
+
+OpenClaw (the Rust competitor we benchmark against) shipped a "bring-your-own-agent"
+bridge that drives **Even Realities G2** smart glasses. The ask here is *not* to
+integrate OpenClaw — it's to make **Maverick** drivable from the same glasses, as
+just another channel. The pattern is a near-perfect showcase of the long-horizon
+wedge, so it earns a roadmap slot.
+
+### How OpenClaw does it (for reference)
+
+- A thin **~250-line Cloudflare Worker** translates between the G2's expected API
+  shape and OpenClaw's Gateway protocol. That bridge is OpenClaw-specific (published
+  as a reusable *OpenClaw Skill*); the glasses themselves are agent-agnostic.
+- The G2 has a hard **~30 s** request timeout. The Worker enforces a **22 s**
+  deadline and classifies each utterance:
+  - **Quick query** (weather, a fact, short chat) → proxied synchronously to the
+    Gateway and answered inside the deadline.
+  - **Long task** (`write.*code | research | deploy`) → answered *immediately* with
+    an ack ("Got it! Writing article… result will be sent to Telegram"), run in the
+    background on an isolated session, with the full result delivered to a
+    **secondary channel** (Telegram) when done.
+- **Voice is handled on-device**: the G2 does its own speech-to-text and sends only
+  text; replies render on the green-laser **HUD** (no TTS audio in the loop).
+
+### Why it fits Maverick (reuse, don't reinvent)
+
+This is the **ack-then-run** pattern already on the roadmap (Q3 2026 mobile alpha),
+sitting on seams that already exist:
+
+- **Channel adapter** — a new `glasses` adapter in
+  `packages/maverick-channels/maverick_channels/` next to `telegram.py` / `voice.py`,
+  subclassing `base.py`. The HUD's short-text constraint reuses `formatting.py`.
+- **Transport** — the bridge fronts the existing inbound `POST /webhook/start`
+  (Q3 2026 "Generic inbound webhook"); no new server surface.
+- **Long-task delivery** — results ride the existing **outbound webhooks**
+  (`packages/maverick-core/maverick/webhooks.py`) + push bridge into a secondary
+  channel, exactly as OpenClaw routes to Telegram.
+- **Voice tools optional** — `transcribe_audio` / `speak`
+  (`maverick/tools/voice.py`) are *not* needed for G2 (on-device STT, HUD out), but
+  cover wearables that ship raw audio instead.
+
+### Constraints (house rules)
+
+- **Open-source-first / self-hostable.** OpenClaw's bridge is a Cloudflare Worker — a
+  hosted dependency. Ours ships with a "you can self-host this" path: the same thin
+  shim runs either as a Worker **or** as a small local/edge service pointing at
+  `POST /webhook/start`. No mandatory paid edge.
+- **Config knob + wizard (CLAUDE.md #5/#6).** A new channel adapter gets a
+  `[channels.glasses]` knob and an enable/disable step in the installer wizard
+  (`apps/installer-cli/maverick_installer/wizard.py`).
+- **The timeout split is the point.** The quick-vs-ack-then-run boundary is where the
+  long-horizon design shows up on a 30-second device — keep it the headline of the
+  demo, not an afterthought.
+
+### Roadmap placement
+
+Headline item under **Q3 2026 — Ecosystem** (the channels cluster, beside the Voice
+channel and inbound webhook it depends on). Its prerequisites — ack-then-run
+(Q3 2026 UX), inbound/outbound webhooks (Q1/Q3 2026 Ecosystem), push-notification
+bridge (Q2 2026 UX) — all land by Q3 2026, so no new long-pole work is implied. The
+broader "smart-glasses / wearable channel" generalization (other devices, audio-out
+wearables) tracks alongside the **2027 H1** wearables cluster (Apple Watch glance,
+voice command grammar).
+
+### Verify before committing
+
+Device-side specifics (the ~30 s timeout, on-device STT behavior, HUD payload limits)
+are third-party-reported — one community write-up plus Even's support center — and
+should be re-checked against Even Realities' own G2 SDK before this becomes a build
+commitment, same caveat discipline as `ROADMAP-ADDITIONS.md`.
+
+**Sources:** [G2 × OpenClaw bridge write-up](https://blog.juchunko.com/en/even-realities-g2-openclaw-bridge/) ·
+[Even Support Center — G2 "Bring Your Own Agent"](https://support.evenrealities.com/hc/en-us/categories/13489714076815-G2) ·
+[bridge published as an OpenClaw Skill](https://mcpmarket.com/tools/skills/even-realities-g2-openclaw-bridge) ·
+[prior art — openclaw-glasses for Even G1](https://github.com/littlebotshi/openclaw-glasses)
 
 ---
 
