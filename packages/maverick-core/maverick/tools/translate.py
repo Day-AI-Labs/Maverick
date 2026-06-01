@@ -42,6 +42,10 @@ _TRANS_SCHEMA: dict[str, Any] = {
 
 
 def _pick_backend(explicit: str) -> str:
+    # Normalize the backend arg so a model-supplied "DeepL" / " deepl "
+    # routes correctly instead of silently falling through to the default.
+    # Matches the `voice`/`ocr` tools, which already strip+lowercase.
+    explicit = (explicit or "").strip().lower()
     if explicit:
         return explicit
     if os.environ.get("DEEPL_API_KEY", "").strip():
