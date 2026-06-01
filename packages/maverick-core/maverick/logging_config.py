@@ -16,9 +16,37 @@ import contextvars
 import json
 import logging
 import os
+import re
 import sys
 import time
 from typing import Any
+
+# Log-extra keys whose VALUE is almost certainly a secret -> redact wholesale.
+# Tighter than sandbox.local._SECRET_ENV_RE (no URI/URL/CONN, which match
+# benign log keys like "url"); this is matched against caller-chosen field
+# names, not shell env vars.
+_SECRET_KEY_RE = re.compile(
+    r"(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|APIKEY|AUTH|BEARER|SESSION)",
+    re.IGNORECASE,
+)
+
+
+def _is_secret_key(name: str) -> bool:
+    return bool(_SECRET_KEY_RE.search(name or ""))
+
+
+def _scrub_value(value: Any) -> Any:
+    """Run string values through secrets.scrub so an inline key/token/Bearer
+    header/.env line in a log extra is redacted before it leaves the process.
+    Non-strings pass through unchanged. Never raises (logging must not crash)."""
+    if not isinstance(value, str):
+        return value
+    try:
+        from .secrets import scrub
+        return scrub(value)
+    except Exception:  # pragma: no cover -- scrubbing must never break logging
+        return value
+
 
 _goal_id_var: contextvars.ContextVar[int | None] = contextvars.ContextVar(
     "maverick_goal_id", default=None,
@@ -35,17 +63,50 @@ def set_goal_context(
     goal_id: int | None = None,
     conversation_id: int | None = None,
     channel: str | None = None,
-) -> None:
-    """Bind context for log lines emitted in this async/sync task."""
+) -> dict[str, Any]:
+    """Bind context for log lines emitted in this async/sync task.
+
+    Returns reset tokens (one per var actually set) so the caller can restore
+    the *prior* values via ``reset_goal_context`` instead of nulling globally.
+    The old set/clear pair leaked across concurrent goals on one loop: a
+    second goal's set overwrote the first's, and either goal's clear then
+    nulled the var for BOTH — so log lines got mislabeled with the wrong
+    goal_id. Per-call token reset scopes the binding to this run.
+    """
+    tokens: dict[str, Any] = {}
     if goal_id is not None:
-        _goal_id_var.set(goal_id)
+        tokens["goal_id"] = _goal_id_var.set(goal_id)
     if conversation_id is not None:
-        _conversation_id_var.set(conversation_id)
+        tokens["conversation_id"] = _conversation_id_var.set(conversation_id)
     if channel is not None:
-        _channel_var.set(channel)
+        tokens["channel"] = _channel_var.set(channel)
+    return tokens
+
+
+def reset_goal_context(tokens: dict[str, Any] | None) -> None:
+    """Restore the context vars to the values held before ``set_goal_context``.
+
+    Pass the dict ``set_goal_context`` returned. Restoring the prior value
+    (rather than None) means a nested/concurrent goal doesn't wipe an outer
+    goal's context. Tolerant of a partial/None mapping and stale tokens."""
+    if not tokens:
+        return
+    for var, key in (
+        (_goal_id_var, "goal_id"),
+        (_conversation_id_var, "conversation_id"),
+        (_channel_var, "channel"),
+    ):
+        tok = tokens.get(key)
+        if tok is not None:
+            try:
+                var.reset(tok)
+            except (ValueError, LookupError):  # pragma: no cover -- stale/cross-context token
+                var.set(None)
 
 
 def clear_goal_context() -> None:
+    """Null all context vars. Back-compat for callers that don't hold tokens;
+    prefer set_goal_context()/reset_goal_context() to avoid cross-goal leaks."""
     _goal_id_var.set(None)
     _conversation_id_var.set(None)
     _channel_var.set(None)
@@ -82,17 +143,24 @@ class JsonFormatter(logging.Formatter):
         }
         if record.exc_info:
             out["exc"] = self.formatException(record.exc_info)
-        # Add filter-attached context + any caller-passed extras.
+        # Add filter-attached context + any caller-passed extras. Caller extras
+        # are NOT trusted: a stray logger.info(..., extra={"api_key": k})
+        # anywhere would otherwise ship a secret to the aggregator verbatim.
+        # Drop secret-named keys outright and run string values through
+        # secrets.scrub (catches inline keys/tokens/Bearer headers/.env lines).
         for k, v in record.__dict__.items():
             if k in self._STDLIB or k.startswith("_"):
                 continue
             if k in ("goal_id", "conversation_id", "channel") and v is None:
                 continue
+            if _is_secret_key(k):
+                out[k] = "[REDACTED]"
+                continue
             try:
                 json.dumps(v)
-                out[k] = v
+                out[k] = _scrub_value(v)
             except (TypeError, ValueError):
-                out[k] = str(v)
+                out[k] = _scrub_value(str(v))
         return json.dumps(out, separators=(",", ":"))
 
 
