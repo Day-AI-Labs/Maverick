@@ -91,6 +91,16 @@ SCHEMA: list[str] = [
     """,
     # Idempotent add to mirror the SQLite facts table's episode attribution.
     "ALTER TABLE facts ADD COLUMN IF NOT EXISTS source_episode_id INTEGER;",
+    """
+    CREATE TABLE IF NOT EXISTS questions (
+      id          SERIAL PRIMARY KEY,
+      goal_id     INTEGER REFERENCES goals(id),
+      question    TEXT NOT NULL,
+      asked_at    DOUBLE PRECISION NOT NULL,
+      answer      TEXT,
+      answered_at DOUBLE PRECISION
+    );
+    """,
 ]
 
 
@@ -393,6 +403,57 @@ class PostgresWorldModel:
             with self._tx() as cur:
                 cur.execute(f"DELETE FROM facts WHERE key IN ({ph})", keys)
         return keys
+
+    # ----- questions (ask_user / human-in-the-loop) -----
+
+    def ask(self, question: str, goal_id: int | None = None) -> int:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO questions(goal_id, question, asked_at) "
+                "VALUES(%s, %s, %s) RETURNING id",
+                (goal_id, question, time.time()),
+            )
+            row = cur.fetchone()
+        return int(row[0])
+
+    def answer(self, question_id: int, answer: str) -> bool:
+        """Record an answer. Returns False if no question has that id, so a
+        typo'd id is flagged instead of reported as a false success."""
+        with self._tx() as cur:
+            cur.execute(
+                "UPDATE questions SET answer = %s, answered_at = %s WHERE id = %s",
+                (answer, time.time(), question_id),
+            )
+            affected = cur.rowcount
+        return affected > 0
+
+    def open_questions(self, goal_id: int | None = None) -> list:
+        from ..world_model import Question
+        cols = "id, goal_id, question, asked_at, answer, answered_at"
+        with self._tx() as cur:
+            if goal_id is not None:
+                cur.execute(
+                    f"SELECT {cols} FROM questions "
+                    "WHERE answer IS NULL AND goal_id = %s ORDER BY id",
+                    (goal_id,),
+                )
+            else:
+                cur.execute(
+                    f"SELECT {cols} FROM questions WHERE answer IS NULL ORDER BY id"
+                )
+            rows = cur.fetchall()
+        return [Question(*r) for r in rows]
+
+    def all_questions(self, goal_id: int) -> list:
+        from ..world_model import Question
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, goal_id, question, asked_at, answer, answered_at "
+                "FROM questions WHERE goal_id = %s ORDER BY id",
+                (goal_id,),
+            )
+            rows = cur.fetchall()
+        return [Question(*r) for r in rows]
 
     # ----- close -----
 

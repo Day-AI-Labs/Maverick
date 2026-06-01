@@ -148,3 +148,30 @@ def test_list_episodes_and_total_spend(world):
     totals = world.total_spend()
     assert totals["dollars"] >= 1.5   # this run's ended episode counts
     assert totals["runs"] >= 1
+
+
+def test_ask_answer_open_questions(world):
+    gid = world.create_goal("needs input")
+    qid = world.ask("which region?", goal_id=gid)
+    assert isinstance(qid, int)
+
+    # open before answering
+    opens = world.open_questions(goal_id=gid)
+    assert [q.id for q in opens] == [qid]
+    assert opens[0].question == "which region?"
+    assert opens[0].answer is None
+
+    assert world.answer(qid, "us-east-1") is True
+    # answering removes it from the open set
+    assert all(q.id != qid for q in world.open_questions(goal_id=gid))
+
+    # all_questions still shows it, now answered
+    allq = world.all_questions(gid)
+    answered = [q for q in allq if q.id == qid][0]
+    assert answered.answer == "us-east-1"
+    assert answered.answered_at is not None
+
+
+def test_answer_unknown_question_id_returns_false(world):
+    # #394 parity: a typo'd id is reported, not a false success.
+    assert world.answer(987_654_321, "nope") is False
