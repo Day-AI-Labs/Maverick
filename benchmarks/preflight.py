@@ -250,11 +250,20 @@ def check_wave11_env() -> bool:
         elif actual != v:
             _warn(f"{k}={actual!r} (Wave 11 runbook recommends {k}={v!r})")
     bon = os.environ.get("MAVERICK_BEST_OF_N")
-    if bon and int(bon) > 4:
-        _warn(
-            f"MAVERICK_BEST_OF_N={bon} is unusually high (research consensus is "
-            "N=3 heterogeneous; N>4 sees diminishing returns and cost blowup)."
-        )
+    if bon:
+        try:
+            bon_int = int(bon)
+        except ValueError:
+            _warn(
+                f"MAVERICK_BEST_OF_N={bon!r} is not an integer; ignoring this "
+                "warning-only advisory."
+            )
+        else:
+            if bon_int > 4:
+                _warn(
+                    f"MAVERICK_BEST_OF_N={bon} is unusually high (research consensus is "
+                    "N=3 heterogeneous; N>4 sees diminishing returns and cost blowup)."
+                )
     instance_cap = os.environ.get("MAVERICK_INSTANCE_HARD_CAP")
     if not instance_cap:
         _warn(

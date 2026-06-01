@@ -113,6 +113,12 @@ def test_check_wave11_env_returns_true_when_unset(monkeypatch):
     assert pf.check_wave11_env() is True
 
 
+def test_check_wave11_env_non_integer_bon_is_warning_only(monkeypatch):
+    pf = _load_preflight()
+    monkeypatch.setenv("MAVERICK_BEST_OF_N", "bogus")
+    assert pf.check_wave11_env() is True
+
+
 # ---- Config stale-override check ----
 
 
