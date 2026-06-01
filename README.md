@@ -119,7 +119,7 @@ maverick version                         # installed package versions
 ```
 packages/
   maverick-core/       Python agent kernel: recursive swarm, persistent world
-                       model (SQLite + FTS5 + schema v9), 12 LLM providers, 7
+                       model (SQLite + FTS5 + schema v10), 12 LLM providers, 7
                        sandboxes, MCP client, skills, templates, persona,
                        background runner, budget tracking
   maverick-shield/     Agent Shield integration + built-in fallback rule set

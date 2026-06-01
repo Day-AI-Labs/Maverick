@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
@@ -256,6 +256,12 @@ MIGRATIONS: dict[int, list[str]] = {
     # version and pick them up on next open, matching the goal_events /
     # conversations / attachments migration pattern above.
     9: [],
+    # v10: backfill the messages_fts index. The FTS table + its triggers only
+    # index FUTURE writes, so a DB whose messages predate the index (created
+    # before messages_fts shipped) carried unindexed history that
+    # search_messages() silently missed. Rebuild once on upgrade -- a cheap
+    # no-op on a DB that's already fully indexed.
+    10: ["INSERT INTO messages_fts(messages_fts) VALUES('rebuild')"],
 }
 
 
