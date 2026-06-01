@@ -223,3 +223,100 @@ def test_attachments_round_trip(world):
     # scoped to the goal: a different goal sees none of these
     other = world.create_goal("no files")
     assert world.list_attachments(other) == []
+
+
+def test_messages_append_and_search(world):
+    gid = world.create_goal("chat goal")
+    world.append_message(gid, "user", "deploy the API to staging please")
+    world.append_message(gid, "assistant", "deploying now")
+    world.append_message(gid, "user", "unrelated note about cats")
+
+    contents = [h["content"] for h in world.search_messages("deploy")]
+    assert "deploy the API to staging please" in contents
+    assert "deploying now" in contents
+    assert "unrelated note about cats" not in contents
+
+    assert world.search_messages("") == []          # empty query: no crash
+    assert world.search_messages("   ") == []        # whitespace-only too
+
+
+def test_search_messages_escapes_like_wildcards(world):
+    gid = world.create_goal("g-wild")
+    world.append_message(gid, "user", "100% sure")
+    world.append_message(gid, "user", "totally different")
+    # the '%' must be literal, not a match-all wildcard
+    assert [h["content"] for h in world.search_messages("100%")] == ["100% sure"]
+
+
+def test_get_or_create_conversation_idempotent(world):
+    c1 = world.get_or_create_conversation("imessage", "+15551234")
+    c2 = world.get_or_create_conversation("imessage", "+15551234")
+    assert c1.id == c2.id                 # same (channel,user) -> same row
+    assert c2.last_seen >= c1.last_seen    # last_seen bumped
+
+
+def test_turns_append_and_recent_order(world):
+    conv = world.get_or_create_conversation("web", "user-7")
+    world.append_turn(conv.id, "user", "hi")
+    world.append_turn(conv.id, "assistant", "hello")
+    world.append_turn(conv.id, "user", "bye")
+    # most-recent 2, returned chronologically (ascending)
+    assert [t.content for t in world.recent_turns(conv.id, limit=2)] == ["hello", "bye"]
+
+
+def test_append_turn_validates_role(world):
+    conv = world.get_or_create_conversation("web", "user-role")
+    with pytest.raises(ValueError, match="user.*assistant"):
+        world.append_turn(conv.id, "system", "nope")
+
+
+def test_list_conversations_channel_filter(world):
+    world.get_or_create_conversation("slack", "u-a")
+    world.get_or_create_conversation("discord", "u-b")
+    slack = world.list_conversations(channel="slack")
+    assert all(c.channel == "slack" for c in slack)
+    assert any(c.user_id == "u-a" for c in slack)
+
+
+def test_channel_dedup(world):
+    assert world.mark_message_processed("twilio", "SID-1") is True   # first write
+    assert world.mark_message_processed("twilio", "SID-1") is False  # duplicate
+    assert world.is_processed_message("twilio", "SID-1") is True
+    assert world.is_processed_message("twilio", "SID-unseen") is False
+
+
+def test_lookup_processed_message_null_vs_missing(world):
+    world.mark_message_processed("sms", "M-withgoal", goal_id=42)
+    world.mark_message_processed("sms", "M-nogoal", goal_id=None)
+    assert world.lookup_processed_message("sms", "M-withgoal") == 42
+    assert world.lookup_processed_message("sms", "M-nogoal") == 0     # seen, null goal
+    assert world.lookup_processed_message("sms", "M-never") is None   # unseen
+
+
+def test_prune_methods_remove_and_count(world):
+    # Run LAST: a negative horizon prunes everything (cutoff in the future).
+    gid = world.create_goal("prunable")
+    world.append_event(gid, "a", "k", "old event")
+    world.mark_message_processed("ch", "ext-prune")
+    conv = world.get_or_create_conversation("ch", "prune-user")
+    world.append_turn(conv.id, "user", "x")
+
+    assert world.prune_goal_events(older_than_seconds=-1) >= 1
+    assert world.prune_processed_messages(older_than_seconds=-1) >= 1
+    assert world.prune_conversations(idle_for_seconds=-1) >= 1
+
+
+def test_schema_version(world):
+    assert world.schema_version() == 1   # seeded by _migrate
+
+
+def test_reclaim_orphan_goals(world):
+    gid = world.create_goal("stuck")
+    world.set_goal_status(gid, "active")
+    # negative horizon -> cutoff in the future -> reclaims all active/pending
+    # (no flaky equality on updated_at == cutoff)
+    reclaimed = world.reclaim_orphan_goals(max_age_seconds=-1)
+    assert reclaimed >= 1
+    g = world.get_goal(gid)
+    assert g.status == "blocked"
+    assert "process restarted mid-run" in (g.result or "")

@@ -127,6 +127,53 @@ SCHEMA: list[str] = [
     );
     """,
     "CREATE INDEX IF NOT EXISTS idx_pg_attachments_goal_id ON attachments(goal_id);",
+    """
+    CREATE TABLE IF NOT EXISTS messages (
+      id        SERIAL PRIMARY KEY,
+      goal_id   INTEGER REFERENCES goals(id),
+      role      TEXT NOT NULL,
+      content   TEXT NOT NULL,
+      ts        DOUBLE PRECISION NOT NULL
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS conversations (
+      id          SERIAL PRIMARY KEY,
+      channel     TEXT NOT NULL,
+      user_id     TEXT NOT NULL,
+      created_at  DOUBLE PRECISION NOT NULL,
+      last_seen   DOUBLE PRECISION NOT NULL,
+      UNIQUE(channel, user_id)
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_conversations_last_seen ON conversations(last_seen);",
+    """
+    CREATE TABLE IF NOT EXISTS turns (
+      id              SERIAL PRIMARY KEY,
+      conversation_id INTEGER NOT NULL REFERENCES conversations(id),
+      goal_id         INTEGER REFERENCES goals(id),
+      role            TEXT NOT NULL,
+      content         TEXT NOT NULL,
+      ts              DOUBLE PRECISION NOT NULL
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_turns_conv_id ON turns(conversation_id, id);",
+    """
+    CREATE TABLE IF NOT EXISTS processed_messages (
+      id          SERIAL PRIMARY KEY,
+      channel     TEXT NOT NULL,
+      external_id TEXT NOT NULL,
+      goal_id     INTEGER REFERENCES goals(id),
+      seen_at     DOUBLE PRECISION NOT NULL,
+      UNIQUE(channel, external_id)
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS schema_version (
+      version INTEGER PRIMARY KEY
+    );
+    """,
+    "INSERT INTO schema_version(version) VALUES(1) ON CONFLICT DO NOTHING;",
 ]
 
 
@@ -296,6 +343,36 @@ class PostgresWorldModel:
             )
             row = cur.fetchone()
         return PGGoal(*row) if row else None
+
+    def reclaim_orphan_goals(self, *, max_age_seconds: float = 60.0) -> int:
+        """Mark goals stuck 'active'/'pending' (and stale by max_age_seconds)
+        as 'blocked' on startup -- recovers from a crash between create_goal()
+        and a terminal set_goal_status. The 60s default avoids reclaiming a
+        live goal driven by a sibling process (which re-touches updated_at);
+        override via MAVERICK_ORPHAN_RECLAIM_SECONDS. Returns rows reclaimed."""
+        env_override = os.environ.get("MAVERICK_ORPHAN_RECLAIM_SECONDS")
+        if env_override is not None:
+            try:
+                max_age_seconds = max(0.0, float(env_override))
+            except ValueError:
+                pass
+        cutoff = time.time() - max_age_seconds
+        with self._tx() as cur:
+            cur.execute(
+                "UPDATE goals SET status = 'blocked', "
+                "result = COALESCE(result, '') || ' [process restarted mid-run]', "
+                "updated_at = %s "
+                "WHERE status IN ('active', 'pending') AND updated_at < %s",
+                (time.time(), cutoff),
+            )
+            affected = cur.rowcount
+        return affected
+
+    def schema_version(self) -> int:
+        with self._tx() as cur:
+            cur.execute("SELECT version FROM schema_version LIMIT 1")
+            row = cur.fetchone()
+        return row[0] if row else 0
 
     # ----- episodes -----
 
@@ -568,6 +645,174 @@ class PostgresWorldModel:
             )
             rows = cur.fetchall()
         return [Attachment(*r) for r in rows]
+
+    # ----- messages -----
+
+    def append_message(self, goal_id: int, role: str, content: str) -> None:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO messages(goal_id, role, content, ts) "
+                "VALUES(%s, %s, %s, %s)",
+                (goal_id, role, content, time.time()),
+            )
+
+    def search_messages(self, query: str, limit: int = 10) -> list[dict]:
+        # SQLite uses an FTS5 virtual table; Postgres has none, so match with a
+        # case-insensitive substring (ILIKE) over content. The user text's LIKE
+        # metacharacters (\ % _) are escaped so they're literal -- functional
+        # and injection-safe. (Full PG text search via tsvector is a later
+        # refinement.)
+        if not query or not query.strip():
+            return []
+        needle = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, goal_id, role, content, ts FROM messages "
+                "WHERE content ILIKE %s ORDER BY ts DESC LIMIT %s",
+                (f"%{needle}%", limit),
+            )
+            rows = cur.fetchall()
+        cols = ("id", "goal_id", "role", "content", "ts")
+        return [dict(zip(cols, r)) for r in rows]
+
+    # ----- conversations (multi-turn per channel user) -----
+
+    def get_or_create_conversation(self, channel: str, user_id: str):
+        """Idempotent on (channel, user_id); bumps last_seen each call."""
+        from ..world_model import Conversation
+        now = time.time()
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO conversations(channel, user_id, created_at, last_seen) "
+                "VALUES(%s, %s, %s, %s) "
+                "ON CONFLICT(channel, user_id) DO UPDATE SET last_seen = EXCLUDED.last_seen "
+                "RETURNING id, channel, user_id, created_at, last_seen",
+                (channel, user_id, now, now),
+            )
+            row = cur.fetchone()
+        return Conversation(*row)
+
+    def append_turn(
+        self,
+        conversation_id: int,
+        role: str,
+        content: str,
+        goal_id: int | None = None,
+    ) -> int:
+        if role not in ("user", "assistant"):
+            raise ValueError(f"role must be 'user' or 'assistant', got {role!r}")
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO turns(conversation_id, goal_id, role, content, ts) "
+                "VALUES(%s, %s, %s, %s, %s) RETURNING id",
+                (conversation_id, goal_id, role, content, time.time()),
+            )
+            row = cur.fetchone()
+        return int(row[0])
+
+    def recent_turns(self, conversation_id: int, limit: int = 20) -> list:
+        """Most-recent N turns in chronological (ascending) order."""
+        from ..world_model import Turn
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, conversation_id, goal_id, role, content, ts FROM turns "
+                "WHERE conversation_id = %s ORDER BY id DESC LIMIT %s",
+                (conversation_id, limit),
+            )
+            rows = cur.fetchall()
+        return list(reversed([Turn(*r) for r in rows]))
+
+    def list_conversations(self, channel: str | None = None) -> list:
+        from ..world_model import Conversation
+        cols = "id, channel, user_id, created_at, last_seen"
+        with self._tx() as cur:
+            if channel:
+                cur.execute(
+                    f"SELECT {cols} FROM conversations WHERE channel = %s "
+                    "ORDER BY last_seen DESC",
+                    (channel,),
+                )
+            else:
+                cur.execute(f"SELECT {cols} FROM conversations ORDER BY last_seen DESC")
+            rows = cur.fetchall()
+        return [Conversation(*r) for r in rows]
+
+    # ----- channel dedup (webhook idempotency) -----
+
+    def mark_message_processed(
+        self,
+        channel: str,
+        external_id: str,
+        goal_id: int | None = None,
+    ) -> bool:
+        """First write returns True (run the goal); a duplicate (channel,
+        external_id) returns False (already handled) -- the idempotency that
+        stops a retried webhook from triggering N goals / N spends."""
+        import psycopg
+        try:
+            with self._tx() as cur:
+                cur.execute(
+                    "INSERT INTO processed_messages(channel, external_id, goal_id, seen_at) "
+                    "VALUES(%s, %s, %s, %s)",
+                    (channel, external_id, goal_id, time.time()),
+                )
+            return True
+        except psycopg.IntegrityError:
+            return False
+
+    def lookup_processed_message(self, channel: str, external_id: str) -> int | None:
+        """goal_id for an already-processed message: None if unseen, 0 if seen
+        but goal_id is null (use is_processed_message to avoid the ambiguity)."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT goal_id FROM processed_messages "
+                "WHERE channel = %s AND external_id = %s",
+                (channel, external_id),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return row[0] if row[0] is not None else 0
+
+    def is_processed_message(self, channel: str, external_id: str) -> bool:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT 1 FROM processed_messages "
+                "WHERE channel = %s AND external_id = %s LIMIT 1",
+                (channel, external_id),
+            )
+            row = cur.fetchone()
+        return row is not None
+
+    # ----- pruning -----
+
+    def prune_goal_events(self, older_than_seconds: float = 30 * 24 * 3600) -> int:
+        cutoff = time.time() - older_than_seconds
+        with self._tx() as cur:
+            cur.execute("DELETE FROM goal_events WHERE ts < %s", (cutoff,))
+            affected = cur.rowcount
+        return affected
+
+    def prune_processed_messages(self, older_than_seconds: float = 30 * 24 * 3600) -> int:
+        cutoff = time.time() - older_than_seconds
+        with self._tx() as cur:
+            cur.execute("DELETE FROM processed_messages WHERE seen_at < %s", (cutoff,))
+            affected = cur.rowcount
+        return affected
+
+    def prune_conversations(self, idle_for_seconds: float = 90 * 24 * 3600) -> int:
+        """Delete idle conversations and their turns. Returns conversations removed."""
+        cutoff = time.time() - idle_for_seconds
+        with self._tx() as cur:
+            # Delete turns first (no ON DELETE CASCADE) so none are orphaned.
+            cur.execute(
+                "DELETE FROM turns WHERE conversation_id IN "
+                "(SELECT id FROM conversations WHERE last_seen < %s)",
+                (cutoff,),
+            )
+            cur.execute("DELETE FROM conversations WHERE last_seen < %s", (cutoff,))
+            affected = cur.rowcount
+        return affected
 
     # ----- close -----
 
