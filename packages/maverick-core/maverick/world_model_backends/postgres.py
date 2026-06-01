@@ -224,6 +224,43 @@ class PostgresWorldModel:
             rows = cur.fetchall()
         return [PGGoal(*r) for r in rows]
 
+    def list_goals(
+        self,
+        status: str | None = None,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+        order: str = "asc",
+    ) -> list[PGGoal]:
+        """List goals, optionally filtered by status + paginated (mirrors SQLite)."""
+        direction = "DESC" if str(order).lower() == "desc" else "ASC"
+        sql = (
+            "SELECT id, parent_id, title, description, status, "
+            "created_at, updated_at, deadline, result FROM goals"
+        )
+        params: list = []
+        if status:
+            sql += " WHERE status = %s"
+            params.append(status)
+        sql += f" ORDER BY id {direction}"
+        if limit is not None:
+            sql += " LIMIT %s OFFSET %s"
+            params += [max(1, int(limit)), max(0, int(offset))]
+        with self._tx() as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+        return [PGGoal(*r) for r in rows]
+
+    def active_goal(self) -> PGGoal | None:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, parent_id, title, description, status, "
+                "created_at, updated_at, deadline, result FROM goals "
+                "WHERE status IN ('active', 'blocked') ORDER BY updated_at DESC LIMIT 1"
+            )
+            row = cur.fetchone()
+        return PGGoal(*row) if row else None
+
     # ----- episodes -----
 
     def start_episode(self, goal_id: int) -> int:
@@ -256,6 +293,43 @@ class PostgresWorldModel:
                  cost_dollars, input_tokens, output_tokens, tool_calls,
                  episode_id),
             )
+
+    def list_episodes(self, limit: int = 50, goal_id: int | None = None) -> list:
+        from ..world_model import EpisodeSpend
+        cols = (
+            "id, goal_id, started_at, ended_at, outcome, "
+            "COALESCE(cost_dollars, 0), COALESCE(input_tokens, 0), "
+            "COALESCE(output_tokens, 0), COALESCE(tool_calls, 0)"
+        )
+        with self._tx() as cur:
+            if goal_id is not None:
+                cur.execute(
+                    f"SELECT {cols} FROM episodes WHERE goal_id = %s "
+                    "ORDER BY started_at DESC LIMIT %s",
+                    (goal_id, limit),
+                )
+            else:
+                cur.execute(
+                    f"SELECT {cols} FROM episodes ORDER BY started_at DESC LIMIT %s",
+                    (limit,),
+                )
+            rows = cur.fetchall()
+        return [EpisodeSpend(*r) for r in rows]
+
+    def total_spend(self) -> dict[str, float]:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT COALESCE(SUM(cost_dollars), 0), COALESCE(SUM(input_tokens), 0), "
+                "COALESCE(SUM(output_tokens), 0), COUNT(*) "
+                "FROM episodes WHERE ended_at IS NOT NULL"
+            )
+            row = cur.fetchone()
+        return {
+            "dollars": row[0],
+            "input_tokens": row[1],
+            "output_tokens": row[2],
+            "runs": row[3],
+        }
 
     # ----- events -----
 
