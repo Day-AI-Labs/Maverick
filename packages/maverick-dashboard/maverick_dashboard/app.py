@@ -1204,6 +1204,20 @@ async def trajectory_page(request: Request, goal_id: int) -> HTMLResponse:
     )
 
 
+@app.get("/goals/{goal_id}/errors", response_class=HTMLResponse)
+async def errors_page(request: Request, goal_id: int) -> HTMLResponse:
+    """Error inspector: every failed turn for a goal, with full content."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    errors = [e for e in w.goal_events(goal_id, limit=10_000) if e.kind == "error"]
+    return templates.TemplateResponse(
+        request, "errors.html",
+        {"goal": g, "errors": errors},
+    )
+
+
 @app.get("/api/v1/cost.csv")
 async def cost_csv(month: str | None = None) -> StreamingResponse:
     """CSV rollup of episode spend, streamed.
