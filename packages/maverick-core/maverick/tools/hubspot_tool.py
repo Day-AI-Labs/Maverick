@@ -88,6 +88,31 @@ def _patch(path: str, body: dict) -> tuple[int, Any]:
         return r.status_code, r.text[:300]
 
 
+def _get_paginated(path: str, params: dict, limit: int) -> tuple[int, Any, list[dict]]:
+    """Follow HubSpot's ``paging.next.after`` cursor on a CRM list endpoint
+    until ``limit`` results are collected. Returns (code, error, rows).
+
+    HubSpot caps ``limit`` at 100 per page and returns the next offset token in
+    ``paging.next.after``; bounded by a hard page cap.
+    """
+    rows: list[dict] = []
+    after: str | None = None
+    max_pages = max(1, (limit // 100) + 2)
+    for _ in range(max_pages):
+        p = dict(params)
+        p["limit"] = min(100, max(1, limit - len(rows)))
+        if after:
+            p["after"] = after
+        code, data = _get(path, p)
+        if code >= 400 or not isinstance(data, dict):
+            return code, data, rows
+        rows.extend(data.get("results") or [])
+        after = ((data.get("paging") or {}).get("next") or {}).get("after")
+        if len(rows) >= limit or not after:
+            break
+    return 200, {}, rows[:limit]
+
+
 def _op_contacts(args: dict) -> str:
     limit = max(1, min(int(args.get("limit") or 25), 100))
     query = (args.get("query") or "").strip()
@@ -97,9 +122,19 @@ def _op_contacts(args: dict) -> str:
             "properties": ["email", "firstname", "lastname"],
         })
     else:
-        code, data = _get("/crm/v3/objects/contacts", {
-            "limit": limit, "properties": "email,firstname,lastname",
-        })
+        code, err, rows = _get_paginated("/crm/v3/objects/contacts", {
+            "properties": "email,firstname,lastname",
+        }, limit)
+        if code >= 400:
+            return f"ERROR: contacts ({code}): {err}"
+        if not rows:
+            return "no contacts"
+        return "\n".join(
+            f"  {c.get('id')}  {(c.get('properties') or {}).get('email', '?')}  "
+            f"{(c.get('properties') or {}).get('firstname', '')} "
+            f"{(c.get('properties') or {}).get('lastname', '')}"
+            for c in rows
+        )
     if code >= 400 or not isinstance(data, dict):
         return f"ERROR: contacts ({code}): {data}"
     rows = data.get("results") or []
@@ -171,12 +206,11 @@ def _op_contact_update(args: dict) -> str:
 
 def _op_companies(args: dict) -> str:
     limit = max(1, min(int(args.get("limit") or 25), 100))
-    code, data = _get("/crm/v3/objects/companies", {
-        "limit": limit, "properties": "name,domain,industry",
-    })
-    if code >= 400 or not isinstance(data, dict):
-        return f"ERROR: companies ({code}): {data}"
-    rows = data.get("results") or []
+    code, err, rows = _get_paginated("/crm/v3/objects/companies", {
+        "properties": "name,domain,industry",
+    }, limit)
+    if code >= 400:
+        return f"ERROR: companies ({code}): {err}"
     if not rows:
         return "no companies"
     return "\n".join(
@@ -198,10 +232,19 @@ def _op_deals(args: dict) -> str:
             "properties": ["dealname", "amount", "dealstage", "closedate"],
         })
     else:
-        code, data = _get("/crm/v3/objects/deals", {
-            "limit": limit,
+        code, err, rows = _get_paginated("/crm/v3/objects/deals", {
             "properties": "dealname,amount,dealstage,closedate",
-        })
+        }, limit)
+        if code >= 400:
+            return f"ERROR: deals ({code}): {err}"
+        if not rows:
+            return "no deals"
+        return "\n".join(
+            f"  {d.get('id')}  {(d.get('properties') or {}).get('dealname', '?'):<40}  "
+            f"${(d.get('properties') or {}).get('amount', '?')}  "
+            f"stage={(d.get('properties') or {}).get('dealstage', '?')}"
+            for d in rows
+        )
     if code >= 400 or not isinstance(data, dict):
         return f"ERROR: deals ({code}): {data}"
     rows = data.get("results") or []

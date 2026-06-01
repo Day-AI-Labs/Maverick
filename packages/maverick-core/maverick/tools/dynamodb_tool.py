@@ -119,6 +119,30 @@ def _op_delete(args: dict) -> str:
     return f"deleted item from {table}"
 
 
+def _paginate(method, base_kwargs: dict, limit: int) -> list[dict]:
+    """Run a DynamoDB query/scan, following ``LastEvaluatedKey`` until ``limit``
+    items are collected.
+
+    ``Limit`` is a per-page *scanned* cap, not a total, and a filtered page can
+    return fewer (or zero) items while more match — so a single call truncates.
+    Pass ``ExclusiveStartKey`` to continue; bounded by a hard page cap.
+    """
+    items: list[dict] = []
+    start_key = None
+    max_pages = 100
+    for _ in range(max_pages):
+        kwargs = dict(base_kwargs)
+        kwargs["Limit"] = min(1000, max(1, limit - len(items)))
+        if start_key is not None:
+            kwargs["ExclusiveStartKey"] = start_key
+        r = method(**kwargs)
+        items.extend(r.get("Items") or [])
+        start_key = r.get("LastEvaluatedKey")
+        if len(items) >= limit or not start_key:
+            break
+    return items[:limit]
+
+
 def _op_query(args: dict) -> str:
     table = (args.get("table") or "").strip()
     expr = (args.get("key_cond_expression") or "").strip()
@@ -127,15 +151,13 @@ def _op_query(args: dict) -> str:
     vals = args.get("expression_values") if isinstance(
         args.get("expression_values"), dict) else {}
     limit = max(1, min(int(args.get("limit") or 25), 1000))
-    r = _client().Table(table).query(
-        KeyConditionExpression=expr,
-        ExpressionAttributeValues=vals,
-        Limit=limit,
-    )
-    items = r.get("Items") or []
+    items = _paginate(_client().Table(table).query, {
+        "KeyConditionExpression": expr,
+        "ExpressionAttributeValues": vals,
+    }, limit)
     if not items:
         return "no items"
-    return f"count={r.get('Count', len(items))}\n" + _dump(items)
+    return f"count={len(items)}\n" + _dump(items)
 
 
 def _op_scan(args: dict) -> str:
@@ -143,18 +165,17 @@ def _op_scan(args: dict) -> str:
     if not table:
         return "ERROR: scan requires table"
     limit = max(1, min(int(args.get("limit") or 25), 1000))
-    kwargs: dict = {"Limit": limit}
+    kwargs: dict = {}
     f = (args.get("filter_expression") or "").strip()
     if f:
         kwargs["FilterExpression"] = f
         vals = args.get("expression_values") if isinstance(
             args.get("expression_values"), dict) else {}
         kwargs["ExpressionAttributeValues"] = vals
-    r = _client().Table(table).scan(**kwargs)
-    items = r.get("Items") or []
+    items = _paginate(_client().Table(table).scan, kwargs, limit)
     if not items:
         return "no items"
-    return f"count={r.get('Count', len(items))}\n" + _dump(items)
+    return f"count={len(items)}\n" + _dump(items)
 
 
 def _run(args: dict[str, Any]) -> str:

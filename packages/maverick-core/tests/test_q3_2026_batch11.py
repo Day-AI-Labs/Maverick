@@ -225,6 +225,20 @@ def test_hubspot_contacts_list(monkeypatch):
     assert "a@x.com" in out
 
 
+def test_hubspot_contacts_follows_paging_after(monkeypatch):
+    monkeypatch.setenv("HUBSPOT_TOKEN", "tok")
+    page1 = {"results": [{"id": "1", "properties": {"email": "one@x"}}],
+             "paging": {"next": {"after": "cur-2"}}}
+    page2 = {"results": [{"id": "2", "properties": {"email": "two@x"}}]}
+    get = MagicMock(side_effect=[_resp(200, page1), _resp(200, page2)])
+    _fake_httpx(monkeypatch, get=get)
+    from maverick.tools.hubspot_tool import hubspot_tool
+    out = hubspot_tool().fn({"op": "contacts", "limit": 50})
+    assert "one@x" in out and "two@x" in out
+    assert get.call_count == 2
+    assert get.call_args_list[1].kwargs["params"]["after"] == "cur-2"
+
+
 def test_hubspot_contact_create_dry_run(monkeypatch):
     monkeypatch.setenv("HUBSPOT_TOKEN", "tok")
     _fake_httpx(monkeypatch, post=MagicMock())
