@@ -98,55 +98,34 @@ def recv(
     messages are re-queued.
     """
     inbox = _get_inbox(agent_id)
+    if correlation_id is None:
+        try:
+            return inbox.get(block=timeout > 0, timeout=max(0.0, timeout))
+        except queue.Empty:
+            return None
+
     # monotonic: this is an elapsed-time deadline, so a wall-clock NTP/DST jump
     # mustn't make recv block past (or return before) the requested timeout.
     deadline = time.monotonic() + max(0.0, timeout)
-    # Non-matching messages are held aside and put back AFTER we stop pulling,
-    # never re-queued mid-drain. The old code did `put_nowait` immediately,
-    # which (a) silently DROPPED a valid message if the inbox was momentarily
-    # full, (b) reordered it to the tail, and (c) busy-looped re-popping the
-    # same held messages until the deadline. Holding them locally avoids all
-    # three: nothing is lost, FIFO order is preserved, and each message is
-    # examined at most once per call.
-    held: list[Message] = []
-    found: Message | None = None
-    try:
+
+    # Scan the queue in place while holding Queue's mutex instead of pulling
+    # non-matching messages into an unbounded side buffer. This preserves FIFO
+    # for skipped messages, avoids temporary capacity expansion under producer
+    # floods, and lets the explicit deadline check below cap total wait time
+    # even when non-matching messages keep arriving.
+    with inbox.not_empty:
         while True:
-            try:
-                msg = inbox.get(
-                    block=timeout > 0,
-                    timeout=max(0.001, deadline - time.monotonic()),
-                )
-            except queue.Empty:
-                break
-            if correlation_id and msg.correlation_id != correlation_id:
-                held.append(msg)
-                # No mid-loop deadline break: get()'s own timeout terminates the
-                # loop (non-blocking -> Empty once drained; blocking -> Empty at
-                # the deadline). An early break here would, with the default
-                # timeout=0, stop after the first non-matching message and miss
-                # a match sitting behind it.
-                continue
-            found = msg
-            break
-    finally:
-        # Restore FIFO order. The held (earlier-than-match) messages must go
-        # back AHEAD of whatever is still queued, but Queue can't prepend — so
-        # drain the remainder and re-add held + remainder in original order.
-        # put_nowait can't overflow: we re-add at most the count we removed.
-        if held:
-            remaining: list[Message] = []
-            while True:
-                try:
-                    remaining.append(inbox.get_nowait())
-                except queue.Empty:
-                    break
-            for m in (*held, *remaining):
-                try:
-                    inbox.put_nowait(m)
-                except queue.Full:  # pragma: no cover -- capacity invariant holds
-                    log.warning("agent_bus: inbox full restoring held message for %s", agent_id)
-    return found
+            for idx, msg in enumerate(inbox.queue):
+                if msg.correlation_id == correlation_id:
+                    del inbox.queue[idx]
+                    inbox.not_full.notify()
+                    return msg
+
+            now = time.monotonic()
+            if timeout <= 0 or now >= deadline:
+                return None
+
+            inbox.not_empty.wait(deadline - now)
 
 
 def peek(agent_id: str) -> int:

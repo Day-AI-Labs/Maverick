@@ -105,6 +105,44 @@ def test_agent_bus_correlation_filter_no_drop_when_inbox_full():
     assert [agent_bus.recv("bob").payload for _ in range(3)] == ["n1", "n2", "n3"]
 
 
+def test_agent_bus_correlation_timeout_not_extended_by_nonmatching_flood():
+    # A correlated recv must honor its overall timeout even when producers keep
+    # sending non-matching messages. It also must not use an out-of-queue held
+    # buffer that lets more successful sends accumulate than the inbox can hold.
+    import queue
+    import threading
+    import time
+
+    from maverick import agent_bus
+
+    agent_bus.clear()
+    cap = 16
+    agent_bus._inboxes["bob"] = queue.Queue(maxsize=cap)
+    sent_ok = 0
+    end = time.monotonic() + 0.25
+
+    def _send_noise():
+        nonlocal sent_ok
+        i = 0
+        while time.monotonic() < end:
+            if agent_bus.send("noise", "bob", i, correlation_id="noise"):
+                sent_ok += 1
+            i += 1
+            time.sleep(0.001)
+
+    producer = threading.Thread(target=_send_noise)
+    producer.start()
+
+    start = time.monotonic()
+    assert agent_bus.recv("bob", correlation_id="target", timeout=0.05) is None
+    elapsed = time.monotonic() - start
+    producer.join()
+
+    assert elapsed < 0.15
+    assert sent_ok <= cap
+    assert agent_bus.peek("bob") == sent_ok
+
+
 def test_agent_bus_peek():
     from maverick import agent_bus
     agent_bus.clear()
