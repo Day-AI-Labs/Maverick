@@ -54,8 +54,8 @@
   <div class="panel">
     <table>
       <tbody>
-        <tr><td>computer-use</td><td>{% if perm.capabilities.computer_use %}<span class="badge blocked">on</span>{% else %}<span class="badge done">off</span>{% endif %}</td></tr>
-        <tr><td>browser</td><td>{% if perm.capabilities.browser %}<span class="badge blocked">on</span>{% else %}<span class="badge done">off</span>{% endif %}</td></tr>
+        <tr><td>computer-use</td><td>{% if perm.capabilities.computer_use %}<span class="badge blocked">⚠ on</span>{% else %}<span class="badge done">off</span>{% endif %}</td></tr>
+        <tr><td>browser</td><td>{% if perm.capabilities.browser %}<span class="badge blocked">⚠ on</span>{% else %}<span class="badge done">off</span>{% endif %}</td></tr>
         <tr><td>web search</td><td>{% if perm.capabilities.web_search %}<span class="badge active">on</span>{% else %}<span class="badge done">off</span>{% endif %}</td></tr>
         <tr><td>sandbox</td><td><code>{{ perm.sandbox.backend or 'local' }}</code></td></tr>
         <tr><td>network policy</td><td><code>{{ perm.network }}</code></td></tr>
