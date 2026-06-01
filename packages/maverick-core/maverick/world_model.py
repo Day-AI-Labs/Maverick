@@ -441,10 +441,36 @@ class WorldModel:
         # `REFERENCES goals(id)` clause is decorative and a delete can
         # orphan turns/attachments/episodes silently.
         self.conn.execute("PRAGMA foreign_keys = ON")
-        self.conn.executescript(SCHEMA)
-        self._init_schema_version()
-        self._apply_migrations()
-        self.conn.commit()
+        # The schema-setup writes (executescript + version row + migrations) can
+        # surface SQLITE_LOCKED -- not SQLITE_BUSY -- when many connections in
+        # the SAME process first-open a fresh DB simultaneously; the
+        # busy_timeout handler doesn't cover SQLITE_LOCKED (same reason the WAL
+        # switch above needs its own retry). The version-row insert is already
+        # race-safe (atomic insert-if-empty in _init_schema_version), but
+        # executescript/migrations can still lose the lock race -- observed in
+        # CI as an intermittent "database is locked" on concurrent first-open.
+        # The whole block is idempotent (CREATE TABLE IF NOT EXISTS, the
+        # empty-table version insert, re-runnable migrations), so retry it
+        # briefly on a transient lock.
+        deadline = time.monotonic() + WAL_SWITCH_RETRY_SECONDS
+        while True:
+            try:
+                self.conn.executescript(SCHEMA)
+                self._init_schema_version()
+                self._apply_migrations()
+                self.conn.commit()
+                break
+            except sqlite3.OperationalError as e:
+                if "locked" not in str(e).lower():
+                    raise
+                try:
+                    self.conn.rollback()
+                except sqlite3.Error:
+                    pass
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                time.sleep(min(0.05, remaining))
 
     @contextlib.contextmanager
     def _writing(self) -> Iterator[sqlite3.Connection]:

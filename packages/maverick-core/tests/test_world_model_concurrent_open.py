@@ -46,9 +46,18 @@ def test_many_concurrent_opens_never_lock(tmp_path):
 
 
 def test_concurrent_first_open_of_fresh_db(tmp_path):
-    """Even with no pre-existing file, concurrent first-opens must not lock."""
-    errors = _hammer_opens(tmp_path / "fresh.db", 16)
-    assert not errors, f"concurrent first-opens raised: {errors[:3]}"
+    """Even with no pre-existing file, concurrent first-opens must not lock.
+
+    Two failure modes raced here: a duplicate schema_version row (fixed by the
+    empty-table-guarded seed) and SQLITE_LOCKED from executescript/migrations
+    (which bypasses busy_timeout, now retried). Both only fired on a fraction
+    of runs -- a single hammer was a weak guard that surfaced as an
+    intermittent CI flake. Repeat over fresh DBs so a regression of either
+    fails reliably, not ~15% of the time.
+    """
+    for i in range(15):
+        errors = _hammer_opens(tmp_path / f"fresh-{i}.db", 16)
+        assert not errors, f"concurrent first-opens raised (iter {i}): {errors[:3]}"
 
 
 def test_concurrent_first_open_leaves_single_schema_version_row(tmp_path):
