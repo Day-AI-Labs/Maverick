@@ -226,36 +226,62 @@ def run_with_maverick(task_text: str, learning_enabled: bool) -> RunMetrics:  # 
     from maverick.budget import Budget
     from maverick.llm import LLM
     from maverick.orchestrator import run_goal_sync
+    from maverick.sandbox import LocalBackend, build_sandbox
     from maverick.world_model import WorldModel
 
-    os.environ["MAVERICK_USE_SKILLS"] = "1" if learning_enabled else "0"
-    os.environ["MAVERICK_REFLEXION"] = "1" if learning_enabled else "0"
-    os.environ["MAVERICK_AUTO_DISTILL"] = "1" if learning_enabled else "0"
+    learning_env = {
+        "MAVERICK_USE_SKILLS": "1" if learning_enabled else "0",
+        "MAVERICK_REFLEXION": "1" if learning_enabled else "0",
+        "MAVERICK_AUTO_DISTILL": "1" if learning_enabled else "0",
+    }
+    previous_env = {key: os.environ.get(key) for key in learning_env}
+    try:
+        os.environ.update(learning_env)
 
-    db_path = Path(os.environ.get("MAVERICK_MOAT_DB", "~/.maverick/moat.db")).expanduser()
-    world = WorldModel(path=db_path)
-    gid = world.create_goal(task_text[:80], task_text)
-    budget = Budget(max_dollars=float(os.environ.get("MAVERICK_MOAT_MAX_DOLLARS", "2.0")))
+        sandbox = build_sandbox()
+        if (
+            isinstance(sandbox, LocalBackend)
+            and os.environ.get("MAVERICK_MOAT_ALLOW_LOCAL_SANDBOX") != "1"
+        ):
+            raise RuntimeError(
+                "refusing to run the live moat benchmark with sandbox backend "
+                "'local' because model-controlled shell commands would execute "
+                "on this host. Configure an isolated backend such as docker, "
+                "podman, firecracker, kubernetes, devcontainer, or ssh; or set "
+                "MAVERICK_MOAT_ALLOW_LOCAL_SANDBOX=1 to explicitly accept host "
+                "execution for this benchmark."
+            )
 
-    start = time.monotonic()
-    run_goal_sync(llm=LLM(), world=world, budget=budget, goal_id=gid)
-    wall = time.monotonic() - start
+        db_path = Path(os.environ.get("MAVERICK_MOAT_DB", "~/.maverick/moat.db")).expanduser()
+        world = WorldModel(path=db_path)
+        gid = world.create_goal(task_text[:80], task_text)
+        budget = Budget(max_dollars=float(os.environ.get("MAVERICK_MOAT_MAX_DOLLARS", "2.0")))
 
-    eps = world.list_episodes(goal_id=gid, limit=1)
-    if eps:
-        e = eps[0]
-        # EpisodeSpend exposes started_at/ended_at, not a duration field;
-        # prefer the persisted span when both ends are present, else fall back
-        # to the wall time measured around run_goal_sync.
-        ep_wall = (e.ended_at - e.started_at) if e.ended_at else wall
-        return RunMetrics(
-            cost_dollars=e.cost_dollars,
-            tool_calls=e.tool_calls,
-            wall_seconds=ep_wall,
-            success=e.outcome == "success",
-        )
-    return RunMetrics(cost_dollars=budget.dollars, tool_calls=budget.tool_calls,
-                      wall_seconds=wall, success=False)
+        start = time.monotonic()
+        run_goal_sync(llm=LLM(), world=world, budget=budget, goal_id=gid, sandbox=sandbox)
+        wall = time.monotonic() - start
+
+        eps = world.list_episodes(goal_id=gid, limit=1)
+        if eps:
+            e = eps[0]
+            # EpisodeSpend exposes started_at/ended_at, not a duration field;
+            # prefer the persisted span when both ends are present, else fall back
+            # to the wall time measured around run_goal_sync.
+            ep_wall = (e.ended_at - e.started_at) if e.ended_at else wall
+            return RunMetrics(
+                cost_dollars=e.cost_dollars,
+                tool_calls=e.tool_calls,
+                wall_seconds=ep_wall,
+                success=e.outcome == "success",
+            )
+        return RunMetrics(cost_dollars=budget.dollars, tool_calls=budget.tool_calls,
+                          wall_seconds=wall, success=False)
+    finally:
+        for key, value in previous_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

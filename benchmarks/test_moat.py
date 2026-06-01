@@ -6,8 +6,12 @@ delta math, the aggregate, and the report rendering.
 """
 from __future__ import annotations
 
+import os
 import sys
+import types
 from pathlib import Path
+
+import pytest
 
 # benchmarks/ is not a package; import the sibling module directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -20,7 +24,76 @@ from moat import (  # noqa: E402
     TaskPair,
     format_report,
     run_moat_benchmark,
+    run_with_maverick,
 )
+
+
+def _install_fake_maverick(monkeypatch, sandbox):
+    """Install tiny fake maverick modules for run_with_maverick tests."""
+    calls = {}
+
+    class FakeBudget:
+        def __init__(self, max_dollars):
+            self.max_dollars = max_dollars
+            self.dollars = 0.0
+            self.tool_calls = 0
+
+    class FakeLLM:
+        pass
+
+    class FakeWorldModel:
+        def __init__(self, path):
+            self.path = path
+
+        def create_goal(self, _title, _text):
+            return "goal-1"
+
+        def list_episodes(self, goal_id, limit):
+            calls["listed"] = (goal_id, limit)
+            return []
+
+    class FakeLocalBackend:
+        pass
+
+    def fake_run_goal_sync(**kwargs):
+        calls["run_kwargs"] = kwargs
+        calls["learning_env"] = {
+            key: os.environ.get(key)
+            for key in (
+                "MAVERICK_USE_SKILLS",
+                "MAVERICK_REFLEXION",
+                "MAVERICK_AUTO_DISTILL",
+            )
+        }
+
+    def fake_build_sandbox():
+        return sandbox
+
+    maverick_pkg = types.ModuleType("maverick")
+    maverick_pkg.__path__ = []
+    budget_mod = types.ModuleType("maverick.budget")
+    budget_mod.Budget = FakeBudget
+    llm_mod = types.ModuleType("maverick.llm")
+    llm_mod.LLM = FakeLLM
+    orchestrator_mod = types.ModuleType("maverick.orchestrator")
+    orchestrator_mod.run_goal_sync = fake_run_goal_sync
+    sandbox_mod = types.ModuleType("maverick.sandbox")
+    sandbox_mod.LocalBackend = FakeLocalBackend
+    sandbox_mod.build_sandbox = fake_build_sandbox
+    world_model_mod = types.ModuleType("maverick.world_model")
+    world_model_mod.WorldModel = FakeWorldModel
+
+    for name, module in {
+        "maverick": maverick_pkg,
+        "maverick.budget": budget_mod,
+        "maverick.llm": llm_mod,
+        "maverick.orchestrator": orchestrator_mod,
+        "maverick.sandbox": sandbox_mod,
+        "maverick.world_model": world_model_mod,
+    }.items():
+        monkeypatch.setitem(sys.modules, name, module)
+
+    return calls, FakeLocalBackend
 
 
 def _scripted_runner(cold: RunMetrics, warm: RunMetrics):
@@ -120,3 +193,53 @@ class TestReport:
         assert result.moat_demonstrated is False
         # Report still renders.
         assert "Compounding-moat benchmark" in format_report(result)
+
+
+class TestLiveRunnerSandbox:
+    def test_live_runner_passes_configured_sandbox_and_restores_learning_env(self, monkeypatch):
+        sandbox = object()
+        calls, _local_backend = _install_fake_maverick(monkeypatch, sandbox)
+        monkeypatch.setenv("MAVERICK_USE_SKILLS", "previous")
+        monkeypatch.delenv("MAVERICK_REFLEXION", raising=False)
+        monkeypatch.delenv("MAVERICK_AUTO_DISTILL", raising=False)
+
+        metrics = run_with_maverick("inspect the repo", learning_enabled=True)
+
+        assert calls["run_kwargs"]["sandbox"] is sandbox
+        assert calls["learning_env"] == {
+            "MAVERICK_USE_SKILLS": "1",
+            "MAVERICK_REFLEXION": "1",
+            "MAVERICK_AUTO_DISTILL": "1",
+        }
+        assert os.environ["MAVERICK_USE_SKILLS"] == "previous"
+        assert "MAVERICK_REFLEXION" not in os.environ
+        assert "MAVERICK_AUTO_DISTILL" not in os.environ
+        assert metrics == RunMetrics(cost_dollars=0.0, tool_calls=0, wall_seconds=metrics.wall_seconds, success=False)
+
+    def test_live_runner_refuses_local_sandbox_without_explicit_opt_in(self, monkeypatch):
+        calls, LocalBackend = _install_fake_maverick(monkeypatch, None)
+        local_sandbox = LocalBackend()
+        sys.modules["maverick.sandbox"].build_sandbox = lambda: local_sandbox
+        monkeypatch.setenv("MAVERICK_REFLEXION", "previous")
+        monkeypatch.delenv("MAVERICK_MOAT_ALLOW_LOCAL_SANDBOX", raising=False)
+
+        with pytest.raises(RuntimeError, match="refusing to run.*'local'"):
+            run_with_maverick("inspect the repo", learning_enabled=False)
+
+        assert "run_kwargs" not in calls
+        assert os.environ["MAVERICK_REFLEXION"] == "previous"
+
+    def test_live_runner_allows_local_sandbox_with_explicit_opt_in(self, monkeypatch):
+        calls, LocalBackend = _install_fake_maverick(monkeypatch, None)
+        local_sandbox = LocalBackend()
+        sys.modules["maverick.sandbox"].build_sandbox = lambda: local_sandbox
+        monkeypatch.setenv("MAVERICK_MOAT_ALLOW_LOCAL_SANDBOX", "1")
+
+        run_with_maverick("inspect the repo", learning_enabled=False)
+
+        assert calls["run_kwargs"]["sandbox"] is local_sandbox
+        assert calls["learning_env"] == {
+            "MAVERICK_USE_SKILLS": "0",
+            "MAVERICK_REFLEXION": "0",
+            "MAVERICK_AUTO_DISTILL": "0",
+        }
