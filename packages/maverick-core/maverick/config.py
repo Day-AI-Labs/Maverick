@@ -54,7 +54,11 @@ def _default_config_path() -> Path:
 # Back-compat: many call sites still reference the constant.
 DEFAULT_CONFIG_PATH = _default_config_path()
 
-_ENV_PATTERN = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)\}")
+# Accept lower/mixed-case names too: a hand-edited config referencing a
+# lowercase env var (`${my_token}`) previously left the literal `${my_token}`
+# in the value, silently un-substituted. The docstring promises "${VAR_NAME}
+# is replaced" with no case restriction.
+_ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 def _interp(value: Any) -> Any:
