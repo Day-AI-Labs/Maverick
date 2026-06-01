@@ -12,6 +12,7 @@ v0.2 cost-correctness fix:
 from __future__ import annotations
 
 import math
+import os
 import threading
 import time
 from dataclasses import dataclass, field
@@ -307,6 +308,19 @@ def budget_from_config(*, defaults: dict | None = None, **overrides) -> Budget:
                 kwargs[key] = cast
             except (TypeError, ValueError):
                 pass  # malformed config value -> fall back to prior layer
+    # Env override for the documented MAVERICK_BUDGET_DOLLARS. The cookbooks
+    # use `MAVERICK_BUDGET_DOLLARS=0.5 maverick start ...` to cap a single
+    # invocation, but nothing read it -- so the cap silently did nothing and
+    # users ran at the default. Sits above [budget] config, below an explicit
+    # CLI override (--max-dollars). Malformed / non-finite -> keep prior layer.
+    env_dollars = os.environ.get("MAVERICK_BUDGET_DOLLARS")
+    if env_dollars:
+        try:
+            cast = float(env_dollars)
+            if math.isfinite(cast):
+                kwargs["max_dollars"] = cast
+        except (TypeError, ValueError):
+            pass
     for key, val in overrides.items():
         if val is not None and key in _BUDGET_KEY_TYPES:
             kwargs[key] = val
