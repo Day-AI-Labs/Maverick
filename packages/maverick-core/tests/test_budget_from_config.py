@@ -58,3 +58,37 @@ def test_malformed_config_value_is_skipped(set_budget_cfg):
     set_budget_cfg({"max_dollars": "not-a-number"})
     b = budget_from_config(defaults={"max_dollars": 2.0})
     assert b.max_dollars == pytest.approx(2.0)  # fell back, did not crash
+
+
+# ---- MAVERICK_BUDGET_DOLLARS env override (the cookbooks' documented knob) ----
+
+def test_env_budget_dollars_applies_over_config(set_budget_cfg, monkeypatch):
+    set_budget_cfg({"max_dollars": 5.0})
+    monkeypatch.setenv("MAVERICK_BUDGET_DOLLARS", "0.5")
+    assert budget_from_config().max_dollars == pytest.approx(0.5)
+
+
+def test_explicit_override_beats_env(set_budget_cfg, monkeypatch):
+    set_budget_cfg({})
+    monkeypatch.setenv("MAVERICK_BUDGET_DOLLARS", "0.5")
+    # An explicit --max-dollars flag is more specific than the env var.
+    assert budget_from_config(max_dollars=3.0).max_dollars == pytest.approx(3.0)
+
+
+def test_malformed_env_budget_dollars_is_skipped(set_budget_cfg, monkeypatch):
+    set_budget_cfg({"max_dollars": 1.5})
+    monkeypatch.setenv("MAVERICK_BUDGET_DOLLARS", "not-a-number")
+    assert budget_from_config().max_dollars == pytest.approx(1.5)  # kept config
+
+
+def test_nonfinite_env_budget_dollars_is_skipped(set_budget_cfg, monkeypatch):
+    set_budget_cfg({"max_dollars": 1.5})
+    monkeypatch.setenv("MAVERICK_BUDGET_DOLLARS", "inf")
+    # A non-finite cap would disable the cap; keep the prior layer instead.
+    assert budget_from_config().max_dollars == pytest.approx(1.5)
+
+
+def test_empty_env_budget_dollars_ignored(set_budget_cfg, monkeypatch):
+    set_budget_cfg({"max_dollars": 1.5})
+    monkeypatch.setenv("MAVERICK_BUDGET_DOLLARS", "")
+    assert budget_from_config().max_dollars == pytest.approx(1.5)
