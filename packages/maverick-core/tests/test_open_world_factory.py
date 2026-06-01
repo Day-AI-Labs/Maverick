@@ -62,3 +62,19 @@ def test_open_world_returns_real_postgres_model(monkeypatch):
 
     world = open_world()
     assert isinstance(world, PostgresWorldModel)
+
+
+def test_postgres_model_has_message_attachment_dedup_parity():
+    """Guard the #469 parity surface without needing a live DB: importing the
+    class is lazy (psycopg only loads in __init__), so a missing method here
+    would AttributeError on the server/orchestrator hot paths under
+    MAVERICK_WORLD_BACKEND=postgres. Checked in the normal matrix, not just
+    the DSN-gated round-trip job."""
+    from maverick.world_model_backends.postgres import PostgresWorldModel
+    for name in (
+        "append_message", "search_messages",
+        "add_attachment", "list_attachments",
+        "mark_message_processed", "lookup_processed_message",
+        "is_processed_message", "prune_processed_messages",
+    ):
+        assert callable(getattr(PostgresWorldModel, name, None)), f"missing {name}"

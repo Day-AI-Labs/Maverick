@@ -38,7 +38,7 @@ log = logging.getLogger(__name__)
 # (read by health.py / audit events). The PG schema is applied idempotently
 # (CREATE ... IF NOT EXISTS + ALTER ... ADD COLUMN IF NOT EXISTS), not
 # version-stepped, so this is a flat constant kept in step with SQLite's.
-_PG_SCHEMA_VERSION = 9
+_PG_SCHEMA_VERSION = 10
 
 
 # Schema mirror. Postgres-flavored types; sequence-based PKs instead of
@@ -142,6 +142,39 @@ SCHEMA: list[str] = [
     );
     """,
     "CREATE INDEX IF NOT EXISTS idx_pg_turns_conv_id ON turns(conversation_id, id);",
+    """
+    CREATE TABLE IF NOT EXISTS messages (
+      id      SERIAL PRIMARY KEY,
+      goal_id INTEGER REFERENCES goals(id),
+      role    TEXT NOT NULL,
+      content TEXT NOT NULL,
+      ts      DOUBLE PRECISION NOT NULL
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_messages_ts ON messages(ts DESC);",
+    """
+    CREATE TABLE IF NOT EXISTS attachments (
+      id         SERIAL PRIMARY KEY,
+      goal_id    INTEGER NOT NULL REFERENCES goals(id),
+      filename   TEXT NOT NULL,
+      mime       TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      sha256     TEXT NOT NULL,
+      path       TEXT NOT NULL,
+      created_at DOUBLE PRECISION NOT NULL
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_attachments_goal_id ON attachments(goal_id);",
+    """
+    CREATE TABLE IF NOT EXISTS processed_messages (
+      id          SERIAL PRIMARY KEY,
+      channel     TEXT NOT NULL,
+      external_id TEXT NOT NULL,
+      goal_id     INTEGER REFERENCES goals(id),
+      seen_at     DOUBLE PRECISION NOT NULL,
+      UNIQUE(channel, external_id)
+    );
+    """,
 ]
 
 
@@ -658,6 +691,104 @@ class PostgresWorldModel:
         (read as a property by health.py + audit events). Constant because the
         PG schema is applied idempotently rather than version-stepped."""
         return _PG_SCHEMA_VERSION
+
+    # ----- messages (durable per-goal message log + search) -----
+
+    def append_message(self, goal_id: int, role: str, content: str) -> None:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO messages(goal_id, role, content, ts) VALUES(%s, %s, %s, %s)",
+                (goal_id, role, content, time.time()),
+            )
+
+    def search_messages(self, query: str, limit: int = 10) -> list[dict]:
+        # SQLite uses FTS5; Postgres has no FTS table here, so ILIKE substring
+        # match mirrors the "find messages containing X" contract. Empty query
+        # returns [] (parity with SQLite, which guards the FTS call).
+        if not query or not query.strip():
+            return []
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, goal_id, role, content, ts FROM messages "
+                "WHERE content ILIKE %s ORDER BY ts DESC LIMIT %s",
+                (f"%{query}%", limit),
+            )
+            rows = cur.fetchall()
+        return [
+            {"id": r[0], "goal_id": r[1], "role": r[2], "content": r[3], "ts": r[4]}
+            for r in rows
+        ]
+
+    # ----- channel dedup (idempotent inbound-message processing) -----
+
+    def mark_message_processed(
+        self, channel: str, external_id: str, goal_id: int | None = None,
+    ) -> bool:
+        """Record an inbound message as processed; idempotent. Returns True on
+        first write (caller should run the goal), False on duplicate. Mirrors
+        SQLite's IntegrityError-on-dup via ON CONFLICT DO NOTHING."""
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO processed_messages(channel, external_id, goal_id, seen_at) "
+                "VALUES(%s, %s, %s, %s) ON CONFLICT(channel, external_id) DO NOTHING "
+                "RETURNING id",
+                (channel, external_id, goal_id, time.time()),
+            )
+            return cur.fetchone() is not None
+
+    def lookup_processed_message(self, channel: str, external_id: str) -> int | None:
+        """goal_id for an already-processed message. None = no row; 0 = row with
+        a null goal_id (parity with SQLite's None-vs-0 distinction)."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT goal_id FROM processed_messages WHERE channel=%s AND external_id=%s",
+                (channel, external_id),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return int(row[0]) if row[0] is not None else 0
+
+    def is_processed_message(self, channel: str, external_id: str) -> bool:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT 1 FROM processed_messages "
+                "WHERE channel=%s AND external_id=%s LIMIT 1",
+                (channel, external_id),
+            )
+            return cur.fetchone() is not None
+
+    def prune_processed_messages(self, older_than_seconds: float = 30 * 24 * 3600) -> int:
+        cutoff = time.time() - older_than_seconds
+        with self._tx() as cur:
+            cur.execute("DELETE FROM processed_messages WHERE seen_at < %s", (cutoff,))
+            return cur.rowcount
+
+    # ----- attachments -----
+
+    def add_attachment(
+        self, goal_id: int, filename: str, mime: str,
+        size_bytes: int, sha256: str, path: str,
+    ) -> int:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO attachments(goal_id, filename, mime, size_bytes, sha256, path, created_at) "
+                "VALUES(%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (goal_id, filename, mime, size_bytes, sha256, path, time.time()),
+            )
+            row = cur.fetchone()
+        return int(row[0])
+
+    def list_attachments(self, goal_id: int) -> list:
+        from ..world_model import Attachment
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, goal_id, filename, mime, size_bytes, sha256, path, created_at "
+                "FROM attachments WHERE goal_id=%s ORDER BY id",
+                (goal_id,),
+            )
+            rows = cur.fetchall()
+        return [Attachment(*r) for r in rows]
 
     # ----- close -----
 

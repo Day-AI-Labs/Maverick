@@ -288,3 +288,52 @@ def test_prune_conversations_keeps_fresh(world):
     conv = world.get_or_create_conversation("email", "keep-me")
     world.prune_conversations(idle_for_seconds=3600)  # 1h window
     assert any(c.id == conv.id for c in world.list_conversations())
+
+
+# ----- messages / dedup / attachments (the #469 parity gap) -----
+
+def test_messages_append_and_search(world):
+    gid = world.create_goal("msg-search")
+    world.append_message(gid, "user", "find the zphyrx marker please")
+    world.append_message(gid, "assistant", "unrelated chatter")
+    hits = world.search_messages("zphyrx")
+    assert any("zphyrx" in h["content"] for h in hits)
+    assert all(set(h) >= {"id", "goal_id", "role", "content", "ts"} for h in hits)
+    assert world.search_messages("   ") == []  # blank query -> no rows
+
+
+def test_processed_message_dedup_roundtrip(world):
+    gid = world.create_goal("dedup")
+    ext = "sid-roundtrip-1"
+    assert world.mark_message_processed("sms", ext, goal_id=gid) is True   # first write
+    assert world.mark_message_processed("sms", ext, goal_id=gid) is False  # duplicate
+    assert world.is_processed_message("sms", ext) is True
+    assert world.lookup_processed_message("sms", ext) == gid
+    assert world.is_processed_message("sms", "never-seen") is False
+    assert world.lookup_processed_message("sms", "never-seen") is None
+
+
+def test_processed_message_null_goal_id_is_zero_not_none(world):
+    ext = "sid-nullgoal-1"
+    world.mark_message_processed("sms", ext)  # no goal_id
+    # None means "no row"; 0 means "row exists, null goal_id" (parity w/ SQLite).
+    assert world.lookup_processed_message("sms", ext) == 0
+
+
+def test_prune_processed_messages_removes_old(world):
+    world.mark_message_processed("sms", "sid-prune-old")
+    removed = world.prune_processed_messages(older_than_seconds=0)
+    assert removed >= 1
+    assert world.is_processed_message("sms", "sid-prune-old") is False
+
+
+def test_attachments_round_trip(world):
+    gid = world.create_goal("attach")
+    aid = world.add_attachment(gid, "report.md", "text/markdown", 123, "deadbeef", "/tmp/report.md")
+    assert isinstance(aid, int)
+    atts = world.list_attachments(gid)
+    assert len(atts) == 1
+    a = atts[0]
+    assert (a.filename, a.mime, a.size_bytes, a.sha256, a.path) == (
+        "report.md", "text/markdown", 123, "deadbeef", "/tmp/report.md",
+    )
