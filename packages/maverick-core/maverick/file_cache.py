@@ -117,15 +117,46 @@ _repo_cache: OrderedDict[str, tuple[str, str]] = OrderedDict()
 _repo_lock = threading.RLock()
 
 
+# Directories we never descend into for the repo-map signature: VCS,
+# vendored deps, caches, virtualenvs, build output. Walking them is slow and
+# they aren't part of the repo map anyway.
+_SIG_SKIP_DIRS = frozenset({
+    ".git", ".hg", ".svn", "node_modules", "__pycache__", ".venv", "venv",
+    ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox", "dist", "build",
+    ".idea", ".gradle", "target",
+})
+
+
 def _workdir_signature(workdir: Path) -> str:
-    """Cheap probe: mtime of root + hash of immediate children's mtimes."""
+    """Content-aware signature of ``workdir`` for repo-map cache invalidation.
+
+    Recursively walks files (skipping VCS / vendor / cache dirs and dot-
+    entries) and digests each file's relative path + size + mtime, so a
+    change to a NESTED file invalidates the cache. The previous version only
+    hashed the immediate children's mtimes, so editing a nested file (e.g.
+    ``src/pkg/mod.py``) left the cached map stale. size+mtime is the cheap
+    proxy for content -- a full content hash would be more robust but too
+    slow for a per-call probe; the vendor-dir skips keep the walk bounded.
+    """
     try:
-        with os.scandir(workdir) as it:
-            entries = sorted(
-                (e.name, e.stat().st_mtime)
-                for e in it
-                if not e.name.startswith(".")
-            )
+        entries: list[tuple[str, int, float]] = []
+        for dirpath, dirnames, filenames in os.walk(workdir):
+            # Prune in place so os.walk never descends into skipped/hidden dirs.
+            dirnames[:] = [
+                d for d in dirnames
+                if not d.startswith(".") and d not in _SIG_SKIP_DIRS
+            ]
+            for name in filenames:
+                if name.startswith("."):
+                    continue
+                fp = Path(dirpath) / name
+                try:
+                    st = fp.stat()
+                except OSError:
+                    continue
+                rel = os.path.relpath(fp, workdir).replace(os.sep, "/")
+                entries.append((rel, st.st_size, st.st_mtime))
+        entries.sort()
     except OSError:
         return ""
     digest = hashlib.sha256()
