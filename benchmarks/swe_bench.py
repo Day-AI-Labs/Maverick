@@ -980,14 +980,17 @@ def _ensure_csv_header(f, cols: list[str]) -> bool:
         return True
 
     f.seek(0)
-    existing_rows = list(csv.reader(f))
-    if not existing_rows:
+    reader = csv.reader(f)
+    try:
+        header = next(reader)
+    except StopIteration:
         return True
 
-    header = existing_rows[0]
     if header == cols:
         f.seek(0, os.SEEK_END)
         return False
+
+    existing_rows = [header, *reader]
 
     if header != cols[:len(header)]:
         raise ValueError(
