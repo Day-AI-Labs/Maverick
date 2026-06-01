@@ -215,11 +215,16 @@ async def review_diff(
         # Budget exhaustion must halt the run, never silently soft-pass:
         # soft-passing here auto-approves the diff when the cap is hit.
         raise
-    except Exception as e:  # pragma: no cover
-        log.warning("reviewer LLM call failed: %s; soft-pass", e)
+    except Exception as e:  # pragma: no cover -- network errors
+        # Fail CLOSED, matching the verifier's contract (verify_proposal): a
+        # reviewer that crashes must not silently auto-approve an unreviewed
+        # diff. Return a `blocker` so the orchestrator surfaces it as a revision
+        # request instead of soft-passing the change through ungated. (A flaky
+        # reviewer can only make the system MORE careful, not less.)
+        log.warning("reviewer LLM call failed: %s; rejecting (fail-closed)", e)
         return ReviewVerdict(
-            approves=True, confidence=0.5,
-            comments=[ReviewComment(path="", line=0, severity="nit",
+            approves=False, confidence=0.0,
+            comments=[ReviewComment(path="", line=0, severity="blocker",
                                     message=f"reviewer call failed: {e}")],
         )
     return _parse(resp.text)
