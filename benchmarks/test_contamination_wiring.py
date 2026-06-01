@@ -154,3 +154,24 @@ def test_write_csv_migrates_existing_header_for_contamination(swebench, tmp_path
     assert "contamination" in rows[0]
     assert rows[0]["contamination"] == "verbatim_gold_patch"
     assert None not in rows[0]
+
+
+def test_write_csv_appends_after_large_existing_patch(swebench, tmp_path):
+    """Appending must not re-parse huge patches when the header already matches."""
+    Row = swebench.Row
+    out = tmp_path / "RESULTS_SWE.csv"
+    large_patch = "x" * (swebench.csv.field_size_limit() + 1)
+
+    swebench.write_csv([Row(
+        instance_id="i1", pipeline="maverick", model_id="m",
+        predicted_patch=large_patch, outcome="success",
+    )], out)
+
+    swebench.write_csv([Row(
+        instance_id="i2", pipeline="maverick", model_id="m",
+        predicted_patch="small", outcome="success",
+    )], out)
+
+    text = out.read_text(encoding="utf-8")
+    assert "i1,maverick" in text
+    assert "i2,maverick" in text
