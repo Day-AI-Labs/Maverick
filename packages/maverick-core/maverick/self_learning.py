@@ -408,12 +408,17 @@ _BANNED_ATTRS = frozenset({
 })
 
 
-def _module_allowed(mod: str) -> bool:
-    # The tool factory legitimately does ``from maverick.tools import Tool``;
-    # allow exactly that, nothing else under the kernel namespace.
-    if mod == "maverick.tools":
-        return True
+def _safe_stdlib_module(mod: str) -> bool:
     return mod.split(".")[0] in _SAFE_IMPORT_TOP
+
+
+def _import_from_allowed(mod: str, names: list[ast.alias]) -> bool:
+    # The tool factory legitimately does ``from maverick.tools import Tool``;
+    # allow exactly that symbol, not arbitrary globals re-exported by the
+    # maverick.tools package (for example its module-scope ``os`` import).
+    if mod == "maverick.tools":
+        return all(alias.name == "Tool" for alias in names)
+    return _safe_stdlib_module(mod)
 
 
 def audit_generated_source(source: str) -> None:
@@ -430,13 +435,13 @@ def audit_generated_source(source: str) -> None:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if not _module_allowed(alias.name):
+                if not _safe_stdlib_module(alias.name):
                     raise ValueError(
                         f"generated tool imports disallowed module {alias.name!r}"
                     )
         elif isinstance(node, ast.ImportFrom):
             mod = node.module or ""
-            if node.level or not _module_allowed(mod):
+            if node.level or not _import_from_allowed(mod, node.names):
                 raise ValueError(
                     "generated tool imports disallowed module "
                     f"{mod or '<relative import>'!r}"
