@@ -193,10 +193,14 @@ async def run_goal(
         )
 
     # Bind trace context so every log line emitted in this task is
-    # automatically tagged with goal_id (+ conversation_id when set).
+    # automatically tagged with goal_id (+ conversation_id when set). Capture
+    # the reset tokens so the finally block restores the PRIOR context instead
+    # of nulling globally — concurrent goals on one loop must not wipe each
+    # other's goal_id.
+    _ctx_tokens: dict[str, Any] | None = None
     try:
         from .logging_config import set_goal_context
-        set_goal_context(goal_id=goal_id, conversation_id=conversation_id)
+        _ctx_tokens = set_goal_context(goal_id=goal_id, conversation_id=conversation_id)
     except Exception:  # pragma: no cover
         pass
 
@@ -747,13 +751,14 @@ async def run_goal(
     finally:
         if mcp_clients:
             await stop_mcp_clients(mcp_clients)
-        # Clear trace context so the next goal on this thread/task
-        # doesn't inherit goal_id / conversation_id from this one
-        # (FastAPI threadpool workers + the CLI chat REPL both reuse
-        # the same execution context across goals).
+        # Restore the trace context to its prior value so the next goal on
+        # this thread/task doesn't inherit goal_id / conversation_id from this
+        # one, AND a concurrent/outer goal isn't wiped (FastAPI threadpool
+        # workers + the CLI chat REPL both reuse the execution context). Token
+        # reset restores the prior binding rather than nulling globally.
         try:
-            from .logging_config import clear_goal_context
-            clear_goal_context()
+            from .logging_config import reset_goal_context
+            reset_goal_context(_ctx_tokens)
         except Exception:  # pragma: no cover
             pass
 
