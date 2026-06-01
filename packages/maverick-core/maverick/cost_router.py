@@ -130,11 +130,35 @@ def _enabled() -> bool:
         return False
 
 
+def _allowed_providers() -> set[str] | None:
+    """Return the routing provider allowlist, or None when unrestricted.
+
+    The installer writes this list alongside advanced routing flags so those
+    opt-ins only use providers the user selected, even if other API keys are
+    present in the shell environment. Hand-written configs without the key keep
+    the historical unrestricted behavior.
+    """
+    try:
+        from .config import load_config
+        routing = (load_config() or {}).get("routing") or {}
+    except Exception:
+        return None
+    allowed = routing.get("allowed_providers")
+    if not isinstance(allowed, list):
+        return None
+    names = {str(p).strip() for p in allowed if str(p).strip()}
+    return names or set()
+
+
 def _provider_available(provider: str) -> bool:
-    """Heuristic: the BYOK key for this provider is set.
+    """Heuristic: the BYOK key for this provider is set and allowed.
 
     Keeps the dependency surface tiny — we don't probe network.
     """
+    allowed = _allowed_providers()
+    if allowed is not None and provider not in allowed:
+        return False
+
     env_keys = {
         "anthropic": ("ANTHROPIC_API_KEY",),
         "openai":    ("OPENAI_API_KEY",),

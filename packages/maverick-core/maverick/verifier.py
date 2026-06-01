@@ -195,6 +195,57 @@ async def verify_proposal(
     return _parse(resp.text)
 
 
+def _provider_from_model(model: str) -> str:
+    return model.split(":", 1)[0].strip()
+
+
+def _routing_allowed_providers() -> set[str] | None:
+    """Return the routing provider allowlist, or None when unrestricted.
+
+    Installer-generated configs include this key when advanced routing or
+    ensemble verification is enabled so verifier prompts do not leave the
+    provider set the user selected in the wizard.
+    """
+    try:
+        from .config import load_config
+        routing = (load_config() or {}).get("routing") or {}
+    except Exception:
+        return None
+    allowed = routing.get("allowed_providers")
+    if not isinstance(allowed, list):
+        return None
+    return {str(p).strip() for p in allowed if str(p).strip()}
+
+
+_DEFAULT_ENSEMBLE_PANEL = [
+    "anthropic:claude-sonnet-4-6",
+    "openai:gpt-5.4",
+    "openrouter:deepseek-v4-pro",
+]
+
+_DEFAULT_ALLOWED_PROVIDER_MODELS = {
+    "anthropic": "anthropic:claude-sonnet-4-6",
+    "openai": "openai:gpt-5.4",
+    "openrouter": "openrouter:deepseek-v4-pro",
+    "deepseek": "deepseek:deepseek-reasoner",
+    "moonshot": "moonshot:moonshot-v1-128k",
+    "xai": "xai:grok-4",
+    "gemini": "gemini:gemini-2.5-pro",
+}
+
+
+def _filter_allowed_panel(panel: list[str], *, default_panel: bool) -> list[str]:
+    allowed = _routing_allowed_providers()
+    if allowed is None:
+        return panel
+    if default_panel:
+        return [
+            spec for provider, spec in _DEFAULT_ALLOWED_PROVIDER_MODELS.items()
+            if provider in allowed
+        ]
+    return [model for model in panel if _provider_from_model(model) in allowed]
+
+
 async def verify_proposal_ensemble(
     brief: str,
     proposal: str,
@@ -214,8 +265,8 @@ async def verify_proposal_ensemble(
     same total compute budget.
 
     Panel: explicit model list, or None to use a curated cross-family
-    default (Anthropic Sonnet + OpenAI GPT + DeepSeek). Each panel
-    member is excluded if it's the same family as the proposer.
+    default (Anthropic Sonnet + OpenAI GPT + DeepSeek). Same-family panel
+    members are excluded when another allowed family remains.
 
     `weighted=True` uses each verdict's `confidence` as a weight in
     the final accept-vote; `weighted=False` is plain majority. The
@@ -226,18 +277,26 @@ async def verify_proposal_ensemble(
     if not proposal or not proposal.strip():
         return VerifierVerdict.reject("proposal is empty")
 
+    default_panel = panel is None
     if panel is None:
-        panel = [
-            "anthropic:claude-sonnet-4-6",
-            "openai:gpt-5.4",
-            "openrouter:deepseek-v4-pro",
-        ]
-    # Drop panel members in the proposer's family.
+        panel = list(_DEFAULT_ENSEMBLE_PANEL)
+    allowed_panel = _filter_allowed_panel(panel, default_panel=default_panel)
+
+    # Drop panel members in the proposer's family when possible, but never
+    # replace an installer-constrained panel with an unselected provider. If
+    # the only selected verifier is same-family, prefer that selected provider
+    # over leaking the brief/proposal to an unselected cross-family fallback.
+    panel = allowed_panel
     if proposer_model:
-        panel = [m for m in panel if not _same_family(proposer_model, m)]
+        cross_family_panel = [m for m in panel if not _same_family(proposer_model, m)]
+        if cross_family_panel:
+            panel = cross_family_panel
     if not panel:
-        # Everything got filtered -- fall back to whatever the default
-        # cross-family verifier is for this proposer.
+        # Everything got filtered. Preserve the historical fallback only when
+        # there is no routing allowlist; wizard-generated configs include an
+        # allowlist and should fail closed instead of contacting third parties.
+        if _routing_allowed_providers() is not None:
+            return VerifierVerdict.reject("no allowed ensemble verifier providers configured")
         cross = _cross_family_fallback(proposer_model or "")
         panel = [cross] if cross else [model_for_role("verifier")]
 
