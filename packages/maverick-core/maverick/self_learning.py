@@ -237,25 +237,27 @@ def _rank_embed(need: str, entries: list, max_n: int) -> list[Candidate] | None:
     """
     try:
         from .skill_embeddings import _cosine, _have_fastembed, embed
-    except Exception:  # pragma: no cover -- module is in-tree
+
+        if not _have_fastembed() or not entries:
+            return None
+        vecs = embed([need] + [_entry_text(e) for _, e in entries])
+        if not vecs or len(vecs) != len(entries) + 1:
+            return None
+        qv = vecs[0]
+        scored: list[Candidate] = []
+        for (kind, e), v in zip(entries, vecs[1:]):
+            score = _cosine(qv, v)
+            if score < _EMBED_MIN_SCORE:
+                continue
+            scored.append(Candidate(
+                kind=kind, name=e.name, summary=e.summary, source=e.source,
+                score=score,
+            ))
+        scored.sort(key=lambda c: -c.score)
+        return scored[: max(1, max_n)]
+    except Exception as e:  # pragma: no cover -- defensive optional path
+        log.debug("self_learning: embedding rank failed: %s", e)
         return None
-    if not _have_fastembed() or not entries:
-        return None
-    vecs = embed([need] + [_entry_text(e) for _, e in entries])
-    if not vecs or len(vecs) != len(entries) + 1:
-        return None
-    qv = vecs[0]
-    scored: list[Candidate] = []
-    for (kind, e), v in zip(entries, vecs[1:]):
-        score = _cosine(qv, v)
-        if score < _EMBED_MIN_SCORE:
-            continue
-        scored.append(Candidate(
-            kind=kind, name=e.name, summary=e.summary, source=e.source,
-            score=score,
-        ))
-    scored.sort(key=lambda c: -c.score)
-    return scored[: max(1, max_n)]
 
 
 def search_capabilities(
