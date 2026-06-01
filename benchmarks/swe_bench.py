@@ -952,6 +952,60 @@ def load_instances(manifest: Path) -> list[dict]:
     return out
 
 
+def _ensure_csv_header(f, cols: list[str]) -> bool:
+    """Ensure an existing results CSV uses the current column schema.
+
+    Returns True when the file is empty and the caller still needs to emit
+    the header. Older results files may be missing columns that were appended
+    to the schema (for example ``contamination``); migrate those headers and
+    pad existing rows so new rows cannot hide values under DictReader's None
+    overflow key. Incompatible headers are refused instead of silently
+    corrupting benchmark provenance.
+    """
+    f.seek(0, os.SEEK_END)
+    if f.tell() == 0:
+        return True
+
+    f.seek(0)
+    existing_rows = list(csv.reader(f))
+    if not existing_rows:
+        return True
+
+    header = existing_rows[0]
+    if header == cols:
+        f.seek(0, os.SEEK_END)
+        return False
+
+    if header != cols[:len(header)]:
+        raise ValueError(
+            "existing results CSV header does not match the current schema: "
+            f"expected {cols!r} or a prefix, got {header!r}"
+        )
+
+    missing = len(cols) - len(header)
+    if missing <= 0:
+        raise ValueError(
+            "existing results CSV header has unexpected extra columns: "
+            f"expected {cols!r}, got {header!r}"
+        )
+
+    migrated_rows = [cols]
+    for row in existing_rows[1:]:
+        if len(row) > len(header):
+            raise ValueError(
+                "existing results CSV row has more fields than its header; "
+                "refusing to append with an ambiguous schema"
+            )
+        migrated_rows.append(row + ([""] * (len(cols) - len(row))))
+
+    f.seek(0)
+    f.truncate()
+    writer = csv.writer(f)
+    writer.writerows(migrated_rows)
+    f.seek(0, os.SEEK_END)
+    return False
+
+
 def write_csv(rows: list[Row], out_path: Path) -> None:
     """Append (or create) a CSV at out_path. One row per (instance, pipeline).
 
@@ -968,8 +1022,8 @@ def write_csv(rows: list[Row], out_path: Path) -> None:
     """
     cols = list(asdict(Row("", "", "")).keys())
     cols.remove("extra")
-    new_file = not out_path.exists()
-    with out_path.open("a", newline="", encoding="utf-8") as f:
+    fd = os.open(out_path, os.O_RDWR | os.O_CREAT, 0o666)
+    with os.fdopen(fd, "r+", newline="", encoding="utf-8") as f:
         try:
             import fcntl as _fcntl
             _fcntl.flock(f.fileno(), _fcntl.LOCK_EX)
@@ -977,12 +1031,7 @@ def write_csv(rows: list[Row], out_path: Path) -> None:
         except (ImportError, OSError):
             _locked = False
         try:
-            # Re-check after lock: another shard may have created the file
-            # between our `exists()` and now.
-            if _locked and out_path.stat().st_size == 0:
-                new_file = True
-            elif _locked:
-                new_file = False
+            new_file = _ensure_csv_header(f, cols)
             w = csv.DictWriter(f, fieldnames=cols)
             if new_file:
                 w.writeheader()

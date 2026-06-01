@@ -98,6 +98,68 @@ def run_one(
     }
 
 
+def _markdown_row(cells: list[str]) -> str:
+    return "| " + " | ".join(cells) + " |\n"
+
+
+def _markdown_cells(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def _ensure_results_table(results_path: Path, cols: list[str]) -> None:
+    if not results_path.exists():
+        header = _markdown_row(cols)
+        divider = "|" + "|".join(["---"] * len(cols)) + "|\n"
+        results_path.write_text(
+            "# Maverick benchmark results\n\n"
+            "Auto-appended by `benchmarks/harness.py`. Each row is one run.\n\n"
+            + header + divider,
+            encoding="utf-8",
+        )
+        return
+
+    lines = results_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    header_idx = None
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("|") and "benchmark" in line:
+            header_idx = i
+            break
+    if header_idx is None:
+        raise ValueError(f"existing results file has no markdown table header: {results_path}")
+
+    header = _markdown_cells(lines[header_idx])
+    if header == cols:
+        return
+
+    old_cols = [c for c in cols if c != "source"]
+    if header != old_cols:
+        raise ValueError(
+            "existing results markdown header does not match the current schema: "
+            f"expected {cols!r} or {old_cols!r}, got {header!r}"
+        )
+
+    source_idx = cols.index("source")
+    lines[header_idx] = _markdown_row(cols)
+    divider_idx = header_idx + 1
+    if divider_idx < len(lines) and lines[divider_idx].lstrip().startswith("|"):
+        lines[divider_idx] = "|" + "|".join(["---"] * len(cols)) + "|\n"
+
+    for i in range(divider_idx + 1, len(lines)):
+        if not lines[i].lstrip().startswith("|"):
+            break
+        cells = _markdown_cells(lines[i])
+        if len(cells) == len(old_cols):
+            cells.insert(source_idx, "")
+            lines[i] = _markdown_row(cells)
+        elif len(cells) != len(cols):
+            raise ValueError(
+                "existing results markdown row has an ambiguous number of "
+                f"cells ({len(cells)}): {lines[i].rstrip()}"
+            )
+
+    results_path.write_text("".join(lines), encoding="utf-8")
+
+
 def append_results(row: dict, results_path: Path) -> None:
     """Append a row to RESULTS.md as a markdown table line.
 
@@ -108,16 +170,8 @@ def append_results(row: dict, results_path: Path) -> None:
         "benchmark", "tag", "agent", "source", "wall_seconds", "cost_dollars",
         "input_tokens", "output_tokens", "tool_calls", "outcome",
     ]
-    if not results_path.exists():
-        header = "| " + " | ".join(cols) + " |\n"
-        divider = "|" + "|".join(["---"] * len(cols)) + "|\n"
-        results_path.write_text(
-            "# Maverick benchmark results\n\n"
-            "Auto-appended by `benchmarks/harness.py`. Each row is one run.\n\n"
-            + header + divider,
-            encoding="utf-8",
-        )
-    line = "| " + " | ".join(str(row.get(c, "")) for c in cols) + " |\n"
+    _ensure_results_table(results_path, cols)
+    line = _markdown_row([str(row.get(c, "")) for c in cols])
     with results_path.open("a", encoding="utf-8") as f:
         f.write(line)
 

@@ -130,3 +130,27 @@ def test_contamination_is_a_csv_column(swebench, tmp_path):
     assert "contamination" in header
     assert "extra" not in header
     assert "verbatim_gold_patch" in text
+
+
+def test_write_csv_migrates_existing_header_for_contamination(swebench, tmp_path):
+    """Appending to pre-contamination CSVs must keep caveats under a named column."""
+    import csv
+
+    Row = swebench.Row
+    out = tmp_path / "RESULTS_SWE.csv"
+    cols = list(swebench.asdict(Row("", "", "")).keys())
+    cols.remove("extra")
+    old_cols = [c for c in cols if c != "contamination"]
+    out.write_text(",".join(old_cols) + "\n", encoding="utf-8")
+
+    swebench.write_csv([Row(
+        instance_id="i1", pipeline="maverick", model_id="m",
+        predicted_patch="p", outcome="success",
+        contamination="verbatim_gold_patch",
+    )], out)
+
+    with out.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    assert "contamination" in rows[0]
+    assert rows[0]["contamination"] == "verbatim_gold_patch"
+    assert None not in rows[0]
