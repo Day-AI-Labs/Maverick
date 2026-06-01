@@ -101,7 +101,12 @@
       }
       for (const el of document.querySelectorAll('[data-ts]')) {
         const ts = el.getAttribute('data-ts');
-        if (ts) el.textContent = rel(ts);
+        if (ts) {
+          // Keep the absolute time reachable on hover / for screen readers
+          // before swapping in the relative label (was discarded before).
+          if (!el.title) el.title = el.textContent.trim();
+          el.textContent = rel(ts);
+        }
       }
     })();
   </script>
