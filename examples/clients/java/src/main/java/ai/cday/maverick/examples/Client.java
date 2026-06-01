@@ -76,6 +76,16 @@ public final class Client {
                 throw new IllegalStateException("maverick_facts_get returned no content");
             }
             System.out.println("maverick_facts_get round-trip OK");
+
+            // Every Maverick tool also returns structuredContent: typed JSON
+            // matching the tool's outputSchema, so a typed client reads parsed
+            // fields instead of re-parsing the text block. facts_get -> { facts: {...} }.
+            if (!(res.structuredContent() instanceof Map<?, ?> structured)
+                    || !structured.containsKey("facts")) {
+                throw new IllegalStateException(
+                        "maverick_facts_get returned no structuredContent with 'facts'");
+            }
+            System.out.println("maverick_facts_get structuredContent OK");
         } finally {
             client.closeGracefully();
         }
