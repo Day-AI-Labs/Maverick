@@ -31,9 +31,15 @@ _FALLBACK_PRICE_OUT = 15.0
 # Two TTLs: 5m default (1.25x write surcharge) and 1h (2.0x write surcharge).
 # Wave 12: prior code collapsed all writes to 1.25x; long-TTL writes were
 # under-billed by ~40%.
-_CACHE_READ_MULT = 0.1     # 90% discount on cache reads (both TTLs)
+_CACHE_READ_MULT = 0.1     # Anthropic: 90% discount on cache reads (both TTLs)
 _CACHE_WRITE_MULT_5M = 1.25
 _CACHE_WRITE_MULT_1H = 2.0
+
+# OpenAI / o-series / gpt-5 automatic prompt cache discounts cache reads ~50%
+# (0.5x), NOT 90% like Anthropic. Billing those reads at 0.1x under-counted
+# cached-input cost ~5x for every non-Anthropic provider with cache hits.
+# Callers pass the provider-appropriate multiplier; default stays Anthropic's.
+CACHE_READ_MULT_OPENAI = 0.5
 
 
 def _cache_write_mult_from_ttl(ttl: str | None) -> float:
@@ -121,14 +127,16 @@ class Budget:
         cache_read_tok: int = 0,
         cache_write_tok: int = 0,
         cache_write_ttl: str | None = None,
+        cache_read_mult: float | None = None,
     ) -> None:
         """Add usage from one LLM call.
 
         ``in_tok`` is the number of input tokens billed at full rate
         (i.e. excludes the cache_read_tok and cache_write_tok counts).
-        ``cache_read_tok`` is billed at 0.1x, ``cache_write_tok`` at
-        1.25x (5m TTL) or 2.0x (1h TTL) — pass ``cache_write_ttl="1h"``
-        when caching with a 1h breakpoint.
+        ``cache_read_tok`` is billed at ``cache_read_mult`` x the input rate
+        (default 0.1x for Anthropic; pass ``CACHE_READ_MULT_OPENAI`` =0.5 for
+        OpenAI/o-series/gpt-5 auto-cache). ``cache_write_tok`` at 1.25x (5m TTL)
+        or 2.0x (1h TTL) — pass ``cache_write_ttl="1h"`` for a 1h breakpoint.
 
         Wave 12 nullsafety: ``in_tok``/``out_tok``/cache counts coerce
         to ``int(... or 0)`` — Anthropic occasionally returns ``None``
@@ -161,8 +169,11 @@ class Budget:
 
             in_rate, out_rate = _lookup_price(model)
             write_mult = _cache_write_mult_from_ttl(cache_write_ttl)
+            # Provider-aware cache-read discount: Anthropic 0.1x (default),
+            # OpenAI/o-series/gpt-5 auto-cache ~0.5x (caller passes it).
+            read_mult = _CACHE_READ_MULT if cache_read_mult is None else float(cache_read_mult)
             self.dollars += (in_tok / 1_000_000) * in_rate
-            self.dollars += (cache_read_tok / 1_000_000) * in_rate * _CACHE_READ_MULT
+            self.dollars += (cache_read_tok / 1_000_000) * in_rate * read_mult
             self.dollars += (cache_write_tok / 1_000_000) * in_rate * write_mult
             self.dollars += (out_tok / 1_000_000) * out_rate
             self.check()
