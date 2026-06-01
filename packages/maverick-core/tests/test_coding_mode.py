@@ -88,6 +88,22 @@ class TestExtractUnifiedDiff:
         assert "scratch that" not in out
         assert "+correct" in out
 
+    def test_diff_context_final_line_not_treated_as_marker(self):
+        text = (
+            "FINAL:\n"
+            "--- a/README.md\n"
+            "+++ b/README.md\n"
+            "@@ -1,3 +1,3 @@\n"
+            " # Header\n"
+            " FINAL:\n"
+            "-old\n"
+            "+new\n"
+        )
+        out = extract_unified_diff(text)
+        assert out is not None
+        assert " FINAL:\n" in out
+        assert "+new" in out
+
     def test_internal_markdown_fence_preserved(self):
         """Wave 12: diffs that edit Markdown files contain triple-
         backtick context lines (e.g. ` \\`\\`\\`python`). The pre-Wave-12
