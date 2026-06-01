@@ -1351,6 +1351,17 @@ class Agent:
                 # the serial path (one per tool, same count).
                 for tc in resp.tool_calls:
                     self.ctx.budget.record_tool_call()
+
+                # Per-host concurrency cap (#434): same-host network reads in
+                # this turn are throttled by a semaphore so a fan-out of reads
+                # to one host can't hammer it / trip its rate limit; local and
+                # cross-host calls stay fully concurrent (no-op context).
+                from . import net_concurrency as _netcc
+
+                async def _run_capped(tc):
+                    async with _netcc.limit(tc.name, tc.input):
+                        return await self._run_tool(tc.name, tc.input)
+
                 # return_exceptions=True: tools.run swallows its own errors, but
                 # the shield scan / PreToolUse hooks inside _run_tool can still
                 # raise. Without this, one such raise propagates out of gather,
@@ -1361,7 +1372,7 @@ class Agent:
                 # re-raise control-flow signals (budget/halt) so a stop isn't
                 # silently downgraded to a tool error.
                 outputs = await _asyncio.gather(
-                    *(self._run_tool(tc.name, tc.input) for tc in resp.tool_calls),
+                    *(_run_capped(tc) for tc in resp.tool_calls),
                     return_exceptions=True,
                 )
                 from . import killswitch as _ks

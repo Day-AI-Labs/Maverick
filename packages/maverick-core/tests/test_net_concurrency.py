@@ -1,0 +1,132 @@
+"""Per-host concurrency caps for parallel network reads (#434).
+
+Same-host network reads in one turn are throttled by a per-host semaphore;
+cross-host reads and local reads stay fully concurrent.
+"""
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+
+import pytest
+from maverick import net_concurrency as nc
+from maverick.agent import Agent
+from maverick.blackboard import Blackboard
+from maverick.budget import Budget
+from maverick.llm import LLMResponse, ToolCall
+from maverick.sandbox import LocalBackend
+from maverick.swarm import SwarmContext
+from maverick.tools import Tool
+from maverick.world_model import WorldModel
+
+
+@pytest.fixture(autouse=True)
+def _reset_semaphores():
+    nc._reset_for_tests()
+    yield
+    nc._reset_for_tests()
+
+
+@pytest.fixture
+def ctx(tmp_path: Path, fake_llm):
+    world = WorldModel(tmp_path / "world.db")
+    goal_id = world.create_goal("test goal", "")
+    return SwarmContext(
+        llm=fake_llm, world=world, budget=Budget(max_dollars=1.0),
+        blackboard=Blackboard(), sandbox=LocalBackend(workdir=tmp_path),
+        goal_id=goal_id, max_depth=1, use_skills=False,
+    )
+
+
+class TestHostKey:
+    def test_http_fetch_parses_host(self):
+        assert nc.host_key("http_fetch", {"url": "https://EXAMPLE.com/a"}) == "http:example.com"
+
+    def test_fixed_endpoint_tools(self):
+        assert nc.host_key("arxiv", {}) == "svc:arxiv.org"
+        assert nc.host_key("wikipedia", {}) == "svc:wikipedia.org"
+        assert nc.host_key("semantic_scholar", {}) == "svc:semanticscholar.org"
+
+    def test_local_and_unknown_are_none(self):
+        assert nc.host_key("read_file", {"path": "x"}) is None
+        assert nc.host_key("totally_unknown", {}) is None
+
+    def test_unparseable_url_is_none(self):
+        assert nc.host_key("http_fetch", {"url": ""}) is None
+        assert nc.host_key("http_fetch", {}) is None
+
+
+class TestLimitContext:
+    @pytest.mark.asyncio
+    async def test_disabled_when_cap_zero(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_NET_HOST_CONCURRENCY", "0")
+        # Even a known host returns a no-op context (no throttling).
+        import contextlib
+        limiter = nc.limit("arxiv", {})
+        assert isinstance(limiter, contextlib.nullcontext)
+
+    @pytest.mark.asyncio
+    async def test_known_host_returns_semaphore(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_NET_HOST_CONCURRENCY", "2")
+        limiter = nc.limit("arxiv", {})
+        assert isinstance(limiter, asyncio.Semaphore)
+
+
+def _net_tool(name: str, tracker: dict) -> Tool:
+    async def fn(args: dict) -> str:
+        tracker["active"] += 1
+        tracker["max"] = max(tracker["max"], tracker["active"])
+        await asyncio.sleep(0.05)
+        tracker["active"] -= 1
+        return "ok"
+
+    return Tool(name=name, description="x",
+                input_schema={"type": "object", "properties": {}},
+                fn=fn, parallel_safe=True)
+
+
+class TestThrottlingThroughAgentLoop:
+    @pytest.mark.asyncio
+    async def test_same_host_is_capped(self, ctx, fake_llm, monkeypatch):
+        monkeypatch.setenv("MAVERICK_NET_HOST_CONCURRENCY", "1")
+        nc._reset_for_tests()
+        tracker = {"active": 0, "max": 0}
+        # Two arxiv calls in one turn -> same host -> cap of 1 -> serialized.
+        fake_llm.scripted = [
+            LLMResponse(
+                text="go", thinking=None, stop_reason="tool_use",
+                tool_calls=[ToolCall(id="a", name="arxiv", input={}),
+                            ToolCall(id="b", name="arxiv", input={})],
+            ),
+            LLMResponse(text="FINAL: done", thinking=None,
+                        stop_reason="end_turn", tool_calls=[]),
+        ]
+        agent = Agent(ctx=ctx, role="researcher", brief="q")
+        # Replace the registered arxiv tool with our instrumented one.
+        agent.tools.register(_net_tool("arxiv", tracker))
+        result = await agent.run()
+        assert result.final == "done"
+        assert tracker["max"] == 1  # capped: never two arxiv calls at once
+
+    @pytest.mark.asyncio
+    async def test_cross_host_stays_concurrent(self, ctx, fake_llm, monkeypatch):
+        monkeypatch.setenv("MAVERICK_NET_HOST_CONCURRENCY", "1")
+        nc._reset_for_tests()
+        tracker = {"active": 0, "max": 0}
+        # arxiv + wikipedia -> different hosts -> both run concurrently
+        # despite a per-host cap of 1.
+        fake_llm.scripted = [
+            LLMResponse(
+                text="go", thinking=None, stop_reason="tool_use",
+                tool_calls=[ToolCall(id="a", name="arxiv", input={}),
+                            ToolCall(id="b", name="wikipedia", input={})],
+            ),
+            LLMResponse(text="FINAL: done", thinking=None,
+                        stop_reason="end_turn", tool_calls=[]),
+        ]
+        agent = Agent(ctx=ctx, role="researcher", brief="q")
+        agent.tools.register(_net_tool("arxiv", tracker))
+        agent.tools.register(_net_tool("wikipedia", tracker))
+        result = await agent.run()
+        assert result.final == "done"
+        assert tracker["max"] == 2  # different hosts overlap
