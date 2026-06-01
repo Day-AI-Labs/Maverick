@@ -295,7 +295,9 @@ def version() -> None:
         pass
     try:
         from maverick_shield import Shield
-        s = Shield.from_config()
+        # warn_if_missing=False: this command prints the backend itself, so the
+        # raw "SDK not installed" log line would just bleed into the table.
+        s = Shield.from_config(warn_if_missing=False)
         click.echo(f"  shield backend:        {s.backend}")
     except ImportError:
         click.echo("  shield backend:        (maverick-shield not installed)")
