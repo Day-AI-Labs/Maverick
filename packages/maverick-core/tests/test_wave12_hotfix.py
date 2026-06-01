@@ -36,7 +36,7 @@ class TestOpusPricingHotfix:
 
 
 class TestOpus47AdaptiveThinking:
-    """Opus 4.7 rejects manual `thinking={"type":"enabled"}` with 400.
+    """Opus 4.7+ rejects manual `thinking={"type":"enabled"}` with 400.
     Must use `adaptive`. Verified at platform.claude.com/docs/.../adaptive-thinking."""
 
     def test_opus_47_with_budget_uses_adaptive(self):
@@ -67,6 +67,49 @@ class TestOpus47AdaptiveThinking:
         )
         assert kwargs.get("thinking", {}).get("type") == "adaptive"
 
+    def test_opus_48_with_budget_uses_adaptive(self):
+        from maverick.providers.anthropic_provider import AnthropicClient
+        client = AnthropicClient.__new__(AnthropicClient)
+        kwargs = client._build_request(
+            system="sys",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=None,
+            max_tokens=4096,
+            thinking_budget=8000,
+            model="claude-opus-4-8",
+        )
+        thinking = kwargs.get("thinking", {})
+        assert thinking.get("type") == "adaptive"
+        assert "budget_tokens" not in thinking
+        assert kwargs.get("max_tokens") >= 9024
+
+    def test_opus_48_without_budget_still_adaptive(self):
+        from maverick.providers.anthropic_provider import AnthropicClient
+        client = AnthropicClient.__new__(AnthropicClient)
+        kwargs = client._build_request(
+            system="sys",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=None,
+            max_tokens=4096,
+            thinking_budget=None,
+            model="claude-opus-4-8",
+        )
+        assert kwargs.get("thinking", {}).get("type") == "adaptive"
+        assert kwargs.get("max_tokens") >= 16384
+
+    def test_opus_48_fast_uses_adaptive(self):
+        from maverick.providers.anthropic_provider import AnthropicClient
+        client = AnthropicClient.__new__(AnthropicClient)
+        kwargs = client._build_request(
+            system="sys",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=None,
+            max_tokens=4096,
+            thinking_budget=8000,
+            model="claude-opus-4-8-fast",
+        )
+        assert kwargs.get("thinking", {}).get("type") == "adaptive"
+
     def test_sonnet_46_uses_enabled_mode(self):
         """Sonnet 4.6 supports both 'enabled' and 'adaptive'; we use
         explicit 'enabled' with budget_tokens for callsites that pass
@@ -93,6 +136,7 @@ class TestLowCacheWarning:
 
     def test_min_cache_tokens_for_modern_models(self):
         from maverick.providers.anthropic_provider import _min_cache_tokens
+        assert _min_cache_tokens("claude-opus-4-8") == 4096
         assert _min_cache_tokens("claude-opus-4-7") == 4096
         assert _min_cache_tokens("claude-opus-4-6") == 4096
         assert _min_cache_tokens("claude-opus-4-5") == 4096

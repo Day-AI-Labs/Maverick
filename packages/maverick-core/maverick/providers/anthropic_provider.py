@@ -86,6 +86,7 @@ def _min_cache_tokens(model_id: str) -> int:
         model_id.startswith("claude-opus-4-5")
         or model_id.startswith("claude-opus-4-6")
         or model_id.startswith("claude-opus-4-7")
+        or model_id.startswith("claude-opus-4-8")
         or model_id.startswith("claude-sonnet-4-5")
         or model_id.startswith("claude-sonnet-4-6")
         or model_id.startswith("claude-haiku-4-5")
@@ -240,7 +241,7 @@ class AnthropicClient:
         # Wave 12 hotfix: thinking + interleaved-thinking handling per
         # Anthropic's May 2026 docs (platform.claude.com/docs/.../adaptive-thinking):
         #
-        #   - Opus 4.7:  ONLY adaptive mode accepted. Manual
+        #   - Opus 4.7+ (including 4.8): ONLY adaptive mode accepted. Manual
         #                `thinking={"type":"enabled"}` returns 400.
         #                Interleaved thinking is automatic — no header.
         #   - Opus 4.6 / Sonnet 4.6 / Haiku 4.5: interleaved is automatic
@@ -254,10 +255,14 @@ class AnthropicClient:
         # for any "claude-opus-/claude-sonnet-4" prefix — that breaks
         # against Opus 4.7 (400) and is wasted noise on 4.6.
         model_id = (model or self.DEFAULT_MODEL) or ""
-        is_opus_47 = model_id.startswith("claude-opus-4-7")
+        is_adaptive_only_opus = (
+            model_id.startswith("claude-opus-4-7")
+            or model_id.startswith("claude-opus-4-8")
+        )
         is_modern_4x = (
             model_id.startswith("claude-opus-4-6")
             or model_id.startswith("claude-opus-4-7")
+            or model_id.startswith("claude-opus-4-8")
             or model_id.startswith("claude-sonnet-4-6")
             or model_id.startswith("claude-haiku-4-5")
         )
@@ -268,8 +273,8 @@ class AnthropicClient:
 
         if thinking_budget and thinking_budget > 0:
             kwargs["max_tokens"] = max(max_tokens, thinking_budget + 1024)
-            if is_opus_47:
-                # Opus 4.7 rejects explicit "enabled"; only "adaptive"
+            if is_adaptive_only_opus:
+                # Opus 4.7+ rejects explicit "enabled"; only "adaptive"
                 # is supported. Drop budget_tokens — adaptive auto-sizes.
                 kwargs["thinking"] = {"type": "adaptive"}
             else:
@@ -286,13 +291,13 @@ class AnthropicClient:
                 betas.append("interleaved-thinking-2025-05-14")
             extra_headers["anthropic-beta"] = ",".join(betas)
             kwargs["extra_headers"] = extra_headers
-        # For 4.6 and 4.7 models, interleaved is automatic in adaptive
+        # For 4.6 and 4.7+ models, interleaved is automatic in adaptive
         # mode — no header needed. Note: even WITHOUT thinking_budget,
-        # callers may want adaptive default on Opus 4.7. Surface that:
-        if is_opus_47 and "thinking" not in kwargs:
-            # Opus 4.7 with no explicit thinking spec: let the model
-            # decide via adaptive. This matches the docs' "adaptive is
-            # the only supported mode" guidance.
+        # callers may want adaptive default on adaptive-only Opus. Surface that:
+        if is_adaptive_only_opus and "thinking" not in kwargs:
+            # Adaptive-only Opus with no explicit thinking spec: let the
+            # model decide via adaptive. This matches the docs'
+            # "adaptive is the only supported mode" guidance.
             kwargs["thinking"] = {"type": "adaptive"}
             # May 26 council fix (API audit #18): adaptive thinking
             # can spend the entire `max_tokens` budget on thinking and
