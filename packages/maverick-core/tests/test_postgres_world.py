@@ -204,3 +204,27 @@ def test_decide_approval_rejects_bad_status(world):
     aid = world.create_approval("do thing")
     with pytest.raises(ValueError, match="approved.*denied"):
         world.decide_approval(aid, "maybe")
+
+
+# ---------- #469: reclaim_orphan_goals + schema_version ----------
+
+def test_reclaim_orphan_goals(world):
+    g = world.create_goal("orphan")
+    world.set_goal_status(g, "active")
+    # max_age_seconds=0 -> the just-touched active goal qualifies as stale.
+    n = world.reclaim_orphan_goals(max_age_seconds=0)
+    assert n >= 1
+    assert world.get_goal(g).status == "blocked"
+
+
+def test_reclaim_skips_fresh_goals(world):
+    g = world.create_goal("fresh")
+    world.set_goal_status(g, "active")
+    # A 1-hour staleness window must NOT reclaim a goal touched just now.
+    world.reclaim_orphan_goals(max_age_seconds=3600)
+    assert world.get_goal(g).status == "active"
+
+
+def test_schema_version_is_int(world):
+    assert isinstance(world.schema_version, int)
+    assert world.schema_version >= 1
