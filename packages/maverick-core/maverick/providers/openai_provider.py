@@ -141,6 +141,35 @@ class OpenAIClient:
         return any(model.startswith(prefix) for prefix in _MODELS_WANTING_MAX_COMPLETION_TOKENS)
 
     @staticmethod
+    def _is_reasoning_model(model: str) -> bool:
+        """True for models that accept ``reasoning_effort`` (o-series, gpt-5).
+
+        Narrower than ``_wants_max_completion``, which also covers gpt-4o/gpt-4.1
+        — those want ``max_completion_tokens`` but are NOT reasoning models and
+        reject ``reasoning_effort`` with a 400.
+        """
+        return any(model.startswith(p) for p in ("o1", "o3", "o4", "gpt-5"))
+
+    @staticmethod
+    def _reasoning_effort_for(thinking_budget: int | None) -> str | None:
+        """Map an Anthropic-style ``thinking_budget`` (token count) to OpenAI's
+        ``reasoning_effort`` bucket (low/medium/high) by magnitude.
+
+        The unified LLM interface expresses extended thinking as a token budget
+        (Anthropic's knob). OpenAI o-series / gpt-5 instead take a coarse
+        ``reasoning_effort`` enum, so a budget passed to this provider was
+        silently dropped. Bucket it: <=4k -> low, <=16k -> medium, else high.
+        Returns None when no budget is requested.
+        """
+        if not thinking_budget or thinking_budget <= 0:
+            return None
+        if thinking_budget <= 4096:
+            return "low"
+        if thinking_budget <= 16384:
+            return "medium"
+        return "high"
+
+    @staticmethod
     def _has_auto_prompt_cache(model: str) -> bool:
         return any(model.startswith(prefix) for prefix in _MODELS_WITH_AUTO_PROMPT_CACHE)
 
@@ -311,6 +340,7 @@ class OpenAIClient:
         tools: list[dict] | None,
         max_tokens: int,
         model: str | None,
+        thinking_budget: int | None = None,
     ) -> dict[str, Any]:
         chosen_model = model or self.DEFAULT_MODEL
         # Write-side prompt-cache friendliness for gpt-4.1 / o-series / gpt-5,
@@ -338,6 +368,14 @@ class OpenAIClient:
             kwargs["max_completion_tokens"] = max_tokens
         else:
             kwargs["max_tokens"] = max_tokens
+        # Map a requested thinking budget to reasoning_effort, but ONLY for
+        # actual reasoning models (o-series / gpt-5). gpt-4o/gpt-4.1 also want
+        # max_completion_tokens yet reject reasoning_effort with a 400, so this
+        # uses the narrower _is_reasoning_model gate.
+        if self._is_reasoning_model(chosen_model):
+            effort = self._reasoning_effort_for(thinking_budget)
+            if effort is not None:
+                kwargs["reasoning_effort"] = effort
         oai_tools = self._to_openai_tools(tools)
         if oai_tools:
             kwargs["tools"] = oai_tools
@@ -356,9 +394,9 @@ class OpenAIClient:
     ) -> LLMResponse:
         # on_delta accepted for Provider-protocol parity; this client doesn't
         # stream token deltas (the Anthropic client does). Ignored, not error.
-        if thinking_budget:
-            log.debug("OpenAI provider ignores thinking_budget=%s", thinking_budget)
-        kwargs = self._build_kwargs(system, messages, tools, max_tokens, model)
+        kwargs = self._build_kwargs(
+            system, messages, tools, max_tokens, model, thinking_budget,
+        )
         resp = sync_retry(lambda: self._sync.chat.completions.create(**kwargs))
         return self._from_response(resp, budget, model=kwargs.get("model"))
 
@@ -372,8 +410,8 @@ class OpenAIClient:
         thinking_budget: int | None = None,
         model: str | None = None,
     ) -> LLMResponse:
-        if thinking_budget:
-            log.debug("OpenAI provider ignores thinking_budget=%s", thinking_budget)
-        kwargs = self._build_kwargs(system, messages, tools, max_tokens, model)
+        kwargs = self._build_kwargs(
+            system, messages, tools, max_tokens, model, thinking_budget,
+        )
         resp = await async_retry(lambda: self._async.chat.completions.create(**kwargs))
         return self._from_response(resp, budget, model=kwargs.get("model"))
