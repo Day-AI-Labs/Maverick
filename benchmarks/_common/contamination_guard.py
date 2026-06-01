@@ -22,7 +22,12 @@ reported with a caveat or excluded.
 from __future__ import annotations
 
 import hashlib
+import logging
+import os
 from dataclasses import dataclass
+from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -89,34 +94,87 @@ def check(
             ),
         ))
 
-    # Brief in known-leaked corpus. The actual corpus check requires a
-    # bloom filter / lookup we ship separately; here we hash the brief
-    # and compare against a small built-in list of confirmed-leaked
-    # SWE-bench Verified instance briefs (placeholder; expand as the
-    # community surfaces more).
+    # Brief in known-leaked corpus. The corpus is loaded from an external
+    # file (community-maintained); see _load_leaked_corpus(). When it's
+    # empty the check can't fire — so we surface THAT as a low-severity
+    # advisory instead of silently passing, which previously made the guard
+    # look like it ran when it had no data (the #320 gap).
+    corpus = _known_leaked_briefs()
     if brief:
-        h = hashlib.sha256(brief.strip().encode("utf-8")).hexdigest()[:16]
-        if h in _KNOWN_LEAKED_BRIEFS:
+        if not corpus:
             flags.append(ContaminationFlag(
-                severity="medium",
-                kind="brief_in_leaked_corpus",
+                severity="low",
+                kind="leaked_corpus_unavailable",
                 reason=(
-                    f"Brief hash {h} is in the known-leaked-corpus list "
-                    "(community-maintained). Treat results as suspect."
+                    "No leaked-brief corpus loaded, so the brief-in-corpus "
+                    "check did not run. Populate one via "
+                    "MAVERICK_LEAKED_BRIEFS_FILE (one brief-sha256[:16] per "
+                    "line) to enable it; until then this dimension is "
+                    "unverified, not 'clean'."
                 ),
             ))
+        else:
+            h = hashlib.sha256(brief.strip().encode("utf-8")).hexdigest()[:16]
+            if h in corpus:
+                flags.append(ContaminationFlag(
+                    severity="medium",
+                    kind="brief_in_leaked_corpus",
+                    reason=(
+                        f"Brief hash {h} is in the known-leaked-corpus list "
+                        "(community-maintained). Treat results as suspect."
+                    ),
+                ))
 
     return flags
 
 
-# Community-maintained set of brief hashes known to leak into training
-# data (e.g. found in GitHub issues / PRs that pre-date the benchmark
-# split). Add IDs as you find them; this is intentionally short until
-# we have a real lookup service.
+# Community-maintained set of brief hashes (sha256[:16]) known to leak
+# into training data. We DON'T ship fabricated entries — the set is loaded
+# from an external file the operator/community maintains, plus anything
+# added at runtime via add_known_leaked_brief(). An empty set means "no
+# corpus available", which the check now reports explicitly (see check()).
 _KNOWN_LEAKED_BRIEFS: set[str] = set()
+_CORPUS_LOADED = False
+
+# Default location; override with MAVERICK_LEAKED_BRIEFS_FILE.
+DEFAULT_CORPUS_PATH = Path(__file__).with_name("leaked_briefs.txt")
+
+
+def _load_leaked_corpus() -> None:
+    """Load brief hashes from the corpus file into _KNOWN_LEAKED_BRIEFS.
+
+    File format: one ``sha256[:16]`` hash per line; blank lines and lines
+    starting with ``#`` are ignored. Idempotent + fail-safe: a missing or
+    unreadable file just leaves the set as-is (the check then reports the
+    corpus as unavailable).
+    """
+    global _CORPUS_LOADED
+    _CORPUS_LOADED = True
+    path = Path(
+        os.environ.get("MAVERICK_LEAKED_BRIEFS_FILE", str(DEFAULT_CORPUS_PATH))
+    )
+    try:
+        if not path.exists():
+            return
+        for line in path.read_text(encoding="utf-8").splitlines():
+            entry = line.strip()
+            if entry and not entry.startswith("#"):
+                _KNOWN_LEAKED_BRIEFS.add(entry.lower())
+    except OSError as e:  # pragma: no cover -- corpus is optional
+        log.debug("leaked-brief corpus unreadable (%s); continuing", e)
+
+
+def _known_leaked_briefs() -> set[str]:
+    """Return the leaked-brief set, loading the corpus file on first use."""
+    if not _CORPUS_LOADED:
+        _load_leaked_corpus()
+    return _KNOWN_LEAKED_BRIEFS
 
 
 def add_known_leaked_brief(brief: str) -> None:
     """Allow harness code or operators to extend the leaked-brief set."""
+    # Make sure the file corpus is loaded first so a runtime add doesn't
+    # accidentally mark the set "non-empty" before the file is read.
+    _known_leaked_briefs()
     h = hashlib.sha256(brief.strip().encode("utf-8")).hexdigest()[:16]
     _KNOWN_LEAKED_BRIEFS.add(h)

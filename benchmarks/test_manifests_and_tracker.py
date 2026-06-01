@@ -114,14 +114,25 @@ class TestContaminationGuard:
         )
         assert any(f.kind == "verbatim_gold_patch" for f in flags)
 
-    def test_clean_run_no_flags(self, contam_mod):
+    def test_clean_run_no_contamination_flags(self, contam_mod):
+        # A clean run raises no CONTAMINATION flags. It may still raise the
+        # low-severity "leaked_corpus_unavailable" advisory when no corpus
+        # file is configured (that dimension is unverified, not clean) — so
+        # assert on the absence of actual contamination kinds, not on an
+        # empty list. With a corpus configured this advisory disappears.
         flags = contam_mod.check(
             task_id="t1", brief="fix it",
             predicted_patch="--- a/y\n+++ b/y\n@@ -1 +1 @@\n-x\n+z\n",
             gold_patch="--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n",
             model_id="claude-sonnet-4-6",
         )
-        assert flags == []
+        contamination_kinds = {
+            "verbatim_gold_patch", "post_publication_cutoff",
+            "brief_in_leaked_corpus",
+        }
+        assert not any(f.kind in contamination_kinds for f in flags)
+        # Every flag present must be low-severity advisory, not a hit.
+        assert all(f.severity == "low" for f in flags)
 
     def test_cutoff_after_publication_flagged(self, contam_mod):
         """A model trained AFTER the benchmark was published may have

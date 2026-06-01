@@ -36,8 +36,15 @@ def run_one(
     max_wall_seconds: float,
     tag: str,
     db_path: Optional[Path] = None,
+    agent: str = "maverick",
 ) -> dict:
-    """Run a single benchmark. Returns a metrics dict."""
+    """Run a single benchmark. Returns a metrics dict.
+
+    ``agent`` labels the row's ``agent`` column. It defaults to "maverick"
+    (this harness drives the Maverick CLI); a comparator harness wrapping
+    another system passes its own name so the comparator's numbers are a
+    first-class row in RESULTS.md rather than a hand-edited placeholder.
+    """
     spec = benchmark_path.read_text(encoding="utf-8")
 
     # We don't actually invoke the LLM in CI; export a flag so the
@@ -84,7 +91,7 @@ def run_one(
     return {
         "benchmark": str(benchmark_path),
         "tag": tag,
-        "agent": "maverick",
+        "agent": agent,
         "wall_seconds": round(wall_seconds, 2),
         "cost_dollars": round(cost, 4),
         "input_tokens": in_tokens,
@@ -129,6 +136,10 @@ def main() -> int:
         default=Path(__file__).parent / "RESULTS.md",
     )
     ap.add_argument("--db", type=Path, default=None)
+    ap.add_argument(
+        "--agent", default="maverick",
+        help="Label for the agent column (e.g. a comparator system's name).",
+    )
     args = ap.parse_args()
 
     if not args.benchmark.exists():
@@ -137,7 +148,7 @@ def main() -> int:
 
     row = run_one(
         args.benchmark, args.max_dollars, args.max_wall_seconds,
-        args.tag, db_path=args.db,
+        args.tag, db_path=args.db, agent=args.agent,
     )
     append_results(row, args.results)
     print(json.dumps(row, indent=2))
