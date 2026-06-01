@@ -298,12 +298,37 @@ class MCPClient:
                 "params": params,
             }
             await self._send(payload)
-            return await asyncio.wait_for(self._read_response(req_id), timeout=self.timeout)
+            try:
+                return await asyncio.wait_for(
+                    self._read_response(req_id), timeout=self.timeout)
+            except asyncio.TimeoutError:
+                # req_id is already on the wire; without a cancel the server
+                # runs the call to completion and leaves its late reply in the
+                # pipe (drained only by the next request). Tell it to stop.
+                # We still hold _lock here, so send directly -- asyncio.Lock
+                # isn't reentrant and _notify would deadlock.
+                await self._send_cancel(req_id)
+                raise
 
     async def _notify(self, method: str, params: dict) -> None:
         async with self._lock:
             self._check_alive()
             await self._send({"jsonrpc": "2.0", "method": method, "params": params})
+
+    async def _send_cancel(self, request_id: int) -> None:
+        """Best-effort MCP cancellation for a request we've given up on.
+
+        Called from _request's timeout path while _lock is held, so it sends
+        directly rather than via _notify (the lock isn't reentrant). A failure
+        here must not mask the timeout the caller is about to see."""
+        try:
+            await self._send({
+                "jsonrpc": "2.0",
+                "method": "notifications/cancelled",
+                "params": {"requestId": request_id, "reason": "client timeout"},
+            })
+        except Exception:  # noqa: BLE001 -- the request is already lost
+            pass
 
     async def _send(self, payload: dict) -> None:
         assert self._proc is not None and self._proc.stdin is not None
@@ -346,10 +371,24 @@ class MCPClient:
             "name": tool_name,
             "arguments": arguments,
         })
+        # A tool error is a real failure -> raise, so it rides the same path
+        # as transport/protocol errors (the wrapper in mcp_tools.py turns any
+        # exception into the agent-visible "ERROR: ..." string). The old
+        # "ERROR: " text prefix was ambiguous: a successful result whose text
+        # merely started with "ERROR:" was indistinguishable from a failure.
         if resp.get("isError"):
-            content = resp.get("content", [])
-            return "ERROR: " + _content_to_str(content)
-        return _content_to_str(resp.get("content", []))
+            raise MCPClientError(
+                f"MCP {self.spec.name!r} tool {tool_name!r} failed: "
+                + _content_to_str(resp.get("content", []))
+            )
+        text = _content_to_str(resp.get("content", []))
+        # A spec-compliant server mirrors structuredContent in a text block,
+        # but one that returns only structured output would otherwise come
+        # back empty -- fall back to the serialized structured result so the
+        # data still reaches the model.
+        if not text and resp.get("structuredContent") is not None:
+            return json.dumps(resp["structuredContent"])
+        return text
 
     async def stop(self) -> None:
         if self._stderr_task is not None:
@@ -384,8 +423,18 @@ def _content_to_str(content: Any) -> str:
     parts: list[str] = []
     for block in content:
         if isinstance(block, dict):
-            if block.get("type") == "text":
+            btype = block.get("type")
+            if btype == "text":
                 parts.append(block.get("text", ""))
+            elif btype == "resource":
+                # Embedded resource: surface its text directly (a text file's
+                # contents) instead of a JSON dump; fall back to JSON for a
+                # binary blob / bare uri so nothing is silently lost.
+                res = block.get("resource")
+                if isinstance(res, dict) and isinstance(res.get("text"), str):
+                    parts.append(res["text"])
+                else:
+                    parts.append(json.dumps(block))
             else:
                 parts.append(json.dumps(block))
         else:
