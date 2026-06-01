@@ -111,3 +111,40 @@ def test_delete_facts_matching_scoped(world):
     remaining = world.get_facts()
     assert "user:carol:email" not in remaining
     assert remaining.get("user:dave:email") == "d@x.com"  # other users untouched
+
+
+def test_list_goals_filter_and_order(world):
+    g1 = world.create_goal("first")
+    g2 = world.create_goal("second")
+    world.set_goal_status(g2, "done")
+
+    done = world.list_goals(status="done")
+    assert any(x.id == g2 for x in done)
+    assert all(x.status == "done" for x in done)  # filter applied
+
+    desc = world.list_goals(order="desc", limit=100)
+    ids = [x.id for x in desc]
+    assert ids.index(g2) < ids.index(g1)  # later id first in DESC order
+
+
+def test_active_goal(world):
+    gid = world.create_goal("to-activate")
+    world.set_goal_status(gid, "active")
+    a = world.active_goal()
+    assert a is not None
+    assert a.status in ("active", "blocked")
+
+
+def test_list_episodes_and_total_spend(world):
+    gid = world.create_goal("spendy")
+    eid = world.start_episode(gid)
+    world.end_episode(
+        eid, "s", "success",
+        cost_dollars=1.5, input_tokens=100, output_tokens=50, tool_calls=3,
+    )
+    eps = world.list_episodes(goal_id=gid)
+    assert any(x.id == eid and x.cost_dollars == 1.5 for x in eps)
+
+    totals = world.total_spend()
+    assert totals["dollars"] >= 1.5   # this run's ended episode counts
+    assert totals["runs"] >= 1
