@@ -48,9 +48,11 @@ def _make_skill(*, sig: str | None = None, pubkey: str | None = None) -> str:
 
 
 def _sign(priv: ed25519.Ed25519PrivateKey) -> str:
-    # Must match skills._canonical_signed_bytes: name + "\n" + stripped body.
-    msg = f"{_NAME}\n{_BODY.strip()}".encode()
-    return priv.sign(msg).hex()
+    # Sign over exactly what verification recomputes: parse the unsigned skill,
+    # then sign its canonical bytes. This stays in lockstep with
+    # _canonical_signed_bytes no matter which fields it binds.
+    parsed = skills.Skill.parse(_make_skill(), Path("in.md"))
+    return priv.sign(skills._canonical_signed_bytes(parsed)).hex()
 
 
 def _write_config(tmp_path: Path, monkeypatch, body: str) -> None:
