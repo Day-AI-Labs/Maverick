@@ -18,10 +18,31 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+from .safety.secret_detector import redact as _redact_secrets
+
 log = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2024-11-05"
 DEFAULT_TIMEOUT = 30.0
+
+_MAX_ERROR_DETAIL_CHARS = 512
+
+
+def _safe_error_detail(text: str) -> str:
+    """Return MCP error text safe enough to place in loggable exceptions.
+
+    MCP tool error content is controlled by the server. Exceptions are often
+    logged before the agent's tool-output redaction path runs, so scrub common
+    secret shapes here and cap the detail length before embedding it in an
+    exception message.
+    """
+    if not text:
+        return ""
+    text, _matches = _redact_secrets(text)
+    if len(text) <= _MAX_ERROR_DETAIL_CHARS:
+        return text
+    omitted = len(text) - _MAX_ERROR_DETAIL_CHARS
+    return f"{text[:_MAX_ERROR_DETAIL_CHARS]}... [truncated {omitted} chars]"
 
 # Env vars that we'll pass through to MCP server subprocesses by default.
 # Everything else (API keys, dashboard tokens, AWS creds, etc.) stays
@@ -377,10 +398,11 @@ class MCPClient:
         # "ERROR: " text prefix was ambiguous: a successful result whose text
         # merely started with "ERROR:" was indistinguishable from a failure.
         if resp.get("isError"):
-            raise MCPClientError(
-                f"MCP {self.spec.name!r} tool {tool_name!r} failed: "
-                + _content_to_str(resp.get("content", []))
-            )
+            detail = _safe_error_detail(_content_to_str(resp.get("content", [])))
+            msg = f"MCP {self.spec.name!r} tool {tool_name!r} failed"
+            if detail:
+                msg += f": {detail}"
+            raise MCPClientError(msg)
         text = _content_to_str(resp.get("content", []))
         # A spec-compliant server mirrors structuredContent in a text block,
         # but one that returns only structured output would otherwise come
