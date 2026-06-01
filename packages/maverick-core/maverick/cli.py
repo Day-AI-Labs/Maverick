@@ -907,6 +907,14 @@ def schedule_add(cron_expr: str, kind: str, payload: str | None) -> None:
         if not isinstance(data, dict):
             click.echo("ERROR: --payload must be a JSON object.", err=True)
             sys.exit(2)
+    from .worker import BUILTIN_JOB_KINDS
+    if kind not in BUILTIN_JOB_KINDS:
+        click.echo(
+            f"WARNING: {kind!r} is not a built-in job kind "
+            f"(only {sorted(BUILTIN_JOB_KINDS)} ship by default). "
+            "It will fail unless your `maverick worker` registers a handler for it.",
+            err=True,
+        )
     data["__cron__"] = cron_expr
     job_id, run_at = schedule_cron(JobQueue(), cron_expr, kind, data)
     from datetime import datetime

@@ -114,6 +114,36 @@ def test_schedule_add_rejects_bad_cron(tmp_path, monkeypatch):
     assert "bad cron" in res.output
 
 
+def test_schedule_add_warns_unknown_kind_but_still_schedules(tmp_path, monkeypatch):
+    # A typo'd kind has no handler; without a warning it would sit in the queue
+    # and fail terminally only at worker time (visible only in logs). Warn, but
+    # still schedule -- embedders register custom kinds via Worker.register().
+    from maverick.cli import main
+    monkeypatch.setattr("maverick.job_queue.DEFAULT_DB", tmp_path / "jobs.db")
+    res = CliRunner().invoke(main, ["schedule", "add", "*/5 * * * *", "run_gaol",
+                                    "--payload", '{"goal_id": 5}'])
+    assert res.exit_code == 0, res.output
+    assert "WARNING" in res.output and "run_gaol" in res.output
+    assert "scheduled job" in res.output
+
+
+def test_schedule_add_builtin_kind_does_not_warn(tmp_path, monkeypatch):
+    from maverick.cli import main
+    monkeypatch.setattr("maverick.job_queue.DEFAULT_DB", tmp_path / "jobs.db")
+    res = CliRunner().invoke(main, ["schedule", "add", "*/5 * * * *", "run_goal",
+                                    "--payload", '{"goal_id": 5}'])
+    assert res.exit_code == 0, res.output
+    assert "WARNING" not in res.output
+
+
+def test_builtin_job_kinds_matches_worker_handlers(tmp_path):
+    # Guard against drift: the advertised constant must equal the handlers the
+    # bare worker actually installs.
+    from maverick.worker import BUILTIN_JOB_KINDS, Worker
+    w = Worker(db_path=tmp_path / "jobs.db")
+    assert set(w._handlers) == set(BUILTIN_JOB_KINDS)
+
+
 def test_worker_command_runs_forever(tmp_path, monkeypatch):
     from maverick.cli import main
     monkeypatch.setattr("maverick.job_queue.DEFAULT_DB", tmp_path / "jobs.db")
