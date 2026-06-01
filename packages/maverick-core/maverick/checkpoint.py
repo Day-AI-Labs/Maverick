@@ -10,7 +10,7 @@ Scope of Phase 1 (intentionally narrow):
     swarm-tree case (spawn_swarm concurrency, per-child records) is Phase 2.
   - Checkpoints the resumable loop state: step index, the LLM ``messages``
     history, and a Budget snapshot (spent counters).
-  - Append-only ``checkpoints`` table keyed by (goal_id, agent_id, step_seq),
+  - Append-only ``checkpoints`` table keyed by (goal_id, episode_id, agent_id, step_seq),
     in its OWN table so it needs no world-model schema-version migration.
 
 Posture (kernel rule 1): OFF by default, fail-open. ``enabled()`` gates the
@@ -150,6 +150,24 @@ class Checkpointer:
         except Exception as e:  # pragma: no cover -- never block a run
             log.warning("checkpoint: save failed (continuing uncheckpointed): %s", e)
             return False
+
+    def latest_episode_id(self, goal_id: int, agent_id: str) -> int | None:
+        """Return the episode containing the newest checkpoint for (goal, agent)."""
+        if goal_id is None or not self._ensure():
+            return None
+        try:
+            row = self._world.conn.execute(
+                "SELECT episode_id FROM checkpoints "
+                "WHERE goal_id = ? AND agent_id = ? "
+                "ORDER BY created_at DESC, step_seq DESC, id DESC LIMIT 1",
+                (goal_id, agent_id),
+            ).fetchone()
+        except Exception as e:  # pragma: no cover
+            log.warning("checkpoint: latest_episode_id() failed: %s", e)
+            return None
+        if row is None:
+            return None
+        return int(row[0])
 
     def latest(self, goal_id: int, agent_id: str, episode_id: int = 0) -> Checkpoint | None:
         """Return the most recent checkpoint for (goal, episode, agent), or None."""

@@ -101,6 +101,7 @@ def run_goal_in_thread(
             run_goal_sync(
                 llm, world, budget,
                 goal_id, sandbox=sandbox, max_depth=max_depth,
+                resume=True,
             )
         except Exception:
             # If the swarm raises an unexpected exception (anything not

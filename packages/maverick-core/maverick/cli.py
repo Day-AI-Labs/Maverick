@@ -1088,7 +1088,8 @@ def resume(ctx, goal_id, max_depth: int, max_dollars, max_wall_seconds) -> None:
     # user who configured docker/podman (a quiet safety + consistency gap).
     sandbox = k.build_sandbox()
     result = k.run_goal_sync(llm, world, bud, goal_id,
-                             sandbox=sandbox, max_depth=max_depth)
+                             sandbox=sandbox, max_depth=max_depth,
+                             resume=True)
     click.echo(result)
 
 

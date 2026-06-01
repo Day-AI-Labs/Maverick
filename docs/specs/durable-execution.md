@@ -178,8 +178,11 @@ lands when the durable loop exists to hang it on.
   fresh-process resume never matched and silently warm-restarted. Now keys on
   `(goal_id, episode_id, checkpoint_id)` where `checkpoint_id = "{role}-{depth}"`
   (stable) and `episode_id` is threaded through `SwarmContext` — so best-of-N
-  attempts (same `goal_id`, distinct episodes) never cross-resume. Production
-  resume now works without test-only name pinning.
+  attempts (same `goal_id`, distinct episodes) never cross-resume. Explicit
+  resume paths recover the episode containing the latest orchestrator checkpoint
+  before building `SwarmContext`, so a fresh-process resume continues the
+  crashed episode instead of creating a new episode that cannot match the saved
+  checkpoint. Production resume now works without test-only name pinning.
 - **Phase 2 — swarm tree.** Per-agent records + parent re-gather; rewind/fork.
 - **Phase 3 — pluggable backend + sandbox-snapshot hook** (interface only).
 - **Phase 4 — deterministic replay** (record tool outputs + seeds; `maverick
