@@ -241,3 +241,88 @@ def test_ios_simctl_routes_through_host_exec(monkeypatch):
     code, out, err = ios_sim._simctl(["list", "devices"])
     assert code == 0 and out == "booted"
     assert calls["argv"][:2] == ["xcrun", "simctl"]
+
+
+# ---------- option-injection / path hardening (issue #476) ----------
+
+import importlib  # noqa: E402
+
+
+@pytest.mark.parametrize("mod", ["ffmpeg_tool", "imagemagick_tool", "pandoc_tool"])
+def test_safe_path_blocks_leading_dash_without_sandbox(mod):
+    """When sandbox is None, _safe_path returned the path verbatim -- so
+    input_path="-i" / "-write ..." became a flag to ffmpeg/convert/pandoc.
+    A leading-dash path must now be rejected; benign paths still pass."""
+    m = importlib.import_module(f"maverick.tools.{mod}")
+    with pytest.raises(ValueError, match="may not begin with '-'"):
+        m._safe_path(None, "-i")
+    assert m._safe_path(None, "in.png") == "in.png"
+
+
+def _capture_sandbox_run(monkeypatch, *, ret=(0, "", "")):
+    """Patch the tools.sandbox_run chokepoint and capture the argv it's given."""
+    import maverick.tools as T
+    captured: dict = {}
+
+    def _rec(sandbox, cmd, **kw):
+        captured["cmd"] = cmd
+        return ret
+
+    monkeypatch.setattr(T, "sandbox_run", _rec)
+    return captured
+
+
+def test_axe_target_protected_by_double_dash(monkeypatch):
+    """The axe target was positional with no `--`, so a target like
+    `--config=/tmp/evil.js` was parsed as an axe flag (pa11y was already
+    fixed). `--` must end option parsing with the target as the sole
+    positional after it."""
+    captured = _capture_sandbox_run(monkeypatch, ret=(0, "[]", ""))
+    from maverick.tools.a11y import _run_axe
+    _run_axe("--config=/tmp/evil.js", None)
+    cmd = captured["cmd"]
+    assert "--" in cmd
+    assert cmd[-1] == "--config=/tmp/evil.js"
+    assert cmd[: cmd.index("--")] == ["axe", "--no-reporter", "--save", "/dev/stdout"]
+
+
+def test_a11y_check_html_confines_path(tmp_path):
+    from maverick.tools.a11y import _confine_path
+    sb = _RecordingSandbox(tmp_path)
+    with pytest.raises(ValueError, match="may not begin with '-'"):
+        _confine_path(sb, "-x.html")
+    with pytest.raises(ValueError, match="escapes the workspace"):
+        _confine_path(sb, "../../etc/passwd")
+    assert _confine_path(sb, "page.html") == str((tmp_path / "page.html").resolve())
+    # No sandbox: pass through (still leading-dash guarded above).
+    assert _confine_path(None, "page.html") == "page.html"
+
+
+def test_imagemagick_composite_uses_magick_on_im7(tmp_path, monkeypatch):
+    monkeypatch.setattr("shutil.which",
+                        lambda b: f"/usr/bin/{b}" if b == "magick" else None)
+    captured = _capture_sandbox_run(monkeypatch)
+    from maverick.tools.imagemagick_tool import imagemagick_tool
+    out = imagemagick_tool(_RecordingSandbox(tmp_path)).fn({
+        "op": "composite", "base_path": "b.png",
+        "overlay_path": "o.png", "output_path": "out.png",
+    })
+    assert "wrote" in out
+    assert captured["cmd"][:2] == ["magick", "composite"]
+
+
+def test_imagemagick_composite_uses_im6_composite_binary(tmp_path, monkeypatch):
+    """IM6 has no `magick`; compositing needs the separate `composite` binary,
+    NOT `convert` (which _magick_or_convert would have wrongly picked)."""
+    present = {"convert", "composite", "identify"}
+    monkeypatch.setattr("shutil.which",
+                        lambda b: f"/usr/bin/{b}" if b in present else None)
+    captured = _capture_sandbox_run(monkeypatch)
+    from maverick.tools.imagemagick_tool import imagemagick_tool
+    out = imagemagick_tool(_RecordingSandbox(tmp_path)).fn({
+        "op": "composite", "base_path": "b.png",
+        "overlay_path": "o.png", "output_path": "out.png",
+    })
+    assert "wrote" in out
+    assert captured["cmd"][0] == "composite"
+    assert "convert" not in captured["cmd"]

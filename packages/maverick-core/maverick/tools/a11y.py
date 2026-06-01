@@ -58,6 +58,24 @@ def _ensure_runner(runner: str) -> str | None:
     return f"ERROR: {b} not found on PATH. Install with: {install}"
 
 
+def _confine_path(sandbox, user_path: str) -> str:
+    """Confine a check_html file path to the sandbox workspace and block
+    option-injection (a leading '-' would be parsed as a runner flag).
+    Mirrors the media tools' _safe_path."""
+    if user_path.startswith("-"):
+        raise ValueError(f"path {user_path!r} may not begin with '-'")
+    if sandbox is None:
+        return user_path
+    from pathlib import Path
+    workdir = Path(sandbox.workdir).resolve()
+    candidate = (workdir / user_path).resolve()
+    try:
+        candidate.relative_to(workdir)
+    except ValueError as e:
+        raise ValueError(f"path {user_path!r} escapes the workspace") from e
+    return str(candidate)
+
+
 def _run_pa11y(target: str, sandbox) -> tuple[int, str, str]:
     from . import sandbox_run
     # `--` ends option parsing so a target beginning with `-` is treated
@@ -72,8 +90,13 @@ def _run_pa11y(target: str, sandbox) -> tuple[int, str, str]:
 
 def _run_axe(target: str, sandbox) -> tuple[int, str, str]:
     from . import sandbox_run
+    # `--` ends option parsing so a target beginning with `-` is treated as a
+    # URL/path, not an injected axe flag (parity with the pa11y path). Options
+    # precede `--`; the target is the sole positional after it.
     code, out, err = sandbox_run(
-        sandbox, ["axe", target, "--no-reporter", "--save", "/dev/stdout"], timeout=120,
+        sandbox,
+        ["axe", "--no-reporter", "--save", "/dev/stdout", "--", target],
+        timeout=120,
     )
     if code == 124:
         return 124, "", "axe TIMEOUT"
@@ -162,6 +185,7 @@ def _run(args: dict[str, Any], sandbox) -> str:
             path = (args.get("path") or "").strip()
             if not path:
                 return "ERROR: check_html requires path"
+            path = _confine_path(sandbox, path)
             return _op_check(path, runner, max_issues, sandbox)
     except Exception as e:
         return f"ERROR: a11y failed: {type(e).__name__}: {e}"
