@@ -29,20 +29,24 @@ jobs:
       - id: release-ref
         name: Validate release tag
         shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          tag="$RELEASE_TAG"
 
-          if [[ ! "$tag" == v* || "$tag" == "v" ]]; then
-            echo "Release tag must match v* and include a version suffix: $tag" >&2
+          if [[ ! "$tag" =~ ^v[0-9A-Za-z][0-9A-Za-z._-]*$ ]]; then
+            echo "Release tag must start with v and contain only letters, numbers, dots, underscores, or hyphens: $tag" >&2
             exit 1
           fi
 
           git fetch --force --tags origin "refs/tags/$tag:refs/tags/$tag"
           tag_sha="$(git rev-list -n 1 "refs/tags/$tag")"
 
-          if [[ "${{ github.event_name }}" == "push" && "${{ github.sha }}" != "$tag_sha" ]]; then
-            echo "Pushed tag $tag resolves to $tag_sha, not workflow SHA ${{ github.sha }}" >&2
+          if [[ "$EVENT_NAME" == "push" && "$EVENT_SHA" != "$tag_sha" ]]; then
+            echo "Pushed tag $tag resolves to $tag_sha, not workflow SHA $EVENT_SHA" >&2
             exit 1
           fi
 
