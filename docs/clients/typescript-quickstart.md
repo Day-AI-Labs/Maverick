@@ -77,6 +77,34 @@ The ~70 in-kernel tools (web search, repo map, editor, Slack, S3, …)
 are **not** individually exposed over MCP — the swarm decides which to
 use while running a goal.
 
+## Typed results (`structuredContent`)
+
+Every tool returns two things: the human-readable `content` text block
+(unchanged, for back-compat) and a `structuredContent` object — typed
+JSON matching the tool's `outputSchema`. Typed clients read the latter
+and skip re-parsing prose:
+
+```ts
+const res = await client.callTool({ name: "maverick_facts_get", arguments: {} });
+console.log(res.structuredContent);   // { facts: { … } }
+```
+
+The shape per tool:
+
+| tool | `structuredContent` |
+|------|---------------------|
+| `maverick_start`, `maverick_resume` | `{ goal_id, answer }` |
+| `maverick_status` | `{ goals, open_questions }` |
+| `maverick_skills_list` | `{ skills }` |
+| `maverick_facts_get` | `{ facts }` |
+| `maverick_answer` | `{ question_id }` |
+| `maverick_fact_set` | `{ key }` |
+| `maverick_skill_install` | `{ name, path }` |
+
+`maverick_start` / `maverick_resume` expose `goal_id` so you can chain a
+follow-up `maverick_status` or `maverick_resume` without scraping it out
+of the text block.
+
 ## What's gated
 
 - The 50+ third-party tools (Slack, GitHub Actions, S3, Salesforce,
