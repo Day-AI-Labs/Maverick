@@ -63,7 +63,9 @@ class DiscordChannel(Channel):
         if channel is None:
             log.warning("Discord channel %s not found", user_id)
             return
-        await channel.send(text)
+        from .formatting import split_for_discord
+        for chunk in split_for_discord(text):
+            await channel.send(chunk)
 
     async def stop(self) -> None:
         await self._client.close()
@@ -99,6 +101,8 @@ if _HAVE_DISCORD:
             except Exception as e:  # pragma: no cover
                 log.exception("handler error")
                 reply = f"⚠ error: {e}"
-            await message.channel.send(reply)
+            from .formatting import split_for_discord
+            for chunk in split_for_discord(reply):
+                await message.channel.send(chunk)
 else:
     _MaverickDiscordClient = None  # type: ignore
