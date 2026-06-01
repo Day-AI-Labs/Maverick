@@ -122,9 +122,19 @@ def _substitute(text: str, params: dict[str, str]) -> str:
 
 
 def _candidate_dirs() -> list[Path]:
-    dirs = [USER_TEMPLATES]
-    dirs.extend(d for d in _BUNDLED_CANDIDATES if d.exists())
-    return dirs
+    # De-dup by resolved path: the two bundled candidates (package-relative
+    # and cwd-relative) point at the same directory when run from a repo
+    # checkout, which otherwise lists it twice -- including in the
+    # "not found. Searched: [...]" error.
+    out: list[Path] = []
+    seen: set[Path] = set()
+    for d in [USER_TEMPLATES, *(c for c in _BUNDLED_CANDIDATES if c.exists())]:
+        rd = d.resolve()
+        if rd in seen:
+            continue
+        seen.add(rd)
+        out.append(d)
+    return out
 
 
 def list_templates() -> list[str]:
