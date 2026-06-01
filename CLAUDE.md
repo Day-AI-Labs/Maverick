@@ -9,7 +9,7 @@ Maverick is the combination of two existing projects:
 - **Maverick Agent** (Python): recursive multi-agent swarm — `packages/maverick-core/`. Optimized for long-horizon work and true multi-agent coordination.
 - **Agent Shield** (JS primary; Python SDK): safety detection layer — integrated via `packages/maverick-shield/` (thin Python wrapper).
 
-The combined product is positioned at general consumers but must perform at the level of the technical tools (OpenClaw, Hermes).
+The combined product is positioned at general consumers but must perform at the level of the best technical agents — OpenClaw, Hermes — which are competitors to match and beat, not tools Maverick integrates with or supports.
 
 ## Behavioral guidelines
 
