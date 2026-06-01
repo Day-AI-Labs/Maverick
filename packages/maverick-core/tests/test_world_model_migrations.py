@@ -145,6 +145,24 @@ def test_migrations_are_idempotent(tmp_path):
     assert wm2.get_goal(gid).title == "new"
 
 
+
+
+def test_legacy_db_without_schema_version_row_runs_migrations(tmp_path):
+    """Legacy DBs that predate schema_version rows should not skip migrations."""
+    db = tmp_path / "legacy-no-version.db"
+    _build_legacy_db(db)
+
+    conn = sqlite3.connect(db)
+    conn.execute("DELETE FROM schema_version")
+    conn.commit()
+    conn.close()
+
+    wm = WorldModel(path=db)
+    assert wm.schema_version == SCHEMA_VERSION
+
+    cols = {r[1] for r in wm.conn.execute("PRAGMA table_info(episodes)").fetchall()}
+    assert {"cost_dollars", "input_tokens", "output_tokens", "tool_calls"}.issubset(cols)
+
 def test_fresh_db_lands_on_current(tmp_path):
     db = tmp_path / "fresh.db"
     wm = WorldModel(path=db)
