@@ -62,7 +62,14 @@ def _try_pyperclip_write(text: str) -> bool:
 
 
 def _try_subprocess(cmd: list[str], stdin: str | None = None) -> str | None:
-    """Run cmd; return stdout on success, None on failure."""
+    """Run cmd; return stdout on success, None on failure.
+
+    Host-bound by nature (CLAUDE.md rule #4): pbcopy/pbpaste/xclip/wl-copy act
+    on the *desktop clipboard*, which lives on the host — the sandbox container
+    has no clipboard to read/write, so this is intentionally NOT routed through
+    sandbox.exec. (It also needs stdin piping, which the argv-only
+    ``tools.host_exec`` helper doesn't cover; the rationale is the same.)
+    """
     if not shutil.which(cmd[0]):
         return None
     try:

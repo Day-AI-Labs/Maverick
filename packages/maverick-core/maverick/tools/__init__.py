@@ -145,6 +145,45 @@ def sandbox_run(
         return 124, "", f"TIMEOUT after {timeout}s"
 
 
+def host_exec(
+    argv: list[str],
+    *,
+    timeout: float = 60.0,
+    text: bool = True,
+) -> tuple[int, Any, Any]:
+    """Run ``argv`` directly on the HOST, deliberately NOT sandbox-mediated.
+
+    CLAUDE.md rule #4 ("sandbox-mediate all shell") applies to *model-influenced
+    commands whose work happens inside the workspace* — those go through
+    ``sandbox_run`` / ``sandbox.exec`` so the configured container isolation
+    applies and tests can swap the backend.
+
+    A small set of tools are **host-bound by nature**: the resource they act on
+    (a USB-attached Android device via ``adb``, an iOS simulator via ``simctl``,
+    the desktop clipboard) lives on the *host*, not in the workspace. The
+    sandbox runs in a network-isolated container with no access to that
+    hardware, so routing these through ``sandbox.exec`` would simply break them.
+    They call ``host_exec`` instead — a single, greppable, env-scrubbed entry
+    point that makes the "intentionally direct, not sandbox-mediated" choice
+    explicit and auditable (rather than a bare ``subprocess.run`` that looks
+    like an un-migrated rule-#4 violation).
+
+    Returns ``(exit_code, stdout, stderr)``; a timeout yields ``(124, "", msg)``.
+    The child env is scrubbed of secrets (``scrub_child_env``). ``argv`` is a
+    list (no shell interpolation).
+    """
+    import subprocess
+    try:
+        r = subprocess.run(
+            argv, capture_output=True, text=text,
+            timeout=timeout, env=scrub_child_env(),
+        )
+        return r.returncode, r.stdout, r.stderr
+    except subprocess.TimeoutExpired:
+        empty = "" if text else b""
+        return 124, empty, f"TIMEOUT after {timeout}s"
+
+
 ToolFn = Callable[[dict[str, Any]], str | Awaitable[str]]
 
 

@@ -165,3 +165,79 @@ def test_media_tools_route_through_sandbox_chokepoint():
         assert "subprocess.run(" not in src, (
             f"{name} still calls subprocess.run directly; route via sandbox_run"
         )
+
+
+# ---------- host_exec: explicit host-bound (NOT sandbox-mediated) path ----------
+# Issue #437: device/clipboard tools act on host hardware (USB adb device, iOS
+# simulator, desktop clipboard) that the sandbox container can't reach, so they
+# are intentionally direct. host_exec makes that choice auditable + scrubs env.
+
+def test_host_exec_scrubs_env(monkeypatch):
+    import sys
+
+    from maverick.tools import host_exec
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-secret")
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    # Print whether the secret leaked into the child env.
+    code, out, err = host_exec(
+        [sys.executable, "-c",
+         "import os; print('LEAK' if os.environ.get('ANTHROPIC_API_KEY') else 'clean')"],
+        timeout=15,
+    )
+    assert code == 0
+    assert "clean" in out and "LEAK" not in out
+
+
+def test_host_exec_timeout_returns_124():
+    import sys
+
+    from maverick.tools import host_exec
+    code, out, err = host_exec(
+        [sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.5,
+    )
+    assert code == 124
+    assert "TIMEOUT" in err
+
+
+def test_host_exec_binary_mode_returns_bytes():
+    import sys
+
+    from maverick.tools import host_exec
+    code, out, err = host_exec(
+        [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'\\x89PNG')"],
+        timeout=15, text=False,
+    )
+    assert code == 0
+    assert out == b"\x89PNG"
+
+
+def test_android_adb_routes_through_host_exec(monkeypatch):
+    """android._adb must dispatch via host_exec (the auditable host-bound path),
+    not a bare subprocess.run."""
+    import maverick.tools as tools_pkg
+    from maverick.tools import android
+    calls = {}
+
+    def fake_host_exec(argv, *, timeout=60.0, text=True):
+        calls["argv"] = argv
+        return 0, "device-list", ""
+
+    monkeypatch.setattr(tools_pkg, "host_exec", fake_host_exec)
+    code, out, err = android._adb(["devices", "-l"])
+    assert code == 0 and out == "device-list"
+    assert calls["argv"][0] == "adb"
+
+
+def test_ios_simctl_routes_through_host_exec(monkeypatch):
+    import maverick.tools as tools_pkg
+    from maverick.tools import ios_sim
+    calls = {}
+
+    def fake_host_exec(argv, *, timeout=60.0, text=True):
+        calls["argv"] = argv
+        return 0, "booted", ""
+
+    monkeypatch.setattr(tools_pkg, "host_exec", fake_host_exec)
+    code, out, err = ios_sim._simctl(["list", "devices"])
+    assert code == 0 and out == "booted"
+    assert calls["argv"][:2] == ["xcrun", "simctl"]
