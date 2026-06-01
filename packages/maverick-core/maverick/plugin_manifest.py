@@ -104,6 +104,20 @@ def parse(path: Path) -> PluginManifest | None:
     return parse_dict(data, source=str(path))
 
 
+def parse_text(text: str, *, source: str = "<text>") -> PluginManifest | None:
+    """Parse manifest TOML text (e.g. read from an installed distribution)."""
+    try:
+        import tomllib  # py>=3.11
+    except ModuleNotFoundError:
+        import tomli as tomllib  # type: ignore[no-redef]
+    try:
+        data = tomllib.loads(text)
+    except Exception as e:
+        log.warning("plugin_manifest: invalid TOML from %s: %s", source, e)
+        return None
+    return parse_dict(data, source=source)
+
+
 def parse_dict(data: dict[str, Any], *, source: str = "<inline>") -> PluginManifest | None:
     """Parse a pre-loaded mapping. Useful for tests."""
     section = data.get("plugin") or data
@@ -154,5 +168,6 @@ __all__ = [
     "PluginPermissions",
     "PluginManifest",
     "parse",
+    "parse_text",
     "parse_dict",
 ]
