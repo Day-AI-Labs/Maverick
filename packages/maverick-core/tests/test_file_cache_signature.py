@@ -26,6 +26,22 @@ def test_new_nested_file_invalidates_signature(tmp_path):
     assert _workdir_signature(tmp_path) != sig1
 
 
+def test_empty_top_level_directory_invalidates_signature(tmp_path):
+    (tmp_path / "a.py").write_text("a\n", encoding="utf-8")
+    sig1 = _workdir_signature(tmp_path)
+    (tmp_path / "empty_top").mkdir()
+    assert _workdir_signature(tmp_path) != sig1
+
+
+def test_empty_nested_directory_invalidates_signature(tmp_path):
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    sig1 = _workdir_signature(tmp_path)
+    (pkg / "nested_empty").mkdir()
+    assert _workdir_signature(tmp_path) != sig1
+
+
 def test_skip_dirs_do_not_affect_signature(tmp_path):
     (tmp_path / "a.py").write_text("a\n", encoding="utf-8")
     sig1 = _workdir_signature(tmp_path)
@@ -50,4 +66,19 @@ def test_repo_map_cached_rebuilds_on_nested_change(tmp_path):
     assert repo_map_cached(tmp_path, _builder) == "map-1"  # cache hit, no rebuild
     f.write_text("v1\nv2\n", encoding="utf-8")              # nested edit
     assert repo_map_cached(tmp_path, _builder) == "map-2"   # rebuilt
+    assert calls["n"] == 2
+
+
+def test_repo_map_cached_rebuilds_on_empty_directory_change(tmp_path):
+    (tmp_path / "pkg").mkdir()
+    calls = {"n": 0}
+
+    def _builder():
+        calls["n"] += 1
+        return f"map-{calls['n']}"
+
+    assert repo_map_cached(tmp_path, _builder) == "map-1"
+    assert repo_map_cached(tmp_path, _builder) == "map-1"  # cache hit
+    (tmp_path / "pkg" / "nested_empty").mkdir()
+    assert repo_map_cached(tmp_path, _builder) == "map-2"
     assert calls["n"] == 2

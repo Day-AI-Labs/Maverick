@@ -7,14 +7,13 @@ Two layers:
    size). Bounded LRU; default 64 entries totalling ≤ 8 MiB.
 2. ``repo_map_cached(workdir, ...)`` — a per-workdir snapshot of the
    repo-map output (the dir listing + heuristics). Keyed by workdir
-   path + filesystem signature (mtime of root, listdir hash). Default
-   16 entries.
+   path + filesystem signature. Default 16 entries.
 
 Cache invalidation:
   - Read cache: if file mtime / size changes since the cached read,
     we re-read.
-  - Repo-map cache: if any top-level child's mtime is newer than the
-    cached signature, we rebuild. Cheap probe (one ``os.scandir``).
+  - Repo-map cache: if any visible file or directory in the recursively
+    walked signature changes, we rebuild.
 
 Thread-safe (RLock). Hot path — keep it dumb.
 """
@@ -130,22 +129,29 @@ _SIG_SKIP_DIRS = frozenset({
 def _workdir_signature(workdir: Path) -> str:
     """Content-aware signature of ``workdir`` for repo-map cache invalidation.
 
-    Recursively walks files (skipping VCS / vendor / cache dirs and dot-
-    entries) and digests each file's relative path + size + mtime, so a
-    change to a NESTED file invalidates the cache. The previous version only
-    hashed the immediate children's mtimes, so editing a nested file (e.g.
-    ``src/pkg/mod.py``) left the cached map stale. size+mtime is the cheap
-    proxy for content -- a full content hash would be more robust but too
-    slow for a per-call probe; the vendor-dir skips keep the walk bounded.
+    Recursively walks visible files and directories (skipping VCS / vendor /
+    cache dirs and dot-entries) and digests each relative path plus cheap
+    metadata. File entries include size+mtime as a proxy for content -- a full
+    content hash would be more robust but too slow for a per-call probe; the
+    vendor-dir skips keep the walk bounded. Directory entries include mtime so
+    directory-only changes that affect the repo map also invalidate the cache.
     """
     try:
-        entries: list[tuple[str, int, float]] = []
+        entries: list[tuple[str, str, int, float]] = []
         for dirpath, dirnames, filenames in os.walk(workdir):
             # Prune in place so os.walk never descends into skipped/hidden dirs.
             dirnames[:] = [
                 d for d in dirnames
                 if not d.startswith(".") and d not in _SIG_SKIP_DIRS
             ]
+            for name in dirnames:
+                dp = Path(dirpath) / name
+                try:
+                    st = dp.stat()
+                except OSError:
+                    continue
+                rel = os.path.relpath(dp, workdir).replace(os.sep, "/")
+                entries.append(("d", rel, 0, st.st_mtime))
             for name in filenames:
                 if name.startswith("."):
                     continue
@@ -155,7 +161,7 @@ def _workdir_signature(workdir: Path) -> str:
                 except OSError:
                     continue
                 rel = os.path.relpath(fp, workdir).replace(os.sep, "/")
-                entries.append((rel, st.st_size, st.st_mtime))
+                entries.append(("f", rel, st.st_size, st.st_mtime))
         entries.sort()
     except OSError:
         return ""
