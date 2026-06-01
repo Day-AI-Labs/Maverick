@@ -258,8 +258,10 @@ class TestProtocol2025_11_25:
 
 
 class TestStructuredOutput:
-    """The read-only query tools declare an outputSchema and return
-    structuredContent. Additive: the text block stays for back-compat."""
+    """Every maverick_* tool declares an outputSchema and returns
+    structuredContent. Query tools re-derive it from the world model; action
+    tools stash it during dispatch. Additive: the text block stays for
+    back-compat."""
 
     @pytest.fixture
     def isolated_wm(self, tmp_path, monkeypatch):
@@ -281,6 +283,14 @@ class TestStructuredOutput:
             schema = by_name[n].get("outputSchema")
             assert schema and schema["type"] == "object"
 
+    def test_all_tools_declare_output_schema(self):
+        # Completion proof: the structured-output story covers all 8 tools, so
+        # every typed client gets parsed JSON regardless of which tool it calls.
+        for t in TOOLS:
+            schema = t.get("outputSchema")
+            assert schema and schema["type"] == "object", t["name"]
+            assert schema.get("required"), t["name"]
+
     def test_facts_get_returns_structured_content(self, isolated_wm):
         isolated_wm.WorldModel().upsert_fact("project", "maverick")
 
@@ -300,11 +310,40 @@ class TestStructuredOutput:
         sk = s.handle_tools_call({"name": "maverick_skills_list", "arguments": {}})
         assert isinstance(sk["structuredContent"]["skills"], list)
 
-    def test_action_tool_has_no_structured_content(self, isolated_wm):
+    def test_fact_set_returns_structured_content(self, isolated_wm):
         out = MCPServer().handle_tools_call(
             {"name": "maverick_fact_set", "arguments": {"key": "k", "value": "v"}})
         assert out["isError"] is False
-        assert "structuredContent" not in out  # no outputSchema -> text only
+        assert "set k" in out["content"][0]["text"]  # back-compat text
+        # the echoed key lets a typed client confirm the write it just made.
+        assert out["structuredContent"] == {"key": "k"}
+
+    def test_answer_returns_structured_content(self, isolated_wm):
+        # Answer a real open question end-to-end against the isolated DB; the
+        # echoed id is what a typed client chains back to maverick_status.
+        qid = isolated_wm.WorldModel().ask("ready?")
+        out = MCPServer().handle_tools_call(
+            {"name": "maverick_answer",
+             "arguments": {"question_id": qid, "answer": "yes"}})
+        assert out["isError"] is False
+        assert out["structuredContent"] == {"question_id": qid}
+        # the question is now closed -> it falls off the open list.
+        assert not isolated_wm.WorldModel().open_questions()
+
+    def test_skill_install_returns_structured_content(self, monkeypatch):
+        # install_skill is imported inside the handler; patch it at the source.
+        import maverick.skills
+        monkeypatch.setattr(
+            maverick.skills, "install_skill",
+            lambda source, trusted_local: SimpleNamespace(
+                name="myskill", path="/tmp/myskill"))
+        out = MCPServer().handle_tools_call(
+            {"name": "maverick_skill_install",
+             "arguments": {"source": "https://example.com/myskill"}})
+        assert out["isError"] is False
+        # path is str()'d so a PosixPath source still serializes cleanly.
+        assert out["structuredContent"] == {
+            "name": "myskill", "path": "/tmp/myskill"}
 
     def test_start_and_resume_declare_goal_id_schema(self):
         by_name = {t["name"]: t for t in TOOLS}
