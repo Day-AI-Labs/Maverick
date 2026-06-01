@@ -273,6 +273,10 @@ class TestGeneratedToolAudit:
         "import socket\n",
         "from os import system\n",
         "import maverick.secrets\n",   # kernel namespace beyond maverick.tools
+        "import maverick.tools\n",     # only Tool may be imported from maverick.tools
+        "from maverick.tools import os\n",
+        "from maverick.tools import Tool, os\n",
+        "from maverick.tools import *\n",
         "from . import sibling\n",     # relative import
     ])
     def test_rejects_disallowed_imports(self, bad):
