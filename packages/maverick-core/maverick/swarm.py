@@ -25,16 +25,23 @@ from .world_model import WorldModel
 
 
 def _default_use_skills() -> bool:
-    """Wave 12: honor MAVERICK_USE_SKILLS env var.
+    """Whether to inject skills into agent prompts.
 
-    The runbook tells operators to set MAVERICK_USE_SKILLS=0 for
-    SWE-bench Pro runs (skill memorization is a contamination risk —
-    see reproducibility-audit + Karpathy-review findings). The env
-    var existed and was read by preflight.py but was NEVER wired
-    into the SwarmContext default — skills were silently ON for every
-    run. This restores the runbook's intent.
+    Precedence: the MAVERICK_USE_SKILLS env var wins when set (the runbook
+    tells operators to set MAVERICK_USE_SKILLS=0 for SWE-bench Pro runs --
+    skill memorization is a contamination risk, see reproducibility-audit +
+    Karpathy-review findings). When the env var is unset, fall back to the
+    [features] skills config toggle (default on). Fail-soft to on so an
+    unreadable config never silently disables skills.
     """
-    return os.environ.get("MAVERICK_USE_SKILLS", "1").lower() not in ("0", "false", "no")
+    env = os.environ.get("MAVERICK_USE_SKILLS")
+    if env is not None:
+        return env.lower() not in ("0", "false", "no")
+    try:
+        from .config import get_features
+        return bool(get_features()["skills"])
+    except Exception:
+        return True
 
 
 def _default_max_total_spawns() -> int:

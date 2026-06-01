@@ -126,6 +126,30 @@ def get_capabilities() -> dict:
     }
 
 
+def get_features() -> dict:
+    """Return the [features] section. These toggle agent-facing behaviors that
+    are otherwise always on:
+
+    - ``skills``      inject distilled/installed skills into agent prompts.
+                      The MAVERICK_USE_SKILLS env var, when set, overrides this.
+    - ``world_model`` inject persisted world-model facts (cross-run memory)
+                      into the orchestrator brief. Off = run without prior
+                      stored facts; the per-run goal/event/checkpoint store
+                      (world.db) still functions regardless.
+    - ``streaming``   stream live progress to the terminal during `maverick
+                      start`. The MAVERICK_NO_PROGRESS env var / non-TTY output
+                      still suppress it.
+
+    All default on.
+    """
+    cfg = load_config().get("features", {}) or {}
+    return {
+        "skills": bool(cfg.get("skills", True)),
+        "world_model": bool(cfg.get("world_model", True)),
+        "streaming": bool(cfg.get("streaming", True)),
+    }
+
+
 def get_safety() -> dict:
     """Return safety section with sensible defaults filled in."""
     cfg = load_config().get("safety", {})

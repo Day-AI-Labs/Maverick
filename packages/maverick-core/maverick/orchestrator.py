@@ -278,7 +278,16 @@ async def run_goal(
         # otherwise act as a standing instruction in EVERY future run.
         # Redact secrets and re-scan each fact through the shield (drop the
         # ones it flags), exactly as we do for replayed conversation turns.
-        facts = world.get_facts()
+        # [features] world_model gates whether persisted facts (the world
+        # model's cross-run memory) influence this run. Off = ignore stored
+        # facts entirely; the goal/event/checkpoint store still functions.
+        # Fail-soft to on so an unreadable config never silently drops memory.
+        try:
+            from .config import get_features
+            _wm_memory_on = get_features()["world_model"]
+        except Exception:
+            _wm_memory_on = True
+        facts = world.get_facts() if _wm_memory_on else {}
         fact_lines: list[str] = []
         for k, v in facts.items():
             val = str(v)

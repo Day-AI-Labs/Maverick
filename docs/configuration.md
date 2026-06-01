@@ -53,9 +53,14 @@ workdir = "~/maverick-workspace"
 timeout = 60
 
 [features]
-skills      = true
-world_model = true
-streaming   = true
+# Toggle agent-facing behaviors that are otherwise always on. All default true.
+skills      = true   # inject distilled/installed skills into agent prompts
+                     #   (the MAVERICK_USE_SKILLS env var overrides this when set)
+world_model = true   # inject persisted facts (cross-run memory) into runs;
+                     #   false = run without prior stored facts. The goal/event/
+                     #   checkpoint store (world.db) still works regardless.
+streaming   = true   # stream live progress to the terminal during `maverick start`
+                     #   (MAVERICK_NO_PROGRESS or non-TTY output still suppress it)
 
 [durable]
 # Crash-resume: checkpoint a goal's loop state each step so `maverick resume`
