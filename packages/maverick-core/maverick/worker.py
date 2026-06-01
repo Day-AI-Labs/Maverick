@@ -34,6 +34,12 @@ log = logging.getLogger(__name__)
 
 Handler = Callable[[Job], None]
 
+# Job kinds the worker handles out of the box. Embedders add more at runtime
+# via Worker.register(); this is the set the bare ``maverick worker`` knows.
+# Exposed so ``maverick schedule add`` can warn on a likely-typo'd kind that
+# would otherwise sit in the queue and fail terminally only at worker time.
+BUILTIN_JOB_KINDS = frozenset({"run_goal"})
+
 
 class UnknownJobKind(Exception):
     """Raised when no handler is registered for a job.kind."""
