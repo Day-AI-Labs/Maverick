@@ -15,7 +15,6 @@ import os
 from types import SimpleNamespace
 
 import pytest
-
 from maverick.budget import Budget, BudgetExceeded, _coerce_count
 
 

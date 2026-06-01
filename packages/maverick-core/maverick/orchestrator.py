@@ -637,6 +637,16 @@ async def run_goal(
             _fire_webhook("goal_finished", {
                 "goal_id": goal_id, "status": "blocked", "result": result.error,
             })
+            if (result.error or "").startswith("budget exceeded:"):
+                # A sub-agent's call was refused by the budget reservation;
+                # surface the same friendly cap message as a top-level
+                # BudgetExceeded, not the generic "ran into an error".
+                return (
+                    f"Stopped: this goal hit your spending or time limit "
+                    f"(${budget.dollars:.2f}, {budget.elapsed():.0f}s elapsed).\n"
+                    f"Resume with a higher cap: "
+                    f"maverick resume {goal_id} --max-dollars <higher>"
+                )
             return (
                 f"Stopped: the assistant ran into an error and couldn't finish.\n"
                 f"Detail: {result.error}\n"

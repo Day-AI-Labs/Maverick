@@ -697,7 +697,7 @@ class Agent:
                 return AgentResult(error=f"halted: {e}", role=self.role, name=self.name)
             except BudgetExceeded as e:
                 bb.post(self.name, "error", f"budget exceeded: {e}")
-                return AgentResult(error=str(e), role=self.role, name=self.name)
+                return AgentResult(error=f"budget exceeded: {e}", role=self.role, name=self.name)
 
             # Karpathy SOTA-review item: long-context compaction. Drop
             # raw tool_result content >2KiB once it's behind the recent
@@ -724,7 +724,7 @@ class Agent:
                 )
             except BudgetExceeded as e:
                 bb.post(self.name, "error", f"budget exceeded: {e}")
-                return AgentResult(error=str(e), role=self.role, name=self.name)
+                return AgentResult(error=f"budget exceeded: {e}", role=self.role, name=self.name)
 
             # May 26 smoke fix: when the response contains BOTH a FINAL:
             # marker AND tool_use blocks, the model is confused. If
