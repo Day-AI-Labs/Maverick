@@ -133,9 +133,12 @@ def {factory}():
 _CHANNEL_INIT_TMPL = '''\
 """Maverick channel plugin: {slug}.
 
-Subclass ``maverick_channels.Channel`` and implement ``start``,
-``send``, ``stop``. ``pyproject.toml`` registers the *class* (not an
-instance) at the ``maverick.channels`` entry point.
+A channel is duck-typed: implement ``start``, ``send``, and ``stop`` (the
+methods below). You MAY subclass ``maverick_channels.Channel`` if that
+package is installed, but the kernel doesn't require it — the plugin
+loader never imports the base class, so a hard dependency on
+``maverick-channels`` is not needed. ``pyproject.toml`` registers the
+*class* (not an instance) at the ``maverick.channels`` entry point.
 """
 from __future__ import annotations
 

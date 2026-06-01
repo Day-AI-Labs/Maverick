@@ -81,7 +81,26 @@ class PluginManifest:
     warnings: list[str] = field(default_factory=list)
 
     def is_compatible(self) -> bool:
-        return self.api_version == MAVERICK_API_VERSION
+        """Compatible iff the MAJOR api version matches the kernel's.
+
+        Compare integer majors, not raw strings (#463): the old
+        ``api_version == "1"`` marked ``"1.0"`` / ``"01"`` incompatible and
+        would flag every plugin the moment the kernel string changed. We
+        take the leading integer of each side; an unparseable version is
+        treated as incompatible (conservative).
+        """
+        mine, kernel = _major(self.api_version), _major(MAVERICK_API_VERSION)
+        return mine is not None and mine == kernel
+
+
+def _major(version: str) -> Optional[int]:
+    """Leading integer of a version string ('1', '1.0', '01', '1.2.3'),
+    or None if it has no parseable leading integer."""
+    head = str(version).strip().split(".", 1)[0]
+    try:
+        return int(head)
+    except (TypeError, ValueError):
+        return None
 
 
 def _load_toml(path: Path) -> dict[str, Any]:

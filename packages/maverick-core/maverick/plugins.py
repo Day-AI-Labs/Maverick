@@ -113,11 +113,61 @@ def _load(ep, what: str) -> Optional[Any]:
         return None
 
 
-def _is_allowed(ep_name: str, allowlist: Optional[set[str]]) -> bool:
-    """allowlist=None means 'all allowed' (the wildcard case)."""
+def _ep_dist_name(ep) -> Optional[str]:
+    """Providing distribution name for an entry point, or None.
+
+    ``ep.dist`` exists on importlib.metadata 3.10+, but be defensive.
+    """
+    dist = getattr(ep, "dist", None)
+    name = getattr(dist, "name", None) if dist is not None else None
+    return str(name) if name else None
+
+
+def _is_allowed(ep, allowlist: Optional[set[str]]) -> bool:
+    """allowlist=None means 'all allowed' (the wildcard case).
+
+    Otherwise the allowlist entry may be the bare entry-point name
+    (``weather``) OR a distribution-qualified name (``my-dist:weather``).
+    Matching the qualified form defends against name-squatting (#463): a
+    hostile package declaring a ``maverick.tools`` entry point named
+    ``weather`` no longer silently satisfies an allowlist of ``weather``
+    when a different dist is expected — the operator can pin
+    ``expected-dist:weather``. The bare name is still honored for the
+    common single-provider case.
+    """
     if allowlist is None:
         return True
-    return ep_name in allowlist
+    name = getattr(ep, "name", "")
+    if name in allowlist:
+        return True
+    dist = _ep_dist_name(ep)
+    return bool(dist and f"{dist}:{name}" in allowlist)
+
+
+def _eligible(group: str, what: str):
+    """Yield allowlisted entry points for ``group``, deduped by name.
+
+    Dedup (#463): two installed distributions can declare the same
+    entry-point name; loading both executes two different packages' code
+    under one name. We keep the FIRST and warn about the shadowing one
+    (qualified by dist so the operator can tell them apart).
+    """
+    allow = _allowed_plugin_names()
+    seen: dict[str, Optional[str]] = {}
+    for ep in _entry_points(group):
+        name = getattr(ep, "name", "")
+        if not _is_allowed(ep, allow):
+            log.debug("plugin %s %s not in allowlist; skipping", what, name)
+            continue
+        if name in seen:
+            log.warning(
+                "duplicate plugin %s entry point %r (kept dist=%s, ignoring "
+                "dist=%s); disambiguate with a dist-qualified allowlist entry",
+                what, name, seen[name] or "?", _ep_dist_name(ep) or "?",
+            )
+            continue
+        seen[name] = _ep_dist_name(ep)
+        yield ep
 
 
 def discover_tools() -> list[Any]:
@@ -127,12 +177,8 @@ def discover_tools() -> list[Any]:
     invocation because Tool constructors may need access to the
     sandbox/world that only exists per-run.
     """
-    allow = _allowed_plugin_names()
     out: list[tuple[str, Callable[[], Any]]] = []
-    for ep in _entry_points("maverick.tools"):
-        if not _is_allowed(ep.name, allow):
-            log.debug("plugin tool %s not in allowlist; skipping", ep.name)
-            continue
+    for ep in _eligible("maverick.tools", "tool"):
         target = _load(ep, "tools")
         if target is None:
             continue
@@ -145,11 +191,8 @@ def discover_tools() -> list[Any]:
 
 def discover_channels() -> list[tuple[str, Any]]:
     """Return (name, Channel subclass) tuples for installed channel plugins."""
-    allow = _allowed_plugin_names()
     out: list[tuple[str, Any]] = []
-    for ep in _entry_points("maverick.channels"):
-        if not _is_allowed(ep.name, allow):
-            continue
+    for ep in _eligible("maverick.channels", "channel"):
         target = _load(ep, "channels")
         if target is None:
             continue
@@ -164,11 +207,8 @@ def discover_channels() -> list[tuple[str, Any]]:
 
 def discover_skills() -> list[Any]:
     """Return a list of plugin-provided Skill objects."""
-    allow = _allowed_plugin_names()
     out: list[Any] = []
-    for ep in _entry_points("maverick.skills"):
-        if not _is_allowed(ep.name, allow):
-            continue
+    for ep in _eligible("maverick.skills", "skill"):
         target = _load(ep, "skills")
         if target is None:
             continue
@@ -178,11 +218,8 @@ def discover_skills() -> list[Any]:
 
 def discover_personas() -> dict[str, Callable[[], str]]:
     """Return {name: renderer} for installed persona plugins."""
-    allow = _allowed_plugin_names()
     out: dict[str, Callable[[], str]] = {}
-    for ep in _entry_points("maverick.personas"):
-        if not _is_allowed(ep.name, allow):
-            continue
+    for ep in _eligible("maverick.personas", "persona"):
         target = _load(ep, "personas")
         if target is None:
             continue
