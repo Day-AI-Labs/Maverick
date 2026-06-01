@@ -99,20 +99,45 @@ def recv(
     """
     inbox = _get_inbox(agent_id)
     deadline = time.time() + max(0.0, timeout)
-    while True:
-        try:
-            msg = inbox.get(block=timeout > 0, timeout=max(0.001, deadline - time.time()))
-        except queue.Empty:
-            return None
-        if correlation_id and msg.correlation_id != correlation_id:
+    # Non-matching messages are held aside (NOT re-queued one-by-one) so we
+    # never: (a) drop a valid message belonging to another waiter when the
+    # inbox is at maxsize, nor (b) re-read our own re-queued message ahead
+    # of the target (busy-spin). Whatever we don't consume goes back at the
+    # end, in original order.
+    held: list[Message] = []
+    found: Optional[Message] = None
+    try:
+        while True:
             try:
-                inbox.put_nowait(msg)  # re-queue
-            except queue.Full:
-                pass  # drop -- inbox is at capacity
-            if time.time() >= deadline:
-                return None
-            continue
-        return msg
+                msg = inbox.get(
+                    block=timeout > 0,
+                    timeout=max(0.001, deadline - time.time()),
+                )
+            except queue.Empty:
+                break
+            if correlation_id and msg.correlation_id != correlation_id:
+                held.append(msg)
+                if time.time() >= deadline:
+                    break
+                continue
+            found = msg
+            break
+    finally:
+        # Put the held (non-matching) messages back, in original order. We
+        # only hold messages we dequeued, so under no concurrent producer
+        # there's always room. A concurrent send() could still fill the
+        # queue in between; that's a far narrower window than the old
+        # per-message re-queue (which dropped on EVERY full inbox), and the
+        # warning makes any residual loss visible instead of silent.
+        for m in held:
+            try:
+                inbox.put_nowait(m)
+            except queue.Full:  # pragma: no cover -- shouldn't happen; see above
+                log.warning(
+                    "agent_bus: inbox full re-queueing held message for %s",
+                    agent_id,
+                )
+    return found
 
 
 def peek(agent_id: str) -> int:

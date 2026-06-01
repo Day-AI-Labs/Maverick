@@ -53,6 +53,46 @@ def test_agent_bus_correlation_id_filter():
     assert msg.payload == "right"
 
 
+def test_agent_bus_correlation_filter_preserves_nonmatching(monkeypatch):
+    # #480: a non-matching message must NOT be dropped — it belongs to
+    # another waiter and is still deliverable after we take ours.
+    from maverick import agent_bus
+    agent_bus.clear()
+    agent_bus.send("alice", "bob", "for-x1", correlation_id="x1")
+    agent_bus.send("alice", "bob", "for-x2", correlation_id="x2")
+
+    got = agent_bus.recv("bob", correlation_id="x2", timeout=0.5)
+    assert got.payload == "for-x2"
+    # The x1 message survived and is still retrievable.
+    leftover = agent_bus.recv("bob", correlation_id="x1", timeout=0.5)
+    assert leftover is not None
+    assert leftover.payload == "for-x1"
+
+
+def test_agent_bus_nonmatching_not_dropped_when_inbox_full(monkeypatch):
+    # #480 core: previously a non-matching message was re-queued one-by-one
+    # with put_nowait and DROPPED if the inbox was at maxsize. With a tiny
+    # maxsize and a full inbox of non-matching messages, a miss for a
+    # correlation_id that isn't present must leave every message intact.
+    import queue
+    from maverick import agent_bus
+    agent_bus.clear()
+    # Force a small inbox so re-queue-one-by-one would have overflowed.
+    small = queue.Queue(maxsize=3)
+    monkeypatch.setitem(agent_bus._inboxes, "bob", small)
+    for i in range(3):
+        agent_bus.send("alice", "bob", f"m{i}", correlation_id="other")
+    assert agent_bus.peek("bob") == 3
+
+    # Look for a correlation_id that doesn't exist; non-blocking miss.
+    miss = agent_bus.recv("bob", correlation_id="absent", timeout=0.0)
+    assert miss is None
+    # All three non-matching messages are still in the inbox (none dropped).
+    assert agent_bus.peek("bob") == 3
+    payloads = {agent_bus.recv("bob").payload for _ in range(3)}
+    assert payloads == {"m0", "m1", "m2"}
+
+
 def test_agent_bus_peek():
     from maverick import agent_bus
     agent_bus.clear()
