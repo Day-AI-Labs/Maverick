@@ -162,7 +162,13 @@ class Shield:
         return self.backend != self.BACKEND_NONE
 
     @classmethod
-    def from_config(cls) -> Shield:
+    def from_config(cls, *, warn_if_missing: bool = True) -> Shield:
+        # ``warn_if_missing`` lets read-only status commands (``maverick
+        # version`` / ``doctor``) resolve the backend WITHOUT emitting the
+        # "agent-shield SDK not installed" log line -- they already render the
+        # shield status in their own formatted output, so the raw warning is
+        # redundant and bleeds onto stderr mid-table. Run paths keep the
+        # default (warn once per process).
         try:
             from maverick.config import get_safety
             safety = get_safety()
@@ -176,6 +182,7 @@ class Shield:
             scan_input=safety.get("scan_input", True),
             scan_tool_calls=safety.get("scan_tool_calls", True),
             scan_output=safety.get("scan_output", True),
+            warn_if_missing=warn_if_missing,
         )
 
     def _scan_via_backend(self, text: str) -> ShieldVerdict:

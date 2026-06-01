@@ -260,7 +260,10 @@ def _check_shield() -> None:
         _row(YELLOW, "shield", "maverick-shield not installed",
              fix="pip install maverick-shield  (built-in fallback rules will activate)")
         return
-    s = Shield.from_config()
+    # warn_if_missing=False: doctor renders the shield row (with remediation)
+    # itself, so the raw "SDK not installed" log line would just bleed into the
+    # health-check output mid-table.
+    s = Shield.from_config(warn_if_missing=False)
     backend_label = {
         "agent-shield": "agent-shield SDK (full ~115 patterns)",
         "builtin": "builtin rules (~20 high-impact patterns)",

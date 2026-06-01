@@ -49,7 +49,7 @@ _MONGO_SCHEMA: dict[str, Any] = {
         "limit": {"type": "integer"},
         "sort": {
             "type": "array",
-            "items": {"type": "array", "items": [{"type": "string"}, {"type": "integer"}]},
+            "items": {"type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"}]},
             "description": "List of (field, direction) pairs. direction = 1 or -1.",
         },
         "upsert": {"type": "boolean"},
