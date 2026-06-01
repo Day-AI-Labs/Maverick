@@ -114,6 +114,19 @@ SCHEMA: list[str] = [
     );
     """,
     "CREATE INDEX IF NOT EXISTS idx_pg_approvals_status ON approvals(status, id);",
+    """
+    CREATE TABLE IF NOT EXISTS attachments (
+      id          SERIAL PRIMARY KEY,
+      goal_id     INTEGER NOT NULL REFERENCES goals(id),
+      filename    TEXT NOT NULL,
+      mime        TEXT NOT NULL,
+      size_bytes  INTEGER NOT NULL,
+      sha256      TEXT NOT NULL,
+      path        TEXT NOT NULL,
+      created_at  DOUBLE PRECISION NOT NULL
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_attachments_goal_id ON attachments(goal_id);",
 ]
 
 
@@ -523,6 +536,38 @@ class PostgresWorldModel:
             )
             affected = cur.rowcount
         return affected > 0
+
+    # ----- attachments -----
+
+    def add_attachment(
+        self,
+        goal_id: int,
+        filename: str,
+        mime: str,
+        size_bytes: int,
+        sha256: str,
+        path: str,
+    ) -> int:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO attachments(goal_id, filename, mime, size_bytes, "
+                "sha256, path, created_at) VALUES(%s, %s, %s, %s, %s, %s, %s) "
+                "RETURNING id",
+                (goal_id, filename, mime, size_bytes, sha256, path, time.time()),
+            )
+            row = cur.fetchone()
+        return int(row[0])
+
+    def list_attachments(self, goal_id: int) -> list:
+        from ..world_model import Attachment
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, goal_id, filename, mime, size_bytes, sha256, path, "
+                "created_at FROM attachments WHERE goal_id = %s ORDER BY id",
+                (goal_id,),
+            )
+            rows = cur.fetchall()
+        return [Attachment(*r) for r in rows]
 
     # ----- close -----
 

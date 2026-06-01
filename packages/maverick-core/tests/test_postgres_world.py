@@ -204,3 +204,22 @@ def test_decide_approval_rejects_bad_status(world):
     aid = world.create_approval("do thing")
     with pytest.raises(ValueError, match="approved.*denied"):
         world.decide_approval(aid, "maybe")
+
+
+def test_attachments_round_trip(world):
+    gid = world.create_goal("with files")
+    a1 = world.add_attachment(gid, "a.txt", "text/plain", 12, "deadbeef", "/tmp/a.txt")
+    a2 = world.add_attachment(gid, "b.png", "image/png", 2048, "cafe", "/tmp/b.png")
+    assert a1 < a2
+
+    rows = world.list_attachments(gid)
+    assert [r.filename for r in rows] == ["a.txt", "b.png"]   # id ASC
+    b = [r for r in rows if r.filename == "b.png"][0]
+    assert b.mime == "image/png"
+    assert b.size_bytes == 2048
+    assert b.sha256 == "cafe"
+    assert b.path == "/tmp/b.png"
+
+    # scoped to the goal: a different goal sees none of these
+    other = world.create_goal("no files")
+    assert world.list_attachments(other) == []
