@@ -87,15 +87,29 @@ def _delete_req(path: str) -> int:
 
 def _op_list(args: dict) -> str:
     query = (args.get("query") or "trashed=false").strip()
-    params = {
-        "q": query,
-        "pageSize": max(1, min(int(args.get("page_size") or 25), 100)),
-        "fields": "files(id, name, mimeType, modifiedTime, size, parents)",
-    }
-    code, data = _get("/files", params)
-    if code >= 400 or not isinstance(data, dict):
-        return f"ERROR: list ({code}): {data}"
-    rows = data.get("files") or []
+    limit = max(1, min(int(args.get("page_size") or 25), 100))
+    # Drive returns up to `pageSize` files per call plus a `nextPageToken`;
+    # follow it until `limit` files are collected (bounded by a hard page cap).
+    # `nextPageToken` must be in `fields` for the API to return it.
+    rows: list[dict] = []
+    token: str | None = None
+    max_pages = max(1, (limit // 100) + 2)
+    for _ in range(max_pages):
+        params: dict = {
+            "q": query,
+            "pageSize": min(100, max(1, limit - len(rows))),
+            "fields": "nextPageToken, files(id, name, mimeType, modifiedTime, size, parents)",
+        }
+        if token:
+            params["pageToken"] = token
+        code, data = _get("/files", params)
+        if code >= 400 or not isinstance(data, dict):
+            return f"ERROR: list ({code}): {data}"
+        rows.extend(data.get("files") or [])
+        token = data.get("nextPageToken")
+        if len(rows) >= limit or not token:
+            break
+    rows = rows[:limit]
     if not rows:
         return f"no files match {query!r}"
     return "\n".join(
