@@ -228,3 +228,63 @@ def test_reclaim_skips_fresh_goals(world):
 def test_schema_version_is_int(world):
     assert isinstance(world.schema_version, int)
     assert world.schema_version >= 1
+
+
+# ---------- #469: conversations / turns (multi-turn channel memory) ----------
+
+def test_get_or_create_conversation_is_idempotent(world):
+    c1 = world.get_or_create_conversation("telegram", "u123")
+    c2 = world.get_or_create_conversation("telegram", "u123")
+    assert c1.id == c2.id  # same (channel, user_id) -> same row
+    assert c1.channel == "telegram" and c1.user_id == "u123"
+    # A different user is a distinct conversation.
+    c3 = world.get_or_create_conversation("telegram", "other")
+    assert c3.id != c1.id
+
+
+def test_append_and_recent_turns_chronological(world):
+    conv = world.get_or_create_conversation("discord", "alice")
+    world.append_turn(conv.id, "user", "hello")
+    world.append_turn(conv.id, "assistant", "hi there")
+    world.append_turn(conv.id, "user", "how are you")
+    turns = world.recent_turns(conv.id, limit=20)
+    # Ascending (chronological) order, ready for a chat prompt.
+    assert [t.content for t in turns] == ["hello", "hi there", "how are you"]
+    assert [t.role for t in turns] == ["user", "assistant", "user"]
+    # limit returns the most-recent N, still ascending.
+    last2 = world.recent_turns(conv.id, limit=2)
+    assert [t.content for t in last2] == ["hi there", "how are you"]
+
+
+def test_append_turn_rejects_bad_role(world):
+    conv = world.get_or_create_conversation("slack", "bob")
+    with pytest.raises(ValueError):
+        world.append_turn(conv.id, "system", "nope")
+
+
+def test_list_conversations_filter_by_channel(world):
+    world.get_or_create_conversation("matrix", "x")
+    world.get_or_create_conversation("matrix", "y")
+    world.get_or_create_conversation("signal", "z")
+    matrix = world.list_conversations(channel="matrix")
+    assert {c.user_id for c in matrix} >= {"x", "y"}
+    assert all(c.channel == "matrix" for c in matrix)
+    # Unfiltered returns at least everything we created.
+    assert len(world.list_conversations()) >= 3
+
+
+def test_prune_conversations_removes_idle_and_their_turns(world):
+    conv = world.get_or_create_conversation("email", "prune-me")
+    world.append_turn(conv.id, "user", "old message")
+    # idle_for_seconds=0 -> the just-touched conversation counts as idle.
+    removed = world.prune_conversations(idle_for_seconds=0)
+    assert removed >= 1
+    # Its turns are gone too (no orphans).
+    assert world.recent_turns(conv.id) == []
+    assert not any(c.id == conv.id for c in world.list_conversations())
+
+
+def test_prune_conversations_keeps_fresh(world):
+    conv = world.get_or_create_conversation("email", "keep-me")
+    world.prune_conversations(idle_for_seconds=3600)  # 1h window
+    assert any(c.id == conv.id for c in world.list_conversations())

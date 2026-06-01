@@ -120,6 +120,28 @@ SCHEMA: list[str] = [
     );
     """,
     "CREATE INDEX IF NOT EXISTS idx_pg_approvals_status ON approvals(status, id);",
+    """
+    CREATE TABLE IF NOT EXISTS conversations (
+      id          SERIAL PRIMARY KEY,
+      channel     TEXT NOT NULL,
+      user_id     TEXT NOT NULL,
+      created_at  DOUBLE PRECISION NOT NULL,
+      last_seen   DOUBLE PRECISION NOT NULL,
+      UNIQUE(channel, user_id)
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_conversations_last_seen ON conversations(last_seen);",
+    """
+    CREATE TABLE IF NOT EXISTS turns (
+      id              SERIAL PRIMARY KEY,
+      conversation_id INTEGER NOT NULL REFERENCES conversations(id),
+      goal_id         INTEGER REFERENCES goals(id),
+      role            TEXT NOT NULL,
+      content         TEXT NOT NULL,
+      ts              DOUBLE PRECISION NOT NULL
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_turns_conv_id ON turns(conversation_id, id);",
 ]
 
 
@@ -550,6 +572,85 @@ class PostgresWorldModel:
             )
             affected = cur.rowcount
         return affected > 0
+
+    # ----- conversations / turns (multi-turn channel memory) -----
+
+    def get_or_create_conversation(self, channel: str, user_id: str):
+        """Idempotent per (channel, user_id); bumps last_seen each call so
+        prune_conversations can retire idle ones. Mirrors SQLite."""
+        from ..world_model import Conversation
+        now = time.time()
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO conversations(channel, user_id, created_at, last_seen) "
+                "VALUES(%s, %s, %s, %s) "
+                "ON CONFLICT(channel, user_id) DO UPDATE SET last_seen = EXCLUDED.last_seen",
+                (channel, user_id, now, now),
+            )
+            cur.execute(
+                "SELECT id, channel, user_id, created_at, last_seen "
+                "FROM conversations WHERE channel = %s AND user_id = %s",
+                (channel, user_id),
+            )
+            row = cur.fetchone()
+        return Conversation(*row)
+
+    def append_turn(
+        self, conversation_id: int, role: str, content: str,
+        goal_id: int | None = None,
+    ) -> int:
+        if role not in ("user", "assistant"):
+            raise ValueError(f"role must be 'user' or 'assistant', got {role!r}")
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO turns(conversation_id, goal_id, role, content, ts) "
+                "VALUES(%s, %s, %s, %s, %s) RETURNING id",
+                (conversation_id, goal_id, role, content, time.time()),
+            )
+            return int(cur.fetchone()[0])
+
+    def recent_turns(self, conversation_id: int, limit: int = 20) -> list:
+        """Most recent N turns in chronological (ascending) order, ready to feed
+        into a chat-format prompt. Mirrors SQLite."""
+        from ..world_model import Turn
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, conversation_id, goal_id, role, content, ts FROM turns "
+                "WHERE conversation_id = %s ORDER BY id DESC LIMIT %s",
+                (conversation_id, limit),
+            )
+            rows = cur.fetchall()
+        return list(reversed([Turn(*r) for r in rows]))
+
+    def list_conversations(self, channel: str | None = None) -> list:
+        from ..world_model import Conversation
+        with self._tx() as cur:
+            if channel:
+                cur.execute(
+                    "SELECT id, channel, user_id, created_at, last_seen FROM conversations "
+                    "WHERE channel = %s ORDER BY last_seen DESC",
+                    (channel,),
+                )
+            else:
+                cur.execute(
+                    "SELECT id, channel, user_id, created_at, last_seen FROM conversations "
+                    "ORDER BY last_seen DESC"
+                )
+            rows = cur.fetchall()
+        return [Conversation(*r) for r in rows]
+
+    def prune_conversations(self, idle_for_seconds: float = 90 * 24 * 3600) -> int:
+        """Delete conversations idle for N seconds and their turns. Turns first
+        (no ON DELETE CASCADE). Returns conversations removed. Mirrors SQLite."""
+        cutoff = time.time() - idle_for_seconds
+        with self._tx() as cur:
+            cur.execute(
+                "DELETE FROM turns WHERE conversation_id IN "
+                "(SELECT id FROM conversations WHERE last_seen < %s)",
+                (cutoff,),
+            )
+            cur.execute("DELETE FROM conversations WHERE last_seen < %s", (cutoff,))
+            return cur.rowcount
 
     @property
     def schema_version(self) -> int:
