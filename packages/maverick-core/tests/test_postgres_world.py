@@ -288,3 +288,64 @@ def test_prune_conversations_keeps_fresh(world):
     conv = world.get_or_create_conversation("email", "keep-me")
     world.prune_conversations(idle_for_seconds=3600)  # 1h window
     assert any(c.id == conv.id for c in world.list_conversations())
+
+
+# ---------- #469: messages, attachments, dedup, pruning (final batch) ----------
+
+def test_append_and_search_messages(world):
+    g = world.create_goal("searchable")
+    world.append_message(g, "user", "the quick brown fox jumps")
+    world.append_message(g, "assistant", "a lazy dog sleeps soundly")
+    hits = world.search_messages("brown fox")
+    assert any("quick brown fox" in h["content"] for h in hits)
+    # Natural-language input with FTS-operator chars must not raise.
+    assert world.search_messages('"unbalanced -quote*') == [] or isinstance(
+        world.search_messages('"unbalanced -quote*'), list
+    )
+    assert world.search_messages("") == []
+
+
+def test_attachments_add_and_list(world):
+    g = world.create_goal("with-files")
+    aid = world.add_attachment(g, "report.pdf", "application/pdf", 1234, "abc123", "/tmp/r.pdf")
+    assert isinstance(aid, int)
+    atts = world.list_attachments(g)
+    assert len(atts) == 1
+    a = atts[0]
+    assert a.filename == "report.pdf" and a.mime == "application/pdf"
+    assert a.size_bytes == 1234 and a.sha256 == "abc123" and a.path == "/tmp/r.pdf"
+    # Scoped to the goal.
+    assert world.list_attachments(world.create_goal("other")) == []
+
+
+def test_processed_message_idempotency(world):
+    g = world.create_goal("dedup")
+    first = world.mark_message_processed("sms", "SM123", goal_id=g)
+    second = world.mark_message_processed("sms", "SM123", goal_id=g)
+    assert first is True   # first write -> run the goal
+    assert second is False  # duplicate -> skip
+    assert world.is_processed_message("sms", "SM123") is True
+    assert world.is_processed_message("sms", "never") is False
+    assert world.lookup_processed_message("sms", "SM123") == g
+    assert world.lookup_processed_message("sms", "never") is None
+
+
+def test_lookup_processed_message_null_goal_returns_zero(world):
+    # Row exists but goal_id is null -> 0 (distinct from None = no row).
+    world.mark_message_processed("email", "msg-1", goal_id=None)
+    assert world.lookup_processed_message("email", "msg-1") == 0
+
+
+def test_prune_goal_events(world):
+    g = world.create_goal("eventful-prune")
+    world.append_event(g, "orch", "note", "old")
+    removed = world.prune_goal_events(older_than_seconds=0)
+    assert removed >= 1
+    assert world.goal_events(g) == []
+
+
+def test_prune_processed_messages(world):
+    world.mark_message_processed("sms", "to-prune")
+    removed = world.prune_processed_messages(older_than_seconds=0)
+    assert removed >= 1
+    assert world.is_processed_message("sms", "to-prune") is False

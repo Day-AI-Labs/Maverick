@@ -142,6 +142,44 @@ SCHEMA: list[str] = [
     );
     """,
     "CREATE INDEX IF NOT EXISTS idx_pg_turns_conv_id ON turns(conversation_id, id);",
+    """
+    CREATE TABLE IF NOT EXISTS messages (
+      id        SERIAL PRIMARY KEY,
+      goal_id   INTEGER REFERENCES goals(id),
+      role      TEXT NOT NULL,
+      content   TEXT NOT NULL,
+      ts        DOUBLE PRECISION NOT NULL
+    );
+    """,
+    # Full-text search index over message content. Postgres has no FTS5; the
+    # native equivalent is a GIN index on to_tsvector(...), queried with
+    # plainto_tsquery (which safely parses arbitrary natural-language input,
+    # the PG analog to the SQLite quoting fix). IMMUTABLE-safe via 'english'.
+    "CREATE INDEX IF NOT EXISTS idx_pg_messages_fts "
+    "ON messages USING GIN (to_tsvector('english', content));",
+    """
+    CREATE TABLE IF NOT EXISTS attachments (
+      id          SERIAL PRIMARY KEY,
+      goal_id     INTEGER NOT NULL REFERENCES goals(id),
+      filename    TEXT NOT NULL,
+      mime        TEXT NOT NULL,
+      size_bytes  INTEGER NOT NULL,
+      sha256      TEXT NOT NULL,
+      path        TEXT NOT NULL,
+      created_at  DOUBLE PRECISION NOT NULL
+    );
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pg_attachments_goal_id ON attachments(goal_id);",
+    """
+    CREATE TABLE IF NOT EXISTS processed_messages (
+      id           SERIAL PRIMARY KEY,
+      channel      TEXT NOT NULL,
+      external_id  TEXT NOT NULL,
+      goal_id      INTEGER REFERENCES goals(id),
+      seen_at      DOUBLE PRECISION NOT NULL,
+      UNIQUE(channel, external_id)
+    );
+    """,
 ]
 
 
@@ -650,6 +688,118 @@ class PostgresWorldModel:
                 (cutoff,),
             )
             cur.execute("DELETE FROM conversations WHERE last_seen < %s", (cutoff,))
+            return cur.rowcount
+
+    # ----- messages (goal-scoped log + full-text search) -----
+
+    def append_message(self, goal_id: int, role: str, content: str) -> None:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO messages(goal_id, role, content, ts) "
+                "VALUES(%s, %s, %s, %s)",
+                (goal_id, role, content, time.time()),
+            )
+
+    def search_messages(self, query: str, limit: int = 10) -> list[dict]:
+        """Full-text search over message content, most-recent first.
+
+        Uses Postgres FTS (plainto_tsquery) rather than SQLite's FTS5.
+        plainto_tsquery parses arbitrary natural-language input safely — it
+        ignores operators, so an unbalanced quote / leading `*` / `-` can't
+        raise a syntax error (the PG analog to the SQLite quoting fix)."""
+        if not query or not query.strip():
+            return []
+        cols = ["id", "goal_id", "role", "content", "ts"]
+        with self._tx() as cur:
+            cur.execute(
+                f"SELECT {', '.join(cols)} FROM messages "
+                "WHERE to_tsvector('english', content) @@ plainto_tsquery('english', %s) "
+                "ORDER BY ts DESC LIMIT %s",
+                (query, limit),
+            )
+            rows = cur.fetchall()
+        return [dict(zip(cols, r)) for r in rows]
+
+    # ----- attachments -----
+
+    def add_attachment(
+        self, goal_id: int, filename: str, mime: str, size_bytes: int,
+        sha256: str, path: str,
+    ) -> int:
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO attachments"
+                "(goal_id, filename, mime, size_bytes, sha256, path, created_at) "
+                "VALUES(%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (goal_id, filename, mime, size_bytes, sha256, path, time.time()),
+            )
+            return int(cur.fetchone()[0])
+
+    def list_attachments(self, goal_id: int) -> list:
+        from ..world_model import Attachment
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, goal_id, filename, mime, size_bytes, sha256, path, "
+                "created_at FROM attachments WHERE goal_id = %s ORDER BY id",
+                (goal_id,),
+            )
+            rows = cur.fetchall()
+        return [Attachment(*r) for r in rows]
+
+    # ----- channel dedup (inbound-message idempotency) -----
+
+    def mark_message_processed(
+        self, channel: str, external_id: str, goal_id: int | None = None,
+    ) -> bool:
+        """Record an inbound message as processed; idempotent. Returns True on
+        first-write (caller should run the goal), False on duplicate (caller
+        returns 200 without re-running). Mirrors SQLite — protects against
+        Twilio/iMessage webhook retries producing N goals + N spends."""
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO processed_messages(channel, external_id, goal_id, seen_at) "
+                "VALUES(%s, %s, %s, %s) ON CONFLICT(channel, external_id) DO NOTHING",
+                (channel, external_id, goal_id, time.time()),
+            )
+            # rowcount is 1 on insert, 0 when the conflict skipped it.
+            return cur.rowcount == 1
+
+    def is_processed_message(self, channel: str, external_id: str) -> bool:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT 1 FROM processed_messages "
+                "WHERE channel = %s AND external_id = %s LIMIT 1",
+                (channel, external_id),
+            )
+            return cur.fetchone() is not None
+
+    def lookup_processed_message(self, channel: str, external_id: str) -> int | None:
+        """goal_id for an already-processed message, or None if unseen.
+        Distinguishes 'no row' (None) from 'row exists but goal_id null' (0),
+        mirroring SQLite."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT goal_id FROM processed_messages "
+                "WHERE channel = %s AND external_id = %s",
+                (channel, external_id),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return row[0] if row[0] is not None else 0
+
+    # ----- pruning -----
+
+    def prune_goal_events(self, older_than_seconds: float = 30 * 24 * 3600) -> int:
+        cutoff = time.time() - older_than_seconds
+        with self._tx() as cur:
+            cur.execute("DELETE FROM goal_events WHERE ts < %s", (cutoff,))
+            return cur.rowcount
+
+    def prune_processed_messages(self, older_than_seconds: float = 30 * 24 * 3600) -> int:
+        cutoff = time.time() - older_than_seconds
+        with self._tx() as cur:
+            cur.execute("DELETE FROM processed_messages WHERE seen_at < %s", (cutoff,))
             return cur.rowcount
 
     @property
