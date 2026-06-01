@@ -573,7 +573,7 @@ class WorldModel:
         if row is None:
             try:
                 self.conn.execute(
-                    "INSERT INTO schema_version(version) VALUES(?)", (SCHEMA_VERSION,)
+                    "INSERT INTO schema_version(version) VALUES(?)", (1,)
                 )
             except _sqlite3.IntegrityError:
                 # Another process beat us to it; their row is fine.
