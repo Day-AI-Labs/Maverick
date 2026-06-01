@@ -152,11 +152,16 @@ def next_run(expr: str, *, after: float | None = None) -> float:
             return dow_ok
         return True
 
-    # Bound the search to ~4 years. Skip whole non-matching days in one
-    # jump instead of walking 1440 dead minutes each — so an impossible
-    # schedule ('0 0 30 2 *', Feb 30) costs ~1.5k day-steps, not ~2M
-    # minute-steps.
-    deadline = base + _dt.timedelta(days=366 * 4)
+    # Bound the search. Skip whole non-matching days in one jump instead of
+    # walking 1440 dead minutes each — so an impossible schedule
+    # ('0 0 30 2 *', Feb 30) costs ~day-steps, not ~2M minute-steps.
+    #
+    # Horizon must clear the longest gap between two valid Feb-29s. The
+    # Gregorian century rule skips leap years at 1900/2100/2200/2300, so e.g.
+    # the next Feb 29 after 2096 is 2104 — an 8-year gap. A 4-year (1464-day)
+    # cap raised a spurious CronError for '0 0 29 2 *' across a skipped
+    # century. Use 9 years to clear the 8-year worst case with margin.
+    deadline = base + _dt.timedelta(days=366 * 9)
     while t <= deadline:
         if not _day_matches(t):
             t = (t + _dt.timedelta(days=1)).replace(
@@ -165,7 +170,7 @@ def next_run(expr: str, *, after: float | None = None) -> float:
         if t.hour in hour and t.minute in minute:
             return t.timestamp()
         t += _dt.timedelta(minutes=1)
-    raise CronError(f"no match for {expr!r} within 4 years")
+    raise CronError(f"no match for {expr!r} within 9 years")
 
 
 def schedule_cron(queue, expr: str, kind: str, payload: dict | None = None,

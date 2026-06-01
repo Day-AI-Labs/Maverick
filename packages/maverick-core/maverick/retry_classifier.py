@@ -73,7 +73,17 @@ _PATTERNS: list[tuple[ErrorClass, re.Pattern]] = [
         re.IGNORECASE,
     )),
     (ErrorClass.CONTEXT_OVERFLOW,  re.compile(r"context.{0,4}(length|window|overflow)|prompt.{0,4}too.{0,4}long|maximum context", re.IGNORECASE)),
-    (ErrorClass.SERVER_5XX,        re.compile(r"\b50[0-9]\b|internal.server|service unavailable|bad gateway", re.IGNORECASE)),
+    # Anchor the bare 5xx number to an HTTP context. The old `\b50[0-9]\b`
+    # matched any standalone 500-509 token in a message ("500 tokens",
+    # "queued 503 jobs") and mis-classified a non-server error as retryable.
+    # Require an HTTP/status/error/code cue near the number; the phrase
+    # alternatives (internal server / service unavailable / bad/gateway
+    # timeout) stay. The structured `status_code` path in classify() handles
+    # the typed case independently.
+    (ErrorClass.SERVER_5XX,        re.compile(
+        r"(?:\b(?:HTTP|status(?:\s*code)?|error|code|response)\b[^\n]{0,12}?\b50[0-9]\b)"
+        r"|(?:\b50[0-9]\b\s*(?:internal|server|service|gateway|error|status))"
+        r"|internal[ .]server|service unavailable|bad gateway|gateway time", re.IGNORECASE)),
     (ErrorClass.TRANSIENT_NETWORK, re.compile(r"timeout|timed out|connection (?:reset|refused|aborted|error)|temporary|dns", re.IGNORECASE)),
     (ErrorClass.MALFORMED,         re.compile(r"json.?decode|malformed|invalid response|unexpected.*format", re.IGNORECASE)),
 ]

@@ -44,6 +44,17 @@ function Ensure-SourcePin {
   Die "MAVERICK_REF must be a full 40-character commit SHA. Ref '$Ref' is mutable; set MAVERICK_ALLOW_UNPINNED=1 only for trusted local testing."
 }
 
+function Ensure-RepoSlug {
+  # $Repo is interpolated into https://github.com/$Repo for the git clone/fetch
+  # below. Constrain it to a GitHub "owner/repo" slug so a hostile or typo'd
+  # value can't point the install at a different repo or smuggle URL/shell
+  # metacharacters into the git command. Mirrors validate_repo in install.sh.
+  # (Only the source path uses $Repo; the default PyPI install never touches it.)
+  if ($Repo -notmatch '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$') {
+    Die "MAVERICK_REPO must be a GitHub 'owner/repo' slug (letters, digits, '.', '_', '-'); got '$Repo'."
+  }
+}
+
 
 function Refresh-Path {
   # Merge the live machine + user PATH from the registry into this
@@ -189,6 +200,7 @@ function Ensure-GitForSource {
 
 function Fetch-Source {
   Ensure-SourcePin
+  Ensure-RepoSlug
   Ensure-GitForSource
   if (Test-Path (Join-Path $SrcDir '.git')) {
     Write-Step "Updating Maverick source ($Repo@$Ref) ..."
