@@ -131,6 +131,76 @@ def _end_episode_with_spend(
     })
 
 
+def _maybe_recall_prior_work(world, goal, shield) -> str | None:
+    """Auto-recall the most similar PRIOR goals into a brief addendum (#431).
+
+    Mirrors the reflexion-recall wiring but for finished prior goals + their
+    results, so the swarm reuses what it already did rather than waiting for
+    the agent to call ``recall_past_goals`` itself. No-op (returns None) unless
+    ``MAVERICK_AUTO_RECALL`` is truthy. The current goal is excluded; each
+    recalled result is shield-scanned (past results are persisted,
+    possibly-poisoned text) and redacted if flagged. Never raises.
+
+    Prefers the indexed semantic store when a ``[memory] backend`` is
+    configured (#432), else falls back to the lexical/embedding linear scan.
+    Tunables: ``MAVERICK_AUTO_RECALL_K`` (default 3); min similarity 0.10.
+    """
+    if os.environ.get("MAVERICK_AUTO_RECALL", "").strip().lower() not in {
+        "1", "true", "yes", "on",
+    }:
+        return None
+    try:
+        try:
+            k = max(1, int(os.environ.get("MAVERICK_AUTO_RECALL_K", "3")))
+        except ValueError:
+            k = 3
+        query = f"{goal.title}\n{goal.description or ''}"
+        # Normalize both backends to (score, goal_id, title, result) rows.
+        rows: list[tuple[float, Any, str, str]] = []
+        from . import semantic_recall
+        sem = semantic_recall.search(query, k=k + 2, exclude_goal_id=goal.id)
+        if sem is not None:
+            for score, meta in sem:
+                rows.append((
+                    score, meta.get("goal_id"),
+                    meta.get("title") or "", meta.get("result") or "",
+                ))
+        else:
+            from .tools.recall import recall_past_goals
+            for score, g in recall_past_goals(query, num_results=k + 2, world=world):
+                rows.append((score, g.id, g.title or "", g.result or ""))
+        lines: list[str] = []
+        for score, gid, title, raw_result in rows:
+            if gid == goal.id or score < 0.10:
+                continue
+            result = (raw_result or "").replace("\n", " ").strip()
+            if shield is not None and result:
+                try:
+                    v = shield.scan_output(result)
+                    if not getattr(v, "allowed", True):
+                        result = "[result redacted by Shield]"
+                except Exception:  # pragma: no cover -- fail open
+                    pass
+            snippet = result[:240] if result else "(no result captured)"
+            lines.append(
+                f"- #{gid} ({score:.2f}) {title or '(no title)'}\n  -> {snippet}"
+            )
+            if len(lines) >= k:
+                break
+        if not lines:
+            return None
+        return (
+            "\n## Relevant prior work (from past runs)\n"
+            "You (or the swarm) handled these similar goals before. Reuse "
+            "their approach/results where applicable instead of redoing the "
+            "work; verify they still apply before relying on them:\n\n"
+            + "\n".join(lines)
+        )
+    except Exception as e:  # pragma: no cover -- recall never blocks a run
+        log.debug("auto-recall skipped: %s", e)
+        return None
+
+
 def _maybe_record_reflexion(
     goal: Any, *, failure_class: str, failure_msg: str, blackboard,
     shield: Any | None = None, channel: str | None = None,
@@ -458,6 +528,15 @@ async def run_goal(
         except Exception as e:  # pragma: no cover -- recall never blocks a run
             log.debug("reflexion recall skipped: %s", e)
 
+        # Auto-recall (opt-in via MAVERICK_AUTO_RECALL=1): prepend the most
+        # similar PRIOR *successful* goals + their results so the swarm reuses
+        # what it already did instead of waiting for the agent to call
+        # recall_past_goals. Complements reflexion (which recalls failures).
+        # No-op by default; never blocks the run.
+        prior_block = _maybe_recall_prior_work(world, goal, shield)
+        if prior_block:
+            brief = brief + "\n" + prior_block
+
         # Tree-of-thought (opt-in via [planning] mode = "tree_of_thought" or
         # MAVERICK_TREE_OF_THOUGHT=1): fork N candidate plans, let a critic
         # pick the winner, and prepend it as guidance. Default mode skips this
@@ -685,6 +764,15 @@ async def run_goal(
 
         _end_episode_with_spend(world, episode_id, summary, "success", budget, goal_id)
         world.set_goal_status(goal_id, "done", result=summary)
+        # Index this finished goal into the semantic store (#432) so future
+        # runs recall it via vector search. No-op unless a [memory] backend is
+        # configured; re-reads the goal so the indexed status/result reflect
+        # the just-written 'done' state. Never blocks the finalize path.
+        try:
+            from . import semantic_recall
+            semantic_recall.index_goal(world.get_goal(goal_id))
+        except Exception as e:  # pragma: no cover -- indexing never blocks a run
+            log.debug("semantic index skipped: %s", e)
         _fire_webhook("final_emitted", {
             "goal_id": goal_id,
             "patch_size_bytes": len(summary.encode("utf-8")),
