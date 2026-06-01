@@ -152,7 +152,10 @@ class TestErrorMessageVoice:
         )
         assert "Stopped" in out
         assert "couldn't finish" in out
-        assert f"maverick resume #{gid}" in out
+        # Positional id, no leading '#': `maverick resume <id>` is copy-pasteable
+        # (resume now takes a positional GOAL_ID, and a bare '#' is a shell comment).
+        assert f"maverick resume {gid}" in out
+        assert f"maverick resume #{gid}" not in out
 
     @pytest.mark.asyncio
     async def test_paused_with_no_questions_is_friendly(

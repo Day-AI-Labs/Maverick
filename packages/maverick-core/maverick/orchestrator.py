@@ -499,7 +499,7 @@ async def run_goal(
                 f"Stopped: this goal hit your spending or time limit "
                 f"(${budget.dollars:.2f}, {budget.elapsed():.0f}s elapsed).\n"
                 f"Resume with a higher cap: "
-                f"maverick resume #{goal_id} --max-dollars <higher>"
+                f"maverick resume {goal_id} --max-dollars <higher>"
             )
         except Exception as e:
             # Anything else escaping the swarm (LLM auth/network errors, a
@@ -533,7 +533,7 @@ async def run_goal(
                 return (
                     "Paused: the assistant said it needs more information, "
                     "but no question was filed. You can resume with "
-                    f"`maverick resume #{goal_id}` or send a follow-up message."
+                    f"`maverick resume {goal_id}` or send a follow-up message."
                 )
             lines = [f"  #{q.id}: {q.question}" for q in qs]
             return (
@@ -590,7 +590,7 @@ async def run_goal(
                     f"Stopped: this goal hit your spending or time limit "
                     f"(${budget.dollars:.2f}, {budget.elapsed():.0f}s elapsed).\n"
                     f"Resume with a higher cap: "
-                    f"maverick resume #{goal_id} --max-dollars <higher>"
+                    f"maverick resume {goal_id} --max-dollars <higher>"
                 )
             # A halt tripped mid-run surfaces as result.error too. Give the
             # clear unhalt instruction rather than the generic error (whose
@@ -603,7 +603,7 @@ async def run_goal(
                 })
                 return (
                     "Stopped: Maverick was halted mid-run (a HALT file is present).\n"
-                    f"Run `maverick unhalt` to clear it, then `maverick resume #{goal_id}`."
+                    f"Run `maverick unhalt` to clear it, then `maverick resume {goal_id}`."
                 )
             _end_episode_with_spend(world, episode_id, result.error, "failure", budget, goal_id)
             _maybe_record_reflexion(
@@ -623,7 +623,7 @@ async def run_goal(
             return (
                 f"Stopped: the assistant ran into an error and couldn't finish.\n"
                 f"Detail: {result.error}\n"
-                f"You can try again with: maverick resume #{goal_id}\n"
+                f"You can try again with: maverick resume {goal_id}\n"
                 f"[{budget.summary()}]"
             )
 
