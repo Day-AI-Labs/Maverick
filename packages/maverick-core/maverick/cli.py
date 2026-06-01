@@ -588,8 +588,19 @@ def start(
     # in real time. Non-tty output (e.g. piped to a file) skips the
     # poller so logs aren't littered with progress lines.
     import threading
+
+    from .config import get_features
     stop_poll = threading.Event()
-    if not click.get_text_stream("stderr").isatty() or os.environ.get("MAVERICK_NO_PROGRESS"):
+    # Suppress the live poller when: output isn't a TTY (don't litter piped
+    # logs), MAVERICK_NO_PROGRESS is set (runtime override), or [features]
+    # streaming is disabled in config (persistent opt-out).
+    try:
+        _streaming_on = get_features()["streaming"]
+    except Exception:
+        _streaming_on = True
+    if (not click.get_text_stream("stderr").isatty()
+            or os.environ.get("MAVERICK_NO_PROGRESS")
+            or not _streaming_on):
         poller = None
     else:
         poller = threading.Thread(
