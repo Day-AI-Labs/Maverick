@@ -286,6 +286,23 @@ def _run_preflight(model_id, system, messages, tools, max_tokens) -> None:
     )
 
 
+def _estimate_call_cost(model_id, system, messages, tools, max_tokens) -> float:
+    """Rough $ for one call BEFORE dispatch: estimated input tokens at the
+    model's input rate + max_tokens at the output rate (chars/4 heuristic,
+    matching the token preflight). Input dominates -- a 200k-token context is
+    the cost driver -- so output using the full max_tokens is acceptably
+    conservative."""
+    from .budget import _lookup_price
+    in_rate, out_rate = _lookup_price(model_id)
+    chars = len(system or "")
+    for m in messages or []:
+        c = m.get("content") if isinstance(m, dict) else m
+        chars += len(c) if isinstance(c, str) else len(str(c))
+    for t in tools or []:
+        chars += len(str(t))
+    return (chars / 4 / 1_000_000) * in_rate + (max_tokens / 1_000_000) * out_rate
+
+
 class LLM:
     """Multi-provider LLM dispatcher.
 
@@ -455,6 +472,14 @@ class LLM:
         _t0 = _time.time()
         _d0 = budget.dollars if budget else 0.0
         _err = False
+        # Hold this call's projected cost against the cap BEFORE dispatching, so
+        # concurrent sub-agents on a shared budget can't each pass an individual
+        # check and then collectively overshoot (a $2.50 cap reached $6+ with a
+        # wide parallel fan-out). reserve() raises BudgetExceeded here if the
+        # call won't fit; released in `finally` once the actual spend lands.
+        _held = budget.reserve(
+            _estimate_call_cost(model_id, system, messages, tools, max_tokens)
+        ) if budget is not None else 0.0
         try:
             with _trace_span(
                 _gen_ai_span_name("chat", model_id),
@@ -471,6 +496,8 @@ class LLM:
             _err = True
             raise
         finally:
+            if _held:
+                budget.release(_held)
             _dt_ms = (_time.time() - _t0) * 1000.0
             _spent = (budget.dollars - _d0) if budget else 0.0
             try:

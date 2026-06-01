@@ -239,6 +239,11 @@ class Budget:
         self._started_monotonic = time.monotonic()
         # Wave 12 (F12b): per-instance lock for atomic counter updates.
         self._lock = threading.Lock()
+        # Dollar cost of in-flight calls, held by reserve() until release().
+        # Lets concurrent sub-agents sharing one budget account for each
+        # other's pending spend instead of all passing the same check and
+        # then collectively overshooting the cap.
+        self._reserved = 0.0
         # A non-finite cap (nan/inf) silently disables enforcement: every
         # `self.dollars > nan` comparison in check() is False, so the cap
         # never trips. TOML 1.0 has native nan/inf and `--max-dollars inf`
@@ -289,6 +294,58 @@ class Budget:
             raise BudgetExceeded(f"tool calls {self.tool_calls} > {self.max_tool_calls}")
         if self.elapsed() > self.max_wall_seconds:
             raise BudgetExceeded(f"wall time {self.elapsed():.0f}s > {self.max_wall_seconds:.0f}s")
+
+    def check_projected(self, est_cost: float) -> None:
+        """Raise BEFORE a call whose estimated cost would push spend over the
+        dollar cap.
+
+        ``check()`` only fires once ``dollars`` ALREADY exceeds the cap, so a
+        single huge-context call -- or several concurrent sub-agent calls on a
+        shared budget -- can blow far past ``max_dollars`` before the next check
+        trips (observed: a $2.50 cap reached $6.81 with parallel Opus/Sonnet
+        researchers on 200k-token contexts). Gating each dispatch on its
+        projected cost bounds the overshoot to roughly the in-flight set.
+        """
+        if est_cost <= 0:
+            return
+        with self._lock:
+            projected = self.dollars + getattr(self, "_reserved", 0.0) + est_cost
+            if projected > self.max_dollars:
+                raise BudgetExceeded(
+                    f"projected ${projected:.2f} > ${self.max_dollars:.2f} "
+                    f"(spent ${self.dollars:.2f} + est ${est_cost:.2f} for this call)"
+                )
+
+    def reserve(self, est_cost: float) -> float:
+        """Atomically hold ``est_cost`` against the cap for an in-flight call;
+        return the amount held (0.0 if non-positive). Raises ``BudgetExceeded``
+        if spent + already-held + est would exceed the dollar cap -- so N
+        concurrent sub-agent calls on a shared budget can't each pass an
+        individual check and then collectively blow past it (a $2.50 cap hit
+        $6+ with a wide parallel fan-out). Pair every successful reserve() with
+        a release() in a ``finally``.
+        """
+        est = est_cost if (est_cost and est_cost > 0) else 0.0
+        if est == 0.0:
+            return 0.0
+        with self._lock:
+            held = getattr(self, "_reserved", 0.0)
+            projected = self.dollars + held + est
+            if projected > self.max_dollars:
+                raise BudgetExceeded(
+                    f"projected ${projected:.2f} > ${self.max_dollars:.2f} "
+                    f"(spent ${self.dollars:.2f} + in-flight ${held:.2f} "
+                    f"+ est ${est:.2f} for this call)"
+                )
+            self._reserved = held + est
+            return est
+
+    def release(self, held: float) -> None:
+        """Release a hold taken by reserve(). Safe to call with 0.0."""
+        if not held or held <= 0:
+            return
+        with self._lock:
+            self._reserved = max(0.0, getattr(self, "_reserved", 0.0) - held)
 
     def summary(self) -> str:
         return (
