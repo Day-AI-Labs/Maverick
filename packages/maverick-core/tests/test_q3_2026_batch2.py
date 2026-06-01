@@ -494,3 +494,25 @@ def test_local_backend_strips_gitlab_token(monkeypatch, tmp_path):
     out = sb.exec("printf %s \"${GITLAB_TOKEN:-missing}\"")
     assert out.exit_code == 0
     assert out.stdout == "missing"
+
+
+def test_cost_router_respects_routing_provider_allowlist(monkeypatch):
+    monkeypatch.setenv("MAVERICK_COST_ROUTING", "1")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-key")
+    for k in ("OPENAI_API_KEY", "MOONSHOT_API_KEY", "XAI_API_KEY",
+              "GROK_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+
+    import maverick.config as cfg
+    monkeypatch.setattr(
+        cfg,
+        "load_config",
+        lambda: {"routing": {"allowed_providers": ["anthropic"]}},
+    )
+
+    from maverick.cost_router import TIER_BASE, CostSignal, pick
+
+    spec = pick(CostSignal(tier=TIER_BASE))
+    assert spec is not None
+    assert spec.startswith("anthropic:"), spec

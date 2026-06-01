@@ -1670,6 +1670,11 @@ def write_config(
         if advanced.get("cost_aware") or advanced.get("verify_ensemble"):
             lines.append("")
             lines.append("[routing]")
+            # Constrain routing features enabled by the wizard to the providers
+            # the user selected in this run. Some router/verifier fallbacks also
+            # know about API keys from the shell environment; the allowlist keeps
+            # advanced opt-ins from sending prompts to those unselected providers.
+            _emit_kv(lines, "allowed_providers", providers)
             if advanced.get("cost_aware"):
                 lines.append("cost_aware = true")
             if advanced.get("verify_ensemble"):

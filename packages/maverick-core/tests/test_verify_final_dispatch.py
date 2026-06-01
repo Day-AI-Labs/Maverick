@@ -102,3 +102,53 @@ def test_verify_final_passes_proposer_model_through(_clean, monkeypatch):
         "b", "a", llm=None, proposer_model="anthropic:claude-opus-4-8",
     ))
     assert seen["proposer_model"] == "anthropic:claude-opus-4-8"
+
+
+def test_ensemble_filters_default_panel_to_allowed_providers(_clean, monkeypatch):
+    monkeypatch.setattr(
+        config,
+        "load_config",
+        lambda: {"routing": {"allowed_providers": ["anthropic"]}},
+    )
+
+    calls = []
+
+    class FakeResp:
+        text = '{"confidence": 0.9, "accepts": true, "critique": "", "issues": []}'
+
+    class FakeLLM:
+        async def complete_async(self, **kwargs):
+            calls.append(kwargs["model"])
+            return FakeResp()
+
+    v = asyncio.run(verifier.verify_proposal_ensemble(
+        "private brief", "private answer", FakeLLM(), proposer_model="anthropic:claude-opus-4-8",
+    ))
+
+    assert v.accepts is True
+    assert calls == ["anthropic:claude-sonnet-4-6"]
+
+
+def test_ensemble_uses_selected_provider_outside_curated_panel(_clean, monkeypatch):
+    monkeypatch.setattr(
+        config,
+        "load_config",
+        lambda: {"routing": {"allowed_providers": ["deepseek"]}},
+    )
+
+    calls = []
+
+    class FakeResp:
+        text = '{"confidence": 0.9, "accepts": true, "critique": "", "issues": []}'
+
+    class FakeLLM:
+        async def complete_async(self, **kwargs):
+            calls.append(kwargs["model"])
+            return FakeResp()
+
+    v = asyncio.run(verifier.verify_proposal_ensemble(
+        "private brief", "private answer", FakeLLM(), proposer_model="anthropic:claude-opus-4-8",
+    ))
+
+    assert v.accepts is True
+    assert calls == ["deepseek:deepseek-reasoner"]

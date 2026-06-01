@@ -26,6 +26,7 @@ def test_advanced_all_on_writes_kernel_sections(tmp_path, monkeypatch):
         "tree_of_thought": True, "compact_history": True, "reflexion": True,
     })
     assert "[routing]" in cfg
+    assert 'allowed_providers = ["anthropic"]' in cfg
     assert "cost_aware = true" in cfg
     assert "verify_ensemble = true" in cfg
     assert "[planning]" in cfg and 'mode = "tree_of_thought"' in cfg
