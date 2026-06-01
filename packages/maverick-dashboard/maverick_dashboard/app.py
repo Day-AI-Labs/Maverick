@@ -865,6 +865,7 @@ async def chat_send(
     request: Request,
     bg: BackgroundTasks,
     title: str = Form(...),
+    description: str = Form(""),
 ) -> RedirectResponse:
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
@@ -882,7 +883,10 @@ async def chat_send(
     if not title:
         raise HTTPException(status_code=400, detail="goal text is required")
     w = _world()
-    goal_id = w.create_goal(title[:200], title[:8000])
+    # The optional "Add details" textarea gives the agent a real brief; fall
+    # back to the title when empty (prior behavior was description == title).
+    description = (description or "").strip()
+    goal_id = w.create_goal(title[:200], (description or title)[:8000])
     # Use the shared runner so this path gets the same concurrency cap,
     # budget defaults, and error handling as the REST API and MCP server.
     from maverick.runner import run_goal_in_thread
