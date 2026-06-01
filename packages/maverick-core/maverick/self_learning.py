@@ -35,6 +35,7 @@ LLM call is metered against the run Budget (kernel rule 3).
 """
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import logging
@@ -381,6 +382,77 @@ Hard rules:
 - Be small and correct. The whole module should read like the example above."""
 
 
+# Static audit of generated tool source (#424). The TOOL_AUTHOR_SYSTEM prompt
+# *asks* for stdlib-only, no subprocess/file/env access — this ENFORCES it
+# before the module is ever imported, so a generated (LLM-authored) module
+# that strays from the contract is rejected instead of executed. This is a
+# guardrail, not a true sandbox: it bounds the obvious escape surface
+# (dangerous imports, eval/exec, the dunder introspection chain) but a
+# determined adversary with getattr tricks could still get around an AST
+# allowlist. Sandboxed validation/execution is the heavier follow-up (issue
+# #424, options B/C). The feature is opt-in/full-autonomy, so this layer plus
+# the Shield text scan is a deliberate, documented trade-off.
+_SAFE_IMPORT_TOP = frozenset({
+    "__future__", "json", "re", "math", "datetime", "urllib", "base64",
+    "hashlib", "hmac", "time", "random", "string", "collections", "itertools",
+    "functools", "typing", "decimal", "html", "textwrap", "statistics",
+    "uuid", "csv", "io", "dataclasses", "enum", "zoneinfo",
+})
+_BANNED_CALLS = frozenset({
+    "eval", "exec", "compile", "__import__", "open", "input", "breakpoint",
+})
+_BANNED_ATTRS = frozenset({
+    "__globals__", "__subclasses__", "__bases__", "__mro__", "__builtins__",
+    "__code__", "__closure__", "__dict__", "__class__", "__base__",
+    "__getattribute__", "__reduce__", "__reduce_ex__",
+})
+
+
+def _module_allowed(mod: str) -> bool:
+    # The tool factory legitimately does ``from maverick.tools import Tool``;
+    # allow exactly that, nothing else under the kernel namespace.
+    if mod == "maverick.tools":
+        return True
+    return mod.split(".")[0] in _SAFE_IMPORT_TOP
+
+
+def audit_generated_source(source: str) -> None:
+    """Reject generated tool source that breaks the stdlib-only contract.
+
+    Raises ValueError on a disallowed import, a banned builtin call
+    (eval/exec/open/...), or access to a known sandbox-escape dunder. A
+    SyntaxError surfaces as a ValueError too (it's an invalid tool either way).
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as e:
+        raise ValueError(f"generated tool has a syntax error: {e}") from e
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if not _module_allowed(alias.name):
+                    raise ValueError(
+                        f"generated tool imports disallowed module {alias.name!r}"
+                    )
+        elif isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            if node.level or not _module_allowed(mod):
+                raise ValueError(
+                    "generated tool imports disallowed module "
+                    f"{mod or '<relative import>'!r}"
+                )
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in _BANNED_CALLS:
+                raise ValueError(
+                    f"generated tool calls disallowed builtin {node.func.id!r}"
+                )
+        elif isinstance(node, ast.Attribute):
+            if node.attr in _BANNED_ATTRS:
+                raise ValueError(
+                    f"generated tool accesses disallowed attribute {node.attr!r}"
+                )
+
+
 def _import_module_from_path(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(f"maverick_generated_{name}", path)
     if spec is None or spec.loader is None:
@@ -408,9 +480,9 @@ def _shield_ok(source: str) -> tuple[bool, str]:
 def write_generated_tool(name: str, source: str, *, need: str = "") -> Any:
     """Validate generated tool ``source`` and persist it, returning the Tool.
 
-    Validation, in order: name regex -> Shield scan -> import (executes the
-    module) -> ``make_tool()`` returns a well-formed Tool. Only after ALL
-    of these pass is the module written to the durable
+    Validation, in order: name regex -> static AST audit -> Shield scan ->
+    import (executes the module) -> ``make_tool()`` returns a well-formed
+    Tool. Only after ALL of these pass is the module written to the durable
     ``generated_tools/`` dir; a tool that fails validation leaves nothing
     behind. The returned Tool is registered into the live run by the
     caller.
@@ -422,6 +494,8 @@ def write_generated_tool(name: str, source: str, *, need: str = "") -> Any:
             f"tool name {name!r} must be lowercase id (a-z0-9_), 3-42 chars"
         )
     source = _strip_fences(source)
+    # Enforce the stdlib-only contract BEFORE the module is imported/executed.
+    audit_generated_source(source)
     ok, reason = _shield_ok(source)
     if not ok:
         raise ValueError(f"generated tool rejected by Shield: {reason}")
@@ -478,6 +552,9 @@ def load_generated_tools() -> list[Any]:
         if p.name.startswith((".", "_")):
             continue
         try:
+            # Re-audit on every load: a persisted file could have been
+            # tampered with on disk since it was written.
+            audit_generated_source(p.read_text(encoding="utf-8"))
             module = _import_module_from_path(p.stem, p)
             tool = module.make_tool()
             if isinstance(tool, Tool) and tool.name and callable(tool.fn):
@@ -686,7 +763,8 @@ async def preflight(
 __all__ = [
     "enabled", "settings", "Learned", "record", "history",
     "Candidate", "search_capabilities", "acquire_skill", "add_mcp_server",
-    "write_generated_tool", "load_generated_tools", "preflight",
+    "write_generated_tool", "load_generated_tools", "audit_generated_source",
+    "preflight",
     "validate_spec_url", "probe_openapi_spec", "discover_openapi_spec",
     "LEARNED_PATH", "GENERATED_TOOLS_DIR", "TOOL_AUTHOR_SYSTEM",
 ]
