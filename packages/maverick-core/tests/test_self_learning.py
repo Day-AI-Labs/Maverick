@@ -182,6 +182,42 @@ class TestSemanticSearch:
         cands = self_learning.search_capabilities("send short messages", kinds=("skills",))
         assert cands and cands[0].name == "send-sms"
 
+    def test_embed_exception_falls_back_to_lexical(self, monkeypatch):
+        monkeypatch.setattr("maverick.catalog.load_catalog", self._two_skills())
+        import maverick.skill_embeddings as se
+        monkeypatch.setattr(se, "_have_fastembed", lambda: True)
+
+        def boom(texts):
+            raise RuntimeError("embedding unavailable")
+
+        monkeypatch.setattr(se, "embed", boom)
+        cands = self_learning.search_capabilities("send short messages", kinds=("skills",))
+        assert cands and cands[0].name == "send-sms"
+
+    def test_have_fastembed_exception_falls_back_to_lexical(self, monkeypatch):
+        monkeypatch.setattr("maverick.catalog.load_catalog", self._two_skills())
+        import maverick.skill_embeddings as se
+
+        def boom():
+            raise RuntimeError("broken fastembed install")
+
+        monkeypatch.setattr(se, "_have_fastembed", boom)
+        cands = self_learning.search_capabilities("send short messages", kinds=("skills",))
+        assert cands and cands[0].name == "send-sms"
+
+    def test_cosine_exception_falls_back_to_lexical(self, monkeypatch):
+        monkeypatch.setattr("maverick.catalog.load_catalog", self._two_skills())
+        import maverick.skill_embeddings as se
+        monkeypatch.setattr(se, "_have_fastembed", lambda: True)
+        monkeypatch.setattr(se, "embed", lambda texts: [[1.0], [1.0], [0.0]])
+
+        def boom(a, b):
+            raise RuntimeError("bad vector")
+
+        monkeypatch.setattr(se, "_cosine", boom)
+        cands = self_learning.search_capabilities("send short messages", kinds=("skills",))
+        assert cands and cands[0].name == "send-sms"
+
 
 class TestAddMcpServer:
     def test_writes_block_and_returns_spec(self, monkeypatch, tmp_path):
