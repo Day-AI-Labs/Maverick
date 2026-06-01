@@ -173,6 +173,8 @@ async def run_goal(
     channel: str | None = None,
     user_id: str | None = None,
     orchestrator_model_override: str | None = None,
+    resume: bool = False,
+    resume_episode_id: int | None = None,
 ) -> str:
     goal = world.get_goal(goal_id)
     if not goal:
@@ -205,7 +207,18 @@ async def run_goal(
         pass
 
     world.set_goal_status(goal_id, "active")
-    episode_id = world.start_episode(goal_id)
+    episode_id = resume_episode_id
+    if episode_id is None and resume:
+        try:
+            from . import checkpoint as _ckpt_mod
+            if _ckpt_mod.enabled():
+                episode_id = _ckpt_mod.Checkpointer(world).latest_episode_id(
+                    goal_id, "orchestrator-0",
+                )
+        except Exception:  # pragma: no cover -- resume lookup must fail open
+            episode_id = None
+    if episode_id is None:
+        episode_id = world.start_episode(goal_id)
     blackboard = Blackboard()
     blackboard.attach_world(world, goal_id)  # persist every post for live streaming
     sandbox = sandbox or LocalBackend()

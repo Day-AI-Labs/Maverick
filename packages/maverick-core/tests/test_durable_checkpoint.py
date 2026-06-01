@@ -16,6 +16,7 @@ from maverick.agent import Agent
 from maverick.blackboard import Blackboard
 from maverick.budget import Budget
 from maverick.llm import LLMResponse, ToolCall
+from maverick.orchestrator import run_goal
 from maverick.sandbox import LocalBackend
 from maverick.swarm import SwarmContext
 from maverick.world_model import WorldModel
@@ -128,8 +129,10 @@ class _ScriptedLLM:
     def __init__(self, responses):
         self._responses = list(responses)
         self.calls = 0
+        self.kwargs = []
 
     async def complete_async(self, **kwargs):
+        self.kwargs.append(kwargs)
         if self.calls >= len(self._responses):
             raise RuntimeError("scripted-crash: ran past the script")
         resp = self._responses[self.calls]
@@ -186,6 +189,51 @@ async def test_resume_works_without_pinning_name(tmp_path, monkeypatch):
     assert result.final and "resumed and done" in result.final
     assert llm.calls == 1  # continued, didn't redo the 5 prior steps
     assert ctx.budget.tool_calls >= 5  # budget restored
+
+
+@pytest.mark.asyncio
+async def test_run_goal_resume_reuses_checkpoint_episode(tmp_path, monkeypatch):
+    """A fresh run_goal() resume must look up checkpoints in the crashed
+    episode, not in a brand-new episode created for the resume invocation."""
+    monkeypatch.setenv("MAVERICK_DURABLE", "1")
+    world_path = tmp_path / "w.db"
+    world = WorldModel(world_path)
+    gid = world.create_goal("durable run_goal", "")
+
+    first_llm = _ScriptedLLM([
+        _resp(
+            tool_calls=[ToolCall(id="t1", name="shell", input={"cmd": "echo prior"})],
+            stop_reason="tool_use",
+        ),
+    ])
+    with pytest.raises(RuntimeError, match="scripted-crash"):
+        await run_goal(
+            first_llm, world, Budget(max_dollars=1.0), gid,
+            sandbox=LocalBackend(workdir=tmp_path), max_depth=1,
+        )
+
+    cp = ckpt_mod.Checkpointer(world)
+    checkpoint_episode_id = cp.latest_episode_id(gid, "orchestrator-0")
+    assert checkpoint_episode_id is not None
+
+    resumed_llm = _ScriptedLLM([
+        _resp(text="FINAL: resumed"),
+        _resp(text='{ "confidence": 0.95, "accepts": true, "critique": "ok", "issues": [] }'),
+        _resp(text="FINAL: (no skill)"),
+    ])
+    out = await run_goal(
+        resumed_llm, world, Budget(max_dollars=1.0), gid,
+        sandbox=LocalBackend(workdir=tmp_path), max_depth=1, resume=True,
+    )
+
+    assert "resumed" in out
+    first_resume_messages = resumed_llm.kwargs[0]["messages"]
+    assert any(
+        block.get("type") == "tool_result" and "prior" in block.get("content", "")
+        for msg in first_resume_messages
+        for block in (msg.get("content") if isinstance(msg.get("content"), list) else [])
+    )
+    assert world.list_episodes(goal_id=gid)[0].id == checkpoint_episode_id
 
 
 @pytest.mark.asyncio
