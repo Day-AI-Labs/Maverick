@@ -112,3 +112,51 @@ class TestCacheFriendlyOrdering:
         )
         # sorted() returns a new list; the caller's list is unchanged.
         assert _UNSORTED_TOOLS == original
+
+
+class TestReasoningEffortMapping:
+    """Issue #466: thinking_budget was silently dropped for OpenAI. It now maps
+    to reasoning_effort for o-series/gpt-5, and is skipped for non-reasoning
+    models (gpt-4o/4.1 want max_completion_tokens but reject reasoning_effort)."""
+
+    def test_budget_maps_to_effort_buckets(self):
+        f = OpenAIClient._reasoning_effort_for
+        assert f(None) is None
+        assert f(0) is None
+        assert f(2000) == "low"
+        assert f(8000) == "medium"
+        assert f(30000) == "high"
+
+    def test_reasoning_model_gets_reasoning_effort(self, client):
+        kwargs = client._build_kwargs(
+            "sys", [{"role": "user", "content": "hi"}], None,
+            max_tokens=256, model="o3-mini", thinking_budget=30000,
+        )
+        assert kwargs["reasoning_effort"] == "high"
+        # o-series also wants max_completion_tokens, not max_tokens.
+        assert "max_completion_tokens" in kwargs
+        assert "max_tokens" not in kwargs
+
+    def test_gpt5_gets_reasoning_effort(self, client):
+        kwargs = client._build_kwargs(
+            "sys", [{"role": "user", "content": "hi"}], None,
+            max_tokens=256, model="gpt-5", thinking_budget=2000,
+        )
+        assert kwargs["reasoning_effort"] == "low"
+
+    def test_non_reasoning_model_skips_reasoning_effort(self, client):
+        # gpt-4o is in _wants_max_completion but is NOT a reasoning model;
+        # sending reasoning_effort would 400.
+        for model in ("gpt-4o", "gpt-4.1"):
+            kwargs = client._build_kwargs(
+                "sys", [{"role": "user", "content": "hi"}], None,
+                max_tokens=256, model=model, thinking_budget=30000,
+            )
+            assert "reasoning_effort" not in kwargs
+
+    def test_no_budget_no_reasoning_effort(self, client):
+        kwargs = client._build_kwargs(
+            "sys", [{"role": "user", "content": "hi"}], None,
+            max_tokens=256, model="o3-mini", thinking_budget=None,
+        )
+        assert "reasoning_effort" not in kwargs
