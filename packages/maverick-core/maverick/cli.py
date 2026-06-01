@@ -634,6 +634,30 @@ def start(
     click.echo(result)
 
 
+@main.command("report-issue")
+@click.argument("goal_id", type=int)
+@click.option("--repo", default=None,
+              help="GitHub repo owner/name to file against (default: Maverick).")
+@click.pass_context
+def report_issue(ctx, goal_id: int, repo: str | None) -> None:
+    """Build a pre-filled GitHub bug-report URL from a failed goal run.
+
+    Gathers the goal's error events, scrubs secrets, and prints a
+    github.com/.../issues/new link with the context filled in. No network
+    call -- open the URL yourself to file the report.
+    """
+    from .issue_report import DEFAULT_REPO, build_report
+    world = open_world(ctx.obj["db"])
+    g = world.get_goal(goal_id)
+    if g is None:
+        click.echo(f"No goal #{goal_id}.", err=True)
+        sys.exit(1)
+    errors = [e for e in world.goal_events(goal_id, limit=10_000) if e.kind == "error"]
+    url = build_report(g, errors, repo=repo or DEFAULT_REPO)
+    click.echo("Open this URL to file a pre-filled bug report:\n")
+    click.echo(url)
+
+
 def _sanitize_progress_content(text: str, limit: int = 200) -> str:
     """Sanitize untrusted event content before printing to a TTY.
 
