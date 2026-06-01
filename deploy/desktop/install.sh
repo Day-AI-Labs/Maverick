@@ -81,7 +81,19 @@ validate_source_pin() {
   die "MAVERICK_REF must be a full 40-character commit SHA. Ref '$REF' is mutable; set MAVERICK_ALLOW_UNPINNED=1 only for trusted local testing."
 }
 
+validate_repo() {
+  # MAVERICK_REPO is interpolated into https://github.com/$REPO for the git
+  # clone/fetch below. Constrain it to a GitHub "owner/repo" slug so a hostile
+  # or typo'd value can't point the install at a different repo or smuggle
+  # shell/URL metacharacters into the git command. (Only the source path uses
+  # REPO; the default PyPI install never touches it.)
+  if [[ ! "$REPO" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then
+    die "MAVERICK_REPO must be a GitHub 'owner/repo' slug (letters, digits, '.', '_', '-'); got '$REPO'."
+  fi
+}
+
 fetch_source() {
+  validate_repo
   validate_source_pin
   if [ -d "$SRC_DIR/.git" ]; then
     log "Updating Maverick source ($REPO@$REF) ..."
