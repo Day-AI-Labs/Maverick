@@ -180,19 +180,22 @@ _KIND_SINGULAR = {
 }
 
 
-def search_capabilities(
-    need: str, *, kinds: tuple[str, ...] = ("skills", "mcp", "plugins"),
-    max_n: int = 5, indexes: list[str] | None = None,
-) -> list[Candidate]:
-    """Rank catalog entries across ``kinds`` by lexical match to ``need``.
+_EMBED_MIN_SCORE = 0.25  # cosine floor so semantic search doesn't return noise
 
-    Degrades to an empty list if the catalog is unreachable (it already
-    returns [] in that case), so a gap-search never breaks a run.
+
+def _entry_text(e: Any) -> str:
+    return f"{e.name} {e.summary}"
+
+
+def _gather_entries(kinds: tuple[str, ...], indexes: list[str] | None):
+    """Collect ``(kind_singular, CatalogEntry)`` across ``kinds``.
+
+    Per-kind load failures are logged and skipped so an unreachable catalog
+    degrades to "fewer candidates" rather than breaking a gap-search.
     """
     from . import catalog as _catalog
 
-    want = _tokens(need)
-    scored: list[Candidate] = []
+    out: list[tuple[str, Any]] = []
     for kind in kinds:
         if kind not in _catalog.VALID_KINDS:
             continue
@@ -201,20 +204,77 @@ def search_capabilities(
         except Exception as e:  # pragma: no cover -- catalog never blocks
             log.debug("self_learning: catalog %s load failed: %s", kind, e)
             continue
-        for e in entries:
-            hay = _tokens(f"{e.name} {e.summary}")
-            if not hay:
-                continue
-            overlap = len(want & hay)
-            if overlap == 0:
-                continue
-            score = overlap / len(want | hay)
-            scored.append(Candidate(
-                kind=_KIND_SINGULAR.get(kind, kind), name=e.name,
-                summary=e.summary, source=e.source, score=score,
-            ))
+        for entry in entries:
+            out.append((_KIND_SINGULAR.get(kind, kind), entry))
+    return out
+
+
+def _rank_lexical(need: str, entries: list, max_n: int) -> list[Candidate]:
+    want = _tokens(need)
+    scored: list[Candidate] = []
+    for kind, e in entries:
+        hay = _tokens(_entry_text(e))
+        if not hay:
+            continue
+        overlap = len(want & hay)
+        if overlap == 0:
+            continue
+        scored.append(Candidate(
+            kind=kind, name=e.name, summary=e.summary, source=e.source,
+            score=overlap / len(want | hay),
+        ))
     scored.sort(key=lambda c: -c.score)
     return scored[: max(1, max_n)]
+
+
+def _rank_embed(need: str, entries: list, max_n: int) -> list[Candidate] | None:
+    """Cosine-rank ``entries`` against ``need`` using fastembed.
+
+    Returns None (signal "fall back to lexical") when fastembed isn't
+    installed or the embed call fails; otherwise a ranked list (possibly
+    empty if nothing clears ``_EMBED_MIN_SCORE``).
+    """
+    try:
+        from .skill_embeddings import _cosine, _have_fastembed, embed
+    except Exception:  # pragma: no cover -- module is in-tree
+        return None
+    if not _have_fastembed() or not entries:
+        return None
+    vecs = embed([need] + [_entry_text(e) for _, e in entries])
+    if not vecs or len(vecs) != len(entries) + 1:
+        return None
+    qv = vecs[0]
+    scored: list[Candidate] = []
+    for (kind, e), v in zip(entries, vecs[1:]):
+        score = _cosine(qv, v)
+        if score < _EMBED_MIN_SCORE:
+            continue
+        scored.append(Candidate(
+            kind=kind, name=e.name, summary=e.summary, source=e.source,
+            score=score,
+        ))
+    scored.sort(key=lambda c: -c.score)
+    return scored[: max(1, max_n)]
+
+
+def search_capabilities(
+    need: str, *, kinds: tuple[str, ...] = ("skills", "mcp", "plugins"),
+    max_n: int = 5, indexes: list[str] | None = None,
+) -> list[Candidate]:
+    """Rank catalog entries across ``kinds`` by relevance to ``need``.
+
+    Uses embedding-based (semantic) ranking when ``fastembed`` is installed
+    — so a need can match a skill that shares no surface tokens — and falls
+    back to lexical token-overlap otherwise. Degrades to an empty list when
+    the catalog is unreachable, so a gap-search never breaks a run.
+    """
+    entries = _gather_entries(kinds, indexes)
+    if not entries:
+        return []
+    ranked = _rank_embed(need, entries, max_n)
+    if ranked is None:
+        ranked = _rank_lexical(need, entries, max_n)
+    return ranked
 
 
 # --------------------------------------------------------------------------

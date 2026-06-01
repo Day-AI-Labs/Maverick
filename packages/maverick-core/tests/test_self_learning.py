@@ -126,6 +126,63 @@ class TestCatalogSearch:
         assert self_learning.search_capabilities("x") == []
 
 
+class TestSemanticSearch:
+    """Embedding-based ranking when fastembed is available (#425)."""
+
+    @staticmethod
+    def _two_skills():
+        def fake_load(kind, indexes=None):
+            if kind == "skills":
+                return [
+                    CatalogEntry(name="send-sms", version="1", kind="skills",
+                                 summary="dispatch short messages", source="s1", sha256="h"),
+                    CatalogEntry(name="weather", version="1", kind="skills",
+                                 summary="forecast the sky", source="s2", sha256="h"),
+                ]
+            return []
+        return fake_load
+
+    def _install_fake_embed(self, monkeypatch):
+        import maverick.skill_embeddings as se
+        monkeypatch.setattr(se, "_have_fastembed", lambda: True)
+
+        def fake_embed(texts):
+            # 2-D vectors: axis 0 = "messaging", axis 1 = "weather".
+            out = []
+            for t in texts:
+                low = t.lower()
+                if "sms" in low or "messages" in low or "cell" in low or "text" in low:
+                    out.append([1.0, 0.0])
+                elif "weather" in low or "forecast" in low or "sky" in low:
+                    out.append([0.0, 1.0])
+                else:
+                    out.append([1.0, 0.0])  # the messaging-flavoured need
+            return out
+        monkeypatch.setattr(se, "embed", fake_embed)
+
+    def test_semantic_match_without_token_overlap(self, monkeypatch):
+        # Need shares NO tokens with either entry -> lexical would return [].
+        monkeypatch.setattr("maverick.catalog.load_catalog", self._two_skills())
+        need = "contact someone on their cell"
+        # Lexical path (no fastembed) finds nothing.
+        import maverick.skill_embeddings as se
+        monkeypatch.setattr(se, "_have_fastembed", lambda: False)
+        assert self_learning.search_capabilities(need, kinds=("skills",)) == []
+        # Embedding path ranks send-sms first.
+        self._install_fake_embed(monkeypatch)
+        cands = self_learning.search_capabilities(need, kinds=("skills",))
+        assert cands and cands[0].name == "send-sms"
+
+    def test_embed_failure_falls_back_to_lexical(self, monkeypatch):
+        monkeypatch.setattr("maverick.catalog.load_catalog", self._two_skills())
+        import maverick.skill_embeddings as se
+        monkeypatch.setattr(se, "_have_fastembed", lambda: True)
+        monkeypatch.setattr(se, "embed", lambda texts: None)  # embed unavailable
+        # Token overlap on "messages" still works via the lexical fallback.
+        cands = self_learning.search_capabilities("send short messages", kinds=("skills",))
+        assert cands and cands[0].name == "send-sms"
+
+
 class TestAddMcpServer:
     def test_writes_block_and_returns_spec(self, monkeypatch, tmp_path):
         cfg = tmp_path / "config.toml"
