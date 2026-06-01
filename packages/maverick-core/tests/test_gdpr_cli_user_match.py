@@ -79,3 +79,43 @@ def test_export_and_erase_do_not_prefix_match_non_cli_colon_ids(tmp_path: Path):
 
     remaining = {c.user_id for c in w.list_conversations("whatsapp")}
     assert remaining == {"whatsapp:+15551234567", "whatsapp:+15557654321"}
+
+
+def test_erase_uses_backend_erase_hook_for_non_sqlite_world(monkeypatch, tmp_path: Path):
+    """Postgres worlds must not be driven through SQLite-only ``world.conn`` SQL."""
+    from maverick import audit as audit_mod
+    from maverick import cli as cli_mod
+    from maverick.world_model import Conversation
+
+    class PostgresLikeWorld:
+        conn = None  # The test fails if erase tries the SQLite direct-SQL path.
+
+        def __init__(self) -> None:
+            self.erase_calls: list[list[int]] = []
+
+        def list_conversations(self, channel: str | None = None):
+            assert channel == "telegram"
+            return [Conversation(42, "telegram", "u123", 1.0, 2.0)]
+
+        def erase_conversations(self, conversation_ids: list[int]):
+            self.erase_calls.append(conversation_ids)
+            return {7}, [], 3
+
+        def delete_facts_matching(self, token: str):
+            assert token == "telegram:u123"
+            return []
+
+    fake_world = PostgresLikeWorld()
+    monkeypatch.setattr(cli_mod, "open_world", lambda _path: fake_world)
+    monkeypatch.setattr(audit_mod, "scrub_user", lambda *_args, **_kwargs: (0, 0))
+    monkeypatch.setattr(audit_mod, "reanchor_after_erase", lambda: 0)
+    monkeypatch.setattr(audit_mod, "record", lambda *_args, **_kwargs: None)
+
+    result = CliRunner().invoke(
+        main,
+        ["--db", str(tmp_path / "ignored.db"), "erase", "--channel", "telegram", "--user", "u123", "--yes"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert fake_world.erase_calls == [[42]]
+    assert "erased 1 conversation(s), 3 turn(s), 1 goal(s)" in result.output

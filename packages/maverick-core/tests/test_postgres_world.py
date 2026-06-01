@@ -349,3 +349,26 @@ def test_prune_processed_messages(world):
     removed = world.prune_processed_messages(older_than_seconds=0)
     assert removed >= 1
     assert world.is_processed_message("sms", "to-prune") is False
+
+
+def test_erase_conversations_deletes_pg_rows(world):
+    conv = world.get_or_create_conversation("gdpr-pg", "erase-me")
+    parent = world.create_goal("parent-delete")
+    child = world.create_goal("child-delete", parent_id=parent)
+    world.append_turn(conv.id, "user", "private text", goal_id=parent)
+    world.append_turn(conv.id, "assistant", "private reply", goal_id=child)
+    world.append_message(parent, "user", "private message")
+    world.append_event(parent, "agent", "note", "private event")
+    world.add_attachment(parent, "secret.txt", "text/plain", 6, "abc", "/tmp/secret.txt")
+    world.mark_message_processed("gdpr-pg", "external-1", goal_id=parent)
+
+    goal_ids, attachment_paths, removed_turns = world.erase_conversations([conv.id])
+
+    assert goal_ids == {parent, child}
+    assert attachment_paths == ["/tmp/secret.txt"]
+    assert removed_turns == 2
+    assert world.recent_turns(conv.id) == []
+    assert all(c.id != conv.id for c in world.list_conversations("gdpr-pg"))
+    assert world.get_goal(parent) is None
+    assert world.get_goal(child) is None
+    assert world.is_processed_message("gdpr-pg", "external-1") is False

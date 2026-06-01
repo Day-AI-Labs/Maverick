@@ -1608,85 +1608,89 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
     # these conversations. We use ALL turns (not just recent), so a
     # conversation with >10k turns doesn't leave orphan attachments.
     conv_ids = [c.id for c in convs]
-    placeholders = ",".join("?" * len(conv_ids))
-    goal_ids: set[int] = set()
-    for row in world.conn.execute(
-        f"SELECT DISTINCT goal_id FROM turns "
-        f"WHERE conversation_id IN ({placeholders}) AND goal_id IS NOT NULL",
-        conv_ids,
-    ).fetchall():
-        goal_ids.add(row[0])
-
-    # Step 1b: expand to the transitive closure of subgoals. A recursive
-    # swarm creates child goals via parent_id that are NOT tied to a turn,
-    # so they're missing from the turn-derived set above. Deleting a parent
-    # while a child still references it (goals.parent_id FK) aborts the
-    # whole transaction -- a required Art.17 erasure that silently does
-    # nothing. Walk the parent_id tree so every descendant is included.
-    if goal_ids:
-        frontier = list(goal_ids)
-        while frontier:
-            fph = ",".join("?" * len(frontier))
-            child_rows = world.conn.execute(
-                f"SELECT id FROM goals WHERE parent_id IN ({fph})", frontier,
-            ).fetchall()
-            new_children = [r[0] for r in child_rows if r[0] not in goal_ids]
-            goal_ids.update(new_children)
-            frontier = new_children
-
-    # Step 2: collect attachment paths to unlink (after commit).
-    attachment_paths: list[str] = []
-    for gid in goal_ids:
-        for a in world.list_attachments(gid):
-            attachment_paths.append(a.path)
-
-    # Step 3: cascade DELETEs in a single transaction.
-    removed_turns = 0
-    try:
-        world.conn.execute("BEGIN IMMEDIATE")
-        # Defer FK checks to COMMIT so deleting parents and children in one
-        # statement can't trip the goals.parent_id self-FK mid-statement.
-        # Combined with the transitive-closure expansion above, every
-        # referenced row is gone by COMMIT, so the deferred check passes.
-        world.conn.execute("PRAGMA defer_foreign_keys = ON")
-        cur = world.conn.execute(
-            f"DELETE FROM turns WHERE conversation_id IN ({placeholders})",
+    backend_erase = getattr(world, "erase_conversations", None)
+    if backend_erase is not None:
+        goal_ids, attachment_paths, removed_turns = backend_erase(conv_ids)
+    else:
+        placeholders = ",".join("?" * len(conv_ids))
+        goal_ids: set[int] = set()
+        for row in world.conn.execute(
+            f"SELECT DISTINCT goal_id FROM turns "
+            f"WHERE conversation_id IN ({placeholders}) AND goal_id IS NOT NULL",
             conv_ids,
-        )
-        removed_turns = cur.rowcount
+        ).fetchall():
+            goal_ids.add(row[0])
 
+        # Step 1b: expand to the transitive closure of subgoals. A recursive
+        # swarm creates child goals via parent_id that are NOT tied to a turn,
+        # so they're missing from the turn-derived set above. Deleting a parent
+        # while a child still references it (goals.parent_id FK) aborts the
+        # whole transaction -- a required Art.17 erasure that silently does
+        # nothing. Walk the parent_id tree so every descendant is included.
         if goal_ids:
-            gph = ",".join("?" * len(goal_ids))
-            gids = list(goal_ids)
-            # FK checks are deferred to COMMIT (above) and the goal_ids set
-            # is the full subgoal closure, so delete order is not load-bearing.
-            world.conn.execute(f"DELETE FROM goal_events WHERE goal_id IN ({gph})", gids)
-            world.conn.execute(f"DELETE FROM messages    WHERE goal_id IN ({gph})", gids)
-            world.conn.execute(f"DELETE FROM questions   WHERE goal_id IN ({gph})", gids)
-            world.conn.execute(f"DELETE FROM attachments WHERE goal_id IN ({gph})", gids)
-            # facts.source_episode_id REFERENCES episodes(id): a fact the agent
-            # distilled from this user's run carries their PII in `value` AND
-            # holds an FK to the episode we're about to delete. Leaving it both
-            # (a) violated Art.17 (PII survived erasure) and (b) tripped the
-            # deferred-FK check at COMMIT once the user had any fact, aborting
-            # the whole erase. Delete those facts before the episodes.
-            world.conn.execute(
-                f"DELETE FROM facts WHERE source_episode_id IN "
-                f"(SELECT id FROM episodes WHERE goal_id IN ({gph}))", gids,
-            )
-            world.conn.execute(f"DELETE FROM episodes    WHERE goal_id IN ({gph})", gids)
-            world.conn.execute(
-                f"DELETE FROM processed_messages WHERE goal_id IN ({gph})", gids,
-            )
-            world.conn.execute(f"DELETE FROM goals WHERE id IN ({gph})", gids)
+            frontier = list(goal_ids)
+            while frontier:
+                fph = ",".join("?" * len(frontier))
+                child_rows = world.conn.execute(
+                    f"SELECT id FROM goals WHERE parent_id IN ({fph})", frontier,
+                ).fetchall()
+                new_children = [r[0] for r in child_rows if r[0] not in goal_ids]
+                goal_ids.update(new_children)
+                frontier = new_children
 
-        world.conn.execute(
-            f"DELETE FROM conversations WHERE id IN ({placeholders})", conv_ids,
-        )
-        world.conn.commit()
-    except Exception:
-        world.conn.rollback()
-        raise
+        # Step 2: collect attachment paths to unlink (after commit).
+        attachment_paths: list[str] = []
+        for gid in goal_ids:
+            for a in world.list_attachments(gid):
+                attachment_paths.append(a.path)
+
+        # Step 3: cascade DELETEs in a single transaction.
+        removed_turns = 0
+        try:
+            world.conn.execute("BEGIN IMMEDIATE")
+            # Defer FK checks to COMMIT so deleting parents and children in one
+            # statement can't trip the goals.parent_id self-FK mid-statement.
+            # Combined with the transitive-closure expansion above, every
+            # referenced row is gone by COMMIT, so the deferred check passes.
+            world.conn.execute("PRAGMA defer_foreign_keys = ON")
+            cur = world.conn.execute(
+                f"DELETE FROM turns WHERE conversation_id IN ({placeholders})",
+                conv_ids,
+            )
+            removed_turns = cur.rowcount
+
+            if goal_ids:
+                gph = ",".join("?" * len(goal_ids))
+                gids = list(goal_ids)
+                # FK checks are deferred to COMMIT (above) and the goal_ids set
+                # is the full subgoal closure, so delete order is not load-bearing.
+                world.conn.execute(f"DELETE FROM goal_events WHERE goal_id IN ({gph})", gids)
+                world.conn.execute(f"DELETE FROM messages    WHERE goal_id IN ({gph})", gids)
+                world.conn.execute(f"DELETE FROM questions   WHERE goal_id IN ({gph})", gids)
+                world.conn.execute(f"DELETE FROM attachments WHERE goal_id IN ({gph})", gids)
+                # facts.source_episode_id REFERENCES episodes(id): a fact the agent
+                # distilled from this user's run carries their PII in `value` AND
+                # holds an FK to the episode we're about to delete. Leaving it both
+                # (a) violated Art.17 (PII survived erasure) and (b) tripped the
+                # deferred-FK check at COMMIT once the user had any fact, aborting
+                # the whole erase. Delete those facts before the episodes.
+                world.conn.execute(
+                    f"DELETE FROM facts WHERE source_episode_id IN "
+                    f"(SELECT id FROM episodes WHERE goal_id IN ({gph}))", gids,
+                )
+                world.conn.execute(f"DELETE FROM episodes    WHERE goal_id IN ({gph})", gids)
+                world.conn.execute(
+                    f"DELETE FROM processed_messages WHERE goal_id IN ({gph})", gids,
+                )
+                world.conn.execute(f"DELETE FROM goals WHERE id IN ({gph})", gids)
+
+            world.conn.execute(
+                f"DELETE FROM conversations WHERE id IN ({placeholders})", conv_ids,
+            )
+            world.conn.commit()
+        except Exception:
+            world.conn.rollback()
+            raise
 
     # Step 4: now that DB rows are gone, unlink files. A failure here
     # only leaks file bytes (no row points at them) -- the metadata is
