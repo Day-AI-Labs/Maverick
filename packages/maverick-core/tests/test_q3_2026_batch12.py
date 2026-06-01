@@ -348,6 +348,39 @@ def test_dynamodb_query(monkeypatch):
     assert "count=1" in out and "alice" in out
 
 
+def test_dynamodb_query_follows_last_evaluated_key(monkeypatch):
+    import types as _t
+
+    boto3 = _t.ModuleType("boto3")
+    calls = {"query": []}
+
+    class _Table:
+        def query(self, **k):
+            calls["query"].append(k)
+            if "ExclusiveStartKey" not in k:
+                return {"Items": [{"id": "1", "name": "alice"}],
+                        "LastEvaluatedKey": {"id": "1"}}
+            return {"Items": [{"id": "2", "name": "bob"}]}
+
+    class _Resource:
+        def Table(self, name):
+            return _Table()
+
+    boto3.resource = lambda *a, **k: _Resource()
+    boto3.client = lambda *a, **k: None
+    monkeypatch.setitem(sys.modules, "boto3", boto3)
+
+    from maverick.tools.dynamodb_tool import dynamodb_tool
+    out = dynamodb_tool().fn({
+        "op": "query", "table": "Users",
+        "key_cond_expression": "id = :id",
+        "expression_values": {":id": "1"}, "limit": 50,
+    })
+    assert "alice" in out and "bob" in out and "count=2" in out
+    assert len(calls["query"]) == 2
+    assert calls["query"][1]["ExclusiveStartKey"] == {"id": "1"}
+
+
 # ---------- Vercel ----------
 
 def test_vercel_requires_op():
