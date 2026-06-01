@@ -95,6 +95,22 @@ The ~70 in-kernel tools (web search, repo map, editor, Slack, S3, …)
 are **not** individually exposed over MCP — the swarm decides which to
 use while running a goal.
 
+## Typed results
+
+Besides the human-readable `res.content()` text, every tool returns
+`res.structuredContent()` — typed JSON matching the tool's `outputSchema`
+(`maverick_facts_get` → `{ "facts": {…} }`), deserialized to a `Map`:
+
+```java
+if (res.structuredContent() instanceof Map<?, ?> structured) {
+    Object facts = structured.get("facts");
+}
+```
+
+The shapes are identical across languages — see the
+[TypeScript quickstart](./typescript-quickstart.md) for the full
+per-tool table.
+
 ## What's gated
 
 - The 50+ third-party tools (Slack, GitHub Actions, S3, Salesforce,
