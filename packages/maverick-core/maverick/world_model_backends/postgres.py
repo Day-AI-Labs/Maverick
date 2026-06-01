@@ -34,6 +34,12 @@ from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
 
+# Reported by the schema_version property for parity with the SQLite backend
+# (read by health.py / audit events). The PG schema is applied idempotently
+# (CREATE ... IF NOT EXISTS + ALTER ... ADD COLUMN IF NOT EXISTS), not
+# version-stepped, so this is a flat constant kept in step with SQLite's.
+_PG_SCHEMA_VERSION = 9
+
 
 # Schema mirror. Postgres-flavored types; sequence-based PKs instead of
 # AUTOINCREMENT, REAL -> DOUBLE PRECISION, TEXT stays TEXT.
@@ -284,6 +290,27 @@ class PostgresWorldModel:
             row = cur.fetchone()
         return PGGoal(*row) if row else None
 
+    def reclaim_orphan_goals(self, *, max_age_seconds: float = 60.0) -> int:
+        """Mark stale active/pending goals as 'blocked' after a crash.
+
+        Called on startup to recover from SIGKILL/OOM mid-run. Only rows whose
+        ``updated_at`` is at least ``max_age_seconds`` old qualify, so a goal
+        being driven live in a sibling process isn't reclaimed. Mirrors the
+        SQLite WorldModel (kernel calls this on dashboard/serve startup).
+        Returns the number of rows reclaimed.
+        """
+        cutoff = time.time() - max_age_seconds
+        now = time.time()
+        with self._tx() as cur:
+            cur.execute(
+                "UPDATE goals SET status = 'blocked', "
+                "result = COALESCE(result, '') || ' [process restarted mid-run]', "
+                "updated_at = %s "
+                "WHERE status IN ('active', 'pending') AND updated_at < %s",
+                (now, cutoff),
+            )
+            return cur.rowcount
+
     # ----- episodes -----
 
     def start_episode(self, goal_id: int) -> int:
@@ -523,6 +550,13 @@ class PostgresWorldModel:
             )
             affected = cur.rowcount
         return affected > 0
+
+    @property
+    def schema_version(self) -> int:
+        """Schema version, for parity with SQLite WorldModel.schema_version
+        (read as a property by health.py + audit events). Constant because the
+        PG schema is applied idempotently rather than version-stepped."""
+        return _PG_SCHEMA_VERSION
 
     # ----- close -----
 
