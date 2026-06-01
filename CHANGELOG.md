@@ -6,6 +6,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- World model search now backfills the `messages_fts` full-text index on
+  upgrade (schema v10). The FTS triggers only index future writes, so a
+  database whose messages predated the index carried unindexed history that
+  message search silently missed; v10 rebuilds it once.
+
 ## [0.1.6] -- 2026-05-31
 
 Post-0.1.4 hardening, plus the cross-language MCP client surface (the
