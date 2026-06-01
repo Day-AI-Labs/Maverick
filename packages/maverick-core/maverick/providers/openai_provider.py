@@ -72,6 +72,30 @@ def _extract_tool_result_text(content: Any) -> str:
     return str(content) if content is not None else ""
 
 
+def _openai_import_error_message(e: ImportError) -> str:
+    """Explain a failed ``from openai import ...`` without misdiagnosing it.
+
+    A bare ``except ImportError`` also catches a missing *transitive*
+    dependency (e.g. openai -> httpx -> idna): ModuleNotFoundError subclasses
+    ImportError. Reporting "openai SDK not installed" then sends the user to
+    ``pip install maverick-agent[openai]``, which won't help because openai
+    IS installed. Use find_spec to tell the two cases apart -- it locates the
+    package without executing its (failing) ``__init__``.
+    """
+    import importlib.util
+    try:
+        present = importlib.util.find_spec("openai") is not None
+    except Exception:
+        present = False
+    if not present:
+        return "openai SDK not installed. Run: pip install 'maverick-agent[openai]'"
+    return (
+        f"the openai SDK is installed but failed to import ({e}); a dependency "
+        "is likely missing or broken. Try: pip install --upgrade "
+        "'maverick-agent[openai]'"
+    )
+
+
 class OpenAIClient:
     DEFAULT_MODEL = "gpt-4o"
 
@@ -84,9 +108,7 @@ class OpenAIClient:
         try:
             from openai import AsyncOpenAI, OpenAI
         except ImportError as e:
-            raise ImportError(
-                "openai SDK not installed. Run: pip install 'maverick-agent[openai]'"
-            ) from e
+            raise ImportError(_openai_import_error_message(e)) from e
         key = api_key
         if key is None and allow_openai_env_fallback:
             key = os.environ.get("OPENAI_API_KEY")
