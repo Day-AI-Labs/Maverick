@@ -283,6 +283,15 @@ def _validate_and_write(content: str, skills_dir: Path) -> Skill:
     tmp_path = skills_dir / ".validating"
     parsed = Skill.parse(content, tmp_path)
 
+    # A skill MUST declare `name:` in its frontmatter. Skill.parse falls back to
+    # path.stem when it's absent -- fine when LOADING an existing skill (the
+    # filename is the name), but on install that stem is the staging file
+    # ('.validating'), so a nameless skill would silently install under the
+    # bogus name 'validating'. Reject it like a missing/invalid frontmatter.
+    _front = re.match(r"^---\n(.*?)\n---\n", content, re.DOTALL)
+    if not (_front and re.search(r"(?m)^name:[ \t]*\S", _front.group(1))):
+        raise ValueError("skill frontmatter missing required 'name'")
+
     # Signed-skill policy: enforce [skills].require_signed / trusted_pubkeys
     # BEFORE the shield scan and BEFORE writing. Rejects forged or untrusted
     # signatures; reject signed skills if cryptography is missing.
