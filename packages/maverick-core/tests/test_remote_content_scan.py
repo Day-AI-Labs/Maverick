@@ -63,6 +63,15 @@ class _FakeResponse:
         self.url = "https://example.com/"
         self.headers = {"content-type": content_type}
 
+    def iter_bytes(self):
+        yield self.content
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
 
 class _FakeClient:
     def __init__(self, response):
@@ -74,7 +83,7 @@ class _FakeClient:
     def __exit__(self, *a):
         return False
 
-    def request(self, *a, **k):
+    def stream(self, *a, **k):
         return self._response
 
 
