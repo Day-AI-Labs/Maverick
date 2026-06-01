@@ -62,21 +62,14 @@ def _fetch_subgoals(world: WorldModel, parent_id: int) -> list[Goal]:
 
 
 def _resolve_active_goal(world: WorldModel) -> Optional[Goal]:
-    """Pick the most-recently-touched non-terminal goal as 'active'."""
-    row = world.conn.execute(
-        "SELECT id, parent_id, title, description, status, created_at, "
-        "updated_at, deadline, result FROM goals "
-        "WHERE status IN ('pending', 'in_progress', 'running') "
-        "ORDER BY updated_at DESC LIMIT 1"
-    ).fetchone()
-    if row:
-        return Goal(**dict(row))
-    # Fall back to most-recent goal regardless of status.
-    row = world.conn.execute(
-        "SELECT id, parent_id, title, description, status, created_at, "
-        "updated_at, deadline, result FROM goals ORDER BY updated_at DESC LIMIT 1"
-    ).fetchone()
-    return Goal(**dict(row)) if row else None
+    """Pick the most-recently-touched non-terminal goal as 'active'.
+
+    Delegates to the locked WorldModel.resolve_active_goal(), which queries
+    the status vocabulary the kernel actually writes (pending/active/blocked)
+    — the old inline query used never-written 'in_progress'/'running' and so
+    silently matched no live goal (#470).
+    """
+    return world.resolve_active_goal()
 
 
 def snapshot(world: WorldModel, goal_id: Optional[int] = None) -> Optional[MonitorState]:

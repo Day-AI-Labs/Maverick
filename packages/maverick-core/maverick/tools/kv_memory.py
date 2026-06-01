@@ -14,7 +14,6 @@ Scoped to the current goal so memory doesn't leak across runs. Use the
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 
 from . import Tool
@@ -74,62 +73,43 @@ def _run_factory(world, goal_id: int | None):
                     "Store a summary or a file path instead."
                 )
             scoped = _scoped_key(goal_id, user_key)
-            # Upsert: delete existing for this scoped key, insert.
-            world.conn.execute("DELETE FROM facts WHERE key=?", (scoped,))
-            world.conn.execute(
-                "INSERT INTO facts(key, value, updated_at) VALUES(?, ?, ?)",
-                (scoped, value, time.time()),
-            )
-            world.conn.commit()
+            # Locked upsert via the WorldModel helper (#470): no longer
+            # reaches into conn.execute (torn writes under the threadpool /
+            # `?` breaks the psycopg backend).
+            world.set_fact_raw(scoped, value)
             return f"set {user_key!r} ({len(value)} bytes)"
         if op == "get":
             user_key = (args.get("key") or "").strip()
             if not user_key:
                 return "ERROR: get requires key"
-            row = world.conn.execute(
-                "SELECT value FROM facts WHERE key=? LIMIT 1",
-                (_scoped_key(goal_id, user_key),),
-            ).fetchone()
-            if row is None:
+            value = world.get_fact(_scoped_key(goal_id, user_key))
+            if value is None:
                 return f"(no fact stored for {user_key!r})"
-            return row["value"]
+            return value
         if op == "delete":
             user_key = (args.get("key") or "").strip()
             if not user_key:
                 return "ERROR: delete requires key"
-            cur = world.conn.execute(
-                "DELETE FROM facts WHERE key=?",
-                (_scoped_key(goal_id, user_key),),
-            )
-            world.conn.commit()
-            return f"deleted {cur.rowcount} row(s)"
+            removed = world.delete_fact(_scoped_key(goal_id, user_key))
+            return f"deleted {removed} row(s)"
         prefix_like = f"goal:{goal_id}:%"
         if op == "list":
-            rows = world.conn.execute(
-                "SELECT key, length(value) AS sz FROM facts "
-                "WHERE key LIKE ? ORDER BY updated_at DESC LIMIT ?",
-                (prefix_like, cap),
-            ).fetchall()
+            rows = world.list_facts(prefix_like, limit=cap)
             if not rows:
                 return "(no facts stored for this goal)"
-            return "\n".join(f"{_unscope(r['key'])}  ({r['sz']} bytes)" for r in rows)
+            return "\n".join(f"{_unscope(k)}  ({sz} bytes)" for k, sz in rows)
         if op == "search":
             q = (args.get("query") or "").strip()
             if not q:
                 return "ERROR: search requires query"
             like = f"%{q}%"
-            rows = world.conn.execute(
-                "SELECT key, value FROM facts WHERE key LIKE ? "
-                "AND (key LIKE ? OR value LIKE ?) "
-                "ORDER BY updated_at DESC LIMIT ?",
-                (prefix_like, like, like, cap),
-            ).fetchall()
+            rows = world.search_facts(prefix_like, like, limit=cap)
             if not rows:
                 return f"no matches for {q!r}"
             out = []
-            for r in rows:
-                snippet = (r["value"] or "")[:200]
-                out.append(f"{_unscope(r['key'])}: {snippet}")
+            for k, v in rows:
+                snippet = (v or "")[:200]
+                out.append(f"{_unscope(k)}: {snippet}")
             return "\n".join(out)
         return f"ERROR: unknown op {op!r}"
     return _run

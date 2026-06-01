@@ -409,6 +409,23 @@ class WorldModel:
             finally:
                 self._write_depth -= 1
 
+    def _read_all(self, sql: str, params: tuple = ()) -> list:
+        """Run a SELECT under the write lock and return all rows.
+
+        Reads share ``_write_lock`` with writers so a query can't observe a
+        torn intermediate state while another thread is mid-transaction
+        (the ``serve`` threadpool runs the dashboard and a goal at once).
+        SQLite's RLock is cheap; this only serialises against in-process
+        writers, not against WAL readers in other processes.
+        """
+        with self._write_lock:
+            return self.conn.execute(sql, params).fetchall()
+
+    def _read_one(self, sql: str, params: tuple = ()):
+        """Run a SELECT under the write lock and return the first row (or None)."""
+        with self._write_lock:
+            return self.conn.execute(sql, params).fetchone()
+
     def close(self) -> None:
         """Close the underlying SQLite connection.
 
@@ -590,10 +607,61 @@ class WorldModel:
         return [Goal(**dict(r)) for r in rows]
 
     def active_goal(self) -> Optional[Goal]:
-        row = self.conn.execute(
+        row = self._read_one(
             "SELECT * FROM goals WHERE status IN ('active', 'blocked') ORDER BY updated_at DESC LIMIT 1"
-        ).fetchone()
+        )
         return Goal(**dict(row)) if row else None
+
+    # Canonical status vocabulary actually written by the kernel
+    # (orchestrator.set_goal_status + create_goal default): pending (new),
+    # active (running), blocked (paused/awaiting), done (success), cancelled.
+    # Helpers below query against THIS vocabulary — earlier call sites used
+    # never-written statuses ('in_progress'/'running'/'succeeded'/'failed')
+    # and silently matched nothing (#470).
+    # "Running now" for monitor = pending/active. 'blocked' is paused
+    # awaiting the user, so it's not what "what's the agent working on"
+    # should surface first (it's still reachable via the any-status
+    # fallback). The old query used 'in_progress'/'running', which the
+    # kernel never writes — so it always fell through to the fallback.
+    _ACTIVE_STATUSES = ("pending", "active")
+    _FINISHED_STATUSES = ("done", "blocked", "cancelled")
+
+    def resolve_active_goal(self) -> Optional[Goal]:
+        """Most-recently-touched pending/active goal, else the most recent
+        goal of any status. Locked. Used by ``maverick monitor``."""
+        placeholders = ", ".join("?" * len(self._ACTIVE_STATUSES))
+        row = self._read_one(
+            f"SELECT * FROM goals WHERE status IN ({placeholders}) "
+            "ORDER BY updated_at DESC LIMIT 1",
+            self._ACTIVE_STATUSES,
+        )
+        if row is None:
+            row = self._read_one(
+                "SELECT * FROM goals ORDER BY updated_at DESC LIMIT 1"
+            )
+        return Goal(**dict(row)) if row else None
+
+    def candidate_goals(self, include_running: bool = False, limit: int = 500) -> list[Goal]:
+        """Goals with meaningful text to match against, for cross-goal
+        recall. Locked. By default only FINISHED goals (done/blocked/
+        cancelled); ``include_running`` widens to every goal with text."""
+        text_filter = (
+            "(COALESCE(title, '') != '' OR COALESCE(description, '') != '')"
+        )
+        if include_running:
+            rows = self._read_all(
+                f"SELECT * FROM goals WHERE {text_filter} "
+                "ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            )
+        else:
+            placeholders = ", ".join("?" * len(self._FINISHED_STATUSES))
+            rows = self._read_all(
+                f"SELECT * FROM goals WHERE status IN ({placeholders}) "
+                f"AND {text_filter} ORDER BY updated_at DESC LIMIT ?",
+                self._FINISHED_STATUSES + (limit,),
+            )
+        return [Goal(**dict(r)) for r in rows]
 
     # ----- episodes -----
     def start_episode(self, goal_id: int) -> int:
@@ -699,8 +767,60 @@ class WorldModel:
             )
 
     def get_facts(self) -> dict[str, str]:
-        rows = self.conn.execute("SELECT key, value FROM facts ORDER BY updated_at DESC").fetchall()
+        rows = self._read_all("SELECT key, value FROM facts ORDER BY updated_at DESC")
         return {r["key"]: r["value"] for r in rows}
+
+    # ----- goal-scoped fact helpers (locked; used by kv_memory) -----
+    # kv_memory stores per-goal facts under a ``goal:<id>:<key>`` prefix on
+    # the flat ``facts`` table. These wrap that access in the write lock so
+    # the tool no longer reaches into ``conn.execute`` directly (#470).
+    def get_fact(self, key: str) -> Optional[str]:
+        row = self._read_one(
+            "SELECT value FROM facts WHERE key=? LIMIT 1", (key,),
+        )
+        return row["value"] if row is not None else None
+
+    def delete_fact(self, key: str) -> int:
+        """Delete one fact by exact key. Returns rows removed."""
+        with self._writing() as conn:
+            cur = conn.execute("DELETE FROM facts WHERE key=?", (key,))
+            return cur.rowcount
+
+    def list_facts(self, key_prefix: str, limit: int = 50) -> list[tuple[str, int]]:
+        """Return ``(key, value_length)`` for facts whose key starts with
+        ``key_prefix`` (a LIKE pattern the caller supplies), newest first."""
+        rows = self._read_all(
+            "SELECT key, length(value) AS sz FROM facts "
+            "WHERE key LIKE ? ORDER BY updated_at DESC LIMIT ?",
+            (key_prefix, limit),
+        )
+        return [(r["key"], r["sz"]) for r in rows]
+
+    def search_facts(
+        self, key_prefix: str, like: str, limit: int = 50,
+    ) -> list[tuple[str, str]]:
+        """Substring search within a key-prefix scope. ``like`` is a
+        pre-built ``%term%`` pattern; ``key_prefix`` scopes the rows."""
+        rows = self._read_all(
+            "SELECT key, value FROM facts WHERE key LIKE ? "
+            "AND (key LIKE ? OR value LIKE ?) "
+            "ORDER BY updated_at DESC LIMIT ?",
+            (key_prefix, like, like, limit),
+        )
+        return [(r["key"], r["value"]) for r in rows]
+
+    def set_fact_raw(self, key: str, value: str) -> None:
+        """Upsert a fact by exact key (no source_episode_id). Locked.
+
+        kv_memory uses this for its goal-scoped keys; ``upsert_fact`` is the
+        episode-attributed variant used by the agent's fact-learning path.
+        """
+        with self._writing() as conn:
+            conn.execute("DELETE FROM facts WHERE key=?", (key,))
+            conn.execute(
+                "INSERT INTO facts(key, value, updated_at) VALUES(?, ?, ?)",
+                (key, value, time.time()),
+            )
 
     # ----- questions -----
     def ask(self, question: str, goal_id: Optional[int] = None) -> int:

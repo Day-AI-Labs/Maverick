@@ -119,13 +119,17 @@ def world_with_history(tmp_path):
     """A WorldModel with a few finished goals to recall against."""
     from maverick.world_model import WorldModel
     world = WorldModel(tmp_path / "wm.sqlite")
-    # Insert via direct SQL (we control the schema fields).
+    # Insert via direct SQL (we control the schema fields). Statuses match
+    # the vocabulary the kernel actually writes — done/blocked for finished,
+    # active for running — which recall/monitor were reconciled to in #470
+    # (the old 'succeeded'/'failed'/'in_progress' were never written, so the
+    # queries matched nothing). A reverted goal lands in 'blocked'.
     goals = [
-        (1, None, "Refactor auth module", "Replace JWT with sessions in app/auth.py", "succeeded", "Migrated auth to sessions, all tests pass."),
-        (2, None, "Fix bug in payment flow", "Stripe webhook crashes on negative amounts", "succeeded", "Added input validation; webhook stable."),
-        (3, None, "Refactor authentication", "Same as #1 essentially", "failed", "Hit a deadlock; reverted."),
-        (4, None, "Write tests for cart", "Add coverage for shopping cart edge cases", "succeeded", "Cart now at 85% coverage."),
-        (5, None, "Database migration", "Move from SQLite to Postgres", "in_progress", None),
+        (1, None, "Refactor auth module", "Replace JWT with sessions in app/auth.py", "done", "Migrated auth to sessions, all tests pass."),
+        (2, None, "Fix bug in payment flow", "Stripe webhook crashes on negative amounts", "done", "Added input validation; webhook stable."),
+        (3, None, "Refactor authentication", "Same as #1 essentially", "blocked", "Hit a deadlock; reverted."),
+        (4, None, "Write tests for cart", "Add coverage for shopping cart edge cases", "done", "Cart now at 85% coverage."),
+        (5, None, "Database migration", "Move from SQLite to Postgres", "active", None),
     ]
     now = time.time()
     for gid, parent, title, desc, status, result in goals:
@@ -213,11 +217,11 @@ def test_monitor_snapshot_empty_db(tmp_path):
 
 
 def test_monitor_snapshot_resolves_active_goal(world_with_history):
-    """Without explicit goal_id, picks the most-recent in_progress one."""
+    """Without explicit goal_id, picks the most-recent non-terminal goal."""
     from maverick.monitor import snapshot
     state = snapshot(world_with_history)
     assert state is not None
-    # Goal #5 is the only in_progress one.
+    # Goal #5 is the only 'active' (non-terminal) one.
     assert state.goal.id == 5
 
 
@@ -233,7 +237,7 @@ def test_monitor_render_contains_key_fields(world_with_history):
     state = snapshot(world_with_history, goal_id=2)
     text = render(state)
     assert "Goal #2" in text
-    assert "succeeded" in text.lower()
+    assert "done" in text.lower()
     assert "payment" in text.lower()
 
 
@@ -244,7 +248,7 @@ def test_monitor_render_shows_children(world_with_history):
     world_with_history.conn.execute(
         "INSERT INTO goals(id, parent_id, title, description, status, "
         "created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
-        (10, 5, "Spin up Postgres", "Local docker pg", "in_progress",
+        (10, 5, "Spin up Postgres", "Local docker pg", "active",
          time.time(), time.time()),
     )
     world_with_history.conn.commit()

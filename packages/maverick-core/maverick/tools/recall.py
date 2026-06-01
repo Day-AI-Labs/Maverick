@@ -121,24 +121,14 @@ def _rank_with_jaccard(query: str, goals: list) -> list[tuple[float, Any]]:
 
 
 def _list_candidate_goals(world: WorldModel, include_running: bool) -> list:
-    """Pull goals that have meaningful text to compare against."""
-    if include_running:
-        rows = world.conn.execute(
-            "SELECT id, parent_id, title, description, status, created_at, "
-            "updated_at, deadline, result FROM goals "
-            "WHERE COALESCE(title, '') != '' OR COALESCE(description, '') != '' "
-            "ORDER BY updated_at DESC LIMIT 500"
-        ).fetchall()
-    else:
-        rows = world.conn.execute(
-            "SELECT id, parent_id, title, description, status, created_at, "
-            "updated_at, deadline, result FROM goals "
-            "WHERE status IN ('succeeded', 'done', 'failed') "
-            "AND (COALESCE(title, '') != '' OR COALESCE(description, '') != '') "
-            "ORDER BY updated_at DESC LIMIT 500"
-        ).fetchall()
-    from ..world_model import Goal
-    return [Goal(**dict(r)) for r in rows]
+    """Pull goals that have meaningful text to compare against.
+
+    Delegates to the locked WorldModel.candidate_goals() (#470): no direct
+    conn.execute (torn reads / `?` breaks psycopg), and the finished-goal
+    filter uses the status vocabulary the kernel writes (done/blocked/
+    cancelled) instead of the never-written 'succeeded'/'failed'.
+    """
+    return world.candidate_goals(include_running=include_running, limit=500)
 
 
 def recall_past_goals(
@@ -156,7 +146,10 @@ def recall_past_goals(
     """
     own_world = False
     if world is None:
-        world = WorldModel(db_path)
+        # Use open_world() so a Postgres-configured install recalls from
+        # Postgres instead of silently opening an empty SQLite file (#470).
+        from ..world_model import open_world
+        world = open_world(db_path)
         own_world = True
     try:
         candidates = _list_candidate_goals(world, include_running)
