@@ -1081,7 +1081,9 @@ def answer(ctx, question_id: int, answer: tuple[str, ...]) -> None:
 
 
 @main.command()
-@click.option("--goal-id", type=int, default=None)
+@click.argument("goal_id_arg", required=False, type=int, metavar="[GOAL_ID]")
+@click.option("--goal-id", "goal_id", type=int, default=None,
+              help="The goal to resume (alternative to the positional GOAL_ID).")
 @click.option("--max-depth", default=3, type=int)
 @click.option("--max-dollars", type=float, default=None,
               help="Raise the dollar cap for this resume (e.g. after a budget halt).")
@@ -1089,10 +1091,18 @@ def answer(ctx, question_id: int, answer: tuple[str, ...]) -> None:
               help="Raise the wall-clock cap for this resume.")
 @click.pass_context
 @_humane_errors
-def resume(ctx, goal_id, max_depth: int, max_dollars, max_wall_seconds) -> None:
-    """Resume a blocked goal."""
+def resume(ctx, goal_id_arg, goal_id, max_depth: int, max_dollars, max_wall_seconds) -> None:
+    """Resume a blocked goal.
+
+    Pass the goal id positionally (``maverick resume 7``) or via ``--goal-id``;
+    omit both to resume the current active/blocked goal.
+    """
     _require_llm_key()
     world = open_world(ctx.obj["db"])
+    # The positional arg and --goal-id are equivalent; the option wins if both
+    # are given. The budget-halt / error messages suggest the positional form.
+    if goal_id is None:
+        goal_id = goal_id_arg
     if goal_id is None:
         g = world.active_goal()
         if not g:
