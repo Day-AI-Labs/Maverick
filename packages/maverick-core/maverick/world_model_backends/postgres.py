@@ -31,8 +31,14 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import Any
 
 log = logging.getLogger(__name__)
+
+# Reported by the schema_version property for parity with the SQLite backend.
+# The PG schema is applied idempotently (CREATE ... IF NOT EXISTS + ALTER ...
+# ADD COLUMN IF NOT EXISTS), not version-stepped, so this is a flat constant.
+_PG_SCHEMA_VERSION = 9
 
 
 # Schema mirror. Postgres-flavored types; sequence-based PKs instead of
@@ -106,6 +112,20 @@ class PGGoal:
     updated_at: float
     deadline: float | None
     result: str | None
+
+
+@dataclass
+class PGEpisodeSpend:
+    """Mirror of maverick.world_model.EpisodeSpend."""
+    id: int
+    goal_id: int
+    started_at: float
+    ended_at: float | None
+    outcome: str | None
+    cost_dollars: float
+    input_tokens: int
+    output_tokens: int
+    tool_calls: int
 
 
 class PostgresWorldModel:
@@ -224,6 +244,63 @@ class PostgresWorldModel:
             rows = cur.fetchall()
         return [PGGoal(*r) for r in rows]
 
+    _GOAL_COLS = (
+        "id, parent_id, title, description, status, "
+        "created_at, updated_at, deadline, result"
+    )
+
+    def active_goal(self) -> PGGoal | None:
+        """The most-recently-touched active/blocked goal (kernel contract:
+        matches SQLite WorldModel.active_goal)."""
+        with self._tx() as cur:
+            cur.execute(
+                f"SELECT {self._GOAL_COLS} FROM goals "
+                "WHERE status IN ('active', 'blocked') "
+                "ORDER BY updated_at DESC LIMIT 1"
+            )
+            row = cur.fetchone()
+        return PGGoal(*row) if row else None
+
+    def list_goals(
+        self,
+        status: str | None = None,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+        order: str = "asc",
+    ) -> list[PGGoal]:
+        """List goals, optionally filtered + paginated (mirrors SQLite)."""
+        direction = "DESC" if str(order).lower() == "desc" else "ASC"
+        sql = f"SELECT {self._GOAL_COLS} FROM goals"
+        params: list[Any] = []
+        if status:
+            sql += " WHERE status = %s"
+            params.append(status)
+        sql += f" ORDER BY id {direction}"
+        if limit is not None:
+            sql += " LIMIT %s OFFSET %s"
+            params.extend([limit, offset])
+        with self._tx() as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+        return [PGGoal(*r) for r in rows]
+
+    def reclaim_orphan_goals(self, *, max_age_seconds: float = 60.0) -> int:
+        """Mark stale active/pending goals as blocked after a crash. Only rows
+        whose updated_at is at least ``max_age_seconds`` old qualify, so a goal
+        live in a sibling process isn't reclaimed (matches SQLite)."""
+        cutoff = time.time() - max_age_seconds
+        now = time.time()
+        with self._tx() as cur:
+            cur.execute(
+                "UPDATE goals SET status = 'blocked', "
+                "result = COALESCE(result, '') || ' [process restarted mid-run]', "
+                "updated_at = %s "
+                "WHERE status IN ('active', 'pending') AND updated_at < %s",
+                (now, cutoff),
+            )
+            return cur.rowcount
+
     # ----- episodes -----
 
     def start_episode(self, goal_id: int) -> int:
@@ -256,6 +333,45 @@ class PostgresWorldModel:
                  cost_dollars, input_tokens, output_tokens, tool_calls,
                  episode_id),
             )
+
+    _EPISODE_COLS = (
+        "id, goal_id, started_at, ended_at, outcome, "
+        "COALESCE(cost_dollars, 0), COALESCE(input_tokens, 0), "
+        "COALESCE(output_tokens, 0), COALESCE(tool_calls, 0)"
+    )
+
+    def list_episodes(
+        self, limit: int = 50, goal_id: int | None = None,
+    ) -> list[PGEpisodeSpend]:
+        """Recent episodes with spend (mirrors SQLite WorldModel.list_episodes)."""
+        sql = f"SELECT {self._EPISODE_COLS} FROM episodes"
+        params: list[Any] = []
+        if goal_id is not None:
+            sql += " WHERE goal_id = %s"
+            params.append(goal_id)
+        sql += " ORDER BY started_at DESC LIMIT %s"
+        params.append(limit)
+        with self._tx() as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+        return [PGEpisodeSpend(*r) for r in rows]
+
+    def total_spend(self) -> dict[str, float]:
+        """Lifetime totals across finished episodes (mirrors SQLite)."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT COALESCE(SUM(cost_dollars), 0), "
+                "COALESCE(SUM(input_tokens), 0), "
+                "COALESCE(SUM(output_tokens), 0), "
+                "COUNT(*) FROM episodes WHERE ended_at IS NOT NULL"
+            )
+            row = cur.fetchone()
+        return {
+            "dollars": row[0],
+            "input_tokens": row[1],
+            "output_tokens": row[2],
+            "runs": row[3],
+        }
 
     # ----- events -----
 
@@ -319,6 +435,13 @@ class PostgresWorldModel:
             with self._tx() as cur:
                 cur.execute(f"DELETE FROM facts WHERE key IN ({ph})", keys)
         return keys
+
+    @property
+    def schema_version(self) -> int:
+        """Schema version, for parity with SQLite WorldModel.schema_version
+        (read by health.py / audit events). The PG schema is applied
+        idempotently via SCHEMA, not version-stepped, so this is a constant."""
+        return _PG_SCHEMA_VERSION
 
     # ----- close -----
 
