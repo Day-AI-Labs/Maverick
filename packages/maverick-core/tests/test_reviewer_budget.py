@@ -1,9 +1,12 @@
-"""review_diff must propagate BudgetExceeded, never soft-pass-approve.
+"""review_diff must propagate BudgetExceeded and fail CLOSED on other errors.
 
 Regression: the reviewer's LLM call was wrapped in a bare ``except
 Exception`` that returned approves=True on ANY failure, including budget
 exhaustion. A goal that ran out of budget mid-review would have its diff
-auto-approved (CLAUDE.md rule 3). Non-budget failures still soft-pass.
+auto-approved (CLAUDE.md rule 3) -- BudgetExceeded now propagates. A
+non-budget failure no longer soft-passes either: it fails closed (approves
+False + a blocker comment), matching the verifier, so a crashed reviewer
+can't wave an unreviewed diff through.
 """
 import asyncio
 
@@ -31,9 +34,11 @@ def test_review_diff_propagates_budget_exceeded():
         ))
 
 
-def test_review_diff_soft_passes_non_budget_errors():
-    # A non-budget failure still soft-passes (unchanged conservative behavior).
+def test_review_diff_fails_closed_on_non_budget_errors():
+    # A non-budget reviewer failure must NOT auto-approve an unreviewed diff;
+    # it fails closed (matching the verifier), surfacing a blocker comment.
     verdict = asyncio.run(review_diff(
         brief="add x", diff=_DIFF, llm=_TransientErrorLLM(), budget=Budget(),
     ))
-    assert verdict.approves is True
+    assert verdict.approves is False
+    assert any(c.severity == "blocker" for c in verdict.comments)
