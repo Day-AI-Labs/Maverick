@@ -68,8 +68,19 @@ class TestGating:
         st = self_learning.settings()
         assert st["enable"] is False
         assert st["create_tools"] is True
-        assert st["add_mcp_servers"] is True
         assert st["max_acquisitions"] == 5
+        # The retired add_mcp_servers knob is no longer surfaced.
+        assert "add_mcp_servers" not in st
+
+    def test_legacy_add_mcp_servers_key_tolerated(self, monkeypatch, tmp_path):
+        # An old config that still carries add_mcp_servers must not error.
+        cfg = tmp_path / "config.toml"
+        cfg.write_text("[self_learning]\nenable = true\nadd_mcp_servers = true\n")
+        monkeypatch.setenv("MAVERICK_CONFIG", str(cfg))
+        monkeypatch.delenv("MAVERICK_SELF_LEARNING", raising=False)
+        st = self_learning.settings()
+        assert st["enable"] is True
+        assert "add_mcp_servers" not in st
 
 
 class TestLedger:
@@ -288,7 +299,7 @@ class TestLearnTool:
         from maverick import self_learning as sl
         monkeypatch.setattr(sl, "settings", lambda: {
             "enable": True, "preflight": True, "create_tools": False,
-            "add_mcp_servers": True, "max_acquisitions": 5,
+            "max_acquisitions": 5,
         })
         from maverick.tools.learn import learn_capability
         tool = learn_capability(stub_agent)

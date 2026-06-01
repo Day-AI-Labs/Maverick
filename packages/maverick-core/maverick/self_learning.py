@@ -83,7 +83,7 @@ def settings() -> dict:
     except Exception:  # pragma: no cover
         return {
             "enable": False, "preflight": True, "create_tools": True,
-            "add_mcp_servers": True, "max_acquisitions": 5,
+            "max_acquisitions": 5,
         }
 
 

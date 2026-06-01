@@ -793,16 +793,17 @@ def pick_capabilities() -> dict[str, bool]:
 def pick_self_learning() -> dict[str, Any]:
     """Opt-in to self-learning: acquire/build new capabilities on demand.
 
-    Off by default. When on, the agent can install catalog skills, wire in
-    MCP servers, and GENERATE + run new tools when it hits a capability gap.
+    Off by default. When on, the agent can install catalog skills, generate
+    + run new tools, and discover REST APIs when it hits a capability gap.
     Generating and executing fresh code is a real trust decision, so this
     ships disabled and we say so plainly. Returns a dict written under
-    ``[self_learning]``.
+    ``[self_learning]``. (Agent-driven MCP-server acquisition was removed in
+    #392 — MCP servers are operator-configured.)
     """
     console.print()
     console.print(
         "[dim]Self-learning lets the agent close capability gaps on its own: "
-        "install skills, wire in MCP servers, even write & run new tools. "
+        "install skills, discover REST APIs, even write & run new tools. "
         "It generates and executes fresh code in-process, so it's OFF by "
         "default.[/dim]"
     )
@@ -813,10 +814,6 @@ def pick_self_learning() -> dict[str, Any]:
         "  Allow the agent to GENERATE and run new tools (full autonomy)?",
         default=True,
     )
-    add_mcp = _q_confirm(
-        "  Allow the agent to add + start external MCP servers?",
-        default=True,
-    )
     preflight = _q_confirm(
         "  Pre-acquire likely skills before each run (one extra LLM call)?",
         default=True,
@@ -825,7 +822,6 @@ def pick_self_learning() -> dict[str, Any]:
         "enable": True,
         "preflight": preflight,
         "create_tools": create_tools,
-        "add_mcp_servers": add_mcp,
         "max_acquisitions": 5,
     }
 
