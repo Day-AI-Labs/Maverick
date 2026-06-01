@@ -198,7 +198,15 @@ class MCPClient:
         self.timeout = timeout
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._req_id = 0
-        self._lock = asyncio.Lock()
+        # Serialises stdin WRITES only (a json line must not interleave with
+        # another). It does NOT span the read, so concurrent tool calls no
+        # longer block each other for up to the full timeout.
+        self._send_lock = asyncio.Lock()
+        # id -> Future resolved by the background reader. This is what makes
+        # concurrent requests safe: each registers its own future, the
+        # single reader dispatches responses by id.
+        self._pending: dict[int, "asyncio.Future[dict]"] = {}
+        self._reader_task: Optional[asyncio.Task] = None
         self._stderr_task: Optional[asyncio.Task] = None
         self.tools: list[dict[str, Any]] = []
 
@@ -232,6 +240,8 @@ class MCPClient:
         # never fills and blocks the child on write. Without this, MCP
         # servers that log heavily deadlock mid-tool-call.
         self._stderr_task = asyncio.create_task(self._drain_stderr())
+        # Single persistent reader dispatches responses to per-id futures.
+        self._reader_task = asyncio.create_task(self._read_loop())
 
         init_resp = await self._request("initialize", {
             "protocolVersion": PROTOCOL_VERSION,
@@ -260,6 +270,52 @@ class MCPClient:
         except asyncio.CancelledError:
             return
 
+    async def _read_loop(self) -> None:
+        """Single reader: parse each stdout line and resolve the matching
+        pending future by id. Notifications + unknown ids are ignored. On
+        EOF, every outstanding future is failed so awaiters don't hang."""
+        assert self._proc is not None and self._proc.stdout is not None
+        try:
+            while True:
+                line = await self._proc.stdout.readline()
+                if not line:
+                    self._fail_all(MCPClientError(
+                        f"MCP server {self.spec.name!r} closed stdout"
+                    ))
+                    return
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    log.debug("MCP %s non-JSON line: %s", self.spec.name, line[:200])
+                    continue
+                msg_id = msg.get("id")
+                if msg_id is None:
+                    continue  # notification / server-initiated, ignore
+                fut = self._pending.pop(msg_id, None)
+                if fut is None or fut.done():
+                    # No waiter (e.g. a late response after timeout/cancel).
+                    continue
+                if "error" in msg:
+                    err = msg["error"] or {}
+                    fut.set_exception(MCPClientError(
+                        f"MCP {self.spec.name!r} error {err.get('code')}: "
+                        f"{err.get('message')}"
+                    ))
+                else:
+                    fut.set_result(msg.get("result", {}))
+        except asyncio.CancelledError:
+            self._fail_all(MCPClientError("MCP client stopped"))
+            raise
+        except Exception as e:  # pragma: no cover -- unexpected reader death
+            self._fail_all(MCPClientError(f"MCP reader failed: {e}"))
+
+    def _fail_all(self, exc: Exception) -> None:
+        """Fail every outstanding future (reader exit / shutdown)."""
+        for fut in list(self._pending.values()):
+            if not fut.done():
+                fut.set_exception(exc)
+        self._pending.clear()
+
     def _check_alive(self) -> None:
         if self._proc is None:
             raise MCPClientError("server not started")
@@ -270,68 +326,82 @@ class MCPClient:
             )
 
     async def _request(self, method: str, params: dict) -> dict:
-        async with self._lock:
-            self._check_alive()
-            req_id = self._next_id()
-            payload = {
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "method": method,
-                "params": params,
-            }
+        self._check_alive()
+        req_id = self._next_id()
+        loop = asyncio.get_event_loop()
+        fut: "asyncio.Future[dict]" = loop.create_future()
+        self._pending[req_id] = fut
+        payload = {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "method": method,
+            "params": params,
+        }
+        try:
             await self._send(payload)
-            return await asyncio.wait_for(self._read_response(req_id), timeout=self.timeout)
+        except Exception:
+            self._pending.pop(req_id, None)
+            raise
+        try:
+            return await asyncio.wait_for(fut, timeout=self.timeout)
+        except asyncio.TimeoutError:
+            # The request id is already on the wire; drop our future and tell
+            # the server to cancel so it doesn't keep running and leave a
+            # late response in the pipe. Best-effort: a dead/slow server may
+            # not honour it, but we no longer wait on the result.
+            self._pending.pop(req_id, None)
+            try:
+                await self._notify("notifications/cancelled", {
+                    "requestId": req_id,
+                    "reason": "client timeout",
+                })
+            except Exception:  # pragma: no cover -- cancel is best-effort
+                pass
+            raise MCPClientError(
+                f"MCP server {self.spec.name!r} request {method!r} timed out "
+                f"after {self.timeout}s"
+            )
 
     async def _notify(self, method: str, params: dict) -> None:
-        async with self._lock:
-            self._check_alive()
-            await self._send({"jsonrpc": "2.0", "method": method, "params": params})
+        self._check_alive()
+        await self._send({"jsonrpc": "2.0", "method": method, "params": params})
 
     async def _send(self, payload: dict) -> None:
         assert self._proc is not None and self._proc.stdin is not None
         line = (json.dumps(payload) + "\n").encode()
-        self._proc.stdin.write(line)
-        await self._proc.stdin.drain()
-
-    async def _read_response(self, expected_id: int) -> dict:
-        assert self._proc is not None and self._proc.stdout is not None
-        while True:
-            line = await self._proc.stdout.readline()
-            if not line:
-                raise MCPClientError(f"MCP server {self.spec.name!r} closed stdout")
-            try:
-                msg = json.loads(line)
-            except json.JSONDecodeError:
-                log.debug("MCP %s non-JSON line: %s", self.spec.name, line[:200])
-                continue
-            # Drop notifications + responses for other requests.
-            if msg.get("id") != expected_id:
-                continue
-            if "error" in msg:
-                err = msg["error"]
-                raise MCPClientError(
-                    f"MCP {self.spec.name!r} error {err.get('code')}: {err.get('message')}"
-                )
-            return msg.get("result", {})
+        # Only the write is serialised, so two concurrent requests can be
+        # in flight (each awaiting its own future) without blocking.
+        async with self._send_lock:
+            self._proc.stdin.write(line)
+            await self._proc.stdin.drain()
 
     async def call_tool(self, tool_name: str, arguments: dict) -> str:
+        """Call an MCP tool. Raises MCPClientError on a real tool error
+        (``isError``) so a successful output that merely starts with
+        'ERROR:' is no longer indistinguishable from a failure."""
         resp = await self._request("tools/call", {
             "name": tool_name,
             "arguments": arguments,
         })
         if resp.get("isError"):
-            content = resp.get("content", [])
-            return "ERROR: " + _content_to_str(content)
+            raise MCPClientError(
+                f"MCP tool {tool_name!r} returned an error: "
+                + _content_to_str(resp.get("content", []))
+            )
         return _content_to_str(resp.get("content", []))
 
     async def stop(self) -> None:
-        if self._stderr_task is not None:
-            self._stderr_task.cancel()
-            try:
-                await self._stderr_task
-            except (asyncio.CancelledError, Exception):
-                pass
-            self._stderr_task = None
+        for task_attr in ("_reader_task", "_stderr_task"):
+            task = getattr(self, task_attr)
+            if task is not None:
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                setattr(self, task_attr, None)
+        # Any awaiter still pending after the reader is gone must not hang.
+        self._fail_all(MCPClientError("MCP client stopped"))
         if self._proc is None:
             return
         if self._proc.returncode is None:
