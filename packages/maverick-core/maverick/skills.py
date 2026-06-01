@@ -119,10 +119,27 @@ def load_skills(skills_dir: Path = SKILLS_DIR) -> list[Skill]:
     return out
 
 
+def _decay_weights(names: list[str]) -> dict[str, float]:
+    """Track-record multipliers for ``names`` (neutral 1.0 on any failure).
+
+    Recall ranking judges a skill by relevance to the goal; this folds in how
+    it has PERFORMED in past runs (see ``skill_stats``) so a skill that keeps
+    riding along with failures yields rank to alternatives. Fully optional —
+    if the stats module is unavailable or decay is disabled, every weight is
+    1.0 and ranking is unchanged.
+    """
+    try:
+        from . import skill_stats
+        return skill_stats.decay_weights(names)
+    except Exception:  # pragma: no cover -- stats never block recall
+        return {n: 1.0 for n in names}
+
+
 def _relevant_skills_lexical(goal: str, all_skills: list[Skill], max_n: int = 3) -> list[Skill]:
     goal_lower = goal.lower()
     goal_words = set(re.findall(r"\w+", goal_lower))
-    scored: list[tuple[int, Skill]] = []
+    weights = _decay_weights([s.name for s in all_skills])
+    scored: list[tuple[float, Skill]] = []
     for s in all_skills:
         score = 0
         for trig in s.triggers:
@@ -131,7 +148,7 @@ def _relevant_skills_lexical(goal: str, all_skills: list[Skill], max_n: int = 3)
             if trig.lower() in goal_lower:
                 score += 5
         if score > 0:
-            scored.append((score, s))
+            scored.append((score * weights.get(s.name, 1.0), s))
     scored.sort(key=lambda x: -x[0])
     return [s for _, s in scored[:max_n]]
 

@@ -1184,9 +1184,16 @@ def facts(ctx) -> None:
         click.echo(f"  {k}: {v}")
 
 
-@main.command()
-def skills() -> None:
-    """List skills the swarm has distilled or installed."""
+@main.group(invoke_without_command=True)
+@click.pass_context
+def skills(ctx: click.Context) -> None:
+    """List skills the swarm has distilled or installed.
+
+    With no subcommand, lists skills. Use `skills stats` to see each skill's
+    track record and `skills evict` to prune ones that rarely help.
+    """
+    if ctx.invoked_subcommand is not None:
+        return
     from .skills import SKILLS_DIR, load_skills
     items = load_skills()
     if not items:
@@ -1196,6 +1203,52 @@ def skills() -> None:
         click.echo(f"  {s.name}")
         for t in s.triggers[:3]:
             click.echo(f"    trigger: {t}")
+
+
+@skills.command("stats")
+def skills_stats() -> None:
+    """Show each skill's usage track record (uses / win-rate / recall weight)."""
+    from . import skill_stats
+    from .skills import load_skills
+    items = load_skills()
+    if not items:
+        click.echo("no skills yet.")
+        return
+    for s in items:
+        st = skill_stats.get(s.name)
+        if st is None or st.uses == 0:
+            click.echo(f"  {s.name}: no usage recorded")
+            continue
+        decided = st.wins + st.losses
+        wr = (st.wins / decided) if decided else 0.0
+        click.echo(
+            f"  {s.name}: uses={st.uses} wins={st.wins} losses={st.losses} "
+            f"win_rate={wr:.0%} weight={skill_stats.decay_weight(s.name):.2f}"
+        )
+
+
+@skills.command("evict")
+@click.option("--apply", "do_apply", is_flag=True,
+              help="Delete the candidates (default: dry-run, just lists them).")
+@click.option("--min-uses", type=int, default=5, show_default=True,
+              help="Only consider skills used at least this many times.")
+@click.option("--max-win-rate", type=float, default=0.2, show_default=True,
+              help="Flag skills whose win rate is at or below this.")
+def skills_evict(do_apply: bool, min_uses: int, max_win_rate: float) -> None:
+    """List (or with --apply, remove) skills that have had a fair trial and rarely help."""
+    from . import skill_stats
+    from .skills import remove_skill
+    cands = skill_stats.evictable(min_uses=min_uses, max_win_rate=max_win_rate)
+    if not cands:
+        click.echo("no eviction candidates.")
+        return
+    for name in cands:
+        if do_apply:
+            click.echo(f"  {'removed' if remove_skill(name) else 'not found'}: {name}")
+        else:
+            click.echo(f"  candidate: {name}")
+    if not do_apply:
+        click.echo("\n(dry-run; re-run with --apply to remove them)")
 
 
 @main.command()

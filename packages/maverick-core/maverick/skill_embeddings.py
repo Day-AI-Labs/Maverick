@@ -169,12 +169,19 @@ def relevant_skills_embed(
     goal_vec = goal_vecs[0]
 
     by_name = {s.name: s for s in all_skills}
+    # Fold each skill's past-run track record into the ranking BEFORE the
+    # top-N cut (see skills._decay_weights / skill_stats), so a skill that
+    # rides along with failures yields rank. Threshold still gates on raw
+    # relevance — decay only re-orders skills that already cleared it, never
+    # pulls in an irrelevant one. Neutral 1.0 when stats are unavailable.
+    from .skills import _decay_weights
+    weights = _decay_weights(list(by_name))
     scored: list[tuple[float, object]] = []
     for name, entry in cache.items():
         if name not in by_name:
             continue
         score = _cosine(goal_vec, entry.vector)
         if score >= threshold:
-            scored.append((score, by_name[name]))
+            scored.append((score * weights.get(name, 1.0), by_name[name]))
     scored.sort(key=lambda x: -x[0])
     return [s for _, s in scored[:max_n]]
