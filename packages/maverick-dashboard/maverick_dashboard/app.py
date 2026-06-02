@@ -7,6 +7,7 @@ mcp/server.py.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hmac
 import ipaddress
 import json
@@ -432,9 +433,17 @@ def _any_provider_key_set() -> bool:
 # Council safety-seat (round 1): nothing throttled /chat/send or
 # POST /api/v1/goals. A runaway loop or a flood of same-origin posts
 # could spawn unbounded goals, each costing real money. This is an
-# in-process sliding-window limiter (no new dependency) shared by both
-# goal-creating routes. Cap is generous and configurable.
-_goal_times: deque[float] = deque()
+# in-process sliding-window limiter (no new dependency) shared by all
+# goal-creating routes. Caps are generous and configurable.
+#
+# Exposed-deployment hardening: the window used to be one process-wide
+# deque shared across every caller AND the HMAC webhooks, so a single
+# noisy client (or a webhook flood) 429'd everyone. Key the per-client
+# window per principal/source (client IP, or a webhook source label) and
+# keep a separate global ceiling so the process still can't be driven to
+# spawn unbounded paid goals in aggregate.
+_goal_times: dict[str, deque[float]] = {}
+_goal_times_global: deque[float] = deque()
 _goal_rl_lock = threading.Lock()
 
 
@@ -445,26 +454,105 @@ def _max_goals_per_min() -> int:
         return 30
 
 
-def check_goal_rate_limit() -> None:
-    """Raise HTTPException(429) if the goal-creation rate exceeds the cap.
+def _max_goals_global_per_min() -> int:
+    # Process-wide ceiling across all clients; defaults to 10x the per-client
+    # cap so one client can't starve others yet a distributed flood is still
+    # bounded.
+    try:
+        return max(1, int(os.environ.get(
+            "MAVERICK_DASHBOARD_MAX_GOALS_GLOBAL_PER_MIN",
+            str(_max_goals_per_min() * 10),
+        )))
+    except ValueError:
+        return _max_goals_per_min() * 10
 
-    60-second sliding window. Shared by /chat/send and /api/v1/goals so
-    the limit is global to the dashboard process, not per-route.
+
+def _rate_limit_key(request: Request | None, source: str | None = None) -> str:
+    """Identify the principal/source for rate-limiting.
+
+    Assumption (documented): we don't have per-request auth principals
+    threaded through here, so we key on the client IP (the safe, IP-based
+    option called out in the issue). HMAC webhooks pass an explicit
+    ``source`` label since their callers share no useful client identity.
     """
+    if source:
+        return f"source:{source}"
+    host = request.client.host if (request and request.client) else "unknown"
+    return f"ip:{host}"
+
+
+def check_goal_rate_limit(
+    request: Request | None = None, *, source: str | None = None
+) -> None:
+    """Raise HTTPException(429) if the goal-creation rate exceeds a cap.
+
+    Two 60-second sliding windows are enforced: a per-client window keyed
+    by principal/source (so one noisy client can't 429 everyone) and a
+    process-wide global ceiling (so a distributed flood still can't spawn
+    unbounded paid goals).
+    """
+    key = _rate_limit_key(request, source)
     cap = _max_goals_per_min()
+    global_cap = _max_goals_global_per_min()
     now = time.monotonic()
+    cutoff = now - 60.0
     with _goal_rl_lock:
-        cutoff = now - 60.0
-        while _goal_times and _goal_times[0] < cutoff:
-            _goal_times.popleft()
-        if len(_goal_times) >= cap:
-            retry = int(60 - (now - _goal_times[0])) + 1
+        # Global ceiling first.
+        while _goal_times_global and _goal_times_global[0] < cutoff:
+            _goal_times_global.popleft()
+        if len(_goal_times_global) >= global_cap:
+            retry = int(60 - (now - _goal_times_global[0])) + 1
+            raise HTTPException(
+                status_code=429,
+                detail=f"goal rate limit reached ({global_cap}/min total). "
+                       f"Try again in {retry}s.",
+                headers={"Retry-After": str(max(1, retry))},
+            )
+
+        window = _goal_times.get(key)
+        if window is None:
+            window = _goal_times[key] = deque()
+        while window and window[0] < cutoff:
+            window.popleft()
+        if len(window) >= cap:
+            retry = int(60 - (now - window[0])) + 1
             raise HTTPException(
                 status_code=429,
                 detail=f"goal rate limit reached ({cap}/min). Try again in {retry}s.",
                 headers={"Retry-After": str(max(1, retry))},
             )
-        _goal_times.append(now)
+
+        # Opportunistically drop empty per-client windows so a flood of
+        # distinct IPs can't grow the dict without bound.
+        for stale_key in [k for k, w in _goal_times.items() if not w and k != key]:
+            del _goal_times[stale_key]
+
+        window.append(now)
+        _goal_times_global.append(now)
+
+
+# ----- SSE stream concurrency cap -----
+# Council security finding (exposed-deployment hardening): each open SSE
+# stream spawns a 300s task polling SQLite every 0.5s. Thousands of
+# EventSource opens exhaust file descriptors and the event loop. Cap the
+# number of concurrent streams with a semaphore (no new dependency) and
+# return 503 past the cap. Built lazily on the running loop so the limit
+# binds to the event loop the streams actually run on.
+def _max_sse_streams() -> int:
+    try:
+        return max(1, int(os.environ.get("MAVERICK_DASHBOARD_MAX_SSE", "64")))
+    except ValueError:
+        return 64
+
+
+_sse_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_sse_semaphore() -> asyncio.Semaphore:
+    global _sse_semaphore
+    if _sse_semaphore is None:
+        _sse_semaphore = asyncio.Semaphore(_max_sse_streams())
+    return _sse_semaphore
 
 
 _world_cache: dict[str, Any] = {}
@@ -878,7 +966,7 @@ async def chat_send(
                 "the dashboard."
             ),
         )
-    check_goal_rate_limit()
+    check_goal_rate_limit(request)
     title = (title or "").strip()
     if not title:
         raise HTTPException(status_code=400, detail="goal text is required")
@@ -946,7 +1034,7 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
         raise HTTPException(status_code=400, detail="title is required")
     description = str(payload.get("description") or "")
 
-    check_goal_rate_limit()
+    check_goal_rate_limit(request, source="webhook")
     w = _world()
     goal_id = w.create_goal(title[:200], description[:8000])
 
@@ -1032,7 +1120,7 @@ async def _handle_issue_webhook(
             status_code=400,
             detail="No LLM provider key configured. Run 'maverick init'.",
         )
-    check_goal_rate_limit()
+    check_goal_rate_limit(request, source=f"webhook:{provider}")
     w = _world()
     title = f"{event.issue_id}: {event.title}".strip()
     goal_id = w.create_goal(title[:200], build_brief(event)[:8000])
@@ -1347,6 +1435,18 @@ async def api_goal_events_stream(request: Request, goal_id: int, since: int = 0)
     if w.get_goal(goal_id) is None:
         raise HTTPException(status_code=404, detail="no such goal")
 
+    # Cap concurrent streams so thousands of EventSource opens can't exhaust
+    # FDs/tasks. Acquire non-blocking and return 503 when full; release in the
+    # generator's finally so a disconnect (CancelledError) frees a slot.
+    sem = _get_sse_semaphore()
+    if sem.locked():
+        raise HTTPException(
+            status_code=503,
+            detail="too many concurrent event streams; retry shortly",
+            headers={"Retry-After": "5"},
+        )
+    await sem.acquire()
+
     TERMINAL = ("done", "cancelled", "failed")
     POLL_INTERVAL = 0.5            # server-side cadence
     MAX_POLL_INTERVAL = 5.0        # cap idle backoff to reduce DB churn
@@ -1420,6 +1520,10 @@ async def api_goal_events_stream(request: Request, goal_id: int, since: int = 0)
                 await _asyncio.sleep(poll_interval)
         except _asyncio.CancelledError:
             return
+        finally:
+            # Always free the stream slot, whether we ended on a terminal
+            # status, the lifetime cap, or a client disconnect.
+            sem.release()
 
     return StreamingResponse(
         generate(),
@@ -1477,7 +1581,18 @@ async def healthz() -> JSONResponse:
     in_flight = MAX_CONCURRENT_GOALS - _run_semaphore._value  # type: ignore[attr-defined]
     checks["runner"] = f"in_flight={in_flight}/{MAX_CONCURRENT_GOALS}"
 
-    payload = {"status": "ok" if overall_ok else "degraded", "checks": checks}
+    status = "ok" if overall_ok else "degraded"
+    # /healthz + /readyz are auth-exempt (LB/k8s probes can't carry a bearer).
+    # On a token-protected (i.e. potentially exposed) deployment, the detailed
+    # `checks` block leaks operational signal to anyone on the network:
+    # whether an LLM key is configured (llm_key: ok/missing) and a live
+    # in-flight goal gauge. Mirror the DB-path redaction already done above and
+    # collapse the exempt payload to just the status (LB probes only need the
+    # 200/503). Local-dev (no token) keeps the full checks for debuggability.
+    if os.environ.get("MAVERICK_DASHBOARD_TOKEN"):
+        payload: dict[str, Any] = {"status": status}
+    else:
+        payload = {"status": status, "checks": checks}
     return JSONResponse(payload, status_code=200 if overall_ok else 503)
 
 
