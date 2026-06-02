@@ -436,3 +436,112 @@ class TestShellPopsGoldPatch:
             "via env to the agent's sandboxed shell"
         )
         reset_gold_patch_cache()
+
+
+class TestOpaqueGoldLeakGaps474:
+    """#474: close opaque-mode gold-leak blocklist gaps.
+
+    Three gaps: single-ref `git diff <ref>` (no `..`), patch-emitting
+    porcelain (format-patch --stdout / whatchanged / archive / bundle
+    create / log --format=%H), and `.git` laundering to a non-`.git`
+    name (cp/ln/tar/rsync .git). All blocked ONLY in opaque mode;
+    normal-mode `git diff`/`git log` must keep working.
+    """
+
+    def _shell(self, tmp_path):
+        from maverick.tools.shell import shell
+
+        class _Sandbox:
+            workdir = tmp_path
+            timeout = 5.0
+
+            def exec(self, cmd, timeout=None):
+                from maverick.sandbox.local import ExecResult
+                return ExecResult(stdout="ok", stderr="", exit_code=0)
+
+        return shell(_Sandbox())
+
+    # --- Task 1: single-ref `git diff <ref>` ---
+
+    @pytest.mark.parametrize("cmd", [
+        "git diff main",
+        "git diff origin/main",
+        "git diff HEAD~1",
+        "git diff abc1234",
+        "git -P diff main",
+    ])
+    def test_git_diff_single_ref_blocked(self, tmp_path, opaque_mode, cmd):
+        tool = self._shell(tmp_path)
+        out = tool.fn({"cmd": cmd})
+        assert "blocked" in out.lower(), cmd
+
+    @pytest.mark.parametrize("cmd", [
+        "git diff",
+        "git diff --staged",
+        "git diff --cached -- file.py",
+        "git diff HEAD",
+        "git diff HEAD --",
+        "git diff -- path/to/file",
+    ])
+    def test_legit_git_diff_allowed_in_opaque(self, tmp_path, opaque_mode, cmd):
+        tool = self._shell(tmp_path)
+        out = tool.fn({"cmd": cmd})
+        assert "blocked" not in out.lower(), cmd
+        assert "ok" in out
+
+    # --- Task 2: patch-emitting porcelain ---
+
+    @pytest.mark.parametrize("cmd", [
+        "git format-patch HEAD~1 --stdout",
+        "git whatchanged -p",
+        "git archive HEAD",
+        "git bundle create out.bundle HEAD",
+        "git log --format=%H",
+        "git log --pretty=%H",
+    ])
+    def test_patch_porcelain_blocked(self, tmp_path, opaque_mode, cmd):
+        tool = self._shell(tmp_path)
+        out = tool.fn({"cmd": cmd})
+        assert "blocked" in out.lower(), cmd
+
+    # --- Task 3: .git laundering to a non-.git name ---
+
+    @pytest.mark.parametrize("cmd", [
+        "cp -r .git /tmp/g && cat /tmp/g/HEAD",
+        "ln -s .git gd",
+        "tar cf - .git",
+        "rsync -a .git /tmp/x",
+    ])
+    def test_dotgit_laundering_blocked(self, tmp_path, opaque_mode, cmd):
+        tool = self._shell(tmp_path)
+        out = tool.fn({"cmd": cmd})
+        assert "blocked" in out.lower(), cmd
+
+    def test_gitignore_not_overblocked(self, tmp_path, opaque_mode):
+        # `.gitignore` must not trip the `.git` laundering rule.
+        tool = self._shell(tmp_path)
+        out = tool.fn({"cmd": "cat .gitignore"})
+        assert "blocked" not in out.lower()
+        assert "ok" in out
+
+    # --- Normal mode: none of the new blocks apply ---
+
+    @pytest.mark.parametrize("cmd", [
+        "git diff main",
+        "git diff HEAD~1",
+        "git format-patch HEAD~1 --stdout",
+        "git whatchanged -p",
+        "git archive HEAD",
+        "git bundle create out.bundle HEAD",
+        "git log --format=%H",
+        "cp -r .git /tmp/g",
+        "ln -s .git gd",
+        "tar cf - .git",
+    ])
+    def test_all_allowed_in_normal_mode(self, tmp_path, monkeypatch, cmd):
+        monkeypatch.setenv("MAVERICK_BENCHMARK_OPAQUE", "0")
+        monkeypatch.delenv("MAVERICK_CODING_MODE", raising=False)
+        tool = self._shell(tmp_path)
+        out = tool.fn({"cmd": cmd})
+        assert "blocked" not in out.lower(), cmd
+        assert "ok" in out
