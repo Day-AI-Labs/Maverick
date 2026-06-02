@@ -72,7 +72,7 @@ The `lint-pr-title` CI check (`amannn/action-semantic-pull-request`) enforces Co
 packages/maverick-core/        Agent kernel (the brain)
 packages/maverick-shield/      Agent Shield integration (the guardrails)
 apps/installer-cli/            Interactive setup wizard
-apps/installer-desktop/        GUI installer (planned, Tauri)
+apps/installer-desktop/        GUI installer (Tauri; built, ships unsigned)
 docs/                          User-facing docs
 ```
 

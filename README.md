@@ -133,7 +133,7 @@ packages/
                        can also CONSUME external MCP servers as its own tools.
 apps/
   installer-cli/       Interactive Python TUI wizard (`maverick init`)
-  installer-desktop/   Tauri-based GUI installer scaffold (signing in v0.2)
+  installer-desktop/   Tauri-based GUI installer (built; unsigned -- code signing in v0.2)
 deploy/
   docker/ vps/ desktop/  Dockerfile, install.sh, systemd unit, Caddyfile
 docs/

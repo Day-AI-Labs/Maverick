@@ -182,6 +182,9 @@ jobs:
     needs: [validate-release-tag, docker-image, binaries]
     runs-on: ubuntu-latest
     if: always() && needs.docker-image.result == 'success' && needs.binaries.result == 'success'
+    permissions:
+      contents: write   # create the GitHub Release
+      actions: write    # dispatch desktop.yml to build + attach installers
     steps:
       - uses: actions/checkout@v6
         with:
@@ -201,3 +204,17 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: ${{ needs.validate-release-tag.outputs.prerelease }}
+
+      - name: Build + attach the native desktop installers
+        # The desktop installers (.dmg/.msi/.exe/.AppImage/.deb) are built
+        # by desktop.yml. Dispatch it here -- rather than relying on a tag
+        # push -- so it fires even when this release was cut via
+        # workflow_dispatch: in that case the tag is created with
+        # GITHUB_TOKEN, which can't trigger push-based workflows
+        # (workflow_dispatch is the documented exception). desktop.yml's
+        # attach-release job waits for the Release created just above and
+        # uploads the bundles to it.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.validate-release-tag.outputs.tag }}
+        run: gh workflow run desktop.yml --ref "$TAG"
