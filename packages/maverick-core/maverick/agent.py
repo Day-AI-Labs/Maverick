@@ -1094,6 +1094,10 @@ class Agent:
                     # goal. Sub-agents skip verification (their parent
                     # is the verifier of last resort).
                     verdict = None
+                    # Set True once verify_final actually runs, so a verifier
+                    # that hits the budget (verdict stays None) is distinguished
+                    # from a role that never verifies -- see the FINAL return.
+                    verifier_attempted = False
                     # Only the orchestrator's FINAL is verified. Sub-agents
                     # answer to their parent; the parent is their verifier.
                     if (
@@ -1279,6 +1283,7 @@ class Agent:
 
                         try:
                             from .verifier import verify_final
+                            verifier_attempted = True
                             verdict = await verify_final(
                                 self.brief, final, self.ctx.llm, self.ctx.budget,
                                 proposer_model=self.model,
@@ -1352,8 +1357,19 @@ class Agent:
                     self._score_step(step_index=step, is_final=True)
                     return AgentResult(
                         final=final, role=self.role, name=self.name,
-                        verifier_confidence=verdict.confidence if verdict else 1.0,
-                        verifier_critique=verdict.critique if verdict else "",
+                        # A verifier that was attempted but hit budget/error
+                        # (verdict is None) must NOT report high confidence: a
+                        # budget-starved run would otherwise be donated as a
+                        # "high-confidence" trajectory it never verified (#612).
+                        # Roles that never verify keep the 1.0 default.
+                        verifier_confidence=(
+                            verdict.confidence if verdict is not None
+                            else (0.0 if verifier_attempted else 1.0)
+                        ),
+                        verifier_critique=(
+                            verdict.critique if verdict is not None
+                            else ("verifier did not complete (budget)" if verifier_attempted else "")
+                        ),
                         final_patch=getattr(self, "_final_patch", None),
                     )
                 bb.post(self.name, "observation", resp.text[:1000])
