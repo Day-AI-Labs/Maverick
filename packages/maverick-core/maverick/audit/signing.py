@@ -47,6 +47,7 @@ _KEY_ID_RE = re.compile(r"^[0-9a-f]{16}$")
 # completed day-file's tip hash + row count, so deleting or truncating a WHOLE
 # day-file is detectable (per-file verify_chain only sees within one file).
 ANCHOR_FILENAME = "anchors.ndjson"
+ANCHOR_MARKER_FILENAME = ".anchors.required"
 _DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
@@ -397,18 +398,61 @@ def _anchored_days(audit_dir: Path) -> set[str]:
     return days
 
 
+def _anchor_marker_path(audit_dir: Path) -> Path:
+    """Return the durable marker that records an expected anchor ledger.
+
+    The marker prevents a deleted ``anchors.ndjson`` from being silently
+    recreated from only the day-files that an attacker chose to leave behind.
+    """
+    return audit_dir / ANCHOR_MARKER_FILENAME
+
+
+def _mark_anchor_ledger_required(audit_dir: Path) -> None:
+    marker = _anchor_marker_path(audit_dir)
+    if marker.exists():
+        return
+    try:
+        audit_dir.mkdir(parents=True, exist_ok=True)
+        marker.write_text(
+            "anchors.ndjson is required for audit tamper-evidence\n",
+            encoding="utf-8",
+        )
+    except OSError as e:  # pragma: no cover - best-effort marker
+        log.warning("audit anchors: failed to write ledger marker: %s", e)
+
+
+def _ensure_anchor_ledger(audit_dir: Path) -> bool:
+    """Return whether it is safe to append to the anchor ledger.
+
+    A missing ledger is acceptable before the first completed day is anchored.
+    Once the marker records that the ledger has existed, however, a missing
+    ledger is suspicious and must not be rebuilt from only the remaining
+    day-files.
+    """
+    anchor_path = audit_dir / ANCHOR_FILENAME
+    if anchor_path.exists():
+        _mark_anchor_ledger_required(audit_dir)
+        return True
+    return not _anchor_marker_path(audit_dir).exists()
+
+
 def _append_anchor(audit_dir: Path, day: str, tip_hash: str, row_count: int) -> bool:
     """Append one signed, chained anchor row to the tip-ledger."""
     if not _have_crypto():
         return False
     signer = AuditSigner(audit_dir / ANCHOR_FILENAME)
-    return bool(signer.write({
-        "kind": "anchor",
-        "day": day,
-        "tip_hash": tip_hash,
-        "row_count": row_count,
-        "ts": datetime.now(timezone.utc).isoformat(),
-    }))
+    ok = bool(
+        signer.write({
+            "kind": "anchor",
+            "day": day,
+            "tip_hash": tip_hash,
+            "row_count": row_count,
+            "ts": datetime.now(timezone.utc).isoformat(),
+        })
+    )
+    if ok:
+        _mark_anchor_ledger_required(audit_dir)
+    return ok
 
 
 def _today_utc() -> str:
@@ -425,6 +469,12 @@ def ensure_anchors(audit_dir: Path) -> int:
     Returns the number of anchors written.
     """
     if not _have_crypto():
+        return 0
+    if not _ensure_anchor_ledger(audit_dir):
+        log.warning(
+            "audit anchors: %s is missing but was previously required; refusing to rebuild",
+            ANCHOR_FILENAME,
+        )
         return 0
     today = _today_utc()
     anchored = _anchored_days(audit_dir)
@@ -464,6 +514,16 @@ def verify_anchors(audit_dir: Path, pubkey_hex: str | None = None) -> list[Chain
     """
     anchor_path = audit_dir / ANCHOR_FILENAME
     if not anchor_path.exists():
+        has_completed_days = any(p.stem < _today_utc() for p in _day_files(audit_dir))
+        if has_completed_days or _anchor_marker_path(audit_dir).exists():
+            return [
+                ChainBreak(
+                    0,
+                    "anchor_ledger_missing",
+                    f"{ANCHOR_FILENAME} is missing; "
+                    "cross-file audit tamper-evidence cannot be verified",
+                )
+            ]
         return []
     breaks = list(verify_chain(anchor_path, pubkey_hex))
     # The ledger is append-only; the last anchor for a day wins (supersession).
