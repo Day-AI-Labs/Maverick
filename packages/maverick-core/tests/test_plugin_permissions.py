@@ -5,7 +5,7 @@ Complements test_plugins.py (discovery semantics) and test_tier0_security.py
 
   - a name published by 2+ distributions is refused unless pinned `name@dist`,
   - a plugin whose maverick-plugin.toml requests an ungranted permission is
-    warned about (default) or skipped (enforce_permissions).
+    skipped (the default) or, with enforce_permissions=false, loaded+warned.
 """
 from __future__ import annotations
 
@@ -65,7 +65,8 @@ def _manifest_toml(**perms) -> str:
 
 @pytest.fixture(autouse=True)
 def _hermetic_plugins_config(monkeypatch):
-    # No grant, warn-only by default; tests override via monkeypatch.
+    # No grant; enforce-by-default (the secure default). Tests that need the
+    # warn-only path set enforce_permissions=false explicitly.
     monkeypatch.setattr(plugins, "_plugins_config", lambda: {})
     monkeypatch.delenv("MAVERICK_PLUGINS_ENFORCE", raising=False)
 
@@ -114,14 +115,28 @@ def test_ungranted_permission_skipped_when_enforced(monkeypatch):
     assert plugins.discover_tools() == []   # network requested, not granted, enforced
 
 
-def test_ungranted_permission_loads_with_warning_by_default(monkeypatch, caplog):
-    monkeypatch.setenv("MAVERICK_PLUGINS_ALLOW", "*")  # default _plugins_config -> {} (warn-only)
+def test_ungranted_permission_skipped_by_default(monkeypatch):
+    # #463: default is now enforce -- a manifest requesting an ungranted
+    # permission is NOT loaded. (Manifest-less plugins declare none -> see
+    # test_unmanifested_plugin_loads_even_when_enforced.)
+    monkeypatch.setenv("MAVERICK_PLUGINS_ALLOW", "*")  # default _plugins_config -> {} (enforce)
+    _set_eps(monkeypatch, {"maverick.tools": [
+        _FakeEP("wp", lambda: "ok", dist=_FakeDist("wp", _manifest_toml(network=True))),
+    ]})
+    assert plugins.discover_tools() == []  # network requested, not granted -> skipped
+
+
+def test_ungranted_permission_warns_when_enforce_disabled(monkeypatch, caplog):
+    # The escape hatch: enforce_permissions=false reverts to load-with-warning.
+    monkeypatch.setenv("MAVERICK_PLUGINS_ALLOW", "*")
+    monkeypatch.setattr(plugins, "_plugins_config",
+                        lambda: {"enforce_permissions": False})
     _set_eps(monkeypatch, {"maverick.tools": [
         _FakeEP("wp", lambda: "ok", dist=_FakeDist("wp", _manifest_toml(network=True))),
     ]})
     with caplog.at_level(logging.WARNING, logger="maverick.plugins"):
         out = plugins.discover_tools()
-    assert [n for n, _ in out] == ["wp"]            # loaded (back-compat)
+    assert [n for n, _ in out] == ["wp"]            # loaded
     assert "not in [plugins] grant" in caplog.text  # but warned
 
 
@@ -151,11 +166,25 @@ def test_unmanifested_plugin_loads_even_when_enforced(monkeypatch):
 def test_enforce_env_override(monkeypatch):
     monkeypatch.setenv("MAVERICK_PLUGINS_ALLOW", "*")
     monkeypatch.setenv("MAVERICK_PLUGINS_ENFORCE", "1")
-    monkeypatch.setattr(plugins, "_plugins_config", lambda: {})  # config says warn-only...
+    # config explicitly disables enforcement...
+    monkeypatch.setattr(plugins, "_plugins_config",
+                        lambda: {"enforce_permissions": False})
     _set_eps(monkeypatch, {"maverick.tools": [
         _FakeEP("wp", lambda: "ok", dist=_FakeDist("wp", _manifest_toml(subprocess=True))),
     ]})
-    assert plugins.discover_tools() == []   # ...but the env var forces enforce
+    assert plugins.discover_tools() == []   # ...but the env var forces enforce back on
+
+
+def test_enforce_env_can_disable(monkeypatch, caplog):
+    # MAVERICK_PLUGINS_ENFORCE=0 downgrades the default enforce to warn-only.
+    monkeypatch.setenv("MAVERICK_PLUGINS_ALLOW", "*")
+    monkeypatch.setenv("MAVERICK_PLUGINS_ENFORCE", "0")
+    _set_eps(monkeypatch, {"maverick.tools": [
+        _FakeEP("wp", lambda: "ok", dist=_FakeDist("wp", _manifest_toml(network=True))),
+    ]})
+    with caplog.at_level(logging.WARNING, logger="maverick.plugins"):
+        out = plugins.discover_tools()
+    assert [n for n, _ in out] == ["wp"]  # loaded (enforcement disabled via env)
 
 
 # ---------- pure helpers ----------
