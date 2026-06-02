@@ -49,7 +49,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from itertools import combinations
+from heapq import heappop, heappush
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -156,38 +156,79 @@ def build_preference_pairs(
             continue
         groups.setdefault(fam, []).append(r)
 
+    if max_pairs_per_group <= 0:
+        return []
+
     pairs: list[dict] = []
     for fam, members in groups.items():
         if len(members) < 2:
             continue
-        group_pairs: list[dict] = []
-        for a, b in combinations(members, 2):
-            ra = float(a.get("terminal_reward", 0.0) or 0.0)
-            rb = float(b.get("terminal_reward", 0.0) or 0.0)
-            if ra >= rb:
-                chosen, rejected, cr, rr = a, b, ra, rb
-            else:
-                chosen, rejected, cr, rr = b, a, rb, ra
-            margin = cr - rr
+
+        # Sort once by reward so each high-reward row can be paired with
+        # progressively lower-reward rows.  A max-heap over those per-row
+        # streams lets us keep only the configured cap instead of building
+        # and sorting every all-vs-all candidate for large task families.
+        ranked = sorted(
+            ((_reward(member), member) for member in members),
+            key=lambda item: (-item[0], _confidence(item[1])),
+        )
+        heap: list[tuple[float, float, int, int]] = []
+        last = len(ranked) - 1
+        for i, (high_reward, high) in enumerate(ranked[:-1]):
+            low_reward, low = ranked[last]
+            margin = high_reward - low_reward
             if margin < min_margin:
                 continue
-            conf_c = _confidence(chosen)
-            conf_r = _confidence(rejected)
-            group_pairs.append({
-                "task_family": fam,
-                "chosen_id": chosen.get("id"),
-                "rejected_id": rejected.get("id"),
-                "chosen_reward": cr,
-                "rejected_reward": rr,
-                "margin": margin,
-                "weight": (conf_c + conf_r) / 2.0,
-            })
-        # Keep the widest-margin (then highest-confidence) pairs per group.
-        group_pairs.sort(key=lambda p: (p["margin"], p["weight"]), reverse=True)
-        pairs.extend(group_pairs[:max_pairs_per_group])
+            weight = (_confidence(high) + _confidence(low)) / 2.0
+            heappush(heap, (-margin, -weight, i, last))
+
+        group_pairs: list[dict] = []
+        while heap and len(group_pairs) < max_pairs_per_group:
+            _neg_margin, _neg_weight, i, j = heappop(heap)
+            high_reward, high = ranked[i]
+            low_reward, low = ranked[j]
+            group_pairs.append(_preference_pair(fam, high, low, high_reward, low_reward))
+
+            next_j = j - 1
+            if next_j <= i:
+                continue
+            next_low_reward, next_low = ranked[next_j]
+            next_margin = high_reward - next_low_reward
+            if next_margin < min_margin:
+                continue
+            next_weight = (_confidence(high) + _confidence(next_low)) / 2.0
+            heappush(heap, (-next_margin, -next_weight, i, next_j))
+
+        pairs.extend(group_pairs)
 
     pairs.sort(key=lambda p: (p["margin"], p["weight"]), reverse=True)
     return pairs
+
+
+def _reward(row: dict) -> float:
+    """Terminal reward for sorting and margin calculations."""
+    return float(row.get("terminal_reward", 0.0) or 0.0)
+
+
+def _preference_pair(
+    fam: str,
+    chosen: dict,
+    rejected: dict,
+    chosen_reward: float,
+    rejected_reward: float,
+) -> dict:
+    """Create one verifier-reward preference pair."""
+    conf_c = _confidence(chosen)
+    conf_r = _confidence(rejected)
+    return {
+        "task_family": fam,
+        "chosen_id": chosen.get("id"),
+        "rejected_id": rejected.get("id"),
+        "chosen_reward": chosen_reward,
+        "rejected_reward": rejected_reward,
+        "margin": chosen_reward - rejected_reward,
+        "weight": (conf_c + conf_r) / 2.0,
+    }
 
 
 def _confidence(row: dict) -> float:

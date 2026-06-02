@@ -122,6 +122,25 @@ def test_per_group_cap_respected():
                for i in range(len(pairs) - 1))
 
 
+def test_per_group_cap_avoids_materializing_all_candidates(monkeypatch):
+    rows = [_row(f"r{i}", "swe", float(i)) for i in range(100)]
+    built = 0
+    real_pair = rlaif._preference_pair
+
+    def counted_pair(*args, **kwargs):
+        nonlocal built
+        built += 1
+        return real_pair(*args, **kwargs)
+
+    monkeypatch.setattr(rlaif, "_preference_pair", counted_pair)
+    pairs = rlaif.build_preference_pairs(
+        rows, min_margin=0.5, max_pairs_per_group=3,
+    )
+
+    assert len(pairs) == 3
+    assert built == 3
+
+
 def test_empty_or_missing_family_skipped():
     rows = [
         _row("a", "", 1.0),
