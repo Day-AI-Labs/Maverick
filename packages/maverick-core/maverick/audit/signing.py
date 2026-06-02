@@ -32,6 +32,7 @@ import os
 import re
 import threading
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -41,6 +42,12 @@ KEY_DIR = Path.home() / ".maverick" / "audit" / "keys"
 
 
 _KEY_ID_RE = re.compile(r"^[0-9a-f]{16}$")
+
+# Cross-file tip-ledger (#462/#443): a signed, chained ledger recording each
+# completed day-file's tip hash + row count, so deleting or truncating a WHOLE
+# day-file is detectable (per-file verify_chain only sees within one file).
+ANCHOR_FILENAME = "anchors.ndjson"
+_DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def _is_valid_key_id(key_id: str) -> bool:
@@ -344,6 +351,148 @@ def verify_chain(path: Path, pubkey_hex: str | None = None) -> list[ChainBreak]:
                     # a tamper-evidence tool should do).
                     breaks.append(ChainBreak(n, "bad_signature", f"malformed sig/hash: {e}"))
             prev = row_hash
+    return breaks
+
+
+# ---- cross-file tip-ledger (#462/#443) -------------------------------------
+
+def _file_tip_and_count(path: Path) -> tuple[str, int]:
+    """Return ``(last_row_hash, non_empty_row_count)`` for a signed day-file."""
+    tip = ""
+    count = 0
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            count += 1
+            try:
+                tip = str(json.loads(line).get("hash") or tip)
+            except json.JSONDecodeError:
+                pass
+    return tip, count
+
+
+def _day_files(audit_dir: Path) -> list[Path]:
+    """Date-named day-files (YYYY-MM-DD.ndjson), excluding the anchor ledger."""
+    return sorted(
+        p for p in audit_dir.glob("*.ndjson") if _DAY_RE.fullmatch(p.stem)
+    )
+
+
+def _anchored_days(audit_dir: Path) -> set[str]:
+    path = audit_dir / ANCHOR_FILENAME
+    days: set[str] = set()
+    if not path.exists():
+        return days
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                d = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if d.get("kind") == "anchor" and d.get("day"):
+                days.add(str(d["day"]))
+    return days
+
+
+def _append_anchor(audit_dir: Path, day: str, tip_hash: str, row_count: int) -> bool:
+    """Append one signed, chained anchor row to the tip-ledger."""
+    if not _have_crypto():
+        return False
+    signer = AuditSigner(audit_dir / ANCHOR_FILENAME)
+    return bool(signer.write({
+        "kind": "anchor",
+        "day": day,
+        "tip_hash": tip_hash,
+        "row_count": row_count,
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }))
+
+
+def _today_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def ensure_anchors(audit_dir: Path) -> int:
+    """Record a tip-ledger anchor for every COMPLETED day-file lacking one.
+
+    Only completed days (< today, UTC) are anchored -- today's file is still
+    growing. Already-anchored days are left alone: we never silently re-anchor
+    over a tampered file (that's ``verify_anchors``' job to flag); a legitimate
+    GDPR erase re-anchors its day explicitly via ``reanchor_day_after_erase``.
+    Returns the number of anchors written.
+    """
+    if not _have_crypto():
+        return 0
+    today = _today_utc()
+    anchored = _anchored_days(audit_dir)
+    written = 0
+    for day_file in _day_files(audit_dir):
+        day = day_file.stem
+        if day >= today or day in anchored:
+            continue
+        tip, count = _file_tip_and_count(day_file)
+        if count and _append_anchor(audit_dir, day, tip, count):
+            written += 1
+    return written
+
+
+def reanchor_day_after_erase(audit_dir: Path, day_file: Path) -> None:
+    """After a GDPR erase rewrites a completed day-file (changing its tip),
+    append a fresh superseding anchor so ``verify_anchors`` matches the new
+    state. The prior anchor stays in the append-only ledger -- an auditable
+    record that the day was modified."""
+    if not _have_crypto():
+        return
+    day = day_file.stem
+    if not _DAY_RE.fullmatch(day) or day >= _today_utc():
+        return  # not a completed day-file
+    tip, count = _file_tip_and_count(day_file)
+    if count:
+        _append_anchor(audit_dir, day, tip, count)
+
+
+def verify_anchors(audit_dir: Path, pubkey_hex: str | None = None) -> list[ChainBreak]:
+    """Cross-file tamper-evidence: confirm every anchored day-file still exists
+    and matches its latest recorded tip hash + row count. Catches deletion or
+    truncation of a whole day-file, which per-file ``verify_chain`` cannot.
+
+    Verifies the anchor ledger's own signed chain first, then each day.
+    Empty list = intact.
+    """
+    anchor_path = audit_dir / ANCHOR_FILENAME
+    if not anchor_path.exists():
+        return []
+    breaks = list(verify_chain(anchor_path, pubkey_hex))
+    # The ledger is append-only; the last anchor for a day wins (supersession).
+    latest: dict[str, dict] = {}
+    with open(anchor_path, encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                d = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if d.get("kind") == "anchor" and d.get("day"):
+                latest[str(d["day"])] = d
+    for day, anc in sorted(latest.items()):
+        day_file = audit_dir / f"{day}.ndjson"
+        if not day_file.exists():
+            breaks.append(ChainBreak(
+                0, "anchored_file_deleted", f"{day}.ndjson is anchored but missing"))
+            continue
+        tip, count = _file_tip_and_count(day_file)
+        if tip != anc.get("tip_hash"):
+            breaks.append(ChainBreak(
+                0, "anchor_tip_mismatch",
+                f"{day}: tip {tip[:12]}... != anchored {str(anc.get('tip_hash'))[:12]}..."))
+        if count != anc.get("row_count"):
+            breaks.append(ChainBreak(
+                0, "anchor_count_mismatch",
+                f"{day}: {count} rows != anchored {anc.get('row_count')}"))
     return breaks
 
 

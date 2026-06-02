@@ -163,9 +163,13 @@ def _process_file(
             pass
         if any_signed:
             try:
-                from .signing import reanchor_file
+                from .signing import reanchor_day_after_erase, reanchor_file
 
                 reanchor_file(path, force=True, preverified=True)
+                # The rewrite changed the file's tip hash -> append a fresh
+                # superseding tip-ledger anchor so verify_anchors matches the
+                # new state (the prior anchor stays, recording the change).
+                reanchor_day_after_erase(path.parent, path)
             except Exception as e:  # pragma: no cover - defensive/crypto missing
                 log.warning("audit erase: could not reanchor %s after rewrite: %s", path, e)
     except OSError as e:

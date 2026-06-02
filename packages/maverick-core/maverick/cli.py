@@ -2121,7 +2121,7 @@ def audit_verify(day: str | None, file_: str | None, pubkey: str | None) -> None
     import datetime as _dt
     from pathlib import Path as _Path
 
-    from .audit import verify_chain
+    from .audit import verify_anchors, verify_chain
     from .audit.writer import DEFAULT_AUDIT_DIR
 
     if file_:
@@ -2137,12 +2137,24 @@ def audit_verify(day: str | None, file_: str | None, pubkey: str | None) -> None
             err=True,
         )
     breaks = verify_chain(path, pubkey_hex=pubkey)
-    if not breaks:
-        click.echo(f"OK: chain intact ({path})")
+    # Cross-file check: a whole deleted/truncated day-file is invisible to the
+    # per-file chain above; the signed tip-ledger catches it.
+    anchor_dir = path.parent if file_ else DEFAULT_AUDIT_DIR
+    anchor_breaks = verify_anchors(anchor_dir, pubkey_hex=pubkey)
+    if not breaks and not anchor_breaks:
+        click.echo(f"OK: chain intact ({path}); tip-ledger intact ({anchor_dir})")
         return
-    click.echo(f"FAIL: {len(breaks)} issue(s) in {path}", err=True)
-    for b in breaks:
-        click.echo(f"  line {b.line_no}: {b.reason} — {b.detail}", err=True)
+    if breaks:
+        click.echo(f"FAIL: {len(breaks)} issue(s) in {path}", err=True)
+        for b in breaks:
+            click.echo(f"  line {b.line_no}: {b.reason} — {b.detail}", err=True)
+    if anchor_breaks:
+        click.echo(
+            f"FAIL: {len(anchor_breaks)} cross-file tip-ledger issue(s) in {anchor_dir}",
+            err=True,
+        )
+        for b in anchor_breaks:
+            click.echo(f"  anchor: {b.reason} — {b.detail}", err=True)
     raise SystemExit(1)
 
 

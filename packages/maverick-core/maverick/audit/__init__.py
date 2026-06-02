@@ -21,7 +21,14 @@ from __future__ import annotations
 
 from .erase import delete_user, scrub_user  # noqa: F401
 from .events import AuditEvent, EventKind  # noqa: F401
-from .signing import AuditSigner, ChainBreak, reanchor_file, verify_chain  # noqa: F401
+from .signing import (  # noqa: F401
+    AuditSigner,
+    ChainBreak,
+    ensure_anchors,
+    reanchor_file,
+    verify_anchors,
+    verify_chain,
+)
 from .writer import (  # noqa: F401
     AuditLog,
     default_audit_log,
@@ -42,4 +49,6 @@ __all__ = [
     "ChainBreak",
     "verify_chain",
     "reanchor_file",
+    "ensure_anchors",
+    "verify_anchors",
 ]
