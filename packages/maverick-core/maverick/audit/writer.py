@@ -126,6 +126,11 @@ class AuditLog:
                 line = json.dumps(payload, default=str) + "\n"
                 with open(path, "a", encoding="utf-8") as f:
                     f.write(line)
+                    # fsync so a crash / power loss can't lose a committed
+                    # audit row (the signed path in signing.py already does
+                    # this; match it so the unsigned log is just as durable).
+                    f.flush()
+                    os.fsync(f.fileno())
                 return True
             except (OSError, TypeError, ValueError) as e:
                 log.warning("audit: write failed: %s", e)
