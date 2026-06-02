@@ -67,16 +67,26 @@ jobs:
         # an unrelated edit shifts a known fixture's line -- means only a
         # genuinely new secret trips the gate, never code movement.
         #
+        # On pull requests, use the target branch's baseline as the audited
+        # trust root so a PR cannot hide a new secret by changing the baseline
+        # or weakening its recorded scan filters in the same checkout.
+        #
         # To clear a real false positive: add an inline `pragma: allowlist
-        # secret` comment at the line (preferred), or re-audit the baseline with
-        # `detect-secrets scan --baseline .secrets.baseline` and commit it.
+        # secret` comment at the line (preferred). Baseline-only re-audits
+        # should happen on the protected base branch after review.
         run: |
           python -m pip install 'detect-secrets>=1.5'
-          cp .secrets.baseline /tmp/scan.baseline
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
+            git show "FETCH_HEAD:.secrets.baseline" > /tmp/audited.baseline
+          else
+            cp .secrets.baseline /tmp/audited.baseline
+          fi
+          cp /tmp/audited.baseline /tmp/scan.baseline
           detect-secrets scan --baseline /tmp/scan.baseline
           python3 - <<'PY'
           import json, sys
-          old = json.load(open(".secrets.baseline"))["results"]
+          old = json.load(open("/tmp/audited.baseline"))["results"]
           new = json.load(open("/tmp/scan.baseline"))["results"]
           pairs = lambda r: {(f, i["hashed_secret"]) for f, items in r.items() for i in items}
           extra = sorted(pairs(new) - pairs(old))
@@ -86,8 +96,8 @@ jobs:
                   print(f"  {f}  (sha1 {h[:16]}...)")
               print("")
               print("If real: remove and ROTATE it. If a false positive: add an inline")
-              print("`pragma: allowlist secret` comment, or re-audit the baseline via")
-              print("`detect-secrets scan --baseline .secrets.baseline` and commit it.")
+              print("`pragma: allowlist secret` comment. Baseline-only re-audits")
+              print("should happen on the protected base branch after review.")
               sys.exit(1)
           print("detect-secrets: no new secrets vs audited baseline")
           PY
