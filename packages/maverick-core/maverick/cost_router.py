@@ -36,33 +36,55 @@ TIER_BASE = 1
 TIER_PREMIUM = 2
 
 
-# (provider, model_id, tier, $/Mtok input, $/Mtok output)
-_PRICING: list[tuple[str, str, int, float, float]] = [
+# (provider, model_id, tier). The per-million input/output rates are NOT
+# duplicated here: llm.MODEL_PRICES is the single billing source of truth, so
+# the router derives every rate from it via _rate_for() below. Earlier the
+# table hard-coded its own numbers AND its own model ids (gpt-5*, grok-4,
+# gemini-2.5-*, a date-suffixed Haiku) that didn't exist in MODEL_PRICES — they
+# scored against stale rates and billed at the Sonnet fallback. Every id here
+# now resolves in MODEL_PRICES.
+_TIERS: list[tuple[str, str, int]] = [
     # Anthropic
-    ("anthropic", "claude-haiku-4-5-20251001",  TIER_CHEAP,   0.80,  4.00),
-    ("anthropic", "claude-sonnet-4-6",          TIER_BASE,    3.00, 15.00),
-    ("anthropic", "claude-opus-4-8",            TIER_PREMIUM, 5.00, 25.00),
+    ("anthropic", "claude-haiku-4-5",   TIER_CHEAP),
+    ("anthropic", "claude-sonnet-4-6",  TIER_BASE),
+    ("anthropic", "claude-opus-4-8",    TIER_PREMIUM),
     # Prior Opus kept so price_for_model still resolves a pinned 4-7
     # (same $5/$25). Selection prefers 4-8 above (equal cost, listed first).
-    ("anthropic", "claude-opus-4-7",            TIER_PREMIUM, 5.00, 25.00),
+    ("anthropic", "claude-opus-4-7",    TIER_PREMIUM),
     # OpenAI
-    ("openai",    "gpt-5-nano",                 TIER_CHEAP,   0.50,  2.50),
-    ("openai",    "gpt-5",                      TIER_BASE,    3.00, 12.00),
-    ("openai",    "gpt-5-pro",                  TIER_PREMIUM, 8.00, 40.00),
-    # DeepSeek. Rates kept in sync with llm.MODEL_PRICES (the billing source of
-    # truth): the router used to score deepseek-chat at 0.14/0.28 while Budget
-    # billed it at 0.27/1.10, so cost-aware routing optimized against a number
-    # ~4x below the real output cost.
-    ("deepseek",  "deepseek-chat",              TIER_CHEAP,   0.27,  1.10),
-    ("deepseek",  "deepseek-reasoner",          TIER_BASE,    0.55,  2.19),
-    # Moonshot / Kimi. moonshot-v1-128k is flat-rate (1.20/1.20) per MODEL_PRICES;
-    # the router's 1.20/3.60 over-penalized output 3x.
-    ("moonshot",  "moonshot-v1-128k",           TIER_BASE,    1.20,  1.20),
+    ("openai",    "gpt-5.4-nano",       TIER_CHEAP),
+    ("openai",    "gpt-5.4",            TIER_BASE),
+    ("openai",    "gpt-5.4-pro",        TIER_PREMIUM),
+    # DeepSeek
+    ("deepseek",  "deepseek-chat",      TIER_CHEAP),
+    ("deepseek",  "deepseek-reasoner",  TIER_BASE),
+    # Moonshot / Kimi
+    ("moonshot",  "moonshot-v1-128k",   TIER_BASE),
     # xAI
-    ("xai",       "grok-4",                     TIER_BASE,    3.00, 15.00),
+    ("xai",       "grok-4-latest",      TIER_BASE),
     # Gemini
-    ("gemini",    "gemini-2.5-flash",           TIER_CHEAP,   0.30,  1.20),
-    ("gemini",    "gemini-2.5-pro",             TIER_PREMIUM, 5.00, 20.00),
+    ("gemini",    "gemini-3.5-flash",   TIER_CHEAP),
+    ("gemini",    "gemini-3.5-pro",     TIER_PREMIUM),
+]
+
+
+def _rate_for(model_id: str) -> tuple[float, float] | None:
+    """(in_per_mtok, out_per_mtok) for a model id from the canonical
+    llm.MODEL_PRICES catalog, or None if absent (so a stale tier entry is
+    dropped from routing rather than scored against an invented rate)."""
+    try:
+        from .llm import MODEL_PRICES
+    except ImportError:
+        return None
+    return MODEL_PRICES.get(model_id)
+
+
+# (provider, model_id, tier, $/Mtok input, $/Mtok output) — rates pulled from
+# llm.MODEL_PRICES at import so there is exactly one place to edit pricing.
+_PRICING: list[tuple[str, str, int, float, float]] = [
+    (provider, mid, tier, rate[0], rate[1])
+    for provider, mid, tier in _TIERS
+    if (rate := _rate_for(mid)) is not None
 ]
 
 
@@ -70,10 +92,10 @@ def price_for_model(model_id: str) -> tuple[float, float] | None:
     """Return (in_per_mtok, out_per_mtok) for a model_id from the router's
     pricing table, or None if it isn't listed.
 
-    Budget billing (budget._lookup_price) consults this for models the
-    cost-router can SELECT but that aren't in llm.MODEL_PRICES (e.g.
-    gpt-5-nano, grok-4, gemini-2.5-*, the date-suffixed Haiku id) so they
-    bill at their real rate instead of silently falling back to Sonnet's.
+    Budget billing (budget._lookup_price) consults this as a secondary
+    lookup for any selectable model. Every id in the table now lives in
+    llm.MODEL_PRICES (the rates are derived from it), so this resolves to
+    the same canonical rate rather than a stale duplicate.
     """
     if not model_id:
         return None
@@ -186,6 +208,50 @@ def _avg_price(in_rate: float, out_rate: float, *, output_heavy: bool) -> float:
     return (in_rate + out_rate) / 2.0
 
 
+# A provider whose recent error rate is at/above this is EXCLUDED from
+# routing, not merely penalized: the multiplicative error surcharge alone
+# let a 100%-error (down) provider still win if it was cheap enough. Knob:
+# env MAVERICK_ROUTING_MAX_ERROR_RATE or [routing] max_error_rate; default
+# 0.5 (>=50% recent failures => unhealthy, route elsewhere).
+_DEFAULT_MAX_ERROR_RATE = 0.5
+# Require a minimum sample size before excluding, so a single early failure
+# (1/1 = 100%) doesn't blacklist a provider that's actually fine.
+_MIN_CALLS_FOR_EXCLUSION = 3
+
+
+def _max_error_rate() -> float:
+    """Recent-error-rate ceiling above which a provider is excluded."""
+    raw = os.environ.get("MAVERICK_ROUTING_MAX_ERROR_RATE")
+    if raw is None:
+        try:
+            from .config import load_config
+            routing = (load_config() or {}).get("routing") or {}
+            raw = routing.get("max_error_rate")
+        except Exception:
+            raw = None
+    if raw is None:
+        return _DEFAULT_MAX_ERROR_RATE
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return _DEFAULT_MAX_ERROR_RATE
+    # A non-positive or >1 ceiling would exclude everything / nothing in a
+    # surprising way; clamp to a sane (0, 1] band, else fall back to default.
+    if not (0.0 < val <= 1.0):
+        return _DEFAULT_MAX_ERROR_RATE
+    return val
+
+
+def _is_unhealthy(stat: dict | None, threshold: float) -> bool:
+    """True if a provider_health snapshot row is over the error ceiling with
+    enough recent samples to trust the rate."""
+    if not stat:
+        return False
+    if (stat.get("calls") or 0) < _MIN_CALLS_FOR_EXCLUSION:
+        return False
+    return (stat.get("error_rate") or 0.0) >= threshold
+
+
 def pick(signal: CostSignal) -> str | None:
     """Return ``"provider:model_id"`` or ``None`` to use the default.
 
@@ -220,6 +286,15 @@ def pick(signal: CostSignal) -> str | None:
     available = [c for c in candidates if _provider_available(c[0])]
     if not available:
         return None
+    # Hard health exclusion: drop any provider/model whose recent error rate
+    # is over the threshold (with enough samples to trust it). The error
+    # surcharge in _score only multiplies cost, so a cheap-but-down provider
+    # could still win; excluding it forces a fallback to the cheapest HEALTHY
+    # candidate. If every candidate is unhealthy, keep them all rather than
+    # return nothing useful — a degraded pick beats silently routing nowhere.
+    threshold = _max_error_rate()
+    healthy = [c for c in available if not _is_unhealthy(snap.get((c[0], c[1])), threshold)]
+    available = healthy or available
     available.sort(key=_score)
     provider, model, *_ = available[0]
     return f"{provider}:{model}"

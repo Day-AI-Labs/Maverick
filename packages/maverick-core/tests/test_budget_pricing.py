@@ -48,30 +48,33 @@ def test_unknown_model_falls_back_to_sonnet_rate():
 
 
 def test_router_selectable_models_bill_at_real_rate_not_fallback():
-    """Models the cost-router can SELECT but that aren't in llm.MODEL_PRICES
-    must bill at their cost_router._PRICING rate, not the Sonnet $3/$15
-    fallback. Regression: budget._lookup_price had no path to the router
-    table, so e.g. a gpt-5-nano call billed at 6x its real rate. (grok-4 is
-    omitted because its router price IS 3/15, indistinguishable from the
-    fallback.)"""
-    # model id -> (in_per_mtok, out_per_mtok) from cost_router._PRICING,
-    # each chosen so 1M+1M != the $18 fallback.
-    cases = {
-        "gpt-5-nano": (0.50, 2.50),                 # -> $3.00
-        "gpt-5-pro": (8.00, 40.00),                 # -> $48.00
-        "gemini-2.5-flash": (0.30, 1.20),           # -> $1.50
-        "gemini-2.5-pro": (5.00, 20.00),            # -> $25.00
-        "claude-haiku-4-5-20251001": (0.80, 4.00),  # -> $4.80
-    }
-    for model, (pin, pout) in cases.items():
-        b = Budget(max_dollars=1000.0, max_input_tokens=10_000_000,
+    """Every model the cost-router can SELECT must bill at its canonical
+    rate, not the Sonnet $3/$15 fallback.
+
+    Issue #465 reconciled cost_router._PRICING to llm.MODEL_PRICES (one
+    source of truth), so every router id now lives in MODEL_PRICES and the
+    rates are derived from it. This walks the router's own table and asserts
+    Budget bills each id at the MODEL_PRICES rate -- catching any future id
+    that drifts out of the canonical catalog and silently bills at fallback.
+    """
+    from maverick.cost_router import _PRICING
+    from maverick.llm import MODEL_PRICES
+
+    saw_non_fallback = False
+    for _provider, model, _tier, _in, _out in _PRICING:
+        assert model in MODEL_PRICES, f"{model} not in canonical MODEL_PRICES"
+        pin, pout = MODEL_PRICES[model]
+        b = Budget(max_dollars=1e9, max_input_tokens=10_000_000,
                    max_output_tokens=10_000_000)
         b.record_tokens(1_000_000, 1_000_000, model=model)
-        expected = pin + pout
-        assert abs(b.dollars - expected) < 0.001, (
-            f"{model}: billed ${b.dollars:.2f}, expected ${expected:.2f} "
-            "(Sonnet fallback would be $18.00)"
+        assert abs(b.dollars - (pin + pout)) < 0.001, (
+            f"{model}: billed ${b.dollars:.2f}, expected ${pin + pout:.2f}"
         )
+        if abs((pin + pout) - 18.0) > 0.001:
+            saw_non_fallback = True
+    # Guard against a vacuous pass where every router id happens to equal the
+    # $18 fallback (which would hide a real fallback regression).
+    assert saw_non_fallback
 
 
 def test_no_model_uses_fallback_rate():
