@@ -275,9 +275,16 @@ class ToolRegistry:
                                message=f"chaos: tool_dispatch on {name!r}")
                 except ImportError:
                     pass
-                result = self._tools[name].fn(args)
-                if inspect.isawaitable(result):
-                    result = await result
+                async def _invoke() -> str:
+                    out = self._tools[name].fn(args)
+                    if inspect.isawaitable(out):
+                        out = await out
+                    return out
+
+                # One shared reliability policy: transient upstream failures
+                # on retry-safe (non-high-risk) tools are retried with backoff.
+                from ..tool_reliability import run_with_retry
+                result = await run_with_retry(name, _invoke)
                 try:
                     from ..observability import record_metric as _rm
                     _rm("tool_calls", labels={"tool": name, "status": "ok"})
