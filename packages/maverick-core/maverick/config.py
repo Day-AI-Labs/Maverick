@@ -226,6 +226,12 @@ def get_self_learning() -> dict:
         "enable": bool(cfg.get("enable", False)),
         "preflight": bool(cfg.get("preflight", True)),
         "create_tools": bool(cfg.get("create_tools", True)),
+        # Agent-proposed MCP-server acquisition is the highest-trust knob:
+        # even gated behind catalog-pinning + operator consent it can start
+        # a third-party subprocess, so it ships OFF independently of the
+        # self-learning master switch (#422). Env override:
+        # MAVERICK_ALLOW_MCP_ACQUISITION.
+        "allow_mcp_acquisition": bool(cfg.get("allow_mcp_acquisition", False)),
         "max_acquisitions": max(1, max_acq),
     }
 

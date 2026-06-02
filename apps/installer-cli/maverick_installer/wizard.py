@@ -806,8 +806,12 @@ def pick_self_learning() -> dict[str, Any]:
     + run new tools, and discover REST APIs when it hits a capability gap.
     Generating and executing fresh code is a real trust decision, so this
     ships disabled and we say so plainly. Returns a dict written under
-    ``[self_learning]``. (Agent-driven MCP-server acquisition was removed in
-    #392 — MCP servers are operator-configured.)
+    ``[self_learning]``.
+
+    MCP-server acquisition (#422) is a separate, even-higher-trust knob: it
+    re-enables the capability #392 disabled, but only for curated, hash-pinned
+    catalog servers AND only after explicit operator approval. It ships OFF
+    independently of the self-learning master switch.
     """
     console.print()
     console.print(
@@ -827,10 +831,20 @@ def pick_self_learning() -> dict[str, Any]:
         "  Pre-acquire likely skills before each run (one extra LLM call)?",
         default=True,
     )
+    console.print(
+        "[dim]  MCP acquisition: the agent may PROPOSE adding a curated, "
+        "hash-pinned catalog MCP server (never a free-text command). Each one "
+        "still needs your explicit approval before it starts.[/dim]"
+    )
+    allow_mcp = _q_confirm(
+        "  Allow agent to propose catalog MCP servers (operator-approved)?",
+        default=False,
+    )
     return {
         "enable": True,
         "preflight": preflight,
         "create_tools": create_tools,
+        "allow_mcp_acquisition": allow_mcp,
         "max_acquisitions": 5,
     }
 

@@ -2,8 +2,9 @@
 
 When you ask Maverick to do something it doesn't yet have the capability
 for, it can **acquire the capability itself** — install a skill, drive a
-REST API, or generate a brand-new tool — instead of giving up. MCP servers
-remain operator-managed because they launch host subprocesses.
+REST API, or generate a brand-new tool — instead of giving up. It can also
+*propose* a curated MCP server, but only one from the hash-pinned catalog and
+only after you explicitly approve it (see "MCP-server acquisition" below).
 
 It's **off by default**. The kernel runs unchanged unless you turn it on,
 because "create a tool" means generating and executing fresh code in your
@@ -19,13 +20,15 @@ edit `~/.maverick/config.toml`:
 enable           = true  # master switch (default false)
 preflight        = true  # pre-acquire likely skills before each run
 create_tools     = true  # let the agent generate + run new tools
+allow_mcp_acquisition = false  # let the agent propose catalog MCP servers (off)
 max_acquisitions = 5     # cap on auto-acquisitions per run
 ```
 
-> Agent-driven MCP-server acquisition was removed in #392 (launching
-> model-supplied subprocesses is unsafe). MCP servers are operator-configured
-> via `[mcp_servers.<name>]`. An older config that still sets
-> `add_mcp_servers` is tolerated and ignored.
+> `allow_mcp_acquisition` is a **separate, higher-trust** opt-in that ships off
+> even when the rest of self-learning is on. It re-enables (safely) the
+> capability removed in #392: see "MCP-server acquisition" below. Set it via
+> config or `MAVERICK_ALLOW_MCP_ACQUISITION=1`. An older config that still sets
+> the retired `add_mcp_servers` key is tolerated and ignored.
 
 Or for a one-off run: `MAVERICK_SELF_LEARNING=1 maverick start "..."`.
 The env var also force-*disables* (`MAVERICK_SELF_LEARNING=0`) over config.
@@ -48,7 +51,7 @@ realises mid-task that it's missing something, it calls this tool:
 | --- | --- |
 | `search` | find catalog skills / MCP servers / plugins matching a need, plus already-loaded tools |
 | `acquire_skill` | install a catalog skill by name (hash-verified) and inject its steps immediately |
-| `add_mcp_server` | disabled for agent-driven self-learning; ask an operator to add trusted `[mcp_servers.<name>]` config |
+| `add_mcp_server` | add a catalog MCP server **by name** — command + SHA come from the curated, hash-pinned catalog entry (no free-text command), gated behind `allow_mcp_acquisition` **and** operator approval (see below). Off by default. |
 | `create_tool` | generate a Python tool from a description, validate it, and register it live |
 | `find_api` | discover an API's OpenAPI spec (probe a `base_url` or web-search), list its operations, and drive it via the built-in `openapi_runner` (no new code) |
 
@@ -58,8 +61,10 @@ agent can use it on its very next turn — no restart.
 ## What persists
 
 - **Skills** install to `~/.maverick/skills/*.md` (the normal skill store).
-- **MCP servers** are not written by self-learning. Operators can still add
-  trusted `[mcp_servers.<name>]` blocks to `~/.maverick/config.toml`.
+- **MCP servers** are only written when `allow_mcp_acquisition` is on **and**
+  you approve the specific server. The approved server is persisted as a normal
+  `[mcp_servers.<name>]` block (with its `pin_sha256`) so it also loads on the
+  next run. Operators can still add trusted blocks by hand.
 - **Generated tools** are written to `~/.maverick/generated_tools/*.py`.
   When self-learning is enabled, the kernel loads them as first-class
   tools at the start of every run.
@@ -91,9 +96,48 @@ Self-learning honors the same chokepoints as the rest of the kernel:
 - **Catalog trust** — `acquire_skill` only installs curated,
   SHA-256-pinned catalog entries, so a fetched skill must match the
   index byte-for-byte.
-- **MCP subprocess safety** — self-learning does not persist or hot-start
-  model-supplied MCP commands; operators must configure trusted servers.
+- **MCP subprocess safety** — see "MCP-server acquisition" below: the agent
+  can never launch a model-supplied command. Only catalog-pinned, SHA-verified
+  servers, and only after explicit operator approval.
 
 Because generated tools execute in-process, enabling `create_tools` is a
 genuine trust decision. Leave it off (or set `create_tools = false`) if
 you only want the safer acquisition paths (skills / APIs).
+
+## MCP-server acquisition
+
+PR #378 once let the agent add and hot-start an MCP server from a
+model-supplied `command`/`args`. PR #392 disabled that: a model that can pick
+the command line is a remote-code-execution / supply-chain hole. #422 restores
+the *capability* without re-opening the hole, by closing two gaps at once —
+**no free-text command, and an operator in the loop**:
+
+1. **Catalog-pinned only.** `op=add_mcp_server` takes a catalog **name**, not a
+   command. The command, args, and `pin_sha256` come from the curated `mcp`
+   catalog entry (resolved read-only via the federated index). A request that
+   carries a free-text `command`/`args` is rejected outright, and a name with
+   no catalog entry is rejected too.
+2. **Operator consent.** Before anything is persisted or started, the proposal
+   goes through the same consent queue as other risky actions
+   (`require_consent`). With `MAVERICK_CONSENT_MODE=dashboard` it parks in the
+   approvals queue for `maverick approve`; in `ask` mode it prompts on the TTY.
+   Denied, auto-deny, or a non-interactive context → **not persisted, not
+   started**.
+3. **Existing spec defenses.** The pinned command still goes through
+   `MCPServerSpec` validation (shell-metacharacter / NUL / newline rejection)
+   and `pin_sha256` is verified against the on-disk binary at launch
+   (CVE-2026-30615). None of those defenses are weakened.
+
+The launch path is unchanged: catalog-pinned entry → operator-approved →
+the same validated `MCPServerSpec` → the same `MCPClient.start()` the static
+config loader uses. There is no new subprocess spawn.
+
+The whole path is **off by default** and gated behind `allow_mcp_acquisition`
+(or `MAVERICK_ALLOW_MCP_ACQUISITION=1`) — independent of the self-learning
+master switch. With it off, `op=add_mcp_server` returns the same informative
+"disabled" error as before.
+
+> Note: catalog `mcp` entries encode their launch command in the entry's
+> `source` field (e.g. `source = "npx -y @scope/server"`); Maverick splits it
+> into `command` + `args`. The entry's `sha256` becomes the server's
+> `pin_sha256`.
