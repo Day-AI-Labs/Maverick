@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-from .._envparse import env_int
+from .._envparse import env_float, env_int
 from . import Tool
 
 if TYPE_CHECKING:
@@ -24,6 +24,23 @@ if TYPE_CHECKING:
 
 
 MAX_SWARM_FANOUT = env_int("MAVERICK_MAX_SWARM_FANOUT", 8)
+
+# #611: budget reserved for the top-level goal's synthesis/write step. Once
+# cumulative spend crosses (1 - this) of the cap, spawn_swarm refuses new
+# fan-out so a recursive research swarm can't consume the budget needed to
+# actually produce the answer. Mirrors agent.py's per-worker soft-stop.
+SYNTHESIS_RESERVE = env_float("MAVERICK_SYNTHESIS_RESERVE", 0.25)
+
+
+def _fanout_cap_for_depth(depth: int) -> int:
+    """Per-call fan-out width, DECAYING with depth.
+
+    A flat cap lets a recursive swarm explode geometrically (8 -> 64 -> 512).
+    Halving the width each level keeps the deep tail bounded while still letting
+    the root parallelize: depth 0 gets the full ``MAVERICK_MAX_SWARM_FANOUT``,
+    each level below halves it (floor 1).
+    """
+    return max(1, MAX_SWARM_FANOUT >> max(0, depth))
 
 
 def spawn_subagent_tool(parent: Agent) -> Tool:
@@ -96,16 +113,34 @@ def spawn_swarm_tool(parent: Agent) -> Tool:
         if parent.depth + 1 > parent.ctx.max_depth:
             return f"ERROR: max depth {parent.ctx.max_depth} reached"
 
-        # Cap per-call fan-out: an agent asking for 50 siblings on a
-        # trivial sub-goal is almost always confused / under attack, and
-        # the budget shouldn't bear the cost of refusing per-spawn.
-        if len(agents_spec) > MAX_SWARM_FANOUT:
+        # #611 synthesis reserve: once spend crosses (1 - reserve) of the cap,
+        # refuse new fan-out so the budget the top-level goal needs to write its
+        # answer isn't consumed by deeper research. Tell the agent to synthesize.
+        _b = parent.ctx.budget
+        if SYNTHESIS_RESERVE > 0 and _b.dollars >= _b.max_dollars * (1.0 - SYNTHESIS_RESERVE):
+            parent.ctx.blackboard.post(
+                parent.name, "plan",
+                f"spawning paused: ${_b.dollars:.2f}/${_b.max_dollars:.2f} spent; "
+                f"holding the final {SYNTHESIS_RESERVE:.0%} for synthesis",
+            )
+            return (
+                f"ERROR: spawning paused to reserve budget for the final answer "
+                f"(spent ${_b.dollars:.2f} of ${_b.max_dollars:.2f}; the last "
+                f"{SYNTHESIS_RESERVE:.0%} is held for synthesis). Do NOT spawn "
+                "more — synthesize and finalize with the findings you already have."
+            )
+
+        # Cap per-call fan-out, DECAYING with depth so a recursive swarm can't
+        # explode geometrically (#611). An agent asking for 50 siblings on a
+        # trivial sub-goal is almost always confused / under attack too.
+        cap = _fanout_cap_for_depth(parent.depth)
+        if len(agents_spec) > cap:
             parent.ctx.blackboard.post(
                 parent.name, "error",
                 f"swarm fan-out capped: requested {len(agents_spec)}, "
-                f"max {MAX_SWARM_FANOUT}",
+                f"max {cap} at depth {parent.depth}",
             )
-            agents_spec = agents_spec[:MAX_SWARM_FANOUT]
+            agents_spec = agents_spec[:cap]
 
         if not parent.ctx.try_reserve_spawns(len(agents_spec)):
             return (
