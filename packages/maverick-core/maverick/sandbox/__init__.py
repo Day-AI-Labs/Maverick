@@ -169,9 +169,11 @@ def build_sandbox(
         image = _resolve_image(full_cfg)
         return DockerBackend(
             workdir=wd, image=image, timeout=timeout,
+            allow_network=bool(full_cfg.get("allow_network", False)),
             pids_limit=full_cfg.get("pids_limit", 512),
             memory=full_cfg.get("memory", "4g"),
             cpus=full_cfg.get("cpus"),
+            allow_root=bool(full_cfg.get("allow_root", False)),
         )
     if chosen == "podman":
         image = _resolve_image(full_cfg)
@@ -181,6 +183,7 @@ def build_sandbox(
             pids_limit=full_cfg.get("pids_limit", 512),
             memory=full_cfg.get("memory", "4g"),
             cpus=full_cfg.get("cpus"),
+            allow_root=bool(full_cfg.get("allow_root", False)),
         )
     if chosen == "devcontainer":
         project_dir = Path(
@@ -199,6 +202,9 @@ def build_sandbox(
             timeout=timeout,
             allow_network=bool(full_cfg.get("allow_network", False)),
             extra_kubectl_args=full_cfg.get("extra_kubectl_args") or [],
+            run_as_user=int(full_cfg.get("run_as_user", 1000)),
+            memory=full_cfg.get("memory", "4g"),
+            cpus=full_cfg.get("cpus"),
         )
     if chosen == "firecracker":
         return FirecrackerBackend(
@@ -220,6 +226,7 @@ def build_sandbox(
             workdir=Path(full_cfg.get("workdir", "~/maverick-workspace")),
             timeout=timeout,
             ssh_args=full_cfg.get("ssh_args", []),
+            host_key_checking=full_cfg.get("host_key_checking", "accept-new"),
         )
     if chosen != "local":
         # The user asked for something other than local, but it matched no

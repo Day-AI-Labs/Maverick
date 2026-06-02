@@ -31,7 +31,8 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from .local import ExecResult
+from .docker import _kill_container
+from .local import ExecResult, container_user_args, scrub_env
 
 
 @dataclass
@@ -48,6 +49,12 @@ class PodmanBackend:
     # falsy value ("" / None) disables either cap.
     memory: str | None = "4g"
     cpus: str | None = None
+    # Run as the invoking user (uid:gid) by default instead of root, matching
+    # DevcontainerBackend. Set ``[sandbox] allow_root = true`` (or
+    # MAVERICK_SANDBOX_ALLOW_ROOT) to keep root for images that require it.
+    # (Rootless podman maps container-uid 0 to the host user already, but an
+    # explicit ``--user`` keeps parity with docker and the in-container view.)
+    allow_root: bool = False
 
     def __post_init__(self) -> None:
         self.workdir = Path(self.workdir)
@@ -82,11 +89,15 @@ class PodmanBackend:
             # pip/npm/pytest, which need no capabilities.
             "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges",
+            *container_user_args(self.allow_root),
         ]
         if self.pids_limit:
             args.extend(["--pids-limit", str(self.pids_limit)])
         if self.memory:
-            args.extend(["--memory", str(self.memory)])
+            # Pin --memory-swap to --memory so the cap can't be sidestepped via
+            # swap, keeping the RAM bound real.
+            args.extend(["--memory", str(self.memory),
+                         "--memory-swap", str(self.memory)])
         if self.cpus:
             args.extend(["--cpus", str(self.cpus)])
         if not self.allow_network:
@@ -99,6 +110,7 @@ class PodmanBackend:
                 capture_output=True,
                 text=True,
                 timeout=effective,
+                env=scrub_env(),
             )
             return ExecResult(
                 stdout=result.stdout[-8000:],
@@ -106,23 +118,15 @@ class PodmanBackend:
                 exit_code=result.returncode,
             )
         except subprocess.TimeoutExpired as e:
-            # Best-effort cleanup. A hung daemon could make `rm` itself
-            # time out / raise; swallow it so we still return the
-            # TIMEOUT ExecResult instead of masking it with a cleanup
-            # exception.
-            try:
-                subprocess.run(
-                    ["podman", "rm", "-f", container_name],
-                    capture_output=True,
-                    timeout=10,
-                )
-            except Exception:
-                pass
+            # The timeout killed our local `podman run` client, not the
+            # container -- reap it by name. Surface a cleanup failure in stderr
+            # instead of swallowing it under a bare except.
+            cleanup_note = _kill_container(container_name, engine="podman")
             stdout = e.stdout or ""
             if isinstance(stdout, bytes):
                 stdout = stdout.decode("utf-8", errors="replace")
             return ExecResult(
                 stdout=stdout[-8000:],
-                stderr=f"TIMEOUT after {effective}s",
+                stderr=f"TIMEOUT after {effective}s{cleanup_note}",
                 exit_code=124,
             )

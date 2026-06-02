@@ -20,7 +20,33 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from .local import ExecResult
+from .local import ExecResult, container_user_args, scrub_env
+
+
+def _kill_container(name: str, engine: str = "docker") -> str:
+    """Reap an orphaned container by name; return a stderr note on failure.
+
+    ``subprocess.run(timeout=...)`` only kills the local client process, so the
+    daemon-side container survives the timeout. ``{engine} kill`` stops it and
+    ``{engine} rm -f`` removes it; we retry the kill once in case the daemon was
+    briefly busy. If both attempts fail we return a short ``; cleanup failed``
+    note so the leak is visible rather than swallowed under a bare except.
+    """
+    last_err = ""
+    for _ in range(2):
+        try:
+            subprocess.run(
+                [engine, "kill", name],
+                capture_output=True, timeout=10, env=scrub_env(),
+            )
+            subprocess.run(
+                [engine, "rm", "-f", name],
+                capture_output=True, timeout=10, env=scrub_env(),
+            )
+            return ""
+        except Exception as e:  # daemon wedged / binary gone -- note + retry
+            last_err = str(e) or e.__class__.__name__
+    return f"; container cleanup failed ({last_err}); {name} may be orphaned"
 
 
 @dataclass
@@ -40,6 +66,12 @@ class DockerBackend:
     # value ("" / None) disables either cap.
     memory: str | None = "4g"
     cpus: str | None = None
+    # Run as the invoking user (uid:gid) by default instead of root, matching
+    # DevcontainerBackend -- root in the container owns the writable
+    # ``-v {workdir}:/workspace`` mount on the host. Set
+    # ``[sandbox] allow_root = true`` (or MAVERICK_SANDBOX_ALLOW_ROOT) to keep
+    # root for images that require it.
+    allow_root: bool = False
 
     def __post_init__(self) -> None:
         self.workdir = Path(self.workdir)
@@ -75,11 +107,15 @@ class DockerBackend:
             # pip/npm/pytest, which need no capabilities.
             "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges",
+            *container_user_args(self.allow_root),
         ]
         if self.pids_limit:
             args.extend(["--pids-limit", str(self.pids_limit)])
         if self.memory:
-            args.extend(["--memory", str(self.memory)])
+            # Pin --memory-swap to --memory so the cap can't be sidestepped via
+            # swap (default: swap == 2x memory), keeping the RAM bound real.
+            args.extend(["--memory", str(self.memory),
+                         "--memory-swap", str(self.memory)])
         if self.cpus:
             args.extend(["--cpus", str(self.cpus)])
         if not self.allow_network:
@@ -92,6 +128,7 @@ class DockerBackend:
                 capture_output=True,
                 text=True,
                 timeout=effective,
+                env=scrub_env(),
             )
             return ExecResult(
                 stdout=result.stdout[-8000:],
@@ -99,24 +136,17 @@ class DockerBackend:
                 exit_code=result.returncode,
             )
         except subprocess.TimeoutExpired as e:
-            # Best-effort cleanup. If the Docker daemon is itself wedged
-            # (often the cause of the original timeout), `docker rm` can
-            # also hang/raise; swallow it so the clean exit_code=124
-            # TIMEOUT result below is what propagates, not an unhandled
-            # exception in the agent loop. (Matches podman/kubernetes.)
-            try:
-                subprocess.run(
-                    ["docker", "rm", "-f", container_name],
-                    capture_output=True,
-                    timeout=10,
-                )
-            except Exception:
-                pass
+            # The timeout killed our local `docker run` client, not the daemon
+            # container -- which keeps running (and holding the workspace mount)
+            # until reaped. Force-remove it by name. Surface a cleanup failure
+            # in stderr instead of swallowing it under a bare except: a leaked
+            # container is a real condition the operator should see.
+            cleanup_note = _kill_container(container_name)
             stdout = e.stdout or ""
             if isinstance(stdout, bytes):
                 stdout = stdout.decode("utf-8", errors="replace")
             return ExecResult(
                 stdout=stdout[-8000:],
-                stderr=f"TIMEOUT after {effective}s",
+                stderr=f"TIMEOUT after {effective}s{cleanup_note}",
                 exit_code=124,
             )

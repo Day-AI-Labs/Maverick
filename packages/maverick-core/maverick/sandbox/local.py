@@ -31,6 +31,35 @@ _ALWAYS_STRIP_ENV = (
 )
 
 
+_TRUE = {"1", "true", "yes", "on"}
+
+
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in _TRUE
+
+
+def container_user_args(allow_root: bool = False) -> list[str]:
+    """Return ``["--user", "uid:gid"]`` for non-root container execution.
+
+    Containers default to running as root; against a writable host mount that
+    lets a prompt-injected agent write root-owned files (or worse) on the host.
+    Drop to the invoking user's uid/gid -- matching ``DevcontainerBackend`` --
+    unless the operator opts back into root via ``[sandbox] allow_root = true``
+    or ``MAVERICK_SANDBOX_ALLOW_ROOT`` (truthy).
+
+    ``os.getuid``/``os.getgid`` are POSIX-only (absent on Windows); there is no
+    uid/gid mapping to pin there, so fall back to no ``--user`` flag and let the
+    container engine's own user handling apply.
+    """
+    if allow_root or _truthy(os.environ.get("MAVERICK_SANDBOX_ALLOW_ROOT")):
+        return []
+    getuid = getattr(os, "getuid", None)
+    getgid = getattr(os, "getgid", None)
+    if getuid is None or getgid is None:
+        return []
+    return ["--user", f"{getuid()}:{getgid()}"]
+
+
 def scrub_env(source: dict | None = None) -> dict:
     """Return a copy of the environment with secrets removed.
 
