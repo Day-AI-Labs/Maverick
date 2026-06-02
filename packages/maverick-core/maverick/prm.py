@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -36,6 +37,9 @@ log = logging.getLogger(__name__)
 # Role vocabulary for the one-hot feature block. Order is load-bearing:
 # both the LearnedPRM head and prm_train.py depend on this exact ordering.
 ROLE_VOCAB = ["orchestrator", "researcher", "coder", "writer", "verifier", "other"]
+
+# Upper bound for learned artifact architecture to avoid oversized loads.
+MAX_LEARNED_PRM_HIDDEN_DIM = 1024
 
 # Names of the 12 features produced by step_features(), in order.
 FEATURE_NAMES = [
@@ -192,8 +196,10 @@ class LearnedPRM:
     """In-process AgentPRM head trained from trajectories (arxiv:2511.08325).
 
     Loads a small MLP from a model directory (head.pt + head.json) and
-    scores each step from the shared `step_features` vector. torch is an
-    OPTIONAL dependency: it is imported lazily on the first score(), never
+    scores each step from the shared `step_features` vector. Artifact
+    directories must be operator-controlled and read-only to the agent;
+    untrusted model files are rejected rather than loaded unsafely. torch is
+    an OPTIONAL dependency: it is imported lazily on the first score(), never
     at construction. If torch is missing OR the artifact can't be loaded,
     LearnedPRM fails OPEN — it logs a warning ONCE and delegates every
     score to HeuristicPRM so the swarm never blocks on model availability.
@@ -211,6 +217,59 @@ class LearnedPRM:
         if not self._warned:
             log.warning("LearnedPRM: %s; falling back to heuristic", msg)
             self._warned = True
+
+    @staticmethod
+    def _artifact_dims(meta: Mapping[str, object]) -> tuple[int, int]:
+        """Validate head.json and return the expected network dimensions."""
+        if meta.get("feature_names") != FEATURE_NAMES:
+            raise ValueError("head.json feature_names do not match this Maverick build")
+        if meta.get("role_vocab") != ROLE_VOCAB:
+            raise ValueError("head.json role_vocab does not match this Maverick build")
+
+        input_dim = int(meta.get("input_dim", len(FEATURE_NAMES)))
+        if input_dim != len(FEATURE_NAMES):
+            raise ValueError(
+                f"head.json input_dim={input_dim} does not match expected {len(FEATURE_NAMES)}"
+            )
+
+        hidden_dim = int(meta.get("hidden_dim", 16))
+        if hidden_dim < 1 or hidden_dim > MAX_LEARNED_PRM_HIDDEN_DIM:
+            raise ValueError(
+                f"head.json hidden_dim={hidden_dim} outside allowed range "
+                f"1..{MAX_LEARNED_PRM_HIDDEN_DIM}"
+            )
+        return input_dim, hidden_dim
+
+    @staticmethod
+    def _validate_state_dict(state: object, torch, input_dim: int, hidden_dim: int):
+        """Ensure head.pt is a tensor-only state_dict for the expected MLP."""
+        expected_shapes = {
+            "0.weight": (hidden_dim, input_dim),
+            "0.bias": (hidden_dim,),
+            "2.weight": (2, hidden_dim),
+            "2.bias": (2,),
+        }
+        if not isinstance(state, Mapping):
+            raise ValueError("head.pt did not contain a state_dict mapping")
+
+        keys = set(state.keys())
+        expected_keys = set(expected_shapes)
+        if keys != expected_keys:
+            raise ValueError(
+                "head.pt state_dict keys mismatch "
+                f"(missing={sorted(expected_keys - keys)}, extra={sorted(keys - expected_keys)})"
+            )
+
+        for key, shape in expected_shapes.items():
+            value = state[key]
+            if not torch.is_tensor(value):
+                raise ValueError(f"head.pt state_dict[{key!r}] is not a tensor")
+            if tuple(value.shape) != shape:
+                raise ValueError(
+                    f"head.pt state_dict[{key!r}] shape {tuple(value.shape)} "
+                    f"does not match expected {shape}"
+                )
+        return state
 
     def _load(self):
         """Lazily import torch + build the cached MLP. Returns it or None."""
@@ -230,14 +289,16 @@ class LearnedPRM:
         try:
             d = Path(self.model_dir)
             meta = json.loads((d / "head.json").read_text(encoding="utf-8"))
-            input_dim = int(meta.get("input_dim", len(FEATURE_NAMES)))
-            hidden_dim = int(meta.get("hidden_dim", 16))
+            if not isinstance(meta, Mapping):
+                raise ValueError("head.json did not contain an object")
+            input_dim, hidden_dim = self._artifact_dims(meta)
             net = torch.nn.Sequential(
                 torch.nn.Linear(input_dim, hidden_dim),
                 torch.nn.ReLU(),
                 torch.nn.Linear(hidden_dim, 2),
             )
-            state = torch.load(d / "head.pt", map_location="cpu")
+            state = torch.load(d / "head.pt", map_location="cpu", weights_only=True)
+            state = self._validate_state_dict(state, torch, input_dim, hidden_dim)
             net.load_state_dict(state)
             net.eval()
             self._model = (net, torch)

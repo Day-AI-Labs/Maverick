@@ -4,10 +4,13 @@ that is the point. The round-trip train/load test is skipped if torch is
 absent.
 """
 import json
+import sys
+import types
 
 import pytest
 from maverick.prm import (
     FEATURE_NAMES,
+    MAX_LEARNED_PRM_HIDDEN_DIM,
     ROLE_VOCAB,
     HeuristicPRM,
     LearnedPRM,
@@ -99,6 +102,116 @@ def test_learned_prm_construction_does_not_import_torch():
     # Construction must not touch torch / the filesystem.
     learned = LearnedPRM(model_dir="/nope")
     assert learned._model is None
+
+
+class _FakeTensor:
+    def __init__(self, shape):
+        self.shape = shape
+
+
+class _FakeNet:
+    def __init__(self, *layers):
+        self.layers = layers
+        self.loaded_state = None
+
+    def load_state_dict(self, state):
+        self.loaded_state = state
+
+    def eval(self):
+        return None
+
+
+def _install_fake_torch(monkeypatch, state):
+    calls = {}
+
+    def load(path, *, map_location=None, weights_only=None):
+        calls["path"] = path
+        calls["map_location"] = map_location
+        calls["weights_only"] = weights_only
+        return state
+
+    fake_torch = types.SimpleNamespace(
+        load=load,
+        is_tensor=lambda value: isinstance(value, _FakeTensor),
+        nn=types.SimpleNamespace(
+            Linear=lambda *args: ("linear", args),
+            ReLU=lambda: ("relu",),
+            Sequential=_FakeNet,
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    return calls
+
+
+def _valid_meta(hidden_dim=16):
+    return {
+        "version": 1,
+        "input_dim": len(FEATURE_NAMES),
+        "hidden_dim": hidden_dim,
+        "feature_names": FEATURE_NAMES,
+        "role_vocab": ROLE_VOCAB,
+    }
+
+
+def _valid_state(hidden_dim=16):
+    return {
+        "0.weight": _FakeTensor((hidden_dim, len(FEATURE_NAMES))),
+        "0.bias": _FakeTensor((hidden_dim,)),
+        "2.weight": _FakeTensor((2, hidden_dim)),
+        "2.bias": _FakeTensor((2,)),
+    }
+
+
+def test_learned_prm_uses_weights_only_torch_load(monkeypatch, tmp_path):
+    (tmp_path / "head.json").write_text(json.dumps(_valid_meta()), encoding="utf-8")
+    (tmp_path / "head.pt").write_bytes(b"fake")
+    calls = _install_fake_torch(monkeypatch, _valid_state())
+
+    learned = LearnedPRM(model_dir=str(tmp_path))
+    model = learned._load()
+
+    assert model is not None
+    assert calls["map_location"] == "cpu"
+    assert calls["weights_only"] is True
+
+
+def test_learned_prm_rejects_metadata_mismatch_before_loading(monkeypatch, tmp_path):
+    bad_meta = _valid_meta()
+    bad_meta["feature_names"] = [*FEATURE_NAMES, "unexpected"]
+    (tmp_path / "head.json").write_text(json.dumps(bad_meta), encoding="utf-8")
+    (tmp_path / "head.pt").write_bytes(b"fake")
+    calls = _install_fake_torch(monkeypatch, _valid_state())
+
+    learned = LearnedPRM(model_dir=str(tmp_path))
+
+    assert learned._load() is None
+    assert calls == {}
+
+
+def test_learned_prm_rejects_invalid_state_dict(monkeypatch, tmp_path):
+    (tmp_path / "head.json").write_text(json.dumps(_valid_meta()), encoding="utf-8")
+    (tmp_path / "head.pt").write_bytes(b"fake")
+    bad_state = _valid_state()
+    bad_state["2.weight"] = _FakeTensor((3, 16))
+    _install_fake_torch(monkeypatch, bad_state)
+
+    learned = LearnedPRM(model_dir=str(tmp_path))
+
+    assert learned._load() is None
+
+
+def test_learned_prm_caps_hidden_dim(monkeypatch, tmp_path):
+    too_large = MAX_LEARNED_PRM_HIDDEN_DIM + 1
+    (tmp_path / "head.json").write_text(
+        json.dumps(_valid_meta(hidden_dim=too_large)), encoding="utf-8"
+    )
+    (tmp_path / "head.pt").write_bytes(b"fake")
+    calls = _install_fake_torch(monkeypatch, _valid_state(hidden_dim=too_large))
+
+    learned = LearnedPRM(model_dir=str(tmp_path))
+
+    assert learned._load() is None
+    assert calls == {}
 
 
 # --- build_from_env --------------------------------------------------------
