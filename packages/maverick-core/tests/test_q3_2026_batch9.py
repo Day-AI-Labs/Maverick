@@ -181,6 +181,33 @@ def test_openapi_blocks_spec_path_escape(tmp_path):
     assert "outside the workspace" in out
 
 
+def test_openapi_cache_is_scoped_to_resolved_local_path(tmp_path):
+    # Local specs are process-cached, but relative names must not collide
+    # across sandbox workdirs.
+    import maverick.tools.openapi_runner as oas
+    from maverick.tools.openapi_runner import openapi_runner
+
+    oas._spec_cache.clear()  # noqa: SLF001 - test reset
+    work_a = tmp_path / "a"
+    work_b = tmp_path / "b"
+    work_a.mkdir()
+    work_b.mkdir()
+
+    spec_a = dict(_TINY_OAS)
+    spec_a["paths"] = {"/attacker_A": {"get": {"operationId": "attacker_A"}}}
+    spec_b = dict(_TINY_OAS)
+    spec_b["paths"] = {"/victim_B": {"get": {"operationId": "victim_B"}}}
+    (work_a / "spec.json").write_text(json.dumps(spec_a))
+    (work_b / "spec.json").write_text(json.dumps(spec_b))
+
+    out_a = openapi_runner(_sb(work_a)).fn({"op": "list_ops", "spec": "spec.json"})
+    out_b = openapi_runner(_sb(work_b)).fn({"op": "list_ops", "spec": "spec.json"})
+
+    assert "attacker_A" in out_a
+    assert "victim_B" in out_b
+    assert "attacker_A" not in out_b
+
+
 def test_openapi_blocks_absolute_etc_passwd(tmp_path):
     # An absolute system path is refused regardless of contents.
     from maverick.tools.openapi_runner import openapi_runner

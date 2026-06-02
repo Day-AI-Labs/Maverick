@@ -98,9 +98,14 @@ def _load_spec(source: str, workdir: Path | None = None) -> dict:
     # path escape can't slip through a warm cache (and is rejected even if the
     # same bad path was attempted before).
     local_path = None if is_url else _confine_local(source, workdir)
+    # Cache local specs by their confined, resolved path rather than the raw
+    # user-provided string. Otherwise separate sandboxes using the same
+    # relative name (for example, ``spec.json``) can share a process-global
+    # cache entry across workdirs. URL specs remain keyed by URL.
+    cache_key = source if is_url else str(local_path)
     with _spec_lock:
-        if source in _spec_cache:
-            return _spec_cache[source]
+        if cache_key in _spec_cache:
+            return _spec_cache[cache_key]
     if is_url:
         from ._ssrf import safe_client
         # safe_client validates the host and pins the connection to the
@@ -127,7 +132,7 @@ def _load_spec(source: str, workdir: Path | None = None) -> dict:
     if not isinstance(data, dict) or "paths" not in data:
         raise RuntimeError("OpenAPI spec missing 'paths'")
     with _spec_lock:
-        _spec_cache[source] = data
+        _spec_cache[cache_key] = data
     return data
 
 
