@@ -105,7 +105,9 @@ def test_scaffold_manifest_permissions_parse_correctly(tmp_path: Path):
 def test_scaffold_channel(tmp_path: Path):
     scaffold("chat-thing", "channel", dest=tmp_path)
     body = (tmp_path / "chat-thing" / "src" / "chat_thing" / "__init__.py").read_text()
-    assert "class ChatThingChannel" in body
+    # Must subclass the documented Channel base, not an ad-hoc class.
+    assert "class ChatThingChannel(Channel)" in body
+    assert "from maverick_channels import Channel" in body
     assert "async def start" in body
     assert "async def send" in body
     assert "async def stop" in body

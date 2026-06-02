@@ -235,6 +235,30 @@ def test_plugin_manifest_incompatible_version_warns():
     assert any("api_version" in w for w in m.warnings)
 
 
+@pytest.mark.parametrize("api_version", ["1", "1.0", "01", "1.5"])
+def test_plugin_manifest_compatible_by_major(api_version):
+    # Kernel major is 1; any plugin with major 1 is compatible regardless
+    # of how its api_version string is spelled.
+    from maverick.plugin_manifest import parse_dict
+    m = parse_dict({
+        "plugin": {"name": "x", "version": "0.1.0", "api_version": api_version}
+    })
+    assert m is not None
+    assert m.is_compatible()
+    assert not any("api_version" in w for w in m.warnings)
+
+
+@pytest.mark.parametrize("api_version", ["2", "0", "abc", "v1"])
+def test_plugin_manifest_incompatible_by_major(api_version):
+    from maverick.plugin_manifest import parse_dict
+    m = parse_dict({
+        "plugin": {"name": "x", "version": "0.1.0", "api_version": api_version}
+    })
+    assert m is not None
+    assert not m.is_compatible()
+    assert any("api_version" in w for w in m.warnings)
+
+
 def test_plugin_manifest_loads_capabilities_permissions():
     from maverick.plugin_manifest import MAVERICK_API_VERSION, parse_dict
     m = parse_dict({

@@ -51,6 +51,20 @@ log = logging.getLogger(__name__)
 MAVERICK_API_VERSION = "1"
 
 
+def _major(api_version: str) -> int | None:
+    """Parse a declared ``api_version`` to its MAJOR integer.
+
+    Compatibility is by major version only, so ``"1"``, ``"1.0"``,
+    ``"01"`` and ``"1.2"`` all map to ``1``. Returns None for a
+    malformed/empty value so the caller can treat it as incompatible.
+    """
+    head = str(api_version or "").strip().split(".", 1)[0]
+    try:
+        return int(head)
+    except ValueError:
+        return None
+
+
 @dataclass
 class PluginCapabilities:
     tools: list[str] = field(default_factory=list)
@@ -81,7 +95,11 @@ class PluginManifest:
     warnings: list[str] = field(default_factory=list)
 
     def is_compatible(self) -> bool:
-        return self.api_version == MAVERICK_API_VERSION
+        plugin_major = _major(self.api_version)
+        kernel_major = _major(MAVERICK_API_VERSION)
+        if plugin_major is None or kernel_major is None:
+            return False
+        return plugin_major == kernel_major
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
