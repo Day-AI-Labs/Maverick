@@ -350,6 +350,47 @@ class PostgresWorldModel:
             row = cur.fetchone()
         return PGGoal(*row) if row else None
 
+    def inflight_goal(self) -> PGGoal | None:
+        """Most-recently-updated in-flight goal (active/pending); mirrors SQLite."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, parent_id, title, description, status, "
+                "created_at, updated_at, deadline, result FROM goals "
+                "WHERE status IN ('active', 'pending') ORDER BY updated_at DESC LIMIT 1"
+            )
+            row = cur.fetchone()
+        return PGGoal(*row) if row else None
+
+    def candidate_goals(self, include_running: bool, limit: int = 500) -> list[PGGoal]:
+        """Goals with comparable text for recall (mirrors SQLite). Finished set
+        is the written vocabulary done/blocked/cancelled, not the never-written
+        succeeded/failed the old query used."""
+        text_clause = "(COALESCE(title, '') != '' OR COALESCE(description, '') != '')"
+        if include_running:
+            where = f"WHERE {text_clause}"
+        else:
+            where = f"WHERE status IN ('done', 'blocked', 'cancelled') AND {text_clause}"
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, parent_id, title, description, status, created_at, "
+                f"updated_at, deadline, result FROM goals {where} "
+                "ORDER BY updated_at DESC LIMIT %s",
+                (limit,),
+            )
+            rows = cur.fetchall()
+        return [PGGoal(*r) for r in rows]
+
+    def subgoals(self, parent_id: int, limit: int = 50) -> list[PGGoal]:
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, parent_id, title, description, status, created_at, "
+                "updated_at, deadline, result FROM goals WHERE parent_id = %s "
+                "ORDER BY created_at ASC LIMIT %s",
+                (parent_id, limit),
+            )
+            rows = cur.fetchall()
+        return [PGGoal(*r) for r in rows]
+
     def reclaim_orphan_goals(self, *, max_age_seconds: float = 60.0) -> int:
         """Mark stale active/pending goals as 'blocked' after a crash.
 

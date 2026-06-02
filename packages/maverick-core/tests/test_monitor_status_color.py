@@ -14,14 +14,19 @@ from maverick.monitor import _status_color
     ("active", "cyan"),        # the bug: normal running state was uncolored
     ("blocked", "red"),        # was missing from the plan-tree map
     ("pending", "yellow"),
-    ("in_progress", "cyan"),
-    ("running", "cyan"),
-    ("succeeded", "green"),
     ("done", "green"),
-    ("failed", "red"),
+    ("cancelled", "red"),
 ])
 def test_known_statuses_have_colors(status, color):
     assert _status_color(status) == color
+
+
+def test_never_written_statuses_default_white():
+    # in_progress/running/succeeded/failed are never written by the orchestrator
+    # (vocab is active/pending/blocked/done/cancelled); they no longer have map
+    # entries and fall through to the default.
+    for stale in ("in_progress", "running", "succeeded", "failed"):
+        assert _status_color(stale) == "white"
 
 
 def test_case_insensitive():
