@@ -340,6 +340,17 @@ class PostgresWorldModel:
             rows = cur.fetchall()
         return [PGGoal(*r) for r in rows]
 
+    def most_recent_goal(self) -> PGGoal | None:
+        """Most-recently-updated goal regardless of status; mirrors SQLite."""
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, parent_id, title, description, status, "
+                "created_at, updated_at, deadline, result FROM goals "
+                "ORDER BY updated_at DESC LIMIT 1"
+            )
+            row = cur.fetchone()
+        return PGGoal(*row) if row else None
+
     def active_goal(self) -> PGGoal | None:
         with self._tx() as cur:
             cur.execute(

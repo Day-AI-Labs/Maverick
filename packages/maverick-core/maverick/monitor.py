@@ -78,8 +78,7 @@ def _resolve_active_goal(world: WorldModel) -> Goal | None:
     goal = world.inflight_goal()
     if goal is not None:
         return goal
-    recent = world.list_goals(limit=1, order="desc")
-    return recent[0] if recent else None
+    return world.most_recent_goal()
 
 
 def snapshot(world: WorldModel, goal_id: int | None = None) -> MonitorState | None:

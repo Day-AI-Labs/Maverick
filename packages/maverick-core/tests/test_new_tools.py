@@ -149,7 +149,7 @@ def test_recall_excludes_running_by_default(world_with_history):
         include_running=False,
     )
     ids = [g.id for _, g in matches]
-    assert 5 not in ids  # "Database migration" is in_progress
+    assert 5 not in ids  # "Database migration" is active
 
 
 def test_recall_finds_relevant_by_jaccard(world_with_history):
@@ -214,12 +214,32 @@ def test_monitor_snapshot_empty_db(tmp_path):
 
 
 def test_monitor_snapshot_resolves_active_goal(world_with_history):
-    """Without explicit goal_id, picks the most-recent in_progress one."""
+    """Without explicit goal_id, picks the most-recent active goal."""
     from maverick.monitor import snapshot
     state = snapshot(world_with_history)
     assert state is not None
-    # Goal #5 is the only in_progress one.
+    # Goal #5 is the only active one.
     assert state.goal.id == 5
+
+
+def test_monitor_snapshot_fallback_uses_updated_at_not_id(tmp_path):
+    """Without an in-flight goal, picks the most-recently-touched terminal goal."""
+    from maverick.monitor import snapshot
+    from maverick.world_model import WorldModel
+
+    world = WorldModel(tmp_path / "wm.sqlite")
+    try:
+        older_id = world.create_goal("older id, touched last")
+        newer_id = world.create_goal("newer id, stale")
+        world.set_goal_status(newer_id, "done")
+        time.sleep(0.01)
+        world.set_goal_status(older_id, "done")
+
+        state = snapshot(world)
+        assert state is not None
+        assert state.goal.id == older_id
+    finally:
+        world.close()
 
 
 def test_monitor_snapshot_explicit_goal(world_with_history):
