@@ -134,3 +134,18 @@ def test_unsigned_rejected_when_require_signed(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="require_signed"):
         skills.install_skill(str(src), skills_dir=skills_dir)
     assert not list(skills_dir.glob("*.md"))
+
+
+def test_present_but_empty_sig_rejected_as_malformed(tmp_path, monkeypatch):
+    # A `sig:`/`pubkey:` key present with an empty value must NOT silently
+    # downgrade to "unsigned" and install under the default require_signed=False;
+    # a skill claiming to be signed must verify or be rejected as malformed.
+    _write_config(tmp_path, monkeypatch, "")  # default: unsigned allowed
+    content = _make_skill(sig="", pubkey="")  # keys present, values blank
+
+    src = tmp_path / "in.md"
+    src.write_text(content, encoding="utf-8")
+    skills_dir = tmp_path / "skills"
+    with pytest.raises(ValueError, match="malformed"):
+        skills.install_skill(str(src), skills_dir=skills_dir)
+    assert not list(skills_dir.glob("*.md"))

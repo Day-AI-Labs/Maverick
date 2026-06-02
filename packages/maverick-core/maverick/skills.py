@@ -70,6 +70,10 @@ class Skill:
     path: Path
     sig: str | None = None
     pubkey: str | None = None
+    # Set True by _validate_and_write only when a real Ed25519 signature
+    # verified against a trusted publisher key. Distinct from "the skill
+    # carries sig/pubkey frontmatter" (which may be forged or untrusted).
+    verified: bool = False
 
     @classmethod
     def parse(cls, text: str, path: Path) -> Skill:
@@ -78,6 +82,10 @@ class Skill:
             raise ValueError("missing YAML frontmatter")
         front, body = m.group(1), m.group(2)
         meta: dict = {}
+        # Track which keys appeared in frontmatter, even with an empty value.
+        # Lets us tell "no sig: line at all" (genuinely unsigned) apart from
+        # "sig: present but blank/malformed" (a skill CLAIMING to be signed).
+        present: set[str] = set()
         current_key = None
         for line in front.splitlines():
             line = line.rstrip()
@@ -90,10 +98,24 @@ class Skill:
                 k = k.strip()
                 v = v.strip()
                 current_key = k
+                present.add(k)
                 if v:
                     meta[k] = v
                 else:
                     meta[k] = []
+        # A sig:/pubkey: key present but empty/whitespace (parsed to []) or a
+        # non-scalar value is a skill that visually claims to be signed yet
+        # carries no usable signature. Reject it as malformed rather than
+        # quietly returning sig=None, which _verify_skill_signature would read
+        # as "unsigned" and (under the default require_signed=False) install
+        # with NO verification.
+        for key in ("sig", "pubkey"):
+            if key in present and not (isinstance(meta.get(key), str) and meta[key].strip()):
+                raise ValueError(
+                    f"malformed skill frontmatter: '{key}:' is present but empty "
+                    "or non-scalar. A skill claiming to be signed must carry a "
+                    "valid sig and pubkey, or omit both."
+                )
         sig = meta.get("sig")
         pubkey = meta.get("pubkey")
         return cls(
@@ -265,31 +287,39 @@ def _canonical_signed_bytes(parsed: Skill) -> bytes:
     ).encode("utf-8")
 
 
-def _verify_skill_signature(parsed: Skill) -> None:
+def _verify_skill_signature(parsed: Skill, *, require_signature: bool = False) -> bool:
     """Enforce the ``[skills]`` signing policy on a parsed skill.
 
-    - ``require_signed``: reject any skill without ``sig`` + ``pubkey``.
+    - ``require_signed`` (config) or ``require_signature`` (caller): reject any
+      skill without a sig that verifies against a trusted publisher. The caller
+      flag is the catalog path's ``require_signed_catalog`` knob, which forces a
+      verified signature even when ``trusted_pubkeys`` is empty.
     - signed skill: its ``pubkey`` must be a trusted publisher (when
-      ``trusted_pubkeys`` is non-empty) and the Ed25519 signature must
-      verify over the canonical bytes; otherwise reject.
+      ``trusted_pubkeys`` is non-empty -- and ALWAYS when ``require_signature``,
+      since "verified" is meaningless without a trust anchor) and the Ed25519
+      signature must verify over the canonical bytes; otherwise reject.
 
-    If ``cryptography`` is absent, signed skills are rejected because the
-    signature and publisher trust cannot be verified safely.
+    Returns True iff a real Ed25519 signature verified against a trusted
+    publisher key (the genuine "verified" status); False means the skill is
+    installed unsigned under TOFU/no-trust. Raises ``ValueError`` on any
+    policy violation. If ``cryptography`` is absent, signed skills are
+    rejected because trust cannot be established safely.
     """
     from . import config as _config
     from .audit import signing
 
     cfg = _config.get_skills()
     trusted = cfg["trusted_pubkeys"]
+    must_verify = bool(cfg["require_signed"]) or require_signature
     signed = bool(parsed.sig and parsed.pubkey)
 
     if not signed:
-        if cfg["require_signed"]:
+        if must_verify:
             raise ValueError(
-                "skill rejected: require_signed is set but the SKILL.md has no "
-                "'sig'/'pubkey' frontmatter."
+                "skill rejected: require_signed (or require_signed_catalog) is "
+                "set but the SKILL.md has no 'sig'/'pubkey' frontmatter."
             )
-        return
+        return False
 
     if not signing._have_crypto():
         raise ValueError(
@@ -297,7 +327,23 @@ def _verify_skill_signature(parsed: Skill) -> None:
             "Install 'maverick-agent[audit-signing]' to enable signature verification."
         )
 
-    if trusted and parsed.pubkey not in trusted:
+    # With no configured trust anchor, a self-asserted pubkey verifies its own
+    # signature -- that is integrity, not authenticity. When the caller demands
+    # a verified signature (require_signed_catalog), refuse unless we can anchor
+    # the pubkey to a trusted publisher.
+    if not trusted:
+        if require_signature:
+            raise ValueError(
+                "skill rejected: require_signed_catalog is set but no "
+                "[skills].trusted_pubkeys are configured to anchor trust. "
+                "A self-asserted signature cannot be verified as authentic."
+            )
+        # No trust configured and none required: a self-signed skill provides
+        # no authenticity guarantee, so report it as NOT verified even though
+        # the signature is internally consistent.
+        return False
+
+    if parsed.pubkey not in trusted:
         raise ValueError(
             "skill rejected: signed by an untrusted publisher key "
             f"{parsed.pubkey[:16]!r} (not in [skills].trusted_pubkeys)."
@@ -310,12 +356,19 @@ def _verify_skill_signature(parsed: Skill) -> None:
             "skill rejected: Ed25519 signature does not verify over the skill's "
             "signed fields (name/triggers/tools_needed/body)."
         )
+    return True
 
 
-def _validate_and_write(content: str, skills_dir: Path) -> Skill:
+def _validate_and_write(
+    content: str, skills_dir: Path, *, require_signature: bool = False
+) -> Skill:
     """Parse + shield-scan skill content, then write it. Shared by
     ``install_skill`` (free-text source) and ``install_from_catalog``
-    (hash-pinned source)."""
+    (hash-pinned source).
+
+    ``require_signature`` forces a verified Ed25519 signature from a trusted
+    publisher (the catalog ``require_signed_catalog`` path); the returned
+    ``Skill.verified`` reflects whether a real signature actually verified."""
     # CRITICAL: parse + validate BEFORE writing to disk. Old behavior wrote
     # the file first and parsed second -- an attacker passing /etc/passwd
     # would still leave its contents on disk even though install errored.
@@ -333,9 +386,10 @@ def _validate_and_write(content: str, skills_dir: Path) -> Skill:
         raise ValueError("skill frontmatter missing required 'name'")
 
     # Signed-skill policy: enforce [skills].require_signed / trusted_pubkeys
-    # BEFORE the shield scan and BEFORE writing. Rejects forged or untrusted
-    # signatures; reject signed skills if cryptography is missing.
-    _verify_skill_signature(parsed)
+    # (and the catalog's require_signature) BEFORE the shield scan and BEFORE
+    # writing. Rejects forged or untrusted signatures; rejects signed skills if
+    # cryptography is missing. The bool is the REAL verification status.
+    verified = _verify_skill_signature(parsed, require_signature=require_signature)
 
     # Council finding (Tier 0): the body markdown gets concatenated into
     # the agent's system prompt via render_for_prompt. A `gh:` skill
@@ -374,7 +428,9 @@ def _validate_and_write(content: str, skills_dir: Path) -> Skill:
     name = _safe_name(parsed.name) if parsed.name else "imported-skill"
     target = skills_dir / f"{name}.md"
     target.write_text(content, encoding="utf-8")
-    return Skill.parse(content, target)
+    result = Skill.parse(content, target)
+    result.verified = verified
+    return result
 
 
 def _fetch_skill_source(source: str) -> str:
@@ -403,13 +459,23 @@ def install_from_catalog(
 ) -> Skill:
     """Install a skill by name from the federated catalog.
 
-    Unlike ``install_skill`` with a free-text source, this is safe to
-    expose without the ``MAVERICK_ALLOW_SKILL_INSTALL`` opt-in: the
-    entry comes from a curated index AND the fetched bytes are verified
-    against the index's pinned SHA-256 before anything is written. A
-    missing or mismatched hash is a hard error.
+    The index and the content are fetched from the same unauthenticated
+    host, so the pinned SHA-256 is only an integrity-in-transit check (an
+    attacker controlling the host supplies BOTH the bytes and their hash).
+    Authenticity therefore comes from the Ed25519 skill-signature path, not
+    the index: when ``[skills].trusted_pubkeys`` is configured, the resolved
+    skill MUST carry a ``sig``/``pubkey`` that verifies against a trusted
+    publisher (``_validate_and_write`` enforces this) -- sha256 stays as a
+    transit check on top. With no trusted keys configured we keep today's
+    sha256-TOFU behavior (non-breaking), but the returned ``Skill.verified``
+    reflects REAL signature status, not the index's self-asserted bool.
+
+    ``[skills].require_signed_catalog`` (or ``MAVERICK_REQUIRE_SIGNED_CATALOG``)
+    forces a verified signature for ANY catalog install regardless of
+    ``trusted_pubkeys``. Default off. A missing/mismatched hash is a hard error.
     """
     from . import catalog as _catalog
+    from . import config as _config
 
     entry = _catalog.resolve(name, "skills", indexes=indexes)
     if entry is None:
@@ -420,7 +486,15 @@ def install_from_catalog(
             f"content hash mismatch for {name!r}: the fetched SKILL.md does "
             "not match the catalog's pinned sha256. Refusing to install."
         )
-    return _validate_and_write(content, skills_dir)
+    cfg = _config.get_skills()
+    # Authenticity for catalog installs: when a trust anchor is configured
+    # (trusted_pubkeys non-empty), the resolved skill MUST carry a signature
+    # that verifies against a trusted publisher -- an unsigned skill from the
+    # unauthenticated index host is no longer accepted. require_signed_catalog
+    # forces this even with an empty anchor. With neither configured, today's
+    # sha256-TOFU behavior is preserved (non-breaking).
+    require_sig = cfg["require_signed_catalog"] or bool(cfg["trusted_pubkeys"])
+    return _validate_and_write(content, skills_dir, require_signature=require_sig)
 
 
 def _fetch_url(url: str) -> str:

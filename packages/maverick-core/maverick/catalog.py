@@ -31,6 +31,17 @@ verifies the SHA-256 matches the index. Because the content is both
 curated AND hash-pinned, catalog installs don't require the
 ``MAVERICK_ALLOW_SKILL_INSTALL`` opt-in that free-text URL installs do.
 
+The pinned SHA-256 is only integrity-in-transit: the index and the
+content are served from the SAME unauthenticated host, so an attacker
+controlling that host supplies both the bytes AND their hash. The
+``verified`` field below is likewise SELF-ASSERTED by the index and is
+NOT a trust signal. Real authenticity comes from the Ed25519
+skill-signature path in ``skills`` (``trusted_pubkeys`` /
+``require_signed_catalog``): a catalog install resolves to a skill whose
+signature verifies against a trusted publisher, and the genuine verified
+status is reported on the installed ``Skill.verified`` -- not on this
+entry's ``verified`` bool.
+
 Self-hosting: point ``[catalogs] indexes`` at your own base URL(s).
 Multiple indexes merge; earlier indexes win on name collision.
 """
@@ -74,6 +85,10 @@ class CatalogEntry:
     source: str
     sha256: str
     author: str = ""
+    # Self-asserted by the index, NOT a trust signal (the index host is
+    # unauthenticated). Real verification is reported on the installed
+    # Skill.verified after Ed25519 signature checking. Kept for schema
+    # compatibility / display only.
     verified: bool = False
     install_count: int = 0
 

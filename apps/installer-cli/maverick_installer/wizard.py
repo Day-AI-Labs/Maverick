@@ -748,7 +748,16 @@ def pick_signed_skills() -> dict[str, Any]:
         "  Reject unsigned skills (only install signed + trusted ones)?",
         default=False,
     )
-    return {"trusted_pubkeys": trusted, "require_signed": require}
+    require_catalog = _q_confirm(
+        "  Require a verified signature for catalog installs (even with no "
+        "trusted keys above)?",
+        default=False,
+    )
+    return {
+        "trusted_pubkeys": trusted,
+        "require_signed": require,
+        "require_signed_catalog": require_catalog,
+    }
 
 
 def pick_budget() -> dict[str, float]:
@@ -2477,7 +2486,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
         webhooks=webhooks,
         a2a=a2a_cfg,
         web_search_enabled=web_search_enabled,
-        skills=signed_skills if (signed_skills.get("trusted_pubkeys") or signed_skills.get("require_signed")) else None,
+        skills=signed_skills if (signed_skills.get("trusted_pubkeys") or signed_skills.get("require_signed") or signed_skills.get("require_signed_catalog")) else None,
         self_learning=self_learning if self_learning.get("enable") else None,
         durable=durable if durable.get("enabled") else None,
     )
