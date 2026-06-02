@@ -18,6 +18,29 @@ YELLOW = click.style("!", fg="yellow")
 RED = click.style("✗", fg="red")
 
 
+def _is_outage(exc: BaseException) -> bool:
+    """True if ``exc`` signals the provider is actually unreachable/down --
+    a connection error, a timeout, or a 5xx server response -- as opposed to
+    a local reason the probe couldn't run (SDK quirk, unexpected shape).
+
+    Matched by class name so this works for both the anthropic and openai
+    SDKs (and their httpx-level timeouts) without importing either eagerly.
+    Both SDKs share these exception names (APIConnectionError / APITimeoutError
+    / APIStatusError, with the 5xx InternalServerError as an APIStatusError
+    subclass).
+    """
+    names = {c.__name__ for c in type(exc).__mro__}
+    if names & {"APIConnectionError", "APITimeoutError", "ConnectError",
+                "ConnectTimeout", "ReadTimeout", "TimeoutException"}:
+        return True
+    # 5xx server-side outage. InternalServerError subclasses APIStatusError and
+    # carries a status_code; treat any >=500 status as a real outage.
+    if "APIStatusError" in names:
+        code = getattr(exc, "status_code", None)
+        return isinstance(code, int) and code >= 500
+    return "InternalServerError" in names
+
+
 def _row(marker: str, label: str, detail: str = "", fix: str = "") -> None:
     line = f"  {marker} {label}"
     if detail:
@@ -75,8 +98,16 @@ def _check_anthropic() -> None:
         _row(RED, "anthropic", "API rejected the key",
              fix="generate a new key at https://console.anthropic.com/settings/keys, then `maverick init` to update .env")
     except Exception as e:
-        _row(YELLOW, "anthropic", f"validation skipped: {type(e).__name__}",
-             fix="check network / proxy; key format looks right")
+        # A real outage (no connection / timeout / 5xx) is RED -- the agent
+        # cannot reach the API, so reporting it as a benign YELLOW "skipped"
+        # hid genuine downtime. Anything else (unexpected SDK shape) stays
+        # YELLOW: we just couldn't run the probe.
+        if _is_outage(e):
+            _row(RED, "anthropic", f"API unreachable: {type(e).__name__}",
+                 fix="check network / proxy / api.anthropic.com status; key format looks right")
+        else:
+            _row(YELLOW, "anthropic", f"validation skipped: {type(e).__name__}",
+                 fix="check network / proxy; key format looks right")
 
 
 def _check_openai() -> None:
@@ -97,7 +128,13 @@ def _check_openai() -> None:
         _row(RED, "openai", "API rejected the key",
              fix="regenerate at https://platform.openai.com/api-keys, then `maverick init`")
     except Exception as e:
-        _row(YELLOW, "openai", f"validation skipped: {type(e).__name__}")
+        # Real outage (no connection / timeout / 5xx) is RED; everything else
+        # stays YELLOW "skipped" -- see _check_anthropic.
+        if _is_outage(e):
+            _row(RED, "openai", f"API unreachable: {type(e).__name__}",
+                 fix="check network / proxy / status.openai.com")
+        else:
+            _row(YELLOW, "openai", f"validation skipped: {type(e).__name__}")
 
 
 def _check_sandbox(cfg: dict) -> None:

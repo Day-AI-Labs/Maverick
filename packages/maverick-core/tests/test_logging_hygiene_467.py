@@ -4,12 +4,16 @@
     redact secret-named keys, scrub inline secrets in string values.
   - goal-context contextvars must reset to the PRIOR value (token-based), so
     concurrent/nested goals don't mislabel each other's log lines.
+  - health.doctor must report a real provider outage (connection/timeout/5xx)
+    as RED, not a benign YELLOW "validation skipped".
 """
 from __future__ import annotations
 
 import json
 import logging
 
+import pytest
+from maverick import health
 from maverick.logging_config import (
     JsonFormatter,
     _goal_id_var,
@@ -75,3 +79,87 @@ def test_reset_tolerates_none_and_partial():
     reset_goal_context(tok)
     from maverick.logging_config import _conversation_id_var
     assert _conversation_id_var.get() is None
+
+
+# ---------- health: outage vs. skipped ----------
+
+def _patch_anthropic_raising(monkeypatch, exc):
+    """Point health's anthropic client at a fake that raises ``exc`` on
+    models.list, with a valid-looking key set."""
+    anthropic = pytest.importorskip("anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-" + "x" * 24)
+
+    class _Models:
+        def list(self, *a, **k):
+            raise exc
+
+    class _Client:
+        def __init__(self, *a, **k):
+            self.models = _Models()
+
+    monkeypatch.setattr(anthropic, "Anthropic", _Client)
+    return anthropic
+
+
+def _rows(monkeypatch):
+    captured: list[tuple[str, str, str]] = []
+
+    def fake_row(marker, label, detail="", fix=""):
+        captured.append((marker, label, detail))
+
+    monkeypatch.setattr(health, "_row", fake_row)
+    return captured
+
+
+def test_anthropic_connection_error_is_red(monkeypatch):
+    anthropic = _patch_anthropic_raising(
+        monkeypatch, anthropic_conn_error())
+    rows = _rows(monkeypatch)
+    health._check_anthropic()
+    assert rows and rows[-1][0] == health.RED
+    assert "unreachable" in rows[-1][2]
+    _ = anthropic
+
+
+def test_anthropic_server_5xx_is_red(monkeypatch):
+    anthropic = pytest.importorskip("anthropic")
+    exc = _make_status_error(anthropic, 503)
+    _patch_anthropic_raising(monkeypatch, exc)
+    rows = _rows(monkeypatch)
+    health._check_anthropic()
+    assert rows[-1][0] == health.RED
+
+
+def test_anthropic_unexpected_error_stays_yellow(monkeypatch):
+    _patch_anthropic_raising(monkeypatch, RuntimeError("weird SDK shape"))
+    rows = _rows(monkeypatch)
+    health._check_anthropic()
+    assert rows[-1][0] == health.YELLOW
+    assert "skipped" in rows[-1][2]
+
+
+def anthropic_conn_error():
+    anthropic = pytest.importorskip("anthropic")
+    # APIConnectionError requires a request kwarg in recent SDKs; build it
+    # defensively so the test isn't coupled to the exact constructor.
+    try:
+        return anthropic.APIConnectionError(message="down", request=None)
+    except TypeError:
+        try:
+            return anthropic.APIConnectionError(request=None)
+        except TypeError:
+            return anthropic.APIConnectionError("down")
+
+
+def _make_status_error(anthropic, code):
+    err = anthropic.APIStatusError.__new__(anthropic.APIStatusError)
+    err.status_code = code
+    return err
+
+
+def test_is_outage_classification():
+    anthropic = pytest.importorskip("anthropic")
+    assert health._is_outage(anthropic_conn_error()) is True
+    assert health._is_outage(_make_status_error(anthropic, 502)) is True
+    assert health._is_outage(_make_status_error(anthropic, 400)) is False
+    assert health._is_outage(RuntimeError("nope")) is False
