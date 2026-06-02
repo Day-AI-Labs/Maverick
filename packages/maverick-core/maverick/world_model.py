@@ -707,6 +707,11 @@ class WorldModel:
         rows = self._read_all(sql, params)
         return [Goal(**dict(r)) for r in rows]
 
+    def most_recent_goal(self) -> Goal | None:
+        """Most-recently-updated goal regardless of status. Locked read."""
+        row = self._read_one("SELECT * FROM goals ORDER BY updated_at DESC LIMIT 1")
+        return Goal(**dict(row)) if row else None
+
     def active_goal(self) -> Goal | None:
         row = self._read_one(
             "SELECT * FROM goals WHERE status IN ('active', 'blocked') ORDER BY updated_at DESC LIMIT 1"
