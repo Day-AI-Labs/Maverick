@@ -33,6 +33,7 @@ from .base import (
     approx_record_budget,
     iter_sse_data_payloads,
     stringify_messages,
+    tool_use_unsupported,
 )
 
 log = logging.getLogger(__name__)
@@ -221,12 +222,7 @@ class ClaudeSessionClient:
         model: str | None = None,
     ) -> LLMResponse:
         if tools:
-            raise NotImplementedError(
-                "Claude session adapter does not support native tool-use. "
-                "Tool-using roles (orchestrator, coder, researcher) must use "
-                "BYOK (ANTHROPIC_API_KEY). Session adapters are best for "
-                "summarizer / writer / analyst roles."
-            )
+            raise tool_use_unsupported("Claude", "ANTHROPIC_API_KEY")
         if thinking_budget:
             log.debug("Claude session ignores thinking_budget=%s", thinking_budget)
         import httpx
@@ -276,9 +272,7 @@ class ClaudeSessionClient:
         model: str | None = None,
     ) -> LLMResponse:
         if tools:
-            raise NotImplementedError(
-                "Claude session adapter does not support native tool-use."
-            )
+            raise tool_use_unsupported("Claude", "ANTHROPIC_API_KEY")
         if thinking_budget:
             log.debug("Claude session ignores thinking_budget=%s", thinking_budget)
         import httpx

@@ -22,6 +22,7 @@ from .base import (
     approx_record_budget,
     iter_sse_data_payloads,
     stringify_messages,
+    tool_use_unsupported,
 )
 
 log = logging.getLogger(__name__)
@@ -148,11 +149,7 @@ class KimiSessionClient:
         model: str | None = None,
     ) -> LLMResponse:
         if tools:
-            raise NotImplementedError(
-                "Kimi session adapter does not support native tool-use. "
-                "Use MOONSHOT_API_KEY BYOK for tool-using roles, or wrap "
-                "this client in SimulatedToolCallClient."
-            )
+            raise tool_use_unsupported("Kimi", "MOONSHOT_API_KEY")
         if thinking_budget:
             log.debug("Kimi session ignores thinking_budget=%s", thinking_budget)
         import httpx
@@ -195,7 +192,7 @@ class KimiSessionClient:
         model: str | None = None,
     ) -> LLMResponse:
         if tools:
-            raise NotImplementedError("Kimi session does not support tool-use.")
+            raise tool_use_unsupported("Kimi", "MOONSHOT_API_KEY")
         if thinking_budget:
             log.debug("Kimi session ignores thinking_budget=%s", thinking_budget)
         import httpx

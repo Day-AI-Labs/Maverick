@@ -24,7 +24,7 @@ import uuid
 from ..budget import Budget
 from ..llm import LLMResponse
 from . import cookie_store
-from .base import approx_record_budget, stringify_messages
+from .base import approx_record_budget, stringify_messages, tool_use_unsupported
 
 log = logging.getLogger(__name__)
 
@@ -234,10 +234,7 @@ class GeminiSessionClient:
         model: str | None = None,
     ) -> LLMResponse:
         if tools:
-            raise NotImplementedError(
-                "Gemini session adapter does not support native tool-use. "
-                "Use GEMINI_API_KEY BYOK for tool-using roles."
-            )
+            raise tool_use_unsupported("Gemini", "GEMINI_API_KEY")
         if thinking_budget:
             log.debug("Gemini session ignores thinking_budget=%s", thinking_budget)
         import httpx
@@ -288,7 +285,7 @@ class GeminiSessionClient:
         model: str | None = None,
     ) -> LLMResponse:
         if tools:
-            raise NotImplementedError("Gemini session does not support tool-use.")
+            raise tool_use_unsupported("Gemini", "GEMINI_API_KEY")
         if thinking_budget:
             log.debug("Gemini session ignores thinking_budget=%s", thinking_budget)
         import httpx

@@ -579,3 +579,31 @@ def test_llm_facade_routes_claude_session(tmp_path, monkeypatch):
     cached = llm._clients["claude-session"]
     assert isinstance(cached, SimulatedToolCallClient)
     assert isinstance(cached._inner, ClaudeSessionClient)
+
+
+def test_tool_use_unsupported_helper_is_typed_and_actionable():
+    from maverick.session_providers.base import (
+        SessionToolUseUnsupported,
+        tool_use_unsupported,
+    )
+    err = tool_use_unsupported("Grok", "XAI_API_KEY")
+    # Typed so callers can detect the capability gap, but still a
+    # NotImplementedError so any existing handler keeps catching it.
+    assert isinstance(err, SessionToolUseUnsupported)
+    assert isinstance(err, NotImplementedError)
+    msg = str(err)
+    assert "Grok" in msg and "XAI_API_KEY" in msg and "tool-use" in msg
+
+
+def test_chatgpt_session_raises_typed_capability_error(tmp_path, monkeypatch):
+    _stub_session(tmp_path, monkeypatch, access_token="t")
+    from maverick.session_providers.base import SessionToolUseUnsupported
+    from maverick.session_providers.chatgpt_session import ChatGPTSessionClient
+    client = ChatGPTSessionClient()
+    # Tighter than the legacy NotImplementedError check: the de-scope now
+    # raises the typed subclass on the (unwrapped) tool-use path.
+    with pytest.raises(SessionToolUseUnsupported):
+        client.complete(
+            system="", messages=[{"role": "user", "content": "x"}],
+            tools=[{"name": "calc", "input_schema": {}}],
+        )
