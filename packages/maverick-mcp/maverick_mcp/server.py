@@ -242,9 +242,24 @@ _TOOL_NAMES = {t["name"] for t in TOOLS}
 
 
 class MCPServer:
+    # Resources a client may subscribe to, and which mutating tool dirties
+    # each -- after such a tool call we push notifications/resources/updated.
+    RESOURCE_URIS = ("maverick://goals", "maverick://skills")
+    _TOOL_RESOURCE = {
+        "maverick_start": "maverick://goals",
+        "maverick_resume": "maverick://goals",
+        "maverick_answer": "maverick://goals",
+        "maverick_skill_install": "maverick://skills",
+    }
+
     def __init__(self):
         self._initialized = False
         self._shield = self._build_shield()
+        # resources/subscribe state: URIs the client wants updates for, plus
+        # the updates queued by the current tools/call to flush after its
+        # result (so the client sees result-then-notification).
+        self._subscriptions: set[str] = set()
+        self._pending_updates: list[str] = []
 
     @staticmethod
     def _build_shield():
@@ -266,10 +281,12 @@ class MCPServer:
             "protocolVersion": version,
             "capabilities": {
                 "tools": {"listChanged": False},
-                # Resources: goals/skills/facts exposed as URI-addressable
-                # objects for clients (Claude Desktop, Cursor) that support
-                # the 2025-11-25 spec.
-                "resources": {"subscribe": False, "listChanged": False},
+                # Resources: goals/skills exposed as URI-addressable objects
+                # for clients (Claude Desktop, Cursor) that support the
+                # 2025-11-25 spec. subscribe=True: a client can watch a
+                # resource and we push notifications/resources/updated when a
+                # tool mutates it (see _flush_resource_updates).
+                "resources": {"subscribe": True, "listChanged": False},
                 # Prompts: ship templated goal patterns so clients can
                 # surface "start a research run" / "plan a trip" without
                 # the user typing the prompt themselves.
@@ -342,6 +359,47 @@ class MCPServer:
         }
 
     # ---- 2025-11-25 Prompts -------------------------------------------
+
+    def handle_resources_subscribe(self, params: dict) -> dict:
+        """Track a client's interest in a resource (2025-11-25 subscribe)."""
+        uri = params.get("uri", "")
+        if uri not in self.RESOURCE_URIS:
+            raise _ProtocolError(
+                -32602, f"cannot subscribe to unknown resource: {uri!r}"
+            )
+        self._subscriptions.add(uri)
+        return {}
+
+    def handle_resources_unsubscribe(self, params: dict) -> dict:
+        """Stop notifying a client about a resource. Idempotent."""
+        self._subscriptions.discard(params.get("uri", ""))
+        return {}
+
+    def _queue_resource_update(self, tool_name: str) -> None:
+        """Record that ``tool_name`` dirtied a resource, to flush once the
+        tool result has been sent (result-then-notification ordering)."""
+        uri = self._TOOL_RESOURCE.get(tool_name)
+        if uri is not None:
+            self._pending_updates.append(uri)
+
+    def drain_resource_updates(self) -> list[str]:
+        """Pop the queued updates, returning those a client subscribed to.
+
+        Shared by both transports so neither double-emits: stdio sends each as
+        a notification (_flush_resource_updates); the HTTP transport yields
+        them on the SSE stream after the tool result.
+        """
+        pending, self._pending_updates = self._pending_updates, []
+        return [uri for uri in pending if uri in self._subscriptions]
+
+    def _flush_resource_updates(self) -> None:
+        """stdio: emit notifications/resources/updated for subscribed URIs."""
+        for uri in self.drain_resource_updates():
+            self._send({
+                "jsonrpc": "2.0",
+                "method": "notifications/resources/updated",
+                "params": {"uri": uri},
+            })
 
     def handle_prompts_list(self, params: dict) -> dict:
         return {"prompts": [
@@ -427,6 +485,7 @@ class MCPServer:
         # they stash their structured result here during dispatch; reset per
         # call so a prior call's value can't leak.
         self._structured_override = None
+        self._pending_updates = []
         try:
             result = self._dispatch_tool(name, arguments)
         except Exception as e:
@@ -474,6 +533,9 @@ class MCPServer:
                             "content": [{"type": "text", "text": f"⚠ Output blocked: {'; '.join(verdict.reasons)}"}],
                         }
                 response["structuredContent"] = structured
+        # A successful mutating tool dirties a resource; queue the update to
+        # flush after the result is sent (run() calls _flush_resource_updates).
+        self._queue_resource_update(name)
         return response
 
     def _dispatch_tool(self, name: str, args: dict) -> str:
@@ -739,10 +801,16 @@ class MCPServer:
                     self._send_result(request_id, self.handle_tools_list(params))
                 elif method == "tools/call":
                     self._send_result(request_id, self.handle_tools_call(params))
+                    # Result first, then any resources/updated notifications.
+                    self._flush_resource_updates()
                 elif method == "resources/list":
                     self._send_result(request_id, self.handle_resources_list(params))
                 elif method == "resources/read":
                     self._send_result(request_id, self.handle_resources_read(params))
+                elif method == "resources/subscribe":
+                    self._send_result(request_id, self.handle_resources_subscribe(params))
+                elif method == "resources/unsubscribe":
+                    self._send_result(request_id, self.handle_resources_unsubscribe(params))
                 elif method == "prompts/list":
                     self._send_result(request_id, self.handle_prompts_list(params))
                 elif method == "prompts/get":
