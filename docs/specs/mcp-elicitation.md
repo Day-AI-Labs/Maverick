@@ -1,6 +1,6 @@
 # Design Spec: MCP Elicitation → Shield/Consent
 
-**Status:** Draft / proposal · **Roadmap ref:** [`ROADMAP-ADDITIONS.md`](../ROADMAP-ADDITIONS.md) §B1 ([#396](https://github.com/cdayAI/Maverick/issues/396)) · **Date:** May 2026
+**Status:** Draft / proposal · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (B1) ([#396](https://github.com/cdayAI/Maverick/issues/396)) · **Date:** May 2026
 
 > Proposal for discussion. Stops at interface + integration points; module
 > names/handlers should be confirmed against current code at implementation time.

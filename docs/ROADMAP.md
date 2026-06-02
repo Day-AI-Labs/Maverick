@@ -15,7 +15,74 @@ shelf (vs Devin, Hermes, OpenClaw, Cline, Aider).
 
 ---
 
+## Current state & gap analysis (reconciled June 2026)
+
+*Folded in from the former `ROADMAP-ADDITIONS.md`. The quarterly backlog below is
+the forward plan; this section is the **current-state truth**, reconciled against
+the code on `main`.*
+
+**Thesis.** The backlog is *breadth-heavy* (100+ tools, channels, integrations).
+The highest-leverage additions are **not** more breadth — they cluster in three
+under-invested places: (1) the agent-loop control surface (durable execution,
+hooks, context lifecycle), (2) the MCP / interop layer the cross-language strategy
+rides on, and (3) closing Maverick's own learning & eval loop. Most of (1) and the
+reliability plumbing (D) have since shipped — see the table.
+
+**Status:** ✅ shipped · 🟡 partial · ⬜ open. PR numbers cite where it landed;
+`file:line` cites implementing code.
+
+| Item | Ask | Status | Evidence |
+|------|-----|--------|----------|
+| A1 | Durable/resumable execution + checkpoint/rewind | ✅ | `checkpoint.py`, `cli resume` |
+| A2 | Kernel lifecycle hooks (Pre/PostToolUse, UserPromptSubmit) | ✅ | `hooks.py` |
+| A3 | Context lifecycle — deferred tool loading / memory tool / programmatic calling | 🟡 | deferred loading + `find_tools` (#693); compaction exists; memory-tool + programmatic calling still open |
+| B1 | Tool `outputSchema` | ✅ | `server.py` |
+| B1 | Resource subscriptions | ✅ #694 | `http_transport.py` |
+| B1 | Streamable-HTTP transport | ✅ | `http_transport.py` |
+| B1 | Elicitation | ⬜ | spec only (`specs/mcp-elicitation.md`); needs sync-loop design |
+| B1 | Async tasks | ⬜ | — |
+| B2 | MCP client OAuth 2.1 + Registry | ⬜ blocked | client is stdio-only (`mcp_client.py`); needs a remote-HTTP client transport first |
+| B3 | A2A vs. homegrown ACD | ⬜ decision | recommend adopting A2A's Agent Card; reframe/cut ACD |
+| C1 | Eval harness (GAIA / τ²-bench / terminal-bench) | 🟡 | GAIA shipped (#687); the other two need real verification-env *harnesses* (SWE-bench-style, cf. `swe_bench.py`), not simple adapters |
+| C1 | Skill quality gate / pruning | ✅ | gate (#396) + decay + active pruning (`skill_stats.evictable()` + `skills evict`), wired (`agent.py:274`, `orchestrator.py:227`), tested; only versioning absent |
+| C2 | Learning-substrate decision (close loop vs. prune) | ⬜ decision | `training/`, `prm.py`, compaction gate are scaffolds |
+| C3 | Verifier default-on across goal types | ✅ | `agent.py:1155–1342` (not coding-gated) |
+| D1 | Shared tool-reliability layer | ✅ #684 | `tool_reliability.py`, `retry.py` |
+| D2 | Semantic memory wired into reflexion | ✅ #678 | `reflexion.py` cosine path |
+| D3 | Session-provider tool-use gaps | ✅ #685 | de-scoped + documented |
+
+**Still open — near-term focus**
+
+1. **MCP elicitation + async tasks (B1)** — the remaining server-spec items; need a
+   design for the synchronous stdio loop (outputSchema / resources / streamable-HTTP
+   / subscriptions already shipped).
+2. **Remote-HTTP MCP *client* transport → then OAuth 2.1 + Registry (B2)** — the
+   client is stdio-only, so the transport is the prerequisite; OAuth validation also
+   needs real accounts.
+3. **Finish A3** — memory / context-editing abstraction + programmatic tool calling.
+4. **Finish C1's benchmark coverage** — terminal-bench + τ²-bench *harnesses*
+   (verification-env, SWE-bench-style), not simple adapters.
+5. **Decisions (need the founder):** C2 learning substrate (close the eval→reward
+   loop or prune the scaffolds); B3 A2A-vs-ACD; and the breadth-vs-depth call — see
+   [`specs/tool-inventory.md`](./specs/tool-inventory.md) (56 core tools vs. a
+   47-tool SaaS-connector tail).
+
+**Accuracy caveats.** MCP Sampling / Roots / Logging appear to be on a deprecation
+path — don't build on sampling. Some ecosystem dates/specs (mid-2026 MCP RC,
+LangGraph 1.2, terminal-bench 2.0) postdate the original author's cutoff —
+re-verify before committing. Vendor benchmark numbers are directional (contamination
+/ single-run inflation) — run multi-seed.
+
+---
+
 ## Q1 2026
+
+> **Status (June 2026): ✅ shipped (engineering).** The Q1 capabilities, perf,
+> safety, and ecosystem/plugin items are in the tree (tools in `maverick/tools/`;
+> `hooks.py`, `checkpoint.py`, `secrets.py`, `killswitch.py`, `audit/`, plugin API;
+> CI / publish / release / docs workflows). Community/launch items (Discord,
+> HN/Reddit, landing page, good-first-issue sweep) are founder-tracked — not
+> code-verifiable here.
 
 **Capabilities**
 - **Web search tool**: unified `web_search` with Tavily/Brave/DDG/SerpAPI backends, BYOK, ranked snippets + citations. *(shipped this round)*
@@ -88,6 +155,14 @@ shelf (vs Devin, Hermes, OpenClaw, Cline, Aider).
 ---
 
 ## Q2 2026
+
+> **Status (June 2026 — current quarter): 🟡 mostly shipped.** Landed: voice
+> in/out, Docker sandbox, cross-agent bus, OCR, preview-diff / kv-memory /
+> clipboard; OpenTelemetry / Prometheus / Sentry, repo+file caches, parallel tools;
+> per-channel & per-user ACLs, signed skills; Postgres / TGI / Chroma adapters,
+> arXiv, catalog index. Remaining are mostly community/distribution (playground,
+> cookbook growth, socials, bug bounty) plus a few perf/safety classifiers —
+> in-progress or founder-tracked.
 
 **Capabilities**
 - **Voice input (Whisper)**: `transcribe_audio` via faster-whisper + OpenAI/Groq Whisper API, diarization + timestamps.
@@ -517,7 +592,8 @@ voice command grammar).
 Device-side specifics (the ~30 s timeout, on-device STT behavior, HUD payload limits)
 are third-party-reported — one community write-up plus Even's support center — and
 should be re-checked against Even Realities' own G2 SDK before this becomes a build
-commitment, same caveat discipline as `ROADMAP-ADDITIONS.md`.
+commitment — the same caveat discipline as the **Accuracy caveats** under "Current
+state & gap analysis" above.
 
 **Sources:** [G2 × OpenClaw bridge write-up](https://blog.juchunko.com/en/even-realities-g2-openclaw-bridge/) ·
 [Even Support Center — G2 "Bring Your Own Agent"](https://support.evenrealities.com/hc/en-us/categories/13489714076815-G2) ·
