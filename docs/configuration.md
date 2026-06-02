@@ -5,8 +5,8 @@ Maverick reads `~/.maverick/config.toml`. The installer wizard writes it; you ca
 ## Full schema
 
 ```toml
-[deploy]
-target = "desktop"     # desktop | docker | vps | phone
+[deployment]
+type = "desktop"       # desktop | docker | vps | phone
 
 [providers.anthropic]
 api_key = "${ANTHROPIC_API_KEY}"   # env var interpolation
