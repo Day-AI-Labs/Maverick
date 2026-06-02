@@ -12,6 +12,7 @@ import logging
 import os
 import threading
 import time
+import weakref
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,52 @@ log = logging.getLogger(__name__)
 
 
 DEFAULT_AUDIT_DIR = Path.home() / ".maverick" / "audit"
+
+# Every live AuditLog registers here so an erase can drop the stale in-memory
+# chain head on *any* writer pointed at the erased dir -- not just the default
+# singleton. A WeakSet so GC'd logs fall out on their own.
+_live_logs: weakref.WeakSet[AuditLog] = weakref.WeakSet()
+_live_logs_lock = threading.Lock()
+
+
+class _file_append_lock:
+    """Advisory cross-process exclusive lock for the duration of an append.
+
+    Two processes appending to the same day-file can interleave torn records
+    once a line exceeds ``PIPE_BUF`` (single-``write`` atomicity no longer
+    holds), corrupting NDJSON and -- when signing -- the hash chain. An
+    advisory ``flock`` on the open file handle serializes concurrent writers.
+
+    POSIX-only: on platforms without ``fcntl`` (e.g. Windows) this degrades to
+    a no-op -- the in-process ``threading.Lock`` still covers same-process
+    concurrency; cross-process append safety is simply not available there.
+    """
+
+    def __init__(self, fileobj: Any):
+        self._fileobj = fileobj
+        self._locked = False
+
+    def __enter__(self) -> _file_append_lock:
+        try:
+            import fcntl
+        except ImportError:  # non-POSIX (e.g. Windows): no advisory lock
+            return self
+        try:
+            fcntl.flock(self._fileobj.fileno(), fcntl.LOCK_EX)
+            self._locked = True
+        except OSError as e:  # pragma: no cover - exotic FS without flock
+            log.warning("audit: advisory flock unavailable (%s); appending unlocked", e)
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        if not self._locked:
+            return
+        try:
+            import fcntl
+
+            fcntl.flock(self._fileobj.fileno(), fcntl.LOCK_UN)
+        except (ImportError, OSError):  # pragma: no cover - best-effort unlock
+            pass
 
 
 def _resolve_signing(explicit: bool | None) -> bool:
@@ -68,6 +115,8 @@ class AuditLog:
         self._signing_enabled = _resolve_signing(sign)
         self._signer: Any = None
         self._signer_path: Path | None = None
+        with _live_logs_lock:
+            _live_logs.add(self)
 
     def _path_for(self, day_str: str) -> Path:
         return self.audit_dir / f"{day_str}.ndjson"
@@ -125,12 +174,15 @@ class AuditLog:
                     return bool(signer.write(payload))
                 line = json.dumps(payload, default=str) + "\n"
                 with open(path, "a", encoding="utf-8") as f:
-                    f.write(line)
-                    # fsync so a crash / power loss can't lose a committed
-                    # audit row (the signed path in signing.py already does
-                    # this; match it so the unsigned log is just as durable).
-                    f.flush()
-                    os.fsync(f.fileno())
+                    # Cross-process advisory lock so two processes appending the
+                    # same day-file can't interleave torn records above PIPE_BUF.
+                    with _file_append_lock(f):
+                        f.write(line)
+                        # fsync so a crash / power loss can't lose a committed
+                        # audit row (the signed path in signing.py already does
+                        # this; match it so the unsigned log is just as durable).
+                        f.flush()
+                        os.fsync(f.fileno())
                 return True
             except (OSError, TypeError, ValueError) as e:
                 log.warning("audit: write failed: %s", e)
@@ -163,6 +215,26 @@ class AuditLog:
                 self._signing_enabled = False
                 return None
         return self._signer
+
+    def reset_signer_for_dir(self, audit_dir: Path) -> None:
+        """Drop the cached signer if it targets ``audit_dir``.
+
+        An erase re-anchors the day file on disk, but the live signer still
+        holds the pre-erase ``_last_hash`` in memory, so the next in-process
+        ``record()`` would chain onto a hash no longer in the file ->
+        immediate ``chain_mismatch``. Clearing the cached signer forces the
+        next write to rebuild it and re-read the new chain tail via
+        ``_resume_last_hash``. No-op if this log writes elsewhere.
+        """
+        try:
+            same = self.audit_dir.resolve() == audit_dir.resolve()
+        except OSError:
+            same = self.audit_dir == audit_dir
+        if not same:
+            return
+        with self._lock:
+            self._signer = None
+            self._signer_path = None
 
     def reanchor_after_erase(self) -> int:
         """Refresh signed audit files after a GDPR erase.
@@ -316,6 +388,21 @@ def reanchor_after_erase() -> int:
     a no-op when signing is off.
     """
     return default_audit_log().reanchor_after_erase()
+
+
+def reset_signer_after_erase(audit_dir: Path) -> None:
+    """Reset every live AuditLog whose cached signer targets ``audit_dir``.
+
+    Called by the erase helpers right after they re-anchor a file so a
+    same-process erase-then-``record()`` chains onto the rewritten tail
+    instead of a stale in-memory ``_last_hash``. Covers the default singleton
+    and any directly-constructed log via the live registry; never forces a
+    singleton into being.
+    """
+    with _live_logs_lock:
+        logs = list(_live_logs)
+    for log_obj in logs:
+        log_obj.reset_signer_for_dir(audit_dir)
 
 
 __all__ = [

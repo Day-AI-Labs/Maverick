@@ -18,9 +18,13 @@ Both walk every `*.ndjson` file in ``~/.maverick/audit/``. They never
 modify files mid-write — they write to a temp file and atomically
 rename.
 
-Matching: an event matches a user iff its payload contains
-``channel`` AND ``user_id`` keys equal to the args (or
-``channel:user_id`` appears in any string field).
+Matching: an event matches a user iff it carries STRUCTURED ``channel``
+AND ``user_id`` fields both exactly equal to the args. Matching is on the
+structured fields only -- never a substring of a serialized value --
+because the old ``f"{channel}:{user_id}"`` substring test both
+over-deleted (``slack:42`` matched ``slack:4200``) and under-deleted (a
+``slack/42`` encoding was never matched). Exact field equality is the
+only safe rule.
 """
 
 from __future__ import annotations
@@ -36,19 +40,34 @@ from .writer import DEFAULT_AUDIT_DIR
 log = logging.getLogger(__name__)
 
 
+def _reset_live_signer(audit_dir: Path) -> None:
+    """Drop the live signer's stale chain head after an in-place re-anchor.
+
+    ``_process_file`` re-anchors the signed file on disk, but a long-lived
+    ``AuditLog`` singleton still holds the pre-erase ``_last_hash`` in memory.
+    Without this, the next same-process ``record()`` chains onto a hash no
+    longer in the file -> ``chain_mismatch``. Best-effort + never fatal: an
+    erase must complete even if there is no live signer to refresh.
+    """
+    try:
+        from .writer import reset_signer_after_erase
+
+        reset_signer_after_erase(audit_dir)
+    except Exception as e:  # pragma: no cover - defensive
+        log.warning("audit erase: could not reset live signer: %s", e)
+
+
 def _subject_digest(channel: str, user_id: str) -> str:
     """Return a short, non-reversible identifier for erase log messages."""
     return hashlib.sha256(f"{channel}:{user_id}".encode()).hexdigest()[:16]
 
 
 def _event_matches(event: dict, channel: str, user_id: str) -> bool:
-    if event.get("channel") == channel and event.get("user_id") == user_id:
-        return True
-    target = f"{channel}:{user_id}"
-    for v in event.values():
-        if isinstance(v, str) and target in v:
-            return True
-    return False
+    # Structured-field equality only. A substring test over serialized values
+    # both over- and under-matches (see module docstring), so we never fall
+    # back to one -- an event with no structured channel/user_id simply does
+    # not match.
+    return event.get("channel") == channel and event.get("user_id") == user_id
 
 
 def _tombstone(event: dict, channel: str, user_id: str) -> dict:
@@ -175,6 +194,8 @@ def scrub_user(
         m, w = _process_file(path, channel, user_id, delete=False)
         total_matched += m
         total_scanned += w
+    if total_matched:
+        _reset_live_signer(audit_dir)
     log.info(
         "audit erase (scrub): subject_hash=%s matched=%d scanned=%d",
         _subject_digest(channel, user_id),
@@ -199,6 +220,8 @@ def delete_user(
         m, w = _process_file(path, channel, user_id, delete=True)
         total_matched += m
         total_scanned += w
+    if total_matched:
+        _reset_live_signer(audit_dir)
     log.info(
         "audit erase (delete): subject_hash=%s matched=%d scanned=%d",
         _subject_digest(channel, user_id),
