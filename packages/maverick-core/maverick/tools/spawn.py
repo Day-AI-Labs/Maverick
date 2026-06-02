@@ -43,6 +43,34 @@ def _fanout_cap_for_depth(depth: int) -> int:
     return max(1, MAX_SWARM_FANOUT >> max(0, depth))
 
 
+def _synthesis_reserve_block(parent: Agent) -> str | None:
+    """If spend has crossed the synthesis reserve, return a refusal string.
+
+    #611: once cumulative spend crosses ``(1 - SYNTHESIS_RESERVE)`` of the cap,
+    refuse new fan-out so the budget the top-level goal needs to write its
+    answer isn't consumed by deeper spawning. Returns ``None`` when spawning is
+    still allowed. Shared by ``spawn_swarm`` and ``spawn_subagent`` so a
+    sequential spawn chain (notably from the depth-0 orchestrator, which the
+    per-worker soft-stop in agent.py doesn't cover) can't bypass the reserve.
+    """
+    if SYNTHESIS_RESERVE <= 0:
+        return None
+    b = parent.ctx.budget
+    if b.dollars < b.max_dollars * (1.0 - SYNTHESIS_RESERVE):
+        return None
+    parent.ctx.blackboard.post(
+        parent.name, "plan",
+        f"spawning paused: ${b.dollars:.2f}/${b.max_dollars:.2f} spent; "
+        f"holding the final {SYNTHESIS_RESERVE:.0%} for synthesis",
+    )
+    return (
+        f"ERROR: spawning paused to reserve budget for the final answer "
+        f"(spent ${b.dollars:.2f} of ${b.max_dollars:.2f}; the last "
+        f"{SYNTHESIS_RESERVE:.0%} is held for synthesis). Do NOT spawn "
+        "more — synthesize and finalize with the findings you already have."
+    )
+
+
 def spawn_subagent_tool(parent: Agent) -> Tool:
     async def fn(args: dict) -> str:
         role = args["role"]
@@ -51,6 +79,9 @@ def spawn_subagent_tool(parent: Agent) -> Tool:
 
         if parent.depth + 1 > parent.ctx.max_depth:
             return f"ERROR: max depth {parent.ctx.max_depth} reached"
+        _blocked = _synthesis_reserve_block(parent)
+        if _blocked is not None:
+            return _blocked
         if not parent.ctx.try_reserve_spawns(1):
             return (
                 f"ERROR: per-goal spawn cap ({parent.ctx.max_total_spawns}) reached"
@@ -125,19 +156,9 @@ def spawn_swarm_tool(parent: Agent) -> Tool:
         # #611 synthesis reserve: once spend crosses (1 - reserve) of the cap,
         # refuse new fan-out so the budget the top-level goal needs to write its
         # answer isn't consumed by deeper research. Tell the agent to synthesize.
-        _b = parent.ctx.budget
-        if SYNTHESIS_RESERVE > 0 and _b.dollars >= _b.max_dollars * (1.0 - SYNTHESIS_RESERVE):
-            parent.ctx.blackboard.post(
-                parent.name, "plan",
-                f"spawning paused: ${_b.dollars:.2f}/${_b.max_dollars:.2f} spent; "
-                f"holding the final {SYNTHESIS_RESERVE:.0%} for synthesis",
-            )
-            return (
-                f"ERROR: spawning paused to reserve budget for the final answer "
-                f"(spent ${_b.dollars:.2f} of ${_b.max_dollars:.2f}; the last "
-                f"{SYNTHESIS_RESERVE:.0%} is held for synthesis). Do NOT spawn "
-                "more — synthesize and finalize with the findings you already have."
-            )
+        _blocked = _synthesis_reserve_block(parent)
+        if _blocked is not None:
+            return _blocked
 
         # Cap per-call fan-out, DECAYING with depth so a recursive swarm can't
         # explode geometrically (#611). An agent asking for 50 siblings on a

@@ -19,6 +19,8 @@ from maverick.swarm import SwarmContext
 from maverick.tools.spawn import (
     MAX_SWARM_FANOUT,
     _fanout_cap_for_depth,
+    _synthesis_reserve_block,
+    spawn_subagent_tool,
     spawn_swarm_tool,
 )
 from maverick.world_model import WorldModel
@@ -65,6 +67,28 @@ async def test_spawn_refused_past_synthesis_ceiling():
     bud.dollars = 0.8  # past the ceiling
     tool = spawn_swarm_tool(_fake_parent(depth=0, budget=bud))
     out = await tool.fn({"agents": [{"role": "researcher", "task": "x"}]})
+    assert "ERROR" in out
+    assert "reserve" in out.lower() and "synthes" in out.lower()
+
+
+def test_synthesis_reserve_block_helper():
+    # Below the 0.75 ceiling: spawning allowed (None). Past it: refusal string.
+    bud = Budget(max_dollars=1.0)
+    bud.dollars = 0.5
+    assert _synthesis_reserve_block(_fake_parent(depth=0, budget=bud)) is None
+    bud.dollars = 0.8
+    blocked = _synthesis_reserve_block(_fake_parent(depth=0, budget=bud))
+    assert blocked is not None and "synthes" in blocked.lower()
+
+
+@pytest.mark.asyncio
+async def test_spawn_subagent_refused_past_synthesis_ceiling():
+    # The reserve gate must cover spawn_subagent too -- a depth-0 orchestrator's
+    # sequential spawn chain is NOT caught by the depth>0 per-worker soft-stop.
+    bud = Budget(max_dollars=1.0)
+    bud.dollars = 0.8  # past the 0.75 ceiling
+    tool = spawn_subagent_tool(_fake_parent(depth=0, budget=bud))
+    out = await tool.fn({"role": "researcher", "task": "x"})
     assert "ERROR" in out
     assert "reserve" in out.lower() and "synthes" in out.lower()
 
