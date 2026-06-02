@@ -117,6 +117,33 @@ def _cached_tools(tools: list[dict]) -> list[dict]:
     return out
 
 
+def _strip_message_cache_control(messages: list[dict]) -> list[dict]:
+    """Remove any pre-existing ``cache_control`` from message content blocks.
+
+    Re-sent history can carry ``cache_control`` marks from earlier turns (a
+    previously-marked breakpoint replayed in the next request). Left in place
+    they stack with the fresh system + tools + messages breakpoints and can
+    exceed Anthropic's hard limit of **4 cache breakpoints** -- a 400 on long
+    trajectories. Stripping first guarantees the messages array contributes at
+    most the single breakpoint we add below.
+    """
+    out: list[dict] = []
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, list) and any(
+            isinstance(b, dict) and "cache_control" in b for b in content
+        ):
+            blocks = [
+                {k: v for k, v in b.items() if k != "cache_control"}
+                if isinstance(b, dict) else b
+                for b in content
+            ]
+            out.append({**m, "content": blocks})
+        else:
+            out.append(m)
+    return out
+
+
 def _add_messages_cache_breakpoint(messages: list[dict]) -> list[dict]:
     """Mark the last user/tool_result message for caching.
 
@@ -134,6 +161,9 @@ def _add_messages_cache_breakpoint(messages: list[dict]) -> list[dict]:
     """
     if not messages or len(messages) < 2:
         return messages
+    # Drop any cache_control carried in from prior turns so the messages array
+    # contributes exactly one breakpoint (system + tools + 1 = 3 <= 4 limit).
+    messages = _strip_message_cache_control(messages)
     # Find the most recent user message that's NOT the final one (the
     # final user message changes every turn -- caching it would write
     # a fresh cache entry every call, the OPPOSITE of what we want).

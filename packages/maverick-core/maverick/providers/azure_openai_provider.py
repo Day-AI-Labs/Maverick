@@ -32,6 +32,22 @@ from .openai_provider import OpenAIClient
 class AzureOpenAIClient(OpenAIClient):
     DEFAULT_MODEL = "azure-deployment"
 
+    @staticmethod
+    def _wants_max_completion(model: str) -> bool:
+        """Whether to send ``max_completion_tokens`` instead of ``max_tokens``.
+
+        Azure routes to a free-form *deployment* name, so the base class's
+        prefix-match on the model id can't tell an o-series / gpt-5 deployment
+        (which rejects ``max_tokens`` with a 400) from a gpt-4-turbo one. Let
+        the operator force it via ``AZURE_OPENAI_USE_MAX_COMPLETION``; otherwise
+        fall back to the base name heuristic (works when the deployment is named
+        after the model).
+        """
+        env = os.environ.get("AZURE_OPENAI_USE_MAX_COMPLETION")
+        if env is not None and env.strip():
+            return env.strip().lower() in ("1", "true", "yes", "on")
+        return OpenAIClient._wants_max_completion(model)
+
     def __init__(self, api_key: str | None = None, base_url: str | None = None):
         try:
             from openai import AsyncAzureOpenAI, AzureOpenAI
