@@ -56,16 +56,22 @@ def _write_spec(tmp_path, name="spec.json"):
     return str(p)
 
 
+def _sb(tmp_path):
+    """A stand-in sandbox whose workdir is the test's tmp_path, so the
+    #612 spec-path confinement allows the in-workspace spec file."""
+    return types.SimpleNamespace(workdir=str(tmp_path))
+
+
 def test_openapi_list_ops(tmp_path):
     from maverick.tools.openapi_runner import openapi_runner
-    out = openapi_runner().fn({"op": "list_ops", "spec": _write_spec(tmp_path)})
+    out = openapi_runner(_sb(tmp_path)).fn({"op": "list_ops", "spec": _write_spec(tmp_path)})
     assert "getPet" in out and "createPet" in out and "deletePet" in out
     assert "GET" in out and "POST" in out
 
 
 def test_openapi_describe(tmp_path):
     from maverick.tools.openapi_runner import openapi_runner
-    out = openapi_runner().fn({
+    out = openapi_runner(_sb(tmp_path)).fn({
         "op": "describe", "spec": _write_spec(tmp_path), "op_id": "getPet",
     })
     assert "GET /pets/{petId}" in out
@@ -74,7 +80,7 @@ def test_openapi_describe(tmp_path):
 
 def test_openapi_describe_unknown(tmp_path):
     from maverick.tools.openapi_runner import openapi_runner
-    out = openapi_runner().fn({
+    out = openapi_runner(_sb(tmp_path)).fn({
         "op": "describe", "spec": _write_spec(tmp_path), "op_id": "bogus",
     })
     assert "not found" in out
@@ -114,7 +120,7 @@ def test_openapi_call_substitutes_path_param(tmp_path, monkeypatch):
     resp.text = '{"id": 7, "name": "Fido"}'
     _patch_safe_client(monkeypatch, resp, captured)
     from maverick.tools.openapi_runner import openapi_runner
-    out = openapi_runner().fn({
+    out = openapi_runner(_sb(tmp_path)).fn({
         "op": "call", "spec": _write_spec(tmp_path),
         "op_id": "getPet", "params": {"petId": 7},
     })
@@ -126,7 +132,7 @@ def test_openapi_call_substitutes_path_param(tmp_path, monkeypatch):
 def test_openapi_call_missing_required_path_param(tmp_path, monkeypatch):
     # Missing path param is rejected before any fetch, so no client needed.
     from maverick.tools.openapi_runner import openapi_runner
-    out = openapi_runner().fn({
+    out = openapi_runner(_sb(tmp_path)).fn({
         "op": "call", "spec": _write_spec(tmp_path),
         "op_id": "getPet", "params": {},
     })
@@ -140,7 +146,7 @@ def test_openapi_call_sends_body(tmp_path, monkeypatch):
     resp.text = "{}"
     _patch_safe_client(monkeypatch, resp, captured)
     from maverick.tools.openapi_runner import openapi_runner
-    out = openapi_runner().fn({
+    out = openapi_runner(_sb(tmp_path)).fn({
         "op": "call", "spec": _write_spec(tmp_path),
         "op_id": "createPet", "body": {"name": "Rex"},
     })
@@ -152,12 +158,37 @@ def test_openapi_call_blocks_private_base_url(tmp_path, monkeypatch):
     # No client patch: safe_client must resolve 127.0.0.1, see it's
     # non-public, and refuse before any connection (works offline).
     from maverick.tools.openapi_runner import openapi_runner
-    out = openapi_runner().fn({
+    out = openapi_runner(_sb(tmp_path)).fn({
         "op": "call", "spec": _write_spec(tmp_path),
         "op_id": "getPet", "params": {"petId": 7},
         "base_url": "http://127.0.0.1:8080",
     })
     assert "refusing to fetch" in out and "127.0.0.1" in out
+
+
+def test_openapi_blocks_spec_path_escape(tmp_path):
+    # #612: a local spec path outside the sandbox workdir is refused, so the
+    # agent can't read /etc/passwd or ~/.ssh/id_rsa via the spec arg.
+    import maverick.tools.openapi_runner as oas
+    from maverick.tools.openapi_runner import openapi_runner
+    oas._spec_cache.clear()  # noqa: SLF001 - test reset
+    # Write a real spec OUTSIDE the workdir; confinement must still refuse it.
+    outside = tmp_path.parent / "outside_spec.json"
+    outside.write_text(json.dumps(_TINY_OAS))
+    out = openapi_runner(_sb(tmp_path / "work")).fn(
+        {"op": "list_ops", "spec": str(outside)}
+    )
+    assert "outside the workspace" in out
+
+
+def test_openapi_blocks_absolute_etc_passwd(tmp_path):
+    # An absolute system path is refused regardless of contents.
+    from maverick.tools.openapi_runner import openapi_runner
+    (tmp_path / "work").mkdir()
+    out = openapi_runner(_sb(tmp_path / "work")).fn(
+        {"op": "list_ops", "spec": "/etc/passwd"}
+    )
+    assert "outside the workspace" in out
 
 
 # ---------- OCR tool ----------

@@ -44,7 +44,7 @@ SPEC = {
 
 
 def _patch_spec(monkeypatch):
-    monkeypatch.setattr(oar, "_load_spec", lambda src: SPEC)
+    monkeypatch.setattr(oar, "_load_spec", lambda src, workdir=None: SPEC)
 
 
 # ---------- _resolve_ref ----------

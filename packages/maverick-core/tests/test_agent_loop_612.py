@@ -111,6 +111,46 @@ class TestBudgetTripDoesNotOrphanToolUse:
         _assert_no_orphan_tool_use(llm.last_messages)
 
     @pytest.mark.asyncio
+    async def test_serial_tool_raise_mid_run_answers_pending(self, tmp_path, monkeypatch):
+        # A stateful serial tool (e.g. spawn_subagent whose child shares this
+        # Budget) can raise BudgetExceeded DURING execution, after its tool_use
+        # is already in the turn. The serial path must answer the pending
+        # tool_use before unwinding so no orphan reaches a resume/parent.
+        llm = _CapturingLLM([
+            LLMResponse(
+                text="acting",
+                thinking=None,
+                tool_calls=[ToolCall(id="a", name="shell", input={"cmd": "echo 1"})],
+                stop_reason="tool_use",
+            ),
+        ])
+        ctx = _ctx(tmp_path, llm)  # generous tool-call cap; the raise is in _run_tool
+        agent = Agent(ctx=ctx, role="researcher", brief="...")
+
+        async def _boom(name, args):
+            raise BudgetExceeded("child tripped the shared budget mid-run")
+
+        monkeypatch.setattr(agent, "_run_tool", _boom)
+        with pytest.raises(BudgetExceeded):
+            await agent.run()
+        assert llm.last_messages is not None
+        _assert_no_orphan_tool_use(llm.last_messages)
+
+    @pytest.mark.asyncio
+    async def test_patch_validated_resets_on_new_final(self, tmp_path):
+        # #612: _patch_validated was sticky for the whole run; a new FINAL must
+        # reset it so a later genuinely-different FINAL re-validates its patch.
+        llm = _CapturingLLM([
+            LLMResponse(text="FINAL: done", thinking=None, tool_calls=[],
+                        stop_reason="end_turn"),
+        ])
+        ctx = _ctx(tmp_path, llm)
+        agent = Agent(ctx=ctx, role="researcher", brief="...")
+        agent._patch_validated = True  # simulate a prior rejected patch
+        await agent.run()
+        assert agent._patch_validated is False
+
+    @pytest.mark.asyncio
     async def test_parallel_path_budget_trip_answers_pending(self, tmp_path):
         # Two parallel-safe reads -> parallel path records both up front; the
         # second record_tool_call() raises before any result is appended.
