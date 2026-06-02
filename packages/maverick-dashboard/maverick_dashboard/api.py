@@ -406,6 +406,90 @@ async def remove_skill_endpoint(name: str) -> None:
         raise HTTPException(status_code=404, detail="no such skill")
 
 
+# ---------- self-learning: learned ledger + generated tools (#427) ----------
+
+
+def _learned_snapshot(limit: int = 50) -> dict:
+    """Read-only view of the self-learning ledger + on-disk generated tools.
+
+    Powers the /learned page and GET /api/v1/learned. Degrades to empty
+    lists if the self-learning module / ledger / dir is unavailable, so a
+    fresh install (feature never enabled) renders "nothing learned yet"
+    instead of 500ing.
+    """
+    learned: list[dict] = []
+    tools: list[str] = []
+    try:
+        from maverick import self_learning
+        # Pass the path explicitly: history()'s default arg is bound at
+        # import time, so reading the module global here lets the live
+        # LEARNED_PATH (and tests) take effect.
+        learned = [
+            e.to_dict()
+            for e in self_learning.history(
+                limit=limit, path=self_learning.LEARNED_PATH,
+            )
+        ]
+        d = self_learning.GENERATED_TOOLS_DIR
+        if d.exists():
+            tools = sorted(
+                p.name for p in d.glob("*.py")
+                if not p.name.startswith((".", "_"))
+            )
+    except Exception as e:  # pragma: no cover -- never block the page
+        log.debug("learned snapshot failed: %s", e)
+    return {"learned": learned, "generated_tools": tools}
+
+
+def _resolve_generated_tool(name: str):
+    """Resolve ``name`` to a ``*.py`` file strictly inside GENERATED_TOOLS_DIR.
+
+    Path-safety guard for the removal endpoint: the resolved target must be
+    a direct child of the generated-tools dir and end in ``.py``. Rejects
+    traversal (``..``), absolute paths, and subdirectory escapes by
+    comparing the resolved parent against the resolved dir. Returns the
+    Path or raises HTTPException(400).
+    """
+    from maverick import self_learning
+    d = self_learning.GENERATED_TOOLS_DIR
+    # A legitimate generated-tool filename is a bare ``<name>.py`` with no
+    # separators; reject anything with a path separator or traversal token
+    # before touching the filesystem.
+    if "/" in name or "\\" in name or name in ("", ".", "..") or not name.endswith(".py"):
+        raise HTTPException(status_code=400, detail="invalid generated-tool name")
+    target = (d / name).resolve()
+    base = d.resolve()
+    if target.parent != base:
+        raise HTTPException(status_code=400, detail="path outside generated_tools")
+    return target
+
+
+@router.get("/learned")
+async def learned_api() -> dict:
+    """Learned-capability ledger entries + on-disk generated tool filenames."""
+    return _learned_snapshot()
+
+
+@router.delete("/generated-tools/{name}", status_code=204)
+async def remove_generated_tool(name: str) -> None:
+    """Delete a persisted generated tool so a bad one can be pulled.
+
+    The valuable mutation of #427: removes ~/.maverick/generated_tools/<name>
+    without filesystem access. The path is resolved strictly under the
+    generated-tools dir (see ``_resolve_generated_tool``) so traversal /
+    absolute / out-of-dir names are refused. Auth/same-origin is enforced
+    centrally by the dashboard's bearer_auth middleware (DELETE is a
+    mutating method, so the same-origin check applies).
+    """
+    target = _resolve_generated_tool(name)
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="no such generated tool")
+    try:
+        target.unlink()
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"could not remove: {e}")
+
+
 @router.get("/spend")
 async def get_spend() -> dict:
     w = _world()

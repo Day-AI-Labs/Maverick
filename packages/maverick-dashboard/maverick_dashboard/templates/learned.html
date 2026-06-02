@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}learned · Maverick{% endblock %}
+{% block content %}
+  <h2>what maverick taught itself</h2>
+  <div class="panel">
+    <p class="muted">
+      Capabilities the swarm acquired on demand mid-run (skills, tools,
+      apis) and the tools it generated for itself. Self-learning is off by
+      default; this is empty until it's enabled. Source of truth is the
+      ledger at <code>~/.maverick/learned.ndjson</code>.
+    </p>
+  </div>
+
+  <h2>learned capabilities</h2>
+  <div class="panel">
+    {% if learned %}
+      <table>
+        <thead><tr>
+          <th scope="col">kind</th><th scope="col">name</th>
+          <th scope="col">need</th><th scope="col">when</th>
+          <th scope="col">outcome</th>
+        </tr></thead>
+        <tbody>
+        {% for e in learned %}
+          <tr>
+            <td><span class="badge">{{ e.kind }}</span></td>
+            <td><code>{{ e.name }}</code></td>
+            <td class="muted">{{ e.need }}</td>
+            <td>{{ e.ts | datetime }}</td>
+            <td>
+              {% if e.outcome == 'acquired' %}<span class="badge active">{{ e.outcome }}</span>
+              {% else %}<span class="badge blocked">{{ e.outcome }}</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted" id="no-learned">Nothing learned yet.</p>
+    {% endif %}
+  </div>
+
+  <h2>generated tools</h2>
+  <div class="panel" id="generated-tools">
+    <p class="muted">
+      Auto-generated Python tool modules in
+      <code>~/.maverick/generated_tools/</code>. Remove pulls a
+      misbehaving tool — the file is deleted and it won't load on the next
+      run.
+    </p>
+    {% if generated_tools %}
+      <table>
+        <thead><tr><th scope="col">file</th><th scope="col">action</th></tr></thead>
+        <tbody>
+        {% for f in generated_tools %}
+          <tr data-name="{{ f }}">
+            <td><code>{{ f }}</code></td>
+            <td><button class="gt-remove" data-name="{{ f }}">Remove</button></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted" id="no-generated">No generated tools.</p>
+    {% endif %}
+  </div>
+
+  <p id="gt-msg" role="status" aria-live="polite" class="muted" style="min-height: 1em;"></p>
+
+  <style>
+    button.gt-remove { padding: 0.35rem 0.85rem; background: var(--panel); color: var(--danger); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+    button.gt-remove:hover { border-color: var(--danger); }
+    button.gt-remove[disabled] { opacity: 0.6; cursor: not-allowed; }
+  </style>
+
+  <script>
+    (function() {
+      const msg = document.getElementById('gt-msg');
+      document.querySelectorAll('button.gt-remove').forEach(function(btn) {
+        btn.addEventListener('click', async function() {
+          const name = btn.dataset.name;
+          if (!confirm('Remove generated tool ' + name + '?')) return;
+          btn.disabled = true;
+          msg.style.color = 'var(--muted)';
+          msg.textContent = 'Removing ' + name + '…';
+          try {
+            const r = await fetch('/api/v1/generated-tools/' + encodeURIComponent(name), {
+              method: 'DELETE',
+            });
+            if (r.ok || r.status === 204) {
+              msg.style.color = 'var(--accent)';
+              msg.textContent = name + ' removed. Gone on the next run.';
+              // Drop the row in place (keeps scroll position) instead of
+              // a full reload — mirrors permissions.html.
+              const row = btn.closest('tr');
+              if (row) row.remove();
+            } else {
+              const j = await r.json().catch(function() { return {}; });
+              btn.disabled = false;
+              msg.style.color = 'var(--danger)';
+              msg.textContent = (j.detail || ('Failed: ' + r.status));
+            }
+          } catch (e) {
+            btn.disabled = false;
+            msg.style.color = 'var(--danger)';
+            msg.textContent = String(e);
+          }
+        });
+      });
+    })();
+  </script>
+{% endblock %}

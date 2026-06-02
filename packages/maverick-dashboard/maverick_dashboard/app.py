@@ -618,6 +618,16 @@ async def skills_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "skills.html", {"skills": _load_skills()})
 
 
+@app.get("/learned", response_class=HTMLResponse)
+async def learned_page(request: Request) -> HTMLResponse:
+    """Self-learning observability: the learned-capability ledger + the
+    on-disk generated tools, with a remove action per generated tool (#427)."""
+    from .api import _learned_snapshot
+    return templates.TemplateResponse(
+        request, "learned.html", _learned_snapshot(),
+    )
+
+
 @app.get("/facts", response_class=HTMLResponse)
 async def facts_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "facts.html", {"facts": _world().get_facts()})
