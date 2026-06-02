@@ -29,9 +29,13 @@ The whole feature is OFF by default (kernel rule 1: the kernel runs
 without extra persisted state). Turn it on with ``MAVERICK_SELF_LEARNING=1``
 or ``[self_learning] enable = true``. Because "create a tool" means
 generating and executing fresh in-process code, enabling it is an
-explicit, opt-in trust decision. Generated source is scanned through the
-Shield (when installed) before it is ever imported, and the generation
-LLM call is metered against the run Budget (kernel rule 3).
+explicit, opt-in trust decision. Generated source is AST-constrained to
+stdlib-only, import-validated in an out-of-host child process, scanned
+through the Shield (when installed), and consent-gated at first
+registration before it is ever persisted (#424); the generation LLM call
+is metered against the run Budget (kernel rule 3). An approved tool's
+``fn`` still runs in-process at runtime (the out-of-process tool runtime
+is a documented future hardening).
 """
 from __future__ import annotations
 
@@ -41,6 +45,8 @@ import json
 import logging
 import os
 import re
+import subprocess
+import sys
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -501,9 +507,11 @@ Hard rules:
 # guardrail, not a true sandbox: it bounds the obvious escape surface
 # (dangerous imports, eval/exec, the dunder introspection chain) but a
 # determined adversary with getattr tricks could still get around an AST
-# allowlist. Sandboxed validation/execution is the heavier follow-up (issue
-# #424, options B/C). The feature is opt-in/full-autonomy, so this layer plus
-# the Shield text scan is a deliberate, documented trade-off.
+# allowlist. So validation no longer happens in the host: the import + shape
+# check runs out-of-host (``_validate_import_isolated``), and registration is
+# consent-gated. A full out-of-process tool RUNTIME (running an approved tool's
+# fn in a sandbox on every call) is the remaining follow-up. The feature is
+# opt-in/full-autonomy, so this layered trade-off is deliberate and documented.
 _SAFE_IMPORT_TOP = frozenset({
     "__future__", "json", "re", "math", "datetime", "urllib", "base64",
     "hashlib", "hmac", "time", "random", "string", "collections", "itertools",
@@ -594,17 +602,90 @@ def _shield_ok(source: str) -> tuple[bool, str]:
     return False, "; ".join(getattr(verdict, "reasons", []) or ["blocked by Shield"])
 
 
-def write_generated_tool(name: str, source: str, *, need: str = "") -> Any:
+# Out-of-host import/shape check (#424). The AST audit above bounds the source
+# statically; this confirms the module actually imports cleanly and exposes a
+# valid make_tool() WITHOUT executing it in the kernel interpreter, so an
+# import-time side-effect (or anything the static audit missed) can't touch the
+# live process. The body runs in a throwaway child: a real sandbox backend when
+# the call site has one, else a short-lived plain subprocess with a timeout.
+_IMPORT_CHECK_TIMEOUT = 20.0
+# Printed by the probe on success; its absence (timeout, crash, raising import,
+# raising make_tool()) is treated as a failed validation.
+_IMPORT_CHECK_OK = "__MAVERICK_TOOL_OK__"
+_IMPORT_CHECK_PROBE = '''
+import importlib.util, sys
+_spec = importlib.util.spec_from_file_location("maverick_generated_probe", {path!r})
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+if not hasattr(_mod, "make_tool"):
+    print("module does not define make_tool()"); sys.exit(1)
+_t = _mod.make_tool()
+if not (getattr(_t, "name", "") and callable(getattr(_t, "fn", None))):
+    print("make_tool() did not return a valid Tool"); sys.exit(1)
+print({ok!r})
+'''
+
+
+def _validate_import_isolated(path: Path, *, sandbox: Any = None) -> None:
+    """Import ``path`` and check its make_tool() shape in a child process.
+
+    Raises ValueError if the module fails to import, doesn't expose a valid
+    make_tool(), or the check times out / crashes. The check NEVER executes
+    the generated body in the host interpreter. Routes through
+    ``sandbox.exec()`` when a backend is supplied (the kernel's mediated-shell
+    chokepoint); otherwise falls back to a plain ``subprocess`` with a hard
+    timeout. (Note: a plain subprocess is process-isolation, not a security
+    sandbox — pair it with a real [sandbox] backend for untrusted goals.)
+    """
+    import shlex
+
+    probe = _IMPORT_CHECK_PROBE.format(path=str(path), ok=_IMPORT_CHECK_OK)
+    if sandbox is not None:
+        cmd = f"{shlex.quote(sys.executable)} -c {shlex.quote(probe)}"
+        try:
+            result = sandbox.exec(cmd, timeout=_IMPORT_CHECK_TIMEOUT)
+        except Exception as e:  # backend unavailable -> treat as failed check
+            raise ValueError(
+                f"generated tool import check could not run: {type(e).__name__}: {e}"
+            ) from e
+        if _IMPORT_CHECK_OK not in (result.stdout or ""):
+            detail = (result.stdout or "").strip() or (result.stderr or "").strip()
+            raise ValueError(f"generated tool failed validation: {detail or 'import check failed'}")
+        return
+    try:
+        proc = subprocess.run(  # noqa: S603 -- isolated import check, not a tool shell
+            [sys.executable, "-c", probe],
+            capture_output=True, text=True, timeout=_IMPORT_CHECK_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise ValueError("generated tool failed validation: import timed out") from e
+    if _IMPORT_CHECK_OK not in (proc.stdout or ""):
+        detail = (proc.stdout or "").strip() or (proc.stderr or "").strip()
+        raise ValueError(f"generated tool failed validation: {detail or 'import check failed'}")
+
+
+def write_generated_tool(
+    name: str, source: str, *, need: str = "",
+    sandbox: Any = None, require_approval: bool = True,
+) -> Any:
     """Validate generated tool ``source`` and persist it, returning the Tool.
 
-    Validation, in order: name regex -> static AST audit -> Shield scan ->
-    import (executes the module) -> ``make_tool()`` returns a well-formed
-    Tool. Only after ALL of these pass is the module written to the durable
-    ``generated_tools/`` dir; a tool that fails validation leaves nothing
-    behind. The returned Tool is registered into the live run by the
-    caller.
+    Validation, in order (#424): name regex -> static AST audit (stdlib-only
+    enforcement) -> Shield scan -> OUT-OF-HOST import + make_tool() shape check
+    (``_validate_import_isolated``: a child process, never the kernel
+    interpreter) -> operator consent. Only after ALL of these pass is the
+    module written to the durable ``generated_tools/`` dir and registered; a
+    tool that fails validation or is denied leaves nothing behind.
+
+    The generated body is NOT executed in this process here — the import check
+    runs in a ``sandbox.exec()`` child when ``sandbox`` is given, otherwise a
+    timed plain subprocess. At RUNTIME the persisted tool's ``fn`` still runs
+    in-process under the self-learning opt-in (an out-of-process tool RUNTIME
+    is the documented future hardening). ``require_approval`` gates the FIRST
+    registration via the consent queue; reloads of an already-approved tool
+    don't re-prompt.
     """
-    from .tools import Tool
+    from .safety.consent import require_consent
 
     if not _NAME_RE.match(name):
         raise ValueError(
@@ -623,23 +704,29 @@ def write_generated_tool(name: str, source: str, *, need: str = "") -> Any:
     staging = GENERATED_TOOLS_DIR / f".staging_{name}.py"
     staging.write_text(source, encoding="utf-8")
     try:
-        module = _import_module_from_path(name, staging)
-        if not hasattr(module, "make_tool"):
-            raise ValueError("module does not define make_tool()")
-        tool = module.make_tool()
-        if not isinstance(tool, Tool) or not tool.name or not callable(tool.fn):
-            raise ValueError("make_tool() did not return a valid Tool")
-    except ValueError:
-        raise
-    except Exception as e:
-        # SyntaxError / ImportError / a raising make_tool() — surface as a
-        # single rejection the agent can read and retry against.
-        raise ValueError(f"generated tool failed validation: {type(e).__name__}: {e}") from e
+        _validate_import_isolated(staging, sandbox=sandbox)
     finally:
         staging.unlink(missing_ok=True)
 
+    # Consent gate the FIRST registration of a never-seen tool. Denial (or a
+    # non-interactive context under a gating consent mode) -> nothing persisted.
+    if require_approval:
+        require_consent(
+            "register-generated-tool", risk="high", scope=name,
+            detail=(
+                f"Register LLM-generated tool {name!r} (stdlib-only, "
+                f"import-validated out-of-host). It runs IN-PROCESS at runtime."
+            ),
+            raise_on_deny=True,
+        )
+
     target = GENERATED_TOOLS_DIR / f"{name}.py"
     target.write_text(source, encoding="utf-8")
+    # Re-derive the Tool object for the caller to register live. The body has
+    # already passed the out-of-host import check; importing it here is the
+    # in-process runtime trust the opt-in accepts (documented residual trust).
+    module = _import_module_from_path(name, target)
+    tool = module.make_tool()
     record(need or name, "tool", tool.name, source=str(target))
     return tool
 

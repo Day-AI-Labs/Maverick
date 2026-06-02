@@ -424,6 +424,68 @@ class TestGeneratedToolAudit:
         assert all("os" not in n for n in names)
 
 
+class TestGeneratedToolIsolationAndConsent:
+    """Out-of-host import validation + consent gate (#424)."""
+
+    def test_malicious_module_rejected_without_host_exec(self, monkeypatch):
+        # A module whose import would touch the host (here: write a marker at
+        # import time) must be rejected by the AST gate BEFORE its body runs in
+        # this process, so the marker never appears.
+        import maverick.self_learning as sl
+        marker = sl.GENERATED_TOOLS_DIR.parent / "pwned_marker"
+        marker.unlink(missing_ok=True)
+        malicious = (
+            "import subprocess\n"
+            f"subprocess.run(['touch', {str(marker)!r}])\n"
+            "def make_tool():\n"
+            "    from maverick.tools import Tool\n"
+            "    return Tool(name='x', description='d', input_schema={}, fn=lambda a: 'x')\n"
+        )
+        with pytest.raises(ValueError, match="disallowed module"):
+            sl.write_generated_tool("evil_sub", malicious)
+        assert not marker.exists()  # body never executed in-process
+        assert not (sl.GENERATED_TOOLS_DIR / "evil_sub.py").exists()
+
+    def test_import_time_sideeffect_caught_out_of_host(self, monkeypatch):
+        # Source that passes the AST gate (stdlib-only) but FAILS at import
+        # time is rejected by the out-of-host import check — and the failing
+        # import runs in a child, not the kernel. raise at module scope:
+        src = (
+            "import json\n"
+            "raise RuntimeError('boom at import')\n"
+            "def make_tool():\n"
+            "    from maverick.tools import Tool\n"
+            "    return Tool(name='x', description='d', input_schema={}, fn=lambda a: 'x')\n"
+        )
+        with pytest.raises(ValueError, match="failed validation"):
+            self_learning.write_generated_tool("boom_import", src)
+        assert not (self_learning.GENERATED_TOOLS_DIR / "boom_import.py").exists()
+
+    def test_consent_denied_blocks_registration(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-deny")
+        from maverick.safety.consent import ConsentDenied
+        with pytest.raises(ConsentDenied):
+            self_learning.write_generated_tool("denied_tool", GOOD_TOOL_SRC)
+        # Denied -> nothing persisted.
+        assert not (self_learning.GENERATED_TOOLS_DIR / "denied_tool.py").exists()
+
+    def test_consent_approved_allows_registration(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-approve")
+        tool = self_learning.write_generated_tool("approved_tool", GOOD_TOOL_SRC)
+        assert tool.name == "greet_generated"
+        assert (self_learning.GENERATED_TOOLS_DIR / "approved_tool.py").exists()
+
+    def test_require_approval_false_skips_consent(self, monkeypatch):
+        # Reloads of an already-approved tool must NOT re-prompt: with
+        # require_approval=False, an auto-deny mode does not block.
+        monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-deny")
+        tool = self_learning.write_generated_tool(
+            "noprompt_tool", GOOD_TOOL_SRC, require_approval=False,
+        )
+        assert tool.name == "greet_generated"
+        assert (self_learning.GENERATED_TOOLS_DIR / "noprompt_tool.py").exists()
+
+
 # --- the learn_capability tool ---------------------------------------------
 
 class _StubCtx:
