@@ -197,6 +197,27 @@ class TestHTTPTransport:
                     "Origin": "http://evil.example.com"})
         assert resp.status_code == 403
 
+    def test_dns_rebinding_host_origin_rejected(self, monkeypatch):
+        """Do not trust Host-derived same-origin checks for DNS rebinding."""
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        client = self._client()
+        resp = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {},
+        }, headers={"Authorization": "Bearer s3cr3t",
+                    "Host": "attacker.example:8771",
+                    "Origin": "http://attacker.example:8771"})
+        assert resp.status_code == 403
+
+    def test_loopback_origin_allowed(self, monkeypatch):
+        """Local browser clients loaded from loopback remain supported."""
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        client = self._client()
+        resp = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {},
+        }, headers={"Authorization": "Bearer s3cr3t",
+                    "Origin": "http://127.0.0.1:8771"})
+        assert resp.status_code == 200
+
     def test_no_origin_header_allowed(self, monkeypatch):
         """Native MCP clients / curl omit Origin and must still work."""
         monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
