@@ -38,18 +38,26 @@ jobs:
           version = os.environ["VERSION"].lstrip("v")
           api = f"https://pypi.org/pypi/maverick-agent/{version}/json"
 
-          # PyPI's index can lag a publish by a minute or two -- retry before failing.
-          data = None
-          for attempt in range(10):
-              try:
-                  with urllib.request.urlopen(api, timeout=30) as r:
-                      data = json.load(r)
-                  break
-              except Exception as e:  # noqa: BLE001 -- transient index/propagation
-                  print(f"PyPI not ready yet ({e}); retry {attempt + 1}/10")
-                  time.sleep(15)
-          if data is None:
-              raise SystemExit(f"maverick-agent=={version} not found on PyPI")
+          # PyPI's JSON API, simple index, and file CDN each propagate on
+          # their own schedule after a publish, so every PyPI-touching step
+          # retries before failing. Waiting on the JSON API alone (as before)
+          # let the later piptools resolve race ahead of the install index.
+          def wait_for_pypi(label, fetch):
+              for attempt in range(10):
+                  try:
+                      return fetch()
+                  except Exception as e:  # noqa: BLE001 -- transient index/propagation
+                      print(f"PyPI {label} not ready yet ({e}); retry {attempt + 1}/10")
+                      time.sleep(15)
+              raise SystemExit(
+                  f"maverick-agent=={version} {label} never became available on PyPI"
+              )
+
+          def fetch_metadata():
+              with urllib.request.urlopen(api, timeout=30) as r:
+                  return json.load(r)
+
+          data = wait_for_pypi("metadata", fetch_metadata)
 
           sdist = next(u for u in data["urls"] if u["packagetype"] == "sdist")
           url, sha = sdist["url"], sdist["digests"]["sha256"]
@@ -69,22 +77,29 @@ jobs:
                   ],
                   check=True,
               )
-              subprocess.run(
-                  [
-                      sys.executable,
-                      "-m",
-                      "piptools",
-                      "compile",
-                      "--generate-hashes",
-                      "--allow-unsafe",
-                      "--resolver=backtracking",
-                      "--output-file",
-                      str(output_path),
-                      str(input_path),
-                  ],
-                  check=True,
-              )
-              requirements = output_path.read_text()
+              def compile_requirements():
+                  subprocess.run(
+                      [
+                          sys.executable,
+                          "-m",
+                          "piptools",
+                          "compile",
+                          "--generate-hashes",
+                          "--allow-unsafe",
+                          "--resolver=backtracking",
+                          "--output-file",
+                          str(output_path),
+                          str(input_path),
+                      ],
+                      check=True,
+                      # No HTTP cache: a simple-index page fetched before the
+                      # sdist propagated would otherwise be reused on every
+                      # retry, pinning the resolve to the same 404.
+                      env={**os.environ, "PIP_NO_CACHE_DIR": "1"},
+                  )
+                  return output_path.read_text()
+
+              requirements = wait_for_pypi("dependency index", compile_requirements)
 
           # Homebrew already downloads and verifies maverick-agent as the formula
           # source. Keep only its resolved dependencies in the hash-locked
