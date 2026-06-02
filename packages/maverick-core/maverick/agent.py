@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass
 
 from . import killswitch
-from ._envparse import env_int
+from ._envparse import env_float, env_int
 from .budget import BudgetExceeded
 from .llm import model_for_role
 from .swarm import SwarmContext
@@ -39,11 +39,11 @@ Tools you can call include:
   - `mcp_<server>__<tool>` for any external MCP servers wired into config.
 
 Rules:
-1. If your task naturally decomposes into 2+ independent parts and you have depth budget remaining, prefer `spawn_swarm` for speed.
+1. Do the work YOURSELF by default. Only `spawn_swarm` when a sub-task is genuinely heavy AND independent AND needs its own context window — not merely because your task "has several aspects". Over-decomposing front-loads the whole budget on fan-out so nobody is left to synthesize the answer. The deeper you are, the more you should be a leaf: at depth ≥ 1, prefer doing the research yourself over spawning more children.
 2. If a sub-task needs its own context window or a different specialty, use `spawn_subagent`.
 3. When done, respond in plain text starting with `FINAL:` followed by your answer. No tool call.
 4. Be precise. Cite exact paths, commands, results, and findings from your children.
-5. Budget is enforced globally; spend wisely. Stop spawning if results so far are sufficient."""
+5. Budget is enforced globally; spend wisely. Stop spawning if results so far are sufficient — reaching a synthesized answer matters more than breadth of research."""
 
 
 ORCHESTRATOR_SYSTEM_TEMPLATE = """You are the orchestrator of a Maverick swarm.
@@ -63,6 +63,36 @@ You have a maximum spawn depth of {max_depth}. Use it wisely.
 Available roles for children: researcher, coder, writer, analyst, summarizer, revisor.
 
 External MCP tools (if any) appear as `mcp_<server>__<tool>`."""
+
+
+# #611: fraction of the budget reserved for the TOP-level goal's synthesis /
+# write step. A deeper worker (depth > 0) stops once cumulative spend crosses
+# (1 - this) of the cap, so a recursive research swarm can't burn the budget
+# the orchestrator needs to actually produce the answer (the dogfooded failure:
+# 35 agents, $7.85 spent, zero report). 0 disables it.
+_SYNTHESIS_RESERVE = env_float("MAVERICK_SYNTHESIS_RESERVE", 0.25)
+
+
+def _last_assistant_text(messages: list[dict]) -> str:
+    """Best-effort plain text of the most recent assistant message.
+
+    Content may be a string or a list of content blocks; pull any text out so a
+    worker that yields early (synthesis reserve) still returns its partial work.
+    """
+    for m in reversed(messages):
+        if m.get("role") != "assistant":
+            continue
+        c = m.get("content")
+        if isinstance(c, str):
+            return c.strip()
+        if isinstance(c, list):
+            text = " ".join(
+                b.get("text", "") for b in c
+                if isinstance(b, dict) and b.get("type") == "text"
+            ).strip()
+            if text:
+                return text
+    return ""
 
 
 @dataclass
@@ -708,6 +738,26 @@ class Agent:
             except BudgetExceeded as e:
                 bb.post(self.name, "error", f"budget exceeded: {e}")
                 return AgentResult(error=f"budget exceeded: {e}", role=self.role, name=self.name)
+
+            # #611 synthesis reserve: a deeper worker yields before it eats the
+            # budget the top-level goal needs to write its answer. Only workers
+            # (depth > 0) stop here; the orchestrator (depth 0) keeps the reserve
+            # to synthesize. Return whatever partial findings we have rather than
+            # spending into the reserve, so the run delivers SOMETHING instead of
+            # paying in full for nothing.
+            if self.depth > 0 and _SYNTHESIS_RESERVE > 0:
+                _b = self.ctx.budget
+                if _b.dollars >= _b.max_dollars * (1.0 - _SYNTHESIS_RESERVE):
+                    bb.post(
+                        self.name, "note",
+                        f"stopping at ${_b.dollars:.2f}/${_b.max_dollars:.2f} to "
+                        f"reserve the final {_SYNTHESIS_RESERVE:.0%} for synthesis",
+                    )
+                    partial = _last_assistant_text(messages)
+                    return AgentResult(
+                        final=partial or "(stopped early to reserve synthesis budget)",
+                        role=self.role, name=self.name,
+                    )
 
             # Karpathy SOTA-review item: long-context compaction. Drop
             # raw tool_result content >2KiB once it's behind the recent
