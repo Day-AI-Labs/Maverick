@@ -290,6 +290,23 @@ def test_processed_messages_idempotent(tmp_path):
     assert wm.lookup_processed_message("sms", "missing") is None
 
 
+def test_release_processed_message_allows_reclaim(tmp_path):
+    """Channels claim the dedup row BEFORE running the goal (so a racing Twilio
+    retry no-ops instead of double-spending). A failed run must release the
+    claim so the retry can re-process -- not be deduped against a run that
+    never completed. Issue #473."""
+    from maverick.world_model import WorldModel
+    wm = WorldModel(tmp_path / "w.db")
+
+    assert wm.mark_message_processed("sms", "SM-x") is True   # claim wins
+    assert wm.mark_message_processed("sms", "SM-x") is False  # racing retry no-ops
+    wm.release_processed_message("sms", "SM-x")               # the run failed
+    assert wm.is_processed_message("sms", "SM-x") is False    # claim released
+    assert wm.mark_message_processed("sms", "SM-x") is True   # retry can re-claim
+    # Releasing a SID that was never claimed is a harmless no-op.
+    wm.release_processed_message("sms", "never-seen")
+
+
 # ---------- orphan reclaim ----------
 
 def test_reclaim_orphan_goals(tmp_path):

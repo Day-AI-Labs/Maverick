@@ -1123,6 +1123,22 @@ class WorldModel:
         except sqlite3.IntegrityError:
             return False
 
+    def release_processed_message(self, channel: str, external_id: str) -> None:
+        """Undo a claim made by ``mark_message_processed`` so a retry can
+        re-process the message.
+
+        Channels claim the dedup row BEFORE running the goal (atomic, so a
+        Twilio retry that races a slow handler is a no-op instead of a
+        double-spend). If that run then fails, the claim must be released or
+        the message is stuck marked-as-done and never retried.
+        """
+        with self._writing() as conn:
+            conn.execute(
+                "DELETE FROM processed_messages "
+                "WHERE channel = ? AND external_id = ?",
+                (channel, external_id),
+            )
+
     def lookup_processed_message(
         self,
         channel: str,
