@@ -431,3 +431,85 @@ class TestStructuredOutput:
         sc = out["structuredContent"]
         assert isinstance(sc["goal_id"], int)   # the field clients need to chain
         assert sc["answer"] == "the swarm's answer"
+
+
+class TestResourceSubscriptions:
+    """2025-11-25 resources/subscribe: track interest + push updated."""
+
+    def _capture(self, s):
+        sent: list = []
+        s._send = sent.append      # intercept outbound JSON-RPC messages
+        s._shield = None           # don't let an output scan interfere
+        return sent
+
+    def test_capability_now_advertised(self):
+        caps = MCPServer().handle_initialize({})["capabilities"]
+        assert caps["resources"]["subscribe"] is True
+
+    def test_subscribe_tracks_known_uri(self):
+        s = MCPServer()
+        assert s.handle_resources_subscribe({"uri": "maverick://goals"}) == {}
+        assert "maverick://goals" in s._subscriptions
+
+    def test_subscribe_rejects_unknown_uri(self):
+        s = MCPServer()
+        with pytest.raises(_ProtocolError) as ei:
+            s.handle_resources_subscribe({"uri": "maverick://nope"})
+        assert ei.value.code == -32602
+        assert s._subscriptions == set()
+
+    def test_unsubscribe_is_idempotent(self):
+        s = MCPServer()
+        s.handle_resources_subscribe({"uri": "maverick://skills"})
+        assert s.handle_resources_unsubscribe({"uri": "maverick://skills"}) == {}
+        assert s.handle_resources_unsubscribe({"uri": "maverick://skills"}) == {}
+        assert "maverick://skills" not in s._subscriptions
+
+    def test_mutating_tool_notifies_subscriber_after_result(self, monkeypatch):
+        s = MCPServer()
+        sent = self._capture(s)
+        s.handle_resources_subscribe({"uri": "maverick://goals"})
+        monkeypatch.setattr(s, "_dispatch_tool", lambda name, args: "started")
+        out = s.handle_tools_call({"name": "maverick_start",
+                                   "arguments": {"title": "x"}})
+        assert out["isError"] is False
+        assert sent == []  # queued, not sent until the result is flushed
+        s._flush_resource_updates()
+        assert sent == [{
+            "jsonrpc": "2.0",
+            "method": "notifications/resources/updated",
+            "params": {"uri": "maverick://goals"},
+        }]
+
+    def test_no_notification_without_subscription(self, monkeypatch):
+        s = MCPServer()
+        sent = self._capture(s)
+        monkeypatch.setattr(s, "_dispatch_tool", lambda name, args: "started")
+        s.handle_tools_call({"name": "maverick_start", "arguments": {"title": "x"}})
+        s._flush_resource_updates()
+        assert sent == []
+
+    def test_skill_install_notifies_skills_resource(self, monkeypatch):
+        s = MCPServer()
+        sent = self._capture(s)
+        s.handle_resources_subscribe({"uri": "maverick://skills"})
+        monkeypatch.setattr(s, "_dispatch_tool", lambda name, args: "installed")
+        s.handle_tools_call({"name": "maverick_skill_install",
+                             "arguments": {"source": "x"}})
+        s._flush_resource_updates()
+        assert [m["params"]["uri"] for m in sent] == ["maverick://skills"]
+
+    def test_failed_tool_call_does_not_notify(self, monkeypatch):
+        s = MCPServer()
+        sent = self._capture(s)
+        s.handle_resources_subscribe({"uri": "maverick://goals"})
+
+        def boom(name, args):
+            raise RuntimeError("kaboom")
+
+        monkeypatch.setattr(s, "_dispatch_tool", boom)
+        out = s.handle_tools_call({"name": "maverick_start",
+                                   "arguments": {"title": "x"}})
+        assert out["isError"] is True
+        s._flush_resource_updates()
+        assert sent == []

@@ -336,9 +336,20 @@ def build_app(server) -> FastAPI:
                             },
                         })
                 try:
-                    yield _sse(_result_envelope(request_id, task.result()))
+                    result = task.result()
                 except Exception as e:
                     yield _sse(_error_envelope(request_id, e))
+                else:
+                    yield _sse(_result_envelope(request_id, result))
+                    # HTTP analog of stdio's _flush_resource_updates: push any
+                    # resources/updated the tool dirtied that this client
+                    # subscribed to, on the same SSE stream, after the result.
+                    for uri in server.drain_resource_updates():
+                        yield _sse({
+                            "jsonrpc": "2.0",
+                            "method": "notifications/resources/updated",
+                            "params": {"uri": uri},
+                        })
 
             return StreamingResponse(_stream(), media_type="text/event-stream")
 
@@ -371,6 +382,8 @@ _METHOD_MAP = {
     "tools/call":      "handle_tools_call",
     "resources/list":  "handle_resources_list",
     "resources/read":  "handle_resources_read",
+    "resources/subscribe":   "handle_resources_subscribe",
+    "resources/unsubscribe": "handle_resources_unsubscribe",
     "prompts/list":    "handle_prompts_list",
     "prompts/get":     "handle_prompts_get",
 }

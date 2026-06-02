@@ -153,3 +153,42 @@ def test_max_progress_events_env(monkeypatch):
     assert ht._max_progress_events() == 0
     monkeypatch.setenv("MAVERICK_MCP_SSE_MAX_PROGRESS_EVENTS", "garbage")
     assert ht._max_progress_events() == 240
+
+
+def test_http_subscribe_then_tool_pushes_resource_update(monkeypatch):
+    # Shared server instance so the subscription set survives across requests.
+    monkeypatch.setenv("MAVERICK_MCP_TOKEN", "test-token")
+    server = MCPServer()
+    server._shield = None
+    client = TestClient(ht.build_app(server))
+
+    r = client.post("/mcp", headers=_AUTH, json={
+        "jsonrpc": "2.0", "id": 1, "method": "resources/subscribe",
+        "params": {"uri": "maverick://goals"},
+    })
+    assert r.status_code == 200
+    assert "maverick://goals" in server._subscriptions
+
+    # Avoid real goal creation; the mutating tool still dirties the resource.
+    monkeypatch.setattr(server, "_dispatch_tool", lambda name, args: "started")
+    resp = client.post("/mcp", headers=_SSE, json={
+        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+        "params": {"name": "maverick_start", "arguments": {"title": "x"}},
+    })
+    body = resp.text
+    assert '"result"' in body                              # tool result first
+    assert "notifications/resources/updated" in body       # then the push
+    assert "maverick://goals" in body
+
+
+def test_http_no_update_pushed_without_subscription(monkeypatch):
+    monkeypatch.setenv("MAVERICK_MCP_TOKEN", "test-token")
+    server = MCPServer()
+    server._shield = None
+    client = TestClient(ht.build_app(server))
+    monkeypatch.setattr(server, "_dispatch_tool", lambda name, args: "started")
+    resp = client.post("/mcp", headers=_SSE, json={
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "maverick_start", "arguments": {"title": "x"}},
+    })
+    assert "notifications/resources/updated" not in resp.text
