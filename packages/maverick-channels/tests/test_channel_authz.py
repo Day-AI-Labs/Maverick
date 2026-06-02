@@ -218,7 +218,12 @@ def test_whatsapp_webhook_rejects_unauthorized_sender():
 
 
 class _FakeWorldModel:
-    """Records dedup interactions without touching a real DB."""
+    """Models the atomic dedup-claim API without touching a real DB.
+
+    ``marked`` tracks the SIDs *currently* claimed: a claim adds, a release
+    removes. ``mark_message_processed`` returns True on first claim / False on
+    a duplicate, mirroring the real INSERT-under-UNIQUE-constraint behavior the
+    channels now rely on (claim-first dedup, issue #473)."""
 
     instances: list = []
 
@@ -230,9 +235,19 @@ class _FakeWorldModel:
     def is_processed_message(self, channel, external_id) -> bool:
         return (channel, external_id) in self.processed
 
-    def mark_message_processed(self, channel, external_id) -> None:
-        self.marked.append((channel, external_id))
-        self.processed.add((channel, external_id))
+    def mark_message_processed(self, channel, external_id, goal_id=None) -> bool:
+        key = (channel, external_id)
+        if key in self.processed:
+            return False  # already claimed -> caller no-ops
+        self.processed.add(key)
+        self.marked.append(key)
+        return True
+
+    def release_processed_message(self, channel, external_id) -> None:
+        key = (channel, external_id)
+        self.processed.discard(key)
+        if key in self.marked:
+            self.marked.remove(key)
 
 
 @pytest.mark.skipif(not _have_twilio(), reason="fastapi+twilio not installed")

@@ -126,20 +126,24 @@ class WhatsAppChannel(Channel):
             log.warning("unauthorized whatsapp access: from=%s", From)
             raise HTTPException(status_code=403, detail="sender not allowed")
 
-        # Twilio retries; lookup-then-mark so a handler crash doesn't
-        # permanently lose the message (Twilio retry re-processes it). We mark
-        # immediately AFTER the handler returns (not after the outbound send),
-        # so a transient send failure can't trigger a full goal re-run.
+        # Twilio retries within ~15s on a slow or non-2xx handler. CLAIM the
+        # MessageSid atomically before processing: mark_message_processed
+        # INSERTs under the UNIQUE(channel, external_id) constraint and returns
+        # False if the row already exists. The old code checked
+        # is_processed_message() here and only marked AFTER the handler -- so a
+        # retry that raced a still-running handler passed the check too and
+        # spawned a second goal + second spend. Claiming first makes the racing
+        # retry a no-op.
         wm = None
         if MessageSid:
             try:
                 from maverick.world_model import DEFAULT_DB, WorldModel
                 wm = WorldModel(DEFAULT_DB)
-                if wm.is_processed_message("whatsapp", MessageSid):
-                    log.info("WhatsApp MessageSid %s already processed; skipping", MessageSid)
+                if not wm.mark_message_processed("whatsapp", MessageSid):
+                    log.info("WhatsApp MessageSid %s already claimed; skipping", MessageSid)
                     return Response(content="", media_type="text/xml")
             except Exception:  # pragma: no cover
-                log.warning("WhatsApp dedup check failed; processing anyway")
+                log.warning("WhatsApp dedup claim failed; processing anyway")
                 wm = None
 
         msg = IncomingMessage(user_id=From, text=Body, channel="whatsapp")
@@ -147,23 +151,22 @@ class WhatsAppChannel(Channel):
             reply = await self.handler(msg)
         except Exception as e:  # pragma: no cover
             log.exception("handler error")
-            # Don't mark as processed on handler error -- let Twilio retry the
-            # full goal. The handler burned no useful budget if it raised.
+            # The goal didn't complete -- release the claim so Twilio's retry
+            # re-processes instead of being deduped against a failed run.
+            if wm is not None and MessageSid:
+                try:
+                    wm.release_processed_message("whatsapp", MessageSid)
+                except Exception:  # pragma: no cover
+                    log.warning("WhatsApp dedup release failed")
             try:
                 await self.send(From, f"⚠ error: {e}")
             except Exception:  # pragma: no cover
                 log.exception("WhatsApp error-reply send failed")
             return Response(content="", media_type="text/xml")
 
-        # Mark processed NOW -- the budget-spending handler already succeeded.
-        # A transient outbound-send failure below must NOT 500 (Twilio would
-        # retry and re-run the whole goal, double-spending). Dedup first, then
-        # attempt the reply, logging a send failure without re-raising.
-        if wm is not None and MessageSid:
-            try:
-                wm.mark_message_processed("whatsapp", MessageSid)
-            except Exception:  # pragma: no cover
-                log.warning("WhatsApp dedup mark failed (handler succeeded)")
+        # Already claimed above; a transient outbound-send failure must NOT
+        # 500 (Twilio would retry and re-run the whole goal). Attempt the
+        # reply, logging a send failure without re-raising.
         try:
             await self.send(From, reply)
         except Exception:  # pragma: no cover

@@ -116,22 +116,24 @@ class SMSChannel(Channel):
             log.warning("unauthorized sms access: from=%s", From)
             raise HTTPException(status_code=403, detail="sender not allowed")
 
-        # Council finding (Tier 0 + Wave 4): Twilio retries non-2xx and
-        # slow handlers; without MessageSid dedup the same inbound SMS
-        # spawns N goals and burns N API spends. We use lookup BEFORE
-        # processing (so retries are no-ops) and mark immediately AFTER the
-        # handler returns (so a handler crash doesn't permanently lose the
-        # message -- Twilio's next retry will re-process it).
+        # Twilio retries within ~15s on a slow or non-2xx handler. CLAIM the
+        # MessageSid atomically before processing: mark_message_processed
+        # INSERTs under the UNIQUE(channel, external_id) constraint and returns
+        # False if the row already exists. The old code checked
+        # is_processed_message() here and only marked AFTER the handler -- so a
+        # retry that raced a still-running handler passed the check too and
+        # spawned a second goal + second spend. Claiming first makes the racing
+        # retry a no-op.
         wm = None
         if MessageSid:
             try:
                 from maverick.world_model import DEFAULT_DB, WorldModel
                 wm = WorldModel(DEFAULT_DB)
-                if wm.is_processed_message("sms", MessageSid):
-                    log.info("SMS MessageSid %s already processed; skipping", MessageSid)
+                if not wm.mark_message_processed("sms", MessageSid):
+                    log.info("SMS MessageSid %s already claimed; skipping", MessageSid)
                     return Response(content="", media_type="text/xml")
             except Exception:  # pragma: no cover
-                log.warning("SMS dedup check failed; processing anyway")
+                log.warning("SMS dedup claim failed; processing anyway")
                 wm = None
 
         msg = IncomingMessage(user_id=From, text=Body, channel="sms")
@@ -139,23 +141,22 @@ class SMSChannel(Channel):
             reply = await self.handler(msg)
         except Exception as e:  # pragma: no cover
             log.exception("handler error")
-            # Don't mark as processed on handler error -- let Twilio retry the
-            # full goal. The handler burned no useful budget if it raised.
+            # The goal didn't complete -- release the claim so Twilio's retry
+            # re-processes instead of being deduped against a failed run.
+            if wm is not None and MessageSid:
+                try:
+                    wm.release_processed_message("sms", MessageSid)
+                except Exception:  # pragma: no cover
+                    log.warning("SMS dedup release failed")
             try:
                 await self.send(From, f"⚠ error: {e}")
             except Exception:  # pragma: no cover
                 log.exception("SMS error-reply send failed")
             return Response(content="", media_type="text/xml")
 
-        # Mark processed NOW -- the budget-spending handler already succeeded.
-        # A transient outbound-send failure below must NOT 500 (Twilio would
-        # retry and re-run the whole goal, double-spending). Dedup first, then
-        # attempt the reply, logging a send failure without re-raising.
-        if wm is not None and MessageSid:
-            try:
-                wm.mark_message_processed("sms", MessageSid)
-            except Exception:  # pragma: no cover
-                log.warning("SMS dedup mark failed (handler succeeded)")
+        # Already claimed above; a transient outbound-send failure must NOT
+        # 500 (Twilio would retry and re-run the whole goal). Attempt the
+        # reply, logging a send failure without re-raising.
         try:
             await self.send(From, reply)
         except Exception:  # pragma: no cover
