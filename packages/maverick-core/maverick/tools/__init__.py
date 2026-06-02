@@ -214,11 +214,20 @@ class Tool:
 
 
 class ToolRegistry:
+    # Deferred-loading meta-tool name (see enable_deferred / find_tools.py).
+    META_TOOL = "find_tools"
+
     def __init__(self):
         self._tools: dict[str, Tool] = {}
         self._acl_allowed: set[str] = set()
         self._acl_denied: set[str] = set()
         self._acl_max_risk: str | None = None
+        # Deferred tool loading: when on, only _core (+ find_tools + any
+        # _activated) tools are shown to the model; the long tail is
+        # discovered on demand. run() can still execute ANY registered tool.
+        self._deferred = False
+        self._core: set[str] = set()
+        self._activated: set[str] = set()
 
     def set_acl(
         self,
@@ -254,8 +263,51 @@ class ToolRegistry:
     def all(self) -> list[Tool]:
         return list(self._tools.values())
 
+    # --- deferred tool loading -----------------------------------------
+    # With 80+ tools (+ MCP servers), sending every schema every turn
+    # dominates the context window. When enabled, only a small CORE set +
+    # the find_tools meta-tool are exposed to the model; the long tail is
+    # discovered and activated on demand. The exposed set is stable across
+    # turns (until an activation), so the tool-catalog prompt cache still
+    # hits. activation only governs what the model SEES -- run() executes
+    # any registered tool regardless.
+
+    def enable_deferred(self, core: set[str]) -> None:
+        """Expose only ``core`` (∩ registered) + find_tools to the model."""
+        self._deferred = True
+        self._core = {n for n in core if n in self._tools}
+
+    def deferred_enabled(self) -> bool:
+        return self._deferred
+
+    def _exposed_names(self) -> set[str]:
+        return self._core | self._activated | {self.META_TOOL}
+
+    def activate(self, names: list[str]) -> list[str]:
+        """Reveal deferred tools to the model. Returns the names that
+        resolved to a registered tool (unknown names are ignored)."""
+        resolved = [n for n in names if n in self._tools]
+        self._activated.update(resolved)
+        return resolved
+
+    def exposed(self) -> list[Tool]:
+        """Tools the model sees this turn, in registration order.
+
+        Identity when deferred loading is off, so default behavior and the
+        byte-identical tool catalog (for prompt caching) are unchanged.
+        """
+        if not self._deferred:
+            return list(self._tools.values())
+        names = self._exposed_names()
+        return [t for n, t in self._tools.items() if n in names]
+
+    def deferred_tools(self) -> list[Tool]:
+        """Registered tools not currently exposed -- find_tools' search space."""
+        names = self._exposed_names()
+        return [t for n, t in self._tools.items() if n not in names]
+
     def to_anthropic(self) -> list[dict[str, Any]]:
-        return [t.to_anthropic() for t in self._tools.values()]
+        return [t.to_anthropic() for t in self.exposed()]
 
     async def run(self, name: str, args: dict[str, Any]) -> str:
         if name not in self._tools:
@@ -303,6 +355,44 @@ class ToolRegistry:
                 except Exception:  # pragma: no cover
                     pass
                 return f"ERROR: {type(e).__name__}: {e}"
+
+
+# Tools exposed to the model by default under deferred loading. The long
+# tail (SaaS/cloud integrations, MCP, plugins) is discovered via find_tools.
+# Listing a name that isn't registered is harmless -- enable_deferred
+# intersects with the actual registry.
+CORE_TOOL_NAMES = frozenset({
+    # filesystem + execution
+    "read_file", "write_file", "list_dir", "shell",
+    # code editing
+    "str_replace_editor", "apply_patch", "ast_edit", "preview_diff",
+    # repo understanding
+    "repo_map", "dep_graph",
+    # interaction + attachments
+    "ask_user", "list_attachments",
+    # web / docs / media basics
+    "http_fetch", "web_search", "read_pdf", "view_image",
+    # memory + run introspection
+    "recall_past_goals", "kv_memory", "budget_status", "diagnose",
+    "spend_report", "notify", "compute",
+    # multi-agent
+    "spawn_subagent", "spawn_swarm",
+})
+
+
+def _deferred_loading_enabled() -> bool:
+    """Whether deferred tool loading is on (default off -- unchanged behavior).
+
+    Enable with ``MAVERICK_DEFERRED_TOOLS=1`` or ``[tools] deferred_loading =
+    true`` in ``~/.maverick/config.toml``.
+    """
+    if _env_true("MAVERICK_DEFERRED_TOOLS"):
+        return True
+    try:
+        from ..config import load_config
+        return bool(load_config().get("tools", {}).get("deferred_loading", False))
+    except Exception:  # pragma: no cover -- config never blocks the registry
+        return False
 
 
 def base_registry(
@@ -645,6 +735,15 @@ def base_registry(
         _rl_apply(reg)
     except Exception:  # pragma: no cover
         pass
+
+    # Deferred tool loading (opt-in): expose only CORE + find_tools to the
+    # model; everything else (incl. MCP and plugin tools) is discovered on
+    # demand. Enabled last, after every tool is registered, so the long tail
+    # find_tools searches is complete.
+    if _deferred_loading_enabled():
+        from .find_tools import find_tools as _find_tools
+        reg.register(_find_tools(reg))
+        reg.enable_deferred(CORE_TOOL_NAMES)
 
     return reg
 

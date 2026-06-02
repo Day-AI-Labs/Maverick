@@ -921,6 +921,12 @@ def pick_advanced() -> dict[str, bool]:
             "(slower, stronger).",
             default=False,
         ),
+        "deferred_tools": _q_confirm(
+            "Deferred tool loading? Show the model a small core toolset plus a "
+            "find_tools search tool, loading the long tail (80+ integrations, MCP) "
+            "on demand. Big context savings when many tools are enabled.",
+            default=False,
+        ),
     }
 
 
@@ -1840,6 +1846,10 @@ def write_config(
             lines.append("")
             lines.append("[reflexion]")
             lines.append("enable = true")
+        if advanced.get("deferred_tools"):
+            lines.append("")
+            lines.append("[tools]")
+            lines.append("deferred_loading = true")
 
     if mcp_servers:
         for name, cfg in mcp_servers.items():
