@@ -18,6 +18,14 @@ access, or safety scans -- it's purely a voice / tone customization.
 """
 from __future__ import annotations
 
+import logging
+
+log = logging.getLogger(__name__)
+
+# Unknown [persona] style values we've already warned about, so a misconfigured
+# style logs once per process rather than on every agent build.
+_warned_styles: set[str] = set()
+
 STYLES = {
     "concise":  "Be brief. Skip filler words. Trim qualifications.",
     "thorough": "Provide context and trade-offs. Don't oversimplify.",
@@ -55,6 +63,16 @@ def render_persona_prompt() -> str:
     style = (p["style"] or "").strip().lower()
     if style and style in STYLES:
         parts.append(STYLES[style])
+    elif style and style not in _warned_styles:
+        # A typo'd / unsupported style (e.g. "concice") would otherwise be
+        # silently dropped with no feedback. Nudge once per process toward the
+        # valid set rather than hard-erroring (voice-only, low stakes).
+        _warned_styles.add(style)
+        log.warning(
+            "[persona] style %r is not recognized and was ignored; "
+            "valid values: %s",
+            style, " | ".join(sorted(STYLES)),
+        )
     if p["addendum"]:
         parts.append(p["addendum"])
     return "\n\n# Persona\n\n" + " ".join(parts)
