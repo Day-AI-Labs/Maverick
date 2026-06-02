@@ -79,7 +79,12 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     # `env_secret` rule in maverick.secrets so both redactors agree. Only the
     # value (named group ``val``) is redacted, keeping the var name readable.
     ("env_secret",         re.compile(
-        r"(?:^|\n)\s*(?:export\s+)?[A-Z][A-Z0-9_]*"
+        # Leading indentation is `[^\S\n]*` (horizontal whitespace), NOT `\s*`:
+        # `\s` matches `\n`, and with re.MULTILINE the `(?:^|\n)` anchor fires
+        # at every line start, so on a long newline run `\s*` backtracks O(N^2)
+        # -- a ReDoS, since this scans attacker-influenced tool output. The
+        # newline is already consumed by the `(?:^|\n)` anchor.
+        r"(?:^|\n)[^\S\n]*(?:export\s+)?[A-Z][A-Z0-9_]*"
         r"(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z0-9_]*\s*=\s*"
         r"(?P<val>[^\s\n]+)",
         re.MULTILINE,
