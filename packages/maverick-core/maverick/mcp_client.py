@@ -59,6 +59,19 @@ class MCPClientError(Exception):
     pass
 
 
+def _format_rpc_error(err: object) -> str:
+    """Render a JSON-RPC ``error`` member for a message.
+
+    The spec says ``error`` is an object with ``code``/``message``, but the
+    server is untrusted: a hostile or buggy one can send a string, list, or
+    null. Calling ``.get()`` on that raised an ``AttributeError`` that killed
+    the read loop and failed every in-flight call. Format defensively instead.
+    """
+    if isinstance(err, dict):
+        return f"{err.get('code')}: {err.get('message')}"
+    return repr(err)
+
+
 @dataclass
 class MCPServerSpec:
     name: str
@@ -434,11 +447,10 @@ class MCPClient:
         # be correlated to a single request -- the server choked on our input.
         # Surface it to every in-flight caller rather than swallowing it.
         if msg.get("id") is None and "error" in msg:
-            err = msg["error"]
             self._fail_all_pending(
                 MCPClientError(
                     f"MCP {self.spec.name!r} protocol error "
-                    f"{err.get('code')}: {err.get('message')}"))
+                    f"{_format_rpc_error(msg['error'])}"))
             return
         msg_id = msg.get("id")
         if msg_id is None:
@@ -451,11 +463,10 @@ class MCPClient:
         if future.done():  # cancelled caller; nothing to deliver
             return
         if "error" in msg:
-            err = msg["error"]
             future.set_exception(
                 MCPClientError(
                     f"MCP {self.spec.name!r} error "
-                    f"{err.get('code')}: {err.get('message')}"))
+                    f"{_format_rpc_error(msg['error'])}"))
         else:
             future.set_result(msg.get("result", {}))
 
