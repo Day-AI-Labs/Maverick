@@ -132,19 +132,31 @@ def _op_submit_metric(args: dict) -> str:
 
 
 def _op_monitors(args: dict) -> str:
-    params: dict = {"page_size": max(1, min(int(args.get("limit") or 25), 100))}
+    limit = max(1, min(int(args.get("limit") or 25), 100))
     name = (args.get("name") or "").strip()
     if name:
-        params["name"] = name
-    code, data = _get("/api/v1/monitor", params)
-    if code >= 400 or not isinstance(data, list):
-        return f"ERROR: monitors ({code}): {data}"
-    if not data:
+        # /api/v1/monitor has no `name` filter -- it'd be silently ignored,
+        # returning every monitor. /api/v1/monitor/search supports
+        # `query=name:...` and returns the matches under a `monitors` key
+        # (a dict) rather than the bare list the plain list endpoint returns.
+        code, data = _get(
+            "/api/v1/monitor/search",
+            {"query": f"name:{name}", "per_page": limit},
+        )
+        if code >= 400 or not isinstance(data, dict):
+            return f"ERROR: monitors ({code}): {data}"
+        monitors = data.get("monitors") or []
+    else:
+        code, data = _get("/api/v1/monitor", {"page_size": limit})
+        if code >= 400 or not isinstance(data, list):
+            return f"ERROR: monitors ({code}): {data}"
+        monitors = data
+    if not monitors:
         return "no monitors"
     return "\n".join(
         f"  {str(m.get('id') or '?'):>10}  [{m.get('overall_state', '?'):>4}]  "
         f"{(m.get('name') or '')[:80]}"
-        for m in data
+        for m in monitors
     )
 
 
