@@ -372,6 +372,11 @@ class TestMetrics:
         """Wave 4 council security finding: on a VPS with
         MAVERICK_DASHBOARD_TOKEN set, /healthz must NOT leak the
         absolute DB path in error messages (it exposes the OS username).
+
+        Issue #468 hardens this further: the auth-exempt payload now drops
+        the whole ``checks`` block under a token (which also leaked
+        ``llm_key`` and a live in-flight gauge), collapsing to just the
+        status. So no DB path can appear at all.
         """
         monkeypatch.setenv("MAVERICK_DASHBOARD_TOKEN", "s3cr3t")
         # Point DEFAULT_DB at an unwritable path so the DB check fails.
@@ -381,11 +386,10 @@ class TestMetrics:
 
         resp = client.get("/healthz")
         body = resp.json()
-        db_check = body["checks"]["db"]
-        # Exception class name is fine for debuggability; the absolute
-        # path (revealing OS username) is not.
-        assert "subdir-that-does-not-exist" not in db_check
-        assert str(bad_path) not in db_check
+        # Minimal payload under a token: only the status, no checks block.
+        assert "checks" not in body
+        assert "subdir-that-does-not-exist" not in resp.text
+        assert str(bad_path) not in resp.text
 
     def test_metrics_prometheus_format(self):
         resp = client.get("/metrics")

@@ -157,6 +157,29 @@ def _mount_task_endpoint(app: Any) -> None:
 
     engine = TaskEngine()
 
+    # A2A JSON-RPC bodies are small task envelopes. Cap them with the same
+    # 256 KiB limit the dashboard webhooks use so an (optionally
+    # unauthenticated) caller can't force the server to buffer an arbitrarily
+    # large request body. ``request.json()`` buffers the whole body before
+    # parsing, so enforce the cap on the raw stream first.
+    _MAX_A2A_BODY_BYTES = 256 * 1024
+
+    async def _read_limited_body(request) -> bytes | None:
+        """Read the body with a hard size cap; return None if it's too large."""
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > _MAX_A2A_BODY_BYTES:
+                    return None
+            except ValueError:
+                return None
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > _MAX_A2A_BODY_BYTES:
+                return None
+        return bytes(body)
+
     def _rpc_result(req_id: Any, result: Any) -> dict[str, Any]:
         return {"jsonrpc": "2.0", "id": req_id, "result": result}
 
@@ -173,8 +196,14 @@ def _mount_task_endpoint(app: Any) -> None:
     # (where the locally-imported Request wouldn't be found -> 422).
     async def _a2a_rpc(request):
         authorization = request.headers.get("authorization")
+        raw = await _read_limited_body(request)
+        if raw is None:
+            return JSONResponse(
+                _rpc_error(None, -32600, "request body too large"),
+                status_code=413,
+            )
         try:
-            body = await request.json()
+            body = _json.loads(raw)
         except Exception:
             return JSONResponse(_rpc_error(None, -32700, "parse error"))
         if not isinstance(body, dict):

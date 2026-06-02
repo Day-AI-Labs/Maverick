@@ -8,7 +8,7 @@ import json
 import logging
 import os
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile
 from maverick.runner import (
     DEFAULT_MAX_DEPTH,
     DEFAULT_MAX_DOLLARS,
@@ -113,7 +113,7 @@ def _to_goal_out(g) -> GoalOut:
 
 
 @router.post("/goals", response_model=GoalOut, status_code=201)
-async def create_goal(payload: GoalIn, bg: BackgroundTasks) -> GoalOut:
+async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) -> GoalOut:
     if not _any_provider_key_set():
         raise HTTPException(
             status_code=400,
@@ -126,7 +126,7 @@ async def create_goal(payload: GoalIn, bg: BackgroundTasks) -> GoalOut:
     # Shared sliding-window cap across /chat/send + this route, so a
     # runaway loop can't spawn unbounded (paid) goals.
     from maverick_dashboard.app import check_goal_rate_limit
-    check_goal_rate_limit()
+    check_goal_rate_limit(request)
     title = payload.title
     description = payload.description
     if payload.template:
