@@ -1,8 +1,8 @@
 # Tool inventory — maintenance & risk audit
 
 **Purpose.** Decision-support for the *breadth-vs-depth* question raised in
-[`ROADMAP-ADDITIONS.md`](../ROADMAP-ADDITIONS.md) (thesis: "the highest-value
-additions are not more breadth"). This audit buckets the **103** tools in
+[`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (thesis: "the
+highest-value additions are not more breadth"). This audit buckets the **103** tools in
 `packages/maverick-core/maverick/tools/` by **what they cost to maintain** and
 **how much capability/risk they carry**, so the team can decide what stays in the
 core and what should move to the community **plugin** tier.
