@@ -87,6 +87,21 @@ jobs:
         run: |
           python -m pip install pip-audit
           pip-audit
+      - name: SAST (bandit, high-severity)
+        # BLOCKING static-analysis gate over shipped source (tests excluded:
+        # asserts / subprocess there are expected). High-severity tests catch
+        # the serious classes -- shell/command injection, weak crypto, insecure
+        # deserialization, disabled TLS verification, etc. -- so a new instance
+        # fails the build. By-design findings carry an inline `# nosec <id>`
+        # with justification. B613 (bidi chars in source) is skipped: its only
+        # hits are the shield's intentional invisible-char DETECTION patterns;
+        # converting those to \u escapes and re-enabling it is a tracked
+        # follow-up. Tighten to medium severity once the B608 false-positive
+        # parameterized-IN sites are annotated.
+        run: |
+          python -m pip install 'bandit>=1.7'
+          python -m bandit -q -r packages apps -lll -ii -s B613 \
+            -x '*/tests/*,*/test_*.py'
 
   test:
     runs-on: ubuntu-latest
