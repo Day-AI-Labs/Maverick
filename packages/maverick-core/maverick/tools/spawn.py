@@ -133,6 +133,15 @@ def spawn_swarm_tool(parent: Agent) -> Tool:
 
         results = await asyncio.gather(*(c.run() for c in children), return_exceptions=True)
 
+        # A child hitting the budget cap or the killswitch is a STOP signal for
+        # the whole swarm, not a per-child failure -- re-raise it instead of
+        # folding it into the result string (matches agent.py's gather handler).
+        from .. import killswitch as _ks
+        from ..budget import BudgetExceeded as _BE
+        for res in results:
+            if isinstance(res, (_BE, _ks.Halted)):
+                raise res
+
         # SubagentStop hooks: one per child that completed without raising.
         from ..hooks import HookEvent
         from ..hooks import emit as _emit_hook

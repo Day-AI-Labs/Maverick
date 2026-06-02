@@ -69,9 +69,22 @@ class TelegramChannel(Channel):
     def _is_authorized(self, update: Update) -> bool:
         user_id = str(update.effective_user.id) if update.effective_user else ""
         chat_id = str(update.effective_chat.id) if update.effective_chat else ""
+        chat_type = getattr(update.effective_chat, "type", None)
+
+        # An allowlisted sender is always authorized, in any chat.
         if self.allowed_user_ids and user_id in self.allowed_user_ids:
             return True
-        if self.allowed_chat_ids and chat_id in self.allowed_chat_ids:
+
+        # A chat allowlist must NOT authorize every member of a group: any
+        # participant of an allowlisted group could otherwise drive the agent.
+        # A private (1:1) chat has a single sender, so an allowlisted private
+        # chat is equivalent to an allowlisted user -- honour it there only.
+        # In groups, require the sender to be on TELEGRAM_ALLOWED_USER_IDS.
+        if (
+            chat_type == "private"
+            and self.allowed_chat_ids
+            and chat_id in self.allowed_chat_ids
+        ):
             return True
         return False
 
@@ -84,8 +97,8 @@ class TelegramChannel(Channel):
                         getattr(update.effective_chat, "id", None))
             return
         # effective_user is None for channel posts / anonymous admins;
-        # _is_authorized handles that via allowed_chat_ids, so guard here
-        # too rather than AttributeError after auth passed.
+        # _is_authorized denies those (they can't be attributed to an
+        # allowlisted sender), but guard here too rather than AttributeError.
         msg = IncomingMessage(
             user_id=str(update.effective_user.id) if update.effective_user else "",
             text=update.message.text,

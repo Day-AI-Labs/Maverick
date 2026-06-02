@@ -31,7 +31,13 @@ from __future__ import annotations
 import logging
 import os
 
-from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
+from .base import (
+    Channel,
+    IncomingMessage,
+    is_allowed,
+    normalize_allowlist,
+    public_url_for,
+)
 
 log = logging.getLogger(__name__)
 
@@ -105,7 +111,9 @@ class WhatsAppChannel(Channel):
     ):
         # Validate Twilio signature so random POSTs can't spoof inbound.
         signature = request.headers.get("X-Twilio-Signature", "")
-        url = str(request.url)
+        # Validate against the PUBLIC URL Twilio signed, not the loopback URL
+        # the reverse proxy forwarded to (see public_url_for).
+        url = public_url_for(request)
         form = await request.form()
         form_dict = {k: str(v) for k, v in form.items()}
         if not self._validator.validate(url, form_dict, signature):
@@ -119,7 +127,9 @@ class WhatsAppChannel(Channel):
             raise HTTPException(status_code=403, detail="sender not allowed")
 
         # Twilio retries; lookup-then-mark so a handler crash doesn't
-        # permanently lose the message (Twilio retry re-processes it).
+        # permanently lose the message (Twilio retry re-processes it). We mark
+        # immediately AFTER the handler returns (not after the outbound send),
+        # so a transient send failure can't trigger a full goal re-run.
         wm = None
         if MessageSid:
             try:
@@ -137,15 +147,27 @@ class WhatsAppChannel(Channel):
             reply = await self.handler(msg)
         except Exception as e:  # pragma: no cover
             log.exception("handler error")
-            reply = f"⚠ error: {e}"
-            await self.send(From, reply)
+            # Don't mark as processed on handler error -- let Twilio retry the
+            # full goal. The handler burned no useful budget if it raised.
+            try:
+                await self.send(From, f"⚠ error: {e}")
+            except Exception:  # pragma: no cover
+                log.exception("WhatsApp error-reply send failed")
             return Response(content="", media_type="text/xml")
-        await self.send(From, reply)
+
+        # Mark processed NOW -- the budget-spending handler already succeeded.
+        # A transient outbound-send failure below must NOT 500 (Twilio would
+        # retry and re-run the whole goal, double-spending). Dedup first, then
+        # attempt the reply, logging a send failure without re-raising.
         if wm is not None and MessageSid:
             try:
                 wm.mark_message_processed("whatsapp", MessageSid)
             except Exception:  # pragma: no cover
-                log.warning("WhatsApp dedup mark failed (message processed OK)")
+                log.warning("WhatsApp dedup mark failed (handler succeeded)")
+        try:
+            await self.send(From, reply)
+        except Exception:  # pragma: no cover
+            log.exception("WhatsApp reply send failed (goal already processed)")
         return Response(content="", media_type="text/xml")
 
     async def start(self) -> None:

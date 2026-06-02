@@ -1067,6 +1067,12 @@ async def run_goal_best_of_n(
                     orchestrator_model_override=per_model or None,
                 )
             except Exception as e:
+                # A budget cap or killswitch is a STOP signal, not a normal
+                # attempt failure -- re-raise so it propagates instead of being
+                # downgraded to a zero-score candidate (matches agent.py).
+                from . import killswitch as _ks
+                if isinstance(e, (BudgetExceeded, _ks.Halted)):
+                    raise
                 log.warning("best-of-N attempt %d failed: %s", i, e)
                 candidates.append(Candidate(
                     index=i, patch="", score=0.0,
