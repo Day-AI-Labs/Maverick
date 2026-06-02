@@ -93,12 +93,14 @@ def test_cancel_pending_task():
 def test_push_config_set_and_get():
     eng = TaskEngine(runner=_fake_runner)
     t = eng._new_task(_msg("x"))
-    cfg = {"url": "https://client.example/wh", "token": "abc"}
+    # Literal public IP: registration-time SSRF check resolves it without DNS.
+    cfg = {"url": "https://93.184.216.34/wh", "token": "abc"}
     res = eng.set_push_config({"taskId": t.id, "pushNotificationConfig": cfg})
     assert res["pushNotificationConfig"]["url"] == cfg["url"]
-    # get_push_config must NOT echo the registered webhook token: a peer sharing
+    # neither set nor get echoes the registered webhook token: a peer sharing
     # the single A2A bearer token could otherwise read another caller's secret.
     # The url is still returned; the token is masked.
+    assert res["pushNotificationConfig"]["token"] == "***"
     got = eng.get_push_config({"taskId": t.id})["pushNotificationConfig"]
     assert got["url"] == cfg["url"]
     assert got["token"] == "***" and got["token"] != "abc"
@@ -106,6 +108,50 @@ def test_push_config_set_and_get():
     assert eng._tasks[t.id].push_config["token"] == "abc"
     with pytest.raises(_RpcError):  # url is required
         eng.set_push_config({"taskId": t.id, "pushNotificationConfig": {}})
+
+
+def test_set_push_config_rejects_ssrf_url_at_registration():
+    """A loopback/metadata push URL is refused at registration, never stored."""
+    eng = TaskEngine(runner=_fake_runner)
+    t = eng._new_task(_msg("x"))
+    for url in (
+        "http://127.0.0.1:8765/api/v1/killswitch",
+        "http://169.254.169.254/latest/meta-data/",
+        "file:///etc/passwd",
+    ):
+        with pytest.raises(_RpcError):
+            eng.set_push_config(
+                {"taskId": t.id, "pushNotificationConfig": {"url": url}},
+            )
+    assert eng._tasks[t.id].push_config is None
+
+
+def test_tasks_are_scoped_to_principal():
+    """Under unauthenticated/shared access, one principal must not read, cancel,
+    or redirect another principal's task -- a cross-principal lookup 404s."""
+    eng = TaskEngine(runner=_fake_runner)
+    owner = TaskEngine.principal_for("Bearer alice")
+    other = TaskEngine.principal_for("Bearer bob")
+    assert owner != other
+    task = asyncio.run(eng.send(_msg("x"), owner))
+    tid = task["id"]
+    # owner can read/cancel/configure
+    assert eng.get({"id": tid}, owner)["id"] == tid
+    # a different principal is rejected (404-shaped, not 403) on every path
+    with pytest.raises(_RpcError):
+        eng.get({"id": tid}, other)
+    with pytest.raises(_RpcError):
+        eng.cancel({"id": tid}, other)
+    with pytest.raises(_RpcError):
+        eng.get_push_config({"taskId": tid}, other)
+    with pytest.raises(_RpcError):
+        eng.set_push_config(
+            {"taskId": tid,
+             "pushNotificationConfig": {"url": "https://93.184.216.34/wh"}},
+            other,
+        )
+    # the owner's task is untouched by the rejected cancel attempt
+    assert eng.get({"id": tid}, owner)["status"]["state"] == "completed"
 
 
 # ---- auth + budget clamping ------------------------------------------
@@ -128,16 +174,38 @@ def test_auth_model(monkeypatch):
     assert eng.auth_error("Bearer sekret") is None
 
 
-def test_budget_is_clamped_to_ceiling(monkeypatch):
-    monkeypatch.setenv("MAVERICK_A2A_MAX_DOLLARS", "2.5")
+def _budget_recorder():
     captured = {}
 
     def rec(text, *, max_dollars, max_wall, max_depth):
         captured.update(d=max_dollars)
         return "ok"
 
+    return rec, captured
+
+
+def test_budget_defaults_to_ceiling_when_client_silent(monkeypatch):
+    monkeypatch.setenv("MAVERICK_A2A_MAX_DOLLARS", "2.5")
+    rec, captured = _budget_recorder()
     eng = TaskEngine(runner=rec)
     asyncio.run(eng.send(_msg("hi")))
+    assert captured["d"] == 2.5
+
+
+def test_client_budget_is_clamped_to_operator_ceiling(monkeypatch):
+    """The CLIENT request is honoured but clamped to the operator ceiling --
+    not the old tautology where the env var was both value and ceiling and the
+    client request was ignored."""
+    monkeypatch.setenv("MAVERICK_A2A_MAX_DOLLARS", "2.5")
+    rec, captured = _budget_recorder()
+    eng = TaskEngine(runner=rec)
+    # client asks for LESS than the ceiling -> honoured (down)
+    params = {**_msg("hi"), "configuration": {"max_dollars": 1.0}}
+    asyncio.run(eng.send(params))
+    assert captured["d"] == 1.0
+    # client asks for MORE than the ceiling -> clamped to the operator max
+    params = {**_msg("hi"), "configuration": {"max_dollars": 100.0}}
+    asyncio.run(eng.send(params))
     assert captured["d"] == 2.5
 
 

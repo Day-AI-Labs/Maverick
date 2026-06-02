@@ -987,13 +987,19 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
     """Generic inbound webhook: create a goal from an HMAC-signed POST.
 
     Body is JSON ``{title, description?, budget?}``. The request must carry
-    an ``X-Maverick-Signature: sha256=<hex>`` header computed over the raw
-    body with the configured ``[webhooks] secret`` (see
-    ``maverick.webhooks``). Returns ``{"goal_id": <int>}`` on success.
+    an ``X-Maverick-Signature: sha256=<hex>`` header computed over the
+    timestamp + raw body with the configured ``[webhooks] secret`` (see
+    ``maverick.webhooks``), plus an ``X-Maverick-Timestamp`` header. Returns
+    ``{"goal_id": <int>}`` on success.
 
     Auth: this route is exempt from the dashboard bearer / same-origin
     middleware (see ``_AUTH_EXEMPT``); the HMAC signature is the only
     credential. We fail closed -- a missing/empty secret yields 401.
+
+    Replay defence (Maverick-CONTROLLED format): the signature binds the
+    ``X-Maverick-Timestamp``; a request whose timestamp is outside the
+    configured freshness window (``[webhooks] max_age_seconds``) is rejected,
+    so a captured signed request can't be replayed to re-spend budget.
     """
     from maverick.webhooks import inbound_secret, verify_signature
 
@@ -1007,10 +1013,11 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
             ),
         )
     signature = request.headers.get("X-Maverick-Signature") or ""
-    if not signature:
+    timestamp = request.headers.get("X-Maverick-Timestamp") or ""
+    if not signature or not timestamp:
         raise HTTPException(status_code=403, detail="bad webhook signature")
     body = await _read_limited_webhook_body(request)
-    if not verify_signature(body, signature, secret):
+    if not verify_signature(body, signature, secret, timestamp=timestamp):
         raise HTTPException(status_code=403, detail="bad webhook signature")
 
     if not _any_provider_key_set():

@@ -219,10 +219,15 @@ def _mount_task_endpoint(app: Any) -> None:
                 status_code=401,
             )
 
+        # Bind every call to a principal so tasks are scoped to their creator: a
+        # client can't get/cancel/redirect another principal's task. Derived
+        # from the presented bearer; "anon" when unauthenticated.
+        principal = engine.principal_for(authorization)
+
         if method in STREAM_METHODS:
             async def _gen():
                 try:
-                    async for event in engine.stream(params):
+                    async for event in engine.stream(params, principal):
                         yield _sse(_rpc_result(req_id, event))
                 except _RpcError as e:
                     yield _sse(_rpc_error(req_id, e.code, e.message))
@@ -230,15 +235,15 @@ def _mount_task_endpoint(app: Any) -> None:
 
         try:
             if method == "message/send":
-                result = await engine.send(params)
+                result = await engine.send(params, principal)
             elif method == "tasks/get":
-                result = engine.get(params)
+                result = engine.get(params, principal)
             elif method == "tasks/cancel":
-                result = engine.cancel(params)
+                result = engine.cancel(params, principal)
             elif method == "tasks/pushNotificationConfig/set":
-                result = engine.set_push_config(params)
+                result = engine.set_push_config(params, principal)
             elif method == "tasks/pushNotificationConfig/get":
-                result = engine.get_push_config(params)
+                result = engine.get_push_config(params, principal)
             else:
                 return JSONResponse(
                     _rpc_error(req_id, -32601, f"method not found: {method}")
