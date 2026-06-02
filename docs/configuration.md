@@ -191,3 +191,9 @@ MAVERICK_MAX_CONCURRENT_GOALS=4 maverick dashboard
 ```
 
 Default is 2. Raise on a beefy machine; lower on a Raspberry Pi.
+
+## Environment variables
+
+Most settings live in this file, but many can be overridden (or only set) via
+`MAVERICK_*` environment variables — see **[Environment variables](env-vars.md)**
+for the full reference.
