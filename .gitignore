@@ -90,3 +90,6 @@ Thumbs.db
 # Build outputs
 *.log
 .maverick-workspace/
+
+# generated security-benchmark run artifact (RESULTS.md is the checked-in record)
+benchmarks/security/results.jsonl
