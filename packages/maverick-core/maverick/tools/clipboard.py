@@ -8,7 +8,10 @@ Intentionally host-local: the clipboard is a host-desktop resource, so
 this tool shells out directly (with a scrubbed env) rather than through
 ``sandbox.exec`` — a sandboxed container has no access to the user's
 clipboard. This is a deliberate exception to the "sandbox-mediate all
-shell" rule, not an oversight.
+shell" rule, not an oversight. Because the host path can't be sandboxed,
+both read and write are gated through ``safety.consent.require_consent``
+(the clipboard holds passwords / 2FA codes / tokens) — that consent gate
+is this tool's safety boundary in place of sandbox mediation.
 
 Implementation strategy:
   1. ``pyperclip`` if installed (cross-platform, best UX)
@@ -132,10 +135,39 @@ def _write_clipboard(text: str) -> bool:
     return False
 
 
+def _consent_ok(op: str) -> bool:
+    """Gate clipboard read/write through the consent/approvals path.
+
+    The clipboard routinely holds passwords / 2FA codes / tokens, so a
+    prompt-injected agent could silently exfiltrate (read) or plant
+    (write) content. Both ops therefore go through ``require_consent``.
+    Under the default 'auto-approve' mode this is a no-op (granted +
+    logged), so behavior is unchanged out of the box; an operator who
+    sets MAVERICK_CONSENT_MODE to ask / dashboard / auto-deny gets every
+    clipboard access gated. A denial returns False so the caller can
+    surface a clear error instead of crashing.
+
+    This tool stays on the host path -- the desktop clipboard can't be
+    sandboxed (see the module docstring) -- so the consent gate is its
+    safety boundary, not sandbox.exec.
+    """
+    from ..safety import ConsentDenied, require_consent
+    try:
+        require_consent(
+            "clipboard", risk="high", scope=op, detail=f"clipboard {op}",
+            raise_on_deny=True,
+        )
+        return True
+    except ConsentDenied:
+        return False
+
+
 def _run(args: dict[str, Any]) -> str:
     if os.environ.get("MAVERICK_CLIPBOARD_DISABLE") == "1":
         return "ERROR: clipboard tool disabled by MAVERICK_CLIPBOARD_DISABLE=1"
     op = args.get("op")
+    if op in ("read", "write") and not _consent_ok(op):
+        return "ERROR: clipboard access denied (consent)"
     if op == "read":
         val = _read_clipboard()
         if val is None:
