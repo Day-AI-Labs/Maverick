@@ -283,13 +283,26 @@ class TestAcquireMcpServer:
             self_learning.acquire_mcp_server("weather")
         assert not cfg.exists()
 
-    def test_approved_persists_with_pin(self, monkeypatch, tmp_path):
+    def test_default_auto_approve_not_explicit_enough(self, monkeypatch, tmp_path):
+        from maverick.safety.consent import ConsentDenied
         cfg = tmp_path / "config.toml"
         monkeypatch.setattr("maverick.config.config_path", lambda: cfg)
+        monkeypatch.setattr("maverick.catalog.resolve", lambda *a, **k: self._entry())
+        monkeypatch.delenv("MAVERICK_CONSENT_MODE", raising=False)
+        with pytest.raises(ConsentDenied):
+            self_learning.acquire_mcp_server("weather")
+        assert not cfg.exists()
+
+    def test_approved_persists_with_pin(self, monkeypatch, tmp_path):
+        from maverick.safety import consent
+        cfg = tmp_path / "config.toml"
+        monkeypatch.setattr("maverick.config.config_path", lambda: cfg)
+        monkeypatch.setattr(consent, "CONSENT_LEDGER_PATH", tmp_path / "consent.ledger")
         monkeypatch.setattr(
             "maverick.catalog.resolve",
             lambda *a, **k: self._entry(source="npx -y @scope/weather", sha256="cd" * 32))
-        monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-approve")
+        monkeypatch.delenv("MAVERICK_CONSENT_MODE", raising=False)
+        consent.grant_persistent("add-mcp-server", scope="weather")
         spec = self_learning.acquire_mcp_server("weather")
         assert spec.command == "npx"
         assert spec.args == ["-y", "@scope/weather"]
@@ -307,7 +320,10 @@ class TestAcquireMcpServer:
         monkeypatch.setattr(
             "maverick.catalog.resolve",
             lambda *a, **k: self._entry(source="node;rm"))
-        monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-approve")
+        from maverick.safety import consent
+        monkeypatch.setattr(consent, "CONSENT_LEDGER_PATH", tmp_path / "consent.ledger")
+        monkeypatch.delenv("MAVERICK_CONSENT_MODE", raising=False)
+        consent.grant_persistent("add-mcp-server", scope="weather")
         with pytest.raises(ValueError):
             self_learning.acquire_mcp_server("weather")
         assert not cfg.exists()
@@ -582,9 +598,10 @@ class TestLearnTool:
 
     @pytest.mark.asyncio
     async def test_add_mcp_server_catalog_pinned_consent_gate(self, monkeypatch, tmp_path, stub_agent):
-        # Opt-in ON + a catalog entry + consent auto-deny -> NOT persisted,
-        # NOT started. Then auto-approve -> persisted (start is attempted but
-        # the fake command fails to spawn, which is fine for this assertion).
+        # Opt-in ON + a catalog entry + consent auto-deny/default-auto-approve
+        # -> NOT persisted, NOT started. Then an explicit ledger grant ->
+        # persisted (start is attempted but the fake command fails to spawn,
+        # which is fine for this assertion).
         cfg = tmp_path / "config.toml"
         monkeypatch.setattr("maverick.config.config_path", lambda: cfg)
         monkeypatch.setenv("MAVERICK_ALLOW_MCP_ACQUISITION", "1")
@@ -605,8 +622,17 @@ class TestLearnTool:
         assert not cfg.exists()
         assert stub_agent.ctx.mcp_clients == []
 
-        # Approved -> persisted to config (start will fail on the fake cmd).
-        monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-approve")
+        # Default auto-approve is not explicit approval for this high-trust path.
+        monkeypatch.delenv("MAVERICK_CONSENT_MODE", raising=False)
+        out = await tool.fn({"op": "add_mcp_server", "name": "weather"})
+        assert "NOT ADDED" in out
+        assert not cfg.exists()
+        assert stub_agent.ctx.mcp_clients == []
+
+        # Explicitly approved -> persisted to config (start will fail on the fake cmd).
+        from maverick.safety import consent
+        monkeypatch.setattr(consent, "CONSENT_LEDGER_PATH", tmp_path / "consent.ledger")
+        consent.grant_persistent("add-mcp-server", scope="weather")
         out = await tool.fn({"op": "add_mcp_server", "name": "weather"})
         assert "[mcp_servers.weather]" in cfg.read_text()
         assert 'command = "node"' in cfg.read_text()

@@ -467,7 +467,7 @@ def acquire_mcp_server(name: str, *, need: str = "") -> Any:
     )
     require_consent(
         "add-mcp-server", risk="high", scope=name, detail=detail,
-        raise_on_deny=True,
+        raise_on_deny=True, allow_auto_approve=False,
     )
 
     return add_mcp_server(
