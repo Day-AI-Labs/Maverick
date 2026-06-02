@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import time
 
 import pytest
 from fastapi import HTTPException
@@ -23,7 +24,23 @@ client = TestClient(app)
 SECRET = "test-webhook-secret"
 
 
+def _sign_at(body: bytes, ts: str) -> str:
+    """Sign timestamp+body, mirroring webhooks._sign(timestamp=...)."""
+    material = f"{ts}.".encode() + body
+    return "sha256=" + hmac.new(SECRET.encode("utf-8"), material, hashlib.sha256).hexdigest()
+
+
+def _headers(body: bytes, ts: str | None = None) -> dict[str, str]:
+    """Signed + timestamped headers for a fresh (replay-safe) request."""
+    ts = ts if ts is not None else str(int(time.time()))
+    return {
+        "X-Maverick-Signature": _sign_at(body, ts),
+        "X-Maverick-Timestamp": ts,
+    }
+
+
 def _sign(body: bytes) -> str:
+    """Body-only signature (no timestamp) -- used to assert it's now rejected."""
     return "sha256=" + hmac.new(SECRET.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
 
@@ -55,11 +72,7 @@ def _configured(monkeypatch):
 
 def test_valid_signature_creates_goal(_configured, _no_real_run):
     body = json.dumps({"title": "ship it", "description": "do the thing"}).encode()
-    resp = client.post(
-        "/webhook/start",
-        content=body,
-        headers={"X-Maverick-Signature": _sign(body)},
-    )
+    resp = client.post("/webhook/start", content=body, headers=_headers(body))
     assert resp.status_code == 201
     goal_id = resp.json()["goal_id"]
     assert isinstance(goal_id, int)
@@ -76,13 +89,43 @@ def test_valid_signature_creates_goal(_configured, _no_real_run):
 
 def test_budget_propagates_to_runner(_configured, _no_real_run):
     body = json.dumps({"title": "capped", "budget": 1.5}).encode()
-    resp = client.post(
-        "/webhook/start",
-        content=body,
-        headers={"X-Maverick-Signature": _sign(body)},
-    )
+    resp = client.post("/webhook/start", content=body, headers=_headers(body))
     assert resp.status_code == 201
     assert _no_real_run[0][1] == 1.5
+
+
+def test_stale_timestamp_replay_rejected(_configured, _no_real_run):
+    """A captured-but-stale signed request is rejected (replay defence): the
+    signature is valid for the timestamp, but the timestamp is outside the
+    freshness window, so the request must not re-spend budget."""
+    body = json.dumps({"title": "replayed"}).encode()
+    stale = str(int(time.time()) - 10_000)  # well past the 300s window
+    resp = client.post(
+        "/webhook/start", content=body, headers=_headers(body, ts=stale),
+    )
+    assert resp.status_code == 403
+    assert _no_real_run == []
+
+
+def test_fresh_timestamp_passes(_configured, _no_real_run):
+    """The same payload with a fresh timestamp is accepted -- replay protection
+    rejects only stale captures, not legitimate fresh requests."""
+    body = json.dumps({"title": "fresh"}).encode()
+    resp = client.post("/webhook/start", content=body, headers=_headers(body))
+    assert resp.status_code == 201
+    assert len(_no_real_run) == 1
+
+
+def test_body_only_signature_without_timestamp_rejected(_configured, _no_real_run):
+    """A legacy body-only signature (no X-Maverick-Timestamp) is now rejected:
+    the timestamp is required so a replay can't omit it to dodge the window."""
+    body = json.dumps({"title": "no-ts"}).encode()
+    resp = client.post(
+        "/webhook/start", content=body,
+        headers={"X-Maverick-Signature": _sign(body)},
+    )
+    assert resp.status_code == 403
+    assert _no_real_run == []
 
 
 def test_invalid_signature_rejected(_configured, _no_real_run):
@@ -122,11 +165,7 @@ def test_no_secret_configured_fails_closed(monkeypatch, _no_real_run):
 
 def test_missing_title_rejected(_configured, _no_real_run):
     body = json.dumps({"description": "no title"}).encode()
-    resp = client.post(
-        "/webhook/start",
-        content=body,
-        headers={"X-Maverick-Signature": _sign(body)},
-    )
+    resp = client.post("/webhook/start", content=body, headers=_headers(body))
     assert resp.status_code == 400
     assert _no_real_run == []
 
@@ -145,7 +184,10 @@ def test_oversized_content_length_rejected_before_signature_check(
     resp = client.post(
         "/webhook/start",
         content=body,
-        headers={"X-Maverick-Signature": "sha256=invalid"},
+        headers={
+            "X-Maverick-Signature": "sha256=invalid",
+            "X-Maverick-Timestamp": str(int(time.time())),
+        },
     )
     assert resp.status_code == 413
     assert _no_real_run == []
@@ -186,21 +228,13 @@ def test_oversized_budget_clamped_to_default_ceiling(_configured, _no_real_run):
     # must clamp to DEFAULT_MAX_DOLLARS, exactly as the REST route does.
     from maverick.runner import DEFAULT_MAX_DOLLARS
     body = json.dumps({"title": "greedy", "budget": 1_000_000}).encode()
-    resp = client.post(
-        "/webhook/start",
-        content=body,
-        headers={"X-Maverick-Signature": _sign(body)},
-    )
+    resp = client.post("/webhook/start", content=body, headers=_headers(body))
     assert resp.status_code == 201
     assert _no_real_run[0][1] == DEFAULT_MAX_DOLLARS
 
 
 def test_negative_budget_clamped_to_zero(_configured, _no_real_run):
     body = json.dumps({"title": "neg", "budget": -5}).encode()
-    resp = client.post(
-        "/webhook/start",
-        content=body,
-        headers={"X-Maverick-Signature": _sign(body)},
-    )
+    resp = client.post("/webhook/start", content=body, headers=_headers(body))
     assert resp.status_code == 201
     assert _no_real_run[0][1] == 0.0

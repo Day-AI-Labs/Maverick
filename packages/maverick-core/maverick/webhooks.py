@@ -59,9 +59,47 @@ def _load_config_outbound() -> tuple[list[str], str | None]:
     return urls, secret
 
 
-def _sign(body: bytes, secret: str) -> str:
-    mac = hmac.new(secret.encode("utf-8"), body, hashlib.sha256)
+def _sign(body: bytes, secret: str, *, timestamp: str | None = None) -> str:
+    """HMAC-SHA256 of the request body, optionally binding a timestamp.
+
+    When ``timestamp`` is given it is prepended to the signed material
+    (``"<ts>.".encode() + body``). This is the Maverick-CONTROLLED replay
+    defence: the sender sends the same ``timestamp`` in an ``X-Maverick-
+    Timestamp`` header, so a captured request can't be replayed past the
+    freshness window without breaking the signature. Body-only signing
+    (``timestamp=None``) is preserved for the existing receiver round-trip.
+    """
+    mac = hmac.new(secret.encode("utf-8"), _signed_material(body, timestamp),
+                   hashlib.sha256)
     return "sha256=" + mac.hexdigest()
+
+
+def _signed_material(body: bytes, timestamp: str | None) -> bytes:
+    if timestamp is None:
+        return body
+    return f"{timestamp}.".encode() + body
+
+
+def _default_max_age() -> int:
+    """Replay window (seconds) for Maverick-signed inbound webhooks.
+
+    Config knob: ``[webhooks] max_age_seconds`` in config.toml, overridable by
+    ``MAVERICK_WEBHOOK_MAX_AGE_SECONDS``. Defaults to 300s (5 min)."""
+    env = os.environ.get("MAVERICK_WEBHOOK_MAX_AGE_SECONDS")
+    if env:
+        try:
+            return max(1, int(env))
+        except ValueError:
+            pass
+    try:
+        from .config import load_config
+        section = (load_config() or {}).get("webhooks") or {}
+        val = section.get("max_age_seconds")
+        if val is not None:
+            return max(1, int(val))
+    except Exception:
+        pass
+    return 300
 
 
 def _get_executor():
@@ -84,12 +122,26 @@ def _post(url: str, body: bytes, headers: dict[str, str], timeout: float) -> Non
     # land in the default-level logs / log aggregator verbatim.
     safe_url = scrub(url)
     try:
-        import httpx
+        import httpx  # noqa: F401  (presence check; client built via _ssrf)
     except ImportError:
         log.warning("webhooks: httpx not installed; skipping %s", safe_url)
         return
+    # Route through the SSRF guard: an outbound URL comes from user config, but
+    # a config that points at a loopback/metadata/internal host would let the
+    # webhook dispatcher be used as an SSRF proxy. safe_client resolves once,
+    # rejects any non-public address, and pins the connection (no rebind).
     try:
-        resp = httpx.post(url, content=body, headers=headers, timeout=timeout)
+        from .tools._ssrf import BlockedHost, safe_client
+    except Exception:  # pragma: no cover - guard unavailable
+        return
+    try:
+        client = safe_client(url, timeout=timeout)
+    except BlockedHost as e:
+        log.warning("webhooks: %s blocked (SSRF guard): %s", safe_url, e)
+        return
+    try:
+        with client:
+            resp = client.post(url, content=body, headers=headers)
         if resp.status_code >= 400:
             log.warning(
                 "webhooks: %s returned %d: %s",
@@ -137,7 +189,13 @@ def fire(
         "X-Maverick-Event": event,
     }
     if secret:
-        headers["X-Maverick-Signature"] = _sign(body, secret)
+        # Bind a timestamp into the signature so a receiver enforcing a max-age
+        # (see verify_signature) can reject a replayed capture. The timestamp is
+        # sent alongside in X-Maverick-Timestamp and is part of the signed
+        # material -- it can't be altered without breaking the HMAC.
+        ts = str(int(time.time()))
+        headers["X-Maverick-Timestamp"] = ts
+        headers["X-Maverick-Signature"] = _sign(body, secret, timestamp=ts)
 
     executor = _get_executor()
     for url in urls:
@@ -145,15 +203,43 @@ def fire(
     return len(urls)
 
 
-def verify_signature(body: bytes, signature: str, secret: str) -> bool:
+def verify_signature(
+    body: bytes,
+    signature: str,
+    secret: str,
+    *,
+    timestamp: str | None = None,
+    max_age: int | None = None,
+) -> bool:
     """Verify an inbound webhook signature (mirror of _sign()).
 
     Useful for receivers building on Maverick's webhook format.
+
+    When ``timestamp`` is supplied the signature must cover that timestamp
+    (replay defence for the Maverick-CONTROLLED format) AND the timestamp must
+    be within ``max_age`` seconds of now -- a captured-but-stale request is
+    rejected even though its HMAC is otherwise valid. ``max_age`` defaults to
+    ``_default_max_age()``. With ``timestamp=None`` this is the original
+    body-only check, unchanged.
     """
     if not signature or not signature.startswith("sha256="):
         return False
-    expected = _sign(body, secret)
+    if timestamp is not None:
+        if not _timestamp_fresh(timestamp, max_age):
+            return False
+    expected = _sign(body, secret, timestamp=timestamp)
     return hmac.compare_digest(signature, expected)
+
+
+def _timestamp_fresh(timestamp: str, max_age: int | None) -> bool:
+    """True if ``timestamp`` (unix seconds) is within the replay window."""
+    try:
+        ts = float(timestamp)
+    except (TypeError, ValueError):
+        return False
+    window = _default_max_age() if max_age is None else max_age
+    # Reject both stale (replayed) and far-future (clock-skew abuse) stamps.
+    return abs(time.time() - ts) <= window
 
 
 def inbound_secret() -> str | None:

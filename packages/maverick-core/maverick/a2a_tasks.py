@@ -30,6 +30,7 @@ safety shield when installed (fail-open).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import logging
 import os
@@ -152,6 +153,12 @@ class _Task:
         self.artifacts: list[dict] = []
         self.push_config: dict | None = None
         self.cancel_requested = False
+        # Principal that created the task; get/cancel/push-config are scoped to
+        # it so one A2A caller can't read/cancel/redirect another's task.
+        self.principal: str = ""
+        # Client-requested budget captured at creation, clamped to the operator
+        # ceiling at run time (see TaskEngine._limits).
+        self.budget_request: dict = {}
 
     def set_state(self, state: str) -> dict:
         self.state = state
@@ -216,24 +223,95 @@ class TaskEngine:
             return _err(_AUTH_REQUIRED, "invalid bearer token")
         return None
 
-    def _limits(self) -> dict:
+    @staticmethod
+    def principal_for(authorization: str | None) -> str:
+        """Derive a stable principal id for a request, used to scope tasks.
+
+        A task is bound to its creator's principal at creation, and
+        get/cancel/push-config reject a mismatch -- so one A2A caller cannot
+        read, cancel, or redirect another caller's task.
+
+        NOTE: the A2A bearer is a single shared operator token (the protocol
+        carries no per-caller identity), so all callers presenting the *same*
+        bearer share one principal. The scope this enforces is between
+        *different bearer values* and between unauthenticated callers -- the
+        latter being the ``MAVERICK_A2A_ALLOW_UNAUTHENTICATED=1`` case the issue
+        calls out, where any local client could otherwise reach another's task.
+        We key on a hash of the presented bearer (never stored raw) and fall
+        back to ``anon`` when none is presented."""
+        if authorization and authorization.startswith("Bearer "):
+            given = authorization[len("Bearer "):].strip()
+            if given:
+                return "bearer:" + hashlib.sha256(given.encode()).hexdigest()
+        return "anon"
+
+    def _owned(self, task_id: str, principal: str) -> _Task:
+        """Look up a task and enforce principal ownership.
+
+        Raises a 'task not found' error (not a distinct 'forbidden') for both a
+        missing task and a cross-principal one, so a caller can't probe which
+        ids exist that belong to someone else."""
+        task = self._tasks.get(task_id or "")
+        if task is None or task.principal != principal:
+            raise _RpcError(_TASK_NOT_FOUND, "task not found")
+        return task
+
+    def _limits(self, task: _Task | None = None) -> dict:
+        """Resolve per-run limits, clamping the CLIENT request to the operator
+        ceiling.
+
+        The operator env vars are the hard ceiling; the A2A caller may request
+        *less* via its message (captured in ``task.budget_request``). We pass
+        the client value as ``value`` and the operator setting as ``ceiling`` so
+        ``min(client, operator)`` clamps the request DOWN -- never up. The
+        previous code passed the same env var as both value and ceiling, so the
+        ``min`` was a tautology and the client request was ignored entirely.
+        With no client value the run defaults to the operator ceiling."""
+        req = task.budget_request if task else {}
+        ceil_dollars = os.environ.get("MAVERICK_A2A_MAX_DOLLARS", 5.0)
+        ceil_wall = os.environ.get("MAVERICK_A2A_MAX_WALL_SECONDS", 3600.0)
+        ceil_depth = os.environ.get("MAVERICK_A2A_MAX_DEPTH", 3)
         return {
             "max_dollars": _bounded_float(
-                os.environ.get("MAVERICK_A2A_MAX_DOLLARS", 5.0),
-                default=5.0,
-                ceiling=os.environ.get("MAVERICK_A2A_MAX_DOLLARS", 5.0),
+                req.get("max_dollars", ceil_dollars),
+                default=_bounded_float(ceil_dollars, default=5.0, ceiling=ceil_dollars),
+                ceiling=ceil_dollars,
             ),
             "max_wall": _bounded_float(
-                os.environ.get("MAVERICK_A2A_MAX_WALL_SECONDS", 3600.0),
-                default=3600.0,
-                ceiling=os.environ.get("MAVERICK_A2A_MAX_WALL_SECONDS", 3600.0),
+                req.get("max_wall", ceil_wall),
+                default=_bounded_float(ceil_wall, default=3600.0, ceiling=ceil_wall),
+                ceiling=ceil_wall,
             ),
             "max_depth": _bounded_int(
-                os.environ.get("MAVERICK_A2A_MAX_DEPTH", 3),
-                default=3,
-                ceiling=os.environ.get("MAVERICK_A2A_MAX_DEPTH", 3),
+                req.get("max_depth", ceil_depth),
+                default=_bounded_int(ceil_depth, default=3, ceiling=ceil_depth),
+                ceiling=ceil_depth,
             ),
         }
+
+    @staticmethod
+    def _client_budget(params: dict | None) -> dict:
+        """Extract a client-requested budget from the request params.
+
+        A2A callers carry per-call budget hints in ``params.configuration`` and
+        /or the message ``metadata``; we read a small explicit set of keys.
+        Absent / junk values simply don't appear here and fall back to the
+        operator ceiling in ``_limits`` -- and whatever the client asks for is
+        still clamped DOWN to the ceiling there, never up."""
+        params = params or {}
+        sources: list[dict] = []
+        cfg = params.get("configuration")
+        if isinstance(cfg, dict):
+            sources.append(cfg)
+        msg = params.get("message")
+        if isinstance(msg, dict) and isinstance(msg.get("metadata"), dict):
+            sources.append(msg["metadata"])
+        out: dict = {}
+        for src in sources:
+            for key in ("max_dollars", "max_wall", "max_depth"):
+                if key in src and key not in out:
+                    out[key] = src[key]
+        return out
 
     def _shield_block(self, text: str) -> str | None:
         """Return a reason string if the shield blocks the input, else None.
@@ -252,7 +330,7 @@ class TaskEngine:
 
     # ---- task helpers --------------------------------------------------
 
-    def _new_task(self, params: dict) -> _Task:
+    def _new_task(self, params: dict, principal: str = "anon") -> _Task:
         message = (params or {}).get("message") or {}
         context_id = message.get("contextId") or ""
         # Normalise the inbound message so history echoes a complete record.
@@ -263,6 +341,8 @@ class TaskEngine:
             "kind": "message",
         }
         task = _Task(context_id, user_message)
+        task.principal = principal
+        task.budget_request = self._client_budget(params)
         user_message["taskId"] = task.id
         user_message["contextId"] = task.context_id
         with self._lock:
@@ -290,7 +370,7 @@ class TaskEngine:
             task.add_artifact(f"blocked by safety shield: {block}", "error")
             return
         task.set_state("working")
-        limits = self._limits()
+        limits = self._limits(task)
         try:
             result = await asyncio.to_thread(
                 self._runner,
@@ -314,15 +394,17 @@ class TaskEngine:
 
     # ---- JSON-RPC methods ----------------------------------------------
 
-    async def send(self, params: dict) -> dict:
-        task = self._new_task(params)
+    async def send(self, params: dict, principal: str = "anon") -> dict:
+        task = self._new_task(params, principal)
         await self._run(task)
         await self._fire_push(task)
         return task.to_dict()
 
-    async def stream(self, params: dict) -> AsyncIterator[dict]:
+    async def stream(
+        self, params: dict, principal: str = "anon",
+    ) -> AsyncIterator[dict]:
         """Yield A2A stream events (already in result-object form)."""
-        task = self._new_task(params)
+        task = self._new_task(params, principal)
         # 1. initial Task snapshot.
         yield task.to_dict()
         text = _message_text(task.messages[0])
@@ -338,7 +420,7 @@ class TaskEngine:
         task.set_state("working")
         yield _status_event(task, final=False)
         # 3. run.
-        limits = self._limits()
+        limits = self._limits(task)
         try:
             result = await asyncio.to_thread(
                 self._runner, text,
@@ -365,36 +447,47 @@ class TaskEngine:
         yield _status_event(task, final=True)
         await self._fire_push(task)
 
-    def get(self, params: dict) -> dict:
-        task = self._tasks.get((params or {}).get("id", ""))
-        if task is None:
-            raise _RpcError(_TASK_NOT_FOUND, "task not found")
+    def get(self, params: dict, principal: str = "anon") -> dict:
+        task = self._owned((params or {}).get("id", ""), principal)
         return task.to_dict()
 
-    def cancel(self, params: dict) -> dict:
-        task = self._tasks.get((params or {}).get("id", ""))
-        if task is None:
-            raise _RpcError(_TASK_NOT_FOUND, "task not found")
+    def cancel(self, params: dict, principal: str = "anon") -> dict:
+        task = self._owned((params or {}).get("id", ""), principal)
         task.cancel_requested = True
         if task.state not in TERMINAL_STATES:
             task.set_state("canceled")
         return task.to_dict()
 
-    def set_push_config(self, params: dict) -> dict:
-        task = self._tasks.get((params or {}).get("taskId", ""))
-        if task is None:
-            raise _RpcError(_TASK_NOT_FOUND, "task not found")
+    def set_push_config(self, params: dict, principal: str = "anon") -> dict:
+        task = self._owned((params or {}).get("taskId", ""), principal)
         cfg = (params or {}).get("pushNotificationConfig") or {}
-        if not cfg.get("url"):
+        url = cfg.get("url")
+        if not url:
             raise _RpcError(_INVALID_PARAMS, "pushNotificationConfig.url required")
-        task.push_config = cfg
-        return {"taskId": task.id, "pushNotificationConfig": cfg}
+        # Validate the push URL at REGISTRATION (not just at fire time): a
+        # loopback/metadata/internal target must be refused here so it can never
+        # be stored, mirroring the SSRF guard _fire_push applies. Reuse the same
+        # resolve-and-check primitive.
+        try:
+            from urllib.parse import urlparse
 
-    def get_push_config(self, params: dict) -> dict:
-        task = self._tasks.get((params or {}).get("id", "")
-                               or (params or {}).get("taskId", ""))
-        if task is None:
-            raise _RpcError(_TASK_NOT_FOUND, "task not found")
+            from .tools._ssrf import BlockedHost, resolve_pinned_ip
+            parsed = urlparse(url)
+            if parsed.scheme not in ("http", "https"):
+                raise BlockedHost(f"scheme {parsed.scheme!r} not allowed")
+            resolve_pinned_ip(parsed.hostname or "")
+        except BlockedHost as e:
+            raise _RpcError(
+                _INVALID_PARAMS, f"pushNotificationConfig.url rejected: {e}",
+            )
+        except ImportError:  # pragma: no cover - guard unavailable, fall through
+            pass
+        task.push_config = cfg
+        return {"taskId": task.id, "pushNotificationConfig": _redacted_push_config(cfg)}
+
+    def get_push_config(self, params: dict, principal: str = "anon") -> dict:
+        task = self._owned((params or {}).get("id", "")
+                           or (params or {}).get("taskId", ""), principal)
         return {
             "taskId": task.id,
             "pushNotificationConfig": _redacted_push_config(task.push_config),
