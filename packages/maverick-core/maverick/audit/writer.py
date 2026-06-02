@@ -101,6 +101,16 @@ class AuditLog:
                 return None
         self._current_path = path
         self._current_day = day_str
+        if self._signing_enabled:
+            # Rollover (or first write this process): any now-complete prior
+            # day-files get a signed tip-ledger anchor so deleting a whole
+            # day-file is detectable. Best-effort -- anchoring must never block
+            # an audit write.
+            try:
+                from .signing import ensure_anchors
+                ensure_anchors(self.audit_dir)
+            except Exception as e:  # pragma: no cover - defensive
+                log.debug("audit: ensure_anchors failed: %s", e)
         return path
 
     def record(self, event: AuditEvent) -> bool:
