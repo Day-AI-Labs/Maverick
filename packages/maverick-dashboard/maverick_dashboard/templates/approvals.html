@@ -64,8 +64,21 @@
             });
             if (r.ok || r.status === 204) {
               msg.style.color = 'var(--accent)';
-              msg.textContent = '#' + id + ' ' + action + 'd. Reloading…';
-              setTimeout(function() { window.location.reload(); }, 700);
+              msg.textContent = '#' + id + ' ' + action + 'd.';
+              // Mutate in place rather than full-reload (keeps scroll
+              // position): the decided item leaves the queue.
+              const row = document.querySelector('tr[data-id="' + id + '"]');
+              if (row && row.parentElement) {
+                const tbody = row.parentElement;
+                row.remove();
+                if (!tbody.querySelector('tr')) {
+                  const table = tbody.closest('table');
+                  const empty = document.createElement('p');
+                  empty.className = 'muted';
+                  empty.textContent = 'No pending approvals.';
+                  if (table) table.replaceWith(empty);
+                }
+              }
             } else {
               const j = await r.json().catch(function() { return {}; });
               document.querySelectorAll('tr[data-id="' + id + '"] button.approval-btn')

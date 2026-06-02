@@ -2,7 +2,7 @@
 {% block title %}skills · Maverick{% endblock %}
 {% block content %}
   <h2>installed skills</h2>
-  <div class="panel">
+  <div class="panel" id="installed-skills">
     {% if skills %}
       {% for s in skills %}
         <h3 style="margin-top: 1.5rem;"><code>{{ s.name }}</code></h3>
@@ -15,7 +15,7 @@
         {% endif %}
       {% endfor %}
     {% else %}
-      <p class="muted">No skills installed yet.</p>
+      <p class="muted" id="no-skills">No skills installed yet.</p>
     {% endif %}
   </div>
 
@@ -46,6 +46,39 @@
       const src = document.getElementById('skill-source');
       const msg = document.getElementById('skill-install-msg');
       const btn = form.querySelector('button[type="submit"]');
+      const installedEl = document.getElementById('installed-skills');
+
+      // Append the newly installed skill in place (keeps scroll position)
+      // rather than full-reloading — mirrors store.html's in-place update.
+      function appendSkill(s) {
+        const noSkills = document.getElementById('no-skills');
+        if (noSkills) noSkills.remove();
+        const h = document.createElement('h3');
+        h.style.marginTop = '1.5rem';
+        const code = document.createElement('code');
+        code.textContent = s.name;
+        h.appendChild(code);
+        installedEl.appendChild(h);
+        if (s.triggers && s.triggers.length) {
+          const p = document.createElement('p');
+          p.className = 'muted';
+          p.textContent = 'triggers:';
+          installedEl.appendChild(p);
+          const ul = document.createElement('ul');
+          s.triggers.forEach(function(t) {
+            const li = document.createElement('li');
+            li.textContent = t;
+            ul.appendChild(li);
+          });
+          installedEl.appendChild(ul);
+        }
+        if (s.tools_needed && s.tools_needed.length) {
+          const p = document.createElement('p');
+          p.className = 'muted';
+          p.textContent = 'tools: ' + s.tools_needed.join(', ');
+          installedEl.appendChild(p);
+        }
+      }
       form.addEventListener('submit', async function(ev) {
         ev.preventDefault();
         const source = src.value.trim();
@@ -60,9 +93,15 @@
             body: JSON.stringify({source}),
           });
           if (r.ok) {
+            const s = await r.json().catch(function() { return null; });
             msg.style.color = 'var(--accent)';
-            msg.textContent = 'Installed. Reloading…';
-            setTimeout(function() { window.location.reload(); }, 600);
+            if (s && s.name) {
+              appendSkill(s);
+              msg.textContent = 'Installed ' + s.name + '. Active on the next agent invocation.';
+              src.value = '';
+            } else {
+              msg.textContent = 'Installed.';
+            }
           } else {
             const j = await r.json().catch(function() { return {}; });
             msg.style.color = 'var(--danger)';

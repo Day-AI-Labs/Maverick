@@ -47,6 +47,12 @@
   }
   .filters select:hover { border-color: var(--accent); }
 </style>
+{# Shared event-kind vocabulary. Mirrors KIND_LABELS in chat_goal.html so
+   the same raw kinds read the same on both pages. #}
+{% set KIND_LABELS = {
+  'plan': 'thinking', 'finding': 'answer', 'observation': 'result',
+  'error': 'error', 'verify': 'checking', 'artifact': 'produced',
+} %}
 <p class="muted"><a href="/goals">← all goals</a> · <a href="/goals/{{ goal.id }}/plan">plan tree</a></p>
 <h2>Trajectory · Goal #{{ goal.id }}: {{ goal.title }}</h2>
 
@@ -72,7 +78,7 @@
     <select id="filter-severity" class="filter-severity" aria-label="Filter by severity">
       <option value="">All severities</option>
       {% for kind in events | map(attribute="kind") | unique | sort %}
-        <option value="{{ kind }}">{{ kind }}</option>
+        <option value="{{ kind }}">{{ KIND_LABELS[kind] or kind }}</option>
       {% endfor %}
     </select>
   </div>
@@ -82,7 +88,7 @@
         <span class="ev-meta">
           [{{ ev.ts | datetime }}]
           <span class="ev-agent">{{ ev.agent }}</span>
-          <span class="ev-kind">{{ ev.kind }}</span>
+          <span class="ev-kind">{{ KIND_LABELS[ev.kind] or ev.kind }}</span>
         </span>
         {% if ev.content %}
           <div class="ev-content">{{ ev.content[:2000] }}{% if ev.content|length > 2000 %}…{% endif %}</div>

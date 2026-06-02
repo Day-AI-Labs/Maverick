@@ -116,8 +116,21 @@
             });
             if (r.ok || r.status === 204) {
               msg.style.color = 'var(--accent)';
-              msg.textContent = name + ' ' + action + 'd. Takes effect on the next goal. Reloading…';
-              setTimeout(function() { window.location.reload(); }, 700);
+              msg.textContent = name + ' ' + action + 'd. Takes effect on the next goal.';
+              // Mutate the row in place (keeps scroll position) instead of
+              // a full reload: flip the badge + the button's next action.
+              const nowEnabled = action === 'enable';
+              const row = btn.closest('tr');
+              if (row) {
+                const badge = row.querySelector('.badge');
+                if (badge) {
+                  badge.className = 'badge ' + (nowEnabled ? 'active' : 'blocked');
+                  badge.textContent = nowEnabled ? 'enabled' : 'disabled';
+                }
+              }
+              btn.dataset.action = nowEnabled ? 'disable' : 'enable';
+              btn.textContent = nowEnabled ? 'Disable' : 'Enable';
+              btn.disabled = false;
             } else {
               const j = await r.json().catch(function() { return {}; });
               btn.disabled = false;

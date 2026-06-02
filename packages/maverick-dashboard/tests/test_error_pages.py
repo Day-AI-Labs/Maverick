@@ -52,3 +52,30 @@ def test_unhandled_exception_renders_500(monkeypatch, tmp_path):
     assert "Something went wrong" in resp.text
     assert "RuntimeError" not in resp.text
     assert "test-only failure" not in resp.text
+
+
+def test_validation_error_page_does_not_echo_detail(monkeypatch, tmp_path):
+    """A 422 routed to the branded page must not echo arbitrary request
+    detail. validation_exception_handler renders 500.html, so the page
+    must not template {{ detail }} — otherwise crafted input could leak
+    into the HTML response (reflected-XSS / info-leak surface)."""
+    from maverick import world_model
+    from maverick_dashboard import app as dash_app
+
+    @dash_app.app.get("/__needs_param")
+    async def needs_param(marker_xyzzy: int):  # required query param
+        return {"ok": marker_xyzzy}
+
+    monkeypatch.setattr(world_model, "DEFAULT_DB", tmp_path / "world.db")
+    monkeypatch.delenv("MAVERICK_DASHBOARD_TOKEN", raising=False)
+    client = _client()
+    # Missing/non-int required param -> RequestValidationError -> branded page.
+    resp = client.get(
+        "/__needs_param?marker_xyzzy=PWNED_REFLECTED",
+        headers={"Accept": "text/html"},
+    )
+    assert resp.status_code == 400  # handler downgrades 422 -> 400 for browsers
+    assert "Something went wrong" in resp.text
+    # The crafted value and validation internals must not appear in the HTML.
+    assert "PWNED_REFLECTED" not in resp.text
+    assert "marker_xyzzy" not in resp.text

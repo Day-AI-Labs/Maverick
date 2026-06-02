@@ -186,6 +186,38 @@ class TestHTTPTransport:
         }, headers={"Authorization": "Bearer s3cr3t"})
         assert resp.status_code == 200
 
+    def test_cross_origin_request_rejected(self, monkeypatch):
+        """DNS-rebinding defense: a browser cross-origin Origin is rejected
+        before dispatch, even with a valid bearer."""
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        client = self._client()
+        resp = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {},
+        }, headers={"Authorization": "Bearer s3cr3t",
+                    "Origin": "http://evil.example.com"})
+        assert resp.status_code == 403
+
+    def test_no_origin_header_allowed(self, monkeypatch):
+        """Native MCP clients / curl omit Origin and must still work."""
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        client = self._client()
+        resp = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {},
+        }, headers={"Authorization": "Bearer s3cr3t"})
+        assert resp.status_code == 200
+
+    def test_configured_origin_allowed(self, monkeypatch):
+        """An operator can allowlist a gateway origin."""
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        monkeypatch.setenv("MAVERICK_MCP_ALLOWED_ORIGINS",
+                           "http://gateway.example.com")
+        client = self._client()
+        resp = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {},
+        }, headers={"Authorization": "Bearer s3cr3t",
+                    "Origin": "http://gateway.example.com"})
+        assert resp.status_code == 200
+
     def test_notification_returns_204(self, monkeypatch):
         monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
         client = self._client()
