@@ -33,3 +33,8 @@ ignore = [
 testpaths = ["packages", "apps", "benchmarks"]
 python_files = "test_*.py"
 addopts = "--import-mode=importlib"
+# Put the repo root (rootdir) on sys.path so cross-package test imports like
+# `from benchmarks.swe_bench import ...` resolve regardless of the invocation
+# cwd. Without this the maverick-core suite only collected from the repo root
+# and ModuleNotFound'd when run from inside packages/maverick-core (#599).
+pythonpath = ["."]
