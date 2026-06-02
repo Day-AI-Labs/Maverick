@@ -16,7 +16,7 @@ Hand Maverick a goal. Its orchestrator decomposes it, spawns specialist sub-agen
 ```bash
 pipx install 'maverick-agent[installer]'
 maverick init                        # four questions, safe defaults
-maverick start "Research the top 3 CRMs for a 5-person startup and write a recommendation"
+maverick start "Build a CLI that emails me a digest of today's top Hacker News stories — research the API, write it, and verify it runs"
 ```
 
 Prefer no terminal? Grab the [**double-click desktop installer**](#install). New here? See [`docs/getting-started.md`](./docs/getting-started.md).
