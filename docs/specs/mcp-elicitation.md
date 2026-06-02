@@ -1,6 +1,6 @@
 # Design Spec: MCP Elicitation → Shield/Consent
 
-**Status:** Draft / proposal · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (B1) ([#396](https://github.com/cdayAI/Maverick/issues/396)) · **Date:** May 2026
+**Status:** Phase 1 shipped (client inbound handler); Phases 2–3 proposed · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (B1) ([#396](https://github.com/cdayAI/Maverick/issues/396)) · **Date:** May 2026
 
 > Proposal for discussion. Stops at interface + integration points; module
 > names/handlers should be confirmed against current code at implementation time.
@@ -102,9 +102,18 @@ When a tool/flow needs user input and the connected client advertised
   decline doesn't abort a long run.
 
 ## 6. Phasing
-- **Phase 1 — client inbound handler.** Handle `elicitation/create` from external
-  servers via the consent queue (form mode). Smallest slice; unblocks servers
-  that elicit, which otherwise stall.
+- **Phase 1 — client inbound handler. ✅ shipped.** `mcp_client.py` now answers
+  every inbound request instead of dropping it: `elicitation/create` is resolved
+  by policy (`MAVERICK_MCP_ELICITATION` — default `decline`, or `cancel` /
+  `prompt`) after a `scan_remote_content` floor-scan of the prompt, with `prompt`
+  mode collecting typed input off the event loop through `require_consent`; any
+  other inbound method (`roots/list`, `sampling/createMessage`, …) gets a clean
+  `-32601` instead of stalling the server. The client advertises the
+  `elicitation` capability now that a handler exists. Elicited content is
+  resolved entirely in the transport and never passes through the model context,
+  and no URL in the request is ever fetched/auto-opened. Code:
+  `mcp_client.py::_handle_inbound_request` / `_handle_elicitation`; tests:
+  `tests/test_mcp_elicitation.py`.
 - **Phase 2 — server outbound (form mode).** Advertise + emit elicitation,
   capability-gated, backed by `questions`/`approvals`, shield-screened.
 - **Phase 3 — URL mode** both directions (the secrets-never-transit-model path);

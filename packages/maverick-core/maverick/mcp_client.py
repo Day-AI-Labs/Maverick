@@ -15,9 +15,11 @@ import asyncio
 import json
 import logging
 import os
+import sys
 from dataclasses import dataclass, field
 from typing import Any
 
+from .safety.remote_scan import scan_remote_content
 from .safety.secret_detector import redact as _redact_secrets
 
 log = logging.getLogger(__name__)
@@ -26,6 +28,37 @@ PROTOCOL_VERSION = "2024-11-05"
 DEFAULT_TIMEOUT = 30.0
 
 _MAX_ERROR_DETAIL_CHARS = 512
+
+# Inbound elicitation policy (server -> client elicitation/create). Mirrors the
+# env-var idiom of MAVERICK_CONSENT_MODE. Default "decline" is the safe,
+# non-stalling outcome: the server continues without the value. "cancel" aborts
+# the server's operation; "prompt" collects typed input from an interactive
+# operator (off the event loop, gated through require_consent).
+ELICITATION_ENV = "MAVERICK_MCP_ELICITATION"
+
+
+def _resolve_elicitation_policy() -> str:
+    return (os.environ.get(ELICITATION_ENV) or "decline").strip().lower()
+
+
+def _coerce_scalar(raw: str, declared: object) -> Any:
+    """Coerce a typed-in string to the JSON-Schema scalar the server asked for.
+
+    Best-effort: a value that doesn't parse as the declared type is returned as
+    the raw string rather than raising -- the server validates its own schema."""
+    if declared == "integer":
+        try:
+            return int(raw)
+        except ValueError:
+            return raw
+    if declared == "number":
+        try:
+            return float(raw)
+        except ValueError:
+            return raw
+    if declared == "boolean":
+        return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return raw
 
 
 def _safe_error_detail(text: str) -> str:
@@ -243,6 +276,10 @@ class MCPClient:
         # request id -> Future the caller awaits. A reply whose id is not in
         # this map (already timed out / cancelled) is dropped, not crashed on.
         self._pending: dict[int, asyncio.Future] = {}
+        # Tasks answering inbound requests the server sends US (e.g.
+        # elicitation/create). Tracked so they aren't GC'd mid-flight and can be
+        # cancelled on stop().
+        self._inbound_tasks: set[asyncio.Task] = set()
         self.tools: list[dict[str, Any]] = []
 
     def _next_id(self) -> int:
@@ -284,7 +321,10 @@ class MCPClient:
 
         init_resp = await self._request("initialize", {
             "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": {},
+            # Advertise elicitation now that we handle inbound elicitation/create
+            # (see _handle_elicitation). Without a handler this would invite a
+            # request we'd never answer -- the exact stall the spec warns about.
+            "capabilities": {"elicitation": {}},
             "clientInfo": {"name": "maverick", "version": "0.1.0"},
         })
         log.debug("MCP %s initialized: %s", self.spec.name,
@@ -442,7 +482,16 @@ class MCPClient:
                     f"MCP server {self.spec.name!r} reader failed: {e}"))
 
     def _dispatch(self, msg: dict) -> None:
-        """Route one parsed message to its waiting Future (if any)."""
+        """Route one parsed message: inbound request, notification, or response."""
+        # A message carrying "method" originates FROM the server: an inbound
+        # request (has "id" -> we must reply) or a notification (no "id" ->
+        # ignored). Responses to OUR requests never carry "method"; keying on it
+        # also stops a server-chosen request id from being mistaken for one of
+        # our pending response ids.
+        if msg.get("method") is not None:
+            if msg.get("id") is not None:
+                self._handle_inbound_request(msg)
+            return  # notification: nothing to route
         # A JSON-RPC error with id:null (parse error / invalid request) can't
         # be correlated to a single request -- the server choked on our input.
         # Surface it to every in-flight caller rather than swallowing it.
@@ -469,6 +518,130 @@ class MCPClient:
                     f"{_format_rpc_error(msg['error'])}"))
         else:
             future.set_result(msg.get("result", {}))
+
+    # ---- inbound requests (server -> client) -------------------------------
+
+    def _handle_inbound_request(self, msg: dict) -> None:
+        """Answer a request the server sent US (e.g. elicitation/create).
+
+        A server that issues a request and gets no reply stalls the call, so we
+        always respond: a supported method is handled, anything else gets a
+        JSON-RPC "method not found". Handling runs in its own task so blocking
+        work (consent prompt, human input) never stalls the single stdout
+        reader that has to keep correlating other in-flight replies."""
+        task = asyncio.create_task(self._respond_to_inbound(msg))
+        self._inbound_tasks.add(task)
+        task.add_done_callback(self._inbound_tasks.discard)
+
+    async def _respond_to_inbound(self, msg: dict) -> None:
+        req_id = msg.get("id")
+        method = msg.get("method")
+        try:
+            if method == "elicitation/create":
+                result = await self._handle_elicitation(msg.get("params") or {})
+                await self._send_response(req_id, result=result)
+            else:
+                # roots/list, sampling/createMessage, etc. -- we don't advertise
+                # these, so decline cleanly instead of leaving the server hanging.
+                await self._send_response(
+                    req_id,
+                    error={"code": -32601,
+                           "message": f"Method not found: {method}"})
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 -- a handler bug must still reply
+            log.error("MCP %s inbound %r handler failed: %s",
+                      self.spec.name, method, e)
+            await self._send_response(
+                req_id, error={"code": -32603, "message": "Internal error"})
+
+    async def _send_response(
+        self, req_id: object, *, result: dict | None = None,
+        error: dict | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {"jsonrpc": "2.0", "id": req_id}
+        if error is not None:
+            payload["error"] = error
+        else:
+            payload["result"] = result if result is not None else {}
+        try:
+            async with self._lock:
+                self._check_alive()
+                await self._send(payload)
+        except Exception as e:  # noqa: BLE001 -- server gone/unwritable; drop it
+            log.debug("MCP %s could not send response for id %s: %s",
+                      self.spec.name, req_id, e)
+
+    async def _handle_elicitation(self, params: dict) -> dict:
+        """Decide an inbound elicitation/create per policy + shield.
+
+        Returns an MCP elicitation result:
+        ``{"action": "accept"|"decline"|"cancel", "content"?: {...}}``.
+
+        Safety invariants:
+          - The prompt is untrusted remote content -> floor-scanned; a flagged
+            prompt is declined, never shown to a human or acted on.
+          - Elicited content is resolved entirely in the transport (operator or
+            policy); it never passes through the model context.
+          - No URL carried in the request is ever fetched or auto-opened -- this
+            handler performs no network/browser I/O on the params at all."""
+        message = str(params.get("message") or "")
+        scan = scan_remote_content(message)
+        if scan.suspicious:
+            log.warning(
+                "MCP %s elicitation prompt flagged (score=%.2f, patterns=%s); "
+                "declining", self.spec.name, scan.score, scan.matched_patterns)
+            return {"action": "decline"}
+
+        policy = _resolve_elicitation_policy()
+        if policy == "cancel":
+            return {"action": "cancel"}
+        if policy != "prompt":
+            return {"action": "decline"}  # default + any unrecognized value
+
+        schema = params.get("requestedSchema") or {}
+        # Blocking consent + input() run off the event loop so the reader keeps
+        # servicing other in-flight requests while a human is typing.
+        return await asyncio.to_thread(
+            self._collect_elicitation_blocking, scan.cleaned, schema)
+
+    def _collect_elicitation_blocking(self, message: str, schema: dict) -> dict:
+        """Gate + collect typed elicitation input on a worker thread."""
+        from .safety.consent import require_consent
+
+        decision = require_consent(
+            "mcp-elicitation", risk="medium",
+            scope=self.spec.name, detail=message,
+        )
+        if not decision.granted:
+            return {"action": "cancel"}
+        if not sys.stdin.isatty():
+            # Permitted, but there's no interactive surface to collect input on.
+            return {"action": "decline"}
+
+        props = schema.get("properties") if isinstance(schema, dict) else None
+        required = set(schema.get("required") or []) if isinstance(schema, dict) else set()
+        sys.stderr.write(f"\n[MCP {self.spec.name}] {message}\n")
+        sys.stderr.flush()
+        content: dict[str, Any] = {}
+        for key, field_spec in (props or {}).items():
+            field_spec = field_spec if isinstance(field_spec, dict) else {}
+            label = field_spec.get("title") or key
+            prompt = f"  {label}"
+            if field_spec.get("description"):
+                prompt += f" ({field_spec['description']})"
+            sys.stderr.write(prompt + ": ")
+            sys.stderr.flush()
+            try:
+                raw = input().strip()
+            except (EOFError, KeyboardInterrupt):
+                return {"action": "cancel"}
+            if not raw:
+                if key in required:
+                    return {"action": "cancel"}
+                continue
+            content[key] = _coerce_scalar(raw, field_spec.get("type"))
+        return {"action": "accept", "content": content}
 
     async def call_tool(self, tool_name: str, arguments: dict) -> str:
         resp = await self._request("tools/call", {
@@ -503,6 +676,11 @@ class MCPClient:
             except (asyncio.CancelledError, Exception):
                 pass
             self._reader_task = None
+        # Drop any in-flight inbound-request handlers (e.g. an elicitation
+        # blocked on operator input) so they don't outlive the transport.
+        for task in list(self._inbound_tasks):
+            task.cancel()
+        self._inbound_tasks.clear()
         # Cancelling the reader stops it before it can fail pending callers, so
         # release any still-waiting requests here so they don't hang on close.
         self._fail_all_pending(
