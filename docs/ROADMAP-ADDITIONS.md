@@ -1,5 +1,11 @@
 # Roadmap Additions — Gap Analysis (May 2026)
 
+> **Reconciled against shipped code — June 2026.** Many items below have since
+> landed. See **[Reconciliation status](#reconciliation-status-june-2026)** for the
+> at-a-glance done/open table. Section bodies are kept verbatim for context, with
+> corrections inline where the original text is now factually wrong (C1, C3).
+> Legend: ✅ shipped · 🟡 partial · ⬜ open.
+
 A companion to [`ROADMAP.md`](./ROADMAP.md). That doc is the broad 36-month
 backlog; **this one is a focused gap analysis**: what the roadmap *under-weights*
 given (a) what the code itself admits is unfinished and (b) how the agent
@@ -26,6 +32,41 @@ cites evidence: `file:line` for code gaps, or a source theme for ecosystem items
 See the **Accuracy caveats** at the bottom — several ecosystem dates/specs
 postdate the author's knowledge and must be re-verified before they become
 roadmap commitments.
+
+---
+
+## Reconciliation status (June 2026)
+
+*Reconciled against the code on `main`. ✅ shipped · 🟡 partial · ⬜ open. PR
+numbers cite where it landed; `file:line` cites the implementing code.*
+
+| Item | Ask | Status | Evidence |
+|------|-----|--------|----------|
+| **A1** | Durable/resumable execution + checkpoint/rewind | ✅ shipped | `checkpoint.py` (store + `latest()`), `cli.py` `resume` |
+| **A2** | Kernel lifecycle hooks (Pre/PostToolUse, UserPromptSubmit) | ✅ shipped | `hooks.py` |
+| **A3** | Context lifecycle — deferred tool loading / memory tool / programmatic calling | 🟡 partial | deferred loading + `find_tools` shipped (#693); compaction in `compaction.py`/`context_compactor.py`; **memory-tool + programmatic tool-calling still open** |
+| **B1** | Tool `outputSchema` | ✅ shipped | `server.py` `outputSchema` on tools |
+| **B1** | Resource subscriptions | ✅ shipped (#694) | `http_transport.py` `resources/subscribe` |
+| **B1** | Streamable-HTTP transport | ✅ present | `http_transport.py` (not deprecated SSE) |
+| **B1** | Elicitation | ⬜ open | deliberately unadvertised; needs a design for the sync loop |
+| **B1** | Async tasks | ⬜ open | — |
+| **B2** | MCP client OAuth 2.1 + Registry | ⬜ open *(blocked)* | client is **stdio-only** (`mcp_client.py`); needs a remote-HTTP client transport first |
+| **B3** | A2A vs. homegrown ACD | ⬜ open *(decision)* | — |
+| **C1** | Eval harness (GAIA / τ²-bench / terminal-bench) | 🟡 GAIA shipped (#687) | `benchmarks/eval_gaia.py`, `evals.py`; τ²/terminal-bench adapters still open |
+| **C1** | Skill quality gate / pruning | 🟡 partial | quality gate (#396) + usage decay (`skills.py::_decay_weights` → `skill_stats`); explicit versioning/active-pruning still light |
+| **C2** | Learning-substrate decision (close loop vs. prune) | ⬜ open *(decision)* | `training/`, `prm.py`, compaction gate are scaffolds |
+| **C3** | Verifier default-on across goal types | ✅ confirmed | `agent.py:1155–1342` — `verify_final` runs on every orchestrator depth-0 FINAL, not coding-gated |
+| **D1** | Shared tool-reliability layer | ✅ shipped (#684) | `tool_reliability.py`, `retry.py` |
+| **D2** | Semantic memory wired into reflexion | ✅ shipped (#678) | `reflexion.py` cosine path (fastembed) |
+| **D3** | Session-provider tool-use gaps | ✅ shipped (#685) | de-scoped + documented |
+
+**Net:** the cleanly-autonomous Lane A/B engineering is largely done. What's left
+clusters into (a) two MCP server items that need design — **elicitation, async
+tasks**; (b) a **prerequisite** (remote-HTTP MCP *client* transport) that unblocks
+**OAuth/Registry**; (c) finishing **A3** (memory/programmatic calling) and **C1**
+(more benchmark adapters); and (d) the **decisions** — C2 learning substrate, B3
+A2A-vs-ACD, and the breadth-vs-depth question (see
+[`tool-inventory.md`](./specs/tool-inventory.md)).
 
 ---
 
@@ -113,6 +154,12 @@ no "did it help," no pruning** — a bad skill can *poison future runs*
 (`skills.py`), which is a safety issue, not just a feature. You can't claim
 "deepest long-horizon agent" without measuring it.
 
+> **Update (June 2026):** partly addressed — a skill **quality gate** landed
+> (#396) and skill retrieval now uses **usage-based weight decay**
+> (`skills.py::_decay_weights` → `skill_stats`). Explicit **versioning** and
+> **active pruning** remain light. The GAIA half of the eval harness shipped
+> (#687); τ²-bench / terminal-bench adapters are still open.
+
 ### C2. Decide the learning-substrate question **[strategic]**
 `training/` (PRM_TRAIN + RLAIF), `prm.py` (Null/Heuristic only; RemotePRM is a
 stub), and `compaction.py`'s learned gate are all **scaffolds explicitly waiting
@@ -126,6 +173,13 @@ Correction to a common misread: the verifier *is* implemented
 (`agent.py:1071`). The legitimate item is narrower: confirm it runs **default-on
 across goal types** (not just coding mode) and characterize **revision-loop
 depth**. A roadmap line, not a rewrite.
+
+> **Resolved (June 2026):** default-on **confirmed**. `verify_final` runs on
+> every orchestrator depth-0 FINAL regardless of goal type
+> (`agent.py:1155–1342`), gated only on role / depth / once-per-goal — coding
+> mode merely swaps in the test-driven verifier when ground-truth tests exist.
+> Revision loop is capped at **one** retry (`_verifier_revision_used` /
+> `_patch_validated`).
 
 ---
 
@@ -156,15 +210,22 @@ implement or clearly document the limitation in the wizard.
 
 ---
 
-## Top 6 near-term picks
-1. Durable/resumable execution + checkpoint/rewind (A1).
-2. Kernel lifecycle hooks as the shield/budget/killswitch chokepoint (A2).
-3. MCP server modernization: output schemas, resources, streamable HTTP,
-   elicitation (B1).
-4. MCP client OAuth 2.1 + Registry + allowlist governance (B2).
-5. Provider-neutral memory / context-editing / tool-search layer (A3).
-6. Eval harness (GAIA/τ²-bench/terminal-bench) + skill-distillation quality
-   gate (C1).
+## Top 6 near-term picks — *updated June 2026*
+Picks 1–2 and most of 3 have shipped; 5–6 are partially done. Strikethrough =
+landed. The remaining near-term priorities:
+1. ~~Durable/resumable execution + checkpoint/rewind (A1).~~ ✅ shipped.
+2. ~~Kernel lifecycle hooks as the shield/budget/killswitch chokepoint (A2).~~ ✅ shipped.
+3. **MCP elicitation + async tasks (B1)** — output schemas, resources, streamable
+   HTTP, and subscriptions already shipped; these two remain and need a design
+   for the synchronous stdio loop.
+4. **Remote-HTTP MCP *client* transport → then OAuth 2.1 + Registry (B2)** — the
+   client is stdio-only today, so the transport is the prerequisite; OAuth
+   validation also needs real accounts.
+5. **Finish A3:** memory / context-editing abstraction + programmatic tool
+   calling (deferred tool loading already shipped, #693).
+6. **Finish C1:** τ²-bench / terminal-bench adapters + a firmer
+   skill-distillation quality/pruning gate (GAIA harness shipped #687; quality
+   gate #396 exists).
 
 ---
 
