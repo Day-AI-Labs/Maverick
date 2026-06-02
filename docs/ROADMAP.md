@@ -39,7 +39,7 @@ reliability plumbing (D) have since shipped — see the table.
 | B1 | Tool `outputSchema` | ✅ | `server.py` |
 | B1 | Resource subscriptions | ✅ #694 | `http_transport.py` |
 | B1 | Streamable-HTTP transport | ✅ | `http_transport.py` |
-| B1 | Elicitation | ⬜ | spec only (`specs/mcp-elicitation.md`); needs sync-loop design |
+| B1 | Elicitation | 🟡 | client inbound handler shipped (`mcp_client.py`, `tests/test_mcp_elicitation.py`) — answers `elicitation/create` by policy + shield, advertises the capability, `-32601` for other inbound methods; server-outbound (form) + URL mode still open (`specs/mcp-elicitation.md` Phases 2–3) |
 | B1 | Async tasks | ⬜ | — |
 | B2 | MCP client OAuth 2.1 + Registry | ⬜ blocked | client is stdio-only (`mcp_client.py`); needs a remote-HTTP client transport first |
 | B3 | A2A vs. homegrown ACD | ⬜ decision | recommend adopting A2A's Agent Card; reframe/cut ACD |
@@ -53,9 +53,11 @@ reliability plumbing (D) have since shipped — see the table.
 
 **Still open — near-term focus**
 
-1. **MCP elicitation + async tasks (B1)** — the remaining server-spec items; need a
-   design for the synchronous stdio loop (outputSchema / resources / streamable-HTTP
-   / subscriptions already shipped).
+1. **MCP elicitation + async tasks (B1)** — client-inbound elicitation has shipped
+   (`mcp_client.py` answers `elicitation/create` by policy + shield, no more stalls);
+   the remaining server-spec items are server-*outbound* elicitation (form mode,
+   capability-gated) and async tasks — both need a design for the synchronous stdio
+   loop (outputSchema / resources / streamable-HTTP / subscriptions already shipped).
 2. **Remote-HTTP MCP *client* transport → then OAuth 2.1 + Registry (B2)** — the
    client is stdio-only, so the transport is the prerequisite; OAuth validation also
    needs real accounts.
