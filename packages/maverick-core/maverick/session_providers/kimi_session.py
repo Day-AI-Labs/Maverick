@@ -18,7 +18,11 @@ import uuid
 from ..budget import Budget
 from ..llm import LLMResponse
 from . import cookie_store
-from .base import approx_record_budget, stringify_messages
+from .base import (
+    approx_record_budget,
+    iter_sse_data_payloads,
+    stringify_messages,
+)
 
 log = logging.getLogger(__name__)
 
@@ -47,10 +51,8 @@ _BASE_HEADERS = {
 def _parse_sse_response(stream_text: str) -> str:
     """Concatenate ``text`` deltas from a Kimi SSE stream."""
     pieces: list[str] = []
-    for line in stream_text.splitlines():
-        if not line.startswith("data:"):
-            continue
-        payload = line[len("data:"):].strip()
+    for payload in iter_sse_data_payloads(stream_text):
+        payload = payload.strip()
         if not payload or payload == "[DONE]":
             continue
         try:

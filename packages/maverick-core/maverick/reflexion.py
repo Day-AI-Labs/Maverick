@@ -145,6 +145,18 @@ def _sanitize_text(text: str, *, shield: Any | None = None) -> str:
     return safe
 
 
+# Only score the most recent N lines so recall cost stays bounded as the
+# NDJSON log grows unbounded over a machine's lifetime.
+_SCAN_CAP = 500
+# How much recency tilts the blended score vs. raw similarity. Similarity
+# still dominates (0.7); recency (0.3) breaks ties toward fresher lessons so
+# a stale near-match can't outrank an equally-relevant fresh one.
+_RECENCY_WEIGHT = 0.3
+# Two lessons whose goal-text token sets overlap at/above this are treated as
+# near-duplicates; only the higher-scored one survives in the top-k.
+_DEDUP_THRESHOLD = 0.9
+
+
 def recall(
     goal_text: str,
     *,
@@ -153,42 +165,75 @@ def recall(
     min_score: float = 0.05,
     channel: str | None = None,
     user_id: str | None = None,
+    scan_cap: int = _SCAN_CAP,
 ) -> list[tuple[float, Reflexion]]:
     """Return the top-k most similar prior reflections.
 
     Tuples are (score, Reflexion), sorted by score descending. Empty
     list if no file exists or no matches above ``min_score``.
+
+    The returned score blends token-jaccard similarity with a recency
+    factor so a fresher lesson outranks an equally-relevant stale one;
+    only the most recent ``scan_cap`` lines are considered, and
+    near-identical lessons are de-duplicated within the top-k.
     """
     if not goal_text or not path.exists():
         return []
     qt = _tokens(goal_text)
-    scored: list[tuple[float, Reflexion]] = []
+    entries: list[Reflexion] = []
     try:
         with open(path, encoding="utf-8") as f:
-            for raw in f:
-                try:
-                    data = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-                try:
-                    entry = Reflexion(**{
-                        k: data.get(k) for k in (
-                            "ts", "goal_text", "failure_class",
-                            "failure_msg", "reflection", "tools_used",
-                            "channel", "user_id",
-                        )
-                    })
-                except TypeError:
-                    continue
-                if not _scope_matches(entry, channel=channel, user_id=user_id):
-                    continue
-                score = _jaccard(qt, _tokens(entry.goal_text))
-                if score >= min_score:
-                    scored.append((score, entry))
+            lines = f.readlines()
     except OSError:
         return []
-    scored.sort(key=lambda p: p[0], reverse=True)
-    return scored[:max(1, k)]
+    for raw in lines[-max(1, scan_cap):]:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        try:
+            entry = Reflexion(**{
+                key: data.get(key) for key in (
+                    "ts", "goal_text", "failure_class",
+                    "failure_msg", "reflection", "tools_used",
+                    "channel", "user_id",
+                )
+            })
+        except TypeError:
+            continue
+        if not _scope_matches(entry, channel=channel, user_id=user_id):
+            continue
+        entries.append(entry)
+
+    if not entries:
+        return []
+    # Recency is measured against the freshest entry seen so the blend is
+    # deterministic (no wall-clock dependency) and bounded to [0, 1].
+    newest = max(e.ts for e in entries)
+    oldest = min(e.ts for e in entries)
+    span = newest - oldest
+
+    scored: list[tuple[float, Reflexion]] = []
+    for entry in entries:
+        sim = _jaccard(qt, _tokens(entry.goal_text))
+        if sim < min_score:
+            continue
+        recency = 1.0 if span <= 0 else (entry.ts - oldest) / span
+        blended = (1.0 - _RECENCY_WEIGHT) * sim + _RECENCY_WEIGHT * recency
+        scored.append((blended, entry))
+
+    scored.sort(key=lambda p: (p[0], p[1].ts), reverse=True)
+
+    top: list[tuple[float, Reflexion]] = []
+    for score, entry in scored:
+        et = _tokens(entry.goal_text)
+        if any(_jaccard(et, _tokens(k_entry.goal_text)) >= _DEDUP_THRESHOLD
+               for _, k_entry in top):
+            continue
+        top.append((score, entry))
+        if len(top) >= max(1, k):
+            break
+    return top
 
 
 def list_recent(

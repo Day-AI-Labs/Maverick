@@ -177,6 +177,11 @@ def _fit_recent_to_budget(messages: list[dict], budget_tokens: int) -> tuple[lis
             fitted_reversed.append(dict(msg))
             remaining -= cost
             continue
+        if remaining <= 0:
+            # Budget exhausted: stop here rather than appending
+            # empty-content turns the model would see as blank user/
+            # assistant messages. The older tail is dropped, not blanked.
+            break
         fitted_reversed.append(_trim_message_to_tokens(msg, remaining))
         remaining = 0
     fitted_reversed.reverse()
@@ -324,9 +329,17 @@ def _score_by_embedding(
         return dot / (na * nb)
 
     texts = [_message_text(msg) for msg in head]
+    vectors = list(m.embed(texts))
     out: list[tuple[float, int, dict]] = []
-    for i, (vec, msg) in enumerate(zip(m.embed(texts), head)):
-        out.append((_cos(qv, vec), i, msg))
+    for i, msg in enumerate(head):
+        # The embedder may yield fewer vectors than head turns (empty
+        # texts / batching). Drive the loop by head and, when a turn has
+        # no vector, KEEP it (treat as max relevance) rather than letting
+        # it be silently dropped and culled.
+        if i < len(vectors):
+            out.append((_cos(qv, vectors[i]), i, msg))
+        else:
+            out.append((float("inf"), i, msg))
     return out
 
 
