@@ -26,12 +26,37 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
+from pathlib import Path
 from typing import Any
 
 from . import Tool
 
 log = logging.getLogger(__name__)
+
+
+def _confine_local(source: str, workdir: Path | None) -> Path:
+    """Resolve a local spec path, confined to the workspace.
+
+    #612: every other file-reading tool (fs / ocr / pdf_reader / view_image)
+    confines local paths to the workdir; ``openapi_runner`` did ``open(source)``
+    on any host path (``/etc/passwd``, ``~/.ssh/id_rsa``). Confine here too.
+    An absolute path is allowed only when it resolves INSIDE the workspace —
+    so loading a spec by absolute path (a tested feature) keeps working for
+    in-workspace files, while a path escape raises. ``~`` is expanded first so
+    ``~/.ssh/...`` can't sneak past via expansion inside the workdir.
+    """
+    base = (workdir or Path.cwd()).resolve()
+    p = Path(os.path.expanduser(source))
+    p = p.resolve() if p.is_absolute() else (base / p).resolve()
+    try:
+        p.relative_to(base)
+    except ValueError as e:
+        raise RuntimeError(
+            f"refusing to read spec outside the workspace: {source}"
+        ) from e
+    return p
 
 
 _OAS_SCHEMA: dict[str, Any] = {
@@ -67,11 +92,16 @@ _spec_lock = threading.Lock()
 _spec_cache: dict[str, dict] = {}
 
 
-def _load_spec(source: str) -> dict:
+def _load_spec(source: str, workdir: Path | None = None) -> dict:
+    is_url = source.startswith(("http://", "https://"))
+    # #612: confine local reads to the workspace BEFORE the cache lookup so a
+    # path escape can't slip through a warm cache (and is rejected even if the
+    # same bad path was attempted before).
+    local_path = None if is_url else _confine_local(source, workdir)
     with _spec_lock:
         if source in _spec_cache:
             return _spec_cache[source]
-    if source.startswith(("http://", "https://")):
+    if is_url:
         from ._ssrf import safe_client
         # safe_client validates the host and pins the connection to the
         # resolved public IP (closes the DNS-rebinding TOCTOU).
@@ -80,7 +110,7 @@ def _load_spec(source: str) -> dict:
         r.raise_for_status()
         text = r.text
     else:
-        with open(source, encoding="utf-8") as f:
+        with open(local_path, encoding="utf-8") as f:
             text = f.read()
     # Try JSON first; fall back to YAML.
     try:
@@ -151,8 +181,8 @@ def _merged_parameters(spec: dict, path_item: dict, op: dict) -> list[dict]:
     return list(merged.values())
 
 
-def _op_list(spec_src: str) -> str:
-    spec = _load_spec(spec_src)
+def _op_list(spec_src: str, workdir: Path | None = None) -> str:
+    spec = _load_spec(spec_src, workdir)
     rows: list[str] = []
     for method, path, op in _walk_ops(spec):
         op_id = op.get("operationId") or f"{method.lower()}_{path}"
@@ -172,8 +202,8 @@ def _find_op(spec: dict, op_id: str) -> tuple[str, str, dict] | None:
     return None
 
 
-def _op_describe(spec_src: str, op_id: str) -> str:
-    spec = _load_spec(spec_src)
+def _op_describe(spec_src: str, op_id: str, workdir: Path | None = None) -> str:
+    spec = _load_spec(spec_src, workdir)
     found = _find_op(spec, op_id)
     if not found:
         return f"op {op_id!r} not found"
@@ -211,8 +241,9 @@ def _op_call(
     body: Any,
     headers: dict | None,
     base_url: str,
+    workdir: Path | None = None,
 ) -> str:
-    spec = _load_spec(spec_src)
+    spec = _load_spec(spec_src, workdir)
     found = _find_op(spec, op_id)
     if not found:
         return f"op {op_id!r} not found"
@@ -252,7 +283,7 @@ def _op_call(
     return f"HTTP {r.status_code}\n{truncated}"
 
 
-def _run(args: dict[str, Any]) -> str:
+def _run(args: dict[str, Any], workdir: Path | None = None) -> str:
     op = args.get("op")
     if not op:
         return "ERROR: op is required"
@@ -261,12 +292,12 @@ def _run(args: dict[str, Any]) -> str:
         return "ERROR: spec is required (URL or local path)"
     try:
         if op == "list_ops":
-            return _op_list(spec_src)
+            return _op_list(spec_src, workdir)
         if op == "describe":
             op_id = (args.get("op_id") or "").strip()
             if not op_id:
                 return "ERROR: describe requires op_id"
-            return _op_describe(spec_src, op_id)
+            return _op_describe(spec_src, op_id, workdir)
         if op == "call":
             try:
                 import httpx  # noqa: F401
@@ -281,6 +312,7 @@ def _run(args: dict[str, Any]) -> str:
                 args.get("body"),
                 args.get("headers") if isinstance(args.get("headers"), dict) else None,
                 (args.get("base_url") or "").strip(),
+                workdir,
             )
     except RuntimeError as e:
         return f"ERROR: {e}"
@@ -292,7 +324,17 @@ def _run(args: dict[str, Any]) -> str:
     return f"ERROR: unknown op {op!r}"
 
 
-def openapi_runner() -> Tool:
+def openapi_runner(sandbox: Any = None) -> Tool:
+    # #612: thread the sandbox workdir so local spec reads are confined to the
+    # workspace (URL specs are unaffected). None -> falls back to cwd-confine.
+    workdir = None
+    wd = getattr(sandbox, "workdir", None)
+    if wd is not None:
+        workdir = Path(wd)
+
+    def _fn(args: dict[str, Any]) -> str:
+        return _run(args, workdir)
+
     return Tool(
         name="openapi_runner",
         description=(
@@ -303,5 +345,5 @@ def openapi_runner() -> Tool:
             "Spec URL is cached for the process."
         ),
         input_schema=_OAS_SCHEMA,
-        fn=_run,
+        fn=_fn,
     )

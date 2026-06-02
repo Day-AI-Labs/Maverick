@@ -953,6 +953,13 @@ class Agent:
                     # `verifier_confidence=1.0` (the fallback when
                     # verdict is None) regardless of actual quality.
                     self._already_verified = False
+                    # #612: `_patch_validated` was sticky for the whole run
+                    # (only ever set True), so after one rejected patch a
+                    # later genuinely-different FINAL would skip its own
+                    # apply-check / diff extraction. Reset it alongside
+                    # `_already_verified` so each new FINAL re-validates the
+                    # patch it actually carries.
+                    self._patch_validated = False
 
                     # Wave 8: coding-mode patch self-validation. If the
                     # workdir is a git repo AND the FINAL contains a
@@ -1570,7 +1577,20 @@ class Agent:
                             "ERROR: tool not executed (budget exceeded)"
                         )
                         raise
-                    output = await self._run_tool(tc.name, tc.input)
+                    # #612: a stateful serial tool (notably `spawn_subagent`,
+                    # whose child shares this Budget) can trip BudgetExceeded
+                    # — or a halt can land — DURING execution. That raise would
+                    # leave this tool_use + any siblings already dispatched this
+                    # turn without matching tool_results -> Anthropic 400 on a
+                    # resume/parent. Answer every pending tool_use, then re-raise
+                    # so the stop still halts the run cleanly.
+                    try:
+                        output = await self._run_tool(tc.name, tc.input)
+                    except (BudgetExceeded, killswitch.Halted):
+                        _answer_pending_tool_uses(
+                            "ERROR: tool not executed (run stopped)"
+                        )
+                        raise
                     if tc.name == "ask_user":
                         blocked = True
                     bb.post(

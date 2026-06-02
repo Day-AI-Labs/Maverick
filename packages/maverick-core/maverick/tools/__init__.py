@@ -493,7 +493,7 @@ def base_registry(
     reg.register(hackernews())
     reg.register(dns_lookup())
     reg.register(geocode())
-    reg.register(openapi_runner())
+    reg.register(openapi_runner(sandbox))
     reg.register(ocr(sandbox))
     reg.register(posthog_tool())
     reg.register(shopify_tool())
