@@ -439,7 +439,9 @@ class TestGeneratedToolIsolationAndConsent:
             f"subprocess.run(['touch', {str(marker)!r}])\n"
             "def make_tool():\n"
             "    from maverick.tools import Tool\n"
-            "    return Tool(name='x', description='d', input_schema={}, fn=lambda a: 'x')\n"
+            "    return Tool(\n"
+            "        name='x', description='d', input_schema={}, fn=lambda a: 'x',\n"
+            "    )\n"
         )
         with pytest.raises(ValueError, match="disallowed module"):
             sl.write_generated_tool("evil_sub", malicious)
@@ -455,11 +457,61 @@ class TestGeneratedToolIsolationAndConsent:
             "raise RuntimeError('boom at import')\n"
             "def make_tool():\n"
             "    from maverick.tools import Tool\n"
-            "    return Tool(name='x', description='d', input_schema={}, fn=lambda a: 'x')\n"
+            "    return Tool(\n"
+            "        name='x', description='d', input_schema={}, fn=lambda a: 'x',\n"
+            "    )\n"
         )
         with pytest.raises(ValueError, match="failed validation"):
             self_learning.write_generated_tool("boom_import", src)
         assert not (self_learning.GENERATED_TOOLS_DIR / "boom_import.py").exists()
+
+    def test_import_check_rejects_spoofed_success_marker(self):
+        # Generated module stdout must not be able to spoof the probe-only
+        # success signal. Even though this prints the old fixed marker, the
+        # child exits non-zero, validation fails, and nothing is persisted.
+        src = (
+            f"print({self_learning._IMPORT_CHECK_OK!r})\n"
+            "raise RuntimeError('boom after spoofed success')\n"
+            "def make_tool():\n"
+            "    from maverick.tools import Tool\n"
+            "    return Tool(\n"
+            "        name='x', description='d', input_schema={}, fn=lambda a: 'x',\n"
+            "    )\n"
+        )
+        with pytest.raises(ValueError, match="failed validation"):
+            self_learning.write_generated_tool("spoof_marker", src)
+        assert not (self_learning.GENERATED_TOOLS_DIR / "spoof_marker.py").exists()
+
+    def test_sandbox_import_check_requires_zero_exit_and_exact_stdout(self, tmp_path):
+        class FakeSandbox:
+            def exec(self, cmd, timeout=None):
+                class Result:
+                    stdout = f"{self_learning._IMPORT_CHECK_OK}\n"
+                    stderr = "traceback from generated module"
+                    exit_code = 1
+                return Result()
+
+        with pytest.raises(ValueError, match="traceback from generated module"):
+            self_learning._validate_import_isolated(
+                tmp_path / "unused.py", sandbox=FakeSandbox(),
+            )
+
+    def test_final_host_import_failure_removes_durable_file(self):
+        # The isolated probe imports the staging file as maverick_generated_probe.
+        # Simulate a failure that appears only during the final host import; the
+        # durable file must be removed so load_generated_tools() cannot retry it.
+        src = (
+            "if __name__ != 'maverick_generated_probe':\n"
+            "    raise RuntimeError('host import failed')\n"
+            "def make_tool():\n"
+            "    from maverick.tools import Tool\n"
+            "    return Tool(\n"
+            "        name='x', description='d', input_schema={}, fn=lambda a: 'x',\n"
+            "    )\n"
+        )
+        with pytest.raises(RuntimeError, match="host import failed"):
+            self_learning.write_generated_tool("cleanup_fail", src)
+        assert not (self_learning.GENERATED_TOOLS_DIR / "cleanup_fail.py").exists()
 
     def test_consent_denied_blocks_registration(self, monkeypatch):
         monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-deny")
