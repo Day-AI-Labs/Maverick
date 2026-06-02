@@ -326,6 +326,14 @@ def load_from_entry_points() -> int:
     allowed factory, register what it returned, and isolate failures (one
     broken plugin doesn't disable the rest).
 
+    Gating reuses :func:`maverick.plugins._gate`, so hooks inherit the same
+    load-time controls the four plugin slots use: the dist-qualified allowlist,
+    the name-squat defense (a ``maverick.hooks`` name published by 2+
+    distributions is refused unless pinned ``name@dist``), and manifest
+    permission enforcement (a hook plugin whose ``maverick-plugin.toml``
+    requests an ungranted permission is skipped, subject to
+    ``[plugins] enforce_permissions``).
+
     Returns the number of hooks registered.
     """
     try:
@@ -333,17 +341,23 @@ def load_from_entry_points() -> int:
     except ImportError:  # pragma: no cover -- py<3.10
         return 0
     try:
-        eps = entry_points(group="maverick.hooks")
+        eps = list(entry_points(group="maverick.hooks"))
     except TypeError:  # pragma: no cover -- py<3.10 API differences
-        eps = entry_points().get("maverick.hooks", [])  # type: ignore[assignment]
+        eps = list(entry_points().get("maverick.hooks", []))  # type: ignore[assignment]
 
-    from .plugins import _allowed_plugin_names, _is_allowed
+    from .plugins import (
+        _allowed_plugin_names,
+        _gate,
+        _name_dist_map,
+        _permission_policy,
+    )
 
     allow = _allowed_plugin_names()
+    name_dists = _name_dist_map(eps)
+    granted, enforce = _permission_policy()
     registered = 0
     for ep in eps:
-        if not _is_allowed(ep.name, allow):
-            log.debug("hook plugin %s not in allowlist; skipping", ep.name)
+        if not _gate(ep, "maverick.hooks", allow, name_dists, granted, enforce):
             continue
         try:
             register_fn = ep.load()
