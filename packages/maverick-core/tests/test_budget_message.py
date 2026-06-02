@@ -35,4 +35,7 @@ async def test_budget_exhaustion_gives_helpful_message(tmp_path: Path, fake_llm)
     assert "hit your spending or time limit" in out
     assert "--max-dollars" in out
     assert "ran into an error" not in out
+    # The message reports spend AGAINST the configured cap, not spend alone, so
+    # the user can see how far over they went and what the limit was (#598).
+    assert "$5.00 of $0.01 cap" in out
     assert world.get_goal(gid).status == "blocked"

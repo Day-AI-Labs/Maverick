@@ -621,7 +621,7 @@ async def run_goal(
             # Sentence-style error so a non-engineer can read it.
             return (
                 f"Stopped: this goal hit your spending or time limit "
-                f"(${budget.dollars:.2f}, {budget.elapsed():.0f}s elapsed).\n"
+                f"(${budget.dollars:.2f} of ${budget.max_dollars:.2f} cap, {budget.elapsed():.0f}s of {budget.max_wall_seconds:.0f}s).\n"
                 f"Resume with a higher cap: "
                 f"maverick resume {goal_id} --max-dollars <higher>"
             )
@@ -712,7 +712,7 @@ async def run_goal(
                 })
                 return (
                     f"Stopped: this goal hit your spending or time limit "
-                    f"(${budget.dollars:.2f}, {budget.elapsed():.0f}s elapsed).\n"
+                    f"(${budget.dollars:.2f} of ${budget.max_dollars:.2f} cap, {budget.elapsed():.0f}s of {budget.max_wall_seconds:.0f}s).\n"
                     f"Resume with a higher cap: "
                     f"maverick resume {goal_id} --max-dollars <higher>"
                 )
@@ -754,7 +754,7 @@ async def run_goal(
                 # BudgetExceeded, not the generic "ran into an error".
                 return (
                     f"Stopped: this goal hit your spending or time limit "
-                    f"(${budget.dollars:.2f}, {budget.elapsed():.0f}s elapsed).\n"
+                    f"(${budget.dollars:.2f} of ${budget.max_dollars:.2f} cap, {budget.elapsed():.0f}s of {budget.max_wall_seconds:.0f}s).\n"
                     f"Resume with a higher cap: "
                     f"maverick resume {goal_id} --max-dollars <higher>"
                 )
