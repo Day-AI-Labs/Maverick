@@ -41,6 +41,36 @@ def _isolate_maverick_home(tmp_path, monkeypatch):
     return tmp_path
 
 
+@pytest.fixture(autouse=True)
+def _isolate_root_logging():
+    """Snapshot + restore the root logger around every test.
+
+    ``maverick.cli`` configures process-global logging on every command run
+    (the group callback calls ``_configure_cli_logging`` -> ``configure_logging``,
+    which is idempotent and *replaces* the root handlers, optionally attaching a
+    warning filter). Any ``CliRunner(main)`` test therefore mutates the root
+    logger for the rest of the session -- removing pytest's caplog handler and
+    leaving a filter that drops non-allowlisted WARNINGs -- which silently
+    breaks later ``caplog``-based warning assertions. Resetting per test keeps
+    that mutation from leaking; within a test logging still behaves normally.
+    """
+    import logging
+
+    import maverick.logging_config as lc
+    root = logging.getLogger()
+    saved_handlers = root.handlers[:]
+    saved_level = root.level
+    saved_filters = root.filters[:]
+    saved_configured = getattr(lc, "_configured", False)
+    try:
+        yield
+    finally:
+        root.handlers[:] = saved_handlers
+        root.setLevel(saved_level)
+        root.filters[:] = saved_filters
+        lc._configured = saved_configured
+
+
 @dataclass
 class FakeLLM:
     """Drop-in replacement for ``maverick.llm.LLM`` driven by a script."""
