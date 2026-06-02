@@ -23,8 +23,36 @@ _GIT_GOLD_LEAK_PATTERNS = [
     re.compile(r"\bgit\s[^\n;&|]*?\bblame\b"),
     # `git diff` HEAD-vs-worktree is fine; block ref-vs-ref diffs.
     re.compile(r"\bgit\s[^\n;&|]*?\bdiff\s+\S+\.\."),
+    # #474: a SINGLE ref (no `..`) — `git diff main` / `origin/main` /
+    # `HEAD~1` / `<sha>` — compares that ref against the working tree,
+    # which IS the inverted gold patch. Block `git diff <ref>` for any
+    # ref other than HEAD / the working tree. We allow the bare options
+    # cases (`git diff`, `git diff --staged`, `git diff -- path`,
+    # `git diff HEAD`, `git diff HEAD --`) and block when the first
+    # non-option token is a ref that isn't exactly HEAD. The negative
+    # lookahead skips leading dash-options and `--` path separators.
+    re.compile(
+        r"\bgit\s[^\n;&|]*?\bdiff\s+"
+        r"(?:-(?!-\s|-$)[^\s]+\s+)*"  # skip dash-options, but NOT a lone `--`
+        r"(?!HEAD(?:\s|$))"           # HEAD alone (vs worktree) is fine
+        r"(?!-)"                      # not an option/`--` (paths-only sep)
+        r"[A-Za-z0-9_./~^@]+"         # a ref token (branch/sha/tag)
+    ),
     re.compile(r"\bgit\s[^\n;&|]*?\bstash\s+(?:list|show)\b"),
     re.compile(r"\bgit\s[^\n;&|]*?\breflog\b"),
+    # #474: patch-emitting porcelain. `format-patch --stdout`,
+    # `whatchanged -p`, `archive`, `bundle create` all materialize the
+    # tree/history (and thus the gold patch) outside the blocked verbs.
+    # Bare `git log --format=%H` / `--pretty=%H` leaks the gold SHA,
+    # which then unlocks `git diff <sha>` — so block those too.
+    re.compile(r"\bgit\s[^\n;&|]*?\bformat-patch\b.*?--stdout\b"),
+    re.compile(r"\bgit\s[^\n;&|]*?\bwhatchanged\b"),
+    re.compile(r"\bgit\s[^\n;&|]*?\barchive\b"),
+    re.compile(r"\bgit\s[^\n;&|]*?\bbundle\s+create\b"),
+    re.compile(
+        r"\bgit\s[^\n;&|]*?\blog\b.*?"
+        r"(?:--format|--pretty)[=\s]\S*%H",
+    ),
     # Plumbing — Wave 12 hardening: full coverage including subcommands
     # that the original list missed (rev-list, show-ref, ls-files,
     # fsck, update-ref, symbolic-ref).
@@ -54,6 +82,24 @@ _GIT_GOLD_LEAK_PATTERNS = [
         r"|refs(?:/|\b)|objects(?:/|\b)|index\b)",
     ),
     re.compile(r"\bfind\s+\.git\b"),
+    # #474: `.git` laundering. The rule above anchors on the literal
+    # `.git/<file>` token, so relocating/aliasing the dir to a non-`.git`
+    # name evades it: `cp -r .git /tmp/g && cat /tmp/g/HEAD`,
+    # `ln -s .git gd && cat gd/HEAD`, `tar cf - .git`, `rsync -a .git x`.
+    # Block any archiver/copier/linker/reader that NAMES `.git` as a
+    # source/argument. Match `.git` as a whole path component (start of
+    # token or after `/`), with a word/path boundary after, so we catch
+    # both bare `.git` and `.git/...` but not e.g. `foo.gitignore`.
+    re.compile(
+        r"\b(?:cp|mv|ln|tar|rsync|cat|scp|install|7z|zip)\b"
+        r"[^\n;&|]*?(?:^|\s|=)\.git(?:/|\b)",
+    ),
+    # NOTE: string-matching is inherently brittle (quoting, `$(...)`,
+    # env-var indirection, base64, etc. all evade it). The robust
+    # complement is to relocate `.git` out of the sandbox workdir (or
+    # make it unreadable) for the duration of an opaque-mode run; that
+    # belongs in the sandbox/backend setup, not in this shell-tool regex
+    # blocklist, and is intentionally NOT implemented here.
 ]
 
 
