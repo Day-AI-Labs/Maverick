@@ -96,6 +96,23 @@ def _bounded_int(value: Any, *, default: int, ceiling: Any) -> int:
     return int(_bounded_float(value, default=float(default), ceiling=ceiling))
 
 
+def _redacted_push_config(cfg: dict | None) -> dict | None:
+    """Mask the push-notification ``token`` for read-back.
+
+    The token is a write-only secret an A2A caller registers so it can
+    authenticate the callbacks we POST to its webhook. Echoing it back from
+    ``get_push_config`` would let a peer that shares the (single) A2A bearer
+    token read another caller's webhook secret. Mask it to a fixed marker so
+    the owner can still tell that a token is configured; the real value stays
+    in storage for ``_fire_push``.
+    """
+    if not cfg or "token" not in cfg:
+        return cfg
+    redacted = dict(cfg)
+    redacted["token"] = "***"
+    return redacted
+
+
 # Runner signature: (text, *, max_dollars, max_wall, max_depth) -> result str.
 Runner = Callable[..., str]
 
@@ -378,7 +395,10 @@ class TaskEngine:
                                or (params or {}).get("taskId", ""))
         if task is None:
             raise _RpcError(_TASK_NOT_FOUND, "task not found")
-        return {"taskId": task.id, "pushNotificationConfig": task.push_config}
+        return {
+            "taskId": task.id,
+            "pushNotificationConfig": _redacted_push_config(task.push_config),
+        }
 
     async def _fire_push(self, task: _Task) -> None:
         """POST the terminal Task to a registered webhook (best-effort).
