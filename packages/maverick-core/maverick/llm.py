@@ -425,7 +425,10 @@ class LLM:
                 _rm("llm_latency", _dt_ms / 1000.0,
                     labels={"provider": provider, "model": model_id})
                 if budget is not None:
-                    _rm("budget_dollars", budget.dollars)
+                    # inc() by THIS call's delta, not the per-goal cumulative
+                    # total: budget_dollars is a lifetime counter, and passing
+                    # the per-goal accumulator let a fresh goal stomp it.
+                    _rm("budget_dollars", _spent)
             except Exception:  # pragma: no cover
                 pass
 
@@ -512,6 +515,9 @@ class LLM:
                 _rm("llm_latency", _dt_ms / 1000.0,
                     labels={"provider": provider, "model": model_id})
                 if budget is not None:
-                    _rm("budget_dollars", budget.dollars)
+                    # inc() by THIS call's delta, not the per-goal cumulative
+                    # total: budget_dollars is a lifetime counter, and passing
+                    # the per-goal accumulator let a fresh goal stomp it.
+                    _rm("budget_dollars", _spent)
             except Exception:  # pragma: no cover
                 pass

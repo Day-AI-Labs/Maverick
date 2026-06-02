@@ -89,7 +89,7 @@ def _initialize() -> None:
 
         if _prometheus_enabled():
             try:
-                from prometheus_client import Counter, Gauge, Histogram, start_http_server
+                from prometheus_client import Counter, Histogram, start_http_server
             except ImportError:
                 log.warning(
                     "observability: prometheus_client not installed. "
@@ -120,7 +120,12 @@ def _initialize() -> None:
                 "maverick_tool_calls_total",
                 "Tool invocations", ["tool", "status"],
             )
-            _metrics["budget_dollars"] = Gauge(
+            # Lifetime total -> a Counter (monotonic, accumulates via inc()).
+            # It used to be a Gauge fed `.set(budget.dollars)` from the per-goal
+            # Budget accumulator, so a second goal starting fresh at $0 stomped
+            # the running total back down. Callers now inc() by each call's
+            # delta, which sums to a true cross-goal lifetime spend.
+            _metrics["budget_dollars"] = Counter(
                 "maverick_budget_dollars_spent",
                 "Total dollars spent (lifetime)",
             )
