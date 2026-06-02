@@ -205,3 +205,79 @@ async def test_failed_run_records_reflexion(monkeypatch, tmp_path: Path, fake_ll
     assert "Stopped" in out  # failure surfaced to the caller
     assert len(captured) == 1
     assert "Summarize the quarterly report" in captured[0]["goal_text"]
+
+
+class TestReflexionSemanticRecall:
+    """recall() should match a lesson by meaning, not just shared tokens."""
+
+    # Query and the matching lesson deliberately share no content tokens, so
+    # jaccard scores them 0; a concept-aware embedder still ranks them close.
+    QUERY = "service kept dropping connections under load"
+    INFRA_LESSON = "exhausted the database pool during the stress run"
+    UI_LESSON = "the css grid layout broke on mobile"
+
+    @staticmethod
+    def _fake_embed(texts):
+        infra = {"service", "connections", "connection", "dropping", "load",
+                 "exhausted", "database", "pool", "stress"}
+        ui = {"css", "grid", "layout", "mobile", "broke"}
+        out = []
+        for t in texts:
+            words = set(t.lower().split())
+            if words & infra:
+                out.append([1.0, 0.0])
+            elif words & ui:
+                out.append([0.0, 1.0])
+            else:
+                out.append([0.5, 0.5])
+        return out
+
+    def _seed(self, path):
+        for goal in (self.INFRA_LESSON, self.UI_LESSON):
+            reflexion.record(
+                goal_text=goal,
+                failure_class="agent_error",
+                failure_msg="boom",
+                reflection="lesson body",
+                path=path,
+            )
+
+    def test_jaccard_path_misses_reworded_lesson(self, tmp_path, monkeypatch):
+        # No embeddings available -> jaccard. The infra lesson shares no
+        # tokens with the query, so the lexical path cannot surface it.
+        monkeypatch.setattr("maverick.skill_embeddings._have_fastembed",
+                            lambda: False)
+        path = tmp_path / "reflexions.ndjson"
+        self._seed(path)
+        hits = reflexion.recall(self.QUERY, path=path)
+        assert not any(self.INFRA_LESSON == r.goal_text for _, r in hits)
+
+    def test_embedding_path_recalls_reworded_lesson(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("maverick.skill_embeddings._have_fastembed",
+                            lambda: True)
+        monkeypatch.setattr("maverick.skill_embeddings.embed", self._fake_embed)
+        path = tmp_path / "reflexions.ndjson"
+        self._seed(path)
+        hits = reflexion.recall(self.QUERY, path=path)
+        recalled = [r.goal_text for _, r in hits]
+        # The semantically-matching infra lesson is surfaced; the unrelated
+        # UI lesson (cosine 0) is filtered by min_embed_score.
+        assert self.INFRA_LESSON in recalled
+        assert self.UI_LESSON not in recalled
+
+    def test_embedding_failure_falls_back_to_jaccard(self, tmp_path, monkeypatch):
+        # A lesson that DOES share tokens with the query is still found when
+        # the embedder raises -- recall must fail open, not blow up.
+        monkeypatch.setattr("maverick.skill_embeddings._have_fastembed",
+                            lambda: True)
+        def _boom(_texts):
+            raise RuntimeError("embedding backend down")
+        monkeypatch.setattr("maverick.skill_embeddings.embed", _boom)
+        path = tmp_path / "reflexions.ndjson"
+        reflexion.record(
+            goal_text="fix the flaky parser test",
+            failure_class="agent_error", failure_msg="boom",
+            reflection="plan first", path=path,
+        )
+        hits = reflexion.recall("fix the flaky parser test", path=path)
+        assert any("parser" in r.goal_text for _, r in hits)
