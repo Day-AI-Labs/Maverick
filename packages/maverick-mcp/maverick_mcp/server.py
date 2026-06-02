@@ -724,6 +724,13 @@ class MCPServer:
             method = msg.get("method")
             request_id = msg.get("id")
             params = msg.get("params", {}) or {}
+            # A client can send `params` as a non-object (list/string/number).
+            # Handlers call `params.get(...)`, which would raise AttributeError
+            # -- caught below as a scrubbed -32603 "internal error". Coerce to
+            # {} so a malformed-params call yields the correct -32602 invalid-
+            # params response from the handler instead.
+            if not isinstance(params, dict):
+                params = {}
             is_notification = request_id is None
             try:
                 if method == "initialize":

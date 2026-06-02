@@ -75,7 +75,14 @@ def _parse_sse_response(stream_text: str) -> str:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        result = event.get("result") or {}
+        # x.com is an untrusted upstream: a chunk whose `result` (or the event
+        # itself) isn't the expected object would make `.get()` raise and crash
+        # the whole response parse. Skip anything that isn't shaped right.
+        if not isinstance(event, dict):
+            continue
+        result = event.get("result")
+        if not isinstance(result, dict):
+            continue
         message = result.get("message")
         if isinstance(message, str):
             pieces.append(message)
