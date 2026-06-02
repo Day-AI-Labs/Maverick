@@ -136,6 +136,7 @@ def require_consent(
     scope: str | None = None,
     detail: str | None = None,
     raise_on_deny: bool = False,
+    allow_auto_approve: bool = True,
 ) -> ConsentDecision:
     """Gate a destructive action through user (or env) approval.
 
@@ -146,6 +147,12 @@ def require_consent(
 
     Returns a ConsentDecision. If ``raise_on_deny``, denials raise
     ConsentDenied instead.
+
+    ``allow_auto_approve=False`` is for high-trust paths that require an
+    explicit operator decision even though the consent primitive defaults to
+    ``auto-approve`` for backwards compatibility. Ledger grants, dashboard
+    approvals, and TTY prompts still work; silent auto-approval is treated as
+    a denial.
     """
     ts = time.time()
     # 1) Ledger fast-path.
@@ -154,7 +161,13 @@ def require_consent(
     # 2) Mode override.
     mode = _resolve_mode()
     if mode == "auto-approve":
-        return _emit(ConsentDecision(True, "auto", risk, ts), action, scope, detail)
+        d = _emit(
+            ConsentDecision(allow_auto_approve, "auto", risk, ts),
+            action, scope, detail,
+        )
+        if not d.granted and raise_on_deny:
+            raise ConsentDenied(action)
+        return d
     if mode == "auto-deny":
         d = _emit(ConsentDecision(False, "auto", risk, ts), action, scope, detail)
         if raise_on_deny:
