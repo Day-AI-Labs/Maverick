@@ -10,6 +10,7 @@ import asyncio
 import logging
 import os
 import secrets as _secrets
+import time
 import uuid
 from dataclasses import dataclass
 
@@ -71,6 +72,11 @@ External MCP tools (if any) appear as `mcp_<server>__<tool>`."""
 # the orchestrator needs to actually produce the answer (the dogfooded failure:
 # 35 agents, $7.85 spent, zero report). 0 disables it.
 _SYNTHESIS_RESERVE = env_float("MAVERICK_SYNTHESIS_RESERVE", 0.25)
+
+# #614: how often (seconds) the root agent mirrors running spend onto its
+# open episode row so `maverick runs` / `maverick budget` show mid-run spend.
+# Throttled so we don't write the row on every step of a fast loop.
+_SPEND_MIRROR_INTERVAL = env_float("MAVERICK_SPEND_MIRROR_INTERVAL", 5.0)
 
 
 def _last_assistant_text(messages: list[dict]) -> str:
@@ -155,6 +161,11 @@ class Agent:
         self._prm = build_from_env()
         self._prm_enabled = type(self._prm).__name__ != "NullPRM"
         self._last_step_score = 0.5
+        # Live-spend mirror throttle (#614): the root agent periodically
+        # mirrors running totals onto its open episode row so `maverick runs`
+        # / `maverick budget` reflect accruing mid-run spend instead of
+        # $0.00 / 0 tools. Throttled to once per _SPEND_MIRROR_INTERVAL s.
+        self._last_spend_mirror = 0.0
 
     @property
     def checkpoint_id(self) -> str:
@@ -648,6 +659,33 @@ class Agent:
         except Exception as e:  # pragma: no cover - PRM must never break the loop
             log.debug("PRM scoring skipped: %s", e)
 
+    def _mirror_live_spend(self, episode_id: int) -> None:
+        """Throttled write of running totals onto the open episode row (#614).
+
+        Only the root agent (depth 0) of a goal-scoped run mirrors; sub-agents
+        share the goal's single episode and budget, so the orchestrator's
+        write already covers the whole swarm's accruing spend. Read-side
+        observability only -- `update_episode_spend` guards on
+        `ended_at IS NULL` so it can never clobber `end_episode`. Never raises.
+        """
+        if self.depth != 0 or not episode_id or self.ctx.goal_id is None:
+            return
+        now = time.monotonic()
+        if (now - self._last_spend_mirror) < _SPEND_MIRROR_INTERVAL:
+            return
+        self._last_spend_mirror = now
+        b = self.ctx.budget
+        try:
+            self.ctx.world.update_episode_spend(
+                episode_id,
+                cost_dollars=b.dollars,
+                input_tokens=b.input_tokens,
+                output_tokens=b.output_tokens,
+                tool_calls=b.tool_calls,
+            )
+        except Exception as e:  # pragma: no cover -- observability never blocks
+            log.debug("live-spend mirror skipped: %s", e)
+
     async def run(self) -> AgentResult:
         bb = self.ctx.blackboard
         bb.post(self.name, "plan", f"role={self.role} depth={self.depth} brief={self.brief}")
@@ -738,6 +776,13 @@ class Agent:
             except BudgetExceeded as e:
                 bb.post(self.name, "error", f"budget exceeded: {e}")
                 return AgentResult(error=f"budget exceeded: {e}", role=self.role, name=self.name)
+
+            # #614 live-spend mirror: at the turn boundary, the root agent
+            # writes the budget's running totals onto its open episode row
+            # (throttled) so `maverick runs` / `maverick budget` reflect
+            # accruing spend mid-run instead of $0.00 until end_episode.
+            # Read-side only; never blocks the run.
+            self._mirror_live_spend(ep_id)
 
             # #611 synthesis reserve: a deeper worker yields before it eats the
             # budget the top-level goal needs to write its answer. Only workers
