@@ -95,3 +95,32 @@ def test_erase_appends_superseding_anchor(tmp_path, monkeypatch):
     # stays in the append-only ledger as an auditable record of the change).
     reanchor_day_after_erase(tmp_path, p)
     assert verify_anchors(tmp_path) == []
+
+
+def test_missing_anchor_ledger_is_detected(tmp_path, monkeypatch):
+    _isolate_keys(monkeypatch, tmp_path)
+    _write_signed_day(tmp_path, _past_day(1), 2)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    _write_signed_day(tmp_path, today, 1)
+    ensure_anchors(tmp_path)
+
+    (tmp_path / signing.ANCHOR_FILENAME).unlink()
+
+    breaks = verify_anchors(tmp_path)
+    assert any(b.reason == "anchor_ledger_missing" for b in breaks)
+
+
+def test_ensure_anchors_does_not_rebuild_deleted_anchor_ledger(tmp_path, monkeypatch):
+    _isolate_keys(monkeypatch, tmp_path)
+    survivor = _past_day(1)
+    _write_signed_day(tmp_path, _past_day(2), 2)
+    _write_signed_day(tmp_path, survivor, 2)
+    ensure_anchors(tmp_path)
+
+    (tmp_path / f"{_past_day(2)}.ndjson").unlink()
+    (tmp_path / signing.ANCHOR_FILENAME).unlink()
+
+    assert ensure_anchors(tmp_path) == 0
+    assert not (tmp_path / signing.ANCHOR_FILENAME).exists()
+    breaks = verify_anchors(tmp_path)
+    assert any(b.reason == "anchor_ledger_missing" for b in breaks)

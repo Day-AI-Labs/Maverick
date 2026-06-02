@@ -467,7 +467,7 @@ def acquire_mcp_server(name: str, *, need: str = "") -> Any:
     )
     require_consent(
         "add-mcp-server", risk="high", scope=name, detail=detail,
-        raise_on_deny=True,
+        raise_on_deny=True, allow_auto_approve=False,
     )
 
     return add_mcp_server(
@@ -609,19 +609,23 @@ def _shield_ok(source: str) -> tuple[bool, str]:
 # live process. The body runs in a throwaway child: a real sandbox backend when
 # the call site has one, else a short-lived plain subprocess with a timeout.
 _IMPORT_CHECK_TIMEOUT = 20.0
-# Printed by the probe on success; its absence (timeout, crash, raising import,
-# raising make_tool()) is treated as a failed validation.
+# Printed by the probe on success. Generated module stdout is redirected to
+# stderr while the probe imports and shape-checks the module, so stdout is a
+# probe-only control channel. Validation requires both exit code 0 and stdout
+# exactly equal to this marker line; generated code cannot spoof success by
+# printing the marker before crashing.
 _IMPORT_CHECK_OK = "__MAVERICK_TOOL_OK__"
 _IMPORT_CHECK_PROBE = '''
-import importlib.util, sys
+import contextlib, importlib.util, sys
 _spec = importlib.util.spec_from_file_location("maverick_generated_probe", {path!r})
 _mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
-if not hasattr(_mod, "make_tool"):
-    print("module does not define make_tool()"); sys.exit(1)
-_t = _mod.make_tool()
-if not (getattr(_t, "name", "") and callable(getattr(_t, "fn", None))):
-    print("make_tool() did not return a valid Tool"); sys.exit(1)
+with contextlib.redirect_stdout(sys.stderr):
+    _spec.loader.exec_module(_mod)
+    if not hasattr(_mod, "make_tool"):
+        print("module does not define make_tool()"); sys.exit(1)
+    _t = _mod.make_tool()
+    if not (getattr(_t, "name", "") and callable(getattr(_t, "fn", None))):
+        print("make_tool() did not return a valid Tool"); sys.exit(1)
 print({ok!r})
 '''
 
@@ -648,9 +652,13 @@ def _validate_import_isolated(path: Path, *, sandbox: Any = None) -> None:
             raise ValueError(
                 f"generated tool import check could not run: {type(e).__name__}: {e}"
             ) from e
-        if _IMPORT_CHECK_OK not in (result.stdout or ""):
-            detail = (result.stdout or "").strip() or (result.stderr or "").strip()
-            raise ValueError(f"generated tool failed validation: {detail or 'import check failed'}")
+        stdout = result.stdout or ""
+        exit_code = getattr(result, "exit_code", 1)
+        if exit_code != 0 or stdout != f"{_IMPORT_CHECK_OK}\n":
+            detail = (result.stderr or "").strip() or stdout.strip()
+            raise ValueError(
+                f"generated tool failed validation: {detail or 'import check failed'}"
+            )
         return
     try:
         proc = subprocess.run(  # noqa: S603 -- isolated import check, not a tool shell
@@ -659,9 +667,12 @@ def _validate_import_isolated(path: Path, *, sandbox: Any = None) -> None:
         )
     except subprocess.TimeoutExpired as e:
         raise ValueError("generated tool failed validation: import timed out") from e
-    if _IMPORT_CHECK_OK not in (proc.stdout or ""):
-        detail = (proc.stdout or "").strip() or (proc.stderr or "").strip()
-        raise ValueError(f"generated tool failed validation: {detail or 'import check failed'}")
+    stdout = proc.stdout or ""
+    if proc.returncode != 0 or stdout != f"{_IMPORT_CHECK_OK}\n":
+        detail = (proc.stderr or "").strip() or stdout.strip()
+        raise ValueError(
+            f"generated tool failed validation: {detail or 'import check failed'}"
+        )
 
 
 def write_generated_tool(
@@ -725,8 +736,14 @@ def write_generated_tool(
     # Re-derive the Tool object for the caller to register live. The body has
     # already passed the out-of-host import check; importing it here is the
     # in-process runtime trust the opt-in accepts (documented residual trust).
-    module = _import_module_from_path(name, target)
-    tool = module.make_tool()
+    # If this final host import still fails, remove the durable file so later
+    # reloads cannot repeatedly execute import-time side effects.
+    try:
+        module = _import_module_from_path(name, target)
+        tool = module.make_tool()
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
     record(need or name, "tool", tool.name, source=str(target))
     return tool
 

@@ -144,12 +144,13 @@ the *capability* without re-opening the hole, by closing two gaps at once —
    catalog entry (resolved read-only via the federated index). A request that
    carries a free-text `command`/`args` is rejected outright, and a name with
    no catalog entry is rejected too.
-2. **Operator consent.** Before anything is persisted or started, the proposal
-   goes through the same consent queue as other risky actions
-   (`require_consent`). With `MAVERICK_CONSENT_MODE=dashboard` it parks in the
-   approvals queue for `maverick approve`; in `ask` mode it prompts on the TTY.
-   Denied, auto-deny, or a non-interactive context → **not persisted, not
-   started**.
+2. **Explicit operator consent.** Before anything is persisted or started, the
+   proposal goes through the same consent queue as other risky actions
+   (`require_consent`), but silent `auto-approve` mode is not accepted for this
+   high-trust path. Use a prior ledger grant, `MAVERICK_CONSENT_MODE=dashboard`
+   (parks in the approvals queue for `maverick approve`), or `ask` mode on a
+   TTY. Denied, auto-deny, default auto-approve without a ledger grant, or a
+   non-interactive context → **not persisted, not started**.
 3. **Existing spec defenses.** The pinned command still goes through
    `MCPServerSpec` validation (shell-metacharacter / NUL / newline rejection)
    and `pin_sha256` is verified against the on-disk binary at launch

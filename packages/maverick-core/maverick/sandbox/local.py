@@ -118,7 +118,10 @@ class LocalBackend:
         try:
             result = subprocess.run(
                 cmd,
-                shell=True,
+                # LocalBackend is the intentional unsandboxed host-exec path
+                # (CLAUDE.md rule 4 allowlists shell only under sandbox/); env is
+                # scrubbed and operators are warned to use a container backend.
+                shell=True,  # nosec B602
                 cwd=str(self.workdir),
                 capture_output=True,
                 text=True,

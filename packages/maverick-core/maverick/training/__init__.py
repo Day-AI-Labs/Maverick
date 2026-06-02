@@ -14,9 +14,10 @@ Layout:
   rlaif.py        RLAIF / DPO loop on the proposer using verifier
                   rewards as the signal.
 
-Status (May 2026): SCHEMA + INGEST scaffolded; PRM_TRAIN + RLAIF are
-placeholders that document the next step. Real training requires GPU
-+ trajectory volume which is operator-side work, not in-kernel.
+Status (June 2026): SCHEMA + INGEST scaffolded; PRM_TRAIN implements the
+AgentPRM head trainer (torch optional extra); RLAIF is a placeholder that
+documents the next step. Real training requires GPU + trajectory volume
+which is operator-side work, not in-kernel.
 """
 
-__all__ = ["schema", "ingest"]
+__all__ = ["schema", "ingest", "prm_train", "rlaif"]

@@ -28,8 +28,14 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # Credentials embedded in a URL / connection string
     # (scheme://user:password@host -- postgres://, redis://, mongodb://, ...).
     # Redacts only the password segment, keeping the rest readable.
+    # The scheme run is bounded ({0,31}) instead of an open `*`: an
+    # unbounded greedy class followed by the required `://` backtracks
+    # quadratically on a long run of scheme-class chars that has no `://`
+    # (a ReDoS -- scrub() runs on tool output / LLM error payloads, so a
+    # crafted long string could hang the agent). No real URL scheme is
+    # anywhere near 32 chars, so the bound changes no legitimate match.
     ("url_credentials", re.compile(
-        r"([a-zA-Z][a-zA-Z0-9+.\-]*://[^\s:/@]+:)([^\s/@]+)(@)",
+        r"([a-zA-Z][a-zA-Z0-9+.\-]{0,31}://[^\s:/@]+:)([^\s/@]+)(@)",
     )),
     # Anthropic API key (sk-ant-...)
     ("anthropic_key", re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}\b")),
@@ -52,7 +58,12 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # contains TOKEN / KEY / SECRET / PASSWORD / PASS / CREDENTIAL). Tolerates
     # a leading `export ` so shell-style `export FOO_TOKEN=...` is covered too.
     ("env_secret", re.compile(
-        r"((?:^|\n)\s*(?:export\s+)?[A-Z][A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z0-9_]*\s*=\s*)"
+        # Leading indentation is `[^\S\n]*` (horizontal whitespace), NOT `\s*`:
+        # `\s` includes `\n`, and with re.MULTILINE the `(?:^|\n)` anchor fires
+        # at every line start, so on a long run of newlines `\s*` backtracks
+        # O(N^2) -- a ReDoS, since scrub() runs on attacker-influenced output.
+        # The newline itself is already handled by the `(?:^|\n)` anchor.
+        r"((?:^|\n)[^\S\n]*(?:export\s+)?[A-Z][A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z0-9_]*\s*=\s*)"
         # Value: a single- or double-quoted string (which may contain
         # spaces) OR a bare run of non-space chars. Without the quoted
         # alternatives a value like FOO_SECRET="a b c" matched only "a,

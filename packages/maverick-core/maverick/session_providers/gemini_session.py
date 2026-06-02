@@ -60,7 +60,10 @@ def _sapisid_hash(sapisid: str, origin: str = _BASE_URL) -> str:
     """
     ts = str(int(time.time()))
     raw = f"{ts} {sapisid} {origin}".encode()
-    digest = hashlib.sha1(raw).hexdigest()
+    # SAPISIDHASH is Google's protocol: the token IS SHA1(ts + sapisid + origin).
+    # The SHA1 is a wire-format requirement, not a security primitive we chose --
+    # usedforsecurity=False documents that (and satisfies bandit B324).
+    digest = hashlib.sha1(raw, usedforsecurity=False).hexdigest()
     return f"SAPISIDHASH {ts}_{digest}"
 
 

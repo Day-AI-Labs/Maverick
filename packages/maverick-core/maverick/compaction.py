@@ -9,8 +9,12 @@ and pay full price every turn. The compaction policy:
   ``<digest>`` block prepended to the messages list; raw turns are
   removed.
 * **Vector-index** (v0.3): episode digests get embedded so RAG can
-  recover deep history. Not in this commit -- needs an embedding
-  model wired through the provider layer first.
+  recover deep history. See ``DigestIndex`` / ``recall_relevant_digests``
+  below -- an opt-in, fail-open retrieval path. The embedder is injected
+  (``Embedder`` protocol); the default one lazily wraps the repo's
+  optional ``fastembed`` backend and is absent unless that lib is
+  installed. ``compact_messages`` behavior is unchanged when no
+  embedder/index is supplied.
 
 The "drop vs keep" boundary is hardcoded for now per the Karpathy
 review: "start hardcoded ... then learn the what-to-keep gate from
@@ -24,7 +28,10 @@ heuristic summary; the LLM-summarize variant is a follow-up).
 """
 from __future__ import annotations
 
+import math
 import os
+from dataclasses import dataclass, field
+from typing import Protocol, runtime_checkable
 
 
 # Tunables.
@@ -199,3 +206,123 @@ def make_heuristic_digest(messages: list[dict]) -> str:
         f"tools invoked: {tools_summary}\n"
         f"</digest>"
     )
+
+
+# --------------------------------------------------------------------------
+# Vector-index (RAG) path for episode digests.
+#
+# Opt-in and fail-open: nothing here runs unless a caller builds a
+# ``DigestIndex`` and supplies an ``Embedder``. ``compact_messages`` is
+# untouched. Embedding the deep history lets a long run recall digests of
+# turns that compaction has already dropped from the live context.
+# --------------------------------------------------------------------------
+
+
+@runtime_checkable
+class Embedder(Protocol):
+    """Injection seam for turning text into vectors.
+
+    Tests pass a deterministic fake; production passes ``default_embedder()``
+    (fastembed-backed) or any object with a matching ``embed``.
+    """
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        ...
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    """Cosine similarity. Returns 0.0 for mismatched/empty/zero vectors."""
+    if len(a) != len(b) or not a:
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return dot / (na * nb)
+
+
+@dataclass
+class DigestEntry:
+    text: str
+    vector: list[float]
+    turn: int
+
+
+@dataclass
+class DigestIndex:
+    """In-memory store of embedded episode digests for similarity recall."""
+
+    entries: list[DigestEntry] = field(default_factory=list)
+
+    def add(self, text: str, turn: int, embedder: Embedder) -> None:
+        """Embed and store one digest. Fail-open: skips on embed failure."""
+        vectors = embedder.embed([text])
+        if not vectors:
+            return
+        self.entries.append(DigestEntry(text=text, vector=vectors[0], turn=turn))
+
+    def add_many(
+        self, items: list[tuple[str, int]], embedder: Embedder
+    ) -> None:
+        """Embed and store ``(text, turn)`` pairs in one batched call."""
+        if not items:
+            return
+        vectors = embedder.embed([t for t, _ in items])
+        if not vectors:
+            return
+        for (text, turn), vec in zip(items, vectors):
+            self.entries.append(DigestEntry(text=text, vector=vec, turn=turn))
+
+    def retrieve(
+        self, query: str, embedder: Embedder, k: int = 3
+    ) -> list[DigestEntry]:
+        """Return the top-``k`` digests most similar to ``query``."""
+        if not self.entries or k <= 0:
+            return []
+        query_vecs = embedder.embed([query])
+        if not query_vecs:
+            return []
+        query_vec = query_vecs[0]
+        scored = [(_cosine(query_vec, e.vector), e) for e in self.entries]
+        scored.sort(key=lambda se: -se[0])
+        return [e for _, e in scored[:k]]
+
+
+class _FastembedEmbedder:
+    """Default embedder backed by the repo's optional fastembed util."""
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        from .skill_embeddings import embed as _embed
+        return _embed(texts) or []
+
+
+def default_embedder() -> Embedder | None:
+    """Construct the fastembed-backed embedder, or ``None`` if unavailable.
+
+    Fail-open: when ``fastembed`` isn't installed, callers must inject their
+    own ``Embedder``. Never raises.
+    """
+    try:
+        from .skill_embeddings import _have_fastembed
+    except Exception:  # pragma: no cover - import guard
+        return None
+    if not _have_fastembed():
+        return None
+    return _FastembedEmbedder()
+
+
+def recall_relevant_digests(
+    query: str, index: DigestIndex, embedder: Embedder, k: int = 3
+) -> str:
+    """Format the top-``k`` recalled digests as a ``<recall>`` block.
+
+    Returns ``""`` when nothing is retrieved, so an agent loop can safely
+    prepend the result unconditionally. Wiring into the live loop is tracked
+    separately; this is the tested hook.
+    """
+    hits = index.retrieve(query, embedder, k=k)
+    if not hits:
+        return ""
+    body = "\n".join(f"[turn {e.turn}] {e.text}" for e in hits)
+    return f"<recall>\n{body}\n</recall>"

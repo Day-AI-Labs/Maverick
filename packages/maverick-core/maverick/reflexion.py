@@ -17,10 +17,11 @@ Retrieval: ``recall(goal_text, k=3)`` returns the top-K most similar
 prior reflections. Used by the orchestrator's pre-run context layer
 (opt-in via [reflexion] enable = true).
 
-Similarity scoring: token-jaccard with simple normalization. We
-intentionally don't depend on embeddings here; the vector_store
-module is the right place for that and reflexions are usually
-small enough that jaccard ranks them fine.
+Similarity scoring: embedding cosine when fastembed is installed, so a
+lesson phrased differently from the current goal still matches; otherwise
+token-jaccard. The embedding path reuses the shared ``skill_embeddings``
+model/cache and fails open to jaccard — the kernel never *requires*
+fastembed (CLAUDE.md rule 1).
 """
 from __future__ import annotations
 
@@ -116,6 +117,29 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b)
 
 
+def _embed_sims(query: str, entries: list[Reflexion]) -> list[float] | None:
+    """Cosine similarity of ``query`` to each entry's goal_text.
+
+    Returns a list aligned with ``entries`` when the shared fastembed model
+    is available, else ``None`` so ``recall`` falls back to jaccard. Reuses
+    the ``skill_embeddings`` model/cache (one batch call) and never raises;
+    mirrors ``tools/recall._rank_with_embeddings`` — same model, same
+    fail-open contract.
+    """
+    try:
+        from .skill_embeddings import _cosine, _have_fastembed, embed
+        if not _have_fastembed():
+            return None
+        vectors = embed([query] + [e.goal_text or "" for e in entries])
+        if not vectors or len(vectors) != len(entries) + 1:
+            return None
+        qv = vectors[0]
+        return [_cosine(qv, vectors[i + 1]) for i in range(len(entries))]
+    except Exception as e:  # pragma: no cover -- fail open to jaccard
+        log.debug("reflexion embedding recall failed (%s); using jaccard", e)
+        return None
+
+
 def _scope_matches(
     entry: Reflexion, *, channel: str | None, user_id: str | None
 ) -> bool:
@@ -164,6 +188,7 @@ def recall(
     k: int = 3,
     path: Path = DEFAULT_PATH,
     min_score: float = 0.05,
+    min_embed_score: float = 0.35,
     channel: str | None = None,
     user_id: str | None = None,
     scan_cap: int = _SCAN_CAP,
@@ -171,12 +196,15 @@ def recall(
     """Return the top-k most similar prior reflections.
 
     Tuples are (score, Reflexion), sorted by score descending. Empty
-    list if no file exists or no matches above ``min_score``.
+    list if no file exists or nothing clears the similarity floor.
 
-    The returned score blends token-jaccard similarity with a recency
-    factor so a fresher lesson outranks an equally-relevant stale one;
-    only the most recent ``scan_cap`` lines are considered, and
-    near-identical lessons are de-duplicated within the top-k.
+    Similarity is embedding cosine when fastembed is installed, else
+    token-jaccard; the floor is ``min_embed_score`` or ``min_score``
+    respectively (the two metrics aren't on the same scale). The returned
+    score blends similarity with a recency factor so a fresher lesson
+    outranks an equally-relevant stale one; only the most recent
+    ``scan_cap`` lines are considered, and near-identical lessons are
+    de-duplicated within the top-k.
     """
     if not goal_text or not path.exists():
         return []
@@ -215,10 +243,18 @@ def recall(
     oldest = min(e.ts for e in entries)
     span = newest - oldest
 
+    # Prefer embedding cosine (catches differently-worded lessons jaccard
+    # misses); fall back to per-entry jaccard when fastembed is absent.
+    embed_sims = _embed_sims(goal_text, entries)
+    if embed_sims is not None:
+        sims, floor = embed_sims, min_embed_score
+    else:
+        sims = [_jaccard(qt, _tokens(e.goal_text)) for e in entries]
+        floor = min_score
+
     scored: list[tuple[float, Reflexion]] = []
-    for entry in entries:
-        sim = _jaccard(qt, _tokens(entry.goal_text))
-        if sim < min_score:
+    for entry, sim in zip(entries, sims):
+        if sim < floor:
             continue
         recency = 1.0 if span <= 0 else (entry.ts - oldest) / span
         blended = (1.0 - _RECENCY_WEIGHT) * sim + _RECENCY_WEIGHT * recency

@@ -154,8 +154,13 @@ async def verify_proposal(
     the same family as the proposer (e.g. both Anthropic), they can be
     jailbroken in lockstep (Anthropic's alignment-faking paper
     arxiv:2412.14093 + 2026 deceptive-alignment follow-ups). When the
-    proposer_model is passed and matches the verifier's family, we
-    swap to a cross-family verifier via MODEL_FAMILY_FALLBACK.
+    proposer_model is passed and matches the verifier's family, we swap
+    to a cross-family verifier — but ONLY when one is explicitly
+    configured via ``MAVERICK_CROSS_FAMILY_VERIFIER`` (users own model
+    choice; we never implicitly switch to a provider whose credentials
+    the operator may not have). #612: if no fallback is configured, the
+    same-family verifier runs and we log the lockstep risk ONCE rather
+    than silently pretending a cross-family swap happened.
     """
     if not proposal or not proposal.strip():
         return VerifierVerdict.reject("proposal is empty")
@@ -165,6 +170,8 @@ async def verify_proposal(
         cross = _cross_family_fallback(model)
         if cross is not None:
             model = cross
+        else:
+            _warn_same_family_verifier(model)
 
     user_msg = (
         f"GOAL BRIEF:\n{brief}\n\n"
@@ -450,14 +457,42 @@ def _same_family(a: str, b: str) -> bool:
     return _provider(a) == _provider(b)
 
 
+_warned_same_family = False
+
+
+def _warn_same_family_verifier(model: str) -> None:
+    """Log the lockstep-jailbreak risk ONCE when the verifier shares the
+    proposer's family and no cross-family fallback is configured.
+
+    #612: the contract promises a cross-family swap to defend against
+    lockstep jailbreaks, but the swap only happens when
+    ``MAVERICK_CROSS_FAMILY_VERIFIER`` is set. When it isn't, surface the
+    residual risk instead of leaving the gap silent.
+    """
+    global _warned_same_family
+    if _warned_same_family:
+        return
+    _warned_same_family = True
+    log.warning(
+        "verifier %s shares the proposer's family; set "
+        "MAVERICK_CROSS_FAMILY_VERIFIER to a different-provider model to "
+        "defend against lockstep jailbreaks (running same-family for now).",
+        model,
+    )
+
+
 # Preferred cross-family verifier per source family. Read from env if
 # the operator wants to override. The fallback chain ends with the
 # original model (no swap) when no peer is configured.
 def _cross_family_fallback(model: str) -> str | None:
     """Pick a verifier from a different provider family.
 
-    Uses only explicit env override; no implicit provider swap is performed.
-    Returns None when no cross-family peer is explicitly configured.
+    Uses only the explicit ``MAVERICK_CROSS_FAMILY_VERIFIER`` override; no
+    implicit provider swap is performed (users own model choice — we won't
+    silently route to a provider whose credentials may be absent). Returns
+    None when no cross-family peer is explicitly configured; callers that
+    care about the lockstep risk should warn via
+    ``_warn_same_family_verifier``.
     """
     explicit = os.environ.get("MAVERICK_CROSS_FAMILY_VERIFIER")
     if explicit:

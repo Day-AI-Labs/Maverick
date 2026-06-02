@@ -11,6 +11,7 @@ from __future__ import annotations
 def test_pick_channels_collects_discord_allowlist(monkeypatch):
     from maverick_installer import wizard
 
+    monkeypatch.setattr(wizard, "_q_confirm", lambda *a, **kw: False)
     monkeypatch.setattr(wizard, "_q_checkbox", lambda msg, choices: ["discord  - Discord"])
     # discord's only _q_text prompt is the allowlist.
     monkeypatch.setattr(wizard, "_q_text", lambda msg, default="": "111, 222")
@@ -22,6 +23,7 @@ def test_pick_channels_collects_discord_allowlist(monkeypatch):
 def test_pick_channels_voice_collects_optional_callers(monkeypatch):
     from maverick_installer import wizard
 
+    monkeypatch.setattr(wizard, "_q_confirm", lambda *a, **kw: False)
     monkeypatch.setattr(wizard, "_q_checkbox", lambda msg, choices: ["voice  - Voice"])
     # voice prompts: provider, phone_number, assistant_id, port, allowed_callers.
     answers = iter(["vapi", "", "", "8770", "+12025550111"])
@@ -34,6 +36,7 @@ def test_pick_channels_voice_collects_optional_callers(monkeypatch):
 def test_pick_channels_voice_collects_provider_specific_api_key(monkeypatch):
     from maverick_installer import wizard
 
+    monkeypatch.setattr(wizard, "_q_confirm", lambda *a, **kw: False)
     monkeypatch.setattr(wizard, "_q_checkbox", lambda msg, choices: ["voice  - Voice"])
     # voice prompts: provider, phone_number, assistant_id, port, allowed_callers.
     answers = iter(["retell", "", "", "8770", ""])
@@ -53,6 +56,8 @@ def test_pick_channels_no_allowlist_channel_unaffected(monkeypatch):
     """imessage has no allowlist requirement -> no allowed_user_ids key added."""
     from maverick_installer import wizard
 
+    # imessage is experimental, so opt in before it can be selected.
+    monkeypatch.setattr(wizard, "_q_confirm", lambda *a, **kw: True)
     monkeypatch.setattr(wizard, "_q_checkbox", lambda msg, choices: ["imessage  - iMessage"])
     monkeypatch.setattr(wizard, "_q_text", lambda msg, default="": "")
 

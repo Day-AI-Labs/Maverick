@@ -1,6 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Maverick · overview{% endblock %}
 {% block content %}
+  <div id="tour" role="region" aria-label="How to start a goal" hidden
+       class="panel" style="position: relative; border-color: var(--accent);">
+    <button type="button" id="tour-dismiss" aria-label="Dismiss tour"
+            style="position: absolute; top: 0.6rem; right: 0.6rem; background: transparent; color: var(--muted); border: 0; font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0.25rem 0.4rem;">&times;</button>
+    <h2 style="color: var(--accent);">Three ways to start a goal · 60-second tour</h2>
+    <ol style="margin: 0; padding-left: 1.2rem; display: grid; gap: 0.75rem;">
+      <li>
+        <strong>Web UI</strong> — use the goal box on this page or open the
+        <a href="/chat">chat</a>.
+      </li>
+      <li>
+        <strong>REST API</strong> — <code>POST /api/v1/goals</code>:
+        <br /><code>curl -X POST http://localhost:8000/api/v1/goals -d '{"title":"Plan a trip to Japan"}'</code>
+      </li>
+      <li>
+        <strong>CLI</strong> — <code>maverick start "your goal"</code>.
+      </li>
+    </ol>
+  </div>
+
   {% if counts.total == 0 %}
     <div class="panel" style="text-align: center; padding: 3rem 1.5rem;">
       <h2 style="font-size: 1.5rem; color: var(--text); text-transform: none; letter-spacing: 0; font-weight: 600; margin-bottom: 0.75rem;">Start your first goal</h2>
@@ -90,6 +110,22 @@
   {% endif %}
 
   <script>
+    // Dismissible landing tour. Hidden by default in markup; reveal only
+    // when it hasn't been dismissed before (persisted in localStorage).
+    (function() {
+      const KEY = 'maverick_tour_dismissed';
+      const tour = document.getElementById('tour');
+      const close = document.getElementById('tour-dismiss');
+      if (!tour || !close) return;
+      let dismissed = false;
+      try { dismissed = localStorage.getItem(KEY) === '1'; } catch (e) {}
+      if (!dismissed) tour.hidden = false;
+      close.addEventListener('click', function() {
+        tour.hidden = true;
+        try { localStorage.setItem(KEY, '1'); } catch (e) {}
+      });
+    })();
+
     // Replace absolute timestamps with relative time on the client.
     (function() {
       function rel(ts) {

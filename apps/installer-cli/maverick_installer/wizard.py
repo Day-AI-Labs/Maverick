@@ -60,6 +60,15 @@ CHANNELS: list[tuple[str, str, list[str]]] = [
 ]
 
 
+# Channels that are scaffolds: they ship runtime code but can't work
+# end-to-end from a default install — whatsapp/sms need a Twilio account
+# plus a public webhook (maverick_channels documents both as "scaffold"),
+# and imessage is macOS-only and needs Full Disk Access. Offering them in
+# the default checkbox is dishonest: users pick them, then hit a dead end.
+# Gate them behind an explicit opt-in (see pick_channels).
+EXPERIMENTAL_CHANNELS: set[str] = {"whatsapp", "sms", "imessage"}
+
+
 # Ordered advanced-flow steps, mirroring the pick_* sequence in run().
 # Purely a progress-bar aid: changing this list never changes the config.
 STEPS: list[tuple[str, str]] = [
@@ -581,7 +590,19 @@ def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]
             "[bold]Phone-companion mode:[/bold] pick the channels your phone will use.\n"
         )
 
-    choices = [f"{ch_id:9} - {label}" for ch_id, label, _ in CHANNELS]
+    selectable = [c for c in CHANNELS if c[0] not in EXPERIMENTAL_CHANNELS]
+    if _q_confirm(
+        "Show experimental/unfinished channels (WhatsApp, SMS, iMessage)? "
+        "These are scaffolds and may not work end-to-end.",
+        default=False,
+    ):
+        selectable += [
+            (ch_id, f"{label} [experimental]", envs)
+            for ch_id, label, envs in CHANNELS
+            if ch_id in EXPERIMENTAL_CHANNELS
+        ]
+
+    choices = [f"{ch_id:9} - {label}" for ch_id, label, _ in selectable]
     picked = _q_checkbox("Which channels do you want to enable?", choices)
     picked_ids = [p.split()[0] for p in picked]
 

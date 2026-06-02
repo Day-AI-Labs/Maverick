@@ -54,3 +54,24 @@ async def test_non_verifying_role_keeps_default_confidence(
     result = await worker.run()
     assert "child result" in (result.final or "")
     assert result.verifier_confidence == 1.0
+
+
+# --- #612 finding 4: cross-family verifier contract vs behavior ---
+
+def test_cross_family_fallback_requires_explicit_env(monkeypatch):
+    import maverick.verifier as v
+    monkeypatch.delenv("MAVERICK_CROSS_FAMILY_VERIFIER", raising=False)
+    # No implicit provider swap: returns None unless explicitly configured.
+    assert v._cross_family_fallback("anthropic:claude-x") is None
+    monkeypatch.setenv("MAVERICK_CROSS_FAMILY_VERIFIER", "openai:gpt-x")
+    assert v._cross_family_fallback("anthropic:claude-x") == "openai:gpt-x"
+
+
+def test_same_family_verifier_warns_once(monkeypatch, caplog):
+    import maverick.verifier as v
+    monkeypatch.setattr(v, "_warned_same_family", False)
+    with caplog.at_level("WARNING"):
+        v._warn_same_family_verifier("anthropic:claude-x")
+        v._warn_same_family_verifier("anthropic:claude-x")
+    lockstep = [r for r in caplog.records if "lockstep" in r.getMessage()]
+    assert len(lockstep) == 1  # warned exactly once, not per call
