@@ -33,6 +33,21 @@ from typing import Protocol
 
 log = logging.getLogger(__name__)
 
+# Role vocabulary for the one-hot feature block. Order is load-bearing:
+# both the LearnedPRM head and prm_train.py depend on this exact ordering.
+ROLE_VOCAB = ["orchestrator", "researcher", "coder", "writer", "verifier", "other"]
+
+# Names of the 12 features produced by step_features(), in order.
+FEATURE_NAMES = [
+    "is_final",
+    "has_error",
+    "tool_succeeded",
+    "has_tool",
+    "prior_step_score",
+    "step_index_norm",
+    *[f"role_{r}" for r in ROLE_VOCAB],
+]
+
 
 @dataclass(frozen=True)
 class StepContext:
@@ -45,6 +60,28 @@ class StepContext:
     is_final: bool = False
     error: str | None = None
     prior_step_score: float = 0.5
+
+
+def step_features(ctx: StepContext) -> list[float]:
+    """Deterministic, ordered, length-12 feature vector for a step.
+
+    The ordering MUST match FEATURE_NAMES exactly; the trained head and
+    inference path both rely on it. See module-level FEATURE_NAMES.
+    """
+    role = (ctx.role or "").split("-", 1)[0]
+    if role not in ROLE_VOCAB:
+        role = "other"
+    role_onehot = [1.0 if r == role else 0.0 for r in ROLE_VOCAB]
+    tool_succeeded = {None: 0.0, True: 1.0, False: -1.0}[ctx.tool_succeeded]
+    return [
+        1.0 if ctx.is_final else 0.0,
+        1.0 if ctx.error else 0.0,
+        tool_succeeded,
+        1.0 if ctx.tool_name else 0.0,
+        float(ctx.prior_step_score),
+        min(ctx.step_index / 100.0, 1.0),
+        *role_onehot,
+    ]
 
 
 @dataclass(frozen=True)
@@ -151,12 +188,91 @@ class RemotePRM:
             return self._fallback.score(ctx)
 
 
+class LearnedPRM:
+    """In-process AgentPRM head trained from trajectories (arxiv:2511.08325).
+
+    Loads a small MLP from a model directory (head.pt + head.json) and
+    scores each step from the shared `step_features` vector. torch is an
+    OPTIONAL dependency: it is imported lazily on the first score(), never
+    at construction. If torch is missing OR the artifact can't be loaded,
+    LearnedPRM fails OPEN — it logs a warning ONCE and delegates every
+    score to HeuristicPRM so the swarm never blocks on model availability.
+    """
+    name = "learned"
+
+    def __init__(self, model_dir: str):
+        self.model_dir = model_dir
+        self._fallback = HeuristicPRM()
+        self._model = None       # cached (torch_module, torch) once loaded
+        self._warned = False
+        self._failed = False
+
+    def _warn_once(self, msg: str) -> None:
+        if not self._warned:
+            log.warning("LearnedPRM: %s; falling back to heuristic", msg)
+            self._warned = True
+
+    def _load(self):
+        """Lazily import torch + build the cached MLP. Returns it or None."""
+        if self._model is not None:
+            return self._model
+        if self._failed:
+            return None
+        try:
+            import json
+            from pathlib import Path
+
+            import torch
+        except Exception as e:  # torch missing
+            self._failed = True
+            self._warn_once(f"torch unavailable ({e})")
+            return None
+        try:
+            d = Path(self.model_dir)
+            meta = json.loads((d / "head.json").read_text(encoding="utf-8"))
+            input_dim = int(meta.get("input_dim", len(FEATURE_NAMES)))
+            hidden_dim = int(meta.get("hidden_dim", 16))
+            net = torch.nn.Sequential(
+                torch.nn.Linear(input_dim, hidden_dim),
+                torch.nn.ReLU(),
+                torch.nn.Linear(hidden_dim, 2),
+            )
+            state = torch.load(d / "head.pt", map_location="cpu")
+            net.load_state_dict(state)
+            net.eval()
+            self._model = (net, torch)
+            return self._model
+        except Exception as e:
+            self._failed = True
+            self._warn_once(f"could not load artifact from {self.model_dir!r} ({e})")
+            return None
+
+    def score(self, ctx: StepContext) -> StepReward:
+        model = self._load()
+        if model is None:
+            return self._fallback.score(ctx)
+        net, torch = model
+        try:
+            x = torch.tensor([step_features(ctx)], dtype=torch.float32)
+            with torch.no_grad():
+                out = torch.tanh(net(x))[0]
+            return StepReward(
+                promise=float(out[0]),
+                progress=float(out[1]),
+                confidence=0.7,
+            )
+        except Exception as e:
+            self._warn_once(f"inference failed ({e})")
+            return self._fallback.score(ctx)
+
+
 def build_from_env() -> ProcessRewardModel:
     """Resolve the PRM backend from env / config.
 
-    MAVERICK_PRM=null|heuristic|remote
+    MAVERICK_PRM=null|heuristic|remote|learned
     MAVERICK_PRM_ENDPOINT=...  (when remote)
     MAVERICK_PRM_API_KEY=...   (when remote)
+    MAVERICK_PRM_PATH=...      (when learned; model dir w/ head.pt + head.json)
 
     Default: NullPRM (preserves pre-Wave-7c behavior).
     """
@@ -170,4 +286,10 @@ def build_from_env() -> ProcessRewardModel:
             return HeuristicPRM()
         return RemotePRM(endpoint=endpoint,
                          api_key=os.environ.get("MAVERICK_PRM_API_KEY"))
+    if kind == "learned":
+        path = os.environ.get("MAVERICK_PRM_PATH")
+        if not path:
+            log.warning("PRM=learned but MAVERICK_PRM_PATH unset; falling back to heuristic")
+            return HeuristicPRM()
+        return LearnedPRM(model_dir=path)
     return NullPRM()
