@@ -12,6 +12,7 @@ Covers four independent fixes:
 """
 from __future__ import annotations
 
+import builtins
 import sys
 import time
 import types
@@ -200,6 +201,47 @@ def test_recall_dedupes_near_identical_lessons(tmp_path):
     msgs = [h[1].failure_msg for h in hits]
     # The two identical "deploy ... staging" goals must collapse to one.
     assert msgs.count("dup-a") + msgs.count("dup-b") == 1
+
+
+def test_recall_scan_cap_streams_without_reading_all_lines(tmp_path, monkeypatch):
+    path = tmp_path / "reflexions.ndjson"
+    path.touch()
+
+    class IterOnlyFile:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def __iter__(self):
+            import json
+            now = time.time()
+            for i in range(5):
+                yield json.dumps({
+                    "ts": now + i,
+                    "goal_text": f"target goal {i}",
+                    "failure_class": "agent_error",
+                    "failure_msg": f"kept-{i}",
+                    "reflection": "x",
+                    "tools_used": [],
+                    "channel": None,
+                    "user_id": None,
+                }) + "\n"
+
+        def readlines(self):
+            raise AssertionError("recall must not materialize the whole log")
+
+    def fake_open(open_path, *args, **kwargs):
+        if open_path == path:
+            return IterOnlyFile()
+        return real_open(open_path, *args, **kwargs)
+
+    real_open = builtins.open
+    monkeypatch.setattr(builtins, "open", fake_open)
+
+    hits = reflexion.recall("target goal", path=path, scan_cap=2, k=5)
+    assert [hit[1].failure_msg for hit in hits] == ["kept-4", "kept-3"]
 
 
 def test_recall_scan_cap_limits_considered_lines(tmp_path):
