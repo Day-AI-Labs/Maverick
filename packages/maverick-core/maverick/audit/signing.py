@@ -227,15 +227,21 @@ class AuditSigner:
             payload["sig"] = sig
             line = json.dumps(payload, default=str) + "\n"
             try:
+                from .writer import _file_append_lock
+
                 self._path.parent.mkdir(parents=True, exist_ok=True)
                 with open(self._path, "a", encoding="utf-8") as f:
-                    f.write(line)
-                    # fsync so a power loss can't lose committed audit rows
-                    # (or leave a torn line that breaks chain resume). The
-                    # audit log is the trust anchor; durability matters more
-                    # than the small write cost here.
-                    f.flush()
-                    os.fsync(f.fileno())
+                    # Cross-process advisory lock: serialize concurrent writers
+                    # so an append above PIPE_BUF can't interleave a torn row
+                    # into the signed chain. POSIX-only; no-op elsewhere.
+                    with _file_append_lock(f):
+                        f.write(line)
+                        # fsync so a power loss can't lose committed audit rows
+                        # (or leave a torn line that breaks chain resume). The
+                        # audit log is the trust anchor; durability matters more
+                        # than the small write cost here.
+                        f.flush()
+                        os.fsync(f.fileno())
                 try:
                     os.chmod(self._path, 0o600)
                 except OSError:
