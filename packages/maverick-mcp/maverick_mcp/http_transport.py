@@ -38,9 +38,11 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import ipaddress
 import json
 import logging
 import os
+from urllib.parse import urlparse
 
 log = logging.getLogger(__name__)
 
@@ -93,14 +95,51 @@ async def _read_limited_json(request, http_exc):
         raise http_exc(status_code=400, detail="body must be valid JSON")
 
 
+def _normalized_origin(origin: str) -> str | None:
+    """Return a canonical Origin value, or None when malformed/unsupported."""
+    parsed = urlparse(origin)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+    if parsed.username or parsed.password:
+        return None
+    if parsed.path not in {"", "/"} or parsed.params or parsed.query or parsed.fragment:
+        return None
+    try:
+        parsed_port = parsed.port
+    except ValueError:
+        return None
+    host = parsed.hostname.lower().rstrip(".")
+    if ":" in host:
+        host = f"[{host}]"
+    port = f":{parsed_port}" if parsed_port is not None else ""
+    return f"{parsed.scheme}://{host}{port}"
+
+
+def _origin_host_is_loopback(origin: str) -> bool:
+    parsed = urlparse(origin)
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    if hostname == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
 def _allowed_origins() -> set[str]:
-    """Extra Origin values allowed beyond same-origin.
+    """Explicit Origin values allowed for browser requests.
 
     Comma-separated list in MAVERICK_MCP_ALLOWED_ORIGINS (e.g. a gateway's
-    public origin). Same-origin is always allowed; these are additions.
+    public origin). Localhost/loopback Origins are also allowed for local
+    browser clients. The request Host header is intentionally not trusted:
+    DNS rebinding makes Host attacker-controlled for this defense.
     """
     raw = os.environ.get("MAVERICK_MCP_ALLOWED_ORIGINS", "")
-    return {o.strip() for o in raw.split(",") if o.strip()}
+    return {
+        normalized
+        for origin in raw.split(",")
+        if (normalized := _normalized_origin(origin.strip()))
+    }
 
 
 def _is_origin_allowed(request) -> bool:
@@ -108,24 +147,24 @@ def _is_origin_allowed(request) -> bool:
 
     A browser page on any site can POST no-cors to http://127.0.0.1:8771,
     and DNS rebinding lets an attacker's hostname resolve to loopback. The
-    bearer token is still the primary gate, but echoing the same-origin
-    spirit of the dashboard's _is_same_origin gives defense-in-depth: a
-    cross-origin browser request is rejected before dispatch.
+    bearer token is still the primary gate, but the Origin layer rejects
+    browser requests unless they come from an explicit allowlist or from a
+    literal localhost/loopback Origin.
 
     Requests with no Origin header (native MCP clients, curl, server-to-
     server) are allowed — like the dashboard, the Origin check only ever
     constrains browser-issued cross-origin requests; non-browser callers
     omit Origin and are gated by the bearer token instead.
     """
-    from urllib.parse import urlparse
-
     origin = request.headers.get("origin")
     if not origin:
         return True
-    parsed = urlparse(origin)
-    if parsed.netloc and parsed.netloc == request.url.netloc:
+    normalized = _normalized_origin(origin)
+    if not normalized:
+        return False
+    if _origin_host_is_loopback(normalized):
         return True
-    return origin in _allowed_origins()
+    return normalized in _allowed_origins()
 
 
 def _check_bearer(authorization: str | None) -> bool:
