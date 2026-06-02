@@ -36,10 +36,34 @@ The wizard takes ~2 minutes. It writes `~/.maverick/config.toml` and `~/.maveric
 Then:
 
 ```bash
-maverick start "Plan a 2-week trip to Japan. Write the itinerary to trip.md."
+maverick start "Build a CLI that emails me a digest of today's top Hacker News stories — research the API, write it, and verify it runs"
 ```
 
-Watch the swarm work. When done:
+## Watch the swarm decompose
+
+Run `maverick monitor` in a second terminal. The orchestrator plans the goal, then spawns specialist sub-agents that work in parallel — here a researcher pins down the API, a coder writes the tool, and a verifier runs it:
+
+```
+Goal #1 active  2m elapsed
+Build a CLI that emails me a digest of today's top Hacker News stories
+
+Plan tree
+  ├─        done  #2 Research the Hacker News Firebase API
+  ├─      active  #3 Write the digest CLI (fetch + format + send)
+  ├─      active  #4 Verify it runs and emails a sample digest
+  ├─     pending  #5 Write a short usage README
+
+Latest episode #7 (running)  $0.0431  in=18,204 out=2,910 tools=11
+
+Recent activity
+  4s ago [researcher] decision: top stories live at /v0/topstories.json, then /v0/item/<id>.json
+  3s ago [coder] tool_call: write_file hn_digest.py (118 lines)
+  1s ago [verifier] tool_call: run "python hn_digest.py --dry-run" -> printed 10 stories
+
+Cumulative spend on this DB: $0.21
+```
+
+When done:
 
 ```bash
 maverick status      # what's currently active or blocked
