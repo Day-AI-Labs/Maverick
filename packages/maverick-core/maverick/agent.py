@@ -1411,12 +1411,39 @@ class Agent:
 
             tool_results: list[dict] = []
             blocked = False
+
+            def _answer_pending_tool_uses(reason: str) -> None:
+                # #612: a control-flow stop (BudgetExceeded / Halted) can fire
+                # mid-dispatch -- most often from budget.record_tool_call(),
+                # which calls check() and can raise AFTER the assistant turn's
+                # tool_use blocks are already in `messages`. If we unwind now,
+                # the saved/resumed history (or a parent that keeps these
+                # messages) has tool_use ids with no matching tool_result ->
+                # Anthropic 400 on the next call. Append an error tool_result
+                # for every still-unanswered tool_use, then let the caller
+                # re-raise/return so the stop is NOT swallowed.
+                answered = {tr["tool_use_id"] for tr in tool_results}
+                pending = [tc for tc in resp.tool_calls if tc.id not in answered]
+                if not pending:
+                    return
+                for tc in pending:
+                    tool_results.append(self._make_tool_result(tc.id, reason))
+                messages.append({"role": "user", "content": tool_results})
+
             if run_parallel:
                 import asyncio as _asyncio
                 # Account every call up front; record_tool_call mirrors
-                # the serial path (one per tool, same count).
-                for tc in resp.tool_calls:
-                    self.ctx.budget.record_tool_call()
+                # the serial path (one per tool, same count). A budget trip
+                # here raises BEFORE any tool ran -- answer every pending
+                # tool_use so the turn isn't left with orphan tool_use blocks.
+                try:
+                    for tc in resp.tool_calls:
+                        self.ctx.budget.record_tool_call()
+                except BudgetExceeded:
+                    _answer_pending_tool_uses(
+                        "ERROR: tool not executed (budget exceeded)"
+                    )
+                    raise
 
                 # Per-host concurrency cap (#434): same-host network reads in
                 # this turn are throttled by a semaphore so a fan-out of reads
@@ -1446,6 +1473,12 @@ class Agent:
                 _norm: list[str] = []
                 for o in outputs:
                     if isinstance(o, (_BE, _ks.Halted)):
+                        # #612: re-raise as a stop, but first answer every
+                        # tool_use this turn emitted so the history isn't left
+                        # with orphan tool_use blocks for a resume/parent.
+                        _answer_pending_tool_uses(
+                            f"ERROR: tool not executed ({type(o).__name__})"
+                        )
                         raise o
                     _norm.append(
                         o if isinstance(o, str)
@@ -1474,11 +1507,24 @@ class Agent:
                     try:
                         killswitch.check()
                     except killswitch.Halted as e:
+                        # #612: answer any tool_use we've already passed (and
+                        # this + remaining ones) so the assistant turn isn't
+                        # left with orphan tool_use blocks before we unwind.
+                        _answer_pending_tool_uses("ERROR: tool not executed (halted)")
                         bb.post(self.name, "error", f"halted: {e}")
                         return AgentResult(
                             error=f"halted: {e}", role=self.role, name=self.name,
                         )
-                    self.ctx.budget.record_tool_call()
+                    # #612: record_tool_call() calls check() and can raise
+                    # mid-turn; answer pending tool_use blocks, then re-raise
+                    # so the budget trip still stops the run cleanly.
+                    try:
+                        self.ctx.budget.record_tool_call()
+                    except BudgetExceeded:
+                        _answer_pending_tool_uses(
+                            "ERROR: tool not executed (budget exceeded)"
+                        )
+                        raise
                     output = await self._run_tool(tc.name, tc.input)
                     if tc.name == "ask_user":
                         blocked = True

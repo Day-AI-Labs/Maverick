@@ -69,7 +69,16 @@ def spawn_subagent_tool(parent: Agent) -> Tool:
             parent=parent,
             max_steps=parent.max_steps,
         )
-        result = await child.run()
+        # #612: a child that RAISES (budget/halt/unexpected error) never
+        # consumed its slot productively -- give it back so transient child
+        # failures don't permanently erode the per-goal spawn cap. A child
+        # that returns (even with result.error set) legitimately ran, so we
+        # keep its slot.
+        try:
+            result = await child.run()
+        except BaseException:
+            parent.ctx.release_spawns(1)
+            raise
         from ..hooks import HookEvent
         from ..hooks import emit as _emit_hook
         await _emit_hook(
@@ -167,6 +176,14 @@ def spawn_swarm_tool(parent: Agent) -> Tool:
         )
 
         results = await asyncio.gather(*(c.run() for c in children), return_exceptions=True)
+
+        # #612: every child that RAISED never consumed its slot productively;
+        # return those slots so a swarm with transient child failures doesn't
+        # permanently erode the per-goal spawn cap. Children that returned
+        # (even with result.error set) legitimately ran and keep their slot.
+        n_failed = sum(1 for res in results if isinstance(res, BaseException))
+        if n_failed:
+            parent.ctx.release_spawns(n_failed)
 
         # A child hitting the budget cap or the killswitch is a STOP signal for
         # the whole swarm, not a per-child failure -- re-raise it instead of
