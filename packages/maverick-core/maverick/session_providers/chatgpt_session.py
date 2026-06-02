@@ -28,6 +28,7 @@ from .base import (
     approx_record_budget,
     iter_sse_data_payloads,
     stringify_messages,
+    tool_use_unsupported,
 )
 
 log = logging.getLogger(__name__)
@@ -187,13 +188,7 @@ class ChatGPTSessionClient:
         model: str | None = None,
     ) -> LLMResponse:
         if tools:
-            raise NotImplementedError(
-                "ChatGPT session adapter does not support native tool-use. "
-                "Tool-using roles (orchestrator, coder, researcher) must use "
-                "BYOK (OPENAI_API_KEY) or another provider that exposes "
-                "tools via API. Session adapters are best for summarizer / "
-                "writer / analyst roles."
-            )
+            raise tool_use_unsupported("ChatGPT", "OPENAI_API_KEY")
         if thinking_budget:
             log.debug("ChatGPT session ignores thinking_budget=%s", thinking_budget)
         import httpx
@@ -240,9 +235,7 @@ class ChatGPTSessionClient:
         model: str | None = None,
     ) -> LLMResponse:
         if tools:
-            raise NotImplementedError(
-                "ChatGPT session adapter does not support native tool-use."
-            )
+            raise tool_use_unsupported("ChatGPT", "OPENAI_API_KEY")
         if thinking_budget:
             log.debug("ChatGPT session ignores thinking_budget=%s", thinking_budget)
         import httpx

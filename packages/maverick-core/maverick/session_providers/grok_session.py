@@ -18,7 +18,7 @@ import uuid
 from ..budget import Budget
 from ..llm import LLMResponse
 from . import cookie_store
-from .base import approx_record_budget, stringify_messages
+from .base import approx_record_budget, stringify_messages, tool_use_unsupported
 
 log = logging.getLogger(__name__)
 
@@ -156,10 +156,7 @@ class GrokSessionClient:
         model: str | None = None,
     ) -> LLMResponse:
         if tools:
-            raise NotImplementedError(
-                "Grok session adapter does not support native tool-use. "
-                "Use XAI_API_KEY BYOK for tool-using roles."
-            )
+            raise tool_use_unsupported("Grok", "XAI_API_KEY")
         if thinking_budget:
             log.debug("Grok session ignores thinking_budget=%s", thinking_budget)
         import httpx
@@ -209,7 +206,7 @@ class GrokSessionClient:
         model: str | None = None,
     ) -> LLMResponse:
         if tools:
-            raise NotImplementedError("Grok session does not support tool-use.")
+            raise tool_use_unsupported("Grok", "XAI_API_KEY")
         if thinking_budget:
             log.debug("Grok session ignores thinking_budget=%s", thinking_budget)
         import httpx

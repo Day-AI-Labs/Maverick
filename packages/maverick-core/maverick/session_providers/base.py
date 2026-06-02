@@ -15,6 +15,30 @@ from ..budget import Budget, BudgetExceeded
 log = logging.getLogger(__name__)
 
 
+class SessionToolUseUnsupported(NotImplementedError):
+    """Raised when a browser-session adapter is asked to run tool-use.
+
+    Consumer chat endpoints don't expose native tool-use, so session
+    adapters serve only non-tool roles (summarizer, writer, analyst).
+    Subclasses ``NotImplementedError`` so any existing handler still
+    catches it, while letting callers detect the capability gap by type.
+    """
+
+
+def tool_use_unsupported(adapter: str, byok_env: str) -> SessionToolUseUnsupported:
+    """Build the consistent capability error for a session adapter.
+
+    Raise it at every ``if tools:`` guard so the sync and async paths give
+    the same actionable message instead of drifting (one rich, one terse).
+    """
+    return SessionToolUseUnsupported(
+        f"{adapter} session adapter does not support native tool-use -- "
+        f"consumer chat doesn't expose it. Use {byok_env} (BYOK) for "
+        f"tool-using roles; session adapters serve non-tool roles "
+        f"(summarizer, writer, analyst)."
+    )
+
+
 def _looks_complete(buffered: list[str]) -> bool:
     """Whether the accumulated ``data:`` lines already form one JSON value.
 
