@@ -125,12 +125,16 @@ class RunItem extends vscode.TreeItem {
   }
 }
 
-class RunsProvider implements vscode.TreeDataProvider<RunItem> {
+class RunsProvider implements vscode.TreeDataProvider<RunItem>, vscode.Disposable {
   private _onDidChange = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this._onDidChange.event;
 
   refresh() {
     this._onDidChange.fire();
+  }
+
+  dispose() {
+    this._onDidChange.dispose();
   }
 
   getTreeItem(el: RunItem): vscode.TreeItem {
@@ -219,9 +223,12 @@ async function exportCommand() {
 
 export function activate(context: vscode.ExtensionContext): void {
   const runs = new RunsProvider();
-  vscode.window.registerTreeDataProvider("maverick.runs", runs);
 
   context.subscriptions.push(
+    // Push the provider (disposes its EventEmitter) and the tree-view
+    // registration so a reload/deactivate tears them down instead of leaking.
+    runs,
+    vscode.window.registerTreeDataProvider("maverick.runs", runs),
     vscode.commands.registerCommand("maverick.start", startGoalCommand),
     vscode.commands.registerCommand("maverick.status", statusCommand),
     vscode.commands.registerCommand("maverick.halt", async () => {

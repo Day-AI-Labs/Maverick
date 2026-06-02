@@ -34,7 +34,7 @@ log = logging.getLogger(__name__)
 _MAX_READ_ENTRIES = 64
 _MAX_READ_BYTES = 8 * 1024 * 1024  # 8 MiB
 
-_read_cache: OrderedDict[str, tuple[float, int, str]] = OrderedDict()
+_read_cache: OrderedDict[str, tuple[float, int, str, int]] = OrderedDict()
 _read_cache_bytes = 0
 _read_lock = threading.RLock()
 
@@ -74,20 +74,27 @@ def read_file_cached(
 
 def _put_read(key: str, mtime: float, size: int, text: str) -> None:
     global _read_cache_bytes
+    # Account for the encoded byte length, not the code-point count: the
+    # _MAX_READ_BYTES cap is a memory budget, and a non-ASCII file holds
+    # several bytes per character, so len(text) undercounts and lets the cache
+    # grow past its limit. Compute the byte length once here and stash it in
+    # the entry so eviction below doesn't have to re-encode. (st_size isn't a
+    # safe substitute: errors='replace' can change the decoded text's length.)
+    nbytes = len(text.encode("utf-8", "replace"))
     with _read_lock:
         # Evict prior version if present.
         prior = _read_cache.pop(key, None)
         if prior is not None:
-            _read_cache_bytes -= len(prior[2])
-        _read_cache[key] = (mtime, size, text)
-        _read_cache_bytes += len(text)
+            _read_cache_bytes -= prior[3]
+        _read_cache[key] = (mtime, size, text, nbytes)
+        _read_cache_bytes += nbytes
         # Trim to limits.
         while (
             len(_read_cache) > _MAX_READ_ENTRIES
             or _read_cache_bytes > _MAX_READ_BYTES
         ):
             _, evicted = _read_cache.popitem(last=False)
-            _read_cache_bytes -= len(evicted[2])
+            _read_cache_bytes -= evicted[3]
 
 
 def clear_read_cache() -> None:

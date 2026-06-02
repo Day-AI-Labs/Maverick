@@ -41,9 +41,16 @@ class ProviderStat:
     def p95(self) -> float | None:
         if not self.latencies_ms:
             return None
-        # Plain percentile on small samples; statistics.quantiles needs >=2.
-        if len(self.latencies_ms) < 2:
-            return float(next(iter(self.latencies_ms)))
+        # statistics.quantiles(n=20) interpolates between the two highest
+        # samples, so for a small window it reports a p95 *above every observed
+        # latency* (with 3 samples it sits ~95% of the way to the max) — a
+        # misleading number on the dashboard. Below 20 samples, fall back to the
+        # nearest-rank value (the ceil(0.95*n)-th smallest), which is always a
+        # real observation. At >=20 samples the interpolated estimate is sound.
+        if len(self.latencies_ms) < 20:
+            ordered = sorted(self.latencies_ms)
+            rank = -(-95 * len(ordered) // 100)  # ceil(0.95 * n), >=1
+            return float(ordered[rank - 1])
         cuts = statistics.quantiles(self.latencies_ms, n=20)
         return float(cuts[18])  # 95th of 20-quantile = idx 18
 
