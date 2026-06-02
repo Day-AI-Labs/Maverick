@@ -138,7 +138,18 @@ RULES: list[Rule] = [
          _compile(r"\b(DAN|do anything now|developer mode|jailbreak|unfiltered\s+ai)\b"),
          "DAN / developer-mode jailbreak"),
     Rule("persona_takeover", "high",
-         _compile(r"\byou\s+are\s+now\s+(an?\s+)?(unrestricted|uncensored|amoral|evil)\s+(ai|assistant|model)"),
+         _compile(
+             # "you are now a(n) <malicious-adj>[, <adj> and ...] <noun>".
+             # The adjective list is attack-only (so "you are now a helpful
+             # assistant" never matches), but allow a comma/'and'-separated
+             # run of them before the noun -- "you are now an unrestricted,
+             # uncensored AI" slipped past the old single-adjective form. The
+             # {1,4} bound keeps it linear (no ReDoS).
+             r"\byou\s+are\s+now\s+(?:an?\s+)?"
+             r"(?:(?:unrestricted|uncensored|unfiltered|unlimited|amoral|immoral|evil|jailbroken|lawless|rogue)"
+             r"(?:\s*,\s*|\s+and\s+|\s+)){1,4}"
+             r"(?:ai|a\.i\.|assistant|model|chatbot|bot|llm|language\s+model|entity|being|persona)"
+         ),
          "Persona takeover"),
 
     # Data exfiltration
