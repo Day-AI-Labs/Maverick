@@ -848,6 +848,47 @@ class WorldModel:
                 conn.execute(f"DELETE FROM facts WHERE key IN ({ph})", keys)
         return keys
 
+    @staticmethod
+    def _like_escape(s: str) -> str:
+        """Escape LIKE wildcards so a key/query is matched literally."""
+        return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    def get_fact(self, key: str) -> str | None:
+        """Single fact value by exact key, or None. Locked read."""
+        row = self._read_one("SELECT value FROM facts WHERE key = ? LIMIT 1", (key,))
+        return row["value"] if row else None
+
+    def delete_fact(self, key: str) -> int:
+        """Delete one fact by exact key; return rows removed (0 or 1)."""
+        with self._writing() as conn:
+            return conn.execute("DELETE FROM facts WHERE key = ?", (key,)).rowcount
+
+    def list_facts(self, key_prefix: str, limit: int = 50) -> list[tuple[str, int]]:
+        """``(key, value_size)`` for facts whose key starts with ``key_prefix``,
+        newest first. Locked read; the prefix is LIKE-escaped."""
+        like = self._like_escape(key_prefix) + "%"
+        rows = self._read_all(
+            "SELECT key, length(value) AS sz FROM facts "
+            "WHERE key LIKE ? ESCAPE '\\' ORDER BY updated_at DESC LIMIT ?",
+            (like, limit),
+        )
+        return [(r["key"], r["sz"]) for r in rows]
+
+    def search_facts(
+        self, key_prefix: str, query: str, limit: int = 50,
+    ) -> list[tuple[str, str]]:
+        """``(key, value)`` for facts under ``key_prefix`` whose key or value
+        contains ``query`` (literal substring), newest first. Locked read."""
+        pfx = self._like_escape(key_prefix) + "%"
+        q = "%" + self._like_escape(query) + "%"
+        rows = self._read_all(
+            "SELECT key, value FROM facts WHERE key LIKE ? ESCAPE '\\' "
+            "AND (key LIKE ? ESCAPE '\\' OR value LIKE ? ESCAPE '\\') "
+            "ORDER BY updated_at DESC LIMIT ?",
+            (pfx, q, q, limit),
+        )
+        return [(r["key"], r["value"]) for r in rows]
+
     # ----- questions -----
     def ask(self, question: str, goal_id: int | None = None) -> int:
         with self._writing() as conn:

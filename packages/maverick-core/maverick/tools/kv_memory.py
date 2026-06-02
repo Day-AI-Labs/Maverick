@@ -86,53 +86,36 @@ def _run_factory(world, goal_id: int | None):
             user_key = (args.get("key") or "").strip()
             if not user_key:
                 return "ERROR: get requires key"
-            row = world.conn.execute(
-                "SELECT value FROM facts WHERE key=? LIMIT 1",
-                (_scoped_key(goal_id, user_key),),
-            ).fetchone()
-            if row is None:
+            # Route through the locked, backend-portable helper instead of
+            # world.conn.execute(... ?): the raw path took torn reads under the
+            # serve threadpool and used `?` placeholders that break on Postgres.
+            value = world.get_fact(_scoped_key(goal_id, user_key))
+            if value is None:
                 return f"(no fact stored for {user_key!r})"
-            return row["value"]
+            return value
         if op == "delete":
             user_key = (args.get("key") or "").strip()
             if not user_key:
                 return "ERROR: delete requires key"
-            cur = world.conn.execute(
-                "DELETE FROM facts WHERE key=?",
-                (_scoped_key(goal_id, user_key),),
-            )
-            world.conn.commit()
-            return f"deleted {cur.rowcount} row(s)"
-        prefix_like = f"goal:{goal_id}:%"
+            n = world.delete_fact(_scoped_key(goal_id, user_key))
+            return f"deleted {n} row(s)"
+        prefix = f"goal:{goal_id}:"
         if op == "list":
-            rows = world.conn.execute(
-                "SELECT key, length(value) AS sz FROM facts "
-                "WHERE key LIKE ? ORDER BY updated_at DESC LIMIT ?",
-                (prefix_like, cap),
-            ).fetchall()
+            rows = world.list_facts(prefix, cap)
             if not rows:
                 return "(no facts stored for this goal)"
-            return "\n".join(f"{_unscope(r['key'])}  ({r['sz']} bytes)" for r in rows)
+            return "\n".join(f"{_unscope(k)}  ({sz} bytes)" for k, sz in rows)
         if op == "search":
             q = (args.get("query") or "").strip()
             if not q:
                 return "ERROR: search requires query"
-            # Escape LIKE wildcards so a query containing % or _ is matched as a
-            # literal substring (otherwise "a_b" matched "axb", "%" matched all).
-            esc = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            like = f"%{esc}%"
-            rows = world.conn.execute(
-                "SELECT key, value FROM facts WHERE key LIKE ? "
-                "AND (key LIKE ? ESCAPE '\\' OR value LIKE ? ESCAPE '\\') "
-                "ORDER BY updated_at DESC LIMIT ?",
-                (prefix_like, like, like, cap),
-            ).fetchall()
+            rows = world.search_facts(prefix, q, cap)
             if not rows:
                 return f"no matches for {q!r}"
             out = []
-            for r in rows:
-                snippet = (r["value"] or "")[:200]
-                out.append(f"{_unscope(r['key'])}: {snippet}")
+            for k, v in rows:
+                snippet = (v or "")[:200]
+                out.append(f"{_unscope(k)}: {snippet}")
             return "\n".join(out)
         return f"ERROR: unknown op {op!r}"
     return _run

@@ -504,6 +504,47 @@ class PostgresWorldModel:
                 cur.execute(f"DELETE FROM facts WHERE key IN ({ph})", keys)
         return keys
 
+    @staticmethod
+    def _like_escape(s: str) -> str:
+        return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    def get_fact(self, key: str) -> str | None:
+        with self._tx() as cur:
+            cur.execute("SELECT value FROM facts WHERE key = %s LIMIT 1", (key,))
+            row = cur.fetchone()
+        return row[0] if row else None
+
+    def delete_fact(self, key: str) -> int:
+        with self._tx() as cur:
+            cur.execute("DELETE FROM facts WHERE key = %s", (key,))
+            return cur.rowcount
+
+    def list_facts(self, key_prefix: str, limit: int = 50) -> list[tuple[str, int]]:
+        like = self._like_escape(key_prefix) + "%"
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT key, length(value) AS sz FROM facts "
+                "WHERE key LIKE %s ESCAPE '\\' ORDER BY updated_at DESC LIMIT %s",
+                (like, limit),
+            )
+            rows = cur.fetchall()
+        return [(r[0], r[1]) for r in rows]
+
+    def search_facts(
+        self, key_prefix: str, query: str, limit: int = 50,
+    ) -> list[tuple[str, str]]:
+        pfx = self._like_escape(key_prefix) + "%"
+        q = "%" + self._like_escape(query) + "%"
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT key, value FROM facts WHERE key LIKE %s ESCAPE '\\' "
+                "AND (key LIKE %s ESCAPE '\\' OR value LIKE %s ESCAPE '\\') "
+                "ORDER BY updated_at DESC LIMIT %s",
+                (pfx, q, q, limit),
+            )
+            rows = cur.fetchall()
+        return [(r[0], r[1]) for r in rows]
+
     # ----- questions (ask_user / human-in-the-loop) -----
 
     def ask(self, question: str, goal_id: int | None = None) -> int:
