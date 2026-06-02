@@ -1,0 +1,79 @@
+# Maverick GitLab CI template (reusable)
+#
+# The GitLab counterpart to the `deploy/github-action` wrapper: install
+# `maverick-agent` from PyPI and run a Maverick goal inside a pipeline,
+# under a hard spend cap and with non-interactive safety defaults.
+#
+# A downstream project pulls this in with `include:` and sets a few CI/CD
+# variables (see deploy/gitlab-ci/README.md):
+#
+#     include:
+#       - remote: 'https://gitlab.com/cdayAI/maverick/-/raw/main/deploy/gitlab-ci/maverick.gitlab-ci.yml'
+#
+#     maverick:
+#       extends: .maverick
+#       variables:
+#         MAVERICK_GOAL: "Review the changes on this branch and flag risks."
+#
+# Required project CI/CD variables:
+#   ANTHROPIC_API_KEY   provider key (mark as Masked/Protected)
+#   MAVERICK_GOAL       the goal text passed to `maverick start`
+# Optional:
+#   MAVERICK_MAX_DOLLARS  hard USD spend cap (default below)
+#   MAVERICK_MODEL        model override, e.g. anthropic:claude-sonnet-4-6
+#   MAVERICK_VERSION      pin the maverick-agent version for reproducibility
+
+.maverick:
+  image: "python:${MAVERICK_PYTHON_VERSION}"
+  variables:
+    # --- Safety defaults, baked in --------------------------------------
+    # Non-interactive: a pipeline has no human at a prompt, so any tool
+    # call that would ask for consent is denied rather than hanging.
+    MAVERICK_CONSENT_MODE: "auto-deny"
+    # Hard USD spend cap. A runaway goal stops rather than running up a
+    # bill. Wired into [budget] max_dollars in the generated config below.
+    MAVERICK_MAX_DOLLARS: "1.0"
+    # Shell sandbox backend. A CI job is already an ephemeral VM, so
+    # `local` is the default; it is scoped to the checkout ($CI_PROJECT_DIR).
+    MAVERICK_SANDBOX: "local"
+    # Defaults for the knobs a downstream job may override.
+    MAVERICK_PYTHON_VERSION: "3.12"
+    MAVERICK_MODEL: ""
+    MAVERICK_VERSION: ""
+  script:
+    - set -e
+    - |
+      if [ -z "$MAVERICK_GOAL" ]; then
+        echo "MAVERICK_GOAL is required (set it as a CI/CD variable)." >&2
+        exit 1
+      fi
+    - python -m pip install --upgrade pip
+    - |
+      if [ -n "$MAVERICK_VERSION" ]; then
+        pip install "maverick-agent==${MAVERICK_VERSION}"
+      else
+        pip install "maverick-agent"
+      fi
+    - maverick version || maverick --help
+    # Generate ~/.maverick/config.toml. The budget cap and sandbox scope
+    # live here so they hold no matter how the goal is invoked.
+    - mkdir -p ~/.maverick
+    - |
+      cat > ~/.maverick/config.toml <<EOF
+      [providers.anthropic]
+      api_key = "${ANTHROPIC_API_KEY}"
+
+      [budget]
+      max_dollars = ${MAVERICK_MAX_DOLLARS}
+
+      [sandbox]
+      backend = "${MAVERICK_SANDBOX}"
+      workdir = "${CI_PROJECT_DIR}"
+      EOF
+    # Global options (e.g. --model) go before the subcommand. The goal is
+    # passed as a single positional argument, quoted, so metacharacters in
+    # it can't inject shell.
+    - |
+      pre=()
+      [ -n "$MAVERICK_MODEL" ] && pre+=( --model "$MAVERICK_MODEL" )
+      maverick "${pre[@]}" start "$MAVERICK_GOAL" --max-dollars "$MAVERICK_MAX_DOLLARS" --sandbox "$MAVERICK_SANDBOX"
