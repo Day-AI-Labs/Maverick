@@ -713,6 +713,50 @@ class WorldModel:
         )
         return Goal(**dict(row)) if row else None
 
+    def inflight_goal(self) -> Goal | None:
+        """Most-recently-updated goal still in flight (``active``/``pending``).
+
+        Distinct from :meth:`active_goal` (which includes ``blocked``): the
+        monitor wants the currently-running goal, not a stopped one. Locked.
+        """
+        row = self._read_one(
+            "SELECT * FROM goals WHERE status IN ('active', 'pending') "
+            "ORDER BY updated_at DESC LIMIT 1"
+        )
+        return Goal(**dict(row)) if row else None
+
+    def candidate_goals(self, include_running: bool, limit: int = 500) -> list[Goal]:
+        """Goals with comparable text, for cross-run recall. Locked read.
+
+        ``include_running`` widens to in-flight goals too; otherwise only
+        FINISHED ones. The terminal set is the vocabulary the orchestrator
+        actually writes (``done``/``blocked``/``cancelled``) -- the old query
+        filtered on ``succeeded``/``failed``, statuses that are never written,
+        so it silently missed every failed (``blocked``) past goal.
+        """
+        text_clause = "(COALESCE(title, '') != '' OR COALESCE(description, '') != '')"
+        if include_running:
+            where = f"WHERE {text_clause}"
+        else:
+            where = f"WHERE status IN ('done', 'blocked', 'cancelled') AND {text_clause}"
+        rows = self._read_all(
+            "SELECT id, parent_id, title, description, status, created_at, "
+            f"updated_at, deadline, result FROM goals {where} "
+            "ORDER BY updated_at DESC LIMIT ?",
+            (limit,),
+        )
+        return [Goal(**dict(r)) for r in rows]
+
+    def subgoals(self, parent_id: int, limit: int = 50) -> list[Goal]:
+        """Immediate children of a goal, oldest first. Locked read."""
+        rows = self._read_all(
+            "SELECT id, parent_id, title, description, status, created_at, "
+            "updated_at, deadline, result FROM goals WHERE parent_id = ? "
+            "ORDER BY created_at ASC LIMIT ?",
+            (parent_id, limit),
+        )
+        return [Goal(**dict(r)) for r in rows]
+
     # ----- episodes -----
     def start_episode(self, goal_id: int) -> int:
         with self._writing() as conn:

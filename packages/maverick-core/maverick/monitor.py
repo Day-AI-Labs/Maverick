@@ -31,15 +31,15 @@ log = logging.getLogger(__name__)
 # to via world_model.set_goal_status('active')) was in neither, so a live goal
 # rendered uncolored; 'blocked' was missing from the plan-tree map. Centralize
 # so the main status line and the plan tree can't disagree again.
+# Keyed on the statuses the orchestrator actually writes
+# (pending/active/blocked/done/cancelled) -- the old map also listed
+# in_progress/running/succeeded/failed (never written) and lacked cancelled.
 _STATUS_COLORS = {
     "pending": "yellow",
     "active": "cyan",
-    "in_progress": "cyan",
-    "running": "cyan",
-    "succeeded": "green",
     "done": "green",
-    "failed": "red",
     "blocked": "red",
+    "cancelled": "red",
 }
 
 
@@ -62,32 +62,24 @@ class MonitorState:
 
 
 def _fetch_subgoals(world: WorldModel, parent_id: int) -> list[Goal]:
-    """Return immediate children of a goal, sorted by created_at."""
-    rows = world.conn.execute(
-        "SELECT id, parent_id, title, description, status, created_at, "
-        "updated_at, deadline, result FROM goals WHERE parent_id = ? "
-        "ORDER BY created_at ASC LIMIT 50",
-        (parent_id,),
-    ).fetchall()
-    return [Goal(**dict(r)) for r in rows]
+    """Return immediate children of a goal, sorted by created_at. Locked +
+    backend-portable (was a raw world.conn.execute with `?` placeholders)."""
+    return world.subgoals(parent_id, limit=50)
 
 
 def _resolve_active_goal(world: WorldModel) -> Goal | None:
-    """Pick the most-recently-touched non-terminal goal as 'active'."""
-    row = world.conn.execute(
-        "SELECT id, parent_id, title, description, status, created_at, "
-        "updated_at, deadline, result FROM goals "
-        "WHERE status IN ('pending', 'in_progress', 'running') "
-        "ORDER BY updated_at DESC LIMIT 1"
-    ).fetchone()
-    if row:
-        return Goal(**dict(row))
-    # Fall back to most-recent goal regardless of status.
-    row = world.conn.execute(
-        "SELECT id, parent_id, title, description, status, created_at, "
-        "updated_at, deadline, result FROM goals ORDER BY updated_at DESC LIMIT 1"
-    ).fetchone()
-    return Goal(**dict(row)) if row else None
+    """Pick the most-recently-touched in-flight goal as 'active'.
+
+    Routes through the locked ``inflight_goal`` helper (vocab active/pending --
+    what the orchestrator actually writes) instead of a raw query on the stale
+    pending/in_progress/running set, which missed every `active` goal. Falls
+    back to the most-recent goal regardless of status.
+    """
+    goal = world.inflight_goal()
+    if goal is not None:
+        return goal
+    recent = world.list_goals(limit=1, order="desc")
+    return recent[0] if recent else None
 
 
 def snapshot(world: WorldModel, goal_id: int | None = None) -> MonitorState | None:

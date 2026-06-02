@@ -77,10 +77,14 @@ def _goal_text(g) -> str:
 
 
 def _format_match(g, score: float) -> str:
+    # Markers keyed on the vocabulary the orchestrator actually writes
+    # (active/pending/blocked/done/cancelled) -- the old map keyed on
+    # succeeded/failed/in_progress/running (never written) and lacked
+    # active/cancelled, so a live goal rendered as "?".
     status_marker = {
-        "succeeded": "✓", "done": "✓",
-        "failed": "✗", "blocked": "✗",
-        "in_progress": "…", "running": "…",
+        "done": "✓",
+        "blocked": "✗", "cancelled": "✗",
+        "active": "…",
         "pending": "·",
     }.get((g.status or "").lower(), "?")
     result = (g.result or "")[:240].replace("\n", " ")
@@ -121,24 +125,15 @@ def _rank_with_jaccard(query: str, goals: list) -> list[tuple[float, Any]]:
 
 
 def _list_candidate_goals(world: WorldModel, include_running: bool) -> list:
-    """Pull goals that have meaningful text to compare against."""
-    if include_running:
-        rows = world.conn.execute(
-            "SELECT id, parent_id, title, description, status, created_at, "
-            "updated_at, deadline, result FROM goals "
-            "WHERE COALESCE(title, '') != '' OR COALESCE(description, '') != '' "
-            "ORDER BY updated_at DESC LIMIT 500"
-        ).fetchall()
-    else:
-        rows = world.conn.execute(
-            "SELECT id, parent_id, title, description, status, created_at, "
-            "updated_at, deadline, result FROM goals "
-            "WHERE status IN ('succeeded', 'done', 'failed') "
-            "AND (COALESCE(title, '') != '' OR COALESCE(description, '') != '') "
-            "ORDER BY updated_at DESC LIMIT 500"
-        ).fetchall()
-    from ..world_model import Goal
-    return [Goal(**dict(r)) for r in rows]
+    """Pull goals that have meaningful text to compare against.
+
+    Routes through the locked, backend-portable ``candidate_goals`` helper
+    instead of ``world.conn.execute`` -- the raw path took torn reads, used
+    ``dict(row)`` access that returned nothing on the Postgres backend, and
+    filtered on ``succeeded``/``failed`` statuses the orchestrator never writes
+    (so every failed/``blocked`` past goal was silently missed).
+    """
+    return world.candidate_goals(include_running, limit=500)
 
 
 def recall_past_goals(
@@ -156,7 +151,10 @@ def recall_past_goals(
     """
     own_world = False
     if world is None:
-        world = WorldModel(db_path)
+        # open_world() honors a configured [world_model] backend, so recall
+        # works on a Postgres install instead of always opening empty SQLite.
+        from ..world_model import open_world
+        world = open_world(db_path)
         own_world = True
     try:
         candidates = _list_candidate_goals(world, include_running)

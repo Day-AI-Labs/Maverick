@@ -119,12 +119,14 @@ def world_with_history(tmp_path):
     from maverick.world_model import WorldModel
     world = WorldModel(tmp_path / "wm.sqlite")
     # Insert via direct SQL (we control the schema fields).
+    # Statuses use the vocabulary the orchestrator actually writes
+    # (done/blocked/active), not the never-written succeeded/failed/in_progress.
     goals = [
-        (1, None, "Refactor auth module", "Replace JWT with sessions in app/auth.py", "succeeded", "Migrated auth to sessions, all tests pass."),
-        (2, None, "Fix bug in payment flow", "Stripe webhook crashes on negative amounts", "succeeded", "Added input validation; webhook stable."),
-        (3, None, "Refactor authentication", "Same as #1 essentially", "failed", "Hit a deadlock; reverted."),
-        (4, None, "Write tests for cart", "Add coverage for shopping cart edge cases", "succeeded", "Cart now at 85% coverage."),
-        (5, None, "Database migration", "Move from SQLite to Postgres", "in_progress", None),
+        (1, None, "Refactor auth module", "Replace JWT with sessions in app/auth.py", "done", "Migrated auth to sessions, all tests pass."),
+        (2, None, "Fix bug in payment flow", "Stripe webhook crashes on negative amounts", "done", "Added input validation; webhook stable."),
+        (3, None, "Refactor authentication", "Same as #1 essentially", "blocked", "Hit a deadlock; reverted."),
+        (4, None, "Write tests for cart", "Add coverage for shopping cart edge cases", "done", "Cart now at 85% coverage."),
+        (5, None, "Database migration", "Move from SQLite to Postgres", "active", None),
     ]
     now = time.time()
     for gid, parent, title, desc, status, result in goals:
@@ -232,7 +234,7 @@ def test_monitor_render_contains_key_fields(world_with_history):
     state = snapshot(world_with_history, goal_id=2)
     text = render(state)
     assert "Goal #2" in text
-    assert "succeeded" in text.lower()
+    assert "done" in text.lower()
     assert "payment" in text.lower()
 
 
@@ -243,7 +245,7 @@ def test_monitor_render_shows_children(world_with_history):
     world_with_history.conn.execute(
         "INSERT INTO goals(id, parent_id, title, description, status, "
         "created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
-        (10, 5, "Spin up Postgres", "Local docker pg", "in_progress",
+        (10, 5, "Spin up Postgres", "Local docker pg", "active",
          time.time(), time.time()),
     )
     world_with_history.conn.commit()
