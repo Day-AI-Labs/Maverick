@@ -135,25 +135,27 @@ _CHANNEL_INIT_TMPL = '''\
 
 Subclass ``maverick_channels.Channel`` and implement ``start``,
 ``send``, ``stop``. ``pyproject.toml`` registers the *class* (not an
-instance) at the ``maverick.channels`` entry point.
+instance) at the ``maverick.channels`` entry point; Maverick passes the
+agent ``handler`` when it instantiates the channel per-deployment.
 """
 from __future__ import annotations
 
-from typing import Any
+from maverick_channels import Channel, Handler
 
 
-class {class_name}:
+class {class_name}(Channel):
     name = "{slug_under}"
 
-    def __init__(self, **kwargs: Any) -> None:
-        # Pull config from ``[channels.{slug_under}]`` in config.toml.
-        self.config = kwargs
+    def __init__(self, handler: Handler) -> None:
+        super().__init__(handler)
+        # TODO: pull config from ``[channels.{slug_under}]`` in config.toml.
 
     async def start(self) -> None:
-        # TODO: open the inbound connection (poller, webhook, websocket).
+        # TODO: open the inbound connection (poller, webhook, websocket),
+        # then dispatch each message to ``self.handler``.
         pass
 
-    async def send(self, *, user_id: str, text: str) -> None:
+    async def send(self, user_id: str, text: str) -> None:
         # TODO: deliver `text` back to `user_id` on this channel.
         raise NotImplementedError
 
@@ -234,14 +236,14 @@ def _ascii_title(slug: str) -> str:
 
 
 def _factory_call(kind: str) -> str:
-    return "()" if kind in ("tool", "persona") else "(config={})"
+    return "()" if kind in ("tool", "persona") else "(handler=lambda msg: None)"
 
 
 def _kind_assertions(kind: str) -> str:
     if kind == "tool":
         return "from maverick.tools import Tool; assert isinstance(obj, Tool)"
     if kind == "channel":
-        return "assert hasattr(obj, 'start') and hasattr(obj, 'send') and hasattr(obj, 'stop')"
+        return "from maverick_channels import Channel; assert isinstance(obj, Channel)"
     return "assert isinstance(obj, str) and obj.strip()"
 
 
