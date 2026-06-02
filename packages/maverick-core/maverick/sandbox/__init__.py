@@ -170,6 +170,8 @@ def build_sandbox(
         return DockerBackend(
             workdir=wd, image=image, timeout=timeout,
             pids_limit=full_cfg.get("pids_limit", 512),
+            memory=full_cfg.get("memory", "4g"),
+            cpus=full_cfg.get("cpus"),
         )
     if chosen == "podman":
         image = _resolve_image(full_cfg)
@@ -177,6 +179,8 @@ def build_sandbox(
             workdir=wd, image=image, timeout=timeout,
             allow_network=bool(full_cfg.get("allow_network", False)),
             pids_limit=full_cfg.get("pids_limit", 512),
+            memory=full_cfg.get("memory", "4g"),
+            cpus=full_cfg.get("cpus"),
         )
     if chosen == "devcontainer":
         project_dir = Path(

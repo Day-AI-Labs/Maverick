@@ -42,6 +42,12 @@ class PodmanBackend:
     allow_network: bool = False
     # Fork-bomb guard; generous enough for real builds. 0/None disables.
     pids_limit: int | None = 512
+    # Bound host RAM so a runaway / prompt-injected process can't exhaust it
+    # and trip the kernel OOM-killer. CPU is uncapped by default (the per-exec
+    # ``timeout`` already bounds a busy-loop); ``cpus`` exposes the knob. A
+    # falsy value ("" / None) disables either cap.
+    memory: str | None = "4g"
+    cpus: str | None = None
 
     def __post_init__(self) -> None:
         self.workdir = Path(self.workdir)
@@ -79,6 +85,10 @@ class PodmanBackend:
         ]
         if self.pids_limit:
             args.extend(["--pids-limit", str(self.pids_limit)])
+        if self.memory:
+            args.extend(["--memory", str(self.memory)])
+        if self.cpus:
+            args.extend(["--cpus", str(self.cpus)])
         if not self.allow_network:
             args.extend(["--network", "none"])
         args.extend([self.image, "sh", "-c", cmd])

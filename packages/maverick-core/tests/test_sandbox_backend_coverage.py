@@ -74,3 +74,63 @@ class TestDiagnoseBackendCoverage:
         monkeypatch.setattr("shutil.which", lambda name: None)
         monkeypatch.delenv("E2B_API_KEY", raising=False)
         assert "E2B_API_KEY unset" in "\n".join(d._check_sandbox())
+
+
+class TestContainerResourceCaps:
+    """Docker/Podman must bound host RAM by default (OOM is the catastrophic,
+    non-recoverable host-DoS); CPU is opt-in since the per-exec timeout already
+    bounds a busy-loop. Issue #461."""
+
+    @staticmethod
+    def _argv(monkeypatch, Backend, verify_attr, tmp_path, **kw):
+        monkeypatch.setattr(Backend, verify_attr, lambda self: None)
+        cap: dict = {}
+
+        class _R:
+            stdout = ""
+            stderr = ""
+            returncode = 0
+
+        monkeypatch.setattr("subprocess.run",
+                            lambda args, **k: cap.update(args=args) or _R())
+        Backend(workdir=tmp_path, **kw).exec("echo hi")
+        return cap["args"]
+
+    def test_docker_memory_capped_by_default_cpu_optin(self, tmp_path, monkeypatch):
+        from maverick.sandbox.docker import DockerBackend
+        args = self._argv(monkeypatch, DockerBackend, "_verify_docker", tmp_path)
+        assert args[args.index("--memory") + 1] == "4g"
+        assert "--cpus" not in args  # opt-in
+        # existing containment must remain intact
+        assert "--cap-drop" in args and "no-new-privileges" in args
+
+    def test_docker_cpu_cap_applied_when_configured(self, tmp_path, monkeypatch):
+        from maverick.sandbox.docker import DockerBackend
+        args = self._argv(monkeypatch, DockerBackend, "_verify_docker", tmp_path,
+                          cpus="2", memory="1g")
+        assert args[args.index("--cpus") + 1] == "2"
+        assert args[args.index("--memory") + 1] == "1g"
+
+    def test_memory_cap_disengageable_with_falsy(self, tmp_path, monkeypatch):
+        from maverick.sandbox.docker import DockerBackend
+        args = self._argv(monkeypatch, DockerBackend, "_verify_docker", tmp_path,
+                          memory="")
+        assert "--memory" not in args
+
+    def test_podman_memory_capped_by_default(self, tmp_path, monkeypatch):
+        from maverick.sandbox.podman import PodmanBackend
+        args = self._argv(monkeypatch, PodmanBackend, "_verify_podman", tmp_path)
+        assert args[args.index("--memory") + 1] == "4g"
+
+    def test_build_sandbox_passes_memory_from_config(self, tmp_path, monkeypatch):
+        # The [sandbox] memory/cpus knobs reach the backend.
+        from maverick import sandbox
+        monkeypatch.setattr(sandbox.DockerBackend, "_verify_docker", lambda self: None)
+        monkeypatch.setattr(config, "get_sandbox",
+                            lambda: {"backend": "docker", "workdir": str(tmp_path)})
+        monkeypatch.setattr(
+            "maverick.config.load_config",
+            lambda: {"sandbox": {"backend": "docker", "memory": "8g", "cpus": "4"}},
+        )
+        be = sandbox.build_sandbox()
+        assert be.memory == "8g" and be.cpus == "4"
