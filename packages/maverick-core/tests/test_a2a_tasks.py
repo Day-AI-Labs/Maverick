@@ -96,7 +96,14 @@ def test_push_config_set_and_get():
     cfg = {"url": "https://client.example/wh", "token": "abc"}
     res = eng.set_push_config({"taskId": t.id, "pushNotificationConfig": cfg})
     assert res["pushNotificationConfig"]["url"] == cfg["url"]
-    assert eng.get_push_config({"taskId": t.id})["pushNotificationConfig"] == cfg
+    # get_push_config must NOT echo the registered webhook token: a peer sharing
+    # the single A2A bearer token could otherwise read another caller's secret.
+    # The url is still returned; the token is masked.
+    got = eng.get_push_config({"taskId": t.id})["pushNotificationConfig"]
+    assert got["url"] == cfg["url"]
+    assert got["token"] == "***" and got["token"] != "abc"
+    # ...but the real token stays in storage so _fire_push can authenticate.
+    assert eng._tasks[t.id].push_config["token"] == "abc"
     with pytest.raises(_RpcError):  # url is required
         eng.set_push_config({"taskId": t.id, "pushNotificationConfig": {}})
 
