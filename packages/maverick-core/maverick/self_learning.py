@@ -316,15 +316,22 @@ def _toml_value(v: Any) -> str:
 def add_mcp_server(
     name: str, command: str, *,
     args: list[str] | None = None, env: dict[str, str] | None = None,
-    need: str = "",
+    pin_sha256: str | None = None, need: str = "",
 ) -> Any:
     """Validate + persist an ``[mcp_servers.<name>]`` block to config.toml.
 
     Returns the validated ``MCPServerSpec``. The block is only written
     AFTER validation succeeds (the same supply-chain / shell-meta input
     checks the static config loader enforces), so a malformed spec never
-    lands on disk. Hot-starting the client is the caller's job (it needs
-    the running event loop).
+    lands on disk. ``pin_sha256`` (a catalog-supplied executable/package
+    digest) is persisted so ``MCPClient.start()`` verifies the binary on
+    every launch (CVE-2026-30615). Hot-starting the client is the caller's
+    job (it needs the running event loop).
+
+    NOTE: this is the low-level persistence primitive. It is NOT the
+    agent-facing entry point — ``learn_capability`` routes through
+    ``acquire_mcp_server`` (catalog-pinned + operator consent), never here
+    with a model-supplied free-text command.
     """
     from .config import config_path
     from .mcp_client import MCPServerSpec
@@ -337,6 +344,7 @@ def add_mcp_server(
     spec = MCPServerSpec(
         name=name, command=command, args=list(args or []),
         env={k: str(v) for k, v in (env or {}).items()},
+        pin_sha256=pin_sha256 or None,
     )  # __post_init__ runs the CVE-2026-30615 input validation.
 
     path = config_path()
@@ -350,6 +358,8 @@ def add_mcp_server(
         block.append(f"args = {_toml_value(spec.args)}")
     if spec.env:
         block.append(f"env = {_toml_value(spec.env)}")
+    if spec.pin_sha256:
+        block.append(f"pin_sha256 = {_toml_value(spec.pin_sha256)}")
     body = ("" if existing.endswith("\n") or not existing else "\n") + \
         "\n" + "\n".join(block) + "\n"
 
@@ -358,6 +368,106 @@ def add_mcp_server(
         f.write(body)
     record(need or name, "mcp", name, source=command)
     return spec
+
+
+# Maximum command tokens we'll accept from a catalog ``source``. A pinned
+# MCP launch line is short (``npx -y @scope/pkg`` etc.); a huge token list
+# signals a malformed/abusive entry.
+_MCP_SOURCE_MAX_TOKENS = 32
+
+
+def mcp_acquisition_enabled() -> bool:
+    """Whether agent-driven MCP-server acquisition (#422) is allowed.
+
+    OFF by default and independent of the self-learning master switch: it
+    re-enables the capability #392 disabled, so it's a separate, explicit
+    trust decision. ``MAVERICK_ALLOW_MCP_ACQUISITION`` overrides config.
+    """
+    env = os.environ.get("MAVERICK_ALLOW_MCP_ACQUISITION", "").strip().lower()
+    if env in {"1", "true", "yes", "on"}:
+        return True
+    if env in {"0", "false", "no", "off"}:
+        return False
+    return bool(settings().get("allow_mcp_acquisition", False))
+
+
+def _parse_catalog_mcp_source(source: str) -> tuple[str, list[str]]:
+    """Split a catalog ``mcp`` entry ``source`` into (command, args).
+
+    Convention (this module is the only consumer; catalog.py stays
+    read-only): the ``source`` field of an ``mcp`` CatalogEntry is the
+    launch command line, e.g. ``"npx -y @scope/server"``. We shlex-split
+    it — argv[0] is the command, the rest are args. The result is fed to
+    MCPServerSpec, whose __post_init__ runs the full shell-meta / NUL /
+    newline validation, so nothing here weakens those defenses.
+    """
+    import shlex
+
+    try:
+        tokens = shlex.split(source or "", posix=True)
+    except ValueError as e:
+        raise ValueError(f"catalog mcp source is not a valid command line: {e}") from e
+    if not tokens:
+        raise ValueError("catalog mcp entry has an empty command source")
+    if len(tokens) > _MCP_SOURCE_MAX_TOKENS:
+        raise ValueError("catalog mcp source has too many tokens")
+    return tokens[0], tokens[1:]
+
+
+def acquire_mcp_server(name: str, *, need: str = "") -> Any:
+    """Catalog-pinned, consent-gated MCP-server acquisition (#422).
+
+    The ONLY agent-reachable path to add an MCP server. Restores the
+    capability #392 removed without re-opening the RCE/supply-chain hole:
+
+      1. Resolve ``name`` against the curated ``mcp`` catalog index
+         (read-only ``catalog.resolve``). A name with no catalog entry is
+         rejected — there is NO free-text ``command``/``args`` input.
+      2. The command/args come from the entry's pinned ``source``; its
+         ``sha256`` becomes ``pin_sha256`` so the binary is hash-verified
+         on launch (CVE-2026-30615). MCPServerSpec validation (shell-meta
+         / NUL / newline rejection) runs before anything is persisted.
+      3. Require explicit operator approval through the existing consent
+         queue (``require_consent(raise_on_deny=True)``). Denied / uncertain
+         (auto-deny, non-tty, dashboard timeout-then-non-tty) → ConsentDenied
+         and nothing is persisted or started.
+
+    Returns the validated ``MCPServerSpec`` (persisted to config). The
+    caller hot-starts the client via the normal validated launch path.
+    Raises ValueError (no/invalid catalog entry) or ConsentDenied.
+    """
+    from . import catalog as _catalog
+    from .safety.consent import require_consent
+
+    if not _NAME_RE.match(name):
+        raise ValueError(
+            f"mcp server name {name!r} must be lowercase id (a-z0-9_), "
+            "3-42 chars, starting with a letter"
+        )
+    entry = _catalog.resolve(name, "mcp")
+    if entry is None:
+        raise ValueError(
+            f"no catalog 'mcp' entry named {name!r}. Agent-driven MCP "
+            "acquisition only installs curated, hash-pinned catalog entries "
+            "(a free-text command is not accepted)."
+        )
+    command, args = _parse_catalog_mcp_source(entry.source)
+
+    # Operator gate BEFORE any persistence/launch. The detail surfaces the
+    # exact pinned command + digest so the approver sees what will run.
+    detail = (
+        f"Add MCP server {name!r} from catalog: {command} {' '.join(args)} "
+        f"(sha256={entry.sha256 or 'unpinned'}; source={entry.source})"
+    )
+    require_consent(
+        "add-mcp-server", risk="high", scope=name, detail=detail,
+        raise_on_deny=True,
+    )
+
+    return add_mcp_server(
+        name, command, args=args, pin_sha256=entry.sha256 or None,
+        need=need or name,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -770,6 +880,7 @@ async def preflight(
 __all__ = [
     "enabled", "settings", "Learned", "record", "history",
     "Candidate", "search_capabilities", "acquire_skill", "add_mcp_server",
+    "acquire_mcp_server", "mcp_acquisition_enabled",
     "write_generated_tool", "load_generated_tools", "audit_generated_source",
     "preflight",
     "validate_spec_url", "probe_openapi_spec", "discover_openapi_spec",
