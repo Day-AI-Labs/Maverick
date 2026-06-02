@@ -150,3 +150,29 @@ def test_library_warning_surfaced_with_debug(monkeypatch, capsys):
     err = capsys.readouterr().err
     assert "ignoring unreadable config.toml" in err
     _reset_logging()
+
+
+def test_sandbox_security_warning_surfaced_by_default(monkeypatch, capsys):
+    monkeypatch.delenv("MAVERICK_DEBUG", raising=False)
+    monkeypatch.delenv("MAVERICK_LOG_LEVEL", raising=False)
+    _reset_logging()
+    _configure_cli_logging()
+    logging.getLogger("maverick.sandbox").warning(
+        "sandbox backend is 'local': model-generated shell runs directly on this host"
+    )
+    err = capsys.readouterr().err
+    assert "model-generated shell runs directly on this host" in err
+    _reset_logging()
+
+
+def test_shield_security_warning_surfaced_by_default(monkeypatch, capsys):
+    monkeypatch.delenv("MAVERICK_DEBUG", raising=False)
+    monkeypatch.delenv("MAVERICK_LOG_LEVEL", raising=False)
+    _reset_logging()
+    _configure_cli_logging()
+    logging.getLogger("maverick.orchestrator").warning(
+        "maverick-shield not installed; tool-call scans disabled"
+    )
+    err = capsys.readouterr().err
+    assert "maverick-shield not installed" in err
+    _reset_logging()

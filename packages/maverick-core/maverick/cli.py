@@ -205,32 +205,56 @@ def _kernel():
     )
 
 
+_CLI_SECURITY_WARNING_LOGGERS = ("maverick.sandbox", "maverick.orchestrator")
+
+
+class _CliDefaultWarningFilter(logging.Filter):
+    """Keep routine WARNING noise quiet while surfacing safety warnings."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.ERROR:
+            return True
+        return any(
+            record.name == name or record.name.startswith(f"{name}.")
+            for name in _CLI_SECURITY_WARNING_LOGGERS
+        )
+
+
 def _configure_cli_logging() -> None:
-    """Keep library log lines off the consumer's terminal by default (#614).
+    """Keep routine library log lines off the consumer's terminal by default.
 
     The CLI installs no log handler, so Python's last-resort handler dumps any
     library WARNING/ERROR (e.g. "ignoring unreadable config.toml
     (TOMLDecodeError...)") straight to stderr mid-run. Install a root handler
-    so those are suppressed by default and only surface when the user opts in:
+    so routine warnings are suppressed by default while security-posture
+    warnings still surface:
 
       - ``MAVERICK_DEBUG`` set  -> verbose: DEBUG-level logs to stderr.
       - ``MAVERICK_LOG_LEVEL``  -> honored as-is (operators who want logs).
-      - otherwise               -> only ERROR+ reaches the terminal; routine
-        library WARNING noise is swallowed.
+      - otherwise               -> ERROR+ reaches the terminal, plus WARNING
+        diagnostics from the sandbox / Shield safety path.
 
     Delegates to ``logging_config.configure_logging`` (idempotent) so the
     JSON-format / context-filter wiring stays in one place.
     """
     from .logging_config import configure_logging
+    default_warning_filter = False
     if os.environ.get("MAVERICK_DEBUG"):
         level = "DEBUG"
+    elif os.environ.get("MAVERICK_LOG_LEVEL"):
+        # Explicit operator logging preference wins as-is.
+        level = os.environ["MAVERICK_LOG_LEVEL"]
     else:
-        # Default to ERROR so a library WARNING doesn't bleed onto the terminal
-        # during a normal `start` / `chat` run; an explicit MAVERICK_LOG_LEVEL
-        # still wins inside configure_logging.
-        level = os.environ.get("MAVERICK_LOG_LEVEL", "ERROR")
+        # Root must admit WARNING records so the filter below can pass through
+        # sandbox / Shield safety warnings while dropping routine library noise.
+        level = "WARNING"
+        default_warning_filter = True
     try:
         configure_logging(level=level)
+        if default_warning_filter:
+            safety_filter = _CliDefaultWarningFilter()
+            for handler in logging.getLogger().handlers:
+                handler.addFilter(safety_filter)
     except Exception:  # pragma: no cover -- logging setup must never break the CLI
         pass
 
