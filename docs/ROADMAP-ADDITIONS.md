@@ -52,8 +52,8 @@ numbers cite where it landed; `file:line` cites the implementing code.*
 | **B1** | Async tasks | ⬜ open | — |
 | **B2** | MCP client OAuth 2.1 + Registry | ⬜ open *(blocked)* | client is **stdio-only** (`mcp_client.py`); needs a remote-HTTP client transport first |
 | **B3** | A2A vs. homegrown ACD | ⬜ open *(decision)* | — |
-| **C1** | Eval harness (GAIA / τ²-bench / terminal-bench) | 🟡 GAIA shipped (#687) | `benchmarks/eval_gaia.py`, `evals.py`; τ²/terminal-bench adapters still open |
-| **C1** | Skill quality gate / pruning | 🟡 partial | quality gate (#396) + usage decay (`skills.py::_decay_weights` → `skill_stats`); explicit versioning/active-pruning still light |
+| **C1** | Eval harness (GAIA / τ²-bench / terminal-bench) | 🟡 GAIA shipped (#687) | `benchmarks/eval_gaia.py`, `evals.py`; the remaining two are verification-env benchmarks needing real *harnesses* (Docker / user-sim, SWE-bench-style — cf. `swe_bench.py`), not simple string-scored adapters |
+| **C1** | Skill quality gate / pruning | ✅ done *(versioning aside)* | quality gate (#396), usage decay (`skill_stats.decay_weights`), **and active pruning** — `evictable()` + `skills evict` CLI; outcome recording wired (`agent.py:274`, `orchestrator.py:227`); tested. Only explicit versioning absent. |
 | **C2** | Learning-substrate decision (close loop vs. prune) | ⬜ open *(decision)* | `training/`, `prm.py`, compaction gate are scaffolds |
 | **C3** | Verifier default-on across goal types | ✅ confirmed | `agent.py:1155–1342` — `verify_final` runs on every orchestrator depth-0 FINAL, not coding-gated |
 | **D1** | Shared tool-reliability layer | ✅ shipped (#684) | `tool_reliability.py`, `retry.py` |
@@ -63,8 +63,10 @@ numbers cite where it landed; `file:line` cites the implementing code.*
 **Net:** the cleanly-autonomous Lane A/B engineering is largely done. What's left
 clusters into (a) two MCP server items that need design — **elicitation, async
 tasks**; (b) a **prerequisite** (remote-HTTP MCP *client* transport) that unblocks
-**OAuth/Registry**; (c) finishing **A3** (memory/programmatic calling) and **C1**
-(more benchmark adapters); and (d) the **decisions** — C2 learning substrate, B3
+**OAuth/Registry**; (c) finishing **A3** (memory/programmatic calling) and **C1**'s
+two benchmark *harnesses* (terminal-bench, τ²-bench — verification-env, not simple
+adapters; its skill quality/pruning half is already done); and (d) the
+**decisions** — C2 learning substrate, B3
 A2A-vs-ACD, and the breadth-vs-depth question (see
 [`tool-inventory.md`](./specs/tool-inventory.md)).
 
@@ -154,11 +156,16 @@ no "did it help," no pruning** — a bad skill can *poison future runs*
 (`skills.py`), which is a safety issue, not just a feature. You can't claim
 "deepest long-horizon agent" without measuring it.
 
-> **Update (June 2026):** partly addressed — a skill **quality gate** landed
-> (#396) and skill retrieval now uses **usage-based weight decay**
-> (`skills.py::_decay_weights` → `skill_stats`). Explicit **versioning** and
-> **active pruning** remain light. The GAIA half of the eval harness shipped
-> (#687); τ²-bench / terminal-bench adapters are still open.
+> **Update (June 2026):** the self-curation loop is **complete** — a skill
+> **quality gate** (#396), **usage-based weight decay**, **and active pruning**
+> (`skill_stats.evictable()` + the `skills evict` CLI), with outcome recording
+> wired into the loop (`agent.py:274` `record_use`, `orchestrator.py:227`
+> `record_outcome`) and tests (`test_skill_stats.py`, `test_skills_cli.py`).
+> Only explicit **versioning** is absent (low value — distilled skills are
+> regenerable). On eval: the GAIA harness shipped (#687); the remaining two
+> (τ²-bench, terminal-bench) are verification-environment benchmarks needing
+> real harnesses (Docker / user-simulator, like `swe_bench.py`), **not** the
+> simple string-scored adapter GAIA uses — a deliberate effort, not a quick add.
 
 ### C2. Decide the learning-substrate question **[strategic]**
 `training/` (PRM_TRAIN + RLAIF), `prm.py` (Null/Heuristic only; RemotePRM is a
@@ -223,9 +230,11 @@ landed. The remaining near-term priorities:
    validation also needs real accounts.
 5. **Finish A3:** memory / context-editing abstraction + programmatic tool
    calling (deferred tool loading already shipped, #693).
-6. **Finish C1:** τ²-bench / terminal-bench adapters + a firmer
-   skill-distillation quality/pruning gate (GAIA harness shipped #687; quality
-   gate #396 exists).
+6. **Finish C1's benchmark coverage:** the remaining two slices (τ²-bench,
+   terminal-bench) need real *verification-environment harnesses* (Docker /
+   user-simulator, SWE-bench-style — cf. `swe_bench.py`), not simple adapters.
+   (GAIA shipped #687; the skill quality / decay / **pruning** gate is already
+   done — see C1 above.)
 
 ---
 
