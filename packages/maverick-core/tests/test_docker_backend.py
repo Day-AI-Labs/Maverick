@@ -104,3 +104,48 @@ def test_timeout_forces_container_cleanup(monkeypatch, tmp_path):
     assert "--name" in run_args
     container_name = run_args[run_args.index("--name") + 1]
     assert rm_args[3] == container_name
+
+
+def test_build_sandbox_parses_string_false_docker_controls(monkeypatch, tmp_path):
+    """Quoted/interpolated false must not enable Docker network or root."""
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "\n".join([
+            "[sandbox]",
+            'backend = "docker"',
+            f'workdir = "{tmp_path}"',
+            'allow_network = "${MAV_ALLOW_NETWORK}"',
+            'allow_root = "false"',
+        ])
+    )
+    monkeypatch.setenv("MAVERICK_CONFIG", str(config_path))
+    monkeypatch.setenv("MAV_ALLOW_NETWORK", "false")
+    monkeypatch.delenv("MAVERICK_SANDBOX_ALLOW_ROOT", raising=False)
+
+    from maverick.sandbox import DockerBackend, build_sandbox
+
+    monkeypatch.setattr(DockerBackend, "_verify_docker", lambda self: None)
+
+    backend = build_sandbox()
+    assert backend.allow_network is False
+    assert backend.allow_root is False
+
+    captured: dict = {}
+
+    class _R:
+        stdout = ""
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr(
+        subprocess, "run", lambda args, **kwargs: captured.update(args=args) or _R()
+    )
+    backend.exec("echo hi")
+
+    assert "--network" in captured["args"]
+    assert captured["args"][captured["args"].index("--network") + 1] == "none"
+    if hasattr(os, "getuid"):
+        assert "--user" in captured["args"]
+        assert captured["args"][captured["args"].index("--user") + 1] == (
+            f"{os.getuid()}:{os.getgid()}"
+        )

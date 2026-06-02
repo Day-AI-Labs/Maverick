@@ -67,6 +67,37 @@ _IMAGE_BY_LANGUAGE = {
 }
 
 
+_TRUE_CONFIG_VALUES = {"1", "true", "yes", "on"}
+_FALSE_CONFIG_VALUES = {"0", "false", "no", "off", ""}
+
+
+def _config_bool(value: object, default: bool = False) -> bool:
+    """Parse hand-edited/interpolated config booleans without string truthiness.
+
+    TOML booleans arrive as ``bool``, but quoted values and ``${ENV}``
+    interpolation arrive as strings.  Using ``bool("false")`` would enable
+    security-sensitive toggles such as Docker network/root access, so accept
+    common boolean spellings explicitly and fall back to the supplied default
+    for unrecognized values.
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in _TRUE_CONFIG_VALUES:
+            return True
+        if normalized in _FALSE_CONFIG_VALUES:
+            return False
+        log.warning("invalid sandbox boolean %r; using default %s", value, default)
+        return default
+    if isinstance(value, int):
+        return bool(value)
+    log.warning("invalid sandbox boolean %r; using default %s", value, default)
+    return default
+
+
 def _resolve_image(full_cfg: dict) -> str:
     """Pick the container image for the container-based backends.
 
@@ -169,21 +200,21 @@ def build_sandbox(
         image = _resolve_image(full_cfg)
         return DockerBackend(
             workdir=wd, image=image, timeout=timeout,
-            allow_network=bool(full_cfg.get("allow_network", False)),
+            allow_network=_config_bool(full_cfg.get("allow_network"), False),
             pids_limit=full_cfg.get("pids_limit", 512),
             memory=full_cfg.get("memory", "4g"),
             cpus=full_cfg.get("cpus"),
-            allow_root=bool(full_cfg.get("allow_root", False)),
+            allow_root=_config_bool(full_cfg.get("allow_root"), False),
         )
     if chosen == "podman":
         image = _resolve_image(full_cfg)
         return PodmanBackend(
             workdir=wd, image=image, timeout=timeout,
-            allow_network=bool(full_cfg.get("allow_network", False)),
+            allow_network=_config_bool(full_cfg.get("allow_network"), False),
             pids_limit=full_cfg.get("pids_limit", 512),
             memory=full_cfg.get("memory", "4g"),
             cpus=full_cfg.get("cpus"),
-            allow_root=bool(full_cfg.get("allow_root", False)),
+            allow_root=_config_bool(full_cfg.get("allow_root"), False),
         )
     if chosen == "devcontainer":
         project_dir = Path(
@@ -191,7 +222,7 @@ def build_sandbox(
         ).expanduser()
         return DevcontainerBackend(
             project_dir=project_dir, timeout=timeout,
-            allow_network=bool(full_cfg.get("allow_network", True)),
+            allow_network=_config_bool(full_cfg.get("allow_network"), True),
         )
     if chosen == "kubernetes":
         return KubernetesBackend(
@@ -200,7 +231,7 @@ def build_sandbox(
             context=full_cfg.get("context"),
             workdir=Path(full_cfg.get("workdir", "/workspaces/repo")),
             timeout=timeout,
-            allow_network=bool(full_cfg.get("allow_network", False)),
+            allow_network=_config_bool(full_cfg.get("allow_network"), False),
             extra_kubectl_args=full_cfg.get("extra_kubectl_args") or [],
             run_as_user=int(full_cfg.get("run_as_user", 1000)),
             memory=full_cfg.get("memory", "4g"),
