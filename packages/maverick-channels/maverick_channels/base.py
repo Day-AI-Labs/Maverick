@@ -33,6 +33,27 @@ def is_allowed(user_id, allowlist) -> bool:
     return uid in allowlist
 
 
+def public_url_for(request) -> str:
+    """Reconstruct the PUBLIC URL Twilio signed, not the loopback URL the
+    reverse proxy forwarded to. Twilio signs the https URL it was configured
+    with; behind a proxy ``request.url`` is the internal http://127.0.0.1 URL,
+    so validating against it 403s every legitimate webhook.
+
+    Prefer ``MAVERICK_PUBLIC_BASE_URL`` (e.g. ``https://bot.example.com``) when
+    set; otherwise rebuild from the ``X-Forwarded-Proto``/``X-Forwarded-Host``
+    headers the proxy adds (Caddy/nginx set both). Falls back to the raw
+    request URL when neither is available (direct-bind deploys)."""
+    base = os.environ.get("MAVERICK_PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if base:
+        return base + request.url.path
+
+    proto = request.headers.get("X-Forwarded-Proto")
+    host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host")
+    if proto and host:
+        return f"{proto}://{host}{request.url.path}"
+    return str(request.url)
+
+
 def _max_inbound_chars() -> int:
     """Cap on inbound text fed to the swarm. A single oversized inbound
     message (a 200KB email, an attacker-crafted mention) would otherwise

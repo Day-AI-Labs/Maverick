@@ -23,7 +23,13 @@ from __future__ import annotations
 import logging
 import os
 
-from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
+from .base import (
+    Channel,
+    IncomingMessage,
+    is_allowed,
+    normalize_allowlist,
+    public_url_for,
+)
 
 log = logging.getLogger(__name__)
 
@@ -95,7 +101,9 @@ class SMSChannel(Channel):
         MessageSid: str = Form(""),  # noqa: N803 -- Twilio dedup key
     ):
         signature = request.headers.get("X-Twilio-Signature", "")
-        url = str(request.url)
+        # Validate against the PUBLIC URL Twilio signed, not the loopback URL
+        # the reverse proxy forwarded to (see public_url_for).
+        url = public_url_for(request)
         form = await request.form()
         form_dict = {k: str(v) for k, v in form.items()}
         if not self._validator.validate(url, form_dict, signature):
@@ -111,8 +119,8 @@ class SMSChannel(Channel):
         # Council finding (Tier 0 + Wave 4): Twilio retries non-2xx and
         # slow handlers; without MessageSid dedup the same inbound SMS
         # spawns N goals and burns N API spends. We use lookup BEFORE
-        # processing (so retries are no-ops) and mark AFTER successful
-        # processing (so a handler crash doesn't permanently lose the
+        # processing (so retries are no-ops) and mark immediately AFTER the
+        # handler returns (so a handler crash doesn't permanently lose the
         # message -- Twilio's next retry will re-process it).
         wm = None
         if MessageSid:
@@ -131,18 +139,27 @@ class SMSChannel(Channel):
             reply = await self.handler(msg)
         except Exception as e:  # pragma: no cover
             log.exception("handler error")
-            reply = f"⚠ error: {e}"
-            # Don't mark as processed on handler error -- let Twilio retry.
-            await self.send(From, reply)
+            # Don't mark as processed on handler error -- let Twilio retry the
+            # full goal. The handler burned no useful budget if it raised.
+            try:
+                await self.send(From, f"⚠ error: {e}")
+            except Exception:  # pragma: no cover
+                log.exception("SMS error-reply send failed")
             return Response(content="", media_type="text/xml")
 
-        await self.send(From, reply)
-        # Only mark after the full handler + send succeeded.
+        # Mark processed NOW -- the budget-spending handler already succeeded.
+        # A transient outbound-send failure below must NOT 500 (Twilio would
+        # retry and re-run the whole goal, double-spending). Dedup first, then
+        # attempt the reply, logging a send failure without re-raising.
         if wm is not None and MessageSid:
             try:
                 wm.mark_message_processed("sms", MessageSid)
             except Exception:  # pragma: no cover
-                log.warning("SMS dedup mark failed (message processed OK)")
+                log.warning("SMS dedup mark failed (handler succeeded)")
+        try:
+            await self.send(From, reply)
+        except Exception:  # pragma: no cover
+            log.exception("SMS reply send failed (goal already processed)")
         return Response(content="", media_type="text/xml")
 
     async def start(self) -> None:

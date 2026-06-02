@@ -208,6 +208,206 @@ def test_whatsapp_webhook_rejects_unauthorized_sender():
     assert seen == ["whatsapp:+12025550111"]
 
 
+# --- sms / whatsapp: dedup-before-send (no double-spend on send failure) ---
+#
+# The budget-spending handler runs the full swarm. If we only marked the
+# MessageSid processed AFTER the outbound send, a transient send failure would
+# 500, Twilio would retry, and the whole goal would re-run -- double budget
+# spend. The fix marks the MessageSid processed immediately after the handler
+# succeeds, BEFORE the send, and never 500s on a send failure.
+
+
+class _FakeWorldModel:
+    """Records dedup interactions without touching a real DB."""
+
+    instances: list = []
+
+    def __init__(self, _path):
+        self.processed: set[tuple[str, str]] = set()
+        self.marked: list[tuple[str, str]] = []
+        _FakeWorldModel.instances.append(self)
+
+    def is_processed_message(self, channel, external_id) -> bool:
+        return (channel, external_id) in self.processed
+
+    def mark_message_processed(self, channel, external_id) -> None:
+        self.marked.append((channel, external_id))
+        self.processed.add((channel, external_id))
+
+
+@pytest.mark.skipif(not _have_twilio(), reason="fastapi+twilio not installed")
+def test_sms_marks_processed_before_send_and_survives_send_failure(monkeypatch):
+    import maverick.world_model as _wm
+    from fastapi.testclient import TestClient
+    from maverick_channels.sms import SMSChannel
+
+    _FakeWorldModel.instances = []
+    monkeypatch.setattr(_wm, "WorldModel", _FakeWorldModel)
+
+    ran = []
+
+    async def _handler(msg):
+        ran.append(msg.user_id)
+        return "ok"
+
+    chan = SMSChannel(
+        handler=_handler, account_sid="ACx", auth_token="tok",
+        from_number="+15550000", allowed_user_ids={"+12025550111"},
+    )
+    chan._validator.validate = lambda *a, **k: True
+
+    async def _send_fails(_uid, _text):
+        raise RuntimeError("twilio 503")
+
+    chan.send = _send_fails
+    client = TestClient(chan._app)
+
+    resp = client.post(
+        "/webhook/sms",
+        data={"From": "+12025550111", "Body": "hi", "MessageSid": "SM123"},
+    )
+    # Send failed, but the goal already ran: must NOT 500 (Twilio would retry
+    # and re-run the swarm). And the MessageSid is marked processed.
+    assert resp.status_code == 200
+    assert ran == ["+12025550111"]
+    wm = _FakeWorldModel.instances[-1]
+    assert ("sms", "SM123") in wm.marked
+
+
+@pytest.mark.skipif(not _have_twilio(), reason="fastapi+twilio not installed")
+def test_sms_does_not_mark_processed_on_handler_failure(monkeypatch):
+    import maverick.world_model as _wm
+    from fastapi.testclient import TestClient
+    from maverick_channels.sms import SMSChannel
+
+    _FakeWorldModel.instances = []
+    monkeypatch.setattr(_wm, "WorldModel", _FakeWorldModel)
+
+    async def _handler(_msg):
+        raise RuntimeError("handler boom")
+
+    chan = SMSChannel(
+        handler=_handler, account_sid="ACx", auth_token="tok",
+        from_number="+15550000", allowed_user_ids={"+12025550111"},
+    )
+    chan._validator.validate = lambda *a, **k: True
+
+    async def _send(_uid, _text):
+        return None
+
+    chan.send = _send
+    client = TestClient(chan._app)
+
+    resp = client.post(
+        "/webhook/sms",
+        data={"From": "+12025550111", "Body": "hi", "MessageSid": "SM999"},
+    )
+    assert resp.status_code == 200
+    # Handler raised, so the message must be left UNmarked -- Twilio's retry
+    # re-processes it rather than silently losing the goal.
+    wm = _FakeWorldModel.instances[-1]
+    assert ("sms", "SM999") not in wm.marked
+
+
+@pytest.mark.skipif(not _have_twilio(), reason="fastapi+twilio not installed")
+def test_whatsapp_marks_processed_before_send_and_survives_send_failure(monkeypatch):
+    import maverick.world_model as _wm
+    from fastapi.testclient import TestClient
+    from maverick_channels.whatsapp import WhatsAppChannel
+
+    _FakeWorldModel.instances = []
+    monkeypatch.setattr(_wm, "WorldModel", _FakeWorldModel)
+
+    ran = []
+
+    async def _handler(msg):
+        ran.append(msg.user_id)
+        return "ok"
+
+    chan = WhatsAppChannel(
+        handler=_handler, account_sid="ACx", auth_token="tok",
+        from_number="whatsapp:+15550000",
+        allowed_user_ids={"whatsapp:+12025550111"},
+    )
+    chan._validator.validate = lambda *a, **k: True
+
+    async def _send_fails(_uid, _text):
+        raise RuntimeError("twilio 503")
+
+    chan.send = _send_fails
+    client = TestClient(chan._app)
+
+    resp = client.post(
+        "/webhook/whatsapp",
+        data={"From": "whatsapp:+12025550111", "Body": "hi", "MessageSid": "WA123"},
+    )
+    assert resp.status_code == 200
+    assert ran == ["whatsapp:+12025550111"]
+    wm = _FakeWorldModel.instances[-1]
+    assert ("whatsapp", "WA123") in wm.marked
+
+
+# --- telegram: chat allowlist must not authorize every group member --------
+
+
+def _have_telegram() -> bool:
+    try:
+        import telegram  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+class _FakeUser:
+    def __init__(self, uid):
+        self.id = uid
+
+
+class _FakeChat:
+    def __init__(self, cid, ctype):
+        self.id = cid
+        self.type = ctype
+
+
+class _FakeUpdate:
+    def __init__(self, user_id, chat_id, chat_type):
+        self.effective_user = _FakeUser(user_id) if user_id is not None else None
+        self.effective_chat = _FakeChat(chat_id, chat_type)
+
+
+@pytest.mark.skipif(not _have_telegram(), reason="python-telegram-bot not installed")
+def test_telegram_group_requires_allowlisted_sender():
+    from maverick_channels.telegram import TelegramChannel
+
+    chan = TelegramChannel(
+        handler=_noop,
+        token="test-token",
+        allowed_user_ids={"111"},
+        allowed_chat_ids={"-1009998887777"},
+    )
+    group = "-1009998887777"
+    # Allowlisted sender in the allowlisted group: authorized.
+    assert chan._is_authorized(_FakeUpdate("111", group, "supergroup")) is True
+    # A DIFFERENT group member (sender not allowlisted) must NOT be authorized
+    # just because the chat is allowlisted -- this was the bug.
+    assert chan._is_authorized(_FakeUpdate("222", group, "supergroup")) is False
+    # Anonymous group admin / channel post (no sender): denied.
+    assert chan._is_authorized(_FakeUpdate(None, group, "supergroup")) is False
+
+
+@pytest.mark.skipif(not _have_telegram(), reason="python-telegram-bot not installed")
+def test_telegram_private_chat_allowlist_authorizes():
+    from maverick_channels.telegram import TelegramChannel
+
+    # Chat-only allowlist for a PRIVATE chat is fine: one sender == one chat.
+    chan = TelegramChannel(
+        handler=_noop, token="test-token", allowed_chat_ids={"555"},
+    )
+    assert chan._is_authorized(_FakeUpdate("555", "555", "private")) is True
+    # But the same chat allowlist must not authorize a group with chat id 777.
+    assert chan._is_authorized(_FakeUpdate("777", "777", "supergroup")) is False
+
+
 # --- voice: per-caller allowlist (launch-hardening) ------------------------
 
 def _have_voice_deps() -> bool:
