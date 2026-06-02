@@ -93,6 +93,41 @@ async def _read_limited_json(request, http_exc):
         raise http_exc(status_code=400, detail="body must be valid JSON")
 
 
+def _allowed_origins() -> set[str]:
+    """Extra Origin values allowed beyond same-origin.
+
+    Comma-separated list in MAVERICK_MCP_ALLOWED_ORIGINS (e.g. a gateway's
+    public origin). Same-origin is always allowed; these are additions.
+    """
+    raw = os.environ.get("MAVERICK_MCP_ALLOWED_ORIGINS", "")
+    return {o.strip() for o in raw.split(",") if o.strip()}
+
+
+def _is_origin_allowed(request) -> bool:
+    """DNS-rebinding defense for the loopback HTTP transport.
+
+    A browser page on any site can POST no-cors to http://127.0.0.1:8771,
+    and DNS rebinding lets an attacker's hostname resolve to loopback. The
+    bearer token is still the primary gate, but echoing the same-origin
+    spirit of the dashboard's _is_same_origin gives defense-in-depth: a
+    cross-origin browser request is rejected before dispatch.
+
+    Requests with no Origin header (native MCP clients, curl, server-to-
+    server) are allowed — like the dashboard, the Origin check only ever
+    constrains browser-issued cross-origin requests; non-browser callers
+    omit Origin and are gated by the bearer token instead.
+    """
+    from urllib.parse import urlparse
+
+    origin = request.headers.get("origin")
+    if not origin:
+        return True
+    parsed = urlparse(origin)
+    if parsed.netloc and parsed.netloc == request.url.netloc:
+        return True
+    return origin in _allowed_origins()
+
+
 def _check_bearer(authorization: str | None) -> bool:
     """Bearer-token gate for network HTTP transport.
 
@@ -205,6 +240,11 @@ def build_app(server) -> FastAPI:
         request: Request,
         authorization: str | None = Header(None),
     ):
+        if not _is_origin_allowed(request):
+            raise HTTPException(
+                status_code=403,
+                detail="cross-origin request blocked (set MAVERICK_MCP_ALLOWED_ORIGINS to allow)",
+            )
         if not _check_bearer(authorization):
             raise HTTPException(status_code=401, detail="invalid bearer")
         # Bounded read (size cap) + parse; rejects oversized / malformed /

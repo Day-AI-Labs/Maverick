@@ -7,10 +7,6 @@
       The dashboard caught an unexpected error on <code>{{ path or request.url.path }}</code>.
       Check <code>maverick logs</code> or the server output for the full trace.
     </p>
-    {% if detail %}
-      <pre class="muted" style="display: inline-block; text-align: left; background: var(--bg); padding: 0.85rem 1rem; border-radius: 6px; max-width: 600px; overflow-x: auto;">{{ detail }}</pre>
-      <br />
-    {% endif %}
     <p style="margin-top: 1.5rem;">
       <a href="/" style="color: var(--accent);">Back to the overview</a>
     </p>
