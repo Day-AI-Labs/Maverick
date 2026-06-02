@@ -771,6 +771,35 @@ class WorldModel:
             )
             return cur.lastrowid
 
+    def update_episode_spend(
+        self,
+        episode_id: int,
+        cost_dollars: float = 0.0,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        tool_calls: int = 0,
+    ) -> None:
+        """Mirror in-flight spend onto a LIVE (not-yet-ended) episode row.
+
+        Read-side observability only: `maverick runs` / `maverick budget`
+        read the episode row, which `end_episode` only writes when the run
+        finishes -- so a long run showed `$0.00 / 0 tools` for minutes. The
+        orchestrator calls this periodically (throttled) so those commands
+        reflect accruing spend. Leaves `ended_at`/`outcome`/`summary`
+        untouched, so the row still reads as 'running' and `total_spend`
+        (which sums only ended episodes) is unaffected -- this is not a new
+        billing path. The `ended_at IS NULL` guard means a late mirror write
+        can never clobber the authoritative `end_episode` totals.
+        """
+        with self._writing() as conn:
+            conn.execute(
+                "UPDATE episodes SET cost_dollars = ?, input_tokens = ?, "
+                "output_tokens = ?, tool_calls = ? "
+                "WHERE id = ? AND ended_at IS NULL",
+                (cost_dollars, input_tokens, output_tokens, tool_calls,
+                 episode_id),
+            )
+
     def end_episode(
         self,
         episode_id: int,

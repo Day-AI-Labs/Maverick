@@ -130,6 +130,16 @@ def _humanize_run_error(e: Exception) -> str:
             "  Check the key in ~/.maverick/.env or your shell, then retry.\n"
             "  Diagnose with:  maverick doctor"
         )
+    # A typo'd / unavailable model id surfaces as a provider 404 (Anthropic/
+    # OpenAI raise NotFoundError). Point at `maverick config`, where [models]
+    # are set -- NOT `maverick doctor`, which only validates the API key and
+    # would send the user chasing a non-existent auth problem.
+    if "notfound" in name or "404" in msg or ("model" in low and "not found" in low):
+        return (
+            "The model id wasn't found by the provider (404).\n"
+            "  This usually means a typo'd or unavailable model id.\n"
+            "  Check the model in [models]:  maverick config"
+        )
     if "ratelimit" in name or "429" in msg:
         return ("The LLM provider rate-limited this run (429). "
                 "Wait a moment and retry.")
@@ -195,6 +205,36 @@ def _kernel():
     )
 
 
+def _configure_cli_logging() -> None:
+    """Keep library log lines off the consumer's terminal by default (#614).
+
+    The CLI installs no log handler, so Python's last-resort handler dumps any
+    library WARNING/ERROR (e.g. "ignoring unreadable config.toml
+    (TOMLDecodeError...)") straight to stderr mid-run. Install a root handler
+    so those are suppressed by default and only surface when the user opts in:
+
+      - ``MAVERICK_DEBUG`` set  -> verbose: DEBUG-level logs to stderr.
+      - ``MAVERICK_LOG_LEVEL``  -> honored as-is (operators who want logs).
+      - otherwise               -> only ERROR+ reaches the terminal; routine
+        library WARNING noise is swallowed.
+
+    Delegates to ``logging_config.configure_logging`` (idempotent) so the
+    JSON-format / context-filter wiring stays in one place.
+    """
+    from .logging_config import configure_logging
+    if os.environ.get("MAVERICK_DEBUG"):
+        level = "DEBUG"
+    else:
+        # Default to ERROR so a library WARNING doesn't bleed onto the terminal
+        # during a normal `start` / `chat` run; an explicit MAVERICK_LOG_LEVEL
+        # still wins inside configure_logging.
+        level = os.environ.get("MAVERICK_LOG_LEVEL", "ERROR")
+    try:
+        configure_logging(level=level)
+    except Exception:  # pragma: no cover -- logging setup must never break the CLI
+        pass
+
+
 @click.group(epilog=(
     "New here? Start with these four:\n"
     "\n"
@@ -211,6 +251,7 @@ def _kernel():
 @click.pass_context
 def main(ctx: click.Context, db: str, model: str | None) -> None:
     """Maverick: multi-agent swarm for long-horizon work."""
+    _configure_cli_logging()
     ctx.ensure_object(dict)
     ctx.obj["db"] = Path(db)
     ctx.obj["model"] = model  # resolved lazily on first use
@@ -1013,6 +1054,11 @@ def serve(max_depth: int, verbose: bool) -> None:
         level=logging.DEBUG if verbose else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+    # _configure_cli_logging (run by the group) defaults the root level to
+    # ERROR so library noise stays off a consumer's terminal -- but `serve`
+    # is a long-running server that wants its INFO/DEBUG logs. basicConfig is
+    # a no-op once a handler exists, so set the level explicitly here.
+    logging.getLogger().setLevel(logging.DEBUG if verbose else logging.INFO)
     try:
         from .server import build_from_config
     except ImportError as e:

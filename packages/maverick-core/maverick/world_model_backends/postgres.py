@@ -435,6 +435,28 @@ class PostgresWorldModel:
             row = cur.fetchone()
         return int(row[0])
 
+    def update_episode_spend(
+        self,
+        episode_id: int,
+        cost_dollars: float = 0.0,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        tool_calls: int = 0,
+    ) -> None:
+        """Mirror in-flight spend onto a live (not-yet-ended) episode row.
+
+        Observability mirror only (see the SQLite backend's docstring): the
+        `ended_at IS NULL` guard keeps it from clobbering `end_episode`.
+        """
+        with self._tx() as cur:
+            cur.execute(
+                "UPDATE episodes SET cost_dollars=%s, input_tokens=%s, "
+                "output_tokens=%s, tool_calls=%s "
+                "WHERE id=%s AND ended_at IS NULL",
+                (cost_dollars, input_tokens, output_tokens, tool_calls,
+                 episode_id),
+            )
+
     def end_episode(
         self,
         episode_id: int,
