@@ -9,14 +9,17 @@ these guidelines before opening your first PR.
 ```bash
 git clone https://github.com/cdayAI/maverick
 cd maverick
-pip install -e ./packages/maverick-core
+# Core + the full dev/test toolchain (pytest, ruff, pre-commit, and the
+# cross-package runtime deps the suite imports) in one shot:
+pip install -e './packages/maverick-core[dev]'
+# Sibling packages are import-time deps of the suite (installed --no-deps;
+# their runtime deps come from [dev] above at the floors CI enforces):
 pip install --no-deps -e ./packages/maverick-shield
 pip install --no-deps -e ./packages/maverick-channels
 pip install --no-deps -e ./packages/maverick-dashboard
 pip install --no-deps -e ./packages/maverick-mcp
 pip install --no-deps -e ./apps/installer-cli
-pip install pytest pytest-asyncio fastapi uvicorn jinja2 questionary rich
-pip install pre-commit ruff && pre-commit install
+pre-commit install
 
 pytest -q
 ```
