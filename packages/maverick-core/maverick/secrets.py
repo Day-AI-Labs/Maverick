@@ -58,7 +58,12 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # contains TOKEN / KEY / SECRET / PASSWORD / PASS / CREDENTIAL). Tolerates
     # a leading `export ` so shell-style `export FOO_TOKEN=...` is covered too.
     ("env_secret", re.compile(
-        r"((?:^|\n)\s*(?:export\s+)?[A-Z][A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z0-9_]*\s*=\s*)"
+        # Leading indentation is `[^\S\n]*` (horizontal whitespace), NOT `\s*`:
+        # `\s` includes `\n`, and with re.MULTILINE the `(?:^|\n)` anchor fires
+        # at every line start, so on a long run of newlines `\s*` backtracks
+        # O(N^2) -- a ReDoS, since scrub() runs on attacker-influenced output.
+        # The newline itself is already handled by the `(?:^|\n)` anchor.
+        r"((?:^|\n)[^\S\n]*(?:export\s+)?[A-Z][A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL)[A-Z0-9_]*\s*=\s*)"
         # Value: a single- or double-quoted string (which may contain
         # spaces) OR a bare run of non-space chars. Without the quoted
         # alternatives a value like FOO_SECRET="a b c" matched only "a,

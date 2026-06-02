@@ -1,19 +1,25 @@
-"""Fuzz + ReDoS hardening for the secret scrubber.
+"""Fuzz + ReDoS hardening for the secret redactors.
 
-``scrub()`` is a security control: it runs on tool stdout, MCP stderr
-drains, and LLM error payloads before any of those are logged / audited /
-replay-exported. All three can carry attacker-influenced bytes (a prompt-
-injected agent can echo a crafted string; a hostile page can land text in
-an error). So the scrubber has to survive arbitrary input without
-crashing and without blowing up super-linearly.
+Maverick has two mirror secret redactors -- ``maverick.secrets.scrub`` and
+``maverick.safety.secret_detector.redact`` -- and both are security
+controls: they run on tool stdout, MCP stderr drains, and LLM error
+payloads before any of those are logged / audited / replay-exported. All
+of those can carry attacker-influenced bytes (a prompt-injected agent can
+echo a crafted string; a hostile page can land text in an error). So the
+redactors have to survive arbitrary input without crashing and without
+blowing up super-linearly.
 
 These tests pin three properties:
 
-1. No ReDoS -- ``scrub()`` stays roughly linear on long single-character
-   runs. (Regression for the ``url_credentials`` pattern, whose unbounded
-   greedy scheme run ``[a-zA-Z0-9+.\\-]*://`` backtracked O(N^2) on a long
-   run of scheme-class chars that never reached ``://`` -- ~70s on a 300KB
-   string, i.e. a remote hang.)
+1. No ReDoS -- both redactors stay roughly linear on long single-character
+   runs, including whitespace runs. Regressions guarded:
+     - ``url_credentials``: an unbounded greedy scheme run
+       ``[a-zA-Z0-9+.\\-]*://`` backtracked O(N^2) on a long run of
+       scheme-class chars that never reached ``://`` (~70s / 300KB).
+     - ``env_secret``: ``(?:^|\\n)\\s*`` backtracked O(N^2) on a long run of
+       newlines (``\\s`` matches ``\\n``; re.MULTILINE anchors at every line
+       start) -- ~13s / 16KB. Present identically in both redactors.
+   Either is a remote agent-hang (DoS).
 2. No crash -- random adversarial inputs never raise.
 3. Still effective -- a real secret embedded in noise is still redacted,
    and scrubbing is idempotent.
@@ -28,27 +34,38 @@ import textwrap
 from maverick.secrets import scrub
 
 
-def test_scrub_does_not_redos_on_long_runs():
-    # Run in a child process: a regex stuck in catastrophic backtracking
-    # holds the GIL, so neither a thread join-timeout nor signal.alarm can
-    # preempt it -- only killing the process can. With the quantifier bound
-    # in place every case below is linear (~1s total for 8 x 300KB); a
-    # regressed pattern blows past the timeout and the child is killed.
+def test_secret_redactors_do_not_redos_on_long_runs():
+    # Covers BOTH mirror redactors -- maverick.secrets.scrub and
+    # maverick.safety.secret_detector.redact -- against long single-character
+    # runs, including whitespace runs ("\n"/"\t"/" ") that triggered the
+    # env_secret O(N^2) (its `(?:^|\n)\s*` backtracked on newline runs because
+    # `\s` matches `\n` and re.MULTILINE anchors at every line start).
+    #
+    # Run in a child process: a regex stuck in catastrophic backtracking holds
+    # the GIL, so neither a thread join-timeout nor signal.alarm can preempt it
+    # -- only killing the process can. With the patterns fixed every case is
+    # linear (~3s total); a regression blows past the timeout and is killed.
     prog = textwrap.dedent(
         """
         from maverick.secrets import scrub
+        from maverick.safety import secret_detector
         N = 300_000
-        for s in (
+        evil = (
             "a" * N,                                  # url_credentials scheme run
-            "A" * N,                                  # uppercase (env / url classes)
+            "A" * N,                                  # uppercase env / url classes
             "A" * N + "KEY",                          # env_secret name run, no '='
+            "\\n" * N,                                # newline run: env_secret O(N^2)
+            "\\t" * N,                                # tab run
+            " " * N,                                  # space run
             "http://" + "a" * N + ":",                # scheme + host run, no '@'
             "sk-ant-" + "a" * N,                      # long key-ish run
             "eyJ" + "a" * N,                          # jwt-ish run, no dots
             "?token=" + "a" * N,                      # url_secret value run
-            "-----BEGIN RSA PRIVATE KEY-----" + "a" * N,  # pragma: allowlist secret (fake PEM, no END)
-        ):
-            scrub(s)
+            "-----BEGIN RSA PRIVATE KEY-----" + "a" * N,  # pragma: allowlist secret (fake PEM)
+        )
+        for s in evil:
+            scrub(s)                      # maverick.secrets redactor
+            secret_detector.redact(s)     # maverick.safety mirror redactor
         """
     )
     try:
@@ -60,10 +77,11 @@ def test_scrub_does_not_redos_on_long_runs():
         )
     except subprocess.TimeoutExpired:
         raise AssertionError(
-            "scrub() did not finish within 20s on long single-character runs "
-            "-- a regex is backtracking super-linearly (ReDoS). scrub() runs "
-            "on tool output / LLM error payloads, so this is a remote-DoS "
-            "vector: bound the offending greedy quantifier."
+            "a secret redactor did not finish within 20s on long single-"
+            "character runs -- a regex is backtracking super-linearly (ReDoS). "
+            "The redactors run on tool output / LLM error payloads, so this is "
+            "a remote-DoS vector: bound the offending greedy quantifier or stop "
+            "it from spanning newlines."
         )
 
 
