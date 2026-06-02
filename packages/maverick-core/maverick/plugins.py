@@ -39,9 +39,9 @@ Two further load-time controls layer on top of the allowlist:
     (see ``plugin_manifest``) declaring the permissions it needs
     (``network`` / ``fs_write`` / ``subprocess`` / ``sensitive_envs``). The
     user grants permissions via ``[plugins] grant = [...]``. A plugin that
-    requests an ungranted permission is loaded with a warning by default, or
-    skipped entirely when ``[plugins] enforce_permissions = true`` (or
-    ``MAVERICK_PLUGINS_ENFORCE=1``).
+    requests an ungranted permission is **skipped** by default; downgrade to a
+    load-with-warning with ``[plugins] enforce_permissions = false`` (or
+    ``MAVERICK_PLUGINS_ENFORCE=0``).
 
 Each plugin entry must conform to a contract:
 
@@ -122,11 +122,12 @@ def _allowed_plugin_names() -> set[str] | None:
 def _permission_policy() -> tuple[set[str], bool]:
     """Return ``(granted_permissions, enforce)``.
 
-    Default is "nothing granted, warn-only" so existing installs keep working
-    (a plugin requesting a permission is loaded with a warning). Set
-    ``[plugins] grant = ["network", ...]`` to grant, and
-    ``[plugins] enforce_permissions = true`` (or ``MAVERICK_PLUGINS_ENFORCE=1``)
-    to *skip* plugins requesting an ungranted permission instead of warning.
+    Default is "nothing granted, ENFORCE": a plugin requesting a permission the
+    operator hasn't granted is *skipped*. Manifest-less plugins declare no
+    permissions, so the large body of existing plugins is unaffected. Grant with
+    ``[plugins] grant = ["network", ...]``; set
+    ``[plugins] enforce_permissions = false`` (or ``MAVERICK_PLUGINS_ENFORCE=0``)
+    to downgrade enforcement to a warning instead of a skip.
     """
     cfg = _plugins_config()
     grant = cfg.get("grant")
@@ -136,7 +137,7 @@ def _permission_policy() -> tuple[set[str], bool]:
         granted = {str(x).strip().lower() for x in grant if str(x).strip()}
     else:
         granted = set()
-    enforce = bool(cfg.get("enforce_permissions", False))
+    enforce = bool(cfg.get("enforce_permissions", True))
     env = os.environ.get("MAVERICK_PLUGINS_ENFORCE")
     if env is not None and env.strip():
         enforce = env.strip().lower() in ("1", "true", "yes")
@@ -308,7 +309,8 @@ def _gate(ep, group: str, allow, name_dists, granted, enforce) -> bool:
         if enforce:
             log.warning(
                 "plugin %s.%s (%s) requests ungranted permission(s) %s; skipping. "
-                "Grant via [plugins] grant=[...] or unset enforce_permissions.",
+                "Grant via [plugins] grant=[...], or set enforce_permissions=false "
+                "to downgrade to a warning.",
                 group, name, dist or "unknown-dist", violations,
             )
             return False
