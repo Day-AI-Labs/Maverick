@@ -172,13 +172,25 @@ def get_skills() -> dict:
     ``trusted_pubkeys`` is a list of hex-encoded Ed25519 publisher keys; a
     signed skill is only accepted if its ``pubkey`` is in this list (when
     the list is non-empty). ``require_signed`` rejects unsigned skills.
-    Both default off so the kernel keeps current behavior out of the box.
+    ``require_signed_catalog`` forces a verified Ed25519 signature from a
+    trusted publisher for ANY catalog install, even when ``trusted_pubkeys``
+    is empty (in which case the install fails for lack of a trust anchor) --
+    it hardens the catalog path without flipping the global ``require_signed``
+    default. The ``MAVERICK_REQUIRE_SIGNED_CATALOG`` env var overrides it.
+    All default off so the kernel keeps current behavior out of the box.
     """
     cfg = load_config().get("skills", {})
     pubkeys = cfg.get("trusted_pubkeys", [])
+    env_catalog = os.environ.get("MAVERICK_REQUIRE_SIGNED_CATALOG")
+    require_catalog = (
+        env_catalog.strip().lower() in ("1", "true", "yes", "on")
+        if env_catalog is not None
+        else bool(cfg.get("require_signed_catalog", False))
+    )
     return {
         "trusted_pubkeys": [str(k) for k in pubkeys] if isinstance(pubkeys, list) else [],
         "require_signed": bool(cfg.get("require_signed", False)),
+        "require_signed_catalog": require_catalog,
     }
 
 

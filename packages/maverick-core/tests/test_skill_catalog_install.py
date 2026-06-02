@@ -86,3 +86,150 @@ def test_example_index_sha_matches_committed_skill():
     pinned = index["entries"][0]["sha256"]
     actual = hashlib.sha256(body.encode()).hexdigest()
     assert pinned == actual, "example index sha256 drifted from the example SKILL.md"
+
+
+# --- Supply-chain authenticity (#464): catalog install resolves to a skill
+# whose Ed25519 signature verifies against a trusted publisher; sha256 alone is
+# integrity-in-transit only (same unauthenticated host serves bytes + hash). ---
+
+ed25519 = pytest.importorskip(
+    "cryptography.hazmat.primitives.asymmetric.ed25519"
+)
+from cryptography.hazmat.primitives import serialization  # noqa: E402
+
+
+def _keypair():
+    priv = ed25519.Ed25519PrivateKey.generate()
+    pub_hex = priv.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    ).hex()
+    return priv, pub_hex
+
+
+def _signed_body(priv, pub_hex: str) -> str:
+    """Build a SKILL.md signed over the canonical bytes (matches verifier)."""
+    unsigned = (
+        "---\n"
+        "name: summarize-url\n"
+        "triggers:\n"
+        "  - summarize this url\n"
+        "tools_needed:\n"
+        "  - http_fetch\n"
+        "---\n"
+        "# Summarize a URL\n\nFetch with http_fetch, write 3 sentences.\n"
+    )
+    parsed = skills.Skill.parse(unsigned, Path("in.md"))
+    sig = priv.sign(skills._canonical_signed_bytes(parsed)).hex()
+    return (
+        "---\n"
+        "name: summarize-url\n"
+        "triggers:\n"
+        "  - summarize this url\n"
+        "tools_needed:\n"
+        "  - http_fetch\n"
+        f"sig: {sig}\n"
+        f"pubkey: {pub_hex}\n"
+        "---\n"
+        "# Summarize a URL\n\nFetch with http_fetch, write 3 sentences.\n"
+    )
+
+
+def _write_config(tmp_path, monkeypatch, body: str) -> None:
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(body, encoding="utf-8")
+    monkeypatch.setenv("MAVERICK_CONFIG", str(cfg))
+
+
+def _install_content(monkeypatch, tmp_path, content: str) -> skills.Skill:
+    sha = hashlib.sha256(content.encode()).hexdigest()
+    monkeypatch.setattr(catalog, "resolve",
+                        lambda name, kind, indexes=None: _entry(sha256=sha))
+    monkeypatch.setattr(skills, "_fetch_skill_source", lambda source: content)
+    return skills.install_from_catalog("summarize-url", skills_dir=tmp_path / "skills")
+
+
+def test_catalog_trusted_pubkeys_accepts_signed_and_reports_verified(tmp_path, monkeypatch):
+    priv, pub_hex = _keypair()
+    _write_config(tmp_path, monkeypatch, f'[skills]\ntrusted_pubkeys = ["{pub_hex}"]\n')
+    s = _install_content(monkeypatch, tmp_path, _signed_body(priv, pub_hex))
+    assert s.name == "summarize-url"
+    assert s.verified is True
+
+
+def test_catalog_trusted_pubkeys_rejects_unsigned(tmp_path, monkeypatch):
+    _priv, pub_hex = _keypair()
+    _write_config(tmp_path, monkeypatch, f'[skills]\ntrusted_pubkeys = ["{pub_hex}"]\n')
+    # _BODY is unsigned. With a trust anchor configured, an unsigned catalog
+    # skill must be rejected (require_signed implied for the configured anchor).
+    with pytest.raises(ValueError, match="sig"):
+        _install_content(monkeypatch, tmp_path, _BODY)
+    assert not list((tmp_path / "skills").glob("*.md"))
+
+
+def test_catalog_trusted_pubkeys_rejects_wrong_key(tmp_path, monkeypatch):
+    signer_priv, _signer_pub = _keypair()
+    _other_priv, other_pub = _keypair()
+    # Signed by signer_priv but only other_pub is trusted.
+    _write_config(tmp_path, monkeypatch, f'[skills]\ntrusted_pubkeys = ["{other_pub}"]\n')
+    signer_pub = signer_priv.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    ).hex()
+    with pytest.raises(ValueError, match="untrusted publisher"):
+        _install_content(monkeypatch, tmp_path, _signed_body(signer_priv, signer_pub))
+    assert not list((tmp_path / "skills").glob("*.md"))
+
+
+def test_catalog_no_trust_tofu_reports_verified_false(tmp_path, monkeypatch):
+    # No trusted_pubkeys: TOFU still installs the unsigned skill (non-breaking),
+    # but the REAL verified status is False even though the index says verified=true.
+    _write_config(tmp_path, monkeypatch, "")
+    s = _install_content(monkeypatch, tmp_path, _BODY)
+    assert s.name == "summarize-url"
+    assert s.verified is False
+
+
+def test_catalog_no_trust_signed_self_asserted_is_not_verified(tmp_path, monkeypatch):
+    # A self-signed skill with no configured trust anchor is integrity, not
+    # authenticity: install succeeds but verified stays False.
+    priv, pub_hex = _keypair()
+    _write_config(tmp_path, monkeypatch, "")
+    s = _install_content(monkeypatch, tmp_path, _signed_body(priv, pub_hex))
+    assert s.verified is False
+
+
+def test_catalog_require_signed_catalog_forces_signing_with_empty_trust(tmp_path, monkeypatch):
+    # require_signed_catalog set, trusted_pubkeys empty -> unsigned rejected.
+    _write_config(tmp_path, monkeypatch, "[skills]\nrequire_signed_catalog = true\n")
+    with pytest.raises(ValueError, match="sig|trusted_pubkeys"):
+        _install_content(monkeypatch, tmp_path, _BODY)
+    assert not list((tmp_path / "skills").glob("*.md"))
+
+
+def test_catalog_require_signed_catalog_via_env(tmp_path, monkeypatch):
+    _write_config(tmp_path, monkeypatch, "")
+    monkeypatch.setenv("MAVERICK_REQUIRE_SIGNED_CATALOG", "1")
+    with pytest.raises(ValueError, match="sig|trusted_pubkeys"):
+        _install_content(monkeypatch, tmp_path, _BODY)
+
+
+def test_catalog_present_but_empty_sig_rejected_as_malformed(tmp_path, monkeypatch):
+    # A skill that visually claims to be signed (sig:/pubkey: present) but with
+    # empty values must be rejected as malformed, NOT installed unsigned.
+    _write_config(tmp_path, monkeypatch, "")
+    malformed = (
+        "---\n"
+        "name: summarize-url\n"
+        "triggers:\n"
+        "  - summarize this url\n"
+        "tools_needed:\n"
+        "  - http_fetch\n"
+        "sig:\n"
+        "pubkey:\n"
+        "---\n"
+        "# Summarize a URL\n\nFetch with http_fetch, write 3 sentences.\n"
+    )
+    with pytest.raises(ValueError, match="malformed"):
+        _install_content(monkeypatch, tmp_path, malformed)
+    assert not list((tmp_path / "skills").glob("*.md"))
