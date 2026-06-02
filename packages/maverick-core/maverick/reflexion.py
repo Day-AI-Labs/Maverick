@@ -30,6 +30,7 @@ import os
 import re
 import threading
 import time
+from collections import deque
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -181,12 +182,13 @@ def recall(
         return []
     qt = _tokens(goal_text)
     entries: list[Reflexion] = []
+    scan_limit = max(1, scan_cap)
     try:
         with open(path, encoding="utf-8") as f:
-            lines = f.readlines()
+            lines = deque(f, maxlen=scan_limit)
     except OSError:
         return []
-    for raw in lines[-max(1, scan_cap):]:
+    for raw in lines:
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
