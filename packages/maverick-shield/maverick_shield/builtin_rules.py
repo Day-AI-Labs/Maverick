@@ -48,7 +48,7 @@ def _compile(p: str) -> re.Pattern:
 # Zero-width spaces/joiners, bidi controls, BOM, and the Unicode tag block
 # (steganographic invisible chars).
 _INVISIBLE = re.compile(
-    r"[​-‏‪-‮⁠-⁯﻿]|[\U000E0000-\U000E007F]"
+    r"[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]|[\U000E0000-\U000E007F]"
 )
 
 # Common confusable code points folded to their ASCII look-alike. Covers the
@@ -188,7 +188,7 @@ RULES: list[Rule] = [
     # so 'strict' blocks on smuggling even when the de-obfuscated payload
     # happens to match no other rule.
     Rule("zero_width_chars", "medium",
-         _compile(r"[​-‏ - ⁠-⁯]"),
+         _compile(r"[\u200b-\u200f\u2028-\u202f\u2060-\u206f]"),
          "Zero-width / bidi characters"),
 ]
 

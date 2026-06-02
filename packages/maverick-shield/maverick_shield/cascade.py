@@ -49,7 +49,7 @@ _PROBE_REGEX = re.compile(
 # Unicode tag block U+E0000–U+E007F (steganographic invisible chars).
 _TAG_RE = re.compile(r"[\U000E0000-\U000E007F]")
 # Zero-width / format chars.
-_INVISIBLE_RE = re.compile(r"[​-‏‪-‮⁠-⁯]")
+_INVISIBLE_RE = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060-\u206f]")
 
 
 @dataclass
