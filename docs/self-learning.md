@@ -82,14 +82,27 @@ Self-learning honors the same chokepoints as the rest of the kernel:
 - **Off by default** — no extra persisted state until you opt in.
 - **Budget** — the generation LLM call is metered against the run's
   [budget](configuration.md); `max_acquisitions` bounds churn per run.
-- **Static audit** — generated tool source is parsed and checked against a
-  stdlib-only allowlist *before* it is imported: disallowed imports
-  (`os`, `subprocess`, `socket`, …), banned builtins (`eval`/`exec`/`open`/
-  `__import__`), and the dunder sandbox-escape chain are rejected. The source
-  is re-audited every time a persisted tool is loaded, so on-disk tampering is
-  caught too. This is a guardrail, not a true sandbox (a determined adversary
-  could still evade an AST allowlist) — sandboxed validation/execution is a
-  planned follow-up.
+- **Static audit (enforced, not just requested)** — generated tool source is
+  parsed and checked against a stdlib-only allowlist *before* it is imported:
+  disallowed imports (`os`, `subprocess`, `socket`, …), banned builtins
+  (`eval`/`exec`/`open`/`__import__`), and the dunder sandbox-escape chain are
+  rejected. The `TOOL_AUTHOR_SYSTEM` prompt *asks* for stdlib-only; this layer
+  *enforces* it. The source is re-audited every time a persisted tool is
+  loaded, so on-disk tampering is caught too. This is a guardrail, not a true
+  sandbox (a determined adversary with `getattr` tricks could still evade an
+  AST allowlist).
+- **Out-of-host import validation** — the check that a generated module
+  imports cleanly and exposes a valid `make_tool()` runs in a **short-lived
+  child process** (a `sandbox.exec()` child when the call site has a backend,
+  otherwise a timed plain subprocess), never the kernel interpreter. So an
+  import-time side-effect — or anything the static audit missed — can't touch
+  the live process at validation time.
+- **Consent gate at first registration** — before a newly generated tool is
+  persisted or registered, it goes through the same consent queue as other
+  risky actions (`require_consent`, action `register-generated-tool`). Denied,
+  auto-deny, or a non-interactive context under a gating consent mode →
+  **not persisted, not registered**. Reloads of an already-approved tool do
+  **not** re-prompt.
 - **Shield** — generated tool source is also scanned through the
   [Shield](safety.md) (when installed) before it is ever imported;
   blocked source is rejected.
@@ -100,9 +113,23 @@ Self-learning honors the same chokepoints as the rest of the kernel:
   can never launch a model-supplied command. Only catalog-pinned, SHA-verified
   servers, and only after explicit operator approval.
 
-Because generated tools execute in-process, enabling `create_tools` is a
-genuine trust decision. Leave it off (or set `create_tools = false`) if
-you only want the safer acquisition paths (skills / APIs).
+### Trust model for generated tools
+
+A generated tool is, in order: **AST-constrained** to stdlib-only,
+**import-validated out-of-host** in a child process, and **consent-gated at
+first registration**. After it is approved and persisted, its `fn` runs
+**in-process at runtime** under the explicit `create_tools` opt-in — the AST
+gate and out-of-host check bound *validation*, but execution of an approved
+tool still happens in the kernel process. That residual in-process trust is
+deliberate and documented; an **out-of-process tool runtime** (running each
+generated tool's `fn` in its own sandbox on every call) is the planned future
+hardening and is intentionally out of scope here.
+
+Because of that, enabling `create_tools` is a genuine trust decision. Leave it
+off (or set `create_tools = false`) if you only want the safer acquisition
+paths (skills / APIs). For untrusted goals, also run with a real `[sandbox]`
+backend (docker/podman): the out-of-host import check is then a true sandbox,
+not just process isolation.
 
 ## MCP-server acquisition
 

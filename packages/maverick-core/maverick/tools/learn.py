@@ -164,6 +164,7 @@ def learn_capability(agent: Agent) -> Tool:
             try:
                 tool = self_learning.write_generated_tool(
                     name, resp.text or "", need=need or spec,
+                    sandbox=getattr(ctx, "sandbox", None),
                 )
             except Exception as e:
                 return f"ERROR: generated tool was rejected: {e}"
