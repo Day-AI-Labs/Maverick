@@ -251,12 +251,11 @@ class TestTimeoutCancellation:
         async def fake_send(self, payload):
             sent.append(payload)
 
-        async def never(self, expected_id):
-            await asyncio.sleep(10)
-
         monkeypatch.setattr(MCPClient, "_check_alive", lambda self: None)
         monkeypatch.setattr(MCPClient, "_send", fake_send)
-        monkeypatch.setattr(MCPClient, "_read_response", never)
+        # No reader: the request's Future never resolves, so wait_for hits the
+        # timeout path -- exactly the situation #541's cancel must handle.
+        monkeypatch.setattr(MCPClient, "_ensure_reader", lambda self: None)
         c = MCPClient(MCPServerSpec(name="x", command="true"), timeout=0.01)
 
         with pytest.raises(asyncio.TimeoutError):
