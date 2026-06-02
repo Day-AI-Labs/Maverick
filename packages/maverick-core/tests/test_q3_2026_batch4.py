@@ -105,6 +105,55 @@ def test_k8s_disallow_network_fails_closed(monkeypatch):
     assert calls["n"] == 1  # constructor verification only
 
 
+def test_k8s_pod_overrides_non_root_and_limits(monkeypatch):
+    """The pod spec must run non-root, drop caps, block privilege escalation,
+    and carry resource limits (issue #461)."""
+    import json
+
+    captured = {"args": None}
+
+    def _fake_run(args, *a, **k):
+        if args[:2] == ["kubectl", "version"]:
+            return MagicMock(returncode=0, stdout=b"", stderr=b"")
+        if "delete" in args:
+            return MagicMock(returncode=0, stdout="", stderr="")
+        captured["args"] = args
+        return MagicMock(returncode=0, stdout="ok\n", stderr="")
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+    from maverick.sandbox.kubernetes import KubernetesBackend
+    backend = KubernetesBackend(image="alpine", allow_network=True,
+                                memory="2g", cpus="1")
+    backend.exec("echo hi")
+    args = captured["args"]
+    assert "--overrides" in args
+    overrides = json.loads(args[args.index("--overrides") + 1])
+    pod_sc = overrides["spec"]["securityContext"]
+    assert pod_sc["runAsNonRoot"] is True
+    assert pod_sc["runAsUser"] == 1000
+    container = overrides["spec"]["containers"][0]
+    assert container["securityContext"]["allowPrivilegeEscalation"] is False
+    assert container["securityContext"]["capabilities"]["drop"] == ["ALL"]
+    assert container["resources"]["limits"] == {"memory": "2g", "cpu": "1"}
+
+
+def test_k8s_disallow_network_emits_networkpolicy_hint(monkeypatch, caplog):
+    import logging
+
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda args, *a, **k: MagicMock(returncode=0, stdout=b"", stderr=b""),
+    )
+    from maverick.sandbox.kubernetes import KubernetesBackend
+    backend = KubernetesBackend(namespace="ci", allow_network=False)
+    with caplog.at_level(logging.WARNING):
+        out = backend.exec("echo hi")
+    assert out.exit_code == 2
+    assert "NetworkPolicy" in caplog.text
+    assert "kind: NetworkPolicy" in caplog.text
+    assert "namespace: ci" in caplog.text
+
+
 def _k8s_backend_recording_deletes(monkeypatch, run_behavior):
     """Build a backend whose `run` delegates to `run_behavior` (after the
     constructor's kubectl-version check) and record every `delete pod` call."""

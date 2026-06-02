@@ -30,6 +30,7 @@ catches it before the agent runs.
 """
 from __future__ import annotations
 
+import json
 import logging
 import shlex
 import subprocess
@@ -37,9 +38,23 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .local import ExecResult
+from .local import ExecResult, scrub_env
 
 log = logging.getLogger(__name__)
+
+# Deny-all NetworkPolicy the operator applies once per namespace so pods get no
+# egress (and no ingress). Surfaced when allow_network=false, since a transient
+# `kubectl run` pod can't enforce this on itself.
+_DENY_ALL_NETWORKPOLICY = """\
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: maverick-deny-all
+  namespace: {ns}
+spec:
+  podSelector: {{}}
+  policyTypes: [Ingress, Egress]\
+"""
 
 
 @dataclass
@@ -51,10 +66,47 @@ class KubernetesBackend:
     timeout: float = 120.0
     allow_network: bool = False
     extra_kubectl_args: list[str] = field(default_factory=list)
+    # Containment for a possibly prompt-injected agent (mirrors docker/podman):
+    # never run as uid 0, block privilege escalation, and bound RAM/CPU so a
+    # runaway can't exhaust the node. Falsy memory/cpu disables that limit.
+    run_as_user: int = 1000
+    memory: str | None = "4g"
+    cpus: str | None = None
 
     def __post_init__(self) -> None:
         self.workdir = Path(self.workdir)
         self._verify_kubectl()
+
+    def _pod_overrides(self) -> dict:
+        """A non-root, resource-bounded pod spec for ``kubectl run --overrides``.
+
+        ``kubectl run`` otherwise emits a bare pod that runs as the image's
+        default user (often root) with no resource limits. We pin a non-root
+        securityContext + drop all capabilities + block privilege escalation,
+        and set requests/limits so a runaway can't starve the node."""
+        limits: dict[str, str] = {}
+        if self.memory:
+            limits["memory"] = str(self.memory)
+        if self.cpus:
+            limits["cpu"] = str(self.cpus)
+        container: dict = {
+            "name": "maverick",
+            "securityContext": {
+                "allowPrivilegeEscalation": False,
+                "capabilities": {"drop": ["ALL"]},
+            },
+        }
+        if limits:
+            container["resources"] = {"limits": limits, "requests": limits}
+        return {
+            "spec": {
+                "securityContext": {
+                    "runAsNonRoot": True,
+                    "runAsUser": int(self.run_as_user),
+                },
+                "containers": [container],
+            }
+        }
 
     def _kubectl_prefix(self) -> list[str]:
         args = ["kubectl"]
@@ -68,7 +120,7 @@ class KubernetesBackend:
         try:
             subprocess.run(
                 ["kubectl", "version", "--client", "--output=yaml"],
-                capture_output=True, timeout=5, check=True,
+                capture_output=True, timeout=5, check=True, env=scrub_env(),
             )
         except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             raise RuntimeError(
@@ -91,7 +143,7 @@ class KubernetesBackend:
             subprocess.run(
                 [*self._kubectl_prefix(), "delete", "pod", pod_name,
                  "--ignore-not-found=true", "--grace-period=0", "--force"],
-                capture_output=True, timeout=10,
+                capture_output=True, timeout=10, env=scrub_env(),
             )
         except Exception:
             pass
@@ -106,23 +158,39 @@ class KubernetesBackend:
         )
 
         if not self.allow_network:
+            # We can't make a single transient `kubectl run` pod enforce
+            # no-egress on its own -- that needs a cluster-level NetworkPolicy
+            # the operator applies once. Fail closed (don't silently run with
+            # network) but emit the concrete deny-all policy to apply, making
+            # good on the docstring's "NetworkPolicy-deny hint" promise.
+            log.warning(
+                "kubernetes backend: allow_network=false but a transient pod "
+                "cannot self-enforce no-egress. Apply a deny-all NetworkPolicy "
+                "to namespace %r once, then set allow_network=true:\n%s",
+                self.namespace, _DENY_ALL_NETWORKPOLICY.format(ns=self.namespace),
+            )
             return ExecResult(
                 stdout="",
                 stderr=(
-                    "networking is disabled for kubernetes backend (allow_network=false), "
-                    "but kubectl backend cannot enforce no-network safely"
+                    "networking is disabled for kubernetes backend "
+                    "(allow_network=false), but a transient kubectl pod cannot "
+                    "enforce no-network on its own. Apply a deny-all "
+                    "NetworkPolicy to the namespace (see logs) and set "
+                    "allow_network=true."
                 ),
                 exit_code=2,
             )
 
         # `kubectl run` creates the pod, runs it, deletes it (--rm).
         # restart=Never is required for --rm semantics; --quiet
-        # suppresses pod-create noise so stdout stays clean.
+        # suppresses pod-create noise so stdout stays clean. --overrides pins
+        # the non-root securityContext + resource limits onto the pod spec.
         args = [
             *self._kubectl_prefix(),
             "run", pod_name,
             "--rm", "-i", "--restart=Never", "--quiet",
             f"--image={self.image}",
+            "--overrides", json.dumps(self._pod_overrides()),
             "--",
             "sh", "-c", wrapped,
         ]
@@ -134,6 +202,7 @@ class KubernetesBackend:
         try:
             result = subprocess.run(
                 args, capture_output=True, text=True, timeout=effective,
+                env=scrub_env(),
             )
             return ExecResult(
                 stdout=result.stdout[-8000:],

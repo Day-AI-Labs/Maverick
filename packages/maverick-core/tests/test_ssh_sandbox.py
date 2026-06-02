@@ -32,7 +32,9 @@ def test_verify_ssh_probe_runs_on_construction(monkeypatch):
     probe = calls[0][0]
     assert probe[0] == "ssh"
     assert "BatchMode=yes" in probe
-    assert "ConnectTimeout=5" in probe
+    assert "ConnectTimeout=10" in probe
+    # Host-key policy pinned on the probe (default accept-new).
+    assert "StrictHostKeyChecking=accept-new" in probe
     assert probe[-2:] == ["me@example.com", "true"]
     # ssh_args are threaded into the probe before host.
     assert "-i" in probe and "key" in probe
@@ -71,16 +73,48 @@ def test_exec_builds_mkdir_cd_and_quotes_command(monkeypatch):
 
     args, kwargs = calls[0]
     assert args[0] == "ssh"
-    assert args[1:3] == ["-p", "2222"]  # ssh_args threaded before host
-    assert args[3] == "me@example.com"
-    remote = args[4]
+    # ssh hardening opts precede ssh_args, which precede the host.
+    assert "BatchMode=yes" in args
+    assert "StrictHostKeyChecking=accept-new" in args
+    p_idx = args.index("-p")
+    assert args[p_idx:p_idx + 2] == ["-p", "2222"]  # ssh_args threaded before host
+    host = args[-2]
+    remote = args[-1]
+    assert host == "me@example.com"
     quoted = shlex.quote("/home/me/ws")
-    assert remote == f"mkdir -p {quoted} && cd {quoted} && echo $HOME"
+    # cmd runs as a single quoted arg inside sh -c so it can't escape the cd.
+    inner = shlex.quote("echo $HOME")
+    assert remote == f"mkdir -p {quoted} && cd {quoted} && sh -c {inner}"
     assert kwargs["capture_output"] is True
     assert kwargs["text"] is True
     assert result.stdout == "hi"
     assert result.stderr == "warn"
     assert result.exit_code == 0
+
+
+def test_exec_cmd_injection_stays_single_arg(monkeypatch):
+    """A cmd that tries to break out of the cd guard with a leading `;` must
+    stay a single quoted argument to `sh -c`, not splice into the remote
+    shell as a second statement that runs outside the workspace."""
+    calls = []
+    _patch_ssh_ok(monkeypatch)
+    backend = SSHBackend(host="me@example.com", workdir="/home/me/ws")
+
+    def _exec_run(args, **kwargs):
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", _exec_run)
+
+    evil = "; rm -rf /"
+    backend.exec(evil)
+
+    remote = calls[0][0][-1]
+    quoted = shlex.quote("/home/me/ws")
+    # The whole evil string is one quoted arg to `sh -c` -- it never appears
+    # as a bare `; rm -rf /` spliced after the cd.
+    assert remote == f"mkdir -p {quoted} && cd {quoted} && sh -c {shlex.quote(evil)}"
+    assert remote.endswith(shlex.quote(evil))
 
 
 def test_exec_uses_default_timeout_then_override(monkeypatch):
