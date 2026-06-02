@@ -1048,6 +1048,30 @@ def pick_plugins() -> list[str]:
     return _q_checkbox("Enable plugins:", sorted(discovered))
 
 
+def pick_plugin_permissions() -> tuple[list[str], bool]:
+    """Grants + enforcement for enabled plugins (writes ``[plugins].grant`` /
+    ``enforce_permissions``).
+
+    A plugin declares the permissions it needs (network / fs_write / subprocess)
+    in its manifest. By default an ungranted request is loaded with a warning;
+    granting here silences it, and enforcing *skips* a plugin that requests
+    something ungranted. Returns ``(grant, enforce)``; only asked when at least
+    one plugin is enabled.
+    """
+    grant = _q_checkbox(
+        "Permissions enabled plugins may use "
+        "(ungranted requests warn, or are skipped if you enforce next):",
+        ["network", "fs_write", "subprocess"],
+        default=[],
+    )
+    enforce = _q_confirm(
+        "Skip plugins that request a permission you didn't grant? "
+        "(recommended; off = load with a warning)",
+        default=False,
+    )
+    return grant, enforce
+
+
 def pick_tool_acl(channels: dict[str, Any]) -> dict[str, Any]:
     """Optional per-tool / per-channel allow/deny lists.
 
@@ -1577,6 +1601,8 @@ def write_config(
     advanced: dict[str, bool] | None = None,
     mcp_servers: dict[str, dict[str, Any]] | None = None,
     plugins: list[str] | None = None,
+    plugin_grant: list[str] | None = None,
+    plugin_enforce: bool = False,
     tool_acl: dict[str, Any] | None = None,
     rate_limits: dict[str, str] | None = None,
     retention: dict[str, int] | None = None,
@@ -1782,6 +1808,10 @@ def write_config(
         lines.append("")
         lines.append("[plugins]")
         _emit_kv(lines, "enabled", plugins)
+        if plugin_grant:
+            _emit_kv(lines, "grant", plugin_grant)
+        if plugin_enforce:
+            _emit_kv(lines, "enforce_permissions", plugin_enforce)
 
     if tool_acl:
         lines.append("")
@@ -2353,6 +2383,16 @@ def run(fast: bool = False, resume: bool = False) -> int:
         state["plugins"] = plugins
         _save_partial(state)
 
+    # Only ask about plugin permissions when at least one plugin is enabled --
+    # most setups have none, so the step is skipped entirely.
+    plugin_grant = state.get("plugin_grant")
+    plugin_enforce = state.get("plugin_enforce", False)
+    if plugins and plugin_grant is None:
+        plugin_grant, plugin_enforce = pick_plugin_permissions()
+        state["plugin_grant"] = plugin_grant
+        state["plugin_enforce"] = plugin_enforce
+        _save_partial(state)
+
     _announce()
     tool_acl = state.get("tool_acl")
     if tool_acl is None:
@@ -2427,6 +2467,8 @@ def run(fast: bool = False, resume: bool = False) -> int:
         advanced=advanced,
         mcp_servers=mcp_servers,
         plugins=plugins,
+        plugin_grant=plugin_grant,
+        plugin_enforce=plugin_enforce,
         tool_acl=tool_acl,
         rate_limits=rate_limits,
         retention=retention,
