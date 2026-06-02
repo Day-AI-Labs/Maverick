@@ -151,6 +151,12 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # This job does no checkout (unlike publish.yml's sign job), so gh
+          # has no git remote to infer the repo from. Without GH_REPO every
+          # `gh release view` below fails to resolve the repository, the poll
+          # loop times out, and the installers silently fall back to workflow
+          # artifacts instead of attaching to the Release.
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
           set -e
