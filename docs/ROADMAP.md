@@ -222,7 +222,7 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 - File-content read cache (LRU per run).
 - Parallel tool execution via asyncio.gather.
 - Failure-mode taxonomy doc + fault-injection tests.
-- Compaction quality regression suite (20 long-trajectory fixtures).
+- Compaction quality regression suite (20 long-trajectory fixtures). ✅ shipped — `tests/test_compaction_regression.py` (generated long trajectories; guards goal/recent preservation, tool_use↔tool_result pairing, shrink, and idempotence).
 
 **Safety**
 - Prompt-injection classifier (DeBERTa-v3 stage after regex).
