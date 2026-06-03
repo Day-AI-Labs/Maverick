@@ -237,6 +237,54 @@ def _run(args: dict) -> str:
             "insert, delete, or rename")
 
 
+def memory_brief(*, max_chars: int = 2000) -> str:
+    """A concise, promptable map of long-term memory for run bootstrap.
+
+    Lists the memory files plus the model's curated index (``index.md`` /
+    ``README.md``) if present, so a run starts already aware of what it knows.
+    Returns ``""`` when memory is empty (the common case -> zero prompt change).
+
+    Deliberately a small *map*, not a context dump: full file contents are read
+    on demand via the tool's ``view``, which bounds both tokens and the
+    prompt-injection surface (only filenames + a self-authored index land in the
+    system prompt)."""
+    root = _memory_root()
+    try:
+        files = sorted(p for p in root.rglob("*") if p.is_file()) if root.exists() else []
+    except OSError:  # pragma: no cover -- unreadable memory dir
+        files = []
+    if not files:
+        return ""
+    lines = [
+        "## Your long-term memory",
+        "Notes you saved in earlier sessions. Use the `memory` tool to `view` "
+        "any file for detail, and to record durable learnings as you work.",
+        "",
+        "Files:",
+    ]
+    for p in files:
+        try:
+            sz = p.stat().st_size
+        except OSError:  # pragma: no cover
+            sz = 0
+        lines.append(f"- {_rel(p, root)} ({sz} bytes)")
+    for idx_name in ("index.md", "INDEX.md", "README.md"):
+        idx = root / idx_name
+        if idx.is_file():
+            try:
+                content = idx.read_text(encoding="utf-8", errors="replace").strip()
+            except OSError:  # pragma: no cover
+                content = ""
+            if content:
+                lines += ["", f"--- {idx_name} (your index) ---", content]
+            break
+    brief = "\n".join(lines)
+    if len(brief) > max_chars:
+        brief = (brief[:max_chars].rstrip()
+                 + "\n... [memory index truncated; `memory` view for the rest]")
+    return brief
+
+
 def memory() -> Tool:
     """Build the cross-session memory tool (confined to the memory root)."""
     return Tool(
@@ -278,4 +326,4 @@ def memory() -> Tool:
     )
 
 
-__all__ = ["memory"]
+__all__ = ["memory", "memory_brief"]

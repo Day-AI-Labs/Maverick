@@ -146,3 +146,28 @@ def test_persists_across_tool_instances(tmp_path, monkeypatch):
 def test_memory_is_a_core_tool():
     from maverick.tools import CORE_TOOL_NAMES
     assert "memory" in CORE_TOOL_NAMES
+
+
+# ---- memory_brief (agent-loop bootstrap) ------------------------------------
+
+def test_memory_brief_empty_is_blank(mem):
+    from maverick.tools.memory import memory_brief
+    assert memory_brief() == ""  # nothing stored -> zero prompt change
+
+
+def test_memory_brief_lists_files_and_inlines_index(mem):
+    from maverick.tools.memory import memory_brief
+    mem({"command": "create", "path": "conventions.md", "file_text": "use tabs"})
+    mem({"command": "create", "path": "index.md", "file_text": "TOC: see conventions"})
+    brief = memory_brief()
+    assert "## Your long-term memory" in brief
+    assert "conventions.md" in brief
+    assert "TOC: see conventions" in brief  # the model's curated index is inlined
+
+
+def test_memory_brief_respects_cap(mem):
+    from maverick.tools import memory as m
+    mem({"command": "create", "path": "index.md", "file_text": "y" * 5000})
+    brief = m.memory_brief(max_chars=500)
+    assert len(brief) <= 600  # cap + short truncation marker
+    assert "truncated" in brief

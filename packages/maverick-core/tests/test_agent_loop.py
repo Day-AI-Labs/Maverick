@@ -333,3 +333,30 @@ class TestAgentLoop:
                         "consecutive thinking blocks in echoed assistant "
                         f"message: {m.get('content')}"
                     )
+
+
+class TestMemoryInLoop:
+    """Cross-session memory wired into the loop's system prompt (A3)."""
+
+    def test_memory_index_injected_at_root(self, ctx, tmp_path, monkeypatch):
+        monkeypatch.setenv("MAVERICK_MEMORY_DIR", str(tmp_path / "mem"))
+        from maverick.tools.memory import memory
+        memory().fn({"command": "create", "path": "conventions.md",
+                     "file_text": "always run the linter"})
+        root = Agent(ctx=ctx, role="orchestrator", brief="ship the feature")
+        assert "Your long-term memory" in root.system
+        assert "conventions.md" in root.system
+        # A deep worker keeps lean context -> no memory index injected.
+        worker = Agent(ctx=ctx, role="researcher", brief="sub", depth=1)
+        assert "Your long-term memory" not in worker.system
+
+    def test_empty_memory_leaves_prompt_unchanged(self, ctx, tmp_path, monkeypatch):
+        monkeypatch.setenv("MAVERICK_MEMORY_DIR", str(tmp_path / "empty"))
+        root = Agent(ctx=ctx, role="orchestrator", brief="x")
+        assert "Your long-term memory" not in root.system  # empty -> no injection
+
+    def test_memory_tool_is_advertised_in_the_prompt(self, ctx, tmp_path, monkeypatch):
+        monkeypatch.setenv("MAVERICK_MEMORY_DIR", str(tmp_path / "m"))
+        # Even with empty memory, the agent is told it HAS a memory tool.
+        worker = Agent(ctx=ctx, role="researcher", brief="x", depth=1)
+        assert "`memory`" in worker.system
