@@ -27,6 +27,15 @@ RestartSec=5s
 TimeoutStopSec=30
 KillMode=mixed
 
+# Memory cap: OOM-kill + respawn this service before a runaway (e.g. an
+# HTTP/2 header-amplification flood against a channel webhook) can push the
+# whole box into swap. Percentages are of physical RAM, so this scales to
+# any VPS size — raise them if a legitimate workload needs more headroom.
+# A killed worker respawns clean (Restart=on-failure, with the crash-loop
+# guard above); a swapping box drags every other request down with it.
+MemoryHigh=60%
+MemoryMax=75%
+
 # Security hardening.
 NoNewPrivileges=true
 ProtectSystem=strict
