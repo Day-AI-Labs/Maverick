@@ -360,3 +360,57 @@ class TestMemoryInLoop:
         # Even with empty memory, the agent is told it HAS a memory tool.
         worker = Agent(ctx=ctx, role="researcher", brief="x", depth=1)
         assert "`memory`" in worker.system
+
+
+class TestLoopGuard:
+    """Repeated-identical-failure guard in the loop (long-horizon robustness)."""
+
+    def test_repeated_identical_failure_nudges(self, ctx):
+        from maverick import agent as agent_mod
+        a = Agent(ctx=ctx, role="researcher", brief="x")
+        thr = agent_mod._LOOP_GUARD_THRESHOLD
+        notes = [a._loop_guard_note("shell", {"cmd": "boom"}, "ERROR: nope")
+                 for _ in range(thr)]
+        assert all(n == "" for n in notes[:thr - 1])   # below threshold: silent
+        assert "[loop-guard]" in notes[-1]             # at threshold: nudge
+        assert str(thr) in notes[-1]                   # reports the streak count
+
+    def test_success_resets_the_streak(self, ctx):
+        a = Agent(ctx=ctx, role="researcher", brief="x")
+        a._loop_guard_note("shell", {"cmd": "x"}, "ERROR: a")
+        a._loop_guard_note("shell", {"cmd": "x"}, "all good")  # success resets
+        # Streak restarted, so the very next failure is well below threshold.
+        assert a._loop_guard_note("shell", {"cmd": "x"}, "ERROR: a") == ""
+
+    def test_distinct_calls_have_independent_streaks(self, ctx):
+        from maverick import agent as agent_mod
+        a = Agent(ctx=ctx, role="researcher", brief="x")
+        for _ in range(agent_mod._LOOP_GUARD_THRESHOLD):
+            a._loop_guard_note("shell", {"cmd": "A"}, "ERROR")
+        # Different args are tracked separately -> no nudge on their first fail.
+        assert a._loop_guard_note("shell", {"cmd": "B"}, "ERROR") == ""
+
+    def test_can_be_disabled(self, ctx, monkeypatch):
+        from maverick import agent as agent_mod
+        monkeypatch.setattr(agent_mod, "_LOOP_GUARD_ENABLED", False)
+        a = Agent(ctx=ctx, role="researcher", brief="x")
+        for _ in range(agent_mod._LOOP_GUARD_THRESHOLD + 2):
+            assert a._loop_guard_note("shell", {"cmd": "x"}, "ERROR") == ""
+
+    @pytest.mark.asyncio
+    async def test_run_tool_appends_note_after_the_framed_block(self, ctx, monkeypatch):
+        from maverick import agent as agent_mod
+
+        async def _boom(name, args):
+            return "ERROR: boom"
+
+        a = Agent(ctx=ctx, role="researcher", brief="x")
+        monkeypatch.setattr(a.tools, "run", _boom)
+        outs = [await a._run_tool("shell", {"cmd": "x"})
+                for _ in range(agent_mod._LOOP_GUARD_THRESHOLD)]
+        assert "[loop-guard]" not in outs[0]
+        assert "[loop-guard]" in outs[-1]
+        # The raw error is preserved inside the frame; the nudge is appended
+        # OUTSIDE it (trusted loop-control guidance, not tool data).
+        assert "ERROR: boom" in outs[-1]
+        assert outs[-1].index("</tool_output") < outs[-1].index("[loop-guard]")

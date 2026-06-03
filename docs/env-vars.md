@@ -24,6 +24,8 @@ for false unless noted otherwise.
 | `MAVERICK_MAX_CONCURRENT_GOALS` | `3` | Process-wide cap on goals running in parallel. |
 | `MAVERICK_GOAL_ACQUIRE_TIMEOUT` | `300` | Seconds to wait for a goal-execution slot before giving up. |
 | `MAVERICK_PARALLEL_TOOLS` | `1` (on) | Set `0` to run tool calls within a turn serially instead of in parallel. |
+| `MAVERICK_LOOP_GUARD` | `1` (on) | Set `0` to disable the repeated-failure loop guard (nudges the agent when it re-issues the same failing tool call). |
+| `MAVERICK_LOOP_GUARD_THRESHOLD` | `3` | Consecutive identical tool-call failures before the loop guard nudges (min 2). |
 | `MAVERICK_HALT_FILE` | `~/.maverick/HALT` | Killswitch path; the run aborts if this file exists. |
 | `MAVERICK_NO_CLI` | unset | `1` marks embedded mode: skips third-party plugin auto-discovery and CLI-only paths. |
 | `MAVERICK_NO_PROGRESS` | unset | Set to suppress the live progress display. |
