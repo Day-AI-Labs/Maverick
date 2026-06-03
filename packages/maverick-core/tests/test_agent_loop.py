@@ -307,7 +307,11 @@ class TestAgentLoop:
         # rejection forces the loop to CONTINUE and re-send turn 1.
         agent = Agent(ctx=ctx, role="orchestrator", brief="build a thing")
         result = await agent.run()
-        assert result.final == "revised answer"
+        # The verifier rejected both attempts, so the answer is accepted on
+        # the one-revision cap but wrapped in an honest "couldn't fully
+        # verify" caveat. The answer body itself is preserved verbatim.
+        assert result.final.endswith("revised answer")
+        assert "could not fully verify" in result.final
 
         def _max_thinking_run(content) -> int:
             longest = run = 0
