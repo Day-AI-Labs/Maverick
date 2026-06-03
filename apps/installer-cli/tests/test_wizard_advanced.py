@@ -61,3 +61,18 @@ def test_kernel_modules_read_what_the_wizard_writes(tmp_path, monkeypatch):
     assert tree_of_thought.enabled() is True
     assert context_compactor.enabled() is True
     assert reflexion.enabled() is True
+
+
+def test_risk_proportional_verify_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's risk-proportional toggle writes
+    [verification] risk_proportional, and the kernel reads it back."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_RISK_PROPORTIONAL_VERIFY", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"risk_proportional_verify": True})
+    assert "[verification]" in cfg
+    assert "risk_proportional = true" in cfg
+
+    from maverick.agent import _risk_proportional_verify_enabled
+    assert _risk_proportional_verify_enabled() is True

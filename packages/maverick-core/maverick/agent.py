@@ -249,6 +249,52 @@ def _final_with_uncertainty_note(final: str | None, reasons: list[str]) -> str |
     return note + "\n\n" + final
 
 
+_HIGH_RISK_FINAL_MARKERS = (
+    "```",          # fenced code block
+    "diff --git",   # unified diff
+    "<<<<<<<",      # SEARCH/REPLACE edit block
+    "--- a/",       # diff hunk header
+)
+
+
+def _risk_proportional_verify_enabled() -> bool:
+    """Opt-in, off by default. Flipped on via
+    ``MAVERICK_RISK_PROPORTIONAL_VERIFY=1`` or ``[verification]
+    risk_proportional = true`` in config. When on, the orchestrator may
+    skip the LLM verifier on clearly low-risk answers -- SWE-AF's
+    ``needs_deeper_qa`` idea: spend verification where it matters.
+    """
+    if os.environ.get("MAVERICK_RISK_PROPORTIONAL_VERIFY", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }:
+        return True
+    try:
+        from .config import load_config
+        cfg = (load_config() or {}).get("verification") or {}
+        return bool(cfg.get("risk_proportional"))
+    except Exception:
+        return False
+
+
+def _final_is_low_risk(final: str | None, *, coding: bool, tool_calls: int) -> bool:
+    """Cheap, conservative test: safe to skip LLM verification on this answer?
+
+    Low-risk means a short, prose-only answer the agent reached without
+    touching any tools -- a pure-knowledge reply. A coding task, any tool
+    use, an embedded code block / diff / edit, or a long multi-part answer
+    all fall through to full verification. Intentionally narrow: it gates
+    a quality check, so it only fires when skipping is clearly safe.
+    """
+    if coding or not final:
+        return False
+    if tool_calls > 0:
+        return False
+    text = final.strip()
+    if len(text) > 800:
+        return False
+    return not any(marker in text for marker in _HIGH_RISK_FINAL_MARKERS)
+
+
 class Agent:
     def __init__(
         self,
@@ -1346,6 +1392,10 @@ class Agent:
                     # that hits the budget (verdict stays None) is distinguished
                     # from a role that never verifies -- see the FINAL return.
                     verifier_attempted = False
+                    # Risk-proportional verification (opt-in): set True when the
+                    # orchestrator deems the FINAL low-risk and skips the LLM
+                    # verifier. Distinct from "attempted but did not complete".
+                    verification_skipped = False
                     # Only the orchestrator's FINAL is verified. Sub-agents
                     # answer to their parent; the parent is their verifier.
                     if (
@@ -1529,18 +1579,33 @@ class Agent:
                                 messages.append({"role": "user", "content": critique})
                                 continue
 
-                        try:
-                            from .verifier import verify_final
-                            verifier_attempted = True
-                            verdict = await verify_final(
-                                self.brief, final, self.ctx.llm, self.ctx.budget,
-                                proposer_model=self.model,
+                        if (
+                            _risk_proportional_verify_enabled()
+                            and _final_is_low_risk(
+                                final,
+                                coding=bool(coding_cfg and coding_cfg.enabled),
+                                tool_calls=self.ctx.budget.tool_calls,
                             )
-                        except BudgetExceeded:
-                            verdict = None
-                        except Exception as e:  # pragma: no cover
-                            bb.post(self.name, "error", f"verifier failed: {e}")
-                            verdict = None
+                        ):
+                            verification_skipped = True
+                            bb.post(
+                                self.name, "verify",
+                                "verification skipped (risk-proportional: "
+                                "low-risk answer, no tools/code)",
+                            )
+                        else:
+                            try:
+                                from .verifier import verify_final
+                                verifier_attempted = True
+                                verdict = await verify_final(
+                                    self.brief, final, self.ctx.llm, self.ctx.budget,
+                                    proposer_model=self.model,
+                                )
+                            except BudgetExceeded:
+                                verdict = None
+                            except Exception as e:  # pragma: no cover
+                                bb.post(self.name, "error", f"verifier failed: {e}")
+                                verdict = None
 
                         if verdict is not None and not verdict.accepts:
                             if getattr(self, "_verifier_revision_used", False):
@@ -1612,6 +1677,21 @@ class Agent:
                         extra={"name": self.name, "final": final},
                     )
                     self._score_step(step_index=step, is_final=True)
+                    if verification_skipped:
+                        _vconf, _vcrit = 0.9, (
+                            "verification skipped (risk-proportional: low-risk answer)"
+                        )
+                    elif verdict is not None:
+                        _vconf, _vcrit = verdict.confidence, verdict.critique
+                    elif verifier_attempted:
+                        # Attempted but hit budget/error (verdict is None) must
+                        # NOT report high confidence: a budget-starved run would
+                        # otherwise be donated as a "high-confidence" trajectory
+                        # it never verified (#612).
+                        _vconf, _vcrit = 0.0, "verifier did not complete (budget)"
+                    else:
+                        # Roles that never verify keep the 1.0 default.
+                        _vconf, _vcrit = 1.0, ""
                     _reasons = _final_uncertainty_reasons(
                         verifier_rejected=False,
                         verifier_incomplete=(verdict is None and verifier_attempted),
@@ -1623,19 +1703,8 @@ class Agent:
                     return AgentResult(
                         final=_final_with_uncertainty_note(final, _reasons),
                         role=self.role, name=self.name,
-                        # A verifier that was attempted but hit budget/error
-                        # (verdict is None) must NOT report high confidence: a
-                        # budget-starved run would otherwise be donated as a
-                        # "high-confidence" trajectory it never verified (#612).
-                        # Roles that never verify keep the 1.0 default.
-                        verifier_confidence=(
-                            verdict.confidence if verdict is not None
-                            else (0.0 if verifier_attempted else 1.0)
-                        ),
-                        verifier_critique=(
-                            verdict.critique if verdict is not None
-                            else ("verifier did not complete (budget)" if verifier_attempted else "")
-                        ),
+                        verifier_confidence=_vconf,
+                        verifier_critique=_vcrit,
                         final_patch=getattr(self, "_final_patch", None),
                     )
                 bb.post(self.name, "observation", resp.text[:1000])
