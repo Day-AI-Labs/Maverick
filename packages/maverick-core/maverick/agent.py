@@ -110,6 +110,36 @@ def _tool_call_failed(output: str) -> bool:
     return text.lstrip().startswith(("ERROR", "⚠", "BLOCKED by Shield"))
 
 
+# A single runaway tool result (multi-MB shell stdout, a giant query/file dump)
+# would otherwise enter the CURRENT context window uncapped -- compaction only
+# trims results behind the recent window -- blowing tokens/budget in one turn.
+# Cap any single result; the model keeps the head + tail and is told how to get
+# the rest. ~100 KB chars (~25k tokens). Tune via MAVERICK_MAX_TOOL_RESULT_BYTES.
+_MAX_TOOL_RESULT_BYTES = max(2_000, env_int("MAVERICK_MAX_TOOL_RESULT_BYTES", 100_000))
+
+
+def _cap_tool_output(text: str) -> str:
+    """Bound a single tool result so one runaway can't blow the context window.
+
+    Keeps the head (2/3) and tail (1/3) -- results often put the actionable bit
+    (an error, a summary, the last rows) at the end -- with a middle marker that
+    states what was dropped and how to avoid it. A no-op below the cap, so normal
+    results are byte-identical. The head is preserved, so a leading ``ERROR`` is
+    intact for failure classification."""
+    if len(text) <= _MAX_TOOL_RESULT_BYTES:
+        return text
+    head = _MAX_TOOL_RESULT_BYTES * 2 // 3
+    tail = _MAX_TOOL_RESULT_BYTES - head
+    omitted = len(text) - head - tail
+    return (
+        text[:head]
+        + f"\n\n... [tool output truncated: {omitted} of {len(text)} chars "
+        "omitted to protect the context window. Narrow the command/query, or "
+        "write the full output to a file and read it back in slices.] ...\n\n"
+        + text[-tail:]
+    )
+
+
 def _last_assistant_text(messages: list[dict]) -> str:
     """Best-effort plain text of the most recent assistant message.
 
@@ -671,6 +701,9 @@ class Agent:
             output, _redacted = _redact_secrets(output)
         except Exception:  # pragma: no cover
             pass
+        # Bound a single runaway result before it enters the context window
+        # (compaction only trims results behind the recent window).
+        output = _cap_tool_output(output)
         # Council-of-20 security finding: a literal `</tool_output>` in
         # `output` (attacker-controlled file contents, shell stdout, MCP
         # response) escapes the framing and lets following text read as
