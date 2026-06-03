@@ -373,7 +373,7 @@ CORE_TOOL_NAMES = frozenset({
     # web / docs / media basics
     "http_fetch", "web_search", "read_pdf", "view_image",
     # memory + run introspection
-    "recall_past_goals", "kv_memory", "budget_status", "diagnose",
+    "recall_past_goals", "kv_memory", "memory", "budget_status", "diagnose",
     "spend_report", "notify", "compute",
     # multi-agent
     "spawn_subagent", "spawn_swarm",
@@ -502,6 +502,7 @@ def base_registry(
     from .kv_memory import kv_memory
     from .lambda_tool import lambda_tool
     from .linear import linear
+    from .memory import memory
     from .mixpanel_tool import mixpanel_tool
     from .mongodb_tool import mongodb_tool
     from .msgraph_tool import msgraph_tool
@@ -555,6 +556,7 @@ def base_registry(
     reg.register(clipboard())
     reg.register(preview_diff(sandbox))
     reg.register(kv_memory(world, goal_id))
+    reg.register(memory())
     reg.register(arxiv())
     reg.register(semantic_scholar())
     reg.register(wikipedia())
