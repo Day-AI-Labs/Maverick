@@ -928,6 +928,11 @@ def pick_advanced() -> dict[str, bool]:
             "(slower, stronger).",
             default=False,
         ),
+        "risk_proportional_verify": _q_confirm(
+            "Risk-proportional verification? Skip the verifier on trivial, low-risk "
+            "answers (short, prose-only, no tools or code) to save tokens and latency.",
+            default=False,
+        ),
         "deferred_tools": _q_confirm(
             "Deferred tool loading? Show the model a small core toolset plus a "
             "find_tools search tool, loading the long tail (80+ integrations, MCP) "
@@ -1841,6 +1846,10 @@ def write_config(
                 lines.append("cost_aware = true")
             if advanced.get("verify_ensemble"):
                 lines.append("verify_ensemble = true")
+        if advanced.get("risk_proportional_verify"):
+            lines.append("")
+            lines.append("[verification]")
+            lines.append("risk_proportional = true")
         if advanced.get("tree_of_thought"):
             lines.append("")
             lines.append("[planning]")
