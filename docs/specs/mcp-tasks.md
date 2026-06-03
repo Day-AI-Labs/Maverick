@@ -1,6 +1,6 @@
 # Design Spec: MCP Tasks (async, pollable tool execution)
 
-**Status:** Phase 1 shipped (stdio server, basic lifecycle); `input_required` + status-notifications + HTTP deferred · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (B1, async tasks) · **Spec:** [MCP Tasks 2025-11-25 (experimental)](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks) · **Date:** June 2026
+**Status:** Shipped (stdio server: basic lifecycle + `notifications/tasks/status`); `input_required` + HTTP transport deferred · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (B1, async tasks) · **Spec:** [MCP Tasks 2025-11-25 (experimental)](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks) · **Date:** June 2026
 
 ## 1. Problem
 
@@ -32,13 +32,17 @@ Server side, **stdio only** (`packages/maverick-mcp/maverick_mcp/`):
 - **Execution** — the worker runs the tool on a **fresh `MCPServer` instance**
   (`_task_runner`). That isolates the main server's per-call state
   (`_structured_override`, `_pending_updates`) and its stdio: the worker only
-  mutates its task record and **never writes the transport**, so the main loop
-  stays the sole writer. Status → `completed`, or `failed` when the
-  `CallToolResult` has `isError`.
+  mutates its task record and the one push it emits (below). Status →
+  `completed`, or `failed` when the `CallToolResult` has `isError`.
 - **Methods** — `tasks/get` (poll), `tasks/result` (blocks until terminal, returns
   exactly the `CallToolResult` with `_meta["io.modelcontextprotocol/related-task"]`),
   `tasks/cancel` (best-effort; `-32602` on an already-terminal task), `tasks/list`
   (opaque-cursor pagination).
+- **Notifications** — `notifications/tasks/status` is pushed on each status
+  transition (`completed` / `failed` / `cancelled`), carrying the full Task, so a
+  client learns of completion without polling. Optional per spec (clients still
+  poll). Transport writes go through a send lock, so a worker's push can't splice
+  into the middle of the main loop's response line.
 - **Store** (`tasks.py`, `TaskStore`) — in-memory registry + a bounded
   `ThreadPoolExecutor`; lazy TTL purge on access; registry size cap; crypto-random
   task ids (no auth context on stdio). Env knobs: `MAVERICK_MCP_TASK_WORKERS`,
@@ -50,11 +54,10 @@ Server side, **stdio only** (`packages/maverick-mcp/maverick_mcp/`):
 - **`input_required`** — task-driven elicitation (the spec's marquee
   tool-call-needs-elicitation flow). Our elicitation (`specs/mcp-elicitation.md`)
   is synchronous within a foreground tool call; combining it with the async task
-  state machine is its own slice. A task that parks a question today simply leaves
-  it for the async `maverick_answer` flow.
-- **`notifications/tasks/status`** — optional server→client push. We don't send it;
-  requestors poll (which the spec requires them to support regardless), keeping all
-  transport writes on the main thread.
+  state machine is its own slice (the worker would park its question, flip the task
+  to `input_required`, and `tasks/result` on the main thread would drive the
+  elicitation + resume). A task that parks a question today simply leaves it for
+  the async `maverick_answer` flow.
 - **HTTP transport** — tasks are stdio-only for now. The HTTP path already returns
   results synchronously per request; task support there (with its own registry and
   auth-context binding for multi-client isolation) is a follow-up.

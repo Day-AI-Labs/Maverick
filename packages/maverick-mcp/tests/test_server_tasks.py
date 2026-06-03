@@ -13,10 +13,11 @@ import io
 import json
 import sys
 import threading
+import time
 
 import pytest
 from maverick_mcp.server import TOOLS, MCPServer, _ProtocolError
-from maverick_mcp.tasks import RELATED_TASK_META, TaskError, TaskStore
+from maverick_mcp.tasks import RELATED_TASK_META, McpTask, TaskError, TaskStore
 
 
 def _ok(text: str) -> dict:
@@ -279,3 +280,135 @@ def test_run_loop_task_create_then_result(monkeypatch):
     assert result["_meta"][RELATED_TASK_META] == {"taskId": task_id}
     if s._tasks is not None:
         s._tasks.shutdown()
+
+
+# ---- notifications/tasks/status ---------------------------------------------
+
+def test_status_callback_fires_on_completion():
+    fired: list[tuple[str, str]] = []
+    cb_done = threading.Event()
+
+    def cb(task):
+        fired.append((task.id, task.status))
+        cb_done.set()
+
+    store = TaskStore(lambda n, a: _ok("x"), on_status_change=cb)
+    try:
+        task = store.create("maverick_start", {}, {})
+        store.result(task.id)  # terminal
+        assert cb_done.wait(2)  # callback runs on the worker thread, just after
+        assert fired[-1] == (task.id, "completed")
+    finally:
+        store.shutdown()
+
+
+def test_status_callback_fires_on_failure():
+    fired: list[str] = []
+    cb_done = threading.Event()
+
+    def cb(task):
+        fired.append(task.status)
+        cb_done.set()
+
+    store = TaskStore(
+        lambda n, a: {"isError": True, "content": [{"type": "text", "text": "boom"}]},
+        on_status_change=cb)
+    try:
+        task = store.create("maverick_start", {}, {})
+        store.result(task.id)
+        assert cb_done.wait(2)
+        assert fired[-1] == "failed"
+    finally:
+        store.shutdown()
+
+
+def test_status_callback_fires_on_cancel():
+    fired: list[str] = []
+    release = threading.Event()
+    store = TaskStore(
+        lambda n, a: (release.wait(timeout=5), _ok("late"))[1],
+        on_status_change=lambda t: fired.append(t.status))
+    try:
+        task = store.create("maverick_start", {}, {"ttl": 60000})
+        store.cancel(task.id)  # cancel notifies synchronously on this thread
+        assert fired == ["cancelled"]
+    finally:
+        release.set()
+        store.shutdown()
+
+
+def test_callback_error_does_not_break_the_task():
+    def boom(_task):
+        raise RuntimeError("notify exploded")
+
+    store = TaskStore(lambda n, a: _ok("ok"), on_status_change=boom)
+    try:
+        task = store.create("maverick_start", {}, {})
+        res = store.result(task.id)  # must still complete despite the bad callback
+        assert res["content"][0]["text"] == "ok"
+        assert store.get(task.id)["status"] == "completed"
+    finally:
+        store.shutdown()
+
+
+def test_server_emits_well_formed_status_notification():
+    s = MCPServer()
+    sent: list[dict] = []
+    s._send = sent.append
+    task = McpTask(ttl_ms=1000, poll_interval_ms=500)
+    task.set_status("completed", "done")
+    s._emit_task_status(task)
+    assert len(sent) == 1
+    msg = sent[0]
+    assert msg["method"] == "notifications/tasks/status"
+    assert "id" not in msg  # it's a notification, not a request
+    assert msg["params"]["taskId"] == task.id
+    assert msg["params"]["status"] == "completed"
+    assert RELATED_TASK_META not in (msg["params"].get("_meta") or {})
+
+
+def test_task_store_wires_the_status_callback():
+    s = MCPServer()
+    s._stdio = True
+    store = s._task_store()
+    try:
+        assert store._on_status_change == s._emit_task_status
+    finally:
+        store.shutdown()
+
+
+def test_run_loop_pushes_status_notification(monkeypatch):
+    s = MCPServer()
+    monkeypatch.setattr(s, "_task_runner", lambda n, a: _ok(f"done {n}"))
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("".join(json.dumps(m) + "\n" for m in [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+         "params": {"protocolVersion": "2025-11-25",
+                    "capabilities": {"tasks": {"requests": {"tools": {"call": {}}}}}}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+         "params": {"name": "maverick_start", "arguments": {"title": "go"},
+                    "task": {"ttl": 60000}}},
+    ])))
+    s.run()
+    try:
+        # The worker completes + notifies asynchronously; poll for the push.
+        notif = None
+        for _ in range(200):
+            msgs = []
+            for line in out.getvalue().splitlines():
+                if line.strip():
+                    try:
+                        msgs.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+            notif = next((m for m in msgs
+                          if m.get("method") == "notifications/tasks/status"), None)
+            if notif is not None:
+                break
+            time.sleep(0.01)
+        assert notif is not None, "no notifications/tasks/status was pushed"
+        assert notif["params"]["status"] == "completed"
+    finally:
+        if s._tasks is not None:
+            s._tasks.shutdown()

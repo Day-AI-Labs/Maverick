@@ -140,8 +140,12 @@ class TaskStore:
         max_ttl_ms: int | None = None,
         poll_interval_ms: int | None = None,
         page_size: int = 100,
+        on_status_change: Callable[[McpTask], None] | None = None,
     ):
         self._runner = runner
+        # Optional: invoked with the task each time it changes status, so the
+        # server can push notifications/tasks/status. Fired outside the lock.
+        self._on_status_change = on_status_change
         self._max_tasks = max_tasks if max_tasks is not None else _env_int(
             "MAVERICK_MCP_MAX_TASKS", 256, lo=1, hi=100_000)
         self._default_ttl_ms = default_ttl_ms if default_ttl_ms is not None else _env_int(
@@ -193,6 +197,7 @@ class TaskStore:
             result = self._runner(name, arguments)
         except Exception as e:  # noqa: BLE001 -- a runner crash must fail the task, not the pool
             log.exception("mcp task %s (%s) crashed", task.id, name)
+            changed = False
             with self._lock:
                 if task.status not in TASK_TERMINAL:
                     task.result = {
@@ -201,15 +206,22 @@ class TaskStore:
                                      "text": f"task failed: {type(e).__name__}"}],
                     }
                     task.set_status("failed", f"{type(e).__name__}: {e}"[:500])
+                    changed = True
+            if changed:
+                self._notify(task)
             return
+        changed = False
         with self._lock:
-            if task.cancel_requested or task.status in TASK_TERMINAL:
-                return  # cancelled while running: keep cancelled, drop the result
-            task.result = result
-            if result.get("isError"):
-                task.set_status("failed", _first_text(result)[:500] or "tool reported an error")
-            else:
-                task.set_status("completed", "The operation completed.")
+            if not (task.cancel_requested or task.status in TASK_TERMINAL):
+                task.result = result
+                if result.get("isError"):
+                    task.set_status("failed", _first_text(result)[:500] or "tool reported an error")
+                else:
+                    task.set_status("completed", "The operation completed.")
+                changed = True
+            # else: cancelled while running -- keep cancelled, drop the result.
+        if changed:
+            self._notify(task)
 
     # ---- JSON-RPC task methods -----------------------------------------
 
@@ -249,7 +261,9 @@ class TaskStore:
             # is discarded (see _run) and the status is cancelled now.
             task.cancel_requested = True
             task.set_status("cancelled", "The task was cancelled by request.")
-            return task.to_dict()
+            snapshot = task.to_dict()
+        self._notify(task)
+        return snapshot
 
     def list(self, cursor: str | None) -> dict:
         self._purge_expired()
@@ -292,6 +306,15 @@ class TaskStore:
             expired = [tid for tid, t in self._tasks.items() if t.is_expired(now)]
             for tid in expired:
                 self._tasks.pop(tid, None)
+
+    def _notify(self, task: McpTask) -> None:
+        cb = self._on_status_change
+        if cb is None:
+            return
+        try:
+            cb(task)
+        except Exception:  # noqa: BLE001 -- a notify failure must not break the task
+            log.warning("mcp task %s status-notify failed", task.id, exc_info=True)
 
     def shutdown(self) -> None:
         self._executor.shutdown(wait=False, cancel_futures=True)
