@@ -38,8 +38,8 @@ run_benchmark(bench, solver, dataset=..., limit=...) -> {pass_at_1, mean_score, 
 | slice | benchmark | status | scorer |
 |---|---|---|---|
 | general assistant | **GAIA** (`eval_gaia.py`) | ✅ shipped | official normalized exact-match (number / string / list) |
+| tool-agent policy | **τ²-bench** (`eval_tau2.py`) | ✅ shipped | stateful tool domain + DB; graded on final state **and** required actions. Self-runnable: `python benchmarks/eval_tau2.py` (dry-run on the retail fixture); real tau2 task files via `--dataset`. Real Maverick-driving solver + user simulator are the follow-up. |
 | CLI ops | terminal-bench | follow-up | run the task's `verify` command in a sandbox workdir; pass iff exit 0 |
-| tool-agent policy | τ²-bench | follow-up | compare final DB state + actions to the expected trace |
 
 ### Adding the next slice
 
