@@ -92,6 +92,24 @@ _LOOP_GUARD_ENABLED = os.environ.get("MAVERICK_LOOP_GUARD", "1").strip().lower()
 _LOOP_GUARD_THRESHOLD = max(2, env_int("MAVERICK_LOOP_GUARD_THRESHOLD", 3))
 
 
+def _tool_call_failed(output: str) -> bool:
+    """Did a tool result represent a failure? Used for the is_error flag and the
+    per-step success score.
+
+    Looks PAST the ``<tool_output …>`` security frame to the raw content: the
+    frame begins with ``<tool_output``, so a naive leading-``ERROR`` check on the
+    framed string was always False -- silently never setting ``is_error`` and
+    scoring every failed tool as a success. Tool-execution errors are prefixed
+    ``ERROR``; shield / hook blocks (which return UNframed) start with ``⚠``.
+    """
+    text = output or ""
+    if text.startswith("<tool_output "):
+        nl = text.find("\n")
+        if nl != -1:
+            text = text[nl + 1:]  # drop the frame-open line; inspect the content
+    return text.lstrip().startswith(("ERROR", "⚠", "BLOCKED by Shield"))
+
+
 def _last_assistant_text(messages: list[dict]) -> str:
     """Best-effort plain text of the most recent assistant message.
 
@@ -683,7 +701,7 @@ class Agent:
         if not _LOOP_GUARD_ENABLED:
             return ""
         key = self._tool_call_key(name, args)
-        failed = (raw_output or "").lstrip().startswith(("ERROR", "⚠"))
+        failed = _tool_call_failed(raw_output)
         if not failed:
             self._tool_fail_streak.pop(key, None)  # success clears this call's streak
             return ""
@@ -720,13 +738,15 @@ class Agent:
         prefixes errors with "ERROR: " and the shield emits
         "BLOCKED by Shield".
         """
-        stripped = (output or "").lstrip()
         tr: dict = {
             "type": "tool_result",
             "tool_use_id": tool_use_id,
             "content": output,
         }
-        if stripped.startswith("ERROR") or stripped.startswith("BLOCKED by Shield"):
+        # Frame-aware: `output` is the <tool_output …>-wrapped string, so inspect
+        # the content inside it (a leading-ERROR check on the frame is always
+        # false -- that bug left is_error unset on every failed tool).
+        if _tool_call_failed(output):
             tr["is_error"] = True
         return tr
 
@@ -1673,9 +1693,7 @@ class Agent:
                     self._score_step(
                         step_index=step,
                         tool_name=tc.name,
-                        tool_succeeded=not (output or "").lstrip().startswith(
-                            ("ERROR", "BLOCKED by Shield")
-                        ),
+                        tool_succeeded=not _tool_call_failed(output),
                     )
                     tool_results.append(self._make_tool_result(tc.id, output))
             else:
@@ -1726,9 +1744,7 @@ class Agent:
                     self._score_step(
                         step_index=step,
                         tool_name=tc.name,
-                        tool_succeeded=not (output or "").lstrip().startswith(
-                            ("ERROR", "BLOCKED by Shield")
-                        ),
+                        tool_succeeded=not _tool_call_failed(output),
                     )
                     tool_results.append(self._make_tool_result(tc.id, output))
 

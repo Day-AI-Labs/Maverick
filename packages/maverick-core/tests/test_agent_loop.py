@@ -418,3 +418,34 @@ class TestLoopGuard:
         # OUTSIDE it (trusted loop-control guidance, not tool data).
         assert "ERROR: boom" in outs[-1]
         assert outs[-1].index("</tool_output") < outs[-1].index("[loop-guard]")
+
+
+class TestToolFailureClassification:
+    """is_error + per-step score must see PAST the <tool_output> frame.
+
+    Regression: tool results are wrapped in a `<tool_output …>` security frame,
+    so a leading-`ERROR` check on the framed string was always false -- is_error
+    was never set on a failed tool, and every failure scored as a success."""
+
+    def test_classifier_sees_through_the_frame(self):
+        from maverick.agent import _tool_call_failed
+        err = "<tool_output tool='shell' id=ab12>\nERROR: boom\n</tool_output ab12>"
+        ok = "<tool_output tool='read_file' id=ab12>\nhello world\n</tool_output ab12>"
+        assert _tool_call_failed(err) is True
+        assert _tool_call_failed(ok) is False
+
+    def test_classifier_on_unframed_errors_and_blocks(self):
+        from maverick.agent import _tool_call_failed
+        assert _tool_call_failed("ERROR: nope") is True
+        assert _tool_call_failed("⚠ BLOCKED by Shield (high): x. Not executed.") is True
+        assert _tool_call_failed("⚠ BLOCKED by hook. The tool was not executed.") is True
+        assert _tool_call_failed("BLOCKED by Shield") is True
+        assert _tool_call_failed("") is False
+        assert _tool_call_failed("the answer is 42") is False
+
+    def test_make_tool_result_flags_a_framed_error(self):
+        from maverick.agent import Agent
+        err = "<tool_output tool='shell' id=ab12>\nERROR: boom\n</tool_output ab12>"
+        ok = "<tool_output tool='shell' id=ab12>\nall good\n</tool_output ab12>"
+        assert Agent._make_tool_result("t1", err).get("is_error") is True
+        assert "is_error" not in Agent._make_tool_result("t2", ok)
