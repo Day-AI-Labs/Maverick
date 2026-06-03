@@ -160,15 +160,25 @@ Maverick can consume any MCP server (filesystem, GitHub, Postgres,
 browser, etc.) as tools. Add entries under `[mcp_servers.<name>]`:
 
 ```toml
+# stdio: spawn a local subprocess
 [mcp_servers.filesystem]
 command = "npx"
 args    = ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+
+# remote: connect to a server over Streamable HTTP (set `url` instead of `command`)
+[mcp_servers.remote]
+url        = "https://mcp.example.com/mcp"
+auth_token = "..."                      # optional; sent as `Authorization: Bearer …`
+# headers  = { X-Org = "acme" }         # optional extra request headers
 ```
 
 Behavior:
 
-- The server is spawned as a stdio subprocess on swarm start and torn
-  down on goal completion.
+- A `command` server is spawned as a stdio subprocess on swarm start and
+  torn down on goal completion. A `url` server is reached over HTTP
+  (Streamable HTTP, spec 2025-11-25) — `tools/list` + `tools/call` over
+  JSON or SSE, with session-id continuity; no subprocess. OAuth 2.1 isn't
+  wired yet, but a static bearer (`auth_token`) is.
 - Every tool it exposes is registered as `mcp_<name>__<tool>` in the
   agent's catalog and passes through `Shield.scan_tool_call` like any
   other tool.
