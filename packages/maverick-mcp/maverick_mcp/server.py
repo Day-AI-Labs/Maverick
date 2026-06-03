@@ -240,6 +240,23 @@ TOOLS: list[dict[str, Any]] = [
 
 _TOOL_NAMES = {t["name"] for t in TOOLS}
 
+# Form a parked free-text ask_user question is surfaced as, when the client
+# supports elicitation. A single required string keeps the round trip simple.
+_ELICIT_ANSWER_SCHEMA = {
+    "type": "object",
+    "properties": {"answer": {"type": "string", "title": "Your answer"}},
+    "required": ["answer"],
+}
+
+
+def _elicit_timeout() -> float:
+    """Seconds to wait for an elicitation response before giving up (and
+    leaving the question parked for the async maverick_answer flow)."""
+    return _bounded_float(
+        os.environ.get("MAVERICK_MCP_ELICITATION_TIMEOUT", 300.0),
+        default=300.0, ceiling=86400.0,
+    )
+
 
 class MCPServer:
     # Resources a client may subscribe to, and which mutating tool dirties
@@ -260,6 +277,15 @@ class MCPServer:
         # result (so the client sees result-then-notification).
         self._subscriptions: set[str] = set()
         self._pending_updates: list[str] = []
+        # Elicitation (server-initiated forms). Capabilities the CLIENT
+        # advertised at initialize -- elicitation is a *client* capability, so
+        # we only emit elicitation/create when the client declared it. _stdio
+        # gates it to the stdio transport (a server->client request mid-call has
+        # no place in the HTTP request/response model). _elicit_seq namespaces
+        # our outbound request ids so they never collide with the client's.
+        self._client_capabilities: dict = {}
+        self._stdio = False
+        self._elicit_seq = 0
 
     @staticmethod
     def _build_shield():
@@ -271,6 +297,12 @@ class MCPServer:
 
     def handle_initialize(self, params: dict) -> dict:
         self._initialized = True
+        # Record the client's advertised capabilities. Elicitation is a client
+        # capability: its presence here is our gate for emitting elicitation/
+        # create later (see _maybe_elicit_open_questions). Coerce a non-object
+        # to {} so a hostile initialize can't break the .get() gate.
+        caps = params.get("capabilities")
+        self._client_capabilities = caps if isinstance(caps, dict) else {}
         # MCP negotiation: echo the client's requested version if we support
         # it, else respond with our latest. The old `< "2025-11-25"`
         # lexicographic check downgraded EVERY pre-latest client -- including
@@ -291,10 +323,11 @@ class MCPServer:
                 # surface "start a research run" / "plan a trip" without
                 # the user typing the prompt themselves.
                 "prompts": {"listChanged": False},
-                # Elicitation (server-initiated follow-up questions) is not
-                # wired yet — clients use the ask_user tool instead. Don't
-                # advertise the capability until a handler exists, or
-                # 2025-11-25-aware clients will wait on a request we never send.
+                # Elicitation is a *client* capability, not a server one, so it
+                # isn't listed here. When the client advertises it we surface a
+                # parked ask_user question as a protocol form mid-call (stdio
+                # only); otherwise the async ask_user / maverick_answer flow is
+                # used unchanged. See _maybe_elicit_open_questions.
             },
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
         }
@@ -493,6 +526,16 @@ class MCPServer:
                 "isError": True,
                 "content": [{"type": "text", "text": f"{type(e).__name__}: {e}"}],
             }
+        # Phase 2 elicitation: if the run parked questions and the (stdio)
+        # client advertised elicitation, surface them as protocol forms now,
+        # record the answers, and resume -- so the caller gets the finished
+        # answer in one round trip instead of the start -> answer -> resume
+        # dance. A no-op for HTTP clients or those without the capability,
+        # leaving the async ask_user / maverick_answer flow unchanged.
+        if name in ("maverick_start", "maverick_resume"):
+            elicited = self._maybe_elicit_open_questions()
+            if elicited is not None:
+                result = elicited
         if self._shield is not None:
             verdict = self._shield.scan_output(result)
             if not verdict.allowed:
@@ -772,9 +815,180 @@ class MCPServer:
     def _send_result(self, request_id: Any, result: dict) -> None:
         self._send({"jsonrpc": "2.0", "id": request_id, "result": result})
 
+    # ---- server-initiated elicitation (stdio, capability-gated) ----------
+
+    def _client_supports_elicitation(self) -> bool:
+        return (
+            self._stdio
+            and isinstance(self._client_capabilities, dict)
+            and "elicitation" in self._client_capabilities
+        )
+
+    def _next_elicit_id(self) -> str:
+        # String ids namespace our server->client requests so they can never be
+        # confused with the client's own (integer) request ids on the wire.
+        self._elicit_seq += 1
+        return f"elicit-{self._elicit_seq}"
+
+    def _elicit(self, message: str, requested_schema: dict) -> dict | None:
+        """Send one elicitation/create and block for the client's response.
+
+        Returns the MCP elicitation result ({"action": ..., "content"?: ...}),
+        or None if the client can't elicit, the round trip times out, or the
+        client errors -- callers fall back to the async question flow."""
+        if not self._client_supports_elicitation():
+            return None
+        req_id = self._next_elicit_id()
+        self._send({
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "method": "elicitation/create",
+            "params": {"message": message, "requestedSchema": requested_schema},
+        })
+        return self._await_elicit_response(req_id, _elicit_timeout())
+
+    def _await_elicit_response(self, req_id: str, timeout: float) -> dict | None:
+        """Read stdin until the matching elicitation response arrives.
+
+        The client is awaiting our tools/call result, so the only traffic we
+        expect meanwhile is that response (plus the odd keep-alive ping). We
+        answer pings, treat a cancelled notification as a cancel, and ignore
+        anything else rather than re-entering tool dispatch from here."""
+        import time as _time
+        deadline = _time.monotonic() + max(0.0, timeout)
+        while True:
+            remaining = deadline - _time.monotonic()
+            if remaining <= 0:
+                log.warning("elicitation %s timed out", req_id)
+                return None
+            line = self._readline_with_timeout(remaining)
+            if not line:  # timeout (None) or EOF ('')
+                return None
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("id") == req_id and "method" not in msg:
+                if "error" in msg:
+                    return None
+                result = msg.get("result")
+                return result if isinstance(result, dict) else {}
+            method = msg.get("method")
+            if method == "ping" and msg.get("id") is not None:
+                self._send_result(msg["id"], {})  # keep-alive
+            elif method == "notifications/cancelled":
+                return None
+            # else: a stray message while we wait -- drop it (don't re-enter
+            # tool dispatch from inside an in-flight tool call).
+
+    def _readline_with_timeout(self, timeout: float | None) -> str | None:
+        """Read a line from stdin, returning None if `timeout` elapses first.
+
+        The timeout only applies when stdin is backed by a real fd (the stdio
+        transport); test/StringIO streams fall through to a plain readline."""
+        src = sys.stdin
+        if timeout is not None and os.name == "posix":
+            try:
+                fd = src.fileno()
+            except (AttributeError, OSError, ValueError):
+                fd = None
+            if fd is not None:
+                import select
+                ready, _, _ = select.select([src], [], [], timeout)
+                if not ready:
+                    return None
+        return src.readline()
+
+    def _maybe_elicit_open_questions(self) -> str | None:
+        """Resolve questions the just-finished run parked, via elicitation.
+
+        For an elicitation-capable stdio client: elicit each open question for
+        the goal, record the answer (shield-screened) through the same path as
+        maverick_answer, and resume so the swarm consumes it -- looping until no
+        questions remain, the client declines, or a round cap is hit. Returns
+        the final (resumed) answer, or None if nothing was elicited (caller
+        keeps the original result; the async flow is unchanged)."""
+        if not self._client_supports_elicitation():
+            return None
+        goal_id = (self._structured_override or {}).get("goal_id")
+        if goal_id is None:
+            return None
+        from maverick.world_model import WorldModel
+        world = WorldModel()
+        max_rounds = _bounded_int(
+            os.environ.get("MAVERICK_MCP_MAX_ELICIT_ROUNDS", 8),
+            default=8, ceiling=64,
+        )
+        final_answer: str | None = None
+        for _ in range(max_rounds):
+            questions = [q for q in world.open_questions() if q.goal_id == goal_id]
+            if not questions:
+                break
+            answered = False
+            for q in questions:
+                reply = self._elicit_question(q.question)
+                if reply is None:
+                    return final_answer  # declined / blocked / timed out
+                world.answer(q.id, reply)
+                answered = True
+            if not answered:
+                break
+            final_answer = self._tool_resume({"goal_id": goal_id})
+        return final_answer
+
+    def _elicit_question(self, question: str) -> str | None:
+        """Elicit one free-text answer, shield-screening both legs.
+
+        Returns the answer string on accept, or None on decline/cancel, a
+        shield block, or an unusable response (caller leaves it parked)."""
+        # Outbound: the question is model-influenced text going to the user.
+        if self._shield is not None:
+            try:
+                v = self._shield.scan_output(question)
+                if not getattr(v, "allowed", True):
+                    log.warning("elicitation prompt blocked by shield")
+                    return None
+            except Exception:  # pragma: no cover -- fail open (kernel rule 1)
+                pass
+        result = self._elicit(question, _ELICIT_ANSWER_SCHEMA)
+        if not result or result.get("action") != "accept":
+            return None
+        content = result.get("content")
+        if not isinstance(content, dict):
+            return None
+        answer = content.get("answer")
+        if not isinstance(answer, str) or not answer:
+            return None
+        # Inbound: the answer is fed back into the agent loop -- scan it like
+        # _tool_answer does before it becomes the user's reply.
+        if self._shield is not None:
+            try:
+                v = self._shield.scan_input(answer)
+                if not getattr(v, "allowed", True):
+                    log.warning("elicited answer rejected by shield")
+                    return None
+            except Exception:  # pragma: no cover -- fail open (kernel rule 1)
+                pass
+        return answer
+
     def run(self) -> None:
         log.info("Maverick MCP server starting (protocol %s)", PROTOCOL_VERSION)
-        for line in sys.stdin:
+        # Mark the stdio transport: server-initiated elicitation is only valid
+        # here (it needs the bidirectional pipe; the HTTP path can't do a
+        # mid-call server->client request). Read via readline() rather than
+        # `for line in sys.stdin` so a tool handler can do a nested read for an
+        # elicitation response without the iterator's read-ahead buffer
+        # swallowing the following messages.
+        self._stdio = True
+        while True:
+            line = sys.stdin.readline()
+            if not line:  # EOF -- client closed the pipe
+                break
             line = line.strip()
             if not line:
                 continue
