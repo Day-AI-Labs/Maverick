@@ -7,6 +7,7 @@ without patching the kernel.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import secrets as _secrets
@@ -80,6 +81,15 @@ _SYNTHESIS_RESERVE = env_float("MAVERICK_SYNTHESIS_RESERVE", 0.25)
 # open episode row so `maverick runs` / `maverick budget` show mid-run spend.
 # Throttled so we don't write the row on every step of a fast loop.
 _SPEND_MIRROR_INTERVAL = env_float("MAVERICK_SPEND_MIRROR_INTERVAL", 5.0)
+
+# Loop guard: a long-horizon failure mode is the model re-issuing the SAME
+# tool call that keeps failing the same way, silently burning budget/steps. We
+# track a per-(tool,args) consecutive-failure streak and, once it hits the
+# threshold, append a one-line nudge to the tool result so the model breaks the
+# loop (change args, switch tools, rethink). Pure advice -- it never blocks a
+# call. Default on; MAVERICK_LOOP_GUARD=0 disables it.
+_LOOP_GUARD_ENABLED = os.environ.get("MAVERICK_LOOP_GUARD", "1").strip().lower() not in {"0", "false", "no", "off"}
+_LOOP_GUARD_THRESHOLD = max(2, env_int("MAVERICK_LOOP_GUARD_THRESHOLD", 3))
 
 
 def _last_assistant_text(messages: list[dict]) -> str:
@@ -169,6 +179,9 @@ class Agent:
         # / `maverick budget` reflect accruing mid-run spend instead of
         # $0.00 / 0 tools. Throttled to once per _SPEND_MIRROR_INTERVAL s.
         self._last_spend_mirror = 0.0
+        # Loop guard: per-(tool,args) consecutive-failure streak. Grows while an
+        # identical call keeps failing; reset when that call finally succeeds.
+        self._tool_fail_streak: dict[str, int] = {}
 
     @property
     def checkpoint_id(self) -> str:
@@ -602,10 +615,43 @@ class Agent:
         # authoritative LLM context. Use a random per-call nonce so the
         # close tag is unforgeable. `secrets.token_hex(8)` = 16 hex chars.
         nonce = _secrets.token_hex(8)
-        return (
+        framed = (
             f"<tool_output tool={name!r} id={nonce}>\n"
             f"{output}\n"
             f"</tool_output {nonce}>"
+        )
+        # Loop guard: detect a repeated identical FAILURE from the raw result
+        # (before framing) and, past threshold, append a nudge OUTSIDE the data
+        # block -- it's trusted loop-control guidance, not tool output.
+        return framed + self._loop_guard_note(name, args, output)
+
+    @staticmethod
+    def _tool_call_key(name: str, args: dict) -> str:
+        try:
+            blob = json.dumps(args, sort_keys=True, default=str)
+        except Exception:  # pragma: no cover -- unserializable args
+            blob = repr(args)
+        return f"{name}\x00{blob}"
+
+    def _loop_guard_note(self, name: str, args: dict, raw_output: str) -> str:
+        """Track this call's outcome; return a nudge when an identical call has
+        failed the same way ``_LOOP_GUARD_THRESHOLD`` times in a row."""
+        if not _LOOP_GUARD_ENABLED:
+            return ""
+        key = self._tool_call_key(name, args)
+        failed = (raw_output or "").lstrip().startswith(("ERROR", "⚠"))
+        if not failed:
+            self._tool_fail_streak.pop(key, None)  # success clears this call's streak
+            return ""
+        streak = self._tool_fail_streak.get(key, 0) + 1
+        self._tool_fail_streak[key] = streak
+        if streak < _LOOP_GUARD_THRESHOLD:
+            return ""
+        return (
+            f"\n\n[loop-guard] You have issued this exact `{name}` call "
+            f"{streak} times in a row and it failed the same way each time. "
+            "Do NOT repeat it again — change the arguments, switch tools, or "
+            "step back and rethink the approach."
         )
 
     def _is_parallel_safe(self, name: str) -> bool:
