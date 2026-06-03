@@ -40,7 +40,7 @@ reliability plumbing (D) have since shipped — see the table.
 | B1 | Resource subscriptions | ✅ #694 | `http_transport.py` |
 | B1 | Streamable-HTTP transport | ✅ | `http_transport.py` |
 | B1 | Elicitation | 🟡 | client inbound (`mcp_client.py`) **and** server outbound form mode (`maverick_mcp/server.py`, `tests/test_server_elicitation.py`) shipped — a parked `ask_user` question surfaces as a capability-/stdio-gated `elicitation/create` form, shield-screened both legs, then resumes; only Phase 3 URL mode + eliciting arbitrary flows / the approvals-table surface remain (`specs/mcp-elicitation.md`) |
-| B1 | Async tasks | ⬜ | — |
+| B1 | Async tasks | ✅ | MCP Tasks 2025-11-25 on the stdio server (`maverick_mcp/tasks.py`, `server.py`, `tests/test_server_tasks.py`) — task-augmented `tools/call` returns `CreateTaskResult` and runs on a background worker; `tasks/get`/`result`/`cancel`/`list` + capability + `execution.taskSupport`. `input_required`/status-notifications deferred (`specs/mcp-tasks.md`) |
 | B2 | MCP client OAuth 2.1 + Registry | ⬜ blocked | client is stdio-only (`mcp_client.py`); needs a remote-HTTP client transport first |
 | B3 | A2A vs. homegrown ACD | ⬜ decision | recommend adopting A2A's Agent Card; reframe/cut ACD |
 | C1 | Eval harness (GAIA / τ²-bench / terminal-bench) | 🟡 | GAIA shipped (#687); the other two need real verification-env *harnesses* (SWE-bench-style, cf. `swe_bench.py`), not simple adapters |
@@ -53,13 +53,15 @@ reliability plumbing (D) have since shipped — see the table.
 
 **Still open — near-term focus**
 
-1. **MCP elicitation + async tasks (B1)** — elicitation has shipped both
+1. **MCP elicitation + async tasks (B1)** — both shipped. Elicitation in both
    directions: client-inbound (`mcp_client.py`, by policy + shield) and
    server-outbound form mode (`server.py` surfaces a parked `ask_user` question as
-   a capability-/stdio-gated form, then resumes). The remaining server-spec item is
-   **async tasks**; Phase 3 URL-mode elicitation (secrets-never-transit-model) is
-   the other open elicitation slice (outputSchema / resources / streamable-HTTP /
-   subscriptions already shipped).
+   a capability-/stdio-gated form, then resumes). Async tasks: MCP Tasks 2025-11-25
+   on the stdio server (`tasks.py` — task-augmented `tools/call` → `CreateTaskResult`
+   + background worker + `tasks/get|result|cancel|list`). Remaining elicitation slice
+   is Phase 3 URL-mode (secrets-never-transit-model); remaining tasks slices are the
+   optional `input_required` (task-driven elicitation) and `notifications/tasks/status`
+   push, plus task support over the HTTP transport (`specs/mcp-tasks.md`).
 2. **Remote-HTTP MCP *client* transport → then OAuth 2.1 + Registry (B2)** — the
    client is stdio-only, so the transport is the prerequisite; OAuth validation also
    needs real accounts.
