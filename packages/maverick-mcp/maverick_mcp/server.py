@@ -8,6 +8,8 @@ import os
 import sys
 from typing import Any
 
+from .tasks import TaskError
+
 log = logging.getLogger(__name__)
 
 logging.basicConfig(
@@ -83,6 +85,9 @@ TOOLS: list[dict[str, Any]] = [
             "Start a new goal in Maverick's recursive multi-agent swarm. "
             "Returns the final answer after the swarm completes. Long-running."
         ),
+        # Long-running, so it supports task augmentation (run async, poll for
+        # the result) where the client and transport (stdio) allow it.
+        "execution": {"taskSupport": "optional"},
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -139,6 +144,7 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "maverick_resume",
         "description": "Resume a paused goal by id.",
+        "execution": {"taskSupport": "optional"},
         "inputSchema": {
             "type": "object",
             "properties": {"goal_id": {"type": "integer"}},
@@ -258,6 +264,11 @@ def _elicit_timeout() -> float:
     )
 
 
+def _tool_supports_tasks(tool_spec: dict) -> bool:
+    """Whether a tool opted into task augmentation via execution.taskSupport."""
+    return tool_spec.get("execution", {}).get("taskSupport") in ("optional", "required")
+
+
 class MCPServer:
     # Resources a client may subscribe to, and which mutating tool dirties
     # each -- after such a tool call we push notifications/resources/updated.
@@ -286,6 +297,9 @@ class MCPServer:
         self._client_capabilities: dict = {}
         self._stdio = False
         self._elicit_seq = 0
+        # MCP Tasks: lazily built on first task-augmented call so the HTTP path
+        # (which never uses tasks) doesn't spin up an executor.
+        self._tasks = None
 
     @staticmethod
     def _build_shield():
@@ -309,26 +323,37 @@ class MCPServer:
         # modern ones like "2025-06-18" -- all the way to "2024-11-05".
         client_ver = params.get("protocolVersion", "")
         version = client_ver if client_ver in SUPPORTED_PROTOCOL_VERSIONS else PROTOCOL_VERSION
+        capabilities: dict = {
+            "tools": {"listChanged": False},
+            # Resources: goals/skills exposed as URI-addressable objects
+            # for clients (Claude Desktop, Cursor) that support the
+            # 2025-11-25 spec. subscribe=True: a client can watch a
+            # resource and we push notifications/resources/updated when a
+            # tool mutates it (see _flush_resource_updates).
+            "resources": {"subscribe": True, "listChanged": False},
+            # Prompts: ship templated goal patterns so clients can
+            # surface "start a research run" / "plan a trip" without
+            # the user typing the prompt themselves.
+            "prompts": {"listChanged": False},
+            # Elicitation is a *client* capability, not a server one, so it
+            # isn't listed here. When the client advertises it we surface a
+            # parked ask_user question as a protocol form mid-call (stdio
+            # only); otherwise the async ask_user / maverick_answer flow is
+            # used unchanged. See _maybe_elicit_open_questions.
+        }
+        # Tasks (2025-11-25): async, pollable tool execution. Only advertised on
+        # stdio, where the long-running tools can run on a background worker
+        # while the loop stays free to poll/cancel. The HTTP transport processes
+        # task-augmented calls normally (capability absent -> spec says ignore).
+        if self._stdio:
+            capabilities["tasks"] = {
+                "list": {},
+                "cancel": {},
+                "requests": {"tools": {"call": {}}},
+            }
         return {
             "protocolVersion": version,
-            "capabilities": {
-                "tools": {"listChanged": False},
-                # Resources: goals/skills exposed as URI-addressable objects
-                # for clients (Claude Desktop, Cursor) that support the
-                # 2025-11-25 spec. subscribe=True: a client can watch a
-                # resource and we push notifications/resources/updated when a
-                # tool mutates it (see _flush_resource_updates).
-                "resources": {"subscribe": True, "listChanged": False},
-                # Prompts: ship templated goal patterns so clients can
-                # surface "start a research run" / "plan a trip" without
-                # the user typing the prompt themselves.
-                "prompts": {"listChanged": False},
-                # Elicitation is a *client* capability, not a server one, so it
-                # isn't listed here. When the client advertises it we surface a
-                # parked ask_user question as a protocol form mid-call (stdio
-                # only); otherwise the async ask_user / maverick_answer flow is
-                # used unchanged. See _maybe_elicit_open_questions.
-            },
+            "capabilities": capabilities,
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
         }
 
@@ -514,6 +539,21 @@ class MCPServer:
         missing = [r for r in required if r not in arguments]
         if missing:
             raise _ProtocolError(-32602, f"missing required argument(s) for {name}: {missing}")
+        # MCP task augmentation: a tools/call carrying a `task` field runs async
+        # when the tool opts in (execution.taskSupport) and we're on stdio.
+        # Returns a CreateTaskResult immediately; the worker runs the tool on an
+        # isolated MCPServer instance and the client polls tasks/get|result. Over
+        # HTTP (no tasks capability) the field is ignored and the call runs
+        # normally, per the spec.
+        task_param = params.get("task")
+        if isinstance(task_param, dict) and self._stdio:
+            if not _tool_supports_tasks(tool_spec):
+                raise _ProtocolError(
+                    -32601, f"tool {name!r} does not support task augmentation")
+            task = self._task_store().create(name, arguments, task_param)
+            # The frozen creation snapshot: a CreateTaskResult always reports the
+            # initial `working` status, even if a fast tool already finished.
+            return {"task": task.create_result}
         # Side-effectful action tools (start/resume) can't be re-derived, so
         # they stash their structured result here during dispatch; reset per
         # call so a prior call's value can't leak.
@@ -976,6 +1016,27 @@ class MCPServer:
                 pass
         return answer
 
+    # ---- MCP tasks (stdio: async, pollable tool execution) ----------------
+
+    def _task_store(self):
+        if self._tasks is None:
+            from .tasks import TaskStore
+            self._tasks = TaskStore(
+                lambda name, arguments: self._task_runner(name, arguments))
+        return self._tasks
+
+    def _task_runner(self, name: str, arguments: dict) -> dict:
+        """Execute a task's tool on a FRESH server instance.
+
+        Isolation matters: a background worker must not touch the main server's
+        per-call state (``_structured_override`` / ``_pending_updates``) or its
+        stdio. The fresh instance has ``_stdio=False``, so it takes the normal
+        synchronous path (no elicitation, no resource-update flush) and returns
+        the CallToolResult the client later fetches via ``tasks/result``."""
+        worker = MCPServer()
+        worker._shield = self._shield  # reuse the (stateless) shield scanner
+        return worker.handle_tools_call({"name": name, "arguments": arguments})
+
     def run(self) -> None:
         log.info("Maverick MCP server starting (protocol %s)", PROTOCOL_VERSION)
         # Mark the stdio transport: server-initiated elicitation is only valid
@@ -1029,6 +1090,18 @@ class MCPServer:
                     self._send_result(request_id, self.handle_prompts_list(params))
                 elif method == "prompts/get":
                     self._send_result(request_id, self.handle_prompts_get(params))
+                elif method == "tasks/get":
+                    self._send_result(
+                        request_id, self._task_store().get(params.get("taskId")))
+                elif method == "tasks/result":
+                    self._send_result(
+                        request_id, self._task_store().result(params.get("taskId")))
+                elif method == "tasks/cancel":
+                    self._send_result(
+                        request_id, self._task_store().cancel(params.get("taskId")))
+                elif method == "tasks/list":
+                    self._send_result(
+                        request_id, self._task_store().list(params.get("cursor")))
                 elif method == "notifications/initialized":
                     pass
                 elif method == "ping":
@@ -1037,6 +1110,9 @@ class MCPServer:
                 else:
                     if not is_notification:
                         self._send_error(request_id, -32601, f"method not found: {method}")
+            except TaskError as e:
+                if not is_notification:
+                    self._send_error(request_id, e.code, e.message)
             except _ProtocolError as e:
                 if not is_notification:
                     self._send_error(request_id, e.code, e.message)
