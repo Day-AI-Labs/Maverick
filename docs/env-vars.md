@@ -19,6 +19,7 @@ for false unless noted otherwise.
 | `MAVERICK_CODING_MODE` | unset | When `1`/`true`/`yes`, switches the agent into coding mode (set by the `maverick code` CLI path); affects prompts, fs/shell tool defaults, and cache TTL. |
 | `MAVERICK_LANGUAGE` | unset | Primary project language hint (e.g. `python`, `go`). Feeds sandbox/toolchain selection and coding mode. |
 | `MAVERICK_MAX_STEPS` | `25` | Global cap on agent loop steps per goal. |
+| `MAVERICK_STEP_BUDGET_WARNING` | `3` | When this many tool-using turns remain before `MAVERICK_MAX_STEPS`, the loop nudges the agent to give its FINAL answer (so a long run isn't cut off mid-work). `0` disables. |
 | `MAVERICK_MAX_SWARM_FANOUT` | `8` | Max child agents a single spawn call may branch into. |
 | `MAVERICK_MAX_TOTAL_SPAWNS` | `64` | Process-wide cap on total spawned agents across a run. |
 | `MAVERICK_MAX_CONCURRENT_GOALS` | `3` | Process-wide cap on goals running in parallel. |

@@ -91,6 +91,12 @@ _SPEND_MIRROR_INTERVAL = env_float("MAVERICK_SPEND_MIRROR_INTERVAL", 5.0)
 _LOOP_GUARD_ENABLED = os.environ.get("MAVERICK_LOOP_GUARD", "1").strip().lower() not in {"0", "false", "no", "off"}
 _LOOP_GUARD_THRESHOLD = max(2, env_int("MAVERICK_LOOP_GUARD_THRESHOLD", 3))
 
+# Step-budget awareness: when only this many tool-using turns remain before
+# max_steps force-stops the run, the loop nudges the agent to synthesize a
+# FINAL now -- otherwise a long run can get cut off mid-work with no answer.
+# 0 disables the nudge. Tune via MAVERICK_STEP_BUDGET_WARNING.
+_STEP_BUDGET_WARNING = max(0, env_int("MAVERICK_STEP_BUDGET_WARNING", 3))
+
 
 def _tool_call_failed(output: str) -> bool:
     """Did a tool result represent a failure? Used for the is_error flag and the
@@ -1781,6 +1787,23 @@ class Agent:
                     )
                     tool_results.append(self._make_tool_result(tc.id, output))
 
+            # Step-budget awareness: when only a few tool-using turns remain
+            # before max_steps force-stops the run, tell the model so it
+            # synthesizes a FINAL now instead of starting new work and getting
+            # cut off with no answer. Appended after the tool_results (text
+            # after tool_result blocks is a valid user turn); only on turns that
+            # ran tools, which is exactly when a working agent risks the cutoff.
+            remaining = self.max_steps - 1 - step
+            if tool_results and _STEP_BUDGET_WARNING and 0 < remaining <= _STEP_BUDGET_WARNING:
+                tool_results.append({
+                    "type": "text",
+                    "text": (
+                        f"⚠ Step budget almost exhausted: about {remaining} more "
+                        "tool-using turn(s) remain before this run is force-stopped. "
+                        "Prioritize giving your FINAL: answer now with the best "
+                        "result you have rather than starting new work."
+                    ),
+                })
             messages.append({"role": "user", "content": tool_results})
 
             if blocked:

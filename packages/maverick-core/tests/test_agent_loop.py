@@ -489,3 +489,55 @@ class TestToolOutputCap:
         out = await a._run_tool("shell", {"cmd": "cat huge"})
         assert "truncated" in out
         assert len(out) < 5000   # framed + capped, far smaller than the raw 5000
+
+
+class TestStepBudgetWarning:
+    """Near max_steps, the loop nudges the agent to synthesize a FINAL."""
+
+    async def _run_with_tool_turns(self, ctx, fake_llm, make_llm_response,
+                                   monkeypatch, *, n_tool_turns, max_steps):
+        fake_llm.scripted = [
+            make_llm_response(tool_calls=[ToolCall(id=f"t{i}", name="read_file",
+                                                   input={"path": "x"})])
+            for i in range(n_tool_turns)
+        ]
+        agent = Agent(ctx=ctx, role="researcher", brief="x", max_steps=max_steps)
+
+        async def _ok(name, args):
+            return "ok"
+
+        monkeypatch.setattr(agent.tools, "run", _ok)
+        await agent.run()
+        return str(fake_llm.calls[-1]["messages"])
+
+    @pytest.mark.asyncio
+    async def test_warns_near_the_limit(self, ctx, fake_llm, make_llm_response, monkeypatch):
+        sent = await self._run_with_tool_turns(
+            ctx, fake_llm, make_llm_response, monkeypatch,
+            n_tool_turns=3, max_steps=3)
+        assert "Step budget almost exhausted" in sent
+
+    @pytest.mark.asyncio
+    async def test_no_warning_when_far_from_limit(self, ctx, fake_llm, make_llm_response, monkeypatch):
+        fake_llm.scripted = [
+            make_llm_response(tool_calls=[ToolCall(id="t0", name="read_file",
+                                                   input={"path": "x"})]),
+            make_llm_response(text="FINAL: done"),
+        ]
+        agent = Agent(ctx=ctx, role="researcher", brief="x", max_steps=20)
+
+        async def _ok(name, args):
+            return "ok"
+
+        monkeypatch.setattr(agent.tools, "run", _ok)
+        await agent.run()
+        assert "Step budget almost exhausted" not in str(fake_llm.calls[-1]["messages"])
+
+    @pytest.mark.asyncio
+    async def test_can_be_disabled(self, ctx, fake_llm, make_llm_response, monkeypatch):
+        from maverick import agent as agent_mod
+        monkeypatch.setattr(agent_mod, "_STEP_BUDGET_WARNING", 0)
+        sent = await self._run_with_tool_turns(
+            ctx, fake_llm, make_llm_response, monkeypatch,
+            n_tool_turns=2, max_steps=2)
+        assert "Step budget almost exhausted" not in sent
