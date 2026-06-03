@@ -124,6 +124,24 @@ def _tool_call_failed(output: str) -> bool:
 _MAX_TOOL_RESULT_BYTES = max(2_000, env_int("MAVERICK_MAX_TOOL_RESULT_BYTES", 100_000))
 
 
+def unframe_tool_output(framed: str) -> str:
+    """Recover the raw tool output from the ``<tool_output …>`` frame _run_tool
+    adds. Block/error messages (shield, hooks) are returned UNframed by
+    _run_tool, so they pass through unchanged. Used by code_exec to feed real
+    data -- not the model-facing frame -- into a sandboxed script."""
+    text = framed or ""
+    if not text.startswith("<tool_output "):
+        return text
+    nl = text.find("\n")
+    if nl == -1:
+        return text
+    inner = text[nl + 1:]
+    close = inner.rfind("\n</tool_output ")
+    if close != -1:
+        inner = inner[:close]  # drop the close tag (and any loop-guard note after it)
+    return inner
+
+
 def _cap_tool_output(text: str) -> str:
     """Bound a single tool result so one runaway can't blow the context window.
 
@@ -335,6 +353,17 @@ class Agent:
                 reg.register(learn_capability(self))
         except Exception as e:  # pragma: no cover -- never block tool build
             log.debug("self_learning tool registration skipped: %s", e)
+        # Programmatic tool calling (opt-in): a sandboxed Python script that
+        # orchestrates declared tool calls, keeping their raw outputs out of the
+        # model's context. Powerful (runs code + tools), so off unless enabled
+        # via [capabilities] code_exec or MAVERICK_CODE_EXEC.
+        code_exec_on = caps.get("code_exec", False) or (
+            os.environ.get("MAVERICK_CODE_EXEC", "").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+        if code_exec_on:
+            from .tools.code_exec import code_exec_tool
+            reg.register(code_exec_tool(self))
         return reg
 
     def _build_system(self) -> str:

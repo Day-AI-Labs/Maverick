@@ -127,6 +127,9 @@ def get_capabilities() -> dict:
         "browser": bool(cfg.get("browser", False)),
         "web_search": bool(cfg.get("web_search", False)),
         "mobile_tools": bool(cfg.get("mobile_tools", False)),
+        # Programmatic tool calling: a sandboxed Python script that orchestrates
+        # declared tool calls (also enableable via MAVERICK_CODE_EXEC).
+        "code_exec": bool(cfg.get("code_exec", False)),
     }
 
 

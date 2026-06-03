@@ -541,3 +541,17 @@ class TestStepBudgetWarning:
             ctx, fake_llm, make_llm_response, monkeypatch,
             n_tool_turns=2, max_steps=2)
         assert "Step budget almost exhausted" not in sent
+
+
+class TestCodeExecGating:
+    """code_exec is opt-in (powerful: runs code + tools)."""
+
+    def test_off_by_default(self, ctx, monkeypatch):
+        monkeypatch.delenv("MAVERICK_CODE_EXEC", raising=False)
+        agent = Agent(ctx=ctx, role="researcher", brief="x")
+        assert "code_exec" not in {t.name for t in agent.tools.all()}
+
+    def test_enabled_by_env(self, ctx, monkeypatch):
+        monkeypatch.setenv("MAVERICK_CODE_EXEC", "1")
+        agent = Agent(ctx=ctx, role="researcher", brief="x")
+        assert "code_exec" in {t.name for t in agent.tools.all()}

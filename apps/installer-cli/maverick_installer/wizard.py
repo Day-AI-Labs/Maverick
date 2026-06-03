@@ -814,9 +814,16 @@ def pick_capabilities() -> dict[str, bool]:
         "Enable browser? Lets the agent navigate the web via Playwright.",
         default=False,
     )
+    use_code_exec = _q_confirm(
+        "Enable code_exec? Lets the agent run a sandboxed Python script that "
+        "orchestrates several tool calls in one turn (keeps large intermediate "
+        "outputs out of context). Runs code in the sandbox, like the shell tool.",
+        default=False,
+    )
     return {
         "computer_use": use_computer,
         "browser": use_browser,
+        "code_exec": use_code_exec,
     }
 
 
