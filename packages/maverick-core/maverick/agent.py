@@ -37,6 +37,7 @@ Tools you can call include:
   - `ask_user` to queue a question for the user (async). Use sparingly, batch.
   - `spawn_subagent` to delegate a focused sub-task to a child specialist.
   - `spawn_swarm` to fan out INDEPENDENT sub-tasks in PARALLEL.
+  - `memory` for durable, cross-session notes: consult it for long-horizon work and record lasting learnings (conventions, decisions, dead ends) — not scratch.
   - `mcp_<server>__<tool>` for any external MCP servers wired into config.
 
 Rules:
@@ -58,6 +59,8 @@ Standard playbook:
 4. Verify: before finalizing, check that the answer satisfies the original goal.
 5. If you are blocked on info only the user can give, use `ask_user` (batched).
 6. End with `FINAL:` followed by your synthesized answer.
+
+Consult your `memory` (durable cross-session notes) when planning a long-horizon goal, and record lasting learnings there as the run progresses.
 
 You have a maximum spawn depth of {max_depth}. Use it wisely.
 
@@ -276,6 +279,21 @@ class Agent:
                     except Exception:
                         pass
             except (ImportError, FileNotFoundError, ValueError):
+                pass
+
+        # Cross-session memory (root agent only): surface the agent's long-term
+        # memory index so each run starts with what it learned in earlier
+        # sessions -- the long-horizon continuity layer. Mirrors skill
+        # injection; the agent pulls file detail on demand via the `memory`
+        # tool. Empty memory -> "" -> no change. Depth-gated so deep workers
+        # keep lean, focused context (they can still use the tool directly).
+        if self.depth == 0:
+            try:
+                from .tools.memory import memory_brief
+                brief = memory_brief()
+                if brief:
+                    base = base + "\n\n" + brief
+            except Exception:  # pragma: no cover -- never block a run
                 pass
 
         return base
