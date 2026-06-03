@@ -41,7 +41,7 @@ reliability plumbing (D) have since shipped — see the table.
 | B1 | Streamable-HTTP transport | ✅ | `http_transport.py` |
 | B1 | Elicitation | 🟡 | client inbound (`mcp_client.py`) **and** server outbound form mode (`maverick_mcp/server.py`, `tests/test_server_elicitation.py`) shipped — a parked `ask_user` question surfaces as a capability-/stdio-gated `elicitation/create` form, shield-screened both legs, then resumes; only Phase 3 URL mode + eliciting arbitrary flows / the approvals-table surface remain (`specs/mcp-elicitation.md`) |
 | B1 | Async tasks | ✅ | MCP Tasks 2025-11-25 on the stdio server (`maverick_mcp/tasks.py`, `server.py`, `tests/test_server_tasks.py`) — task-augmented `tools/call` returns `CreateTaskResult` and runs on a background worker; `tasks/get`/`result`/`cancel`/`list` + `notifications/tasks/status` push + capability + `execution.taskSupport`. Only `input_required` + HTTP-transport tasks deferred (`specs/mcp-tasks.md`) |
-| B2 | MCP client OAuth 2.1 + Registry | ⬜ blocked | client is stdio-only (`mcp_client.py`); needs a remote-HTTP client transport first |
+| B2 | MCP client OAuth 2.1 + Registry | 🟡 | remote-HTTP **client transport** shipped — `StreamableHttpMCPClient` (`mcp_client.py`, `tests/test_mcp_http_client.py`) consumes remote servers via `[mcp_servers.<name>] url`, JSON + SSE responses, session-id continuity, optional bearer `auth_token`. OAuth 2.1 (needs real accounts) + the Registry still open |
 | B3 | A2A vs. homegrown ACD | ⬜ decision | recommend adopting A2A's Agent Card; reframe/cut ACD |
 | C1 | Eval harness (GAIA / τ²-bench / terminal-bench) | 🟡 | GAIA shipped (#687); the other two need real verification-env *harnesses* (SWE-bench-style, cf. `swe_bench.py`), not simple adapters |
 | C1 | Skill quality gate / pruning | ✅ | gate (#396) + decay + active pruning (`skill_stats.evictable()` + `skills evict`), wired (`agent.py:274`, `orchestrator.py:227`), tested; only versioning absent |
@@ -62,10 +62,13 @@ reliability plumbing (D) have since shipped — see the table.
    push). Remaining elicitation slice is Phase 3 URL-mode (secrets-never-transit-model);
    remaining tasks slices are the larger `input_required` (task-driven elicitation)
    and task support over the HTTP transport (`specs/mcp-tasks.md`).
-2. **Remote-HTTP MCP *client* transport → then OAuth 2.1 + Registry (B2)** — the
-   client is stdio-only, so the transport is the prerequisite; OAuth validation also
-   needs real accounts.
-3. **Finish A3** — memory / context-editing abstraction + programmatic tool calling.
+2. **MCP client OAuth 2.1 + Registry (B2)** — the remote-HTTP **client transport**
+   has shipped (`StreamableHttpMCPClient`: `[mcp_servers.<name>] url`, JSON+SSE,
+   session continuity, static bearer `auth_token`), so Maverick now consumes remote
+   servers. Remaining: OAuth 2.1 (needs real accounts to validate) + the Registry.
+3. **Finish A3** — ✅ done: memory tool + loop bootstrap, and programmatic tool
+   calling (`code_exec`); the full mid-execution bridge awaits interactive sandbox
+   sessions.
 4. **Finish C1's benchmark coverage** — terminal-bench + τ²-bench *harnesses*
    (verification-env, SWE-bench-style), not simple adapters.
 5. **Decisions (need the founder):** C2 learning substrate (close the eval→reward

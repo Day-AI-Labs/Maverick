@@ -108,7 +108,7 @@ def _format_rpc_error(err: object) -> str:
 @dataclass
 class MCPServerSpec:
     name: str
-    command: str
+    command: str = ""
     args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
     inherit_env: bool = False  # opt-in to full os.environ inheritance
@@ -118,9 +118,29 @@ class MCPServerSpec:
     # supply-chain attack class shipped to STDIO MCP in April 2026
     # (CVE-2026-30615 et al). Default None = no pin (legacy behavior).
     pin_sha256: str | None = None
+    # Remote (Streamable HTTP) transport: when ``url`` is set the server is
+    # reached over HTTP (StreamableHttpMCPClient) instead of a stdio subprocess,
+    # and command/args/env/pin are unused. ``auth_token`` is sent as a bearer
+    # (a static token -- full OAuth 2.1 is separate, §B2); ``headers`` are extra
+    # request headers. The url is operator config, not model-controlled.
+    url: str | None = None
+    headers: dict[str, str] = field(default_factory=dict)
+    auth_token: str | None = None
+
+    @property
+    def is_http(self) -> bool:
+        return bool(self.url)
 
     @classmethod
     def from_config(cls, name: str, cfg: dict) -> MCPServerSpec:
+        if cfg.get("url"):
+            spec = cls(
+                name=name,
+                url=str(cfg["url"]),
+                headers={str(k): str(v) for k, v in (cfg.get("headers", {}) or {}).items()},
+                auth_token=cfg.get("auth_token"),
+            )
+            return spec  # __post_init__ validated the http spec
         spec = cls(
             name=name,
             command=cfg["command"],
@@ -129,18 +149,38 @@ class MCPServerSpec:
             inherit_env=bool(cfg.get("inherit_env", False)),
             pin_sha256=cfg.get("pin_sha256"),
         )
-        _validate_subprocess_inputs(spec)
-        return spec
+        return spec  # __post_init__ validated the subprocess inputs
 
     def __post_init__(self):
-        # Allow direct construction (tests / programmatic use) but still
-        # apply the input validation. The dataclass default args don't
-        # call from_config so we hook __post_init__.
-        _validate_subprocess_inputs(self)
+        # Allow direct construction (tests / programmatic use) but still apply
+        # the right validation: HTTP specs validate the url, stdio specs validate
+        # the command/args/env against the CVE-2026-30615 subprocess-injection class.
+        if self.url:
+            _validate_http_spec(self)
+        else:
+            _validate_subprocess_inputs(self)
 
 
 _DENY_CHARS = ("\n", "\r", "\0")
 _DENY_SHELL_METAS = (";", "|", "&", "$(", "`", ">", "<")
+
+
+def _validate_http_spec(spec: MCPServerSpec) -> None:
+    """Validate a remote (HTTP) MCP server spec: scheme + no control chars.
+
+    The url is operator config (not model-controlled), so this is a sanity
+    guard, not an SSRF defense -- it rejects obvious mistakes (non-http schemes,
+    embedded newlines) up front rather than at connect time."""
+    from urllib.parse import urlparse
+    url = spec.url or ""
+    for ch in _DENY_CHARS:
+        if ch in url:
+            raise ValueError(
+                f"MCP server {spec.name!r} url contains illegal char {ch!r}")
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError(
+            f"MCP server {spec.name!r} url must be http(s)://host/…; got {url!r}")
 
 
 def _validate_subprocess_inputs(spec: MCPServerSpec) -> None:
@@ -709,6 +749,156 @@ class MCPClient:
         self._proc = None
 
 
+class StreamableHttpMCPClient:
+    """MCP client over Streamable HTTP (spec 2025-11-25) for REMOTE servers.
+
+    Covers the request/response path -- initialize, tools/list, tools/call --
+    which is what consuming a remote server's tools needs. POSTs JSON-RPC and
+    accepts either a single ``application/json`` response or a Streamable-HTTP
+    SSE stream carrying the response event. Server->client SSE streaming (push
+    notifications, server-initiated elicitation over HTTP) is future work; this
+    client advertises no such capability.
+
+    Exposes the same surface the registry uses (``spec``, ``tools``,
+    ``call_tool``, ``stop``) so it's a drop-in alongside the stdio MCPClient."""
+
+    def __init__(self, spec: MCPServerSpec, timeout: float = DEFAULT_TIMEOUT):
+        self.spec = spec
+        self.timeout = timeout
+        self._client: Any = None  # httpx.AsyncClient
+        self._session_id: str | None = None
+        self._protocol_version = PROTOCOL_VERSION
+        self._initialized = False
+        self._req_id = 0
+        self.tools: list[dict[str, Any]] = []
+
+    def _next_id(self) -> int:
+        self._req_id += 1
+        return self._req_id
+
+    async def start(self) -> None:
+        import httpx
+        headers = {"User-Agent": "maverick-mcp-client/0.1"}
+        if self.spec.headers:
+            headers.update(self.spec.headers)
+        if self.spec.auth_token:
+            headers["Authorization"] = f"Bearer {self.spec.auth_token}"
+        self._client = httpx.AsyncClient(timeout=self.timeout, headers=headers)
+        log.info("MCP HTTP client connecting %r (%s)", self.spec.name, self.spec.url)
+        init = await self._request("initialize", {
+            "protocolVersion": PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {"name": "maverick", "version": "0.1.0"},
+        })
+        if isinstance(init, dict) and init.get("protocolVersion"):
+            self._protocol_version = init["protocolVersion"]
+        self._initialized = True  # gates the MCP-Protocol-Version header below
+        await self._notify("notifications/initialized", {})
+        tools_resp = await self._request("tools/list", {})
+        self.tools = tools_resp.get("tools", []) if isinstance(tools_resp, dict) else []
+        log.info("MCP %s ready (%d tool(s)) over HTTP", self.spec.name, len(self.tools))
+
+    def _headers(self) -> dict[str, str]:
+        h = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+        # Session continuity + protocol pinning per the 2025-11-25 spec: resend
+        # the server-assigned session id and the negotiated protocol version.
+        if self._session_id:
+            h["Mcp-Session-Id"] = self._session_id
+        if self._initialized:
+            h["MCP-Protocol-Version"] = self._protocol_version
+        return h
+
+    async def _post(self, payload: dict) -> Any:
+        if self._client is None:
+            raise MCPClientError(f"MCP server {self.spec.name!r} not started")
+        try:
+            resp = await self._client.post(
+                self.spec.url, json=payload, headers=self._headers())
+        except Exception as e:  # connect/timeout/transport error
+            raise MCPClientError(
+                f"MCP {self.spec.name!r} HTTP request failed: "
+                f"{_safe_error_detail(str(e))}") from e
+        sid = resp.headers.get("mcp-session-id")
+        if sid:
+            self._session_id = sid
+        return resp
+
+    async def _request(self, method: str, params: dict) -> dict:
+        req_id = self._next_id()
+        resp = await self._post(
+            {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params})
+        if resp.status_code >= 400:
+            raise MCPClientError(
+                f"MCP {self.spec.name!r} {method} -> HTTP {resp.status_code}: "
+                f"{_safe_error_detail(resp.text)}")
+        msg = self._extract(resp, req_id)
+        if msg is None:
+            raise MCPClientError(
+                f"MCP {self.spec.name!r} {method}: no JSON-RPC response in reply")
+        if "error" in msg:
+            raise MCPClientError(
+                f"MCP {self.spec.name!r} error {_format_rpc_error(msg['error'])}")
+        result = msg.get("result", {})
+        return result if isinstance(result, dict) else {}
+
+    async def _notify(self, method: str, params: dict) -> None:
+        # A notification carries no id; a spec server replies 202 with no body.
+        await self._post({"jsonrpc": "2.0", "method": method, "params": params})
+
+    def _extract(self, resp: Any, req_id: int) -> dict | None:
+        """Pull the JSON-RPC response for ``req_id`` from a JSON or SSE reply."""
+        ctype = (resp.headers.get("content-type") or "").lower()
+        text = resp.text or ""
+        if "text/event-stream" in ctype:
+            # Streamable-HTTP SSE: scan `data:` events for our response, skipping
+            # heartbeats (comment lines) and any interleaved notifications.
+            for block in text.replace("\r\n", "\n").split("\n\n"):
+                data = "\n".join(
+                    line[len("data:"):].lstrip()
+                    for line in block.split("\n") if line.startswith("data:")
+                )
+                if not data:
+                    continue
+                try:
+                    m = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(m, dict) and m.get("id") == req_id:
+                    return m
+            return None
+        try:
+            m = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        return m if isinstance(m, dict) else None
+
+    async def call_tool(self, tool_name: str, arguments: dict) -> str:
+        resp = await self._request("tools/call", {
+            "name": tool_name, "arguments": arguments,
+        })
+        if resp.get("isError"):
+            detail = _safe_error_detail(_content_to_str(resp.get("content", [])))
+            msg = f"MCP {self.spec.name!r} tool {tool_name!r} failed"
+            if detail:
+                msg += f": {detail}"
+            raise MCPClientError(msg)
+        text = _content_to_str(resp.get("content", []))
+        if not text and resp.get("structuredContent") is not None:
+            return json.dumps(resp["structuredContent"])
+        return text
+
+    async def stop(self) -> None:
+        if self._client is not None:
+            try:
+                await self._client.aclose()
+            except Exception:  # pragma: no cover -- best-effort close
+                pass
+            self._client = None
+
+
 def _content_to_str(content: Any) -> str:
     if isinstance(content, str):
         return content
@@ -736,10 +926,15 @@ def _content_to_str(content: Any) -> str:
     return "\n".join(parts)
 
 
-async def start_mcp_clients(specs: list[MCPServerSpec]) -> list[MCPClient]:
-    clients = [MCPClient(spec) for spec in specs]
+async def start_mcp_clients(specs: list[MCPServerSpec]) -> list:
+    # Build the transport that matches each spec: remote (Streamable HTTP) when
+    # a url is set, else the stdio subprocess client.
+    clients = [
+        StreamableHttpMCPClient(spec) if spec.is_http else MCPClient(spec)
+        for spec in specs
+    ]
 
-    async def _try_start(c: MCPClient) -> MCPClient | None:
+    async def _try_start(c) -> object | None:
         try:
             await c.start()
             return c
@@ -777,8 +972,8 @@ def load_mcp_specs_from_config() -> list[MCPServerSpec]:
             continue
         if not server_cfg.get("enabled", True):
             continue
-        if "command" not in server_cfg:
-            log.warning("mcp_servers.%s missing 'command'; skipping", name)
+        if "command" not in server_cfg and "url" not in server_cfg:
+            log.warning("mcp_servers.%s needs 'command' (stdio) or 'url' (http); skipping", name)
             continue
         try:
             out.append(MCPServerSpec.from_config(name, server_cfg))
