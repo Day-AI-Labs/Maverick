@@ -6,6 +6,7 @@ import logging
 import math
 import os
 import sys
+import threading
 from typing import Any
 
 from .tasks import TaskError
@@ -300,6 +301,10 @@ class MCPServer:
         # MCP Tasks: lazily built on first task-augmented call so the HTTP path
         # (which never uses tasks) doesn't spin up an executor.
         self._tasks = None
+        # Serializes transport writes. A task's background worker emits
+        # notifications/tasks/status while the main loop may be writing a
+        # response, so the two must not interleave a half-line on stdout.
+        self._send_lock = threading.Lock()
 
     @staticmethod
     def _build_shield():
@@ -842,8 +847,12 @@ class MCPServer:
         return "\n".join(f"{k}: {v}" for k, v in facts.items())
 
     def _send(self, message: dict) -> None:
-        sys.stdout.write(json.dumps(message) + "\n")
-        sys.stdout.flush()
+        line = json.dumps(message) + "\n"
+        # Held across write+flush so a worker's status notification can't splice
+        # into the middle of the main loop's response line (or vice versa).
+        with self._send_lock:
+            sys.stdout.write(line)
+            sys.stdout.flush()
 
     def _send_error(self, request_id: Any, code: int, message: str) -> None:
         self._send({
@@ -1022,8 +1031,22 @@ class MCPServer:
         if self._tasks is None:
             from .tasks import TaskStore
             self._tasks = TaskStore(
-                lambda name, arguments: self._task_runner(name, arguments))
+                lambda name, arguments: self._task_runner(name, arguments),
+                on_status_change=self._emit_task_status)
         return self._tasks
+
+    def _emit_task_status(self, task) -> None:
+        """Push a notifications/tasks/status when a task changes status.
+
+        Optional per spec (clients still poll tasks/get), but it lets a client
+        learn of completion without polling. Runs on the worker thread for
+        completed/failed and the main thread for cancelled; _send is locked, so
+        either is safe. No related-task _meta: the taskId is already in params."""
+        self._send({
+            "jsonrpc": "2.0",
+            "method": "notifications/tasks/status",
+            "params": task.to_dict(),
+        })
 
     def _task_runner(self, name: str, arguments: dict) -> dict:
         """Execute a task's tool on a FRESH server instance.
