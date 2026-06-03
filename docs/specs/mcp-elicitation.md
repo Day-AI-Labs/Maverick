@@ -1,6 +1,6 @@
 # Design Spec: MCP Elicitation → Shield/Consent
 
-**Status:** Phase 1 shipped (client inbound handler); Phases 2–3 proposed · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (B1) ([#396](https://github.com/cdayAI/Maverick/issues/396)) · **Date:** May 2026
+**Status:** Phases 1–2 shipped (client inbound handler + server outbound form mode); Phase 3 (URL mode) proposed · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (B1) ([#396](https://github.com/cdayAI/Maverick/issues/396)) · **Date:** May 2026
 
 > Proposal for discussion. Stops at interface + integration points; module
 > names/handlers should be confirmed against current code at implementation time.
@@ -114,8 +114,21 @@ When a tool/flow needs user input and the connected client advertised
   and no URL in the request is ever fetched/auto-opened. Code:
   `mcp_client.py::_handle_inbound_request` / `_handle_elicitation`; tests:
   `tests/test_mcp_elicitation.py`.
-- **Phase 2 — server outbound (form mode).** Advertise + emit elicitation,
-  capability-gated, backed by `questions`/`approvals`, shield-screened.
+- **Phase 2 — server outbound (form mode). ✅ shipped.** When a swarm run parks
+  an `ask_user` question and the connected **stdio** client advertised the
+  `elicitation` capability (captured at `handle_initialize`), the server surfaces
+  the question as an `elicitation/create` form mid-call, records the answer
+  through the same `world.answer` path as `maverick_answer`, and resumes the goal
+  — collapsing the `start → answer → resume` dance into one round trip. Both legs
+  are shield-screened (`scan_output` on the prompt, `scan_input` on the answer),
+  it's capability- **and** transport-gated (HTTP and non-capable clients fall back
+  to the async flow, byte-for-byte unchanged), the synchronous round trip reads
+  the response on a nested `readline` (with a `select` timeout on real stdio), and
+  outbound request ids are namespaced (`elicit-N`) so they can't collide with the
+  client's. Code: `server.py::_maybe_elicit_open_questions` / `_elicit` /
+  `_await_elicit_response`; tests: `tests/test_server_elicitation.py`. Not yet
+  done: eliciting *arbitrary* tool flows (only the parked-question path), and the
+  `approvals`-table/dashboard surface (answers flow through `questions`).
 - **Phase 3 — URL mode** both directions (the secrets-never-transit-model path);
   dovetails with §B2 remote-server OAuth.
 
