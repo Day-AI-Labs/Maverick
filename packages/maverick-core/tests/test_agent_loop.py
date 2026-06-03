@@ -449,3 +449,43 @@ class TestToolFailureClassification:
         ok = "<tool_output tool='shell' id=ab12>\nall good\n</tool_output ab12>"
         assert Agent._make_tool_result("t1", err).get("is_error") is True
         assert "is_error" not in Agent._make_tool_result("t2", ok)
+
+
+class TestToolOutputCap:
+    """A single runaway tool result must not blow the context window."""
+
+    def test_small_output_is_unchanged(self):
+        from maverick.agent import _cap_tool_output
+        assert _cap_tool_output("short result") == "short result"
+
+    def test_large_output_keeps_head_and_tail(self, monkeypatch):
+        from maverick import agent as agent_mod
+        monkeypatch.setattr(agent_mod, "_MAX_TOOL_RESULT_BYTES", 100)
+        big = "H" * 400 + "T" * 400
+        out = agent_mod._cap_tool_output(big)
+        assert "truncated" in out
+        assert out.startswith("H")          # head preserved
+        assert out.endswith("T")            # tail preserved
+        assert len(out) < len(big)
+        assert "of 800 chars" in out        # reports the original size
+
+    def test_cap_preserves_leading_error_for_classification(self, monkeypatch):
+        from maverick import agent as agent_mod
+        monkeypatch.setattr(agent_mod, "_MAX_TOOL_RESULT_BYTES", 100)
+        capped = agent_mod._cap_tool_output("ERROR: " + "x" * 1000)
+        assert capped.startswith("ERROR: ")
+        assert agent_mod._tool_call_failed(capped) is True  # still classified as failed
+
+    @pytest.mark.asyncio
+    async def test_run_tool_caps_a_runaway_result(self, ctx, monkeypatch):
+        from maverick import agent as agent_mod
+        monkeypatch.setattr(agent_mod, "_MAX_TOOL_RESULT_BYTES", 200)
+
+        async def _huge(name, args):
+            return "Z" * 5000
+
+        a = Agent(ctx=ctx, role="researcher", brief="x")
+        monkeypatch.setattr(a.tools, "run", _huge)
+        out = await a._run_tool("shell", {"cmd": "cat huge"})
+        assert "truncated" in out
+        assert len(out) < 5000   # framed + capped, far smaller than the raw 5000

@@ -111,7 +111,8 @@ for false unless noted otherwise.
 | `MAVERICK_HISTORY_TOKENS` | config `[context]` | Max history tokens before compaction triggers. |
 | `MAVERICK_COMPACT_KEEP_RECENT` | `4` | Recent turns always kept uncompacted. |
 | `MAVERICK_COMPACT_DIGEST_EVERY` | `10` | Digest older turns every N turns. |
-| `MAVERICK_COMPACT_MAX_TOOL_BYTES` | `2048` | Max bytes of tool output retained before truncation during compaction. |
+| `MAVERICK_COMPACT_MAX_TOOL_BYTES` | `2048` | Max bytes of tool output retained before truncation during compaction (applies to results behind the recent window). |
+| `MAVERICK_MAX_TOOL_RESULT_BYTES` | `100000` | Hard cap on a single tool result (head+tail kept) before it enters the context window, so one runaway `shell`/query output can't blow tokens/budget in a turn. |
 
 ## Sandbox & tools
 
