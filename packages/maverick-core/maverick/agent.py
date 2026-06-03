@@ -133,6 +133,50 @@ class AgentResult:
     final_patch: str | None = None
 
 
+def _final_uncertainty_reasons(
+    *,
+    verifier_rejected: bool,
+    verifier_incomplete: bool,
+    disagreement: float,
+    coding: bool,
+) -> list[str]:
+    """Reasons the orchestrator cannot cleanly stand behind a FINAL.
+
+    Empty list means nothing to flag: a clean verification, or a
+    sub-agent / coding-mode answer we must not wrap in prose (it may be a
+    patch). The swarm-disagreement signal is added only as colour when we
+    are *already* flagging uncertainty, so a reconciled-and-verified
+    answer is never noised up.
+    """
+    if coding:
+        return []
+    reasons: list[str] = []
+    if verifier_rejected:
+        reasons.append("an internal self-check did not pass after one revision")
+    if verifier_incomplete:
+        reasons.append("verification did not finish within the budget")
+    if reasons and disagreement >= 0.8:
+        reasons.append(f"parallel attempts disagreed (entropy {disagreement:.2f})")
+    return reasons
+
+
+def _final_with_uncertainty_note(final: str | None, reasons: list[str]) -> str | None:
+    """Prepend a brief honesty caveat to a user-facing answer.
+
+    Leaves the answer body untouched; only adds a leading note so an
+    unverified result is not handed over as if it were confirmed. No-op
+    when there is nothing to flag or there is no answer text.
+    """
+    if not final or not reasons:
+        return final
+    note = (
+        "⚠️ I could not fully verify this answer: "
+        + "; ".join(reasons)
+        + ". Treat it with caution."
+    )
+    return note + "\n\n" + final
+
+
 class Agent:
     def __init__(
         self,
@@ -1418,8 +1462,17 @@ class Agent:
                                     "verifier rejected after retry; accepting "
                                     "second attempt per one-revision cap",
                                 )
+                                _reasons = _final_uncertainty_reasons(
+                                    verifier_rejected=True,
+                                    verifier_incomplete=False,
+                                    disagreement=float(
+                                        getattr(self.ctx, "last_disagreement", 0.0) or 0.0
+                                    ),
+                                    coding=bool(coding_cfg and coding_cfg.enabled),
+                                )
                                 return AgentResult(
-                                    final=final, role=self.role, name=self.name,
+                                    final=_final_with_uncertainty_note(final, _reasons),
+                                    role=self.role, name=self.name,
                                     verifier_confidence=verdict.confidence,
                                     verifier_critique=verdict.critique,
                                     final_patch=getattr(self, "_final_patch", None),
@@ -1471,8 +1524,17 @@ class Agent:
                         extra={"name": self.name, "final": final},
                     )
                     self._score_step(step_index=step, is_final=True)
+                    _reasons = _final_uncertainty_reasons(
+                        verifier_rejected=False,
+                        verifier_incomplete=(verdict is None and verifier_attempted),
+                        disagreement=float(
+                            getattr(self.ctx, "last_disagreement", 0.0) or 0.0
+                        ),
+                        coding=bool(coding_cfg and coding_cfg.enabled),
+                    )
                     return AgentResult(
-                        final=final, role=self.role, name=self.name,
+                        final=_final_with_uncertainty_note(final, _reasons),
+                        role=self.role, name=self.name,
                         # A verifier that was attempted but hit budget/error
                         # (verdict is None) must NOT report high confidence: a
                         # budget-starved run would otherwise be donated as a
