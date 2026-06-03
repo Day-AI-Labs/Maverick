@@ -35,7 +35,7 @@ reliability plumbing (D) have since shipped — see the table.
 |------|-----|--------|----------|
 | A1 | Durable/resumable execution + checkpoint/rewind | ✅ | `checkpoint.py`, `cli resume` |
 | A2 | Kernel lifecycle hooks (Pre/PostToolUse, UserPromptSubmit) | ✅ | `hooks.py` |
-| A3 | Context lifecycle — deferred tool loading / memory tool / programmatic calling | 🟡 | deferred loading + `find_tools` (#693); compaction exists; memory-tool + programmatic calling still open |
+| A3 | Context lifecycle — deferred tool loading / memory tool / programmatic calling | 🟡 | deferred loading + `find_tools` (#693); compaction exists; cross-session **`memory`** tool shipped (`tools/memory.py`, `tests/test_memory_tool.py`); only programmatic tool calling still open |
 | B1 | Tool `outputSchema` | ✅ | `server.py` |
 | B1 | Resource subscriptions | ✅ #694 | `http_transport.py` |
 | B1 | Streamable-HTTP transport | ✅ | `http_transport.py` |

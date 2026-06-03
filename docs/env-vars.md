@@ -83,6 +83,7 @@ for false unless noted otherwise.
 
 | Env var | Default | Description |
 | --- | --- | --- |
+| `MAVERICK_MEMORY_DIR` | `~/.maverick/memory` | Root directory for the cross-session `memory` tool (the agent's model-curated long-term notes). |
 | `MAVERICK_AUTO_RECALL` | unset (off) | Auto-recall related prior goals/facts into a run. |
 | `MAVERICK_AUTO_RECALL_K` | `3` | Number of prior items to recall when auto-recall is on. |
 | `MAVERICK_AUTO_DISTILL` | unset (off) | Auto-distill skills from completed runs. |
