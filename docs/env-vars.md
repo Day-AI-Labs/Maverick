@@ -120,6 +120,7 @@ for false unless noted otherwise.
 | Env var | Default | Description |
 | --- | --- | --- |
 | `MAVERICK_SUPPRESS_SANDBOX_WARNING` | unset | `1` silences the "running without an isolated sandbox" warning. |
+| `MAVERICK_CODE_EXEC` | unset (off) | `1` enables the `code_exec` tool (programmatic tool calling: a sandboxed Python script that orchestrates declared tool calls, keeping raw outputs out of context). Also settable via `[capabilities] code_exec`. |
 | `MAVERICK_FIRECRACKER_STRICT` | `1` (on) | Set `0` to allow Firecracker to fall back to a Docker/hardened sandbox instead of failing. |
 | `MAVERICK_LONG_CMD_TIMEOUT` | `600` | Timeout (seconds) for long-running shell commands. |
 | `MAVERICK_PARALLEL_TOOLS` | `1` (on) | See Core / run. |

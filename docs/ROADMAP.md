@@ -35,7 +35,7 @@ reliability plumbing (D) have since shipped — see the table.
 |------|-----|--------|----------|
 | A1 | Durable/resumable execution + checkpoint/rewind | ✅ | `checkpoint.py`, `cli resume` |
 | A2 | Kernel lifecycle hooks (Pre/PostToolUse, UserPromptSubmit) | ✅ | `hooks.py` |
-| A3 | Context lifecycle — deferred tool loading / memory tool / programmatic calling | 🟡 | deferred loading + `find_tools` (#693); compaction exists; cross-session **`memory`** tool shipped (`tools/memory.py`) **and wired into the loop** — `_build_system` injects the memory index at the root agent so every run starts with prior-session knowledge (`agent.py`, `memory_brief`); only programmatic tool calling still open |
+| A3 | Context lifecycle — deferred tool loading / memory tool / programmatic calling | ✅ | deferred loading + `find_tools` (#693); cross-session **`memory`** tool shipped + wired into the loop (`tools/memory.py`, `memory_brief`); **programmatic tool calling** shipped as the run-to-completion slice (`tools/code_exec.py` — declared tool calls run shielded, outputs feed a sandboxed script, raw data stays out of context; opt-in). Full mid-execution tool-callback bridge needs interactive sandbox sessions (all backends are run-to-completion today) — future work |
 | B1 | Tool `outputSchema` | ✅ | `server.py` |
 | B1 | Resource subscriptions | ✅ #694 | `http_transport.py` |
 | B1 | Streamable-HTTP transport | ✅ | `http_transport.py` |
