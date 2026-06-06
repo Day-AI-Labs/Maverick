@@ -91,6 +91,129 @@ def test_attenuation_is_subset_of_parent():
             assert parent.permits(t), f"child escalated on {t}"
 
 
+# --- resource scopes: paths + hosts ---------------------------------------
+
+def test_empty_scopes_mean_all():
+    cap = Capability(principal="p")
+    assert cap.permits_path("/etc/passwd") and cap.permits_path("/repo/a.py")
+    assert cap.permits_host("example.com") and cap.permits_host("10.0.0.1")
+
+
+def test_permits_path_glob():
+    cap = Capability(principal="p", allow_paths=frozenset({"/repo/*", "/tmp/*.log"}))
+    assert cap.permits_path("/repo/src/main.py") is True
+    assert cap.permits_path("/tmp/run.log") is True
+    assert cap.permits_path("/etc/passwd") is False
+    assert cap.permits_path("/tmp/run.txt") is False
+
+
+def test_permits_host_glob():
+    cap = Capability(principal="p", allow_hosts=frozenset({"*.example.com", "api.svc"}))
+    assert cap.permits_host("a.example.com") is True
+    assert cap.permits_host("api.svc") is True
+    assert cap.permits_host("evil.com") is False
+    assert cap.permits_host("example.com") is False  # no leading label
+
+
+def test_attenuate_paths_restrict_from_all():
+    # Parent unrestricted (all paths); child may be restricted to a subset.
+    child = Capability(principal="p").attenuate(allow_paths={"/repo/*"})
+    assert child.allow_paths == frozenset({"/repo/*"})
+    assert child.permits_path("/repo/x") is True
+    assert child.permits_path("/etc/x") is False
+
+
+def test_attenuate_hosts_restrict_from_all():
+    child = Capability(principal="p").attenuate(allow_hosts={"*.example.com"})
+    assert child.allow_hosts == frozenset({"*.example.com"})
+    assert child.permits_host("a.example.com") is True
+    assert child.permits_host("evil.com") is False
+
+
+def test_attenuate_paths_only_shrink():
+    # Parent already restricted; child cannot add a path the parent lacked.
+    parent = Capability(principal="p", allow_paths=frozenset({"/repo/*"}))
+    child = parent.attenuate(allow_paths={"/repo/*", "/etc/*"})
+    assert child.allow_paths == frozenset({"/repo/*"})  # intersection only
+    assert child.permits_path("/etc/passwd") is False
+
+
+def test_attenuate_hosts_only_shrink():
+    parent = Capability(principal="p", allow_hosts=frozenset({"*.example.com"}))
+    child = parent.attenuate(allow_hosts={"*.example.com", "evil.com"})
+    assert child.allow_hosts == frozenset({"*.example.com"})
+    assert child.permits_host("evil.com") is False
+
+
+def test_attenuate_paths_inherited_when_unspecified():
+    parent = Capability(principal="p", allow_paths=frozenset({"/repo/*"}),
+                        allow_hosts=frozenset({"api.svc"}))
+    child = parent.attenuate(principal="agent:x")
+    assert child.allow_paths == frozenset({"/repo/*"})
+    assert child.allow_hosts == frozenset({"api.svc"})
+
+
+def test_attenuate_disjoint_scopes_deny_all_not_allow_all():
+    # Two restricted, non-overlapping pattern sets must NOT collapse to the
+    # empty set (which would mean "all"); the child must permit nothing.
+    parent = Capability(principal="p", allow_paths=frozenset({"/repo/*"}))
+    child = parent.attenuate(allow_paths={"/srv/*"})
+    assert child.allow_paths != frozenset()  # not allow-all
+    assert child.permits_path("/repo/x") is False
+    assert child.permits_path("/srv/x") is False
+    assert child.permits_path("/anything") is False
+
+
+def test_attenuation_scopes_are_subset_of_parent():
+    # Invariant: every path/host the child permits is also permitted by parent.
+    parent = Capability(
+        principal="p",
+        allow_paths=frozenset({"/repo/*", "/tmp/*"}),
+        allow_hosts=frozenset({"*.example.com", "api.svc"}),
+    )
+    child = parent.attenuate(
+        principal="agent:x",
+        allow_paths={"/repo/*"},
+        allow_hosts={"*.example.com"},
+    )
+    paths = ["/repo/a", "/repo/b/c.py", "/tmp/x", "/etc/passwd", "/srv/y", "/"]
+    for pth in paths:
+        if child.permits_path(pth):
+            assert parent.permits_path(pth), f"child escalated on path {pth}"
+    hosts = ["a.example.com", "deep.sub.example.com", "api.svc", "evil.com",
+             "example.com", "localhost"]
+    for h in hosts:
+        if child.permits_host(h):
+            assert parent.permits_host(h), f"child escalated on host {h}"
+
+
+def test_signing_bytes_includes_scopes():
+    base = Capability(principal="p")
+    scoped = Capability(principal="p", allow_paths=frozenset({"/repo/*"}),
+                        allow_hosts=frozenset({"api.svc"}))
+    # Distinct scopes must yield distinct signing payloads.
+    assert base.signing_bytes() != scoped.signing_bytes()
+    assert b"allow_paths" in scoped.signing_bytes()
+    assert b"allow_hosts" in scoped.signing_bytes()
+    # Stable + order-independent for the same logical grant.
+    a = Capability(principal="p", allow_paths=frozenset({"/a", "/b"}))
+    b = Capability(principal="p", allow_paths=frozenset({"/b", "/a"}))
+    assert a.signing_bytes() == b.signing_bytes()
+
+
+def test_from_config_scopes_default_unrestricted(monkeypatch):
+    # New fields don't disturb capability_from_config: scopes stay all-permissive.
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda *a, **k: {"security": {"denied_tools": ["shell"]}},
+    )
+    cap = capability_from_config("user:local")
+    assert cap.allow_paths == frozenset()
+    assert cap.allow_hosts == frozenset()
+    assert cap.permits_path("/anywhere") is True
+    assert cap.permits_host("anyhost") is True
+
+
 # --- signing (optional crypto) --------------------------------------------
 
 def test_sign_verify_roundtrip():
