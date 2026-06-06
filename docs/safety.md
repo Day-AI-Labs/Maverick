@@ -89,3 +89,27 @@ Or set `MAVERICK_ENTERPRISE=1`, or pick it in `maverick init`. **Off by default.
 The egress lock is enforced at the single LLM dispatch chokepoint (`maverick.llm.LLM.complete`),
 so it covers every agent, role, and tool-driven model call. An explicit env/config setting
 still wins per control, but the egress lock can never be satisfied by a cloud provider.
+
+## Compliance posture (`maverick compliance`)
+
+`maverick compliance` reports which GDPR + EU AI Act controls are active for your
+deployment, mapped to the article each supports, and flags the opt-in controls that are
+still off — with the exact knob to enable each:
+
+| Control | Article(s) | Status / enable with |
+|---|---|---|
+| AI transparency disclosure | EU AI Act Art. 50 | on by default (channel server) |
+| Audit logging (record-keeping) | EU AI Act Art. 12, GDPR Art. 30 | always on |
+| Tamper-evident audit | EU AI Act Art. 12 | `[audit] sign = true` |
+| Human oversight (consent) | EU AI Act Art. 14 | `MAVERICK_CONSENT_MODE=ask` or enterprise mode |
+| Kill switch | EU AI Act Art. 14 | `~/.maverick/HALT` |
+| Data-subject access & portability | GDPR Art. 15 & 20 | `maverick export-user` |
+| Right to erasure | GDPR Art. 17 | `maverick erase` |
+| Storage limitation (retention) | GDPR Art. 5(1)(e) | `[retention]` + `maverick retention enforce` |
+| Data-egress control | GDPR Art. 32 / AI Act Art. 15 | `[enterprise] mode = true` |
+| Secret/PII redaction in logs | GDPR Art. 25 & 32 | always on |
+| Log data minimization | GDPR Art. 5(1)(c) | `[privacy] anonymous = true` |
+
+`--format json` emits the same for pipelines/SIEM. **This is control coverage, not a
+legal attestation** — full GDPR / EU AI Act compliance also requires a DPA, ROPA (Art. 30
+records), a DPIA, AI-Act risk classification, and review by qualified counsel.

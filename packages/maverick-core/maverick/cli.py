@@ -1865,6 +1865,27 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         )
 
 
+@main.command("compliance")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+@click.pass_context
+def compliance_cmd(ctx, fmt: str) -> None:
+    """Report GDPR + EU AI Act control coverage for this deployment.
+
+    Maps each active control to the article it supports and flags opt-in
+    controls that are off. Control coverage only -- not a legal attestation.
+    """
+    from .compliance import (
+        compliance_report,
+        render_report_json,
+        render_report_text,
+    )
+    checks = compliance_report()
+    click.echo(
+        render_report_json(checks) if fmt == "json" else render_report_text(checks)
+    )
+
+
 @main.command("export-user")
 @click.option("--channel", required=True, help="Channel name.")
 @click.option("--user", required=True, help="The channel user_id to export.")
