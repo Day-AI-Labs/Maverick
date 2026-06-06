@@ -222,3 +222,20 @@ async def test_run_tool_allows_permitted(tmp_path):
     assert "pong" in await agent._run_tool("ping", {})
     # A tool outside the whitelist is denied.
     assert "DENIED by capability" in await agent._run_tool("shell", {"cmd": "x"})
+
+
+@pytest.mark.asyncio
+async def test_capability_denial_is_audited(tmp_path, monkeypatch):
+    import maverick.audit
+    from maverick.audit import EventKind
+    calls = []
+    monkeypatch.setattr(maverick.audit, "record",
+                        lambda kind, **kw: calls.append((kind, kw)) or True)
+    agent = _agent(tmp_path)
+    agent.capability = Capability(principal="agent:coder-1",
+                                  deny_tools=frozenset({"shell"}))
+    await agent._run_tool("shell", {"cmd": "x"})
+    denied = [kw for k, kw in calls if k == EventKind.CAPABILITY_DENIED]
+    assert denied, "capability denial was not written to the audit log"
+    assert denied[0]["tool"] == "shell"
+    assert denied[0]["principal"] == "agent:coder-1"

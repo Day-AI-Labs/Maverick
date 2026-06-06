@@ -21,6 +21,7 @@ follow-on increments.
 """
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import os
 import re
@@ -93,10 +94,52 @@ def data_dir(*parts: str, tenant: str | None = "__active__") -> Path:
     return base.joinpath(*parts)
 
 
+def tenant_by_user_enabled() -> bool:
+    """Opt-in, off by default. ``MAVERICK_TENANT_BY_USER=1`` or
+    ``[tenancy] by_user = true`` makes the server isolate each channel user
+    into their own tenant (so one user's cross-session memory can't leak to
+    another). Off -> single shared tenant, behaviour unchanged."""
+    if os.environ.get("MAVERICK_TENANT_BY_USER", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }:
+        return True
+    try:
+        from .config import load_config
+        cfg = (load_config() or {}).get("tenancy") or {}
+        return bool(cfg.get("by_user"))
+    except Exception:
+        return False
+
+
+@contextlib.contextmanager
+def tenant_scope(*, channel: str | None = None, user_id: str | None = None,
+                 tenant: str | None = None):
+    """Pin the active tenant for the duration of the block, then restore it.
+
+    No-op (yields with the tenant unchanged) unless an explicit ``tenant`` is
+    given, or ``tenant_by_user_enabled()`` and a ``user_id`` is present — in
+    which case the tenant is ``"<channel>:<user_id>"`` (sanitized). The reset
+    on exit makes this safe for a server that handles messages sequentially on
+    one task or concurrently across tasks.
+    """
+    if tenant is None and user_id is not None and tenant_by_user_enabled():
+        tenant = f"{channel or 'unknown'}:{user_id}"
+    if tenant is None:
+        yield
+        return
+    token = set_tenant(tenant)
+    try:
+        yield
+    finally:
+        reset_tenant(token)
+
+
 __all__ = [
     "current_tenant",
     "set_tenant",
     "reset_tenant",
     "maverick_home",
     "data_dir",
+    "tenant_by_user_enabled",
+    "tenant_scope",
 ]
