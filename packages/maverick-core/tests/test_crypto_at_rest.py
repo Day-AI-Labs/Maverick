@@ -6,6 +6,10 @@ import base64
 import pytest
 from maverick import crypto_at_rest as car
 
+# AES-GCM needs the optional 'cryptography' extra; skip (don't fail) where it is
+# absent, matching the audit-signing tests (test_audit_anchor.py).
+pytest.importorskip("cryptography")
+
 
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch, tmp_path):
