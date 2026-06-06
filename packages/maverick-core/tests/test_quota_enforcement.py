@@ -152,3 +152,113 @@ async def test_quotas_off_run_proceeds_and_records_usage(
     (args, _kwargs) = recorded[0]
     assert args[0] == "user:local"
     assert args[1:] == (budget.dollars, budget.input_tokens, budget.output_tokens)
+
+
+@pytest.mark.asyncio
+async def test_budget_exceeded_run_records_usage_before_return(
+    tmp_path: Path, fake_llm, monkeypatch,
+):
+    # BudgetExceeded can be raised after a provider response has already added
+    # tokens/dollars to the Budget. That spend must advance the daily ledger so
+    # a second run is refused by the quota gate instead of spending again.
+    from maverick.agent import Agent
+    from maverick.quotas import UsageLedger, over_quota
+
+    monkeypatch.setenv("MAVERICK_QUOTA_ENFORCE", "1")
+    monkeypatch.setenv("MAVERICK_QUOTA_MAX_TOKENS_PER_DAY", "100")
+
+    calls = 0
+
+    async def spend_then_exceed(self):
+        nonlocal calls
+        calls += 1
+        self.ctx.budget.record_tokens(200, 50, model="fake:test")
+
+    monkeypatch.setattr(Agent, "run", spend_then_exceed)
+
+    world = WorldModel(path=tmp_path / "world.db")
+    gid1 = world.create_goal("exhaust budget", "trivial")
+    out1 = await run_goal(
+        llm=fake_llm,
+        world=world,
+        budget=Budget(max_input_tokens=100, max_dollars=1.0),
+        goal_id=gid1,
+        sandbox=LocalBackend(workdir=tmp_path),
+        max_depth=1,
+    )
+
+    assert "hit your spending or time limit" in out1
+    assert world.get_goal(gid1).status == "blocked"
+    usage = UsageLedger().usage("user:local")
+    assert usage["in_tokens"] == 200
+    assert usage["out_tokens"] == 50
+    assert over_quota("user:local") is not None
+
+    gid2 = world.create_goal("try again", "trivial")
+    out2 = await run_goal(
+        llm=fake_llm,
+        world=world,
+        budget=Budget(max_dollars=1.0),
+        goal_id=gid2,
+        sandbox=LocalBackend(workdir=tmp_path),
+        max_depth=1,
+    )
+
+    assert "quota" in out2
+    assert world.get_goal(gid2).status == "blocked"
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_error_run_records_usage_before_return(
+    tmp_path: Path, fake_llm, monkeypatch,
+):
+    # Agent errors/max-steps can occur after paid LLM activity. Charge that
+    # spend before returning the friendly error so the next run sees the cap.
+    from maverick.agent import Agent, AgentResult
+    from maverick.quotas import UsageLedger, over_quota
+
+    monkeypatch.setenv("MAVERICK_QUOTA_ENFORCE", "1")
+    monkeypatch.setenv("MAVERICK_QUOTA_MAX_TOKENS_PER_DAY", "100")
+
+    calls = 0
+
+    async def spend_then_error(self):
+        nonlocal calls
+        calls += 1
+        self.ctx.budget.record_tokens(60, 50, model="fake:test")
+        return AgentResult(error="max_steps exceeded", role=self.role, name=self.name)
+
+    monkeypatch.setattr(Agent, "run", spend_then_error)
+
+    world = WorldModel(path=tmp_path / "world.db")
+    gid1 = world.create_goal("fail after spend", "trivial")
+    out1 = await run_goal(
+        llm=fake_llm,
+        world=world,
+        budget=Budget(max_dollars=1.0),
+        goal_id=gid1,
+        sandbox=LocalBackend(workdir=tmp_path),
+        max_depth=1,
+    )
+
+    assert "couldn't finish" in out1
+    assert world.get_goal(gid1).status == "blocked"
+    usage = UsageLedger().usage("user:local")
+    assert usage["in_tokens"] == 60
+    assert usage["out_tokens"] == 50
+    assert over_quota("user:local") is not None
+
+    gid2 = world.create_goal("try again", "trivial")
+    out2 = await run_goal(
+        llm=fake_llm,
+        world=world,
+        budget=Budget(max_dollars=1.0),
+        goal_id=gid2,
+        sandbox=LocalBackend(workdir=tmp_path),
+        max_depth=1,
+    )
+
+    assert "quota" in out2
+    assert world.get_goal(gid2).status == "blocked"
+    assert calls == 1
