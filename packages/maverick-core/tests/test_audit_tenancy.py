@@ -15,8 +15,15 @@ from datetime import datetime, timezone
 
 import pytest
 from maverick.audit.events import AuditEvent, EventKind
-from maverick.audit.writer import AuditLog, default_audit_log
+from maverick.audit.writer import AuditLog, default_audit_log, record
 from maverick.paths import reset_tenant, set_tenant
+
+
+def _reset_default_logs(monkeypatch):
+    import maverick.audit.writer as writer
+
+    monkeypatch.setattr(writer, "_default", None)
+    monkeypatch.setattr(writer, "_defaults", {})
 
 
 def _event(title: str) -> AuditEvent:
@@ -50,9 +57,7 @@ def test_default_audit_log_no_tenant_is_legacy(monkeypatch, tmp_path):
     # The module singleton also resolves the legacy dir when no tenant is set.
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("MAVERICK_TENANT", raising=False)
-    import maverick.audit.writer as writer
-
-    monkeypatch.setattr(writer, "_default", None)
+    _reset_default_logs(monkeypatch)
     assert default_audit_log().audit_dir == tmp_path / ".maverick" / "audit"
 
 
@@ -160,3 +165,63 @@ def test_two_tenants_are_isolated(monkeypatch, tmp_path):
     assert "acme-only secret" not in globex_text
     assert "globex-only secret" in globex_text
     assert "globex-only secret" not in acme_text
+
+
+def test_default_audit_log_is_cached_per_tenant(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    _reset_default_logs(monkeypatch)
+
+    acme_dir = tmp_path / ".maverick" / "tenants" / "acme" / "audit"
+    globex_dir = tmp_path / ".maverick" / "tenants" / "globex" / "audit"
+
+    tok = set_tenant("acme")
+    try:
+        acme_log = default_audit_log()
+        assert acme_log.audit_dir == acme_dir
+    finally:
+        reset_tenant(tok)
+
+    tok = set_tenant("globex")
+    try:
+        globex_log = default_audit_log()
+        assert globex_log.audit_dir == globex_dir
+    finally:
+        reset_tenant(tok)
+
+    tok = set_tenant("acme")
+    try:
+        assert default_audit_log() is acme_log
+    finally:
+        reset_tenant(tok)
+    assert globex_log is not acme_log
+
+
+def test_module_record_is_tenant_isolated(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    _reset_default_logs(monkeypatch)
+
+    acme_dir = tmp_path / ".maverick" / "tenants" / "acme" / "audit"
+    globex_dir = tmp_path / ".maverick" / "tenants" / "globex" / "audit"
+
+    tok = set_tenant("acme")
+    try:
+        assert record(EventKind.GOAL_START, goal_id=1, title="acme-only secret")
+    finally:
+        reset_tenant(tok)
+
+    tok = set_tenant("globex")
+    try:
+        assert record(EventKind.GOAL_START, goal_id=2, title="globex-only secret")
+    finally:
+        reset_tenant(tok)
+
+    acme_text = _today_file(acme_dir).read_text()
+    globex_text = _today_file(globex_dir).read_text()
+
+    assert "acme-only secret" in acme_text
+    assert "acme-only secret" not in globex_text
+    assert "globex-only secret" in globex_text
+    assert "globex-only secret" not in acme_text
+    assert not _today_file(tmp_path / ".maverick" / "audit").exists()

@@ -370,16 +370,34 @@ def _redact_event(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 _default: AuditLog | None = None
+_defaults: dict[Path, AuditLog] = {}
 _default_lock = threading.Lock()
 
 
 def default_audit_log() -> AuditLog:
-    """Singleton AuditLog at ``~/.maverick/audit/``."""
+    """Return the default audit log for the active tenant context.
+
+    ``AuditLog`` resolves its output directory at construction time, so the
+    module-level shortcut must not share one tenant-dependent instance across
+    all callers in a long-lived process. Cache one default writer per resolved
+    audit directory instead: the no-tenant path keeps the legacy singleton
+    semantics, while tenant-scoped calls get an independent writer and chain.
+    """
     global _default
+    from ..paths import data_dir
+
+    audit_dir = data_dir("audit")
+    shared_audit_dir = data_dir("audit", tenant=None)
     with _default_lock:
-        if _default is None:
-            _default = AuditLog()
-        return _default
+        log_obj = _defaults.get(audit_dir)
+        if log_obj is None:
+            log_obj = AuditLog(audit_dir)
+            _defaults[audit_dir] = log_obj
+        if audit_dir == shared_audit_dir:
+            # Back-compat for code/tests that inspect or reset the historical
+            # no-tenant singleton attribute directly.
+            _default = log_obj
+        return log_obj
 
 
 def record(
