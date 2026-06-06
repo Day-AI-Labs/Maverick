@@ -1,0 +1,127 @@
+"""P1 multi-tenancy increment 1: tenant-aware paths + per-tenant memory.
+
+A tenant namespaces on-disk state. With no tenant active, paths resolve to the
+legacy ~/.maverick locations (single-tenant unchanged). With a tenant, the
+cross-session memory store is isolated so one tenant cannot read another's.
+"""
+import maverick.paths as paths
+from maverick.paths import current_tenant, data_dir, reset_tenant, set_tenant
+
+# --- tenant resolution -----------------------------------------------------
+
+def test_no_tenant_by_default(monkeypatch):
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    assert current_tenant() is None
+
+
+def test_tenant_from_env(monkeypatch):
+    monkeypatch.setenv("MAVERICK_TENANT", "acme")
+    assert current_tenant() == "acme"
+
+
+def test_explicit_scope_beats_env(monkeypatch):
+    monkeypatch.setenv("MAVERICK_TENANT", "acme")
+    tok = set_tenant("globex")
+    try:
+        assert current_tenant() == "globex"
+    finally:
+        reset_tenant(tok)
+    assert current_tenant() == "acme"  # restored
+
+
+def test_sanitization_prevents_traversal(monkeypatch):
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    tok = set_tenant("../../etc")  # path-traversal attempt
+    try:
+        t = current_tenant()
+        assert "/" not in t  # collapses to a single safe path segment
+        # The real invariant: the resolved data path can't escape the tenants root.
+        resolved = data_dir("x").resolve()
+        assert (paths.maverick_home() / "tenants").resolve() in resolved.parents
+    finally:
+        reset_tenant(tok)
+
+
+# --- data_dir --------------------------------------------------------------
+
+def test_data_dir_no_tenant(monkeypatch):
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    p = data_dir("memory")
+    assert p == paths.maverick_home() / "memory"
+    assert "tenants" not in p.parts
+
+
+def test_data_dir_with_tenant(monkeypatch):
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    tok = set_tenant("acme")
+    try:
+        p = data_dir("memory")
+        assert p == paths.maverick_home() / "tenants" / "acme" / "memory"
+    finally:
+        reset_tenant(tok)
+
+
+def test_data_dir_force_shared(monkeypatch):
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    tok = set_tenant("acme")
+    try:
+        # tenant=None forces the shared location even when a tenant is active.
+        assert data_dir("audit", tenant=None) == paths.maverick_home() / "audit"
+    finally:
+        reset_tenant(tok)
+
+
+# --- memory store honours the tenant + stays isolated ----------------------
+
+def test_memory_root_follows_tenant(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    monkeypatch.delenv("MAVERICK_MEMORY_DIR", raising=False)
+    from maverick.tools.memory import _memory_root
+
+    assert _memory_root() == tmp_path / ".maverick" / "memory"  # legacy default
+    tok = set_tenant("acme")
+    try:
+        assert _memory_root() == tmp_path / ".maverick" / "tenants" / "acme" / "memory"
+    finally:
+        reset_tenant(tok)
+
+
+def test_explicit_memory_dir_override_wins(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_MEMORY_DIR", str(tmp_path / "mem"))
+    tok = set_tenant("acme")
+    try:
+        from maverick.tools.memory import _memory_root
+        assert _memory_root() == tmp_path / "mem"  # override ignores tenant
+    finally:
+        reset_tenant(tok)
+
+
+def test_memory_isolated_across_tenants(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    monkeypatch.delenv("MAVERICK_MEMORY_DIR", raising=False)
+    from maverick.tools.memory import _run
+
+    tok = set_tenant("tenant-a")
+    try:
+        assert "wrote" in _run({"command": "create", "path": "notes.md",
+                                "file_text": "a-secret"})
+        assert "notes.md" in _run({"command": "view", "path": ""})
+    finally:
+        reset_tenant(tok)
+
+    # A different tenant sees an empty memory -- no cross-tenant leakage.
+    tok = set_tenant("tenant-b")
+    try:
+        assert _run({"command": "view", "path": ""}) == "(memory is empty)"
+    finally:
+        reset_tenant(tok)
+
+    # Back to tenant-a: the note is still there.
+    tok = set_tenant("tenant-a")
+    try:
+        out = _run({"command": "view", "path": "notes.md"})
+        assert "a-secret" in out
+    finally:
+        reset_tenant(tok)
