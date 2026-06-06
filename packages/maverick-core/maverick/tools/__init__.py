@@ -317,13 +317,19 @@ class ToolRegistry:
         if name not in self._tools:
             return f"ERROR: unknown tool {name!r}"
         try:
-            from ..observability import trace_span
+            from ..observability import gen_ai_tool_attributes, trace_span
         except ImportError:  # pragma: no cover
             import contextlib
 
             def trace_span(*a, **kw):  # type: ignore
                 return contextlib.nullcontext()
-        with trace_span("tool.run", attributes={"tool.name": name}):
+
+            def gen_ai_tool_attributes(tool_name, **kw):  # type: ignore
+                return {}
+        with trace_span(
+            "tool.run",
+            attributes={"tool.name": name, **gen_ai_tool_attributes(name)},
+        ):
             try:
                 try:
                     from ..chaos import maybe_fail
