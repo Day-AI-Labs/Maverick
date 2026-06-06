@@ -240,7 +240,10 @@ def test_server_tenant_scope_uses_authenticated_principal(monkeypatch):
 
     monkeypatch.setattr(server_mod, "run_goal", _fake_run_goal)
     world = _World()
-    monkeypatch.setattr(server_mod, "world_for_tenant", lambda tenant: world)
+    # With per-user tenancy on, _handle_message routes through world_for_tenant
+    # (a real per-tenant world.db); point it at the stub so we can assert the
+    # routing keys off the authenticated principal, not the reply target.
+    monkeypatch.setattr(server_mod, "world_for_tenant", lambda _tenant: world)
     srv = server_mod.Server(world=world, llm=object(), sandbox=object())
 
     class _RoomMessage:
