@@ -7,6 +7,20 @@
 > concrete deployment requirements of HIPAA / SOC 2 / GDPR / EU AI Act / SR 11-7 /
 > FedRAMP. Load-bearing external figures are flagged **[verify]**.
 
+> **⚠️ Correction (2026-06-06, post-publication).** A 10-front adversarial teardown
+> ([`commercialization/00-synthesis.md`](./commercialization/00-synthesis.md)) found
+> two claims below too optimistic. (1) **"~70% built on be-compliant"** conflates
+> cryptographic primitives with *enforced* controls — real regulated readiness is
+> **~15–20%**, and multi-tenancy is ~5% and broken at the call site (world model +
+> audit are written outside the tenant scope); see
+> [`commercialization/04`](./commercialization/04-regulated-deployment-eng-gaps.md).
+> (2) **"agent governance is an unowned category"** is already wrong at the identity
+> layer — Microsoft Entra Agent ID and Okta for AI Agents shipped the generic
+> register/scope/audit primitive in 2026; see
+> [`commercialization/03`](./commercialization/03-competitive-teardown.md). The
+> defensible wedge narrows to the *self-hostable, provable, regulated* runtime with
+> human-attested evidence. Read the synthesis alongside this doc.
+
 ## Bottom line (four verdicts)
 
 1. **This is two questions sharing one substrate.** "Use Maverick in regulated
