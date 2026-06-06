@@ -42,6 +42,7 @@ import ipaddress
 import json
 import logging
 import os
+import secrets
 from urllib.parse import urlparse
 
 log = logging.getLogger(__name__)
@@ -274,6 +275,33 @@ def build_app(server) -> FastAPI:
     from maverick import a2a
     a2a.mount(app)
 
+    # One MCPServer handles the whole HTTP app, but resource subscriptions are
+    # per MCP HTTP client. Persist a small opaque session id in both the
+    # standard-ish MCP-Session-Id header and a same-site cookie fallback so
+    # clients that do not yet send a session header still get isolated state.
+    resource_sessions: dict[str, set[str]] = {}
+
+    def _session_id(request: Request) -> str:
+        supplied = (
+            request.headers.get("Mcp-Session-Id")
+            or request.cookies.get("maverick_mcp_session")
+        )
+        if supplied and supplied in resource_sessions:
+            return supplied
+        sid = secrets.token_urlsafe(24)
+        resource_sessions[sid] = set()
+        return sid
+
+    def _attach_session(response, sid: str):
+        response.headers["Mcp-Session-Id"] = sid
+        response.set_cookie(
+            "maverick_mcp_session",
+            sid,
+            httponly=True,
+            samesite="lax",
+        )
+        return response
+
     @app.post("/mcp")
     async def mcp_endpoint(
         request: Request,
@@ -301,6 +329,8 @@ def build_app(server) -> FastAPI:
         if not isinstance(params, dict):
             raise HTTPException(status_code=400, detail="params must be a JSON object")
         accepts_sse = "text/event-stream" in (request.headers.get("accept") or "")
+        sid = _session_id(request)
+        subscriptions = resource_sessions[sid]
 
         # Streamable HTTP: when the client accepts SSE and this is a real
         # request (not a fire-and-forget notification), stream progress
@@ -312,10 +342,14 @@ def build_app(server) -> FastAPI:
             progress_token = _progress_token(params, HTTPException)
             max_progress_events = _max_progress_events()
 
+            def _dispatch_with_updates():
+                with server.resource_update_scope(subscriptions):
+                    result = _dispatch(server, method, params)
+                    updates = server.drain_resource_updates()
+                    return result, updates
+
             async def _stream():
-                task = asyncio.create_task(
-                    asyncio.to_thread(_dispatch, server, method, params)
-                )
+                task = asyncio.create_task(asyncio.to_thread(_dispatch_with_updates))
                 interval = _heartbeat_seconds()
                 progress = 0
                 while not task.done():
@@ -336,7 +370,7 @@ def build_app(server) -> FastAPI:
                             },
                         })
                 try:
-                    result = task.result()
+                    result, updates = task.result()
                 except Exception as e:
                     yield _sse(_error_envelope(request_id, e))
                 else:
@@ -344,30 +378,35 @@ def build_app(server) -> FastAPI:
                     # HTTP analog of stdio's _flush_resource_updates: push any
                     # resources/updated the tool dirtied that this client
                     # subscribed to, on the same SSE stream, after the result.
-                    for uri in server.drain_resource_updates():
+                    for uri in updates:
                         yield _sse({
                             "jsonrpc": "2.0",
                             "method": "notifications/resources/updated",
                             "params": {"uri": uri},
                         })
 
-            return StreamingResponse(_stream(), media_type="text/event-stream")
+            response = StreamingResponse(_stream(), media_type="text/event-stream")
+            return _attach_session(response, sid)
 
         # Blocking JSON path (default). Dispatch runs in a worker thread
         # for the same asyncio.run reason as above.
+        def _dispatch_for_session():
+            with server.resource_update_scope(subscriptions):
+                return _dispatch(server, method, params)
+
         try:
-            result = await asyncio.to_thread(_dispatch, server, method, params)
+            result = await asyncio.to_thread(_dispatch_for_session)
         except Exception as e:
             if is_notification:
                 # 204 must carry no body; JSONResponse({}) writes "{}" which
                 # strict proxies (e.g. Cloudflare) reject as a protocol violation.
-                return Response(status_code=204)
-            return JSONResponse(_error_envelope(request_id, e))
+                return _attach_session(Response(status_code=204), sid)
+            return _attach_session(JSONResponse(_error_envelope(request_id, e)), sid)
 
         if is_notification:
             # 204 must carry no body (see above).
-            return Response(status_code=204)
-        return JSONResponse(_result_envelope(request_id, result))
+            return _attach_session(Response(status_code=204), sid)
+        return _attach_session(JSONResponse(_result_envelope(request_id, result)), sid)
 
     @app.get("/healthz")
     async def healthz():
