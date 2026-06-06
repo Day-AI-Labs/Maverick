@@ -305,12 +305,19 @@ class Agent:
         depth: int = 0,
         parent: Agent | None = None,
         max_steps: int = 25,
+        capability=None,
     ):
         self.ctx = ctx
         self.role = role
         self.brief = brief
         self.depth = depth
         self.parent = parent
+        # P0 identity layer: the capability grant this agent runs under. An
+        # explicit arg (passed by an attenuating spawn) wins; otherwise inherit
+        # the run's root grant; otherwise the depth-0 orchestrator mints the
+        # root grant from config when enforcement is enabled. None ==
+        # unrestricted, so enforcement is a no-op unless opted in.
+        self.capability = self._resolve_capability(capability)
         # Wave 11: Scale Labs' Pro empirical study (arxiv 2509.16941)
         # shows "most successful solutions resolve in ~25 rounds; long-
         # tail iteration past that has diminishing returns." Allow ops
@@ -344,6 +351,35 @@ class Agent:
         # Loop guard: per-(tool,args) consecutive-failure streak. Grows while an
         # identical call keeps failing; reset when that call finally succeeds.
         self._tool_fail_streak: dict[str, int] = {}
+
+    def _resolve_capability(self, explicit):
+        """Pick this agent's capability grant. Fail-open: any error or the
+        disabled default yields ``None`` (unrestricted), so a misconfigured
+        policy can never wedge a run."""
+        if explicit is not None:
+            return explicit
+        inherited = getattr(self.ctx, "capability", None)
+        if inherited is not None:
+            return inherited
+        if self.depth != 0:
+            return None
+        try:
+            from .capability import capability_enforced, capability_from_config
+            if not capability_enforced():
+                return None
+            root = capability_from_config(
+                principal=f"user:{getattr(self.ctx, 'user_id', None) or 'local'}",
+                channel=getattr(self.ctx, "channel", None),
+                user_id=getattr(self.ctx, "user_id", None),
+            )
+            # Stash on the shared context so spawned children inherit + attenuate.
+            try:
+                self.ctx.capability = root
+            except Exception:
+                pass
+            return root
+        except Exception:
+            return None
 
     @property
     def checkpoint_id(self) -> str:
@@ -713,6 +749,21 @@ class Agent:
                     f"⚠ BLOCKED by Shield ({verdict.severity}): "
                     f"{'; '.join(verdict.reasons)}. The tool was not executed."
                 )
+
+        # P0 capability layer: a per-agent grant (attenuated from the parent
+        # on spawn) gates the tool surface. None == unrestricted, so this is a
+        # no-op unless capability enforcement was opted in. Deny wins -- the
+        # tool never runs and the model gets a clear, non-leaky refusal.
+        cap = getattr(self, "capability", None)
+        if cap is not None and not cap.permits(name):
+            self.ctx.blackboard.post(
+                self.name, "error",
+                f"tool={name} DENIED by capability (principal={cap.principal})",
+            )
+            return (
+                f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
+                f"not granted tool {name!r}. The tool was not executed."
+            )
 
         # PreToolUse hooks: any registered hook can BLOCK the call by
         # returning a non-zero exit code (shell hook) or a falsy value

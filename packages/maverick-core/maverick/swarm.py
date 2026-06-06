@@ -65,6 +65,11 @@ class SwarmContext:
     mcp_clients: list = field(default_factory=list)
     channel: str | None = None
     user_id: str | None = None
+    # P0 identity layer: the root principal's capability grant for this run.
+    # None == unrestricted (the default). Set when capability enforcement is
+    # enabled; children inherit an *attenuated* copy so a sub-agent can never
+    # exceed it. Typed Any to avoid importing the capability module here.
+    capability: Any | None = None
     # Durable execution: the episode this run belongs to. Discriminates
     # best-of-N attempts (same goal_id, distinct episodes) so a resumed
     # attempt doesn't pick up a sibling's checkpoint. Defaults to 0 for

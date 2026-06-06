@@ -933,6 +933,11 @@ def pick_advanced() -> dict[str, bool]:
             "answers (short, prose-only, no tools or code) to save tokens and latency.",
             default=False,
         ),
+        "enforce_capabilities": _q_confirm(
+            "Enforce agent capabilities? Each agent runs under a scoped grant and "
+            "spawned sub-agents can only narrow it, never exceed it (least privilege).",
+            default=False,
+        ),
         "deferred_tools": _q_confirm(
             "Deferred tool loading? Show the model a small core toolset plus a "
             "find_tools search tool, loading the long tail (80+ integrations, MCP) "
@@ -1850,6 +1855,10 @@ def write_config(
             lines.append("")
             lines.append("[verification]")
             lines.append("risk_proportional = true")
+        if advanced.get("enforce_capabilities"):
+            lines.append("")
+            lines.append("[capabilities]")
+            lines.append("enforce = true")
         if advanced.get("tree_of_thought"):
             lines.append("")
             lines.append("[planning]")

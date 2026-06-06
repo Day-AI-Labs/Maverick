@@ -71,6 +71,17 @@ def _synthesis_reserve_block(parent: Agent) -> str | None:
     )
 
 
+def _child_capability(parent, role: str, depth: int):
+    """A child's capability grant: the parent's, attenuated (never broadened)
+    and re-bound to the child principal. ``None`` when the parent runs
+    unrestricted (capability enforcement off), so this is a no-op by default.
+    """
+    cap = getattr(parent, "capability", None)
+    if cap is None:
+        return None
+    return cap.attenuate(principal=f"agent:{role}-{depth}")
+
+
 def spawn_subagent_tool(parent: Agent) -> Tool:
     async def fn(args: dict) -> str:
         role = args["role"]
@@ -99,6 +110,7 @@ def spawn_subagent_tool(parent: Agent) -> Tool:
             depth=parent.depth + 1,
             parent=parent,
             max_steps=parent.max_steps,
+            capability=_child_capability(parent, role, parent.depth + 1),
         )
         # #612: a child that RAISES (budget/halt/unexpected error) never
         # consumed its slot productively -- give it back so transient child
@@ -185,6 +197,7 @@ def spawn_swarm_tool(parent: Agent) -> Tool:
                 depth=parent.depth + 1,
                 parent=parent,
                 max_steps=parent.max_steps,
+                capability=_child_capability(parent, spec["role"], parent.depth + 1),
             )
             for spec in agents_spec
         ]
