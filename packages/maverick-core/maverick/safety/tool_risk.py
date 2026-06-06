@@ -48,6 +48,7 @@ _DEFAULT_RISK: dict[str, str] = {
     "str_replace_editor": "high",
     "ast_edit": "high",
     "compute": "high",
+    "code_exec": "high",
     # high: mutate external state / money / send messages / drive infra or a
     # device / recursively spawn. These used to fall through to the "medium"
     # default, so a max_risk="medium" channel ceiling failed to drop them.
