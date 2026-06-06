@@ -98,6 +98,14 @@ MODEL_PRICES: dict[str, tuple[float, float]] = {
     "gemini-3.5-flash":          (0.15, 0.60),
     "gemini-3-pro":              (2.50, 10.0),
     "gemini-3-flash":            (0.15, 0.60),
+    # OpenRouter vendor/model ids (cheap, near-frontier-on-coding open models).
+    # Keyed by the OpenRouter `vendor/model` id because that is the bare
+    # model_id _lookup_price sees after stripping the `openrouter:` prefix.
+    # TODO: verify each rate against https://openrouter.ai pricing before relying
+    # on these for billing — placeholders below are best-effort May/June 2026.
+    "minimax/minimax-m2.5":      (0.30, 1.20),    # MiniMax M2.5 — verify on openrouter.ai
+    "deepseek/deepseek-v4-pro":  (0.14, 0.55),    # DeepSeek V4 Pro via OpenRouter — verify
+    "qwen/qwen3-coder-next":     (0.20, 0.80),    # Qwen3 Coder Next via OpenRouter — verify
     # Open-weight defaults via Ollama: priced at zero (compute cost).
     "qwen3-coder-next":          (0.0, 0.0),
     "qwen3-32b":                 (0.0, 0.0),
