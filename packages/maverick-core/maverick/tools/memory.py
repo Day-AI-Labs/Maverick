@@ -32,9 +32,13 @@ _MAX_VIEW_BYTES = 16_000
 
 
 def _memory_root() -> Path:
+    # Explicit override wins; otherwise the (optionally tenant-scoped) default,
+    # which is the legacy ~/.maverick/memory when no tenant is active.
     raw = os.environ.get("MAVERICK_MEMORY_DIR")
-    root = Path(raw).expanduser() if raw else Path.home() / ".maverick" / "memory"
-    return root
+    if raw:
+        return Path(raw).expanduser()
+    from ..paths import data_dir
+    return data_dir("memory")
 
 
 def _resolve(root: Path, rel: str) -> Path:
