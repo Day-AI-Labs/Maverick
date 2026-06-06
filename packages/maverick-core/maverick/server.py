@@ -65,6 +65,8 @@ class Server:
 
         from .paths import tenant_by_user_enabled, tenant_scope
 
+        principal_id = getattr(msg, "principal_id", msg.user_id)
+
         # Resolve the per-tenant world ONCE. When per-user tenancy is on, this
         # message's goal/conversation/turns land in that user's own world.db
         # (~/.maverick/tenants/<channel>:<user_id>/world.db) -- the SAME tenant
@@ -73,19 +75,17 @@ class Server:
         # reuse the SHARED self.world unchanged (``world is self.world``), so the
         # legacy single-tenant path is byte-for-byte identical and we never open
         # a second connection to ~/.maverick/world.db. self.world also still
-        # backs startup orphan-reclaim and the dashboard. Fail-soft: if anything
-        # goes wrong resolving the tenant world, fall back to self.world rather
-        # than dropping the message.
+        # backs startup orphan-reclaim and the dashboard. If per-user tenant
+        # resolution fails, reject the message rather than running attacker input
+        # against the shared world and breaking tenant isolation.
+        tenant = None
+        if tenant_by_user_enabled():
+            tenant = f"{msg.channel or 'unknown'}:{principal_id}"
         try:
-            tenant = (
-                f"{msg.channel or 'unknown'}:{msg.user_id}"
-                if tenant_by_user_enabled()
-                else None
-            )
             world = self.world if tenant is None else world_for_tenant(tenant)
-        except Exception:  # pragma: no cover - fail-soft, never drop a message
-            log.exception("tenant world resolution failed; using shared world")
-            world = self.world
+        except Exception:
+            log.exception("tenant world resolution failed; rejecting message")
+            return "⚠ Tenant isolation is unavailable for this message. Try again later."
 
         # Multi-turn: a single (channel, user_id) gets one conversation
         # row. Every inbound message becomes a 'user' turn; the
@@ -96,7 +96,6 @@ class Server:
         # first turn. `first_turn_disclosure` checks the conversation
         # row (creates if needed) and returns None on follow-up turns.
         from .compliance import first_turn_disclosure
-        principal_id = getattr(msg, "principal_id", msg.user_id)
         disclosure = first_turn_disclosure(
             world,
             channel=msg.channel or "unknown",

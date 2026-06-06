@@ -36,15 +36,24 @@ _TENANT: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 _SAFE_TENANT_CHARS = frozenset(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-"
 )
+MAX_TENANT_SEGMENT_LENGTH = 200
+
+
+class InvalidTenantError(ValueError):
+    """Raised when a tenant id cannot be represented safely on disk."""
 
 
 def _tenant_segment(tenant: str) -> str:
     if tenant in {".", ".."}:
-        return "%2E" * len(tenant)
-    return "".join(
-        chr(byte) if chr(byte) in _SAFE_TENANT_CHARS else f"%{byte:02X}"
-        for byte in tenant.encode("utf-8")
-    )
+        segment = "%2E" * len(tenant)
+    else:
+        segment = "".join(
+            chr(byte) if chr(byte) in _SAFE_TENANT_CHARS else f"%{byte:02X}"
+            for byte in tenant.encode("utf-8")
+        )
+    if len(segment) > MAX_TENANT_SEGMENT_LENGTH:
+        raise InvalidTenantError("tenant id is too long")
+    return segment
 
 
 def current_tenant() -> str | None:
@@ -146,6 +155,8 @@ __all__ = [
     "reset_tenant",
     "maverick_home",
     "data_dir",
+    "InvalidTenantError",
+    "MAX_TENANT_SEGMENT_LENGTH",
     "tenant_by_user_enabled",
     "tenant_scope",
 ]

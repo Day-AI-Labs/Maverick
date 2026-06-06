@@ -150,6 +150,44 @@ def test_handle_message_routes_goal_to_user_tenant(monkeypatch):
     assert shared.list_conversations() == []
 
 
+def test_world_for_tenant_rejects_overlong_tenant(monkeypatch):
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+
+    with pytest.raises(ValueError, match="tenant id is too long"):
+        world_for_tenant("x" * 201)
+
+
+def test_world_for_tenant_caps_cached_tenant_worlds(monkeypatch):
+    import maverick.world_model as wm
+
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    monkeypatch.setattr(wm, "MAX_TENANT_WORLDS", 2)
+
+    first = world_for_tenant("tenant-1")
+    assert world_for_tenant("tenant-2") is not first
+    assert world_for_tenant("tenant-1") is first
+    with pytest.raises(wm.TenantWorldLimitError):
+        world_for_tenant("tenant-3")
+
+
+def test_handle_message_rejects_tenant_resolution_failure(monkeypatch):
+    monkeypatch.setenv("MAVERICK_TENANT_BY_USER", "1")
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    server_mod, srv, shared = _build_server(monkeypatch)
+
+    async def _fake_run_goal(*args, **kwargs):
+        raise AssertionError("run_goal must not run without an isolated tenant")
+
+    monkeypatch.setattr(server_mod, "run_goal", _fake_run_goal)
+
+    msg = _Msg(text="do not fall back", channel="tg", user_id="X" * 201)
+    out = asyncio.run(srv._handle_message(msg))
+
+    assert "Tenant isolation is unavailable" in out
+    assert shared.list_goals() == []
+    assert shared.list_conversations() == []
+
+
 def test_handle_message_uses_shared_world_when_tenancy_off(monkeypatch):
     monkeypatch.delenv("MAVERICK_TENANT_BY_USER", raising=False)
     monkeypatch.delenv("MAVERICK_TENANT", raising=False)

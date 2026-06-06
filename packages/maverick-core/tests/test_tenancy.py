@@ -240,6 +240,7 @@ def test_server_tenant_scope_uses_authenticated_principal(monkeypatch):
 
     monkeypatch.setattr(server_mod, "run_goal", _fake_run_goal)
     world = _World()
+    monkeypatch.setattr(server_mod, "world_for_tenant", lambda tenant: world)
     srv = server_mod.Server(world=world, llm=object(), sandbox=object())
 
     class _RoomMessage:
