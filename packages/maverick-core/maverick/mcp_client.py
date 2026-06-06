@@ -26,6 +26,9 @@ log = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2024-11-05"
 DEFAULT_TIMEOUT = 30.0
+# Bound remote HTTP MCP replies so a malicious server cannot keep an SSE
+# response open forever or force the client to buffer unbounded data.
+_MAX_HTTP_RESPONSE_BYTES = 1024 * 1024
 
 _MAX_ERROR_DETAIL_CHARS = 512
 
@@ -749,6 +752,13 @@ class MCPClient:
         self._proc = None
 
 
+@dataclass
+class _HTTPMCPResponse:
+    status_code: int
+    headers: Any
+    text: str
+
+
 class StreamableHttpMCPClient:
     """MCP client over Streamable HTTP (spec 2025-11-25) for REMOTE servers.
 
@@ -811,25 +821,83 @@ class StreamableHttpMCPClient:
             h["MCP-Protocol-Version"] = self._protocol_version
         return h
 
-    async def _post(self, payload: dict) -> Any:
+    async def _post(self, payload: dict, req_id: int | None = None) -> Any:
         if self._client is None:
             raise MCPClientError(f"MCP server {self.spec.name!r} not started")
+
+        async def _send() -> _HTTPMCPResponse:
+            async with self._client.stream(
+                "POST", self.spec.url, json=payload, headers=self._headers()
+            ) as resp:
+                sid = resp.headers.get("mcp-session-id")
+                if sid:
+                    self._session_id = sid
+                text = await self._read_response_text(resp, req_id)
+                return _HTTPMCPResponse(resp.status_code, resp.headers, text)
+
         try:
-            resp = await self._client.post(
-                self.spec.url, json=payload, headers=self._headers())
+            return await asyncio.wait_for(_send(), timeout=self.timeout)
+        except MCPClientError:
+            raise
+        except asyncio.TimeoutError as e:
+            raise MCPClientError(
+                f"MCP {self.spec.name!r} HTTP request timed out after "
+                f"{self.timeout:.1f}s") from e
         except Exception as e:  # connect/timeout/transport error
             raise MCPClientError(
                 f"MCP {self.spec.name!r} HTTP request failed: "
                 f"{_safe_error_detail(str(e))}") from e
-        sid = resp.headers.get("mcp-session-id")
-        if sid:
-            self._session_id = sid
-        return resp
+
+    async def _read_response_text(self, resp: Any, req_id: int | None) -> str:
+        ctype = (resp.headers.get("content-type") or "").lower()
+        if "text/event-stream" in ctype:
+            return await self._read_sse_response_text(resp, req_id)
+        body = bytearray()
+        async for chunk in resp.aiter_bytes():
+            body.extend(chunk)
+            if len(body) > _MAX_HTTP_RESPONSE_BYTES:
+                raise MCPClientError(
+                    f"MCP {self.spec.name!r} HTTP response exceeded "
+                    f"{_MAX_HTTP_RESPONSE_BYTES} bytes")
+        return body.decode(resp.encoding or "utf-8", errors="replace")
+
+    async def _read_sse_response_text(self, resp: Any, req_id: int | None) -> str:
+        # Read SSE incrementally and stop as soon as the requested JSON-RPC
+        # response event arrives. Do not wait for the server to close the stream:
+        # Streamable HTTP servers may keep it open for heartbeats/notifications.
+        text = ""
+        buffer = ""
+        total = 0
+        async for chunk in resp.aiter_text():
+            total += len(chunk.encode("utf-8", errors="replace"))
+            if total > _MAX_HTTP_RESPONSE_BYTES:
+                raise MCPClientError(
+                    f"MCP {self.spec.name!r} SSE response exceeded "
+                    f"{_MAX_HTTP_RESPONSE_BYTES} bytes")
+            text += chunk
+            buffer += chunk
+            buffer = buffer.replace("\r\n", "\n").replace("\r", "\n")
+            while "\n\n" in buffer:
+                block, buffer = buffer.split("\n\n", 1)
+                data = "\n".join(
+                    line[len("data:"):].lstrip()
+                    for line in block.split("\n") if line.startswith("data:")
+                )
+                if not data:
+                    continue
+                try:
+                    msg = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                if req_id is None or (isinstance(msg, dict) and msg.get("id") == req_id):
+                    return text
+        return text
 
     async def _request(self, method: str, params: dict) -> dict:
         req_id = self._next_id()
         resp = await self._post(
-            {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params})
+            {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params},
+            req_id=req_id)
         if resp.status_code >= 400:
             raise MCPClientError(
                 f"MCP {self.spec.name!r} {method} -> HTTP {resp.status_code}: "
