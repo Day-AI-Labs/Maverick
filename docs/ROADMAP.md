@@ -45,7 +45,7 @@ reliability plumbing (D) have since shipped — see the table.
 | B3 | A2A vs. homegrown ACD | ✅ decision | **Adopt A2A's Agent Card; cut homegrown ACD.** A2A already ships — discovery (`a2a.py`: `build_agent_card` + `/.well-known/agent-card.json`) and delegation (`a2a_tasks.py`: `/a2a/v1`, `message/send|stream`, `tasks/*`, auth, budget caps). ACD would re-answer the same question non-standardly; it's redundant with A2A and complementary to MCP. Recorded in [`specs/a2a-vs-acd-decision.md`](./specs/a2a-vs-acd-decision.md) |
 | C1 | Eval harness (GAIA / τ²-bench / terminal-bench) | ✅ | GAIA shipped (#687); **τ²-bench-style** stateful verification harness shipped (`benchmarks/eval_tau2.py`, `test_eval_tau2.py`); **terminal-bench-style** harness shipped (`benchmarks/eval_terminal_bench.py`, `test_eval_terminal_bench.py`) — a virtual-FS shell domain graded on final files **and** required commands (regex), runnable in CI on a shipped fixture with **no Docker**; the real container-backed + Maverick-driving solver (+ user simulator) plugs in at the injected-solver seam (documented follow-up, same shape as tau2's real solver) |
 | C1 | Skill quality gate / pruning | ✅ | gate (#396) + decay + active pruning (`skill_stats.evictable()` + `skills evict`), wired (`agent.py:274`, `orchestrator.py:227`), tested; only versioning absent |
-| C2 | Learning-substrate decision (close loop vs. prune) | ⬜ decision | `training/`, `prm.py`, compaction gate are scaffolds |
+| C2 | Learning-substrate decision (close loop vs. prune) | ✅ decision | **Park** — keep the wired half (`prm.py` interface + `HeuristicPRM` default + `donation.py`/`ingest.py` data-shaping, all fail-open/opt-in), don't close the outcome-reward loop yet (speculative pre-volume), don't prune the offline scaffolds (`training/rlaif.py`, learned compaction/reflexion gates — free when off). Revisit on a trajectory-volume + operator-pull tripwire. No code change required. [`specs/learning-substrate-decision.md`](./specs/learning-substrate-decision.md) |
 | C3 | Verifier default-on across goal types | ✅ | `agent.py:1155–1342` (not coding-gated) |
 | D1 | Shared tool-reliability layer | ✅ #684 | `tool_reliability.py`, `retry.py` |
 | D2 | Semantic memory wired into reflexion | ✅ #678 | `reflexion.py` cosine path |
@@ -82,10 +82,13 @@ reliability plumbing (D) have since shipped — see the table.
    real task files plugging in via `--dataset`. The only remainder — common to both —
    is wiring a real Maverick-driving solver (+ container task envs / user simulator)
    at the injected-solver seam; that is operator/integration work, not harness work.
-5. **Decisions (need the founder):** C2 learning substrate (close the eval→reward
-   loop or prune the scaffolds); B3 A2A-vs-ACD; and the breadth-vs-depth call — see
-   [`specs/tool-inventory.md`](./specs/tool-inventory.md) (56 core tools vs. a
-   47-tool SaaS-connector tail).
+5. **Decisions:** ✅ **C2 learning substrate** — decided: *park* (keep the wired
+   PRM/donation half, don't close the loop pre-volume, don't prune the scaffolds;
+   revisit on a trajectory-volume tripwire — [`specs/learning-substrate-decision.md`](./specs/learning-substrate-decision.md)).
+   ✅ **B3 A2A-vs-ACD** — decided: adopt A2A, cut ACD
+   ([`specs/a2a-vs-acd-decision.md`](./specs/a2a-vs-acd-decision.md)). Still open:
+   the **breadth-vs-depth** tool call — see [`specs/tool-inventory.md`](./specs/tool-inventory.md)
+   (56 core tools vs. a 47-tool SaaS-connector tail).
 
 **Accuracy caveats.** MCP Sampling / Roots / Logging appear to be on a deprecation
 path — don't build on sampling. Some ecosystem dates/specs (mid-2026 MCP RC,
