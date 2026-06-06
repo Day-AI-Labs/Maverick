@@ -8,6 +8,7 @@ parsing, and that it's a drop-in for start_mcp_clients + tools_from_mcp.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
@@ -91,6 +92,78 @@ async def test_handles_sse_response(monkeypatch):
     c = _client()
     await c.start()
     assert await c.call_tool("echo", {"msg": "sse"}) == "hi sse"  # extracted past the heartbeat
+    await c.stop()
+
+
+class NeverEndingSSE(httpx.AsyncByteStream):
+    def __init__(self, result: dict):
+        self.result = result
+        self.closed = False
+
+    async def __aiter__(self):
+        yield b": heartbeat\n\n"
+        yield f"data: {json.dumps(self.result)}\n\n".encode()
+        while True:
+            await asyncio.sleep(3600)
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class ChunkedSSE(httpx.AsyncByteStream):
+    def __init__(self, chunks: list[bytes]):
+        self.chunks = chunks
+
+    async def __aiter__(self):
+        for chunk in self.chunks:
+            yield chunk
+
+
+@pytest.mark.asyncio
+async def test_streaming_sse_returns_without_waiting_for_close(monkeypatch):
+    streams: list[NeverEndingSSE] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        method = body.get("method")
+        if method != "tools/call":
+            return make_handler()(request)
+        result = {"jsonrpc": "2.0", "id": body["id"],
+                  "result": {"content": [{"type": "text", "text": "streamed"}]}}
+        stream = NeverEndingSSE(result)
+        streams.append(stream)
+        return httpx.Response(
+            200, headers={"content-type": "text/event-stream"}, stream=stream)
+
+    _install(monkeypatch, handler)
+    c = _client()
+    await c.start()
+    assert await asyncio.wait_for(c.call_tool("echo", {}), timeout=1) == "streamed"
+    assert streams and streams[0].closed
+    await c.stop()
+
+
+@pytest.mark.asyncio
+async def test_sse_response_size_is_capped(monkeypatch):
+    import maverick.mcp_client as mcp_client
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        method = body.get("method")
+        if method != "tools/call":
+            return make_handler()(request)
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=ChunkedSSE([b": heartbeat\n\n", b"data: ", b"x" * 64]),
+        )
+
+    _install(monkeypatch, handler)
+    c = _client()
+    await c.start()
+    monkeypatch.setattr(mcp_client, "_MAX_HTTP_RESPONSE_BYTES", 32)
+    with pytest.raises(MCPClientError, match="SSE response exceeded"):
+        await c.call_tool("echo", {})
     await c.stop()
 
 
