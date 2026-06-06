@@ -20,6 +20,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
+from fnmatch import fnmatch
 
 from .safety.tool_risk import risk_rank, tool_risk
 
@@ -33,6 +34,10 @@ class Capability:
     - ``deny_tools``: always subtractive; deny wins over allow.
     - ``max_risk``: optional ceiling ("low"/"medium"/"high"); ``None`` == no cap.
     - ``expires_at``: optional epoch-seconds expiry; ``None`` == never.
+    - ``allow_paths``: fnmatch-style filesystem path globs the principal may
+      touch; empty set means *all* paths (same "empty == all" convention).
+    - ``allow_hosts``: fnmatch-style network host globs the principal may reach;
+      empty set means *all* hosts.
     """
 
     principal: str
@@ -40,6 +45,8 @@ class Capability:
     deny_tools: frozenset[str] = frozenset()
     max_risk: str | None = None
     expires_at: float | None = None
+    allow_paths: frozenset[str] = frozenset()
+    allow_hosts: frozenset[str] = frozenset()
 
     def is_expired(self, now: float | None = None) -> bool:
         if self.expires_at is None:
@@ -61,6 +68,18 @@ class Capability:
             return False
         return True
 
+    def permits_path(self, path: str) -> bool:
+        """True iff ``path`` matches some ``allow_paths`` glob (empty == all)."""
+        if not self.allow_paths:
+            return True
+        return any(fnmatch(path, pat) for pat in self.allow_paths)
+
+    def permits_host(self, host: str) -> bool:
+        """True iff ``host`` matches some ``allow_hosts`` glob (empty == all)."""
+        if not self.allow_hosts:
+            return True
+        return any(fnmatch(host, pat) for pat in self.allow_hosts)
+
     def attenuate(
         self,
         *,
@@ -68,6 +87,8 @@ class Capability:
         allow: set[str] | frozenset[str] | None = None,
         deny: set[str] | frozenset[str] | None = None,
         max_risk: str | None = None,
+        allow_paths: set[str] | frozenset[str] | None = None,
+        allow_hosts: set[str] | frozenset[str] | None = None,
     ) -> Capability:
         """Return a strictly-narrower grant. It can never broaden:
 
@@ -75,10 +96,13 @@ class Capability:
           allows all, the child may be *restricted* to ``allow``).
         - ``deny`` unions (the deny-set only grows).
         - ``max_risk`` can only tighten (min by rank).
+        - ``allow_paths`` / ``allow_hosts`` intersect (an all-permissive scope
+          may be *restricted* by the child; an already-restricted scope only
+          shrinks, and can never gain a path/host the parent lacked).
         - ``expires_at`` is inherited (a child never outlives its parent).
 
-        By construction, every tool the result ``permits`` is also permitted
-        by ``self`` — children cannot escalate.
+        By construction, every tool/path/host the result permits is also
+        permitted by ``self`` — children cannot escalate.
         """
         if allow is None:
             new_allow = self.allow_tools
@@ -98,6 +122,8 @@ class Capability:
             deny_tools=new_deny,
             max_risk=new_max,
             expires_at=self.expires_at,
+            allow_paths=_narrow_globs(self.allow_paths, allow_paths),
+            allow_hosts=_narrow_globs(self.allow_hosts, allow_hosts),
         )
 
     def signing_bytes(self) -> bytes:
@@ -109,10 +135,41 @@ class Capability:
                 "deny_tools": sorted(self.deny_tools),
                 "max_risk": self.max_risk,
                 "expires_at": self.expires_at,
+                "allow_paths": sorted(self.allow_paths),
+                "allow_hosts": sorted(self.allow_hosts),
             },
             sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8")
+
+
+# A glob that can never match any real path or host, used to represent an
+# empty (permits-nothing) scope without colliding with the "empty set == all"
+# convention -- NUL is illegal in POSIX paths and DNS names alike.
+_DENY_ALL_GLOB = "\x00"
+
+
+def _narrow_globs(
+    current: frozenset[str],
+    requested: set[str] | frozenset[str] | None,
+) -> frozenset[str]:
+    """Intersect two allow-globs sets, preserving the narrow-only invariant.
+
+    Mirrors the ``allow_tools`` intersection (empty == all): an all-permissive
+    parent may be restricted to ``requested``; an already-restricted parent
+    only shrinks. When both sides are restricted but their patterns are
+    disjoint, the result must permit *nothing* -- collapsing to the empty set
+    there would wrongly mean "all", so we emit an unmatchable sentinel instead.
+    """
+    if requested is None:
+        return current
+    req = frozenset(requested)
+    if not current:
+        return req
+    if not req:
+        return current
+    narrowed = current & req
+    return narrowed or frozenset({_DENY_ALL_GLOB})
 
 
 def _have_crypto() -> bool:
