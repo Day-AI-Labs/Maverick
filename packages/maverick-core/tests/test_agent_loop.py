@@ -386,13 +386,25 @@ class TestLoopGuard:
         # Streak restarted, so the very next failure is well below threshold.
         assert a._loop_guard_note("shell", {"cmd": "x"}, "ERROR: a") == ""
 
-    def test_distinct_calls_have_independent_streaks(self, ctx):
+    def test_intervening_call_resets_the_streak(self, ctx, monkeypatch):
         from maverick import agent as agent_mod
+        monkeypatch.setattr(agent_mod, "_LOOP_GUARD_THRESHOLD", 2)
         a = Agent(ctx=ctx, role="researcher", brief="x")
-        for _ in range(agent_mod._LOOP_GUARD_THRESHOLD):
-            a._loop_guard_note("shell", {"cmd": "A"}, "ERROR")
-        # Different args are tracked separately -> no nudge on their first fail.
-        assert a._loop_guard_note("shell", {"cmd": "B"}, "ERROR") == ""
+        assert a._loop_guard_note("shell", {"cmd": "A"}, "ERROR: A") == ""
+        assert a._loop_guard_note("shell", {"cmd": "B"}, "ERROR: B") == ""
+        # The second A failure is not consecutive, so it must not nudge.
+        assert a._loop_guard_note("shell", {"cmd": "A"}, "ERROR: A") == ""
+
+    def test_different_error_resets_the_streak(self, ctx, monkeypatch):
+        from maverick import agent as agent_mod
+        monkeypatch.setattr(agent_mod, "_LOOP_GUARD_THRESHOLD", 2)
+        a = Agent(ctx=ctx, role="researcher", brief="x")
+        assert a._loop_guard_note("shell", {"cmd": "A"}, "ERROR: one") == ""
+        # Same tool and args, but a different error is not the same failure mode.
+        assert a._loop_guard_note("shell", {"cmd": "A"}, "ERROR: two") == ""
+        assert "[loop-guard]" in a._loop_guard_note(
+            "shell", {"cmd": "A"}, "ERROR: two",
+        )
 
     def test_can_be_disabled(self, ctx, monkeypatch):
         from maverick import agent as agent_mod
