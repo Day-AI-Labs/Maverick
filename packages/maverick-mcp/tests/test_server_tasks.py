@@ -115,6 +115,65 @@ def test_cancel_while_running_keeps_cancelled_and_drops_result():
         store.shutdown()
 
 
+def test_active_task_cap_rejects_unbounded_submissions():
+    release = threading.Event()
+    started = 0
+    started_lock = threading.Lock()
+
+    def runner(name, args):
+        nonlocal started
+        with started_lock:
+            started += 1
+        release.wait(timeout=5)
+        return _ok("done")
+
+    store = TaskStore(runner, max_workers=1, max_tasks=2)
+    try:
+        first = store.create("maverick_start", {}, {"ttl": 60000})
+        second = store.create("maverick_start", {}, {"ttl": 60000})
+        for _ in range(200):
+            with started_lock:
+                if started:
+                    break
+            time.sleep(0.01)
+
+        with pytest.raises(TaskError) as ei:
+            store.create("maverick_start", {}, {"ttl": 60000})
+        assert ei.value.code == -32602
+        assert "too many active tasks" in ei.value.message
+
+        store.cancel(second.id)
+        with pytest.raises(TaskError):
+            store.create("maverick_start", {}, {"ttl": 60000})
+        with started_lock:
+            assert started == 1
+
+        release.set()
+        store.result(first.id)
+        for _ in range(200):
+            if second.future is not None and second.future.done():
+                break
+            time.sleep(0.01)
+
+        third = store.create("maverick_start", {}, {"ttl": 60000})
+        assert store.get(third.id)["status"] == "working"
+    finally:
+        release.set()
+        store.shutdown()
+
+
+def test_terminal_tasks_are_pruned_when_cap_is_full():
+    store = TaskStore(lambda n, a: _ok("done"), max_tasks=1)
+    try:
+        first = store.create("maverick_start", {}, {"ttl": 60000})
+        store.result(first.id)
+        second = store.create("maverick_start", {}, {"ttl": 60000})
+        assert second.id != first.id
+        assert [t["taskId"] for t in store.list(None)["tasks"]] == [second.id]
+    finally:
+        store.shutdown()
+
+
 def test_get_and_result_unknown_task_raise_invalid_params():
     store = TaskStore(lambda n, a: _ok("x"))
     try:
