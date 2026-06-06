@@ -72,6 +72,19 @@ class IncomingMessage:
     attachments: list[dict] = field(default_factory=list)
     channel: str = ""
     raw: object = None
+    sender_id: str | None = None
+
+    @property
+    def principal_id(self) -> str:
+        """Stable end-user identity for auth, history, and tenant scoping.
+
+        ``user_id`` remains the channel reply target for room-based adapters
+        (Slack channel, Discord channel, Matrix room). Those adapters set
+        ``sender_id`` to the authenticated human sender so per-user server state
+        is not accidentally shared by everyone in a room. One-to-one channels
+        leave ``sender_id`` unset and continue to use ``user_id`` as before.
+        """
+        return self.sender_id or self.user_id
 
     def __post_init__(self) -> None:
         cap = _max_inbound_chars()

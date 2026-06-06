@@ -95,6 +95,7 @@ if _HAVE_DISCORD:
                 text=message.content,
                 channel="discord",
                 raw=message,
+                sender_id=author_id,
             )
             try:
                 reply = await self.handler(msg)

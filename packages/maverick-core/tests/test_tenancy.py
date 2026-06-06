@@ -205,3 +205,50 @@ def test_tenant_scope_explicit_tenant_ignores_flag(monkeypatch):
     from maverick.paths import tenant_scope
     with tenant_scope(tenant="acme"):
         assert current_tenant() == "acme"  # explicit tenant works even when flag off
+
+
+def test_server_tenant_scope_uses_authenticated_principal(monkeypatch):
+    import asyncio
+
+    import maverick.server as server_mod
+
+    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setenv("MAVERICK_TENANT_BY_USER", "1")
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    monkeypatch.setattr("maverick.compliance.first_turn_disclosure", lambda *a, **k: None)
+
+    class _World:
+        def get_or_create_conversation(self, channel, user_id):
+            self.conversation_key = (channel, user_id)
+            return type("Conversation", (), {"id": 1})()
+
+        def append_turn(self, conversation_id, role, text):
+            return None
+
+        def create_goal(self, title, text):
+            return 7
+
+        def set_goal_status(self, *args, **kwargs):
+            return None
+
+    captured = {}
+
+    async def _fake_run_goal(*args, **kwargs):
+        captured["kwargs"] = kwargs
+        captured["tenant"] = current_tenant()
+        return "ok"
+
+    monkeypatch.setattr(server_mod, "run_goal", _fake_run_goal)
+    world = _World()
+    srv = server_mod.Server(world=world, llm=object(), sandbox=object())
+
+    class _RoomMessage:
+        channel = "slack"
+        user_id = "CROOM"  # reply target, not the human sender
+        principal_id = "UALICE"
+        text = "hello"
+
+    assert asyncio.run(srv._handle_message(_RoomMessage())) == "ok"
+    assert world.conversation_key == ("slack", "UALICE")
+    assert captured["kwargs"]["user_id"] == "slack:UALICE"
+    assert captured["tenant"] == "slack%3AUALICE"
