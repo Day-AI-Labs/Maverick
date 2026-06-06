@@ -1837,15 +1837,19 @@ def write_config(
         for k, v in durable.items():
             _emit_kv(lines, k, v)
 
-    if capabilities:
+    capability_config = dict(capabilities or {})
+    if web_search_enabled and not capability_config.get("web_search"):
+        # web_search is wired through enable_web_search at kernel
+        # boot; reflect the wizard's pick under [capabilities].
+        capability_config["web_search"] = True
+    if advanced and advanced.get("enforce_capabilities"):
+        capability_config["enforce"] = True
+
+    if capability_config:
         lines.append("")
         lines.append("[capabilities]")
-        for k, v in capabilities.items():
+        for k, v in capability_config.items():
             lines.append(f"{k} = {str(v).lower()}")
-        if web_search_enabled and not capabilities.get("web_search"):
-            # web_search is wired through enable_web_search at kernel
-            # boot; reflect the wizard's pick under [capabilities].
-            lines.append("web_search = true")
 
     if advanced:
         # Advanced reasoning toggles -> the kernel's config sections. Each is
@@ -1866,10 +1870,6 @@ def write_config(
             lines.append("")
             lines.append("[verification]")
             lines.append("risk_proportional = true")
-        if advanced.get("enforce_capabilities"):
-            lines.append("")
-            lines.append("[capabilities]")
-            lines.append("enforce = true")
         if advanced.get("enforce_quotas"):
             lines.append("")
             lines.append("[quotas]")
