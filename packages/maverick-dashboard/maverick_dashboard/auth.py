@@ -68,6 +68,14 @@ def require_principal(request: Request) -> VerifiedPrincipal | None:
         return None
     if request.url.path in _OIDC_EXEMPT_PATHS:
         return None
+    # HMAC-signed webhooks (GitHub/Telegram/Linear/Jira/...) can't present an
+    # OIDC ID token -- the external sender authenticates with a shared-secret
+    # signature, verified by the webhook handler itself. Requiring an OIDC
+    # bearer here would 401 every inbound webhook when OIDC is on, breaking
+    # event delivery. They're gated by their signature, not OIDC (mirrors the
+    # webhook entries in app._AUTH_EXEMPT).
+    if request.url.path.startswith("/webhook/"):
+        return None
 
     token = _bearer_token(request)
     if not token:

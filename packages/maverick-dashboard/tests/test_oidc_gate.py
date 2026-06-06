@@ -105,3 +105,20 @@ def test_enabled_health_endpoints_stay_open(monkeypatch):
     monkeypatch.setattr(auth, "verify_oidc_token", _boom)
 
     assert client.get("/livez").status_code == 200
+
+
+def test_enabled_webhooks_exempt_from_oidc(monkeypatch):
+    """OIDC on: HMAC-signed webhooks bypass the OIDC gate (external senders
+    can't present an ID token; they're authenticated by their own signature).
+    The gate must NOT reject them and must NOT call verify_oidc_token."""
+    monkeypatch.setattr(auth, "oidc_enabled", lambda: True)
+
+    def _boom(*a, **k):  # pragma: no cover - exempt paths must not verify
+        raise AssertionError("verify_oidc_token called on an exempt webhook path")
+    monkeypatch.setattr(auth, "verify_oidc_token", _boom)
+
+    resp = client.post("/webhook/start", json={})
+    # If the gate had run verify, _boom would surface as a 500; and the OIDC
+    # gate's own 401 detail must never be what rejects a webhook.
+    assert resp.status_code != 500
+    assert resp.json().get("detail") != "OIDC bearer token required"
