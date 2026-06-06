@@ -24,6 +24,7 @@ MANIFEST
 
 # Virtualenvs
 .venv/
+.venv*/
 venv/
 env/
 ENV/
