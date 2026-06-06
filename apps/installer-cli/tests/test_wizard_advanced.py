@@ -4,7 +4,10 @@ read (the rule-6 integrity check: a wizard toggle must actually reach the
 feature)."""
 from __future__ import annotations
 
-import tomllib
+try:
+    import tomllib  # 3.11+
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib  # type: ignore[no-redef]
 
 
 def _write(cfg_dir, monkeypatch, advanced, capabilities=None):
