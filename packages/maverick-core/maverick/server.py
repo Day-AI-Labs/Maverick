@@ -88,14 +88,18 @@ class Server:
         goal_id = self.world.create_goal(title, msg.text)
 
         budget = budget_from_config()
+        from .paths import tenant_scope
         try:
-            result = await run_goal(
-                self.llm, self.world, budget, goal_id,
-                sandbox=self.sandbox, max_depth=self.max_depth,
-                conversation_id=conversation.id,
-                channel=msg.channel or "unknown",
-                user_id=f"{msg.channel or 'unknown'}:{msg.user_id}",
-            )
+            # Per-user tenant isolation when enabled (no-op otherwise): scopes
+            # the run's cross-session memory to this channel user, then restores.
+            with tenant_scope(channel=msg.channel, user_id=msg.user_id):
+                result = await run_goal(
+                    self.llm, self.world, budget, goal_id,
+                    sandbox=self.sandbox, max_depth=self.max_depth,
+                    conversation_id=conversation.id,
+                    channel=msg.channel or "unknown",
+                    user_id=f"{msg.channel or 'unknown'}:{msg.user_id}",
+                )
         except Exception:
             log.exception("goal #%s run failed", goal_id)
             try:

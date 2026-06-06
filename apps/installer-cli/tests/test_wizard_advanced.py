@@ -91,3 +91,18 @@ def test_enforce_capabilities_writes_and_is_read(tmp_path, monkeypatch):
 
     from maverick.capability import capability_enforced
     assert capability_enforced() is True
+
+
+def test_tenant_by_user_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's tenant toggle writes [tenancy] by_user, and
+    the kernel reads it back."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT_BY_USER", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"tenant_by_user": True})
+    assert "[tenancy]" in cfg
+    assert "by_user = true" in cfg
+
+    from maverick.paths import tenant_by_user_enabled
+    assert tenant_by_user_enabled() is True

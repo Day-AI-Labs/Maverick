@@ -938,6 +938,11 @@ def pick_advanced() -> dict[str, bool]:
             "spawned sub-agents can only narrow it, never exceed it (least privilege).",
             default=False,
         ),
+        "tenant_by_user": _q_confirm(
+            "Isolate each user into their own tenant? Per-user cross-session memory "
+            "is kept separate — recommended for multi-user servers.",
+            default=False,
+        ),
         "deferred_tools": _q_confirm(
             "Deferred tool loading? Show the model a small core toolset plus a "
             "find_tools search tool, loading the long tail (80+ integrations, MCP) "
@@ -1859,6 +1864,10 @@ def write_config(
             lines.append("")
             lines.append("[capabilities]")
             lines.append("enforce = true")
+        if advanced.get("tenant_by_user"):
+            lines.append("")
+            lines.append("[tenancy]")
+            lines.append("by_user = true")
         if advanced.get("tree_of_thought"):
             lines.append("")
             lines.append("[planning]")

@@ -125,3 +125,47 @@ def test_memory_isolated_across_tenants(monkeypatch, tmp_path):
         assert "a-secret" in out
     finally:
         reset_tenant(tok)
+
+
+# --- per-user tenant scope (server wiring) ---------------------------------
+
+def test_tenant_by_user_disabled_by_default(monkeypatch):
+    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.delenv("MAVERICK_TENANT_BY_USER", raising=False)
+    from maverick.paths import tenant_by_user_enabled
+    assert tenant_by_user_enabled() is False
+
+
+def test_tenant_by_user_via_env(monkeypatch):
+    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setenv("MAVERICK_TENANT_BY_USER", "1")
+    from maverick.paths import tenant_by_user_enabled
+    assert tenant_by_user_enabled() is True
+
+
+def test_tenant_scope_noop_when_disabled(monkeypatch):
+    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.delenv("MAVERICK_TENANT_BY_USER", raising=False)
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    from maverick.paths import tenant_scope
+    with tenant_scope(channel="tg", user_id="42"):
+        assert current_tenant() is None  # disabled -> no isolation
+
+
+def test_tenant_scope_sets_and_restores(monkeypatch):
+    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setenv("MAVERICK_TENANT_BY_USER", "1")
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    from maverick.paths import tenant_scope
+    assert current_tenant() is None
+    with tenant_scope(channel="tg", user_id="42"):
+        assert current_tenant() == "tg_42"  # ':' sanitized to '_'
+    assert current_tenant() is None  # restored after the block
+
+
+def test_tenant_scope_explicit_tenant_ignores_flag(monkeypatch):
+    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.delenv("MAVERICK_TENANT_BY_USER", raising=False)
+    from maverick.paths import tenant_scope
+    with tenant_scope(tenant="acme"):
+        assert current_tenant() == "acme"  # explicit tenant works even when flag off
