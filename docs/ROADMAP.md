@@ -86,9 +86,12 @@ reliability plumbing (D) have since shipped — see the table.
    PRM/donation half, don't close the loop pre-volume, don't prune the scaffolds;
    revisit on a trajectory-volume tripwire — [`specs/learning-substrate-decision.md`](./specs/learning-substrate-decision.md)).
    ✅ **B3 A2A-vs-ACD** — decided: adopt A2A, cut ACD
-   ([`specs/a2a-vs-acd-decision.md`](./specs/a2a-vs-acd-decision.md)). Still open:
-   the **breadth-vs-depth** tool call — see [`specs/tool-inventory.md`](./specs/tool-inventory.md)
-   (56 core tools vs. a 47-tool SaaS-connector tail).
+   ([`specs/a2a-vs-acd-decision.md`](./specs/a2a-vs-acd-decision.md)).
+   ✅ **Breadth-vs-depth** — decided: *freeze breadth, invest in depth*; re-home
+   (don't delete) the 47-connector tail to the plugin/registry tier (the B2 registry
+   that re-homing depends on now ships), telemetry-first then migrate with a
+   deprecation window ([`specs/breadth-vs-depth-decision.md`](./specs/breadth-vs-depth-decision.md),
+   grounded in [`specs/tool-inventory.md`](./specs/tool-inventory.md)).
 
 **Accuracy caveats.** MCP Sampling / Roots / Logging appear to be on a deprecation
 path — don't build on sampling. Some ecosystem dates/specs (mid-2026 MCP RC,
