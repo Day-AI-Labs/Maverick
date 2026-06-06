@@ -226,6 +226,7 @@ class ToolRegistry:
         # _activated) tools are shown to the model; the long tail is
         # discovered on demand. run() can still execute ANY registered tool.
         self._deferred = False
+        self._core_names: set[str] = set()
         self._core: set[str] = set()
         self._activated: set[str] = set()
 
@@ -256,6 +257,8 @@ class ToolRegistry:
         if not self._acl_allows(tool.name):
             return
         self._tools[tool.name] = tool
+        if self._deferred and tool.name in self._core_names:
+            self._core.add(tool.name)
 
     def get(self, name: str) -> Tool:
         return self._tools[name]
@@ -275,7 +278,8 @@ class ToolRegistry:
     def enable_deferred(self, core: set[str]) -> None:
         """Expose only ``core`` (∩ registered) + find_tools to the model."""
         self._deferred = True
-        self._core = {n for n in core if n in self._tools}
+        self._core_names = set(core)
+        self._core = {n for n in self._core_names if n in self._tools}
 
     def deferred_enabled(self) -> bool:
         return self._deferred
