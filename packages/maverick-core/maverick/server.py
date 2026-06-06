@@ -65,20 +65,26 @@ class Server:
 
         from .paths import tenant_by_user_enabled, tenant_scope
 
+        # The authenticated sender. Room-based adapters keep msg.user_id as the
+        # reply target and expose the human via msg.principal_id; the tenant, the
+        # conversation key, and run_goal's user_id must ALL agree on it -- else a
+        # user's world.db lands under a different tenant than their memory/audit.
+        principal_id = getattr(msg, "principal_id", msg.user_id)
+
         # Resolve the per-tenant world ONCE. When per-user tenancy is on, this
         # message's goal/conversation/turns land in that user's own world.db
-        # (~/.maverick/tenants/<channel>:<user_id>/world.db) -- the SAME tenant
-        # the tenant_scope() below pins for cross-session memory + audit, so all
-        # three stores stay co-located. Off (default) -> tenant is None and we
-        # reuse the SHARED self.world unchanged (``world is self.world``), so the
-        # legacy single-tenant path is byte-for-byte identical and we never open
-        # a second connection to ~/.maverick/world.db. self.world also still
+        # (~/.maverick/tenants/<channel>:<principal_id>/world.db) -- the SAME
+        # tenant the tenant_scope() below pins for cross-session memory + audit,
+        # so all three stores stay co-located. Off (default) -> tenant is None and
+        # we reuse the SHARED self.world unchanged (``world is self.world``), so
+        # the legacy single-tenant path is byte-for-byte identical and we never
+        # open a second connection to ~/.maverick/world.db. self.world also still
         # backs startup orphan-reclaim and the dashboard. Fail-soft: if anything
         # goes wrong resolving the tenant world, fall back to self.world rather
         # than dropping the message.
         try:
             tenant = (
-                f"{msg.channel or 'unknown'}:{msg.user_id}"
+                f"{msg.channel or 'unknown'}:{principal_id}"
                 if tenant_by_user_enabled()
                 else None
             )
@@ -96,7 +102,6 @@ class Server:
         # first turn. `first_turn_disclosure` checks the conversation
         # row (creates if needed) and returns None on follow-up turns.
         from .compliance import first_turn_disclosure
-        principal_id = getattr(msg, "principal_id", msg.user_id)
         disclosure = first_turn_disclosure(
             world,
             channel=msg.channel or "unknown",
