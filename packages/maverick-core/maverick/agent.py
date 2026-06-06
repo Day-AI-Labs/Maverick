@@ -760,6 +760,12 @@ class Agent:
                 self.name, "error",
                 f"tool={name} DENIED by capability (principal={cap.principal})",
             )
+            try:  # tamper-evident record of the denial; never block on audit
+                from .audit import EventKind, record
+                record(EventKind.CAPABILITY_DENIED, agent=self.name,
+                       goal_id=self.ctx.goal_id, tool=name, principal=cap.principal)
+            except Exception:  # pragma: no cover
+                pass
             return (
                 f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
                 f"not granted tool {name!r}. The tool was not executed."

@@ -16,6 +16,7 @@ Payload shapes (kind -> required fields, all events also carry
   tool_call:         name:str, input_summary:str (truncated)
   tool_result:       name:str, status:str, output_summary:str
   shield_block:      stage:str (input|tool|output), reason:str, score:float|None
+  capability_denied: tool:str, principal:str
   consent_prompt:    action:str, risk:str (low|medium|high|critical)
   consent_result:    decision:str (approve|deny|timeout)
   secret_redacted:   tool_name:str, pattern:str, count:int
@@ -39,6 +40,7 @@ class EventKind:
     TOOL_CALL       = "tool_call"
     TOOL_RESULT     = "tool_result"
     SHIELD_BLOCK    = "shield_block"
+    CAPABILITY_DENIED = "capability_denied"
     CONSENT_PROMPT  = "consent_prompt"
     CONSENT_RESULT  = "consent_result"
     SECRET_REDACTED = "secret_redacted"
