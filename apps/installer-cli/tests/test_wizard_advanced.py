@@ -76,3 +76,18 @@ def test_risk_proportional_verify_writes_and_is_read(tmp_path, monkeypatch):
 
     from maverick.agent import _risk_proportional_verify_enabled
     assert _risk_proportional_verify_enabled() is True
+
+
+def test_enforce_capabilities_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's capability toggle writes [capabilities]
+    enforce, and the kernel reads it back."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_ENFORCE_CAPABILITIES", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"enforce_capabilities": True})
+    assert "[capabilities]" in cfg
+    assert "enforce = true" in cfg
+
+    from maverick.capability import capability_enforced
+    assert capability_enforced() is True
