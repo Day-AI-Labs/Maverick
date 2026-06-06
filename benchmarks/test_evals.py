@@ -33,6 +33,11 @@ def gaia():
     return _load("eval_gaia.py")
 
 
+@pytest.fixture(scope="module")
+def run_eval():
+    return _load("run_eval.py")
+
+
 # --- framework ---------------------------------------------------------
 
 class TestRunBenchmark:
@@ -129,3 +134,38 @@ class TestGaiaEndToEnd:
         bench = gaia.GaiaBenchmark()
         summary = evals.run_benchmark(bench, lambda t: "")
         assert summary["pass_at_1"] == 0.0
+
+
+# --- real CLI solver wrapper ------------------------------------------
+
+class TestMaverickSolver:
+    def test_runs_supported_start_command_and_returns_stdout(self, run_eval, monkeypatch, evals):
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+            return run_eval.subprocess.CompletedProcess(
+                cmd, 0, stdout="FINAL ANSWER: Paris\n", stderr=""
+            )
+
+        monkeypatch.setattr(run_eval.subprocess, "run", fake_run)
+        solver = run_eval._maverick_solver(max_dollars=0.25, max_wall_seconds=12)
+        task = evals.EvalTask(task_id="task", prompt="What is the answer?")
+
+        assert solver(task) == "FINAL ANSWER: Paris\n"
+        assert calls == [
+            (
+                [
+                    "maverick", "start",
+                    "--max-dollars", "0.25",
+                    "--max-wall-seconds", "12",
+                    "What is the answer?",
+                ],
+                {
+                    "capture_output": True,
+                    "text": True,
+                    "timeout": 12,
+                    "check": True,
+                },
+            )
+        ]
