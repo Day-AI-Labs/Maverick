@@ -612,6 +612,7 @@ class MCPClient:
         decision = require_consent(
             "mcp-elicitation", risk="medium",
             scope=self.spec.name, detail=message,
+            allow_auto_approve=False,
         )
         if not decision.granted:
             return {"action": "cancel"}
