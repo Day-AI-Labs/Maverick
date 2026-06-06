@@ -213,3 +213,18 @@ def test_oidc_disabled_writes_no_section(tmp_path, monkeypatch):
 
     from maverick.oidc import oidc_enabled
     assert oidc_enabled() is False
+
+
+def test_enterprise_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's enterprise toggle writes [enterprise] mode, and
+    the kernel reads it back as enterprise_enabled()."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_ENTERPRISE", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"enterprise": True})
+    assert "[enterprise]" in cfg
+    assert "mode = true" in cfg
+
+    from maverick.enterprise import enterprise_enabled
+    assert enterprise_enabled() is True

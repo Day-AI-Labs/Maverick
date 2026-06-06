@@ -987,6 +987,13 @@ def pick_advanced() -> dict[str, Any]:
             "is kept separate — recommended for multi-user servers.",
             default=False,
         ),
+        "enterprise": _q_confirm(
+            "Enterprise mode (private/sensitive data)? Pin every LLM call to a "
+            "local/self-hosted model so data never leaves your boundary, gate "
+            "destructive actions, and enforce per-agent capabilities. Recommended "
+            "when the agent handles PHI/PII/financial data.",
+            default=False,
+        ),
         "deferred_tools": _q_confirm(
             "Deferred tool loading? Show the model a small core toolset plus a "
             "find_tools search tool, loading the long tail (80+ integrations, MCP) "
@@ -1925,6 +1932,10 @@ def write_config(
             lines.append("")
             lines.append("[tenancy]")
             lines.append("by_user = true")
+        if advanced.get("enterprise"):
+            lines.append("")
+            lines.append("[enterprise]")
+            lines.append("mode = true")
         if advanced.get("tree_of_thought"):
             lines.append("")
             lines.append("[planning]")

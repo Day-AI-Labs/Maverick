@@ -60,7 +60,19 @@ def _resolve_mode() -> str:
     # Default 'auto-approve': gating is opt-in, so wiring require_consent into
     # tools (e.g. shell) does not change out-of-the-box behavior. Operators
     # set MAVERICK_CONSENT_MODE=ask/dashboard/auto-deny to actually gate.
-    return (os.environ.get("MAVERICK_CONSENT_MODE") or "auto-approve").strip().lower()
+    env = os.environ.get("MAVERICK_CONSENT_MODE")
+    if env:
+        return env.strip().lower()
+    # Enterprise mode flips the default to 'ask' so destructive actions are gated
+    # (and denied in non-interactive contexts) when handling sensitive data. An
+    # explicit MAVERICK_CONSENT_MODE above still wins.
+    try:
+        from ..enterprise import enterprise_enabled
+        if enterprise_enabled():
+            return "ask"
+    except Exception:
+        pass
+    return "auto-approve"
 
 
 def _ledger_lines() -> list[str]:
