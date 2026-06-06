@@ -167,6 +167,18 @@ def _is_origin_allowed(request) -> bool:
     return normalized in _allowed_origins()
 
 
+def _http_tasks_enabled() -> bool:
+    """Whether async MCP tasks are offered over the HTTP transport.
+
+    Opt-in (default off): over HTTP a single bearer token is the trust boundary,
+    so an enabled task store is shared by all authenticated callers. That's fine
+    for single-tenant / trusted-bearer deployments; multi-tenant per-caller task
+    isolation is a later slice. Set MAVERICK_MCP_HTTP_TASKS=1 to enable.
+    """
+    return os.environ.get("MAVERICK_MCP_HTTP_TASKS", "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
 def _check_bearer(authorization: str | None) -> bool:
     """Bearer-token gate for network HTTP transport.
 
@@ -189,7 +201,11 @@ def _result_envelope(request_id, result: dict) -> dict:
 
 def _error_envelope(request_id, exc: Exception) -> dict:
     from .server import _ProtocolError
-    if isinstance(exc, _ProtocolError):
+    from .tasks import TaskError
+    # Both _ProtocolError and TaskError carry an explicit JSON-RPC (code,
+    # message); preserve them so a task error (e.g. -32602 task not found)
+    # reaches the HTTP client with the same wire code the stdio path produces.
+    if isinstance(exc, (_ProtocolError, TaskError)):
         code, message = exc.code, exc.message
     else:
         code, message = -32603, f"internal error: {exc}"
@@ -273,6 +289,13 @@ def build_app(server) -> FastAPI:
 
     from maverick import a2a
     a2a.mount(app)
+
+    # Offer async tasks over HTTP when opted in (MAVERICK_MCP_HTTP_TASKS). The
+    # store lives on this server instance, so it persists across requests: a
+    # task-augmented tools/call returns a CreateTaskResult and the client polls
+    # tasks/get|result|cancel|list on later POSTs. Off by default -> task field
+    # ignored and tasks/* return -32601, exactly as before.
+    server._tasks_enabled = _http_tasks_enabled()
 
     @app.post("/mcp")
     async def mcp_endpoint(
@@ -386,6 +409,12 @@ _METHOD_MAP = {
     "resources/unsubscribe": "handle_resources_unsubscribe",
     "prompts/list":    "handle_prompts_list",
     "prompts/get":     "handle_prompts_get",
+    # Tasks (async, pollable). The handlers self-gate on _tasks_enabled and
+    # return -32601 when tasks aren't enabled for this transport.
+    "tasks/get":       "handle_tasks_get",
+    "tasks/result":    "handle_tasks_result",
+    "tasks/cancel":    "handle_tasks_cancel",
+    "tasks/list":      "handle_tasks_list",
 }
 
 

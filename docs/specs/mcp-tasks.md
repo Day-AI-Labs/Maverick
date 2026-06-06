@@ -1,6 +1,6 @@
 # Design Spec: MCP Tasks (async, pollable tool execution)
 
-**Status:** Shipped (stdio server: basic lifecycle + `notifications/tasks/status`); `input_required` + HTTP transport deferred · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (B1, async tasks) · **Spec:** [MCP Tasks 2025-11-25 (experimental)](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks) · **Date:** June 2026
+**Status:** Shipped — stdio (full lifecycle + `notifications/tasks/status` push) **and** HTTP transport (opt-in via `MAVERICK_MCP_HTTP_TASKS`, poll-only); `input_required` deferred · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (B1, async tasks) · **Spec:** [MCP Tasks 2025-11-25 (experimental)](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks) · **Date:** June 2026
 
 ## 1. Problem
 
@@ -19,9 +19,12 @@ background; the requestor polls `tasks/get` and retrieves the result via
 Server side, **stdio only** (`packages/maverick-mcp/maverick_mcp/`):
 
 - **Capability** — `handle_initialize` advertises
-  `tasks: { list:{}, cancel:{}, requests:{ tools:{ call:{} } } }`, but only on
-  stdio (`self._stdio`). The HTTP transport doesn't advertise it, so per the spec
-  a `task` field there is ignored and the call runs normally.
+  `tasks: { list:{}, cancel:{}, requests:{ tools:{ call:{} } } }` when the
+  transport enabled tasks. A transport-neutral `self._tasks_enabled` flag gates it
+  (kept distinct from `self._stdio`, which still gates *elicitation* — that needs
+  the bidirectional pipe). `run()` sets it on stdio; `build_app` sets it on HTTP
+  from `MAVERICK_MCP_HTTP_TASKS`. When tasks are disabled the capability is absent,
+  a `task` field is ignored, and `tasks/*` return `-32601`, per the spec.
 - **Tool opt-in** — `maverick_start` and `maverick_resume` (the long ones) declare
   `execution.taskSupport: "optional"` in `tools/list`. A `task`-augmented call to a
   tool that didn't opt in gets `-32601` (method not found).
@@ -58,9 +61,12 @@ Server side, **stdio only** (`packages/maverick-mcp/maverick_mcp/`):
   to `input_required`, and `tasks/result` on the main thread would drive the
   elicitation + resume). A task that parks a question today simply leaves it for
   the async `maverick_answer` flow.
-- **HTTP transport** — tasks are stdio-only for now. The HTTP path already returns
-  results synchronously per request; task support there (with its own registry and
-  auth-context binding for multi-client isolation) is a follow-up.
+- **Per-caller task isolation over HTTP** — HTTP task support shipped (opt-in;
+  see §6), but the store is **bearer-scoped, not per-caller**: every request
+  authenticated with the one `MAVERICK_MCP_TOKEN` shares the same task registry.
+  That's correct for single-tenant / trusted-bearer deployments; a multi-tenant
+  version that binds each task to a distinct auth context is the follow-up. This is
+  why HTTP tasks are opt-in rather than on by default.
 
 ## 4. Security / resource notes
 
@@ -83,3 +89,33 @@ TTL purge. Server wiring: capability advertised only on stdio; `taskSupport` on 
 long tools; `CreateTaskResult` shape; `-32601` for augmenting a non-task tool;
 `task` ignored over HTTP; runner isolation (main state untouched); and a full
 `run()`-loop create-then-result.
+
+HTTP wiring (`tests/test_http_transport.py::TestHTTPTasks`): capability advertised
+only when `MAVERICK_MCP_HTTP_TASKS` is set; task-augmented `tools/call` →
+`CreateTaskResult`; `tasks/result` blocks (in the dispatch worker thread, not the
+event loop) and returns the `CallToolResult` + related-task meta; `tasks/get` /
+`tasks/list` / `tasks/cancel`; unknown id → `-32602`; with tasks disabled the
+`task` field is ignored (synchronous result) and `tasks/*` → `-32601`.
+
+## 6. HTTP transport (opt-in)
+
+Tasks now work over the Streamable-HTTP transport, gated by `MAVERICK_MCP_HTTP_TASKS`
+(default off). The `TaskStore` is transport-agnostic, so the HTTP path reuses it
+with no new state machine:
+
+- `build_app` sets `server._tasks_enabled` from the env knob. The store lives on
+  the single `server` instance `build_app` wraps, so it persists across requests:
+  a task-augmented `tools/call` returns a `CreateTaskResult`, and the client polls
+  `tasks/get` / `tasks/result` / `tasks/cancel` / `tasks/list` on subsequent POSTs.
+- The four `tasks/*` methods are routed through shared `MCPServer.handle_tasks_*`
+  methods (used by both transports — stdio's `run()` now calls them too) that
+  self-gate on `_tasks_enabled`. `_error_envelope` maps `TaskError` to its JSON-RPC
+  `(code, message)` so an HTTP client sees the same wire codes as stdio.
+- `tasks/result` blocks until terminal, but the HTTP dispatch already runs in a
+  worker thread (`asyncio.to_thread`), so it never wedges the FastAPI event loop.
+- **No push over HTTP:** `notifications/tasks/status` is stdio-only
+  (`_emit_task_status` no-ops when not stdio); HTTP clients poll, which the spec
+  requires them to support regardless.
+- **Off by default** because the store is bearer-scoped (see §3) — opt-in keeps the
+  safe single-client default and preserves the prior "ignore the task field"
+  behavior byte-for-byte.

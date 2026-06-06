@@ -40,7 +40,7 @@ reliability plumbing (D) have since shipped — see the table.
 | B1 | Resource subscriptions | ✅ #694 | `http_transport.py` |
 | B1 | Streamable-HTTP transport | ✅ | `http_transport.py` |
 | B1 | Elicitation | 🟡 | client inbound (`mcp_client.py`) **and** server outbound form mode (`maverick_mcp/server.py`, `tests/test_server_elicitation.py`) shipped — a parked `ask_user` question surfaces as a capability-/stdio-gated `elicitation/create` form, shield-screened both legs, then resumes; only Phase 3 URL mode + eliciting arbitrary flows / the approvals-table surface remain (`specs/mcp-elicitation.md`) |
-| B1 | Async tasks | ✅ | MCP Tasks 2025-11-25 on the stdio server (`maverick_mcp/tasks.py`, `server.py`, `tests/test_server_tasks.py`) — task-augmented `tools/call` returns `CreateTaskResult` and runs on a background worker; `tasks/get`/`result`/`cancel`/`list` + `notifications/tasks/status` push + capability + `execution.taskSupport`. Only `input_required` + HTTP-transport tasks deferred (`specs/mcp-tasks.md`) |
+| B1 | Async tasks | ✅ | MCP Tasks 2025-11-25 on **both** transports (`maverick_mcp/tasks.py`, `server.py`, `http_transport.py`, `tests/test_server_tasks.py`, `tests/test_http_transport.py`) — task-augmented `tools/call` returns `CreateTaskResult` and runs on a background worker; `tasks/get`/`result`/`cancel`/`list` (shared `handle_tasks_*` across stdio + HTTP) + stdio `notifications/tasks/status` push + capability + `execution.taskSupport`. HTTP tasks are opt-in via `MAVERICK_MCP_HTTP_TASKS` (poll-only, bearer-scoped store). Only `input_required` (task-driven elicitation) deferred (`specs/mcp-tasks.md`) |
 | B2 | MCP client OAuth 2.1 + Registry | 🟡 | remote-HTTP **client transport** shipped — `StreamableHttpMCPClient` (`mcp_client.py`, `tests/test_mcp_http_client.py`) consumes remote servers via `[mcp_servers.<name>] url`, JSON + SSE responses, session-id continuity, optional bearer `auth_token`. OAuth 2.1 (needs real accounts) + the Registry still open |
 | B3 | A2A vs. homegrown ACD | ⬜ decision | recommend adopting A2A's Agent Card; reframe/cut ACD |
 | C1 | Eval harness (GAIA / τ²-bench / terminal-bench) | ✅ | GAIA shipped (#687); **τ²-bench-style** stateful verification harness shipped (`benchmarks/eval_tau2.py`, `test_eval_tau2.py`); **terminal-bench-style** harness shipped (`benchmarks/eval_terminal_bench.py`, `test_eval_terminal_bench.py`) — a virtual-FS shell domain graded on final files **and** required commands (regex), runnable in CI on a shipped fixture with **no Docker**; the real container-backed + Maverick-driving solver (+ user simulator) plugs in at the injected-solver seam (documented follow-up, same shape as tau2's real solver) |
@@ -57,11 +57,13 @@ reliability plumbing (D) have since shipped — see the table.
    directions: client-inbound (`mcp_client.py`, by policy + shield) and
    server-outbound form mode (`server.py` surfaces a parked `ask_user` question as
    a capability-/stdio-gated form, then resumes). Async tasks: MCP Tasks 2025-11-25
-   on the stdio server (`tasks.py` — task-augmented `tools/call` → `CreateTaskResult`
-   + background worker + `tasks/get|result|cancel|list` + `notifications/tasks/status`
-   push). Remaining elicitation slice is Phase 3 URL-mode (secrets-never-transit-model);
-   remaining tasks slices are the larger `input_required` (task-driven elicitation)
-   and task support over the HTTP transport (`specs/mcp-tasks.md`).
+   on **both** transports (`tasks.py` — task-augmented `tools/call` → `CreateTaskResult`
+   + background worker + `tasks/get|result|cancel|list` + stdio `notifications/tasks/status`
+   push); HTTP-transport tasks ship opt-in via `MAVERICK_MCP_HTTP_TASKS` (shared
+   `handle_tasks_*`, poll-only, bearer-scoped store). Remaining elicitation slice is
+   Phase 3 URL-mode (secrets-never-transit-model); remaining tasks slice is the larger
+   `input_required` (task-driven elicitation) + a per-caller (multi-tenant) HTTP task
+   store (`specs/mcp-tasks.md`).
 2. **MCP client OAuth 2.1 + Registry (B2)** — the remote-HTTP **client transport**
    has shipped (`StreamableHttpMCPClient`: `[mcp_servers.<name>] url`, JSON+SSE,
    session continuity, static bearer `auth_token`), so Maverick now consumes remote

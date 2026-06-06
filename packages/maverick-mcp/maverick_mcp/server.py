@@ -298,9 +298,15 @@ class MCPServer:
         self._client_capabilities: dict = {}
         self._stdio = False
         self._elicit_seq = 0
-        # MCP Tasks: lazily built on first task-augmented call so the HTTP path
-        # (which never uses tasks) doesn't spin up an executor.
+        # MCP Tasks: lazily built on first task-augmented call so a transport
+        # that never uses tasks doesn't spin up an executor.
         self._tasks = None
+        # Whether async tasks are offered on this transport. stdio sets it in
+        # run(); the HTTP transport sets it from MAVERICK_MCP_HTTP_TASKS in
+        # build_app (opt-in, since multi-client task isolation is bearer-scoped).
+        # Kept distinct from _stdio because elicitation is stdio-only (it needs
+        # the bidirectional pipe) while tasks are not.
+        self._tasks_enabled = False
         # Serializes transport writes. A task's background worker emits
         # notifications/tasks/status while the main loop may be writing a
         # response, so the two must not interleave a half-line on stdout.
@@ -346,11 +352,12 @@ class MCPServer:
             # only); otherwise the async ask_user / maverick_answer flow is
             # used unchanged. See _maybe_elicit_open_questions.
         }
-        # Tasks (2025-11-25): async, pollable tool execution. Only advertised on
-        # stdio, where the long-running tools can run on a background worker
-        # while the loop stays free to poll/cancel. The HTTP transport processes
-        # task-augmented calls normally (capability absent -> spec says ignore).
-        if self._stdio:
+        # Tasks (2025-11-25): async, pollable tool execution. Advertised when the
+        # transport enables tasks (stdio always; HTTP via MAVERICK_MCP_HTTP_TASKS),
+        # so the long-running tools can run on a background worker while the loop
+        # stays free to poll/cancel. When a transport has tasks disabled the
+        # capability is absent and a `task` field is ignored (spec-compliant).
+        if self._tasks_enabled:
             capabilities["tasks"] = {
                 "list": {},
                 "cancel": {},
@@ -545,13 +552,13 @@ class MCPServer:
         if missing:
             raise _ProtocolError(-32602, f"missing required argument(s) for {name}: {missing}")
         # MCP task augmentation: a tools/call carrying a `task` field runs async
-        # when the tool opts in (execution.taskSupport) and we're on stdio.
-        # Returns a CreateTaskResult immediately; the worker runs the tool on an
-        # isolated MCPServer instance and the client polls tasks/get|result. Over
-        # HTTP (no tasks capability) the field is ignored and the call runs
-        # normally, per the spec.
+        # when the tool opts in (execution.taskSupport) and this transport has
+        # tasks enabled. Returns a CreateTaskResult immediately; the worker runs
+        # the tool on an isolated MCPServer instance and the client polls
+        # tasks/get|result. When tasks are disabled the field is ignored and the
+        # call runs normally, per the spec.
         task_param = params.get("task")
-        if isinstance(task_param, dict) and self._stdio:
+        if isinstance(task_param, dict) and self._tasks_enabled:
             if not _tool_supports_tasks(tool_spec):
                 raise _ProtocolError(
                     -32601, f"tool {name!r} does not support task augmentation")
@@ -1035,13 +1042,46 @@ class MCPServer:
                 on_status_change=self._emit_task_status)
         return self._tasks
 
+    # ---- task JSON-RPC methods (shared by stdio + HTTP transports) --------
+
+    def _require_tasks_enabled(self) -> None:
+        """Reject tasks/* when this transport hasn't enabled tasks.
+
+        Mirrors "capability absent -> method not supported": a client that
+        didn't see the tasks capability shouldn't be calling these, and an
+        HTTP deployment with tasks off must not silently spin up a store."""
+        if not self._tasks_enabled:
+            raise _ProtocolError(-32601, "tasks capability not enabled on this transport")
+
+    def handle_tasks_get(self, params: dict) -> dict:
+        self._require_tasks_enabled()
+        return self._task_store().get(params.get("taskId"))
+
+    def handle_tasks_result(self, params: dict) -> dict:
+        self._require_tasks_enabled()
+        return self._task_store().result(params.get("taskId"))
+
+    def handle_tasks_cancel(self, params: dict) -> dict:
+        self._require_tasks_enabled()
+        return self._task_store().cancel(params.get("taskId"))
+
+    def handle_tasks_list(self, params: dict) -> dict:
+        self._require_tasks_enabled()
+        return self._task_store().list(params.get("cursor"))
+
     def _emit_task_status(self, task) -> None:
         """Push a notifications/tasks/status when a task changes status.
 
-        Optional per spec (clients still poll tasks/get), but it lets a client
-        learn of completion without polling. Runs on the worker thread for
-        completed/failed and the main thread for cancelled; _send is locked, so
-        either is safe. No related-task _meta: the taskId is already in params."""
+        stdio-only: it writes to the bidirectional pipe via _send. The HTTP
+        transport has no server->client push channel here, so this is a no-op
+        there and HTTP clients learn of completion by polling tasks/get (which
+        the spec requires them to support regardless).
+
+        Optional per spec. Runs on the worker thread for completed/failed and
+        the main thread for cancelled; _send is locked, so either is safe. No
+        related-task _meta: the taskId is already in params."""
+        if not self._stdio:
+            return
         self._send({
             "jsonrpc": "2.0",
             "method": "notifications/tasks/status",
@@ -1069,6 +1109,7 @@ class MCPServer:
         # elicitation response without the iterator's read-ahead buffer
         # swallowing the following messages.
         self._stdio = True
+        self._tasks_enabled = True
         while True:
             line = sys.stdin.readline()
             if not line:  # EOF -- client closed the pipe
@@ -1114,17 +1155,13 @@ class MCPServer:
                 elif method == "prompts/get":
                     self._send_result(request_id, self.handle_prompts_get(params))
                 elif method == "tasks/get":
-                    self._send_result(
-                        request_id, self._task_store().get(params.get("taskId")))
+                    self._send_result(request_id, self.handle_tasks_get(params))
                 elif method == "tasks/result":
-                    self._send_result(
-                        request_id, self._task_store().result(params.get("taskId")))
+                    self._send_result(request_id, self.handle_tasks_result(params))
                 elif method == "tasks/cancel":
-                    self._send_result(
-                        request_id, self._task_store().cancel(params.get("taskId")))
+                    self._send_result(request_id, self.handle_tasks_cancel(params))
                 elif method == "tasks/list":
-                    self._send_result(
-                        request_id, self._task_store().list(params.get("cursor")))
+                    self._send_result(request_id, self.handle_tasks_list(params))
                 elif method == "notifications/initialized":
                     pass
                 elif method == "ping":

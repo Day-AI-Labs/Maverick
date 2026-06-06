@@ -168,13 +168,17 @@ def test_expired_task_is_purged():
 
 # ---- server wiring ----------------------------------------------------------
 
-def test_initialize_advertises_tasks_only_on_stdio():
+def test_initialize_advertises_tasks_when_enabled():
+    # Tasks are advertised when the transport enabled them. stdio's run() sets
+    # _tasks_enabled; here we set it directly to simulate that.
     s = MCPServer()
     s._stdio = True
+    s._tasks_enabled = True
     caps = s.handle_initialize({})["capabilities"]
     assert caps["tasks"]["requests"]["tools"]["call"] == {}
     assert caps["tasks"]["list"] == {} and caps["tasks"]["cancel"] == {}
-    # Over HTTP (no stdio) tasks are NOT advertised.
+    # A transport with tasks disabled (the default, e.g. HTTP without
+    # MAVERICK_MCP_HTTP_TASKS) does NOT advertise them.
     assert "tasks" not in MCPServer().handle_initialize({})["capabilities"]
 
 
@@ -189,6 +193,7 @@ def test_long_tools_declare_task_support():
 def test_task_augmented_call_returns_create_task_result(monkeypatch):
     s = MCPServer()
     s._stdio = True
+    s._tasks_enabled = True
     monkeypatch.setattr(s, "_task_runner", lambda name, args: _ok(f"ran {name}"))
     out = s.handle_tools_call({
         "name": "maverick_start",
@@ -208,6 +213,7 @@ def test_task_augmented_call_returns_create_task_result(monkeypatch):
 def test_task_augmenting_unsupported_tool_is_method_not_found():
     s = MCPServer()
     s._stdio = True
+    s._tasks_enabled = True
     with pytest.raises(_ProtocolError) as ei:
         s.handle_tools_call({
             "name": "maverick_status", "arguments": {}, "task": {"ttl": 1000}})
@@ -353,6 +359,7 @@ def test_callback_error_does_not_break_the_task():
 
 def test_server_emits_well_formed_status_notification():
     s = MCPServer()
+    s._stdio = True  # status push is stdio-only (HTTP clients poll)
     sent: list[dict] = []
     s._send = sent.append
     task = McpTask(ttl_ms=1000, poll_interval_ms=500)
