@@ -26,7 +26,7 @@ import secrets
 import threading
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
@@ -86,6 +86,7 @@ class McpTask:
         self.ttl_ms = ttl_ms
         self.poll_interval_ms = poll_interval_ms
         self.result: dict | None = None
+        self.future: Future | None = None
         self.cancel_requested = False
         # Set when the task reaches a terminal status; tasks/result blocks on it.
         self.done = threading.Event()
@@ -172,12 +173,11 @@ class TaskStore:
             poll_interval_ms=self._poll_ms,
         )
         with self._lock:
+            self._make_room_for_task_locked()
             self._tasks[task.id] = task
-            # Bound the registry so a client can't grow it without limit. dict
-            # preserves insertion order, so popping the front drops the oldest.
-            while len(self._tasks) > self._max_tasks:
-                self._tasks.pop(next(iter(self._tasks)))
-        self._executor.submit(self._run, task, name, arguments)
+        future = self._executor.submit(self._run, task, name, arguments)
+        with self._lock:
+            task.future = future
         return task
 
     def _resolve_ttl(self, task_param: dict) -> int:
@@ -257,10 +257,10 @@ class TaskStore:
                 raise TaskError(
                     _INVALID_PARAMS,
                     f"cannot cancel task in terminal status {task.status!r}")
-            # Best effort: an in-flight run isn't force-killed, but its result
-            # is discarded (see _run) and the status is cancelled now.
-            task.cancel_requested = True
-            task.set_status("cancelled", "The task was cancelled by request.")
+            # Best effort: an in-flight run isn't force-killed, but queued work
+            # remains counted until a worker drains it and running results are
+            # discarded.
+            self._cancel_task_locked(task, "The task was cancelled by request.")
             snapshot = task.to_dict()
         self._notify(task)
         return snapshot
@@ -300,12 +300,46 @@ class TaskStore:
             raise TaskError(_INVALID_PARAMS, "invalid cursor")
         return start
 
+    def _make_room_for_task_locked(self) -> None:
+        # Completed/failed/cancelled records are retained only for polling; drop
+        # the oldest terminal snapshots first before rejecting new work. A
+        # cancelled task may still occupy the executor queue, so keep it counted
+        # until the worker has drained it and the future is done. Never evict
+        # active records: losing those task ids would make their queued or
+        # running executions unmanageable and defeat the configured task cap.
+        while len(self._tasks) >= self._max_tasks:
+            for tid, task in self._tasks.items():
+                future_done = task.future is None or task.future.done()
+                if task.status in TASK_TERMINAL and future_done:
+                    self._tasks.pop(tid, None)
+                    break
+            else:
+                raise TaskError(_INVALID_PARAMS, "too many active tasks")
+
+    def _cancel_task_locked(self, task: McpTask, message: str) -> None:
+        task.cancel_requested = True
+        # Do not call Future.cancel() here: ThreadPoolExecutor leaves cancelled
+        # work items in its internal queue until a worker drains them. Keeping
+        # the future pending makes the task continue counting toward
+        # _max_tasks, so repeated cancel/expire cycles cannot grow that queue
+        # without bound. Running tasks cannot be force-killed; _run drops their
+        # results after observing cancel_requested.
+        task.set_status("cancelled", message)
+
     def _purge_expired(self) -> None:
         now = time.time()
         with self._lock:
             expired = [tid for tid, t in self._tasks.items() if t.is_expired(now)]
             for tid in expired:
-                self._tasks.pop(tid, None)
+                task = self._tasks.get(tid)
+                if task is None:
+                    continue
+                if task.status not in TASK_TERMINAL:
+                    self._cancel_task_locked(task, "The task expired.")
+                    continue
+                future_done = task.future is None or task.future.done()
+                if future_done:
+                    self._tasks.pop(tid, None)
 
     def _notify(self, task: McpTask) -> None:
         cb = self._on_status_change
