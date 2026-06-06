@@ -176,7 +176,10 @@ jobs:
           pip install 'questionary>=2.0' 'rich>=13.7'
           pip install 'fastapi>=0.110' 'uvicorn>=0.27' 'jinja2>=3.1' \
                       'httpx>=0.27' 'python-multipart>=0.0.9'
-          pip install pytest pytest-asyncio
+          # OIDC (P4) verifier ships as the optional [oidc] extra (PyJWT);
+          # install it here so the adversarial security matrix in test_oidc.py
+          # actually RUNS in CI instead of self-skipping when PyJWT is absent.
+          pip install pytest pytest-asyncio 'pyjwt[crypto]'
       - name: Show installed packages
         run: pip list
       - name: Test
