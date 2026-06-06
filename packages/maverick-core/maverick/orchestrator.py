@@ -292,6 +292,23 @@ async def run_goal(
             "Run `maverick unhalt` to clear it, then try again."
         )
 
+    # Per-principal usage quota (P2 cost governance). Default-off and opt-in
+    # ([quotas] enforce / MAVERICK_QUOTA_*): with nothing configured this is a
+    # no-op. When enforcement is on and this principal is over its daily cap,
+    # refuse BEFORE the expensive agent run -- mirror the killswitch handler
+    # above (mark blocked, return the human-readable reason). The principal
+    # convention matches agent.py's capability resolution.
+    principal = f"user:{user_id or 'local'}"
+    try:
+        from . import quotas
+        _quota_reason = quotas.over_quota(principal) if quotas.quotas_enforced() else None
+    except Exception:  # pragma: no cover -- quotas are fully fail-soft
+        _quota_reason = None
+    if _quota_reason:
+        world.set_goal_status(goal_id, "blocked", result=f"over quota: {_quota_reason}")
+        log.warning("goal #%s refused: %s", goal_id, _quota_reason)
+        return _quota_reason
+
     # Bind trace context so every log line emitted in this task is
     # automatically tagged with goal_id (+ conversation_id when set). Capture
     # the reset tokens so the finally block restores the PRIOR context instead
@@ -796,6 +813,17 @@ async def run_goal(
 
         _end_episode_with_spend(world, episode_id, summary, "success", budget, goal_id)
         world.set_goal_status(goal_id, "done", result=summary)
+        # Charge this run's final spend to the principal's daily usage ledger
+        # (P2 cost governance). Always safe to call -- recording is how the
+        # ledger accrues chargeback data even when enforcement is off -- and
+        # fail-soft, so a ledger error never affects the goal result.
+        try:
+            from . import quotas
+            quotas.record_usage(
+                principal, budget.dollars, budget.input_tokens, budget.output_tokens,
+            )
+        except Exception:  # pragma: no cover -- ledger is fully fail-soft
+            log.debug("usage ledger record skipped for %s", principal)
         # Index this finished goal into the semantic store (#432) so future
         # runs recall it via vector search. No-op unless a [memory] backend is
         # configured; re-reads the goal so the indexed status/result reflect
