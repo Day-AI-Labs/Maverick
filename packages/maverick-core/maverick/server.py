@@ -65,20 +65,26 @@ class Server:
 
         from .paths import tenant_by_user_enabled, tenant_scope
 
+        # The authenticated sender. Room-based adapters keep msg.user_id as the
+        # reply target and expose the human via msg.principal_id; the tenant, the
+        # conversation key, and run_goal's user_id must ALL agree on it -- else a
+        # user's world.db lands under a different tenant than their memory/audit.
+        principal_id = getattr(msg, "principal_id", msg.user_id)
+
         # Resolve the per-tenant world ONCE. When per-user tenancy is on, this
         # message's goal/conversation/turns land in that user's own world.db
-        # (~/.maverick/tenants/<channel>:<user_id>/world.db) -- the SAME tenant
-        # the tenant_scope() below pins for cross-session memory + audit, so all
-        # three stores stay co-located. Off (default) -> tenant is None and we
-        # reuse the SHARED self.world unchanged (``world is self.world``), so the
-        # legacy single-tenant path is byte-for-byte identical and we never open
-        # a second connection to ~/.maverick/world.db. self.world also still
+        # (~/.maverick/tenants/<channel>:<principal_id>/world.db) -- the SAME
+        # tenant the tenant_scope() below pins for cross-session memory + audit,
+        # so all three stores stay co-located. Off (default) -> tenant is None and
+        # we reuse the SHARED self.world unchanged (``world is self.world``), so
+        # the legacy single-tenant path is byte-for-byte identical and we never
+        # open a second connection to ~/.maverick/world.db. self.world also still
         # backs startup orphan-reclaim and the dashboard. Fail-soft: if anything
         # goes wrong resolving the tenant world, fall back to self.world rather
         # than dropping the message.
         try:
             tenant = (
-                f"{msg.channel or 'unknown'}:{msg.user_id}"
+                f"{msg.channel or 'unknown'}:{principal_id}"
                 if tenant_by_user_enabled()
                 else None
             )
@@ -99,12 +105,12 @@ class Server:
         disclosure = first_turn_disclosure(
             world,
             channel=msg.channel or "unknown",
-            user_id=msg.user_id,
+            user_id=principal_id,
         )
 
         conversation = world.get_or_create_conversation(
             channel=msg.channel or "unknown",
-            user_id=msg.user_id,
+            user_id=principal_id,
         )
         world.append_turn(conversation.id, "user", msg.text)
 
@@ -114,14 +120,16 @@ class Server:
         budget = budget_from_config()
         try:
             # Per-user tenant isolation when enabled (no-op otherwise): scopes
-            # the run's cross-session memory to this channel user, then restores.
-            with tenant_scope(channel=msg.channel, user_id=msg.user_id):
+            # the run's cross-session memory to the authenticated sender, then
+            # restores. Room-based adapters keep msg.user_id as the reply target
+            # and expose the sender via msg.principal_id.
+            with tenant_scope(channel=msg.channel, user_id=principal_id):
                 result = await run_goal(
                     self.llm, world, budget, goal_id,
                     sandbox=self.sandbox, max_depth=self.max_depth,
                     conversation_id=conversation.id,
                     channel=msg.channel or "unknown",
-                    user_id=f"{msg.channel or 'unknown'}:{msg.user_id}",
+                    user_id=f"{msg.channel or 'unknown'}:{principal_id}",
                 )
         except Exception:
             log.exception("goal #%s run failed", goal_id)

@@ -781,8 +781,15 @@ class Agent:
             )
             try:  # tamper-evident record of the denial; never block on audit
                 from .audit import EventKind, record
-                record(EventKind.CAPABILITY_DENIED, agent=self.name,
-                       goal_id=self.ctx.goal_id, tool=name, principal=cap.principal)
+                record(
+                    EventKind.CAPABILITY_DENIED,
+                    agent=self.name,
+                    goal_id=self.ctx.goal_id,
+                    tool=name,
+                    principal=cap.principal,
+                    channel=getattr(self.ctx, "channel", None),
+                    user_id=getattr(self.ctx, "user_id", None),
+                )
             except Exception:  # pragma: no cover
                 pass
             return (

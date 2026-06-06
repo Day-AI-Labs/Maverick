@@ -88,6 +88,7 @@ class SlackChannel(Channel):
                         text=event.get("text", ""),
                         channel="slack",
                         raw=event,
+                        sender_id=sender,
                     )
                     try:
                         reply = await self.handler(msg)
