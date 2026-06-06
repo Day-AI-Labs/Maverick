@@ -389,14 +389,20 @@ def default_audit_log() -> AuditLog:
     audit_dir = data_dir("audit")
     shared_audit_dir = data_dir("audit", tenant=None)
     with _default_lock:
+        if audit_dir == shared_audit_dir:
+            # No active tenant: keep the legacy singleton semantics so callers
+            # that ASSIGN ``writer._default`` (the dashboard grep endpoint, the
+            # audit tests) keep overriding the writer that ``record()`` uses.
+            # Reading the new per-dir cache here would ignore that override and
+            # silently build a fresh empty writer at the real home dir.
+            if _default is None:
+                _default = AuditLog(audit_dir)
+            _defaults[audit_dir] = _default
+            return _default
         log_obj = _defaults.get(audit_dir)
         if log_obj is None:
             log_obj = AuditLog(audit_dir)
             _defaults[audit_dir] = log_obj
-        if audit_dir == shared_audit_dir:
-            # Back-compat for code/tests that inspect or reset the historical
-            # no-tenant singleton attribute directly.
-            _default = log_obj
         return log_obj
 
 
