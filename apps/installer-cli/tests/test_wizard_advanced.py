@@ -4,8 +4,10 @@ read (the rule-6 integrity check: a wizard toggle must actually reach the
 feature)."""
 from __future__ import annotations
 
+import tomllib
 
-def _write(cfg_dir, monkeypatch, advanced):
+
+def _write(cfg_dir, monkeypatch, advanced, capabilities=None):
     monkeypatch.setattr("maverick_installer.wizard.CONFIG_DIR", cfg_dir)
     monkeypatch.setattr("maverick_installer.wizard.ENV_FILE", cfg_dir / ".env")
     monkeypatch.setattr("maverick_installer.wizard.CONFIG_FILE", cfg_dir / "config.toml")
@@ -15,7 +17,8 @@ def _write(cfg_dir, monkeypatch, advanced):
         channels={}, safety={"profile": "balanced"},
         budget={"max_dollars": 5.0, "max_wall_seconds": 600, "max_tool_calls": 30},
         sandbox={"backend": "local", "workdir": "~/ws"},
-        keys={"ANTHROPIC_API_KEY": "x"}, capabilities={}, advanced=advanced,
+        keys={"ANTHROPIC_API_KEY": "x"},
+        capabilities=capabilities or {}, advanced=advanced,
     )
     return (cfg_dir / "config.toml").read_text()
 
@@ -90,4 +93,34 @@ def test_enforce_capabilities_writes_and_is_read(tmp_path, monkeypatch):
     assert "enforce = true" in cfg
 
     from maverick.capability import capability_enforced
+    assert capability_enforced() is True
+
+
+def test_enforce_capabilities_reuses_existing_capabilities_table(tmp_path, monkeypatch):
+    """The normal wizard path already writes [capabilities]; enabling
+    enforcement must add to that table instead of emitting a duplicate TOML
+    table that makes the entire config unreadable."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_ENFORCE_CAPABILITIES", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+
+    cfg = _write(
+        cfg_dir,
+        monkeypatch,
+        {"enforce_capabilities": True},
+        capabilities={"computer_use": False, "browser": False, "code_exec": False},
+    )
+
+    assert cfg.count("[capabilities]") == 1
+    parsed = tomllib.loads(cfg)
+    assert parsed["capabilities"] == {
+        "computer_use": False,
+        "browser": False,
+        "code_exec": False,
+        "enforce": True,
+    }
+
+    from maverick.capability import capability_enforced
+
     assert capability_enforced() is True
