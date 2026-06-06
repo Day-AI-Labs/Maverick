@@ -114,7 +114,7 @@ def _fire_webhook(event: str, payload: dict[str, Any]) -> None:
 
 def _end_episode_with_spend(
     world: WorldModel, episode_id: int, summary: str, outcome: str, budget: Budget,
-    goal_id: int | None = None,
+    goal_id: int | None = None, principal: str | None = None,
 ) -> None:
     try:
         world.end_episode(
@@ -126,6 +126,16 @@ def _end_episode_with_spend(
         )
     except TypeError:
         world.end_episode(episode_id, summary, outcome)
+    if principal:
+        try:
+            from .quotas import record_usage
+            record_usage(
+                principal, budget.dollars,
+                budget.input_tokens + budget.cache_read_tokens + budget.cache_write_tokens,
+                budget.output_tokens,
+            )
+        except Exception as e:  # pragma: no cover -- quotas must never block finalization
+            log.warning("quotas: failed to account spend for %r: %s", principal, e)
     _fire_webhook("episode_finished", {
         "goal_id": goal_id,
         "episode_id": episode_id,
@@ -303,6 +313,17 @@ async def run_goal(
         _ctx_tokens = set_goal_context(goal_id=goal_id, conversation_id=conversation_id)
     except Exception:  # pragma: no cover
         pass
+
+    quota_principal = user_id or "local"
+    try:
+        from .quotas import over_quota
+        quota_reason = over_quota(quota_principal)
+    except Exception as e:  # pragma: no cover -- quota checks are fail-open
+        log.warning("quotas: failed to check usage for %r: %s", quota_principal, e)
+        quota_reason = None
+    if quota_reason:
+        world.set_goal_status(goal_id, "blocked", result=f"quota exceeded: {quota_reason}")
+        return f"BLOCKED: quota exceeded: {quota_reason}"
 
     world.set_goal_status(goal_id, "active")
     episode_id = resume_episode_id
@@ -607,7 +628,7 @@ async def run_goal(
             except Exception:  # pragma: no cover -- never block completion
                 pass
         except BudgetExceeded as e:
-            _end_episode_with_spend(world, episode_id, f"budget: {e}", "failure", budget, goal_id)
+            _end_episode_with_spend(world, episode_id, f"budget: {e}", "failure", budget, goal_id, quota_principal)
             _maybe_record_reflexion(
                 goal, failure_class="budget", failure_msg=str(e),
                 blackboard=blackboard, shield=shield, channel=channel,
@@ -633,7 +654,7 @@ async def run_goal(
             # the error (the CLI turns it into a one-line message).
             try:
                 _end_episode_with_spend(
-                    world, episode_id, f"error: {e}", "failure", budget, goal_id,
+                    world, episode_id, f"error: {e}", "failure", budget, goal_id, quota_principal,
                 )
             except Exception:  # pragma: no cover
                 pass
@@ -645,7 +666,7 @@ async def run_goal(
 
         if result.blocked_on_user:
             _end_episode_with_spend(
-                world, episode_id, "blocked awaiting user", "interrupted", budget, goal_id,
+                world, episode_id, "blocked awaiting user", "interrupted", budget, goal_id, quota_principal,
             )
             world.set_goal_status(goal_id, "blocked")
             _fire_webhook("goal_finished", {
@@ -676,7 +697,7 @@ async def run_goal(
                 or "--- a/" in result.final_patch
             ):
                 _end_episode_with_spend(
-                    world, episode_id, result.final_patch, "success", budget, goal_id,
+                    world, episode_id, result.final_patch, "success", budget, goal_id, quota_principal,
                 )
                 world.set_goal_status(
                     goal_id, "done", result=result.final_patch,
@@ -699,7 +720,7 @@ async def run_goal(
             try:
                 budget.check()
             except BudgetExceeded as be:
-                _end_episode_with_spend(world, episode_id, f"budget: {be}", "failure", budget, goal_id)
+                _end_episode_with_spend(world, episode_id, f"budget: {be}", "failure", budget, goal_id, quota_principal)
                 _maybe_record_reflexion(
                     goal, failure_class="budget", failure_msg=str(be),
                     blackboard=blackboard, shield=shield, channel=channel,
@@ -720,7 +741,7 @@ async def run_goal(
             # clear unhalt instruction rather than the generic error (whose
             # 'resume' advice would just halt again).
             if "halt" in (result.error or "").lower():
-                _end_episode_with_spend(world, episode_id, "halted", "interrupted", budget, goal_id)
+                _end_episode_with_spend(world, episode_id, "halted", "interrupted", budget, goal_id, quota_principal)
                 world.set_goal_status(goal_id, "blocked", result="halted")
                 _fire_webhook("goal_finished", {
                     "goal_id": goal_id, "status": "blocked", "result": "halted",
@@ -729,7 +750,7 @@ async def run_goal(
                     "Stopped: Maverick was halted mid-run (a HALT file is present).\n"
                     f"Run `maverick unhalt` to clear it, then `maverick resume {goal_id}`."
                 )
-            _end_episode_with_spend(world, episode_id, result.error, "failure", budget, goal_id)
+            _end_episode_with_spend(world, episode_id, result.error, "failure", budget, goal_id, quota_principal)
             _maybe_record_reflexion(
                 goal,
                 failure_class=(
@@ -794,7 +815,7 @@ async def run_goal(
             except Exception:  # pragma: no cover -- fail open per kernel rule 1
                 log.exception("scan_output on summary failed (fail-open)")
 
-        _end_episode_with_spend(world, episode_id, summary, "success", budget, goal_id)
+        _end_episode_with_spend(world, episode_id, summary, "success", budget, goal_id, quota_principal)
         world.set_goal_status(goal_id, "done", result=summary)
         # Index this finished goal into the semantic store (#432) so future
         # runs recall it via vector search. No-op unless a [memory] backend is

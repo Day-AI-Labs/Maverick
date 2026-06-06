@@ -194,3 +194,58 @@ def test_over_quota_isolates_principals(monkeypatch):
     record_usage("alice", 10.0, 0, 0)
     assert over_quota("alice") is not None
     assert over_quota("bob") is None  # bob hasn't spent
+
+
+def test_run_goal_blocks_over_quota_principal(monkeypatch, tmp_path, fake_llm):
+    from maverick.budget import Budget
+    from maverick.orchestrator import run_goal
+    from maverick.sandbox import LocalBackend
+    from maverick.world_model import WorldModel
+
+    _enforce(monkeypatch, dollars=1.0)
+    record_usage("attacker", 1.0, 0, 0)
+    world = WorldModel(path=tmp_path / "world.db")
+    gid = world.create_goal("blocked quota", "")
+
+    import asyncio
+
+    out = asyncio.run(run_goal(
+        fake_llm, world, Budget(max_dollars=1.0), gid,
+        sandbox=LocalBackend(workdir=tmp_path), max_depth=1, user_id="attacker",
+    ))
+
+    assert "quota exceeded" in out
+    assert world.get_goal(gid).status == "blocked"
+    assert fake_llm.calls == []
+
+
+def test_run_goal_records_usage_for_principal(monkeypatch, tmp_path, fake_llm, make_llm_response):
+    from maverick.budget import Budget
+    from maverick.orchestrator import run_goal
+    from maverick.sandbox import LocalBackend
+    from maverick.world_model import WorldModel
+
+    fake_llm.scripted = [
+        make_llm_response(text="FINAL: quota accounting works"),
+        make_llm_response(
+            text='{"confidence": 0.95, "accepts": true, "critique": "ok", "issues": []}',
+        ),
+        make_llm_response(text="FINAL: (no skill)"),
+    ]
+    budget = Budget(max_dollars=1.0)
+    budget.record_tokens(1000, 250, model="fake:test")
+    before = budget.dollars
+    world = WorldModel(path=tmp_path / "world.db")
+    gid = world.create_goal("account quota", "")
+
+    import asyncio
+
+    asyncio.run(run_goal(
+        fake_llm, world, budget, gid,
+        sandbox=LocalBackend(workdir=tmp_path), max_depth=1, user_id="alice",
+    ))
+
+    usage = UsageLedger().usage("alice")
+    assert usage["dollars"] >= before
+    assert usage["in_tokens"] >= 1000
+    assert usage["out_tokens"] >= 250
