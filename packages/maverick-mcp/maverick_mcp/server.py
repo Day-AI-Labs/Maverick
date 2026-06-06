@@ -578,7 +578,7 @@ class MCPServer:
         # dance. A no-op for HTTP clients or those without the capability,
         # leaving the async ask_user / maverick_answer flow unchanged.
         if name in ("maverick_start", "maverick_resume"):
-            elicited = self._maybe_elicit_open_questions()
+            elicited = self._maybe_elicit_open_questions(arguments)
             if elicited is not None:
                 result = elicited
         if self._shield is not None:
@@ -953,7 +953,7 @@ class MCPServer:
                     return None
         return src.readline()
 
-    def _maybe_elicit_open_questions(self) -> str | None:
+    def _maybe_elicit_open_questions(self, original_args: dict | None = None) -> str | None:
         """Resolve questions the just-finished run parked, via elicitation.
 
         For an elicitation-capable stdio client: elicit each open question for
@@ -973,6 +973,10 @@ class MCPServer:
             os.environ.get("MAVERICK_MCP_MAX_ELICIT_ROUNDS", 8),
             default=8, ceiling=64,
         )
+        resume_args = {"goal_id": goal_id}
+        for limit_name in ("max_dollars", "max_wall_seconds", "max_depth"):
+            if original_args and limit_name in original_args:
+                resume_args[limit_name] = original_args[limit_name]
         final_answer: str | None = None
         for _ in range(max_rounds):
             questions = [q for q in world.open_questions() if q.goal_id == goal_id]
@@ -987,7 +991,7 @@ class MCPServer:
                 answered = True
             if not answered:
                 break
-            final_answer = self._tool_resume({"goal_id": goal_id})
+            final_answer = self._tool_resume(dict(resume_args))
         return final_answer
 
     def _elicit_question(self, question: str) -> str | None:
