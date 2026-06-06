@@ -131,6 +131,29 @@ class MCPServerSpec:
     def is_http(self) -> bool:
         return bool(self.url)
 
+    def to_dict(self) -> dict:
+        """Serialize to a ``[mcp_servers.<name>]`` config dict (inverse of
+        ``from_config``). Omits the name (it's the table key) and any empty
+        optionals so the emitted config stays minimal. Used by the MCP registry
+        to write an installed server into ~/.maverick/config.toml."""
+        if self.url:
+            d: dict = {"url": self.url}
+            if self.headers:
+                d["headers"] = dict(self.headers)
+            if self.auth_token:
+                d["auth_token"] = self.auth_token
+            return d
+        d = {"command": self.command}
+        if self.args:
+            d["args"] = list(self.args)
+        if self.env:
+            d["env"] = dict(self.env)
+        if self.inherit_env:
+            d["inherit_env"] = True
+        if self.pin_sha256:
+            d["pin_sha256"] = self.pin_sha256
+        return d
+
     @classmethod
     def from_config(cls, name: str, cfg: dict) -> MCPServerSpec:
         if cfg.get("url"):

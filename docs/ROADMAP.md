@@ -41,7 +41,7 @@ reliability plumbing (D) have since shipped — see the table.
 | B1 | Streamable-HTTP transport | ✅ | `http_transport.py` |
 | B1 | Elicitation | 🟡 | client inbound (`mcp_client.py`) **and** server outbound form mode (`maverick_mcp/server.py`, `tests/test_server_elicitation.py`) shipped — a parked `ask_user` question surfaces as a capability-/stdio-gated `elicitation/create` form, shield-screened both legs, then resumes; only Phase 3 URL mode + eliciting arbitrary flows / the approvals-table surface remain (`specs/mcp-elicitation.md`) |
 | B1 | Async tasks | ✅ | MCP Tasks 2025-11-25 on **both** transports (`maverick_mcp/tasks.py`, `server.py`, `http_transport.py`, `tests/test_server_tasks.py`, `tests/test_http_transport.py`) — task-augmented `tools/call` returns `CreateTaskResult` and runs on a background worker; `tasks/get`/`result`/`cancel`/`list` (shared `handle_tasks_*` across stdio + HTTP) + stdio `notifications/tasks/status` push + capability + `execution.taskSupport`. HTTP tasks are opt-in via `MAVERICK_MCP_HTTP_TASKS` (poll-only, bearer-scoped store). Only `input_required` (task-driven elicitation) deferred (`specs/mcp-tasks.md`) |
-| B2 | MCP client OAuth 2.1 + Registry | 🟡 | remote-HTTP **client transport** shipped — `StreamableHttpMCPClient` (`mcp_client.py`, `tests/test_mcp_http_client.py`) consumes remote servers via `[mcp_servers.<name>] url`, JSON + SSE responses, session-id continuity, optional bearer `auth_token`. OAuth 2.1 (needs real accounts) + the Registry still open |
+| B2 | MCP client OAuth 2.1 + Registry | 🟡 | remote-HTTP **client transport** shipped — `StreamableHttpMCPClient` (`mcp_client.py`, `tests/test_mcp_http_client.py`) consumes remote servers via `[mcp_servers.<name>] url`, JSON + SSE responses, session-id continuity, optional bearer `auth_token`. **Registry shipped** — `mcp_registry.py` (discovery via the federated `catalog` with an inline-spec entry, `install_mcp_from_registry` validated through `MCPServerSpec.from_config`, dependency-free config write), `maverick mcp-registry browse/add/remove/list`, `[mcp_registries]` knob + wizard emission (`specs/mcp-registry.md`). Only OAuth 2.1 (needs real accounts) still open |
 | B3 | A2A vs. homegrown ACD | ⬜ decision | recommend adopting A2A's Agent Card; reframe/cut ACD |
 | C1 | Eval harness (GAIA / τ²-bench / terminal-bench) | ✅ | GAIA shipped (#687); **τ²-bench-style** stateful verification harness shipped (`benchmarks/eval_tau2.py`, `test_eval_tau2.py`); **terminal-bench-style** harness shipped (`benchmarks/eval_terminal_bench.py`, `test_eval_terminal_bench.py`) — a virtual-FS shell domain graded on final files **and** required commands (regex), runnable in CI on a shipped fixture with **no Docker**; the real container-backed + Maverick-driving solver (+ user simulator) plugs in at the injected-solver seam (documented follow-up, same shape as tau2's real solver) |
 | C1 | Skill quality gate / pruning | ✅ | gate (#396) + decay + active pruning (`skill_stats.evictable()` + `skills evict`), wired (`agent.py:274`, `orchestrator.py:227`), tested; only versioning absent |
@@ -66,8 +66,12 @@ reliability plumbing (D) have since shipped — see the table.
    store (`specs/mcp-tasks.md`).
 2. **MCP client OAuth 2.1 + Registry (B2)** — the remote-HTTP **client transport**
    has shipped (`StreamableHttpMCPClient`: `[mcp_servers.<name>] url`, JSON+SSE,
-   session continuity, static bearer `auth_token`), so Maverick now consumes remote
-   servers. Remaining: OAuth 2.1 (needs real accounts to validate) + the Registry.
+   session continuity, static bearer `auth_token`), and the **Registry** has shipped
+   (`mcp_registry.py` + `maverick mcp-registry browse/add/remove/list` + the
+   `[mcp_registries]` knob; discovery reuses the federated `catalog`, install validates
+   through `MCPServerSpec.from_config` and writes config without a TOML-writer dep —
+   `specs/mcp-registry.md`). Remaining: **OAuth 2.1** (needs real accounts to validate)
+   + optional signed registry entries.
 3. **Finish A3** — ✅ done: memory tool + loop bootstrap, and programmatic tool
    calling (`code_exec`); the full mid-execution bridge awaits interactive sandbox
    sessions.
