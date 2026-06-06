@@ -53,6 +53,8 @@ def test_scrub_env_strips_secret_shaped_vars():
         "GITHUB_TOKEN": "ghp_secret",
         "STRIPE_SECRET": "x",
         "DATABASE_URL": "postgres://u:p@h/db",
+        "MAVERICK_OTEL_HEADERS": "authorization=Bearer secret,dd-api-key=dd-secret",
+        "OTEL_EXPORTER_OTLP_HEADERS": "x-honeycomb-team=hc-secret",
         "PATH": "/usr/bin",
         "HOME": "/home/u",
         "PLAIN_SETTING": "keep",
@@ -62,6 +64,8 @@ def test_scrub_env_strips_secret_shaped_vars():
     assert "GITHUB_TOKEN" not in out
     assert "STRIPE_SECRET" not in out
     assert "DATABASE_URL" not in out  # connection string w/ embedded creds
+    assert "MAVERICK_OTEL_HEADERS" not in out  # auth-bearing OTLP headers
+    assert "OTEL_EXPORTER_OTLP_HEADERS" not in out
     # Non-secret operational vars survive.
     assert out["PATH"] == "/usr/bin"
     assert out["HOME"] == "/home/u"
