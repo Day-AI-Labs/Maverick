@@ -107,7 +107,16 @@ class AuditLog:
     edits, not an attacker who can also write the key dir.
     """
 
-    def __init__(self, audit_dir: Path = DEFAULT_AUDIT_DIR, *, sign: bool | None = None):
+    def __init__(self, audit_dir: Path | None = None, *, sign: bool | None = None):
+        # Resolve the dir at construction (not as a default arg, which would
+        # freeze the path at import time). With no explicit dir, route through
+        # the tenant-aware helper: the no-tenant default is the legacy
+        # ``~/.maverick/audit`` and an active tenant gets its own audit chain
+        # under ``~/.maverick/tenants/<t>/audit``.
+        if audit_dir is None:
+            from ..paths import data_dir
+
+            audit_dir = data_dir("audit")
         self.audit_dir = audit_dir
         self._lock = threading.Lock()
         self._current_path: Path | None = None

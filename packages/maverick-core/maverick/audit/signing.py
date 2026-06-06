@@ -38,7 +38,28 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 
-KEY_DIR = Path.home() / ".maverick" / "audit" / "keys"
+# Legacy single-tenant key dir, kept as a module-level attribute for
+# back-compat: existing tests monkeypatch ``signing.KEY_DIR`` to isolate keys,
+# so every key path is resolved through ``_key_dir()`` which honours that
+# override. With no override, ``_key_dir()`` resolves the *tenant-scoped* dir
+# via ``data_dir`` so each tenant gets an independent signing key, while the
+# no-tenant default stays exactly ``~/.maverick/audit/keys``.
+_LEGACY_KEY_DIR = Path.home() / ".maverick" / "audit" / "keys"
+KEY_DIR = _LEGACY_KEY_DIR
+
+
+def _key_dir() -> Path:
+    """The active audit signing-key directory.
+
+    Honours a monkeypatched ``KEY_DIR`` (tests pin it for isolation); otherwise
+    routes through the tenant-aware path helper so each tenant gets its own key
+    chain while the no-tenant default is the legacy ``~/.maverick/audit/keys``.
+    """
+    if KEY_DIR is not _LEGACY_KEY_DIR:
+        return KEY_DIR
+    from ..paths import data_dir
+
+    return data_dir("audit", "keys")
 
 
 _KEY_ID_RE = re.compile(r"^[0-9a-f]{16}$")
@@ -60,11 +81,12 @@ def _key_paths_for_id(key_id: str) -> tuple[Path, Path] | tuple[None, None]:
     """Return trusted key paths for key_id, or (None, None) if invalid."""
     if not _is_valid_key_id(key_id):
         return None, None
-    pub_path = (KEY_DIR / f"{key_id}.pub").resolve()
-    priv_path = (KEY_DIR / f"{key_id}.key").resolve()
+    key_dir = _key_dir()
+    pub_path = (key_dir / f"{key_id}.pub").resolve()
+    priv_path = (key_dir / f"{key_id}.key").resolve()
     try:
-        pub_path.relative_to(KEY_DIR.resolve())
-        priv_path.relative_to(KEY_DIR.resolve())
+        pub_path.relative_to(key_dir.resolve())
+        priv_path.relative_to(key_dir.resolve())
     except ValueError:
         return None, None
     return pub_path, priv_path
@@ -130,13 +152,14 @@ def _generate_keypair() -> tuple[bytes, bytes, str]:
 
 
 def _save_keypair(priv: bytes, pub: bytes, key_id: str) -> Path:
-    KEY_DIR.mkdir(parents=True, exist_ok=True)
+    key_dir = _key_dir()
+    key_dir.mkdir(parents=True, exist_ok=True)
     try:
-        os.chmod(KEY_DIR, 0o700)
+        os.chmod(key_dir, 0o700)
     except OSError:
         pass
-    priv_path = KEY_DIR / f"{key_id}.key"
-    pub_path = KEY_DIR / f"{key_id}.pub"
+    priv_path = key_dir / f"{key_id}.key"
+    pub_path = key_dir / f"{key_id}.pub"
     # Create the private signing key (the audit chain's trust anchor) with the
     # mode set AT creation. write_bytes() + a later chmod left a world-readable
     # window during which another local user could read -- and then forge with
@@ -157,12 +180,13 @@ def _save_keypair(priv: bytes, pub: bytes, key_id: str) -> Path:
 
 def _load_or_create_keypair() -> tuple[bytes, bytes, str]:
     """Load the most-recent keypair or generate one if none exists."""
-    if KEY_DIR.exists():
-        priv_files = sorted(KEY_DIR.glob("*.key"))
+    key_dir = _key_dir()
+    if key_dir.exists():
+        priv_files = sorted(key_dir.glob("*.key"))
         if priv_files:
             latest = max(priv_files, key=lambda p: p.stat().st_mtime)
             key_id = latest.stem
-            pub_path = KEY_DIR / f"{key_id}.pub"
+            pub_path = key_dir / f"{key_id}.pub"
             if pub_path.exists():
                 return latest.read_bytes(), pub_path.read_bytes(), key_id
     priv, pub, key_id = _generate_keypair()
