@@ -43,6 +43,16 @@ class TestExposure:
         reg.enable_deferred({"read_file", "not_registered"})
         assert _names(reg) == {"read_file"}  # phantom core name ignored
 
+    def test_core_registered_after_enable_is_exposed(self):
+        reg = ToolRegistry()
+        reg.register(_tool("read_file"))
+        reg.enable_deferred({"read_file", "spawn_subagent", "not_registered"})
+        assert _names(reg) == {"read_file"}
+
+        reg.register(_tool("spawn_subagent"))
+
+        assert _names(reg) == {"read_file", "spawn_subagent"}
+
     def test_run_executes_hidden_tool(self):
         # Visibility != availability: run() still executes a deferred tool.
         reg = ToolRegistry()

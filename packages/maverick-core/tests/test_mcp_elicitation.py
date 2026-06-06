@@ -145,9 +145,9 @@ async def test_suspicious_prompt_is_declined_even_in_prompt_mode(monkeypatch):
 @pytest.mark.asyncio
 async def test_prompt_mode_collects_and_accepts(monkeypatch):
     monkeypatch.setenv("MAVERICK_MCP_ELICITATION", "prompt")
-    monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-approve")
+    monkeypatch.setenv("MAVERICK_CONSENT_MODE", "ask")
     monkeypatch.setattr(sys, "stdin", type("T", (), {"isatty": lambda self: True})())
-    answers = iter(["main", "42"])
+    answers = iter(["yes", "main", "42"])
     monkeypatch.setattr("builtins.input", lambda *_a: next(answers))
 
     c, proc = _make_client()
@@ -171,25 +171,26 @@ async def test_prompt_mode_collects_and_accepts(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_prompt_mode_non_tty_declines(monkeypatch):
-    # Permitted by consent, but no interactive surface -> decline, never accept
-    # an empty/garbage form.
+async def test_prompt_mode_non_tty_cancels_without_explicit_consent(monkeypatch):
+    # Silent auto-approval is not sufficient for MCP elicitation, so a non-TTY
+    # default configuration cancels before any form can be accepted.
     monkeypatch.setenv("MAVERICK_MCP_ELICITATION", "prompt")
     monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-approve")
     monkeypatch.setattr(sys, "stdin", type("T", (), {"isatty": lambda self: False})())
     c, proc = _make_client()
     _feed_inbound(proc, 12, "elicitation/create", {"message": "x"})
     reply = await _await_reply(proc, 12)
-    assert reply["result"] == {"action": "decline"}
+    assert reply["result"] == {"action": "cancel"}
     await c.stop()
 
 
 @pytest.mark.asyncio
 async def test_required_field_left_blank_cancels(monkeypatch):
     monkeypatch.setenv("MAVERICK_MCP_ELICITATION", "prompt")
-    monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-approve")
+    monkeypatch.setenv("MAVERICK_CONSENT_MODE", "ask")
     monkeypatch.setattr(sys, "stdin", type("T", (), {"isatty": lambda self: True})())
-    monkeypatch.setattr("builtins.input", lambda *_a: "")  # blank
+    answers = iter(["yes", ""])  # approve consent, then leave field blank
+    monkeypatch.setattr("builtins.input", lambda *_a: next(answers))
     c, proc = _make_client()
     schema = {"properties": {"name": {"type": "string"}}, "required": ["name"]}
     _feed_inbound(proc, 13, "elicitation/create",
@@ -200,18 +201,43 @@ async def test_required_field_left_blank_cancels(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_prompt_mode_does_not_auto_accept_with_default_consent(monkeypatch):
+    # Prompt-mode elicitation must require an explicit operator consent. The
+    # consent primitive defaults to auto-approve for backwards compatibility,
+    # but an MCP server must not turn an empty schema into a silent accept.
+    monkeypatch.setenv("MAVERICK_MCP_ELICITATION", "prompt")
+    monkeypatch.delenv("MAVERICK_CONSENT_MODE", raising=False)
+    monkeypatch.setattr(sys, "stdin", type("T", (), {"isatty": lambda self: True})())
+
+    def _boom(*_a):
+        raise AssertionError("input() should not be reached after auto consent denial")
+
+    monkeypatch.setattr("builtins.input", _boom)
+    c, proc = _make_client()
+    _feed_inbound(proc, 14, "elicitation/create",
+                  {"message": "Authorize?", "requestedSchema": {}})
+    reply = await _await_reply(proc, 14)
+    assert reply["result"] == {"action": "cancel"}
+    await c.stop()
+
+
+@pytest.mark.asyncio
 async def test_inbound_request_does_not_block_the_reader(monkeypatch):
     # While an elicitation handler is parked on operator input (in a worker
     # thread), a normal response must still correlate -- proving the single
     # stdout reader is not blocked by inbound-request handling.
     monkeypatch.setenv("MAVERICK_MCP_ELICITATION", "prompt")
-    monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-approve")
+    monkeypatch.setenv("MAVERICK_CONSENT_MODE", "ask")
     monkeypatch.setattr(sys, "stdin", type("T", (), {"isatty": lambda self: True})())
     release = threading.Event()
+    answers = iter(["yes"])
 
     def _blocking_input(*_a):
-        release.wait(timeout=5)  # bounded so a forgotten release can't hang CI
-        return "done"
+        try:
+            return next(answers)
+        except StopIteration:
+            release.wait(timeout=5)  # bounded so a forgotten release can't hang CI
+            return "done"
 
     monkeypatch.setattr("builtins.input", _blocking_input)
     c, proc = _make_client()

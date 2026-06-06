@@ -503,12 +503,12 @@ class Agent:
             except (ImportError, FileNotFoundError, ValueError):
                 pass
 
-        # Cross-session memory (root agent only): surface the agent's long-term
-        # memory index so each run starts with what it learned in earlier
-        # sessions -- the long-horizon continuity layer. Mirrors skill
-        # injection; the agent pulls file detail on demand via the `memory`
-        # tool. Empty memory -> "" -> no change. Depth-gated so deep workers
-        # keep lean, focused context (they can still use the tool directly).
+        # Cross-session memory (root agent only): surface only a safe presence
+        # hint so each run knows durable memory exists. Memory filenames and
+        # contents are model-writable/untrusted and must re-enter through the
+        # `memory` tool's normal scanned, redacted, framed output path. Empty
+        # memory -> "" -> no change. Depth-gated so deep workers keep lean,
+        # focused context (they can still use the tool directly).
         if self.depth == 0:
             try:
                 from .tools.memory import memory_brief
@@ -760,6 +760,12 @@ class Agent:
                 self.name, "error",
                 f"tool={name} DENIED by capability (principal={cap.principal})",
             )
+            try:  # tamper-evident record of the denial; never block on audit
+                from .audit import EventKind, record
+                record(EventKind.CAPABILITY_DENIED, agent=self.name,
+                       goal_id=self.ctx.goal_id, tool=name, principal=cap.principal)
+            except Exception:  # pragma: no cover
+                pass
             return (
                 f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
                 f"not granted tool {name!r}. The tool was not executed."
