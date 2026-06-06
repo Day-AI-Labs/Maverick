@@ -372,6 +372,11 @@ class LLM:
         on_delta=None,
     ) -> LLMResponse:
         provider, model_id = _parse_spec(model or self.model)
+        # Egress lock (no-op unless enterprise mode is on): refuse to send data to a
+        # non-local provider so sensitive data never leaves the boundary. Raises
+        # EgressBlocked before any prompt is dispatched.
+        from .enterprise import assert_provider_allowed
+        assert_provider_allowed(provider)
         _run_preflight(model_id, system, messages, tools, max_tokens)
         client = self._get_client(provider)
         kwargs: dict[str, Any] = dict(
@@ -452,6 +457,9 @@ class LLM:
         model: str | None = None,
     ) -> LLMResponse:
         provider, model_id = _parse_spec(model or self.model)
+        # Egress lock (no-op unless enterprise mode is on): see complete().
+        from .enterprise import assert_provider_allowed
+        assert_provider_allowed(provider)
         _run_preflight(model_id, system, messages, tools, max_tokens)
         client = self._get_client(provider)
         import time as _time
