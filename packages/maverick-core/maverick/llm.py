@@ -257,6 +257,7 @@ def _provider_api_key(provider: str, anthropic_api_key: str | None) -> str | Non
         "moonshot": ("MOONSHOT_API_KEY",),
         "xai": ("XAI_API_KEY", "GROK_API_KEY"),
         "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        "openrouter": ("OPENROUTER_API_KEY",),
     }
     for env_key in env_keys.get(provider, ()):
         value = os.environ.get(env_key, "").strip()
