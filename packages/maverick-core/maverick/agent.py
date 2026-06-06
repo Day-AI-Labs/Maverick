@@ -7,6 +7,7 @@ without patching the kernel.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -348,8 +349,9 @@ class Agent:
         # / `maverick budget` reflect accruing mid-run spend instead of
         # $0.00 / 0 tools. Throttled to once per _SPEND_MIRROR_INTERVAL s.
         self._last_spend_mirror = 0.0
-        # Loop guard: per-(tool,args) consecutive-failure streak. Grows while an
-        # identical call keeps failing; reset when that call finally succeeds.
+        # Loop guard: current consecutive failure streak. Grows only while the
+        # exact same tool call fails with the same raw error; any intervening
+        # different call or success starts a new streak.
         self._tool_fail_streak: dict[str, int] = {}
 
     def _resolve_capability(self, explicit):
@@ -866,17 +868,23 @@ class Agent:
             blob = repr(args)
         return f"{name}\x00{blob}"
 
+    @staticmethod
+    def _tool_failure_key(name: str, args: dict, raw_output: str) -> str:
+        error_hash = hashlib.sha256((raw_output or "").strip().encode()).hexdigest()
+        return f"{Agent._tool_call_key(name, args)}\x00{error_hash}"
+
     def _loop_guard_note(self, name: str, args: dict, raw_output: str) -> str:
         """Track this call's outcome; return a nudge when an identical call has
         failed the same way ``_LOOP_GUARD_THRESHOLD`` times in a row."""
         if not _LOOP_GUARD_ENABLED:
             return ""
-        key = self._tool_call_key(name, args)
         failed = _tool_call_failed(raw_output)
         if not failed:
-            self._tool_fail_streak.pop(key, None)  # success clears this call's streak
+            self._tool_fail_streak.clear()
             return ""
+        key = self._tool_failure_key(name, args, raw_output)
         streak = self._tool_fail_streak.get(key, 0) + 1
+        self._tool_fail_streak.clear()
         self._tool_fail_streak[key] = streak
         if streak < _LOOP_GUARD_THRESHOLD:
             return ""
