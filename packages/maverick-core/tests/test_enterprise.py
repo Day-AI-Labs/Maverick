@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import pytest
-
 from maverick import capability
 from maverick.enterprise import (
     EgressBlocked,

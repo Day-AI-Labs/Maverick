@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from maverick.compliance import (
     compliance_report,
     render_report_json,
