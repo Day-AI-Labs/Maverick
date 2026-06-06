@@ -43,7 +43,7 @@ reliability plumbing (D) have since shipped — see the table.
 | B1 | Async tasks | ✅ | MCP Tasks 2025-11-25 on the stdio server (`maverick_mcp/tasks.py`, `server.py`, `tests/test_server_tasks.py`) — task-augmented `tools/call` returns `CreateTaskResult` and runs on a background worker; `tasks/get`/`result`/`cancel`/`list` + `notifications/tasks/status` push + capability + `execution.taskSupport`. Only `input_required` + HTTP-transport tasks deferred (`specs/mcp-tasks.md`) |
 | B2 | MCP client OAuth 2.1 + Registry | 🟡 | remote-HTTP **client transport** shipped — `StreamableHttpMCPClient` (`mcp_client.py`, `tests/test_mcp_http_client.py`) consumes remote servers via `[mcp_servers.<name>] url`, JSON + SSE responses, session-id continuity, optional bearer `auth_token`. OAuth 2.1 (needs real accounts) + the Registry still open |
 | B3 | A2A vs. homegrown ACD | ⬜ decision | recommend adopting A2A's Agent Card; reframe/cut ACD |
-| C1 | Eval harness (GAIA / τ²-bench / terminal-bench) | 🟡 | GAIA shipped (#687); **τ²-bench-style** stateful verification harness shipped (`benchmarks/eval_tau2.py`, `test_eval_tau2.py`) — a tool domain + DB the tools mutate, graded on final state **and** required actions (not a string adapter), runnable in CI on a shipped retail fixture; only terminal-bench (needs container task envs) remains |
+| C1 | Eval harness (GAIA / τ²-bench / terminal-bench) | ✅ | GAIA shipped (#687); **τ²-bench-style** stateful verification harness shipped (`benchmarks/eval_tau2.py`, `test_eval_tau2.py`); **terminal-bench-style** harness shipped (`benchmarks/eval_terminal_bench.py`, `test_eval_terminal_bench.py`) — a virtual-FS shell domain graded on final files **and** required commands (regex), runnable in CI on a shipped fixture with **no Docker**; the real container-backed + Maverick-driving solver (+ user simulator) plugs in at the injected-solver seam (documented follow-up, same shape as tau2's real solver) |
 | C1 | Skill quality gate / pruning | ✅ | gate (#396) + decay + active pruning (`skill_stats.evictable()` + `skills evict`), wired (`agent.py:274`, `orchestrator.py:227`), tested; only versioning absent |
 | C2 | Learning-substrate decision (close loop vs. prune) | ⬜ decision | `training/`, `prm.py`, compaction gate are scaffolds |
 | C3 | Verifier default-on across goal types | ✅ | `agent.py:1155–1342` (not coding-gated) |
@@ -69,11 +69,13 @@ reliability plumbing (D) have since shipped — see the table.
 3. **Finish A3** — ✅ done: memory tool + loop bootstrap, and programmatic tool
    calling (`code_exec`); the full mid-execution bridge awaits interactive sandbox
    sessions.
-4. **Finish C1's benchmark coverage** — the **τ²-bench-style** verification harness
-   has shipped (`benchmarks/eval_tau2.py`: stateful tool domain + outcome/action
-   verifier, CI-runnable on a retail fixture; real tau2 task files plug in via
-   `--dataset`). Remaining: **terminal-bench** (needs container task envs, like
-   `swe_bench.py`) and wiring a real Maverick-driving solver (+ user simulator).
+4. **Finish C1's benchmark coverage** — ✅ done. The **τ²-bench-style**
+   (`benchmarks/eval_tau2.py`) and **terminal-bench-style**
+   (`benchmarks/eval_terminal_bench.py`) verification harnesses have both shipped:
+   stateful domain + outcome/process verifier, CI-runnable on shipped fixtures, with
+   real task files plugging in via `--dataset`. The only remainder — common to both —
+   is wiring a real Maverick-driving solver (+ container task envs / user simulator)
+   at the injected-solver seam; that is operator/integration work, not harness work.
 5. **Decisions (need the founder):** C2 learning substrate (close the eval→reward
    loop or prune the scaffolds); B3 A2A-vs-ACD; and the breadth-vs-depth call — see
    [`specs/tool-inventory.md`](./specs/tool-inventory.md) (56 core tools vs. a
