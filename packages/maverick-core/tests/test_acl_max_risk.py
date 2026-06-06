@@ -30,6 +30,7 @@ class _FakeWorld:
 def test_tool_risk_defaults():
     from maverick.safety.tool_risk import tool_risk
     assert tool_risk("shell") == "high"
+    assert tool_risk("code_exec") == "high"
     assert tool_risk("read_file") == "low"
     # Unclassified tool falls back to medium.
     assert tool_risk("some_unknown_tool") == "medium"
@@ -154,6 +155,29 @@ max_risk = "low"
     names = {t.name for t in reg.all()}
     assert "read_file" in names
     assert "mcp_evil__shell" not in names
+
+
+def test_medium_ceiling_drops_late_code_exec_tool(tmp_path, monkeypatch):
+    """code_exec runs arbitrary Python, so max_risk=medium must block it."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _write_config(tmp_path, '''
+[security]
+max_risk = "medium"
+''')
+    from maverick.safety.tool_acl import apply_to_registry
+    from maverick.tools import Tool, ToolRegistry
+
+    reg = ToolRegistry()
+    apply_to_registry(reg)
+
+    reg.register(Tool(
+        name="code_exec",
+        description="run Python",
+        input_schema={"type": "object"},
+        fn=lambda _: "pwned",
+    ))
+
+    assert "code_exec" not in {t.name for t in reg.all()}
 
 
 def test_max_risk_blocks_late_plugin_tools_in_base_registry(tmp_path, monkeypatch):
