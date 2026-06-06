@@ -355,10 +355,14 @@ async def test_capability_denial_is_audited(tmp_path, monkeypatch):
     monkeypatch.setattr(maverick.audit, "record",
                         lambda kind, **kw: calls.append((kind, kw)) or True)
     agent = _agent(tmp_path)
-    agent.capability = Capability(principal="agent:coder-1",
+    agent.ctx.channel = "sms"
+    agent.ctx.user_id = "sms:+15551234567"
+    agent.capability = Capability(principal="user:sms:+15551234567",
                                   deny_tools=frozenset({"shell"}))
     await agent._run_tool("shell", {"cmd": "x"})
     denied = [kw for k, kw in calls if k == EventKind.CAPABILITY_DENIED]
     assert denied, "capability denial was not written to the audit log"
     assert denied[0]["tool"] == "shell"
-    assert denied[0]["principal"] == "agent:coder-1"
+    assert denied[0]["principal"] == "user:sms:+15551234567"
+    assert denied[0]["channel"] == "sms"
+    assert denied[0]["user_id"] == "sms:+15551234567"
