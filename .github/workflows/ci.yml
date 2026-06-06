@@ -125,6 +125,11 @@ jobs:
         # whole point of the gate. Re-add `|| true` only as a temporary
         # measure if an upstream CVE lands with no fix available yet.
         run: |
+          # The runner's default pip (26.1.1) is itself flagged by
+          # PYSEC-2026-196; 26.1.2 patches it. Bump pip to the fixed floor
+          # before auditing so the gate reflects our shipped dependency tree,
+          # not a stale CVE in the runner's own tooling.
+          python -m pip install --upgrade 'pip>=26.1.2'
           python -m pip install pip-audit
           pip-audit
       - name: SAST (bandit, high-severity)
