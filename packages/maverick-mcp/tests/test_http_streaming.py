@@ -193,6 +193,44 @@ def test_http_no_update_pushed_without_subscription(monkeypatch):
     assert "notifications/resources/updated" not in resp.text
 
 
+def test_http_non_subscription_requests_do_not_create_sessions(monkeypatch):
+    monkeypatch.setenv("MAVERICK_MCP_TOKEN", "test-token")
+    app = ht.build_app(MCPServer())
+    client = TestClient(app)
+
+    for i in range(5):
+        client.cookies.clear()
+        resp = client.post("/mcp", headers=_AUTH, json={
+            "jsonrpc": "2.0", "id": i, "method": "tools/list",
+        })
+        assert resp.status_code == 200
+        assert "Mcp-Session-Id" not in resp.headers
+
+    assert len(app.state.resource_sessions) == 0
+
+
+def test_http_resource_sessions_are_capped(monkeypatch):
+    monkeypatch.setenv("MAVERICK_MCP_TOKEN", "test-token")
+    monkeypatch.setenv("MAVERICK_MCP_MAX_RESOURCE_SESSIONS", "2")
+    app = ht.build_app(MCPServer())
+    client = TestClient(app)
+    seen = []
+
+    for i in range(3):
+        client.cookies.clear()
+        resp = client.post("/mcp", headers=_AUTH, json={
+            "jsonrpc": "2.0", "id": i, "method": "resources/subscribe",
+            "params": {"uri": "maverick://goals"},
+        })
+        assert resp.status_code == 200
+        seen.append(resp.headers["Mcp-Session-Id"])
+
+    assert len(app.state.resource_sessions) == 2
+    assert seen[0] not in app.state.resource_sessions
+    assert seen[1] in app.state.resource_sessions
+    assert seen[2] in app.state.resource_sessions
+
+
 def test_http_resource_subscriptions_are_client_scoped(monkeypatch):
     monkeypatch.setenv("MAVERICK_MCP_TOKEN", "test-token")
     server = MCPServer()
