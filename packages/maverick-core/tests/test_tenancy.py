@@ -29,17 +29,27 @@ def test_explicit_scope_beats_env(monkeypatch):
     assert current_tenant() == "acme"  # restored
 
 
-def test_sanitization_prevents_traversal(monkeypatch):
+def test_tenant_encoding_prevents_traversal_without_collisions(monkeypatch):
     monkeypatch.delenv("MAVERICK_TENANT", raising=False)
     tok = set_tenant("../../etc")  # path-traversal attempt
     try:
         t = current_tenant()
-        assert "/" not in t  # collapses to a single safe path segment
+        assert t == "..%2F..%2Fetc"
+        assert "/" not in t  # remains a single safe path segment
         # The real invariant: the resolved data path can't escape the tenants root.
         resolved = data_dir("x").resolve()
         assert (paths.maverick_home() / "tenants").resolve() in resolved.parents
     finally:
         reset_tenant(tok)
+
+
+def test_tenant_encoding_is_collision_resistant(monkeypatch):
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    assert data_dir("memory", tenant="ac/me") != data_dir("memory", tenant="ac_me")
+    assert data_dir("memory", tenant="/") != data_dir("memory", tenant="default")
+    assert data_dir("memory", tenant=".").resolve().parent == (
+        paths.maverick_home() / "tenants" / "%2E"
+    ).resolve()
 
 
 # --- data_dir --------------------------------------------------------------
@@ -127,6 +137,32 @@ def test_memory_isolated_across_tenants(monkeypatch, tmp_path):
         reset_tenant(tok)
 
 
+def test_memory_isolated_for_previously_colliding_tenants(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    monkeypatch.delenv("MAVERICK_MEMORY_DIR", raising=False)
+    from maverick.tools.memory import _run
+
+    tok = set_tenant("ac/me")
+    try:
+        assert "wrote" in _run({"command": "create", "path": "secrets.md",
+                                "file_text": "SECRET123"})
+    finally:
+        reset_tenant(tok)
+
+    tok = set_tenant("ac_me")
+    try:
+        assert _run({"command": "view", "path": ""}) == "(memory is empty)"
+    finally:
+        reset_tenant(tok)
+
+    tok = set_tenant("ac/me")
+    try:
+        assert "SECRET123" in _run({"command": "view", "path": "secrets.md"})
+    finally:
+        reset_tenant(tok)
+
+
 # --- per-user tenant scope (server wiring) ---------------------------------
 
 def test_tenant_by_user_disabled_by_default(monkeypatch):
@@ -159,7 +195,7 @@ def test_tenant_scope_sets_and_restores(monkeypatch):
     from maverick.paths import tenant_scope
     assert current_tenant() is None
     with tenant_scope(channel="tg", user_id="42"):
-        assert current_tenant() == "tg_42"  # ':' sanitized to '_'
+        assert current_tenant() == "tg%3A42"  # ':' is percent-encoded
     assert current_tenant() is None  # restored after the block
 
 
