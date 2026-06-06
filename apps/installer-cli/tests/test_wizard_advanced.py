@@ -37,9 +37,9 @@ def test_advanced_all_on_writes_kernel_sections(tmp_path, monkeypatch):
 def test_advanced_all_off_writes_no_sections(tmp_path, monkeypatch):
     cfg = _write(tmp_path, monkeypatch, dict.fromkeys(
         ["cost_aware", "verify_ensemble", "tree_of_thought",
-         "compact_history", "reflexion"], False,
+         "compact_history", "reflexion", "enforce_quotas"], False,
     ))
-    for section in ("[routing]", "[planning]", "[context]", "[reflexion]"):
+    for section in ("[routing]", "[planning]", "[context]", "[reflexion]", "[quotas]"):
         assert section not in cfg
 
 
@@ -106,3 +106,24 @@ def test_tenant_by_user_writes_and_is_read(tmp_path, monkeypatch):
 
     from maverick.paths import tenant_by_user_enabled
     assert tenant_by_user_enabled() is True
+
+
+def test_enforce_quotas_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's quota toggle writes [quotas] enforce + the
+    daily caps, and the kernel reads them back."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for env in ("MAVERICK_QUOTA_ENFORCE", "MAVERICK_QUOTA_MAX_DOLLARS_PER_DAY",
+                "MAVERICK_QUOTA_MAX_TOKENS_PER_DAY"):
+        monkeypatch.delenv(env, raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"enforce_quotas": True})
+    assert "[quotas]" in cfg
+    assert "enforce = true" in cfg
+    assert "max_dollars_per_day = 25.0" in cfg
+    assert "max_tokens_per_day = 5000000" in cfg
+
+    from maverick.quotas import over_quota, quotas_enforced
+    assert quotas_enforced() is True
+    # Nothing recorded yet, so a fresh principal is under quota.
+    assert over_quota("alice") is None

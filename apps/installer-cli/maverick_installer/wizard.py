@@ -938,6 +938,12 @@ def pick_advanced() -> dict[str, bool]:
             "spawned sub-agents can only narrow it, never exceed it (least privilege).",
             default=False,
         ),
+        "enforce_quotas": _q_confirm(
+            "Enforce per-principal usage quotas? Track spend (dollars + tokens) per "
+            "user per day and refuse to start a new goal once the daily cap is hit "
+            "(chargeback / cost governance across runs, beyond the per-run budget).",
+            default=False,
+        ),
         "tenant_by_user": _q_confirm(
             "Isolate each user into their own tenant? Per-user cross-session memory "
             "is kept separate — recommended for multi-user servers.",
@@ -1864,6 +1870,14 @@ def write_config(
             lines.append("")
             lines.append("[capabilities]")
             lines.append("enforce = true")
+        if advanced.get("enforce_quotas"):
+            lines.append("")
+            lines.append("[quotas]")
+            lines.append("enforce = true")
+            # Starter daily caps per principal; edit or set to 0 to disable a
+            # dimension. The kernel also reads MAVERICK_QUOTA_* env overrides.
+            lines.append("max_dollars_per_day = 25.0")
+            lines.append("max_tokens_per_day = 5000000")
         if advanced.get("tenant_by_user"):
             lines.append("")
             lines.append("[tenancy]")
