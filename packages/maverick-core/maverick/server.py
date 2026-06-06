@@ -72,15 +72,16 @@ class Server:
         # first turn. `first_turn_disclosure` checks the conversation
         # row (creates if needed) and returns None on follow-up turns.
         from .compliance import first_turn_disclosure
+        principal_id = getattr(msg, "principal_id", msg.user_id)
         disclosure = first_turn_disclosure(
             self.world,
             channel=msg.channel or "unknown",
-            user_id=msg.user_id,
+            user_id=principal_id,
         )
 
         conversation = self.world.get_or_create_conversation(
             channel=msg.channel or "unknown",
-            user_id=msg.user_id,
+            user_id=principal_id,
         )
         self.world.append_turn(conversation.id, "user", msg.text)
 
@@ -91,14 +92,16 @@ class Server:
         from .paths import tenant_scope
         try:
             # Per-user tenant isolation when enabled (no-op otherwise): scopes
-            # the run's cross-session memory to this channel user, then restores.
-            with tenant_scope(channel=msg.channel, user_id=msg.user_id):
+            # the run's cross-session memory to the authenticated sender, then
+            # restores. Room-based adapters keep msg.user_id as the reply target
+            # and expose the sender via msg.principal_id.
+            with tenant_scope(channel=msg.channel, user_id=principal_id):
                 result = await run_goal(
                     self.llm, self.world, budget, goal_id,
                     sandbox=self.sandbox, max_depth=self.max_depth,
                     conversation_id=conversation.id,
                     channel=msg.channel or "unknown",
-                    user_id=f"{msg.channel or 'unknown'}:{msg.user_id}",
+                    user_id=f"{msg.channel or 'unknown'}:{principal_id}",
                 )
         except Exception:
             log.exception("goal #%s run failed", goal_id)
