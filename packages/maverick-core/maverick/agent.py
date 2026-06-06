@@ -98,6 +98,23 @@ _LOOP_GUARD_THRESHOLD = max(2, env_int("MAVERICK_LOOP_GUARD_THRESHOLD", 3))
 # 0 disables the nudge. Tune via MAVERICK_STEP_BUDGET_WARNING.
 _STEP_BUDGET_WARNING = max(0, env_int("MAVERICK_STEP_BUDGET_WARNING", 3))
 
+# P0 capability layer (path resource-scopes): the filesystem tools whose path
+# argument a capability's allow_paths globs gate at the _run_tool chokepoint,
+# mapped to the arg name that carries that path. Conservative on purpose --
+# only tools whose single path arg is verified against its real input_schema
+# appear here, so we never path-deny a call we can't confidently locate the
+# path for. `apply_patch` is intentionally absent: its `patch` arg is a
+# multi-file unified diff, not a single path. Empty allow_paths == all (the
+# capability's "empty == allow-all" convention), so this is a no-op unless
+# capability enforcement was opted in AND the active grant restricts paths.
+_FILE_TOOL_PATH_ARGS: dict[str, str] = {
+    "read_file": "path",
+    "write_file": "path",
+    "list_dir": "path",
+    "str_replace_editor": "path",
+    "ast_edit": "path",
+}
+
 
 def _tool_call_failed(output: str) -> bool:
     """Did a tool result represent a failure? Used for the is_error flag and the
@@ -772,6 +789,34 @@ class Agent:
                 f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
                 f"not granted tool {name!r}. The tool was not executed."
             )
+
+        # P0 capability layer (path resource-scopes): for a known filesystem
+        # tool, the grant's allow_paths globs also gate the path it touches.
+        # No-op unless a path-restricted grant is active (empty == all). Fail-
+        # soft: if the path arg is missing/unusable we skip the check rather
+        # than error, so a malformed call still reaches the tool's own
+        # validation -- we never deny something we can't confidently locate.
+        path_arg = _FILE_TOOL_PATH_ARGS.get(name)
+        if cap is not None and path_arg is not None:
+            raw = args.get(path_arg) if isinstance(args, dict) else None
+            if isinstance(raw, str) and raw and not cap.permits_path(raw):
+                self.ctx.blackboard.post(
+                    self.name, "error",
+                    f"tool={name} path={raw} DENIED by capability "
+                    f"(principal={cap.principal})",
+                )
+                try:  # tamper-evident record of the denial; never block on audit
+                    from .audit import EventKind, record
+                    record(EventKind.CAPABILITY_DENIED, agent=self.name,
+                           goal_id=self.ctx.goal_id, tool=name,
+                           principal=cap.principal, path=raw)
+                except Exception:  # pragma: no cover
+                    pass
+                return (
+                    f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
+                    f"not granted path {raw!r} for tool {name!r}. "
+                    "The tool was not executed."
+                )
 
         # PreToolUse hooks: any registered hook can BLOCK the call by
         # returning a non-zero exit code (shell hook) or a falsy value
