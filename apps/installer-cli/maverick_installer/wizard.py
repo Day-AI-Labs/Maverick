@@ -994,6 +994,12 @@ def pick_advanced() -> dict[str, Any]:
             "when the agent handles PHI/PII/financial data.",
             default=False,
         ),
+        "encrypt_at_rest": _q_confirm(
+            "Encrypt sensitive local stores at rest? Seals the cross-session "
+            "memory store with AES-256-GCM (key in ~/.maverick/keys, chmod 600). "
+            "Implied by enterprise mode; recommended for PHI/PII/financial data.",
+            default=False,
+        ),
         "deferred_tools": _q_confirm(
             "Deferred tool loading? Show the model a small core toolset plus a "
             "find_tools search tool, loading the long tail (80+ integrations, MCP) "
@@ -1936,6 +1942,10 @@ def write_config(
             lines.append("")
             lines.append("[enterprise]")
             lines.append("mode = true")
+        if advanced.get("encrypt_at_rest"):
+            lines.append("")
+            lines.append("[encryption]")
+            lines.append("at_rest = true")
         if advanced.get("tree_of_thought"):
             lines.append("")
             lines.append("[planning]")

@@ -213,6 +213,21 @@ def compliance_report() -> list[ControlCheck]:
         "Secret/PII redaction in logs", "GDPR Art. 25 & 32", "active",
         "audit events pass through the secret detector before write",
     ))
+
+    # GDPR Art. 32 — encryption of personal data at rest (memory store).
+    enc_on = False
+    try:
+        from .crypto_at_rest import at_rest_enabled
+        enc_on = at_rest_enabled()
+    except Exception:
+        pass
+    checks.append(ControlCheck(
+        "Encryption at rest (memory store)", "GDPR Art. 32",
+        "active" if enc_on else "action_needed",
+        "cross-session memory sealed with AES-256-GCM" if enc_on
+        else "enable [encryption] at_rest = true (or enterprise mode) to seal it",
+    ))
+
     anon_on = False
     try:
         from .privacy import anon_enabled

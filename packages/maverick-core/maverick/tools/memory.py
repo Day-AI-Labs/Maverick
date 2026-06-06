@@ -31,6 +31,25 @@ _MAX_TOTAL_BYTES = 16 * 1024 * 1024  # 16 MB across the whole memory dir
 _MAX_VIEW_BYTES = 16_000
 
 
+def _read_text(target: Path) -> str:
+    """Read a memory file, transparently decrypting a sealed file (and reading a
+    legacy plaintext file unchanged)."""
+    from ..crypto_at_rest import unseal_to_text
+    return unseal_to_text(target.read_bytes())
+
+
+def _write_text(target: Path, text: str) -> None:
+    """Write a memory file, sealing it at rest when encryption is enabled.
+
+    Fail-closed: if encryption is on but unavailable, this raises rather than
+    silently writing plaintext (the caller surfaces it as an error)."""
+    from ..crypto_at_rest import at_rest_enabled, seal_text
+    if at_rest_enabled():
+        target.write_bytes(seal_text(text))
+    else:
+        target.write_text(text, encoding="utf-8")
+
+
 def _memory_root() -> Path:
     # Explicit override wins; otherwise the (optionally tenant-scoped) default,
     # which is the legacy ~/.maverick/memory when no tenant is active.
@@ -89,7 +108,7 @@ def _view(target: Path, root: Path) -> str:
                 rows.append(f"- {_rel(p, root)}  ({sz} bytes)")
         return "\n".join(rows) if rows else "(memory is empty)"
     try:
-        data = target.read_text(encoding="utf-8", errors="replace")
+        data = _read_text(target)
     except OSError as e:
         return f"ERROR: {e}"
     lines = data.splitlines()
@@ -116,6 +135,14 @@ def _fits(root: Path, target: Path, new_text: str) -> str | None:
 
 
 def _run(args: dict) -> str:
+    from ..crypto_at_rest import EncryptionUnavailable
+    try:
+        return _run_impl(args)
+    except EncryptionUnavailable as e:
+        return f"ERROR: at-rest encryption unavailable: {e}"
+
+
+def _run_impl(args: dict) -> str:
     cmd = (args.get("command") or "").strip()
     if not cmd:
         return ("ERROR: missing `command` (view, create, str_replace, insert, "
@@ -164,7 +191,7 @@ def _run(args: dict) -> str:
             return err
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text, encoding="utf-8")
+            _write_text(target, text)
         except OSError as e:
             return f"ERROR: {e}"
         return f"wrote {_rel(target, root)} ({len(text)} bytes)"
@@ -176,7 +203,7 @@ def _run(args: dict) -> str:
             return "ERROR: str_replace requires `old_str` and `new_str`"
         if not target.is_file():
             return f"ERROR: {_rel(target, root)} not found"
-        data = target.read_text(encoding="utf-8", errors="replace")
+        data = _read_text(target)
         count = data.count(old)
         if count == 0:
             return ("ERROR: `old_str` not found. Use `view` to confirm the exact "
@@ -189,7 +216,7 @@ def _run(args: dict) -> str:
         if err:
             return err
         try:
-            target.write_text(new_data, encoding="utf-8")
+            _write_text(target, new_data)
         except OSError as e:
             return f"ERROR: {e}"
         delta = len(new_data) - len(data)
@@ -208,7 +235,7 @@ def _run(args: dict) -> str:
             idx = int(after)
         except (TypeError, ValueError):
             return f"ERROR: insert_line must be an integer; got {after!r}"
-        data = target.read_text(encoding="utf-8", errors="replace")
+        data = _read_text(target)
         lines = data.split("\n")
         if idx < 0 or idx > len(lines):
             return (f"ERROR: insert_line={idx} out of range "
@@ -218,7 +245,7 @@ def _run(args: dict) -> str:
         if err:
             return err
         try:
-            target.write_text(new_data, encoding="utf-8")
+            _write_text(target, new_data)
         except OSError as e:
             return f"ERROR: {e}"
         return f"inserted at line {idx} of {_rel(target, root)}"
