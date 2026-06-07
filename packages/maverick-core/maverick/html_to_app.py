@@ -156,7 +156,7 @@ _SCHEMA = {
 }
 
 
-def _run(args: dict) -> str:
+def _run(args: dict, sandbox=None) -> str:
     import json as _json
     op = args.get("op")
     html = args.get("html")
@@ -168,27 +168,35 @@ def _run(args: dict) -> str:
         dest = args.get("dest")
         if not dest:
             return "ERROR: scaffold requires dest"
+        # Confine the scaffold destination to the sandbox workspace: an
+        # unconfined `dest` is an arbitrary-directory write of model-controlled
+        # index.html/app.js (docroot/dotfile clobber, stored XSS).
+        from .tools.ffmpeg_tool import _safe_path
         try:
-            plan = scaffold(html, Path(dest).expanduser())
+            safe_dest = Path(_safe_path(sandbox, dest))
+            plan = scaffold(html, safe_dest)
+        except ValueError as e:
+            return f"ERROR: {e}"
         except OSError as e:
             return f"ERROR: {e}"
-        return (f"scaffolded '{plan['title']}' into {dest}: "
+        return (f"scaffolded '{plan['title']}' into {safe_dest}: "
                 f"{', '.join(plan['written'])} "
                 f"({len(plan['forms'])} form(s), {len(plan['links'])} link(s))")
     return f"ERROR: unknown op {op!r}"
 
 
-def html_to_app():
+def html_to_app(sandbox=None):
     from .tools import Tool
     return Tool(
         name="html_to_app",
         description=(
             "Turn a static HTML mockup into a starter project. ops: analyze "
             "(html) -> structural plan (title/headings/forms/links/assets), "
-            "scaffold (html, dest) -> writes index.html + app.js stub + README."
+            "scaffold (html, dest) -> writes index.html + app.js stub + README. "
+            "The destination is confined to the workspace."
         ),
         input_schema=_SCHEMA,
-        fn=_run,
+        fn=lambda args: _run(args, sandbox),
     )
 
 

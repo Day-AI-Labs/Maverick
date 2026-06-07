@@ -8,7 +8,15 @@ from maverick.workspace_snapshot import (
     create_snapshot,
     list_snapshots,
     restore_snapshot,
+    workspace_snapshot,
 )
+
+
+class _SB:
+    """Minimal sandbox stub exposing a workdir confinement root."""
+
+    def __init__(self, workdir):
+        self.workdir = str(workdir)
 
 
 def _src(tmp_path):
@@ -67,3 +75,27 @@ def test_restore_blocks_path_traversal(tmp_path):
     with pytest.raises(ValueError):
         restore_snapshot(store, "snap-0001", tmp_path / "dest")
     assert not (tmp_path / "escape.txt").exists()
+
+
+def test_tool_snapshot_confined_to_workspace(tmp_path):
+    # HOME is isolated by the autouse conftest, so the store lands under tmp.
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "f.txt").write_text("x", encoding="utf-8")
+    out = workspace_snapshot(_SB(work)).fn({"op": "snapshot", "path": "."})
+    assert out.startswith("created snap-")
+
+
+def test_tool_snapshot_rejects_source_escape(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    out = workspace_snapshot(_SB(work)).fn({"op": "snapshot", "path": "../../"})
+    assert out.startswith("ERROR") and "escape" in out.lower()
+
+
+def test_tool_restore_rejects_dest_escape(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    out = workspace_snapshot(_SB(work)).fn(
+        {"op": "restore", "id": "snap-0001", "dest": "/tmp/evil-restore"})
+    assert out.startswith("ERROR") and "escape" in out.lower()

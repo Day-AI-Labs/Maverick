@@ -176,13 +176,19 @@ _SCHEMA = {
 }
 
 
-def _run(args: dict) -> str:
+def _run(args: dict, sandbox=None) -> str:
     import json as _json
+
+    # Confine the snapshot SOURCE and the restore DESTINATION to the sandbox
+    # workspace. Unconfined, `snapshot path=~/.maverick` would tar up the
+    # operator's API keys + world.db, and `restore dest=...` could write those
+    # bytes anywhere -- a secret-exfiltration / arbitrary-write primitive.
+    from .tools.ffmpeg_tool import _safe_path
     op = args.get("op")
     store = store_dir()
     try:
         if op == "snapshot":
-            src = Path(args.get("path") or ".").expanduser()
+            src = Path(_safe_path(sandbox, args.get("path") or "."))
             man = create_snapshot(src, store, args.get("label") or "")
             return (f"created {man['id']} ({man['files']} files, "
                     f"{man['bytes']} bytes) -> {man['path']}")
@@ -193,24 +199,26 @@ def _run(args: dict) -> str:
             dest = args.get("dest")
             if not dest:
                 return "ERROR: restore requires dest"
-            res = restore_snapshot(store, args.get("id") or "", Path(dest).expanduser())
+            res = restore_snapshot(store, args.get("id") or "",
+                                   Path(_safe_path(sandbox, dest)))
             return f"restored {res['restored']} files from {res['id']} -> {res['dest']}"
     except (ValueError, OSError, tarfile.TarError) as e:
         return f"ERROR: {e}"
     return f"ERROR: unknown op {op!r}"
 
 
-def workspace_snapshot():
+def workspace_snapshot(sandbox=None):
     from .tools import Tool
     return Tool(
         name="workspace_snapshot",
         description=(
             "Snapshot / restore a working directory as a gzip tarball. ops: "
             "snapshot (path, label), list, restore (id, dest). Snapshots live "
-            "under ~/.maverick/snapshots; restore is path-traversal-safe."
+            "under ~/.maverick/snapshots; the source/destination are confined "
+            "to the workspace and restore is path-traversal-safe."
         ),
         input_schema=_SCHEMA,
-        fn=_run,
+        fn=lambda args: _run(args, sandbox),
     )
 
 

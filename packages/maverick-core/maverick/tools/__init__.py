@@ -749,11 +749,11 @@ def base_registry(
     from ..workspace_snapshot import workspace_snapshot
     reg.register(dom_diff())
     reg.register(license_scan())
-    reg.register(workspace_snapshot())
+    reg.register(workspace_snapshot(sandbox))
     reg.register(task_graph())
     reg.register(browser_device())
     reg.register(bench_track())
-    reg.register(html_to_app())
+    reg.register(html_to_app(sandbox))
     reg.register(browser_auth_vault())
 
     # Subpackage capability tools (ROADMAP 2027 H2). The sandbox-backed ones
