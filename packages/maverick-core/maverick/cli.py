@@ -2549,6 +2549,7 @@ _REQUIRED_SOC2_CONTROLS = (
     "tenant_isolation",
     "usage_quotas",
     "oidc_auth",
+    "encryption_at_rest",
 )
 
 
