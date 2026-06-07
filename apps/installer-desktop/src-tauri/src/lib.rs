@@ -22,7 +22,7 @@ use tokio::process::Command;
 
 // Source the installer pulls from. The desktop installer always pins
 // the checkout to the commit captured when the signed app was built.
-const REPO: &str = "cdayAI/Maverick";
+const REPO: &str = "Day-AI-Labs/Maverick";
 const GIT_REF: &str = env!("MAVERICK_INSTALL_REF");
 
 #[cfg(windows)]

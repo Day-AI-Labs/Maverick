@@ -15,7 +15,7 @@
 
 $ErrorActionPreference = 'Stop'
 
-$Repo   = if ($env:MAVERICK_REPO) { $env:MAVERICK_REPO } else { 'cdayAI/Maverick' }
+$Repo   = if ($env:MAVERICK_REPO) { $env:MAVERICK_REPO } else { 'Day-AI-Labs/Maverick' }
 $Ref    = if ($env:MAVERICK_REF)  { $env:MAVERICK_REF }  else { '' }
 $SrcDir = Join-Path $env:LOCALAPPDATA 'Maverick\src'
 $AllowUnpinned = if ($env:MAVERICK_ALLOW_UNPINNED) { $env:MAVERICK_ALLOW_UNPINNED } else { '' }

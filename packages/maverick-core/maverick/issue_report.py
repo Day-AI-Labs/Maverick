@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-DEFAULT_REPO = "cdayAI/Maverick"
+DEFAULT_REPO = "Day-AI-Labs/Maverick"
 # Keep the prefilled body well under GitHub's URL length limit so the link
 # always opens; long error dumps are truncated.
 _MAX_BODY_CHARS = 6000

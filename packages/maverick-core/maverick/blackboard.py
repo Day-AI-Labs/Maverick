@@ -33,6 +33,10 @@ class Blackboard:
         self.entries: list[Entry] = []
         self._world = None
         self._goal_id: int | None = None
+        # Agent compartments: optional QuarantineRegistry. When attached, posts
+        # by a sealed agent are withheld from render() so a poisoned finding
+        # can't steer the rest of the swarm. None == disabled.
+        self._quarantine = None
         # Guards entries against a runner thread and the event loop touching
         # the same blackboard. (NOTE: this does not serialize same-thread
         # gather() coroutines against each other — the deeper swarm-shares-
@@ -43,6 +47,19 @@ class Blackboard:
         """Wire the blackboard to a WorldModel so posts are persisted as events."""
         self._world = world
         self._goal_id = goal_id
+
+    def attach_quarantine(self, registry) -> None:
+        """Wire a QuarantineRegistry so sealed agents' posts are withheld."""
+        self._quarantine = registry
+
+    def _is_sealed(self, agent: str) -> bool:
+        q = self._quarantine
+        if q is None:
+            return False
+        try:
+            return q.is_sealed(agent)
+        except Exception:  # pragma: no cover -- containment must never break reads
+            return False
 
     # Hard cap on retained entries so a long run (or an agent posting in a
     # loop) can't grow this list without bound. Reads only ever take a
@@ -75,7 +92,11 @@ class Blackboard:
 
     def render(self, max_entries: int = 50) -> str:
         with self._lock:
-            recent = self.entries[-max_entries:]
+            snapshot = list(self.entries)
+        # Withhold sealed agents' posts (compartment Rung 1): a quarantined
+        # agent's findings must not steer the orchestrator or its siblings.
+        visible = [e for e in snapshot if not self._is_sealed(e.agent)]
+        recent = visible[-max_entries:]
         lines = []
         for e in recent:
             head = f"[{e.agent}/{e.kind}]"

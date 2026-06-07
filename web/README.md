@@ -18,7 +18,7 @@ python -m http.server -d web 8000
 Until `maverick.dev` is registered:
 
 1. In repo Settings → Pages, set source to `main` branch / `/web` folder
-2. The site appears at `https://cdayai.github.io/maverick/`
+2. The site appears at `https://day-ai-labs.github.io/maverick/`
 
 After `maverick.dev` is registered:
 

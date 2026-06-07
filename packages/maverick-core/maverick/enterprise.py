@@ -36,14 +36,35 @@ the egress lock can never be satisfied by a cloud provider.
 """
 from __future__ import annotations
 
+import ipaddress
 import os
+from urllib.parse import urlparse
 
 # Built-in self-hosted providers: data stays on infrastructure the operator runs.
 # ``ollama`` (localhost:11434), ``vllm`` and ``tgi`` (self-hosted inference servers).
 # An operator can declare additional local endpoints via ``[enterprise]
-# local_providers`` (e.g. a generic OpenAI-compatible provider pointed at an internal
-# vLLM) — see :func:`_extra_local_providers`.
+# local_providers`` (e.g. a custom in-process provider). Known cloud providers are
+# never accepted as local, even if listed in config.
 LOCAL_PROVIDERS = frozenset({"ollama", "vllm", "tgi"})
+
+# Providers whose canonical implementations route to third-party/cloud APIs. They
+# must not become enterprise-local through the operator-provided provider-name list.
+CLOUD_PROVIDERS = frozenset({
+    "anthropic",
+    "azure",
+    "bedrock",
+    "deepseek",
+    "gemini",
+    "moonshot",
+    "openai",
+    "openrouter",
+    "xai",
+})
+
+# The generic OpenAI-compatible provider can point at either a local/self-hosted
+# endpoint or an arbitrary public gateway. In enterprise mode it is only treated as
+# local when its configured endpoint is provably local/private.
+_ENDPOINT_VALIDATED_PROVIDERS = frozenset({"openai_compatible"})
 
 
 class EgressBlocked(RuntimeError):
@@ -53,8 +74,8 @@ class EgressBlocked(RuntimeError):
         super().__init__(
             f"enterprise mode: refusing to send data to non-local provider "
             f"{provider!r}. Sensitive data must stay in your boundary — route this "
-            f"role to a self-hosted model (ollama / vllm / tgi) or add the endpoint "
-            f"to [enterprise] local_providers in ~/.maverick/config.toml."
+            f"role to a self-hosted model (ollama / vllm / tgi) or another "
+            f"validated local provider."
         )
         self.provider = provider
 
@@ -79,15 +100,77 @@ def enterprise_enabled() -> bool:
     return bool(val)
 
 
+def _configured_openai_compatible_base_url() -> str | None:
+    """Return the configured OpenAI-compatible endpoint, matching provider setup."""
+    try:
+        from .config import get_provider_config
+
+        cfg = get_provider_config("openai_compatible")
+    except Exception:
+        cfg = {}
+    url = cfg.get("base_url") or os.environ.get("OPENAI_COMPATIBLE_BASE_URL")
+    return str(url).strip() if url else None
+
+
+def _is_local_endpoint(url: str | None) -> bool:
+    """True only for endpoints that are syntactically local/private.
+
+    Enterprise egress is fail-closed: public hostnames such as Groq/Together and
+    ambiguous DNS names are not considered local here because this check runs before
+    prompt dispatch and must not rely on network lookups.
+    """
+    if not url:
+        return False
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    host = parsed.hostname.strip().lower().rstrip(".")
+    if host in {"localhost", "ip6-localhost", "ip6-loopback"} or host.endswith(
+        ".localhost"
+    ):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private or ip.is_link_local
+
+
+def _endpoint_validated_provider_is_local(provider: str) -> bool:
+    if provider != "openai_compatible":
+        return False
+    return _is_local_endpoint(_configured_openai_compatible_base_url())
+
+
 def _extra_local_providers() -> frozenset[str]:
     """Operator-declared additional self-hosted providers (``[enterprise]
-    local_providers``), canonicalized. Lets an internal endpoint behind a generic
-    provider count as local. Empty / unreadable config -> no extras."""
+    local_providers``), canonicalized and fail-closed. Known cloud providers are
+    ignored even if listed, and base-url-driven providers must have a configured
+    local/private endpoint before they count as local. Empty / unreadable config ->
+    no extras."""
     try:
         from .config import load_config
         from .providers import _canonical
+
         raw = ((load_config() or {}).get("enterprise") or {}).get("local_providers") or []
-        return frozenset(_canonical(str(x)) for x in raw)
+        providers: set[str] = set()
+        for item in raw:
+            canon = _canonical(str(item))
+            if not canon:
+                continue
+            if canon in LOCAL_PROVIDERS:
+                providers.add(canon)
+            elif canon in CLOUD_PROVIDERS:
+                continue
+            elif canon in _ENDPOINT_VALIDATED_PROVIDERS:
+                if _endpoint_validated_provider_is_local(canon):
+                    providers.add(canon)
+            else:
+                providers.add(canon)
+        return frozenset(providers)
     except Exception:
         return frozenset()
 
@@ -132,6 +215,7 @@ def assert_provider_allowed(provider: str) -> None:
 
 
 __all__ = [
+    "CLOUD_PROVIDERS",
     "LOCAL_PROVIDERS",
     "EgressBlocked",
     "enterprise_enabled",

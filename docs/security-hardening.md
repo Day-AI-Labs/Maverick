@@ -1,0 +1,603 @@
+# Security hardening (operator guide)
+
+Maverick ships **defense in depth**, but almost every *enterprise/security*
+control is **opt-in and off by default** so a personal install behaves exactly
+as before. That makes the controls easy to miss: turning them on currently
+means knowing the config key. This guide is the single place that lists every
+one — what it does, the exact `~/.maverick/config.toml` block, the
+environment-variable equivalent, the installer-wizard toggle (if any), gotchas,
+and how to confirm it's actually on.
+
+> **Precedence.** For every toggle below, an explicitly-set environment
+> variable wins over `~/.maverick/config.toml`. A few controls
+> (capabilities, encryption-at-rest) are additionally **implied by enterprise
+> mode** — see [Enterprise mode](#enterprise-mode-the-umbrella-switch).
+
+> **Verify what's on.** `maverick soc2` prints a JSON posture snapshot of the
+> main toggles (capabilities, tenant isolation, quotas, OIDC) plus audit-log
+> verification. Use it after any change. See
+> [Verifying your posture](#verifying-your-posture).
+
+## Contents
+
+- [Always-on safety (not opt-in)](#always-on-safety-not-opt-in)
+- [Enterprise mode (the umbrella switch)](#enterprise-mode-the-umbrella-switch)
+- [Capability enforcement](#capability-enforcement)
+- [Multi-tenancy (per-user isolation)](#multi-tenancy-per-user-isolation)
+- [Usage quotas](#usage-quotas)
+- [OIDC SSO authentication](#oidc-sso-authentication)
+- [Encryption at rest](#encryption-at-rest)
+- [Risk-proportional verification](#risk-proportional-verification)
+- [Audit-log signing (tamper-evidence)](#audit-log-signing-tamper-evidence)
+- [Compliance commands](#compliance-commands)
+- [Verifying your posture](#verifying-your-posture)
+- [Recommended enterprise baseline](#recommended-enterprise-baseline)
+
+---
+
+## Always-on safety (not opt-in)
+
+These are on by default and need no configuration. They are the floor the
+opt-in controls build on:
+
+- **Agent Shield** — the safety detection layer (`packages/maverick-shield/`).
+  Fail-open with a warning if not installed; it's a chokepoint, not a hard
+  dependency.
+- **Sandbox-mediated shell** — all tool shell execution goes through
+  `sandbox.exec()` (local/Firecracker backends), never raw `subprocess`.
+- **Hard `Budget` caps** — every long-running path respects a per-run budget
+  (`budget.check()`); a single run cannot spend without bound.
+- **Append-only audit log** — every notable action is written to an
+  append-only NDJSON audit log; when [signing](#audit-log-signing-tamper-evidence)
+  is enabled it becomes an Ed25519 Merkle-chained, tamper-evident log.
+- **Tool ACLs / risk ceilings** — allow/deny tool lists and a per-deployment
+  max-risk ceiling (`maverick.safety.tool_acl`).
+- **Consent / HITL** — human-in-the-loop confirmation gates for sensitive or
+  destructive actions.
+
+The sections below are the controls you must **explicitly turn on**.
+
+---
+
+## Enterprise mode (the umbrella switch)
+
+The fastest way to a hardened posture. Enterprise mode pins every LLM call to a
+local/self-hosted provider (an **egress lock**: sensitive data physically
+cannot reach a cloud API) and, as a side effect, **implies two of the controls
+below**: it forces [capability enforcement](#capability-enforcement) on and
+turns on [encryption at rest](#encryption-at-rest).
+
+**config.toml**
+
+```toml
+[enterprise]
+mode = true
+```
+
+**Environment variable**
+
+```bash
+export MAVERICK_ENTERPRISE=1          # set to a falsey value to force-disable
+```
+
+**Wizard toggle:** yes — "Enterprise mode (private/sensitive data)?"
+
+**Gotchas**
+
+- The egress lock pins LLM calls to `ollama` / `vllm` / `tgi`, or endpoints you
+  allow-list under `[enterprise] local_providers`. A call routed to a known
+  cloud provider raises `EgressBlocked` *before any prompt is sent*, and the
+  denial is audited. Make sure you actually have a local provider configured,
+  or runs will fail closed.
+- `MAVERICK_ENTERPRISE` (when set to a non-empty value) wins over
+  `[enterprise] mode`.
+- Enterprise mode is documented in depth in
+  [`docs/security/`](security/) and the enterprise module
+  (`maverick.enterprise`). This guide only covers its security side effects.
+
+> If you only want the individual controls (not the egress lock), skip this and
+> turn on each control directly below.
+
+---
+
+## Capability enforcement
+
+**What it does.** Gives every agent a *scoped, signed, attenuating* capability:
+a grant over which tools (up to what risk), which filesystem paths, and which
+network hosts it may touch. Child/sub-agents can only ever be **narrowed**
+(attenuated) relative to their parent — least privilege by construction, so a
+sub-agent can never exceed what its parent was granted. Off → enforcement is a
+no-op and behaviour is unchanged.
+
+**config.toml**
+
+```toml
+[capabilities]
+enforce = true
+```
+
+**Environment variable**
+
+```bash
+export MAVERICK_ENFORCE_CAPABILITIES=1
+```
+
+**Scopes** (the grant is built from your existing `[security]` tool-ACL config —
+the same allow/deny/max-risk knobs `maverick.safety.tool_acl` reads). The
+`Capability` fields are:
+
+| Field | Meaning | "empty" convention |
+| --- | --- | --- |
+| `allow_tools` | tool whitelist | empty set = **all** tools |
+| `deny_tools` | subtractive deny — **deny wins over allow** | — |
+| `max_risk` | risk ceiling: `"low"` / `"medium"` / `"high"` | `None` = no cap |
+| `allow_paths` | fnmatch globs of filesystem paths the principal may touch | empty = **all** paths |
+| `allow_hosts` | fnmatch globs of network hosts the principal may reach | empty = **all** hosts |
+
+**Attenuation.** As a grant propagates to children: `allow_tools` intersects
+(only shrinks), `deny_tools` unions (only grows), `max_risk` only tightens,
+`allow_paths`/`allow_hosts` intersect, and `expires_at` is inherited (a child
+never outlives its parent).
+
+**Ed25519 signing.** Grants can be Ed25519-signed (`sign_capability` /
+`verify_capability`, reusing the audit-signing key primitives) so they are
+independently verifiable. Signing/verification requires the `cryptography`
+package; verification returns `False` (never raises) if it's absent, so callers
+that *require* verification must check for crypto first.
+
+**Gotchas**
+
+- A denied tool call emits a **`capability_denied`** audit event
+  (`tool`, `principal`, `channel`, `user_id`) — grep your audit log for it to
+  see what got blocked.
+- With no `[security]` ACL configured, the root grant is all-permissive but
+  still gives identity + least-privilege-on-spawn (children still attenuate).
+- **Enterprise mode forces this on** regardless of `[capabilities] enforce`.
+
+**Verify it's on:** `maverick soc2` →
+`controls.capability_enforcement.status == "enabled"`.
+
+---
+
+## Multi-tenancy (per-user isolation)
+
+**What it does.** Namespaces Maverick's on-disk state per *tenant* so one
+tenant's data cannot leak to another. When enabled, each channel user is
+isolated into their own tenant. Tenant `t`'s data lives under
+`~/.maverick/tenants/<t>/...` instead of the legacy `~/.maverick/...` root.
+
+This increment routes the **cross-session memory** store, the **usage ledger**
+(quotas), and other tenant-aware stores through the tenant-aware path resolver.
+(The `maverick.paths` docstring notes the world model and audit log are migrated
+in follow-on increments — see *Gotchas*.)
+
+**config.toml**
+
+```toml
+[tenancy]
+by_user = true
+```
+
+**Environment variables**
+
+```bash
+export MAVERICK_TENANT_BY_USER=1      # isolate each channel user into its own tenant
+# or pin a single explicit tenant for the whole process:
+export MAVERICK_TENANT=acme-corp
+```
+
+**Wizard toggle:** yes — "Per-user tenant isolation?"
+
+**Tenant derivation.** With `by_user` on, a request's tenant is
+**`"<channel>:<user_id>"`** (e.g. `telegram:12345`), sanitized for safe use as
+a path segment. The active tenant is resolved in order:
+
+1. an explicit `set_tenant(...)` / `tenant_scope(...)` scope (a `ContextVar`, so
+   concurrent async runs each pin their own tenant safely);
+2. the `MAVERICK_TENANT` environment variable;
+3. none → the shared/legacy `~/.maverick/...` root.
+
+**Gotchas**
+
+- With **no** tenant active, paths resolve to the legacy locations, so
+  single-tenant installs are completely unchanged.
+- Tenant ids become path segments: non-`[A-Za-z0-9._-]` bytes are
+  percent-encoded, and an over-long id (> 200 chars after encoding) raises
+  `InvalidTenantError`. Distinct ids can never collapse onto the same on-disk
+  namespace.
+- Per the module docstring this is an *incremental* migration: the
+  most leak-sensitive store (cross-session memory) is isolated first. Confirm in
+  your version which stores are routed through `maverick.paths.data_dir` before
+  relying on isolation for a specific store.
+
+**Verify it's on:** `maverick soc2` →
+`controls.tenant_isolation.status == "enabled"`.
+
+---
+
+## Usage quotas
+
+**What it does.** Where `Budget` caps a *single run*, quotas cap a *principal*
+across runs over a rolling **UTC calendar day** — so you can do chargeback /
+rate-limit spend per user or team. A persistent ledger records cumulative
+dollars + input/output tokens per `(principal, day)` under the tenant-aware data
+dir (`<data>/usage/ledger.json`, so it's already tenant-isolated). The module is
+**fail-soft**: a ledger error logs a warning and never crashes a run; quotas
+only ever *refuse*, never crash.
+
+**config.toml**
+
+```toml
+[quotas]
+enforce = true
+max_dollars_per_day = 25.0       # 0 or unset = no limit on this dimension
+max_tokens_per_day = 5000000     # counts input + output tokens
+```
+
+**Environment variables**
+
+```bash
+export MAVERICK_QUOTA_ENFORCE=1
+export MAVERICK_QUOTA_MAX_DOLLARS_PER_DAY=25
+export MAVERICK_QUOTA_MAX_TOKENS_PER_DAY=5000000
+```
+
+**Wizard toggle:** yes — "Enforce per-principal usage quotas?" (the wizard
+writes starter caps of `25.0` dollars and `5000000` tokens).
+
+**Gotchas**
+
+- Env vars override config per field. A cap of `0` (or unset) means "no limit on
+  *this* dimension"; if **both** caps are `0`/unset, nothing is enforced even
+  with `enforce = true`.
+- Usage is **always recorded** (even when enforcement is off) so the ledger
+  accrues chargeback data — turning enforcement on later acts on history already
+  collected.
+- The day window is **UTC**, so it doesn't shift with the host timezone/DST.
+
+**Verify it's on:** `maverick soc2` →
+`controls.usage_quotas.status == "enabled"`.
+
+---
+
+## OIDC SSO authentication
+
+**What it does.** Verifies an OpenID-Connect **ID token** (a JWT) for the
+`maverick serve` / dashboard HTTP surface against a configured issuer and
+audience, mapping a verified subject to the principal `user:<sub>` (which slots
+straight into the capability/tenant model). When enabled, **every gated request
+must carry a valid `Authorization: Bearer <jwt>` header**; a missing/invalid
+token gets an opaque `401`. Off → no token is required and behaviour is
+unchanged (fail-open only when disabled).
+
+**config.toml**
+
+```toml
+[auth.oidc]
+enabled = true
+issuer = "https://login.example.com/"
+audience = "maverick"
+jwks_uri = "https://login.example.com/.well-known/jwks.json"
+algorithms = ["RS256", "ES256"]   # optional; asymmetric-only, default RS256/ES256
+```
+
+**Environment variables**
+
+```bash
+export MAVERICK_OIDC_ENABLED=1
+export MAVERICK_OIDC_ISSUER="https://login.example.com/"
+export MAVERICK_OIDC_AUDIENCE="maverick"
+export MAVERICK_OIDC_JWKS_URI="https://login.example.com/.well-known/jwks.json"
+export MAVERICK_OIDC_ALGORITHMS="RS256,ES256"   # comma-separated
+```
+
+**Wizard toggle:** yes — "Enable OIDC SSO token verification?" (prompts for
+issuer / audience / jwks_uri and writes the `[auth.oidc]` table).
+
+**Exempt paths** (answer without a bearer even when OIDC is on, for load
+balancers / k8s probes / OpenAPI docs):
+`/healthz`, `/livez`, `/readyz`, `/openapi.json`, `/docs`, `/redoc`,
+`/docs/oauth2-redirect`, `/.well-known/agent-card.json`,
+`/.well-known/agent.json`. **HMAC-signed webhooks** (`/webhook/...`) are also
+exempt — they carry their own shared-secret signature and are gated separately,
+so OIDC does not 401 inbound webhooks.
+
+**Gotchas**
+
+- **Needs the optional extra.** OIDC verification requires PyJWT:
+  `pip install 'maverick-agent[oidc]'` (equivalently `pip install
+  'pyjwt[crypto]>=2.8'`). The kernel imports fine without it; you'll only hit
+  the error when a token is actually verified.
+- **Asymmetric-only by design.** `algorithms` is filtered to asymmetric
+  algorithms (`RS*`/`ES*`/`PS*`/`EdDSA`); `none` and every HMAC alg
+  (`HS256/384/512`) are hard-rejected regardless of config — this defeats the
+  alg-confusion attack. A config that lists only `HS256`/`none` falls back to
+  the default `["RS256","ES256"]`.
+- `exp`, `iat`, `aud`, `iss`, `sub` are all **required and verified**. Signing
+  keys are fetched from `jwks_uri` keyed by the token's `kid`; an unknown `kid`
+  is a rejection (no fallback key). There is **no fail-open-to-authenticated**
+  path — any failure raises and yields a `401`.
+
+**Verify it's on:** `maverick soc2` → `controls.oidc_auth.status == "enabled"`
+(reports `absent` if the optional module/extra isn't installed).
+
+---
+
+## Encryption at rest
+
+**What it does.** AES-256-GCM authenticated encryption for Maverick's sensitive
+local stores. By default the kernel keeps state in plaintext on disk; this seals
+it so anyone who can read `~/.maverick` can't read its contents. This increment
+wires it into the **cross-session memory** store (the most leak-sensitive
+per-tenant store).
+
+**config.toml**
+
+```toml
+[encryption]
+at_rest = true
+```
+
+**Environment variable**
+
+```bash
+export MAVERICK_ENCRYPT_AT_REST=1     # a falsey value force-disables
+```
+
+**Wizard toggle:** yes — "Encrypt sensitive local stores at rest?"
+
+**Key management** (first match wins):
+
+1. **`MAVERICK_ENCRYPTION_KEY`** — a 32-byte key as **hex or base64**, so you
+   can inject a KMS-derived key without it ever touching disk.
+   ```bash
+   export MAVERICK_ENCRYPTION_KEY="$(openssl rand -hex 32)"   # 64 hex chars
+   ```
+2. Otherwise **`~/.maverick/keys/at_rest.key`** — generated on first use,
+   `chmod 600`, directory `chmod 700`.
+
+**Gotchas**
+
+- **Scope today.** This increment covers the **memory store**. The world DB and
+  the audit log are a **documented future increment** — do not assume they are
+  encrypted yet. (Confirm in your version before relying on it for those
+  stores.)
+- **Requires `cryptography`.** With at-rest enabled but the package missing,
+  `seal()` **fails closed** (raises `EncryptionUnavailable`) rather than writing
+  plaintext: `pip install 'maverick-agent[audit-signing]'`.
+- **Transparent migration.** Sealed blobs carry a magic header; data written
+  *before* you enabled encryption is read back transparently (no flag-day
+  re-encrypt). New writes are sealed.
+- **Don't lose the key.** If you rely on the generated `at_rest.key`, back it up
+  — losing it means losing access to sealed data. Prefer
+  `MAVERICK_ENCRYPTION_KEY` from your KMS for production.
+- Precedence: `MAVERICK_ENCRYPT_AT_REST` (non-empty) wins over `[encryption]
+  at_rest`, which wins over enterprise mode (which **implies** at-rest on).
+
+**Verify it's on:** at-rest has no dedicated `soc2` field; confirm via your
+config/env, and note that **enterprise mode implies it**.
+
+---
+
+## Risk-proportional verification
+
+**What it does.** When on, the orchestrator may **skip** the LLM self-verifier
+on clearly low-risk answers (a short, prose-only reply reached without touching
+any tools), spending verification only where it matters. Any coding task, any
+tool use, an embedded code block/diff/edit, or a long multi-part answer falls
+through to full verification. This is a *cost/latency* optimization, not a safety
+control — it never weakens verification on anything non-trivial.
+
+**config.toml**
+
+```toml
+[verification]
+risk_proportional = true
+```
+
+**Environment variable**
+
+```bash
+export MAVERICK_RISK_PROPORTIONAL_VERIFY=1
+```
+
+**Wizard toggle:** yes — risk-proportional verification prompt under advanced
+options.
+
+**Gotcha.** Off by default; with it off, the orchestrator's FINAL is always
+verified (subject to budget). Leave it off if you want maximal verification
+regardless of cost.
+
+---
+
+## Audit-log signing (tamper-evidence)
+
+**What it does.** Turns the append-only audit log into an **Ed25519
+Merkle-chained, tamper-evident** log: each row is hash-chained and signed, and a
+cross-file tip-ledger (`anchors.ndjson`) catches deletion/truncation of a whole
+day-file. This is what makes [`maverick audit verify`](#compliance-commands)
+and the `soc2` audit-chain probe meaningful — without signing, the log is
+append-only NDJSON but not cryptographically tamper-evident (the probe reports
+`unsigned`).
+
+**config.toml**
+
+```toml
+[audit]
+sign = true
+```
+
+**Environment variable**
+
+```bash
+export MAVERICK_AUDIT_SIGN=1
+```
+
+**Gotchas**
+
+- Precedence: explicit code arg > `MAVERICK_AUDIT_SIGN` env > `[audit] sign` in
+  config.
+- Requires `cryptography` (`pip install 'maverick-agent[audit-signing]'`).
+- The signing key lives under `~/.maverick/keys/`; `maverick soc2`'s
+  `audit_signing_key` probe reports whether a key is present.
+
+**Verify it's on:** `maverick audit verify` (see below) and `maverick soc2` →
+`audit_log.status == "ok"` (vs `unsigned` when signing is off).
+
+---
+
+## Compliance commands
+
+| Command | Purpose |
+| --- | --- |
+| `maverick soc2` | Print a SOC 2 technical-posture snapshot as JSON (which controls are ON + whether the audit log verifies). Add `--json` for compact single-line output. Fail-soft: always emits JSON, exits 0. |
+| `maverick audit verify` | Verify the Ed25519 hash-chain (+ cross-file tip-ledger) of a signed audit log. Exits non-zero if the chain is not intact, so it can gate CI/cron. |
+| `maverick dsar export --user <id>` | GDPR Art. 15/20 (access / portability): export everything Maverick holds for a subject as a JSON bundle. |
+| `maverick erase --channel <c> --user <id>` | GDPR Art. 17 (right to erasure): erase everything Maverick knows about a `(channel, user_id)` pair. |
+
+**`maverick audit verify` flags:**
+
+```bash
+maverick audit verify --day 2026-06-07           # default: today (UTC)
+maverick audit verify --all                      # sweep every day-file in the audit dir
+maverick audit verify --tenant acme              # verify a specific tenant's audit dir
+maverick audit verify --file path/to/log.ndjson  # one file (overrides --day/--all)
+maverick audit verify --pubkey <ed25519-hex>     # trusted external key for real
+                                                 # third-party tamper-evidence
+```
+
+> **Flags.** `audit verify` accepts `--day`, `--all`, `--tenant`, `--file`, and
+> `--pubkey`. `--all` sweeps every `YYYY-MM-DD.ndjson` day-file in the audit dir
+> (the anchor ledger is verified separately as the cross-file tip-ledger).
+> `--tenant <t>` resolves that tenant's audit dir the same way the writer/signer
+> wrote it (`~/.maverick/tenants/<t>/audit/`); the default follows the active
+> tenant. `--file` pins a single file and overrides `--day`/`--all`. Without
+> `--pubkey` it trusts a locally-held key and prints a warning; pass the
+> externally-held pubkey for genuine third-party tamper-evidence. Exits 1 on any
+> break, 0 when clean; if `cryptography` is missing it can't verify and exits 0
+> (can't-verify ≠ tampered).
+
+**`maverick dsar export` flags:**
+
+```bash
+maverick dsar export --user <user_id> \
+    [--tenant <t>] \         # default: active tenant
+    [--output bundle.json] \ # -o; default stdout. Written 0o600.
+    [--json]                 # compact single-line JSON
+```
+
+**`maverick erase` flags:**
+
+```bash
+maverick erase --channel telegram --user <user_id> [--yes]
+```
+
+> Note: `erase` requires **both** `--channel` and `--user`; it scopes erasure to
+> that one `(channel, user_id)` pair (conversations, turns, on-disk
+> attachments, the conversation row, related facts/episodes, and an audit
+> re-anchor). `--yes` skips the confirmation prompt.
+
+**SOC 2 controls mapping.** The mapping of these technical controls to the SOC 2
+Trust Services Criteria lives in
+[`docs/compliance/soc2-controls.md`](compliance/soc2-controls.md). The
+machine-readable evidence collector behind `maverick soc2` is
+`maverick.soc2.collect_soc2_evidence()`.
+
+---
+
+## Verifying your posture
+
+After enabling anything, run:
+
+```bash
+maverick soc2
+```
+
+It reports each main control's `status` (`enabled` / `disabled` / `absent` /
+`unknown`) and the audit-chain state. The relevant keys:
+
+| `soc2` key | Backing control |
+| --- | --- |
+| `controls.capability_enforcement` | [Capability enforcement](#capability-enforcement) |
+| `controls.tenant_isolation` | [Multi-tenancy](#multi-tenancy-per-user-isolation) |
+| `controls.usage_quotas` | [Usage quotas](#usage-quotas) |
+| `controls.oidc_auth` | [OIDC SSO](#oidc-sso-authentication) (`absent` if the extra isn't installed) |
+| `audit_log` | audit-chain verification: `ok` / `unsigned` / `broken` / `empty` / `no_crypto` / `unknown` |
+| `audit_signing_key` | whether an audit signing key is present |
+
+Then confirm tamper-evidence end-to-end with `maverick audit verify`.
+
+> Encryption-at-rest and risk-proportional verification have no dedicated
+> `soc2` field; confirm those via your config/env (and remember enterprise mode
+> implies at-rest).
+
+---
+
+## Recommended enterprise baseline
+
+A sensible default for a deployment handling sensitive data. Adjust the quota
+caps, OIDC endpoints, and key source to your environment.
+
+```toml
+# ~/.maverick/config.toml
+
+# Umbrella: egress lock + implies capability enforcement + at-rest encryption.
+[enterprise]
+mode = true
+
+# Least privilege per agent, with attenuating propagation to sub-agents.
+# (Redundant under enterprise mode, but explicit is clearer and survives
+# turning enterprise mode off.)
+[capabilities]
+enforce = true
+
+# Isolate each channel user into their own on-disk tenant.
+[tenancy]
+by_user = true
+
+# Per-principal daily chargeback/rate-limit caps (0 disables a dimension).
+[quotas]
+enforce = true
+max_dollars_per_day = 25.0
+max_tokens_per_day = 5000000
+
+# Tamper-evident, Ed25519 Merkle-chained audit log.
+[audit]
+sign = true
+
+# AES-256-GCM at rest for sensitive local stores (memory store today).
+[encryption]
+at_rest = true
+
+# SSO for `maverick serve` / dashboard. Requires:  pip install 'maverick-agent[oidc]'
+[auth.oidc]
+enabled = true
+issuer = "https://login.example.com/"
+audience = "maverick"
+jwks_uri = "https://login.example.com/.well-known/jwks.json"
+# algorithms defaults to ["RS256","ES256"]; asymmetric-only is enforced.
+
+# Optional cost/latency optimization (NOT a safety control): skip the LLM
+# verifier on clearly low-risk, tool-free answers. Omit for maximal verification.
+# [verification]
+# risk_proportional = true
+```
+
+For production, prefer injecting the at-rest key from your KMS rather than the
+generated keyfile:
+
+```bash
+export MAVERICK_ENCRYPTION_KEY="$(your-kms-fetch | xxd -p -c 32)"   # 32 bytes, hex
+```
+
+Then verify:
+
+```bash
+maverick soc2
+maverick audit verify
+```
+
+**Further reading:** [`docs/compliance/soc2-controls.md`](compliance/soc2-controls.md)
+(SOC 2 TSC → control mapping), the enterprise-mode docs under
+[`docs/security/`](security/), and [`docs/env-vars.md`](env-vars.md) for the
+full environment-variable reference.

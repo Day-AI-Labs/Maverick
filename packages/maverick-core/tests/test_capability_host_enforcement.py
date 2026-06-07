@@ -180,3 +180,24 @@ async def test_host_denial_is_audited(tmp_path, monkeypatch):
     assert denied[0]["tool"] == "browser"
     assert denied[0]["principal"] == "agent:coder-1"
     assert denied[0]["host"] == "evil.com"
+
+
+@pytest.mark.asyncio
+async def test_browser_receives_active_host_scope(tmp_path):
+    agent = _agent(tmp_path)
+    agent.capability = Capability(principal="agent:coder-1",
+                                  allow_hosts=frozenset({"*.example.com"}))
+    calls: list = []
+    agent.tools.register(Tool(
+        name="browser",
+        description="spy browser",
+        fn=lambda args: calls.append(args) or "ran",
+        input_schema={"type": "object", "properties": {"url": {"type": "string"}}},
+    ))
+
+    out = await agent._run_tool("browser", {
+        "action": "navigate",
+        "url": "https://api.example.com/x",
+    })
+    assert "DENIED" not in out
+    assert calls[0]["_capability_allow_hosts"] == ("*.example.com",)

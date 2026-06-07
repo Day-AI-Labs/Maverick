@@ -7,7 +7,7 @@ these guidelines before opening your first PR.
 ## Quick start (dev setup)
 
 ```bash
-git clone https://github.com/cdayAI/maverick
+git clone https://github.com/Day-AI-Labs/maverick
 cd maverick
 # Core + the full dev/test toolchain (pytest, ruff, pre-commit, and the
 # cross-package runtime deps the suite imports) in one shot:

@@ -17,7 +17,7 @@ dependencies = []
 scan = ["agent-shield>=14.0"]
 
 [project.urls]
-Homepage = "https://github.com/cdayAI/maverick"
+Homepage = "https://github.com/Day-AI-Labs/maverick"
 
 [tool.setuptools.packages.find]
 where = ["."]
