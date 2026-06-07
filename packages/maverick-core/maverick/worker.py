@@ -176,7 +176,7 @@ class Worker:
         while an earlier long-running handler executes wait for the next
         invocation.
         """
-        job = self.queue.claim(now=ready_at)
+        job = self.queue.claim(ready_at=ready_at)
         if job is None:
             return False
         self._maybe_rearm(job)

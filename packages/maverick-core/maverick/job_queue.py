@@ -20,7 +20,7 @@ readers (dashboard) + writer (worker).
 Workflow:
 
   - ``enqueue(kind, payload, run_at=None)`` -> job id
-  - ``claim(now)``                          -> next ready job (atomic UPDATE)
+  - ``claim(now, ready_at)``                -> next ready job (atomic UPDATE)
   - ``complete(job_id)``                    -> mark done
   - ``fail(job_id, error, retry_after=60)`` -> bump attempts + reschedule
   - ``list(status='pending')``              -> rows for the dashboard
@@ -120,15 +120,28 @@ class JobQueue:
             )
             return int(cur.lastrowid)
 
-    def claim(self, *, now: float | None = None) -> Job | None:
-        """Atomically pick the next ready pending job + mark it 'running'."""
+    def claim(
+        self,
+        *,
+        now: float | None = None,
+        ready_at: float | None = None,
+    ) -> Job | None:
+        """Atomically pick the next ready pending job + mark it 'running'.
+
+        ``ready_at`` is an optional readiness cutoff for callers that need to
+        snapshot queue eligibility, such as one-shot drains. ``now`` remains
+        the claim/heartbeat timestamp written to ``updated_at``. Keeping those
+        values separate prevents a long-running drain from claiming later jobs
+        with a stale heartbeat that another worker could reclaim.
+        """
         n = now if now is not None else time.time()
+        cutoff = ready_at if ready_at is not None else n
         with self._lock, self._conn() as c:
             # Pick a candidate.
             row = c.execute(
                 "SELECT id FROM jobs WHERE status='pending' AND run_at <= ? "
                 "ORDER BY run_at ASC, id ASC LIMIT 1",
-                (n,),
+                (cutoff,),
             ).fetchone()
             if not row:
                 return None

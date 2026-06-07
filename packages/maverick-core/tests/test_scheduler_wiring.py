@@ -307,6 +307,20 @@ def test_drain_runs_all_ready_jobs_and_returns_count(tmp_path):
     assert q.claim() is None  # no ready jobs left
 
 
+def test_claim_ready_cutoff_uses_fresh_heartbeat(tmp_path):
+    from maverick.job_queue import JobQueue
+
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    jid = q.enqueue("noop", {}, run_at=100.0)
+
+    job = q.claim(now=500.0, ready_at=100.0)
+
+    assert job is not None and job.id == jid
+    assert job.updated_at == 500.0
+    assert q.reclaim_stale(300.0, now=550.0) == 0
+    assert q.get(jid).status == "running"
+
+
 def test_drain_does_not_run_rearmed_future_occurrence(tmp_path):
     # A re-armed cron occurrence has a FUTURE run_at, so it must NOT run in the
     # same drain -- exactly one future occurrence stays pending for next time.
