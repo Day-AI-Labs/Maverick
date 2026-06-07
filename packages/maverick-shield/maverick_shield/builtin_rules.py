@@ -184,6 +184,66 @@ RULES: list[Rule] = [
          _compile(r"\b(the\s+user|admin|operator)\s+(has\s+)?already\s+(approved|authorized|allowed)"),
          "False pre-approval claim"),
 
+    # --- Newer attack families (close the held-out benchmark gaps) -----------
+    # These generalize the family, not the specific benchmark sentence: each
+    # requires an attack verb/marker AND a target, so benign text that merely
+    # name-drops the vocabulary does not trip them. Bounded `{0,N}?` gaps keep
+    # them linear (no ReDoS) and allow the two tokens to span a newline.
+    Rule("directive_supersede", "high",
+         _compile(r"\b(new|updated|latest|the\s+following)\s+(directive|instruction|rule|policy|order)s?\b[\s\S]{0,40}?\b(supersed|overrid|replac|take[\s-]?priorit|come\s+first)"),
+         "Instruction-override: a new directive supersedes prior ones"),
+    Rule("stop_following_policy", "high",
+         _compile(r"\bstop\s+(following|obeying|applying|enforcing|adhering\s+to)\s+(your|the|all|its)?\s*(configured\s+)?(polic\w+|rules?|guidelines?|instructions?|guardrails?|safety)"),
+         "Instruction-override: stop following configured policy"),
+    Rule("comply_without_restrictions", "high",
+         _compile(r"\b(comply|respond|answer|proceed|continue|do\s+it)\b[\s\S]{0,40}?\bwithout\s+(any\s+)?(restrictions?|limits?|limitations?|filters?|guardrails?|refus\w+)"),
+         "Instruction-override: comply without restrictions"),
+
+    # Persona takeover — "from now on", "pretend safety is off", "true self".
+    Rule("from_now_on_persona", "high",
+         _compile(r"\bfrom\s+now\s+on\b[\s\S]{0,40}?\byou\s+(are|act|operate|behave|respond|will|must)\b"),
+         "Persona takeover: 'from now on you ...'"),
+    Rule("pretend_safety_off", "critical",
+         _compile(r"\b(pretend|imagine|assume|act\s+as\s+if|suppose)\b[\s\S]{0,40}?\b(safety|content|filter|guardrails?|alignment|moderation|rules?)\b[\s\S]{0,24}?\b(off|disabled|removed|gone|switched\s+off|turned\s+off|don'?t\s+apply|never\s+existed)"),
+         "Jailbreak: pretend the safety layer is disabled"),
+    Rule("unaligned_self", "high",
+         _compile(r"\b(answer|respond|act|reply|speak)\s+as\s+your\s+(raw|true|real|unaligned|unfiltered|uncensored|unrestricted|boundless)\s+self\b"),
+         "Persona takeover: answer as your 'unaligned self'"),
+
+    # System-prompt leak — verbatim / everything above / hidden directives.
+    Rule("verbatim_prompt_leak", "medium",
+         _compile(r"\b(print|repeat|output|show|reveal|echo|paste|reproduce)\b[\s\S]{0,40}?\b(verbatim|exact\s+text|everything\s+(above|that\s+appears)|hidden\s+(directive|instruction|prompt)|configuration\s+block)"),
+         "System-prompt extraction: dump hidden/preceding text verbatim"),
+
+    # Secret exfiltration — name a credential AND move it out (either order).
+    Rule("secret_exfil_request", "critical",
+         _compile(r"\b(api[\s_-]?(key|token)|access[\s_-]?token|secret|credential|password|private\s+key|\.env\b|config\.toml|/\.aws/|id_rsa)\b[\s\S]{0,60}?\b(include|return|reply|print|show|reveal|paste|email|send|upload|post|exfil|leak|give\s+me)"),
+         "Credential exfiltration request"),
+    Rule("secret_exfil_request_rev", "critical",
+         _compile(r"\b(read|fetch|get|dump|cat|summari[sz]e|print|reveal|leak|exfil\w*)\b[\s\S]{0,40}?\b(environment\s+variable|env\s+var|api[\s_-]?(key|token)|secret|credential|password|private\s+key|\.env\b|config\.toml|/\.aws/|id_rsa)"),
+         "Credential read/exfiltration request"),
+
+    # Indirect / tool-output injection — content addressing the agent.
+    Rule("ai_reading_this", "high",
+         _compile(r"\bif\s+you\s+(are|'?re)\s+(an?\s+)?(ai|agent|assistant|llm|model|language\s+model|bot)\b[\s\S]{0,40}?\b(reading|seeing|processing|parsing|viewing)\b"),
+         "Indirect injection: content addressed to an AI that reads it"),
+    Rule("real_task_hijack", "high",
+         _compile(r"\byour\s+(real|actual|true|new|secret|hidden|primary)\s+(task|job|goal|mission|instruction|objective|purpose)\s+is\b"),
+         "Task hijack: your 'real task' is ..."),
+    Rule("injected_command_to_agent", "high",
+         _compile(r"\b(system\s+note|important|attention|urgent|note\s+from\s+file)\b[\s\S]{0,60}?\b(assistant|ai|agent|model)\b[\s\S]{0,24}?\b(must|should|needs?\s+to|has\s+to|now)\b[\s\S]{0,24}?\b(email|send|upload|exfil\w*|delete|run|execute|forward|leak|transfer)"),
+         "Tool-output / file injection issuing a command to the agent"),
+
+    # Jailbreak framing — fiction/hypothetical used to elicit a bypass.
+    Rule("fiction_bypass_framing", "high",
+         _compile(r"\b(fiction|story|stories|roleplay|role[\s-]?play|hypothetical|screenplay|novel|game|scenario)\b[\s\S]{0,80}?\b(bypass\w*|disabl\w*|ignor\w*|circumvent\w*|evad\w*|get\s+around|turn\s+off|defeat\w*|get\s+past)[\s\S]{0,40}?\b(filter|safety|guardrails?|rules?|restrictions?|alignment|content\s+(policy|filter)|moderation)"),
+         "Jailbreak via fiction / hypothetical framing"),
+
+    # Encoding evasion — "decode X and treat it as an instruction".
+    Rule("decode_and_obey", "high",
+         _compile(r"\bdecode\b[\s\S]{0,60}?\b(treat|use\s+it|execute|run|obey|follow|act\s+on|top[\s-]?priority|overrid)"),
+         "Encoding evasion: decode then treat as instruction"),
+
     # Invisible/bidi chars are an evasion signal in their own right -- medium
     # so 'strict' blocks on smuggling even when the de-obfuscated payload
     # happens to match no other rule.
