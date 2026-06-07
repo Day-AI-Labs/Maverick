@@ -330,6 +330,8 @@ class ToolRegistry:
             "tool.run",
             attributes={"tool.name": name, **gen_ai_tool_attributes(name)},
         ):
+            import time as _perf_time
+            _t0 = _perf_time.perf_counter()
             try:
                 try:
                     from ..chaos import maybe_fail
@@ -365,6 +367,14 @@ class ToolRegistry:
                 except Exception:  # pragma: no cover
                     pass
                 return f"ERROR: {type(e).__name__}: {e}"
+            finally:
+                # Always-on per-tool latency profile (complements OTel spans).
+                # Records on both the success and error paths; never raises.
+                try:
+                    from ..tool_latency import record as _rec_latency
+                    _rec_latency(name, (_perf_time.perf_counter() - _t0) * 1000.0)
+                except Exception:  # pragma: no cover -- profiling never breaks a tool
+                    pass
 
 
 # Tools exposed to the model by default under deferred loading. The long
