@@ -92,20 +92,26 @@ class ThreatLedger:
     _sigs: OrderedDict[str, _Signature] = field(default_factory=OrderedDict)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
-    def record(self, text: str, verdict: ShieldVerdict) -> str | None:
-        """Quarantine the payload behind a blocking verdict. No-op if allowed."""
+    def record(self, text: str, verdict: ShieldVerdict, surface: str = "") -> str | None:
+        """Quarantine the payload behind a blocking verdict. No-op if allowed.
+
+        ``surface`` scopes the fingerprint to the scan surface it was blocked on
+        (input / output / tool_call): a string blocked as an untrusted INPUT
+        must not auto-block the same text legitimately QUOTED in an agent's
+        output. Returns the bare fingerprint (or None)."""
         if getattr(verdict, "allowed", True):
             return None
         fp = fingerprint(text)
         if fp is None:
             return None
+        key = f"{surface}|{fp}"
         with self._lock:
-            existing = self._sigs.get(fp)
+            existing = self._sigs.get(key)
             if existing is not None:
                 existing.hits += 1
-                self._sigs.move_to_end(fp)
+                self._sigs.move_to_end(key)
                 return fp
-            self._sigs[fp] = _Signature(
+            self._sigs[key] = _Signature(
                 severity=getattr(verdict, "severity", "high") or "high",
                 reasons=list(getattr(verdict, "reasons", []) or []),
             )
@@ -113,15 +119,17 @@ class ThreatLedger:
                 self._sigs.popitem(last=False)  # evict oldest
         return fp
 
-    def check(self, text: str) -> _Signature | None:
-        """Return the stored signature if this payload was already quarantined."""
+    def check(self, text: str, surface: str = "") -> _Signature | None:
+        """Return the stored signature if this payload was quarantined on the
+        same ``surface`` (see :meth:`record`)."""
         fp = fingerprint(text)
         if fp is None:
             return None
+        key = f"{surface}|{fp}"
         with self._lock:
-            sig = self._sigs.get(fp)
+            sig = self._sigs.get(key)
             if sig is not None:
-                self._sigs.move_to_end(fp)
+                self._sigs.move_to_end(key)
             return sig
 
     def __len__(self) -> int:  # observability
@@ -160,10 +168,13 @@ class ImmunizingShield:
         ]
         return ShieldVerdict(allowed=False, severity=sig.severity, reasons=reasons)
 
-    def _guard(self, text: str, base_scan):
-        """Ledger-check -> base scan -> record. Fail-open on ledger errors."""
+    def _guard(self, text: str, base_scan, surface: str):
+        """Ledger-check -> base scan -> record, scoped to ``surface``. Fail-open
+        on ledger errors. Immunity is per-surface so a block on one surface
+        never auto-quarantines the same text on another (a different trust
+        context); the base scan still runs as the floor on every surface."""
         try:
-            hit = self.ledger.check(text)
+            hit = self.ledger.check(text, surface)
         except Exception:  # pragma: no cover -- ledger must never break a scan
             hit = None
         if hit is not None:
@@ -171,17 +182,18 @@ class ImmunizingShield:
         verdict = base_scan()
         try:
             if not getattr(verdict, "allowed", True):
-                self.ledger.record(text, verdict)
+                self.ledger.record(text, verdict, surface)
         except Exception:  # pragma: no cover -- recording must never break a scan
             pass
         return verdict
 
     def scan_input(self, text: str):
-        return self._guard(text, lambda: self.base.scan_input(text))
+        return self._guard(text, lambda: self.base.scan_input(text), "input")
 
     def scan_output(self, text: str, known_prompt: str | None = None):
         return self._guard(
-            text, lambda: self.base.scan_output(text, known_prompt=known_prompt)
+            text, lambda: self.base.scan_output(text, known_prompt=known_prompt),
+            "output",
         )
 
     def scan_tool_call(self, tool_name: str, args: dict):
@@ -192,7 +204,9 @@ class ImmunizingShield:
             payload = "\n".join([f"tool={tool_name}", *_collect_arg_strings(args)])
         except Exception:  # pragma: no cover
             payload = f"tool={tool_name}"
-        return self._guard(payload, lambda: self.base.scan_tool_call(tool_name, args))
+        return self._guard(
+            payload, lambda: self.base.scan_tool_call(tool_name, args), "tool_call"
+        )
 
 
 def compartments_enabled() -> bool:
