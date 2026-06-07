@@ -129,6 +129,10 @@ class MCPServerSpec:
     url: str | None = None
     headers: dict[str, str] = field(default_factory=dict)
     auth_token: str | None = None
+    # OAuth 2.1 client-credentials (§B2): a table {token_url, client_id,
+    # client_secret?, scope?}. When set, the HTTP client fetches + refreshes a
+    # short-lived access token (mcp_oauth) instead of using a static auth_token.
+    oauth: dict | None = None
 
     @property
     def is_http(self) -> bool:
@@ -145,6 +149,8 @@ class MCPServerSpec:
                 d["headers"] = dict(self.headers)
             if self.auth_token:
                 d["auth_token"] = self.auth_token
+            if self.oauth:
+                d["oauth"] = dict(self.oauth)
             return d
         d = {"command": self.command}
         if self.args:
@@ -165,6 +171,7 @@ class MCPServerSpec:
                 url=str(cfg["url"]),
                 headers={str(k): str(v) for k, v in (cfg.get("headers", {}) or {}).items()},
                 auth_token=cfg.get("auth_token"),
+                oauth=cfg.get("oauth") if isinstance(cfg.get("oauth"), dict) else None,
             )
             return spec  # __post_init__ validated the http spec
         spec = cls(
@@ -804,19 +811,33 @@ class StreamableHttpMCPClient:
         self._protocol_version = PROTOCOL_VERSION
         self._initialized = False
         self._req_id = 0
+        self._oauth_provider: Any = None
         self.tools: list[dict[str, Any]] = []
 
     def _next_id(self) -> int:
         self._req_id += 1
         return self._req_id
 
+    def _bearer(self) -> str | None:
+        """The bearer token for this server: an OAuth access token when an
+        ``oauth`` block is configured (fetched + cached + refreshed), else the
+        static ``auth_token``. Returns None when neither is set."""
+        if self.spec.oauth:
+            from .mcp_oauth import OAuthConfig, OAuthTokenProvider
+            if self._oauth_provider is None:
+                self._oauth_provider = OAuthTokenProvider(
+                    OAuthConfig.from_dict(self.spec.oauth))
+            return self._oauth_provider.token()
+        return self.spec.auth_token
+
     async def start(self) -> None:
         import httpx
         headers = {"User-Agent": "maverick-mcp-client/0.1"}
         if self.spec.headers:
             headers.update(self.spec.headers)
-        if self.spec.auth_token:
-            headers["Authorization"] = f"Bearer {self.spec.auth_token}"
+        bearer = self._bearer()
+        if bearer:
+            headers["Authorization"] = f"Bearer {bearer}"
         self._client = httpx.AsyncClient(timeout=self.timeout, headers=headers)
         log.info("MCP HTTP client connecting %r (%s)", self.spec.name, self.spec.url)
         init = await self._request("initialize", {

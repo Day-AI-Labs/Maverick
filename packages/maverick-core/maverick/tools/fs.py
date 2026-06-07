@@ -203,6 +203,11 @@ def write_file(sandbox) -> Tool:
             target = _safe_resolve(sandbox, args["path"])
         except ValueError as e:
             return f"ERROR: {e}"
+        # Opt-in per-run file-write quota (default off -> no-op).
+        from ..file_quota import check_and_add
+        ok, msg = check_and_add(len(args["content"].encode("utf-8", "replace")))
+        if not ok:
+            return f"ERROR: {msg}"
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(args["content"], encoding="utf-8")

@@ -628,9 +628,11 @@ class Agent:
         return base
 
     def _thinking_budget(self) -> int | None:
-        if self.role in ("orchestrator", "revisor"):
-            return 8000
-        return None
+        base = 8000 if self.role in ("orchestrator", "revisor") else None
+        # Adaptive controller (opt-in, default off): trims/raises by recent
+        # success rate. Disabled or low-data -> returns `base` unchanged.
+        from .thinking_budget import adjust
+        return adjust(self.role, base)
 
     def _extract_and_apply_patch(self, final: str):
         """Wave 11: unify SEARCH/REPLACE and unified-diff extraction.

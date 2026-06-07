@@ -272,6 +272,14 @@ def _record_skill_outcome(ctx: Any, *, success: bool) -> None:
             skill_stats.record_outcome(names, success=success)
     except Exception:  # pragma: no cover -- stats never block a run
         pass
+    # Feed the same run outcome to the adaptive thinking-budget controller
+    # (no-op unless [thinking] adaptive is on). Attributed to the orchestrator,
+    # the run's primary reasoner.
+    try:
+        from . import thinking_budget
+        thinking_budget.record("orchestrator", success)
+    except Exception:  # pragma: no cover -- never block a run on a stats write
+        pass
 
 
 def _maybe_record_reflexion(

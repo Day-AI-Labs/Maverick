@@ -330,6 +330,8 @@ class ToolRegistry:
             "tool.run",
             attributes={"tool.name": name, **gen_ai_tool_attributes(name)},
         ):
+            import time as _perf_time
+            _t0 = _perf_time.perf_counter()
             try:
                 try:
                     from ..chaos import maybe_fail
@@ -365,6 +367,14 @@ class ToolRegistry:
                 except Exception:  # pragma: no cover
                     pass
                 return f"ERROR: {type(e).__name__}: {e}"
+            finally:
+                # Always-on per-tool latency profile (complements OTel spans).
+                # Records on both the success and error paths; never raises.
+                try:
+                    from ..tool_latency import record as _rec_latency
+                    _rec_latency(name, (_perf_time.perf_counter() - _t0) * 1000.0)
+                except Exception:  # pragma: no cover -- profiling never breaks a tool
+                    pass
 
 
 # Tools exposed to the model by default under deferred loading. The long
@@ -519,6 +529,7 @@ def base_registry(
     from .newsapi_tool import newsapi_tool
     from .notify import notify_tool
     from .notion import notion
+    from .obsidian import obsidian
     from .ocr import ocr
     from .openapi_runner import openapi_runner
     from .pagerduty_tool import pagerduty_tool
@@ -543,6 +554,7 @@ def base_registry(
     from .sns_tool import sns_tool
     from .spend_report import spend_report
     from .spotify_tool import spotify_tool
+    from .spreadsheet import spreadsheet
     from .sql_query import sql_query
     from .stripe_tool import stripe_tool
     from .test_impact import test_impact
@@ -593,6 +605,8 @@ def base_registry(
     reg.register(test_impact())
     reg.register(youtube())
     reg.register(notion())
+    reg.register(obsidian())
+    reg.register(spreadsheet())
     reg.register(translate())
     reg.register(slack_bot())
     reg.register(stripe_tool())

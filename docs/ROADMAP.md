@@ -45,7 +45,7 @@ terminal-bench harnesses + the learning-substrate decision. See the table.
 | B1 | Streamable-HTTP transport | ✅ | `http_transport.py` |
 | B1 | Elicitation | 🟡 | client inbound (`mcp_client.py`) **and** server outbound form mode (`maverick_mcp/server.py`, `tests/test_server_elicitation.py`) shipped — a parked `ask_user` question surfaces as a capability-/stdio-gated `elicitation/create` form, shield-screened both legs, then resumes; only Phase 3 URL mode + eliciting arbitrary flows / the approvals-table surface remain (`specs/mcp-elicitation.md`) |
 | B1 | Async tasks | ✅ | MCP Tasks 2025-11-25 on **both** transports (`maverick_mcp/tasks.py`, `server.py`, `http_transport.py`, `tests/test_server_tasks.py`, `tests/test_http_transport.py`) — task-augmented `tools/call` returns `CreateTaskResult` and runs on a background worker; `tasks/get`/`result`/`cancel`/`list` (shared `handle_tasks_*` across stdio + HTTP) + stdio `notifications/tasks/status` push + capability + `execution.taskSupport`. HTTP tasks are opt-in via `MAVERICK_MCP_HTTP_TASKS` (poll-only, bearer-scoped store). Only `input_required` (task-driven elicitation) deferred (`specs/mcp-tasks.md`) |
-| B2 | MCP client OAuth 2.1 + Registry | 🟡 | remote-HTTP **client transport** shipped — `StreamableHttpMCPClient` (`mcp_client.py`, `tests/test_mcp_http_client.py`) consumes remote servers via `[mcp_servers.<name>] url`, JSON + SSE responses, session-id continuity, optional bearer `auth_token`. **Registry shipped** — `mcp_registry.py` (discovery via the federated `catalog` with an inline-spec entry, `install_mcp_from_registry` validated through `MCPServerSpec.from_config`, dependency-free config write), `maverick mcp-registry browse/add/remove/list`, `[mcp_registries]` knob + wizard emission (`specs/mcp-registry.md`). Only OAuth 2.1 (needs real accounts) still open |
+| B2 | MCP client OAuth 2.1 + Registry | 🟡 | remote-HTTP **client transport** shipped — `StreamableHttpMCPClient` (`mcp_client.py`, `tests/test_mcp_http_client.py`) consumes remote servers via `[mcp_servers.<name>] url`, JSON + SSE responses, session-id continuity, optional bearer `auth_token`. **Registry shipped** — `mcp_registry.py` (discovery via the federated `catalog` with an inline-spec entry, `install_mcp_from_registry` validated through `MCPServerSpec.from_config`, dependency-free config write), `maverick mcp-registry browse/add/remove/list`, `[mcp_registries]` knob + wizard emission (`specs/mcp-registry.md`). **OAuth 2.1 client-credentials shipped** (`mcp_oauth.py` + `[mcp_servers.<name>.oauth]` + `StreamableHttpMCPClient._bearer`, cache+refresh, unit-tested against a mock token endpoint); only the user-redirect authorization-code grant + real-IdP validation remain |
 | B3 | A2A vs. homegrown ACD | ✅ decision | **Adopt A2A's Agent Card; cut homegrown ACD.** A2A already ships — discovery (`a2a.py`: `build_agent_card` + `/.well-known/agent-card.json`) and delegation (`a2a_tasks.py`: `/a2a/v1`, `message/send|stream`, `tasks/*`, auth, budget caps). ACD would re-answer the same question non-standardly; it's redundant with A2A and complementary to MCP. Recorded in [`specs/a2a-vs-acd-decision.md`](./specs/a2a-vs-acd-decision.md) |
 | C1 | Eval harness (GAIA / τ²-bench / terminal-bench) | ✅ | GAIA shipped (#687); **τ²-bench-style** stateful verification harness shipped (`benchmarks/eval_tau2.py`, `test_eval_tau2.py`); **terminal-bench-style** harness shipped (`benchmarks/eval_terminal_bench.py`, `test_eval_terminal_bench.py`) — a virtual-FS shell domain graded on final files **and** required commands (regex), runnable in CI on a shipped fixture with **no Docker**; the real container-backed + Maverick-driving solver (+ user simulator) plugs in at the injected-solver seam (documented follow-up, same shape as tau2's real solver) |
 | C1 | Skill quality gate / pruning | ✅ | gate (#396) + decay + active pruning (`skill_stats.evictable()` + `skills evict`), wired (`agent.py:274`, `orchestrator.py:227`), tested; only versioning absent |
@@ -74,8 +74,10 @@ terminal-bench harnesses + the learning-substrate decision. See the table.
    (`mcp_registry.py` + `maverick mcp-registry browse/add/remove/list` + the
    `[mcp_registries]` knob; discovery reuses the federated `catalog`, install validates
    through `MCPServerSpec.from_config` and writes config without a TOML-writer dep —
-   `specs/mcp-registry.md`). Remaining: **OAuth 2.1** (needs real accounts to validate)
-   + optional signed registry entries.
+   `specs/mcp-registry.md`). **OAuth 2.1 client-credentials shipped** (`mcp_oauth.py`,
+   `[mcp_servers.<name>.oauth]`, cache+refresh, unit-tested vs a mock IdP). Remaining:
+   only the user-redirect **authorization-code grant** + real-IdP validation + optional
+   signed registry entries.
 3. **Finish A3** — ✅ done: memory tool + loop bootstrap, and programmatic tool
    calling (`code_exec`); the full mid-execution bridge awaits interactive sandbox
    sessions.
@@ -111,7 +113,26 @@ here as they land (the dense future-quarter prose lists are left as-is):
 - **Cost forecasting** (Q4 2026, UX) — ✅ `maverick start --dry-cost`: estimates cost from similar past priced runs (lexical Jaccard over goal titles, dependency-free) and exits without an LLM key or a run (`cost_forecast.py`, `tests/test_cost_forecast.py`).
 - **Query-plan regression guard** (2027 H1, Performance) — ✅ `tests/test_query_plans.py`: pins that hot world-model queries SEARCH using an index (never a full table scan), with a control test proving the assertion discriminates indexed from unindexed plans.
 - **Embed-integrations guide** (Q4 2026, Distribution) — ✅ [`docs/embedding.md`](./embedding.md): in-process kernel API + FastAPI/Flask/Django (with the run-in-a-thread rule), config-driven Slack/Discord/Telegram, MCP/A2A, and the dashboard REST.
-- **Cookbook growth** (Q4 2026, Distribution; "to 30 recipes") — 🟡 12 → 16: added flaky-test-hunt, dependency-CVE-triage, CSV-cleanup, bug-repro recipes (`docs/cookbook/`). A living doc — grows by contribution toward 30, not a discrete one-shot deliverable.
+- **Adaptive thinking budget** (Q4 2026, Performance) — ✅ `thinking_budget.py`: closed loop over real run outcomes — trims a thinking role's budget when succeeding, raises it when failing (clamped). Read-side in `agent._thinking_budget`, write-side in the orchestrator's outcome path; opt-in `[thinking] adaptive`, default off (no-op until enabled + enough data) (`tests/test_thinking_budget.py`).
+- **Provider failover** (2027 H1, Performance) — ✅ `provider_failover.py` (`failover`/`afailover`/`fallback_models`) wired into `LLM.complete`/`complete_async` behind `[provider_failover] chains` (default off, guarded no-op when unset; original single-call path untouched) (`tests/test_provider_failover.py`).
+- **File-write quota** (Q4 2026, Safety) — ✅ `file_quota.py`: opt-in per-run byte cap (`[limits] file_write_quota_mb`, default off) enforced in the `write_file` tool; fail-open, guarded no-op when unset (`tests/test_file_quota.py`).
+- **MCP client OAuth 2.1 (client-credentials)** (B2) — ✅ `mcp_oauth.py`: cache+refresh token provider, `[mcp_servers.<name>.oauth]` spec field, wired as the HTTP bearer with static-token fallback. Unit-tested against a mock IdP (real-authorization-server validation pending) (`tests/test_mcp_oauth.py`).
+- **Spreadsheet tool** (2027 H1, Capabilities) — ✅ `tools/spreadsheet.py`: write-capable CSV (stdlib) + XLSX (openpyxl) — info/read/write/set_cell — complementing read-only `pandas_query`; registered; optional `[spreadsheet]` extra with a graceful install hint (the CLAUDE.md-#5 knob exemption) (`tests/test_spreadsheet.py`).
+- **Obsidian integration** (2027 H1, Ecosystem) — ✅ `tools/obsidian.py`: file-based vault read/write/search (list/read/create/append/search), vault-confined paths, no external service/auth; registered in the default registry (`tests/test_obsidian.py`).
+- **Per-tool latency profile** (2027 H1, Performance) — ✅ `tool_latency.py` (bounded in-memory p50/p95/p99 per tool) wired into `ToolRegistry.run` (records on success + error; never raises into the tool path); complements the OTel tool spans for always-on, exporter-free profiling (`tests/test_tool_latency.py`).
+- **Cookbook to 30 recipes** (Q4 2026, Distribution) — ✅ 12 → **30** (`docs/cookbook/`): added flaky-test-hunt, CVE-triage, CSV-cleanup, bug-repro, log-triage, slow-SQL, Dockerfile-harden, OpenAPI-client, README-refresh, license-audit, type-annotate, perf-profile, release-notes, coverage-gap, extract-god-function, config-migrate, JSON-schema-infer, a11y-audit — all real agent-goal recipes in the existing format, wired into `cookbook/index.md`.
+
+**Near-term focus: closed.** Every item above (A1–D3 + the pulled-forward set) is
+shipped or decided. What genuinely remains is **externally blocked, not unbuilt**:
+- **OAuth 2.1 authorization-code grant** + real-IdP validation (client-credentials
+  ships) — needs a real authorization server to build and verify.
+- **World-model sharding** — a faithful build is a live-SQLite data-plane rewrite
+  that can't be verified here and overlaps the shipped tenancy work; a routing stub
+  would be hollow.
+- **IRC channel / LangChain / LangGraph adapters** — need an external dependency
+  *and* a live service to build and meaningfully test.
+- The rest of the 2027–2028 quarterly prose is already shipped, owned by parallel
+  governance work on `main`, or non-code (conferences, translations, marketing).
 
 **Accuracy caveats.** MCP Sampling / Roots / Logging appear to be on a deprecation
 path — don't build on sampling. Some ecosystem dates/specs (mid-2026 MCP RC,
