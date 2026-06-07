@@ -171,12 +171,39 @@ def unseal_to_text(blob: bytes) -> str:
     return unseal(blob).decode("utf-8", errors="replace")
 
 
+# --- TEXT-column helpers ---------------------------------------------------
+# Seal a string into a single TEXT-storable token so a sensitive SQLite column
+# (TEXT affinity) can hold ciphertext with no schema change. A value without the
+# marker is treated as legacy plaintext (transparent migration).
+_STR_PREFIX = "MVKAR1:"
+
+
+def is_sealed_str(s: object) -> bool:
+    return isinstance(s, str) and s.startswith(_STR_PREFIX)
+
+
+def seal_to_str(text: str) -> str:
+    """Seal ``text`` into ``'MVKAR1:' + base64(sealed)`` -- safe for a TEXT column."""
+    return _STR_PREFIX + base64.b64encode(seal(text.encode("utf-8"))).decode("ascii")
+
+
+def unseal_from_str(s: str) -> str:
+    """Inverse of :func:`seal_to_str`; a string without the marker is returned
+    unchanged (legacy plaintext written before encryption was enabled)."""
+    if not is_sealed_str(s):
+        return s
+    return unseal(base64.b64decode(s[len(_STR_PREFIX):])).decode("utf-8", errors="replace")
+
+
 __all__ = [
     "at_rest_enabled",
     "is_sealed",
+    "is_sealed_str",
     "seal",
     "unseal",
     "seal_text",
     "unseal_to_text",
+    "seal_to_str",
+    "unseal_from_str",
     "EncryptionUnavailable",
 ]

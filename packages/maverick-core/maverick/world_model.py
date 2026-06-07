@@ -354,6 +354,27 @@ class Attachment:
     created_at: float
 
 
+def _enc_field(text: str | None) -> str | None:
+    """Seal a sensitive text field for storage when at-rest encryption is on.
+
+    Fail-closed: if encryption is enabled but the crypto backend is missing,
+    this raises (via ``seal_to_str``) rather than silently storing plaintext.
+    Returns the value unchanged when encryption is off (and for ``None``)."""
+    if text is None:
+        return text
+    from .crypto_at_rest import at_rest_enabled, seal_to_str
+    return seal_to_str(text) if at_rest_enabled() else text
+
+
+def _dec_field(text: str | None) -> str | None:
+    """Unseal a stored field. A value written before encryption was enabled (no
+    marker) is returned unchanged, so reads stay backward-compatible."""
+    if text is None:
+        return text
+    from .crypto_at_rest import unseal_from_str
+    return unseal_from_str(text)
+
+
 class WorldModel:
     def __init__(self, path: Path = DEFAULT_DB):
         self.path = path
@@ -891,12 +912,12 @@ class WorldModel:
             conn.execute(
                 "INSERT INTO facts(key, value, source_episode_id, updated_at) VALUES(?, ?, ?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-                (key, value, episode_id, time.time()),
+                (key, _enc_field(value), episode_id, time.time()),
             )
 
     def get_facts(self) -> dict[str, str]:
         rows = self._read_all("SELECT key, value FROM facts ORDER BY updated_at DESC")
-        return {r["key"]: r["value"] for r in rows}
+        return {r["key"]: _dec_field(r["value"]) for r in rows}
 
     def facts_matching(self, token: str) -> dict[str, str]:
         """Facts explicitly scoped to ``token`` by key prefix.
@@ -934,7 +955,7 @@ class WorldModel:
     def get_fact(self, key: str) -> str | None:
         """Single fact value by exact key, or None. Locked read."""
         row = self._read_one("SELECT value FROM facts WHERE key = ? LIMIT 1", (key,))
-        return row["value"] if row else None
+        return _dec_field(row["value"]) if row else None
 
     def delete_fact(self, key: str) -> int:
         """Delete one fact by exact key; return rows removed (0 or 1)."""
@@ -965,7 +986,7 @@ class WorldModel:
             "ORDER BY updated_at DESC LIMIT ?",
             (pfx, q, q, limit),
         )
-        return [(r["key"], r["value"]) for r in rows]
+        return [(r["key"], _dec_field(r["value"])) for r in rows]
 
     # ----- questions -----
     def ask(self, question: str, goal_id: int | None = None) -> int:
@@ -1105,7 +1126,7 @@ class WorldModel:
             cur = conn.execute(
                 "INSERT INTO turns(conversation_id, goal_id, role, content, ts) "
                 "VALUES(?, ?, ?, ?, ?)",
-                (conversation_id, goal_id, role, content, time.time()),
+                (conversation_id, goal_id, role, _enc_field(content), time.time()),
             )
             return cur.lastrowid
 
@@ -1117,7 +1138,12 @@ class WorldModel:
             "WHERE conversation_id = ? ORDER BY id DESC LIMIT ?",
             (conversation_id, limit),
         )
-        return list(reversed([Turn(**dict(r)) for r in rows]))
+        out: list[Turn] = []
+        for r in rows:
+            d = dict(r)
+            d["content"] = _dec_field(d["content"])
+            out.append(Turn(**d))
+        return list(reversed(out))
 
     def list_conversations(self, channel: str | None = None) -> list[Conversation]:
         if channel:

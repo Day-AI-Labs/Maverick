@@ -125,3 +125,54 @@ def test_memory_reads_legacy_plaintext(monkeypatch, tmp_path):
 
     view = memory().fn({"command": "view", "path": "old.md"})
     assert "legacy note" in view       # transparent plaintext fallback
+
+
+def test_seal_to_str_roundtrip_and_passthrough():
+    tok = car.seal_to_str("hello secret")
+    assert tok.startswith("MVKAR1:")
+    assert "hello secret" not in tok
+    assert car.unseal_from_str(tok) == "hello secret"
+    # Legacy plaintext (no marker) passes through unchanged.
+    assert car.unseal_from_str("plain value") == "plain value"
+    assert car.is_sealed_str(tok) and not car.is_sealed_str("plain value")
+
+
+def test_world_db_seals_turns_and_facts(monkeypatch, tmp_path):
+    import sqlite3
+
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    from maverick.world_model import WorldModel
+
+    db = tmp_path / "world.db"
+    wm = WorldModel(db)
+    conv = wm.get_or_create_conversation("slack", "alice")
+    wm.append_turn(conv.id, "user", "my secret SSN 123-45-6789")
+    wm.upsert_fact("user:alice:note", "card 4111111111111111")
+
+    # The raw on-disk columns hold sealed tokens, not plaintext.
+    raw_turn = sqlite3.connect(str(db)).execute("SELECT content FROM turns").fetchone()[0]
+    raw_fact = sqlite3.connect(str(db)).execute("SELECT value FROM facts").fetchone()[0]
+    assert raw_turn.startswith("MVKAR1:") and "123-45-6789" not in raw_turn
+    assert raw_fact.startswith("MVKAR1:") and "4111111111111111" not in raw_fact
+
+    # Reads transparently decrypt.
+    assert wm.recent_turns(conv.id)[-1].content == "my secret SSN 123-45-6789"
+    assert wm.get_facts()["user:alice:note"] == "card 4111111111111111"
+    assert wm.get_fact("user:alice:note") == "card 4111111111111111"
+
+
+def test_world_db_reads_legacy_plaintext(monkeypatch, tmp_path):
+    from maverick.world_model import WorldModel
+
+    db = tmp_path / "world.db"
+    # Write WITHOUT encryption (legacy rows; the fixture left at_rest off).
+    wm = WorldModel(db)
+    conv = wm.get_or_create_conversation("slack", "bob")
+    wm.append_turn(conv.id, "user", "plain legacy turn")
+    wm.upsert_fact("user:bob:n", "plain legacy fact")
+
+    # Now turn encryption on; existing plaintext rows still read back fine.
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    wm2 = WorldModel(db)
+    assert wm2.recent_turns(conv.id)[-1].content == "plain legacy turn"
+    assert wm2.get_fact("user:bob:n") == "plain legacy fact"

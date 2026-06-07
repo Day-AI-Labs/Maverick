@@ -222,9 +222,10 @@ def compliance_report() -> list[ControlCheck]:
     except Exception:
         pass
     checks.append(ControlCheck(
-        "Encryption at rest (memory store)", "GDPR Art. 32",
+        "Encryption at rest", "GDPR Art. 32",
         "active" if enc_on else "action_needed",
-        "cross-session memory sealed with AES-256-GCM" if enc_on
+        "AES-256-GCM seals the memory store + world-DB conversation turns & facts"
+        if enc_on
         else "enable [encryption] at_rest = true (or enterprise mode) to seal it",
     ))
 
