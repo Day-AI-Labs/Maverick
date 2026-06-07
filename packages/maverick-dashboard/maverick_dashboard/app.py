@@ -829,9 +829,10 @@ async def oversight_page(request: Request) -> HTMLResponse:
 
     w = _world()
     try:
-        pending = len(w.pending_approvals())
+        approvals = list(w.pending_approvals())
     except Exception:
-        pending = 0
+        approvals = []
+    sources = {a.id: _approval_source(a.detail) for a in approvals}
     try:
         active = len(w.list_goals(status="active", owner=goal_owner_filter(request)))
     except Exception:
@@ -844,7 +845,9 @@ async def oversight_page(request: Request) -> HTMLResponse:
             "by_kind": dict(by_kind),
             "total": len(events),
             "halted": halted,
-            "pending": pending,
+            "approvals": approvals,
+            "sources": sources,
+            "pending": len(approvals),
             "active": active,
             "n": n,
             "day": day,

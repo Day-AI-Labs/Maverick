@@ -99,13 +99,27 @@ def test_halt_state_reflected(monkeypatch, tmp_path):
     assert "<strong>HALTED</strong>" in _client().get("/oversight").text
 
 
-def test_pending_approvals_surface(monkeypatch, tmp_path):
+def test_pending_holds_are_actionable_inline(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     from maverick.world_model import WorldModel
     w = WorldModel(tmp_path / "world.db")
     w.create_approval("shell", risk="high", detail="'shell' requires human approval")
     text = _client().get("/oversight").text
-    assert 'href="/approvals"' in text  # links to the Art-14 queue
+    assert 'href="/approvals"' in text          # still links to the full queue
+    # ...but the hold is also actionable right here: the action + inline
+    # approve/deny buttons wired to the decision API render on the console.
+    assert "shell" in text
+    assert 'data-action="approve"' in text
+    assert 'data-action="deny"' in text
+    assert "/api/v1/approvals/" in text
+    # Governance REQUIRE_HUMAN holds are labelled (EU AI Act Art 14).
+    assert "Art 14" in text
+
+
+def test_no_pending_holds_shows_empty_state(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    text = _client().get("/oversight").text
+    assert "No pending approvals." in text
 
 
 def test_day_traversal_is_neutralized(monkeypatch, tmp_path):
