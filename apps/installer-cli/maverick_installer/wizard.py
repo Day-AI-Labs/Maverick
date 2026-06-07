@@ -743,12 +743,23 @@ def pick_safety() -> dict[str, Any]:
         "permissive": "critical",
         "off": "critical",
     }[profile]
+    # Agent compartments: when one agent's scan blocks a threat, record its
+    # signature so the rest of the swarm is immune to the same attack for the
+    # run. Moot with safety off (nothing scans). Off by default.
+    compartments = False
+    if profile != "off":
+        compartments = _q_confirm(
+            "  Enable agent compartments (one agent's blocked threat immunizes "
+            "the rest of the swarm for the run)?",
+            default=False,
+        )
     return {
         "profile": profile,
         "block_threshold": threshold,
         "scan_input": profile != "off",
         "scan_tool_calls": profile != "off",
         "scan_output": profile != "off",
+        "compartments": compartments,
     }
 
 
@@ -2151,6 +2162,7 @@ def run_fast() -> int:
         "scan_input": True,
         "scan_tool_calls": True,
         "scan_output": True,
+        "compartments": False,
     }
     budget = {
         "max_dollars": 5.0,

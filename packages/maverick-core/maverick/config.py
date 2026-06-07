@@ -166,6 +166,9 @@ def get_safety() -> dict:
         "scan_input": cfg.get("scan_input", True),
         "scan_tool_calls": cfg.get("scan_tool_calls", True),
         "scan_output": cfg.get("scan_output", True),
+        # Agent compartments: a swarm-shared threat ledger so one agent's
+        # blocked threat immunizes the rest for the run. Off by default.
+        "compartments": cfg.get("compartments", False),
     }
 
 
