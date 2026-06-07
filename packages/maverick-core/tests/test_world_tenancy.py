@@ -211,3 +211,56 @@ def test_handle_message_uses_shared_world_when_tenancy_off(monkeypatch):
     assert len(shared.list_goals()) == 1
     # No per-tenant dir was created.
     assert not (maverick_home() / "tenants").exists()
+
+
+# --- CLI routing (the actual wiring) ---------------------------------------
+# The channel server isolates world.db per tenant via world_for_tenant; the CLI
+# must too, or `MAVERICK_TENANT=acme maverick start ...` would pool one
+# business's run history into the shared world.db. The `--db` default resolves
+# to Workspace.current().db_path (== the legacy path when no tenant is set).
+
+def test_cli_defaults_world_db_to_active_tenant(monkeypatch):
+    from click.testing import CliRunner
+    from maverick.cli import main
+
+    monkeypatch.delenv("MAVERICK_HOME", raising=False)
+    monkeypatch.setenv("MAVERICK_TENANT", "acme")
+
+    # `status` opens the world at the resolved default db (no --db passed).
+    result = CliRunner().invoke(main, ["status"])
+    assert result.exit_code == 0, result.output
+
+    # The run history landed in acme's OWN world.db, not the shared default.
+    assert (maverick_home() / "tenants" / "acme" / "world.db").exists()
+    assert not (maverick_home() / "world.db").exists()
+
+
+def test_cli_no_tenant_uses_legacy_world_db(monkeypatch):
+    from click.testing import CliRunner
+    from maverick.cli import main
+
+    monkeypatch.delenv("MAVERICK_HOME", raising=False)
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+
+    result = CliRunner().invoke(main, ["status"])
+    assert result.exit_code == 0, result.output
+
+    # Single-tenant unchanged: the legacy shared world.db, no per-tenant dir.
+    assert (maverick_home() / "world.db").exists()
+    assert not (maverick_home() / "tenants").exists()
+
+
+def test_cli_explicit_db_overrides_tenant(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+    from maverick.cli import main
+
+    monkeypatch.delenv("MAVERICK_HOME", raising=False)
+    monkeypatch.setenv("MAVERICK_TENANT", "acme")
+    explicit = tmp_path / "explicit" / "world.db"
+
+    result = CliRunner().invoke(main, ["--db", str(explicit), "status"])
+    assert result.exit_code == 0, result.output
+
+    # An explicit --db always wins over the tenant default.
+    assert explicit.exists()
+    assert not (maverick_home() / "tenants" / "acme" / "world.db").exists()
