@@ -1001,6 +1001,69 @@ class Agent:
                     "The tool was not executed."
                 )
 
+        # Org oversight control plane (enterprise): on top of the per-principal
+        # capability above, an org-level policy can DENY an action outright or
+        # REQUIRE_HUMAN sign-off (EU AI Act Art 14). Default-open -- an empty
+        # [governance] policy returns ALLOW, so this is a no-op for non-
+        # enterprise installs. Fail-open on an unexpected error: a governance
+        # bug must never wedge the tool path.
+        try:
+            from .governance import Decision as _GovDecision
+            from .governance import evaluate as _gov_evaluate
+            _gov = _gov_evaluate(name)  # org policy; capability already gated above
+        except Exception:  # pragma: no cover -- never block the loop on a gov bug
+            _gov = None
+        if _gov is not None and _gov.decision is not _GovDecision.ALLOW:
+            from .audit import EventKind, record
+            _principal = getattr(cap, "principal", None) if cap is not None else None
+            if _gov.decision is _GovDecision.DENY:
+                self.ctx.blackboard.post(
+                    self.name, "error",
+                    f"tool={name} DENIED by governance ({_gov.rule})",
+                )
+                try:  # tamper-evident record of the denial; never block on audit
+                    record(EventKind.GOVERNANCE_DENIED, agent=self.name,
+                           goal_id=self.ctx.goal_id, tool=name,
+                           principal=_principal, rule=_gov.rule, reason=_gov.reason)
+                except Exception:  # pragma: no cover
+                    pass
+                return (
+                    f"⚠ DENIED by org policy ({_gov.rule}): {_gov.reason}. "
+                    "The tool was not executed."
+                )
+            # REQUIRE_HUMAN: the action runs only with a real human's approval
+            # (Art 14). allow_auto_approve=False means a silent auto-approve mode
+            # counts as a denial -- no human in the loop, no run.
+            import asyncio as _asyncio
+            granted = False
+            try:
+                from .safety.consent import require_consent
+                from .safety.tool_risk import tool_risk
+                decision = await _asyncio.to_thread(
+                    require_consent, name,
+                    risk=tool_risk(name), detail=_gov.reason,
+                    allow_auto_approve=False,
+                )
+                granted = bool(decision.granted)
+            except Exception:  # pragma: no cover -- consent unavailable -> fail closed
+                granted = False
+            if not granted:
+                self.ctx.blackboard.post(
+                    self.name, "error",
+                    f"tool={name} BLOCKED: governance requires human approval",
+                )
+                try:
+                    record(EventKind.GOVERNANCE_DENIED, agent=self.name,
+                           goal_id=self.ctx.goal_id, tool=name,
+                           principal=_principal, rule=_gov.rule,
+                           reason="human approval not granted")
+                except Exception:  # pragma: no cover
+                    pass
+                return (
+                    f"⚠ {name!r} requires human approval (EU AI Act Art 14): "
+                    f"{_gov.reason}. Not granted, so the tool was not executed."
+                )
+
         # PreToolUse hooks: any registered hook can BLOCK the call by
         # returning a non-zero exit code (shell hook) or a falsy value
         # (Python callable). Modeled on Claude Code's hook surface.
