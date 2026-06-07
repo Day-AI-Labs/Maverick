@@ -132,7 +132,7 @@ class TestKnowledgeBase:
 
     def test_shield_drops_poisoned_chunk(self):
         class _Shield:
-            def scan_input(self, text):
+            def scan_output(self, text, known_prompt=None):
                 blocked = "ignore all previous instructions" in text.lower()
                 return SimpleNamespace(allowed=not blocked)
 

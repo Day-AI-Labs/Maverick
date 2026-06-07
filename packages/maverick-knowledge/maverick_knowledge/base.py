@@ -52,7 +52,10 @@ class KnowledgeBase:
         if self.shield is None:
             return True
         try:
-            verdict = self.shield.scan_input(text)
+            # An ingested chunk is untrusted CONTENT (like tool output), so use
+            # the indirect-injection / content detector, not the prompt-tuned
+            # scan_input.
+            verdict = self.shield.scan_output(text)
             return getattr(verdict, "allowed", True)
         except Exception:  # pragma: no cover -- never block ingest on a scan bug
             return True
