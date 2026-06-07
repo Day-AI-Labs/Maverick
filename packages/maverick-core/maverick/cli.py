@@ -430,8 +430,23 @@ def onboard(ctx: click.Context, name, docs, no_llm, yes) -> None:
         from maverick_knowledge import KnowledgeBase, build_embedder, build_store
 
         from .config import get_knowledge
+        from .workspace import Workspace
         kcfg = get_knowledge()
-        kb = KnowledgeBase(store=build_store(kcfg), embedder=build_embedder(kcfg))
+        # Persist uploads to the active tenant's knowledge store (NOT :memory:,
+        # which discards them on exit) so the run-time KB reads the same store.
+        # An explicit [knowledge] path still wins.
+        if not kcfg.get("path"):
+            kcfg = {**kcfg, "path": str(Workspace.current().knowledge_path)}
+        # Shield-scan documents at ingest: a poisoned upload is dropped at the
+        # door, not only at query time (RAG-poisoning defense).
+        shield = None
+        try:
+            from maverick_shield import Shield
+            shield = Shield.from_config(warn_if_missing=False)
+        except Exception:
+            pass
+        kb = KnowledgeBase(store=build_store(kcfg), embedder=build_embedder(kcfg),
+                           shield=shield)
         try:  # OCR uploaded diagrams/images when the vision extra is installed
             from maverick_knowledge.image import build_ocr_describer
             kb.image_describer = build_ocr_describer()
