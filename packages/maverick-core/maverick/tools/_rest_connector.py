@@ -93,8 +93,15 @@ def make_rest_tool(
         body = args.get("body") if isinstance(args.get("body"), dict) else None
         try:
             base, tok = _config()
+            url = f"{base}{_norm(path)}"
+            # Enterprise mode: a connector POSTs agent-supplied content to a
+            # third-party SaaS host -- hold it to the egress boundary too.
+            from ..enterprise import enterprise_egress_denial
+            deny = enterprise_egress_denial(url, tool=name)
+            if deny:
+                return f"ERROR: {deny}"
             import httpx
-            r = httpx.request(op.upper(), f"{base}{_norm(path)}", headers=_headers(tok),
+            r = httpx.request(op.upper(), url, headers=_headers(tok),
                               params=params or None, json=body, timeout=30.0)
             try:
                 data = r.json()
