@@ -59,13 +59,26 @@ def _sanitize_persisted_prompt_text(
 def _build_shield() -> Any | None:
     try:
         from maverick_shield import Shield
-        return Shield.from_config()
+        shield: Any = Shield.from_config()
     except ImportError:
         log.warning("maverick-shield not installed; tool-call scans disabled")
         return None
     except Exception as e:  # pragma: no cover
         log.error("Shield construction failed (fail-open): %s", e)
         return None
+    # Agent compartments: wrap the single swarm-shared shield with a run-scoped
+    # threat ledger so a block by any agent immunizes the rest of the swarm for
+    # the run (docs/proposals/agent-compartments.md). Opt-in, fail-open.
+    try:
+        from maverick_shield.compartment import (
+            ImmunizingShield,
+            compartments_enabled,
+        )
+        if compartments_enabled():
+            return ImmunizingShield(base=shield)
+    except Exception as e:  # pragma: no cover
+        log.error("Compartment wrap failed (fail-open): %s", e)
+    return shield
 
 
 def _format_tree_of_thought_plan(winning_plan: str, *, shield: Any | None = None) -> str:
