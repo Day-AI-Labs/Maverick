@@ -133,12 +133,11 @@ SUITE_PREFIXES: dict[str, str] = {
     "finance_": "finance",
     "ops_": "operations",
     "legal_": "legal",
-    "grc_": "it_grc", "secops_": "it_grc", "aigov_": "it_grc", "appsec_": "it_grc",
-    "iam_": "it_grc", "itops_": "it_grc",
+    "itgrc_": "it_grc",
     "gtm_": "sales_gtm",
     "hr_": "hr",
     "pe_": "product_engineering",
-    "corpdev_": "strategy", "exec_": "strategy",
+    "strat_": "strategy",
 }
 
 
