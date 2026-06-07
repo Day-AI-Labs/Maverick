@@ -172,3 +172,65 @@ def load_template(name: str) -> Template:
     raise FileNotFoundError(
         f"template {name!r} not found. Searched: {[str(d) for d in _candidate_dirs()]}"
     )
+
+
+# ---- v2 community registry (federated catalog) ------------------------------
+#
+# Goal templates v2: discover + install templates by name from a self-hostable
+# `<base>/templates/index.json` (the same federated `catalog` the skills + MCP
+# registries use). A template is content (frontmatter + body), so an entry is
+# fetched from `source` and verified against `sha256`, exactly like skills.
+
+
+def _configured_template_indexes() -> list[str]:
+    """Registry base URLs from ``[template_registries] indexes``, else the
+    shared catalog default."""
+    from . import catalog
+    try:
+        from .config import load_config
+        cfg = (load_config() or {}).get("template_registries") or {}
+        indexes = cfg.get("indexes")
+        if isinstance(indexes, list) and indexes:
+            return [str(i).rstrip("/") for i in indexes]
+    except Exception:  # pragma: no cover -- never block discovery on config
+        pass
+    return [i.rstrip("/") for i in catalog.DEFAULT_INDEXES]
+
+
+def browse_templates(*, indexes: list[str] | None = None):
+    """Return the template entries available across the configured registries."""
+    from . import catalog
+    return catalog.load_catalog(
+        "templates",
+        indexes=indexes if indexes is not None else _configured_template_indexes())
+
+
+def install_template_from_catalog(
+    name: str, *, indexes: list[str] | None = None, dest: Path | None = None
+) -> Template:
+    """Install a template by name from the registry into ``~/.maverick/templates``.
+
+    Resolves the entry, fetches its ``source`` (gh:/https:), verifies the pinned
+    ``sha256`` (integrity-in-transit, same trust model as the skills catalog),
+    validates it parses as a Template, then writes ``<name>.md``. Returns the
+    parsed Template. Raises ValueError on unknown name or hash mismatch."""
+    from . import catalog
+    from .skills import _fetch_skill_source  # generic gh:/https: text fetcher
+
+    _validate_template_name(name)
+    entry = catalog.resolve(
+        name, "templates",
+        indexes=indexes if indexes is not None else _configured_template_indexes())
+    if entry is None:
+        raise ValueError(f"no template named {name!r} in the registry")
+    content = _fetch_skill_source(entry.source)
+    if not catalog.verify_sha256(content, entry.sha256):
+        raise ValueError(
+            f"content hash mismatch for {name!r}: the fetched template does not "
+            "match the registry's pinned sha256. Refusing to install.")
+    template = Template.parse(content, name)  # validate it parses before writing
+    target_dir = dest if dest is not None else USER_TEMPLATES
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / f"{name}.md").write_text(content, encoding="utf-8")
+    template.path = target_dir / f"{name}.md"
+    return template

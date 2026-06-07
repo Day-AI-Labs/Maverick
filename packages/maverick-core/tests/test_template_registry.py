@@ -1,0 +1,86 @@
+"""Goal templates v2: community registry discover + install (ROADMAP Q4 2026)."""
+from __future__ import annotations
+
+import hashlib
+
+import pytest
+from click.testing import CliRunner
+from maverick import catalog, skills, templates
+from maverick.cli import main
+
+_BODY = "---\ntitle: Plan a trip\nparams:\n  - city\n---\nPlan a trip to {{ city }}.\n"
+_SHA = hashlib.sha256(_BODY.encode()).hexdigest()
+_INDEX = {
+    "schema_version": 1, "kind": "templates",
+    "entries": [{
+        "name": "trip-plan", "version": "1.0.0", "summary": "Plan a trip.",
+        "source": "gh:org/repo:templates/trip-plan.md", "sha256": _SHA,
+    }],
+}
+
+
+@pytest.fixture
+def fake_registry(monkeypatch):
+    monkeypatch.setattr(catalog, "_fetch_index_raw", lambda url: _INDEX)
+    monkeypatch.setattr(skills, "_fetch_skill_source", lambda source: _BODY)
+    return ["https://templates.test"]
+
+
+def test_templates_is_a_valid_catalog_kind():
+    assert "templates" in catalog.VALID_KINDS
+
+
+def test_browse(fake_registry):
+    entries = templates.browse_templates(indexes=fake_registry)
+    assert {e.name for e in entries} == {"trip-plan"}
+
+
+def test_install_fetches_verifies_parses_writes(tmp_path, fake_registry):
+    t = templates.install_template_from_catalog(
+        "trip-plan", indexes=fake_registry, dest=tmp_path)
+    assert t.name == "trip-plan" and t.title == "Plan a trip"
+    assert t.params == ["city"]
+    written = tmp_path / "trip-plan.md"
+    assert written.exists() and written.read_text(encoding="utf-8") == _BODY
+    # the installed template renders with its param
+    title, body = t.render(city="Lisbon")
+    assert "Lisbon" in body
+
+
+def test_install_unknown_name_raises(tmp_path, fake_registry):
+    with pytest.raises(ValueError, match="no template named"):
+        templates.install_template_from_catalog(
+            "absent", indexes=fake_registry, dest=tmp_path)
+
+
+def test_install_hash_mismatch_refuses(tmp_path, monkeypatch):
+    monkeypatch.setattr(catalog, "_fetch_index_raw", lambda url: _INDEX)
+    monkeypatch.setattr(skills, "_fetch_skill_source", lambda source: "TAMPERED")
+    with pytest.raises(ValueError, match="hash mismatch"):
+        templates.install_template_from_catalog(
+            "trip-plan", indexes=["https://t.test"], dest=tmp_path)
+    assert not (tmp_path / "trip-plan.md").exists()  # nothing written on mismatch
+
+
+def test_invalid_name_rejected(tmp_path, fake_registry):
+    with pytest.raises(ValueError):
+        templates.install_template_from_catalog(
+            "../etc/passwd", indexes=fake_registry, dest=tmp_path)
+
+
+# ---- CLI ----
+
+def test_cli_browse(monkeypatch):
+    entries = [catalog.CatalogEntry(name="trip-plan", version="1.0.0", kind="templates",
+                                    summary="Plan a trip.", source="gh:o/r:t.md", sha256="ab")]
+    monkeypatch.setattr(templates, "browse_templates", lambda: entries)
+    r = CliRunner().invoke(main, ["template", "browse"])
+    assert r.exit_code == 0 and "trip-plan" in r.output
+
+
+def test_cli_add(monkeypatch, tmp_path):
+    fake = templates.Template(name="trip-plan", title="Plan a trip", body="...",
+                              path=tmp_path / "trip-plan.md")
+    monkeypatch.setattr(templates, "install_template_from_catalog", lambda name: fake)
+    r = CliRunner().invoke(main, ["template", "add", "trip-plan"])
+    assert r.exit_code == 0 and "installed: trip-plan" in r.output

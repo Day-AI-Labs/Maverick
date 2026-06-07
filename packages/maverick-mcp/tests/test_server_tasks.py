@@ -201,6 +201,26 @@ def test_list_paginates_with_opaque_cursor():
         store.shutdown()
 
 
+def test_task_store_owner_isolates_http_callers():
+    store = TaskStore(lambda n, a: _ok(str(a.get("title", "x"))))
+    try:
+        alice = store.create(
+            "maverick_start", {"title": "alice-secret"}, {"ttl": 60000}, owner="alice")
+        bob = store.create(
+            "maverick_start", {"title": "bob-secret"}, {"ttl": 60000}, owner="bob")
+
+        assert [t["taskId"] for t in store.list(None, owner="alice")["tasks"]] == [alice.id]
+        assert [t["taskId"] for t in store.list(None, owner="bob")["tasks"]] == [bob.id]
+
+        with pytest.raises(TaskError) as ei:
+            store.result(alice.id, owner="bob")
+        assert ei.value.code == -32602
+
+        assert "alice-secret" in store.result(alice.id, owner="alice")["content"][0]["text"]
+    finally:
+        store.shutdown()
+
+
 def test_list_invalid_cursor_raises():
     store = TaskStore(lambda n, a: _ok("x"))
     try:

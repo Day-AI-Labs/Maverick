@@ -14,9 +14,29 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 from maverick.cli import main
+from maverick.paths import data_dir
 from maverick.world_model import WorldModel
+
+
+@pytest.fixture(autouse=True)
+def _clear_world_cache():
+    """Close cached tenant world handles between CLI tests."""
+    import maverick.world_model as wm
+
+    def _drain():
+        for world in list(wm._tenant_worlds.values()):
+            try:
+                world.close()
+            except Exception:
+                pass
+        wm._tenant_worlds.clear()
+
+    _drain()
+    yield
+    _drain()
 
 
 def _world_db() -> Path:
@@ -43,8 +63,10 @@ def test_dsar_export_prints_seeded_bundle_and_exits_zero():
     assert result.exit_code == 0
     bundle = json.loads(result.output)
 
-    # Envelope reflects the requested subject.
-    assert bundle["subject"] == {"user_id": "alice", "channel": None}
+    # Envelope reflects the requested subject. The subject was seeded on a
+    # single channel, so the exporter infers it (channel is part of subject
+    # identity; an unambiguous id resolves to its one channel).
+    assert bundle["subject"] == {"user_id": "alice", "channel": "telegram"}
     assert bundle["tenant"] is None
 
     # Counts/world reflect the seeded data.
@@ -64,6 +86,32 @@ def test_dsar_export_prints_seeded_bundle_and_exits_zero():
     assert len(goals) == 1
     assert goals[0]["title"] == "alice's goal"
     assert goals[0]["episodes"][0]["outcome"] == "succeeded"
+
+
+def _seed_world_at(path: Path, message: str) -> None:
+    """Seed alice's single-turn conversation in the given world DB."""
+    wm = WorldModel(path)
+    conv = wm.get_or_create_conversation("telegram", "alice")
+    wm.append_turn(conv.id, "user", message)
+    wm.close()
+
+
+def test_dsar_export_without_tenant_uses_active_tenant_not_shared(monkeypatch):
+    monkeypatch.setenv("MAVERICK_TENANT", "acme")
+    _seed_world_at(_world_db(), "shared secret must not leak")
+    _seed_world_at(data_dir("world.db"), "active tenant message")
+
+    result = CliRunner().invoke(main, ["dsar", "export", "--user", "alice"])
+    assert result.exit_code == 0
+    bundle = json.loads(result.output)
+
+    contents = [
+        turn["content"]
+        for conversation in bundle["world"]["conversations"]
+        for turn in conversation["turns"]
+    ]
+    assert "active tenant message" in contents
+    assert "shared secret must not leak" not in contents
 
 
 def test_dsar_export_unknown_user_is_empty_and_exits_zero():

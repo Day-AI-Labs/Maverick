@@ -375,6 +375,14 @@ def _dec_field(text: str | None) -> str | None:
     return unseal_from_str(text)
 
 
+def _question_from_row(row) -> Question:
+    """Build a Question from a row, decrypting the sealed question/answer fields."""
+    d = dict(row)
+    d["question"] = _dec_field(d.get("question"))
+    d["answer"] = _dec_field(d.get("answer"))
+    return Question(**d)
+
+
 class WorldModel:
     def __init__(self, path: Path = DEFAULT_DB):
         self.path = path
@@ -993,7 +1001,7 @@ class WorldModel:
         with self._writing() as conn:
             cur = conn.execute(
                 "INSERT INTO questions(goal_id, question, asked_at) VALUES(?, ?, ?)",
-                (goal_id, question, time.time()),
+                (goal_id, _enc_field(question), time.time()),
             )
             return cur.lastrowid
 
@@ -1004,7 +1012,7 @@ class WorldModel:
         with self._writing() as conn:
             cur = conn.execute(
                 "UPDATE questions SET answer = ?, answered_at = ? WHERE id = ?",
-                (answer, time.time(), question_id),
+                (_enc_field(answer), time.time(), question_id),
             )
             return cur.rowcount > 0
 
@@ -1017,13 +1025,13 @@ class WorldModel:
             rows = self._read_all(
                 "SELECT * FROM questions WHERE answer IS NULL ORDER BY id"
             )
-        return [Question(**dict(r)) for r in rows]
+        return [_question_from_row(r) for r in rows]
 
     def all_questions(self, goal_id: int) -> list[Question]:
         rows = self._read_all(
             "SELECT * FROM questions WHERE goal_id = ? ORDER BY id", (goal_id,)
         )
-        return [Question(**dict(r)) for r in rows]
+        return [_question_from_row(r) for r in rows]
 
     # ----- approvals (high-risk action queue) -----
     def create_approval(

@@ -1,0 +1,95 @@
+"""Structural compaction: a shrunk tool_result keeps a content-addressed ref
+(source tool + path/url + sha256 + size) instead of an opaque 'output dropped'
+(ROADMAP 'Structural compaction'). Complements test_compaction_regression.py,
+which guards the count/pairing/idempotence invariants."""
+from __future__ import annotations
+
+import hashlib
+
+from maverick.compaction import (
+    _shrink_tool_result,
+    _source_locator,
+    compact_messages,
+)
+
+
+def _big(n: int = 5000) -> str:
+    return "A" * n
+
+
+def test_source_locator_extracts_tool_and_path():
+    tu = {"type": "tool_use", "id": "t1", "name": "read_file",
+          "input": {"path": "/app/main.py"}}
+    assert _source_locator(tu) == ("read_file", "/app/main.py")
+    # url locator
+    assert _source_locator({"name": "http_fetch", "input": {"url": "https://x/y"}}) == (
+        "http_fetch", "https://x/y")
+    # unknown / no input
+    assert _source_locator(None) == ("", "")
+    assert _source_locator({"name": "shell", "input": {}}) == ("shell", "")
+
+
+def test_shrink_emits_content_addressed_ref():
+    payload = _big()
+    block = {"type": "tool_result", "tool_use_id": "t1", "content": payload}
+    out = _shrink_tool_result(block, 2048, source=("read_file", "/app/main.py"))
+    ref = out["content"]
+    sha = hashlib.sha256(payload.encode()).hexdigest()[:12]
+    assert "read_file(/app/main.py)" in ref      # source + locator preserved
+    assert f"sha256:{sha}" in ref                 # content-addressed
+    assert "5000B" in ref                         # original size retained
+    assert len(ref) < len(payload)                # actually shrank
+    # the tool_use_id is preserved so the tool_use/tool_result pair stays intact
+    assert out["tool_use_id"] == "t1"
+
+
+def test_shrink_without_source_still_refs_hash_and_size():
+    payload = _big()
+    out = _shrink_tool_result(
+        {"type": "tool_result", "tool_use_id": "t9", "content": payload}, 2048)
+    sha = hashlib.sha256(payload.encode()).hexdigest()[:12]
+    ref = out["content"]
+    assert f"sha256:{sha}" in ref and "5000B" in ref
+    assert "(" not in ref.split("sha256")[0][-40:]  # no empty "name()" when unknown
+
+
+def test_small_result_unchanged():
+    block = {"type": "tool_result", "tool_use_id": "t1", "content": "tiny"}
+    assert _shrink_tool_result(block, 2048, source=("read_file", "/a")) is block
+
+
+def test_compact_messages_threads_source_from_tool_use():
+    payload = _big()
+    msgs = [
+        {"role": "user", "content": "GOAL: inspect the app"},
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "t1", "name": "read_file",
+             "input": {"path": "/app/main.py"}}]},
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "t1", "content": payload}]},
+    ] + [{"role": "assistant", "content": [{"type": "text", "text": f"step {i}"}]}
+         for i in range(6)]
+
+    out = compact_messages(msgs, keep_recent=4, max_tool_bytes=2048)
+    # message count + the goal are preserved (pairing invariant from regression suite)
+    assert len(out) == len(msgs)
+    assert out[0] == msgs[0]
+    tr = out[2]["content"][0]
+    assert tr["type"] == "tool_result" and tr["tool_use_id"] == "t1"
+    assert "read_file(/app/main.py)" in tr["content"]  # source threaded through
+    assert "sha256:" in tr["content"]
+
+
+def test_structural_ref_is_idempotent():
+    payload = _big()
+    msgs = [
+        {"role": "user", "content": "GOAL"},
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "t1", "name": "http_fetch",
+             "input": {"url": "https://e/x"}}]},
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "t1", "content": payload}]},
+    ] + [{"role": "assistant", "content": [{"type": "text", "text": f"s{i}"}]}
+         for i in range(6)]
+    once = compact_messages(msgs)
+    assert compact_messages(once) == once  # second pass is a no-op

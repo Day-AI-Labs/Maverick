@@ -97,6 +97,22 @@ terminal-bench harnesses + the learning-substrate decision. See the table.
    deprecation window ([`specs/breadth-vs-depth-decision.md`](./specs/breadth-vs-depth-decision.md),
    grounded in [`specs/tool-inventory.md`](./specs/tool-inventory.md)).
 
+**Pulled forward — far-future items shipped ahead of their quarter (June 2026).**
+A code-grounded audit of Q3 2026 → 2028 H2 found most far-future items already
+shipped, blocked on external accounts/infra, or non-code; the genuinely-open,
+buildable, depth-/compliance-aligned ones are being pulled forward and ticked
+here as they land (the dense future-quarter prose lists are left as-is):
+
+- **Structural compaction** (Q4 2026, Performance) — ✅ `compaction.py` content-addressed refs (`tests/test_compaction_structural_refs.py`).
+- **Skill validator** (2027 H1, Distribution) — ✅ `maverick skill validate` + `skills.validate_skill_file` (`tests/test_skill_validator.py`).
+- **Coordinated-disclosure log** (2027 H1, Safety) — ✅ [`docs/DISCLOSURES.md`](./DISCLOSURES.md) (companion to `SECURITY.md`).
+- **SBOM (CycloneDX)** (Q4 2026, Safety) — ✅ non-blocking CycloneDX SBOM artifact in CI's `audit` job (`.github/workflows/ci.yml`). *(CI-only; runs on GitHub, not locally verifiable.)*
+- **Goal templates v2 community registry** (Q4 2026, UX) — ✅ `templates.browse_templates` / `install_template_from_catalog` (federated `catalog` "templates" kind, hash-verified), `maverick template browse/add`, `[template_registries]` knob + wizard emission (`tests/test_template_registry.py`).
+- **Cost forecasting** (Q4 2026, UX) — ✅ `maverick start --dry-cost`: estimates cost from similar past priced runs (lexical Jaccard over goal titles, dependency-free) and exits without an LLM key or a run (`cost_forecast.py`, `tests/test_cost_forecast.py`).
+- **Query-plan regression guard** (2027 H1, Performance) — ✅ `tests/test_query_plans.py`: pins that hot world-model queries SEARCH using an index (never a full table scan), with a control test proving the assertion discriminates indexed from unindexed plans.
+- **Embed-integrations guide** (Q4 2026, Distribution) — ✅ [`docs/embedding.md`](./embedding.md): in-process kernel API + FastAPI/Flask/Django (with the run-in-a-thread rule), config-driven Slack/Discord/Telegram, MCP/A2A, and the dashboard REST.
+- **Cookbook growth** (Q4 2026, Distribution; "to 30 recipes") — 🟡 12 → 16: added flaky-test-hunt, dependency-CVE-triage, CSV-cleanup, bug-repro recipes (`docs/cookbook/`). A living doc — grows by contribution toward 30, not a discrete one-shot deliverable.
+
 **Accuracy caveats.** MCP Sampling / Roots / Logging appear to be on a deprecation
 path — don't build on sampling. Some ecosystem dates/specs (mid-2026 MCP RC,
 LangGraph 1.2, terminal-bench 2.0) postdate the original author's cutoff —
@@ -426,7 +442,7 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 **Performance**
 - Adaptive thinking budget controller (closed-loop Opus thinking adjustment).
 - Compaction v2 retrieval-augmented (embed locally; retrieve top-k chunks).
-- Structural compaction (collapse file-read tool_use/tool_result to path+sha refs).
+- Structural compaction (collapse file-read tool_use/tool_result to path+sha refs). ✅ shipped — `compaction.py` `_shrink_tool_result` now emits a content-addressed ref (source tool + path/url + `sha256` + size) instead of an opaque "output dropped"; `compact_messages` threads the originating tool_use; `tests/test_compaction_structural_refs.py`.
 - Provider health board (per-provider success/latency/$).
 - Memory profiling baseline (tracemalloc + memray weekly soak).
 - GC tuning experiment (`gc.freeze()` post-warmup).
@@ -467,10 +483,13 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 > cost-aware routing (`cost_router.py`); and on the safety/enterprise side —
 > encrypted audit-at-rest (`crypto_at_rest.py`), SOC2-aligned audit export
 > (`soc2.py`), DSAR (`dsar.py`), per-user quotas (`quotas.py`), and the
-> enterprise/compliance scaffolds (`enterprise.py`, `compliance.py`); and on the
+> enterprise/compliance scaffolds (`enterprise.py`, `compliance.py`); on the
+> capabilities side — image generation + edit tools (`tools/replicate_tool.py`,
+> `tools/imagemagick_tool.py`) and diff-aware code review (`reviewer.py`); and on the
 > ecosystem side — the WhatsApp channel (`maverick_channels/whatsapp.py`), the
-> Wikipedia (`tools/wikipedia.py`) and Semantic Scholar
-> (`tools/semantic_scholar.py`) tools. The bulk of 2027 H1 remains forward plan.
+> Wikipedia (`tools/wikipedia.py`) and Semantic Scholar (`tools/semantic_scholar.py`)
+> tools, and the Qdrant vector store (`vector_store/qdrant_store.py`). The bulk of
+> 2027 H1 remains forward plan.
 
 **Capabilities**: Firecracker microVM sandbox; audio understanding (non-speech CLAP); 3D model viewer; DOM accessibility-tree extractor (5-10x token cut); plan-execute-reflect loop topology; cross-language LSP bridge; file watcher; spreadsheet tool; vector-store as first-class memory; speculative parallel tool calls. Constrained-generation tool; speech-to-action live-mic; GUI element memory; image gen + edit tools; web automation recorder; ASR meeting listener; auto-skill distillation v2; per-tool rate limiter; diff-aware code review.
 
@@ -488,6 +507,11 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 
 ## 2027 — H2
 
+> **Status (June 2026): ⬜ forward plan, with a few items already in the tree.** The
+> SQL agent tool (`tools/sql_query.py`, read-only by default) and the
+> shared-scratchpad / multi-agent observation channel (`blackboard.py`) shipped
+> early; everything else here remains forward plan.
+
 **Capabilities**: Multi-modal RAG; agent-to-agent debate over shared scratchpad; WASM sandbox; ROS robotics action tool; browser anti-bot evasion kit (opt-in); SQL agent tool (read-only by default); LaTeX render; diagramming (Mermaid/Graphviz/PlantUML); critic-agent template; cost-aware model router. Persistent task graph (checkpoint per step); browser auth vault; HTML-to-app scaffolder; notebook execution; real-time WebSocket tool; multi-agent observation channel; self-edit tool (human-gated); browser device emulation; Slack/Discord/Teams tool; continuous-benchmarking tool.
 
 **UX**: Native macOS/Windows/Linux GUI apps; browser extension; voice persona presets; multi-language voice; wizard branching paths; inline cost preview; run gallery; replay export to MP4. Collaborative supervision (multi-user dashboard); approval delegation rules; trace pinning to commit; VS Code + JetBrains live-run extensions; TUI mouse mode; cost anomaly alerts; "why this cost" drill-down; run-as-tutorial export; accessibility audit pass; i18n community portal.
@@ -504,6 +528,12 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 
 ## 2028 — H1
 
+> **Status (June 2026): ⬜ forward plan, with a few items already in the tree.** The
+> cron/scheduler tool (`scheduler.py`), the file-format converter
+> (`tools/pandoc_tool.py` + `tools/ffmpeg_tool.py`), and the Salesforce/HubSpot
+> adapters (`tools/salesforce_tool.py`, `tools/hubspot_tool.py`) shipped early; the
+> bulk of 2028 H1 remains forward plan.
+
 **Capabilities**: Live-DOM diff in browser tool; computer-use coordinate calibration; audio diarization + emotion; vision-grounded clicking; file-format converter (pandoc+ffmpeg+libreoffice); knowledge-graph builder; cron/scheduler tool; workspace snapshot/restore; tool-output cache; async tool invocation. Multi-monitor computer-use; process introspection; hardware sensor tool; voice cloning consent gate; semantic code search; cross-repo dependency graph; test generation (Hypothesis); mutation testing; container build tool; streaming reasoning trace channel.
 
 **UX**: Plan-tree minimap; conversational supervisor; voice-only mode; smart notification batching; mobile offline cache; augmented terminal (Rich inline charts); cost split by tag; multi-tenant view; personalized starter templates; replay annotation export. AR plan-tree (visionOS); live captions voice; visual goal templates marketplace; "diff to expected"; smart goal completion; adaptive UI density; embedded analytics web component; pluggable themes API; voice macros; RTL language support.
@@ -519,6 +549,11 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 ---
 
 ## 2028 — H2
+
+> **Status (June 2026): ⬜ forward plan, with a couple of items already in the
+> tree.** The Open Banking tool (`tools/plaid_tool.py`, Plaid) and the Home
+> Assistant integration (`tools/home_assistant_tool.py`) shipped early; the bulk of
+> 2028 H2 remains forward plan.
 
 **Capabilities**: WebRTC tool; browser extension bridge; ARIA-first navigation; adversarial self-test; sandbox-escape detector; embedded device tool (serial/JTAG/I2C); mixed-precision local inference; speculative decoding across providers; long-form writing (outline→draft→polish); citation verifier. Continuous-learning skill loop (local); agent simulator harness; multi-agent fairness scheduler; sub-second tool latency budget; network sandbox (per-tool egress); zero-config BYO-tool (`@tool` decorator); WebGPU local vision; synthetic data tool; federated swarm protocol; capability self-report tool.
 

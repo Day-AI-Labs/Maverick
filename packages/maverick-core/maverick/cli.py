@@ -663,12 +663,15 @@ def mcp_registry_list(ctx) -> None:
                    "(SWE-bench FAIL_TO_PASS). Enables test-driven verifier.")
 @click.option("--pass-to-pass", default=None,
               help="||-separated pytest node IDs that must KEEP passing.")
+@click.option("--dry-cost", is_flag=True,
+              help="Estimate cost from similar past runs and exit "
+                   "(no LLM key needed, no swarm run, no goal created).")
 @click.pass_context
 @_humane_errors
 def start(
     ctx, title, description, template_name, params,
     max_dollars, max_wall_seconds, max_depth, workdir, sandbox_backend,
-    coding_mode, best_of_n, fail_to_pass, pass_to_pass,
+    coding_mode, best_of_n, fail_to_pass, pass_to_pass, dry_cost,
 ) -> None:
     """Start a new goal and run the swarm."""
     # Coding-mode flags propagate via env so coding_mode.from_env()
@@ -682,7 +685,10 @@ def start(
         os.environ["MAVERICK_FAIL_TO_PASS"] = fail_to_pass
     if pass_to_pass:
         os.environ["MAVERICK_PASS_TO_PASS"] = pass_to_pass
-    _require_llm_key()
+    # A --dry-cost estimate needs no LLM (it never runs the swarm), so don't
+    # gate it on a provider key.
+    if not dry_cost:
+        _require_llm_key()
     if template_name:
         from .templates import load_template
         try:
@@ -708,6 +714,17 @@ def start(
     elif not title:
         click.echo("ERROR: pass TITLE or --template <name>", err=True)
         sys.exit(2)
+
+    if dry_cost:
+        # Forecast from past priced runs and exit — no goal created, no run.
+        from .cost_forecast import forecast, gather_samples, render
+        world = open_world(ctx.obj["db"])
+        try:
+            fc = forecast(gather_samples(world), f"{title} {description}".strip())
+        finally:
+            world.close()
+        click.echo(render(fc))
+        return
 
     k = _kernel()
     world = open_world(ctx.obj["db"])
@@ -1002,6 +1019,37 @@ def template_show(name: str) -> None:
     click.echo(f"budget: ${t.budget_dollars} / {t.budget_wall_seconds}s")
     click.echo(f"params: {', '.join(t.params) or '(none)'}\n")
     click.echo(t.body)
+
+
+@template.command("browse")
+def template_browse() -> None:
+    """List goal templates available in the community registry."""
+    from .templates import browse_templates
+    entries = browse_templates()
+    if not entries:
+        click.echo("no registry templates (index empty or unreachable).")
+        return
+    for e in entries:
+        mark = " [verified]" if e.verified else ""
+        click.echo(f"  {e.name}{mark}  v{e.version}")
+        if e.summary:
+            click.echo(f"    {e.summary}")
+    click.echo("")
+    click.echo("install one with:  maverick template add <name>")
+
+
+@template.command("add")
+@click.argument("name")
+def template_add(name: str) -> None:
+    """Install a registry goal template by name (hash-verified)."""
+    from .templates import install_template_from_catalog
+    try:
+        t = install_template_from_catalog(name)
+    except ValueError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    click.echo(f"installed: {t.name} -> {t.path}")
+    click.echo(f"run it with:  maverick start --template {t.name}")
 
 
 @main.command()
@@ -1567,6 +1615,23 @@ def skill_info(name: str) -> None:
             return
     click.echo(f"no skill named {name!r}", err=True)
     sys.exit(2)
+
+
+@skill.command("validate")
+@click.argument("path", type=click.Path())
+def skill_validate(path: str) -> None:
+    """Lint a SKILL.md for publish-readiness (offline; does not install)."""
+    from .skills import validate_skill_file
+    r = validate_skill_file(Path(path))
+    for w in r.warnings:
+        click.echo(click.style(f"  warning: {w}", fg="yellow"))
+    for e in r.errors:
+        click.echo(click.style(f"  error: {e}", fg="red"), err=True)
+    if r.ok:
+        click.echo(click.style("OK: skill is valid for publishing.", fg="green"))
+    else:
+        click.echo(f"INVALID: {len(r.errors)} error(s).", err=True)
+        sys.exit(1)
 
 
 @main.command()

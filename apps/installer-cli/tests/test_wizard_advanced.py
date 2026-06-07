@@ -244,3 +244,37 @@ def test_encrypt_at_rest_writes_and_is_read(tmp_path, monkeypatch):
 
     from maverick.crypto_at_rest import at_rest_enabled
     assert at_rest_enabled() is True
+
+
+def test_audit_sign_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's audit-signing toggle writes [audit] sign, and
+    the kernel's signing resolver reads it back. This is the tamper-evidence
+    control `maverick audit verify` and `maverick soc2` depend on."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_AUDIT_SIGN", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"audit_sign": True})
+    assert "[audit]" in cfg
+    assert "sign = true" in cfg
+
+    from maverick.audit.writer import _resolve_signing
+    # explicit=None -> falls through to MAVERICK_AUDIT_SIGN env (unset) ->
+    # [audit] sign in the config the wizard just wrote.
+    assert _resolve_signing(None) is True
+
+
+def test_anonymous_logs_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's anonymous-mode toggle writes [privacy]
+    anonymous, and the kernel reads it back as anon_enabled() -- the PII-scrub
+    over logs and audit events."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_ANON", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"anonymous_logs": True})
+    assert "[privacy]" in cfg
+    assert "anonymous = true" in cfg
+
+    from maverick.privacy import anon_enabled
+    assert anon_enabled() is True
