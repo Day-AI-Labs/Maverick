@@ -432,6 +432,11 @@ def onboard(ctx: click.Context, name, docs, no_llm, yes) -> None:
         from .config import get_knowledge
         kcfg = get_knowledge()
         kb = KnowledgeBase(store=build_store(kcfg), embedder=build_embedder(kcfg))
+        try:  # OCR uploaded diagrams/images when the vision extra is installed
+            from maverick_knowledge.image import build_ocr_describer
+            kb.image_describer = build_ocr_describer()
+        except Exception:
+            pass  # no vision extra -> images are skipped, not read as bytes
     except Exception as e:  # knowledge layer is optional
         if doc_paths:
             click.echo(f"(knowledge unavailable; skipping doc ingestion: {e})", err=True)

@@ -35,9 +35,21 @@ def _html_to_text(raw: str) -> str:
     return " ".join(p.parts)
 
 
+IMAGE_EXTS = frozenset({
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".tif",
+})
+
+
+def is_image(path: str | Path) -> bool:
+    """True if ``path`` looks like an image (by extension). Images can't be read
+    as UTF-8 -- they need an image_describer (OCR or a vision model) to become
+    text, which the KnowledgeBase routes them through."""
+    return Path(path).suffix.lower() in IMAGE_EXTS
+
+
 def extract_text(path: str | Path) -> str:
     """Return the document's text. Raises only when an optional parser extra is
-    required (PDF/DOCX) but not installed."""
+    required (PDF/DOCX) but not installed, or for an image (route via a describer)."""
     path = Path(path)
     suffix = path.suffix.lower()
     if suffix in (".html", ".htm"):
@@ -61,5 +73,10 @@ def extract_text(path: str | Path) -> str:
                 "pip install maverick-knowledge[parsers]"
             ) from e
         return "\n".join(p.text for p in docx.Document(str(path)).paragraphs)
+    if is_image(path):
+        raise RuntimeError(
+            "images need an image_describer (OCR or a vision model); the "
+            "KnowledgeBase routes them there before extract_text"
+        )
     # text / markdown / unknown -> read as UTF-8 text.
     return path.read_text(encoding="utf-8", errors="replace")

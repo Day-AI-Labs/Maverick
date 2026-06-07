@@ -159,3 +159,40 @@ class TestSearchFormatted:
         kb.ingest_text("b", "beta revenue figures", source="db")
         out = kb.search_formatted(["a", "b"], "revenue", k=5)
         assert "da" in out and "db" in out
+
+
+class TestImageIngestion:
+    def test_is_image(self):
+        from maverick_knowledge.parse import is_image
+        assert is_image("flow.png") is True
+        assert is_image("diagram.JPG") is True
+        assert is_image("notes.txt") is False
+
+    def test_image_ingested_via_describer(self, tmp_path):
+        img = tmp_path / "flow.png"
+        img.write_bytes(b"\x89PNG not-a-real-image")
+
+        def describer(p):  # a vision/OCR describer would return text like this
+            return "process diagram: orders flow to fulfillment then to billing"
+
+        kb = KnowledgeBase(embedder=DeterministicEmbedder(dim=64),
+                           image_describer=describer)
+        assert kb.ingest_path("ops", img) >= 1
+        hits = kb.search("ops", "fulfillment billing", k=3)
+        assert hits and "fulfillment" in hits[0].text.lower()
+
+    def test_image_skipped_without_describer(self, tmp_path):
+        img = tmp_path / "flow.png"
+        img.write_bytes(b"\x89PNG not-a-real-image")
+        kb = KnowledgeBase(embedder=DeterministicEmbedder(dim=64))  # no describer
+        assert kb.ingest_path("ops", img) == 0  # skipped, not read as bytes
+
+    def test_describer_failure_is_fail_soft(self, tmp_path):
+        img = tmp_path / "flow.png"
+        img.write_bytes(b"\x89PNG")
+
+        def boom(_p):
+            raise RuntimeError("vision backend down")
+
+        kb = KnowledgeBase(embedder=DeterministicEmbedder(dim=64), image_describer=boom)
+        assert kb.ingest_path("ops", img) == 0  # failure swallowed, ingestion continues
