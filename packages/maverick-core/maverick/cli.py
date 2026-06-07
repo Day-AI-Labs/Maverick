@@ -633,6 +633,7 @@ def fleet() -> None:
               help="An agent as NAME:ROLE (repeatable). ROLE is an RBAC role.")
 def fleet_create(name: str, owner: str, agents: tuple[str, ...]) -> None:
     """Create a fleet: an owner plus a roster of NAME:ROLE agents."""
+    from .capability import role_exists
     from .fleet import Fleet, FleetAgent, save_fleet, valid_name
     if not valid_name(name):
         click.echo("ERROR: name must be [A-Za-z0-9_-] (<=64 chars)", err=True)
@@ -644,6 +645,10 @@ def fleet_create(name: str, owner: str, agents: tuple[str, ...]) -> None:
         role = role.strip()
         if not valid_name(agent_name) or not role:
             click.echo(f"ERROR: bad --agent {spec!r}; use NAME:ROLE", err=True)
+            sys.exit(2)
+        if not role_exists(role):
+            click.echo(f"ERROR: undefined RBAC role {role!r} for --agent {spec!r}",
+                       err=True)
             sys.exit(2)
         roster.append(FleetAgent(name=agent_name, role=role))
     path = save_fleet(Fleet(name=name, owner=owner, agents=tuple(roster)))
@@ -712,7 +717,7 @@ def fleet_run(ctx, fleet_name: str, agent_name: str, prompt: str,
     its own audit principal (``agent:<fleet>.<agent>``), so the oversight
     control plane governs the work automatically.
     """
-    from .capability import capability_for_role
+    from .capability import UnknownRoleError, capability_for_role
     from .fleet import load_fleet, record_run
     from .runner import run_goal_in_thread
 
@@ -726,7 +731,11 @@ def fleet_run(ctx, fleet_name: str, agent_name: str, prompt: str,
         sys.exit(1)
 
     principal = f.principal_for(agent.name)
-    cap = capability_for_role(agent.role, principal=principal)
+    try:
+        cap = capability_for_role(agent.role, principal=principal)
+    except UnknownRoleError as exc:
+        click.echo(f"ERROR: {exc}", err=True)
+        sys.exit(2)
     world = open_world(ctx.obj["db"])
     try:
         goal_id = world.create_goal(prompt)

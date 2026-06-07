@@ -274,6 +274,10 @@ def capability_from_config(
     return base
 
 
+class UnknownRoleError(ValueError):
+    """Raised when an explicitly requested RBAC role is not configured."""
+
+
 def capability_for_role(role: str, *, principal: str = "agent") -> Capability:
     """The capability for ``principal`` scoped to the named RBAC ``role``.
 
@@ -281,11 +285,15 @@ def capability_for_role(role: str, *, principal: str = "agent") -> Capability:
     narrows it by the ``[roles.<role>]`` scope -- the same attenuation
     :func:`capability_from_config` applies for an *assigned* role, but keyed on
     an explicit role rather than ``[role_assignments]``. This is how a fleet
-    agent runs least-privileged under its declared role. An unknown/empty role
-    leaves the base grant unchanged.
+    agent runs least-privileged under its declared role. Unknown or empty
+    explicit roles are rejected so governed fleet runs cannot fail open to the
+    deployment-wide base grant.
     """
+    role_name = role.strip() if isinstance(role, str) else role
+    if not role_exists(role_name):
+        raise UnknownRoleError(f"undefined RBAC role: {role!r}")
     base = capability_from_config(principal)
-    return _apply_role(base, role) if role else base
+    return _apply_role(base, role_name)
 
 
 def _roles_config() -> dict:
@@ -304,6 +312,13 @@ def configured_roles() -> frozenset[str]:
         name for name, scope in roles.items()
         if isinstance(name, str) and isinstance(scope, dict)
     )
+
+
+def role_exists(role_name: str) -> bool:
+    """True when ``role_name`` names a configured ``[roles.<role_name>]`` table."""
+    if not isinstance(role_name, str) or not role_name.strip():
+        return False
+    return isinstance(_roles_config().get(role_name.strip()), dict)
 
 
 def role_for_principal(principal: str) -> str | None:
@@ -360,5 +375,7 @@ __all__ = [
     "capability_from_config",
     "capability_for_role",
     "configured_roles",
+    "role_exists",
     "role_for_principal",
+    "UnknownRoleError",
 ]
