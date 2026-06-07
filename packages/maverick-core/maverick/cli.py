@@ -1372,6 +1372,60 @@ def status(ctx) -> None:
 
 
 @main.command()
+@click.option("-n", "--limit", default=10, show_default=True, type=int,
+              help="Max recent goals to include.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def ps(ctx, limit: int, as_json: bool) -> None:
+    """List the runtime's processes: recent goals + scheduled jobs.
+
+    A unified, read-only view across the two execution surfaces -- the world
+    model's goals (last activity) and the cron/job queue (next run) -- so you
+    can see what the runtime is doing or about to do in one place. Goals alone:
+    `maverick status`; scheduled jobs alone: `maverick schedule list`.
+    """
+    import datetime as _dt
+    import json as _json
+
+    from .world_model import open_world
+
+    def _when(ts: float | None) -> str:
+        if not ts:
+            return ""
+        return _dt.datetime.fromtimestamp(
+            ts, _dt.timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+    procs: list[dict] = []
+    try:
+        world = open_world(ctx.obj["db"])
+        for g in world.list_goals(limit=limit, order="desc"):
+            procs.append({"type": "goal", "id": g.id, "state": g.status,
+                          "when": _when(g.updated_at), "what": g.title})
+    except Exception:  # fail-soft: a missing/locked world shouldn't crash ps
+        pass
+    try:
+        from .job_queue import JobQueue
+        for j in JobQueue().list(status="pending"):
+            cron = j.payload.get("__cron__")
+            what = j.kind + (f"  [{cron}]" if cron else "")
+            procs.append({"type": "job", "id": j.id, "state": j.status,
+                          "when": _when(j.run_at), "what": what})
+    except Exception:
+        pass
+
+    if as_json:
+        click.echo(_json.dumps(procs, default=str))
+        return
+    if not procs:
+        click.echo("no goals or scheduled jobs.")
+        return
+    click.echo(f"{'TYPE':4}  {'ID':>5}  {'STATE':9}  {'WHEN (UTC)':16}  WHAT")
+    for p in procs:
+        click.echo(f"{p['type']:4}  {str(p['id']):>5}  {p['state']:9}  "
+                   f"{p['when']:16}  {p['what']}")
+
+
+@main.command()
 @click.argument("question_id", type=int)
 @click.argument("answer", nargs=-1, required=True)
 @click.pass_context
