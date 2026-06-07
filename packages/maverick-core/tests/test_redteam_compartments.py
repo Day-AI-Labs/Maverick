@@ -104,7 +104,7 @@ class TestSectorSealHoldsTheBulkhead:
 class TestKnowledgeBulkhead:
     def test_poisoned_doc_dropped_and_domains_isolated(self):
         class _IngestShield:
-            def scan_input(self, text):
+            def scan_output(self, text, known_prompt=None):
                 bad = "ignore all previous instructions" in text.lower()
                 return ShieldVerdict.block("high", "x") if bad else ShieldVerdict.allow()
 

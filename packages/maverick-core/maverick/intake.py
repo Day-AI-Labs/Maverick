@@ -66,6 +66,29 @@ def _default_persona(spec: IntakeSpec) -> str:
     )
 
 
+_MAX_PERSONA_CHARS = 2000
+
+
+def _safe_persona(persona: str, spec: IntakeSpec) -> str:
+    """A generated persona is untrusted model output that becomes the agent's
+    system prompt -- a prime injection target. Cap its length and shield-scan it;
+    if it trips the shield, fall back to the safe templated persona. Fail-open if
+    the shield isn't installed (kernel rule 1)."""
+    persona = (persona or "").strip()[:_MAX_PERSONA_CHARS]
+    if not persona:
+        return _default_persona(spec)
+    try:
+        from maverick_shield import Shield
+        verdict = Shield.from_config(warn_if_missing=False).scan_output(persona)
+        if not getattr(verdict, "allowed", True):
+            log.warning("intake: generated persona tripped the shield; using the "
+                        "safe default persona")
+            return _default_persona(spec)
+    except Exception:  # shield optional -> fail-open
+        pass
+    return persona
+
+
 def validate_profile(profile: DomainProfile) -> DomainProfile:
     """Clamp a generated pack to a safe envelope: union a baseline deny set,
     strip denied or over-ceiling tools out of allow, and cap ``max_risk``.
@@ -116,6 +139,7 @@ def generate_profile(spec: IntakeSpec, propose=None) -> DomainProfile:
         knowledge_sources=[name],
         authoring="generated",
     )
+    profile.persona = _safe_persona(profile.persona, spec)
     return validate_profile(profile)
 
 
