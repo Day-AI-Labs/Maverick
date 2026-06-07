@@ -22,14 +22,19 @@ here.
   refuses to exceed (`budget.py`).
 - **Killswitch** — `~/.maverick/HALT` aborts all running goals (`killswitch.py`).
 - **Verifier default-on** across goal types (`verifier.py`); **reflexion** retry
-  loop with cross-session failure memory (`reflexion.py`).
+  loop with cross-session failure memory (`reflexion.py`); graded **critic** for
+  structured accept/revise/reject feedback (`critic.py`).
 - **Planning topologies** — tree-of-thought (`tree_of_thought.py`), debate
-  (`debate.py`), speculative decode/finalize (`speculative.py`), shared-scratchpad
+  (`debate.py`), speculative decode/finalize (`speculative.py`), latency-aware
+  best-of-N that cancels laggards (`latency_best_of_n.py`), shared-scratchpad
   blackboard (`blackboard.py`), cross-agent bus (`agent_bus.py`).
 - **Context lifecycle** — deferred tool loading + `find_tools`, cross-session
   `memory` tool (`tools/memory.py`), programmatic tool calling
   (`tools/code_exec.py`), structural/retrieval-augmented compaction
   (`compaction.py`, `context_compactor.py`).
+- **Local continuous learning** — distill successful run trajectories into a
+  reusable, validator-compliant `SKILL.md` under `~/.maverick/learned-skills`
+  (`skill_distillation_local.py`), opt-in via `[self_learning] distill_local`.
 
 ## Tools
 
@@ -37,15 +42,21 @@ here.
 
 - **Code & files** — `fs`, `str_edit`, `ast_edit` (tree-sitter), `apply_patch`
   (atomic multi-file), `repo_map`, `dep_graph`, `test_impact` (coverage-guided),
-  `reviewer` (diff review), `file_watcher`.
+  `reviewer` (diff review), `file_watcher`, `notebook_exec` (run a .ipynb's code
+  cells in the sandbox), `self_edit` (human-gated, path-confined edits to
+  Maverick's own code/config), `html_to_app` (scaffold a starter app from an HTML
+  mockup).
 - **Data** — `sql_query` (read-only by default), `pandas_query`, `spreadsheet`
   (CSV/XLSX, write-capable), `compute` (SymPy), `embeddings`.
 - **Web & research** — `web_search` (Tavily/Brave/DDG/SerpAPI), `http_fetch`,
-  `browser` (navigate/click/type/`fill_form`), `arxiv`, `semantic_scholar`,
-  `wikipedia`, `hackernews`, `youtube`.
+  `browser` (navigate/click/type/`fill_form`), `browser_device` (device-emulation
+  presets), `browser_auth_vault` (Fernet-encrypted session store), `websocket`
+  (ws/wss connect-send-recv), `dom_diff` (structural before/after HTML diff),
+  `arxiv`, `semantic_scholar`, `wikipedia`, `hackernews`, `youtube`.
 - **Media** — `view_image`, `view_video`, `pdf_reader`, `ocr`, `voice`
   (transcribe/speak), `ffmpeg_tool`, `imagemagick_tool`, `pandoc_tool`,
-  `replicate_tool` (image/video/audio gen).
+  `replicate_tool` (image/video/audio gen), `latex` (math→MathML + document→PDF),
+  `diagram` (Graphviz / Mermaid render).
 - **Knowledge** — `knowledge_search` (per-domain RAG over collected docs),
   `recall`, `kv_memory`.
 - **Productivity & SaaS connectors (~47)** — GitHub Actions, GitLab, Jira, Linear,
@@ -56,13 +67,23 @@ here.
   Vercel, AWS Lambda/SES/SNS, Microsoft Graph, and more.
 - **System** — `shell` (sandbox-mediated), `git_advanced`, `compute`,
   `dns_lookup`, `openapi_runner`, `clipboard`, `notify`, `attachments`,
-  `android` / `ios_sim`, `a11y`.
+  `android` / `ios_sim`, `a11y`, `task_graph` (persistent dependency-DAG of
+  tasks), `workspace_snapshot` (snapshot/restore a working dir), `license_scan`
+  (classify deps + flag copyleft), `self_capability` (report the run's capability
+  grant), `oidc` (OIDC authorization-code client), `cost_curve` (per-provider cost
+  model), `bench_track` (record benchmark scores + flag regressions), `teams`
+  (Microsoft Teams webhook).
+- **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
+  function into a registered Tool with a signature-derived JSON Schema, no
+  boilerplate.
 
 ## Channels
 
 12 wired channels (`packages/maverick-channels/`): Telegram, Discord, Slack,
 Signal, Email, Matrix, Bluesky, Mastodon, Voice (Twilio), WhatsApp, SMS, iMessage
-(macOS). Rich formatting + dedup + per-channel authz.
+(macOS). Rich formatting + dedup + per-channel authz. **Email v2** adds IMAP IDLE
+(push instead of poll) + conversation threading from Message-ID/In-Reply-To/
+References (`email_v2.py`).
 
 ## Sandboxes
 
@@ -74,7 +95,10 @@ devcontainer, Firecracker microVM, Kubernetes. Selected via `[sandbox] backend`.
 12 providers, routable per role (`llm.py`): Anthropic, OpenAI, OpenRouter,
 Ollama, Gemini, DeepSeek, Bedrock, Azure, xAI, Moonshot, TGI, vLLM (generic
 OpenAI-compatible via `base_url`). Cost-aware routing (`cost_router.py`) and
-provider failover (`provider_failover.py`), both opt-in.
+provider failover (`provider_failover.py`), both opt-in. **Local-first routing**
+prefers a reachable local model before remote (`provider_local_first.py`);
+**energy-aware routing** downgrades to a cheaper model on low battery
+(`energy_aware_router.py`); both opt-in and default-OFF.
 
 ## MCP & agent interop
 
@@ -96,11 +120,16 @@ provider failover (`provider_failover.py`), both opt-in.
   fail-open if the SDK isn't installed.
 - **Floors** — secret detector, PII detector, jailbreak heuristics, unicode /
   zero-width filter, remote-content scan, output-policy classifier
-  (regurgitation + refusal-leak), Constitutional-Classifier-v2 cascade
-  (`safety/`, `maverick_shield/`).
+  (regurgitation + refusal-leak), **phishing-content detector** (credential-harvest
+  + deceptive-link heuristics, composed into `Shield.scan_output`),
+  **operator-defined constitutional rules** (custom regex policy via `[safety]
+  constitution`, `maverick_shield/constitutional.py`),
+  Constitutional-Classifier-v2 cascade (`safety/`, `maverick_shield/`).
 - **Access control** — tool ACLs, consent prompts, capability tokens
-  (`capability.py`), role-based access control over capabilities, `maverick
-  whoami`.
+  (`capability.py`), role-based access control over capabilities, the
+  `self_capability` self-report tool, **approval delegation rules**
+  (risk/scope-based routing, `approval_delegation.py`), per-tool network egress
+  policy (`sandbox/network_policy.py`), `maverick whoami`.
 - **Audit & compliance** — signed append-only audit log (`maverick audit verify`),
   date-windowed **SIEM export**, encryption-at-rest (`crypto_at_rest.py`,
   `maverick encryption migrate`), SOC2 readiness (`soc2.py`), DSAR (`dsar.py`),
@@ -128,10 +157,17 @@ harness, SWE-bench harness, moat suite — CI-runnable on shipped fixtures.
 ## Observability & reliability
 
 OpenTelemetry traces, Prometheus `/metrics`, Sentry (all opt-in)
-(`observability.py`); per-tool latency profiles (`tool_latency.py`); provider
-health board (`provider_health.py`); shared tool-reliability layer
-(`tool_reliability.py`, `retry.py`); circuit breaker (`circuit_breaker.py`);
-adaptive thinking budget (`thinking_budget.py`).
+(`observability.py`); per-tool latency profiles + extended stats
+(`tool_latency.py`); opt-in per-tool **latency budget** (`latency_budget.py`) and
+cross-span **budget propagation** (`latency_span_budget.py`); **tool-output cache**
+for read-only tools (`tool_cache.py`); **network egress accounting**
+(`egress_accounting.py`); **run health score** (`health_score.py`); **replayable
+trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
+**provider cost-curve fitter** (`cost_curve_fitter.py`); provider health board
+(`provider_health.py`); proactive **provider rate-limit predictor**
+(`rate_limit_predictor.py`); shared tool-reliability layer (`tool_reliability.py`,
+`retry.py`); circuit breaker (`circuit_breaker.py`); adaptive thinking budget
+(`thinking_budget.py`).
 
 ## UX surfaces
 
