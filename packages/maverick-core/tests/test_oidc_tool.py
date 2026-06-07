@@ -38,11 +38,12 @@ def test_exchange_code_with_mock_fetch():
         return {"access_token": "tok-abc", "token_type": "Bearer", "expires_in": 3600}
 
     resp = exchange_code("https://idp/token", "client-1", "auth-code",
-                         "https://app/cb", client_secret="s3cret", fetch=fake_fetch)
+                         "https://app/cb", client_secret="s3cret",  # pragma: allowlist secret
+                         fetch=fake_fetch)
     assert resp["access_token"] == "tok-abc"
     assert captured["data"]["grant_type"] == "authorization_code"
     assert captured["data"]["code"] == "auth-code"
-    assert captured["data"]["client_secret"] == "s3cret"
+    assert captured["data"]["client_secret"] == "s3cret"  # pragma: allowlist secret
 
 
 def test_exchange_code_requires_https():
