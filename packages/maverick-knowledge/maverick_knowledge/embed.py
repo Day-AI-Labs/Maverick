@@ -44,7 +44,7 @@ class DeterministicEmbedder:
         for t in texts:
             v = [0.0] * self.dim
             for tok in (t or "").lower().split():
-                h = int(hashlib.sha1(tok.encode("utf-8")).hexdigest(), 16)
+                h = int(hashlib.sha256(tok.encode("utf-8")).hexdigest(), 16)
                 v[h % self.dim] += 1.0
             out.append(_l2(v))
         return out
