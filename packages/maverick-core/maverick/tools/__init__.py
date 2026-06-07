@@ -688,6 +688,11 @@ def base_registry(
     reg.register(workday_tool())
     reg.register(bigquery_tool())
     reg.register(dynamics_tool())
+    # The long tail of token-authed REST connectors (one spec each, built on
+    # make_rest_tool). Same house rules: explicit env auth, confirm-gated writes.
+    from .enterprise_connectors import enterprise_connectors
+    for _conn in enterprise_connectors():
+        reg.register(_conn)
     # Credentialed SaaS/cloud tools are opt-in (PR #124): they can use
     # ambient host credentials, so they only register when the operator
     # sets MAVERICK_ENABLE_CRED_TOOLS=true.
