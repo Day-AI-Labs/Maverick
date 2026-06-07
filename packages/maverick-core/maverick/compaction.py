@@ -90,6 +90,27 @@ def _source_locator(tool_use: dict | None) -> tuple[str, str]:
     return name, locator
 
 
+def _canonical_tool_result_text(text: str) -> str:
+    """Return the stable tool payload for hashing/previews.
+
+    Agent._run_tool stores model-facing results inside a ``<tool_output ...>``
+    frame with a fresh random nonce per call. Structural compaction references
+    should identify the underlying tool output, not that per-call frame, so
+    strip the frame when it is present. Any loop-guard guidance appended after
+    the closing frame is also excluded because it is not tool output.
+    """
+    if not text.startswith("<tool_output "):
+        return text
+    nl = text.find("\n")
+    if nl == -1:
+        return text
+    inner = text[nl + 1:]
+    close = inner.rfind("\n</tool_output ")
+    if close == -1:
+        return text
+    return inner[:close]
+
+
 def _shrink_tool_result(
     block: dict, max_bytes: int, source: tuple[str, str] | None = None
 ) -> dict:
@@ -117,8 +138,9 @@ def _shrink_tool_result(
         joined = str(content)
     if len(joined) <= max_bytes:
         return block
+    canonical = _canonical_tool_result_text(joined)
     import hashlib
-    sha = hashlib.sha256(joined.encode("utf-8", "replace")).hexdigest()[:12]
+    sha = hashlib.sha256(canonical.encode("utf-8", "replace")).hexdigest()[:12]
     name, locator = source or ("", "")
     if name and locator:
         src = f"{name}({locator}) "
@@ -127,8 +149,8 @@ def _shrink_tool_result(
     else:
         src = ""
     digest = (
-        joined[:160].rstrip()
-        + f" ... [{src}output {len(joined)}B truncated, sha256:{sha} — dropped from"
+        canonical[:160].rstrip()
+        + f" ... [{src}output {len(canonical)}B truncated, sha256:{sha} — dropped from"
         " context; re-run the tool to retrieve the full output]"
     )
     new_block = dict(block)

@@ -53,6 +53,41 @@ def test_shrink_without_source_still_refs_hash_and_size():
     assert "(" not in ref.split("sha256")[0][-40:]  # no empty "name()" when unknown
 
 
+def test_shrink_hashes_stable_payload_inside_nonce_frame():
+    payload = _big()
+    framed1 = f"<tool_output tool='read_file' id=aaa111>\n{payload}\n</tool_output aaa111>"
+    framed2 = f"<tool_output tool='read_file' id=bbb222>\n{payload}\n</tool_output bbb222>"
+    block1 = {"type": "tool_result", "tool_use_id": "t1", "content": framed1}
+    block2 = {"type": "tool_result", "tool_use_id": "t1", "content": framed2}
+
+    out1 = _shrink_tool_result(block1, 2048, source=("read_file", "/app/main.py"))
+    out2 = _shrink_tool_result(block2, 2048, source=("read_file", "/app/main.py"))
+
+    sha = hashlib.sha256(payload.encode()).hexdigest()[:12]
+    assert f"sha256:{sha}" in out1["content"]
+    assert f"sha256:{sha}" in out2["content"]
+    assert "id=aaa111" not in out1["content"]
+    assert "id=bbb222" not in out2["content"]
+    assert "5000B" in out1["content"]
+    assert out1["content"] == out2["content"]
+
+
+def test_shrink_ignores_loop_guard_when_hashing_framed_payload():
+    payload = _big()
+    framed = (
+        f"<tool_output tool='shell' id=abc>\n{payload}\n</tool_output abc>"
+        "\n\n[loop-guard] Do not repeat this command."
+    )
+    out = _shrink_tool_result(
+        {"type": "tool_result", "tool_use_id": "t1", "content": framed},
+        2048,
+        source=("shell", ""),
+    )
+    sha = hashlib.sha256(payload.encode()).hexdigest()[:12]
+    assert f"sha256:{sha}" in out["content"]
+    assert "loop-guard" not in out["content"]
+
+
 def test_small_result_unchanged():
     block = {"type": "tool_result", "tool_use_id": "t1", "content": "tiny"}
     assert _shrink_tool_result(block, 2048, source=("read_file", "/a")) is block
