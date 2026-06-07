@@ -11,6 +11,7 @@ def test_regulated_deployment_detects_each_sensitive_control():
     assert wizard._regulated_deployment({"enterprise": True})
     assert wizard._regulated_deployment({"encrypt_at_rest": True})
     assert wizard._regulated_deployment({"audit_sign": True})
+    assert wizard._regulated_deployment({"security_autofix": True})
     # A non-sensitive toggle (or nothing) does not trigger the panel.
     assert not wizard._regulated_deployment({"tenant_by_user": True})
     assert not wizard._regulated_deployment({})
@@ -24,6 +25,9 @@ def test_compliance_command_set_is_the_full_surface():
         "maverick ropa",
         "maverick dpia",
         "maverick ai-act",
+        "maverick assess",
+        "maverick hunt",
+        "maverick remediate",
     ]
 
 

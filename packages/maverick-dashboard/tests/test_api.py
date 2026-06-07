@@ -279,6 +279,18 @@ class TestSpend:
         assert isinstance(data["episodes"], list)
 
 
+class TestSecurityRegister:
+    def test_returns_posture_hunt_and_remediation(self):
+        resp = client.get("/api/v1/security")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data["controls"], list)            # compliance posture
+        assert data["threat_hunt"]["risk"] in {"clear", "low", "medium", "high"}
+        assert isinstance(data["threat_hunt"]["findings"], list)
+        assert "auto_fix_enabled" in data["remediation"]
+        assert isinstance(data["remediation"]["gaps"], list)
+
+
 class TestOpenAPI:
     def test_openapi_schema_served(self):
         resp = client.get("/openapi.json")
@@ -287,7 +299,7 @@ class TestOpenAPI:
         paths = spec.get("paths", {})
         for required in (
             "/api/v1/goals", "/api/v1/goals/{goal_id}", "/api/v1/facts",
-            "/api/v1/skills", "/api/v1/spend",
+            "/api/v1/skills", "/api/v1/spend", "/api/v1/security",
         ):
             assert required in paths, f"missing {required}"
 

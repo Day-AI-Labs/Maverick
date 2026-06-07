@@ -1065,6 +1065,14 @@ def pick_advanced() -> dict[str, Any]:
             "Needs the [audit-signing] extra; falls back to unsigned if absent.",
             default=False,
         ),
+        "security_autofix": _q_confirm(
+            "Let the security assessor auto-fix low-risk gaps? With enterprise mode "
+            "on, `maverick remediate --apply` may auto-apply reversible, in-boundary "
+            "config fixes (enable audit signing, set retention); anything "
+            "behaviour-changing stays gated for a human. Off by default; every fix "
+            "is audited and reversible.",
+            default=False,
+        ),
         "deferred_tools": _q_confirm(
             "Deferred tool loading? Show the model a small core toolset plus a "
             "find_tools search tool, loading the long tail (80+ integrations, MCP) "
@@ -2118,14 +2126,17 @@ def write_config(
         if plugin_enforce:
             _emit_kv(lines, "enforce_permissions", plugin_enforce)
 
-    if tool_acl:
+    autofix = bool((advanced or {}).get("security_autofix"))
+    if tool_acl or autofix:
         lines.append("")
         lines.append("[security]")
-        for k, v in tool_acl.items():
+        if autofix:
+            lines.append("auto_fix = true")
+        for k, v in (tool_acl or {}).items():
             if k == "channels":
                 continue
             _emit_kv(lines, k, v)
-        for ch_id, ch_cfg in (tool_acl.get("channels") or {}).items():
+        for ch_id, ch_cfg in ((tool_acl or {}).get("channels") or {}).items():
             lines.append("")
             lines.append(f"[security.channels.{ch_id}]")
             for k, v in ch_cfg.items():
@@ -2543,6 +2554,9 @@ _COMPLIANCE_COMMANDS: list[tuple[str, str]] = [
     ("maverick ropa", "GDPR Art. 30 record-of-processing scaffold"),
     ("maverick dpia", "GDPR Art. 35 impact-assessment scaffold"),
     ("maverick ai-act", "EU AI Act risk classification"),
+    ("maverick assess", "run a PIA / AIRA / vendor-risk assessment"),
+    ("maverick hunt", "hunt the audit trail for agent attacks"),
+    ("maverick remediate", "assess security posture + fix low-risk gaps"),
 ]
 
 
@@ -2554,6 +2568,7 @@ def _regulated_deployment(advanced: dict[str, Any]) -> bool:
         advanced.get("enterprise")
         or advanced.get("encrypt_at_rest")
         or advanced.get("audit_sign")
+        or advanced.get("security_autofix")
     )
 
 
