@@ -38,7 +38,8 @@ def test_onboard_discards_without_approval(tmp_path, monkeypatch):
     result = runner.invoke(
         main,
         ["onboard", "--no-llm", "--name", "Beta Co"],
-        input="a logistics firm\n\nn\n",  # description, industry, then decline approval
+        # description, industry (blank), end document collection (blank), decline
+        input="a logistics firm\n\n\nn\n",
     )
     assert result.exit_code == 0, result.output
     assert "Discarded" in result.output
