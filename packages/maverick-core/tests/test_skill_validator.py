@@ -4,7 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from click.testing import CliRunner
-
 from maverick.cli import main
 from maverick.skills import validate_skill_file
 
@@ -69,8 +68,11 @@ def test_short_body_fails(tmp_path):
 
 
 def test_hardcoded_secret_fails(tmp_path):
-    # The canonical AWS example access key id — the secret detector flags it.
-    text = _VALID + "\nexport AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n"
+    # The canonical AWS example access key id — Maverick's own secret detector
+    # must flag it. It's AWS's published docs example (not a real credential);
+    # the pragma keeps the repo's detect-secrets CI gate from treating this
+    # test fixture as a newly committed secret.
+    text = _VALID + "\nexport AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n"  # pragma: allowlist secret
     r = validate_skill_file(_write(tmp_path, text))
     assert not r.ok and any("secret" in e for e in r.errors)
 

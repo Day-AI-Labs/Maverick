@@ -5,7 +5,6 @@ import hashlib
 
 import pytest
 from click.testing import CliRunner
-
 from maverick import catalog, skills, templates
 from maverick.cli import main
 
