@@ -68,8 +68,41 @@ def _block_size(block: dict) -> int:
     return 0
 
 
-def _shrink_tool_result(block: dict, max_bytes: int) -> dict:
-    """Replace a large tool_result block with a one-line digest."""
+_LOCATOR_KEYS = ("path", "url", "file", "filename", "target", "uri", "page")
+
+
+def _source_locator(tool_use: dict | None) -> tuple[str, str]:
+    """Best-effort ``(tool_name, locator)`` for the tool_use that produced a
+    result, so a shrunk tool_result keeps the *identity* of what it read (the
+    file path / url) instead of an opaque "output dropped". ``('', '')`` when
+    unknown."""
+    if not isinstance(tool_use, dict):
+        return "", ""
+    name = str(tool_use.get("name", "") or "")
+    inp = tool_use.get("input") or {}
+    locator = ""
+    if isinstance(inp, dict):
+        for k in _LOCATOR_KEYS:
+            v = inp.get(k)
+            if isinstance(v, str) and v.strip():
+                locator = v.strip()
+                break
+    return name, locator
+
+
+def _shrink_tool_result(
+    block: dict, max_bytes: int, source: tuple[str, str] | None = None
+) -> dict:
+    """Replace a large tool_result with a content-addressed structural reference.
+
+    Rather than an opaque "full output dropped", the digest keeps a short preview
+    plus a structural ref — the originating tool + locator (file path / url) and a
+    ``sha256`` + byte size. So the agent retains *what* was read and can re-run the
+    tool to retrieve the full output (and the hash lets it detect a change), which
+    is far more useful than arbitrary truncated bytes for the common file-read /
+    fetch case. Idempotent: a result already at/under ``max_bytes`` is returned
+    unchanged, so a second compaction pass is a no-op.
+    """
     if not isinstance(block, dict) or block.get("type") != "tool_result":
         return block
     content = block.get("content", "")
@@ -84,9 +117,19 @@ def _shrink_tool_result(block: dict, max_bytes: int) -> dict:
         joined = str(content)
     if len(joined) <= max_bytes:
         return block
+    import hashlib
+    sha = hashlib.sha256(joined.encode("utf-8", "replace")).hexdigest()[:12]
+    name, locator = source or ("", "")
+    if name and locator:
+        src = f"{name}({locator}) "
+    elif name:
+        src = f"{name} "
+    else:
+        src = ""
     digest = (
-        joined[:200].rstrip()
-        + f" ... [tool_result {len(joined)}B truncated; full output dropped from context]"
+        joined[:160].rstrip()
+        + f" ... [{src}output {len(joined)}B truncated, sha256:{sha} — dropped from"
+        " context; re-run the tool to retrieve the full output]"
     )
     new_block = dict(block)
     new_block["content"] = digest
@@ -127,6 +170,18 @@ def compact_messages(
     if len(messages) <= keep_recent + 1:
         return list(messages)
 
+    # Index tool_use blocks by id so a shrunk tool_result can name its source
+    # (the tool + the file path / url it read) in the structural reference.
+    tool_use_by_id: dict[str, dict] = {}
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, list):
+            for blk in content:
+                if isinstance(blk, dict) and blk.get("type") == "tool_use":
+                    bid = blk.get("id")
+                    if isinstance(bid, str):
+                        tool_use_by_id[bid] = blk
+
     out: list[dict] = []
     cutoff = len(messages) - keep_recent
     for i, msg in enumerate(messages):
@@ -138,7 +193,8 @@ def compact_messages(
             new_content = []
             for blk in content:
                 if isinstance(blk, dict) and blk.get("type") == "tool_result":
-                    new_content.append(_shrink_tool_result(blk, max_tool_bytes))
+                    source = _source_locator(tool_use_by_id.get(blk.get("tool_use_id")))
+                    new_content.append(_shrink_tool_result(blk, max_tool_bytes, source))
                 elif isinstance(blk, dict) and blk.get("type") == "text":
                     new_content.append(_shrink_text_block(blk, max_tool_bytes))
                 else:
