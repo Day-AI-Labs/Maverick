@@ -215,13 +215,17 @@ async def dispatch(ctx: HookContext) -> bool:
         try:
             ok = await _run_one(spec, ctx, is_blocking=is_blocking)
         except Exception as e:
-            # A hook *bug* (exception) stays isolated/fail-open per the
-            # module contract -- a broken hook must not wedge the run. The
-            # attacker-triggerable bypass we close is the TIMEOUT path (a
-            # large/slow tool arg tripping the deadline), handled in
-            # _run_one where a blocking hook fails closed.
-            log.warning("hook %s/%s raised: %s", spec.event.value, spec.matcher, e)
-            ok = True
+            # A hook that raised hasn't vetted the action. A blocking (Pre*)
+            # hook must therefore BLOCK rather than wave it through: an attacker
+            # who can make a guard hook raise -- e.g. a model-influenced tool arg
+            # that trips a callable's parsing -- would otherwise disarm it. Post*
+            # hooks have nothing to block, so they stay fail-open. This matches
+            # the timeout/missing-binary posture below.
+            log.warning(
+                "hook %s/%s raised: %s%s", spec.event.value, spec.matcher, e,
+                " — BLOCKING the action (fail-closed)" if is_blocking else "",
+            )
+            ok = not is_blocking
         ctx.duration_ms = (time.monotonic() - start) * 1000
         if is_blocking and not ok:
             allowed = False
@@ -298,11 +302,15 @@ async def _run_one(spec: HookSpec, ctx: HookContext, *, is_blocking: bool = Fals
             log.info("hook %s stderr: %s", spec.command, stderr.decode(errors="replace")[:500])
         return proc.returncode == 0
     except FileNotFoundError:
-        # Missing hook binary stays fail-open per the module's "hooks are
-        # isolated/best-effort" contract (it's loudly logged). Only the
-        # timeout path fails closed for blocking hooks.
-        log.warning("hook command not found: %s", spec.command)
-        return True  # missing hook doesn't block
+        # A blocking hook whose binary is missing never vetted the action, so it
+        # must BLOCK (same posture as the timeout path) -- otherwise an attacker
+        # who can delete/rename/chmod-x the hook disarms the guard. A Post* hook
+        # that's missing simply doesn't run.
+        log.warning(
+            "hook command not found: %s%s", spec.command,
+            " — BLOCKING the action (fail-closed)" if is_blocking else "",
+        )
+        return not is_blocking
 
 
 def installed() -> list[HookSpec]:
