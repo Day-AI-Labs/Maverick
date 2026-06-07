@@ -98,22 +98,11 @@ def verify_deployment() -> list[GuaranteeCheck]:
             enc_detail = f"at-rest enabled but unavailable: {e}"
     checks.append(GuaranteeCheck("At-rest encryption", enc_ok, enc_detail))
 
-    # 3. Tamper-evident audit -- signing requested AND the crypto backend present.
-    signing_on = False
-    sign_detail = "enable [audit] sign = true (or MAVERICK_AUDIT_SIGN=1)"
-    try:
-        from .audit.writer import _resolve_signing
-        if _resolve_signing(None):
-            from .audit.signing import _have_crypto
-            signing_on = _have_crypto()
-            sign_detail = (
-                "Ed25519 hash-chain on; verify with 'maverick audit verify'"
-                if signing_on
-                else "audit signing requested but 'cryptography' is not installed"
-            )
-    except Exception:
-        pass
-    checks.append(GuaranteeCheck("Tamper-evident audit", signing_on, sign_detail))
+    # 3. Tamper-evident audit -- exercise the same signer/key path real audit
+    #    writes depend on.  Import-only crypto checks can pass while a malformed
+    #    or unreadable key makes the writer fall back to unsigned rows, so append
+    #    and verify a signed probe chain.
+    checks.append(_verify_audit_signing())
 
     # 4. Human oversight -- destructive actions are consent-gated, not auto-approved.
     mode = "auto-approve"
@@ -145,6 +134,62 @@ def verify_deployment() -> list[GuaranteeCheck]:
     ))
 
     return checks
+
+
+def _verify_audit_signing() -> GuaranteeCheck:
+    """Write and verify a signed probe using the real audit signing key path."""
+    name = "Tamper-evident audit"
+    detail = "enable [audit] sign = true (or MAVERICK_AUDIT_SIGN=1)"
+    probe = None
+    try:
+        from .audit.writer import _resolve_signing
+
+        if not _resolve_signing(None):
+            return GuaranteeCheck(name, False, detail)
+
+        from .audit.signing import AuditSigner, _have_crypto, verify_chain
+
+        if not _have_crypto():
+            return GuaranteeCheck(
+                name,
+                False,
+                "audit signing requested but 'cryptography' is not installed",
+            )
+
+        from .paths import data_dir
+
+        audit_dir = data_dir("audit")
+        audit_dir.mkdir(parents=True, exist_ok=True)
+        probe = audit_dir / ".enterprise-verify-probe.ndjson"
+        try:
+            probe.unlink()
+        except FileNotFoundError:
+            pass
+
+        signer = AuditSigner(probe)
+        wrote = signer.write({
+            "kind": "enterprise_verify_probe",
+            "agent": "system",
+            "goal_id": None,
+            "v": 1,
+        })
+        breaks = verify_chain(probe) if wrote else []
+        passed = bool(wrote and not breaks)
+        detail = (
+            "Ed25519 hash-chain probe wrote and verified; verify logs with "
+            "'maverick audit verify'"
+            if passed
+            else "audit signing probe failed to write or verify"
+        )
+        return GuaranteeCheck(name, passed, detail)
+    except Exception as e:
+        return GuaranteeCheck(name, False, f"audit signing probe failed: {e}")
+    finally:
+        try:
+            if probe is not None:
+                probe.unlink()
+        except Exception:
+            pass
 
 
 def all_passed(checks: list[GuaranteeCheck]) -> bool:
