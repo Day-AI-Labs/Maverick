@@ -38,6 +38,10 @@ ANSWERS = ("yes", "no", "na", "unknown")
 _SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3}
 
 
+def _new_session_id() -> str:
+    return f"{int(time.time())}-{uuid.uuid4().hex[:8]}"
+
+
 @dataclass(frozen=True)
 class Question:
     id: str
@@ -227,8 +231,16 @@ class AssessmentSession:
     type: str = ""
     subject: str = ""
     answers: dict[str, dict] = field(default_factory=dict)
-    id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    id: str = field(default_factory=_new_session_id)
     created_at: float = field(default_factory=time.time)
+
+    def restart(self, assessment_type: str, subject: str) -> None:
+        """Start a new assessment draft in this reusable conversation session."""
+        self.type = assessment_type
+        self.subject = subject
+        self.answers.clear()
+        self.id = _new_session_id()
+        self.created_at = time.time()
 
     def template(self) -> AssessmentTemplate:
         tpl = get_template(self.type)
