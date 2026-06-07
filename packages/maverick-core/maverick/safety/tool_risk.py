@@ -19,7 +19,7 @@ Config (``~/.maverick/config.toml``):
 
     [security.tool_risk]
     my_plugin_tool = "high"      # override / classify a tool
-    "mcp_*"        = "medium"    # glob -- applies to any matching name
+    "mcp_*"        = "medium"    # glob -- relax MCP tools (they default to high)
 
 Default ceiling is *unset*, meaning no cap (all risk levels allowed), so
 behaviour is unchanged unless a ceiling is configured.
@@ -133,14 +133,29 @@ def _load_overrides() -> dict[str, str]:
 
 def tool_risk(name: str, overrides: dict[str, str] | None = None) -> str:
     """Risk level for a tool: config override (exact then glob), then the
-    built-in default, then ``medium``."""
+    built-in default.
+
+    An *unclassified* MCP tool (``mcp_*``) fails safe to ``high``: it runs
+    arbitrary code through a third-party server, so it is treated as dangerous
+    until a deployment says otherwise (an unclassified non-MCP tool still falls
+    back to ``medium``). A config override is checked first, so a trusted MCP
+    server can be relaxed deliberately, e.g. ``[security.tool_risk]``
+    ``"mcp_*" = "medium"``.
+    """
     overrides = _load_overrides() if overrides is None else overrides
     if name in overrides:
         return overrides[name]
     for pattern, level in overrides.items():
         if any(ch in pattern for ch in "*?[") and fnmatch.fnmatchcase(name, pattern):
             return level
-    return _DEFAULT_RISK.get(name, _DEFAULT_RISK_LEVEL)
+    if name in _DEFAULT_RISK:
+        return _DEFAULT_RISK[name]
+    # Unclassified. An MCP tool is externally-defined arbitrary code reached
+    # through a third-party server -> fail safe to high. Anything else falls
+    # back to the medium default.
+    if name.startswith("mcp_"):
+        return "high"
+    return _DEFAULT_RISK_LEVEL
 
 
 def tools_exceeding(
