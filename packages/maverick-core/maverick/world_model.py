@@ -437,6 +437,23 @@ def _goal_event_from_row(row) -> GoalEvent:
     return GoalEvent(**d)
 
 
+def _episode_spend_from_row(row) -> EpisodeSpend:
+    """Build an EpisodeSpend from a row, decrypting the sealed outcome field."""
+    d = dict(row)
+    if "outcome" in d:
+        d["outcome"] = _dec_field(d.get("outcome"))
+    return EpisodeSpend(**d)
+
+
+def _approval_from_row(row) -> Approval:
+    """Build an Approval from a row, decrypting the sealed action/scope/detail."""
+    d = dict(row)
+    d["action"] = _dec_field(d.get("action"))
+    d["scope"] = _dec_field(d.get("scope"))
+    d["detail"] = _dec_field(d.get("detail"))
+    return Approval(**d)
+
+
 class WorldModel:
     def __init__(self, path: Path = DEFAULT_DB):
         self.path = path
@@ -906,7 +923,7 @@ class WorldModel:
                 "UPDATE episodes SET ended_at = ?, summary = ?, outcome = ?, "
                 "cost_dollars = ?, input_tokens = ?, output_tokens = ?, tool_calls = ? "
                 "WHERE id = ?",
-                (time.time(), summary, outcome, cost_dollars,
+                (time.time(), _enc_field(summary), _enc_field(outcome), cost_dollars,
                  input_tokens, output_tokens, tool_calls, episode_id),
             )
 
@@ -936,7 +953,7 @@ class WorldModel:
                 "FROM episodes ORDER BY started_at DESC LIMIT ?",
                 (limit,),
             )
-        return [EpisodeSpend(**dict(r)) for r in rows]
+        return [_episode_spend_from_row(r) for r in rows]
 
     def total_spend(self) -> dict[str, float]:
         row = self._read_one(
@@ -1109,7 +1126,8 @@ class WorldModel:
             cur = conn.execute(
                 "INSERT INTO approvals(action, risk, scope, detail, status, requested_at) "
                 "VALUES(?, ?, ?, ?, 'pending', ?)",
-                (action, risk, scope, detail, time.time()),
+                (_enc_field(action), risk, _enc_field(scope), _enc_field(detail),
+                 time.time()),
             )
             return cur.lastrowid
 
@@ -1117,13 +1135,13 @@ class WorldModel:
         row = self._read_one(
             "SELECT * FROM approvals WHERE id = ?", (approval_id,)
         )
-        return Approval(**dict(row)) if row else None
+        return _approval_from_row(row) if row else None
 
     def pending_approvals(self) -> list[Approval]:
         rows = self._read_all(
             "SELECT * FROM approvals WHERE status = 'pending' ORDER BY id"
         )
-        return [Approval(**dict(r)) for r in rows]
+        return [_approval_from_row(r) for r in rows]
 
     def decide_approval(self, approval_id: int, status: str) -> bool:
         """Flip a pending approval to 'approved' or 'denied'.

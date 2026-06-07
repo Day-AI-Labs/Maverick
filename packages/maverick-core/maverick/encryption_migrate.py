@@ -36,6 +36,11 @@ _SEALED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("goals", "description"),
     ("goals", "result"),
     ("goal_events", "content"),
+    ("episodes", "summary"),
+    ("episodes", "outcome"),
+    ("approvals", "action"),
+    ("approvals", "scope"),
+    ("approvals", "detail"),
 )
 
 
