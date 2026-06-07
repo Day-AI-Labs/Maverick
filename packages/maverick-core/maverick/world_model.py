@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS goals (
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,
     deadline REAL,
-    result TEXT
+    result TEXT,
+    owner TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_goals_status     ON goals(status);
@@ -207,6 +208,9 @@ CREATE INDEX IF NOT EXISTS idx_goals_parent
 
 
 MIGRATIONS: dict[int, list[str]] = {
+    # v11: per-goal owner principal for multi-user dashboard authz (owner-scoped
+    # reads/mutations). Legacy goals get '' (treated as unowned -> admin-only).
+    11: ["ALTER TABLE goals ADD COLUMN owner TEXT NOT NULL DEFAULT ''"],
     2: [
         "ALTER TABLE episodes ADD COLUMN cost_dollars REAL DEFAULT 0",
         "ALTER TABLE episodes ADD COLUMN input_tokens INTEGER DEFAULT 0",
@@ -276,6 +280,7 @@ class Goal:
     updated_at: float
     deadline: float | None
     result: str | None
+    owner: str = ""
 
 
 @dataclass
@@ -691,13 +696,14 @@ class WorldModel:
         return row[0] if row else 0
 
     # ----- goals -----
-    def create_goal(self, title: str, description: str = "", parent_id: int | None = None) -> int:
+    def create_goal(self, title: str, description: str = "", parent_id: int | None = None,
+                    *, owner: str = "") -> int:
         now = time.time()
         with self._writing() as conn:
             cur = conn.execute(
-                "INSERT INTO goals(parent_id, title, description, status, created_at, updated_at) "
-                "VALUES(?, ?, ?, 'pending', ?, ?)",
-                (parent_id, title, description, now, now),
+                "INSERT INTO goals(parent_id, title, description, status, "
+                "created_at, updated_at, owner) VALUES(?, ?, ?, 'pending', ?, ?, ?)",
+                (parent_id, title, description, now, now, owner),
             )
             return cur.lastrowid
 
@@ -716,6 +722,7 @@ class WorldModel:
         self,
         status: str | None = None,
         *,
+        owner: str | None = None,
         limit: int | None = None,
         offset: int = 0,
         order: str = "asc",
@@ -729,10 +736,16 @@ class WorldModel:
         """
         direction = "DESC" if order.lower() == "desc" else "ASC"
         sql = "SELECT * FROM goals"
+        clauses: list[str] = []
         params: tuple[Any, ...] = ()
         if status:
-            sql += " WHERE status = ?"
-            params = (status,)
+            clauses.append("status = ?")
+            params = params + (status,)
+        if owner is not None:
+            clauses.append("owner = ?")
+            params = params + (owner,)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
         sql += f" ORDER BY id {direction}"
         if limit is not None:
             sql += " LIMIT ? OFFSET ?"
