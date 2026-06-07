@@ -239,7 +239,7 @@ def compliance_report() -> list[ControlCheck]:
     checks.append(ControlCheck(
         "Encryption at rest", "GDPR Art. 32",
         "active" if enc_on else "action_needed",
-        "AES-256-GCM seals the memory store + world-DB conversation turns, facts & agent messages"
+        "AES-256-GCM seals the memory store + world-DB content (turns, facts, messages, questions)"
         if enc_on
         else "enable [encryption] at_rest = true (or enterprise mode) to seal it",
     ))

@@ -309,3 +309,33 @@ def test_world_db_seals_messages(monkeypatch, tmp_path):
     hits = {m["content"] for m in wm.search_messages("findable")}
     assert "findable plaintext token" in hits
     assert all("123-45-6789" not in c for c in hits)
+
+
+@requires_crypto
+def test_world_db_seals_questions(monkeypatch, tmp_path):
+    import sqlite3
+
+    from maverick.world_model import WorldModel
+
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    db = tmp_path / "world.db"
+    wm = WorldModel(db)
+    gid = wm.create_goal("g", "d")
+    qid = wm.ask("secret question SSN 123-45-6789?", goal_id=gid)
+
+    # The read path used by CLI / dashboard / MCP decrypts transparently.
+    assert any("123-45-6789" in q.question for q in wm.open_questions(gid))
+
+    wm.answer(qid, "secret answer 987-65-4321")
+
+    # Raw on-disk columns are sealed.
+    row = sqlite3.connect(str(db)).execute(
+        "SELECT question, answer FROM questions"
+    ).fetchone()
+    assert row[0].startswith("MVKAR1:") and "123-45-6789" not in row[0]
+    assert row[1].startswith("MVKAR1:") and "987-65-4321" not in row[1]
+
+    # all_questions decrypts both fields.
+    q = wm.all_questions(gid)[0]
+    assert q.question == "secret question SSN 123-45-6789?"
+    assert q.answer == "secret answer 987-65-4321"
