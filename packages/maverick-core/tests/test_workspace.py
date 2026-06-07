@@ -1,8 +1,10 @@
 """Workspaces (tenants): per-business isolation of the factory's data."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
+from maverick.paths import reset_tenant, set_tenant
 from maverick.workspace import Workspace, _sanitize_tenant
 
 
@@ -20,9 +22,10 @@ class TestWorkspacePaths:
         monkeypatch.setenv("MAVERICK_TENANT", "Acme Co")
         ws = Workspace.current()
         assert ws.tenant == "Acme Co"
-        assert ws.root == tmp_path / "tenants" / "acme_co"
-        assert ws.domains_dir == tmp_path / "tenants" / "acme_co" / "domains"
-        assert ws.knowledge_path == tmp_path / "tenants" / "acme_co" / "knowledge.db"
+        assert ws.root == tmp_path / "tenants" / "Acme%20Co"
+        assert ws.domains_dir == tmp_path / "tenants" / "Acme%20Co" / "domains"
+        assert ws.knowledge_path == tmp_path / "tenants" / "Acme%20Co" / "knowledge.db"
+        assert ws.slug == "Acme%20Co"
 
     def test_two_tenants_are_separate(self):
         assert Workspace("alpha").root != Workspace("beta").root
@@ -33,13 +36,19 @@ class TestTenantSanitization:
         monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
         ws = Workspace("../../etc")
         assert (tmp_path / "tenants") in ws.root.parents  # stays under the root
-        assert ".." not in ws.root.parts                   # no traversal
+        assert ".." not in ws.root.parts  # no traversal
 
     def test_sanitize_examples(self):
-        assert _sanitize_tenant("Acme Co.") == "acme_co"
-        assert _sanitize_tenant("../../etc") == "etc"
-        assert _sanitize_tenant("a/b\\c") == "a_b_c"
-        assert _sanitize_tenant("") == "default"
+        assert _sanitize_tenant("Acme Co.") == "Acme%20Co."
+        assert _sanitize_tenant("../../etc") == "..%2F..%2Fetc"
+        assert _sanitize_tenant("a/b\\c") == "a%2Fb%5Cc"
+        assert _sanitize_tenant("") == ""
+
+    def test_collision_prone_tenant_ids_get_distinct_roots(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+        assert Workspace("ac/me").root != Workspace("ac_me").root
+        assert Workspace("Ac Me").root != Workspace("ac_me").root
+        assert Workspace("../../etc").root != Workspace("etc").root
 
 
 class TestPerTenantDomainIsolation:
@@ -67,3 +76,59 @@ class TestPerTenantDomainIsolation:
         monkeypatch.setenv("MAVERICK_TENANT", "gamma")
         path = Path(save_profile(DomainProfile(name="g1", persona="x"), approved=True))
         assert (tmp_path / "tenants" / "gamma" / "domains") in path.parents
+
+    def test_domains_follow_context_tenant_scope(self, tmp_path, monkeypatch):
+        from maverick.domain import DomainProfile, available_domains
+        from maverick.intake import save_profile
+
+        monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+        monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+        monkeypatch.delenv("MAVERICK_DOMAINS_DIR", raising=False)
+
+        token = set_tenant("slack:alice")
+        try:
+            save_profile(DomainProfile(name="alice_only", persona="x"), approved=True)
+            assert "alice_only" in available_domains()
+        finally:
+            reset_tenant(token)
+
+        token = set_tenant("slack:bob")
+        try:
+            assert "alice_only" not in available_domains()
+        finally:
+            reset_tenant(token)
+
+
+class TestPerTenantKnowledgeIsolation:
+    def test_default_knowledge_path_follows_context_tenant_scope(self, tmp_path, monkeypatch):
+        import sys
+        import types
+
+        from maverick.orchestrator import _build_knowledge
+
+        monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+        monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+        monkeypatch.setattr(
+            "maverick.config.get_knowledge", lambda: {"enable": True}, raising=False
+        )
+
+        fake_knowledge = types.ModuleType("maverick_knowledge")
+
+        class FakeKnowledgeBase:
+            def __init__(self, *, store, embedder):
+                self.store = store
+                self.embedder = embedder
+
+        fake_knowledge.KnowledgeBase = FakeKnowledgeBase
+        fake_knowledge.build_store = lambda cfg: cfg["path"]
+        fake_knowledge.build_embedder = lambda cfg: None
+        monkeypatch.setitem(sys.modules, "maverick_knowledge", fake_knowledge)
+
+        token = set_tenant("slack:alice")
+        try:
+            kb = _build_knowledge()
+        finally:
+            reset_tenant(token)
+
+        assert kb is not None
+        assert kb.store == str(tmp_path / "tenants" / "slack%3Aalice" / "knowledge.db")

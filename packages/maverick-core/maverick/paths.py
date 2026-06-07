@@ -19,6 +19,7 @@ This increment routes the cross-session **memory** store through here (the most
 leak-sensitive per-tenant store); the world model and audit log are migrated in
 follow-on increments.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -33,9 +34,7 @@ _TENANT: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 # A tenant id becomes a path segment. Keep already-safe identifiers readable,
 # but percent-encode every other UTF-8 byte so distinct tenant ids cannot
 # collapse onto the same on-disk namespace.
-_SAFE_TENANT_CHARS = frozenset(
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-"
-)
+_SAFE_TENANT_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
 MAX_TENANT_SEGMENT_LENGTH = 200
 
 
@@ -87,8 +86,9 @@ def reset_tenant(token) -> None:
 
 def maverick_home() -> Path:
     """The base data dir (``~/.maverick``). NOT tenant-scoped; use
-    :func:`data_dir` for tenant-isolated paths."""
-    return Path.home() / ".maverick"
+    :func:`data_dir` for tenant-isolated paths. ``MAVERICK_HOME`` may override
+    the default for tests and custom deployments."""
+    return Path(os.environ.get("MAVERICK_HOME", "~/.maverick")).expanduser()
 
 
 def data_dir(*parts: str, tenant: str | None = "__active__") -> Path:
@@ -115,11 +115,15 @@ def tenant_by_user_enabled() -> bool:
     into their own tenant (so one user's cross-session memory can't leak to
     another). Off -> single shared tenant, behaviour unchanged."""
     if os.environ.get("MAVERICK_TENANT_BY_USER", "").strip().lower() in {
-        "1", "true", "yes", "on",
+        "1",
+        "true",
+        "yes",
+        "on",
     }:
         return True
     try:
         from .config import load_config
+
         cfg = (load_config() or {}).get("tenancy") or {}
         return bool(cfg.get("by_user"))
     except Exception:
@@ -127,8 +131,9 @@ def tenant_by_user_enabled() -> bool:
 
 
 @contextlib.contextmanager
-def tenant_scope(*, channel: str | None = None, user_id: str | None = None,
-                 tenant: str | None = None):
+def tenant_scope(
+    *, channel: str | None = None, user_id: str | None = None, tenant: str | None = None
+):
     """Pin the active tenant for the duration of the block, then restore it.
 
     No-op (yields with the tenant unchanged) unless an explicit ``tenant`` is
