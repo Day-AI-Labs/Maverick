@@ -64,6 +64,20 @@ class TestParse:
         v = _parse('{"confidence": 0.8, "accepts": "true", "critique": "ok"}')
         assert v.accepts is True
 
+    def test_low_confidence_accept_is_downgraded(self):
+        # The confidence floor is enforced in code: a verifier must not wave
+        # output through with accepts=true below the threshold (fail-open the
+        # last gate before FINAL). The verdict is forced to reject.
+        v = _parse('{"confidence": 0.1, "accepts": true, "critique": "", '
+                   '"issues": ["the answer is wrong"]}')
+        assert v.accepts is False
+        assert v.critique  # a revision brief is populated for the proposer
+
+    def test_high_confidence_accept_is_honored(self):
+        v = _parse('{"confidence": 0.95, "accepts": true, "critique": "ok", '
+                   '"issues": []}')
+        assert v.accepts is True
+
 
 class TestVerifyProposal:
     @pytest.mark.asyncio
