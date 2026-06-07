@@ -1466,12 +1466,16 @@ def _build_plan_tree(world, goal_id: int, depth_cap: int = 6) -> dict:
         (goal_id, per_parent_cap, depth_cap),
     ).fetchall()
 
+    # This tree reads goals.title via raw SQL, so decrypt it the same way the
+    # WorldModel accessors do when at-rest encryption seals the column.
+    from maverick.world_model import _dec_field
+
     nodes: dict[int, dict] = {}
     for r in rows:
         nodes[r["id"]] = {
             "id":        r["id"],
             "parent_id": r["parent_id"],
-            "title":     r["title"],
+            "title":     _dec_field(r["title"]),
             "status":    r["status"],
             "dollars":   float(r["dollars"] or 0.0),
             "children":  [],

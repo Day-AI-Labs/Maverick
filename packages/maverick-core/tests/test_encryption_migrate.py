@@ -51,6 +51,8 @@ def test_migrate_seals_existing_plaintext(monkeypatch, tmp_path):
     assert migrate_world_db(db) == {
         "turns.content": 1, "facts.value": 1, "messages.content": 1,
         "questions.question": 1, "questions.answer": 1,
+        "goals.title": 1, "goals.description": 1, "goals.result": 0,
+        "goal_events.content": 0,
     }
 
     # On disk the columns are now sealed (ciphertext, no plaintext).
@@ -58,16 +60,20 @@ def test_migrate_seals_existing_plaintext(monkeypatch, tmp_path):
     turn = c.execute("SELECT content FROM turns").fetchone()[0]
     assert turn.startswith("MVKAR1:") and "123-45-6789" not in turn
     assert c.execute("SELECT value FROM facts").fetchone()[0].startswith("MVKAR1:")
+    assert c.execute("SELECT title FROM goals").fetchone()[0].startswith("MVKAR1:")
 
     # Reads still return plaintext.
     wm2 = WorldModel(db)
     assert wm2.recent_turns(conv.id)[-1].content == "turn SSN 123-45-6789"
     assert wm2.get_fact("k") == "fact 4111111111111111"
+    assert wm2.get_goal(gid).title == "g"          # goal content round-trips
 
     # Idempotent: a second run seals nothing.
     assert migrate_world_db(db) == {
         "turns.content": 0, "facts.value": 0, "messages.content": 0,
         "questions.question": 0, "questions.answer": 0,
+        "goals.title": 0, "goals.description": 0, "goals.result": 0,
+        "goal_events.content": 0,
     }
 
 
