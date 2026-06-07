@@ -837,11 +837,14 @@ class Agent:
         # Compartment Rung 1: a sealed agent runs no further tools. Its prior
         # blackboard posts are also withheld (see Blackboard.render).
         q = getattr(self.ctx, "quarantine", None)
-        if q is not None and q.is_sealed(self.name):
-            return (
-                f"⚠ Agent sealed by compartment quarantine "
-                f"({q.reason(self.name)}). No further tools will run."
-            )
+        if q is not None:
+            # Register this agent's domain so a Rung-2 sector seal reaches it.
+            q.register_agent(self.name, getattr(self, "domain", None))
+            if q.is_sealed(self.name):
+                return (
+                    f"⚠ Agent sealed by compartment quarantine "
+                    f"({q.reason(self.name)}). No further tools will run."
+                )
         shield = self.ctx.shield
         if shield is not None:
             verdict = shield.scan_tool_call(name, args)

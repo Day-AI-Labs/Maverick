@@ -90,6 +90,7 @@ nav:
       - Streaming parity: performance/streaming-parity.md
   - Security:
       - Threat model: security/threat-model.md
+      - Encryption at rest: encryption.md
   - Roadmap:
       - 36-month plan: ROADMAP.md
   - Community:

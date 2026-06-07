@@ -65,3 +65,39 @@ class TestBlackboardWithholding:
         bb = Blackboard()
         bb.post("coder-1", "finding", "hello world")
         assert "hello world" in bb.render()
+
+
+class TestSectorSeal:
+    def test_seal_domain_reaches_registered_agents(self):
+        reg = QuarantineRegistry()
+        reg.register_agent("finance-1", "finance")
+        reg.register_agent("legal-1", "legal")
+        assert reg.is_sealed("finance-1") is False
+        reg.seal_domain("finance", "breach")
+        assert reg.is_sealed("finance-1") is True   # sealed via its domain
+        assert reg.is_sealed("legal-1") is False     # other domain untouched
+        assert reg.is_domain_sealed("finance") is True
+        assert reg.reason("finance-1").startswith("sector 'finance'")
+
+    def test_two_sealed_agents_escalate_to_sector_seal(self):
+        reg = QuarantineRegistry()
+        reg.register_agent("finance-1", "finance")
+        reg.register_agent("finance-2", "finance")
+        triage_block(reg, "finance-1", "critical", "x")
+        assert reg.is_domain_sealed("finance") is False  # one agent: no sector seal
+        triage_block(reg, "finance-2", "critical", "y")
+        assert reg.is_domain_sealed("finance") is True    # two: sector sealed
+
+    def test_unseal_domain_lifts_seal(self):
+        reg = QuarantineRegistry()
+        reg.register_agent("finance-1", "finance")
+        reg.seal_domain("finance", "breach")
+        assert reg.is_sealed("finance-1") is True
+        reg.unseal_domain("finance")
+        assert reg.is_sealed("finance-1") is False
+
+    def test_untagged_agent_unaffected_by_sector_seal(self):
+        reg = QuarantineRegistry()
+        reg.register_agent("plain", None)  # no domain
+        reg.seal_domain("finance", "breach")
+        assert reg.is_sealed("plain") is False

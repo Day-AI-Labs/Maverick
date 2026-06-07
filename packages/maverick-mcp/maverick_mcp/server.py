@@ -589,7 +589,7 @@ class MCPServer:
             }],
         }
 
-    def handle_tools_call(self, params: dict) -> dict:
+    def handle_tools_call(self, params: dict, *, task_owner: str | None = None) -> dict:
         name = params.get("name")
         if name not in _TOOL_NAMES:
             raise _ProtocolError(-32602, f"unknown tool: {name!r}")
@@ -610,7 +610,8 @@ class MCPServer:
             if not _tool_supports_tasks(tool_spec):
                 raise _ProtocolError(
                     -32601, f"tool {name!r} does not support task augmentation")
-            task = self._task_store().create(name, arguments, task_param)
+            task = self._task_store().create(
+                name, arguments, task_param, owner=task_owner)
             # The frozen creation snapshot: a CreateTaskResult always reports the
             # initial `working` status, even if a fast tool already finished.
             return {"task": task.create_result}
@@ -1109,21 +1110,21 @@ class MCPServer:
         if not self._tasks_enabled:
             raise _ProtocolError(-32601, "tasks capability not enabled on this transport")
 
-    def handle_tasks_get(self, params: dict) -> dict:
+    def handle_tasks_get(self, params: dict, *, task_owner: str | None = None) -> dict:
         self._require_tasks_enabled()
-        return self._task_store().get(params.get("taskId"))
+        return self._task_store().get(params.get("taskId"), owner=task_owner)
 
-    def handle_tasks_result(self, params: dict) -> dict:
+    def handle_tasks_result(self, params: dict, *, task_owner: str | None = None) -> dict:
         self._require_tasks_enabled()
-        return self._task_store().result(params.get("taskId"))
+        return self._task_store().result(params.get("taskId"), owner=task_owner)
 
-    def handle_tasks_cancel(self, params: dict) -> dict:
+    def handle_tasks_cancel(self, params: dict, *, task_owner: str | None = None) -> dict:
         self._require_tasks_enabled()
-        return self._task_store().cancel(params.get("taskId"))
+        return self._task_store().cancel(params.get("taskId"), owner=task_owner)
 
-    def handle_tasks_list(self, params: dict) -> dict:
+    def handle_tasks_list(self, params: dict, *, task_owner: str | None = None) -> dict:
         self._require_tasks_enabled()
-        return self._task_store().list(params.get("cursor"))
+        return self._task_store().list(params.get("cursor"), owner=task_owner)
 
     def _emit_task_status(self, task) -> None:
         """Push a notifications/tasks/status when a task changes status.
