@@ -72,6 +72,17 @@ def test_attenuate_allow_only_shrinks():
     assert child2.permits("shell") is False
 
 
+def test_attenuate_disjoint_tools_deny_all_not_allow_all():
+    # Two restricted, non-overlapping tool allow-lists must NOT collapse to the
+    # empty set (which would mean "all"); the child must permit no sampled tools.
+    parent = Capability(principal="p", allow_tools=frozenset({"shell"}))
+    child = parent.attenuate(allow={"read_file"})
+    assert child.allow_tools != frozenset()  # not allow-all
+    assert child.permits("shell") is False
+    assert child.permits("read_file") is False
+    assert child.permits("web_search") is False
+
+
 def test_attenuate_max_risk_only_tightens():
     parent = Capability(principal="p", max_risk="high")
     assert parent.attenuate(max_risk="low").max_risk == "low"
@@ -413,6 +424,21 @@ def test_role_cannot_escalate_past_acl_deny(monkeypatch):
     cap = capability_from_config("user:alice")
     assert cap.permits("shell") is False
     assert cap.permits("read_file") is True
+
+
+def test_role_disjoint_allow_tools_denies_all(monkeypatch):
+    # Deployment ACL and role scopes are both ceilings. If their allow-lists are
+    # disjoint, the narrowed role must not fail open to all deployment tools.
+    _cfg(monkeypatch, {
+        "security": {"allowed_tools": ["shell"]},
+        "role_assignments": {"user:alice": "readonly"},
+        "roles": {"readonly": {"allow_tools": ["read_file"]}},
+    })
+    cap = capability_from_config("user:alice")
+    assert cap.allow_tools != frozenset()  # not allow-all
+    assert cap.permits("shell") is False
+    assert cap.permits("read_file") is False
+    assert cap.permits("web_search") is False
 
 
 def test_role_max_risk_only_tightens(monkeypatch):
