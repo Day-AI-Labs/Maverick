@@ -73,3 +73,38 @@ def test_redaction_no_secrets_passes_through_unchanged(tmp_path: Path):
     row = _read_first(list(tmp_path.glob("*.ndjson"))[0])
     assert row["output_summary"] == "ls /tmp -- nothing of interest"
     assert row["name"] == "shell"
+
+
+def test_anonymous_mode_anonymizes_audit_payload(monkeypatch, tmp_path: Path):
+    from maverick.audit.events import AuditEvent, EventKind
+    from maverick.audit.writer import AuditLog
+
+    monkeypatch.setenv("MAVERICK_ANON", "1")
+    home_path = str(Path.home() / "case_notes.txt")
+
+    al = AuditLog(audit_dir=tmp_path)
+    al.record(AuditEvent(
+        ts=5.0,
+        kind=EventKind.GOAL_START,
+        goal_id=123,
+        payload={
+            "title": "Jane Patient diabetes plan",
+            "description": "Call jane.patient@example.com at 415-555-1212",
+            "channel": "slack-C123",
+            "user_id": "user-123",
+            "path": home_path,
+            "nested": {"email": "jane.patient@example.com"},
+        },
+    ))
+
+    row = _read_first(list(tmp_path.glob("*.ndjson"))[0])
+    body = json.dumps(row)
+    assert "Jane Patient" not in body
+    assert "jane.patient@example.com" not in body
+    assert "415-555-1212" not in body
+    assert "slack-C123" not in body
+    assert "user-123" not in body
+    assert home_path not in body
+    assert row["goal_id"].startswith("goal_id#")
+    assert row["channel"].startswith("channel#")
+    assert row["path"] == "case_notes.txt"

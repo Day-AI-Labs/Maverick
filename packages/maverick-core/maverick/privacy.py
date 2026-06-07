@@ -32,12 +32,17 @@ log = logging.getLogger(__name__)
 
 _SENSITIVE_KEYS = frozenset({
     "goal_text", "title", "description", "content",
-    "prompt", "system", "messages", "answer",
-    "channel", "user_id", "from", "to", "email", "username",
-    "result", "summary",
+    "prompt", "system", "messages", "answer", "msg", "message",
+    "input_summary", "output_summary", "detail", "reason",
+    "channel", "user_id", "goal_id", "conversation_id", "from", "to",
+    "email", "username", "result", "summary",
 })
 
-_HOME_RE = re.compile(re.escape(str(Path.home())))
+_OPAQUE_TEXT_KEYS = frozenset({"goal_text", "title", "description"})
+
+
+def _home_pattern() -> re.Pattern[str]:
+    return re.compile(re.escape(str(Path.home())))
 
 
 def anon_enabled() -> bool:
@@ -70,7 +75,7 @@ def anonymize_text(text: str) -> str:
     """Strip home-path, PII, and obviously-identifying strings."""
     if not text:
         return text
-    out = _HOME_RE.sub("~", text)
+    out = _home_pattern().sub("~", text)
     # Replace email-like patterns + phones via pii_detector if available.
     try:
         from .safety.pii_detector import redact
@@ -84,12 +89,18 @@ def anonymize_field(key: str, value: Any) -> Any:
     """Apply per-field anonymization rules.
 
     - Identity fields (user_id / channel / email / etc.): hash.
-    - Text fields (title / description / content): scrub PII + paths.
+    - Goal text fields (title / description / goal_text): hash.
+    - Other sensitive text fields (content / summary / msg): scrub PII + paths.
     - Path fields: keep only the basename.
     - Anything else: return as-is.
     """
     lower = key.lower()
-    if lower in ("user_id", "username", "channel", "from", "to", "email"):
+    if lower in (
+        "user_id", "username", "channel", "goal_id", "conversation_id",
+        "from", "to", "email",
+    ):
+        return _hash_id(value, prefix=lower)
+    if lower in _OPAQUE_TEXT_KEYS:
         return _hash_id(value, prefix=lower)
     if lower in ("path", "filepath", "filename"):
         try:
@@ -101,12 +112,16 @@ def anonymize_field(key: str, value: Any) -> Any:
             return anonymize_text(value)
         if isinstance(value, list):
             return [
-                anonymize_field("content", v) if isinstance(v, str)
+                anonymize_text(v) if isinstance(v, str)
                 else (anonymize_dict(v) if isinstance(v, dict) else v)
                 for v in value
             ]
         if isinstance(value, dict):
             return anonymize_dict(value)
+    if isinstance(value, dict):
+        return anonymize_dict(value)
+    if isinstance(value, list):
+        return [anonymize_dict(v) if isinstance(v, dict) else v for v in value]
     return value
 
 
