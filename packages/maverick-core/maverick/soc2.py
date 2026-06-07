@@ -14,6 +14,8 @@ evidence request. It probes the live configuration:
   - per-user tenant isolation (``maverick.paths.tenant_by_user_enabled``)
   - per-principal usage quotas (``maverick.quotas.quotas_enforced``)
   - OIDC auth verifier (``maverick.oidc.oidc_enabled``) — optional module
+  - encryption at rest (``maverick.crypto_at_rest.at_rest_enabled``)
+  - data-subject export / DSAR (``maverick.dsar.export_subject_data`` present)
   - the append-only Ed25519 Merkle-chained audit log: does it verify, and is a
     signing key present?
 
@@ -36,8 +38,10 @@ Services Criteria lives in ``docs/compliance/soc2-controls.md``.
 """
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 # Status vocabulary for a single technical control probe.
@@ -91,6 +95,38 @@ def _probe_toggle(import_path: str, attr: str) -> dict[str, Any]:
     }
 
 
+def _probe_present(import_path: str, attr: str) -> dict[str, Any]:
+    """Probe whether a *capability* (a callable) is shipped, fail-soft.
+
+    Unlike :func:`_probe_toggle`, this reports the mere presence of an
+    implemented feature rather than a runtime on/off toggle: it never calls
+    ``attr``, only checks the module imports and the attribute is callable. Used
+    for controls whose existence is the control (e.g. a DSAR export endpoint:
+    GDPR Art. 15/20 access/portability is satisfied by the code being there).
+
+    Order of outcomes (same fail-soft discipline as :func:`_probe_toggle`):
+      - module missing / unimportable -> ``absent``
+      - attr missing / not callable   -> ``absent`` (an unshipped feature)
+      - both present                  -> ``enabled``
+
+    Returns ``status`` from the shared vocabulary plus ``enabled`` (``True`` iff
+    the capability is present). It never invokes the feature, so — unlike a
+    toggle probe — there is no ``disabled``/``unknown`` outcome here.
+    """
+    import importlib
+
+    try:
+        module = importlib.import_module(import_path)
+    except BaseException:  # noqa: BLE001 — fail-soft; absent OR unimportable
+        return {"status": STATUS_ABSENT, "enabled": False}
+
+    fn = getattr(module, attr, None)
+    if not callable(fn):
+        return {"status": STATUS_ABSENT, "enabled": False}
+
+    return {"status": STATUS_ENABLED, "enabled": True}
+
+
 def _safe(fn: Callable[[], Any], default: Any) -> Any:
     """Run ``fn`` and swallow anything it throws, returning ``default``.
 
@@ -114,6 +150,33 @@ def _resolve_audit_dir():
     from .paths import data_dir
 
     return data_dir("audit")
+
+
+def _day_files_are_plain_unsigned(day_files: list[Path]) -> bool:
+    """Return true when day-files contain only unsigned writer rows.
+
+    Audit signing is optional.  With signing disabled the writer emits plain
+    NDJSON rows that have none of the signing metadata fields; those logs are
+    expected not to have a signed anchor ledger.  Signed rows, partially signed
+    rows, or malformed JSON are not treated as this benign state.
+    """
+    saw_row = False
+    for path in day_files:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                saw_row = True
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    return False
+                present = {
+                    field for field in ("hash", "sig", "key_id") if data.get(field)
+                }
+                if present:
+                    return False
+    return saw_row
 
 
 def _probe_audit_chain() -> dict[str, Any]:
@@ -165,6 +228,11 @@ def _probe_audit_chain() -> dict[str, Any]:
         ),
         [],
     )
+    unsigned_anchor_gap = _safe(
+        lambda: _day_files_are_plain_unsigned(day_files)
+        and not (audit_dir / ".anchors.required").exists(),
+        False,
+    )
     real_breaks = 0  # genuine tamper/verify failures
     unsigned_rows = 0  # rows missing hash/sig/key_id (signing simply off)
     first_reason: str | None = None
@@ -203,6 +271,11 @@ def _probe_audit_chain() -> dict[str, Any]:
         reason = getattr(b, "reason", "")
         if reason == "no_crypto":
             no_crypto = True
+            continue
+        # Unsigned deployments never create the cross-file anchor ledger.  A
+        # completed plain NDJSON day-file with no ledger marker is therefore
+        # the documented ``unsigned`` configuration state, not tampering.
+        if reason == "anchor_ledger_missing" and unsigned_anchor_gap:
             continue
         real_breaks += 1
         if first_reason is None:
@@ -277,6 +350,9 @@ def collect_soc2_evidence() -> dict[str, Any]:
           * ``tenant_isolation``       — per-user multi-tenant data isolation
           * ``usage_quotas``           — per-principal daily spend/token caps
           * ``oidc_auth``              — OIDC ID-token verifier (optional module)
+          * ``encryption_at_rest``     — AES-256-GCM at-rest encryption toggle
+          * ``data_subject_export``    — DSAR access/portability export present
+            (a presence probe: ``enabled``/``absent``, never a runtime toggle)
       - ``audit_log``    — audit-chain verification: ``ok`` / ``broken`` /
         ``unsigned`` / ``empty`` / ``no_crypto`` / ``unknown`` (see
         ``_probe_audit_chain``)
@@ -298,6 +374,12 @@ def collect_soc2_evidence() -> dict[str, Any]:
             ),
             "usage_quotas": _probe_toggle("maverick.quotas", "quotas_enforced"),
             "oidc_auth": _probe_toggle("maverick.oidc", "oidc_enabled"),
+            "encryption_at_rest": _probe_toggle(
+                "maverick.crypto_at_rest", "at_rest_enabled"
+            ),
+            "data_subject_export": _probe_present(
+                "maverick.dsar", "export_subject_data"
+            ),
         },
         "audit_log": _safe(_probe_audit_chain, {"status": STATUS_UNKNOWN}),
         "audit_signing_key": _safe(_probe_signing_key, {"status": STATUS_UNKNOWN}),

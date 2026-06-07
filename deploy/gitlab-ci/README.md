@@ -17,7 +17,7 @@ that `extends` the hidden `.maverick` job:
 
 ```yaml
 include:
-  - remote: 'https://gitlab.com/cdayAI/maverick/-/raw/main/deploy/gitlab-ci/maverick.gitlab-ci.yml'
+  - remote: 'https://gitlab.com/Day-AI-Labs/maverick/-/raw/main/deploy/gitlab-ci/maverick.gitlab-ci.yml'
 
 maverick:
   extends: .maverick

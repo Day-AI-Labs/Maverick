@@ -743,12 +743,23 @@ def pick_safety() -> dict[str, Any]:
         "permissive": "critical",
         "off": "critical",
     }[profile]
+    # Agent compartments: when one agent's scan blocks a threat, record its
+    # signature so the rest of the swarm is immune to the same attack for the
+    # run. Moot with safety off (nothing scans). Off by default.
+    compartments = False
+    if profile != "off":
+        compartments = _q_confirm(
+            "  Enable agent compartments (one agent's blocked threat immunizes "
+            "the rest of the swarm for the run)?",
+            default=False,
+        )
     return {
         "profile": profile,
         "block_threshold": threshold,
         "scan_input": profile != "off",
         "scan_tool_calls": profile != "off",
         "scan_output": profile != "off",
+        "compartments": compartments,
     }
 
 
@@ -998,6 +1009,13 @@ def pick_advanced() -> dict[str, Any]:
             "Encrypt sensitive local stores at rest? Seals the cross-session "
             "memory store with AES-256-GCM (key in ~/.maverick/keys, chmod 600). "
             "Implied by enterprise mode; recommended for PHI/PII/financial data.",
+            default=False,
+        ),
+        "audit_sign": _q_confirm(
+            "Sign the audit log for tamper-evidence? Ed25519 hash-chains every "
+            "audit row (plus a signed cross-file ledger) so `maverick audit verify` "
+            "can prove the log was not altered — the basis for SOC 2 evidence. "
+            "Needs the [audit-signing] extra; falls back to unsigned if absent.",
             default=False,
         ),
         "deferred_tools": _q_confirm(
@@ -1948,6 +1966,10 @@ def write_config(
             lines.append("")
             lines.append("[encryption]")
             lines.append("at_rest = true")
+        if advanced.get("audit_sign"):
+            lines.append("")
+            lines.append("[audit]")
+            lines.append("sign = true")
         if advanced.get("tree_of_thought"):
             lines.append("")
             lines.append("[planning]")
@@ -2169,6 +2191,7 @@ def run_fast() -> int:
         "scan_input": True,
         "scan_tool_calls": True,
         "scan_output": True,
+        "compartments": False,
     }
     budget = {
         "max_dollars": 5.0,

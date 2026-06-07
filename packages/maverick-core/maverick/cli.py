@@ -2291,30 +2291,70 @@ def audit_grep(pattern: str, day: str | None) -> None:
 
 @audit.command("verify")
 @click.option("--day", default=None, help="YYYY-MM-DD (default: today).")
-@click.option("--file", "file_", default=None, type=click.Path(), help="Audit file to verify.")
+@click.option("--all", "all_days", is_flag=True,
+              help="Verify every YYYY-MM-DD.ndjson day-file in the audit dir.")
+@click.option("--tenant", default=None,
+              help="Tenant whose audit dir to verify (default: active/none).")
+@click.option("--file", "file_", default=None, type=click.Path(),
+              help="A single audit file to verify (overrides --day/--all).")
 @click.option(
     "--pubkey", default=None,
     help="Trusted Ed25519 pubkey (hex). Required for real third-party "
          "tamper-evidence; without it a locally-held key is trusted.",
 )
-def audit_verify(day: str | None, file_: str | None, pubkey: str | None) -> None:
-    """Verify the Ed25519 hash-chain of a (signed) audit log.
+def audit_verify(
+    day: str | None, all_days: bool, tenant: str | None,
+    file_: str | None, pubkey: str | None,
+) -> None:
+    """Verify the tamper-evident audit log and exit non-zero on any break.
 
-    Reports any broken links/signatures. Exits non-zero if the chain is
-    not intact, so it can gate CI / cron checks. Only meaningful when
-    audit signing is enabled ([audit] sign = true).
+    Walks the Ed25519 hash-chain of the audit day-file(s) and the cross-file
+    tip-ledger, printing a concise OK / per-file break report. Exits 1 if any
+    break is found and 0 if clean, so CI / cron / SOC 2 evidence checks can gate
+    on it. By default it verifies today's day-file; ``--all`` sweeps every
+    day-file in the audit dir. Only meaningful when audit signing is enabled
+    ([audit] sign = true).
+
+    If ``cryptography`` is unavailable the chain can't be verified at all; that
+    is reported and exits 0 (can't verify is not the same as tampered).
     """
     import datetime as _dt
     from pathlib import Path as _Path
 
     from .audit import verify_anchors, verify_chain
-    from .audit.writer import DEFAULT_AUDIT_DIR
+    from .audit.signing import _have_crypto
+    from .paths import data_dir
+
+    # Fail-soft on missing crypto: we cannot prove anything either way, so
+    # report it clearly and exit 0 rather than flag a (possibly intact) log as
+    # tampered. Matches the repo's fail-open crypto convention.
+    if not _have_crypto():
+        click.echo(
+            "cannot verify: 'cryptography' is not installed, so the audit "
+            "chain's signatures can't be checked (this is not evidence of "
+            "tampering). Install: pip install 'maverick-agent[audit-signing]'"
+        )
+        return
+
+    # Resolve the audit dir tenant-aware (matching the writer/signer), unless an
+    # explicit --file pins one file in some other location.
+    audit_dir = data_dir("audit", tenant=tenant) if tenant else data_dir("audit")
 
     if file_:
-        path = _Path(file_)
+        paths = [_Path(file_)]
+        anchor_dir = paths[0].parent
+    elif all_days:
+        # The anchor ledger is verified separately as the tip-ledger; don't
+        # also walk it as if it were a day-file.
+        paths = [p for p in sorted(audit_dir.glob("*.ndjson"))
+                 if p.name != "anchors.ndjson"]
+        anchor_dir = audit_dir
+        if not paths:
+            click.echo(f"no audit day-files in {audit_dir}")
     else:
         d = day or _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
-        path = DEFAULT_AUDIT_DIR / f"{d}.ndjson"
+        paths = [audit_dir / f"{d}.ndjson"]
+        anchor_dir = audit_dir
 
     if not pubkey:
         click.echo(
@@ -2322,26 +2362,34 @@ def audit_verify(day: str | None, file_: str | None, pubkey: str | None) -> None
             "third-party tamper-evidence, pass the externally-held pubkey.",
             err=True,
         )
-    breaks = verify_chain(path, pubkey_hex=pubkey)
+
+    any_break = False
+    for path in paths:
+        breaks = verify_chain(path, pubkey_hex=pubkey)
+        if breaks:
+            any_break = True
+            click.echo(f"FAIL: {len(breaks)} issue(s) in {path}", err=True)
+            for b in breaks:
+                click.echo(f"  line {b.line_no}: {b.reason} — {b.detail}", err=True)
+        else:
+            click.echo(f"OK: chain intact ({path})")
+
     # Cross-file check: a whole deleted/truncated day-file is invisible to the
     # per-file chain above; the signed tip-ledger catches it.
-    anchor_dir = path.parent if file_ else DEFAULT_AUDIT_DIR
     anchor_breaks = verify_anchors(anchor_dir, pubkey_hex=pubkey)
-    if not breaks and not anchor_breaks:
-        click.echo(f"OK: chain intact ({path}); tip-ledger intact ({anchor_dir})")
-        return
-    if breaks:
-        click.echo(f"FAIL: {len(breaks)} issue(s) in {path}", err=True)
-        for b in breaks:
-            click.echo(f"  line {b.line_no}: {b.reason} — {b.detail}", err=True)
     if anchor_breaks:
+        any_break = True
         click.echo(
             f"FAIL: {len(anchor_breaks)} cross-file tip-ledger issue(s) in {anchor_dir}",
             err=True,
         )
         for b in anchor_breaks:
             click.echo(f"  anchor: {b.reason} — {b.detail}", err=True)
-    raise SystemExit(1)
+    else:
+        click.echo(f"OK: tip-ledger intact ({anchor_dir})")
+
+    if any_break:
+        raise SystemExit(1)
 
 
 # ----- Killswitch --------------------------------------------------------
@@ -2496,6 +2544,32 @@ def logs_cmd(pattern: str | None, num: int, day: str | None) -> None:
 
 # ----- SOC 2 evidence --------------------------------------------------
 
+_REQUIRED_SOC2_CONTROLS = (
+    "capability_enforcement",
+    "tenant_isolation",
+    "usage_quotas",
+    "oidc_auth",
+)
+
+
+def _soc2_posture_ready(evidence) -> bool:
+    """Return True only when required SOC 2 controls report a ready posture."""
+    controls = evidence.get("controls", {}) if isinstance(evidence, dict) else {}
+    if not isinstance(controls, dict):
+        return False
+    for control in _REQUIRED_SOC2_CONTROLS:
+        probe = controls.get(control, {})
+        if not isinstance(probe, dict) or probe.get("status") != "enabled":
+            return False
+
+    audit_log = evidence.get("audit_log", {}) if isinstance(evidence, dict) else {}
+    if not isinstance(audit_log, dict) or audit_log.get("status") != "ok":
+        return False
+
+    signing_key = evidence.get("audit_signing_key", {}) if isinstance(evidence, dict) else {}
+    return isinstance(signing_key, dict) and signing_key.get("status") == "enabled"
+
+
 @main.command("soc2")
 @click.option("--json", "compact", is_flag=True,
               help="Emit compact single-line JSON (default: pretty, indent=2).")
@@ -2505,7 +2579,8 @@ def soc2(compact: bool) -> None:
     Serializes ``collect_soc2_evidence()`` -- which controls are ON in this
     deployment and whether the audit log verifies -- for auditors / CI /
     automation. The collector is fail-soft (it never raises), so this command
-    always emits a JSON object and exits 0.
+    always emits a JSON object. The command exits non-zero when required
+    controls or audit-log checks are not in a SOC 2-ready state.
     """
     import json as _json
 
@@ -2515,6 +2590,8 @@ def soc2(compact: bool) -> None:
         click.echo(_json.dumps(evidence, default=str))
     else:
         click.echo(_json.dumps(evidence, default=str, indent=2))
+    if not _soc2_posture_ready(evidence):
+        sys.exit(1)
 
 
 # ----- DSAR subject-data export ----------------------------------------

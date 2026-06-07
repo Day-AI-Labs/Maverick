@@ -7,7 +7,7 @@
 ## How to reach us
 
 - **Conduct / community issues**: open a private security advisory at
-  https://github.com/cdayAI/Maverick/security/advisories/new
+  https://github.com/Day-AI-Labs/Maverick/security/advisories/new
   with `[CONDUCT]` in the title.
 - **Security vulnerabilities**: see [SECURITY.md](SECURITY.md).
 - **General questions**: GitHub Discussions (when enabled), or open a

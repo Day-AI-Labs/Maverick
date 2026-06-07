@@ -4,7 +4,7 @@
 # sed-substitute %i yourself), or systemd gets an empty User= and broken paths.
 [Unit]
 Description=Maverick agent (long-horizon multi-agent swarm)
-Documentation=https://github.com/cdayAI/maverick
+Documentation=https://github.com/Day-AI-Labs/maverick
 After=network-online.target
 Wants=network-online.target
 

@@ -59,13 +59,41 @@ def _sanitize_persisted_prompt_text(
 def _build_shield() -> Any | None:
     try:
         from maverick_shield import Shield
-        return Shield.from_config()
+        shield: Any = Shield.from_config()
     except ImportError:
         log.warning("maverick-shield not installed; tool-call scans disabled")
         return None
     except Exception as e:  # pragma: no cover
         log.error("Shield construction failed (fail-open): %s", e)
         return None
+    # Agent compartments: wrap the single swarm-shared shield with a run-scoped
+    # threat ledger so a block by any agent immunizes the rest of the swarm for
+    # the run (docs/proposals/agent-compartments.md). Opt-in, fail-open.
+    try:
+        from maverick_shield.compartment import (
+            ImmunizingShield,
+            compartments_enabled,
+        )
+        if compartments_enabled():
+            return ImmunizingShield(base=shield)
+    except Exception as e:  # pragma: no cover
+        log.error("Compartment wrap failed (fail-open): %s", e)
+    return shield
+
+
+def _compartments_enabled() -> bool:
+    """Agent-compartments flag, read kernel-side (no maverick-shield dependency,
+    per kernel rule 1). Mirrors maverick_shield.compartment.compartments_enabled."""
+    import os
+    if os.environ.get("MAVERICK_COMPARTMENTS", "").strip().lower() in (
+        "1", "true", "yes", "on"
+    ):
+        return True
+    try:
+        from .config import get_safety
+        return bool(get_safety().get("compartments", False))
+    except Exception:  # pragma: no cover -- flag lookup must fail soft to off
+        return False
 
 
 def _format_tree_of_thought_plan(winning_plan: str, *, shield: Any | None = None) -> str:
@@ -356,6 +384,13 @@ async def run_goal(
         episode_id = world.start_episode(goal_id)
     blackboard = Blackboard()
     blackboard.attach_world(world, goal_id)  # persist every post for live streaming
+    # Agent compartments (Rung 1): wire a run-scoped quarantine registry so a
+    # sealed agent's posts are withheld and its tools refused. Off by default.
+    quarantine = None
+    if _compartments_enabled():
+        from .quarantine import QuarantineRegistry
+        quarantine = QuarantineRegistry()
+        blackboard.attach_quarantine(quarantine)
     sandbox = sandbox or LocalBackend()
     shield = _build_shield()
 
@@ -420,7 +455,7 @@ async def run_goal(
         ctx = SwarmContext(
             llm=llm, world=world, budget=budget, blackboard=blackboard,
             sandbox=sandbox, goal_id=goal_id, max_depth=max_depth,
-            shield=shield, mcp_clients=mcp_clients,
+            shield=shield, quarantine=quarantine, mcp_clients=mcp_clients,
             channel=channel, user_id=user_id, episode_id=episode_id,
         )
 

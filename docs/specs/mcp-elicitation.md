@@ -1,6 +1,6 @@
 # Design Spec: MCP Elicitation → Shield/Consent
 
-**Status:** Phases 1–2 shipped (client inbound handler + server outbound form mode); Phase 3 (URL mode) proposed · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (B1) ([#396](https://github.com/cdayAI/Maverick/issues/396)) · **Date:** May 2026
+**Status:** Phases 1–2 shipped (client inbound handler + server outbound form mode); Phase 3 (URL mode) proposed · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (B1) ([#396](https://github.com/Day-AI-Labs/Maverick/issues/396)) · **Date:** May 2026
 
 > Proposal for discussion. Stops at interface + integration points; module
 > names/handlers should be confirmed against current code at implementation time.

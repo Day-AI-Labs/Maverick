@@ -1,6 +1,6 @@
 # Maverick
 
-[![CI](https://github.com/cdayAI/maverick/actions/workflows/ci.yml/badge.svg)](https://github.com/cdayAI/maverick/actions/workflows/ci.yml)
+[![CI](https://github.com/Day-AI-Labs/maverick/actions/workflows/ci.yml/badge.svg)](https://github.com/Day-AI-Labs/maverick/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org)
 
@@ -42,7 +42,7 @@ Alpha, but **installable today**: all six packages are on [PyPI](https://pypi.or
 
 ### Download the app — no terminal needed (easiest)
 
-Grab the installer for your OS from the **[latest release ›](https://github.com/cdayAI/Maverick/releases/latest)**, double-click it, then press **Install Maverick**:
+Grab the installer for your OS from the **[latest release ›](https://github.com/Day-AI-Labs/Maverick/releases/latest)**, double-click it, then press **Install Maverick**:
 
 | OS | File on the release |
 |---|---|
@@ -74,7 +74,7 @@ pipx inject maverick-agent maverick-installer
 ### From source
 
 ```bash
-git clone https://github.com/cdayAI/maverick
+git clone https://github.com/Day-AI-Labs/maverick
 cd maverick
 pip install -e ./packages/maverick-core
 pip install -e ./apps/installer-cli
@@ -170,7 +170,7 @@ Run the swarm inside any repo's GitHub Actions — on a PR, a schedule, or on
 demand — under a hard spend cap:
 
 ```yaml
-- uses: cdayAI/maverick/deploy/github-action@v0.1.6
+- uses: Day-AI-Labs/maverick/deploy/github-action@v0.1.6
   with:
     goal: "Summarize this PR and flag anything risky."
     max-dollars: "0.50"

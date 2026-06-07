@@ -15,8 +15,9 @@ Unlike skills (whose installable artifact is a fetched ``SKILL.md`` verified by
 `MCPClient.start()` (the CVE-2026-30615 class) — not a hash of the spec text.
 
 Install validates the spec through `MCPServerSpec.from_config` (the same
-subprocess-injection / url checks the kernel applies to hand-written config) and
-writes it to ``~/.maverick/config.toml`` under ``[mcp_servers.<name>]``.
+subprocess-injection / url checks the kernel applies to hand-written config),
+then applies registry-specific hardening before writing it to
+``~/.maverick/config.toml`` under ``[mcp_servers.<name>]``.
 """
 from __future__ import annotations
 
@@ -32,6 +33,28 @@ log = logging.getLogger(__name__)
 # (it serves ``/mcp/index.json`` alongside ``/skills/index.json``). Override with
 # ``[mcp_registries] indexes`` in config or by passing ``indexes=`` explicitly.
 DEFAULT_MCP_REGISTRIES = catalog.DEFAULT_INDEXES
+
+_REGISTRY_EVAL_FLAGS = {
+    "sh": {"-c"},
+    "bash": {"-c"},
+    "dash": {"-c"},
+    "zsh": {"-c"},
+    "fish": {"-c"},
+    "ksh": {"-c"},
+    "csh": {"-c"},
+    "tcsh": {"-c"},
+    "python": {"-c"},
+    "python2": {"-c"},
+    "python3": {"-c"},
+    "node": {"-e", "--eval", "-p", "--print"},
+    "perl": {"-e", "-E"},
+    "ruby": {"-e"},
+    "php": {"-r", "-B", "-R", "-E"},
+    "lua": {"-e"},
+    "powershell": {"-command", "-encodedcommand", "-enc"},
+    "pwsh": {"-command", "-encodedcommand", "-enc"},
+    "cmd": {"/c", "/k"},
+}
 
 _BARE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -65,16 +88,59 @@ def resolve_mcp(name: str, *, indexes: list[str] | None = None) -> catalog.Catal
         name, "mcp", indexes=indexes if indexes is not None else _configured_mcp_registries())
 
 
+def _command_basename(command: str) -> str:
+    """Return a normalized executable basename for registry policy checks."""
+    base = command.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    if base.endswith(".exe"):
+        base = base[:-4]
+    return base
+
+
+def _validate_registry_spec(spec: MCPServerSpec) -> None:
+    """Apply extra policy for untrusted registry-sourced stdio specs.
+
+    Operator-authored config may intentionally launch arbitrary local commands,
+    but registry entries are network-fed data. Require stdio registry entries to
+    pin their executable and reject shell/interpreter inline-eval forms such as
+    ``sh -c`` or ``node -e`` that turn the registry args into host code.
+    """
+    if spec.is_http:
+        return
+    if not spec.pin_sha256:
+        raise ValueError(
+            f"MCP registry entry {spec.name!r} uses stdio command {spec.command!r} "
+            "without pin_sha256; registry-installed commands must pin the "
+            "executable hash"
+        )
+    eval_flags = _REGISTRY_EVAL_FLAGS.get(_command_basename(spec.command))
+    if not eval_flags:
+        return
+    lowered_flags = {flag.lower() for flag in eval_flags}
+    for arg in spec.args:
+        flag = arg.split("=", 1)[0].lower()
+        if flag in lowered_flags:
+            raise ValueError(
+                f"MCP registry entry {spec.name!r} uses interpreter "
+                f"{spec.command!r} with inline execution flag {arg!r}; "
+                "registry entries must reference a pinned MCP executable or "
+                "script file instead"
+            )
+
+
 def spec_from_entry(entry: catalog.CatalogEntry) -> MCPServerSpec:
     """Build a validated MCPServerSpec from a registry entry's inline spec.
 
-    Raises CatalogError if the entry has no inline spec, and ValueError (from
-    MCPServerSpec validation) if the spec is malformed / unsafe."""
+    Raises CatalogError if the entry has no inline spec, and ValueError if the
+    spec is malformed or violates registry-specific untrusted-input policy."""
     if not entry.spec:
         raise catalog.CatalogError(
             f"MCP registry entry {entry.name!r} has no inline spec to install")
-    # from_config applies the CVE-2026-30615 subprocess-injection + url checks.
-    return MCPServerSpec.from_config(entry.name, entry.spec)
+    # from_config applies the baseline subprocess-injection + url checks used
+    # for hand-written config; registry entries then get stricter supply-chain
+    # policy because they are untrusted network-fed data.
+    spec = MCPServerSpec.from_config(entry.name, entry.spec)
+    _validate_registry_spec(spec)
+    return spec
 
 
 def install_mcp_from_registry(name: str, *, indexes: list[str] | None = None) -> MCPServerSpec:

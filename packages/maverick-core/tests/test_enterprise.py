@@ -78,6 +78,51 @@ def test_extra_local_providers_allow_listed(monkeypatch):
         assert_provider_allowed("openai")
 
 
+def test_extra_local_providers_cannot_allow_list_cloud_names(monkeypatch):
+    monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda *a, **k: {"enterprise": {"local_providers": ["openai", "claude"]}},
+    )
+    assert not is_local_provider("openai")
+    assert not is_local_provider("anthropic")
+    with pytest.raises(EgressBlocked) as exc:
+        assert_provider_allowed("openai")
+    assert exc.value.provider == "openai"
+
+
+def test_openai_compatible_requires_local_endpoint_when_allow_listed(monkeypatch):
+    monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda *a, **k: {
+            "enterprise": {"local_providers": ["custom"]},
+            "providers": {
+                "openai_compatible": {"base_url": "https://api.groq.com/openai/v1"}
+            },
+        },
+    )
+    assert not is_local_provider("custom")
+    with pytest.raises(EgressBlocked) as exc:
+        assert_provider_allowed("openai-compatible")
+    assert exc.value.provider == "openai_compatible"
+
+
+def test_openai_compatible_local_endpoint_can_be_allow_listed(monkeypatch):
+    monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda *a, **k: {
+            "enterprise": {"local_providers": ["custom"]},
+            "providers": {
+                "openai_compatible": {"base_url": "http://127.0.0.1:8000/v1"}
+            },
+        },
+    )
+    assert is_local_provider("custom")
+    assert assert_provider_allowed("openai_compatible") is None
+
+
 def test_consent_defaults_fail_closed_in_enterprise(monkeypatch):
     # Off -> auto-approve (unchanged behavior).
     assert consent._resolve_mode() == "auto-approve"
