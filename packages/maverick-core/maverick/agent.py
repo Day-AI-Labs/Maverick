@@ -1006,14 +1006,36 @@ class Agent:
         # capability above, an org-level policy can DENY an action outright or
         # REQUIRE_HUMAN sign-off (EU AI Act Art 14). Default-open -- an empty
         # [governance] policy returns ALLOW, so this is a no-op for non-
-        # enterprise installs. Fail-open on an unexpected error: a governance
-        # bug must never wedge the tool path.
+        # enterprise installs. Fail behaviour is split (hardening): if a policy
+        # IS configured but evaluating THIS action errors, fail CLOSED + log
+        # loudly -- a config/classifier bug must never silently bypass the
+        # oversight gate. If governance/config can't load at all (can't even
+        # tell a policy is set), fail open + log, so a broken import never wedges
+        # every tool for non-enterprise installs.
+        _gov = None
         try:
             from .governance import Decision as _GovDecision
+            from .governance import Policy as _GovPolicy
+            from .governance import Verdict as _GovVerdict
             from .governance import evaluate as _gov_evaluate
-            _gov = _gov_evaluate(name)  # org policy; capability already gated above
-        except Exception:  # pragma: no cover -- never block the loop on a gov bug
-            _gov = None
+            _gov_policy = _GovPolicy.from_config()
+        except Exception:  # governance unavailable -> can't enforce; fail open (logged)
+            log.warning("governance: unavailable; enforcement skipped for %r", name)
+            _gov_policy = None
+        if _gov_policy is not None and not _gov_policy.is_empty():
+            try:
+                _gov = _gov_evaluate(name, policy=_gov_policy)
+            except Exception:
+                log.warning("governance: evaluation failed for %r; failing closed",
+                            name, exc_info=True)
+                self.ctx.blackboard.post(
+                    self.name, "error",
+                    f"tool={name} BLOCKED: governance evaluation error (fail-closed)",
+                )
+                _gov = _GovVerdict(
+                    _GovDecision.DENY,
+                    "governance evaluation error (failed closed)", "error",
+                )
         if _gov is not None and _gov.decision is not _GovDecision.ALLOW:
             from .audit import EventKind, record
             _principal = getattr(cap, "principal", None) if cap is not None else None
