@@ -101,19 +101,32 @@ class Vault:
 
 
 def resolve_key(key_file: Path = _KEY_FILE) -> bytes:
-    """Key from ``MAVERICK_VAULT_KEY``, else a ``0600`` key file (created once)."""
+    """Key from ``MAVERICK_VAULT_KEY``, else a ``0600`` key file (created once).
+
+    The key file is created **atomically** with ``O_CREAT|O_EXCL`` and mode
+    ``0600`` so the secret never exists, even briefly, with default-umask
+    permissions (a write-then-chmod leaves a TOCTOU window where it's
+    group/world-readable). The parent dir is created/tightened to ``0700``.
+    """
     env = os.environ.get("MAVERICK_VAULT_KEY", "").strip()
     if env:
         return env.encode("ascii")
     if key_file.exists():
         return key_file.read_bytes().strip()
     key = generate_key()
-    key_file.parent.mkdir(parents=True, exist_ok=True)
-    key_file.write_bytes(key)
+    key_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     try:
-        os.chmod(key_file, stat.S_IRUSR | stat.S_IWUSR)  # 0600 (best effort)
+        os.chmod(key_file.parent, stat.S_IRWXU)  # 0700 — tighten a pre-existing dir
     except OSError:  # pragma: no cover -- Windows / unusual fs
         pass
+    try:
+        fd = os.open(str(key_file), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:  # lost a create race — read the winner's key
+        return key_file.read_bytes().strip()
+    try:
+        os.write(fd, key)
+    finally:
+        os.close(fd)
     return key
 
 
