@@ -663,12 +663,15 @@ def mcp_registry_list(ctx) -> None:
                    "(SWE-bench FAIL_TO_PASS). Enables test-driven verifier.")
 @click.option("--pass-to-pass", default=None,
               help="||-separated pytest node IDs that must KEEP passing.")
+@click.option("--dry-cost", is_flag=True,
+              help="Estimate cost from similar past runs and exit "
+                   "(no LLM key needed, no swarm run, no goal created).")
 @click.pass_context
 @_humane_errors
 def start(
     ctx, title, description, template_name, params,
     max_dollars, max_wall_seconds, max_depth, workdir, sandbox_backend,
-    coding_mode, best_of_n, fail_to_pass, pass_to_pass,
+    coding_mode, best_of_n, fail_to_pass, pass_to_pass, dry_cost,
 ) -> None:
     """Start a new goal and run the swarm."""
     # Coding-mode flags propagate via env so coding_mode.from_env()
@@ -682,7 +685,10 @@ def start(
         os.environ["MAVERICK_FAIL_TO_PASS"] = fail_to_pass
     if pass_to_pass:
         os.environ["MAVERICK_PASS_TO_PASS"] = pass_to_pass
-    _require_llm_key()
+    # A --dry-cost estimate needs no LLM (it never runs the swarm), so don't
+    # gate it on a provider key.
+    if not dry_cost:
+        _require_llm_key()
     if template_name:
         from .templates import load_template
         try:
@@ -708,6 +714,17 @@ def start(
     elif not title:
         click.echo("ERROR: pass TITLE or --template <name>", err=True)
         sys.exit(2)
+
+    if dry_cost:
+        # Forecast from past priced runs and exit — no goal created, no run.
+        from .cost_forecast import forecast, gather_samples, render
+        world = open_world(ctx.obj["db"])
+        try:
+            fc = forecast(gather_samples(world), f"{title} {description}".strip())
+        finally:
+            world.close()
+        click.echo(render(fc))
+        return
 
     k = _kernel()
     world = open_world(ctx.obj["db"])
