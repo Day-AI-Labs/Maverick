@@ -2,7 +2,7 @@
 
 At-a-glance index of the business-function agent suites designed for the platform.
 Full detail lives in the per-suite docs below; this is the summary to skim later.
-**Seven suites, ~270 agents.**
+**Eight suites, ~300 agents** — the core functional map of a company.
 
 - **Finance** → [`finance-agent-suite.md`](finance-agent-suite.md) — ~40 core agents, 7 towers (+ vertical packs)
 - **IT / GRC / Privacy / Security / AI-Governance** → [`it-grc-agent-suite.md`](it-grc-agent-suite.md) — 47 agents, 10 towers
@@ -11,6 +11,7 @@ Full detail lives in the per-suite docs below; this is the summary to skim later
 - **Product & Engineering** → [`product-engineering-agent-suite.md`](product-engineering-agent-suite.md) — ~40 agents, 8 towers
 - **Strategy / Corp Dev / Executive** → [`strategy-corpdev-exec-agent-suite.md`](strategy-corpdev-exec-agent-suite.md) — ~26 agents, 7 towers
 - **Legal (the GC's office)** → [`legal-agent-suite.md`](legal-agent-suite.md) — ~31 agents, 8 towers (extends `legal.toml`)
+- **Operations / Supply Chain (the COO's office)** → [`operations-supply-chain-agent-suite.md`](operations-supply-chain-agent-suite.md) — ~33 agents, 8 towers
 
 All build on [`../enterprise/architecture.md`](../enterprise/architecture.md)
 (the three-layer control plane) and [`agent-factory.md`](agent-factory.md)
@@ -295,6 +296,34 @@ legal lens on work another suite performs.
 
 ---
 
+## Operations / Supply Chain suite — the COO's office — at a glance
+
+The only suite where **agents act on the physical world** — POs commit money *and* goods,
+schedules move atoms, equipment control touches **worker safety**. Mostly greenfield (the
+physical systems of record aren't wired as connectors yet).
+
+### Eight towers (~33 agents)
+1. **Supply Chain Planning (S&OP)** — demand · supply/MRP · S&OP/IBP · inventory optimization · network/capacity
+2. **Procurement & Sourcing** — sourcing · purchasing/PO (3-way match) · supplier mgmt · supplier risk *(cross-ref finance/GRC)*
+3. **Manufacturing & Production** — scheduling · shop-floor/MES *(read; actuation refused)* · BOM/routing · yield
+4. **Quality Management** — QC/inspection · NCR/CAPA · supplier quality · compliance & recall
+5. **Logistics, Warehousing & Distribution** — TMS · WMS · inventory control · fulfillment · customs/trade/returns
+6. **Asset & Maintenance** — asset mgmt · preventive/predictive maintenance · reliability
+7. **Facilities & Real Estate** — facilities · lease *(cross-ref finance/legal)* · workplace · energy
+8. **EHS & Sustainability Ops** — workplace safety/OSHA · environmental · incident/emergency · sustainability
+
+### What's shipped & the control story
+The physical-action gate substrate (governance + consent; physical tools = `high`-risk), the
+EU AI Act critical-infrastructure classification (`ai_act.py`), Shopify (orders), Home
+Assistant (consumer IoT), ops analytics, and channels/intake. Two distinctive controls: the
+**physical-action gate** ("never move atoms" — POs/production/dispatch/actuation are human-
+authorized) and — uniquely — **safety is a refusal, not a gate** (agents never control safety-
+critical equipment or override an interlock; worker safety overrides efficiency). Procurement/
+inventory/supplier-risk/trade/ESG cross-reference finance/GRC/legal. Gaps are the systems of
+record (ERP/MRP/WMS/TMS/MES/CMMS/QMS/EHS) + industrial IoT (read-scoped).
+
+---
+
 ## Suggested first builds (highest leverage)
 
 1. **Persona-wrapper packs** for the shipped engines — finance assessors and IT-GRC
@@ -317,6 +346,13 @@ legal lens on work another suite performs.
 9. **Citation-integrity pipeline + privilege/conflict walls** (Legal) — verify-every-cite on
    CourtListener + the conflicts check / ethical-wall setup on `quarantine`/`capability`.
 
-> Note the convergence: items 2, 8, and 9 are the **same two primitives** — the amount/
-> severity-aware policy + Operating-Profile compiler, and the `quarantine`/`capability`
-> compartment walls. Build those once and every suite's keystone control lands.
+10. **The physical-action gate + safety-refusal list** (Operations) — `require_human` on
+    every physical commitment; safety-critical actuation excluded from every grant.
+
+> **The convergence.** Across all eight suites, the keystone builds reduce to **three shared
+> primitives**: (a) the **amount/severity/physical-aware policy + Operating-Profile compiler**
+> (gates finance discounting, HR comp, GTM deal-desk, ops POs, and the L0–L4 tiers); (b) the
+> **`quarantine`/`capability` compartment walls** (finance SoD, HR confidentiality, Strategy
+> MNPI, Legal privilege — all the same Rung-2 seal); and (c) **refusal lists** carried by the
+> profile compiler (HR's Art-5 prohibitions, Ops' safety-critical refusals). Build those once
+> and every suite's load-bearing control lands.
