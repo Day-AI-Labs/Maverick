@@ -387,6 +387,76 @@ def version() -> None:
 
 
 @main.command()
+@click.option("--name", default=None, help="Business name (otherwise prompted).")
+@click.option("--doc", "docs", multiple=True,
+              help="Path to a document to ingest (repeatable).")
+@click.option("--no-llm", is_flag=True,
+              help="Use deterministic generation instead of the configured LLM.")
+@click.option("--yes", is_flag=True, help="Skip the approval prompt.")
+@click.pass_context
+def onboard(ctx: click.Context, name, docs, no_llm, yes) -> None:
+    """Onboard a business: describe it + attach docs -> a sealed domain agent.
+
+    Generates a domain pack (clamped to a safe envelope), shows it for your
+    approval, and on approval saves it so the sealed, knowledge-loaded agent
+    goes live. Nothing is activated without your yes.
+    """
+    from .intake import IntakeSpec, run_intake, save_profile
+
+    name = name or click.prompt("Business name")
+    description = click.prompt("What does the business do?", default="", show_default=False)
+    industry = click.prompt("Industry (optional)", default="", show_default=False)
+    doc_paths = list(docs)
+    if not doc_paths:
+        click.echo("Attach documents (blank line to finish):")
+        while True:
+            p = click.prompt("  document path", default="", show_default=False)
+            if not p.strip():
+                break
+            doc_paths.append(p.strip())
+
+    spec = IntakeSpec(name=name, description=description, industry=industry,
+                      doc_paths=doc_paths)
+
+    llm = None
+    if not no_llm:
+        try:
+            from .llm import DEFAULT_MODEL, LLM
+            llm = LLM(model=ctx.obj.get("model") or DEFAULT_MODEL)
+        except Exception as e:  # no provider/key -> deterministic generation
+            click.echo(f"(LLM unavailable; using deterministic generation: {e})", err=True)
+    kb = None
+    try:
+        from maverick_knowledge import KnowledgeBase, build_embedder, build_store
+
+        from .config import get_knowledge
+        kcfg = get_knowledge()
+        kb = KnowledgeBase(store=build_store(kcfg), embedder=build_embedder(kcfg))
+    except Exception as e:  # knowledge layer is optional
+        if doc_paths:
+            click.echo(f"(knowledge unavailable; skipping doc ingestion: {e})", err=True)
+
+    click.echo("Generating a draft domain agent...")
+    profile = run_intake(spec, llm=llm, kb=kb)
+
+    click.echo(click.style("\nDraft domain pack (review before it goes live):", bold=True))
+    click.echo(f"  name:        {profile.name}")
+    click.echo(f"  compartment: {profile.compartment}")
+    click.echo(f"  max_risk:    {profile.max_risk}")
+    click.echo(f"  allow_tools: {', '.join(profile.allow_tools) or '(none)'}")
+    click.echo(f"  deny_tools:  {', '.join(profile.deny_tools) or '(none)'}")
+    click.echo(f"  knowledge:   {', '.join(profile.knowledge_sources) or '(none)'}")
+    click.echo(f"  persona:     {profile.persona[:400]}")
+
+    if not yes and not click.confirm("\nApprove and activate this agent?", default=False):
+        click.echo("Discarded. Nothing was saved.")
+        return
+    path = save_profile(profile, approved=True)
+    click.echo(click.style(f"\nActivated. Pack saved to {path}", fg="green"))
+    click.echo(f"Domain '{profile.name}' is now available to the swarm.")
+
+
+@main.command()
 @click.option("--principal", default=None,
               help="Principal to inspect (default: user:local). Match your "
                    "[role_assignments] key, e.g. user:<oidc-sub>.")
