@@ -232,6 +232,39 @@ def test_cli_export_output_file_is_0600(monkeypatch, tmp_path):
     assert rows[0]["name"] == "read_file"
 
 
+def test_cli_export_rejects_output_over_selected_day_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    audit_dir = tmp_path / ".maverick" / "audit"
+    _write_today(audit_dir, name="read_file")
+    day_file = audit_dir / f"{_today()}.ndjson"
+    before = day_file.read_text(encoding="utf-8")
+
+    from maverick.cli import main
+    res = CliRunner().invoke(
+        main, ["audit", "export", "--day", _today(), "-o", str(day_file)]
+    )
+    assert res.exit_code != 0
+    assert "refusing to write audit export over a source audit log file" in res.output
+    assert day_file.read_text(encoding="utf-8") == before
+
+
+def test_cli_export_all_rejects_output_over_included_day_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    audit_dir = tmp_path / ".maverick" / "audit"
+    _write_day(audit_dir, "2020-01-01", name="old_tool")
+    _write_today(audit_dir, name="today_tool")
+    old_file = audit_dir / "2020-01-01.ndjson"
+    before = old_file.read_text(encoding="utf-8")
+
+    from maverick.cli import main
+    res = CliRunner().invoke(main, ["audit", "export", "--all", "-o", str(old_file)])
+    assert res.exit_code != 0
+    assert "refusing to write audit export over a source audit log file" in res.output
+    assert old_file.read_text(encoding="utf-8") == before
+
+
 def test_cli_export_empty_log_exits_zero(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("MAVERICK_TENANT", raising=False)

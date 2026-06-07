@@ -14,6 +14,7 @@ import datetime as _dt
 import json
 import logging
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -42,6 +43,36 @@ def _audit_version() -> str:
         return "0"
 
 
+def audit_event_paths(
+    *, day: str | None = None, all_days: bool = False,
+    since: str | None = None, until: str | None = None,
+    tenant: str | None = None,
+) -> list[Path]:
+    """Return tenant-aware audit day-files selected for export."""
+    from ..paths import data_dir
+
+    audit_dir = data_dir("audit", tenant=tenant) if tenant else data_dir("audit")
+    if not audit_dir.exists() or not audit_dir.is_dir():
+        return []
+
+    if since or until:
+        # Inclusive [since, until] window over day-file dates. ISO YYYY-MM-DD
+        # sorts lexically, so a plain string compare on the file stem works.
+        lo = since or "0000-00-00"
+        hi = until or "9999-99-99"
+        return [
+            p for p in sorted(audit_dir.glob("*.ndjson"))
+            if p.name != "anchors.ndjson" and lo <= p.stem <= hi
+        ]
+    if all_days:
+        return [
+            p for p in sorted(audit_dir.glob("*.ndjson")) if p.name != "anchors.ndjson"
+        ]
+
+    d = day or _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
+    return [audit_dir / f"{d}.ndjson"]
+
+
 def iter_audit_events(
     *, day: str | None = None, all_days: bool = False,
     since: str | None = None, until: str | None = None,
@@ -56,28 +87,9 @@ def iter_audit_events(
     Malformed/unreadable lines and a missing dir are skipped silently
     (fail-soft).
     """
-    from ..paths import data_dir
-
-    audit_dir = data_dir("audit", tenant=tenant) if tenant else data_dir("audit")
-    if not audit_dir.exists() or not audit_dir.is_dir():
-        return
-
-    if since or until:
-        # Inclusive [since, until] window over day-file dates. ISO YYYY-MM-DD
-        # sorts lexically, so a plain string compare on the file stem works.
-        lo = since or "0000-00-00"
-        hi = until or "9999-99-99"
-        paths = [
-            p for p in sorted(audit_dir.glob("*.ndjson"))
-            if p.name != "anchors.ndjson" and lo <= p.stem <= hi
-        ]
-    elif all_days:
-        paths = [
-            p for p in sorted(audit_dir.glob("*.ndjson")) if p.name != "anchors.ndjson"
-        ]
-    else:
-        d = day or _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
-        paths = [audit_dir / f"{d}.ndjson"]
+    paths = audit_event_paths(
+        day=day, all_days=all_days, since=since, until=until, tenant=tenant,
+    )
 
     for path in paths:
         try:

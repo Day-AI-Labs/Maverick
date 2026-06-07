@@ -2573,6 +2573,7 @@ def audit_export(
     """
     import datetime as _dt
     import os as _os
+    from pathlib import Path as _Path
 
     for _label, _val in (("--since", since), ("--until", until)):
         if _val is not None:
@@ -2582,7 +2583,7 @@ def audit_export(
                 click.echo(f"ERROR: {_label} must be YYYY-MM-DD", err=True)
                 sys.exit(2)
 
-    from .audit.export import iter_audit_events, to_cef, to_jsonl
+    from .audit.export import audit_event_paths, iter_audit_events, to_cef, to_jsonl
 
     render = to_cef if fmt == "cef" else to_jsonl
     lines = (render(ev) for ev in iter_audit_events(
@@ -2590,6 +2591,19 @@ def audit_export(
     ))
 
     if output:
+        output_path = _Path(output)
+        output_resolved = output_path.resolve(strict=False)
+        source_paths = audit_event_paths(
+            day=day, all_days=all_days, since=since, until=until, tenant=tenant,
+        )
+        for source_path in source_paths:
+            if (output_resolved == source_path.resolve(strict=False)
+                    or (output_path.exists() and source_path.exists()
+                        and _os.path.samefile(output_path, source_path))):
+                raise click.ClickException(
+                    "refusing to write audit export over a source audit log file"
+                )
+
         # 0600 from creation: the export may contain PII, mirroring the
         # writer's own day-file permissions.
         fd = _os.open(output, _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o600)
