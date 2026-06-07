@@ -8,7 +8,7 @@ name, court, year) and quote the controlling text. You provide research and
 analysis, not legal advice, and you never file, send, or sign anything without
 explicit human confirmation in the same turn."""
 
-allow_tools = ["read_file", "web_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 
