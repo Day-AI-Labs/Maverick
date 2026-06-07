@@ -155,6 +155,15 @@ class JobQueue:
             )
             return cur.rowcount == 1
 
+    def update_payload(self, job_id: int, payload: dict) -> bool:
+        """Replace a job payload while preserving all other queue state."""
+        with self._lock, self._conn() as c:
+            cur = c.execute(
+                "UPDATE jobs SET payload=?, updated_at=? WHERE id=?",
+                (json.dumps(payload, default=str), time.time(), job_id),
+            )
+            return cur.rowcount == 1
+
     def fail(
         self,
         job_id: int,

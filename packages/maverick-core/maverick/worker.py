@@ -110,12 +110,24 @@ class Worker:
             if not text:
                 raise ValueError("start_goal payload requires non-empty 'text'")
             title = (job.payload.get("title") or text).strip()[:80]
-            from .world_model import DEFAULT_DB, open_world
-            world = open_world(DEFAULT_DB)
-            try:
-                goal_id = world.create_goal(title, text)
-            finally:
-                world.close()
+            goal_id = job.payload.get("__goal_id__")
+            if not goal_id:
+                from .world_model import DEFAULT_DB, open_world
+                world = open_world(DEFAULT_DB)
+                try:
+                    goal_id = world.create_goal(title, text)
+                finally:
+                    world.close()
+                # Persist the created goal before running it so worker retries
+                # are idempotent for this scheduled fire. Cron re-arming already
+                # happened from the original payload, so future occurrences still
+                # create their own fresh goal.
+                updated_payload = dict(job.payload)
+                updated_payload["__goal_id__"] = int(goal_id)
+                if not self.queue.update_payload(job.id, updated_payload):
+                    raise ValueError(
+                        f"unable to persist start_goal id for job {job.id}"
+                    )
             # Same retry contract as run_goal: only transient outcomes requeue.
             from .runner import run_goal_in_thread
             status = run_goal_in_thread(int(goal_id))

@@ -173,14 +173,22 @@ def test_start_goal_handler_creates_fresh_goal_and_runs_it(tmp_path, monkeypatch
 
     monkeypatch.setattr("maverick.runner.run_goal_in_thread", _fake_run)
 
-    from maverick.job_queue import Job
+    from maverick.job_queue import JobQueue
     from maverick.worker import Worker
-    w = Worker(db_path=tmp_path / "jobs.db")
-    w._handlers["start_goal"](Job(
-        id=1, kind="start_goal",
-        payload={"title": "Digest", "text": "Summarize overnight emails"},
-        run_at=0.0, status="running", attempts=1,
-    ))
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    jid = q.enqueue(
+        "start_goal",
+        {"title": "Digest", "text": "Summarize overnight emails"},
+        run_at=0.0,
+    )
+    job = q.claim(now=0.0)
+    assert job is not None
+    w = Worker(queue=q)
+    w._handlers["start_goal"](job)
+
+    stored = q.get(jid)
+    assert stored is not None
+    assert stored.payload["__goal_id__"] == seen["goal_id"]
 
     from maverick.world_model import open_world
     world = open_world(tmp_path / "world.db")
@@ -202,6 +210,51 @@ def test_start_goal_requires_text(tmp_path):
             id=1, kind="start_goal", payload={"title": "x"},
             run_at=0.0, status="running", attempts=1,
         ))
+
+
+def test_start_goal_retry_reuses_created_goal(tmp_path, monkeypatch):
+    # A retry of the same scheduled fire must re-run the goal it already
+    # created, not insert a duplicate fresh goal from the same prompt.
+    monkeypatch.setattr("maverick.world_model.DEFAULT_DB", tmp_path / "world.db")
+    statuses = iter(["error", "done"])
+    seen = []
+
+    def _fake_run(goal_id, *a, **k):
+        seen.append(goal_id)
+        return next(statuses)
+
+    monkeypatch.setattr("maverick.runner.run_goal_in_thread", _fake_run)
+
+    from maverick.job_queue import JobQueue
+    from maverick.worker import Worker
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    jid = q.enqueue(
+        "start_goal",
+        {"title": "Digest", "text": "Summarize overnight emails"},
+        run_at=0.0,
+    )
+    w = Worker(queue=q, retry_after=0.0, max_attempts=3)
+
+    assert w.run_once() is True
+    retried = q.get(jid)
+    assert retried is not None
+    assert retried.status == "pending"
+    assert retried.payload["__goal_id__"] == seen[0]
+
+    assert w.run_once() is True
+    done = q.get(jid)
+    assert done is not None
+    assert done.status == "done"
+    assert seen == [done.payload["__goal_id__"], done.payload["__goal_id__"]]
+
+    from maverick.world_model import open_world
+    world = open_world(tmp_path / "world.db")
+    try:
+        goals = world.list_goals()
+    finally:
+        world.close()
+    assert len(goals) == 1
+    assert goals[0].id == done.payload["__goal_id__"]
 
 
 def test_start_goal_recurs_with_same_prompt(tmp_path, monkeypatch):
