@@ -36,9 +36,7 @@ def assessment_tools(session) -> list[Tool]:
                     "call list_assessments first.")
         if not subject:
             return "ERROR: 'subject' is required (what you are assessing)."
-        session.type = atype
-        session.subject = subject
-        session.answers.clear()
+        session.restart(atype, subject)
         return (f"Started {tpl.title} of {subject!r}. Answer each question with "
                 f"answer_question (answer: yes/no/na/unknown):\n\n"
                 f"{render_questions_text(tpl)}")

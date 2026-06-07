@@ -57,6 +57,29 @@ def test_tools_drive_a_vendor_assessment_to_a_scored_draft():
     assert list_saved()[0]["subject"] == "Acme Corp"
 
 
+def test_starting_another_assessment_persists_a_distinct_draft():
+    session, tools = _session_and_tools()
+
+    asyncio.run(tools["start_assessment"].fn(
+        {"type": "vendor_risk", "subject": "Acme Corp"}))
+    first_id = session.id
+    first_created_at = session.created_at
+    asyncio.run(tools["answer_question"].fn(
+        {"question_id": "vr_dpa", "answer": "no"}))
+    asyncio.run(tools["finalize_assessment"].fn({}))
+
+    asyncio.run(tools["start_assessment"].fn(
+        {"type": "vendor_risk", "subject": "Beta LLC"}))
+    assert session.id != first_id
+    assert session.created_at >= first_created_at
+    asyncio.run(tools["finalize_assessment"].fn({}))
+
+    saved = {item["subject"]: item for item in list_saved()}
+    assert set(saved) == {"Acme Corp", "Beta LLC"}
+    assert saved["Acme Corp"]["risk_rating"] == "high"
+    assert saved["Beta LLC"]["risk_rating"] == "minimal"
+
+
 def test_bad_answers_are_surfaced_as_errors_not_raised():
     _, tools = _session_and_tools()
     asyncio.run(tools["start_assessment"].fn({"type": "aira", "subject": "Screener"}))
