@@ -34,6 +34,11 @@
   </div>
 
   <div class="panel">
+    <h3 style="margin-top: 0;">Pending approvals <span class="muted" style="font-size: 0.85rem; font-weight: normal;">— act on REQUIRE_HUMAN holds (EU AI Act Art 14)</span></h3>
+    {% include "_approvals_queue.html" %}
+  </div>
+
+  <div class="panel">
     <h3 style="margin-top: 0;">By guardrail</h3>
     <div class="muted" style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
       <span>governance: <strong>{{ by_kind.get('governance_denied', 0) }}</strong></span>
