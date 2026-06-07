@@ -55,18 +55,21 @@ def _iso(ts: Any) -> Any:
 
 
 def _resolve_world(tenant: str | None) -> Any:
-    """Open the tenant's ``WorldModel`` (or the default/shared one).
+    """Open the selected tenant's ``WorldModel``.
 
-    ``world_for_tenant`` already maps ``tenant=None`` to the legacy shared
-    ``~/.maverick/world.db`` and a tenant ``t`` to its isolated DB, resolving
-    the active tenant from the environment / contextvar when not given — so we
-    pass ``tenant`` straight through. Returns ``None`` (a fail-soft empty
-    section) if the world cannot be opened at all.
+    ``world_for_tenant(None)`` deliberately forces the legacy shared
+    ``~/.maverick/world.db``. A DSAR export with no explicit tenant, however,
+    should follow the active tenant (environment / contextvar) just like audit
+    export does. Pass the ``data_dir`` active-tenant sentinel through the world
+    factory when ``tenant`` is omitted, falling back to the shared DB only when
+    no tenant is active. Returns ``None`` (a fail-soft empty section) if the
+    world cannot be opened at all.
     """
     try:
         from .world_model import world_for_tenant
 
-        return world_for_tenant(tenant)
+        world_tenant = tenant if tenant else "__active__"
+        return world_for_tenant(world_tenant)
     except Exception as e:  # pragma: no cover - defensive (corrupt/locked DB)
         log.warning("dsar: could not open world model: %s", e)
         return None
