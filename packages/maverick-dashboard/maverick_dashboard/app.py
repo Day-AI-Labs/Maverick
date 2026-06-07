@@ -35,7 +35,13 @@ from maverick import a2a
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .api import router as api_router
-from .auth import execution_user_id_from_request, require_principal
+from .auth import (
+    assert_goal_access,
+    caller_principal,
+    execution_user_id_from_request,
+    goal_owner_filter,
+    require_principal,
+)
 from .oidc_login import router as oidc_login_router
 
 log = logging.getLogger(__name__)
@@ -608,10 +614,18 @@ def _load_skills():
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
     w = _world()
-    # Use SQL aggregation instead of pulling every goal into Python.
-    rows = w.conn.execute(
-        "SELECT status, COUNT(*) FROM goals GROUP BY status"
-    ).fetchall()
+    # Use SQL aggregation instead of pulling every goal into Python. Owner-scope
+    # the rollup to the caller (auth-off/admin -> all; see goal_owner_filter).
+    owner = goal_owner_filter(request)
+    if owner is None:
+        rows = w.conn.execute(
+            "SELECT status, COUNT(*) FROM goals GROUP BY status"
+        ).fetchall()
+    else:
+        rows = w.conn.execute(
+            "SELECT status, COUNT(*) FROM goals WHERE owner = ? GROUP BY status",
+            (owner,),
+        ).fetchall()
     by_status = {r[0]: int(r[1]) for r in rows}
     counts = {
         "total":   sum(by_status.values()),
@@ -620,7 +634,7 @@ async def index(request: Request) -> HTMLResponse:
         "blocked": by_status.get("blocked", 0),
     }
     # Bounded recent slice instead of "load every goal ever, take last 20".
-    recent = w.list_goals(limit=20, order="desc")
+    recent = w.list_goals(owner=owner, limit=20, order="desc")
     facts = w.get_facts()
     skills = _load_skills()
     return templates.TemplateResponse(
@@ -632,7 +646,7 @@ async def index(request: Request) -> HTMLResponse:
 
 @app.get("/goals", response_class=HTMLResponse)
 async def goals_page(request: Request) -> HTMLResponse:
-    goals = _world().list_goals(limit=200, order="desc")
+    goals = _world().list_goals(owner=goal_owner_filter(request), limit=200, order="desc")
     return templates.TemplateResponse(request, "goals.html", {"goals": goals})
 
 
@@ -996,6 +1010,10 @@ async def fleets_page(request: Request) -> HTMLResponse:
         fleets = list_fleets()
     except Exception:  # pragma: no cover - never 500 the console if the registry errors
         fleets = []
+    # Owner-scope the roster to the caller (auth-off/admin -> all).
+    owner = goal_owner_filter(request)
+    if owner is not None:
+        fleets = [f for f in fleets if f.owner == owner]
     return templates.TemplateResponse(
         request, "fleets.html",
         {
@@ -1071,7 +1089,7 @@ async def providers_api() -> JSONResponse:
 
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request) -> HTMLResponse:
-    recent = _world().list_goals(limit=10, order="desc")
+    recent = _world().list_goals(owner=goal_owner_filter(request), limit=10, order="desc")
     return templates.TemplateResponse(request, "chat.html", {"recent": recent})
 
 
@@ -1101,7 +1119,10 @@ async def chat_send(
     # The optional "Add details" textarea gives the agent a real brief; fall
     # back to the title when empty (prior behavior was description == title).
     description = (description or "").strip()
-    goal_id = w.create_goal(title[:200], (description or title)[:8000])
+    goal_id = w.create_goal(
+        title[:200], (description or title)[:8000],
+        owner=caller_principal(request) or "",
+    )
     # Use the shared runner so this path gets the same concurrency cap,
     # budget defaults, and error handling as the REST API and MCP server.
     from maverick.runner import run_goal_in_thread
@@ -1174,7 +1195,11 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
 
     check_goal_rate_limit(request, source="webhook")
     w = _world()
-    goal_id = w.create_goal(title[:200], description[:8000])
+    # HMAC webhooks carry no OIDC principal, so this resolves to "" (unowned):
+    # reachable only by no-auth/admin callers, never another tenant.
+    goal_id = w.create_goal(
+        title[:200], description[:8000], owner=caller_principal(request) or "",
+    )
 
     from maverick.runner import DEFAULT_MAX_DOLLARS, run_goal_in_thread
     budget = payload.get("budget")
@@ -1261,7 +1286,8 @@ async def _handle_issue_webhook(
     check_goal_rate_limit(request, source=f"webhook:{provider}")
     w = _world()
     title = f"{event.issue_id}: {event.title}".strip()
-    goal_id = w.create_goal(title[:200], build_brief(event)[:8000])
+    # Webhook-driven goal: no authenticated principal -> unowned ("").
+    goal_id = w.create_goal(title[:200], build_brief(event)[:8000], owner="")
     from maverick.runner import run_goal_in_thread
     bg.add_task(run_goal_in_thread, goal_id, None)
     return JSONResponse({"goal_id": goal_id}, status_code=201)
@@ -1272,14 +1298,16 @@ async def chat_goal(request: Request, goal_id: int) -> HTMLResponse:
     g = _world().get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     return templates.TemplateResponse(request, "chat_goal.html", {"goal": g})
 
 
 @app.get("/api/goal/{goal_id}")
-async def api_goal_legacy(goal_id: int) -> dict:
+async def api_goal_legacy(request: Request, goal_id: int) -> dict:
     g = _world().get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     return {"id": g.id, "status": g.status, "title": g.title, "result": g.result or ""}
 
 
@@ -1358,12 +1386,13 @@ def _build_plan_tree(world, goal_id: int, depth_cap: int = 6) -> dict:
 
 
 @app.get("/api/v1/goals/{goal_id}/tree")
-async def api_plan_tree(goal_id: int) -> dict:
+async def api_plan_tree(request: Request, goal_id: int) -> dict:
     """Plan-tree JSON: root + recursive children with status + cost."""
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     return _build_plan_tree(w, goal_id)
 
 
@@ -1412,6 +1441,7 @@ async def plan_tree_page(request: Request, goal_id: int) -> HTMLResponse:
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     root = _build_plan_tree(w, goal_id)
     tree_html = _render_tree_html(root)
     return templates.TemplateResponse(
@@ -1427,6 +1457,7 @@ async def trajectory_page(request: Request, goal_id: int) -> HTMLResponse:
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     events = w.goal_events(goal_id, limit=10_000)
     return templates.TemplateResponse(
         request, "trajectory.html",
@@ -1441,6 +1472,7 @@ async def errors_page(request: Request, goal_id: int) -> HTMLResponse:
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     errors = [e for e in w.goal_events(goal_id, limit=10_000) if e.kind == "error"]
     return templates.TemplateResponse(
         request, "errors.html",
@@ -1531,11 +1563,14 @@ async def cost_csv(month: str | None = None) -> StreamingResponse:
 
 
 @app.get("/api/goal/{goal_id}/events")
-async def api_goal_events_legacy(goal_id: int, since: int = 0, limit: int = 200) -> dict:
+async def api_goal_events_legacy(
+    request: Request, goal_id: int, since: int = 0, limit: int = 200,
+) -> dict:
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     limit = max(1, min(limit, 500))
     events = w.goal_events(goal_id, since_id=since, limit=limit)
     return {
@@ -1570,8 +1605,10 @@ async def api_goal_events_stream(request: Request, goal_id: int, since: int = 0)
     import json as _json
 
     w = _world()
-    if w.get_goal(goal_id) is None:
+    g = w.get_goal(goal_id)
+    if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
 
     # Cap concurrent streams so thousands of EventSource opens can't exhaust
     # FDs/tasks. Acquire non-blocking and return 503 when full; release in the

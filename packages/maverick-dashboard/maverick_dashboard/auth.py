@@ -15,6 +15,8 @@ only when disabled.
 """
 from __future__ import annotations
 
+import os
+
 from fastapi import HTTPException, Request
 from maverick.oidc import (
     OIDCError,
@@ -115,6 +117,104 @@ def execution_user_id_from_request(request: Request) -> str | None:
     if principal_name.startswith("user:") and len(principal_name) > len("user:"):
         return principal_name[len("user:"):]
     return None
+
+
+# ---------------------------------------------------------------------------
+# Owner-scoped multi-tenant authorization (stage 2)
+#
+# The verified principal is the unit of ownership. Goals/fleets created by a
+# caller are stamped with that caller's ``user:<sub>`` string; every read/mutate
+# of an owned resource checks the caller against the owner.
+#
+# Load-bearing invariant: when auth is OFF there is no principal, so
+# ``caller_principal`` returns None and EVERY check below is a no-op. The
+# dashboard then behaves exactly as it did before this layer existed
+# (single-user mode -- one operator owns everything).
+# ---------------------------------------------------------------------------
+
+
+def caller_principal(request: Request) -> str | None:
+    """The full ``"user:<sub>"`` identity of the caller, or None when auth is OFF.
+
+    Mirrors ``request.state.principal`` set by :func:`require_principal`. None
+    means no principal was established (OIDC/proxy/session all off) -- i.e.
+    single-user mode -- and is the signal for every scoping check to disable
+    itself and preserve legacy behaviour.
+    """
+    principal = getattr(getattr(request, "state", None), "principal", None)
+    if principal is None:
+        return None
+    name = str(getattr(principal, "principal", "") or "").strip()
+    return name or None
+
+
+def is_dashboard_admin(principal: str) -> bool:
+    """True iff ``principal`` is listed as a dashboard admin.
+
+    Admins bypass owner scoping (they see and control every goal/fleet). The
+    roster is the ``[dashboard] admins`` list in ``~/.maverick/config.toml``,
+    with an optional ``MAVERICK_DASHBOARD_ADMINS`` (comma-separated) env
+    override. Comparison is exact against the full ``"user:<sub>"`` form.
+    """
+    if not principal:
+        return False
+    admins: set[str] = set()
+    env = (os.environ.get("MAVERICK_DASHBOARD_ADMINS") or "").strip()
+    if env:
+        admins = {a.strip() for a in env.split(",") if a.strip()}
+    else:
+        try:
+            from maverick.config import load_config
+
+            raw = (load_config().get("dashboard", {}) or {}).get("admins", []) or []
+        except Exception:  # pragma: no cover - config read must never gate auth
+            raw = []
+        if isinstance(raw, str):
+            raw = [raw]
+        if isinstance(raw, (list, tuple)):
+            admins = {str(a).strip() for a in raw if str(a).strip()}
+    return principal in admins
+
+
+def goal_owner_filter(request: Request) -> str | None:
+    """The ``owner`` value to pass to ``WorldModel.list_goals``.
+
+    Returns None (no owner filter -> all goals) when the caller is unauthenticated
+    (auth off) or an admin; otherwise the caller's principal so the listing is
+    scoped to the rows they own. ``owner=None`` is the historical default, so the
+    auth-off path is unchanged.
+    """
+    principal = caller_principal(request)
+    if principal is None or is_dashboard_admin(principal):
+        return None
+    return principal
+
+
+def can_access_goal(request: Request, goal) -> bool:
+    """Whether the caller may read/mutate ``goal``.
+
+    Allowed iff auth is off (no principal), the caller is an admin, or the
+    caller owns the goal. Legacy ``owner == ""`` goals (created before this
+    layer, or by an external/webhook path) are therefore reachable only by the
+    no-auth/admin paths, never by a different authenticated user.
+    """
+    principal = caller_principal(request)
+    if principal is None:
+        return True
+    if is_dashboard_admin(principal):
+        return True
+    return getattr(goal, "owner", "") == principal
+
+
+def assert_goal_access(request: Request, goal) -> None:
+    """Raise ``HTTPException(404)`` if the caller may not touch ``goal``.
+
+    404 (not 403) on denial so a cross-tenant probe can't distinguish "exists
+    but forbidden" from "does not exist". Callers fetch the goal first (a real
+    miss is its own 404) and then gate on this.
+    """
+    if not can_access_goal(request, goal):
+        raise HTTPException(status_code=404, detail="no such goal")
 
 
 def require_principal(request: Request) -> VerifiedPrincipal | None:
