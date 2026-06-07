@@ -387,6 +387,60 @@ def version() -> None:
 
 
 @main.command()
+@click.option("--principal", default=None,
+              help="Principal to inspect (default: user:local). Match your "
+                   "[role_assignments] key, e.g. user:<oidc-sub>.")
+@click.option("--channel", default=None, help="Channel for ACL resolution.")
+@click.option("--user", "user_id", default=None, help="Channel user id for ACL resolution.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON instead of text.")
+def whoami(principal: str | None, channel: str | None, user_id: str | None,
+           as_json: bool) -> None:
+    """Show the effective capability (and role) for a principal.
+
+    Resolves the grant exactly as the agent would -- the [security] ACL narrowed
+    by any assigned role ([role_assignments] / [roles]) -- so you can verify what
+    a principal is allowed to do before you deploy. Read-only.
+    """
+    import json as _json
+
+    from .capability import capability_enforced, capability_from_config
+
+    p = principal or "user:local"
+    cap = capability_from_config(p, channel=channel, user_id=user_id)
+    role = None
+    try:  # role_for_principal ships with RBAC; tolerate older kernels.
+        from .capability import role_for_principal
+        role = role_for_principal(p)
+    except Exception:
+        pass
+
+    info = {
+        "principal": cap.principal,
+        "role": role,
+        "enforcement": capability_enforced(),
+        "allow_tools": sorted(cap.allow_tools) or "all",
+        "deny_tools": sorted(cap.deny_tools),
+        "max_risk": cap.max_risk or "none",
+        "allow_paths": sorted(cap.allow_paths) or "all",
+        "allow_hosts": sorted(cap.allow_hosts) or "all",
+        "expires_at": cap.expires_at,
+    }
+    if as_json:
+        click.echo(_json.dumps(info, default=str))
+        return
+    click.echo(click.style(f"principal: {info['principal']}", bold=True))
+    click.echo(f"  role:         {role or '(none)'}")
+    click.echo(f"  enforcement:  {'ON' if info['enforcement'] else 'off (advisory)'}")
+    click.echo(f"  allow_tools:  {info['allow_tools']}")
+    click.echo(f"  deny_tools:   {info['deny_tools'] or '(none)'}")
+    click.echo(f"  max_risk:     {info['max_risk']}")
+    click.echo(f"  allow_paths:  {info['allow_paths']}")
+    click.echo(f"  allow_hosts:  {info['allow_hosts']}")
+    if info["expires_at"]:
+        click.echo(f"  expires_at:   {info['expires_at']}")
+
+
+@main.command()
 @click.argument("action", type=click.Choice(["show", "path", "edit"]), default="show")
 def config(action: str) -> None:
     """Show, locate, or edit ~/.maverick/config.toml."""
