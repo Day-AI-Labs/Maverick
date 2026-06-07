@@ -2427,6 +2427,59 @@ def audit_verify(
         raise SystemExit(1)
 
 
+@audit.command("export")
+@click.option("--format", "fmt", type=click.Choice(["json", "cef"]), default="json",
+              help="Output format for SIEM ingestion (default: json).")
+@click.option("--day", default=None, help="YYYY-MM-DD (default: today).")
+@click.option("--all", "all_days", is_flag=True,
+              help="Export every YYYY-MM-DD.ndjson day-file in the audit dir.")
+@click.option("--tenant", default=None,
+              help="Tenant whose audit dir to export (default: active/none).")
+@click.option("-o", "--output", "output", default=None, type=click.Path(),
+              help="Write to FILE (mode 0600; may contain PII). Default: stdout.")
+def audit_export(
+    fmt: str, day: str | None, all_days: bool, tenant: str | None,
+    output: str | None,
+) -> None:
+    """Export the audit log as JSONL or ArcSight CEF for a SIEM.
+
+    Read-only re-emission of the tamper-evident NDJSON log; it never mutates
+    the log or the signing chain. By default it exports today's day-file;
+    ``--all`` sweeps every day-file. An empty/missing log exits 0 (a note goes
+    to stderr) so cron/automation never fails on a quiet day.
+    """
+    import os as _os
+
+    from .audit.export import iter_audit_events, to_cef, to_jsonl
+
+    render = to_cef if fmt == "cef" else to_jsonl
+    lines = (render(ev) for ev in iter_audit_events(
+        day=day, all_days=all_days, tenant=tenant,
+    ))
+
+    if output:
+        # 0600 from creation: the export may contain PII, mirroring the
+        # writer's own day-file permissions.
+        fd = _os.open(output, _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o600)
+        n = 0
+        with _os.fdopen(fd, "w", encoding="utf-8") as f:
+            for line in lines:
+                f.write(line + "\n")
+                n += 1
+        if n == 0:
+            click.echo("no audit events to export", err=True)
+        else:
+            click.echo(f"exported {n} event(s) to {output}", err=True)
+        return
+
+    n = 0
+    for line in lines:
+        click.echo(line)
+        n += 1
+    if n == 0:
+        click.echo("no audit events to export", err=True)
+
+
 # ----- Killswitch --------------------------------------------------------
 
 @main.command()
