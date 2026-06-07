@@ -336,3 +336,12 @@ def test_cli_export_rejects_bad_date(monkeypatch, tmp_path):
     res = CliRunner().invoke(main, ["audit", "export", "--since", "nope"])
     assert res.exit_code == 2
     assert "YYYY-MM-DD" in res.output
+
+
+def test_cli_export_rejects_unpadded_window_date(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    from maverick.cli import main
+    res = CliRunner().invoke(main, ["audit", "export", "--since", "2020-1-1"])
+    assert res.exit_code == 2
+    assert "YYYY-MM-DD" in res.output
