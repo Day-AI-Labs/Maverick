@@ -438,6 +438,14 @@ class LLM:
         _t0 = _time.time()
         _d0 = budget.dollars if budget else 0.0
         _err = False
+        # Hold this call's projected cost against the cap BEFORE dispatching, so
+        # concurrent callers on a shared budget can't each pass an individual
+        # check() and then collectively overshoot -- the same defense the async
+        # path uses. reserve() raises BudgetExceeded if the call won't fit;
+        # released in `finally` once the actual spend lands.
+        _held = budget.reserve(
+            _estimate_call_cost(model_id, system, messages, tools, max_tokens)
+        ) if budget is not None else 0.0
         try:
             with _trace_span(
                 _gen_ai_span_name("chat", model_id),
@@ -451,6 +459,8 @@ class LLM:
             _err = True
             raise
         finally:
+            if _held:
+                budget.release(_held)
             _dt_ms = (_time.time() - _t0) * 1000.0
             _spent = (budget.dollars - _d0) if budget else 0.0
             try:
