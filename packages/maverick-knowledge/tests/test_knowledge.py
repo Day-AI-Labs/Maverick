@@ -117,6 +117,17 @@ class TestSqliteStore:
         hits = store.search("finance", e.embed(["revenue"])[0], k=5)
         assert [h.text for h in hits] == ["revenue"]
 
+    def test_delete_collection_removes_only_that_collection(self):
+        e = DeterministicEmbedder(dim=64)
+        store = SqliteVectorStore()
+        store.add("pending", [("1", "secret draft", e.embed(["secret draft"])[0], {})])
+        store.add("approved", [("1", "public policy", e.embed(["public policy"])[0], {})])
+
+        store.delete_collection("pending")
+
+        assert store.count("pending") == 0
+        assert store.count("approved") == 1
+
 
 class TestKnowledgeBase:
     def test_ingest_and_search_per_domain(self):

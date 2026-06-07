@@ -97,6 +97,10 @@ class KnowledgeBase:
             text = extract_text(path)
         return self.ingest_text(collection, text, source=str(path))
 
+    def delete_collection(self, collection: str) -> None:
+        """Delete an unapproved or retired collection from the backing store."""
+        self.store.delete_collection(collection)
+
     def search(self, collection: str, query: str, k: int = 5) -> list[Hit]:
         vector = self.embedder.embed([query])[0]
         return [

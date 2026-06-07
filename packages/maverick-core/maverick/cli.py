@@ -469,6 +469,21 @@ def onboard(ctx: click.Context, name, docs, no_llm, yes) -> None:
     click.echo(f"  persona:     {profile.persona[:400]}")
 
     if not yes and not click.confirm("\nApprove and activate this agent?", default=False):
+        # Uploaded documents are ingested into a durable, isolated pending
+        # collection before the review prompt so approved packs can use the same
+        # store at run time. If the draft is rejected, remove those pending
+        # chunks so cancellation does not retain sensitive uploads on disk.
+        if kb is not None:
+            for collection in profile.knowledge_sources:
+                if not collection.startswith("intake_pending_"):
+                    continue
+                try:
+                    kb.delete_collection(collection)
+                except Exception as e:
+                    click.echo(
+                        f"(knowledge cleanup failed for {collection}: {e})",
+                        err=True,
+                    )
         click.echo("Discarded. Nothing was saved.")
         return
     path = save_profile(profile, approved=True)
