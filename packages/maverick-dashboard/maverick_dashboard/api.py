@@ -802,6 +802,21 @@ async def deny_approval(approval_id: int) -> None:
         raise HTTPException(status_code=404, detail="no such pending approval")
 
 
+@router.get("/fleets")
+async def list_fleets_api() -> dict:
+    """The operator console roster: each fleet, its owner, and its agents.
+
+    Read-only mirror of the ``/fleets`` page (Layer C of the enterprise control
+    plane). Fail-soft to an empty list so a missing registry never 500s.
+    """
+    try:
+        from maverick.fleet import list_fleets
+        fleets = list_fleets()
+    except Exception:
+        fleets = []
+    return {"fleets": [f.to_dict() for f in fleets]}
+
+
 @router.get("/cache/stats")
 async def cache_stats() -> dict:
     """In-process cache sizes (file reads, repo-map, skill embeddings).

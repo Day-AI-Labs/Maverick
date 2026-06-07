@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}fleets · Maverick{% endblock %}
+{% block content %}
+  <h2>operator console — fleets</h2>
+
+  <div class="panel">
+    <p class="muted">
+      Each employee's fleet of role-scoped agents and the oversight trail over
+      them. Governance can <code>DENY</code> or hold an action for human sign-off
+      (EU AI Act Art 14); holds land in the
+      <a href="/approvals">approval queue</a>
+      ({{ pending_count }} pending) and every verdict is recorded below.
+    </p>
+  </div>
+
+  {% if fleets %}
+    {% for fleet in fleets %}
+      <div class="panel">
+        <div style="display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap;">
+          <strong>{{ fleet.name }}</strong>
+          <span class="muted">owner: <code>{{ fleet.owner or '—' }}</code></span>
+          <span class="muted">{{ fleet.agents | length }} agent(s)</span>
+        </div>
+        {% if fleet.agents %}
+          <table style="margin-top: 0.75rem;">
+            <thead><tr>
+              <th scope="col">agent</th><th scope="col">role</th>
+              <th scope="col">description</th>
+            </tr></thead>
+            <tbody>
+            {% for agent in fleet.agents %}
+              <tr>
+                <td><code>{{ agent.name }}</code></td>
+                <td><span class="badge active">{{ agent.role or '—' }}</span></td>
+                <td class="muted">{{ agent.description or '' }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="muted" style="margin-bottom: 0;">No agents in this fleet yet.</p>
+        {% endif %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="panel">
+      <p class="muted">
+        No fleets yet. Create one to give an employee a roster of role-scoped
+        agents:
+      </p>
+      <pre style="margin: 0; white-space: pre-wrap;"><code>maverick fleet create</code></pre>
+    </div>
+  {% endif %}
+
+  <h2>recent oversight</h2>
+  <div class="panel">
+    <p class="muted">
+      The last {{ holds | length }} governance verdict(s) — org-policy blocks
+      and human-oversight holds. Full history on the
+      <a href="/audit?kind=governance_denied">audit log</a>.
+    </p>
+    {% if holds %}
+      <table>
+        <thead><tr>
+          <th scope="col">ts</th><th scope="col">agent</th>
+          <th scope="col">tool</th><th scope="col">rule</th>
+          <th scope="col">reason</th>
+        </tr></thead>
+        <tbody>
+        {% for ev in holds %}
+          <tr>
+            <td class="muted" style="white-space: nowrap;">{{ ev.ts | datetime }}</td>
+            <td class="muted">{{ ev.agent or '—' }}</td>
+            <td><code>{{ ev.tool or '—' }}</code></td>
+            <td><span class="badge blocked">{{ ev.rule or '—' }}</span></td>
+            <td class="muted">{{ ev.reason or '' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted" style="margin-bottom: 0;">
+        No governance verdicts today. Holds and blocks appear here once an
+        org <code>[governance]</code> policy gates an agent action.
+      </p>
+    {% endif %}
+  </div>
+{% endblock %}
