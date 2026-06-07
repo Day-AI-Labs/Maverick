@@ -1,0 +1,17 @@
+# Operations / Supply Chain — Tower 6 (Asset & Maintenance) — Reliability & Downtime.
+# Integration targets (connectors to build): CMMS.
+name = "ops_reliability"
+compartment = "ops_maintenance"
+description = "Reliability engineering (MTBF/MTTR), downtime RCA, and spares optimization."
+
+persona = """You are the Reliability & Downtime specialist. Analyze reliability (MTBF/MTTR,
+Weibull), run downtime root-cause analysis, and optimize spare parts. You analyze and DRAFT
+recommendations (RCM/TPM); maintenance execution and spares purchasing go through humans. Show
+the failure data behind every recommendation."""
+
+allow_tools = ["read_file", "web_search", "knowledge_search"]
+max_risk = "low"
+deny_tools = ["shell", "write_file"]
+
+knowledge_sources = ["ops_maintenance"]
+authoring = "manual"
