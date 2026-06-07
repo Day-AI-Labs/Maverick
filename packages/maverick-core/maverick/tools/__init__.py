@@ -394,10 +394,18 @@ class ToolRegistry:
             finally:
                 # Always-on per-tool latency profile (complements OTel spans).
                 # Records on both the success and error paths; never raises.
+                _elapsed_ms = (_perf_time.perf_counter() - _t0) * 1000.0
                 try:
                     from ..tool_latency import record as _rec_latency
-                    _rec_latency(name, (_perf_time.perf_counter() - _t0) * 1000.0)
+                    _rec_latency(name, _elapsed_ms)
                 except Exception:  # pragma: no cover -- profiling never breaks a tool
+                    pass
+                # Opt-in per-tool latency budget (default OFF): record a breach
+                # if the call ran longer than [tools] latency_budget_ms. Fail-open.
+                try:
+                    from ..latency_budget import note_elapsed as _note_budget
+                    _note_budget(name, _elapsed_ms)
+                except Exception:  # pragma: no cover -- budget never breaks a tool
                     pass
 
 
@@ -731,6 +739,25 @@ def base_registry(
     reg.register(websocket_tool())
     reg.register(teams_tool())
     reg.register(self_edit())
+
+    # Runtime / introspection tools (ROADMAP 2028 H1/H2).
+    from ..cost_curve_fitter import cost_curve_tool
+    from .capability_query import capability_query
+    from .oidc_tool import oidc_tool
+    reg.register(capability_query(user_id=user_id))
+    reg.register(oidc_tool())
+    reg.register(cost_curve_tool(world))
+
+    # Zero-config BYO tools registered via the @tool decorator (any that were
+    # imported before the registry was built). Never shadow a built-in.
+    try:
+        from .decorator import registered_tools as _byo_tools
+        for _t in _byo_tools():
+            if _t.name not in reg._tools:
+                reg.register(_t)
+    except Exception as e:  # pragma: no cover -- never block the registry
+        import logging as _logging
+        _logging.getLogger(__name__).warning("byo @tool load: %s", e)
 
     if enable_web_search:
         from .web_search import web_search

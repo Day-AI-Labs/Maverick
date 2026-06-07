@@ -51,10 +51,50 @@ def report() -> list[dict]:
     return out
 
 
+def _mean(vals: list[float]) -> float:
+    return sum(vals) / len(vals) if vals else 0.0
+
+
+def _stdev(vals: list[float], mean: float) -> float:
+    if len(vals) < 2:
+        return 0.0
+    var = sum((v - mean) ** 2 for v in vals) / (len(vals) - 1)  # sample stdev
+    return var ** 0.5
+
+
+def extended_report() -> list[dict]:
+    """Richer per-tool stats: ``{tool, count, min, mean, stdev, p50, p90, p95,
+    p99, max}`` (ms), slowest p95 first.
+
+    Complements ``report()`` (kept byte-stable for its callers) with the extra
+    moments — mean/stdev/min/p90 — useful for spotting variance, not just tails.
+    """
+    with _lock:
+        snapshot = {t: list(d) for t, d in _samples.items() if d}
+    out = []
+    for tool, vals in snapshot.items():
+        sv = sorted(vals)
+        mean = _mean(sv)
+        out.append({
+            "tool": tool,
+            "count": len(sv),
+            "min_ms": round(sv[0], 3),
+            "mean_ms": round(mean, 3),
+            "stdev_ms": round(_stdev(sv, mean), 3),
+            "p50_ms": round(_percentile(sv, 0.50), 3),
+            "p90_ms": round(_percentile(sv, 0.90), 3),
+            "p95_ms": round(_percentile(sv, 0.95), 3),
+            "p99_ms": round(_percentile(sv, 0.99), 3),
+            "max_ms": round(sv[-1], 3),
+        })
+    out.sort(key=lambda r: -r["p95_ms"])
+    return out
+
+
 def reset() -> None:
     """Clear all recorded samples (mainly for tests / a fresh run)."""
     with _lock:
         _samples.clear()
 
 
-__all__ = ["record", "report", "reset"]
+__all__ = ["record", "report", "extended_report", "reset"]
