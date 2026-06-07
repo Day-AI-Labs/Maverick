@@ -44,6 +44,8 @@ class FleetAgent:
 
     @classmethod
     def from_dict(cls, d: dict) -> FleetAgent:
+        if not isinstance(d, dict):
+            raise ValueError("fleet agent must be an object")
         return cls(
             name=str(d.get("name", "")),
             role=str(d.get("role", "")),
@@ -74,11 +76,20 @@ class Fleet:
 
     @classmethod
     def from_dict(cls, d: dict) -> Fleet:
+        if not isinstance(d, dict):
+            raise ValueError("fleet must be an object")
+        agents = d.get("agents", []) or []
+        if not isinstance(agents, list | tuple):
+            raise ValueError("fleet agents must be a list")
+        try:
+            created_at = float(d.get("created_at", 0.0) or 0.0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("fleet created_at must be numeric") from exc
         return cls(
             name=str(d.get("name", "")),
             owner=str(d.get("owner", "")),
-            agents=tuple(FleetAgent.from_dict(a) for a in d.get("agents", []) or []),
-            created_at=float(d.get("created_at", 0.0) or 0.0),
+            agents=tuple(FleetAgent.from_dict(a) for a in agents),
+            created_at=created_at,
         )
 
 
@@ -110,9 +121,10 @@ def load_fleet(name: str, *, tenant: str | None = "__active__") -> Fleet | None:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    if not isinstance(data, dict):
+    try:
+        return Fleet.from_dict(data)
+    except ValueError:
         return None
-    return Fleet.from_dict(data)
 
 
 def list_fleets(*, tenant: str | None = "__active__") -> list[Fleet]:
