@@ -50,6 +50,7 @@ _DEFAULT_RISK: dict[str, str] = {
     "compute": "high",
     "code_exec": "high",
     "memory": "high",
+    "clipboard": "high",
     # high: mutate external state / money / send messages / drive infra or a
     # device / recursively spawn. These used to fall through to the "medium"
     # default, so a max_risk="medium" channel ceiling failed to drop them.
@@ -88,6 +89,7 @@ _DEFAULT_RISK: dict[str, str] = {
     "dep_graph": "low",
     "recall_past_goals": "low",  # real registered name (was "recall" -> dead)
     "web_search": "low",
+    "knowledge_search": "low",
     "wikipedia": "low",
     "arxiv": "low",
     "semantic_scholar": "low",

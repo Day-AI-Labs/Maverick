@@ -387,6 +387,81 @@ def version() -> None:
 
 
 @main.command()
+@click.option("--name", default=None, help="Business name (otherwise prompted).")
+@click.option("--doc", "docs", multiple=True,
+              help="Path to a document to ingest (repeatable).")
+@click.option("--no-llm", is_flag=True,
+              help="Use deterministic generation instead of the configured LLM.")
+@click.option("--yes", is_flag=True, help="Skip the approval prompt.")
+@click.pass_context
+def onboard(ctx: click.Context, name, docs, no_llm, yes) -> None:
+    """Onboard a business: describe it + attach docs -> a sealed domain agent.
+
+    Generates a domain pack (clamped to a safe envelope), shows it for your
+    approval, and on approval saves it so the sealed, knowledge-loaded agent
+    goes live. Nothing is activated without your yes.
+    """
+    from .intake import IntakeSpec, run_intake, save_profile
+
+    name = name or click.prompt("Business name")
+    description = click.prompt("What does the business do?", default="", show_default=False)
+    industry = click.prompt("Industry (optional)", default="", show_default=False)
+    doc_paths = list(docs)
+    if not doc_paths:
+        click.echo("Attach documents (blank line to finish):")
+        while True:
+            p = click.prompt("  document path", default="", show_default=False)
+            if not p.strip():
+                break
+            doc_paths.append(p.strip())
+
+    spec = IntakeSpec(name=name, description=description, industry=industry,
+                      doc_paths=doc_paths)
+
+    llm = None
+    if not no_llm:
+        try:
+            from .llm import DEFAULT_MODEL, LLM
+            llm = LLM(model=ctx.obj.get("model") or DEFAULT_MODEL)
+        except Exception as e:  # no provider/key -> deterministic generation
+            click.echo(f"(LLM unavailable; using deterministic generation: {e})", err=True)
+    kb = None
+    try:
+        from maverick_knowledge import KnowledgeBase, build_embedder, build_store
+
+        from .config import get_knowledge
+        kcfg = get_knowledge()
+        kb = KnowledgeBase(store=build_store(kcfg), embedder=build_embedder(kcfg))
+        try:  # OCR uploaded diagrams/images when the vision extra is installed
+            from maverick_knowledge.image import build_ocr_describer
+            kb.image_describer = build_ocr_describer()
+        except Exception:
+            pass  # no vision extra -> images are skipped, not read as bytes
+    except Exception as e:  # knowledge layer is optional
+        if doc_paths:
+            click.echo(f"(knowledge unavailable; skipping doc ingestion: {e})", err=True)
+
+    click.echo("Generating a draft domain agent...")
+    profile = run_intake(spec, llm=llm, kb=kb)
+
+    click.echo(click.style("\nDraft domain pack (review before it goes live):", bold=True))
+    click.echo(f"  name:        {profile.name}")
+    click.echo(f"  compartment: {profile.compartment}")
+    click.echo(f"  max_risk:    {profile.max_risk}")
+    click.echo(f"  allow_tools: {', '.join(profile.allow_tools) or '(none)'}")
+    click.echo(f"  deny_tools:  {', '.join(profile.deny_tools) or '(none)'}")
+    click.echo(f"  knowledge:   {', '.join(profile.knowledge_sources) or '(none)'}")
+    click.echo(f"  persona:     {profile.persona[:400]}")
+
+    if not yes and not click.confirm("\nApprove and activate this agent?", default=False):
+        click.echo("Discarded. Nothing was saved.")
+        return
+    path = save_profile(profile, approved=True)
+    click.echo(click.style(f"\nActivated. Pack saved to {path}", fg="green"))
+    click.echo(f"Domain '{profile.name}' is now available to the swarm.")
+
+
+@main.command()
 @click.option("--principal", default=None,
               help="Principal to inspect (default: user:local). Match your "
                    "[role_assignments] key, e.g. user:<oidc-sub>.")
@@ -1421,8 +1496,9 @@ def ps(ctx, limit: int, as_json: bool) -> None:
         return
     click.echo(f"{'TYPE':4}  {'ID':>5}  {'STATE':9}  {'WHEN (UTC)':16}  WHAT")
     for p in procs:
+        what = _strip_terminal_control(str(p["what"]))
         click.echo(f"{p['type']:4}  {str(p['id']):>5}  {p['state']:9}  "
-                   f"{p['when']:16}  {p['what']}")
+                   f"{p['when']:16}  {what}")
 
 
 @main.command()
@@ -2573,16 +2649,20 @@ def audit_export(
     """
     import datetime as _dt
     import os as _os
+    from pathlib import Path as _Path
 
     for _label, _val in (("--since", since), ("--until", until)):
         if _val is not None:
             try:
-                _dt.datetime.strptime(_val, "%Y-%m-%d")
+                _parsed = _dt.datetime.strptime(_val, "%Y-%m-%d")
             except ValueError:
                 click.echo(f"ERROR: {_label} must be YYYY-MM-DD", err=True)
                 sys.exit(2)
+            if _parsed.strftime("%Y-%m-%d") != _val:
+                click.echo(f"ERROR: {_label} must be YYYY-MM-DD", err=True)
+                sys.exit(2)
 
-    from .audit.export import iter_audit_events, to_cef, to_jsonl
+    from .audit.export import audit_event_paths, iter_audit_events, to_cef, to_jsonl
 
     render = to_cef if fmt == "cef" else to_jsonl
     lines = (render(ev) for ev in iter_audit_events(
@@ -2590,6 +2670,19 @@ def audit_export(
     ))
 
     if output:
+        output_path = _Path(output)
+        output_resolved = output_path.resolve(strict=False)
+        source_paths = audit_event_paths(
+            day=day, all_days=all_days, since=since, until=until, tenant=tenant,
+        )
+        for source_path in source_paths:
+            if (output_resolved == source_path.resolve(strict=False)
+                    or (output_path.exists() and source_path.exists()
+                        and _os.path.samefile(output_path, source_path))):
+                raise click.ClickException(
+                    "refusing to write audit export over a source audit log file"
+                )
+
         # 0600 from creation: the export may contain PII, mirroring the
         # writer's own day-file permissions.
         fd = _os.open(output, _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o600)
@@ -2839,6 +2932,82 @@ def enterprise_verify(fmt: str) -> None:
     click.echo(render_json(checks) if fmt == "json" else render_text(checks))
     if not all_passed(checks):
         sys.exit(1)
+
+
+@main.command("ropa")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+@click.option("--output", "-o", type=click.Path(), default=None,
+              help="Write to file (default stdout).")
+def ropa_cmd(fmt: str, output) -> None:
+    """Generate a GDPR Art. 30 record-of-processing scaffold for this deployment.
+
+    Pre-fills the technical half from the live config and schema -- personal-data
+    categories, recipients / international transfers (from the egress lock),
+    retention, and the active Art. 32 security measures -- and marks the
+    organizational fields (controller, DPO, lawful basis, purposes) for the
+    controller to complete. A scaffold for a DPO to finish, not a legal
+    attestation.
+    """
+    from .ropa import generate_ropa, render_ropa_json, render_ropa_text
+    record = generate_ropa()
+    payload = render_ropa_json(record) if fmt == "json" else render_ropa_text(record)
+    if output:
+        try:
+            fd = os.open(str(output), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload + "\n")
+        except OSError as e:
+            raise click.ClickException(f"could not write {output}: {e}")
+        click.echo(f"wrote {output}")
+    else:
+        click.echo(payload)
+
+
+@main.command("dpia")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+@click.option("--output", "-o", type=click.Path(), default=None,
+              help="Write to file (default stdout).")
+def dpia_cmd(fmt: str, output) -> None:
+    """Generate a GDPR Art. 35 DPIA scaffold for this deployment.
+
+    Pre-fills the processing description (consistent with 'maverick ropa') and a
+    risk register of the agent-on-personal-data risks -- each mapped to the
+    Maverick control that mitigates it and whether that control is active right
+    now -- leaving necessity/proportionality and residual-risk sign-off to the
+    controller. A scaffold for a DPO to finish, not a completed DPIA.
+    """
+    from .dpia import generate_dpia, render_dpia_json, render_dpia_text
+    dpia = generate_dpia()
+    payload = render_dpia_json(dpia) if fmt == "json" else render_dpia_text(dpia)
+    if output:
+        try:
+            fd = os.open(str(output), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload + "\n")
+        except OSError as e:
+            raise click.ClickException(f"could not write {output}: {e}")
+        click.echo(f"wrote {output}")
+    else:
+        click.echo(payload)
+
+
+@main.command("ai-act")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+def ai_act_cmd(fmt: str) -> None:
+    """Classify this deployment under the EU AI Act (self-assessment).
+
+    Reports the live Art. 50 transparency posture and hands you a checklist of
+    the prohibited (Art. 5) and high-risk (Annex III) categories plus the
+    obligations each tier triggers. A conversational agent that discloses it is
+    AI is limited-risk by default -- but you must rule out those lists for your
+    use case. A self-assessment aid, not a legal classification.
+    """
+    from .ai_act import assess_ai_act, render_ai_act_json, render_ai_act_text
+    report = assess_ai_act()
+    click.echo(render_ai_act_json(report) if fmt == "json" else render_ai_act_text(report))
 
 
 # ----- DSAR subject-data export ----------------------------------------

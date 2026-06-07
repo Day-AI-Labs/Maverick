@@ -333,6 +333,25 @@ class ToolRegistry:
             import time as _perf_time
             _t0 = _perf_time.perf_counter()
             try:
+                # Opt-in tool-output cache (default OFF): serve a memoized
+                # result for side-effect-free (parallel_safe) tools so a
+                # repeated read doesn't re-do the work. Never caches writes
+                # or error results. See tool_cache.py.
+                _tool = self._tools[name]
+                try:
+                    from ..tool_cache import get_cached, store_cached
+                except ImportError:  # pragma: no cover
+                    get_cached = store_cached = None  # type: ignore[assignment]
+                if get_cached is not None:
+                    _hit, _cached = get_cached(_tool, args)
+                    if _hit:
+                        try:
+                            from ..observability import record_metric as _rm
+                            _rm("tool_calls",
+                                labels={"tool": name, "status": "cache"})
+                        except Exception:  # pragma: no cover
+                            pass
+                        return _cached
                 try:
                     from ..chaos import maybe_fail
                     maybe_fail("tool_dispatch",
@@ -349,6 +368,11 @@ class ToolRegistry:
                 # on retry-safe (non-high-risk) tools are retried with backoff.
                 from ..tool_reliability import run_with_retry
                 result = await run_with_retry(name, _invoke)
+                if store_cached is not None:
+                    try:
+                        store_cached(_tool, args, result)
+                    except Exception:  # pragma: no cover
+                        pass
                 try:
                     from ..observability import record_metric as _rm
                     _rm("tool_calls", labels={"tool": name, "status": "ok"})
@@ -464,7 +488,7 @@ def base_registry(
     # sandbox host.
     if sandbox.__class__.__name__ != "SSHBackend":
         reg.register(read_file(sandbox))
-        reg.register(write_file(sandbox))
+        reg.register(write_file(sandbox, goal_id=goal_id))
         reg.register(list_dir(sandbox))
     reg.register(shell(sandbox))
     reg.register(ask_user(world, goal_id=goal_id))
@@ -673,6 +697,15 @@ def base_registry(
     from .voice import speak, transcribe_audio
     reg.register(transcribe_audio())
     reg.register(speak())
+
+    # Capability tools that live in the parent package (maverick/), not the
+    # tools subpackage. ROADMAP 2027 H2 / 2028 H1.
+    from ..dom_diff import dom_diff
+    from ..license_scan import license_scan
+    from ..workspace_snapshot import workspace_snapshot
+    reg.register(dom_diff())
+    reg.register(license_scan())
+    reg.register(workspace_snapshot())
 
     if enable_web_search:
         from .web_search import web_search

@@ -339,3 +339,27 @@ def test_world_db_seals_questions(monkeypatch, tmp_path):
     q = wm.all_questions(gid)[0]
     assert q.question == "secret question SSN 123-45-6789?"
     assert q.answer == "secret answer 987-65-4321"
+
+
+def test_world_db_plaintext_marker_questions_do_not_crash_when_encryption_off(
+    monkeypatch, tmp_path
+):
+    import base64
+
+    from maverick.crypto_at_rest import _MAGIC, _NONCE_BYTES
+    from maverick.world_model import WorldModel
+
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "0")
+    wm = WorldModel(tmp_path / "world.db")
+    gid = wm.create_goal("g", "d")
+
+    malformed_question = "MVKAR1:notbase64"
+    qid = wm.ask(malformed_question, goal_id=gid)
+    sealed_like_answer = "MVKAR1:" + base64.b64encode(
+        _MAGIC + b"0" * (_NONCE_BYTES + 16)
+    ).decode("ascii")
+    assert wm.answer(qid, sealed_like_answer)
+
+    q = wm.all_questions(gid)[0]
+    assert q.question == malformed_question
+    assert q.answer == sealed_like_answer

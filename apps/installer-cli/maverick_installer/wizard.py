@@ -937,12 +937,47 @@ def pick_oidc() -> dict[str, Any]:
         "e.g. https://example.okta.com/oauth2/v1/keys)",
         default="",
     ).strip()
-    return {
+    result: dict[str, Any] = {
         "enabled": True,
         "issuer": issuer,
         "audience": audience,
         "jwks_uri": jwks_uri,
     }
+    # Optional: the built-in browser-login (authorization-code) flow. The
+    # default path is bearer-token verification only (API clients) or a reverse
+    # proxy for browser SSO; this self-contained flow is for deployments that
+    # can't run an auth proxy. OFF unless the operator opts in and supplies the
+    # OAuth client + a session-signing secret.
+    console.print(
+        "[dim]Optional: built-in browser login. Lets the dashboard run the "
+        "OAuth2 authorization-code flow itself (browser SSO without a separate "
+        "auth proxy). Needs an OAuth client_id/secret registered with your IdP "
+        "and a redirect URI of <dashboard-url>/auth/callback. OFF by "
+        "default.[/dim]"
+    )
+    if _q_confirm("  Also enable the built-in browser login flow?", default=False):
+        client_id = _q_text(
+            "    OAuth client_id (this dashboard's registered client)", default="",
+        ).strip()
+        client_secret = _q_text(
+            "    OAuth client_secret", default="",
+        ).strip()
+        redirect_uri = _q_text(
+            "    Redirect URI (must be <dashboard-url>/auth/callback)", default="",
+        ).strip()
+        session_secret = _q_text(
+            "    Session-signing secret (a long random string; keep it secret)",
+            default="",
+        ).strip()
+        result.update(
+            {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
+                "session_secret": session_secret,
+            }
+        )
+    return result
 
 
 def pick_advanced() -> dict[str, Any]:
@@ -2007,6 +2042,15 @@ def write_config(
             _emit_kv(lines, "issuer", oidc.get("issuer", ""))
             _emit_kv(lines, "audience", oidc.get("audience", ""))
             _emit_kv(lines, "jwks_uri", oidc.get("jwks_uri", ""))
+            # Built-in browser-login fields, written ONLY when the operator
+            # opted into that flow (so a bearer-only OIDC config is unchanged).
+            # The kernel's login_enabled() additionally gates the routes.
+            for key in (
+                "client_id", "client_secret", "redirect_uri", "session_secret",
+            ):
+                val = oidc.get(key)
+                if val:
+                    _emit_kv(lines, key, val)
 
     if mcp_servers:
         for name, cfg in mcp_servers.items():
@@ -2455,6 +2499,52 @@ def run_consumer() -> int:
     return 0
 
 
+# (command, one-line description) surfaced after a regulated-posture setup, so a
+# non-technical operator discovers the verification + GDPR/EU AI Act
+# documentation commands they'd otherwise never find. Defined as data so a test
+# can assert the set without rendering the Rich panel.
+_COMPLIANCE_COMMANDS: list[tuple[str, str]] = [
+    ("maverick enterprise verify", "prove the data boundary holds"),
+    ("maverick compliance", "GDPR + EU AI Act control coverage"),
+    ("maverick ropa", "GDPR Art. 30 record-of-processing scaffold"),
+    ("maverick dpia", "GDPR Art. 35 impact-assessment scaffold"),
+    ("maverick ai-act", "EU AI Act risk classification"),
+]
+
+
+def _regulated_deployment(advanced: dict[str, Any]) -> bool:
+    """True if the operator turned on a sensitive-data control, so the wizard
+    should point them at the compliance + documentation commands."""
+    advanced = advanced or {}
+    return bool(
+        advanced.get("enterprise")
+        or advanced.get("encrypt_at_rest")
+        or advanced.get("audit_sign")
+    )
+
+
+def show_compliance_commands(advanced: dict[str, Any]) -> None:
+    """Print the compliance/documentation command panel after a regulated setup.
+
+    No-op unless the deployment enabled enterprise mode, at-rest encryption, or
+    audit signing -- otherwise it's just noise for a personal install.
+    """
+    if not _regulated_deployment(advanced):
+        return
+    rows = "\n".join(
+        f"  [bold]{cmd}[/bold]{' ' * max(1, 28 - len(cmd))}# {desc}"
+        for cmd, desc in _COMPLIANCE_COMMANDS
+    )
+    console.print()
+    console.print(Panel.fit(
+        "[bold]You enabled a regulated-data posture.[/bold] Prove and document it:\n\n"
+        f"{rows}\n\n"
+        "[dim]See docs/regulated-deployment.md. Control coverage, not legal advice.[/dim]",
+        border_style="cyan",
+        title="Compliance & documentation",
+    ))
+
+
 def run(fast: bool = False, resume: bool = False) -> int:
     if fast:
         return run_fast()
@@ -2722,6 +2812,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
             "  [bold]maverick dashboard[/bold]    # web UI at http://127.0.0.1:8765",
             border_style="green",
         ))
+        show_compliance_commands(advanced)
         return 0
     return 1
 

@@ -15,13 +15,18 @@ from maverick.intake import (
 
 class TestValidateClamp:
     def test_caps_risk_and_denies_dangerous_tools(self):
-        p = DomainProfile(name="x", allow_tools=["read_file", "shell", "code_exec"],
-                          max_risk="high")
+        p = DomainProfile(
+            name="x",
+            allow_tools=["read_file", "shell", "code_exec", "clipboard"],
+            max_risk="high",
+        )
         validate_profile(p)
         assert p.max_risk == "medium"        # capped down from high
         assert "shell" in p.deny_tools       # baseline deny unioned in
         assert "shell" not in p.allow_tools  # stripped from allow
         assert "code_exec" not in p.allow_tools
+        assert "clipboard" not in p.allow_tools
+        assert "clipboard" in p.deny_tools
         assert "read_file" in p.allow_tools  # safe tool kept
         assert p.authoring == "generated"
 
@@ -40,6 +45,18 @@ class TestGenerate:
         assert prof.max_risk == "medium"
         assert "shell" not in prof.allow_tools
         assert prof.knowledge_sources == ["acme_capital"]
+
+    def test_clipboard_proposal_is_clamped(self):
+        spec = IntakeSpec(name="Acme Support", description="a support desk")
+
+        def propose(_s):
+            return {"allow_tools": ["read_file", "clipboard"], "max_risk": "medium"}
+
+        prof = generate_profile(spec, propose=propose)
+        assert "clipboard" not in prof.allow_tools
+        assert "clipboard" in prof.deny_tools
+        assert "read_file" in prof.allow_tools
+        assert prof.capability("test").permits("clipboard") is False
 
     def test_default_when_no_proposer(self):
         prof = generate_profile(IntakeSpec(name="Beta LLC", industry="logistics"))
@@ -134,7 +151,24 @@ class TestRunIntake:
                           llm=llm, kb=kb)
         assert prof.name == "theta_inc"
         assert "HR helper" in prof.persona
-        assert kb.search("theta_inc", "paid leave", k=3)  # docs were ingested
+        assert prof.knowledge_sources[0].startswith("intake_pending_theta_inc_")
+        assert not kb.search("theta_inc", "paid leave", k=3)
+        assert kb.search(prof.knowledge_sources[0], "paid leave", k=3)  # docs were ingested
+
+    def test_uses_isolated_pending_collection(self, tmp_path):
+        from maverick.intake import run_intake
+        from maverick_knowledge import DeterministicEmbedder, KnowledgeBase
+
+        doc = tmp_path / "poison.txt"
+        doc.write_text("POISONED FINANCE OVERRIDE")
+        kb = KnowledgeBase(embedder=DeterministicEmbedder(dim=64))
+        prof = run_intake(IntakeSpec(name="Finance", doc_paths=[str(doc)]), kb=kb)
+
+        assert prof.name == "finance"
+        assert prof.knowledge_sources != ["finance"]
+        assert prof.knowledge_sources[0].startswith("intake_pending_finance_")
+        assert not kb.search("finance", "POISONED", k=3)
+        assert kb.search(prof.knowledge_sources[0], "POISONED", k=3)
 
 
 class TestIntakeSession:
@@ -160,4 +194,6 @@ class TestIntakeSession:
         assert prof.name == "iota_retail"
         assert "store helper" in prof.persona
         assert prof.max_risk == "medium"
-        assert kb.search("iota_retail", "returns", k=3)  # ingested on finalize
+        assert prof.knowledge_sources[0].startswith("intake_pending_iota_retail_")
+        assert not kb.search("iota_retail", "returns", k=3)
+        assert kb.search(prof.knowledge_sources[0], "returns", k=3)  # ingested on finalize

@@ -254,24 +254,43 @@ class Shield:
         # system-prompt regurgitation and refusal-then-leak. Fail-open.
         if self.backend == self.BACKEND_NONE:
             return verdict
+        threshold_idx = SEVERITY_ORDER.get(self.block_threshold, SEVERITY_ORDER["high"])
+        extra_sev = "none"
+        extra_reasons: list[str] = []
+
+        # Output-policy detectors: verbatim system-prompt regurgitation,
+        # refusal-then-leak. Fail-open.
         try:
             policy = output_policy_scan(text, known_prompt=known_prompt)
         except Exception as e:  # pragma: no cover -- detector bug must not block
             log.error("Shield output-policy scan failed (fail-open): %s", e)
-            return verdict
-        if not policy.blocked:
-            return verdict
-        threshold_idx = SEVERITY_ORDER.get(self.block_threshold, SEVERITY_ORDER["high"])
-        if SEVERITY_ORDER.get(policy.severity, -1) < threshold_idx:
+            policy = None
+        if (policy is not None and policy.blocked
+                and SEVERITY_ORDER.get(policy.severity, -1) >= threshold_idx):
+            extra_sev = _max_severity(extra_sev, policy.severity)
+            extra_reasons += policy.reasons
+
+        # Phishing-content detector: credential harvesting + deceptive links,
+        # whether the agent fetched the content or is about to emit it. Fail-open.
+        try:
+            from .phishing import detect_phishing
+            ph = detect_phishing(text)
+        except Exception as e:  # pragma: no cover -- detector bug must not block
+            log.error("Shield phishing scan failed (fail-open): %s", e)
+            ph = None
+        if (ph is not None and ph.suspicious
+                and SEVERITY_ORDER.get(ph.severity, -1) >= threshold_idx):
+            extra_sev = _max_severity(extra_sev, ph.severity)
+            extra_reasons += [f"phishing: {r}" for r in ph.reasons]
+
+        if not extra_reasons:
             return verdict
         if not verdict.allowed:
             return ShieldVerdict.block(
-                severity=_max_severity(verdict.severity, policy.severity),
-                reason="; ".join(verdict.reasons + policy.reasons),
+                severity=_max_severity(verdict.severity, extra_sev),
+                reason="; ".join(verdict.reasons + extra_reasons),
             )
-        return ShieldVerdict.block(
-            severity=policy.severity, reason="; ".join(policy.reasons),
-        )
+        return ShieldVerdict.block(severity=extra_sev, reason="; ".join(extra_reasons))
 
 
 def _max_severity(a: str, b: str) -> str:

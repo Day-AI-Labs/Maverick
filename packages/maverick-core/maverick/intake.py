@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -31,7 +32,7 @@ log = logging.getLogger(__name__)
 # the envelope at approval. Generation cannot self-escalate past this floor.
 _GENERATED_DENY = frozenset({
     "shell", "write_file", "edit_file", "delete_file", "code_exec",
-    "computer", "browser",
+    "computer", "browser", "clipboard",
 })
 _MAX_GENERATED_RISK = "medium"
 
@@ -51,6 +52,11 @@ def _slug(name: str) -> str:
     return "_".join(filter(None, s.split("_"))) or "business"
 
 
+def _pending_collection(name: str) -> str:
+    """Return an isolated, non-predictable collection for unapproved intake docs."""
+    return f"intake_pending_{_slug(name)}_{secrets.token_urlsafe(8)}"
+
+
 def _default_persona(spec: IntakeSpec) -> str:
     who = spec.description or (f"a {spec.industry} business" if spec.industry else "this business")
     return (
@@ -62,15 +68,21 @@ def _default_persona(spec: IntakeSpec) -> str:
 
 def validate_profile(profile: DomainProfile) -> DomainProfile:
     """Clamp a generated pack to a safe envelope: union a baseline deny set,
-    strip denied tools out of allow, and cap ``max_risk``. Mutates and returns
-    the profile. A human widens this at approval; the generator cannot."""
-    from .safety.tool_risk import risk_rank
+    strip denied or over-ceiling tools out of allow, and cap ``max_risk``.
+    Mutates and returns the profile. A human widens this at approval; the
+    generator cannot."""
+    from .safety.tool_risk import risk_rank, tool_risk
 
-    deny = set(profile.deny_tools) | _GENERATED_DENY
-    profile.deny_tools = sorted(deny)
-    profile.allow_tools = [t for t in profile.allow_tools if t not in deny]
     if profile.max_risk is None or risk_rank(profile.max_risk) > risk_rank(_MAX_GENERATED_RISK):
         profile.max_risk = _MAX_GENERATED_RISK
+    ceiling = risk_rank(profile.max_risk)
+    over_ceiling = {
+        tool for tool in profile.allow_tools
+        if risk_rank(tool_risk(tool)) > ceiling
+    }
+    deny = set(profile.deny_tools) | _GENERATED_DENY | over_ceiling
+    profile.deny_tools = sorted(deny)
+    profile.allow_tools = [t for t in profile.allow_tools if t not in deny]
     if not profile.compartment:
         profile.compartment = profile.name
     profile.authoring = "generated"
@@ -218,13 +230,21 @@ def run_intake(spec: IntakeSpec, *, llm=None, kb=None,
     """Ingest the business's documents and generate a validated (but UNSAVED)
     DomainProfile for human approval. Pass ``llm`` to use the generative path;
     omit it for the deterministic fallback. Persisting is a separate, approved
-    step (``save_profile``)."""
-    if kb is not None:
-        ingest_docs(spec, kb)
+    step (``save_profile``).
+
+    Uploaded documents are stored in an isolated, non-predictable pending
+    collection until the generated profile is approved. This keeps unapproved
+    intake uploads from colliding with or poisoning existing domain collections.
+    """
     propose = (
         build_llm_proposer(llm, model=model, budget=budget) if llm is not None else None
     )
-    return generate_profile(spec, propose=propose)
+    profile = generate_profile(spec, propose=propose)
+    if kb is not None and spec.doc_paths:
+        collection = _pending_collection(profile.name)
+        ingest_docs(spec, kb, collection=collection)
+        profile.knowledge_sources = [collection]
+    return profile
 
 
 INTAKE_PERSONA = (
@@ -270,6 +290,7 @@ def build_intake_agent(ctx, session: IntakeSession | None = None, *, llm=None, k
     ``(agent, session)``. The live chat loop reuses the normal agent/channel
     surface; this just assembles the interviewer."""
     from .agent import Agent
+    from .tools import ToolRegistry
     from .tools.intake_tools import intake_tools
 
     session = session or IntakeSession()
@@ -278,6 +299,10 @@ def build_intake_agent(ctx, session: IntakeSession | None = None, *, llm=None, k
         brief="Interview the business and assemble its specialist agent.",
         persona=INTAKE_PERSONA,
     )
+    # The intake chat is exposed to untrusted prospective users. A regular
+    # Agent starts with the full base registry (shell, filesystem, MCP, etc.),
+    # so replace it with an intake-only registry before adding onboarding tools.
+    agent.tools = ToolRegistry()
     for tool in intake_tools(session, llm=llm or getattr(ctx, "llm", None),
                              kb=kb or getattr(ctx, "knowledge", None)):
         agent.tools.register(tool)

@@ -80,13 +80,29 @@ class VerifiedPrincipal:
 
 @dataclass(frozen=True)
 class OIDCConfig:
-    """Resolved ``[auth.oidc]`` settings."""
+    """Resolved ``[auth.oidc]`` settings.
+
+    The ``client_id`` / ``client_secret`` / ``redirect_uri`` / ``session_secret``
+    and the optional explicit ``authorization_endpoint`` / ``token_endpoint``
+    fields are used ONLY by the built-in browser-login flow
+    (:func:`login_enabled`). They are inert for plain bearer-token verification
+    (:func:`verify_oidc_token`), which needs only ``issuer``/``audience``/
+    ``jwks_uri``.
+    """
 
     enabled: bool = False
     issuer: str = ""
     audience: str = ""
     jwks_uri: str = ""
     algorithms: list[str] = field(default_factory=lambda: list(DEFAULT_ALGORITHMS))
+    # Browser authorization-code login (off unless fully configured; see
+    # login_enabled()).
+    client_id: str = ""
+    client_secret: str = ""
+    redirect_uri: str = ""
+    session_secret: str = ""
+    authorization_endpoint: str = ""
+    token_endpoint: str = ""
 
 
 def _env_flag(name: str) -> bool | None:
@@ -148,12 +164,40 @@ def load_oidc_config() -> OIDCConfig:
         algs_raw = section.get("algorithms")
     algorithms = _normalize_algorithms(algs_raw)
 
+    # Browser-login fields (env overrides config, same as above). These are
+    # only consulted by the authorization-code flow; bearer verification
+    # ignores them.
+    client_id = os.environ.get("MAVERICK_OIDC_CLIENT_ID") or str(
+        section.get("client_id", "") or ""
+    )
+    client_secret = os.environ.get("MAVERICK_OIDC_CLIENT_SECRET") or str(
+        section.get("client_secret", "") or ""
+    )
+    redirect_uri = os.environ.get("MAVERICK_OIDC_REDIRECT_URI") or str(
+        section.get("redirect_uri", "") or ""
+    )
+    session_secret = os.environ.get("MAVERICK_OIDC_SESSION_SECRET") or str(
+        section.get("session_secret", "") or ""
+    )
+    authorization_endpoint = os.environ.get(
+        "MAVERICK_OIDC_AUTHORIZATION_ENDPOINT"
+    ) or str(section.get("authorization_endpoint", "") or "")
+    token_endpoint = os.environ.get("MAVERICK_OIDC_TOKEN_ENDPOINT") or str(
+        section.get("token_endpoint", "") or ""
+    )
+
     return OIDCConfig(
         enabled=enabled,
         issuer=issuer.strip(),
         audience=audience.strip(),
         jwks_uri=jwks_uri.strip(),
         algorithms=algorithms,
+        client_id=client_id.strip(),
+        client_secret=client_secret.strip(),
+        redirect_uri=redirect_uri.strip(),
+        session_secret=session_secret.strip(),
+        authorization_endpoint=authorization_endpoint.strip(),
+        token_endpoint=token_endpoint.strip(),
     )
 
 
@@ -162,6 +206,110 @@ def oidc_enabled() -> bool:
     ``[auth.oidc] enabled = true`` turns on OIDC ID-token verification for the
     serving surface. Off -> no token is required and behaviour is unchanged."""
     return load_oidc_config().enabled
+
+
+def login_enabled(config: OIDCConfig | None = None) -> bool:
+    """True only when the built-in OIDC *browser-login* flow is fully configured.
+
+    Fail-closed and off by default: the dashboard's ``/auth/login`` /
+    ``/auth/callback`` / ``/auth/logout`` routes are registered ONLY when this
+    returns True, so a partial/absent config changes nothing (the existing
+    bearer gate and reverse-proxy path keep working unchanged).
+
+    Requires ALL of:
+      - :func:`oidc_enabled` (the OIDC master switch),
+      - ``client_id`` (the OAuth client this dashboard is registered as),
+      - ``session_secret`` (the HMAC key for our signed session cookie), and
+      - a way to reach the authorization/token endpoints: either ``issuer``
+        (so they can be discovered) OR both endpoints set explicitly.
+    """
+    cfg = config if config is not None else load_oidc_config()
+    if not cfg.enabled:
+        return False
+    if not cfg.client_id or not cfg.session_secret:
+        return False
+    has_endpoints = bool(cfg.authorization_endpoint and cfg.token_endpoint)
+    return bool(cfg.issuer) or has_endpoints
+
+
+# Discovery cache: issuer -> {"authorization_endpoint": ..., "token_endpoint":
+# ...}. The OIDC discovery document is effectively static, so we fetch it once
+# per issuer per process. Keyed by issuer so a config change to a new issuer
+# isn't served a stale doc.
+_DISCOVERY_CACHE: dict[str, dict[str, str]] = {}
+
+
+def _discover_endpoints(issuer: str, *, timeout: float = 5.0) -> dict[str, str]:
+    """GET ``<issuer>/.well-known/openid-configuration`` and return the
+    authorization/token endpoints.
+
+    HTTPS-only and short-timeout. Cached per issuer. Fail-soft in the sense that
+    it never returns a partial/garbage result — any failure (non-https issuer,
+    network error, malformed JSON, missing/non-https endpoints) raises
+    :class:`OIDCError`, which the caller turns into a clean 4xx/5xx without
+    leaking internals.
+    """
+    issuer = (issuer or "").strip()
+    if not issuer:
+        raise OIDCError("OIDC issuer is not configured for discovery")
+    cached = _DISCOVERY_CACHE.get(issuer)
+    if cached is not None:
+        return cached
+    if not issuer.lower().startswith("https://"):
+        raise OIDCError("OIDC issuer must be https for discovery")
+
+    url = issuer.rstrip("/") + "/.well-known/openid-configuration"
+    try:
+        import httpx
+
+        resp = httpx.get(url, timeout=timeout, follow_redirects=True)
+        resp.raise_for_status()
+        doc = resp.json()
+    except OIDCError:
+        raise
+    except Exception as e:  # network, timeout, non-2xx, bad JSON
+        raise OIDCError(f"OIDC discovery failed: {e}") from e
+
+    if not isinstance(doc, dict):
+        raise OIDCError("OIDC discovery document is not a JSON object")
+    authorization_endpoint = str(doc.get("authorization_endpoint", "") or "").strip()
+    token_endpoint = str(doc.get("token_endpoint", "") or "").strip()
+    # The endpoints we will redirect a browser to / POST a client secret to must
+    # themselves be https — never downgrade onto a plaintext endpoint a
+    # discovery document happens to advertise.
+    if not authorization_endpoint.lower().startswith("https://"):
+        raise OIDCError("discovered authorization_endpoint is missing or not https")
+    if not token_endpoint.lower().startswith("https://"):
+        raise OIDCError("discovered token_endpoint is missing or not https")
+
+    resolved = {
+        "authorization_endpoint": authorization_endpoint,
+        "token_endpoint": token_endpoint,
+    }
+    _DISCOVERY_CACHE[issuer] = resolved
+    return resolved
+
+
+def resolve_endpoints(config: OIDCConfig | None = None) -> dict[str, str]:
+    """Resolve the authorization + token endpoints for the login flow.
+
+    Explicit ``authorization_endpoint`` / ``token_endpoint`` config wins; any
+    gap is filled from the issuer's discovery document. Raises
+    :class:`OIDCError` if the result can't be fully resolved.
+    """
+    cfg = config if config is not None else load_oidc_config()
+    authorization_endpoint = cfg.authorization_endpoint
+    token_endpoint = cfg.token_endpoint
+    if not authorization_endpoint or not token_endpoint:
+        discovered = _discover_endpoints(cfg.issuer)
+        authorization_endpoint = authorization_endpoint or discovered["authorization_endpoint"]
+        token_endpoint = token_endpoint or discovered["token_endpoint"]
+    if not authorization_endpoint or not token_endpoint:
+        raise OIDCError("could not resolve OIDC authorization/token endpoints")
+    return {
+        "authorization_endpoint": authorization_endpoint,
+        "token_endpoint": token_endpoint,
+    }
 
 
 def _require_pyjwt():
@@ -313,6 +461,8 @@ __all__ = [
     "VerifiedPrincipal",
     "DEFAULT_ALGORITHMS",
     "oidc_enabled",
+    "login_enabled",
     "load_oidc_config",
+    "resolve_endpoints",
     "verify_oidc_token",
 ]

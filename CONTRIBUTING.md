@@ -4,6 +4,10 @@ Thanks for being here. Maverick is built by accretion -- every commit
 should make the foundation stronger without forcing a rewrite. Read
 these guidelines before opening your first PR.
 
+> **Note:** Maverick is now proprietary, commercially licensed software (see
+> [`LICENSE`](./LICENSE)). External contributions require a signed CLA — see
+> "License & contributions" below.
+
 ## Quick start (dev setup)
 
 ```bash
@@ -142,7 +146,13 @@ Use the issue templates. Include `maverick doctor` output and the
 relevant section of your `~/.maverick/config.toml` (with secrets
 redacted).
 
-## License
+## License & contributions
 
-MIT. By contributing, you agree your contributions are licensed under
-the same terms.
+Maverick is **proprietary** software (see [`LICENSE`](./LICENSE)). External
+contributions are accepted only under a signed Contributor License Agreement
+(CLA) assigning the Licensor the rights needed to relicense the contribution;
+contact the maintainers before opening a PR. By contributing, you agree your
+contribution becomes part of the proprietary work owned by the Licensor. (The
+former inbound=outbound-MIT terms do not apply to contributions made after the
+relicense; versions previously published under MIT remain MIT for those
+versions.)

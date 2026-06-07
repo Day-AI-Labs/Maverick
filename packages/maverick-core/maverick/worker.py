@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 import signal
 import threading
+import time
 import traceback
 from collections.abc import Callable
 from pathlib import Path
@@ -109,13 +110,23 @@ class Worker:
             text = (job.payload.get("text") or "").strip()
             if not text:
                 raise ValueError("start_goal payload requires non-empty 'text'")
-            title = (job.payload.get("title") or text).strip()[:80]
-            from .world_model import DEFAULT_DB, open_world
-            world = open_world(DEFAULT_DB)
-            try:
-                goal_id = world.create_goal(title, text)
-            finally:
-                world.close()
+            # Idempotent across retries: create the fresh goal only once, then
+            # persist its id into the job payload. A retry of THIS job reuses it
+            # (re-running the existing goal, like run_goal) instead of minting a
+            # duplicate goal row on every transient failure. _maybe_rearm runs
+            # before dispatch, so the next cron occurrence still gets the
+            # original (goal_id-free) payload and creates its own fresh goal.
+            goal_id = job.payload.get("goal_id")
+            if not goal_id:
+                title = (job.payload.get("title") or text).strip()[:80]
+                from .world_model import DEFAULT_DB, open_world
+                world = open_world(DEFAULT_DB)
+                try:
+                    goal_id = world.create_goal(title, text)
+                finally:
+                    world.close()
+                job.payload["goal_id"] = goal_id
+                self.queue.set_payload(job.id, job.payload)
             # Same retry contract as run_goal: only transient outcomes requeue.
             from .runner import run_goal_in_thread
             status = run_goal_in_thread(int(goal_id))
@@ -156,9 +167,16 @@ class Worker:
         except Exception:
             log.exception("worker: failed to re-arm cron job %d (%r)", job.id, expr)
 
-    def run_once(self) -> bool:
-        """Process at most one job. Returns True if a job ran."""
-        job = self.queue.claim()
+    def run_once(self, *, ready_at: float | None = None) -> bool:
+        """Process at most one job. Returns True if a job ran.
+
+        ``ready_at`` bounds which pending rows are considered ready. The
+        daemon leaves it unset so each claim uses the current wall clock;
+        one-shot drain mode passes its start time so jobs that become due
+        while an earlier long-running handler executes wait for the next
+        invocation.
+        """
+        job = self.queue.claim(now=ready_at)
         if job is None:
             return False
         self._maybe_rearm(job)
@@ -211,13 +229,11 @@ class Worker:
     def drain(self) -> int:
         """Run every currently-ready job, then return; for cron/systemd timers.
 
-        Reclaims stale jobs once (like ``run_forever``), then loops
-        ``run_once()`` until no ready job remains, returning how many ran. A
-        re-armed cron occurrence gets a FUTURE ``run_at`` (see
-        ``_maybe_rearm``) and ``claim()`` only returns jobs with
-        ``run_at <= now``, so it is intentionally NOT run in the same drain --
-        it fires on the next invocation. That is what lets ``drain()``
-        terminate instead of spinning forever on a recurring job.
+        Reclaims stale jobs once (like ``run_forever``), snapshots the
+        drain start time, then processes only jobs whose ``run_at`` was ready
+        at that moment. Re-armed cron occurrences, retries, or other jobs
+        that become due while a long-running handler is executing wait for
+        the next ``--once`` invocation.
         """
         reclaimed = self.queue.reclaim_stale(
             self.reclaim_lease, max_attempts=self.max_attempts,
@@ -225,8 +241,9 @@ class Worker:
         if reclaimed:
             log.info("worker: reclaimed %d stale job(s) from a prior crash",
                      reclaimed)
+        ready_at = time.time()
         count = 0
-        while self.run_once():
+        while self.run_once(ready_at=ready_at):
             count += 1
         return count
 

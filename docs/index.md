@@ -1,12 +1,13 @@
 # Maverick
 
-> Open-source recursive multi-agent swarm. One kernel, every model.
+> Enterprise recursive multi-agent swarm. One kernel, every model.
 
-Maverick is an **agent framework** for users who want the depth of
-Devin, Hermes, and OpenClaw without paying for any of them. It runs
-locally, drives any LLM (Claude, GPT, Kimi, Grok, Gemini, DeepSeek,
-Ollama, OpenRouter), and ships with the same safety surface that
-hosted platforms gate behind subscriptions.
+Maverick is an **enterprise agent platform** with the depth of Devin,
+Hermes, and OpenClaw — deployed in your own environment. It drives any
+LLM (Claude, GPT, Kimi, Grok, Gemini, DeepSeek, Ollama, OpenRouter), and
+ships a governed, auditable safety surface built for regulated teams.
+Maverick is proprietary, commercially licensed software (see
+[`LICENSE`](LICENSE)).
 
 ## What you can do with it
 
@@ -47,16 +48,17 @@ maverick logs                # audit log
 maverick cost                # spend summary
 ```
 
-## Pricing
+## Licensing & access
 
-There isn't any. Maverick is MIT-licensed, runs entirely on your
-hardware, and we don't take a cut of your LLM spend. The project is
-brand-building for the founder; if it helps you ship, that's the
-whole reason it exists.
+Maverick is **proprietary, commercially licensed** software (see
+[`LICENSE`](LICENSE)). It is self-hostable — the runtime executes entirely
+in your own environment — and use requires a license. Pricing is handled
+per engagement; [contact us](https://github.com/Day-AI-Labs/Maverick) for
+evaluation or enterprise access.
 
-You can support the project via
-[GitHub Sponsors](https://github.com/sponsors/cdayAI) or
-[Open Collective](https://opencollective.com/maverick).
+A deliberately stripped-down **open-source "lite" edition** may be released
+later as a community on-ramp; the full runtime and the governance/compliance
+platform remain proprietary.
 
 ## Where to go next
 
@@ -68,5 +70,6 @@ You can support the project via
 - [Security hardening](security-hardening.md) — enterprise opt-in controls (capabilities, tenancy, quotas, OIDC, encryption-at-rest, audit signing) + compliance commands
 - [Plugins](plugins.md) — extending the tool / channel / skill surface
 - [Self-learning](self-learning.md) — acquire skills, tools, MCP servers, and APIs on demand
-- [Roadmap](ROADMAP.md) — 36-month plan, all open
+- [Features](FEATURES.md) — everything Maverick does today (shipped capabilities + tools)
+- [Roadmap](ROADMAP.md) — the forward backlog (what isn't built yet)
 - [Contributing](CONTRIBUTING.md) — how to send PRs

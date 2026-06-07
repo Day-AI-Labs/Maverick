@@ -11,13 +11,13 @@ name = "maverick-agent"
 version = "0.1.6"
 description = "Recursive multi-agent swarm for long-horizon work"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { text = "LicenseRef-Proprietary" }
 authors = [{ name = "cdayAI" }]
 readme = "README.md"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
