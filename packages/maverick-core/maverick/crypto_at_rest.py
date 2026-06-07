@@ -26,6 +26,7 @@ from __future__ import annotations
 import base64
 import os
 import secrets
+import stat
 from pathlib import Path
 
 _MAGIC = b"MVKAR1\n"          # versioned header: Maverick At-Rest v1
@@ -89,6 +90,63 @@ def _decode_injected_key(raw: str) -> bytes:
         ) from e
 
 
+def _secure_key_dir() -> None:
+    """Ensure the on-disk key directory is private before touching key material."""
+    try:
+        _KEY_PATH.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(_KEY_PATH.parent, 0o700)
+    except OSError as e:
+        raise EncryptionUnavailable(
+            f"cannot secure at-rest key directory {_KEY_PATH.parent}: {e}"
+        ) from e
+
+
+def _ensure_private_key_file() -> None:
+    """Tighten existing key-file permissions before loading it."""
+    try:
+        st = _KEY_PATH.stat()
+    except OSError as e:
+        raise EncryptionUnavailable(f"cannot stat at-rest key {_KEY_PATH}: {e}") from e
+    if not stat.S_ISREG(st.st_mode):
+        raise EncryptionUnavailable(f"at-rest key {_KEY_PATH} is not a regular file")
+    if st.st_mode & 0o077:
+        try:
+            os.chmod(_KEY_PATH, 0o600)
+        except OSError as e:
+            raise EncryptionUnavailable(
+                f"cannot secure at-rest key {_KEY_PATH}: {e}"
+            ) from e
+
+
+def _read_key_file() -> bytes:
+    _secure_key_dir()
+    _ensure_private_key_file()
+    try:
+        key = bytes.fromhex(_KEY_PATH.read_text().strip())
+    except (OSError, ValueError) as e:
+        raise EncryptionUnavailable(f"cannot read at-rest key {_KEY_PATH}: {e}") from e
+    if len(key) != _KEY_BYTES:
+        raise EncryptionUnavailable(f"at-rest key {_KEY_PATH} is malformed")
+    return key
+
+
+def _write_new_key_file(key: bytes) -> None:
+    _secure_key_dir()
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    try:
+        fd = os.open(_KEY_PATH, flags, 0o600)
+    except FileExistsError:
+        raise
+    except OSError as e:
+        raise EncryptionUnavailable(f"cannot write at-rest key {_KEY_PATH}: {e}") from e
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(key.hex())
+        os.chmod(_KEY_PATH, 0o600)
+    except OSError as e:
+        raise EncryptionUnavailable(f"cannot write at-rest key {_KEY_PATH}: {e}") from e
+
+
 def _load_or_create_key() -> bytes:
     raw = os.environ.get("MAVERICK_ENCRYPTION_KEY")
     if raw:
@@ -99,25 +157,14 @@ def _load_or_create_key() -> bytes:
             )
         return key
     if _KEY_PATH.exists():
-        try:
-            key = bytes.fromhex(_KEY_PATH.read_text().strip())
-        except (OSError, ValueError) as e:
-            raise EncryptionUnavailable(f"cannot read at-rest key {_KEY_PATH}: {e}") from e
-        if len(key) != _KEY_BYTES:
-            raise EncryptionUnavailable(f"at-rest key {_KEY_PATH} is malformed")
-        return key
-    # First use: generate + persist, chmod 600 (and 700 the parent).
+        return _read_key_file()
+    # First use: generate + persist atomically with private directory/file modes.
     key = secrets.token_bytes(_KEY_BYTES)
     try:
-        _KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _KEY_PATH.write_text(key.hex())
-        os.chmod(_KEY_PATH, 0o600)
-        try:
-            os.chmod(_KEY_PATH.parent, 0o700)
-        except OSError:  # pragma: no cover - best-effort
-            pass
-    except OSError as e:
-        raise EncryptionUnavailable(f"cannot write at-rest key {_KEY_PATH}: {e}") from e
+        _write_new_key_file(key)
+    except FileExistsError:
+        # Another process won the first-use race; load the private key it wrote.
+        return _read_key_file()
     return key
 
 
