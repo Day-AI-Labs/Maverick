@@ -30,6 +30,8 @@ class VectorStore(Protocol):
         self, collection: str, vector: list[float], k: int = 5
     ) -> list[Match]: ...
 
+    def delete_collection(self, collection: str) -> None: ...
+
 
 def _cosine(a: list[float], b: list[float]) -> float:
     if not a or not b or len(a) != len(b):
@@ -95,6 +97,11 @@ class SqliteVectorStore:
             scored.append(Match(_cosine(vector, stored), text, json.loads(meta)))
         scored.sort(key=lambda m: m.score, reverse=True)
         return scored[:k]
+
+    def delete_collection(self, collection: str) -> None:
+        """Remove all chunks for one collection."""
+        self._db.execute("DELETE FROM chunks WHERE collection = ?", (collection,))
+        self._db.commit()
 
     def count(self, collection: str) -> int:
         (n,) = self._db.execute(
