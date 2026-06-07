@@ -223,8 +223,8 @@ class AssessmentSession:
     """An in-progress assessment of ``subject`` against a template. Answers are
     recorded by id; :meth:`evaluate` scores them into findings + a risk rating."""
 
-    type: str
-    subject: str
+    type: str = ""
+    subject: str = ""
     answers: dict[str, dict] = field(default_factory=dict)
     id: str = field(default_factory=lambda: f"{int(time.time())}-{id(object()) & 0xffff:04x}")
     created_at: float = field(default_factory=time.time)
@@ -384,8 +384,49 @@ def render_result_json(result: AssessmentResult) -> str:
     return json.dumps(asdict(result), indent=2, default=str)
 
 
+# --- The conversational assessor agent -------------------------------------
+
+ASSESSMENT_PERSONA = (
+    "You are Maverick's compliance assessor. You conduct structured assessments "
+    "(privacy impact, AI risk, vendor risk). First call list_assessments to see "
+    "the types, then start_assessment with the type and the subject being "
+    "assessed. Answer each question from the documents and facts you were given, "
+    "one at a time, with answer_question -- yes/no/na, or 'unknown' when you "
+    "genuinely cannot verify it from the evidence. NEVER guess: 'unknown' is the "
+    "honest answer when the evidence is silent. When every question is answered, "
+    "call finalize_assessment to produce the scored findings. You produce a DRAFT "
+    "for a human reviewer (DPO / risk owner) to sign off; you never approve it "
+    "yourself."
+)
+
+
+def build_assessment_agent(ctx, session: AssessmentSession | None = None):
+    """Construct the compliance-assessor agent: an Agent with the assessor persona
+    and the assessment tools bound to a shared :class:`AssessmentSession`. Returns
+    ``(agent, session)``. Mirrors :func:`maverick.intake.build_intake_agent` -- the
+    live chat loop reuses the normal agent surface; this assembles the assessor."""
+    from .agent import Agent
+    from .tools import ToolRegistry
+    from .tools.assessment_tools import assessment_tools
+
+    session = session or AssessmentSession()
+    agent = Agent(
+        ctx=ctx, role="assessment",
+        brief="Conduct a compliance assessment and produce scored findings.",
+        persona=ASSESSMENT_PERSONA,
+    )
+    # The assessor only needs its own tools; replace the full base registry
+    # (shell, filesystem, MCP, ...) with an assessment-only one.
+    agent.tools = ToolRegistry()
+    for tool in assessment_tools(session):
+        agent.tools.register(tool)
+    return agent, session
+
+
 __all__ = [
     "ANSWERS",
+    "ASSESSMENT_PERSONA",
+    "build_assessment_agent",
     "Question",
     "AssessmentTemplate",
     "Finding",
