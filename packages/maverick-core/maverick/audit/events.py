@@ -65,6 +65,7 @@ class EventKind:
     SECRET_REDACTED = "secret_redacted"
     ERASE           = "erase"
     HALT            = "halt"
+    CONFIG_REMEDIATED = "config_remediated"
 
 
 @dataclass
