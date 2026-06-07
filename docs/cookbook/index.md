@@ -22,6 +22,18 @@ Each recipe is:
 | [Dependency CVE triage](./cve-triage.md) | A scanner flagged a CVE; decide if it's reachable here + the safe bump |
 | [CSV cleanup](./csv-cleanup.md)        | Normalize + flag a messy CSV without fabricating values |
 | [Bug report → failing test](./bug-repro.md) | Turn a bug report into a minimal failing regression test (TDD step 1) |
+| [Slow SQL optimize](./sql-optimize.md) | Read a query plan and propose the index/rewrite that fixes a slow query |
+| [Dockerfile harden](./dockerfile-harden.md) | Fix size/cache/security smells in a Dockerfile |
+| [API client from OpenAPI](./api-client-gen.md) | Generate a thin typed client + smoke test from a spec |
+| [README refresh](./readme-refresh.md) | Re-sync a drifted README with what the code actually does |
+| [License audit](./license-audit.md) | Check dependency licenses against how you ship |
+| [Type-annotation pass](./type-annotate.md) | Add type hints to an untyped module and prove them |
+| [Profile a slow function](./perf-profile.md) | Find the real bottleneck and fix the one that matters |
+| [Coverage gap](./coverage-gap.md) | Find the riskiest untested branch and write the test |
+| [Extract a god-function](./refactor-extract.md) | Split a sprawling function into named units, behavior unchanged |
+| [Config format migration](./config-migrate.md) | Migrate a config file format losslessly with a round-trip check |
+| [Infer a JSON schema](./json-schema-infer.md) | Infer + validate a JSON Schema from sample data |
+| [HTML accessibility audit](./accessibility-audit.md) | Find + fix the high-impact a11y issues in a page/template |
 
 ## Quick hits (under 60 seconds)
 
@@ -34,9 +46,11 @@ below $1. Great for muscle-memory tasks you'd otherwise do by hand.
 | [Explain an error](./explain-error.md)  | Paste a stack trace; get the root cause + most likely fix |
 | [Regex builder](./regex-builder.md)     | Describe a pattern in English; get a tested regex back |
 | [Changelog entry](./changelog-entry.md) | Turn a commit range into one user-facing CHANGELOG line |
+| [Release notes](./release-notes.md)     | Draft user-facing release notes from PRs/commits since the last tag |
 | [Docstring pass](./docstring-pass.md)   | Add/fix docstrings on one file's public functions |
 | [Test naming](./test-naming.md)         | Rename vague tests to describe what they assert |
 | [Env-var audit](./env-audit.md)         | Diff env vars read by code against what's documented |
+| [Log triage](./log-triage.md)           | Bucket a noisy log; surface the error spike + likely cause |
 
 ## Submitting your own
 
