@@ -25,8 +25,12 @@ the code on `main`.*
 The highest-leverage additions are **not** more breadth — they cluster in three
 under-invested places: (1) the agent-loop control surface (durable execution,
 hooks, context lifecycle), (2) the MCP / interop layer the cross-language strategy
-rides on, and (3) closing Maverick's own learning & eval loop. Most of (1) and the
-reliability plumbing (D) have since shipped — see the table.
+rides on, and (3) closing Maverick's own learning & eval loop. All three — plus the
+reliability plumbing (D) — have since been substantially built out: (1) is complete
+(A1–A3, incl. context lifecycle + `code_exec`), (2) is largely done (MCP
+elicitation, tasks, remote-HTTP client, registry, cross-language quickstarts — only
+client OAuth + URL-mode elicitation remain), and (3) has the GAIA / τ²-bench /
+terminal-bench harnesses + the learning-substrate decision. See the table.
 
 **Status:** ✅ shipped · 🟡 partial · ⬜ open. PR numbers cite where it landed;
 `file:line` cites implementing code.
@@ -264,6 +268,15 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 
 ## Q3 2026
 
+> **Status (June 2026): 🟡 mostly shipped (engineering).** Landed: tree-of-thought
+> (`tree_of_thought.py`), debate (`debate.py`), speculative decoding/finalization
+> (`speculative.py`); video / SQL / pandas / email / `apply_patch` tools; SSH /
+> Kubernetes / Podman / devcontainer sandboxes; A2A (`a2a.py`) + the MCP registry
+> (`mcp_registry.py`) + the cross-language quickstarts (`docs/clients/*`) +
+> Streamable-HTTP. Remaining are mostly the **glasses/wearable channel** (not yet in
+> `maverick-channels`), plus community/distribution (marketplaces, conference CFPs,
+> newsletter) — founder-tracked.
+
 **Capabilities**
 - Video understanding (`view_video`: adaptive frame sampling + audio transcript → Gemini/GPT-4o).
 - Tree-of-thought planner mode (3-5 candidate plans, critic scores, execute winner).
@@ -332,10 +345,11 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 - Podman sandbox.
 - Devcontainer sandbox.
 - gRPC API surface (`StartGoal`/`StreamEpisode`/`Cancel`).
-- **MCP-as-cross-language-surface (council decision)**: harden the
-  MCP server so any TypeScript / Go / Rust / .NET / JVM client can
-  drive Maverick over stdio JSON-RPC; ship a 20-line TS quickstart
-  in the README + `docs/clients/`. See "Language Bindings — Council
+- **MCP-as-cross-language-surface (council decision)**: ✅ shipped — the MCP
+  server is the official cross-language surface (stdio JSON-RPC + the B2
+  Streamable-HTTP transport), and quickstarts ship for **TypeScript, Go, Rust,
+  C#, and JVM** in `docs/clients/` (`{typescript,go,rust,csharp,java}-quickstart.md`)
+  — beyond the original TS/Go/Rust ask. See "Language Bindings — Council
   Decision" below.
 
 ---
@@ -513,14 +527,15 @@ language. Instead we expose Maverick to other languages **over MCP**.
 Smallest concrete first step (1–2 weeks, one engineer):
 
 1. Polish the existing MCP server as the official cross-language
-   surface. *(Q3 2026: in progress.)*
-2. Ship a 20-line **TypeScript quickstart** in the README — uses the
+   surface. *(✅ shipped — stdio JSON-RPC + the B2 Streamable-HTTP transport.)*
+2. Ship a 20-line **TypeScript quickstart** — uses the
    official MCP SDK, connects to a locally running `maverick mcp`,
-   issues one tool call. *(Q3 2026.)*
+   issues one tool call. *(✅ shipped — `docs/clients/typescript-quickstart.md`.)*
 3. Mirror that quickstart for **Go** and **Rust** before any
-   client-package decision. *(Q4 2026.)*
+   client-package decision. *(✅ shipped — plus C# and JVM:
+   `docs/clients/{go,rust,csharp,java}-quickstart.md`.)*
 4. Add opt-in analytics on MCP-client language headers.
-   *(Q4 2026 — needs new telemetry consent UI.)*
+   *(⬜ open — Q4 2026; needs new telemetry consent UI.)*
 5. **Decision gate (Q1 2027):** if >15% of active installs are being
    driven from non-Python MCP clients, fund **one** thin
    `@maverick/client` TypeScript package (RPC wrapper, ~2k LOC,
@@ -541,11 +556,12 @@ Smallest concrete first step (1–2 weeks, one engineer):
 
 ### Roadmap placement
 
-The MCP-surface + quickstart deliverables live under
-**Q3 2026 — Ecosystem** (MCP hardening, TS quickstart) and **Q4 2026
-— Ecosystem** (Go + Rust quickstarts, MCP-client analytics). The
-binding decision itself is gated to **Q1 2027** based on measured
-non-Python MCP usage.
+The MCP-surface + quickstart deliverables (**✅ shipped** — MCP hardening + the
+TS/Go/Rust/C#/JVM quickstarts in `docs/clients/`) lived under **Q3 2026 —
+Ecosystem** and **Q4 2026 — Ecosystem**. The only remaining gate step is
+**MCP-client language analytics** (Q4 2026 — needs the telemetry consent UI). The
+binding decision itself is gated to **Q1 2027** based on measured non-Python MCP
+usage.
 
 ---
 
