@@ -34,6 +34,19 @@ application behaviour is unchanged. A value written **before** encryption was en
 carries no seal marker and is read back as-is, so enabling encryption is a gradual
 migration, not a flag-day re-encrypt.
 
+## Seal existing data
+
+To seal data written *before* encryption was enabled (instead of waiting for it
+to be rewritten), run:
+
+```
+maverick encryption migrate            # seal existing turns/facts/messages/questions
+maverick encryption migrate --dry-run  # report how much would be sealed
+```
+
+It is **idempotent** (already-sealed values are skipped, so it is safe to re-run)
+and requires at-rest encryption to be enabled first.
+
 ## Key management
 
 Key resolution (first match wins):
