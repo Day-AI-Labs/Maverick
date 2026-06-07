@@ -715,6 +715,21 @@ async def audit_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/compartments", response_class=HTMLResponse)
+async def compartments_page(request: Request) -> HTMLResponse:
+    """The agent factory's roster: each domain pack and the bulkhead it runs in.
+
+    Reads the discoverable domain packs (built-in + onboarded) so an operator
+    can see which sealed agents exist and the capability envelope each runs
+    under -- the compartments a Rung-2 seal acts on."""
+    try:
+        from maverick.domain import available_domains
+        domains = sorted(available_domains().values(), key=lambda d: d.name)
+    except Exception:  # never 500 the page if the factory layer is unavailable
+        domains = []
+    return templates.TemplateResponse(request, "compartments.html", {"domains": domains})
+
+
 @app.get("/safety", response_class=HTMLResponse)
 async def safety_page(request: Request) -> HTMLResponse:
     """Shield activity: what the safety layer blocked, by stage and reason."""
