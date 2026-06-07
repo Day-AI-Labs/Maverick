@@ -74,8 +74,10 @@ terminal-bench harnesses + the learning-substrate decision. See the table.
    (`mcp_registry.py` + `maverick mcp-registry browse/add/remove/list` + the
    `[mcp_registries]` knob; discovery reuses the federated `catalog`, install validates
    through `MCPServerSpec.from_config` and writes config without a TOML-writer dep —
-   `specs/mcp-registry.md`). Remaining: **OAuth 2.1** (needs real accounts to validate)
-   + optional signed registry entries.
+   `specs/mcp-registry.md`). **OAuth 2.1 client-credentials shipped** (`mcp_oauth.py`,
+   `[mcp_servers.<name>.oauth]`, cache+refresh, unit-tested vs a mock IdP). Remaining:
+   only the user-redirect **authorization-code grant** + real-IdP validation + optional
+   signed registry entries.
 3. **Finish A3** — ✅ done: memory tool + loop bootstrap, and programmatic tool
    calling (`code_exec`); the full mid-execution bridge awaits interactive sandbox
    sessions.
@@ -119,6 +121,18 @@ here as they land (the dense future-quarter prose lists are left as-is):
 - **Obsidian integration** (2027 H1, Ecosystem) — ✅ `tools/obsidian.py`: file-based vault read/write/search (list/read/create/append/search), vault-confined paths, no external service/auth; registered in the default registry (`tests/test_obsidian.py`).
 - **Per-tool latency profile** (2027 H1, Performance) — ✅ `tool_latency.py` (bounded in-memory p50/p95/p99 per tool) wired into `ToolRegistry.run` (records on success + error; never raises into the tool path); complements the OTel tool spans for always-on, exporter-free profiling (`tests/test_tool_latency.py`).
 - **Cookbook to 30 recipes** (Q4 2026, Distribution) — ✅ 12 → **30** (`docs/cookbook/`): added flaky-test-hunt, CVE-triage, CSV-cleanup, bug-repro, log-triage, slow-SQL, Dockerfile-harden, OpenAPI-client, README-refresh, license-audit, type-annotate, perf-profile, release-notes, coverage-gap, extract-god-function, config-migrate, JSON-schema-infer, a11y-audit — all real agent-goal recipes in the existing format, wired into `cookbook/index.md`.
+
+**Near-term focus: closed.** Every item above (A1–D3 + the pulled-forward set) is
+shipped or decided. What genuinely remains is **externally blocked, not unbuilt**:
+- **OAuth 2.1 authorization-code grant** + real-IdP validation (client-credentials
+  ships) — needs a real authorization server to build and verify.
+- **World-model sharding** — a faithful build is a live-SQLite data-plane rewrite
+  that can't be verified here and overlaps the shipped tenancy work; a routing stub
+  would be hollow.
+- **IRC channel / LangChain / LangGraph adapters** — need an external dependency
+  *and* a live service to build and meaningfully test.
+- The rest of the 2027–2028 quarterly prose is already shipped, owned by parallel
+  governance work on `main`, or non-code (conferences, translations, marketing).
 
 **Accuracy caveats.** MCP Sampling / Roots / Logging appear to be on a deprecation
 path — don't build on sampling. Some ecosystem dates/specs (mid-2026 MCP RC,
