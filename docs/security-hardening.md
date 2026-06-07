@@ -27,6 +27,7 @@ and how to confirm it's actually on.
 - [Multi-tenancy (per-user isolation)](#multi-tenancy-per-user-isolation)
 - [Usage quotas](#usage-quotas)
 - [OIDC SSO authentication](#oidc-sso-authentication)
+- [Reverse-proxy SSO](#reverse-proxy-sso)
 - [Encryption at rest](#encryption-at-rest)
 - [Risk-proportional verification](#risk-proportional-verification)
 - [Audit-log signing (tamper-evidence)](#audit-log-signing-tamper-evidence)
@@ -370,6 +371,61 @@ so OIDC does not 401 inbound webhooks.
 
 **Verify it's on:** `maverick soc2` → `controls.oidc_auth.status == "enabled"`
 (reports `absent` if the optional module/extra isn't installed).
+
+---
+
+## Reverse-proxy SSO
+
+**What it does.** Lets a standard auth proxy in front of the dashboard
+(oauth2-proxy, your IdP's proxy, an ALB OAuth listener, ...) own the browser
+login, then forward the authenticated user's identity in a request header.
+Maverick maps that header to a `user:<id>` principal that flows into the
+[capability](#capability-enforcement) and tenant model — browser SSO without
+Maverick hand-rolling an OAuth flow. The [OIDC](#oidc-sso-authentication) bearer
+gate still serves API clients; this adds the browser path.
+
+**config.toml**
+
+```toml
+[auth.proxy]
+enabled = true
+header = "X-Forwarded-User"          # the identity header your proxy sets
+trusted_proxies = ["127.0.0.1"]      # peers allowed to assert it (default: loopback)
+```
+
+**Environment variables**
+
+```bash
+export MAVERICK_PROXY_AUTH=1
+export MAVERICK_PROXY_AUTH_HEADER="X-Forwarded-User"
+```
+
+**Security — read this.** A forwarded header is trivially spoofable by a direct
+client, so Maverick honors it **only when the request's network peer is a
+trusted upstream** (`trusted_proxies`; default loopback, since the proxy usually
+runs on the same host). For this to be safe you **must**:
+
+1. Make the proxy the **only** ingress to the dashboard (bind the dashboard to a
+   loopback/private interface the proxy reaches) so nobody can connect directly.
+2. Configure the proxy to **strip any client-supplied copy** of the identity
+   header before it sets its own.
+
+An explicit `trusted_proxies` list is exact — it *replaces* the loopback
+default, so include loopback if you still want it. An unknown/empty peer is
+never trusted (fail-closed).
+
+**Gotchas**
+
+- This sets *identity*, not network access — the dashboard's existing token /
+  loopback gate still governs who may connect.
+- The principal is `user:<header-value>`, so it lines up with `[role_assignments]`
+  keys for role-based access control; the verified principal records
+  `claims.via = "proxy"` so proxy-asserted identities are distinguishable from
+  signed ID tokens.
+
+**Verify it's on:** request a gated dashboard route through the proxy and confirm
+access matches the forwarded user (grep the audit log for `capability_denied` to
+see a role biting). Direct (non-proxy) requests must not carry a honored header.
 
 ---
 

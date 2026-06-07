@@ -22,6 +22,12 @@ from maverick.oidc import (
     oidc_enabled,
     verify_oidc_token,
 )
+from maverick.proxy_auth import (
+    principal_from_proxy,
+    proxy_auth_enabled,
+    proxy_header_name,
+    proxy_trusts,
+)
 
 # Probe/discovery endpoints that must answer without a bearer even when OIDC is
 # on (load balancers and k8s liveness/readiness probes, plus the OpenAPI docs,
@@ -51,6 +57,24 @@ def _bearer_token(request: Request) -> str:
     return ""
 
 
+def _proxy_principal(request: Request) -> VerifiedPrincipal | None:
+    """Reverse-proxy SSO: a principal from a forwarded identity header.
+
+    Honored ONLY when proxy auth is enabled AND the request's network peer is a
+    trusted upstream (anti-spoofing -- see :mod:`maverick.proxy_auth`). Returns
+    ``None`` (fall through to OIDC/loopback) when not applicable.
+    """
+    if not proxy_auth_enabled():
+        return None
+    client_host = request.client.host if request.client else ""
+    if not proxy_trusts(client_host):
+        return None
+    value = (request.headers.get(proxy_header_name(), "") or "").strip()
+    if not value:
+        return None
+    return principal_from_proxy(value)
+
+
 def require_principal(request: Request) -> VerifiedPrincipal | None:
     """FastAPI dependency enforcing OIDC bearer auth when OIDC is enabled.
 
@@ -63,7 +87,16 @@ def require_principal(request: Request) -> VerifiedPrincipal | None:
 
     Health/liveness/discovery paths (see ``_OIDC_EXEMPT_PATHS``) stay open so
     probes and the OpenAPI docs keep working with OIDC on.
+
+    Reverse-proxy SSO (``[auth.proxy]``) takes precedence: when enabled and the
+    request comes from a trusted upstream, a forwarded identity header
+    establishes the principal even with OIDC bearer off.
     """
+    pp = _proxy_principal(request)
+    if pp is not None:
+        request.state.principal = pp
+        return pp
+
     if not oidc_enabled():
         return None
     if request.url.path in _OIDC_EXEMPT_PATHS:
