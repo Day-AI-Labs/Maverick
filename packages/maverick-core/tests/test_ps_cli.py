@@ -56,3 +56,43 @@ def test_ps_json(tmp_path, monkeypatch):
     assert res.exit_code == 0, res.output
     rows = json.loads(res.output)
     assert any(r["type"] == "goal" and r["what"] == "G1" for r in rows)
+
+
+def test_ps_text_strips_terminal_control_sequences(tmp_path, monkeypatch):
+    monkeypatch.setattr("maverick.job_queue.DEFAULT_DB", tmp_path / "jobs.db")
+    from maverick.world_model import open_world
+    db = tmp_path / "world.db"
+    w = open_world(db)
+    w.create_goal("Goal\x1b[2JTitle\x1b]52;c;SGVsbG8=\x07", "x")
+    w.close()
+
+    from maverick.job_queue import JobQueue
+    JobQueue(db_path=tmp_path / "jobs.db").enqueue(
+        "job\x1b]8;;https://evil.example/\x07kind",
+        {"__cron__": "* * * * *\x1b[31m"},
+        run_at=1000.0,
+    )
+
+    from maverick.cli import main
+    res = CliRunner().invoke(main, ["--db", str(db), "ps"])
+    assert res.exit_code == 0, res.output
+    assert "\x1b" not in res.output
+    assert "\x07" not in res.output
+    assert "GoalTitle" in res.output
+    assert "jobkind" in res.output
+
+
+def test_ps_json_preserves_raw_values(tmp_path, monkeypatch):
+    monkeypatch.setattr("maverick.job_queue.DEFAULT_DB", tmp_path / "jobs.db")
+    from maverick.world_model import open_world
+    db = tmp_path / "world.db"
+    w = open_world(db)
+    title = "Goal\x1b[2JTitle"
+    w.create_goal(title, "x")
+    w.close()
+
+    from maverick.cli import main
+    res = CliRunner().invoke(main, ["--db", str(db), "ps", "--json"])
+    assert res.exit_code == 0, res.output
+    rows = json.loads(res.output)
+    assert any(r["type"] == "goal" and r["what"] == title for r in rows)
