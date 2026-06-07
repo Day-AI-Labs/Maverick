@@ -141,6 +141,7 @@ docs/
   configuration.md       Full config schema reference
   deployment.md          Desktop / Docker / VPS / Phone-companion targets
   safety.md              Shield chokepoints and built-in rule set
+  security-hardening.md  Enterprise opt-in controls + compliance commands
   api.md                 REST API reference + curl examples
 benchmarks/
   longhorizon/           Reproducible long-horizon evaluation tasks

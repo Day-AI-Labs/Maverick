@@ -64,6 +64,7 @@ You can support the project via
 - [Configuration](configuration.md) — providers, channels, budgets
 - [Deployment](deployment.md) — desktop / docker / VPS / phone modes
 - [Safety](safety.md) — shield, audit log, kill switches, consent
+- [Security hardening](security-hardening.md) — enterprise opt-in controls (capabilities, tenancy, quotas, OIDC, encryption-at-rest, audit signing) + compliance commands
 - [Plugins](plugins.md) — extending the tool / channel / skill surface
 - [Self-learning](self-learning.md) — acquire skills, tools, MCP servers, and APIs on demand
 - [Roadmap](ROADMAP.md) — 36-month plan, all open
