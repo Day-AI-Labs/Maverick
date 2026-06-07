@@ -24,6 +24,7 @@ with no flag-day re-encrypt. This increment wires it into the cross-session
 from __future__ import annotations
 
 import base64
+import binascii
 import os
 import secrets
 import stat
@@ -235,11 +236,24 @@ def seal_to_str(text: str) -> str:
 
 
 def unseal_from_str(s: str) -> str:
-    """Inverse of :func:`seal_to_str`; a string without the marker is returned
-    unchanged (legacy plaintext written before encryption was enabled)."""
+    """Inverse of :func:`seal_to_str`.
+
+    Strings without the marker are returned unchanged (legacy plaintext written
+    before encryption was enabled). Because the marker is public and TEXT fields
+    may also contain attacker-controlled plaintext while encryption is disabled,
+    a marked value is only decrypted after its payload decodes to a structurally
+    valid sealed blob. Marker collisions remain plaintext; authentic-looking
+    sealed blobs still fail closed if decryption/authentication fails.
+    """
     if not is_sealed_str(s):
         return s
-    return unseal(base64.b64decode(s[len(_STR_PREFIX):])).decode("utf-8", errors="replace")
+    try:
+        blob = base64.b64decode(s[len(_STR_PREFIX):], validate=True)
+    except (ValueError, binascii.Error):
+        return s
+    if not is_sealed(blob) or len(blob) < len(_MAGIC) + _NONCE_BYTES + 16:
+        return s
+    return unseal(blob).decode("utf-8", errors="replace")
 
 
 __all__ = [
