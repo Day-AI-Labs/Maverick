@@ -47,6 +47,26 @@ def test_egress_control_reflects_enterprise(monkeypatch):
     assert _by_control(compliance_report())["Data-egress control"].status == "active"
 
 
+def test_audit_signing_requires_crypto_backend(monkeypatch):
+    monkeypatch.setenv("MAVERICK_AUDIT_SIGN", "1")
+    monkeypatch.setattr("maverick.audit.signing._have_crypto", lambda: False)
+
+    check = _by_control(compliance_report())["Tamper-evident audit"]
+
+    assert check.status == "action_needed"
+    assert "audit-signing" in check.detail
+
+
+def test_audit_signing_active_when_requested_and_crypto_available(monkeypatch):
+    monkeypatch.setenv("MAVERICK_AUDIT_SIGN", "1")
+    monkeypatch.setattr("maverick.audit.signing._have_crypto", lambda: True)
+
+    check = _by_control(compliance_report())["Tamper-evident audit"]
+
+    assert check.status == "active"
+    assert "Ed25519 hash-chain on" in check.detail
+
+
 def test_oversight_reflects_consent_mode(monkeypatch):
     assert _by_control(compliance_report())["Human oversight (consent gating)"].status == "action_needed"
     monkeypatch.setenv("MAVERICK_CONSENT_MODE", "ask")

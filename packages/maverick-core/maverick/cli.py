@@ -564,6 +564,82 @@ def mcp(use_http: bool, host: str, port: int) -> None:
         MCPServer().run()
 
 
+@main.group("mcp-registry")
+def mcp_registry_group() -> None:
+    """Discover + install external MCP servers from a registry.
+
+    A registry is a self-hostable `<base>/mcp/index.json` (point
+    `[mcp_registries] indexes` at your own). `add` writes the chosen server into
+    `[mcp_servers.<name>]` in ~/.maverick/config.toml; the kernel loads it on the
+    next run. (`maverick mcp` — without `-registry` — starts Maverick's own MCP
+    server; this group manages the servers Maverick *consumes*.)
+    """
+
+
+@mcp_registry_group.command("browse")
+def mcp_registry_browse() -> None:
+    """List MCP servers available in the registry."""
+    from .mcp_registry import load_mcp_registry
+    entries = load_mcp_registry()
+    if not entries:
+        click.echo("no registry entries (index empty or unreachable).")
+        return
+    for e in entries:
+        mark = " [verified]" if e.verified else ""
+        transport = "http" if (e.spec or {}).get("url") else "stdio"
+        click.echo(f"  {e.name}{mark}  v{e.version}  ({transport})")
+        if e.summary:
+            click.echo(f"    {e.summary}")
+    click.echo("")
+    click.echo("install one with:  maverick mcp-registry add <name>")
+
+
+@mcp_registry_group.command("add")
+@click.argument("name")
+def mcp_registry_add(name: str) -> None:
+    """Install a registry MCP server by name into config."""
+    from .mcp_registry import add_mcp_server_to_config, install_mcp_from_registry
+    try:
+        spec = install_mcp_from_registry(name)
+        add_mcp_server_to_config(spec.name, spec.to_dict())
+    except ValueError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    transport = "http" if spec.is_http else "stdio"
+    click.echo(f"added: {spec.name} ({transport}) -> [mcp_servers.{spec.name}]")
+    click.echo("it loads on your next `maverick start` / `maverick chat`.")
+
+
+@mcp_registry_group.command("remove")
+@click.argument("name")
+def mcp_registry_remove(name: str) -> None:
+    """Remove a configured MCP server from config."""
+    from .mcp_registry import remove_mcp_server_from_config
+    if remove_mcp_server_from_config(name):
+        click.echo(f"removed: {name}")
+    else:
+        click.echo(f"no MCP server {name!r} in config.", err=True)
+        sys.exit(2)
+
+
+@mcp_registry_group.command("list")
+@click.pass_context
+def mcp_registry_list(ctx) -> None:
+    """List MCP servers currently configured in ~/.maverick/config.toml."""
+    from .mcp_client import load_mcp_specs_from_config
+    specs = load_mcp_specs_from_config()
+    if not specs:
+        click.echo("no MCP servers configured. add one with "
+                   "`maverick mcp-registry add <name>`.")
+        return
+    for s in specs:
+        if s.is_http:
+            click.echo(f"  {s.name}  (http)  {s.url}")
+        else:
+            argstr = " ".join([s.command, *s.args])
+            click.echo(f"  {s.name}  (stdio)  {argstr}")
+
+
 @main.command()
 @click.argument("title", required=False)
 @click.option("--description", default="")
@@ -2374,6 +2450,55 @@ def soc2(compact: bool) -> None:
         click.echo(_json.dumps(evidence, default=str))
     else:
         click.echo(_json.dumps(evidence, default=str, indent=2))
+
+
+# ----- DSAR subject-data export ----------------------------------------
+
+@main.group("dsar")
+def dsar_group() -> None:
+    """Data-subject access requests (GDPR Art. 15 / 20)."""
+
+
+@dsar_group.command("export")
+@click.option("--user", "user_id", required=True,
+              help="The channel user_id (subject) to export.")
+@click.option("--tenant", default=None, help="Tenant to read from (default: active).")
+@click.option("--output", "-o", type=click.Path(), default=None,
+              help="Write JSON to file (default stdout).")
+@click.option("--json", "compact", is_flag=True,
+              help="Emit compact single-line JSON (default: pretty, indent=2).")
+def dsar_export(user_id: str, tenant: str | None, output, compact: bool) -> None:
+    """Export everything Maverick holds for a subject as a JSON bundle.
+
+    Serializes ``export_subject_data()`` -- the subject's conversations, the
+    turns/goals/episodes those reference, and their audit rows -- for the
+    right of access / portability. The exporter is fail-soft (an unknown
+    subject or empty install yields a structured, empty bundle), so this
+    command always emits a JSON object and exits 0.
+    """
+    import json as _json
+
+    from .dsar import export_subject_data
+    bundle = export_subject_data(user_id, tenant=tenant)
+    payload = (
+        _json.dumps(bundle, default=str)
+        if compact
+        else _json.dumps(bundle, default=str, indent=2)
+    )
+    if output:
+        # A DSAR export carries the subject's full conversation content.
+        # Create it 0o600 (not the umask's world-readable 0644) so a
+        # co-tenant can't read it, and fail cleanly instead of dumping a
+        # traceback on a bad/unwritable path.
+        try:
+            fd = os.open(str(output), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload)
+        except OSError as e:
+            raise click.ClickException(f"could not write {output}: {e}")
+        click.echo(f"exported to {output}")
+    else:
+        click.echo(payload)
 
 
 # ----- Cache management ------------------------------------------------

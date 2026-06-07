@@ -2,7 +2,7 @@
 
 A capability whose ``allow_paths`` is non-empty restricts which filesystem
 paths the known file tools (read_file/write_file/list_dir/str_replace_editor/
-ast_edit) may touch. Default-open: an empty ``allow_paths`` (the common case,
+ast_edit/apply_patch) may touch. Default-open: an empty ``allow_paths`` (the common case,
 and the only state reachable without opting into capability enforcement) is a
 no-op, so normal behaviour is unchanged.
 
@@ -50,16 +50,16 @@ def _spy_tool(name: str, calls: list, path_key: str = "path") -> Tool:
 async def test_path_outside_scope_denied_and_tool_not_run(tmp_path):
     agent = _agent(tmp_path)
     agent.capability = Capability(principal="agent:coder-1",
-                                  allow_paths=frozenset({"/repo/*"}))
+                                  allow_paths=frozenset({"repo/*"}))
     calls: list = []
     # Register a fake read_file so a permitted call would be observable; the
     # denied call must NOT reach it.
     agent.tools.register(_spy_tool("read_file", calls))
 
-    out = await agent._run_tool("read_file", {"path": "/etc/passwd"})
+    out = await agent._run_tool("read_file", {"path": "etc/passwd"})
     assert "DENIED by capability" in out
     assert "agent:coder-1" in out
-    assert "/etc/passwd" in out
+    assert "etc/passwd" in out
     assert calls == []  # the file tool did not run
 
 
@@ -67,13 +67,13 @@ async def test_path_outside_scope_denied_and_tool_not_run(tmp_path):
 async def test_path_inside_scope_permitted(tmp_path):
     agent = _agent(tmp_path)
     agent.capability = Capability(principal="agent:coder-1",
-                                  allow_paths=frozenset({"/repo/*"}))
+                                  allow_paths=frozenset({"repo/*"}))
     calls: list = []
     agent.tools.register(_spy_tool("read_file", calls))
 
-    out = await agent._run_tool("read_file", {"path": "/repo/ok.py"})
+    out = await agent._run_tool("read_file", {"path": "repo/ok.py"})
     assert "DENIED" not in out
-    assert calls == ["/repo/ok.py"]  # passed the gate and ran
+    assert calls == ["repo/ok.py"]  # passed the gate and ran
 
 
 @pytest.mark.asyncio
@@ -82,13 +82,13 @@ async def test_tool_not_in_map_never_path_denied(tmp_path):
     # path-denied, even when the path is outside the scope.
     agent = _agent(tmp_path)
     agent.capability = Capability(principal="agent:coder-1",
-                                  allow_paths=frozenset({"/repo/*"}))
+                                  allow_paths=frozenset({"repo/*"}))
     calls: list = []
     agent.tools.register(_spy_tool("not_a_file_tool", calls))
 
-    out = await agent._run_tool("not_a_file_tool", {"path": "/etc/passwd"})
+    out = await agent._run_tool("not_a_file_tool", {"path": "etc/passwd"})
     assert "DENIED" not in out
-    assert calls == ["/etc/passwd"]
+    assert calls == ["etc/passwd"]
 
 
 @pytest.mark.asyncio
@@ -99,9 +99,9 @@ async def test_no_allow_paths_is_no_path_denial(tmp_path):
     calls: list = []
     agent.tools.register(_spy_tool("read_file", calls))
 
-    out = await agent._run_tool("read_file", {"path": "/etc/passwd"})
+    out = await agent._run_tool("read_file", {"path": "etc/passwd"})
     assert "DENIED" not in out
-    assert calls == ["/etc/passwd"]
+    assert calls == ["etc/passwd"]
 
 
 @pytest.mark.asyncio
@@ -112,9 +112,9 @@ async def test_unrestricted_capability_none_is_no_path_denial(tmp_path):
     calls: list = []
     agent.tools.register(_spy_tool("read_file", calls))
 
-    out = await agent._run_tool("read_file", {"path": "/etc/passwd"})
+    out = await agent._run_tool("read_file", {"path": "etc/passwd"})
     assert "DENIED" not in out
-    assert calls == ["/etc/passwd"]
+    assert calls == ["etc/passwd"]
 
 
 @pytest.mark.asyncio
@@ -123,7 +123,7 @@ async def test_missing_path_arg_fails_soft(tmp_path):
     # path check -- it falls through to the tool's own validation.
     agent = _agent(tmp_path)
     agent.capability = Capability(principal="agent:coder-1",
-                                  allow_paths=frozenset({"/repo/*"}))
+                                  allow_paths=frozenset({"repo/*"}))
     calls: list = []
     agent.tools.register(_spy_tool("read_file", calls))
 
@@ -141,10 +141,64 @@ async def test_path_denial_is_audited(tmp_path, monkeypatch):
                         lambda kind, **kw: calls.append((kind, kw)) or True)
     agent = _agent(tmp_path)
     agent.capability = Capability(principal="agent:coder-1",
-                                  allow_paths=frozenset({"/repo/*"}))
-    await agent._run_tool("write_file", {"path": "/etc/evil", "content": "x"})
+                                  allow_paths=frozenset({"repo/*"}))
+    await agent._run_tool("write_file", {"path": "etc/evil", "content": "x"})
     denied = [kw for k, kw in calls if k == EventKind.CAPABILITY_DENIED]
     assert denied, "path denial was not written to the audit log"
     assert denied[0]["tool"] == "write_file"
     assert denied[0]["principal"] == "agent:coder-1"
-    assert denied[0]["path"] == "/etc/evil"
+    assert denied[0]["path"] == "etc/evil"
+
+
+@pytest.mark.asyncio
+async def test_dotdot_path_checked_after_workspace_canonicalization(tmp_path):
+    agent = _agent(tmp_path)
+    (tmp_path / "allowed").mkdir()
+    (tmp_path / "secret.txt").write_text("SECRET_ROOT", encoding="utf-8")
+    agent.capability = Capability(principal="agent:coder-1",
+                                  allow_paths=frozenset({"allowed/*"}))
+
+    out = await agent._run_tool("read_file", {"path": "allowed/../secret.txt"})
+
+    assert "DENIED by capability" in out
+    assert "secret.txt" in out
+    assert "SECRET_ROOT" not in out
+
+
+@pytest.mark.asyncio
+async def test_list_dir_missing_path_checks_default_root(tmp_path):
+    agent = _agent(tmp_path)
+    (tmp_path / "allowed").mkdir()
+    (tmp_path / "secret.txt").write_text("SECRET_ROOT", encoding="utf-8")
+    agent.capability = Capability(principal="agent:coder-1",
+                                  allow_paths=frozenset({"allowed/*"}))
+
+    out = await agent._run_tool("list_dir", {})
+
+    assert "DENIED by capability" in out
+    assert "secret.txt" not in out
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_checks_every_patch_path(tmp_path):
+    import subprocess
+
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "allowed").mkdir()
+    (tmp_path / "secret.txt").write_text("old\n", encoding="utf-8")
+    agent = _agent(tmp_path)
+    agent.capability = Capability(principal="agent:coder-1",
+                                  allow_paths=frozenset({"allowed/*"}))
+    patch = """diff --git a/secret.txt b/secret.txt
+--- a/secret.txt
++++ b/secret.txt
+@@ -1 +1 @@
+-old
++new
+"""
+
+    out = await agent._run_tool("apply_patch", {"patch": patch})
+
+    assert "DENIED by capability" in out
+    assert "secret.txt" in out
+    assert (tmp_path / "secret.txt").read_text(encoding="utf-8") == "old\n"

@@ -1734,6 +1734,7 @@ def write_config(
     *,
     advanced: dict[str, Any] | None = None,
     mcp_servers: dict[str, dict[str, Any]] | None = None,
+    mcp_registries: list[str] | None = None,
     plugins: list[str] | None = None,
     plugin_grant: list[str] | None = None,
     plugin_enforce: bool = False,
@@ -1980,6 +1981,14 @@ def write_config(
             lines.append(f"[mcp_servers.{name}]")
             for k, v in cfg.items():
                 _emit_kv(lines, k, v)
+
+    # Custom/self-hosted MCP registry index URLs (`maverick mcp-registry browse`
+    # reads these; default is the built-in awesome-maverick index). Only emitted
+    # when the operator overrode them — discovery works out of the box otherwise.
+    if mcp_registries:
+        lines.append("")
+        lines.append("[mcp_registries]")
+        _emit_kv(lines, "indexes", mcp_registries)
 
     if plugins:
         lines.append("")

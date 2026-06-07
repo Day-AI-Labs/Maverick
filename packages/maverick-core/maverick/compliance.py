@@ -142,17 +142,32 @@ def compliance_report() -> list[ControlCheck]:
         "Audit logging (record-keeping)", "EU AI Act Art. 12 / GDPR Art. 30",
         "active", "append-only event log at ~/.maverick/audit/YYYY-MM-DD.ndjson",
     ))
-    signing_on = False
+    signing_requested = False
+    signing_available = False
     try:
         from .audit.writer import _resolve_signing
-        signing_on = bool(_resolve_signing(None))
+
+        signing_requested = bool(_resolve_signing(None))
+        if signing_requested:
+            from .audit.signing import _have_crypto
+
+            signing_available = _have_crypto()
     except Exception:
-        pass
+        signing_available = False
+    signing_on = signing_requested and signing_available
+    if signing_on:
+        signing_detail = "Ed25519 hash-chain on; verify with 'maverick audit verify'"
+    elif signing_requested:
+        signing_detail = (
+            "install audit signing support with "
+            "pip install 'maverick-agent[audit-signing]'"
+        )
+    else:
+        signing_detail = "enable [audit] sign = true (or MAVERICK_AUDIT_SIGN=1)"
     checks.append(ControlCheck(
         "Tamper-evident audit", "EU AI Act Art. 12",
         "active" if signing_on else "action_needed",
-        "Ed25519 hash-chain on; verify with 'maverick audit verify'" if signing_on
-        else "enable [audit] sign = true (or MAVERICK_AUDIT_SIGN=1)",
+        signing_detail,
     ))
 
     # EU AI Act Art. 14 — human oversight.
