@@ -62,6 +62,10 @@ class SwarmContext:
     max_depth: int = 3
     use_skills: bool = field(default_factory=_default_use_skills)
     shield: Any | None = None
+    # Agent compartments (Rung 1 containment): a run-scoped QuarantineRegistry
+    # of agents sealed off after a confirmed threat. None == disabled. Typed
+    # Any to avoid importing the quarantine module here.
+    quarantine: Any | None = None
     mcp_clients: list = field(default_factory=list)
     channel: str | None = None
     user_id: str | None = None
