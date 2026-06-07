@@ -2299,12 +2299,15 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
               help="Output format.")
 @click.option("--strict", is_flag=True,
               help="Exit non-zero if any control needs action (gate CI / deploys).")
+@click.option("--framework", type=click.Choice(["eu", "us", "all"]), default="all",
+              help="Filter to a jurisdiction's frameworks (default: all).")
 @click.pass_context
-def compliance_cmd(ctx, fmt: str, strict: bool) -> None:
-    """Report GDPR + EU AI Act control coverage for this deployment.
+def compliance_cmd(ctx, fmt: str, strict: bool, framework: str) -> None:
+    """Report GDPR + EU AI Act + US-framework control coverage for this deployment.
 
-    Maps each active control to the article it supports and flags opt-in
-    controls that are off. Control coverage only -- not a legal attestation.
+    Maps each active control to the article/framework it supports (EU AI Act,
+    GDPR, NIST AI RMF, Colorado AI Act, NYC Local Law 144, EEOC, CCPA) and flags
+    opt-in controls that are off. Control coverage only -- not a legal attestation.
 
     With --strict, exits non-zero if any control is "action needed", so a
     regulated deployment can fail a CI job / release gate when its posture
@@ -2316,6 +2319,8 @@ def compliance_cmd(ctx, fmt: str, strict: bool) -> None:
         render_report_text,
     )
     checks = compliance_report()
+    if framework != "all":
+        checks = [c for c in checks if c.framework == framework]
     click.echo(
         render_report_json(checks) if fmt == "json" else render_report_text(checks)
     )
