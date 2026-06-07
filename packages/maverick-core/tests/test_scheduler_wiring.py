@@ -324,6 +324,38 @@ def test_drain_does_not_run_rearmed_future_occurrence(tmp_path):
     assert len(pend) == 1 and pend[0].id != jid    # next occurrence still armed
 
 
+def test_drain_snapshots_ready_time_for_slow_recurring_jobs(
+    tmp_path, monkeypatch
+):
+    # ``--once`` must drain the work that was ready when it started, not work
+    # that becomes ready while a long handler is still running. Simulate that
+    # by making the first cron re-arm due after the drain snapshot (200 > 100)
+    # but before the real wall clock used by the old dynamic drain loop.
+    from maverick.job_queue import JobQueue
+    from maverick.worker import Worker
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    jid = q.enqueue("noop", {"__cron__": "* * * * *"}, run_at=0.0)
+    monkeypatch.setattr("maverick.worker.time.time", lambda: 100.0)
+    rearmed = {"count": 0}
+
+    def _fake_schedule_cron(queue, expr, kind, payload):
+        rearmed["count"] += 1
+        run_at = 200.0 if rearmed["count"] == 1 else 1_000_000_000_000.0
+        return queue.enqueue(kind, payload, run_at=run_at), run_at
+
+    monkeypatch.setattr("maverick.scheduler.schedule_cron", _fake_schedule_cron)
+    runs = []
+    w = Worker(queue=q, idle_sleep=0.0)
+    w.register("noop", lambda job: runs.append(job.id))
+
+    assert w.drain() == 1
+    assert runs == [jid]
+    assert q.get(jid).status == "done"
+    pend = [j for j in q.list(status="pending") if j.payload.get("__cron__")]
+    assert len(pend) == 1
+    assert pend[0].run_at == 200.0
+
+
 def test_worker_command_once_drains(tmp_path, monkeypatch):
     from maverick.cli import main
     monkeypatch.setattr("maverick.job_queue.DEFAULT_DB", tmp_path / "jobs.db")

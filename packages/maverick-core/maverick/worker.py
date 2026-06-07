@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 import signal
 import threading
+import time
 import traceback
 from collections.abc import Callable
 from pathlib import Path
@@ -166,9 +167,16 @@ class Worker:
         except Exception:
             log.exception("worker: failed to re-arm cron job %d (%r)", job.id, expr)
 
-    def run_once(self) -> bool:
-        """Process at most one job. Returns True if a job ran."""
-        job = self.queue.claim()
+    def run_once(self, *, ready_at: float | None = None) -> bool:
+        """Process at most one job. Returns True if a job ran.
+
+        ``ready_at`` bounds which pending rows are considered ready. The
+        daemon leaves it unset so each claim uses the current wall clock;
+        one-shot drain mode passes its start time so jobs that become due
+        while an earlier long-running handler executes wait for the next
+        invocation.
+        """
+        job = self.queue.claim(now=ready_at)
         if job is None:
             return False
         self._maybe_rearm(job)
@@ -221,13 +229,11 @@ class Worker:
     def drain(self) -> int:
         """Run every currently-ready job, then return; for cron/systemd timers.
 
-        Reclaims stale jobs once (like ``run_forever``), then loops
-        ``run_once()`` until no ready job remains, returning how many ran. A
-        re-armed cron occurrence gets a FUTURE ``run_at`` (see
-        ``_maybe_rearm``) and ``claim()`` only returns jobs with
-        ``run_at <= now``, so it is intentionally NOT run in the same drain --
-        it fires on the next invocation. That is what lets ``drain()``
-        terminate instead of spinning forever on a recurring job.
+        Reclaims stale jobs once (like ``run_forever``), snapshots the
+        drain start time, then processes only jobs whose ``run_at`` was ready
+        at that moment. Re-armed cron occurrences, retries, or other jobs
+        that become due while a long-running handler is executing wait for
+        the next ``--once`` invocation.
         """
         reclaimed = self.queue.reclaim_stale(
             self.reclaim_lease, max_attempts=self.max_attempts,
@@ -235,8 +241,9 @@ class Worker:
         if reclaimed:
             log.info("worker: reclaimed %d stale job(s) from a prior crash",
                      reclaimed)
+        ready_at = time.time()
         count = 0
-        while self.run_once():
+        while self.run_once(ready_at=ready_at):
             count += 1
         return count
 
