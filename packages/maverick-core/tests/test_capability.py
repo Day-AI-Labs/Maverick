@@ -366,3 +366,78 @@ async def test_capability_denial_is_audited(tmp_path, monkeypatch):
     assert denied[0]["principal"] == "user:sms:+15551234567"
     assert denied[0]["channel"] == "sms"
     assert denied[0]["user_id"] == "sms:+15551234567"
+
+
+# --- RBAC: roles -> capability scopes --------------------------------------
+
+def _cfg(monkeypatch, cfg):
+    monkeypatch.setattr("maverick.config.load_config", lambda *a, **k: cfg)
+
+
+def test_role_for_principal_explicit(monkeypatch):
+    from maverick.capability import role_for_principal
+    _cfg(monkeypatch, {"role_assignments": {"user:alice": "analyst"}})
+    assert role_for_principal("user:alice") == "analyst"
+
+
+def test_role_for_principal_default_fallback(monkeypatch):
+    from maverick.capability import role_for_principal
+    _cfg(monkeypatch, {"role_assignments": {"default": "readonly"}})
+    assert role_for_principal("user:nobody") == "readonly"
+
+
+def test_role_for_principal_none_without_config(monkeypatch):
+    from maverick.capability import role_for_principal
+    _cfg(monkeypatch, {})
+    assert role_for_principal("user:alice") is None
+
+
+def test_role_restricts_tools(monkeypatch):
+    _cfg(monkeypatch, {
+        "role_assignments": {"user:alice": "analyst"},
+        "roles": {"analyst": {"allow_tools": ["read_file", "search"]}},
+    })
+    cap = capability_from_config("user:alice")
+    assert cap.permits("read_file") is True
+    assert cap.permits("shell") is False  # not in the role's allow-list
+
+
+def test_role_cannot_escalate_past_acl_deny(monkeypatch):
+    # [security] denies shell; a role that "allows" shell still can't grant it,
+    # because attenuate unions deny -- the ceiling's deny persists.
+    _cfg(monkeypatch, {
+        "security": {"denied_tools": ["shell"]},
+        "role_assignments": {"user:alice": "power"},
+        "roles": {"power": {"allow_tools": ["shell", "read_file"]}},
+    })
+    cap = capability_from_config("user:alice")
+    assert cap.permits("shell") is False
+    assert cap.permits("read_file") is True
+
+
+def test_role_max_risk_only_tightens(monkeypatch):
+    # ACL ceiling is low; a role asking for high cannot raise it.
+    _cfg(monkeypatch, {
+        "security": {"max_risk": "low"},
+        "role_assignments": {"user:alice": "power"},
+        "roles": {"power": {"max_risk": "high"}},
+    })
+    cap = capability_from_config("user:alice")
+    assert cap.max_risk == "low"
+
+
+def test_unknown_role_is_noop(monkeypatch):
+    _cfg(monkeypatch, {
+        "role_assignments": {"user:alice": "ghost"},  # no [roles.ghost] defined
+        "roles": {"analyst": {"allow_tools": ["read_file"]}},
+    })
+    cap = capability_from_config("user:alice")
+    assert cap.permits("shell") is True  # unchanged: all-permissive base
+
+
+def test_no_role_assignment_is_noop(monkeypatch):
+    # ACL still applies; absent any role assignment the grant is ACL-only.
+    _cfg(monkeypatch, {"security": {"denied_tools": ["shell"]}})
+    cap = capability_from_config("user:alice")
+    assert cap.permits("shell") is False
+    assert cap.permits("read_file") is True
