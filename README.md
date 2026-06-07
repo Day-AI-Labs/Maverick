@@ -108,6 +108,8 @@ maverick version                         # installed package versions
 | `maverick dashboard [--host --port --token]` | Local web UI + REST API |
 | `maverick mcp` | MCP server on stdio for Claude Code / Cursor / etc. |
 | `maverick logs / status / answer / resume` | Inspect + control running goals |
+| `maverick schedule goal / add / list / rm` | Schedule recurring autonomous goals via cron |
+| `maverick worker` | Drain the scheduled-job queue (runs the recurring tasks) |
 | `maverick fact / facts` | Get / set persistent facts |
 | `maverick skills` | List installed + distilled skills |
 | `maverick skill install / remove / info` | Manage the skill marketplace |
