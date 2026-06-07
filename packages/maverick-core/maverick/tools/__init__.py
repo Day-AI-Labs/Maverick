@@ -666,6 +666,18 @@ def base_registry(
     reg.register(s3_tool())
     reg.register(elasticsearch_tool())
     reg.register(github_actions())
+    # Strategic-fit connectors (ITSM / data / cloud-ML / GRC). Explicit-token
+    # auth (no ambient creds), so registered unconditionally like salesforce.
+    from .databricks_tool import databricks_tool
+    from .onetrust_tool import onetrust_tool
+    from .servicenow_tool import servicenow_tool
+    from .snowflake_tool import snowflake_tool
+    from .vertex_tool import vertex_tool
+    reg.register(servicenow_tool())
+    reg.register(snowflake_tool())
+    reg.register(databricks_tool())
+    reg.register(onetrust_tool())
+    reg.register(vertex_tool())
     # Credentialed SaaS/cloud tools are opt-in (PR #124): they can use
     # ambient host credentials, so they only register when the operator
     # sets MAVERICK_ENABLE_CRED_TOOLS=true.
