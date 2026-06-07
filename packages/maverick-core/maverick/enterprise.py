@@ -66,6 +66,15 @@ CLOUD_PROVIDERS = frozenset({
 # local when its configured endpoint is provably local/private.
 _ENDPOINT_VALIDATED_PROVIDERS = frozenset({"openai_compatible"})
 
+# Built-in local providers can be redirected off-box via [providers.<name>]
+# base_url or these env vars. A configured non-local endpoint must NOT satisfy the
+# egress lock just because the provider *name* is "local" (ollama has no env
+# override -- it reads [providers.ollama] base_url).
+_LOCAL_PROVIDER_ENDPOINT_ENV = {
+    "vllm": "VLLM_BASE_URL",
+    "tgi": "TGI_BASE_URL",
+}
+
 
 class EgressBlocked(RuntimeError):
     """Raised when enterprise mode refuses to send data to a non-local provider."""
@@ -145,6 +154,30 @@ def _endpoint_validated_provider_is_local(provider: str) -> bool:
     return _is_local_endpoint(_configured_openai_compatible_base_url())
 
 
+def _configured_base_url(provider: str) -> str | None:
+    """The operator-configured endpoint for ``provider`` (``[providers.<name>]
+    base_url`` or its env override), or ``None`` if it uses its built-in default."""
+    try:
+        from .config import get_provider_config
+        cfg = get_provider_config(provider)
+    except Exception:
+        cfg = {}
+    env_var = _LOCAL_PROVIDER_ENDPOINT_ENV.get(provider)
+    url = cfg.get("base_url") or (os.environ.get(env_var) if env_var else None)
+    return str(url).strip() if url else None
+
+
+def _builtin_local_provider_is_local(provider: str) -> bool:
+    """A built-in local provider (ollama/vllm/tgi) is local unless it has been
+    pointed at a non-local endpoint. No configured endpoint -> the built-in
+    localhost default -> local. A public base_url -> NOT local: this is the
+    egress-lock bypass (a "local" provider name aimed off-box) that we close."""
+    url = _configured_base_url(provider)
+    if url is None:
+        return True
+    return _is_local_endpoint(url)
+
+
 def _extra_local_providers() -> frozenset[str]:
     """Operator-declared additional self-hosted providers (``[enterprise]
     local_providers``), canonicalized and fail-closed. Known cloud providers are
@@ -169,24 +202,34 @@ def _extra_local_providers() -> frozenset[str]:
                 if _endpoint_validated_provider_is_local(canon):
                     providers.add(canon)
             else:
-                providers.add(canon)
+                # Operator-vouched custom provider: admit it (a bare name is a
+                # deliberate vouch), but never when it carries an explicitly
+                # non-local base_url -- a public endpoint can't be "local".
+                url = _configured_base_url(canon)
+                if url is None or _is_local_endpoint(url):
+                    providers.add(canon)
         return frozenset(providers)
     except Exception:
         return frozenset()
 
 
 def is_local_provider(provider: str) -> bool:
-    """True if ``provider`` is self-hosted (built-in local set or operator allow-list).
+    """True if ``provider`` is self-hosted AND its endpoint is provably local.
 
-    The name is canonicalized first, so the ``ollama`` alias ``local`` and any
-    capitalization resolve correctly.
+    The name is canonicalized first (so the ``ollama`` alias ``local`` and any
+    capitalization resolve). A built-in local provider (ollama/vllm/tgi) only
+    counts as local when its resolved endpoint is local/private -- a ``base_url``
+    or ``VLLM_BASE_URL``/``TGI_BASE_URL`` pointing off-box does NOT satisfy the
+    egress lock just because the provider name is "local".
     """
     try:
         from .providers import _canonical
         canon = _canonical(provider)
     except Exception:
         canon = (provider or "").strip().lower()
-    return canon in LOCAL_PROVIDERS or canon in _extra_local_providers()
+    if canon in LOCAL_PROVIDERS:
+        return _builtin_local_provider_is_local(canon)
+    return canon in _extra_local_providers()
 
 
 def assert_provider_allowed(provider: str) -> None:
