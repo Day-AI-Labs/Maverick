@@ -54,7 +54,8 @@ def test_audit_signing_requires_crypto_backend(monkeypatch):
     check = _by_control(compliance_report())["Tamper-evident audit"]
 
     assert check.status == "action_needed"
-    assert "audit-signing" in check.detail
+    # Now reflects the active probe, which names the missing crypto backend.
+    assert "cryptography" in check.detail
 
 
 def test_audit_signing_active_when_requested_and_crypto_available(monkeypatch):
@@ -64,7 +65,24 @@ def test_audit_signing_active_when_requested_and_crypto_available(monkeypatch):
     check = _by_control(compliance_report())["Tamper-evident audit"]
 
     assert check.status == "active"
-    assert "Ed25519 hash-chain on" in check.detail
+    # Detail now comes from the real signed-probe verification, not an inference.
+    assert "Ed25519 hash-chain" in check.detail
+
+
+def test_audit_signing_not_active_when_the_signed_write_fails(monkeypatch):
+    # The old import-only inference (requested AND cryptography importable) would
+    # read "active" here; the probe-backed check reports the real state -- a
+    # signer that can't actually produce a verifiable signed row is NOT
+    # tamper-evident, so this must be action_needed, not a false PASS.
+    from maverick.deployment import GuaranteeCheck
+    monkeypatch.setattr(
+        "maverick.deployment._verify_audit_signing",
+        lambda: GuaranteeCheck("Tamper-evident audit", False,
+                               "audit signing probe failed to write or verify"),
+    )
+    check = _by_control(compliance_report())["Tamper-evident audit"]
+    assert check.status == "action_needed"
+    assert "failed" in check.detail
 
 
 def test_oversight_reflects_consent_mode(monkeypatch):
