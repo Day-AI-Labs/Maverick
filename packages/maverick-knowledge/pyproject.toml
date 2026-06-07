@@ -7,7 +7,7 @@ name = "maverick-knowledge"
 version = "0.1.0"
 description = "Per-domain document knowledge (vector RAG) for Maverick agents"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { text = "LicenseRef-Proprietary" }
 authors = [{ name = "cdayAI" }]
 # Pure core (chunking, SQLite brute-force store, deterministic embedder,
 # text/markdown/HTML parsing) has no third-party deps. Real embedding providers,
