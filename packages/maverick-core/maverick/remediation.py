@@ -19,6 +19,7 @@ how to undo it. ``apply`` defaults to a dry run.
 from __future__ import annotations
 
 import os
+import tempfile
 from dataclasses import dataclass
 from typing import Any
 
@@ -153,13 +154,85 @@ def _toml_scalar(v: object) -> str:
         return "true" if v else "false"
     if isinstance(v, int):
         return str(v)
-    return '"' + str(v).replace("\\", "\\\\").replace('"', '\\"') + '"'
+    if isinstance(v, float):
+        return repr(v)
+    s = (str(v).replace("\\", "\\\\").replace('"', '\\"')
+         .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t"))
+    return f'"{s}"'
 
 
 def _emit_block(section: str, changes: dict[str, Any]) -> str:
     lines = [f"[{section}]"]
     lines += [f"{k} = {_toml_scalar(v)}" for k, v in changes.items()]
     return "\n".join(lines) + "\n"
+
+
+def _parses_ok(text: str) -> bool:
+    """True if ``text`` is valid TOML -- the last gate before committing a write,
+    so an append that would corrupt config (duplicate table, scalar/table name
+    collision, or an already-malformed file) is refused, not written."""
+    try:
+        import tomllib  # 3.11+
+    except ModuleNotFoundError:  # Python 3.10
+        import tomli as tomllib  # type: ignore[no-redef]
+    try:
+        tomllib.loads(text)
+        return True
+    except Exception:
+        return False
+
+
+def _record_remediation(item: RemediationItem, block: str) -> bool:
+    """Record the ``config_remediated`` audit event. Returns False if it could not
+    be written -- the caller then refuses to mutate config unlogged (audit is
+    load-bearing for a self-modifying-config change)."""
+    try:
+        from .audit import EventKind, record
+        record(EventKind.CONFIG_REMEDIATED, agent="security_assessor",
+               section=item.section, control=item.control, applied=block.strip())
+        return True
+    except Exception:
+        return False
+
+
+def _write_config_atomic(path, text: str, *, prior: str) -> str:
+    """Write ``text`` to ``path`` atomically and privately (0600), backing the
+    prior contents up to ``<name>.bak`` first. Returns the backup path (or "").
+
+    A temp file in the same dir is written + fsync'd then ``os.replace``-d, so a
+    crash / full disk can never truncate the live config; ``0600`` keeps the
+    secret-bearing file off other users (mirrors the wizard / audit signer)."""
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        os.chmod(path.parent, 0o700)
+    except OSError:
+        pass
+    backup = ""
+    if prior.strip():
+        bak = path.with_name(path.name + ".bak")
+        fd = os.open(str(bak), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(prior)
+        backup = str(bak)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".config-", suffix=".tmp")
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return backup
 
 
 def apply_remediation(item: RemediationItem, *, dry_run: bool = True) -> ApplyResult:
@@ -196,19 +269,31 @@ def apply_remediation(item: RemediationItem, *, dry_run: bool = True) -> ApplyRe
                            undo=f"remove the appended [{item.section}] block")
     try:
         existing = path.read_text(encoding="utf-8") if path.exists() else ""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        joined = (existing.rstrip() + "\n\n" + block) if existing.strip() else block
-        path.write_text(joined, encoding="utf-8")
+    except OSError as e:
+        return ApplyResult(item.control, False, reason=f"could not read config: {e}")
+    new_text = (existing.rstrip() + "\n\n" + block) if existing.strip() else block
+    # Last gate: never write something that doesn't parse -- a duplicate table, a
+    # scalar/table name clash, or an already-malformed config the section check
+    # couldn't see. Refuse rather than corrupt the file.
+    if not _parses_ok(new_text):
+        return ApplyResult(
+            item.control, False, block=block,
+            reason=f"appending [{item.section}] would make config.toml invalid "
+                   "(it may already be malformed); fix it by hand")
+    # Audit is load-bearing here: refuse to mutate config we cannot record.
+    if not _record_remediation(item, block):
+        return ApplyResult(
+            item.control, False,
+            reason="could not write the audit record; refusing to change config "
+                   "unlogged")
+    try:
+        backup = _write_config_atomic(path, new_text, prior=existing)
     except OSError as e:
         return ApplyResult(item.control, False, reason=f"could not write config: {e}")
-    try:  # audit -- best-effort, must not fail the apply
-        from .audit import EventKind, record
-        record(EventKind.CONFIG_REMEDIATED, agent="security_assessor",
-               section=item.section, control=item.control)
-    except Exception:
-        pass
-    return ApplyResult(item.control, True, block=block,
-                       undo=f"remove the appended [{item.section}] block from {path}")
+    return ApplyResult(
+        item.control, True, block=block,
+        undo=f"restore {backup}" if backup
+        else f"remove the appended [{item.section}] block from {path}")
 
 
 def render_plan_text(plan_: RemediationPlan) -> str:

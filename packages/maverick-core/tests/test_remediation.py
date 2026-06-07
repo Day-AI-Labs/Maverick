@@ -87,6 +87,41 @@ def test_apply_appends_block_without_clobbering_and_audits(monkeypatch, tmp_path
     text = cfg.read_text()
     assert "[providers]" in text and "[audit]" in text and "sign = true" in text
     assert recorded and recorded[0][1]["section"] == "audit"
+    # Hardening: the secret-bearing config is written private (0600), the prior
+    # contents are backed up, and undo points at the backup.
+    assert oct(cfg.stat().st_mode)[-3:] == "600"
+    bak = tmp_path / "config.toml.bak"
+    assert bak.exists() and bak.read_text() == '[providers]\ndefault = "ollama"\n'
+    assert "restore" in res.undo
+
+
+def test_apply_refuses_unloggable_change_without_writing(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
+    monkeypatch.setenv("MAVERICK_SECURITY_AUTOFIX", "1")
+    cfg = tmp_path / "config.toml"
+    monkeypatch.setattr("maverick.config.config_path", lambda: cfg)
+
+    import maverick.audit as audit
+
+    def _boom(kind, **p):
+        raise OSError("audit log unwritable")
+    monkeypatch.setattr(audit, "record", _boom)
+
+    res = apply_remediation(_auto_item(), dry_run=False)
+    assert res.applied is False and "unlogged" in res.reason
+    assert not cfg.exists()                       # audit is load-bearing -> no write
+
+
+def test_apply_refuses_when_result_would_be_invalid_toml(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
+    monkeypatch.setenv("MAVERICK_SECURITY_AUTOFIX", "1")
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("this is = = not valid toml [[[\n")    # already malformed
+    monkeypatch.setattr("maverick.config.config_path", lambda: cfg)
+
+    res = apply_remediation(_auto_item(), dry_run=False)
+    assert res.applied is False and "invalid" in res.reason
+    assert cfg.read_text() == "this is = = not valid toml [[[\n"   # left untouched
 
 
 def test_apply_refuses_when_section_already_present(monkeypatch, tmp_path):
