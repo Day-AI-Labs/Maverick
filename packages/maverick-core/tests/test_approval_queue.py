@@ -22,6 +22,7 @@ def test_create_and_decide_approval(tmp_path):
     assert row.action == "rm-rf"
     assert row.risk == "high"
     assert row.scope == "/tmp/build"
+    assert row.provenance is None
     assert [a.id for a in wm.pending_approvals()] == [aid]
 
     # Approve transitions state; the row leaves the pending queue.
@@ -34,6 +35,18 @@ def test_create_and_decide_approval(tmp_path):
     assert wm.decide_approval(aid, "denied") is False
     assert wm.get_approval(aid).status == "approved"
 
+
+
+def test_create_approval_preserves_trusted_provenance(tmp_path):
+    wm = WorldModel(path=tmp_path / "world.db")
+    aid = wm.create_approval(
+        "shell", risk="high", detail="operator review", provenance="governance"
+    )
+
+    row = wm.get_approval(aid)
+    assert row is not None
+    assert row.provenance == "governance"
+    assert wm.pending_approvals()[0].provenance == "governance"
 
 def test_decide_unknown_approval_returns_false(tmp_path):
     wm = WorldModel(path=tmp_path / "world.db")

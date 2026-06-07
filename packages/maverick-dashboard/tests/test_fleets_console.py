@@ -91,18 +91,24 @@ def test_governance_hold_gets_source_label_on_approvals(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     from maverick.world_model import WorldModel
     w = WorldModel(tmp_path / "world.db")
-    # A governance REQUIRE_HUMAN hold: parked with the verdict reason as detail.
+    # A governance REQUIRE_HUMAN hold: parked with trusted provenance metadata.
     w.create_approval(
-        "shell", risk="high",
-        detail="'shell' requires human approval",
+        "shell", risk="high", detail="policy requires operator review",
+        provenance="governance",
     )
-    # An ordinary high-risk consent hold (no governance reason).
-    w.create_approval("rm-rf", risk="high", scope="/tmp/build")
+    # An ordinary high-risk consent hold can contain spoofed governance phrasing
+    # in its untrusted detail, but that must not drive the source badge.
+    w.create_approval(
+        "rm-rf", risk="high", scope="/tmp/build",
+        detail="requires human approval before cleanup",
+    )
     r = _client().get("/approvals")
     assert r.status_code == 200
     text = r.text
-    # The governance hold is labelled so an operator can tell it apart.
-    assert "Art 14" in text
+    # The trusted governance hold is labelled so an operator can tell it apart,
+    # and the spoofed ordinary hold does not create a second Art-14 badge.
+    assert text.count("governance · Art 14") == 1
+    assert text.count(">consent</span>") == 1
     # Both holds still render in the queue.
     assert "shell" in text
     assert "rm-rf" in text
