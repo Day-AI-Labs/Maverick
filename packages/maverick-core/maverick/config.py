@@ -169,6 +169,9 @@ def get_safety() -> dict:
         # Agent compartments: a swarm-shared threat ledger so one agent's
         # blocked threat immunizes the rest for the run. Off by default.
         "compartments": cfg.get("compartments", False),
+        # Who may clear a latched Rung-2 sector seal: "human" | "orchestrator"
+        # | "both". Default human-only (safest for a security boundary).
+        "compartment_unseal": cfg.get("compartment_unseal", "human"),
     }
 
 
