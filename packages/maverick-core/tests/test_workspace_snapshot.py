@@ -8,6 +8,7 @@ from maverick.workspace_snapshot import (
     create_snapshot,
     list_snapshots,
     restore_snapshot,
+    workspace_snapshot,
 )
 
 
@@ -67,3 +68,54 @@ def test_restore_blocks_path_traversal(tmp_path):
     with pytest.raises(ValueError):
         restore_snapshot(store, "snap-0001", tmp_path / "dest")
     assert not (tmp_path / "escape.txt").exists()
+
+
+class _Sandbox:
+    def __init__(self, workdir):
+        self.workdir = workdir
+
+
+def test_tool_rejects_snapshot_path_outside_workspace(tmp_path, monkeypatch):
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("secret", encoding="utf-8")
+    monkeypatch.setattr(
+        "maverick.workspace_snapshot.store_dir", lambda: tmp_path / "snaps")
+
+    out = workspace_snapshot(_Sandbox(workdir)).fn({
+        "op": "snapshot", "path": str(outside)})
+
+    assert "escapes the workspace" in out
+    assert not (tmp_path / "snaps").exists()
+
+
+def test_tool_rejects_restore_dest_outside_workspace(tmp_path, monkeypatch):
+    workdir = tmp_path / "workdir"
+    src = _src(workdir)
+    store = tmp_path / "snaps"
+    create_snapshot(src, store)
+    outside = tmp_path / "outside"
+    monkeypatch.setattr("maverick.workspace_snapshot.store_dir", lambda: store)
+
+    out = workspace_snapshot(_Sandbox(workdir)).fn({
+        "op": "restore", "id": "snap-0001", "dest": str(outside)})
+
+    assert "escapes the workspace" in out
+    assert not outside.exists()
+
+
+def test_tool_snapshots_and_restores_workspace_relative_paths(tmp_path, monkeypatch):
+    workdir = tmp_path / "workdir"
+    _src(workdir)
+    store = tmp_path / "snaps"
+    monkeypatch.setattr("maverick.workspace_snapshot.store_dir", lambda: store)
+    tool = workspace_snapshot(_Sandbox(workdir))
+
+    snap = tool.fn({"op": "snapshot", "path": "work"})
+    restore = tool.fn({"op": "restore", "id": "snap-0001", "dest": "restored"})
+
+    assert snap.startswith("created snap-0001")
+    assert restore.startswith("restored 2 files")
+    assert (workdir / "restored" / "a.txt").read_text(encoding="utf-8") == "alpha"

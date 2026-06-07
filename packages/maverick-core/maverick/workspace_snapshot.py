@@ -176,41 +176,57 @@ _SCHEMA = {
 }
 
 
-def _run(args: dict) -> str:
-    import json as _json
-    op = args.get("op")
-    store = store_dir()
+def _safe_workspace_path(sandbox, user_path: str) -> Path:
+    """Resolve ``user_path`` under ``sandbox.workdir`` and reject escapes."""
+    workdir = Path(sandbox.workdir).resolve()
+    candidate = (workdir / Path(user_path).expanduser()).resolve()
     try:
-        if op == "snapshot":
-            src = Path(args.get("path") or ".").expanduser()
-            man = create_snapshot(src, store, args.get("label") or "")
-            return (f"created {man['id']} ({man['files']} files, "
-                    f"{man['bytes']} bytes) -> {man['path']}")
-        if op == "list":
-            snaps = list_snapshots(store)
-            return _json.dumps(snaps, indent=2) if snaps else "(no snapshots)"
-        if op == "restore":
-            dest = args.get("dest")
-            if not dest:
-                return "ERROR: restore requires dest"
-            res = restore_snapshot(store, args.get("id") or "", Path(dest).expanduser())
-            return f"restored {res['restored']} files from {res['id']} -> {res['dest']}"
-    except (ValueError, OSError, tarfile.TarError) as e:
-        return f"ERROR: {e}"
-    return f"ERROR: unknown op {op!r}"
+        candidate.relative_to(workdir)
+    except ValueError as e:
+        raise ValueError(f"path {user_path!r} escapes the workspace") from e
+    return candidate
 
 
-def workspace_snapshot():
+def _run_with_sandbox(sandbox):
+    def _run(args: dict) -> str:
+        import json as _json
+        op = args.get("op")
+        store = store_dir()
+        try:
+            if op == "snapshot":
+                raw_path = args.get("path") or "."
+                src = _safe_workspace_path(sandbox, str(raw_path))
+                man = create_snapshot(src, store, args.get("label") or "")
+                return (f"created {man['id']} ({man['files']} files, "
+                        f"{man['bytes']} bytes) -> {man['path']}")
+            if op == "list":
+                snaps = list_snapshots(store)
+                return _json.dumps(snaps, indent=2) if snaps else "(no snapshots)"
+            if op == "restore":
+                dest = args.get("dest")
+                if not dest:
+                    return "ERROR: restore requires dest"
+                safe_dest = _safe_workspace_path(sandbox, str(dest))
+                res = restore_snapshot(store, args.get("id") or "", safe_dest)
+                return f"restored {res['restored']} files from {res['id']} -> {res['dest']}"
+        except (ValueError, OSError, tarfile.TarError) as e:
+            return f"ERROR: {e}"
+        return f"ERROR: unknown op {op!r}"
+    return _run
+
+
+def workspace_snapshot(sandbox):
     from .tools import Tool
     return Tool(
         name="workspace_snapshot",
         description=(
-            "Snapshot / restore a working directory as a gzip tarball. ops: "
-            "snapshot (path, label), list, restore (id, dest). Snapshots live "
-            "under ~/.maverick/snapshots; restore is path-traversal-safe."
+            "Snapshot / restore a working directory within the sandbox workspace "
+            "as a gzip tarball. ops: snapshot (path, label), list, restore "
+            "(id, dest). Snapshots live under ~/.maverick/snapshots; restore "
+            "is path-traversal-safe."
         ),
         input_schema=_SCHEMA,
-        fn=_run,
+        fn=_run_with_sandbox(sandbox),
     )
 
 

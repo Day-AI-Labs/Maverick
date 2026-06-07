@@ -705,7 +705,7 @@ def base_registry(
     from ..workspace_snapshot import workspace_snapshot
     reg.register(dom_diff())
     reg.register(license_scan())
-    reg.register(workspace_snapshot())
+    reg.register(workspace_snapshot(sandbox))
 
     if enable_web_search:
         from .web_search import web_search
