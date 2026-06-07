@@ -466,3 +466,45 @@ def test_pick_self_learning_includes_distill_local(monkeypatch):
     result = pick_self_learning()
     assert result["enable"] is True
     assert result["distill_local"] is True
+
+
+# ---------- finance suite wizard step (finance-agent-suite §8) ----------
+
+def test_pick_finance_skipped(monkeypatch):
+    _StubQ(monkeypatch)
+    from maverick_installer.wizard import pick_finance
+    assert pick_finance() == {"enable": False}
+
+
+def test_write_config_emits_finance_governance(tmp_path: Path, monkeypatch):
+    parsed = _write_full_config(
+        tmp_path, monkeypatch,
+        finance={"enable": True, "regimes": ["sox", "gaap"],
+                 "require_human_above": 5000.0, "deny_above": 50000.0,
+                 "sdn_path": "/etc/ofac/sdn.txt"},
+    )
+    assert parsed["governance"]["require_human_min_risk"] == "high"
+    assert parsed["governance"]["require_human_above"]["*"] == 5000.0
+    assert parsed["governance"]["deny_above"]["*"] == 50000.0
+    assert parsed["finance"]["regimes"] == ["sox", "gaap"]
+    assert parsed["screening"]["sdn_path"] == "/etc/ofac/sdn.txt"
+
+
+def test_write_config_omits_finance_when_off(tmp_path: Path, monkeypatch):
+    parsed = _write_full_config(tmp_path, monkeypatch)
+    assert "finance" not in parsed
+    assert "governance" not in parsed
+    assert "screening" not in parsed
+
+
+def test_write_config_finance_no_thresholds(tmp_path: Path, monkeypatch):
+    # require_human_above=0 means "pause all" -> rely on require_human_min_risk,
+    # no [governance.require_human_above] sub-table emitted.
+    parsed = _write_full_config(
+        tmp_path, monkeypatch,
+        finance={"enable": True, "regimes": ["sox"],
+                 "require_human_above": 0, "deny_above": 0, "sdn_path": ""},
+    )
+    assert parsed["governance"]["require_human_min_risk"] == "high"
+    assert "require_human_above" not in parsed["governance"]
+    assert "screening" not in parsed

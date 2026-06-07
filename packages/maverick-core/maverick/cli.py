@@ -2552,6 +2552,58 @@ def compliance_cmd(ctx, fmt: str, strict: bool, framework: str) -> None:
             )
 
 
+@main.group("finance")
+def finance_grp() -> None:
+    """Finance suite: the CFO-office control plane (finance-agent-suite)."""
+
+
+@finance_grp.command("status")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+@click.option("--strict", is_flag=True,
+              help="Exit non-zero if any control needs action (gate CI / deploys).")
+def finance_status_cmd(fmt: str, strict: bool) -> None:
+    """Report finance control coverage (SoD, maker-checker, DoA tiers, book of
+    record, sanctions, encryption, egress, regimes).
+
+    Control coverage only -- not an audit opinion. Agents draft; humans post, pay,
+    file, and certify. With --strict, exits non-zero if any control needs action.
+    """
+    from .finance.status import (
+        finance_status,
+        render_status_json,
+        render_status_text,
+    )
+    checks = finance_status()
+    click.echo(
+        render_status_json(checks) if fmt == "json" else render_status_text(checks)
+    )
+    if strict:
+        needs_action = [c.control for c in checks if c.status == "action_needed"]
+        if needs_action:
+            raise click.ClickException(
+                f"{len(needs_action)} finance control(s) need action: "
+                + ", ".join(needs_action)
+            )
+
+
+@finance_grp.command("lint-sod")
+def finance_lint_sod_cmd() -> None:
+    """Lint the finance roster for segregation-of-duties conflicts (CI gate)."""
+    from .domain import builtin_dir, load_domains, user_dir
+    from .finance.sod_linter import lint_roster
+    packs = {n: p for n, p in {**load_domains(builtin_dir()),
+                               **load_domains(user_dir())}.items()
+             if n.startswith("finance_")}
+    conflicts = lint_roster(packs)
+    if not conflicts:
+        click.echo(f"OK: {len(packs)} finance packs are segregation-of-duties clean.")
+        return
+    for c in conflicts:
+        click.echo(f"SoD CONFLICT: {c}", err=True)
+    raise click.ClickException(f"{len(conflicts)} SoD conflict(s)")
+
+
 @main.command("export-user")
 @click.option("--channel", required=True, help="Channel name.")
 @click.option("--user", required=True, help="The channel user_id to export.")

@@ -83,6 +83,7 @@ STEPS: list[tuple[str, str]] = [
     ("capabilities", "Capabilities"),
     ("self_learning", "Self-learning"),
     ("durable", "Durable execution"),
+    ("finance", "Finance suite"),
     ("advanced", "Advanced reasoning"),
     ("web_search", "Web search"),
     ("mcp_servers", "MCP servers"),
@@ -911,6 +912,51 @@ def pick_durable() -> dict[str, Any]:
     if not _q_confirm("Enable durable execution (crash-resume)?", default=False):
         return {"enabled": False}
     return {"enabled": True, "keep_last": 5}
+
+
+def pick_finance() -> dict[str, Any]:
+    """Opt-in to the finance suite governance (finance-agent-suite §5/§8).
+
+    Off by default. When enabled, governance pauses money movement for a human,
+    you pick the compliance regimes to enforce (strictest-wins), set the
+    delegation-of-authority dollar tiers, and point at an OFAC SDN list. Returns a
+    dict written under ``[governance]`` / ``[finance]`` / ``[screening]``.
+    """
+    console.print()
+    console.print(
+        "[dim]Finance suite: the CFO-office governance wrapper -- segregation of "
+        "duties, maker-checker, dollar-threshold approvals, and a signed book of "
+        "record. Enabling pauses every money movement for a human and lets you "
+        "enforce compliance regimes. OFF by default.[/dim]"
+    )
+    if not _q_confirm("Enable the finance suite governance?", default=False):
+        return {"enable": False}
+    regimes = _q_checkbox(
+        "Compliance regimes to enforce (strictest-wins union):",
+        ["sox", "coso", "gaap", "pci", "glba", "aml", "sec", "irs"],
+        default=["sox", "gaap"],
+    )
+    require_human_above = _safe_float(
+        _q_text("  Pause money movement above $ (DoA threshold; 0 = pause all)",
+                default="5000"),
+        default=5000.0,
+    )
+    deny_above = _safe_float(
+        _q_text("  Hard-deny money movement above $ (0 = no hard ceiling)",
+                default="0"),
+        default=0.0,
+    )
+    sdn_path = _q_text(
+        "  OFAC SDN list path for sanctions screening (blank to set later)",
+        default="",
+    ).strip()
+    return {
+        "enable": True,
+        "regimes": regimes,
+        "require_human_above": require_human_above,
+        "deny_above": deny_above,
+        "sdn_path": sdn_path,
+    }
 
 
 def pick_oidc() -> dict[str, Any]:
@@ -1831,6 +1877,7 @@ def write_config(
     skills: dict[str, Any] | None = None,
     self_learning: dict[str, Any] | None = None,
     durable: dict[str, Any] | None = None,
+    finance: dict[str, Any] | None = None,
     deployment: str | None = None,
 ) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -1975,6 +2022,34 @@ def write_config(
         lines.append("[durable]")
         for k, v in durable.items():
             _emit_kv(lines, k, v)
+
+    if finance:
+        # Finance suite governance (finance-agent-suite): pause money movement for
+        # a human, enforce compliance regimes (strictest-wins), and screen
+        # sanctions. The [governance] scalar key precedes its sub-tables (TOML).
+        lines.append("")
+        lines.append("[governance]")
+        lines.append('require_human_min_risk = "high"')
+        rha = finance.get("require_human_above") or 0
+        if rha and rha > 0:
+            lines.append("")
+            lines.append("[governance.require_human_above]")
+            lines.append(f'"*" = {rha}')
+        da = finance.get("deny_above") or 0
+        if da and da > 0:
+            lines.append("")
+            lines.append("[governance.deny_above]")
+            lines.append(f'"*" = {da}')
+        regimes = finance.get("regimes") or []
+        if regimes:
+            lines.append("")
+            lines.append("[finance]")
+            _emit_kv(lines, "regimes", regimes)
+        sdn = (finance.get("sdn_path") or "").strip()
+        if sdn:
+            lines.append("")
+            lines.append("[screening]")
+            _emit_kv(lines, "sdn_path", sdn)
 
     capability_config = dict(capabilities or {})
     if web_search_enabled and not capability_config.get("web_search"):
@@ -2707,6 +2782,11 @@ def run(fast: bool = False, resume: bool = False) -> int:
     _save_partial(state)
 
     _announce()
+    finance = state.get("finance") or pick_finance()
+    state["finance"] = finance
+    _save_partial(state)
+
+    _announce()
     advanced = state.get("advanced") or pick_advanced()
     state["advanced"] = advanced
     _save_partial(state)
@@ -2832,6 +2912,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
         skills=signed_skills if (signed_skills.get("trusted_pubkeys") or signed_skills.get("require_signed") or signed_skills.get("require_signed_catalog")) else None,
         self_learning=self_learning if self_learning.get("enable") else None,
         durable=durable if durable.get("enabled") else None,
+        finance=finance if finance.get("enable") else None,
     )
     _clear_partial()
     ok = smoke_test()
