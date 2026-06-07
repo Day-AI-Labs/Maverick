@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}oversight · Maverick{% endblock %}
+{% block content %}
+  <h2>oversight</h2>
+  <p class="muted">
+    Mission control for the agent fleet — every control-plane intervention in one
+    place: org-policy holds (governance), shield blocks, capability + egress
+    denials, consent denials, and killswitch halts. Deep dives:
+    <a href="/approvals">approvals</a>, <a href="/safety">safety</a>,
+    <a href="/fleets">fleets</a>, <a href="/audit">audit</a>.
+  </p>
+
+  <div class="panel" style="display: flex; gap: 2rem; flex-wrap: wrap; align-items: center;">
+    <div>
+      <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">killswitch</div>
+      {% if halted %}
+        <p style="font-size: 1.4rem; margin: 0.2rem 0; color: var(--danger);"><strong>HALTED</strong></p>
+      {% else %}
+        <p style="font-size: 1.4rem; margin: 0.2rem 0;">running</p>
+      {% endif %}
+    </div>
+    <div>
+      <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">active agents</div>
+      <p style="font-size: 1.4rem; margin: 0.2rem 0;">{{ active }}</p>
+    </div>
+    <div>
+      <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">pending approvals</div>
+      <p style="font-size: 1.4rem; margin: 0.2rem 0;"><a href="/approvals">{{ pending }}</a></p>
+    </div>
+    <div>
+      <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">interventions {% if day %}({{ day }}){% else %}(today){% endif %}</div>
+      <p style="font-size: 1.4rem; margin: 0.2rem 0;">{{ total }}</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top: 0;">By guardrail</h3>
+    <div class="muted" style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+      <span>governance: <strong>{{ by_kind.get('governance_denied', 0) }}</strong></span>
+      <span>shield: <strong>{{ by_kind.get('shield_block', 0) }}</strong></span>
+      <span>capability: <strong>{{ by_kind.get('capability_denied', 0) }}</strong></span>
+      <span>egress: <strong>{{ by_kind.get('egress_blocked', 0) }}</strong></span>
+      <span>consent: <strong>{{ by_kind.get('consent_result', 0) }}</strong></span>
+      <span>halt: <strong>{{ by_kind.get('halt', 0) }}</strong></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <form method="get" action="/oversight" style="display: flex; gap: 1rem; align-items: end; flex-wrap: wrap;">
+      <label>
+        <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">events scanned</div>
+        <input type="number" name="n" value="{{ n }}" min="1" max="5000"
+               style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+      </label>
+      <label>
+        <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">day (YYYY-MM-DD)</div>
+        <input type="text" name="day" value="{{ day or '' }}" placeholder="today"
+               style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+      </label>
+      <button type="submit"
+              style="padding: 0.45rem 1rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">
+        load
+      </button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top: 0;">Recent interventions</h3>
+    {% if events %}
+      <table>
+        <thead>
+          <tr><th scope="col">ts</th><th scope="col">guardrail</th><th scope="col">agent</th><th scope="col">goal</th><th scope="col">detail</th></tr>
+        </thead>
+        <tbody>
+        {% for ev in events %}
+          <tr>
+            <td class="muted" style="white-space: nowrap;">{{ ev.ts | datetime }}</td>
+            <td><code>{{ ev.kind }}</code></td>
+            <td>{{ ev.agent }}</td>
+            <td class="muted">{% if ev.goal_id is not none %}#{{ ev.goal_id }}{% else %}-{% endif %}</td>
+            <td>{{ ev.detail }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">
+        No control-plane interventions for the selected day — nothing was blocked or
+        held. These are recorded as <code>governance_denied</code>,
+        <code>shield_block</code>, <code>capability_denied</code>,
+        <code>egress_blocked</code>, <code>consent_result</code>, and
+        <code>halt</code> events in the audit log.
+      </p>
+    {% endif %}
+  </div>
+{% endblock %}

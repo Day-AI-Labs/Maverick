@@ -744,6 +744,114 @@ async def compartments_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "compartments.html", {"domains": domains})
 
 
+_OVERSIGHT_KINDS = frozenset({
+    "governance_denied", "shield_block", "capability_denied",
+    "egress_blocked", "consent_result", "halt",
+})
+
+
+def _is_intervention(e: dict) -> bool:
+    """True iff an audit event is a control-plane intervention.
+
+    A ``consent_result`` only counts when it denied/timed out -- an approval is
+    not an intervention.
+    """
+    kind = e.get("kind")
+    if kind == "consent_result":
+        return str(e.get("decision") or "").lower() in {"deny", "timeout"}
+    return kind in _OVERSIGHT_KINDS
+
+
+def _intervention_detail(e: dict) -> str:
+    """A one-line, human summary of an intervention, by kind."""
+    kind = e.get("kind")
+    if kind == "shield_block":
+        return f"{e.get('stage') or '?'}: {e.get('reason') or ''}".strip()
+    if kind == "capability_denied":
+        return f"tool={e.get('tool') or '?'} principal={e.get('principal') or '?'}"
+    if kind == "egress_blocked":
+        return f"provider={e.get('provider') or '?'}"
+    if kind == "consent_result":
+        return f"{e.get('decision') or '?'}: {e.get('action') or ''}".strip()
+    if kind == "halt":
+        return f"{e.get('source') or '?'}: {e.get('detail') or ''}".strip()
+    # governance_denied (and any future kind): the reason, plus which policy
+    # rule fired so the operator can see why it was held.
+    detail = str(e.get("reason") or e.get("detail") or e.get("tool") or "")
+    rule = e.get("rule")
+    if kind == "governance_denied" and rule:
+        detail = f"{detail} [{rule}]".strip()
+    return detail
+
+
+@app.get("/oversight", response_class=HTMLResponse)
+async def oversight_page(request: Request) -> HTMLResponse:
+    """Operator mission-control: every control-plane intervention in one pane.
+
+    Unifies what each guardrail did to the fleet -- org-policy DENY /
+    REQUIRE_HUMAN (governance, EU AI Act Art 14), shield blocks, capability
+    denials, the enterprise egress lock, consent denials, and killswitch halts
+    -- next to the live halt state, the pending human-approval queue, and the
+    count of active agents. The per-guardrail pages (/safety, /approvals,
+    /audit, /fleets) remain the deep dives; this is the at-a-glance roll-up.
+    Fail-soft: an unreadable audit log yields empty panels, never a 500.
+    """
+    from collections import Counter
+
+    from maverick.audit import default_audit_log
+    try:
+        n = max(1, min(int(request.query_params.get("n") or 1000), 5000))
+    except (TypeError, ValueError):
+        n = 1000
+    day = safe_audit_day(request.query_params.get("day"))
+    try:
+        raw = default_audit_log().tail(n, day=day)
+    except Exception:  # pragma: no cover - never 500 the console on a log error
+        raw = []
+    events = [e for e in raw if _is_intervention(e)]
+    by_kind = Counter(str(e.get("kind")) for e in events)
+    rows = [
+        {
+            "ts": e.get("ts"),
+            "kind": e.get("kind"),
+            "agent": e.get("agent") or "-",
+            "goal_id": e.get("goal_id"),
+            "detail": _intervention_detail(e),
+        }
+        for e in reversed(events)
+    ][:150]
+
+    try:
+        from maverick.killswitch import is_active
+        halted = bool(is_active())
+    except Exception:
+        halted = False
+
+    w = _world()
+    try:
+        pending = len(w.pending_approvals())
+    except Exception:
+        pending = 0
+    try:
+        active = len(w.list_goals(status="active", owner=goal_owner_filter(request)))
+    except Exception:
+        active = 0
+
+    return templates.TemplateResponse(
+        request, "oversight.html",
+        {
+            "events": rows,
+            "by_kind": dict(by_kind),
+            "total": len(events),
+            "halted": halted,
+            "pending": pending,
+            "active": active,
+            "n": n,
+            "day": day,
+        },
+    )
+
+
 @app.get("/safety", response_class=HTMLResponse)
 async def safety_page(request: Request) -> HTMLResponse:
     """Shield activity: what the safety layer blocked, by stage and reason."""
