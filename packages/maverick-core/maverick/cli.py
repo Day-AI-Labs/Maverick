@@ -515,6 +515,49 @@ def whoami(principal: str | None, channel: str | None, user_id: str | None,
         click.echo(f"  expires_at:   {info['expires_at']}")
 
 
+@main.group()
+def governance() -> None:
+    """Inspect the oversight control-plane policy (enterprise)."""
+
+
+@governance.command("show")
+def governance_show() -> None:
+    """Show the active org policy from [governance] (default-allow if unset)."""
+    from .governance import Policy
+    pol = Policy.from_config()
+    if pol.is_empty():
+        click.echo("no [governance] policy configured (default-allow)")
+        return
+    click.echo(f"deny_actions:           {sorted(pol.deny_actions) or '(none)'}")
+    click.echo(f"require_human_actions:  {sorted(pol.require_human_actions) or '(none)'}")
+    click.echo(f"deny_min_risk:          {pol.deny_min_risk or '(none)'}")
+    click.echo(f"require_human_min_risk: {pol.require_human_min_risk or '(none)'}")
+
+
+@governance.command("check")
+@click.argument("action")
+@click.option("--risk", type=click.Choice(["low", "medium", "high"]), default=None,
+              help="Override the action's classified risk.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def governance_check(action: str, risk: str | None, as_json: bool) -> None:
+    """Show the control-plane verdict for ACTION under the active policy.
+
+    Returns ALLOW / DENY / REQUIRE_HUMAN so you can verify a policy before
+    deploying. Read-only.
+    """
+    import json as _json
+
+    from .governance import evaluate
+    v = evaluate(action, risk=risk)
+    if as_json:
+        click.echo(_json.dumps({
+            "action": action, "decision": v.decision.value,
+            "rule": v.rule, "reason": v.reason,
+        }))
+        return
+    click.echo(f"{action}: {v.decision.value.upper()}  ({v.rule}) — {v.reason}")
+
+
 @main.command()
 @click.argument("action", type=click.Choice(["show", "path", "edit"]), default="show")
 def config(action: str) -> None:
