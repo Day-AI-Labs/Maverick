@@ -730,7 +730,6 @@ def base_registry(
     from .diagram_tool import diagram_tool
     from .latex_tool import latex_tool
     from .notebook_exec import notebook_exec
-    from .self_edit import self_edit
     from .teams_tool import teams_tool
     from .websocket_tool import websocket_tool
     reg.register(notebook_exec(sandbox))
@@ -738,7 +737,10 @@ def base_registry(
     reg.register(diagram_tool(sandbox))
     reg.register(websocket_tool())
     reg.register(teams_tool())
-    reg.register(self_edit())
+    # self_edit intentionally is not registered in the default tool set.
+    # It can edit Maverick source/config and cannot rely on a model-supplied
+    # boolean as a real human approval gate. Keep it importable for explicit
+    # offline diff proposal workflows, but do not expose it to agents by default.
 
     # Runtime / introspection tools (ROADMAP 2028 H1/H2).
     from ..cost_curve_fitter import cost_curve_tool
