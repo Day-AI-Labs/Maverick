@@ -27,7 +27,7 @@ http = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/cdayAI/maverick"
+Homepage = "https://github.com/Day-AI-Labs/maverick"
 
 [project.scripts]
 maverick-mcp = "maverick_mcp.server:main"

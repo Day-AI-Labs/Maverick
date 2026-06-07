@@ -17,7 +17,7 @@ network port unless you enable a channel that needs one (WhatsApp/SMS).
 
 **Available now:** native single-file builds (PyInstaller) and a
 Tauri-based GUI installer for users who don't open terminals — see the
-[latest release](https://github.com/cdayAI/Maverick/releases/latest).
+[latest release](https://github.com/Day-AI-Labs/Maverick/releases/latest).
 Both are currently **unsigned** (first launch shows an "unknown
 developer" prompt); code signing + notarization are still coming.
 
@@ -30,7 +30,7 @@ docker run -it --rm \
   -v ~/maverick-workspace:/workspace \
   -v ~/.maverick/config.toml:/root/.maverick/config.toml:ro \
   -e ANTHROPIC_API_KEY=... \
-  ghcr.io/cdayai/maverick:latest \
+  ghcr.io/day-ai-labs/maverick:latest \
   start "..."
 ```
 
@@ -51,7 +51,7 @@ The `vps` deployment target generates:
 - Config under `/etc/maverick/config.toml` (`MAVERICK_CONFIG` env)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/cdayAI/Maverick/main/deploy/vps/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/Day-AI-Labs/Maverick/main/deploy/vps/install.sh | sudo bash
 sudo systemctl enable --now maverick
 ```
 

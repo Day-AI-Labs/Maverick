@@ -1,4 +1,4 @@
-module github.com/cdayAI/maverick/examples/clients/go
+module github.com/Day-AI-Labs/maverick/examples/clients/go
 
 go 1.25.0
 

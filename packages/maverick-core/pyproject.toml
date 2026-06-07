@@ -119,11 +119,11 @@ all        = [
 maverick = "maverick.cli:main"
 
 [project.urls]
-Homepage      = "https://github.com/cdayAI/maverick"
-Repository    = "https://github.com/cdayAI/maverick"
-Issues        = "https://github.com/cdayAI/maverick/issues"
-Changelog     = "https://github.com/cdayAI/maverick/blob/main/CHANGELOG.md"
-Documentation = "https://github.com/cdayAI/maverick/tree/main/docs"
+Homepage      = "https://github.com/Day-AI-Labs/maverick"
+Repository    = "https://github.com/Day-AI-Labs/maverick"
+Issues        = "https://github.com/Day-AI-Labs/maverick/issues"
+Changelog     = "https://github.com/Day-AI-Labs/maverick/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/Day-AI-Labs/maverick/tree/main/docs"
 
 [tool.setuptools.packages.find]
 where = ["."]

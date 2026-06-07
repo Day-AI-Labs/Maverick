@@ -109,7 +109,7 @@ def build_agent_card(base_url: str | None = None) -> dict[str, Any]:
         "version": _version(),
         "provider": {
             "organization": "Maverick",
-            "url": "https://github.com/cdayAI/Maverick",
+            "url": "https://github.com/Day-AI-Labs/Maverick",
         },
         "capabilities": {
             # Backed by the task endpoint (a2a_tasks): message/stream over

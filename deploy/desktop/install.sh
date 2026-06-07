@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-REPO="${MAVERICK_REPO:-cdayAI/Maverick}"
+REPO="${MAVERICK_REPO:-Day-AI-Labs/Maverick}"
 REF="${MAVERICK_REF:-}"
 SRC_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/maverick/src"
 ALLOW_UNPINNED="${MAVERICK_ALLOW_UNPINNED:-}"

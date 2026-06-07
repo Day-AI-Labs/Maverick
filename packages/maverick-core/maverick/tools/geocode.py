@@ -41,7 +41,7 @@ def _ua() -> str:
     # via env in real deployments.
     return os.environ.get(
         "NOMINATIM_USER_AGENT",
-        "maverick-agent (https://github.com/cdayAI/Maverick; contact: user)",
+        "maverick-agent (https://github.com/Day-AI-Labs/Maverick; contact: user)",
     )
 
 

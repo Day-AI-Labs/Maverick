@@ -5,7 +5,7 @@ edition = "2021"
 description = "Tauri GUI installer for Maverick"
 authors = ["cdayAI"]
 license = "MIT"
-repository = "https://github.com/cdayAI/maverick"
+repository = "https://github.com/Day-AI-Labs/maverick"
 
 [lib]
 name = "maverick_installer_desktop_lib"
