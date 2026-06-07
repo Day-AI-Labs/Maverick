@@ -31,6 +31,11 @@ log = logging.getLogger(__name__)
 # territory, not deflecting a one-off probe.
 _STRIKE_SEAL_THRESHOLD = 2
 
+# Escalate to a SECTOR seal (Rung 2) once this many distinct agents in one
+# domain have been sealed -- multiple compromised agents in a compartment is a
+# coordinated/structural threat, not an isolated probe.
+_DOMAIN_SEAL_THRESHOLD = 2
+
 
 @dataclass
 class QuarantineRegistry:
@@ -38,6 +43,8 @@ class QuarantineRegistry:
 
     _sealed: dict[str, str] = field(default_factory=dict)   # agent -> reason
     _strikes: dict[str, int] = field(default_factory=dict)  # agent -> block count
+    _sealed_domains: dict[str, str] = field(default_factory=dict)  # domain -> reason
+    _agent_domain: dict[str, str] = field(default_factory=dict)    # agent -> domain
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def seal(self, agent: str, reason: str) -> None:
@@ -45,12 +52,21 @@ class QuarantineRegistry:
             self._sealed.setdefault(agent, reason)
 
     def is_sealed(self, agent: str) -> bool:
+        """True if the agent is sealed directly OR its domain (sector) is sealed."""
         with self._lock:
-            return agent in self._sealed
+            if agent in self._sealed:
+                return True
+            dom = self._agent_domain.get(agent)
+            return dom is not None and dom in self._sealed_domains
 
     def reason(self, agent: str) -> str | None:
         with self._lock:
-            return self._sealed.get(agent)
+            if agent in self._sealed:
+                return self._sealed[agent]
+            dom = self._agent_domain.get(agent)
+            if dom is not None and dom in self._sealed_domains:
+                return f"sector '{dom}': {self._sealed_domains[dom]}"
+            return None
 
     def record_strike(self, agent: str) -> int:
         """Count a shield block against ``agent``; return its running total."""
@@ -59,10 +75,55 @@ class QuarantineRegistry:
             self._strikes[agent] = n
             return n
 
+    def register_agent(self, agent: str, domain: str | None) -> None:
+        """Record an agent's domain so a sector seal can reach it. Idempotent."""
+        if not domain:
+            return
+        with self._lock:
+            self._agent_domain[agent] = domain
+
+    def is_domain_sealed(self, domain: str) -> bool:
+        with self._lock:
+            return domain in self._sealed_domains
+
+    def seal_domain(self, domain: str, reason: str) -> None:
+        """Seal a whole sector (Rung 2): every agent in ``domain`` -- current and
+        future -- is refused, until explicitly unsealed."""
+        with self._lock:
+            self._sealed_domains.setdefault(domain, reason)
+
+    def maybe_seal_domain(self, agent: str, reason: str) -> str | None:
+        """Escalate to a sector seal when an agent's domain has accumulated
+        ``_DOMAIN_SEAL_THRESHOLD`` sealed agents. Returns the domain if sealed."""
+        with self._lock:
+            domain = self._agent_domain.get(agent)
+            if not domain or domain in self._sealed_domains:
+                return None
+            sealed_in_domain = sum(
+                1 for a in self._sealed if self._agent_domain.get(a) == domain
+            )
+            if sealed_in_domain >= _DOMAIN_SEAL_THRESHOLD:
+                self._sealed_domains[domain] = f"sector seal: {reason}"
+                return domain
+            return None
+
+    def unseal_agent(self, agent: str) -> None:
+        with self._lock:
+            self._sealed.pop(agent, None)
+
+    def unseal_domain(self, domain: str) -> None:
+        with self._lock:
+            self._sealed_domains.pop(domain, None)
+
     @property
     def sealed_agents(self) -> list[str]:
         with self._lock:
             return list(self._sealed)
+
+    @property
+    def sealed_domains(self) -> list[str]:
+        with self._lock:
+            return list(self._sealed_domains)
 
 
 def triage_block(
@@ -80,6 +141,12 @@ def triage_block(
         if severity == "critical" or strikes >= _STRIKE_SEAL_THRESHOLD:
             registry.seal(agent, f"{reason} (severity={severity}, strikes={strikes})")
             log.warning("compartment: sealed agent %s after block: %s", agent, reason)
+            sector = registry.maybe_seal_domain(agent, reason)
+            if sector:
+                log.warning(
+                    "compartment: SECTOR seal on domain %s (multiple agents "
+                    "compromised)", sector,
+                )
             return True
     except Exception:  # pragma: no cover -- containment must never break the loop
         pass

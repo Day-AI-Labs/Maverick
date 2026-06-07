@@ -262,3 +262,19 @@ def test_audit_sign_writes_and_is_read(tmp_path, monkeypatch):
     # explicit=None -> falls through to MAVERICK_AUDIT_SIGN env (unset) ->
     # [audit] sign in the config the wizard just wrote.
     assert _resolve_signing(None) is True
+
+
+def test_anonymous_logs_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's anonymous-mode toggle writes [privacy]
+    anonymous, and the kernel reads it back as anon_enabled() -- the PII-scrub
+    over logs and audit events."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_ANON", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"anonymous_logs": True})
+    assert "[privacy]" in cfg
+    assert "anonymous = true" in cfg
+
+    from maverick.privacy import anon_enabled
+    assert anon_enabled() is True

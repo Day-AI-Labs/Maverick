@@ -384,12 +384,21 @@ class Agent:
         parent: Agent | None = None,
         max_steps: int = 25,
         capability=None,
+        domain: str | None = None,
+        persona: str | None = None,
     ):
         self.ctx = ctx
         self.role = role
         self.brief = brief
         self.depth = depth
         self.parent = parent
+        # Agent compartments: the domain/sector this agent belongs to. The
+        # factory's spawn-from-profile sets it; otherwise a child inherits its
+        # parent's domain so a Rung-2 sector seal catches the whole sub-tree.
+        # None == unsectored (the orchestrator and ad-hoc agents).
+        self.domain = domain if domain is not None else getattr(parent, "domain", None)
+        # Optional domain-pack persona, appended to the system prompt below.
+        self._domain_persona = persona
         # P0 identity layer: the capability grant this agent runs under. An
         # explicit arg (passed by an attenuating spawn) wins; otherwise inherit
         # the run's root grant; otherwise the depth-0 orchestrator mints the
@@ -561,6 +570,11 @@ class Agent:
                 base = base + persona
         except Exception:
             pass
+
+        # Domain-pack persona (factory spawn-from-profile): specialist
+        # instructions for this agent's domain, additive to the base template.
+        if self._domain_persona:
+            base = base + "\n\n" + self._domain_persona
 
         # Skills from prior runs (existing logic).
         if self.ctx.use_skills:
@@ -839,11 +853,14 @@ class Agent:
         # Compartment Rung 1: a sealed agent runs no further tools. Its prior
         # blackboard posts are also withheld (see Blackboard.render).
         q = getattr(self.ctx, "quarantine", None)
-        if q is not None and q.is_sealed(self.name):
-            return (
-                f"⚠ Agent sealed by compartment quarantine "
-                f"({q.reason(self.name)}). No further tools will run."
-            )
+        if q is not None:
+            # Register this agent's domain so a Rung-2 sector seal reaches it.
+            q.register_agent(self.name, getattr(self, "domain", None))
+            if q.is_sealed(self.name):
+                return (
+                    f"⚠ Agent sealed by compartment quarantine "
+                    f"({q.reason(self.name)}). No further tools will run."
+                )
         shield = self.ctx.shield
         if shield is not None:
             verdict = shield.scan_tool_call(name, args)

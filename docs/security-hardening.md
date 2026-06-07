@@ -14,8 +14,8 @@ and how to confirm it's actually on.
 > mode** — see [Enterprise mode](#enterprise-mode-the-umbrella-switch).
 
 > **Verify what's on.** `maverick soc2` prints a JSON posture snapshot of the
-> main toggles (capabilities, tenant isolation, quotas, OIDC) plus audit-log
-> verification. Use it after any change. See
+> main toggles (capabilities, tenant isolation, quotas, OIDC, encryption-at-rest,
+> DSAR) plus audit-log verification. Use it after any change. See
 > [Verifying your posture](#verifying-your-posture).
 
 ## Contents
@@ -374,8 +374,8 @@ export MAVERICK_ENCRYPT_AT_REST=1     # a falsey value force-disables
 - Precedence: `MAVERICK_ENCRYPT_AT_REST` (non-empty) wins over `[encryption]
   at_rest`, which wins over enterprise mode (which **implies** at-rest on).
 
-**Verify it's on:** at-rest has no dedicated `soc2` field; confirm via your
-config/env, and note that **enterprise mode implies it**.
+**Verify it's on:** `maverick soc2` →
+`controls.encryption_at_rest.status == "enabled"` (enterprise mode implies it).
 
 ---
 
@@ -474,8 +474,9 @@ maverick audit verify --pubkey <ed25519-hex>     # trusted external key for real
 > tenant. `--file` pins a single file and overrides `--day`/`--all`. Without
 > `--pubkey` it trusts a locally-held key and prints a warning; pass the
 > externally-held pubkey for genuine third-party tamper-evidence. Exits 1 on any
-> break, 0 when clean; if `cryptography` is missing it can't verify and exits 0
-> (can't-verify ≠ tampered).
+> break, 0 when clean. If `cryptography` is missing the chain can't be verified
+> at all, which is treated as a verification break and exits 1 — so automation
+> can't pass unverifiable evidence as clean.
 
 **`maverick dsar export` flags:**
 
@@ -522,6 +523,8 @@ It reports each main control's `status` (`enabled` / `disabled` / `absent` /
 | `controls.tenant_isolation` | [Multi-tenancy](#multi-tenancy-per-user-isolation) |
 | `controls.usage_quotas` | [Usage quotas](#usage-quotas) |
 | `controls.oidc_auth` | [OIDC SSO](#oidc-sso-authentication) (`absent` if the extra isn't installed) |
+| `controls.encryption_at_rest` | [Encryption at rest](#encryption-at-rest) |
+| `controls.data_subject_export` | DSAR export (`maverick dsar export`) is implemented |
 | `audit_log` | audit-chain verification: `ok` / `unsigned` / `broken` / `empty` / `no_crypto` / `unknown` |
 | `audit_signing_key` | whether an audit signing key is present |
 

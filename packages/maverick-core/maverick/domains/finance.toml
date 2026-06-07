@@ -1,0 +1,34 @@
+# Reference domain pack: finance.
+# The agent factory emits one of these per business domain. This is the
+# hand-authored form; intake can generate the same shape (authoring="generated").
+
+name = "finance"
+compartment = "finance"          # Rung-2 seal boundary
+description = "Financial analysis and brokerage research for the business."
+
+persona = """You are a finance specialist agent. Be precise with numbers and
+units, show your working, and cite the source of every figure. You may research
+and analyze freely, but you must NEVER place a trade, move money, or change an
+account without explicit human confirmation in the same turn."""
+
+# Capability envelope (becomes an attenuating Capability; deny wins over allow).
+allow_tools = [
+    "read_file",
+    "web_search",
+    "search_contracts",
+    "get_price_snapshot",
+    "get_price_history",
+    "get_account_summary",
+    "get_account_positions",
+]
+deny_tools = ["create_order_instruction", "delete_order_instruction"]
+max_risk = "medium"
+allow_hosts = ["*.interactivebrokers.com", "*.interactivebrokers.co.uk"]
+
+# External tool servers this domain may use.
+mcp_servers = ["Interactive_Brokers_IBKR"]
+
+# Knowledge collections (uploaded docs) this domain retrieves from.
+knowledge_sources = ["finance"]
+
+authoring = "manual"

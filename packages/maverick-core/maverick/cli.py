@@ -2316,25 +2316,14 @@ def audit_verify(
     ([audit] sign = true).
 
     If ``cryptography`` is unavailable the chain can't be verified at all; that
-    is reported and exits 0 (can't verify is not the same as tampered).
+    is reported as a verification break and exits 1 so automation cannot pass
+    unverifiable evidence as clean.
     """
     import datetime as _dt
     from pathlib import Path as _Path
 
     from .audit import verify_anchors, verify_chain
-    from .audit.signing import _have_crypto
     from .paths import data_dir
-
-    # Fail-soft on missing crypto: we cannot prove anything either way, so
-    # report it clearly and exit 0 rather than flag a (possibly intact) log as
-    # tampered. Matches the repo's fail-open crypto convention.
-    if not _have_crypto():
-        click.echo(
-            "cannot verify: 'cryptography' is not installed, so the audit "
-            "chain's signatures can't be checked (this is not evidence of "
-            "tampering). Install: pip install 'maverick-agent[audit-signing]'"
-        )
-        return
 
     # Resolve the audit dir tenant-aware (matching the writer/signer), unless an
     # explicit --file pins one file in some other location.
@@ -2549,6 +2538,7 @@ _REQUIRED_SOC2_CONTROLS = (
     "tenant_isolation",
     "usage_quotas",
     "oidc_auth",
+    "encryption_at_rest",
 )
 
 
@@ -2711,6 +2701,38 @@ def retention_enforce_cmd(
             cfg["events_days"] = events_days
     report = enforce(config=cfg, dry_run=dry_run)
     click.echo(_json.dumps(report, default=str, indent=2))
+
+
+@main.group("encryption")
+def encryption_group() -> None:
+    """At-rest encryption maintenance (see docs/encryption.md)."""
+
+
+@encryption_group.command("migrate")
+@click.option("--dry-run", is_flag=True,
+              help="Report what would be sealed without writing.")
+@click.pass_context
+def encryption_migrate_cmd(ctx, dry_run: bool) -> None:
+    """Seal existing plaintext in the world DB (turns, facts, messages, questions).
+
+    Enabling encryption only seals NEW writes; this seals data written before it
+    was on. Idempotent and safe to re-run. Requires at-rest encryption enabled.
+    """
+    from pathlib import Path
+
+    from .crypto_at_rest import EncryptionUnavailable
+    from .encryption_migrate import migrate_world_db
+    try:
+        report = migrate_world_db(Path(ctx.obj["db"]), dry_run=dry_run)
+    except EncryptionUnavailable as e:
+        raise click.ClickException(str(e)) from e
+    verb = "would seal" if dry_run else "sealed"
+    for key in sorted(report):
+        click.echo(f"  {key}: {verb} {report[key]}")
+    click.echo(
+        f"{verb} {sum(report.values())} value(s) total"
+        + (" (dry run)" if dry_run else "")
+    )
 
 
 if __name__ == "__main__":

@@ -6,8 +6,9 @@ it via Click's ``CliRunner`` with a HOME-isolated audit dir so the writer, the
 signing keys, and the verifier all resolve to the same throwaway location.
 
 When ``cryptography`` is unavailable the chain can't be checked at all, so the
-command must say so and still exit 0 (can't verify != tampered) -- that path is
-asserted unconditionally; the signed-chain tests skip without crypto.
+command must report that state as a verification break and exit 1; automation
+should not pass unverifiable evidence as clean. That path is asserted
+unconditionally; the signed-chain tests skip without crypto.
 """
 from __future__ import annotations
 
@@ -112,11 +113,12 @@ def test_verify_explicit_file(tmp_path, monkeypatch):
     assert "OK" in result.output
 
 
-def test_verify_reports_no_crypto_state_and_exits_zero(tmp_path, monkeypatch):
-    """With crypto unavailable the chain is unverifiable, not tampered.
+def test_verify_reports_no_crypto_state_and_exits_one(tmp_path, monkeypatch):
+    """With crypto unavailable the verification gate must fail closed.
 
     Forced unconditionally by patching ``signing._have_crypto`` to False so the
-    fail-soft branch runs even in an env that *does* have ``cryptography``.
+    lower-level verifier reports ``no_crypto`` even in an env that *does* have
+    ``cryptography``.
     """
     _isolate_home(monkeypatch, tmp_path)
     from maverick.audit import signing
@@ -124,5 +126,6 @@ def test_verify_reports_no_crypto_state_and_exits_zero(tmp_path, monkeypatch):
     monkeypatch.setattr(signing, "_have_crypto", lambda: False)
 
     result = CliRunner().invoke(main, ["audit", "verify"])
-    assert result.exit_code == 0, result.output
-    assert "cannot verify" in result.output.lower()
+    assert result.exit_code == 1, result.output
+    assert "no_crypto" in result.output
+    assert "cryptography not installed" in result.output

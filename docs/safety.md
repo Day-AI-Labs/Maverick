@@ -108,7 +108,7 @@ still off — with the exact knob to enable each:
 | Storage limitation (retention) | GDPR Art. 5(1)(e) | `[retention]` + `maverick retention enforce` |
 | Data-egress control | GDPR Art. 32 / AI Act Art. 15 | `[enterprise] mode = true` |
 | Secret/PII redaction in logs | GDPR Art. 25 & 32 | always on |
-| Encryption at rest (memory + world-DB turns/facts/messages) | GDPR Art. 32 | `[encryption] at_rest = true` (implied by enterprise mode) |
+| Encryption at rest (memory + world-DB content) | GDPR Art. 32 | `[encryption] at_rest = true` (implied by enterprise mode) — see [encryption.md](encryption.md) |
 | Log data minimization | GDPR Art. 5(1)(c) | `[privacy] anonymous = true` |
 
 `--format json` emits the same for pipelines/SIEM. **This is control coverage, not a
