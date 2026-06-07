@@ -30,22 +30,35 @@ def test_onboard_generates_and_activates(tmp_path, monkeypatch):
 
 
 def test_onboard_discards_without_approval(tmp_path, monkeypatch):
+    import sqlite3
+
     from click.testing import CliRunner
     from maverick.cli import main
 
-    monkeypatch.setenv("MAVERICK_DOMAINS_DIR", str(tmp_path / "domains"))
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_DOMAINS_DIR", raising=False)
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    doc = tmp_path / "policy.txt"
+    doc.write_text("Beta Co's private retention schedule is confidential.")
+
     runner = CliRunner()
     result = runner.invoke(
         main,
-        ["onboard", "--no-llm", "--name", "Beta Co"],
-        # description, industry (blank), end document collection (blank), decline
-        input="a logistics firm\n\n\nn\n",
+        ["onboard", "--no-llm", "--name", "Beta Co", "--doc", str(doc)],
+        # description, industry (blank), decline
+        input="a logistics firm\n\nn\n",
     )
     assert result.exit_code == 0, result.output
     assert "Discarded" in result.output
 
     from maverick.domain import available_domains
+    from maverick.workspace import Workspace
+
     assert "beta_co" not in available_domains()  # nothing saved without a yes
+    db_path = Workspace.current().knowledge_path
+    with sqlite3.connect(db_path) as db:
+        (rows,) = db.execute("SELECT COUNT(*) FROM chunks").fetchone()
+    assert rows == 0
 
 
 def test_onboard_persists_documents(tmp_path, monkeypatch):
