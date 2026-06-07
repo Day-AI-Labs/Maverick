@@ -93,6 +93,15 @@ reliability plumbing (D) have since shipped — see the table.
    deprecation window ([`specs/breadth-vs-depth-decision.md`](./specs/breadth-vs-depth-decision.md),
    grounded in [`specs/tool-inventory.md`](./specs/tool-inventory.md)).
 
+**Pulled forward — far-future items shipped ahead of their quarter (June 2026).**
+A code-grounded audit of Q3 2026 → 2028 H2 found most far-future items already
+shipped, blocked on external accounts/infra, or non-code; the genuinely-open,
+buildable, depth-/compliance-aligned ones are being pulled forward and ticked
+here as they land (the dense future-quarter prose lists are left as-is):
+
+- **Structural compaction** (Q4 2026, Performance) — ✅ `compaction.py` content-addressed refs (`tests/test_compaction_structural_refs.py`).
+- **Skill validator** (2027 H1, Distribution) — ✅ `maverick skill validate` + `skills.validate_skill_file` (`tests/test_skill_validator.py`).
+
 **Accuracy caveats.** MCP Sampling / Roots / Logging appear to be on a deprecation
 path — don't build on sampling. Some ecosystem dates/specs (mid-2026 MCP RC,
 LangGraph 1.2, terminal-bench 2.0) postdate the original author's cutoff —

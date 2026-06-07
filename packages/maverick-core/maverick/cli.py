@@ -1569,6 +1569,23 @@ def skill_info(name: str) -> None:
     sys.exit(2)
 
 
+@skill.command("validate")
+@click.argument("path", type=click.Path())
+def skill_validate(path: str) -> None:
+    """Lint a SKILL.md for publish-readiness (offline; does not install)."""
+    from .skills import validate_skill_file
+    r = validate_skill_file(Path(path))
+    for w in r.warnings:
+        click.echo(click.style(f"  warning: {w}", fg="yellow"))
+    for e in r.errors:
+        click.echo(click.style(f"  error: {e}", fg="red"), err=True)
+    if r.ok:
+        click.echo(click.style("OK: skill is valid for publishing.", fg="green"))
+    else:
+        click.echo(f"INVALID: {len(r.errors)} error(s).", err=True)
+        sys.exit(1)
+
+
 @main.command()
 @click.option("--goal-id", type=int, default=None, help="Specific goal to watch.")
 @click.option("--interval", type=float, default=1.5, help="Refresh seconds.")
