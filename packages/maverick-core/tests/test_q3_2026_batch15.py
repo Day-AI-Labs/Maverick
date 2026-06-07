@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import maverick.tools.view_video as vv
 from maverick.tools.view_video import _evenly_spaced, view_video
 
@@ -39,7 +41,7 @@ def test_view_video_probe_failure(monkeypatch, tmp_path):
     vid = tmp_path / "v.mp4"
     vid.write_bytes(b"\x00")
     monkeypatch.setattr(vv, "_need", lambda b: None)
-    monkeypatch.setattr(vv, "_probe_duration", lambda src: None)
+    monkeypatch.setattr(vv, "_probe_duration", lambda src, sandbox: None)
     out = view_video().fn({"source": str(vid)})
     assert "could not probe video duration" in out.lower()
 
@@ -48,8 +50,8 @@ def test_view_video_no_frames_extracted(monkeypatch, tmp_path):
     vid = tmp_path / "v.mp4"
     vid.write_bytes(b"\x00")
     monkeypatch.setattr(vv, "_need", lambda b: None)
-    monkeypatch.setattr(vv, "_probe_duration", lambda src: 10.0)
-    monkeypatch.setattr(vv, "_extract_frames", lambda src, ts, tmp: [])
+    monkeypatch.setattr(vv, "_probe_duration", lambda src, sandbox: 10.0)
+    monkeypatch.setattr(vv, "_extract_frames", lambda src, ts, tmp, sandbox: [])
     out = view_video().fn({"source": str(vid)})
     assert "extracted no frames" in out.lower()
 
@@ -80,8 +82,8 @@ def _prep(monkeypatch, tmp_path, *, frames):
     vid = tmp_path / "v.mp4"
     vid.write_bytes(b"\x00")
     monkeypatch.setattr(vv, "_need", lambda b: None)
-    monkeypatch.setattr(vv, "_probe_duration", lambda src: 12.0)
-    monkeypatch.setattr(vv, "_extract_frames", lambda src, ts, tmp: frames)
+    monkeypatch.setattr(vv, "_probe_duration", lambda src, sandbox: 12.0)
+    monkeypatch.setattr(vv, "_extract_frames", lambda src, ts, tmp, sandbox: frames)
     monkeypatch.setattr("maverick.llm.LLM", _FakeLLM)
     return vid
 
@@ -118,14 +120,14 @@ def test_view_video_passes_bound_budget_to_vision_call(monkeypatch, tmp_path):
 def test_view_video_clamps_num_frames(monkeypatch, tmp_path):
     seen: dict[str, int] = {}
 
-    def _capture(src, ts, tmp):
+    def _capture(src, ts, tmp, sandbox):
         seen["n"] = len(ts)
         return [(float(i), b"\xff\xd8x") for i in range(len(ts))]
 
     vid = tmp_path / "v.mp4"
     vid.write_bytes(b"\x00")
     monkeypatch.setattr(vv, "_need", lambda b: None)
-    monkeypatch.setattr(vv, "_probe_duration", lambda src: 60.0)
+    monkeypatch.setattr(vv, "_probe_duration", lambda src, sandbox: 60.0)
     monkeypatch.setattr(vv, "_extract_frames", _capture)
     monkeypatch.setattr("maverick.llm.LLM", _FakeLLM)
     view_video().fn({"source": str(vid), "num_frames": 100})
@@ -135,7 +137,7 @@ def test_view_video_clamps_num_frames(monkeypatch, tmp_path):
 def test_view_video_includes_transcript_when_requested(monkeypatch, tmp_path):
     frames = [(3.0, b"\xff\xd8a")]
     vid = _prep(monkeypatch, tmp_path, frames=frames)
-    monkeypatch.setattr(vv, "_transcribe_track", lambda src, tmp: "hello from the clip")
+    monkeypatch.setattr(vv, "_transcribe_track", lambda src, tmp, sandbox: "hello from the clip")
     view_video().fn({"source": str(vid), "transcribe": True})
     texts = [b["text"] for b in _FakeLLM.last_messages[0]["content"]
              if b.get("type") == "text"]
@@ -146,7 +148,7 @@ def test_view_video_skips_transcript_by_default(monkeypatch, tmp_path):
     frames = [(3.0, b"\xff\xd8a")]
     vid = _prep(monkeypatch, tmp_path, frames=frames)
 
-    def _boom(src, tmp):
+    def _boom(src, tmp, sandbox):
         raise AssertionError("_transcribe_track must not run when transcribe is false")
 
     monkeypatch.setattr(vv, "_transcribe_track", _boom)
@@ -174,3 +176,30 @@ def test_view_video_schema_requires_source():
     tool = view_video()
     assert tool.input_schema["required"] == ["source"]
     assert "num_frames" in tool.input_schema["properties"]
+
+
+def test_view_video_passes_sandbox_to_run_cmd(monkeypatch, tmp_path):
+    # Regression: _probe_duration/_extract_frames/_transcribe_track must call
+    # _run_cmd(sandbox, cmd, ...). The previous broken arity bound the argv list
+    # to `sandbox`, leaving `cmd` unfilled, and raised TypeError on every call.
+    # The other tests mock the three helpers, so they never exercised this path.
+    vid = tmp_path / "v.mp4"
+    vid.write_bytes(b"\x00")
+
+    def _fake_run_cmd(sandbox, cmd, *, timeout=600.0):
+        assert isinstance(cmd, list)  # sandbox first, cmd second
+        if cmd and cmd[0] == "ffprobe":
+            return (0, "5.0", "")
+        if "image2" in cmd:  # frame extraction writes the -f image2 target
+            Path(cmd[-1]).write_bytes(b"\xff\xd8jpeg")
+        return (0, "", "")
+
+    monkeypatch.setattr(vv, "_need", lambda b: None)
+    monkeypatch.setattr(vv, "_run_cmd", _fake_run_cmd)
+    monkeypatch.setattr("maverick.llm.LLM", _FakeLLM)
+
+    class _SB:
+        workdir = str(tmp_path)
+
+    out = view_video(_SB()).fn({"source": "v.mp4", "num_frames": 2})
+    assert out == "a cat plays the piano, then jumps down"
