@@ -421,6 +421,17 @@ JD: Per-jurisdiction statutory statements, GAAP-to-local adjustments, local fili
 
 ---
 
+### Council-added agents
+*(Finance seats the council flagged as missing; folded into the roster. New dimension tags shown: delivery `[S]`/`[C]`/`[K]`, `{proficiency}`.)*
+
+- **Treasury Payments / Disbursements Agent — the custody node** — executes/releases *approved* payments; positive-pay, sanctions-at-payment, payment-rail ops. *Systems:* Kyriba / Modern Treasury / bank portals `[C]` · Fedwire/ACH-NACHA/RTP/SWIFT-ISO 20022. *Maverick:* the **custody** seat in the four-way SoD — `release_payment`/`wire` is `require_human`, sealed from AP (records) and the GL. *Cert:* CTP-equivalent.
+- **Model Risk Management / Validation Agent (SR 11-7)** `[+Data]{expert}` — independently validates the suite's models (CECL, VaR, ASC 718, forecasting, anomaly ML). *Domain:* **SR 11-7** validation, conceptual-soundness review, backtesting/benchmarking, outcome analysis. *Maverick:* independent of the model owners.
+- **Pension & Benefits-Accounting Agent (ASC 715)** — DB/OPEB obligation, actuarial gain/loss, funded status, 401(k) **Form 5500** + plan audit. *Domain:* ASC 715/712, ERISA plan accounting.
+- **ESG Controllership Agent** — the controllership/data side of sustainability (dedup with Strategy 7.3, which owns external disclosure). *Domain:* **GHG Protocol Scope 1/2/3**, CSRD/ESRS data, **limited-vs-reasonable assurance** readiness, controls over non-financial data.
+- **Government-Contract & Cost-Accounting Agent** — for gov contractors. *Domain:* **FAR Part 31, CAS, DCAA** incurred-cost & indirect-rate, provisional/final rates.
+
+---
+
 ## IT / GRC / Privacy / Security / AI-Governance suite
 
 47 agents ([it-grc-agent-suite.md](it-grc-agent-suite.md)). Cross-cutting: these mostly
@@ -759,6 +770,20 @@ JD: Ticketing, request fulfillment, KB, SLA — the employee IT front door.
 - Domain: **ITIL service management**.
 - Maverick: AI disclosure; escalate sensitive.
 
+### Council-added agents
+*(GRC/security seats the council flagged as missing.)*
+
+- **Cloud Security / CSPM-CNAPP Agent** `[+Build]` — *Systems:* **Wiz, Prisma Cloud, Orca, Defender for Cloud** `[C]`. *Technical:* CSPM/CIEM/CWPP, **CIS Benchmarks**, IaC drift, **Kubernetes security (OPA/Gatekeeper, Falco), container image scan (Trivy/Grype)**, multi-cloud config. *(No one owned cloud/K8s posture.)*
+- **DLP / Data-Protection Agent** — *Systems:* **Microsoft Purview, Forcepoint, Netskope** `[C]`. *Technical:* DLP policy across email/endpoint/cloud/SaaS, **CASB/SSE/SASE**, insider-risk.
+- **DFIR / Digital-Forensics Agent** `[+Build]` — *Systems:* **Velociraptor, Volatility 3, Plaso, KAPE** `[S]`. *Technical:* memory/disk forensics, triage collection, timeline analysis, **chain-of-custody**, malware triage. *Domain:* NIST 800-86.
+- **Business-Continuity / Resilience Agent** — BIA, **RTO/RPO** governance, crisis management, tabletop/DR-test orchestration. *Domain:* **ISO 22301, NIST 800-34, DORA**. *(Distinct from DR tech in 10.4.)*
+- **GRC-Automation / Continuous-Compliance Agent** `[+Build]` — the engineering side of Vanta/Drata: automated evidence collectors, control-to-test mapping, integration health, continuous-compliance scoring.
+- **Email-Security / Phishing & Insider-Threat Agent** — *Systems:* **Proofpoint, Abnormal, Mimecast** `[C]`. *Technical:* BEC/phishing triage, **DMARC/DKIM/SPF**, UEBA/insider-risk. *(Phishing is the #1 initial-access vector.)*
+- **AI Red-Team / Model-Security Agent** — *Technical:* adversarial-ML — **MITRE ATLAS**, **garak / Microsoft PyRIT / promptfoo** `[S]`, jailbreak/prompt-injection/extraction/poisoning. *Domain:* **NIST AI 100-2**. *(Offensive counterpart to the defensive Shield, 6.1.)*
+- **SaaS Security Posture (SSPM) Agent** — *Systems:* **AppOmni, Obsidian** `[C]`; SaaS misconfig, OAuth-grant risk, least-privilege across SaaS.
+
+---
+
 ## Sales / GTM suite
 
 45 agents ([sales-gtm-agent-suite.md](sales-gtm-agent-suite.md)). Cross-cutting: every
@@ -1067,6 +1092,17 @@ JD: GTM planning, segmentation, ICP, pricing/packaging analytics.
 - Technical: GTM modeling · segmentation · pricing analytics.
 - Domain: GTM strategy · ICP definition.
 
+### Council-added agents
+*(the three the brief named — Salesforce-dev, deliverability, RevOps-data — were under-built.)*
+
+- **Salesforce Admin / Developer Agent** `[+Build]{expert}` — *Technical:* **Flow, Apex (triggers + async Batch/Queueable), SOQL/SOSL, governor limits, LWC, deployment (SFDX / unlocked packages / Gearset), security model (OWD/roles/FLS/sharing), CPQ→Revenue Cloud (RLM)**. *Prereq:* CRM data model. *(Splits the overloaded 4.4.)*
+- **Marketing-Ops / MarTech Engineer Agent** `[+Build]` — Marketo/HubSpot/MCAE program build, lead scoring/lifecycle, **GA4 + Consent Mode v2, server-side GTM, Meta CAPI / enhanced conversions**, attribution plumbing.
+- **Deliverability / Email-Infrastructure Agent** — **SPF/DKIM/DMARC enforcement (p=reject), BIMI/VMC, Google/Yahoo 2024 bulk-sender rules (one-click unsub RFC 8058, <0.3% complaint rate), Postmaster/SNDS**, IP warmup, seed-list/inbox-placement testing.
+- **Revenue / GTM Data-Engineering Agent** `[+Build +Data]` — warehouse-native GTM (**Snowflake/BigQuery**), **reverse-ETL (Census/Hightouch)**, **CDP (Segment/RudderStack)**, dbt funnel models, lead-to-account identity resolution.
+- **Marketing-Privacy / Consent Agent** — **CMP (OneTrust), Global Privacy Control (GPC), CCPA Do-Not-Sell/Share**, cookie consent, MOPS suppression sync.
+
+---
+
 ## HR / People suite
 
 41 agents ([hr-people-agent-suite.md](hr-people-agent-suite.md)). Cross-cutting baseline:
@@ -1360,6 +1396,16 @@ JD: Employee communications, announcements, change comms.
 - Technical: comms drafting · audience targeting.
 - Maverick: sensitive comms (layoffs, policy) human-approved.
 
+### Council-added agents
+
+- **Background-Check / FCRA Adverse-Action Agent** — *Systems:* **Checkr, HireRight** `[C]`. *Domain:* **FCRA** pre-adverse/adverse-action, **ban-the-box / fair-chance** timing, EEOC arrest-vs-conviction, dispute handling. *(Checkr/HireRight had no home.)*
+- **Immigration / Global-Mobility Agent** — visa lifecycle (**H-1B/L-1/O-1/TN/PERM/green card**), **LCA / public-access file**, prevailing wage, expat assignment + **shadow-payroll** triggers.
+- **HRIS / HCM Platform-Admin Agent** `[+Build]` — **Workday** (business processes, security groups, EIB / Studio / Core Connectors, advanced/matrix reports) · **SuccessFactors** (MDF, RBP, business rules, Integration Center). *(Splits the admin role out of 3.2.)*
+- **Workers'-Comp & HR-Safety Agent** — OSHA **recordability (300/301/300A) + ITA e-submission (1904.41)**, fatality/hospitalization reporting, WC claims intake, return-to-work, OSHA↔FMLA/ADA interplay.
+- **Total-Rewards Equity / LTI Agent** `[+Data]` — RSU/option/ESPP benchmarking, **dilution / burn-rate / overhang**, vesting, mobility & §83(b) tax (ties to finance 7.3).
+
+---
+
 ## Product & Engineering suite
 
 40 agents ([product-engineering-agent-suite.md](product-engineering-agent-suite.md)).
@@ -1611,6 +1657,18 @@ JD: Library/framework/vendor evaluation, build-vs-buy, license screening.
 - Systems: `web_search` · `license_scan.py` · `dep_graph`.
 - Technical: tech evaluation · build-vs-buy analysis · license/maintenance-health screening.
 
+### Council-added agents
+*(shipped tooling, no persona — the "tools there, agent missing" gap.)*
+
+- **Mobile Engineering Agent** `[+Build]` — *Systems:* `tools/android.py`, `tools/ios_sim.py` `[C]`. *Technical:* **Swift/SwiftUI, Kotlin/Jetpack Compose, React Native/Flutter; Fastlane/Xcode Cloud/Gradle**; mobile security (keychain/keystore, cert pinning). *Maverick:* App Store/Play release = hard-floor human.
+- **API Design & Contract Agent** `[+Build]` — *Systems:* `tools/openapi_runner.py` `[C]`. *Technical:* **OpenAPI 3.1, GraphQL/Apollo federation, gRPC/protobuf, AsyncAPI**, versioning/deprecation, idempotency/pagination, **contract testing (Pact)**.
+- **Database Engineering / DBA Agent** `[+Build +Data]{expert}` — *Systems:* `tools/{dynamodb,mongodb,redis,elasticsearch}_tool.py` + Oracle/Postgres/SQL Server `[C]`. *Technical:* **data modeling, indexing/partitioning, query optimization (EXPLAIN), migrations (Flyway/Liquibase/Alembic), replication/HA/PITR, and standing up Oracle 23ai (incl. JSON-relational duality + vector)**. *(Owns the "Oracle 23ai standup" capability and the shipped NoSQL connectors.)*
+- **Platform Engineering Agent** `[+Build]` — **Backstage / IDP, golden paths, ephemeral environments, secrets (Vault/SOPS/sealed-secrets), FinOps / cloud cost**.
+- **LLM-Application / Prompt-Engineering Agent** `[+Build]` — building LLM-powered product features: **RAG pipelines, prompt engineering, eval (RAGAS / LLM-as-judge), guardrails, latency/cost optimization**. *(Distinct from classical ML in 6.3/6.4 — Maverick is itself an AI product.)*
+- **Performance / Load-Engineering Agent** `[+Build]` — **k6, Gatling, JMeter, Locust**, profiling (eBPF/Pyroscope), Core Web Vitals (INP), capacity testing.
+
+---
+
 ## Strategy / Corp Dev / Executive suite
 
 26 agents ([strategy-corpdev-exec-agent-suite.md](strategy-corpdev-exec-agent-suite.md)).
@@ -1783,6 +1841,16 @@ JD: ESG strategy + reporting (CSRD/ESRS, ISSB), carbon/impact tracking *(cross-r
 JD: CSR programs, philanthropy, community impact, volunteering.
 - Systems: `knowledge_search` · channels · grants/giving platforms.
 - Technical: CSR-program drafting · impact tracking.
+
+### Council-added agents
+
+- **M&A Financial-Modeling Agent** `[+Data]{expert}` — closes the Strategy↔Finance modeling gap. *Technical:* **three-statement model, LBO mechanics (debt schedule / cash sweep / circularity), DCF / WACC build-up, PPA / opening balance sheet, accretion-dilution, returns (IRR/MOIC) bridges, structuring (cash/stock/earnout/NWC peg)**. *Maverick:* sealed deal compartment.
+- **Antitrust / Merger-Clearance Agent** — **HSR thresholds + the 2024 HSR rule, the 2023 Merger Guidelines, second requests, EU/UK & global merger control, CFIUS, gun-jumping**. *(Awareness/flagging for counsel — was a "Gap.")*
+- **Activist-Defense / Shareholder-Engagement Agent** — **13D/G monitoring (2024 deadlines), proxy season / ISS-Glass Lewis, say-on-pay, Rule 10b5-1 plans**, vulnerability assessment.
+- **JV / Alliance / BD Agent** — non-M&A inorganic growth: JV structuring, strategic alliances, licensing/partnership economics.
+- **Transaction-Tax / Structuring Agent** — **338(h)(10)/336(e), NOLs & §382 limitation, step-up, tax-free reorg (§368)** (cross-ref finance tax). *Maverick:* sealed.
+
+---
 
 ## Legal suite
 
@@ -2006,6 +2074,16 @@ JD: Run conflicts checks before matter intake; set up ethical walls.
 - Technical: **conflicts checking** · ethical-wall setup.
 - Domain: conflicts of interest · ethical-wall practice.
 - Maverick: clearing a conflict is human; the ethical-wall setup point.
+
+### Council-added agents
+
+- **AI & Emerging-Tech Counsel Agent** — **EU AI Act, Colorado AI Act, the US state-privacy wave, AI/IP & training-data law, AI contracting**. *(The legal owner of AI governance, complementing GRC.)*
+- **Litigation Discovery-Response / Subpoena Agent** — responding to **subpoenas / CIDs / government investigations**, litigation-hold coordination (with 4.3), 30(b)(6) prep. *(Inbound-demand workflow, distinct from e-discovery review.)*
+- **Internal-Investigations (GC-led) Agent** — **privileged, counsel-led** investigations (FCPA, fraud, whistleblower-legal), Upjohn warnings, report to the board/audit committee. *(Distinct from HR 7.2; sealed, privileged.)*
+- **Insurance-Coverage Agent** — D&O / cyber / E&O coverage analysis, claim tender to carriers, reservation-of-rights review.
+- **Bankruptcy / Restructuring & Creditors'-Rights Agent** — **UCC Article 9 secured transactions, proof of claim, preference / fraudulent-transfer awareness** (the Finance/AR credit seam).
+
+---
 
 ## Operations / Supply Chain suite
 
@@ -2232,9 +2310,27 @@ JD: Operational sustainability — carbon (Scope 1&2), waste/circularity, effici
 
 ---
 
+### Council-added agents
+
+- **OT / ICS-Security Agent** `[+Build]` — *Domain:* **IEC 62443, the Purdue model / IT-OT segmentation, NIST 800-82**; historian/SCADA/DCS (**OSIsoft PI/AVEVA, Rockwell, Siemens, Honeywell, Emerson**). *(No one owned security over the SCADA/historian the suite reads.)*
+- **Continuous-Improvement / OpEx (Lean) Agent** — **VSM, kaizen, 5S, SMED, kanban/pull, A3, standard work, DMAIC** — the lean operating system the suite claimed cross-cutting but no one owned.
+- **Process-Safety (PSM/RMP) Agent** — **OSHA PSM (1910.119), EPA RMP, PHA/HAZOP/LOPA, LOTO / confined-space / hot-work permits** — for chemical/process plants.
+- **Trade-Compliance / Export-Control Agent** — **ECCN/EAR (de minimis, deemed exports, Entity List, the 2022–23 semiconductor controls), ITAR/USML + DDTC, OFAC, UFLPA forced-labor, rules-of-origin / FTA (USMCA), CTPAT, FTZ / duty drawback** (in-band; cross-ref legal 6.3).
+- **Industrial / Production-Engineering Agent** — time/motion studies, line & **takt** design, capacity, ergonomics, automation/robotics integration (AS/RS, AMRs).
+- **Cold-Chain / Serialization Agent** — **pharma DSCSA** and **food FSMA 204 traceability**, lot/serial/aggregation, temperature-excursion handling. *(Regulated-vertical depth beyond generic lot tracking.)*
+
+---
+
 ## Coverage
 
-All eight suites now have per-agent skill profiles: **Finance (38) · IT-GRC (47) · Sales-GTM
-(45) · HR (41) · Product & Engineering (40) · Strategy/Corp-Dev/Exec (26) · Legal (31) ·
-Operations (33)** — **~301 agents**. Next: adversarial-council review, then a finishing pass
-applying the findings.
+All eight suites have per-agent skill profiles. Base roster (38 · 47 · 45 · 41 · 40 · 26 · 31 ·
+33) = **301**, plus **45 council-added agents** (Finance +5 · IT-GRC +8 · GTM +5 · HR +5 ·
+Product & Engineering +6 · Strategy +5 · Legal +5 · Operations +6) = **~346 agents**.
+
+**Council pass: complete.** A five-member adversarial council reviewed every suite; their
+CRITICAL/IMPORTANT findings are applied (accuracy fixes, the staleness sweep, the 45 added
+agents, and the new skill dimensions) — see "Adversarial council review (applied)" at the top.
+Remaining work is the **incremental rollout**: applying the new dimension tags (`[S]/[C]/[K]`,
+proficiency, Prereq/Verified/Judgment/Cert) and the MINOR depth items to *every* existing entry
+(they're applied to the council-added/updated ones now), and authoring the flagged new templates
+(`sox_control`, `itgc`, `outreach_compliance`, …) and connectors.
