@@ -125,6 +125,15 @@ class QuarantineRegistry:
         with self._lock:
             return list(self._sealed_domains)
 
+    def status(self) -> dict:
+        """Operator snapshot of containment state for this run."""
+        with self._lock:
+            return {
+                "sealed_agents": list(self._sealed),
+                "sealed_domains": list(self._sealed_domains),
+                "agents_tracked": len(self._agent_domain),
+            }
+
 
 def triage_block(
     registry: QuarantineRegistry, agent: str, severity: str, reason: str
@@ -151,3 +160,36 @@ def triage_block(
     except Exception:  # pragma: no cover -- containment must never break the loop
         pass
     return False
+
+
+def compartment_status(quarantine, shield=None) -> dict:
+    """A run's compartment snapshot: what's sealed and how many threat
+    signatures have been immunized. Safe with ``None`` args (feature off)."""
+    out = {"enabled": quarantine is not None, "sealed_agents": [],
+           "sealed_domains": [], "immunized": 0}
+    if quarantine is not None:
+        try:
+            s = quarantine.status()
+            out["sealed_agents"] = s.get("sealed_agents", [])
+            out["sealed_domains"] = s.get("sealed_domains", [])
+        except Exception:  # pragma: no cover -- observability must never raise
+            pass
+    ledger = getattr(shield, "ledger", None)
+    if ledger is not None:
+        try:
+            out["immunized"] = len(ledger)
+        except Exception:  # pragma: no cover
+            pass
+    return out
+
+
+def format_compartment_status(status: dict) -> str:
+    """One-line human summary for the blackboard / CLI / dashboard."""
+    if not status.get("enabled"):
+        return "compartments: off"
+    parts = [f"{status.get('immunized', 0)} threat(s) immunized"]
+    if status.get("sealed_domains"):
+        parts.append("sealed sectors: " + ", ".join(status["sealed_domains"]))
+    if status.get("sealed_agents"):
+        parts.append(f"{len(status['sealed_agents'])} agent(s) sealed")
+    return "compartments: " + "; ".join(parts)
