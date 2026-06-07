@@ -57,10 +57,16 @@ def _pending_collection(name: str) -> str:
     return f"intake_pending_{_slug(name)}_{secrets.token_urlsafe(8)}"
 
 
-def _default_persona(spec: IntakeSpec) -> str:
-    who = spec.description or (f"a {spec.industry} business" if spec.industry else "this business")
+def _default_persona(_spec: IntakeSpec) -> str:
+    """Return a safe fallback persona that does not echo intake text.
+
+    Intake fields are user-controlled and this persona is appended to the agent's
+    system prompt, so the fallback must be constant rather than interpolating
+    business names, descriptions, or industries that may contain prompt
+    injection instructions.
+    """
     return (
-        f"You are a specialist assistant for {spec.name} ({who}). Answer from the "
+        "You are a specialist assistant for this business. Answer from the "
         "company's uploaded documents first and cite them; say plainly when the "
         "documents don't cover something rather than guessing."
     )
