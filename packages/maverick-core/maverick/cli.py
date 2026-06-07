@@ -2452,6 +2452,55 @@ def soc2(compact: bool) -> None:
         click.echo(_json.dumps(evidence, default=str, indent=2))
 
 
+# ----- DSAR subject-data export ----------------------------------------
+
+@main.group("dsar")
+def dsar_group() -> None:
+    """Data-subject access requests (GDPR Art. 15 / 20)."""
+
+
+@dsar_group.command("export")
+@click.option("--user", "user_id", required=True,
+              help="The channel user_id (subject) to export.")
+@click.option("--tenant", default=None, help="Tenant to read from (default: active).")
+@click.option("--output", "-o", type=click.Path(), default=None,
+              help="Write JSON to file (default stdout).")
+@click.option("--json", "compact", is_flag=True,
+              help="Emit compact single-line JSON (default: pretty, indent=2).")
+def dsar_export(user_id: str, tenant: str | None, output, compact: bool) -> None:
+    """Export everything Maverick holds for a subject as a JSON bundle.
+
+    Serializes ``export_subject_data()`` -- the subject's conversations, the
+    turns/goals/episodes those reference, and their audit rows -- for the
+    right of access / portability. The exporter is fail-soft (an unknown
+    subject or empty install yields a structured, empty bundle), so this
+    command always emits a JSON object and exits 0.
+    """
+    import json as _json
+
+    from .dsar import export_subject_data
+    bundle = export_subject_data(user_id, tenant=tenant)
+    payload = (
+        _json.dumps(bundle, default=str)
+        if compact
+        else _json.dumps(bundle, default=str, indent=2)
+    )
+    if output:
+        # A DSAR export carries the subject's full conversation content.
+        # Create it 0o600 (not the umask's world-readable 0644) so a
+        # co-tenant can't read it, and fail cleanly instead of dumping a
+        # traceback on a bad/unwritable path.
+        try:
+            fd = os.open(str(output), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload)
+        except OSError as e:
+            raise click.ClickException(f"could not write {output}: {e}")
+        click.echo(f"exported to {output}")
+    else:
+        click.echo(payload)
+
+
 # ----- Cache management ------------------------------------------------
 
 @main.group("cache")
