@@ -118,3 +118,42 @@ def available_domains() -> dict[str, DomainProfile]:
     domains = load_domains(builtin_dir())
     domains.update(load_domains(user_dir()))
     return domains
+
+
+def domain_capability(profile: DomainProfile, parent_cap, principal: str):
+    """The Capability a domain agent runs under.
+
+    With a parent grant present, attenuate it by the profile's scopes (never
+    broaden); otherwise mint the profile's own envelope. Empty profile fields
+    pass ``None`` so they inherit the parent's scope rather than emptying it --
+    an empty allow-set means "all", which would *broaden* the grant.
+    """
+    allow = set(profile.allow_tools) or None
+    deny = set(profile.deny_tools) or None
+    paths = set(profile.allow_paths) or None
+    hosts = set(profile.allow_hosts) or None
+    if parent_cap is not None:
+        return parent_cap.attenuate(
+            principal=principal, allow=allow, deny=deny,
+            max_risk=profile.max_risk, allow_paths=paths, allow_hosts=hosts,
+        )
+    return profile.capability(principal)
+
+
+def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
+                       parent=None, depth: int = 0, principal: str | None = None):
+    """Spawn a live agent from a domain pack -- the factory's "spit out an agent".
+
+    Sets the agent's role, persona, **compartment tag** (so a Rung-2 sector seal
+    reaches it and its sub-tree), and a capability envelope derived from the
+    profile (attenuated against the parent's grant when one exists). A domain
+    agent therefore always runs inside its pack's tool/risk/host envelope, even
+    when global capability enforcement is off -- the pack is a hard boundary.
+    """
+    from .agent import Agent
+    principal = principal or f"agent:{profile.name}-{depth}"
+    cap = domain_capability(profile, getattr(parent, "capability", None), principal)
+    return Agent(
+        ctx=ctx, role=profile.name, brief=task, depth=depth, parent=parent,
+        domain=profile.compartment, persona=profile.persona, capability=cap,
+    )

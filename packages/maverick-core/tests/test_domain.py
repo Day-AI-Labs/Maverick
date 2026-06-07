@@ -1,9 +1,11 @@
 """Domain packs: schema, loader, and capability derivation (agent factory)."""
 from __future__ import annotations
 
+from maverick.capability import Capability
 from maverick.domain import (
     DomainProfile,
     available_domains,
+    domain_capability,
     load_domain,
     load_domains,
 )
@@ -69,3 +71,39 @@ class TestBuiltinPacks:
         assert "Interactive_Brokers_IBKR" in fin.mcp_servers
         # The derived capability denies order placement (deny wins).
         assert fin.capability("agent:f1").permits("create_order_instruction") is False
+
+    def test_all_four_reference_packs_ship(self):
+        domains = available_domains()
+        for name in ("finance", "legal", "privacy_compliance", "generic"):
+            assert name in domains, f"missing built-in pack: {name}"
+            assert domains[name].persona  # each carries specialist instructions
+
+
+class TestDomainCapability:
+    def test_mints_envelope_without_parent(self):
+        p = DomainProfile(name="finance", allow_tools=["read_file"],
+                          deny_tools=["shell"], max_risk="medium")
+        cap = domain_capability(p, None, "agent:finance-0")
+        assert cap.permits("read_file") is True
+        assert cap.permits("shell") is False     # deny wins
+        assert cap.permits("browser") is False    # whitelist excludes it
+
+    def test_attenuates_parent_never_broadens(self):
+        parent = Capability(principal="user:local",
+                            allow_tools=frozenset({"read_file", "web_search"}))
+        # Profile asks for a tool the parent never granted.
+        p = DomainProfile(name="finance", allow_tools=["read_file", "shell"])
+        cap = domain_capability(p, parent, "agent:finance-0")
+        assert cap.permits("read_file") is True
+        assert cap.permits("shell") is False        # can't gain what the parent lacked
+        assert cap.permits("web_search") is False    # narrowed to the profile's set
+
+    def test_empty_profile_fields_inherit_parent_scope(self):
+        parent = Capability(principal="user:local",
+                            allow_tools=frozenset({"read_file"}))
+        p = DomainProfile(name="x")  # no scopes specified
+        cap = domain_capability(p, parent, "agent:x-0")
+        # Empty allow inherits the parent's whitelist rather than emptying it
+        # (an empty allow-set means "all", which would broaden).
+        assert cap.permits("read_file") is True
+        assert cap.permits("shell") is False
