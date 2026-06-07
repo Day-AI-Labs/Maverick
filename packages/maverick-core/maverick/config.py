@@ -212,6 +212,26 @@ def get_sandbox() -> dict:
     }
 
 
+def get_knowledge() -> dict:
+    """Return the ``[knowledge]`` section (per-domain vector RAG).
+
+    Off by default; the agent kernel never requires the maverick-knowledge
+    package. ``embedder`` selects hosted/local/deterministic; ``store`` selects
+    sqlite/pgvector. Provider details (model/base_url/dim/path) are read by
+    maverick_knowledge.build_embedder / build_store.
+    """
+    cfg = load_config().get("knowledge", {}) or {}
+    return {
+        "enable": bool(cfg.get("enable", False)),
+        "embedder": cfg.get("embedder", "hosted"),
+        "store": cfg.get("store", "sqlite"),
+        "model": cfg.get("model", "voyage-3"),
+        "base_url": cfg.get("base_url", "https://api.voyageai.com/v1"),
+        "dim": int(cfg.get("dim", 1024)),
+        "path": cfg.get("path", ""),
+    }
+
+
 def get_self_learning() -> dict:
     """Return the ``[self_learning]`` section with defaults filled in.
 
