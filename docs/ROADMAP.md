@@ -97,6 +97,18 @@ terminal-bench harnesses + the learning-substrate decision. See the table.
    deprecation window ([`specs/breadth-vs-depth-decision.md`](./specs/breadth-vs-depth-decision.md),
    grounded in [`specs/tool-inventory.md`](./specs/tool-inventory.md)).
 
+**Pulled forward — far-future items shipped ahead of their quarter (June 2026).**
+A code-grounded audit of Q3 2026 → 2028 H2 found most far-future items already
+shipped, blocked on external accounts/infra, or non-code; the genuinely-open,
+buildable, depth-/compliance-aligned ones are being pulled forward and ticked
+here as they land (the dense future-quarter prose lists are left as-is):
+
+- **Structural compaction** (Q4 2026, Performance) — ✅ `compaction.py` content-addressed refs (`tests/test_compaction_structural_refs.py`).
+- **Skill validator** (2027 H1, Distribution) — ✅ `maverick skill validate` + `skills.validate_skill_file` (`tests/test_skill_validator.py`).
+- **Coordinated-disclosure log** (2027 H1, Safety) — ✅ [`docs/DISCLOSURES.md`](./DISCLOSURES.md) (companion to `SECURITY.md`).
+- **SBOM (CycloneDX)** (Q4 2026, Safety) — ✅ non-blocking CycloneDX SBOM artifact in CI's `audit` job (`.github/workflows/ci.yml`). *(CI-only; runs on GitHub, not locally verifiable.)*
+- **Goal templates v2 community registry** (Q4 2026, UX) — ✅ `templates.browse_templates` / `install_template_from_catalog` (federated `catalog` "templates" kind, hash-verified), `maverick template browse/add`, `[template_registries]` knob + wizard emission (`tests/test_template_registry.py`).
+
 **Accuracy caveats.** MCP Sampling / Roots / Logging appear to be on a deprecation
 path — don't build on sampling. Some ecosystem dates/specs (mid-2026 MCP RC,
 LangGraph 1.2, terminal-bench 2.0) postdate the original author's cutoff —
@@ -426,7 +438,7 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 **Performance**
 - Adaptive thinking budget controller (closed-loop Opus thinking adjustment).
 - Compaction v2 retrieval-augmented (embed locally; retrieve top-k chunks).
-- Structural compaction (collapse file-read tool_use/tool_result to path+sha refs).
+- Structural compaction (collapse file-read tool_use/tool_result to path+sha refs). ✅ shipped — `compaction.py` `_shrink_tool_result` now emits a content-addressed ref (source tool + path/url + `sha256` + size) instead of an opaque "output dropped"; `compact_messages` threads the originating tool_use; `tests/test_compaction_structural_refs.py`.
 - Provider health board (per-provider success/latency/$).
 - Memory profiling baseline (tracemalloc + memray weekly soak).
 - GC tuning experiment (`gc.freeze()` post-warmup).

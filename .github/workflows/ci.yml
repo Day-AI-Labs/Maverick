@@ -147,6 +147,24 @@ jobs:
           python -m pip install 'bandit>=1.7'
           python -m bandit -q -r packages apps -lll -ii \
             -x '*/tests/*,*/test_*.py'
+      - name: SBOM (CycloneDX, supply-chain transparency)
+        # NON-BLOCKING (continue-on-error): emit a CycloneDX SBOM of the
+        # resolved dependency tree as a build artifact for supply-chain review
+        # by regulated buyers. Generation must never gate the build, so a
+        # cyclonedx-py hiccup is tolerated; the artifact is best-effort.
+        continue-on-error: true
+        run: |
+          python -m pip install 'cyclonedx-bom>=4'
+          # Generate from the installed environment (the same tree pip-audit saw).
+          cyclonedx-py environment -o sbom.cyclonedx.json || \
+            cyclonedx-py environment > sbom.cyclonedx.json
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cyclonedx.json
+          if-no-files-found: ignore
 
   test:
     runs-on: ubuntu-latest

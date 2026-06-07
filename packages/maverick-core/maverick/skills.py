@@ -129,6 +129,79 @@ class Skill:
         )
 
 
+@dataclass
+class SkillValidation:
+    """Result of linting a SKILL.md for publish-readiness."""
+
+    ok: bool
+    errors: list[str]
+    warnings: list[str]
+
+
+_KEBAB_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+
+def validate_skill_file(path: Path) -> SkillValidation:
+    """Lint a SKILL.md against publish criteria WITHOUT installing it.
+
+    Mirrors the install-time gates (frontmatter parse, secret scan) plus publish
+    hygiene (kebab-case name, triggers present, a non-trivial body) so an author
+    can run ``maverick skill validate`` before submitting to a catalog. Pure and
+    offline — no network, no disk writes. ``ok`` is True iff there are no errors
+    (warnings don't block)."""
+    errors: list[str] = []
+    warnings: list[str] = []
+    p = Path(path).expanduser()
+    if not p.exists():
+        return SkillValidation(False, [f"file not found: {p}"], [])
+    try:
+        text = p.read_text(encoding="utf-8")
+    except OSError as e:
+        return SkillValidation(False, [f"cannot read {p}: {e}"], [])
+    try:
+        skill = Skill.parse(text, p)
+    except ValueError as e:
+        return SkillValidation(False, [f"frontmatter: {e}"], [])
+
+    front_m = re.match(r"^---\n(.*?)\n---\n", text, re.DOTALL)
+    front = front_m.group(1) if front_m else ""
+    has_name = any(ln.strip().startswith("name:") for ln in front.splitlines())
+    if not has_name:
+        errors.append("missing 'name:' in frontmatter")
+    elif not _KEBAB_RE.match(skill.name):
+        errors.append(f"name {skill.name!r} must be kebab-case (lowercase a-z, 0-9, hyphens)")
+
+    if not skill.triggers:
+        errors.append("at least one 'triggers:' entry is required (skills activate by trigger)")
+
+    if not skill.tools_needed:
+        warnings.append("no 'tools_needed:' declared — most skills list the tools they call")
+
+    if len(skill.body) < 40:
+        errors.append("body is too short to be a usable skill — add real Steps/Notes")
+    elif "#" not in skill.body:
+        warnings.append("body has no section headers (e.g. '# Steps', '# Notes')")
+
+    # A published skill must not embed credentials. Reuse the same secret
+    # detector the install/output paths use.
+    try:
+        from .safety.secret_detector import redact
+        _, matches = redact(text)
+        if matches:
+            errors.append(
+                f"possible hardcoded secret(s): {len(matches)} match(es) — "
+                "remove credentials before publishing")
+    except Exception:  # pragma: no cover -- detector must never crash the linter
+        pass
+
+    if skill.sig and skill.pubkey:
+        warnings.append(
+            "signed: the signature is verified against [skills] trusted_pubkeys "
+            "at install time, not here")
+
+    return SkillValidation(ok=not errors, errors=errors, warnings=warnings)
+
+
 def load_skills(skills_dir: Path = SKILLS_DIR) -> list[Skill]:
     if not skills_dir.exists():
         return []

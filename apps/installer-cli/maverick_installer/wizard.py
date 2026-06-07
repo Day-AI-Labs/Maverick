@@ -1011,6 +1011,13 @@ def pick_advanced() -> dict[str, Any]:
             "Implied by enterprise mode; recommended for PHI/PII/financial data.",
             default=False,
         ),
+        "audit_sign": _q_confirm(
+            "Sign the audit log for tamper-evidence? Ed25519 hash-chains every "
+            "audit row (plus a signed cross-file ledger) so `maverick audit verify` "
+            "can prove the log was not altered — the basis for SOC 2 evidence. "
+            "Needs the [audit-signing] extra; falls back to unsigned if absent.",
+            default=False,
+        ),
         "deferred_tools": _q_confirm(
             "Deferred tool loading? Show the model a small core toolset plus a "
             "find_tools search tool, loading the long tail (80+ integrations, MCP) "
@@ -1746,6 +1753,7 @@ def write_config(
     advanced: dict[str, Any] | None = None,
     mcp_servers: dict[str, dict[str, Any]] | None = None,
     mcp_registries: list[str] | None = None,
+    template_registries: list[str] | None = None,
     plugins: list[str] | None = None,
     plugin_grant: list[str] | None = None,
     plugin_enforce: bool = False,
@@ -1958,6 +1966,10 @@ def write_config(
             lines.append("")
             lines.append("[encryption]")
             lines.append("at_rest = true")
+        if advanced.get("audit_sign"):
+            lines.append("")
+            lines.append("[audit]")
+            lines.append("sign = true")
         if advanced.get("tree_of_thought"):
             lines.append("")
             lines.append("[planning]")
@@ -2000,6 +2012,14 @@ def write_config(
         lines.append("")
         lines.append("[mcp_registries]")
         _emit_kv(lines, "indexes", mcp_registries)
+
+    # Custom/self-hosted goal-template registry indexes (`maverick template
+    # browse`). Like MCP registries: only emitted on override; the built-in
+    # default index works out of the box.
+    if template_registries:
+        lines.append("")
+        lines.append("[template_registries]")
+        _emit_kv(lines, "indexes", template_registries)
 
     if plugins:
         lines.append("")
