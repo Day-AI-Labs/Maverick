@@ -70,15 +70,26 @@ class SqliteVectorStore:
         self._db.commit()
 
     def search(self, collection, vector, k: int = 5) -> list[Match]:
+        if k <= 0:
+            return []
         rows = self._db.execute(
             "SELECT text, vec, meta FROM chunks WHERE collection = ?", (collection,)
         ).fetchall()
-        scored = [
-            Match(_cosine(vector, json.loads(vec)), text, json.loads(meta))
-            for text, vec, meta in rows
-        ]
+        scored: list[Match] = []
+        for text, vec, meta in rows:
+            stored = json.loads(vec)
+            # A query embedded with a different model/dim than the corpus would
+            # silently score 0.0 against every chunk and return arbitrary
+            # results. Surface that misconfiguration instead of guessing.
+            if len(stored) != len(vector):
+                raise ValueError(
+                    f"knowledge: query vector dim {len(vector)} != stored dim "
+                    f"{len(stored)} for collection {collection!r}; the corpus was "
+                    "embedded with a different embedder/model than this query"
+                )
+            scored.append(Match(_cosine(vector, stored), text, json.loads(meta)))
         scored.sort(key=lambda m: m.score, reverse=True)
-        return scored[: max(1, k)]
+        return scored[:k]
 
     def count(self, collection: str) -> int:
         (n,) = self._db.execute(

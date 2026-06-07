@@ -112,6 +112,22 @@ def _cef_escape(value: str) -> str:
     )
 
 
+def _cef_header_escape(value: str) -> str:
+    """Escape a CEF *header* field: backslash, pipe, and newlines.
+
+    Header fields are ``|``-delimited (extension values are not), so an
+    unescaped ``|`` or newline in a header field (e.g. a future/plugin-supplied
+    ``kind``) would shift the header columns and corrupt the record.
+    """
+    return (
+        value.replace("\\", "\\\\")
+        .replace("|", "\\|")
+        .replace("\r\n", "\\n")
+        .replace("\n", "\\n")
+        .replace("\r", "\\n")
+    )
+
+
 def to_cef(event: dict[str, Any]) -> str:
     """Render one event as an ArcSight CEF line.
 
@@ -121,7 +137,9 @@ def to_cef(event: dict[str, Any]) -> str:
     """
     kind = str(event.get("kind", "event"))
     severity = _CEF_SEVERITY.get(kind, _DEFAULT_SEVERITY)
-    header = f"CEF:0|Maverick|maverick-agent|{_audit_version()}|{kind}|{kind}|{severity}|"
+    hk = _cef_header_escape(kind)
+    ver = _cef_header_escape(_audit_version())
+    header = f"CEF:0|Maverick|maverick-agent|{ver}|{hk}|{hk}|{severity}|"
     parts = []
     for key, val in event.items():
         if isinstance(val, bool) or isinstance(val, (str, int, float)) or val is None:

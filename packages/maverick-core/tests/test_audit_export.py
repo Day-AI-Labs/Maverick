@@ -15,6 +15,16 @@ from maverick.audit.export import iter_audit_events, to_cef, to_jsonl
 from maverick.audit.writer import AuditLog
 
 
+def test_cef_header_escapes_pipe_in_kind():
+    # CEF header fields are '|'-delimited (extension values are not). A '|' in a
+    # header field (e.g. a future/plugin-supplied kind) must be escaped so it
+    # can't shift the header columns and corrupt the record.
+    line = to_cef({"kind": "policy|halt", "agent": "x"})
+    assert line.startswith("CEF:0|Maverick|maverick-agent|")
+    # both kind header slots carry the escaped form, not a raw delimiter
+    assert "policy\\|halt|policy\\|halt|" in line
+
+
 def _today() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
