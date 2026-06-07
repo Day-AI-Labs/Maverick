@@ -268,7 +268,20 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Build image
-        run: docker build -f deploy/docker/Dockerfile -t maverick:ci .
+        # Docker Hub base-image pulls intermittently time out on CI runners
+        # (registry-1.docker.io i/o timeout). Retry with backoff so a transient
+        # registry blip doesn't fail the whole job.
+        run: |
+          n=0; max=4
+          until docker build -f deploy/docker/Dockerfile -t maverick:ci .; do
+            n=$((n+1))
+            if [ "$n" -ge "$max" ]; then
+              echo "::error::docker build failed after $max attempts (registry/network)"
+              exit 1
+            fi
+            echo "docker build attempt $n/$max failed; retrying in $((n*15))s"
+            sleep $((n*15))
+          done
       - name: Smoke run
         # Beyond --help: dashboard and mcp import maverick-dashboard /
         # maverick-mcp. Before those packages were added to the image they
