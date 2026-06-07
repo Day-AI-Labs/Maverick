@@ -428,7 +428,11 @@ def test_tool_dispatch_opens_span(monkeypatch):
     out = asyncio.run(reg.run("echo", {}))
     assert out == "ok"
     assert seen["name"] == "tool.run"
-    assert seen["attrs"] == {"tool.name": "echo"}
+    # The span carries the back-compat tool.name plus the GenAI-semconv tool
+    # attributes (gen_ai.operation.name/tool.name/tool.type) merged in.
+    assert seen["attrs"]["tool.name"] == "echo"
+    assert seen["attrs"]["gen_ai.operation.name"] == "execute_tool"
+    assert seen["attrs"]["gen_ai.tool.name"] == "echo"
 
 
 def test_llm_complete_opens_span(monkeypatch):
