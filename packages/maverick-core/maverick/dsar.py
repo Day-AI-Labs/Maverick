@@ -260,6 +260,11 @@ def _resolve_subject_channel(
     disclose another subject's data.
     """
     if channel is not None:
+        if channel.strip() == "":
+            log.warning(
+                "dsar: refusing export with blank channel for user_id %r", user_id
+            )
+            return None
         return channel
 
     channels: set[str] = set()
