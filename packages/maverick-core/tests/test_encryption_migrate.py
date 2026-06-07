@@ -53,6 +53,8 @@ def test_migrate_seals_existing_plaintext(monkeypatch, tmp_path):
         "questions.question": 1, "questions.answer": 1,
         "goals.title": 1, "goals.description": 1, "goals.result": 0,
         "goal_events.content": 0,
+        "episodes.summary": 0, "episodes.outcome": 0,
+        "approvals.action": 0, "approvals.scope": 0, "approvals.detail": 0,
     }
 
     # On disk the columns are now sealed (ciphertext, no plaintext).
@@ -74,6 +76,8 @@ def test_migrate_seals_existing_plaintext(monkeypatch, tmp_path):
         "questions.question": 0, "questions.answer": 0,
         "goals.title": 0, "goals.description": 0, "goals.result": 0,
         "goal_events.content": 0,
+        "episodes.summary": 0, "episodes.outcome": 0,
+        "approvals.action": 0, "approvals.scope": 0, "approvals.detail": 0,
     }
 
 

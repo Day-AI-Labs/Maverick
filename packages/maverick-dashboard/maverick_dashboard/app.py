@@ -1655,11 +1655,14 @@ async def cost_csv(month: str | None = None) -> StreamingResponse:
             params = (start_ts, end_ts)
         sql += " ORDER BY id"
 
+        # outcome is a sealed column when at-rest encryption is on; this CSV reads
+        # it via raw SQL, so decrypt it like the WorldModel accessors do.
+        from maverick.world_model import _dec_field
         for row in w.conn.execute(sql, params):
             writer.writerow([
                 row["id"], row["goal_id"],
                 row["started_at"], row["ended_at"] or "",
-                row["outcome"] or "",
+                _dec_field(row["outcome"]) or "",
                 f"{(row['cost_dollars'] or 0):.6f}",
                 row["input_tokens"], row["output_tokens"], row["tool_calls"],
             ])

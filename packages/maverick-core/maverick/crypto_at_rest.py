@@ -23,8 +23,9 @@ with no flag-day re-encrypt.
 Coverage (what is actually sealed today):
   - the cross-session **memory** store (files), and
   - the **world-DB content columns** sealed via ``encryption_migrate._SEALED_COLUMNS``
-    — facts, conversation turns/messages, open questions, and goal content
-    (titles/descriptions/results) + per-agent goal events.
+    — facts, conversation turns/messages, open questions, goal content
+    (titles/descriptions/results) + per-agent goal events, episode
+    summaries/outcomes, and parked-approval action/scope/detail.
   The **audit log is NOT encrypted at rest** — it is *signed* for tamper-evidence
   (see ``audit/signing.py``), which is integrity, not confidentiality. Treat audit
   confidentiality as out of scope here until that is wired in.

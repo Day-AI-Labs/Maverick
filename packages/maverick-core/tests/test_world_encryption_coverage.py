@@ -90,3 +90,43 @@ def test_non_strict_passes_through_legacy_plaintext(monkeypatch, tmp_path):
 
     monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")   # strict OFF (default)
     assert wm.get_goal(gid).title == "legacy title"        # still readable
+
+
+@requires_crypto
+def test_episode_outcome_sealed_and_round_trips(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    from maverick.world_model import WorldModel
+    db = tmp_path / "world.db"
+    wm = WorldModel(db)
+    gid = wm.create_goal("g", "d")
+    eid = wm.start_episode(gid)
+    wm.end_episode(eid, summary="ran the secret task", outcome="model-x: done")
+
+    c = sqlite3.connect(str(db))
+    summary, outcome = c.execute(
+        "SELECT summary, outcome FROM episodes WHERE id=?", (eid,)
+    ).fetchone()
+    assert summary.startswith("MVKAR1:") and "secret" not in summary
+    assert outcome.startswith("MVKAR1:")
+    assert wm.list_episodes(goal_id=gid)[0].outcome == "model-x: done"   # round-trips
+
+
+@requires_crypto
+def test_approval_fields_sealed_and_round_trip(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    from maverick.world_model import WorldModel
+    db = tmp_path / "world.db"
+    wm = WorldModel(db)
+    aid = wm.create_approval("rm -rf /data", risk="high",
+                             scope="prod", detail="delete the SSN export")
+
+    c = sqlite3.connect(str(db))
+    action, scope, detail = c.execute(
+        "SELECT action, scope, detail FROM approvals WHERE id=?", (aid,)
+    ).fetchone()
+    assert action.startswith("MVKAR1:") and "rm -rf" not in action
+    assert scope.startswith("MVKAR1:") and detail.startswith("MVKAR1:")
+    a = wm.get_approval(aid)
+    assert a.action == "rm -rf /data" and a.scope == "prod"
+    assert a.detail == "delete the SSN export" and a.risk == "high"   # risk not sealed
+    assert wm.pending_approvals()[0].action == "rm -rf /data"
