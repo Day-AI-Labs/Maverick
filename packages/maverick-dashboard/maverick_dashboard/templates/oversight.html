@@ -28,7 +28,7 @@
       <p style="font-size: 1.4rem; margin: 0.2rem 0;"><a href="/approvals">{{ pending }}</a></p>
     </div>
     <div>
-      <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">interventions {% if day %}({{ day }}){% else %}(today){% endif %}</div>
+      <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">interventions {% if ranged %}({{ since or '…' }} → {{ until or '…' }}){% elif day %}({{ day }}){% else %}(today){% endif %}</div>
       <p style="font-size: 1.4rem; margin: 0.2rem 0;">{{ total }}</p>
     </div>
   </div>
@@ -103,11 +103,24 @@
         <input type="text" name="day" value="{{ day or '' }}" placeholder="today"
                style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
       </label>
+      <label>
+        <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">since (YYYY-MM-DD)</div>
+        <input type="text" name="since" value="{{ since or '' }}" placeholder="open"
+               style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+      </label>
+      <label>
+        <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">until (YYYY-MM-DD)</div>
+        <input type="text" name="until" value="{{ until or '' }}" placeholder="open"
+               style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+      </label>
       <button type="submit"
               style="padding: 0.45rem 1rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">
         load
       </button>
     </form>
+    <p class="muted" style="margin: 0.5rem 0 0; font-size: 0.8rem;">
+      Set <em>since</em> and/or <em>until</em> for a multi-day window (incident review); they override <em>day</em>.
+    </p>
   </div>
 
   <div class="panel">

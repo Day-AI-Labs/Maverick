@@ -888,6 +888,7 @@ async def oversight_active(request: Request) -> dict:
     fleet work without a full-page reload. Fail-soft per goal: a goal whose
     event tail can't be read still lists with an empty activity.
     """
+    from maverick.world_model import _dec_field
     w = _world()
     goals = w.list_goals(
         status="active", owner=goal_owner_filter(request), limit=50, order="desc",
@@ -902,7 +903,10 @@ async def oversight_active(request: Request) -> dict:
                 (g.id,),
             ).fetchone()
             if row:
-                activity = f"{row[0] or ''}: {(row[1] or '')[:120]}".strip(": ").strip()
+                # content is sealed at rest -> decode (no-op when encryption off);
+                # kind is stored plain.
+                content = (_dec_field(row[1]) or "")[:120]
+                activity = f"{row[0] or ''}: {content}".strip(": ").strip()
         except Exception:
             activity = ""
         out.append({

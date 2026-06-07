@@ -163,3 +163,49 @@ def test_oversight_page_has_live_active_panel(monkeypatch, tmp_path):
     text = _client().get("/oversight").text
     assert 'id="active-now"' in text
     assert "/api/v1/oversight/active" in text  # the client polls this endpoint
+
+
+# --- multi-day (incident-review) range --------------------------------------
+
+def _write_event_on_day(audit_dir, day, kind, **payload):
+    """Append one raw audit event to a specific day-file (the writer only ever
+    names by *today*, so multi-day fixtures are written directly)."""
+    import json
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    ev = {"v": 1, "ts": 1_000_000.0, "kind": kind, "agent": "a", "goal_id": 1, **payload}
+    with open(audit_dir / f"{day}.ndjson", "a", encoding="utf-8") as f:
+        f.write(json.dumps(ev) + "\n")
+
+
+def test_multiday_range_spans_day_files(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    from maverick.paths import data_dir
+    audit_dir = data_dir("audit")
+    _write_event_on_day(audit_dir, "2026-01-10", "governance_denied",
+                        reason="jan-hold", rule="r")
+    _write_event_on_day(audit_dir, "2026-02-20", "shield_block",
+                        stage="tool", reason="feb-block")
+    _write_event_on_day(audit_dir, "2026-03-30", "capability_denied",
+                        tool="s3outofrange")  # outside the window
+    text = _client().get("/oversight?since=2026-01-01&until=2026-02-28").text
+    assert "jan-hold" in text                  # in range (Jan day-file)
+    assert "feb-block" in text                 # in range (Feb day-file)
+    assert "s3outofrange" not in text          # March is outside [since, until]
+    assert "2026-01-01" in text and "2026-02-28" in text  # range shown in label
+
+
+def test_range_inputs_present(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    text = _client().get("/oversight").text
+    assert 'name="since"' in text
+    assert 'name="until"' in text
+
+
+def test_range_day_traversal_neutralized(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    r = _client().get("/oversight?since=../../etc&until=../../passwd")
+    assert r.status_code == 200  # safe_audit_day collapses bad bounds -> open
+    # The crafted values are neutralized to None (empty inputs), never echoed
+    # back or used as a path component.
+    assert "../../etc" not in r.text
+    assert "../../passwd" not in r.text
