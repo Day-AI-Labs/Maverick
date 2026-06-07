@@ -117,10 +117,13 @@ def _is_private_ip(host: str) -> bool:
     plus reserved/multicast/unspecified ranges (0.0.0.0, 224.0.0.0/4,
     240.0.0.0/4, ...) that the previous version missed.
 
-    NOTE: a name that fails to resolve here still returns False (httpx
-    then errors meaningfully). Failing closed on resolution error does
-    NOT stop DNS rebinding — that needs resolve-once-then-pin-the-
-    connection, tracked as the centralized-SSRF-client rebuild item.
+    NOTE: this is the pre-flight validation only (a name that fails to resolve
+    here returns False; the connection layer then errors meaningfully). DNS
+    rebinding between this check and the socket is closed separately by pinning
+    the validated IP for the connection: ``_resolve_pinned`` + the
+    ``_PinnedHTTP(S)Connection`` handlers for the urllib ``guarded_urlopen``
+    path, and ``_ssrf.safe_client`` (which ``_run_fetch`` and ``_check_robots``
+    use) for the httpx path.
     """
     try:
         addrs = socket.getaddrinfo(host, None)
@@ -325,14 +328,16 @@ def guarded_urlopen(url_or_req, *, timeout: float, allow_http: bool = False):
 
 def _check_robots(url: str, user_agent: str = "Maverick") -> bool:
     """Return True if robots.txt allows ``url`` for ``user_agent``."""
-    try:
-        import httpx
-    except ImportError:
-        return True
     parsed = urlparse(url)
     robots_url = urljoin(f"{parsed.scheme}://{parsed.netloc}", "/robots.txt")
     try:
-        resp = httpx.get(robots_url, timeout=5.0, follow_redirects=True)
+        # Fetch robots through the SSRF-safe, IP-pinned client (no redirects)
+        # rather than a raw httpx.get -- the robots host is the same fetch
+        # target, so it gets the same DNS-rebind / SSRF protection. A blocked
+        # host or missing httpx raises and is treated as "allowed" (robots is
+        # advisory; this matches the prior fail-open behavior).
+        from ._ssrf import safe_get
+        resp = safe_get(robots_url, timeout=5.0)
         if resp.status_code >= 400:
             return True
     except Exception:
