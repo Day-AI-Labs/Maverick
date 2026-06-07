@@ -186,13 +186,22 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 
 ## Q2 2026
 
-> **Status (June 2026 — current quarter): 🟡 mostly shipped.** Landed: voice
-> in/out, Docker sandbox, cross-agent bus, OCR, preview-diff / kv-memory /
-> clipboard; OpenTelemetry / Prometheus / Sentry, repo+file caches, parallel tools;
-> per-channel & per-user ACLs, signed skills; Postgres / TGI / Chroma adapters,
-> arXiv, catalog index. Remaining are mostly community/distribution (playground,
-> cookbook growth, socials, bug bounty) plus a few perf/safety classifiers —
-> in-progress or founder-tracked.
+> **Status (June 2026): ✅ shipped (engineering).** Capabilities: voice in/out
+> (`tools/voice.py`), Docker sandbox, cross-agent bus (`agent_bus.py`), screen-OCR
+> (`tools/ocr.py`), pyright watch-mode type feedback (`watch_mode.py`), ReAct trace
+> compression (`context_compactor.py`), preview-diff / kv-memory / clipboard. Perf:
+> OpenTelemetry + Prometheus + Sentry (`observability.py`), repo-map + file caches
+> (`cache.py`, `file_cache.py`), parallel tools, `CostEvent` ledger + CLI cost meter,
+> token preflight (`preflight.py`), and the compaction regression suite
+> (`tests/test_compaction_regression.py`). Safety: per-channel + per-user ACLs
+> (`safety/tool_acl.py`), PII detector (`safety/pii_detector.py`), sandbox-escape
+> canaries (`safety/canaries.py`), jailbreak scoring on input
+> (`safety/jailbreak_heuristics.py`). Ecosystem: Ed25519-signed skills, Postgres
+> world-model (`world_model_backends/postgres.py`), HF TGI provider, arXiv tool,
+> Chroma adapter, Bluesky + Mastodon channels, push-notification bridge
+> (`notifications.py`). **Remaining:** the DeBERTa prompt-injection + output-policy
+> classifiers (heavier ML), and community/distribution (playground, cookbook,
+> socials, bug bounty) — founder-tracked, not code-verifiable here.
 
 **Capabilities**
 - **Voice input (Whisper)**: `transcribe_audio` via faster-whisper + OpenAI/Groq Whisper API, diarization + timestamps.
@@ -271,11 +280,13 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 > **Status (June 2026): 🟡 mostly shipped (engineering).** Landed: tree-of-thought
 > (`tree_of_thought.py`), debate (`debate.py`), speculative decoding/finalization
 > (`speculative.py`); video / SQL / pandas / email / `apply_patch` tools; SSH /
-> Kubernetes / Podman / devcontainer sandboxes; A2A (`a2a.py`) + the MCP registry
-> (`mcp_registry.py`) + the cross-language quickstarts (`docs/clients/*`) +
-> Streamable-HTTP. Remaining are mostly the **glasses/wearable channel** (not yet in
-> `maverick-channels`), plus community/distribution (marketplaces, conference CFPs,
-> newsletter) — founder-tracked.
+> Kubernetes / Podman / devcontainer sandboxes; A2A discovery + delegation
+> (`a2a.py`, `a2a_tasks.py`), the MCP registry (`mcp_registry.py`), the
+> cross-language quickstarts (`docs/clients/*`) + Streamable-HTTP, and the voice
+> channel (`maverick_channels/voice.py`). **Remaining (engineering):** the gRPC API
+> surface (no `grpc` module yet) and the **glasses/wearable channel** (not in
+> `maverick-channels`); the rest is community/distribution (marketplaces, conference
+> CFPs, newsletter) — founder-tracked.
 
 **Capabilities**
 - Video understanding (`view_video`: adaptive frame sampling + audio transcript → Gemini/GPT-4o).
@@ -356,6 +367,18 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 
 ## Q4 2026
 
+> **Status (June 2026): 🟡 mostly shipped (engineering).** Landed: Kubernetes
+> sandbox (`sandbox/kubernetes.py`), reflexion library (`reflexion.py`), Android +
+> iOS-sim tools (`tools/android.py`, `tools/ios_sim.py`), calendar / git-advanced /
+> coverage-guided test runner (`tools/test_impact.py`) / embeddings-as-a-tool /
+> `apply_patch`; deterministic replay (`replay_export.py`), capability tokens
+> (`capability.py`), file-write quota (`quotas.py`), provider health board
+> (`provider_health.py`), retrieval-augmented compaction (`context_compactor.py`);
+> plugin-scaffolding CLI (`plugin_scaffold.py`), LangChain/LangGraph shim, Notion,
+> the generic OpenAI-compatible provider (`llm.py` `base_url`). **Remaining
+> (engineering):** long-context retrieval router, browser form-fill, Obsidian/IRC,
+> SBOM-in-CI; the **1.0 release** + localized docs are founder-tracked.
+
 **Capabilities**
 - Kubernetes sandbox executor (jobs in a cluster, GPU/parallel workloads).
 - Long-context retrieval router (>200k tokens auto-shard to FAISS/Chroma).
@@ -429,6 +452,15 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 ---
 
 ## 2027 — H1
+
+> **Status (June 2026): ⬜ forward plan, but several items shipped early.** Already
+> in the tree: Firecracker microVM sandbox (`sandbox/firecracker.py`), file watcher
+> (`tools/file_watcher.py`), per-tool rate limiter (`safety/rate_limiter.py`),
+> cost-aware routing (`cost_router.py`); and on the safety/enterprise side —
+> encrypted audit-at-rest (`crypto_at_rest.py`), SOC2-aligned audit export
+> (`soc2.py`), DSAR (`dsar.py`), per-user quotas (`quotas.py`), and the
+> enterprise/compliance scaffolds (`enterprise.py`, `compliance.py`). The bulk of
+> 2027 H1 remains forward plan.
 
 **Capabilities**: Firecracker microVM sandbox; audio understanding (non-speech CLAP); 3D model viewer; DOM accessibility-tree extractor (5-10x token cut); plan-execute-reflect loop topology; cross-language LSP bridge; file watcher; spreadsheet tool; vector-store as first-class memory; speculative parallel tool calls. Constrained-generation tool; speech-to-action live-mic; GUI element memory; image gen + edit tools; web automation recorder; ASR meeting listener; auto-skill distillation v2; per-tool rate limiter; diff-aware code review.
 
