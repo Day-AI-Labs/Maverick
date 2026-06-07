@@ -16,6 +16,8 @@ from maverick.runner import (
 )
 from pydantic import BaseModel, Field
 
+from .auth import execution_user_id_from_request
+
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["v1"])
@@ -152,10 +154,18 @@ async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) ->
     max_wall_seconds = min(payload.max_wall_seconds, DEFAULT_MAX_WALL_SECONDS)
     max_depth = min(payload.max_depth, DEFAULT_MAX_DEPTH)
 
-    bg.add_task(
-        run_goal_in_thread, goal_id,
-        max_dollars, max_wall_seconds, max_depth,
-    )
+    user_id = execution_user_id_from_request(request)
+    if user_id:
+        bg.add_task(
+            run_goal_in_thread, goal_id,
+            max_dollars, max_wall_seconds, max_depth,
+            channel="api", user_id=user_id,
+        )
+    else:
+        bg.add_task(
+            run_goal_in_thread, goal_id,
+            max_dollars, max_wall_seconds, max_depth,
+        )
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=500, detail="goal vanished after create")
@@ -819,7 +829,7 @@ async def cache_purge(payload: CachePurgeIn) -> dict:
 
 
 @router.post("/goals/{goal_id}/resume", status_code=204)
-async def resume_goal(goal_id: int, bg: BackgroundTasks) -> None:
+async def resume_goal(goal_id: int, request: Request, bg: BackgroundTasks) -> None:
     """Resume a blocked / cancelled goal.
 
     Capabilities-seat finding: the CLI has ``maverick resume`` but the
@@ -839,4 +849,8 @@ async def resume_goal(goal_id: int, bg: BackgroundTasks) -> None:
         )
     w.set_goal_status(goal_id, "pending", result=None)
     from maverick.runner import run_goal_in_thread
-    bg.add_task(run_goal_in_thread, goal_id)
+    user_id = execution_user_id_from_request(request)
+    if user_id:
+        bg.add_task(run_goal_in_thread, goal_id, channel="api", user_id=user_id)
+    else:
+        bg.add_task(run_goal_in_thread, goal_id)

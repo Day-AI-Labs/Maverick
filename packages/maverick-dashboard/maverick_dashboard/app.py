@@ -35,7 +35,7 @@ from maverick import a2a
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .api import router as api_router
-from .auth import require_principal
+from .auth import execution_user_id_from_request, require_principal
 from .oidc_login import router as oidc_login_router
 
 log = logging.getLogger(__name__)
@@ -1011,7 +1011,11 @@ async def chat_send(
     # Use the shared runner so this path gets the same concurrency cap,
     # budget defaults, and error handling as the REST API and MCP server.
     from maverick.runner import run_goal_in_thread
-    bg.add_task(run_goal_in_thread, goal_id)
+    user_id = execution_user_id_from_request(request)
+    if user_id:
+        bg.add_task(run_goal_in_thread, goal_id, channel="dashboard", user_id=user_id)
+    else:
+        bg.add_task(run_goal_in_thread, goal_id)
     return RedirectResponse(f"/chat/goal/{goal_id}", status_code=303)
 
 
