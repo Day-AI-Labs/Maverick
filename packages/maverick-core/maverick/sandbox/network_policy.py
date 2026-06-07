@@ -29,9 +29,32 @@ def load_policy() -> dict:
         return {}
 
 
+def _canonical_dns_name(name: str) -> str:
+    """Return a DNS name in policy-comparison form.
+
+    DNS names may be written with a final root-label dot (for example,
+    ``example.com.``), but that is equivalent to ``example.com`` for lookup
+    purposes.  Canonicalize both request hosts and policy patterns so deny
+    rules cannot be bypassed with the fully-qualified spelling.
+    """
+    value = (name or "").strip().lower()
+    if value.endswith("."):
+        value = value[:-1]
+    labels = []
+    for label in value.split("."):
+        if any(ch in label for ch in "*?["):
+            labels.append(label)
+            continue
+        try:
+            labels.append(label.encode("idna").decode("ascii"))
+        except UnicodeError:
+            labels.append(label)
+    return ".".join(labels)
+
+
 def _matches(host: str, patterns) -> bool:
-    h = (host or "").strip().lower()
-    return any(fnmatch(h, str(p).strip().lower()) for p in (patterns or []))
+    h = _canonical_dns_name(host)
+    return any(fnmatch(h, _canonical_dns_name(str(p))) for p in (patterns or []))
 
 
 def host_allowed(tool: str, host: str, policy: dict | None = None) -> bool:
