@@ -31,15 +31,17 @@ from ..llm import LLMResponse, ToolCall
 log = logging.getLogger(__name__)
 
 
-# Recognises both <tool>name(...)</tool> and the simpler <tool name="X">
-# {...}</tool> forms. Models tend to drift between styles; accepting
-# both reduces false negatives.
-_TOOL_PATTERN_NAMED = re.compile(
-    r"<tool\s+name=\"([^\"]+)\"\s*>\s*(\{.*?\})\s*</tool>", re.DOTALL
+# A tool block in either drift form the models use:
+#   <tool name="NAME">{...json...}</tool>   (preferred, named-attribute)
+#   <tool>NAME({...json...})</tool>          (inline, function-call style)
+# We capture the inner content up to the first </tool>, then pull the JSON args
+# out with a balance-aware scan (see _args_from_region) so NESTED objects
+# survive -- the old lazy `\{.*?\}` truncated at the first '}' and silently
+# dropped any call whose arguments contained a nested object.
+_TOOL_BLOCK = re.compile(
+    r"<tool(?:\s+name=\"([^\"]+)\")?\s*>(.*?)</tool>", re.DOTALL
 )
-_TOOL_PATTERN_INLINE = re.compile(
-    r"<tool>\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*(\{.*?\})\s*\)\s*</tool>", re.DOTALL
-)
+_INLINE_NAME = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)")
 
 
 def _render_tool_prompt(tools: list[dict]) -> str:
@@ -78,27 +80,103 @@ def _render_tool_prompt(tools: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _parse_tool_calls(text: str) -> tuple[str, list[ToolCall]]:
-    """Pull tool-call XML blocks out of model text.
+def _extract_json_object(s: str, start: int) -> str | None:
+    """Return the balanced ``{...}`` beginning at ``s[start]`` (which must be
+    ``{``), respecting string literals and escapes so a brace *inside* a JSON
+    string isn't counted. ``None`` if the object never balances.
+    """
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(s)):
+        c = s[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return s[start:i + 1]
+    return None
 
-    Returns (remaining_text, tool_calls). The remaining text has the
-    tool blocks removed (we keep any prose around them as the response
-    text in case the model also gave an explanation).
+
+def _loads_tolerant(raw: str) -> Any | None:
+    """``json.loads`` with two cheap repairs for common model drift: strip a
+    surrounding code fence, then drop trailing commas. ``None`` if still invalid.
+    """
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[A-Za-z0-9]*\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw).strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        repaired = re.sub(r",(\s*[}\]])", r"\1", raw)
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError:
+            return None
+
+
+def _args_from_region(region: str) -> dict | None:
+    """Extract a call's JSON args from the inner-tag text.
+
+    Finds the first ``{`` and takes the *balanced* object from there (so nested
+    objects survive), parsing it tolerantly. A block with no ``{`` is a valid
+    no-argument call -> ``{}``. Returns ``None`` only when a JSON object is
+    present but genuinely unparseable, so the caller drops the call.
+    """
+    brace = region.find("{")
+    if brace == -1:
+        return {}
+    obj = _extract_json_object(region, brace)
+    if obj is None:
+        return None
+    parsed = _loads_tolerant(obj)
+    if parsed is None:
+        return None
+    if not isinstance(parsed, dict):
+        return {"_raw": parsed}
+    return parsed
+
+
+def _parse_tool_calls(text: str) -> tuple[str, list[ToolCall]]:
+    """Pull tool-call blocks out of model text.
+
+    Returns (remaining_text, tool_calls). The tool blocks are removed (any prose
+    around them is kept as the response text). Handles both protocol forms,
+    nested-JSON arguments, no-arg calls, and common JSON drift (code fences /
+    trailing commas); a block whose JSON is genuinely malformed is dropped
+    (logged) so the agent sees the leftover text rather than a crash.
     """
     calls: list[ToolCall] = []
 
     def _consume(match: re.Match) -> str:
-        name = match.group(1).strip()
-        raw_args = match.group(2)
-        try:
-            args = json.loads(raw_args)
-        except json.JSONDecodeError:
-            log.warning("Failed to parse tool args for %s: %r", name, raw_args[:200])
-            # Drop the call; the model emitted malformed JSON. The
-            # leftover text will let the agent kernel see what happened.
+        named = match.group(1)
+        inner = match.group(2) or ""
+        if named:
+            name, region = named.strip(), inner
+        else:
+            m = _INLINE_NAME.match(inner)
+            if not m:
+                return ""  # no routable tool name -> drop
+            name, region = m.group(1), inner[m.end():]
+        if not name:
             return ""
-        if not isinstance(args, dict):
-            args = {"_raw": args}
+        args = _args_from_region(region)
+        if args is None:
+            log.warning("Failed to parse tool args for %s: %r", name, region[:200])
+            # Drop the call; the model emitted malformed JSON. The leftover
+            # text lets the agent kernel see what happened.
+            return ""
         calls.append(ToolCall(
             id=f"sim_{uuid.uuid4().hex[:12]}",
             name=name,
@@ -106,10 +184,7 @@ def _parse_tool_calls(text: str) -> tuple[str, list[ToolCall]]:
         ))
         return ""
 
-    # Try the named-attribute form first (preferred protocol), then the
-    # inline form for models that ignored the explicit instruction.
-    cleaned = _TOOL_PATTERN_NAMED.sub(_consume, text)
-    cleaned = _TOOL_PATTERN_INLINE.sub(_consume, cleaned)
+    cleaned = _TOOL_BLOCK.sub(_consume, text)
     return cleaned.strip(), calls
 
 
