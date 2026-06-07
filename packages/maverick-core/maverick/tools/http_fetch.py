@@ -434,6 +434,14 @@ def _run_fetch(args: dict[str, Any]) -> str:
         return f"ERROR: {type(e).__name__}: {e}"
 
     raw_bytes = bytes(buf[:max_bytes])
+    # Per-host egress accounting (always-on, in-memory; never breaks a fetch).
+    try:
+        from ..egress_accounting import record as _egress_record
+        _sent = len(body.encode("utf-8")) if isinstance(body, str) else len(body or b"")
+        _egress_record(parsed.hostname or "(unknown)",
+                       sent=_sent, received=len(raw_bytes))
+    except Exception:  # pragma: no cover -- accounting is best-effort
+        pass
     try:
         text = raw_bytes.decode(encoding or "utf-8", errors="replace")
     except (LookupError, UnicodeDecodeError):
