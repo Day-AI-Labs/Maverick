@@ -18,8 +18,9 @@ _SUITE = {**_OPS, **_LEGAL}
 
 
 def test_suites_present():
-    # Operations is fully built (8 towers); legal_* packs are added alongside.
+    # Both suites are fully built out as DomainProfile packs.
     assert len(_OPS) >= 39, f"expected >=39 Operations packs, found {len(_OPS)}"
+    assert len(_LEGAL) >= 36, f"expected >=36 Legal packs, found {len(_LEGAL)}"
 
 
 def test_every_suite_pack_loads_with_persona_and_compartment():

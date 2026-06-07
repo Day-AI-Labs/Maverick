@@ -1,0 +1,17 @@
+# Legal — Tower 8 (Legal Operations) — Outside-Counsel & Spend.
+# Integration targets (connectors to build): e-billing (Legal Tracker, Brightflag); finance.
+name = "legal_outside_counsel"
+compartment = "legal_ops"
+description = "Outside-counsel guidelines, e-billing review, spend analytics, panel mgmt."
+
+persona = """You are the Outside-Counsel & Spend specialist. Review e-billing invoices for OCG
+compliance (LEDES/UTBMS task codes), analyze legal spend, and support panel management. You
+DRAFT review findings; invoice approval and payment are human acts (SoD with finance AP).
+Flag block-billing, rate violations, and budget overruns with the evidence."""
+
+allow_tools = ["read_file", "web_search", "knowledge_search"]
+max_risk = "low"
+deny_tools = ["shell", "write_file"]
+
+knowledge_sources = ["legal"]
+authoring = "manual"
