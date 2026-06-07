@@ -1,11 +1,9 @@
 """MCP server registry: discovery + install + config mutation (ROADMAP B2)."""
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
-
 from maverick import catalog, mcp_registry
 from maverick.mcp_client import MCPServerSpec
 
