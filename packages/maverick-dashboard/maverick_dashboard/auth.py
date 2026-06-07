@@ -98,6 +98,25 @@ def _session_principal(request: Request) -> VerifiedPrincipal | None:
     return _principal_from_request_session(request)
 
 
+def execution_user_id_from_request(request: Request) -> str | None:
+    """Return the Maverick ``user_id`` for the authenticated HTTP principal.
+
+    ``run_goal`` derives authorization principals as ``user:<user_id>``. The
+    verified dashboard principal stores the raw subject on ``sub`` and exposes
+    the full role-assignment key as ``principal``; pass only the subject so
+    downstream checks evaluate the same ``user:<id>`` identity instead of
+    falling back to ``user:local``.
+    """
+    principal = getattr(getattr(request, "state", None), "principal", None)
+    sub = str(getattr(principal, "sub", "") or "").strip()
+    if sub:
+        return sub
+    principal_name = str(getattr(principal, "principal", "") or "").strip()
+    if principal_name.startswith("user:") and len(principal_name) > len("user:"):
+        return principal_name[len("user:"):]
+    return None
+
+
 def require_principal(request: Request) -> VerifiedPrincipal | None:
     """FastAPI dependency enforcing OIDC bearer auth when OIDC is enabled.
 

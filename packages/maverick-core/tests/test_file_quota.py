@@ -56,6 +56,37 @@ def test_write_file_tool_enforces_when_configured(monkeypatch, tmp_path):
     file_quota.reset("default")
 
 
+def test_base_registry_write_file_quota_is_scoped_by_goal(monkeypatch, tmp_path):
+    from maverick.sandbox import build_sandbox
+    from maverick.tools import base_registry
+
+    class DummyWorld:
+        def ask(self, question, goal_id=None):
+            return 1
+
+        def list_attachments(self, goal_id):
+            return []
+
+    file_quota.reset("default")
+    file_quota.reset("101")
+    file_quota.reset("202")
+    monkeypatch.setattr(file_quota, "_limit_bytes", lambda: 50)
+
+    sandbox = build_sandbox(workdir=str(tmp_path))
+    goal101 = base_registry(DummyWorld(), sandbox, goal_id=101).get("write_file")
+    goal202 = base_registry(DummyWorld(), sandbox, goal_id=202).get("write_file")
+
+    assert goal101.fn({"path": "goal101.txt", "content": "x" * 40}).startswith("wrote")
+    assert goal202.fn({"path": "goal202.txt", "content": "y" * 20}).startswith("wrote")
+
+    blocked = goal101.fn({"path": "goal101-over.txt", "content": "z" * 20})
+    assert blocked.startswith("ERROR") and "quota exceeded" in blocked
+
+    file_quota.reset("default")
+    file_quota.reset("101")
+    file_quota.reset("202")
+
+
 def test_write_file_tool_unaffected_when_off(monkeypatch, tmp_path):
     from maverick.sandbox import build_sandbox
     from maverick.tools.fs import write_file

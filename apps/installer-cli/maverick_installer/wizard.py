@@ -2499,6 +2499,52 @@ def run_consumer() -> int:
     return 0
 
 
+# (command, one-line description) surfaced after a regulated-posture setup, so a
+# non-technical operator discovers the verification + GDPR/EU AI Act
+# documentation commands they'd otherwise never find. Defined as data so a test
+# can assert the set without rendering the Rich panel.
+_COMPLIANCE_COMMANDS: list[tuple[str, str]] = [
+    ("maverick enterprise verify", "prove the data boundary holds"),
+    ("maverick compliance", "GDPR + EU AI Act control coverage"),
+    ("maverick ropa", "GDPR Art. 30 record-of-processing scaffold"),
+    ("maverick dpia", "GDPR Art. 35 impact-assessment scaffold"),
+    ("maverick ai-act", "EU AI Act risk classification"),
+]
+
+
+def _regulated_deployment(advanced: dict[str, Any]) -> bool:
+    """True if the operator turned on a sensitive-data control, so the wizard
+    should point them at the compliance + documentation commands."""
+    advanced = advanced or {}
+    return bool(
+        advanced.get("enterprise")
+        or advanced.get("encrypt_at_rest")
+        or advanced.get("audit_sign")
+    )
+
+
+def show_compliance_commands(advanced: dict[str, Any]) -> None:
+    """Print the compliance/documentation command panel after a regulated setup.
+
+    No-op unless the deployment enabled enterprise mode, at-rest encryption, or
+    audit signing -- otherwise it's just noise for a personal install.
+    """
+    if not _regulated_deployment(advanced):
+        return
+    rows = "\n".join(
+        f"  [bold]{cmd}[/bold]{' ' * max(1, 28 - len(cmd))}# {desc}"
+        for cmd, desc in _COMPLIANCE_COMMANDS
+    )
+    console.print()
+    console.print(Panel.fit(
+        "[bold]You enabled a regulated-data posture.[/bold] Prove and document it:\n\n"
+        f"{rows}\n\n"
+        "[dim]See docs/regulated-deployment.md. Control coverage, not legal advice.[/dim]",
+        border_style="cyan",
+        title="Compliance & documentation",
+    ))
+
+
 def run(fast: bool = False, resume: bool = False) -> int:
     if fast:
         return run_fast()
@@ -2766,6 +2812,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
             "  [bold]maverick dashboard[/bold]    # web UI at http://127.0.0.1:8765",
             border_style="green",
         ))
+        show_compliance_commands(advanced)
         return 0
     return 1
 
