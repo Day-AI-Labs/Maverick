@@ -21,6 +21,8 @@ from typing import Any
 
 from .builtin_rules import SEVERITY_ORDER
 from .builtin_rules import scan as builtin_scan
+from .constitutional import parse_rules as _parse_constitution
+from .constitutional import scan as _constitutional_scan
 from .output_policy import scan_output as output_policy_scan
 
 log = logging.getLogger(__name__)
@@ -101,6 +103,7 @@ class Shield:
         scan_input: bool = True,
         scan_tool_calls: bool = True,
         scan_output: bool = True,
+        constitution: list | None = None,
     ):
         # Normalize: profile/threshold/backend come from user-typed TOML, and
         # the comparisons below (== "off"/"none", the {"strict": ...} sensitivity
@@ -122,6 +125,10 @@ class Shield:
         self._scan_input_enabled = scan_input
         self._scan_tool_calls_enabled = scan_tool_calls
         self._scan_output_enabled = scan_output
+        # Operator-defined constitutional rules ([safety] constitution): a
+        # customisable regex policy layer checked at input + output. Empty by
+        # default, so this is a no-op unless configured.
+        self._constitution = _parse_constitution(constitution or [])
 
         if backend == "none" or profile == "off":
             self.backend = self.BACKEND_NONE
@@ -182,6 +189,7 @@ class Shield:
             scan_input=safety.get("scan_input", True),
             scan_tool_calls=safety.get("scan_tool_calls", True),
             scan_output=safety.get("scan_output", True),
+            constitution=safety.get("constitution"),
             warn_if_missing=warn_if_missing,
         )
 
@@ -229,7 +237,31 @@ class Shield:
     def scan_input(self, text: str) -> ShieldVerdict:
         if not self._scan_input_enabled:
             return ShieldVerdict.allow()
-        return self._scan_via_backend(text)
+        verdict = self._scan_via_backend(text)
+        return self._apply_constitution(text, verdict)
+
+    def _apply_constitution(self, text: str, verdict: ShieldVerdict) -> ShieldVerdict:
+        """Compose operator-defined constitutional rules onto ``verdict``.
+
+        No-op when safety is off, no rules are configured, or the matched
+        severity is below the block threshold. Fail-open on detector error.
+        """
+        if self.backend == self.BACKEND_NONE or not self._constitution:
+            return verdict
+        try:
+            matched, severity, names = _constitutional_scan(text, self._constitution)
+        except Exception as e:  # pragma: no cover -- detector bug must not block
+            log.error("Shield constitutional scan failed (fail-open): %s", e)
+            return verdict
+        threshold_idx = SEVERITY_ORDER.get(self.block_threshold, SEVERITY_ORDER["high"])
+        if not matched or SEVERITY_ORDER.get(severity, -1) < threshold_idx:
+            return verdict
+        reasons = [f"constitution: {n}" for n in names]
+        if not verdict.allowed:
+            return ShieldVerdict.block(
+                severity=_max_severity(verdict.severity, severity),
+                reason="; ".join(verdict.reasons + reasons))
+        return ShieldVerdict.block(severity=severity, reason="; ".join(reasons))
 
     def scan_tool_call(self, tool_name: str, args: dict) -> ShieldVerdict:
         if not self._scan_tool_calls_enabled:
@@ -282,6 +314,17 @@ class Shield:
                 and SEVERITY_ORDER.get(ph.severity, -1) >= threshold_idx):
             extra_sev = _max_severity(extra_sev, ph.severity)
             extra_reasons += [f"phishing: {r}" for r in ph.reasons]
+
+        # Constitutional (operator-defined) rules on the output surface too.
+        if self._constitution:
+            try:
+                c_matched, c_sev, c_names = _constitutional_scan(text, self._constitution)
+            except Exception as e:  # pragma: no cover -- detector bug must not block
+                log.error("Shield constitutional scan failed (fail-open): %s", e)
+                c_matched = False
+            if c_matched and SEVERITY_ORDER.get(c_sev, -1) >= threshold_idx:
+                extra_sev = _max_severity(extra_sev, c_sev)
+                extra_reasons += [f"constitution: {n}" for n in c_names]
 
         if not extra_reasons:
             return verdict

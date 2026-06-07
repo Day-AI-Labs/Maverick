@@ -22,9 +22,11 @@ here.
   refuses to exceed (`budget.py`).
 - **Killswitch** — `~/.maverick/HALT` aborts all running goals (`killswitch.py`).
 - **Verifier default-on** across goal types (`verifier.py`); **reflexion** retry
-  loop with cross-session failure memory (`reflexion.py`).
+  loop with cross-session failure memory (`reflexion.py`); graded **critic** for
+  structured accept/revise/reject feedback (`critic.py`).
 - **Planning topologies** — tree-of-thought (`tree_of_thought.py`), debate
-  (`debate.py`), speculative decode/finalize (`speculative.py`), shared-scratchpad
+  (`debate.py`), speculative decode/finalize (`speculative.py`), latency-aware
+  best-of-N that cancels laggards (`latency_best_of_n.py`), shared-scratchpad
   blackboard (`blackboard.py`), cross-agent bus (`agent_bus.py`).
 - **Context lifecycle** — deferred tool loading + `find_tools`, cross-session
   `memory` tool (`tools/memory.py`), programmatic tool calling
@@ -120,11 +122,14 @@ prefers a reachable local model before remote (`provider_local_first.py`);
   zero-width filter, remote-content scan, output-policy classifier
   (regurgitation + refusal-leak), **phishing-content detector** (credential-harvest
   + deceptive-link heuristics, composed into `Shield.scan_output`),
+  **operator-defined constitutional rules** (custom regex policy via `[safety]
+  constitution`, `maverick_shield/constitutional.py`),
   Constitutional-Classifier-v2 cascade (`safety/`, `maverick_shield/`).
 - **Access control** — tool ACLs, consent prompts, capability tokens
   (`capability.py`), role-based access control over capabilities, the
-  `self_capability` self-report tool, per-tool network egress policy
-  (`sandbox/network_policy.py`), `maverick whoami`.
+  `self_capability` self-report tool, **approval delegation rules**
+  (risk/scope-based routing, `approval_delegation.py`), per-tool network egress
+  policy (`sandbox/network_policy.py`), `maverick whoami`.
 - **Audit & compliance** — signed append-only audit log (`maverick audit verify`),
   date-windowed **SIEM export**, encryption-at-rest (`crypto_at_rest.py`,
   `maverick encryption migrate`), SOC2 readiness (`soc2.py`), DSAR (`dsar.py`),
@@ -159,7 +164,8 @@ for read-only tools (`tool_cache.py`); **network egress accounting**
 (`egress_accounting.py`); **run health score** (`health_score.py`); **replayable
 trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
 **provider cost-curve fitter** (`cost_curve_fitter.py`); provider health board
-(`provider_health.py`); shared tool-reliability layer (`tool_reliability.py`,
+(`provider_health.py`); proactive **provider rate-limit predictor**
+(`rate_limit_predictor.py`); shared tool-reliability layer (`tool_reliability.py`,
 `retry.py`); circuit breaker (`circuit_breaker.py`); adaptive thinking budget
 (`thinking_budget.py`).
 

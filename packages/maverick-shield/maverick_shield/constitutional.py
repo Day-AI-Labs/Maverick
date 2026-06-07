@@ -1,0 +1,73 @@
+"""Constitutional layer: operator-defined policy rules → runtime classifier.
+
+The built-in shield rules are fixed; this adds a *customisable* layer so a
+deployment can declare its own policy in config — e.g. ``no_scrapers`` /
+``no_weapons`` / ``no_pii_exfil`` — as ``(name, regex, severity)`` rules that are
+checked at the input/output chokepoints alongside the built-ins. Pure regex (no
+ML, no external call); invalid patterns are skipped rather than raising.
+``scan`` is unit-tested; ``Shield`` loads rules from ``[safety] constitution`` and
+composes them at the configured severity threshold.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+from .builtin_rules import SEVERITY_ORDER
+
+_DEFAULT_SEVERITY = "high"
+
+
+@dataclass(frozen=True)
+class ConstitutionalRule:
+    name: str
+    pattern: re.Pattern
+    severity: str
+
+
+def parse_rules(raw: list[dict]) -> list[ConstitutionalRule]:
+    """Build rules from ``[{name, pattern, severity?}, ...]``.
+
+    ``severity`` defaults to ``high`` and must be a known level; a rule with a
+    bad/empty regex or an unknown severity is skipped (never raises).
+    """
+    out: list[ConstitutionalRule] = []
+    for r in raw or []:
+        if not isinstance(r, dict):
+            continue
+        pattern = str(r.get("pattern") or "").strip()
+        if not pattern:
+            continue
+        severity = str(r.get("severity") or _DEFAULT_SEVERITY).strip().lower()
+        if severity not in SEVERITY_ORDER:
+            continue
+        try:
+            compiled = re.compile(pattern, re.IGNORECASE)
+        except re.error:
+            continue
+        name = str(r.get("name") or pattern[:24]).strip() or "constitutional_rule"
+        out.append(ConstitutionalRule(name=name, pattern=compiled, severity=severity))
+    return out
+
+
+def scan(text: str, rules: list[ConstitutionalRule]) -> tuple[bool, str, list[str]]:
+    """Return ``(matched, max_severity, names)`` for rules hitting ``text``.
+
+    ``matched`` is True if any rule matched; ``max_severity`` is the highest
+    severity among matches (``"none"`` when none match).
+    """
+    if not text or not rules:
+        return (False, "none", [])
+    if not isinstance(text, str):
+        text = str(text)
+    names: list[str] = []
+    max_sev = "none"
+    for rule in rules:
+        if rule.pattern.search(text):
+            names.append(rule.name)
+            if SEVERITY_ORDER.get(rule.severity, -1) > SEVERITY_ORDER.get(max_sev, -1):
+                max_sev = rule.severity
+    return (bool(names), max_sev, names)
+
+
+__all__ = ["ConstitutionalRule", "parse_rules", "scan"]
