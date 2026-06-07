@@ -700,12 +700,37 @@ def base_registry(
 
     # Capability tools that live in the parent package (maverick/), not the
     # tools subpackage. ROADMAP 2027 H2 / 2028 H1.
+    from ..browser_auth_vault import browser_auth_vault
+    from ..browser_device import browser_device
+    from ..continuous_benchmark import bench_track
     from ..dom_diff import dom_diff
+    from ..html_to_app import html_to_app
     from ..license_scan import license_scan
+    from ..task_graph import task_graph
     from ..workspace_snapshot import workspace_snapshot
     reg.register(dom_diff())
     reg.register(license_scan())
     reg.register(workspace_snapshot())
+    reg.register(task_graph())
+    reg.register(browser_device())
+    reg.register(bench_track())
+    reg.register(html_to_app())
+    reg.register(browser_auth_vault())
+
+    # Subpackage capability tools (ROADMAP 2027 H2). The sandbox-backed ones
+    # take the sandbox; the rest are stateless.
+    from .diagram_tool import diagram_tool
+    from .latex_tool import latex_tool
+    from .notebook_exec import notebook_exec
+    from .self_edit import self_edit
+    from .teams_tool import teams_tool
+    from .websocket_tool import websocket_tool
+    reg.register(notebook_exec(sandbox))
+    reg.register(latex_tool(sandbox))
+    reg.register(diagram_tool(sandbox))
+    reg.register(websocket_tool())
+    reg.register(teams_tool())
+    reg.register(self_edit())
 
     if enable_web_search:
         from .web_search import web_search
