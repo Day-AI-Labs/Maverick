@@ -2713,5 +2713,37 @@ def retention_enforce_cmd(
     click.echo(_json.dumps(report, default=str, indent=2))
 
 
+@main.group("encryption")
+def encryption_group() -> None:
+    """At-rest encryption maintenance (see docs/encryption.md)."""
+
+
+@encryption_group.command("migrate")
+@click.option("--dry-run", is_flag=True,
+              help="Report what would be sealed without writing.")
+@click.pass_context
+def encryption_migrate_cmd(ctx, dry_run: bool) -> None:
+    """Seal existing plaintext in the world DB (turns, facts, messages, questions).
+
+    Enabling encryption only seals NEW writes; this seals data written before it
+    was on. Idempotent and safe to re-run. Requires at-rest encryption enabled.
+    """
+    from pathlib import Path
+
+    from .crypto_at_rest import EncryptionUnavailable
+    from .encryption_migrate import migrate_world_db
+    try:
+        report = migrate_world_db(Path(ctx.obj["db"]), dry_run=dry_run)
+    except EncryptionUnavailable as e:
+        raise click.ClickException(str(e)) from e
+    verb = "would seal" if dry_run else "sealed"
+    for key in sorted(report):
+        click.echo(f"  {key}: {verb} {report[key]}")
+    click.echo(
+        f"{verb} {sum(report.values())} value(s) total"
+        + (" (dry run)" if dry_run else "")
+    )
+
+
 if __name__ == "__main__":
     main()
