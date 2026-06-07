@@ -901,6 +901,18 @@ async def run_goal(
             except Exception:  # pragma: no cover -- fail open per kernel rule 1
                 log.exception("scan_output on summary failed (fail-open)")
 
+        # Compartment observability: record a one-line summary of the run's
+        # bulkhead activity (threats immunized, sealed agents/sectors) so it's
+        # visible in the run record / dashboard. No-op when compartments are off.
+        if quarantine is not None:
+            try:
+                from .quarantine import compartment_status, format_compartment_status
+                blackboard.post(
+                    "orchestrator", "observation",
+                    format_compartment_status(compartment_status(quarantine, shield)),
+                )
+            except Exception:  # pragma: no cover -- observability is best-effort
+                pass
         _end_episode_with_spend(world, episode_id, summary, "success", budget, goal_id)
         world.set_goal_status(goal_id, "done", result=summary)
         _record_quota_usage()
