@@ -2841,6 +2841,36 @@ def enterprise_verify(fmt: str) -> None:
         sys.exit(1)
 
 
+@main.command("ropa")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+@click.option("--output", "-o", type=click.Path(), default=None,
+              help="Write to file (default stdout).")
+def ropa_cmd(fmt: str, output) -> None:
+    """Generate a GDPR Art. 30 record-of-processing scaffold for this deployment.
+
+    Pre-fills the technical half from the live config and schema -- personal-data
+    categories, recipients / international transfers (from the egress lock),
+    retention, and the active Art. 32 security measures -- and marks the
+    organizational fields (controller, DPO, lawful basis, purposes) for the
+    controller to complete. A scaffold for a DPO to finish, not a legal
+    attestation.
+    """
+    from .ropa import generate_ropa, render_ropa_json, render_ropa_text
+    record = generate_ropa()
+    payload = render_ropa_json(record) if fmt == "json" else render_ropa_text(record)
+    if output:
+        try:
+            fd = os.open(str(output), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload + "\n")
+        except OSError as e:
+            raise click.ClickException(f"could not write {output}: {e}")
+        click.echo(f"wrote {output}")
+    else:
+        click.echo(payload)
+
+
 # ----- DSAR subject-data export ----------------------------------------
 
 @main.group("dsar")
