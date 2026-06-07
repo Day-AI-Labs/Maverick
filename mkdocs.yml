@@ -91,6 +91,7 @@ nav:
   - Security:
       - Threat model: security/threat-model.md
       - Encryption at rest: encryption.md
+      - Regulated deployment: regulated-deployment.md
   - Roadmap:
       - 36-month plan: ROADMAP.md
   - Community:

@@ -48,6 +48,24 @@ def _scrub_value(value: Any) -> Any:
         return value
 
 
+def _anon_enabled() -> bool:
+    try:
+        from .privacy import anon_enabled
+        return anon_enabled()
+    except Exception:  # pragma: no cover -- logging must never break
+        return False
+
+
+def _anonymize_log_record(value: dict[str, Any]) -> dict[str, Any]:
+    if not _anon_enabled():
+        return value
+    try:
+        from .privacy import anonymize_dict
+        return anonymize_dict(value)
+    except Exception:  # pragma: no cover -- logging must never break
+        return value
+
+
 _goal_id_var: contextvars.ContextVar[int | None] = contextvars.ContextVar(
     "maverick_goal_id", default=None,
 )
@@ -161,6 +179,7 @@ class JsonFormatter(logging.Formatter):
                 out[k] = _scrub_value(v)
             except (TypeError, ValueError):
                 out[k] = _scrub_value(str(v))
+        out = _anonymize_log_record(out)
         return json.dumps(out, separators=(",", ":"))
 
 

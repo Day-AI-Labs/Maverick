@@ -36,6 +36,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .api import router as api_router
 from .auth import require_principal
+from .oidc_login import router as oidc_login_router
 
 log = logging.getLogger(__name__)
 
@@ -115,6 +116,11 @@ app = FastAPI(
     dependencies=[Depends(require_principal)],
 )
 app.include_router(api_router)
+# Built-in OIDC browser-login routes (/auth/login, /auth/callback, /auth/logout).
+# Each route self-gates on maverick.oidc.login_enabled() and 404s when the login
+# flow isn't fully configured, so including the router unconditionally is inert
+# off by default. See maverick_dashboard.oidc_login.
+app.include_router(oidc_login_router)
 a2a.mount(app)
 
 _DOCS_CSP = (
@@ -199,6 +205,14 @@ _AUTH_EXEMPT = {
     # own HMAC signature), so they bypass the bearer/same-origin checks too.
     "/webhook/linear",
     "/webhook/jira",
+    # Built-in OIDC browser-login endpoints: they bootstrap a session and carry
+    # their own flow-level security (state/PKCE/signed cookies). They must be
+    # reachable by a browser that has no dashboard token yet; each self-gates on
+    # login_enabled() and 404s when the login flow is off.
+    "/auth/login",
+    "/auth/callback",
+    "/auth/logout",
+    "/auth/error",
 }
 
 

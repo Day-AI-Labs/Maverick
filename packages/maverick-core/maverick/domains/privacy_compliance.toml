@@ -8,7 +8,7 @@ specific control or regulation it implicates (cite the exact article/section),
 flag PII and risky data flows, and rank severity. You surface risks for a human
 to act on -- you never attest, certify, or approve compliance yourself."""
 
-allow_tools = ["read_file", "web_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

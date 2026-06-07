@@ -937,12 +937,47 @@ def pick_oidc() -> dict[str, Any]:
         "e.g. https://example.okta.com/oauth2/v1/keys)",
         default="",
     ).strip()
-    return {
+    result: dict[str, Any] = {
         "enabled": True,
         "issuer": issuer,
         "audience": audience,
         "jwks_uri": jwks_uri,
     }
+    # Optional: the built-in browser-login (authorization-code) flow. The
+    # default path is bearer-token verification only (API clients) or a reverse
+    # proxy for browser SSO; this self-contained flow is for deployments that
+    # can't run an auth proxy. OFF unless the operator opts in and supplies the
+    # OAuth client + a session-signing secret.
+    console.print(
+        "[dim]Optional: built-in browser login. Lets the dashboard run the "
+        "OAuth2 authorization-code flow itself (browser SSO without a separate "
+        "auth proxy). Needs an OAuth client_id/secret registered with your IdP "
+        "and a redirect URI of <dashboard-url>/auth/callback. OFF by "
+        "default.[/dim]"
+    )
+    if _q_confirm("  Also enable the built-in browser login flow?", default=False):
+        client_id = _q_text(
+            "    OAuth client_id (this dashboard's registered client)", default="",
+        ).strip()
+        client_secret = _q_text(
+            "    OAuth client_secret", default="",
+        ).strip()
+        redirect_uri = _q_text(
+            "    Redirect URI (must be <dashboard-url>/auth/callback)", default="",
+        ).strip()
+        session_secret = _q_text(
+            "    Session-signing secret (a long random string; keep it secret)",
+            default="",
+        ).strip()
+        result.update(
+            {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
+                "session_secret": session_secret,
+            }
+        )
+    return result
 
 
 def pick_advanced() -> dict[str, Any]:
@@ -2007,6 +2042,15 @@ def write_config(
             _emit_kv(lines, "issuer", oidc.get("issuer", ""))
             _emit_kv(lines, "audience", oidc.get("audience", ""))
             _emit_kv(lines, "jwks_uri", oidc.get("jwks_uri", ""))
+            # Built-in browser-login fields, written ONLY when the operator
+            # opted into that flow (so a bearer-only OIDC config is unchanged).
+            # The kernel's login_enabled() additionally gates the routes.
+            for key in (
+                "client_id", "client_secret", "redirect_uri", "session_secret",
+            ):
+                val = oidc.get(key)
+                if val:
+                    _emit_kv(lines, key, val)
 
     if mcp_servers:
         for name, cfg in mcp_servers.items():
