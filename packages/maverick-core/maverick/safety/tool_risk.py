@@ -50,6 +50,7 @@ _DEFAULT_RISK: dict[str, str] = {
     "compute": "high",
     "code_exec": "high",
     "memory": "high",
+    "obsidian": "high",
     "clipboard": "high",
     # high: mutate external state / money / send messages / drive infra or a
     # device / recursively spawn. These used to fall through to the "medium"
