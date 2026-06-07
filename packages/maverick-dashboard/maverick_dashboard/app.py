@@ -913,17 +913,96 @@ async def permissions_page(request: Request) -> HTMLResponse:
     )
 
 
+# The audit kind a governance verdict records when it blocks or parks an
+# action (see maverick.governance + the kernel tool path). Referenced as a
+# literal so the dashboard reads the log even on a kernel build that predates
+# the EventKind constant; resolved from the constant when it exists.
+def _governance_event_kind() -> str:
+    try:
+        from maverick.audit import EventKind
+        return getattr(EventKind, "GOVERNANCE_DENIED", "governance_denied")
+    except Exception:  # pragma: no cover - audit module always importable
+        return "governance_denied"
+
+
+def _approval_source(detail: str | None) -> str | None:
+    """Label a parked approval as governance/Art-14 originated, else ``None``.
+
+    A governance ``REQUIRE_HUMAN`` hold reaches the queue through
+    ``safety.consent.require_consent`` with ``detail`` set to the governance
+    verdict's reason (see the kernel tool path), which reads e.g. "...requires
+    human approval" / "...denied by org policy". An ordinary high-risk consent
+    hold has no such reason, so the operator can't tell the two apart. Match the
+    governance phrasing and surface a short source label; everything else is an
+    ordinary consent hold (``None`` -> no badge).
+    """
+    if not detail:
+        return None
+    d = detail.lower()
+    if "requires human approval" in d or "denied by org policy" in d:
+        return "governance · Art 14"
+    return None
+
+
 @app.get("/approvals", response_class=HTMLResponse)
 async def approvals_page(request: Request) -> HTMLResponse:
     """Pending high-risk actions awaiting approve/deny.
 
     Populated when an agent runs with ``MAVERICK_CONSENT_MODE=dashboard``:
     ``safety.consent.require_consent`` parks each gated action here and
-    polls for the decision this page writes back.
+    polls for the decision this page writes back. Governance ``REQUIRE_HUMAN``
+    holds (EU AI Act Art 14) arrive the same way; ``_approval_source`` labels
+    them so an operator can distinguish a policy hold from a plain consent one.
     """
+    approvals = _world().pending_approvals()
+    sources = {a.id: _approval_source(a.detail) for a in approvals}
     return templates.TemplateResponse(
         request, "approvals.html",
-        {"approvals": _world().pending_approvals()},
+        {"approvals": approvals, "sources": sources},
+    )
+
+
+def _recent_governance_holds(limit: int = 10) -> list[dict]:
+    """The most recent governance oversight events for the operator console.
+
+    Reuses the audit reader behind ``/audit`` (today's NDJSON tail), filtered to
+    governance verdicts (``GOVERNANCE_DENIED``) and returned newest-first. These
+    are the Art-14 / Art-12 record of every org-policy block + human-oversight
+    hold. Fail-soft: a missing/unreadable log yields an empty panel, never a 500.
+    """
+    try:
+        from maverick.audit import default_audit_log
+        kind = _governance_event_kind()
+        events = [
+            e for e in default_audit_log().tail(500)
+            if e.get("kind") == kind
+        ]
+    except Exception:  # pragma: no cover - never 500 the console on a log error
+        return []
+    return list(reversed(events))[:limit]
+
+
+@app.get("/fleets", response_class=HTMLResponse)
+async def fleets_page(request: Request) -> HTMLResponse:
+    """Operator console: the per-employee agent fleets + their oversight.
+
+    Layer C of the enterprise control plane (see
+    ``docs/enterprise/architecture.md``): lists each fleet (owner + role-scoped
+    roster) alongside the recent governance oversight trail and a link to the
+    pending human-approval queue -- the EU AI Act Art 14 human-oversight surface.
+    """
+    try:
+        from maverick.fleet import list_fleets
+        fleets = list_fleets()
+    except Exception:  # pragma: no cover - never 500 the console if the registry errors
+        fleets = []
+    return templates.TemplateResponse(
+        request, "fleets.html",
+        {
+            "fleets": fleets,
+            "holds": _recent_governance_holds(),
+            "pending_count": len(_world().pending_approvals()),
+        },
     )
 
 
