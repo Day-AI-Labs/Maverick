@@ -148,3 +148,80 @@ def save_profile(profile: DomainProfile, *, approved: bool,
     path = d / f"{profile.name}.toml"
     path.write_text(_to_toml(profile), encoding="utf-8")
     return str(path)
+
+
+_PROPOSER_SYSTEM = (
+    "You configure a specialist business-assistant agent. Given a business "
+    "description, return ONLY a JSON object with these keys:\n"
+    '  "persona": the agent\'s system instructions (string),\n'
+    '  "description": a one-line summary (string),\n'
+    '  "allow_tools": array of tool names it needs (e.g. read_file, web_search),\n'
+    '  "max_risk": "low" or "medium".\n'
+    "Never include shell, code-execution, or file-writing tools. Output JSON only."
+)
+
+
+def _intake_prompt(spec: IntakeSpec) -> str:
+    parts = [f"Business name: {spec.name}"]
+    if spec.industry:
+        parts.append(f"Industry: {spec.industry}")
+    if spec.description:
+        parts.append(f"What they do: {spec.description}")
+    if spec.goals:
+        parts.append("Goals: " + "; ".join(spec.goals))
+    return "\n".join(parts)
+
+
+def _parse_proposal(text: str) -> dict:
+    """Extract the JSON pack from an LLM response and sanitize it to expected
+    types. Returns {} on anything unparseable -- generate_profile then uses its
+    safe default, and validate_profile clamps the result regardless."""
+    if not text:
+        return {}
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end <= start:
+        return {}
+    try:
+        data = json.loads(text[start:end + 1])
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict = {}
+    for key in ("persona", "description", "max_risk"):
+        if isinstance(data.get(key), str):
+            out[key] = data[key]
+    for key in ("allow_tools", "deny_tools"):
+        v = data.get(key)
+        if isinstance(v, list):
+            out[key] = [str(x) for x in v if isinstance(x, str)]
+    return out
+
+
+def build_llm_proposer(llm, *, model: str | None = None, budget=None):
+    """A ``propose(spec)`` callable backed by an LLM -- the generative authoring
+    path ("describe the business, we synthesize the pack"). The result is still
+    run through ``validate_profile``, so the model can't widen the envelope."""
+    def propose(spec: IntakeSpec) -> dict:
+        resp = llm.complete(
+            system=_PROPOSER_SYSTEM,
+            messages=[{"role": "user", "content": _intake_prompt(spec)}],
+            model=model, budget=budget, max_tokens=1500,
+        )
+        return _parse_proposal(getattr(resp, "text", "") or "")
+
+    return propose
+
+
+def run_intake(spec: IntakeSpec, *, llm=None, kb=None,
+               model: str | None = None, budget=None) -> DomainProfile:
+    """Ingest the business's documents and generate a validated (but UNSAVED)
+    DomainProfile for human approval. Pass ``llm`` to use the generative path;
+    omit it for the deterministic fallback. Persisting is a separate, approved
+    step (``save_profile``)."""
+    if kb is not None:
+        ingest_docs(spec, kb)
+    propose = (
+        build_llm_proposer(llm, model=model, budget=budget) if llm is not None else None
+    )
+    return generate_profile(spec, propose=propose)

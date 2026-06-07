@@ -86,3 +86,52 @@ class TestIngestDocs:
         assert ingest_docs(spec, kb) >= 1
         hits = kb.search("zeta_co", "refund window", k=3)
         assert hits and "refund" in hits[0].text.lower()
+
+
+class _StubLLM:
+    def __init__(self, text):
+        self._text = text
+
+    def complete(self, system, messages, **kw):
+        from types import SimpleNamespace
+        return SimpleNamespace(text=self._text)
+
+
+class TestLLMProposer:
+    def test_parse_plain_and_fenced_json(self):
+        from maverick.intake import _parse_proposal
+        assert _parse_proposal('{"persona": "hi", "max_risk": "low"}') == {
+            "persona": "hi", "max_risk": "low"}
+        fenced = '```json\n{"persona": "x", "allow_tools": ["read_file"]}\n```'
+        out = _parse_proposal(fenced)
+        assert out["persona"] == "x" and out["allow_tools"] == ["read_file"]
+
+    def test_parse_junk_returns_empty(self):
+        from maverick.intake import _parse_proposal
+        assert _parse_proposal("sorry, I can't do that") == {}
+        assert _parse_proposal("") == {}
+
+    def test_llm_proposal_is_clamped_through_generation(self):
+        from maverick.intake import build_llm_proposer
+        llm = _StubLLM('{"persona": "You are a tax expert.", '
+                       '"allow_tools": ["read_file", "shell"], "max_risk": "high"}')
+        prof = generate_profile(IntakeSpec(name="Tax Co"),
+                                propose=build_llm_proposer(llm))
+        assert "tax expert" in prof.persona
+        assert prof.max_risk == "medium"        # clamped from the LLM's "high"
+        assert "shell" not in prof.allow_tools  # clamped despite the model asking
+
+
+class TestRunIntake:
+    def test_ingests_and_generates(self, tmp_path):
+        from maverick.intake import run_intake
+        from maverick_knowledge import DeterministicEmbedder, KnowledgeBase
+        doc = tmp_path / "handbook.txt"
+        doc.write_text("Employees accrue paid leave monthly.")
+        kb = KnowledgeBase(embedder=DeterministicEmbedder(dim=64))
+        llm = _StubLLM('{"persona": "HR helper", "allow_tools": ["read_file"]}')
+        prof = run_intake(IntakeSpec(name="Theta Inc", doc_paths=[str(doc)]),
+                          llm=llm, kb=kb)
+        assert prof.name == "theta_inc"
+        assert "HR helper" in prof.persona
+        assert kb.search("theta_inc", "paid leave", k=3)  # docs were ingested
