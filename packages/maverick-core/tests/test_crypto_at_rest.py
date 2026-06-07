@@ -239,3 +239,32 @@ def test_world_db_reads_legacy_plaintext(monkeypatch, tmp_path):
     wm2 = WorldModel(db)
     assert wm2.recent_turns(conv.id)[-1].content == "plain legacy turn"
     assert wm2.get_fact("user:bob:n") == "plain legacy fact"
+
+
+@requires_crypto
+def test_world_db_seals_messages(monkeypatch, tmp_path):
+    import sqlite3
+
+    from maverick.world_model import WorldModel
+
+    db = tmp_path / "world.db"
+    wm = WorldModel(db)
+    gid = wm.create_goal("g", "d")
+
+    # A legacy plaintext message (encryption off) is searchable via FTS.
+    wm.append_message(gid, "user", "findable plaintext token")
+    assert any("findable" in m["content"] for m in wm.search_messages("findable"))
+
+    # With encryption on, new message content is sealed on disk.
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    wm.append_message(gid, "assistant", "secret SSN 123-45-6789")
+    raw = sqlite3.connect(str(db)).execute(
+        "SELECT content FROM messages WHERE role = 'assistant'"
+    ).fetchone()[0]
+    assert raw.startswith("MVKAR1:") and "123-45-6789" not in raw
+
+    # Search can't match ciphertext, so the encrypted message is not returned;
+    # the legacy plaintext message still is, and comes back decrypted.
+    hits = {m["content"] for m in wm.search_messages("findable")}
+    assert "findable plaintext token" in hits
+    assert all("123-45-6789" not in c for c in hits)

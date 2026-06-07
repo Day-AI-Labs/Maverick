@@ -1076,7 +1076,7 @@ class WorldModel:
         with self._writing() as conn:
             conn.execute(
                 "INSERT INTO messages(goal_id, role, content, ts) VALUES(?, ?, ?, ?)",
-                (goal_id, role, content, time.time()),
+                (goal_id, role, _enc_field(content), time.time()),
             )
 
     def search_messages(self, query: str, limit: int = 10) -> list[dict]:
@@ -1092,7 +1092,16 @@ class WorldModel:
             "WHERE messages_fts MATCH ? ORDER BY m.ts DESC LIMIT ?",
             (fts_query, limit),
         )
-        return [dict(r) for r in rows]
+        # Decrypt content for any matched rows. Under at-rest encryption the FTS
+        # index holds ciphertext, so a plaintext query only matches legacy
+        # plaintext rows (search over encrypted messages is disabled); those rows
+        # are returned decrypted, and pre-encryption plaintext passes through.
+        out: list[dict] = []
+        for r in rows:
+            d = dict(r)
+            d["content"] = _dec_field(d.get("content"))
+            out.append(d)
+        return out
 
     # ----- conversations (multi-turn per channel user) -----
     def get_or_create_conversation(self, channel: str, user_id: str) -> Conversation:
