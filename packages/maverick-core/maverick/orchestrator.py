@@ -329,6 +329,7 @@ async def run_goal(
     conversation_id: int | None = None,
     channel: str | None = None,
     user_id: str | None = None,
+    capability: Any | None = None,
     orchestrator_model_override: str | None = None,
     resume: bool = False,
     resume_episode_id: int | None = None,
@@ -490,7 +491,8 @@ async def run_goal(
             sandbox=sandbox, goal_id=goal_id, max_depth=max_depth,
             shield=shield, quarantine=quarantine, knowledge=knowledge,
             mcp_clients=mcp_clients,
-            channel=channel, user_id=user_id, episode_id=episode_id,
+            channel=channel, user_id=user_id, capability=capability,
+            episode_id=episode_id,
         )
 
         # Facts are persisted, user/REST/MCP-settable strings that get

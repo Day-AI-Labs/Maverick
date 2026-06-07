@@ -274,6 +274,20 @@ def capability_from_config(
     return base
 
 
+def capability_for_role(role: str, *, principal: str = "agent") -> Capability:
+    """The capability for ``principal`` scoped to the named RBAC ``role``.
+
+    Starts from the deployment-ACL grant (:func:`capability_from_config`) and
+    narrows it by the ``[roles.<role>]`` scope -- the same attenuation
+    :func:`capability_from_config` applies for an *assigned* role, but keyed on
+    an explicit role rather than ``[role_assignments]``. This is how a fleet
+    agent runs least-privileged under its declared role. An unknown/empty role
+    leaves the base grant unchanged.
+    """
+    base = capability_from_config(principal)
+    return _apply_role(base, role) if role else base
+
+
 def _roles_config() -> dict:
     """The ``[roles]`` table (role name -> scope dict), or empty."""
     try:
@@ -335,5 +349,6 @@ __all__ = [
     "verify_capability",
     "capability_enforced",
     "capability_from_config",
+    "capability_for_role",
     "role_for_principal",
 ]
