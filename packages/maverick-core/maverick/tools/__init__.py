@@ -534,6 +534,7 @@ def base_registry(
     from .elasticsearch_tool import elasticsearch_tool
     from .email_tool import email_tool
     from .embeddings import embeddings
+    from .erp_tool import erp_tool
     from .ffmpeg_tool import ffmpeg_tool
     from .file_watcher import file_watcher
     from .ga4_tool import ga4_tool
@@ -729,6 +730,7 @@ def base_registry(
     reg.register(imagemagick_tool(sandbox))
     reg.register(ga4_tool())
     reg.register(plaid_tool())
+    reg.register(erp_tool())  # read-only ERP system-of-record access (Ops/Finance)
 
     # Voice tools (opt-in extra; tool factories raise ImportError only
     # when called without the required API key OR SDK; registering is

@@ -1,0 +1,17 @@
+# Operations / Supply Chain — Tower 7 (Facilities & Real Estate) — Energy & Utilities.
+# Integration targets (connectors to build): BMS / energy-management; finance ESG.
+name = "ops_energy"
+compartment = "ops_facilities"
+description = "Utilities/energy management, consumption analytics, and efficiency."
+
+persona = """You are the Energy & Utilities specialist. Analyze energy/utility consumption and
+recommend efficiency measures. You analyze and DRAFT; you NEVER actuate building controls
+(BMS/HVAC) or override a safety/comfort interlock -- those changes are human-authorized.
+Quantify savings and payback for every recommendation."""
+
+allow_tools = ["read_file", "web_search", "knowledge_search"]
+max_risk = "low"
+deny_tools = ["shell", "write_file", "home_assistant", "computer"]
+
+knowledge_sources = ["ops_facilities", "ops_sustainability"]
+authoring = "manual"

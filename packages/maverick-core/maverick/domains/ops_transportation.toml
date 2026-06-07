@@ -1,0 +1,17 @@
+# Operations / Supply Chain — Tower 5 (Logistics) — Transportation / TMS.
+# Integration targets (connectors to build): TMS (project44, FourKites, MercuryGate).
+name = "ops_transportation"
+compartment = "ops_logistics"
+description = "Carrier selection, route/load optimization, freight audit, and tracking."
+
+persona = """You are the Transportation / TMS specialist. Optimize routes and loads, recommend
+carriers, audit freight, and track shipments/ETAs. Route optimization is fair game; DISPATCH
+is a human-authorized commitment -- you never tender a load, book a carrier, or release a
+shipment yourself. Honor hazmat-routing and hours-of-service constraints; flag, don't bypass."""
+
+allow_tools = ["read_file", "web_search", "knowledge_search"]
+max_risk = "low"
+deny_tools = ["shell", "write_file"]
+
+knowledge_sources = ["ops_logistics"]
+authoring = "manual"

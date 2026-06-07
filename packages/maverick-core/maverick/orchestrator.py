@@ -701,11 +701,13 @@ async def run_goal(
         root = None
         if domain:
             try:
-                from .domain import agent_from_profile, available_domains
-                _profile = available_domains().get(domain)
+                from .domain import agent_from_profile, enabled_domains
+                # enabled_domains() honors the operator's [suites] toggles, so a
+                # domain whose suite is switched off is treated as unavailable.
+                _profile = enabled_domains().get(domain)
                 if _profile is None:
-                    msg = (f"no such domain: {domain!r}. See `maverick "
-                           "compartments` for available domains.")
+                    msg = (f"no such domain: {domain!r} (unknown or its suite is "
+                           "disabled). See `maverick compartments` for available domains.")
                     world.set_goal_status(goal_id, "blocked", result=msg)
                     _end_episode_with_spend(world, episode_id, msg, "blocked", budget, goal_id)
                     _record_quota_usage()

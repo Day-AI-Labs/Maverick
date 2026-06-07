@@ -32,7 +32,8 @@ persona and applied to **every** agent below:
 
 1. [How a finance agent maps onto Maverick](#1-how-a-finance-agent-maps-onto-maverick)
 2. [The finance control model (read this first)](#2-the-finance-control-model-read-this-first)
-3. [The roster — seven towers of the CFO's office](#3-the-roster--seven-towers-of-the-cfos-office)
+3. [Per-client customization — the dials](#3-per-client-customization--the-dials)
+4. [The roster — seven towers of the CFO's office](#4-the-roster--seven-towers-of-the-cfos-office)
    - [Tower 1 — Controllership (record-to-report)](#tower-1--controllership-record-to-report)
    - [Tower 2 — FP&A (plan-to-perform)](#tower-2--fpa-plan-to-perform)
    - [Tower 3 — Treasury (cash-to-capital)](#tower-3--treasury-cash-to-capital)
@@ -40,12 +41,13 @@ persona and applied to **every** agent below:
    - [Tower 5 — Risk, Controls & Assurance](#tower-5--risk-controls--assurance)
    - [Tower 6 — Procurement & Vendor](#tower-6--procurement--vendor)
    - [Tower 7 — External & Investor Reporting](#tower-7--external--investor-reporting)
-4. [The Finance Controller — supervisor & router (Layer A)](#4-the-finance-controller--supervisor--router-layer-a)
-5. [Compliance-regime packs for finance (Layer B)](#5-compliance-regime-packs-for-finance-layer-b)
-6. [Finance assessment templates (extend the assessment engine)](#6-finance-assessment-templates-extend-the-assessment-engine)
-7. [Integrations catalog — what to connect, build order](#7-integrations-catalog--what-to-connect-build-order)
-8. [Build sequence](#8-build-sequence)
-9. [Honest caveats](#9-honest-caveats)
+   - [Vertical packs (optional, enabled per client)](#vertical-packs-optional-enabled-per-client)
+5. [The Finance Controller — supervisor & router (Layer A)](#5-the-finance-controller--supervisor--router-layer-a)
+6. [Compliance-regime packs for finance (Layer B)](#6-compliance-regime-packs-for-finance-layer-b)
+7. [Finance assessment templates (extend the assessment engine)](#7-finance-assessment-templates-extend-the-assessment-engine)
+8. [Integrations catalog — what to connect, build order](#8-integrations-catalog--what-to-connect-build-order)
+9. [Build sequence](#9-build-sequence)
+10. [Honest caveats](#10-honest-caveats)
 
 ---
 
@@ -84,9 +86,9 @@ On top of the pack, three already-shipped layers do the governance:
 
 ## 2. The finance control model (read this first)
 
-These are **cross-cutting** controls that wrap *every* agent in §3. They are the
-substance of the product. Each maps to a primitive we already own; the few that
-need building are flagged *gap*.
+These are **cross-cutting** controls that wrap *every* agent in the roster (§4);
+§3 is how a client *tunes* them. They are the substance of the product. Each maps
+to a primitive we already own; the few that need building are flagged *gap*.
 
 ### 2.1 Segregation of Duties (SoD) — the cardinal control
 
@@ -100,7 +102,7 @@ non-overlapping capability**, and the deny-set blocks the other side.
 | **Record** (enter invoice, draft JE) | AP, AR, GL/Close | `allow_tools` includes *draft/stage* tools only; `deny_tools` includes *post/release/pay*. |
 | **Authorize** (approve invoice, approve JE) | Finance Controller (human-gated) | Approval is a `require_human` action — never an agent's own tool. |
 | **Custody** (release payment, move cash) | Treasury/Payments | A *distinct* compartment; money tools are `high` risk → `require_human`. |
-| **Reconcile** (match bank to ledger) | Reconciliation / Internal Audit | Read-only capability over *both* sides; cannot post adjustments. |
+| **Reconcile** (match bank to ledger) | Account Reconciliation (1.11), Internal Audit | Read-only capability over *both* sides; cannot post the adjustments it finds. |
 
 Because `Capability.attenuate()` is **narrow-only by construction**, a sub-agent
 the GL agent spawns can never acquire a payment tool the GL agent itself lacks —
@@ -158,15 +160,169 @@ release, and file.**
 | **Budget caps** | Long-running close/forecast/audit runs respect `Budget` (CLAUDE.md rule 3). |
 | **Blast-radius containment** | Compartment seals quarantine a single finance function on a detected threat. |
 | **Kill switch** | `~/.maverick/HALT` aborts every running finance goal. |
-| **Sanctions / AML / KYC screening** | A screening tool every payment + vendor-onboarding path must pass (OFAC SDN, PEP) — *connector to build*, see §7. |
+| **Sanctions / AML / KYC screening** | A screening tool every payment + vendor-onboarding path must pass (OFAC SDN, PEP) — *connector to build*, see §8. |
 | **PCI-DSS** | Card PANs never stored; the secret/PII detector redacts them from logs; expense/AR agents touch tokens, not pans. |
+
+### 2.7 Manual JEs, materiality & management override
+
+Two of the highest-risk areas in any audit, both addressed structurally.
+**Manual / top-side journal entries** are the #1 SOX hot spot — each is staged
+with its supporting evidence and an *independent* human posts it (never the
+preparer); late, post-close, round-dollar, and above-materiality entries are
+auto-flagged. **Management override of controls** is the #1 fraud risk (SAS 99) —
+the immutable Merkle audit chain makes it *detectable* by construction: nothing
+reaches the ledger without a recorded, signed entry attributable to a principal,
+so an override leaves evidence rather than a gap. **Materiality** is a client dial
+(§3.5) that scales flux thresholds and review scope. Finance models run in
+**sandboxed compute** over versioned, audited inputs rather than opaque
+spreadsheets — closing the classic end-user-computing (EUC) gap.
+
+### 2.8 Controls over autonomous agents are now in ICFR scope
+
+A second-order point that is also a differentiator: once the "user" recording or
+paying is an **agent**, the platform's own **access** (capabilities), **change**
+(versioned packs + signed grants), and **operations** (budget, kill switch, audit)
+controls *become* the SOX **IT general controls** over the financial-reporting
+system. The evidence the platform emits for free — capability grants, the signed
+audit chain, governance verdicts — is the ITGC evidence an auditor would otherwise
+assemble by hand (see the `itgc` assessment template, §7).
 
 ---
 
-## 3. The roster — seven towers of the CFO's office
+## 3. Per-client customization — the dials
 
-~30 agents across seven functional towers, each a sealed compartment. For each:
-**Job** (what it does), **Connects to** (systems/knowledge), **Capability**
+No two finance orgs want the same posture: a Series-B startup wants speed and will
+auto-pay small invoices; a regulated bank wants every entry double-checked. The
+suite is **one set of agents tuned per client through configuration, not forks** —
+riding knobs the platform already has (`config.toml`, per-tenant workspaces,
+tenant-dir packs that *win* over built-ins, RBAC roles, the governance `Policy`,
+consent modes). Eight axes:
+
+### 3.1 The automation ladder (per action class)
+
+The headline dial the customer asked for. Every *action class* an agent can take
+is bound to one of five levels; a client sets a default and overrides per action.
+
+| Level | Behaviour | Maps to (existing primitive unless noted) |
+|---|---|---|
+| **L0 Observe** | Analyze & recommend only; no tool that writes to any system. | read-only `Capability` (no stage/post tools) |
+| **L1 Draft** *(default for systems of record)* | Agent stages/prepares; a human posts/releases. | stage tool allowed; post/release on `deny_tools` + `require_human` |
+| **L2 Approve (maker-checker)** | Agent prepares **and** executes, but only after explicit per-action human sign-off. | action in `require_human_actions`; consent `ask`/`dashboard` |
+| **L3 Auto-under-threshold** | Executes autonomously below a configured amount/risk; above it, drops to L2. | amount-aware `require_human_above` *(the §2.3 build)* |
+| **L4 Straight-through** | Executes within policy + budget; humans review after the fact (sampling). | `allow` + post-hoc audit sampling; low-risk, high-volume only |
+
+The same agent runs at different levels per action: an AP agent can be **L3** for
+3-way-matched invoices under $1k, **L2** for everything else, and its vendor-bank-
+change action is **hard-floored** at L2 no matter what the client sets (§3.2).
+
+### 3.2 Hard floors — what no client config can switch off
+
+Customization must not let a client foot-gun into an uncontrolled state. A small
+set of actions are **always ≥ L2 (human)** regardless of tier — the profile
+compiler *refuses to build* a config that lowers them:
+
+- wires/ACH above a platform floor, and **any** vendor/employee **bank-detail change**;
+- the payroll run and payroll bank changes;
+- period close, posting to a **locked** period, and chart-of-accounts changes;
+- tax remittance and any statutory/SEC **filing**;
+- anything that fails **sanctions/OFAC** screening (a hard **deny**, not a gate).
+
+These are the finance analogue of the platform's "deny wins," enforced in code,
+not left to per-client discipline.
+
+### 3.3 Approval thresholds & delegation-of-authority (DoA)
+
+The amount tiers behind L2/L3. Per action, per currency: dollar bands → how many
+approvers and which role — the classic approval matrix as config, compiled to the
+amount-aware policy (§2.3). Supports single-approver, **dual approval (four-eyes)**,
+and board-tier, plus escalation and approver-of-record routing.
+
+### 3.4 Enabled modules — towers, agents, verticals
+
+The roster is a **menu**. A client enables the towers/agents it needs and the
+**vertical packs** for its industry (§4). A 40-person SaaS shop runs
+Controllership-lite + FP&A + the SaaS-metrics vertical and skips Consolidations,
+Transfer Pricing, SEC, and Statutory. Built-in packs ship in the wheel; a client's
+own/edited packs live in its tenant `domains/` dir and **win** over built-ins (the
+existing loader precedence), so any agent can be re-personated or re-scoped without
+a fork.
+
+### 3.5 Accounting framework & policy choices
+
+The numbers themselves are configurable: **GAAP vs IFRS**, fiscal-year end,
+functional/reporting currency, **materiality** thresholds (which drive flux and
+review scope, §2.7), capitalization threshold, depreciation methods, revenue
+policies, and the chart of accounts. These live in `[finance]` config plus the
+client's uploaded **accounting policy manual** (a knowledge source every agent cites).
+
+### 3.6 Segregation-of-duties strictness
+
+Large orgs enforce SoD hard; a five-person finance team physically cannot separate
+every duty and relies on **compensating controls**. So SoD is itself a dial:
+`enforce` (the linter blocks conflicts) vs `warn` (conflicts allowed but flagged,
+and the affected actions are force-raised to L2 human review as the compensating
+control). **Hard-floor** conflicts (§3.2) always block regardless.
+
+### 3.7 Connectors, residency & data handling
+
+Which **ERP / bank / payroll / tax** systems back each agent (`mcp_servers` per
+pack), the **egress region** (residency — pin LLM calls to the client's
+jurisdiction), encryption-at-rest on/off, retention periods, and per-agent
+**budget/quotas**. All existing knobs, scoped per tenant.
+
+### 3.8 The Finance Operating Profile (one bundle)
+
+All of the above is one named, versioned object that onboarding (intake) produces
+and the **wizard** edits (rule 6) — the finance analogue of a compliance-regime
+pack. It compiles to capabilities + governance policy + consent config; it is
+signed and audited, so *"what was this client allowed to automate, and who
+approved that posture?"* is itself an audit-trail question.
+
+```toml
+# ~/.maverick/<tenant>/config.toml  — per client; tenant packs win over built-ins
+[finance]
+framework = "us_gaap"               # us_gaap | ifrs
+fiscal_year_end = "12-31"
+functional_currency = "USD"
+materiality = 50000                 # drives flux / review thresholds
+capitalization_threshold = 2500
+enabled_towers    = ["controllership", "fpa", "treasury", "tax", "assurance"]
+enabled_verticals = ["saas_metrics"]                   # opt-in industry module
+regimes = ["sox", "us_gaap", "pci_dss", "aml_ofac"]    # strictest-wins union
+
+[finance.automation]                # automation level per action class
+default                 = "draft"           # L1
+"ap.match_invoice"      = "auto_threshold"  # L3
+"ap.release_payment"    = "approve"         # L2 (and hard-floored)
+"gl.post_journal_entry" = "approve"         # L2
+"fpa.build_report"      = "straight_through" # L4 (read-only output)
+
+[finance.thresholds]                # amount-aware DoA (compiles to §2.3)
+"ap.release_payment" = [
+  { up_to = 1000,       approvers = 0 },                      # auto under $1k (L3)
+  { up_to = 50000,      approvers = 1, role = "controller" },
+  { up_to = 1000000000, approvers = 2, role = "cfo" },        # dual approval
+]
+
+[finance.sod]
+mode = "enforce"                    # enforce (block) | warn (compensating controls)
+
+[finance.approvals]
+timeout = "fail_closed"            # finance never fail-opens an approval
+```
+
+> *Build note:* the **profile compiler** (profile → `Capability` + `Policy` +
+> consent config, with hard-floor validation) and the **amount-aware policy**
+> (§2.3) are the only two new mechanisms this customization layer needs; the rest
+> is existing config. Both are small and belong with `governance.py`.
+
+---
+
+## 4. The roster — seven towers of the CFO's office
+
+~43 agents (38 base + 5 council-added) across seven functional towers (each a sealed compartment), plus
+optional **vertical packs** (end of §4) a client switches on for its industry. For
+each: **Job** (what it does), **Connects to** (systems/knowledge), **Capability**
 (envelope + the high-risk actions it may *only draft*), and **Controls** (beyond
 the standing set in §2).
 
@@ -177,7 +333,7 @@ the standing set in §2).
 
 A representative high-stakes pack in each tower is given as full TOML; the rest as
 spec rows (same schema). Tool names marked `‹build›` are connectors that don't
-exist yet (see §7); they follow the existing `verb_noun` tool convention.
+exist yet (see §8); they follow the existing `verb_noun` tool convention.
 
 ---
 
@@ -339,6 +495,54 @@ authoring = "manual"
   Denies `approve_expense`, `reimburse`.
 - **Controls:** reimbursement `require_human`; PCI — card tokens only; SoD vs. AP.
 
+#### 1.9 Cost Accounting & Inventory / COGS Agent
+- **Job:** Standard- and actual-costing, BOM/routing **cost roll-ups**, inventory
+  valuation (FIFO/LIFO/weighted-avg), WIP, **manufacturing variances** (purchase-
+  price, material-usage, labor, overhead absorption), landed cost, lower-of-cost-or-
+  NRV, **excess-&-obsolete reserves**, and cycle-count/shrinkage reconciliation
+  feeding COGS. *(Essential for any company with physical product — the single
+  biggest omission from a generic roster.)*
+- **Connects to:** ERP inventory/cost module + MRP/manufacturing + WMS `‹build›`;
+  procurement (for PPV); knowledge: cost policy + standard-cost book.
+- **Capability:** read inventory/cost/production, `draft_cost_roll`,
+  `variance_analysis`, `draft_inventory_adjustment`. Denies posting revaluations.
+- **Controls:** write-downs/revaluations and cycle-count adjustments
+  `require_human`; SoD vs. warehouse custody; ties to GL.
+
+#### 1.10 Lease Accounting Agent (ASC 842 / IFRS 16)
+- **Job:** Lease **classification** (finance vs operating), ROU-asset & lease-
+  liability schedules, discount-rate (IBR) determination, remeasurement on
+  modifications, short-term/low-value elections, **embedded-lease** detection, and
+  disclosures. (Split out from Fixed Assets — material and judgmental enough to
+  stand alone.)
+- **Connects to:** lease system (LeaseQuery, Visual Lease) `‹build›`, contract repo,
+  ERP for the lease JE, rate sources; knowledge: lease policy.
+- **Capability:** read leases, `draft_lease_schedule`, `classify_lease`. Denies posting.
+- **Controls:** classification judgment flagged for review; modifications gated;
+  ties to FA (1.5) / GL.
+
+#### 1.11 Account Reconciliation Agent
+- **Job:** The independent **"reconcile" duty** named in §2.1. Reconciles balance-
+  sheet accounts (bank, subledger-to-GL, intercompany, suspense/clearing),
+  validates and ages reconciling items, certifies completeness, and flags stale/
+  unreconciled balances — prepared for *independent* human review.
+- **Connects to:** GL + all subledgers + bank feeds (read **both** sides), recon
+  tool (BlackLine) `‹build›`; knowledge: recon standards.
+- **Capability:** read both sides + `draft_reconciliation`, `flag_recon_exception`.
+  **Denies `post_adjustment`** — a found difference goes *back* to the recorder.
+- **Controls:** independence is the whole point — it cannot post the adjustments it
+  finds, closing the SoD loop; aged/stale items escalate.
+
+#### 1.12 Financial Master-Data & CoA Governance Agent
+- **Job:** Integrity of **financial master data** — chart of accounts, cost/profit
+  centers, dimensions, legal entities, currencies, bank master. Dedup, validate,
+  enforce mapping standards (local↔group CoA), and control changes.
+- **Connects to:** ERP master data / MDM `‹build›`; knowledge: CoA design + mapping policy.
+- **Capability:** read master data, `propose_master_change`, `validate_mapping`.
+  **Denies `edit_chart_of_accounts`** and master commits.
+- **Controls:** master data drives *every* report → all changes gated
+  `require_human`; SoD vs. transaction recording; full change audit.
+
 ---
 
 ### Tower 2 — FP&A (plan-to-perform)
@@ -398,6 +602,28 @@ authoring = "manual"
 - **Capability:** read cash/AP/AR, `build_cashflow_forecast`. No money movement.
 - **Controls:** feeds Treasury (2.x) but cannot itself sweep/transfer; runway
   assumptions explicit.
+
+#### 2.4 CapEx & Capital-Planning Agent
+- **Job:** Capital **budgeting and appraisal** — business cases, ROI/NPV/IRR/
+  payback, the capital-request workflow, capex-vs-opex classification guidance, and
+  budget-vs-actual capex tracking with **post-investment review**. (Distinct from
+  Fixed Assets, which accounts for the asset *after* the spend.)
+- **Connects to:** EPM/capital-planning, procurement (capex POs), FA, ERP actuals;
+  knowledge: capital policy + hurdle rates.
+- **Capability:** read + `build_capital_case`, `track_capex`. Denies approving capital.
+- **Controls:** capital approval `require_human` per DoA tier (§3.3); ROI
+  assumptions stated; hands approved assets to FA (1.5).
+
+#### 2.5 Workforce & Headcount-Cost Planning Agent
+- **Job:** People-cost planning — **position/headcount plans**, compensation
+  modeling (salary, bonus, benefits, payroll tax, equity), hiring-plan phasing,
+  attrition, and reconciliation of plan to HRIS actuals. (People cost is the
+  largest line of opex for most firms; it deserves its own model.)
+- **Connects to:** HRIS/HCM (read) `‹build›`, EPM, payroll actuals; knowledge: comp
+  bands + org structure.
+- **Capability:** read HRIS/plan + `build_headcount_plan`, `model_comp`. No writes.
+- **Controls:** **high-PII** — read-only over HRIS, encryption at rest, compensation
+  data restricted by least privilege; feeds FP&A (2.1).
 
 ---
 
@@ -526,7 +752,7 @@ domains they assure, never the ability to fix what they find (independence).
 - **Connects to:** GRC (AuditBoard, Workiva) `‹build›`; the **Maverick audit chain
   itself** (the agents' own activity is auditable evidence); RCM (knowledge).
 - **Capability:** **read-only** across all finance compartments + audit log;
-  `test_control`, `log_deficiency`, `run_assessment` (SOX template, §6).
+  `test_control`, `log_deficiency`, `run_assessment` (SOX template, §7).
 - **Controls:** independence — cannot modify any controlled process; testing is
   sampled and evidence-cited; deficiencies are findings for a human control owner.
 
@@ -617,6 +843,22 @@ authoring = "manual"
 - **Controls:** limit changes `require_human`; **FCRA**-style fairness if consumer
   credit data is used (routes to the privacy/compliance domain's bias checks).
 
+#### 5.8 AML / Financial-Crime Agent
+- **Job:** **Customer/counterparty-side** financial-crime controls (for clients that
+  move customer money — fintech, marketplace, lender, bank): KYC/CDD/EDD, customer
+  **sanctions & PEP** screening, **transaction monitoring** for money-laundering
+  typologies, alert triage, and **SAR/STR** drafting + CTR thresholds. Distinct from
+  internal occupational fraud (5.4): AML is about *counterparties* laundering; fraud
+  is about *loss to the company*.
+- **Connects to:** payments/transaction ledger, KYC/identity at onboarding,
+  screening (OFAC, Dow Jones, ComplyAdvantage) `‹build›`, case management, regulator
+  portals; knowledge: the BSA/AML program + typologies.
+- **Capability:** read transactions/customers + `screen_sanctions`,
+  `run_aml_monitoring`, `open_case`, `draft_sar`. **Denies `file_sar`** and customer
+  block/unblock (human).
+- **Controls:** SAR filing is a legal **human** act; customer blocking gated; alert
+  base rates stated; independent of the business line; its own regulated compartment.
+
 ---
 
 ### Tower 6 — Procurement & Vendor
@@ -677,9 +919,80 @@ Where numbers leave the building — every output is human-certified.
 - **Capability:** read cap table, `compute_sbc_expense`, `draft_sbc_entry`. No posting.
 - **Controls:** ties to payroll-tax on RSU vesting; 409A is human-owned.
 
+#### 7.4 Statutory & Local-GAAP Reporting Agent
+- **Job:** Per-jurisdiction **statutory financial statements** (distinct from the
+  consolidated group US-GAAP/IFRS view), GAAP-to-local-GAAP/stat adjustments, local
+  filing requirements, and per-entity audit support — for multinationals that file
+  local books in every country of operation.
+- **Connects to:** per-entity ledgers, a statutory-reporting tool + local filing
+  portals `‹build›`; knowledge: local-GAAP rules + the entity filing calendar.
+- **Capability:** read entity ledgers + `draft_statutory_accounts`,
+  `map_gaap_to_local`. Denies filing (human).
+- **Controls:** local rules cited; filing `require_human`; ties to Consolidations
+  (1.7) and Master-Data mapping (1.12).
+
 ---
 
-## 4. The Finance Controller — supervisor & router (Layer A)
+### Vertical packs (optional, enabled per client)
+
+The seven towers fit a generic company. **Industry verticals change the roster
+materially**, so they ship as opt-in modules a client switches on (§3.4) — not as
+generic agents bent out of shape:
+
+| Vertical pack | For | Adds |
+|---|---|---|
+| **Project / Job Costing & WIP** | construction, agencies, prof-services | percentage-of-completion, project P&L, WIP schedules, milestone billing |
+| **SaaS Revenue Ops & Unit Economics** | SaaS / subscription | ARR/MRR/NRR, churn, CAC/LTV, cohorts, usage billing, deferred-rev waterfall |
+| **Fund & Grant Accounting** | nonprofit, government, research | restricted vs unrestricted funds, grant compliance, fund-balance reporting |
+| **Regulatory Capital & Financial Reporting** | banks, broker-dealers, insurers | Call Reports / FR Y-9C / FINREP-COREP, Basel / Solvency II capital, liquidity |
+| **Profitability & Cost Allocation (ABC)** | any multi-product/segment firm | product/customer/segment profitability, activity-based allocations |
+| **Insurance & Risk Financing** | any (corporate insurance program) | coverage, claims, premiums, captives |
+| **ESG / Sustainability Finance** | EU / large / public | CSRD-ESRS, ISSB (IFRS S1/S2), carbon accounting, EU Taxonomy |
+| **Unclaimed Property / Escheatment** | US multistate | multistate escheatment compliance (also attaches to Tax, 4.2) |
+
+Healthcare revenue cycle, real-estate property accounting, and oil-&-gas joint-
+interest billing/depletion are further verticals on the same opt-in model.
+
+---
+
+### Council-added agents (from the adversarial review)
+
+Five seats the adversarial-council pass surfaced as missing; folded into the roster under the
+same SoD + maker-checker + audit discipline. Full skills in [`agent-skills-catalog.md`](agent-skills-catalog.md).
+
+#### +1 Treasury Payments / Disbursements Agent  *(Tower 3 — the custody node)*
+- **Job:** Execute/release **approved** payments; positive-pay, sanctions-at-payment, payment-rail ops — the literal **custody** node of the four-way SoD the model assumed but never staffed.
+- **Connects to:** Kyriba / Modern Treasury / bank portals `‹build›`; Fedwire / ACH-NACHA / RTP / SWIFT-ISO 20022.
+- **Capability:** read approved batches + `propose_settlement`. **Denies** `release_payment`/`wire` (always `require_human`); sealed from AP (records) and the GL.
+- **Status:** **Partial** (governance gate shipped; rails + amount-aware DoA to build).
+
+#### +2 Model Risk Management / Validation Agent (SR 11-7)  *(Tower 5)*
+- **Job:** Independently validate the suite's models (CECL, VaR, ASC 718, forecasting, anomaly ML) — conceptual soundness, backtesting, outcome analysis.
+- **Connects to:** model owners' outputs (read), `pandas_query`/`sql_query`.
+- **Capability:** read-only + `validate_model`, `log_model_finding`. Independent of model owners.
+- **Status:** **Gap**.
+
+#### +3 Pension & Benefits-Accounting Agent  *(Tower 1)*
+- **Job:** DB/OPEB obligation, actuarial gain/loss, funded status; 401(k) Form 5500 + plan-audit support.
+- **Connects to:** actuary/benefits data, HRIS, the GL.
+- **Capability:** read + `draft_pension_entry`. No posting.
+- **Status:** **Gap** (ASC 715/712).
+
+#### +4 ESG Controllership Agent  *(Tower 1/7)*
+- **Job:** The controllership/data side of sustainability (external disclosure stays with Strategy 7.3) — GHG Scope 1/2/3 data, CSRD/ESRS controls, assurance-readiness over non-financial data.
+- **Connects to:** the finance ESG vertical, ops data, ESG platforms `‹build›`.
+- **Capability:** read + `collect_esg_data`, `draft_esg_controls`.
+- **Status:** **Gap** (deconflict with Strategy 7.3).
+
+#### +5 Government-Contract & Cost-Accounting Agent  *(Tower 1, vertical)*
+- **Job:** For gov contractors — FAR Part 31, CAS, DCAA incurred-cost & indirect-rate work.
+- **Connects to:** the gov-contract ERP, DCAA submission portals `‹build›`.
+- **Capability:** read + `draft_indirect_rates`, `prepare_incurred_cost`. Filing human.
+- **Status:** **Gap** (vertical).
+
+---
+
+## 5. The Finance Controller — supervisor & router (Layer A)
 
 Above the towers sits one **Finance Controller agent** = the finance instance of
 the **oversight control plane** (architecture §Layer A). It is not another
@@ -703,7 +1016,7 @@ to finance.
 
 ---
 
-## 5. Compliance-regime packs for finance (Layer B)
+## 6. Compliance-regime packs for finance (Layer B)
 
 Same pattern as the EU-AI-Act / NIST packs: each regime compiles to a governance
 `Policy` + an **evidence mapping** surfaced by a posture report (generalize
@@ -711,7 +1024,7 @@ Same pattern as the EU-AI-Act / NIST packs: each regime compiles to a governance
 
 | Regime pack | What it asserts | Compiles to |
 |---|---|---|
-| **SOX (§302/§404/§409/§906)** | ICFR exists & is tested; mgmt certifies; tamper-evident records; SoD | `require_human` on all postings/payments; SoD linter (2.1); signed audit = the record; SOX assessment template (§6). |
+| **SOX (§302/§404/§409/§906)** | ICFR exists & is tested; mgmt certifies; tamper-evident records; SoD | `require_human` on all postings/payments; SoD linter (2.1); signed audit = the record; SOX assessment template (§7). |
 | **COSO 2013** | 5 components / 17 principles of internal control | the RCM + control tests (5.1) mapped to principles. |
 | **US GAAP / IFRS** | recognition & disclosure standards (606, 842, 740, 718, 805) | persona + knowledge packs per standard; rev-rec/lease/tax/SBC agents cite the clause. |
 | **PCI-DSS** | cardholder data protection | secret/PII redaction; no-PAN-storage; tokenization at AR/expense. |
@@ -726,7 +1039,7 @@ IFRS + GDPR residency.
 
 ---
 
-## 6. Finance assessment templates (extend the assessment engine)
+## 7. Finance assessment templates (extend the assessment engine)
 
 The [`assessment.py`](../../packages/maverick-core/maverick/assessment.py) engine
 already turns a structured questionnaire into scored findings + a risk rating, and
@@ -746,7 +1059,7 @@ The conversational **finance assessor** is then the existing
 
 ---
 
-## 7. Integrations catalog — what to connect, build order
+## 8. Integrations catalog — what to connect, build order
 
 Per CLAUDE.md rule 5, **every** connector below ships with a config knob, and per
 rule 6 the **installer wizard** gets a toggle for it. Tools follow the existing
@@ -778,31 +1091,38 @@ legal-entity structure, prior filings.
 
 ---
 
-## 8. Build sequence
+## 9. Build sequence
 
 Smallest safe loop first; controls before reach (the privacy/compliance order).
 
 1. **Control substrate for money (do this first).**
-   - Amount-aware authorization in `governance.py` (the 2.3 gap): `amount`/`currency`
+   - Amount-aware authorization in `governance.py` (the §2.3 gap): `amount`/`currency`
      on tool calls, `require_human_above` / `deny_above` thresholds.
-   - **SoD conflict linter** over packs (2.1).
+   - The **Finance Operating Profile** compiler (§3.8): profile → capability +
+     policy + consent config, with **hard-floor** validation (§3.2) and the L0–L4
+     automation tiers (§3.1).
+   - **SoD conflict linter** over packs (§2.1).
    - `sanctions_screen` connector (gates every payment/vendor path).
-   - Finance assessment templates (§6) — pure data, lands immediately.
+   - Finance assessment templates (§7) — pure data, lands immediately.
 2. **Tower 1 (Controllership) + the Finance Controller** on top of one ERP
-   connector + banking read. GL/Close, AP, AR, Payroll, FA. Maker-checker queue live.
+   connector + banking read. GL/Close, AP, AR, Payroll, FA, Cost/Inventory,
+   Reconciliation, Master-Data. Maker-checker queue live; profiles drive automation.
 3. **Tower 3 (Treasury)** reusing the IBKR pattern; **Tower 2 (FP&A)** (low-risk,
    high-value, read-only — a fast win).
 4. **Tower 5 (Risk/Controls)** — SOX/IA/Fraud/Anomaly reading the now-rich audit
    trail and ledgers. **Tower 4 (Tax)**.
-5. **Tower 6 (Procurement)** + **Tower 7 (Reporting)**; regime packs (§5) and the
-   `finance status` posture report; **red-team** an attack crossing a sealed
-   compartment (poisoned invoice → AP, prove payroll/treasury are immune).
-6. **Wizard + dashboard** (rule 6): domain toggles, connector setup, the live
-   maker-checker / approvals surface.
+5. **Tower 6 (Procurement)** + **Tower 7 (Reporting)** + **AML** (5.8); regime
+   packs (§6) and the `finance status` posture report; **red-team** an attack
+   crossing a sealed compartment (poisoned invoice → AP, prove payroll/treasury
+   are immune).
+6. **Wizard + dashboard** (rule 6): domain toggles, connector setup, the
+   profile / automation-tier editor, and the live maker-checker / approvals surface.
+7. **Vertical packs** (§4) per target market — SaaS metrics, project costing, fund
+   accounting — on the same opt-in pack model, last.
 
 ---
 
-## 9. Honest caveats
+## 10. Honest caveats
 
 - **Maverick supplies the controls and the evidence; it does not certify the
   books.** Agents *draft*; humans *post, pay, file, and certify*. No agent
@@ -821,6 +1141,14 @@ Smallest safe loop first; controls before reach (the privacy/compliance order).
 - **SoD is only real if the packs are disjoint.** The whole model depends on no
   compartment holding two incompatible duties; the SoD linter (2.1) must gate CI,
   or the separation silently rots.
-- **The amount-threshold gap is load-bearing.** Until 2.3 ships, "maker-checker"
+- **The amount-threshold gap is load-bearing.** Until §2.3 ships, "maker-checker"
   means *every* money movement pauses for a human (correct but heavy); the
-  threshold tiers are what make it operable at scale.
+  threshold tiers (§3.3) are what make it operable at scale.
+- **Automation tiers are a loaded gun.** L3/L4 trade oversight for speed; the hard
+  floors (§3.2) are the backstop, but a client that pushes tiers high inherits the
+  residual risk. Default conservative (L1) and let a client ratchet up per action
+  with evidence — never ship a high-automation default.
+- **The generic roster is not industry-complete.** A bank needs regulatory-capital
+  reporting, a construction firm needs project/WIP costing, a nonprofit needs fund
+  accounting. Enable the right **vertical pack** (§4) rather than stretching a
+  generic agent past what it was scoped and tested for.

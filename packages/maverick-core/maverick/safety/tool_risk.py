@@ -145,6 +145,7 @@ _DEFAULT_RISK: dict[str, str] = {
     "dns_lookup": "low",
     "currency": "low",
     "preview_diff": "low",
+    "erp_read": "low",  # read-only (GET) ERP access; no writes / host mutation
 }
 
 _DEFAULT_RISK_LEVEL = "medium"
