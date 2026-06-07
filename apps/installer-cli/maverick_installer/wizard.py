@@ -1798,9 +1798,11 @@ def pick_a2a() -> tuple[dict[str, Any], list[str]]:
     console.print(
         "  [dim]A2A serves an agent card at /.well-known/agent-card.json and a "
         "task endpoint at /a2a/v1 (on `maverick dashboard`). Budget is clamped "
-        "to operator caps; a bearer token is required.[/dim]"
+        "to operator caps; a bearer token is required. A2A goals run under a "
+        "tool ceiling (max_risk=medium by default -- edit [a2a].max_risk to "
+        "tighten to \"low\" or open to \"high\"/\"none\").[/dim]"
     )
-    return {"enabled": True}, ["MAVERICK_A2A_TOKEN"]
+    return {"enabled": True, "max_risk": "medium"}, ["MAVERICK_A2A_TOKEN"]
 
 
 def write_config(
