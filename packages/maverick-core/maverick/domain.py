@@ -106,11 +106,16 @@ def builtin_dir() -> Path:
 
 
 def user_dir() -> Path:
+    """The active workspace's domains directory.
+
+    An explicit ``MAVERICK_DOMAINS_DIR`` override still wins (tests / custom
+    layouts); otherwise this is the current tenant's domains dir (per-business
+    isolation), falling back to ~/.maverick/domains for the single-tenant default."""
     override = os.environ.get("MAVERICK_DOMAINS_DIR")
     if override:
         return Path(override).expanduser()
-    home = Path(os.environ.get("MAVERICK_HOME", "~/.maverick")).expanduser()
-    return home / "domains"
+    from .workspace import Workspace
+    return Workspace.current().domains_dir
 
 
 def available_domains() -> dict[str, DomainProfile]:

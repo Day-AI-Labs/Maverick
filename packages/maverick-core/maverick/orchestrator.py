@@ -106,6 +106,12 @@ def _build_knowledge() -> Any | None:
         kcfg = get_knowledge()
         if not kcfg.get("enable"):
             return None
+        # Per-business isolation: default the knowledge store to the active
+        # tenant's own knowledge DB so one business's documents never share a
+        # store with another's. An explicit [knowledge] path still wins.
+        if not kcfg.get("path"):
+            from .workspace import Workspace
+            kcfg = {**kcfg, "path": str(Workspace.current().knowledge_path)}
         from maverick_knowledge import KnowledgeBase, build_embedder, build_store
         return KnowledgeBase(store=build_store(kcfg), embedder=build_embedder(kcfg))
     except Exception as e:  # pragma: no cover -- knowledge is optional
