@@ -89,3 +89,34 @@ async def test_deny_is_audited(monkeypatch, tmp_path):
     await _agent(tmp_path)._run_tool("ping", {})
     kinds = [k for k, _ in seen]
     assert audit.EventKind.GOVERNANCE_DENIED in kinds
+
+
+@pytest.mark.asyncio
+async def test_eval_error_fails_closed_when_policy_configured(monkeypatch, tmp_path):
+    # Hardening: a CONFIGURED policy + an evaluation bug must FAIL CLOSED (deny
+    # this action), never silently bypass the oversight gate.
+    import maverick.governance as gov
+    _gov(monkeypatch, {"deny_actions": ["other"]})  # non-empty policy
+
+    def _boom(*a, **k):
+        raise RuntimeError("classifier blew up")
+
+    monkeypatch.setattr(gov, "evaluate", _boom)
+    out = await _agent(tmp_path)._run_tool("ping", {})
+    assert "governance evaluation error" in out
+    assert "pong" not in out
+
+
+@pytest.mark.asyncio
+async def test_eval_error_open_when_no_policy(monkeypatch, tmp_path):
+    # No policy configured -> evaluate is never consulted, so an (irrelevant)
+    # eval bug can't block: the tool still runs (non-enterprise unaffected).
+    import maverick.governance as gov
+    _gov(monkeypatch, {})  # empty policy
+
+    def _boom(*a, **k):
+        raise RuntimeError("should not be called")
+
+    monkeypatch.setattr(gov, "evaluate", _boom)
+    out = await _agent(tmp_path)._run_tool("ping", {})
+    assert "pong" in out
