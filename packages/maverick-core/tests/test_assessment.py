@@ -66,6 +66,14 @@ def test_record_rejects_bad_answer_and_unknown_question():
         s.record("does_not_exist", "yes")
 
 
+def test_assessment_session_ids_are_unique_for_rapid_creation():
+    from maverick.assessment import AssessmentSession
+
+    ids = {AssessmentSession(type="pia", subject=f"Subject {i}").id for i in range(1000)}
+
+    assert len(ids) == 1000
+
+
 def test_persistence_round_trip():
     from maverick.assessment import (
         AssessmentSession,
