@@ -1,0 +1,95 @@
+"""Agent fleets: the per-employee roster model + CLI (Layer C)."""
+from __future__ import annotations
+
+import stat
+
+import pytest
+from click.testing import CliRunner
+
+
+def test_valid_name():
+    from maverick.fleet import valid_name
+    assert valid_name("acme") and valid_name("acme_ops-1")
+    assert not valid_name("../evil")
+    assert not valid_name("a/b")
+    assert not valid_name("")
+
+
+def test_save_load_roundtrip(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    from maverick.fleet import Fleet, FleetAgent, load_fleet, save_fleet
+    fl = Fleet(name="acme", owner="user:alice", agents=(
+        FleetAgent("researcher", "analyst", "does research"),
+        FleetAgent("coder", "engineer"),
+    ))
+    save_fleet(fl)
+    got = load_fleet("acme")
+    assert got is not None
+    assert got.owner == "user:alice"
+    assert [a.name for a in got.agents] == ["researcher", "coder"]
+    assert got.agents[0].role == "analyst"
+    assert got.principal_for("coder") == "agent:acme.coder"
+
+
+def test_saved_file_is_0600(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    from maverick.fleet import Fleet, save_fleet
+    path = save_fleet(Fleet(name="f1", owner="user:x"))
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+def test_save_rejects_bad_name(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from maverick.fleet import Fleet, save_fleet
+    with pytest.raises(ValueError):
+        save_fleet(Fleet(name="../evil", owner="x"))
+
+
+def test_list_and_remove(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    from maverick.fleet import Fleet, list_fleets, remove_fleet, save_fleet
+    save_fleet(Fleet(name="a", owner="x"))
+    save_fleet(Fleet(name="b", owner="y"))
+    assert {f.name for f in list_fleets()} == {"a", "b"}
+    assert remove_fleet("a") is True
+    assert {f.name for f in list_fleets()} == {"b"}
+    assert remove_fleet("missing") is False
+
+
+def test_cli_create_list_show_rm(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    from maverick.cli import main
+    r = CliRunner()
+    c = r.invoke(main, ["fleet", "create", "acme", "--owner", "user:alice",
+                        "--agent", "researcher:analyst", "--agent", "coder:engineer"])
+    assert c.exit_code == 0, c.output
+    assert "2 agent" in c.output
+
+    lst = r.invoke(main, ["fleet", "list"])
+    assert "acme" in lst.output and "user:alice" in lst.output
+
+    show = r.invoke(main, ["fleet", "show", "acme"])
+    assert "researcher" in show.output and "analyst" in show.output
+    assert "agent:acme.coder" in show.output
+
+    assert r.invoke(main, ["fleet", "rm", "acme"]).exit_code == 0
+    assert "no fleets" in r.invoke(main, ["fleet", "list"]).output
+
+
+def test_cli_create_rejects_bad_agent(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from maverick.cli import main
+    res = CliRunner().invoke(main, ["fleet", "create", "f", "--owner", "x",
+                                    "--agent", "noRole"])
+    assert res.exit_code == 2
+    assert "NAME:ROLE" in res.output
+
+
+def test_cli_show_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from maverick.cli import main
+    assert CliRunner().invoke(main, ["fleet", "show", "ghost"]).exit_code == 1
