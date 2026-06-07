@@ -128,8 +128,8 @@ def _shrink_tool_result(
         src = ""
     digest = (
         joined[:160].rstrip()
-        + f" ... [{src}output {len(joined)}B, sha256:{sha} — dropped from context;"
-        " re-run the tool to retrieve the full output]"
+        + f" ... [{src}output {len(joined)}B truncated, sha256:{sha} — dropped from"
+        " context; re-run the tool to retrieve the full output]"
     )
     new_block = dict(block)
     new_block["content"] = digest
