@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -34,6 +35,9 @@ def _isolated_world(tmp_path, monkeypatch):
     # its own DB (the cache keys on DEFAULT_DB, which we just repointed).
     from maverick_dashboard import app as app_mod
     app_mod._world_cache.clear()
+    # Each test starts with an empty replay-dedup cache so a fresh delivery
+    # isn't mistaken for a replay of an earlier test's identical body.
+    app_mod._issue_webhook_seen.clear()
     yield
 
 
@@ -62,6 +66,8 @@ def _linear_assigned(assignee_id=LINEAR_BOT):
     return {
         "type": "Issue",
         "action": "update",
+        # Linear stamps each delivery; the receiver age-checks it (anti-replay).
+        "webhookTimestamp": int(time.time() * 1000),
         "data": {
             "id": "uuid-1",
             "identifier": "ENG-123",
@@ -76,6 +82,8 @@ def _linear_assigned(assignee_id=LINEAR_BOT):
 def _jira_assigned(account_id=JIRA_BOT):
     return {
         "webhookEvent": "jira:issue_updated",
+        # Jira stamps each delivery; the receiver age-checks it (anti-replay).
+        "timestamp": int(time.time() * 1000),
         "issue": {
             "key": "PROJ-7",
             "fields": {
@@ -258,3 +266,45 @@ def test_linear_oversized_content_length_rejected_before_signature_check(
     )
     assert resp.status_code == 413
     assert _no_real_run == []
+
+
+# ----- replay defence (parity with /webhook/start) -----
+
+def test_linear_stale_event_rejected(_configured, _no_real_run):
+    # A correctly-signed but old delivery (captured + replayed later) is refused
+    # by the freshness check before it can re-spawn a paid goal.
+    payload = _linear_assigned()
+    payload["webhookTimestamp"] = int((time.time() - 10_000) * 1000)
+    body = json.dumps(payload).encode()
+    resp = client.post(
+        "/webhook/linear", content=body,
+        headers={"Linear-Signature": _sign(body)},
+    )
+    assert resp.status_code == 403
+    assert _no_real_run == []
+
+
+def test_jira_undated_event_rejected(_configured, _no_real_run):
+    # No timestamp -> freshness can't be proven -> fail closed (a replayer can't
+    # add one without breaking the signed body, so real events are unaffected).
+    payload = _jira_assigned()
+    payload.pop("timestamp", None)
+    body = json.dumps(payload).encode()
+    resp = client.post(
+        "/webhook/jira", content=body,
+        headers={"X-Hub-Signature": "sha256=" + _sign(body)},
+    )
+    assert resp.status_code == 403
+    assert _no_real_run == []
+
+
+def test_linear_duplicate_delivery_rejected(_configured, _no_real_run):
+    # First delivery spawns a goal (201); the identical replayed POST within the
+    # window is a duplicate (409) and must not drive the swarm a second time.
+    body = json.dumps(_linear_assigned()).encode()
+    headers = {"Linear-Signature": _sign(body)}
+    first = client.post("/webhook/linear", content=body, headers=headers)
+    assert first.status_code == 201
+    second = client.post("/webhook/linear", content=body, headers=headers)
+    assert second.status_code == 409
+    assert len(_no_real_run) == 1

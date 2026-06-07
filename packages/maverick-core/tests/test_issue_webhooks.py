@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import time
 
 from maverick.issue_webhooks import (
     build_brief,
+    event_timestamp_ms,
+    is_fresh,
     parse_issue_event,
     verify_signature,
 )
@@ -142,3 +145,46 @@ class TestBuildBrief:
         assert "ENG-9" in brief
         assert "Do the thing" in brief
         assert "here is how" in brief
+
+
+class TestFreshness:
+    """Replay defence: the signed body's timestamp must be recent."""
+
+    def test_event_timestamp_ms_linear_and_jira(self):
+        assert event_timestamp_ms("linear", {"webhookTimestamp": 1_700_000_000_000}) == 1_700_000_000_000
+        assert event_timestamp_ms("jira", {"timestamp": 1_700_000_000_000}) == 1_700_000_000_000
+
+    def test_event_timestamp_ms_missing_or_garbage(self):
+        assert event_timestamp_ms("linear", {}) is None
+        assert event_timestamp_ms("jira", {"timestamp": "not-a-number"}) is None
+
+    def test_fresh_event_passes(self):
+        now = time.time()
+        ms = int(now * 1000)
+        assert is_fresh("linear", {"webhookTimestamp": ms}, now=now) is True
+        assert is_fresh("jira", {"timestamp": ms}, now=now) is True
+
+    def test_stale_event_rejected(self):
+        now = time.time()
+        old_ms = int((now - 10_000) * 1000)  # ~2.8h old, well past the 300s window
+        assert is_fresh("linear", {"webhookTimestamp": old_ms}, now=now) is False
+
+    def test_future_skew_rejected(self):
+        now = time.time()
+        future_ms = int((now + 10_000) * 1000)
+        assert is_fresh("jira", {"timestamp": future_ms}, now=now) is False
+
+    def test_missing_timestamp_fails_closed(self):
+        # No timestamp -> cannot prove freshness -> reject (a replayer can't add
+        # one without breaking the body HMAC, so real events are unaffected).
+        assert is_fresh("linear", {"type": "Issue"}, now=time.time()) is False
+
+    def test_seconds_valued_timestamp_tolerated(self):
+        now = time.time()
+        assert is_fresh("jira", {"timestamp": int(now)}, now=now) is True
+
+    def test_explicit_window_override(self):
+        now = time.time()
+        ms = int((now - 120) * 1000)  # 2 min old
+        assert is_fresh("linear", {"webhookTimestamp": ms}, now=now, max_age_seconds=60) is False
+        assert is_fresh("linear", {"webhookTimestamp": ms}, now=now, max_age_seconds=600) is True
