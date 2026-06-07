@@ -8,9 +8,12 @@ from maverick.tools.diagram_tool import _argv, diagram_tool
 
 
 class _FakeSandbox:
-    """Creates the renderer's -o output target on success."""
+    """Creates the renderer's -o output target on success.
 
-    def __init__(self, succeed=True):
+    ``workdir`` is the confinement root the tool resolves ``out`` against."""
+
+    def __init__(self, workdir=".", succeed=True):
+        self.workdir = str(workdir)
         self.succeed = succeed
 
     def exec(self, cmd, timeout=None):
@@ -38,11 +41,11 @@ def test_argv_mermaid():
 
 
 def test_render_dot_success(tmp_path):
-    out = tmp_path / "g.svg"
-    res = diagram_tool(_FakeSandbox()).fn(
-        {"engine": "dot", "source": "digraph{a->b}", "out": str(out)})
+    # `out` is workspace-relative; it lands under the sandbox workdir.
+    res = diagram_tool(_FakeSandbox(tmp_path)).fn(
+        {"engine": "dot", "source": "digraph{a->b}", "out": "g.svg"})
     assert "rendered dot diagram" in res
-    assert out.exists()
+    assert (tmp_path / "g.svg").exists()
 
 
 def test_render_invalid_engine():
@@ -50,18 +53,26 @@ def test_render_invalid_engine():
     assert res.startswith("ERROR") and "engine" in res
 
 
-def test_render_invalid_format(tmp_path):
+def test_render_invalid_format():
     res = diagram_tool(_FakeSandbox()).fn(
         {"engine": "dot", "source": "digraph{}", "format": "gif"})
     assert res.startswith("ERROR") and "format" in res
 
 
 def test_render_binary_missing(tmp_path):
-    res = diagram_tool(_FakeSandbox(succeed=False)).fn(
-        {"engine": "mermaid", "source": "graph TD; A-->B", "out": str(tmp_path / "d.svg")})
+    res = diagram_tool(_FakeSandbox(tmp_path, succeed=False)).fn(
+        {"engine": "mermaid", "source": "graph TD; A-->B", "out": "d.svg"})
     assert res.startswith("ERROR") and "installed" in res
 
 
 def test_empty_source():
     assert diagram_tool(_FakeSandbox()).fn(
         {"engine": "dot", "source": "  "}).startswith("ERROR")
+
+
+def test_out_escaping_workspace_is_rejected(tmp_path):
+    # A model-supplied absolute/`..` `out` must not write outside the sandbox.
+    res = diagram_tool(_FakeSandbox(tmp_path)).fn(
+        {"engine": "dot", "source": "digraph{a->b}", "out": "../escaped.svg"})
+    assert res.startswith("ERROR") and "escape" in res.lower()
+    assert not (tmp_path.parent / "escaped.svg").exists()

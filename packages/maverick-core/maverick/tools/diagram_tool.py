@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from . import Tool, sandbox_run
+from .ffmpeg_tool import _safe_path
 
 _ENGINES = ("dot", "mermaid")
 _FORMATS = ("svg", "png", "pdf")
@@ -56,7 +57,12 @@ def _run(args: dict[str, Any], sandbox) -> str:
     ext = "dot" if engine == "dot" else "mmd"
     infile = workdir / f"in.{ext}"
     infile.write_text(source, encoding="utf-8")
-    out = Path(args.get("out") or (Path.cwd() / f"diagram.{fmt}")).expanduser()
+    # Confine the model-supplied destination to the sandbox workspace: an
+    # unconfined `out` is an arbitrary host-file write (e.g. ~/.ssh/authorized_keys).
+    try:
+        out = Path(_safe_path(sandbox, args.get("out") or f"diagram.{fmt}"))
+    except ValueError as e:
+        return f"ERROR: {e}"
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp_out = workdir / f"out.{fmt}"
 

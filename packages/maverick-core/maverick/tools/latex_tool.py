@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from . import Tool, sandbox_run
+from .ffmpeg_tool import _safe_path
 
 _SCHEMA = {
     "type": "object",
@@ -59,7 +60,12 @@ def _render_pdf(latex: str, sandbox, engine: str, out: str) -> str:
         tail = (stderr or stdout or "").strip()[-500:]
         return (f"ERROR: {eng} failed (exit {code}); is it installed in the "
                 f"sandbox? {tail}")
-    dest = Path(out).expanduser() if out else (Path.cwd() / "doc.pdf")
+    # Confine the model-supplied destination to the sandbox workspace; an
+    # unconfined `out` would let the tool overwrite arbitrary host files.
+    try:
+        dest = Path(_safe_path(sandbox, out or "doc.pdf"))
+    except ValueError as e:
+        return f"ERROR: {e}"
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(pdf, dest)
     return f"rendered PDF -> {dest}"
