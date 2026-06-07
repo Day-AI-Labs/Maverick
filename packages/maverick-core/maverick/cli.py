@@ -411,7 +411,7 @@ def onboard(ctx: click.Context, name, docs, no_llm, yes) -> None:
     approval, and on approval saves it so the sealed, knowledge-loaded agent
     goes live. Nothing is activated without your yes.
     """
-    from .intake import IntakeSpec, run_intake, save_profile
+    from .intake import IntakeSpec, attach_docs_to_profile, run_intake, save_profile
 
     name = name or click.prompt("Business name")
     description = click.prompt("What does the business do?", default="", show_default=False)
@@ -437,37 +437,39 @@ def onboard(ctx: click.Context, name, docs, no_llm, yes) -> None:
             click.echo(f"(LLM unavailable; using deterministic generation: {e})", err=True)
     kb = None
     try:
-        from maverick_knowledge import KnowledgeBase, build_embedder, build_store
-
         from .config import get_knowledge
         from .workspace import Workspace
         kcfg = get_knowledge()
-        # Persist uploads to the active tenant's knowledge store (NOT :memory:,
-        # which discards them on exit) so the run-time KB reads the same store.
-        # An explicit [knowledge] path still wins.
-        if not kcfg.get("path"):
-            kcfg = {**kcfg, "path": str(Workspace.current().knowledge_path)}
-        # Shield-scan documents at ingest: a poisoned upload is dropped at the
-        # door, not only at query time (RAG-poisoning defense).
-        shield = None
-        try:
-            from maverick_shield import Shield
-            shield = Shield.from_config(warn_if_missing=False)
-        except Exception:
-            pass
-        kb = KnowledgeBase(store=build_store(kcfg), embedder=build_embedder(kcfg),
-                           shield=shield)
-        try:  # OCR uploaded diagrams/images when the vision extra is installed
-            from maverick_knowledge.image import build_ocr_describer
-            kb.image_describer = build_ocr_describer()
-        except Exception:
-            pass  # no vision extra -> images are skipped, not read as bytes
+        if kcfg.get("enable"):
+            from maverick_knowledge import KnowledgeBase, build_embedder, build_store
+            # Persist uploads to the active tenant's knowledge store (NOT :memory:,
+            # which discards them on exit) so the run-time KB reads the same store.
+            # An explicit [knowledge] path still wins.
+            if not kcfg.get("path"):
+                kcfg = {**kcfg, "path": str(Workspace.current().knowledge_path)}
+            # Shield-scan documents at ingest: a poisoned upload is dropped at the
+            # door, not only at query time (RAG-poisoning defense).
+            shield = None
+            try:
+                from maverick_shield import Shield
+                shield = Shield.from_config(warn_if_missing=False)
+            except Exception:
+                pass
+            kb = KnowledgeBase(store=build_store(kcfg), embedder=build_embedder(kcfg),
+                               shield=shield)
+            try:  # OCR uploaded diagrams/images when the vision extra is installed
+                from maverick_knowledge.image import build_ocr_describer
+                kb.image_describer = build_ocr_describer()
+            except Exception:
+                pass  # no vision extra -> images are skipped, not read as bytes
+        elif doc_paths:
+            click.echo("(knowledge disabled; skipping doc ingestion)", err=True)
     except Exception as e:  # knowledge layer is optional
         if doc_paths:
             click.echo(f"(knowledge unavailable; skipping doc ingestion: {e})", err=True)
 
     click.echo("Generating a draft domain agent...")
-    profile = run_intake(spec, llm=llm, kb=kb)
+    profile = run_intake(spec, llm=llm, kb=None)
 
     click.echo(click.style("\nDraft domain pack (review before it goes live):", bold=True))
     click.echo(f"  name:        {profile.name}")
@@ -479,23 +481,10 @@ def onboard(ctx: click.Context, name, docs, no_llm, yes) -> None:
     click.echo(f"  persona:     {profile.persona[:400]}")
 
     if not yes and not click.confirm("\nApprove and activate this agent?", default=False):
-        # Uploaded documents are ingested into a durable, isolated pending
-        # collection before the review prompt so approved packs can use the same
-        # store at run time. If the draft is rejected, remove those pending
-        # chunks so cancellation does not retain sensitive uploads on disk.
-        if kb is not None:
-            for collection in profile.knowledge_sources:
-                if not collection.startswith("intake_pending_"):
-                    continue
-                try:
-                    kb.delete_collection(collection)
-                except Exception as e:
-                    click.echo(
-                        f"(knowledge cleanup failed for {collection}: {e})",
-                        err=True,
-                    )
         click.echo("Discarded. Nothing was saved.")
         return
+    if kb is not None and doc_paths:
+        attach_docs_to_profile(spec, profile, kb)
     path = save_profile(profile, approved=True)
     click.echo(click.style(f"\nActivated. Pack saved to {path}", fg="green"))
     click.echo(f"Domain '{profile.name}' is now available to the swarm.")

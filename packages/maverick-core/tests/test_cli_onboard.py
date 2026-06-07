@@ -30,8 +30,6 @@ def test_onboard_generates_and_activates(tmp_path, monkeypatch):
 
 
 def test_onboard_discards_without_approval(tmp_path, monkeypatch):
-    import sqlite3
-
     from click.testing import CliRunner
     from maverick.cli import main
 
@@ -52,48 +50,127 @@ def test_onboard_discards_without_approval(tmp_path, monkeypatch):
     assert "Discarded" in result.output
 
     from maverick.domain import available_domains
-    from maverick.workspace import Workspace
 
     assert "beta_co" not in available_domains()  # nothing saved without a yes
-    db_path = Workspace.current().knowledge_path
-    with sqlite3.connect(db_path) as db:
-        (rows,) = db.execute("SELECT COUNT(*) FROM chunks").fetchone()
-    assert rows == 0
 
 
-def test_onboard_persists_documents(tmp_path, monkeypatch):
+def test_onboard_respects_disabled_knowledge_without_importing(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
     from click.testing import CliRunner
     from maverick.cli import main
 
-    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
-    monkeypatch.delenv("MAVERICK_DOMAINS_DIR", raising=False)
-    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
-    # No embeddings key in CI: opt into deterministic retrieval explicitly so
-    # onboard actually ingests (build_embedder now fails loud on hosted+no-key).
-    monkeypatch.setenv("MAVERICK_EMBED_PROVIDER", "deterministic")
-    doc = tmp_path / "policy.txt"
-    doc.write_text("Our refund window is thirty days from purchase.")
+    def fail(*_args, **_kwargs):
+        raise AssertionError("knowledge layer should not be constructed when disabled")
 
-    runner = CliRunner()
-    result = runner.invoke(
+    fake_knowledge = SimpleNamespace(
+        KnowledgeBase=fail,
+        build_embedder=fail,
+        build_store=fail,
+    )
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[knowledge]\nenable = false\n")
+    doc = tmp_path / "secret.txt"
+    doc.write_text("SECRET SHOULD NOT BE INGESTED")
+    monkeypatch.setenv("MAVERICK_CONFIG", str(cfg))
+    monkeypatch.setenv("MAVERICK_DOMAINS_DIR", str(tmp_path / "domains"))
+    monkeypatch.setitem(sys.modules, "maverick_knowledge", fake_knowledge)
+
+    result = CliRunner().invoke(
         main,
-        ["onboard", "--no-llm", "--name", "Acme Co", "--doc", str(doc), "--yes"],
-        input="an online store\nretail\n",
+        ["onboard", "--no-llm", "--name", "Gamma Co", "--doc", str(doc)],
+        input="a services firm\n\nn\n",
     )
+
     assert result.exit_code == 0, result.output
+    assert "knowledge disabled" in result.output
+    assert "Discarded" in result.output
 
-    # The uploaded doc must SURVIVE the command (the bug was a :memory: store):
-    # query the saved pack's knowledge collection from a fresh KB at the tenant
-    # store path and find the content.
-    from maverick.config import get_knowledge
-    from maverick.domain import available_domains
-    from maverick.workspace import Workspace
-    from maverick_knowledge import KnowledgeBase, build_embedder, build_store
 
-    coll = available_domains()["acme_co"].knowledge_sources[0]
-    kb = KnowledgeBase(
-        store=build_store({"path": str(Workspace.current().knowledge_path)}),
-        embedder=build_embedder(get_knowledge()),  # same deterministic dim as onboard
+def test_onboard_decline_defers_enabled_knowledge_ingestion(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    from click.testing import CliRunner
+    from maverick.cli import main
+
+    ingested = []
+
+    class FakeKnowledgeBase:
+        def __init__(self, store, embedder, shield=None):
+            self.store = store
+            self.embedder = embedder
+            self.shield = shield
+
+        def ingest_path(self, collection, path):
+            ingested.append((collection, path))
+            return 1
+
+    fake_knowledge = SimpleNamespace(
+        KnowledgeBase=FakeKnowledgeBase,
+        build_embedder=lambda _cfg: object(),
+        build_store=lambda _cfg: object(),
     )
-    hits = kb.search(coll, "refund window", k=3)
-    assert hits and "refund" in hits[0].text.lower()
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[knowledge]\nenable = true\nembedder = \"deterministic\"\n")
+    doc = tmp_path / "secret.txt"
+    doc.write_text("SECRET SHOULD NOT BE INGESTED BEFORE APPROVAL")
+    monkeypatch.setenv("MAVERICK_CONFIG", str(cfg))
+    monkeypatch.setenv("MAVERICK_DOMAINS_DIR", str(tmp_path / "domains"))
+    monkeypatch.setitem(sys.modules, "maverick_knowledge", fake_knowledge)
+
+    result = CliRunner().invoke(
+        main,
+        ["onboard", "--no-llm", "--name", "Delta Co", "--doc", str(doc)],
+        input="a services firm\n\nn\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Discarded" in result.output
+    assert ingested == []
+
+
+def test_onboard_approval_ingests_enabled_knowledge_then_saves(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    from click.testing import CliRunner
+    from maverick.cli import main
+
+    ingested = []
+
+    class FakeKnowledgeBase:
+        def __init__(self, store, embedder, shield=None):
+            self.store = store
+            self.embedder = embedder
+            self.shield = shield
+
+        def ingest_path(self, collection, path):
+            ingested.append((collection, path))
+            return 1
+
+    fake_knowledge = SimpleNamespace(
+        KnowledgeBase=FakeKnowledgeBase,
+        build_embedder=lambda _cfg: object(),
+        build_store=lambda _cfg: object(),
+    )
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[knowledge]\nenable = true\nembedder = \"deterministic\"\n")
+    doc = tmp_path / "approved.txt"
+    doc.write_text("Approved knowledge")
+    monkeypatch.setenv("MAVERICK_CONFIG", str(cfg))
+    monkeypatch.setenv("MAVERICK_DOMAINS_DIR", str(tmp_path / "domains"))
+    monkeypatch.setitem(sys.modules, "maverick_knowledge", fake_knowledge)
+
+    result = CliRunner().invoke(
+        main,
+        ["onboard", "--no-llm", "--name", "Epsilon Co", "--doc", str(doc), "--yes"],
+        input="a services firm\n\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Activated" in result.output
+    assert len(ingested) == 1
+    assert ingested[0][0].startswith("intake_pending_epsilon_co_")
+    assert ingested[0][1] == str(doc)

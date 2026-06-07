@@ -255,26 +255,37 @@ def build_llm_proposer(llm, *, model: str | None = None, budget=None):
     return propose
 
 
+def attach_docs_to_profile(spec: IntakeSpec, profile: DomainProfile, kb) -> int:
+    """Ingest approved intake documents and bind the profile to their collection.
+
+    The collection is isolated and non-predictable so newly onboarded documents
+    do not collide with or poison existing domain collections. Call this only
+    after the user has approved activation.
+    """
+    if not spec.doc_paths:
+        return 0
+    collection = _pending_collection(profile.name)
+    total = ingest_docs(spec, kb, collection=collection)
+    if total:
+        profile.knowledge_sources = [collection]
+    return total
+
+
 def run_intake(spec: IntakeSpec, *, llm=None, kb=None,
                model: str | None = None, budget=None) -> DomainProfile:
-    """Ingest the business's documents and generate a validated (but UNSAVED)
-    DomainProfile for human approval. Pass ``llm`` to use the generative path;
-    omit it for the deterministic fallback. Persisting is a separate, approved
-    step (``save_profile``).
+    """Generate a validated (but UNSAVED) DomainProfile for human approval.
 
-    Uploaded documents are stored in an isolated, non-predictable pending
-    collection until the generated profile is approved. This keeps unapproved
-    intake uploads from colliding with or poisoning existing domain collections.
+    Pass ``llm`` to use the generative path; omit it for the deterministic
+    fallback. Persisting and document ingestion are separate, approved steps
+    (``save_profile`` and ``attach_docs_to_profile``), so drafting never stores
+    or sends uploaded document contents before the human approval gate. The
+    ``kb`` argument is accepted for backward-compatible callers but is not used
+    during draft generation.
     """
     propose = (
         build_llm_proposer(llm, model=model, budget=budget) if llm is not None else None
     )
-    profile = generate_profile(spec, propose=propose)
-    if kb is not None and spec.doc_paths:
-        collection = _pending_collection(profile.name)
-        ingest_docs(spec, kb, collection=collection)
-        profile.knowledge_sources = [collection]
-    return profile
+    return generate_profile(spec, propose=propose)
 
 
 INTAKE_PERSONA = (
