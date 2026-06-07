@@ -120,7 +120,8 @@ def _probe_audit_chain() -> dict[str, Any]:
     """Verify the append-only Ed25519 Merkle-chained audit log, fail-soft.
 
     Resolves the active (tenant-aware) audit directory via :func:`_resolve_audit_dir`,
-    then runs ``verify_chain`` over every day-file. Reports one of:
+    then runs ``verify_chain`` over every day-file and ``verify_anchors`` over
+    the cross-file anchor ledger. Reports one of:
 
       - ``ok``      — at least one day-file exists and all of them verify clean
       - ``broken``  — a day-file failed cryptographic verification: a real
@@ -137,13 +138,13 @@ def _probe_audit_chain() -> dict[str, Any]:
       - ``unknown`` — the probe itself errored; caught, never raised
 
     The cross-file anchor ledger (``anchors.ndjson``) is excluded from the
-    per-day glob; whole-file deletion/truncation is covered by ``verify_anchors``
-    which is out of scope for this lightweight snapshot.
+    per-day glob, then checked separately with ``verify_anchors`` so deletion or
+    truncation of an entire completed day-file is still detected.
     """
     result: dict[str, Any] = {"status": STATUS_UNKNOWN}
 
     try:
-        from .audit import verify_chain
+        from .audit import verify_anchors, verify_chain
     except BaseException as exc:  # noqa: BLE001 — fail-soft import guard
         result["error"] = str(exc)
         return result
@@ -164,11 +165,6 @@ def _probe_audit_chain() -> dict[str, Any]:
         ),
         [],
     )
-    if not day_files:
-        result["status"] = "empty"
-        result["files_checked"] = 0
-        return result
-
     real_breaks = 0  # genuine tamper/verify failures
     unsigned_rows = 0  # rows missing hash/sig/key_id (signing simply off)
     first_reason: str | None = None
@@ -198,7 +194,22 @@ def _probe_audit_chain() -> dict[str, Any]:
             if first_reason is None:
                 first_reason = reason or "break"
 
+    anchor_breaks = _safe(lambda: verify_anchors(audit_dir), None)
+    if anchor_breaks is None:
+        result["status"] = STATUS_UNKNOWN
+        result["error"] = "verify_anchors raised"
+        return result
+    for b in anchor_breaks:
+        reason = getattr(b, "reason", "")
+        if reason == "no_crypto":
+            no_crypto = True
+            continue
+        real_breaks += 1
+        if first_reason is None:
+            first_reason = reason or "anchor_break"
+
     result["files_checked"] = len(day_files)
+    result["anchors_checked"] = True
     if real_breaks:
         result["status"] = "broken"
         result["breaks"] = real_breaks
@@ -206,6 +217,9 @@ def _probe_audit_chain() -> dict[str, Any]:
         return result
     if no_crypto:
         result["status"] = "no_crypto"
+        return result
+    if not day_files:
+        result["status"] = "empty"
         return result
     if unsigned_rows:
         result["status"] = "unsigned"
