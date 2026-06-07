@@ -64,15 +64,15 @@ def test_login_fields_from_config(monkeypatch, tmp_path):
         'issuer = "https://idp.example.com"\n'
         'audience = "maverick"\n'
         'client_id = "cid-123"\n'
-        'client_secret = "sekret"\n'
+        'client_secret = "sekret"\n'  # pragma: allowlist secret
         'redirect_uri = "https://dash.example.com/auth/callback"\n'
-        'session_secret = "hmac-key"\n'
+        'session_secret = "hmac-key"\n'  # pragma: allowlist secret
     )
     cfg = load_oidc_config()
     assert cfg.client_id == "cid-123"
-    assert cfg.client_secret == "sekret"
+    assert cfg.client_secret == "sekret"  # pragma: allowlist secret
     assert cfg.redirect_uri == "https://dash.example.com/auth/callback"
-    assert cfg.session_secret == "hmac-key"
+    assert cfg.session_secret == "hmac-key"  # pragma: allowlist secret
 
 
 def test_env_overrides_login_fields(monkeypatch):
@@ -82,9 +82,9 @@ def test_env_overrides_login_fields(monkeypatch):
     monkeypatch.setenv("MAVERICK_OIDC_SESSION_SECRET", "env-hmac")
     cfg = load_oidc_config()
     assert cfg.client_id == "env-cid"
-    assert cfg.client_secret == "env-secret"
+    assert cfg.client_secret == "env-secret"  # pragma: allowlist secret
     assert cfg.redirect_uri == "https://x/auth/callback"
-    assert cfg.session_secret == "env-hmac"
+    assert cfg.session_secret == "env-hmac"  # pragma: allowlist secret
 
 
 # ---- login_enabled() fail-closed gate -----------------------------------------
@@ -96,7 +96,7 @@ def _full(**overrides) -> OIDCConfig:
         issuer="https://idp.example.com",
         audience="maverick",
         client_id="cid",
-        session_secret="hmac",
+        session_secret="hmac",  # pragma: allowlist secret
     )
     base.update(overrides)
     return OIDCConfig(**base)

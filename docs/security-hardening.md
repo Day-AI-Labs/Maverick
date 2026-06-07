@@ -414,7 +414,7 @@ jwks_uri = "https://login.example.com/.well-known/jwks.json"
 client_id = "maverick-dashboard"            # the OAuth client registered for this app
 client_secret = "..."                       # the OAuth client secret
 redirect_uri = "https://dash.example.com/auth/callback"  # MUST match the IdP registration
-session_secret = "a-long-random-string"     # HMAC key for the signed session cookie
+session_secret = "a-long-random-string"  # pragma: allowlist secret
 
 # Optional: skip discovery by pinning the endpoints explicitly.
 # authorization_endpoint = "https://login.example.com/authorize"
@@ -427,7 +427,7 @@ session_secret = "a-long-random-string"     # HMAC key for the signed session co
 export MAVERICK_OIDC_CLIENT_ID="maverick-dashboard"
 export MAVERICK_OIDC_CLIENT_SECRET="..."
 export MAVERICK_OIDC_REDIRECT_URI="https://dash.example.com/auth/callback"
-export MAVERICK_OIDC_SESSION_SECRET="a-long-random-string"
+export MAVERICK_OIDC_SESSION_SECRET="a-long-random-string"  # pragma: allowlist secret
 # Optional explicit endpoints (otherwise discovered from the issuer):
 export MAVERICK_OIDC_AUTHORIZATION_ENDPOINT="https://login.example.com/authorize"
 export MAVERICK_OIDC_TOKEN_ENDPOINT="https://login.example.com/token"

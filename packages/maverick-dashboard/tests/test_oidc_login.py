@@ -25,7 +25,7 @@ from maverick_dashboard.app import app
 
 AUTH_ENDPOINT = "https://idp.example.com/authorize"
 TOKEN_ENDPOINT = "https://idp.example.com/token"
-SESSION_SECRET = "unit-test-session-secret"
+SESSION_SECRET = "unit-test-session-secret"  # pragma: allowlist secret
 CLIENT_ID = "test-client-id"
 ISSUER = "https://idp.example.com"
 

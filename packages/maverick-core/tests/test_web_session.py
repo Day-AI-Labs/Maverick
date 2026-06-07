@@ -12,7 +12,7 @@ import time
 
 from maverick.web_session import sign_session, verify_session
 
-SECRET = "test-session-secret-0123456789"
+SECRET = "test-session-secret-0123456789"  # pragma: allowlist secret
 
 
 def _payload(exp_offset: int = 3600, **extra) -> dict:
