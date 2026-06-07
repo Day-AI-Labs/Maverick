@@ -1,20 +1,23 @@
 # Enterprise agent suites — quick reference
 
 At-a-glance index of the business-function agent suites designed for the platform.
-Full detail lives in the two companion docs; this is the summary to skim later.
+Full detail lives in the per-suite docs below; this is the summary to skim later.
+**Six suites, ~225 agents.**
 
 - **Finance** → [`finance-agent-suite.md`](finance-agent-suite.md) — ~40 core agents, 7 towers (+ vertical packs)
 - **IT / GRC / Privacy / Security / AI-Governance** → [`it-grc-agent-suite.md`](it-grc-agent-suite.md) — 47 agents, 10 towers
 - **Sales / GTM (the revenue engine)** → [`sales-gtm-agent-suite.md`](sales-gtm-agent-suite.md) — ~45 agents, 8 towers
 - **HR / People** → [`hr-people-agent-suite.md`](hr-people-agent-suite.md) — ~41 agents, 8 towers
+- **Product & Engineering** → [`product-engineering-agent-suite.md`](product-engineering-agent-suite.md) — ~40 agents, 8 towers
+- **Strategy / Corp Dev / Executive** → [`strategy-corpdev-exec-agent-suite.md`](strategy-corpdev-exec-agent-suite.md) — ~26 agents, 7 towers
 
-Both build on [`../enterprise/architecture.md`](../enterprise/architecture.md)
+All build on [`../enterprise/architecture.md`](../enterprise/architecture.md)
 (the three-layer control plane) and [`agent-factory.md`](agent-factory.md)
 (domain packs). Status: draft design, on branch `claude/amazing-davinci-4Gw6P` (PR #915).
 
 ---
 
-## The shared design model (both suites)
+## The shared design model (all suites)
 
 - **Each agent is one `DomainProfile` pack** — `compartment` seal + `persona` +
   attenuating `allow_tools`/`deny_tools` + `max_risk` + `allow_hosts` +
@@ -209,6 +212,61 @@ SoD: HR decides people, finance owns payroll, IT owns provisioning.
 
 ---
 
+## Product & Engineering suite — at a glance
+
+The inverse of the others: **Maverick is itself a coding agent**, so the engineering core
+and the connector layer are the most mature in the platform. *"The tools are nearly all
+there; the role personas aren't."*
+
+### Eight towers (~40 agents)
+1. **Product Management** — discovery · roadmap · PRDs · backlog · product analytics · feedback synthesis · launch
+2. **Design & UX** — UX research · UI design · design system · accessibility · UX writing
+3. **Software Engineering (the kernel)** — implementation · code review · refactor · debug · test authoring · docs
+4. **Quality Engineering** — test strategy · automation · eval/benchmark · bug triage · release+chaos
+5. **DevOps / Platform / Release** — CI/CD · IaC · release/deploy · observability/SRE · dependency/supply-chain
+6. **Data & ML Engineering** — pipelines · data quality · ML dev · MLOps · BI
+7. **Developer Experience** — tech docs · internal tooling · DORA metrics · codebase Q&A
+8. **Technical Research & Architecture** — design docs/ADRs · spikes · tech evaluation
+
+### What's shipped (the most of any suite)
+The coding kernel, 8 sandbox backends, code review + the test-driven verifier + the
+SWE-bench eval harness, VCS/CI tools, the swarm/orchestrator — plus ~140 connectors incl.
+the full PM stack (Jira/Linear/Asana/ClickUp/Notion/Confluence), product analytics
+(GA4/Mixpanel/PostHog), DevOps (Datadog/Sentry/PagerDuty/Vercel/Cloudflare), Figma + a11y.
+
+### Genuine gaps & control story
+Gaps are the **role personas** (PM/designer/data-eng as packs), DORA metrics, MLOps, formal
+QA test-mgmt. Cardinal control: agents write/test/review in the **sandbox**, but code ships
+only through the **verifier + review** gates, **humans approve every merge/release/deploy**,
+and — uniquely — **an agent never modifies its own runtime/safety without human
+authorization** (`self_edit` ships off by default; *Maverick builds Maverick*).
+
+---
+
+## Strategy / Corp Dev / Executive suite — at a glance
+
+The "top of the house" — leanest and most cross-referenced (valuation/IR → finance, CI/PR →
+GTM, ESG → finance/GRC). What's unique is the **material**: MNPI.
+
+### Seven towers (~26 agents)
+1. **Corporate Strategy** — research/analysis · scenario/wargaming · business-model/portfolio · strategy-ops
+2. **Corp Dev / M&A** — sourcing · due diligence · valuation · deal execution · PMI *(sealed deal compartments)*
+3. **Competitive & Market Intelligence** — CI · market sizing · trend monitoring
+4. **PMO & Strategic Execution** — portfolio/program · initiative tracking · cadence/OKR
+5. **Investor Relations & Capital** — IR · earnings/disclosure · capital strategy *(Reg FD)*
+6. **Executive Office & Chief of Staff** — board/governance *(sealed)* · decision briefs · exec scheduling · exec comms
+7. **Corporate Affairs & ESG** — corp comms/PR · government relations · ESG · CSR
+
+### What's shipped & the control story
+Research (deep-research + the research tools), exec comms/scheduling (Calendar/Gmail/MS
+Graph/Teams), docs, and — the keystone — **information barriers via `quarantine.py`
+compartment seals**. Cardinal control: agents research/model/brief, but **executives and
+the board decide**; **MNPI is walled into sealed compartments** (deal rooms, the board);
+**nothing material is disclosed externally without the Reg-FD gate**. Gaps are the
+workflows (M&A/board/IR/ESG) + connectors (board portal, data room, market data).
+
+---
+
 ## Suggested first builds (highest leverage)
 
 1. **Persona-wrapper packs** for the shipped engines — finance assessors and IT-GRC
@@ -223,3 +281,8 @@ SoD: HR decides people, finance owns payroll, IT owns provisioning.
 6. **The employment-decision pack + bias-eval engine** (HR + AI-Gov) — consequential-
    decision records + mandatory human review + bias-audit export; gates every consequential
    HR agent and satisfies NYC LL144 / EEOC / EU AI Act Annex III.
+7. **Role-persona packs over the kernel + the self-modification floor** (P&E) — fast wins
+   (SWE/code-review/PM/codebase-Q&A are persona+tool-scope over shipped tools); assert that
+   `self_edit` stays off and safety-substrate changes route through a human.
+8. **The information-barrier topology + Reg-FD disclosure gate** (Strategy/Exec) — wire deal/
+   board compartments onto `quarantine`/`capability` and the disclosure gate onto `governance`.
