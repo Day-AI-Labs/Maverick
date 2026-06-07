@@ -34,6 +34,24 @@ def test_host_case_insensitive():
     assert host_allowed("http_fetch", "API.GitHub.com", _POLICY)
 
 
+def test_trailing_root_dot_canonicalized_for_deny_rules():
+    policy = {
+        "http_fetch": {"deny_egress": ["pastebin.com", "*.example.com"]},
+    }
+
+    assert not host_allowed("http_fetch", "pastebin.com.", policy)
+    assert not host_allowed("http_fetch", "evil.example.com.", policy)
+
+
+def test_trailing_root_dot_canonicalized_for_allow_rules():
+    policy = {
+        "http_fetch": {"allow_egress": ["api.github.com.", "*.openai.com."]},
+    }
+
+    assert host_allowed("http_fetch", "api.github.com", policy)
+    assert host_allowed("http_fetch", "api.openai.com.", policy)
+
+
 def test_describe():
     assert "unrestricted" in describe("unknown", _POLICY)
     assert "allow=" in describe("http_fetch", _POLICY)
