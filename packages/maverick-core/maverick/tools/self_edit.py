@@ -1,18 +1,21 @@
-"""Self-edit tool: human-gated edits to Maverick's own code / config.
+"""Self-edit tool: propose-only diffs for Maverick's own code / config.
 
-Lets the agent propose and (with explicit human approval) apply a change to its
-own source or ``~/.maverick`` config — the seed of self-improvement. Guard rails,
-all enforced here:
+The tool may inspect and propose exact-match changes to Maverick source or
+``~/.maverick`` config, but it never writes files. A previous implementation
+allowed ``apply`` with a model-supplied ``confirm=true`` flag; that is not a real
+human approval channel because untrusted goals or prompt injection can influence
+tool arguments. Guard rails, all enforced here:
 
   * **Path-confined**: only files under the maverick package root or
-    ``~/.maverick`` can be touched. Anything else is refused.
-  * **Default dry-run**: ``apply`` does nothing unless ``confirm`` is the real
-    boolean ``True`` (``as_bool`` — a stringy "true" fails closed to a dry run).
+    ``~/.maverick`` can be diffed. Anything else is refused.
+  * **Propose-only**: ``apply`` returns a dry-run diff even when ``confirm`` is
+    true; a human/operator must copy the proposed patch through normal code
+    review or workspace editing flows.
   * **Exact-match**: replaces a unique ``find`` substring; ambiguous or absent
-    matches are rejected so an edit can't land in the wrong place.
+    matches are rejected so a proposed edit can't target the wrong place.
 
-``propose`` always shows a unified diff and writes nothing. ``_allowed_roots`` is
-overridable so the confinement is unit-tested against a tmp root.
+``_allowed_roots`` is overridable so the confinement is unit-tested against a
+tmp root.
 """
 from __future__ import annotations
 
@@ -20,7 +23,7 @@ import difflib
 from pathlib import Path
 from typing import Any
 
-from . import Tool, as_bool
+from . import Tool
 
 _SCHEMA = {
     "type": "object",
@@ -30,7 +33,7 @@ _SCHEMA = {
         "find": {"type": "string", "description": "exact substring to replace (must be unique)"},
         "replace": {"type": "string", "description": "replacement text"},
         "confirm": {"type": "boolean",
-                    "description": "must be true to actually write (apply op)"},
+                    "description": "accepted for compatibility; writes are disabled"},
     },
     "required": ["op", "path", "find", "replace"],
 }
@@ -92,14 +95,10 @@ def _run(args: dict[str, Any]) -> str:
     if op == "propose":
         return f"PROPOSED edit to {path} (not applied):\n{diff}"
     if op == "apply":
-        if not as_bool(args.get("confirm")):
-            return (f"DRY RUN (confirm != true) — would apply to {path}:\n{diff}\n"
-                    "Re-call with confirm=true to write.")
-        try:
-            path.write_text(new_text, encoding="utf-8")
-        except OSError as e:
-            return f"ERROR: cannot write {path}: {e}"
-        return f"applied edit to {path}:\n{diff}"
+        return (
+            f"DRY RUN — self_edit cannot write files; proposed edit to {path}:\n{diff}\n"
+            "Apply this change outside the agent tool path after human review."
+        )
     return f"ERROR: unknown op {op!r}"
 
 
@@ -107,10 +106,9 @@ def self_edit() -> Tool:
     return Tool(
         name="self_edit",
         description=(
-            "Propose / apply a human-gated edit to Maverick's own code or config "
-            "(path-confined to the maverick package + ~/.maverick). ops: propose "
-            "(shows a diff, writes nothing), apply (writes only when confirm=true). "
-            "Uses unique exact-substring replacement."
+            "Propose an exact-match edit to Maverick's own code or config "
+            "(path-confined to the maverick package + ~/.maverick). Writes are "
+            "disabled: propose/apply both return diffs for human review only."
         ),
         input_schema=_SCHEMA,
         fn=_run,

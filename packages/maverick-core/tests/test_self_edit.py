@@ -1,4 +1,4 @@
-"""Self-edit tool: human-gated, path-confined (ROADMAP 2027 H2)."""
+"""Self-edit tool: propose-only, path-confined diffs (ROADMAP 2027 H2)."""
 from __future__ import annotations
 
 import maverick.tools.self_edit as se
@@ -34,6 +34,19 @@ def test_propose_does_not_write(tmp_path, monkeypatch):
     assert f.read_text(encoding="utf-8") == "value = 1\n"  # unchanged
 
 
+def test_self_edit_not_registered_by_default():
+    from maverick.tools import base_registry
+
+    class _World:
+        pass
+
+    class _Sandbox:
+        pass
+
+    reg = base_registry(_World(), _Sandbox())
+    assert "self_edit" not in {tool.name for tool in reg.all()}
+
+
 def test_apply_dry_run_without_confirm(tmp_path, monkeypatch):
     _confine_to(monkeypatch, tmp_path)
     f = tmp_path / "mod.py"
@@ -44,14 +57,14 @@ def test_apply_dry_run_without_confirm(tmp_path, monkeypatch):
     assert f.read_text(encoding="utf-8") == "value = 1\n"  # still unchanged
 
 
-def test_apply_with_confirm_writes(tmp_path, monkeypatch):
+def test_apply_with_confirm_still_does_not_write(tmp_path, monkeypatch):
     _confine_to(monkeypatch, tmp_path)
     f = tmp_path / "mod.py"
     f.write_text("value = 1\n", encoding="utf-8")
     out = self_edit().fn({"op": "apply", "path": str(f), "find": "value = 1",
                           "replace": "value = 2", "confirm": True})
-    assert "applied edit" in out
-    assert f.read_text(encoding="utf-8") == "value = 2\n"
+    assert "DRY RUN" in out and "cannot write files" in out
+    assert f.read_text(encoding="utf-8") == "value = 1\n"
 
 
 def test_stringy_confirm_fails_closed(tmp_path, monkeypatch):
