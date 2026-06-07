@@ -18,9 +18,9 @@ import click
 # heavy submodules (orchestrator, agent, swarm, skills, sandbox) they
 # never use. Submodules import lazily inside the command bodies that
 # actually need them. `world_model` stays at module top — its imports
-# are stdlib (sqlite3, dataclasses, pathlib) and the DEFAULT_DB
-# constant is used in the click option default below.
-from .world_model import DEFAULT_DB, open_world  # noqa: E402  -- cheap stdlib chain
+# are stdlib (sqlite3, dataclasses, pathlib) and `open_world` is used
+# by nearly every command below.
+from .world_model import open_world  # noqa: E402  -- cheap stdlib chain
 
 _TERMINAL_CONTROL_RE = re.compile(
     r"(?:\x1b\][^\x07\x1b]*(?:\x07|\x1b\\|$))"
@@ -270,13 +270,23 @@ def _configure_cli_logging() -> None:
     "\n"
     "The other commands are for power users; most people never need them."
 ))
-@click.option("--db", default=str(DEFAULT_DB), help="World model database path.")
+@click.option("--db", default=None,
+              help="World model database path (default: the active tenant's world.db).")
 @click.option("--model", default=None, help="LLM model id (default: from config).")
 @click.pass_context
-def main(ctx: click.Context, db: str, model: str | None) -> None:
+def main(ctx: click.Context, db: str | None, model: str | None) -> None:
     """Maverick: multi-agent swarm for long-horizon work."""
     _configure_cli_logging()
     ctx.ensure_object(dict)
+    # Default the world DB to the ACTIVE TENANT's world.db (selected via
+    # MAVERICK_TENANT) so one business's run history / goals / facts never pool
+    # into another's -- the same isolation the channel server already gets via
+    # world_for_tenant(). With no tenant this resolves to the legacy
+    # ~/.maverick/world.db, so single-tenant installs are unchanged. An explicit
+    # --db always wins.
+    if db is None:
+        from .workspace import Workspace
+        db = str(Workspace.current().db_path)
     ctx.obj["db"] = Path(db)
     ctx.obj["model"] = model  # resolved lazily on first use
     # `--model` is a run-wide override. The agents resolve their model via
