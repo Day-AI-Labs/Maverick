@@ -2,14 +2,73 @@
 per-domain ingest/search pipeline with shield-scanned ingestion."""
 from __future__ import annotations
 
+import sys
+import types
 from types import SimpleNamespace
 
+import pytest
 from maverick_knowledge import (
     DeterministicEmbedder,
     KnowledgeBase,
     SqliteVectorStore,
     chunk_text,
 )
+
+
+class TestStoreGuards:
+    def test_dim_mismatch_raises_instead_of_silent_zero(self):
+        s = SqliteVectorStore()
+        s.add("c", [("1", "t", [0.1, 0.2, 0.3], {})])
+        # A query embedded at a different dim than the corpus must surface the
+        # misconfiguration, not silently score 0.0 against everything.
+        with pytest.raises(ValueError, match="dim"):
+            s.search("c", [0.1, 0.2])
+
+    def test_k_zero_returns_empty(self):
+        s = SqliteVectorStore()
+        s.add("c", [("1", "t", [1.0, 0.0], {})])
+        assert s.search("c", [1.0, 0.0], k=0) == []
+
+
+class TestHostedEmbedderOrdering:
+    def test_reorders_response_by_index(self, monkeypatch):
+        from maverick_knowledge.embed import HostedEmbedder
+
+        class _Resp:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                # Provider returned the batch out of order; `index` is the truth.
+                return {"data": [
+                    {"index": 1, "embedding": [2.0]},
+                    {"index": 0, "embedding": [1.0]},
+                ]}
+
+        monkeypatch.setitem(
+            sys.modules, "httpx", types.SimpleNamespace(post=lambda *a, **k: _Resp())
+        )
+        e = HostedEmbedder(model="m", base_url="http://x", api_key="k", dim=1)
+        # chunk 0 -> [1.0], chunk 1 -> [2.0], despite the reordered response.
+        assert e.embed(["a", "b"]) == [[1.0], [2.0]]
+
+
+class TestLocalEmbedder:
+    def test_module_provides_lazy_local_embedder(self):
+        # Guards the bug where build_embedder imported a non-existent module, so
+        # `embedder = "local"` always silently degraded to the hash fallback.
+        from maverick_knowledge.local_embed import LocalEmbedder
+
+        e = LocalEmbedder("some-model")
+        assert e.model_name == "some-model"
+        assert isinstance(e.dim, int)
+
+    def test_build_local_falls_back_or_loads_without_crashing(self):
+        from maverick_knowledge.embed import build_embedder
+
+        e = build_embedder({"embedder": "local"})
+        v = e.embed(["hello"])
+        assert v and isinstance(v[0], list)
 
 
 class TestChunk:

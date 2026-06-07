@@ -150,6 +150,26 @@ def _resolve_audit_dir():
     return data_dir("audit")
 
 
+def _audit_signing_expected() -> bool:
+    """Whether this deployment is expected to produce a signed/anchored log.
+
+    True when audit signing is configured on (``[audit] sign`` / ``MAVERICK_AUDIT_SIGN``)
+    OR a signing key already exists on disk (the host has signed before). The
+    operator's signing config lives outside the audit dir, so an attacker who
+    can only write the audit dir cannot flip it -- a missing anchor ledger while
+    signing is *expected* therefore stays a real break (the tamper-downgrade
+    defence). A genuinely unsigned deployment -- no signing config and no key --
+    legitimately has no anchor ledger, so its missing ledger is the benign
+    ``unsigned`` state, not ``broken``.
+    """
+    from .audit import signing
+    from .audit.writer import _resolve_signing
+
+    if _resolve_signing(None):
+        return True
+    return any(signing._key_dir().glob("*.key"))
+
+
 def _probe_audit_chain() -> dict[str, Any]:
     """Verify the append-only Ed25519 Merkle-chained audit log, fail-soft.
 
@@ -233,10 +253,22 @@ def _probe_audit_chain() -> dict[str, Any]:
         result["status"] = STATUS_UNKNOWN
         result["error"] = "verify_anchors raised"
         return result
+    # Fail-safe to "expected" (stay strict) if the signal can't be read.
+    signing_expected = _safe(_audit_signing_expected, True)
     for b in anchor_breaks:
         reason = getattr(b, "reason", "")
         if reason == "no_crypto":
             no_crypto = True
+            continue
+        # A *completely* absent anchor ledger on a deployment that never signs
+        # (no signing config, no key) is the benign "unsigned" state, not
+        # tampering -- otherwise every honest unsigned deployment reports
+        # "broken" the day after its first audit file. A signed deployment
+        # whose ledger was stripped still has signing expected (config/key), so
+        # it stays "broken": the downgrade defence is preserved. Other anchor
+        # breaks (e.g. an anchored day-file deleted) imply a ledger existed and
+        # are always real.
+        if reason == "anchor_ledger_missing" and not signing_expected:
             continue
         real_breaks += 1
         if first_reason is None:

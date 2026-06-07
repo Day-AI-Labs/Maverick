@@ -193,6 +193,33 @@ def test_start_goal_handler_creates_fresh_goal_and_runs_it(tmp_path, monkeypatch
     assert g.description == "Summarize overnight emails"
 
 
+def test_start_goal_idempotent_across_retries(tmp_path, monkeypatch):
+    # A transient run failure requeues the job; the retry must REUSE the goal
+    # created on the first attempt rather than mint a duplicate goal row each
+    # time (a flapping provider would otherwise accumulate orphan goals).
+    monkeypatch.setattr("maverick.world_model.DEFAULT_DB", tmp_path / "world.db")
+    monkeypatch.setattr(
+        "maverick.runner.run_goal_in_thread", lambda goal_id, *a, **k: "error"
+    )
+
+    from maverick.job_queue import JobQueue
+    from maverick.worker import Worker
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    q.enqueue("start_goal", {"text": "recurring task"}, run_at=0.0)
+    w = Worker(queue=q, retry_after=0.0)
+
+    assert w.run_once() is True   # attempt 1: creates goal #1, fails -> requeued
+    assert w.run_once() is True   # attempt 2: reuses goal #1, fails -> requeued
+
+    from maverick.world_model import open_world
+    world = open_world(tmp_path / "world.db")
+    try:
+        assert world.get_goal(1) is not None   # the one fresh goal
+        assert world.get_goal(2) is None       # no duplicate from the retry
+    finally:
+        world.close()
+
+
 def test_start_goal_requires_text(tmp_path):
     from maverick.job_queue import Job
     from maverick.worker import Worker

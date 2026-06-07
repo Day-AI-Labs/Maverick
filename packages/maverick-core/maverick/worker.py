@@ -109,13 +109,23 @@ class Worker:
             text = (job.payload.get("text") or "").strip()
             if not text:
                 raise ValueError("start_goal payload requires non-empty 'text'")
-            title = (job.payload.get("title") or text).strip()[:80]
-            from .world_model import DEFAULT_DB, open_world
-            world = open_world(DEFAULT_DB)
-            try:
-                goal_id = world.create_goal(title, text)
-            finally:
-                world.close()
+            # Idempotent across retries: create the fresh goal only once, then
+            # persist its id into the job payload. A retry of THIS job reuses it
+            # (re-running the existing goal, like run_goal) instead of minting a
+            # duplicate goal row on every transient failure. _maybe_rearm runs
+            # before dispatch, so the next cron occurrence still gets the
+            # original (goal_id-free) payload and creates its own fresh goal.
+            goal_id = job.payload.get("goal_id")
+            if not goal_id:
+                title = (job.payload.get("title") or text).strip()[:80]
+                from .world_model import DEFAULT_DB, open_world
+                world = open_world(DEFAULT_DB)
+                try:
+                    goal_id = world.create_goal(title, text)
+                finally:
+                    world.close()
+                job.payload["goal_id"] = goal_id
+                self.queue.set_payload(job.id, job.payload)
             # Same retry contract as run_goal: only transient outcomes requeue.
             from .runner import run_goal_in_thread
             status = run_goal_in_thread(int(goal_id))
