@@ -201,7 +201,9 @@ class TestAttachments:
         monkeypatch.setattr("maverick.attachments.MAX_FILE_BYTES", 7)
 
         f = _File()
-        out = asyncio.run(api_mod.upload_attachment(1, f))
+        # upload_attachment now takes the Request first (for owner scoping); a
+        # bare object has no .state.principal, so auth is treated as OFF here.
+        out = asyncio.run(api_mod.upload_attachment(object(), 1, f))
 
         assert f.read_sizes == [8]
         assert called["data"] == b"x"

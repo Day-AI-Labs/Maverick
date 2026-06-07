@@ -16,7 +16,12 @@ from maverick.runner import (
 )
 from pydantic import BaseModel, Field
 
-from .auth import execution_user_id_from_request
+from .auth import (
+    assert_goal_access,
+    caller_principal,
+    execution_user_id_from_request,
+    goal_owner_filter,
+)
 
 log = logging.getLogger(__name__)
 
@@ -147,7 +152,7 @@ async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) ->
     if not title:
         raise HTTPException(status_code=400, detail="title is required")
     w = _world()
-    goal_id = w.create_goal(title[:200], description)
+    goal_id = w.create_goal(title[:200], description, owner=caller_principal(request) or "")
     from maverick.runner import run_goal_in_thread
     # Enforce server-side execution caps even when callers request larger values.
     max_dollars = min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
@@ -174,6 +179,7 @@ async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) ->
 
 @router.get("/goals", response_model=list[GoalOut])
 async def list_goals(
+    request: Request,
     status: str | None = None,
     limit: int = 50,
     offset: int = 0,
@@ -183,30 +189,38 @@ async def list_goals(
     Council perf fix: previous version pulled every goal ever into
     Python via ``list_goals()``, then sliced. Now the LIMIT/OFFSET are
     pushed to SQL.
+
+    Owner-scoped: a non-admin authenticated caller sees only their own goals;
+    auth-off and admin callers see all (``goal_owner_filter`` returns None).
     """
     w = _world()
     limit = max(1, min(int(limit or 50), 500))
     offset = max(0, int(offset or 0))
-    goals = w.list_goals(status=status, limit=limit, offset=offset, order="desc")
+    goals = w.list_goals(
+        status=status, owner=goal_owner_filter(request),
+        limit=limit, offset=offset, order="desc",
+    )
     return [_to_goal_out(g) for g in goals]
 
 
 @router.get("/goals/{goal_id}", response_model=GoalOut)
-async def get_goal(goal_id: int) -> GoalOut:
+async def get_goal(request: Request, goal_id: int) -> GoalOut:
     g = _world().get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     return _to_goal_out(g)
 
 
 @router.get("/goals/{goal_id}/events", response_model=GoalEventsResponse)
 async def goal_events(
-    goal_id: int, since: int = 0, limit: int = 200,
+    request: Request, goal_id: int, since: int = 0, limit: int = 200,
 ) -> GoalEventsResponse:
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     events = w.goal_events(goal_id, since_id=since, limit=max(1, min(limit, 500)))
     return GoalEventsResponse(
         status=g.status,
@@ -221,8 +235,12 @@ async def goal_events(
 
 
 @router.post("/goals/{goal_id}/answer", status_code=204)
-async def answer_question(goal_id: int, payload: AnswerIn) -> None:
+async def answer_question(request: Request, goal_id: int, payload: AnswerIn) -> None:
     w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     answer = (payload.answer or "").strip()
     if not answer:
         raise HTTPException(status_code=400, detail="answer is required")
@@ -245,7 +263,9 @@ class AttachmentOut(BaseModel):
     response_model=AttachmentOut,
     status_code=201,
 )
-async def upload_attachment(goal_id: int, file: UploadFile = File(...)) -> AttachmentOut:
+async def upload_attachment(
+    request: Request, goal_id: int, file: UploadFile = File(...),
+) -> AttachmentOut:
     """Upload a file (text, image, or PDF) and attach it to a goal.
 
     Size and mime-type validation are enforced server-side; the agent's
@@ -253,8 +273,10 @@ async def upload_attachment(goal_id: int, file: UploadFile = File(...)) -> Attac
     attachments are auto-embedded as vision blocks on the first message.
     """
     w = _world()
-    if w.get_goal(goal_id) is None:
+    g = w.get_goal(goal_id)
+    if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
 
     from maverick.attachments import (
         MAX_FILE_BYTES,
@@ -304,10 +326,12 @@ async def upload_attachment(goal_id: int, file: UploadFile = File(...)) -> Attac
 
 
 @router.get("/goals/{goal_id}/attachments", response_model=list[AttachmentOut])
-async def list_goal_attachments(goal_id: int) -> list[AttachmentOut]:
+async def list_goal_attachments(request: Request, goal_id: int) -> list[AttachmentOut]:
     w = _world()
-    if w.get_goal(goal_id) is None:
+    g = w.get_goal(goal_id)
+    if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     return [
         AttachmentOut(
             id=a.id, filename=a.filename, mime=a.mime,
@@ -588,7 +612,7 @@ async def halt_clear() -> None:
 
 
 @router.post("/goals/{goal_id}/cancel", status_code=204)
-async def cancel_goal(goal_id: int) -> None:
+async def cancel_goal(request: Request, goal_id: int) -> None:
     """Mark a goal as cancelled.
 
     The agent loop checks status at each tool-call boundary; setting
@@ -599,17 +623,20 @@ async def cancel_goal(goal_id: int) -> None:
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     if g.status in ("done", "cancelled", "failed"):
         return
     w.set_goal_status(goal_id, "cancelled", result="cancelled via dashboard")
 
 
 @router.get("/goals/{goal_id}/open_questions")
-async def goal_open_questions(goal_id: int) -> dict:
+async def goal_open_questions(request: Request, goal_id: int) -> dict:
     """List unanswered questions an agent has parked for this goal."""
     w = _world()
-    if w.get_goal(goal_id) is None:
+    g = w.get_goal(goal_id)
+    if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     qs = w.open_questions(goal_id=goal_id)
     return {
         "open_questions": [
@@ -803,17 +830,23 @@ async def deny_approval(approval_id: int) -> None:
 
 
 @router.get("/fleets")
-async def list_fleets_api() -> dict:
+async def list_fleets_api(request: Request) -> dict:
     """The operator console roster: each fleet, its owner, and its agents.
 
     Read-only mirror of the ``/fleets`` page (Layer C of the enterprise control
     plane). Fail-soft to an empty list so a missing registry never 500s.
+
+    Owner-scoped: a non-admin authenticated caller sees only the fleets they
+    own; auth-off and admin callers see all (``goal_owner_filter`` returns None).
     """
     try:
         from maverick.fleet import list_fleets
         fleets = list_fleets()
     except Exception:
         fleets = []
+    owner = goal_owner_filter(request)
+    if owner is not None:
+        fleets = [f for f in fleets if f.owner == owner]
     return {"fleets": [f.to_dict() for f in fleets]}
 
 
@@ -856,6 +889,7 @@ async def resume_goal(goal_id: int, request: Request, bg: BackgroundTasks) -> No
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     # Block resuming things that have no parked work.
     if g.status not in ("blocked", "cancelled", "failed"):
         raise HTTPException(
