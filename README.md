@@ -4,14 +4,14 @@
 [![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org)
 
-**An enterprise AI agent that runs in your own environment, works for hours, and won't blow your budget.**
+**The governed, auditable AI agent runtime for regulated enterprises — a long-horizon multi-agent swarm that runs on your data, in your environment, under a hard budget.**
 
 Hand Maverick a goal. Its orchestrator decomposes it, spawns specialist sub-agents — researcher, coder, writer, verifier — that work in parallel, checks their output, and returns a result. Every step runs under a hard spending cap and through a safety layer, on the models *you* choose.
 
-- 🧠 **Long-horizon swarm.** Recursive multi-agent coordination built for hours-long tasks, not one-shot replies.
-- 🛡️ **Safe by default.** Agent Shield screens every prompt, tool call, and output — the full SDK scores F1 0.988 on prompt-injection, and a built-in rule set ships out of the box (fail-open, never a hard dependency).
-- 🎛️ **Your models, your budget.** 12 providers, routable per role (plan on Opus, summarise on Haiku). Set a dollar + wall-clock + tool-call cap the kernel refuses to exceed — no surprise bills.
-- 💻 **Runs in your environment.** Desktop app, one-line script, Docker, VPS, Kubernetes, or a phone companion across 12 channels — fully self-hosted. Proprietary, commercially licensed; no telemetry.
+- 🛡️ **Governed by default.** Role-based access control, capability tokens, per-tool ACLs, consent gates, and a kill switch bound every agent action — and Agent Shield screens every prompt, tool call, and output (full SDK scores F1 0.988 on prompt-injection).
+- 🧾 **Tamper-evident & audit-ready.** A signed, hash-chained, append-only audit log (`maverick audit verify`) with SIEM export, encryption-at-rest, DSAR, and SOC2-aligned evidence — built to survive a security review.
+- 🔒 **Self-host & air-gap.** Runs entirely in your environment — laptop, VPC, Kubernetes, or a disconnected network with no required data egress. No hyperscaler dependency, no telemetry.
+- 🧠 **Long-horizon multi-agent depth.** A recursive orchestrator spawns specialist sub-agents that work for hours under hard dollar / wall-clock / tool-call caps — the depth of Devin, Hermes, and OpenClaw, on the models *you* choose.
 
 > **Proprietary software — not open source.** Maverick is enterprise software; use, redistribution, and derivative works require a license. [Contact us](https://github.com/Day-AI-Labs/Maverick) for evaluation or commercial access. See [`LICENSE`](./LICENSE) and [`TRADEMARK.md`](./TRADEMARK.md).
 
