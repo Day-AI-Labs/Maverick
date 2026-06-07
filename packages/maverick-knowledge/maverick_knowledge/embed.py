@@ -1,9 +1,11 @@
 """Embedding providers.
 
-Config-selected (``hosted`` | ``local`` | ``deterministic``); default hosted with
-a safe fallback to the dependency-free :class:`DeterministicEmbedder`, so the
-knowledge layer works out of the box (and in tests) with no API key or heavy
-local model.
+Config-selected (``hosted`` | ``local`` | ``deterministic``), default ``hosted``.
+:func:`build_embedder` **fails loud**: a chosen provider that can't initialize
+raises rather than silently degrading to the non-semantic
+:class:`DeterministicEmbedder` (which returns plausible-looking but meaningless
+retrievals). Opt into the hash embedder explicitly with
+``embedder = "deterministic"`` for tests / offline dev.
 """
 from __future__ import annotations
 
@@ -83,33 +85,52 @@ class HostedEmbedder:
 
 
 def build_embedder(cfg: dict | None = None) -> Embedder:
-    """Select an embedder from config, falling back to ``DeterministicEmbedder``
-    when the chosen provider can't initialize (no key / extra not installed), so
-    enabling knowledge never hard-fails setup."""
+    """Select an embedder from config. **Fails loud.**
+
+    A configured provider that can't initialize (``hosted`` with no API key,
+    ``local`` without the extra) raises rather than silently falling back to the
+    non-semantic :class:`DeterministicEmbedder` -- a silent downgrade yields
+    plausible-looking but meaningless retrievals a business would unknowingly
+    trust. The hash embedder must be opted into: ``embedder = "deterministic"``
+    (or ``MAVERICK_EMBED_PROVIDER=deterministic``), used by tests / offline dev.
+    """
     cfg = cfg or {}
-    provider = str(cfg.get("embedder", "hosted")).lower()
-    try:
-        if provider == "hosted":
-            key = cfg.get("api_key") or os.environ.get("MAVERICK_EMBED_API_KEY", "")
-            if not key:
-                raise RuntimeError("no embeddings API key configured")
-            return HostedEmbedder(
-                model=cfg.get("model", "voyage-3"),
-                base_url=cfg.get("base_url", "https://api.voyageai.com/v1"),
-                api_key=key,
-                dim=int(cfg.get("dim", 1024)),
+    # The env var is an operator escape hatch that wins over config -- e.g. to
+    # force offline/deterministic retrieval without editing config.toml.
+    provider = str(
+        os.environ.get("MAVERICK_EMBED_PROVIDER") or cfg.get("embedder", "hosted")
+    ).lower()
+
+    if provider == "deterministic":
+        return DeterministicEmbedder(int(cfg.get("dim", 256)))
+
+    if provider == "hosted":
+        key = cfg.get("api_key") or os.environ.get("MAVERICK_EMBED_API_KEY", "")
+        if not key:
+            raise RuntimeError(
+                "knowledge: hosted embedder selected but no API key (set "
+                "[knowledge] api_key or MAVERICK_EMBED_API_KEY); or set "
+                "embedder = 'deterministic' for offline/dev retrieval."
             )
-        if provider == "local":
-            import importlib.util
-            if importlib.util.find_spec("sentence_transformers") is None:
-                raise RuntimeError(
-                    "sentence-transformers not installed (the 'local' extra)"
-                )
-            from .local_embed import LocalEmbedder  # optional 'local' extra
-            return LocalEmbedder(cfg.get("model", "all-MiniLM-L6-v2"))
-    except Exception as e:
-        log.warning(
-            "knowledge: %s embedder unavailable (%s); using deterministic fallback",
-            provider, e,
+        return HostedEmbedder(
+            model=cfg.get("model", "voyage-3"),
+            base_url=cfg.get("base_url", "https://api.voyageai.com/v1"),
+            api_key=key,
+            dim=int(cfg.get("dim", 1024)),
         )
-    return DeterministicEmbedder(int(cfg.get("dim", 256)))
+
+    if provider == "local":
+        import importlib.util
+        if importlib.util.find_spec("sentence_transformers") is None:
+            raise RuntimeError(
+                "knowledge: local embedder selected but sentence-transformers is "
+                "not installed (the 'local' extra); or set "
+                "embedder = 'deterministic' for offline/dev retrieval."
+            )
+        from .local_embed import LocalEmbedder  # optional 'local' extra
+        return LocalEmbedder(cfg.get("model", "all-MiniLM-L6-v2"))
+
+    raise ValueError(
+        f"knowledge: unknown embedder provider {provider!r} "
+        "(expected 'hosted', 'local', or 'deterministic')."
+    )
