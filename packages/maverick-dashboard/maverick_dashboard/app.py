@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (
     HTMLResponse,
@@ -35,6 +35,7 @@ from maverick import a2a
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .api import router as api_router
+from .auth import require_principal
 
 log = logging.getLogger(__name__)
 
@@ -104,6 +105,14 @@ app = FastAPI(
     title="Maverick Dashboard + REST API",
     description="Local browser UI plus REST API for programmatic access.",
     version="0.1.0",
+    # OIDC bearer-auth gate, applied to every route. Default-OFF: when OIDC is
+    # disabled (the default) `require_principal` returns None and changes
+    # nothing -- no token is required and no route 401s. When OIDC is enabled it
+    # enforces a valid `Authorization: Bearer` ID token on each request (health/
+    # liveness/docs paths excepted; see maverick_dashboard.auth). This is an
+    # auth layer ON TOP OF the existing MAVERICK_DASHBOARD_TOKEN middleware, not
+    # a replacement for it.
+    dependencies=[Depends(require_principal)],
 )
 app.include_router(api_router)
 a2a.mount(app)

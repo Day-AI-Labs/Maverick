@@ -17,6 +17,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from . import killswitch
 from ._envparse import env_float, env_int
@@ -112,6 +113,20 @@ _FILE_TOOL_PATH_ARGS: dict[str, str] = {
     "list_dir": "path",
     "str_replace_editor": "path",
     "ast_edit": "path",
+}
+
+# P0 capability layer (host resource-scopes): the network tools whose URL
+# argument a capability's allow_hosts globs gate at the _run_tool chokepoint,
+# mapped to the arg name that carries that URL. Conservative on purpose --
+# only tools whose URL arg is verified against its real input_schema appear
+# here. `web_search` is intentionally absent: it takes a query/site, not a URL
+# to reach. The host is parsed from the URL; a URL without a host (or a missing
+# arg) skips the check. Empty allow_hosts == all (the capability's "empty ==
+# allow-all" convention), so this is a no-op unless capability enforcement was
+# opted in AND the active grant restricts hosts.
+_NET_TOOL_URL_ARGS: dict[str, str] = {
+    "http_fetch": "url",
+    "browser": "url",
 }
 
 
@@ -875,6 +890,40 @@ class Agent:
                 return (
                     f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
                     f"not granted path {denied!r} for tool {name!r}. "
+                    "The tool was not executed."
+                )
+
+        # P0 capability layer (host resource-scopes): for a known network tool,
+        # the grant's allow_hosts globs also gate the host its URL reaches.
+        # No-op unless a host-restricted grant is active (empty == all). Fail-
+        # soft: if the URL arg is missing/unparseable (no host) we skip the
+        # check rather than error -- we never deny something we can't
+        # confidently locate the host for.
+        url_arg = _NET_TOOL_URL_ARGS.get(name)
+        if cap is not None and url_arg is not None:
+            raw = args.get(url_arg) if isinstance(args, dict) else None
+            host = None
+            if isinstance(raw, str) and raw:
+                try:  # malformed URLs (e.g. bad IPv6) raise -- skip, don't crash
+                    host = urlsplit(raw).hostname
+                except ValueError:
+                    host = None
+            if host and not cap.permits_host(host):
+                self.ctx.blackboard.post(
+                    self.name, "error",
+                    f"tool={name} host={host} DENIED by capability "
+                    f"(principal={cap.principal})",
+                )
+                try:  # tamper-evident record of the denial; never block on audit
+                    from .audit import EventKind, record
+                    record(EventKind.CAPABILITY_DENIED, agent=self.name,
+                           goal_id=self.ctx.goal_id, tool=name,
+                           principal=cap.principal, host=host)
+                except Exception:  # pragma: no cover
+                    pass
+                return (
+                    f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
+                    f"not granted host {host!r} for tool {name!r}. "
                     "The tool was not executed."
                 )
 

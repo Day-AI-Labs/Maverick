@@ -79,19 +79,17 @@ class Server:
         # we reuse the SHARED self.world unchanged (``world is self.world``), so
         # the legacy single-tenant path is byte-for-byte identical and we never
         # open a second connection to ~/.maverick/world.db. self.world also still
-        # backs startup orphan-reclaim and the dashboard. Fail-soft: if anything
-        # goes wrong resolving the tenant world, fall back to self.world rather
-        # than dropping the message.
+        # backs startup orphan-reclaim and the dashboard. If per-user tenant
+        # resolution fails, reject the message rather than running attacker input
+        # against the shared world and breaking tenant isolation.
+        tenant = None
+        if tenant_by_user_enabled():
+            tenant = f"{msg.channel or 'unknown'}:{principal_id}"
         try:
-            tenant = (
-                f"{msg.channel or 'unknown'}:{principal_id}"
-                if tenant_by_user_enabled()
-                else None
-            )
             world = self.world if tenant is None else world_for_tenant(tenant)
-        except Exception:  # pragma: no cover - fail-soft, never drop a message
-            log.exception("tenant world resolution failed; using shared world")
-            world = self.world
+        except Exception:
+            log.exception("tenant world resolution failed; rejecting message")
+            return "⚠ Tenant isolation is unavailable for this message. Try again later."
 
         # Multi-turn: a single (channel, user_id) gets one conversation
         # row. Every inbound message becomes a 'user' turn; the

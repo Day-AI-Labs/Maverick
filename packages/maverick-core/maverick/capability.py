@@ -208,6 +208,14 @@ def capability_enforced() -> bool:
         "1", "true", "yes", "on",
     }:
         return True
+    # Enterprise mode forces capability enforcement on (least privilege is
+    # mandatory when an agent handles sensitive data).
+    try:
+        from .enterprise import enterprise_enabled
+        if enterprise_enabled():
+            return True
+    except Exception:
+        pass
     try:
         from .config import load_config
         cfg = (load_config() or {}).get("capabilities") or {}

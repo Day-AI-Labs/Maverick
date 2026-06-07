@@ -1294,8 +1294,13 @@ def open_world(path: Path = DEFAULT_DB) -> Any:
 # audit log's default singleton: WorldModel opens with check_same_thread=False +
 # WAL + a write lock, so one instance is safely shared across the FastAPI
 # threadpool / goal tasks.
+MAX_TENANT_WORLDS = 128
 _tenant_worlds: dict[str, WorldModel] = {}
 _tenant_worlds_lock = threading.Lock()
+
+
+class TenantWorldLimitError(RuntimeError):
+    """Raised when the process has reached its tenant world cache limit."""
 
 
 def world_for_tenant(tenant: str | None = None) -> WorldModel:
@@ -1308,8 +1313,9 @@ def world_for_tenant(tenant: str | None = None) -> WorldModel:
     world/memory/audit all land under the same tenant dir.
 
     Repeated calls for the same tenant return the SAME instance; distinct
-    tenants get distinct DBs. Does NOT consult the Postgres backend -- it is the
-    per-tenant SQLite factory the server uses for goal/conversation/turn writes.
+    tenants get distinct DBs, up to ``MAX_TENANT_WORLDS`` cached tenant
+    connections. Does NOT consult the Postgres backend -- it is the per-tenant
+    SQLite factory the server uses for goal/conversation/turn writes.
     """
     from .paths import data_dir
 
@@ -1318,6 +1324,8 @@ def world_for_tenant(tenant: str | None = None) -> WorldModel:
     with _tenant_worlds_lock:
         world = _tenant_worlds.get(key)
         if world is None:
+            if tenant is not None and len(_tenant_worlds) >= MAX_TENANT_WORLDS:
+                raise TenantWorldLimitError("tenant world cache limit reached")
             world = WorldModel(path)
             _tenant_worlds[key] = world
         return world

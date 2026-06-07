@@ -1,0 +1,182 @@
+"""AES-256-GCM encryption at rest for Maverick's sensitive local stores.
+
+The kernel keeps its state in plaintext on disk by default (the world model, the
+audit log, and the cross-session memory directory). That is fine for a personal
+agent but is a GDPR Art. 32 / HIPAA exposure the moment the agent handles
+sensitive data: anyone who can read ``~/.maverick`` sees everything.
+
+This module provides authenticated at-rest encryption for bytes/text plus key
+management that reuses the local-keyfile pattern of the audit signer. It is
+**opt-in**: enable it with ``[encryption] at_rest = true`` /
+``MAVERICK_ENCRYPT_AT_REST=1``, and it is **implied by enterprise mode** (handling
+sensitive data -> seal it at rest). Off by default -> behaviour is unchanged.
+
+Key resolution (first match wins):
+  1. ``MAVERICK_ENCRYPTION_KEY`` — a 32-byte key as hex or base64, so an operator
+     can inject a KMS-derived key without it ever touching disk.
+  2. ``~/.maverick/keys/at_rest.key`` — generated on first use, ``chmod 600``.
+
+Sealed blobs carry a magic header (:data:`_MAGIC`), so :func:`unseal` transparently
+returns plaintext written *before* encryption was enabled — a gradual migration
+with no flag-day re-encrypt. This increment wires it into the cross-session
+**memory** store (the most leak-sensitive per-tenant store).
+"""
+from __future__ import annotations
+
+import base64
+import os
+import secrets
+from pathlib import Path
+
+_MAGIC = b"MVKAR1\n"          # versioned header: Maverick At-Rest v1
+_NONCE_BYTES = 12
+_KEY_BYTES = 32              # AES-256
+_KEY_PATH = Path.home() / ".maverick" / "keys" / "at_rest.key"
+
+
+class EncryptionUnavailable(RuntimeError):
+    """At-rest encryption was requested but cannot be performed (missing crypto
+    or an unreadable/invalid key). Callers fail closed rather than write plaintext."""
+
+
+def _have_crypto() -> bool:
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _truthy(value: object) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def at_rest_enabled() -> bool:
+    """Opt-in. ``MAVERICK_ENCRYPT_AT_REST`` env (a falsey value force-disables)
+    wins over ``[encryption] at_rest`` in config, which wins over enterprise mode.
+    Off by default."""
+    env = os.environ.get("MAVERICK_ENCRYPT_AT_REST")
+    if env is not None and env.strip() != "":
+        return _truthy(env)
+    try:
+        from .config import load_config
+        cfg = (load_config() or {}).get("encryption") or {}
+    except Exception:
+        cfg = {}
+    if "at_rest" in cfg:
+        v = cfg.get("at_rest")
+        return _truthy(v) if isinstance(v, str) else bool(v)
+    # Enterprise mode implies at-rest encryption (sensitive data stays sealed).
+    try:
+        from .enterprise import enterprise_enabled
+        return enterprise_enabled()
+    except Exception:
+        return False
+
+
+def _decode_injected_key(raw: str) -> bytes:
+    raw = raw.strip()
+    if len(raw) == _KEY_BYTES * 2:
+        try:
+            return bytes.fromhex(raw)
+        except ValueError:
+            pass
+    try:
+        return base64.b64decode(raw, validate=True)
+    except Exception as e:  # noqa: BLE001
+        raise EncryptionUnavailable(
+            "MAVERICK_ENCRYPTION_KEY is not valid hex or base64"
+        ) from e
+
+
+def _load_or_create_key() -> bytes:
+    raw = os.environ.get("MAVERICK_ENCRYPTION_KEY")
+    if raw:
+        key = _decode_injected_key(raw)
+        if len(key) != _KEY_BYTES:
+            raise EncryptionUnavailable(
+                f"MAVERICK_ENCRYPTION_KEY must decode to {_KEY_BYTES} bytes, got {len(key)}"
+            )
+        return key
+    if _KEY_PATH.exists():
+        try:
+            key = bytes.fromhex(_KEY_PATH.read_text().strip())
+        except (OSError, ValueError) as e:
+            raise EncryptionUnavailable(f"cannot read at-rest key {_KEY_PATH}: {e}") from e
+        if len(key) != _KEY_BYTES:
+            raise EncryptionUnavailable(f"at-rest key {_KEY_PATH} is malformed")
+        return key
+    # First use: generate + persist, chmod 600 (and 700 the parent).
+    key = secrets.token_bytes(_KEY_BYTES)
+    try:
+        _KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _KEY_PATH.write_text(key.hex())
+        os.chmod(_KEY_PATH, 0o600)
+        try:
+            os.chmod(_KEY_PATH.parent, 0o700)
+        except OSError:  # pragma: no cover - best-effort
+            pass
+    except OSError as e:
+        raise EncryptionUnavailable(f"cannot write at-rest key {_KEY_PATH}: {e}") from e
+    return key
+
+
+def is_sealed(blob: bytes) -> bool:
+    """True if ``blob`` was produced by :func:`seal` (carries the magic header)."""
+    return blob[: len(_MAGIC)] == _MAGIC
+
+
+def seal(plaintext: bytes) -> bytes:
+    """Encrypt with AES-256-GCM. Returns ``MAGIC || nonce || ciphertext+tag``.
+
+    Raises :class:`EncryptionUnavailable` if crypto/key are missing (fail closed:
+    the caller must not silently fall back to writing plaintext)."""
+    if not _have_crypto():
+        raise EncryptionUnavailable(
+            "at-rest encryption enabled but 'cryptography' is not installed "
+            "(pip install 'maverick-agent[audit-signing]')"
+        )
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    key = _load_or_create_key()
+    nonce = secrets.token_bytes(_NONCE_BYTES)
+    ct = AESGCM(key).encrypt(nonce, plaintext, None)
+    return _MAGIC + nonce + ct
+
+
+def unseal(blob: bytes) -> bytes:
+    """Decrypt a sealed blob. A blob *without* the magic header is returned
+    unchanged — plaintext written before encryption was enabled (transparent
+    migration). Raises :class:`EncryptionUnavailable` only when a genuinely
+    sealed blob can't be opened."""
+    if not is_sealed(blob):
+        return blob
+    if not _have_crypto():
+        raise EncryptionUnavailable(
+            "found encrypted data but 'cryptography' is not installed"
+        )
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    key = _load_or_create_key()
+    body = blob[len(_MAGIC):]
+    nonce, ct = body[:_NONCE_BYTES], body[_NONCE_BYTES:]
+    return AESGCM(key).decrypt(nonce, ct, None)
+
+
+def seal_text(text: str) -> bytes:
+    return seal(text.encode("utf-8"))
+
+
+def unseal_to_text(blob: bytes) -> str:
+    return unseal(blob).decode("utf-8", errors="replace")
+
+
+__all__ = [
+    "at_rest_enabled",
+    "is_sealed",
+    "seal",
+    "unseal",
+    "seal_text",
+    "unseal_to_text",
+    "EncryptionUnavailable",
+]

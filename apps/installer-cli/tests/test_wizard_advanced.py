@@ -161,3 +161,86 @@ def test_enforce_quotas_writes_and_is_read(tmp_path, monkeypatch):
     assert quotas_enforced() is True
     # Nothing recorded yet, so a fresh principal is under quota.
     assert over_quota("alice") is None
+
+
+def test_oidc_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's OIDC toggle writes a single [auth.oidc] table
+    (enabled/issuer/audience/jwks_uri), the config round-trips through the TOML
+    parser, and the kernel reads it back via maverick.oidc."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for env in ("MAVERICK_OIDC_ENABLED", "MAVERICK_OIDC_ISSUER",
+                "MAVERICK_OIDC_AUDIENCE", "MAVERICK_OIDC_JWKS_URI",
+                "MAVERICK_OIDC_ALGORITHMS"):
+        monkeypatch.delenv(env, raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"oidc": {
+        "enabled": True,
+        "issuer": "https://issuer.example.com",
+        "audience": "maverick-client",
+        "jwks_uri": "https://issuer.example.com/jwks",
+    }})
+    # Exactly one [auth.oidc] table -- no duplicate-table bug.
+    assert cfg.count("[auth.oidc]") == 1
+    # The whole config must still parse (a duplicate table would raise here).
+    parsed = tomllib.loads(cfg)
+    assert parsed["auth"]["oidc"] == {
+        "enabled": True,
+        "issuer": "https://issuer.example.com",
+        "audience": "maverick-client",
+        "jwks_uri": "https://issuer.example.com/jwks",
+    }
+
+    from maverick.oidc import load_oidc_config, oidc_enabled
+    assert oidc_enabled() is True
+    resolved = load_oidc_config()
+    assert resolved.issuer == "https://issuer.example.com"
+    assert resolved.audience == "maverick-client"
+    assert resolved.jwks_uri == "https://issuer.example.com/jwks"
+    # Allowlist defaults to asymmetric-only (the wizard doesn't surface it).
+    assert resolved.algorithms == ["RS256", "ES256"]
+
+
+def test_oidc_disabled_writes_no_section(tmp_path, monkeypatch):
+    """Declining OIDC (the default) emits no [auth.oidc] table, and the kernel
+    sees OIDC as off."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_OIDC_ENABLED", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"oidc": {"enabled": False}})
+    assert "[auth.oidc]" not in cfg
+
+    from maverick.oidc import oidc_enabled
+    assert oidc_enabled() is False
+
+
+def test_enterprise_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's enterprise toggle writes [enterprise] mode, and
+    the kernel reads it back as enterprise_enabled()."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_ENTERPRISE", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"enterprise": True})
+    assert "[enterprise]" in cfg
+    assert "mode = true" in cfg
+
+    from maverick.enterprise import enterprise_enabled
+    assert enterprise_enabled() is True
+
+
+def test_encrypt_at_rest_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's encryption toggle writes [encryption] at_rest,
+    and the kernel reads it back as at_rest_enabled()."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_ENCRYPT_AT_REST", raising=False)
+    monkeypatch.delenv("MAVERICK_ENTERPRISE", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"encrypt_at_rest": True})
+    assert "[encryption]" in cfg
+    assert "at_rest = true" in cfg
+
+    from maverick.crypto_at_rest import at_rest_enabled
+    assert at_rest_enabled() is True
