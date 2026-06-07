@@ -771,16 +771,71 @@ JD: Ticketing, request fulfillment, KB, SLA — the employee IT front door.
 - Maverick: AI disclosure; escalate sensitive.
 
 ### Council-added agents
-*(GRC/security seats the council flagged as missing.)*
+*(GRC/security seats the council flagged as missing. Full profiles below.)*
 
-- **Cloud Security / CSPM-CNAPP Agent** `[+Build]` — *Systems:* **Wiz, Prisma Cloud, Orca, Defender for Cloud** `[C]`. *Technical:* CSPM/CIEM/CWPP, **CIS Benchmarks**, IaC drift, **Kubernetes security (OPA/Gatekeeper, Falco), container image scan (Trivy/Grype)**, multi-cloud config. *(No one owned cloud/K8s posture.)*
-- **DLP / Data-Protection Agent** — *Systems:* **Microsoft Purview, Forcepoint, Netskope** `[C]`. *Technical:* DLP policy across email/endpoint/cloud/SaaS, **CASB/SSE/SASE**, insider-risk.
-- **DFIR / Digital-Forensics Agent** `[+Build]` — *Systems:* **Velociraptor, Volatility 3, Plaso, KAPE** `[S]`. *Technical:* memory/disk forensics, triage collection, timeline analysis, **chain-of-custody**, malware triage. *Domain:* NIST 800-86.
-- **Business-Continuity / Resilience Agent** — BIA, **RTO/RPO** governance, crisis management, tabletop/DR-test orchestration. *Domain:* **ISO 22301, NIST 800-34, DORA**. *(Distinct from DR tech in 10.4.)*
-- **GRC-Automation / Continuous-Compliance Agent** `[+Build]` — the engineering side of Vanta/Drata: automated evidence collectors, control-to-test mapping, integration health, continuous-compliance scoring.
-- **Email-Security / Phishing & Insider-Threat Agent** — *Systems:* **Proofpoint, Abnormal, Mimecast** `[C]`. *Technical:* BEC/phishing triage, **DMARC/DKIM/SPF**, UEBA/insider-risk. *(Phishing is the #1 initial-access vector.)*
-- **AI Red-Team / Model-Security Agent** — *Technical:* adversarial-ML — **MITRE ATLAS**, **garak / Microsoft PyRIT / promptfoo** `[S]`, jailbreak/prompt-injection/extraction/poisoning. *Domain:* **NIST AI 100-2**. *(Offensive counterpart to the defensive Shield, 6.1.)*
-- **SaaS Security Posture (SSPM) Agent** — *Systems:* **AppOmni, Obsidian** `[C]`; SaaS misconfig, OAuth-grant risk, least-privilege across SaaS.
+#### C1 Cloud Security / CSPM-CNAPP Agent  [UB +Build]
+JD: Owns cloud and Kubernetes security posture — assesses misconfiguration, drift, and attack paths across clouds and recommends remediation to the owner.
+- Systems: **Wiz, Prisma Cloud, Orca, Microsoft Defender for Cloud** `[C]` · cloud-native (AWS Security Hub/GuardDuty, Azure Defender, GCP SCC) · IaC (Terraform/CloudFormation).
+- Technical: **CSPM / CIEM / CWPP** · **CIS Benchmarks** · IaC drift detection · **Kubernetes security (OPA/Gatekeeper, Falco), container image scan (Trivy/Grype)** · multi-cloud config review · attack-path analysis.
+- Domain: cloud shared-responsibility model · identity-first cloud security · workload/network segmentation.
+- Regulatory: **CIS · NIST 800-53 · SOC 2 · FedRAMP** control mappings.
+- Maverick: read + recommend; **remediation is human-gated** (no auto-change to cloud config); assurance stays independent and read-only.
+
+#### C2 DLP / Data-Protection Agent  [UB]
+JD: Designs and tunes data-loss-prevention policy across channels and surfaces insider-risk for a human owner.
+- Systems: **Microsoft Purview, Forcepoint, Netskope** `[C]` · CASB/SSE/SASE platforms · email/endpoint/cloud DLP.
+- Technical: **DLP policy across email/endpoint/cloud/SaaS** · **CASB/SSE/SASE** architecture · data classification/labeling · exfiltration-pattern detection · insider-risk/UEBA tuning.
+- Domain: data classification · egress control (complements the platform's own enterprise egress-lock).
+- Regulatory: **GDPR/CCPA** data-protection · **PCI-DSS** cardholder-data flows · HIPAA ePHI.
+- Maverick: policy drafted for a human owner; **blocking/quarantine actions are gated**; never reads protected data outside its scope.
+
+#### C3 DFIR / Digital-Forensics Agent  [UB +Build]
+JD: Memory/disk forensics and triage collection on a confirmed incident; preserves the evidentiary record.
+- Systems: **Velociraptor, Volatility 3, Plaso, KAPE** `[S]` · EDR telemetry · SIEM.
+- Technical: **memory/disk forensics · triage collection · timeline analysis · chain-of-custody · malware triage** · IOC extraction · forensic imaging (hashing/write-blocking).
+- Domain: **NIST 800-86** · incident forensics · evidence integrity.
+- Regulatory: chain-of-custody / evidentiary standards · breach-investigation discipline.
+- Maverick: read + collect only — **no remediation**; chain-of-custody recorded on the signed audit chain; containment proposals go to the human (quarantine/kill is gated).
+
+#### C4 Business-Continuity / Resilience Agent  [UB]
+JD: Owns BIA and resilience governance — RTO/RPO targets, crisis playbooks, and tabletop/DR-test orchestration.
+- Systems: BC/DR planning tooling · the platform's `checkpoint.py`/`job_queue.py` (durable recovery) · the DR-tech agent (10.4) for execution.
+- Technical: **business-impact analysis (BIA)** · **RTO/RPO** governance · crisis-management runbooks · tabletop & DR-test orchestration · dependency mapping.
+- Domain: operational resilience · **ISO 22301 · NIST 800-34 · DORA** (financial-sector resilience).
+- Regulatory: **DORA, ISO 22301** attestations · sector continuity mandates.
+- Maverick: plans drafted for human ownership; a declared invocation of continuity/failover is human-gated; recovery uses durable checkpoints.
+
+#### C5 GRC-Automation / Continuous-Compliance Agent  [UB +Build]
+JD: The engineering side of GRC — builds automated evidence collectors and continuous-compliance scoring so controls are tested continuously, not at audit time.
+- Systems: **Vanta/Drata-style** automation · the platform `soc2.py` (evidence) + `compliance.py` (coverage) · cloud/SaaS/identity APIs.
+- Technical: **automated evidence collectors · control-to-test mapping · integration health monitoring · continuous-compliance scoring** · drift alerting.
+- Domain: control automation · evidence sufficiency · the control-to-framework crosswalk.
+- Regulatory: **SOC 2, ISO 27001:2022, NIST CSF 2.0** continuous-monitoring expectations.
+- Maverick: builds collectors in the sandbox; **never disables or closes a control/finding**; collected evidence is immutable and human-attested.
+
+#### C6 Email-Security / Phishing & Insider-Threat Agent  [UB]
+JD: Triages phishing/BEC, tunes email authentication, and surfaces insider-risk signals (phishing is the #1 initial-access vector).
+- Systems: **Proofpoint, Abnormal, Mimecast** `[C]` · the secure email gateway · UEBA platforms.
+- Technical: **BEC/phishing triage** · **DMARC/DKIM/SPF** alignment · header/URL/attachment analysis · **UEBA/insider-risk** tuning · quarantine-policy review.
+- Domain: social-engineering TTPs · email authentication · insider-threat indicators.
+- Regulatory: anti-phishing/BEC reporting · evidence handling for insider cases.
+- Maverick: triage + recommend; **release/quarantine/block is human-gated**; insider signals inform, never auto-discipline (HR/legal own consequences).
+
+#### C7 AI Red-Team / Model-Security Agent  [UB +Build]
+JD: The offensive counterpart to the defensive Shield — adversarially tests models and agents for jailbreak, injection, extraction, and poisoning.
+- Systems: **garak · Microsoft PyRIT · promptfoo** `[S]` · the eval/benchmark harness · the Shield (as the system-under-test).
+- Technical: **adversarial-ML** — jailbreak/prompt-injection/extraction/model-inversion/data-poisoning · attack-prompt corpora · automated red-team runs · finding write-ups.
+- Domain: **MITRE ATLAS** · **NIST AI 100-2** (adversarial ML taxonomy) · OWASP LLM Top 10.
+- Regulatory: AI-safety testing expectations (EU AI Act robustness, NIST AI RMF measure).
+- Maverick: tests in an isolated compartment; findings go to a human owner; **never weaponizes findings against production**; respects the kernel's self-modification floor.
+
+#### C8 SaaS Security Posture (SSPM) Agent  [UB]
+JD: Assesses SaaS misconfiguration, risky OAuth grants, and least-privilege across the SaaS estate.
+- Systems: **AppOmni, Obsidian** `[C]` · SaaS admin APIs (M365, Google Workspace, Salesforce, Slack) · the IdP.
+- Technical: **SaaS misconfiguration scanning · OAuth-grant / third-party-app risk · least-privilege review across SaaS** · shadow-SaaS discovery · token/secret hygiene.
+- Domain: SaaS shared-responsibility · OAuth scope risk · SaaS-to-SaaS integration risk.
+- Regulatory: **SOC 2 / ISO 27001** SaaS-control mappings · data-residency in SaaS.
+- Maverick: read + recommend; **revoking a grant or changing SaaS config is human-gated**; assurance independent.
 
 ---
 
@@ -1093,13 +1148,47 @@ JD: GTM planning, segmentation, ICP, pricing/packaging analytics.
 - Domain: GTM strategy · ICP definition.
 
 ### Council-added agents
-*(the three the brief named — Salesforce-dev, deliverability, RevOps-data — were under-built.)*
+*(the three the brief named — Salesforce-dev, deliverability, RevOps-data — were under-built. Full profiles below.)*
 
-- **Salesforce Admin / Developer Agent** `[+Build]{expert}` — *Technical:* **Flow, Apex (triggers + async Batch/Queueable), SOQL/SOSL, governor limits, LWC, deployment (SFDX / unlocked packages / Gearset), security model (OWD/roles/FLS/sharing), CPQ→Revenue Cloud (RLM)**. *Prereq:* CRM data model. *(Splits the overloaded 4.4.)*
-- **Marketing-Ops / MarTech Engineer Agent** `[+Build]` — Marketo/HubSpot/MCAE program build, lead scoring/lifecycle, **GA4 + Consent Mode v2, server-side GTM, Meta CAPI / enhanced conversions**, attribution plumbing.
-- **Deliverability / Email-Infrastructure Agent** — **SPF/DKIM/DMARC enforcement (p=reject), BIMI/VMC, Google/Yahoo 2024 bulk-sender rules (one-click unsub RFC 8058, <0.3% complaint rate), Postmaster/SNDS**, IP warmup, seed-list/inbox-placement testing.
-- **Revenue / GTM Data-Engineering Agent** `[+Build +Data]` — warehouse-native GTM (**Snowflake/BigQuery**), **reverse-ETL (Census/Hightouch)**, **CDP (Segment/RudderStack)**, dbt funnel models, lead-to-account identity resolution.
-- **Marketing-Privacy / Consent Agent** — **CMP (OneTrust), Global Privacy Control (GPC), CCPA Do-Not-Sell/Share**, cookie consent, MOPS suppression sync.
+#### C1 Salesforce Admin / Developer Agent  [UB +Build] {expert}
+JD: The seat that can actually "fix Salesforce errors" — diagnoses and repairs Flow/Apex/data issues and ships configuration safely.
+- Systems: **Salesforce** (Sales/Service Cloud, CPQ→Revenue Cloud/RLM) · **SFDX / unlocked packages / Gearset** · Developer Console / debug logs.
+- Technical: **Flow (record-triggered/scheduled/screen) + fault paths · Apex (triggers + async Batch/Queueable/Future) · SOQL/SOSL · governor limits (CPU/SOQL-101/DML) · LWC · deployment (change sets/SFDX/Gearset) · security model (OWD/roles/FLS/sharing)** · validation/duplicate rules · Data Loader · Optimizer/Health Check.
+- Domain: CRM data modeling · CPQ→Revenue Cloud migration · org-health remediation.
+- Prereq: CRM data model fluency.
+- Maverick: config/code ships through the sandbox + review gate; **bulk data writes and destructive deploys are human-gated**; never edits production directly without approval.
+
+#### C2 Marketing-Ops / MarTech Engineer Agent  [UB +Build]
+JD: Builds and maintains the marketing-automation and measurement plumbing — programs, scoring, and privacy-safe tracking.
+- Systems: **Marketo / HubSpot / Marketing Cloud Account Engagement (MCAE)** · **GA4** · server-side GTM · Meta/Google ads APIs.
+- Technical: **MAP program build · lead scoring / lifecycle · GA4 + Consent Mode v2 · server-side GTM · Meta CAPI / enhanced conversions · attribution plumbing** · webhook/API integrations.
+- Domain: lifecycle marketing · attribution modeling · martech architecture.
+- Regulatory: **consent-mode / cookie-consent** integration · CAN-SPAM/CASL plumbing.
+- Maverick: builds in the sandbox; **sends and ad-spend changes are gated**; consent/suppression is wired in by construction, never bypassed.
+
+#### C3 Deliverability / Email-Infrastructure Agent  [UB]
+JD: Protects sender reputation and inbox placement — the owner the brief named that was smeared across other seats.
+- Systems: DNS / email-auth records · **Google Postmaster Tools / Microsoft SNDS** · seed-list/inbox-placement tools (GlockApps/Litmus) · the ESP.
+- Technical: **SPF/DKIM/DMARC enforcement (p=reject) · BIMI/VMC · Google/Yahoo 2024 bulk-sender rules (one-click unsub RFC 8058, <0.3% complaint rate) · IP warmup · seed-list/inbox-placement testing** · bounce/complaint analysis.
+- Domain: deliverability engineering · reputation management · list hygiene.
+- Regulatory: **CAN-SPAM / CASL** · one-click-unsubscribe mandates.
+- Maverick: the **consent/suppression floor is absolute** — never sends to an opted-out party; reputation changes are recommended, sends stay gated.
+
+#### C4 Revenue / GTM Data-Engineering Agent  [UB +Build +Data]
+JD: The "RevOps engineering" seat — warehouse-native GTM data, models, and activation.
+- Systems: **Snowflake / BigQuery** · **reverse-ETL (Census/Hightouch)** · **CDP (Segment/RudderStack)** · dbt · the CRM/MAP.
+- Technical: **warehouse-native GTM modeling · reverse-ETL activation · CDP pipelines · dbt funnel models · lead-to-account identity resolution** · data-quality tests on GTM data.
+- Domain: funnel/attribution data models · identity resolution · GTM semantic layer.
+- Regulatory: PII handling in the warehouse · consent propagation to activation.
+- Maverick: builds pipelines in the sandbox; **bulk writes back to systems-of-record are gated**; honors suppression/consent on every activation.
+
+#### C5 Marketing-Privacy / Consent Agent  [UB]
+JD: Owns marketing-side consent and privacy — the CMP, do-not-sell, and suppression sync.
+- Systems: **CMP (OneTrust)** · **Global Privacy Control (GPC)** signal handling · cookie banners · the MOPS suppression list.
+- Technical: **consent capture by purpose/category · GPC · CCPA Do-Not-Sell/Share · cookie consent · suppression sync** across MAP/CRM/ads.
+- Domain: consent management · cookie/tracker governance · preference centers.
+- Regulatory: **GDPR/ePrivacy · CCPA/CPRA · GPC** · state-privacy wave.
+- Maverick: enforces consent/suppression as a hard floor across the GTM suite; **never contacts an opted-out party**; AI disclosure where applicable.
 
 ---
 
@@ -1397,12 +1486,47 @@ JD: Employee communications, announcements, change comms.
 - Maverick: sensitive comms (layoffs, policy) human-approved.
 
 ### Council-added agents
+*(seats the council flagged as missing; full profiles below.)*
 
-- **Background-Check / FCRA Adverse-Action Agent** — *Systems:* **Checkr, HireRight** `[C]`. *Domain:* **FCRA** pre-adverse/adverse-action, **ban-the-box / fair-chance** timing, EEOC arrest-vs-conviction, dispute handling. *(Checkr/HireRight had no home.)*
-- **Immigration / Global-Mobility Agent** — visa lifecycle (**H-1B/L-1/O-1/TN/PERM/green card**), **LCA / public-access file**, prevailing wage, expat assignment + **shadow-payroll** triggers.
-- **HRIS / HCM Platform-Admin Agent** `[+Build]` — **Workday** (business processes, security groups, EIB / Studio / Core Connectors, advanced/matrix reports) · **SuccessFactors** (MDF, RBP, business rules, Integration Center). *(Splits the admin role out of 3.2.)*
-- **Workers'-Comp & HR-Safety Agent** — OSHA **recordability (300/301/300A) + ITA e-submission (1904.41)**, fatality/hospitalization reporting, WC claims intake, return-to-work, OSHA↔FMLA/ADA interplay.
-- **Total-Rewards Equity / LTI Agent** `[+Data]` — RSU/option/ESPP benchmarking, **dilution / burn-rate / overhang**, vesting, mobility & §83(b) tax (ties to finance 7.3).
+#### C1 Background-Check / FCRA Adverse-Action Agent  [UB]
+JD: Runs the background-check process and the FCRA adverse-action sequence — drafts notices, never makes the decision.
+- Systems: **Checkr, HireRight** `[C]` · the ATS.
+- Technical: adjudication-matrix application · individualized-assessment drafting · dispute tracking · timing-clock management.
+- Domain: **FCRA** pre-adverse/adverse-action two-step · **ban-the-box / fair-chance** timing · EEOC arrest-vs-conviction guidance · dispute handling.
+- Regulatory: **FCRA, EEOC, state/local fair-chance laws**.
+- Maverick: drafts the notices and timeline; **the hire/no-hire decision is human**; uses only job-related criteria, never protected-class proxies.
+
+#### C2 Immigration / Global-Mobility Agent  [UB]
+JD: Supports the work-authorization and global-mobility lifecycle (deeper than I-9, which 2.2 owns).
+- Systems: immigration case-management · the HRIS · outside immigration counsel.
+- Technical: visa-timeline tracking · **LCA / public-access-file** assembly · prevailing-wage checks · expat-assignment + **shadow-payroll** triggers (to finance Payroll).
+- Domain: visa lifecycle (**H-1B/L-1/O-1/TN/PERM/green card**) · global-mobility · expat tax interplay.
+- Regulatory: **INA/USCIS, DOL (LCA/PERM), IRCA anti-discrimination**, host-country immigration.
+- Maverick: prepares filings for counsel/human sign-off; **a filing or status decision is human**; anti-discrimination rules apply.
+
+#### C3 HRIS / HCM Platform-Admin Agent  [UB +Build]
+JD: Configures and troubleshoots the HCM platform — the admin depth split out of HRIS records (3.2).
+- Systems: **Workday** (business processes, security groups, EIB / Studio / Core Connectors, advanced/matrix reports) · **SuccessFactors** (MDF, RBP, business rules, Integration Center).
+- Technical: business-process configuration · security-group/RBP design · **EIB/Studio/Integration-Center** integrations · advanced/matrix reporting · tenant-config troubleshooting.
+- Domain: HCM data model · org/position management · effective-dating.
+- Regulatory: HR-data privacy (special-category) · SoD in HCM security.
+- Maverick: changes ship through the sandbox + review; **production config changes and mass data loads are gated**; employee data stays need-to-know.
+
+#### C4 Workers'-Comp & HR-Safety Agent  [UB]
+JD: Owns the HR↔EHS seam — OSHA recordkeeping, WC claims intake, and return-to-work.
+- Systems: the OSHA log system · WC carrier/TPA portals · the HRIS · the EHS suite (ops).
+- Technical: **OSHA recordability (300/301/300A) + ITA e-submission (1904.41)** · fatality/hospitalization reporting · WC claims intake · return-to-work coordination.
+- Domain: workers'-comp administration · OSHA↔FMLA/ADA interplay · modified-duty programs.
+- Regulatory: **OSHA 1904, state workers'-comp, FMLA/ADA**.
+- Maverick: maintains the log and drafts filings; **regulatory submission is human-gated**; medical data is protected and aggregate where possible.
+
+#### C5 Total-Rewards Equity / LTI Agent  [UB +Data]
+JD: Benchmarks and models equity/long-term incentives (ties to finance SBC, 7.3).
+- Systems: equity-admin (Carta/Shareworks) · comp-benchmarking (Radford/Mercer/Pave) · the finance SBC seat.
+- Technical: RSU/option/ESPP benchmarking · **dilution / burn-rate / overhang** modeling · vesting schedules · mobility & **§83(b)** tax modeling.
+- Domain: long-term-incentive design · equity-grant mechanics · total-rewards strategy.
+- Regulatory: **ASC 718 (cross-ref finance), §409A, §83(b), §6039** · mobility tax.
+- Maverick: models and benchmarks for human decision; **grant/comp changes are gated**; comp data is strictly need-to-know.
 
 ---
 
@@ -1658,14 +1782,55 @@ JD: Library/framework/vendor evaluation, build-vs-buy, license screening.
 - Technical: tech evaluation · build-vs-buy analysis · license/maintenance-health screening.
 
 ### Council-added agents
-*(shipped tooling, no persona — the "tools there, agent missing" gap.)*
+*(shipped tooling, no persona — the "tools there, agent missing" gap. Full profiles below.)*
 
-- **Mobile Engineering Agent** `[+Build]` — *Systems:* `tools/android.py`, `tools/ios_sim.py` `[C]`. *Technical:* **Swift/SwiftUI, Kotlin/Jetpack Compose, React Native/Flutter; Fastlane/Xcode Cloud/Gradle**; mobile security (keychain/keystore, cert pinning). *Maverick:* App Store/Play release = hard-floor human.
-- **API Design & Contract Agent** `[+Build]` — *Systems:* `tools/openapi_runner.py` `[C]`. *Technical:* **OpenAPI 3.1, GraphQL/Apollo federation, gRPC/protobuf, AsyncAPI**, versioning/deprecation, idempotency/pagination, **contract testing (Pact)**.
-- **Database Engineering / DBA Agent** `[+Build +Data]{expert}` — *Systems:* `tools/{dynamodb,mongodb,redis,elasticsearch}_tool.py` + Oracle/Postgres/SQL Server `[C]`. *Technical:* **data modeling, indexing/partitioning, query optimization (EXPLAIN), migrations (Flyway/Liquibase/Alembic), replication/HA/PITR, and standing up Oracle 23ai (incl. JSON-relational duality + vector)**. *(Owns the "Oracle 23ai standup" capability and the shipped NoSQL connectors.)*
-- **Platform Engineering Agent** `[+Build]` — **Backstage / IDP, golden paths, ephemeral environments, secrets (Vault/SOPS/sealed-secrets), FinOps / cloud cost**.
-- **LLM-Application / Prompt-Engineering Agent** `[+Build]` — building LLM-powered product features: **RAG pipelines, prompt engineering, eval (RAGAS / LLM-as-judge), guardrails, latency/cost optimization**. *(Distinct from classical ML in 6.3/6.4 — Maverick is itself an AI product.)*
-- **Performance / Load-Engineering Agent** `[+Build]` — **k6, Gatling, JMeter, Locust**, profiling (eBPF/Pyroscope), Core Web Vitals (INP), capacity testing.
+#### C1 Mobile Engineering Agent  [UB +Build]
+JD: Builds native and cross-platform mobile apps (the agent for the already-shipped mobile tools).
+- Systems: `tools/android.py`, `tools/ios_sim.py` `[C]` · Xcode/Android Studio · **Fastlane / Xcode Cloud / Gradle**.
+- Technical: **Swift/SwiftUI · Kotlin/Jetpack Compose · React Native/Flutter** · mobile CI/release automation · **mobile security (keychain/keystore, cert pinning)** · offline/sync.
+- Domain: mobile UX patterns · app lifecycle · push/deep-linking.
+- Regulatory: store privacy labels · mobile data-protection (ATT, Play Data Safety).
+- Maverick: builds and tests in the sandbox; opens a PR; **App Store / Play release is a hard human floor**; never self-edits.
+
+#### C2 API Design & Contract Agent  [UB +Build]
+JD: Designs API contracts and enforces compatibility (the agent for the shipped OpenAPI runner).
+- Systems: `tools/openapi_runner.py` `[C]` · schema registries · contract-test harnesses.
+- Technical: **OpenAPI 3.1 · GraphQL / Apollo federation · gRPC/protobuf · AsyncAPI** · versioning/deprecation · idempotency/pagination · **contract testing (Pact)**.
+- Domain: API design (REST/GraphQL/event) · backward-compatibility · API governance.
+- Regulatory: API security (OWASP API Top 10) · data-exposure review.
+- Maverick: proposes contracts and tests in the sandbox via PR; **breaking changes require human review**; never self-edits.
+
+#### C3 Database Engineering / DBA Agent  [UB +Build +Data] {expert}
+JD: Owns data modeling, performance, and database standups — including the named "Oracle 23ai standup" capability.
+- Systems: Oracle / Postgres / SQL Server · `tools/{dynamodb,mongodb,redis,elasticsearch}_tool.py` `[C]` · migration tooling.
+- Technical: **data modeling · indexing/partitioning · query optimization (EXPLAIN) · migrations (Flyway/Liquibase/Alembic) · replication/HA/PITR · standing up Oracle 23ai (incl. JSON-relational duality + vector)** · NoSQL data modeling.
+- Domain: relational + NoSQL design · transaction isolation · HA/DR topologies.
+- Regulatory: data-at-rest encryption · DB access controls (ITGC) · PII handling.
+- Maverick: provisions/standups in the sandbox; **schema migrations and production DB changes are human-gated**; never touches a system-of-record without approval; never self-edits.
+
+#### C4 Platform Engineering Agent  [UB +Build]
+JD: Builds the internal developer platform — golden paths, environments, and secrets.
+- Systems: **Backstage / IDP** · Kubernetes · **Vault / SOPS / sealed-secrets** · cloud-cost (FinOps) tooling.
+- Technical: **IDP / golden paths · ephemeral environments · secrets management · FinOps / cloud cost** · self-service scaffolding · paved-road tooling.
+- Domain: developer experience · platform-as-a-product · multi-tenancy.
+- Regulatory: secrets hygiene · least-privilege platform access.
+- Maverick: builds platform components in the sandbox via PR; **provisioning/apply to shared infra is human-gated**; never self-edits the kernel runtime.
+
+#### C5 LLM-Application / Prompt-Engineering Agent  [UB +Build]
+JD: Builds LLM-powered product features — Maverick is itself an AI product, so this is distinct from classical ML (6.3/6.4).
+- Systems: the LLM/provider layer · vector stores · the eval/benchmark harness · `tools/embeddings`.
+- Technical: **RAG pipelines · prompt engineering · eval (RAGAS / LLM-as-judge) · guardrails · latency/cost optimization** · context/window management · tool-use design.
+- Domain: applied LLM patterns · retrieval quality · agent/guardrail design.
+- Regulatory: AI transparency (Art 50) · eval/robustness evidence (NIST AI RMF).
+- Maverick: builds features in the sandbox via PR; **guardrails/safety changes go through review**; respects the self-modification floor — never edits the agent's own runtime/safety/controls.
+
+#### C6 Performance / Load-Engineering Agent  [UB +Build]
+JD: Owns non-functional performance — load testing, profiling, and capacity.
+- Systems: **k6 · Gatling · JMeter · Locust** · profilers (eBPF/Pyroscope) · APM/observability.
+- Technical: **load/stress testing · profiling · Core Web Vitals (INP) · capacity testing** · bottleneck analysis · regression budgets.
+- Domain: performance engineering · scalability · capacity planning.
+- Regulatory: performance SLAs · resilience-test evidence.
+- Maverick: runs tests in the sandbox; reports for human decision; **load against production/shared environments is gated**; never self-edits.
 
 ---
 
@@ -1843,12 +2008,47 @@ JD: CSR programs, philanthropy, community impact, volunteering.
 - Technical: CSR-program drafting · impact tracking.
 
 ### Council-added agents
+*(the deal-defining seats that fell between suites; full profiles below.)*
 
-- **M&A Financial-Modeling Agent** `[+Data]{expert}` — closes the Strategy↔Finance modeling gap. *Technical:* **three-statement model, LBO mechanics (debt schedule / cash sweep / circularity), DCF / WACC build-up, PPA / opening balance sheet, accretion-dilution, returns (IRR/MOIC) bridges, structuring (cash/stock/earnout/NWC peg)**. *Maverick:* sealed deal compartment.
-- **Antitrust / Merger-Clearance Agent** — **HSR thresholds + the 2024 HSR rule, the 2023 Merger Guidelines, second requests, EU/UK & global merger control, CFIUS, gun-jumping**. *(Awareness/flagging for counsel — was a "Gap.")*
-- **Activist-Defense / Shareholder-Engagement Agent** — **13D/G monitoring (2024 deadlines), proxy season / ISS-Glass Lewis, say-on-pay, Rule 10b5-1 plans**, vulnerability assessment.
-- **JV / Alliance / BD Agent** — non-M&A inorganic growth: JV structuring, strategic alliances, licensing/partnership economics.
-- **Transaction-Tax / Structuring Agent** — **338(h)(10)/336(e), NOLs & §382 limitation, step-up, tax-free reorg (§368)** (cross-ref finance tax). *Maverick:* sealed.
+#### C1 M&A Financial-Modeling Agent  [UB +Data] {expert}
+JD: Builds the deal models — closes the Strategy↔Finance modeling gap inside the sealed deal compartment.
+- Systems: the model workbook · the finance valuation/forecasting seats · market data (inside the wall).
+- Technical: **three-statement model · LBO mechanics (debt schedule / cash sweep / circularity) · DCF / WACC build-up · PPA / opening balance sheet · accretion-dilution · returns (IRR/MOIC) bridges · structuring (cash/stock/earnout/NWC peg)**.
+- Domain: deal modeling · synergy quantification · capital structure.
+- Regulatory: purchase accounting (**ASC 805**) interplay · MNPI handling.
+- Maverick: **sealed deal compartment** — MNPI cannot cross the wall; models for the deal team to decide; never commits, prices, or signs.
+
+#### C2 Antitrust / Merger-Clearance Agent  [UB]
+JD: Flags merger-control and foreign-investment risk for counsel (was a "flag for counsel" gap with no skill).
+- Systems: `web_search` · `CourtListener` · the deal compartment · outside antitrust counsel.
+- Technical: HSR-threshold screening · overlap/concentration analysis · filing-timeline mapping · second-request readiness assessment.
+- Domain: **HSR thresholds + the 2024 HSR rule · 2023 Merger Guidelines · second requests · EU/UK & global merger control · CFIUS · gun-jumping**.
+- Regulatory: **HSR/Clayton Act, EU/UK merger control, CFIUS (FIRRMA)**.
+- Maverick: awareness/flagging only — **the legal determination is qualified counsel's**; gun-jumping discipline enforced inside the wall.
+
+#### C3 Activist-Defense / Shareholder-Engagement Agent  [UB]
+JD: Monitors the shareholder base and prepares engagement and defense readiness.
+- Systems: ownership/13F data · proxy-advisor feeds · the IR seats · transfer-agent data.
+- Technical: **13D/G monitoring (2024 deadlines) · proxy season / ISS-Glass Lewis analysis · say-on-pay modeling · Rule 10b5-1 plan tracking** · vulnerability/perception assessment.
+- Domain: activism defense · proxy mechanics · shareholder engagement.
+- Regulatory: **§13(d)/(g), Reg 14A proxy rules, say-on-pay, Rule 10b5-1**.
+- Maverick: research + brief; **external engagement/disclosure is gated under Reg FD**; MNPI walled.
+
+#### C4 JV / Alliance / BD Agent  [UB]
+JD: Supports non-M&A inorganic growth — JVs, alliances, and licensing.
+- Systems: `knowledge_search` · the legal CLM (for terms) · finance (for economics).
+- Technical: JV structuring · alliance/partnership design · **licensing/partnership economics** modeling · governance-structure options.
+- Domain: joint-venture structures · strategic alliances · BD deal shapes.
+- Regulatory: antitrust-in-JVs awareness (cross-ref C2) · IP/licensing terms (cross-ref legal).
+- Maverick: structures and models for executive decision; **never signs or commits**; antitrust/IP routed to counsel.
+
+#### C5 Transaction-Tax / Structuring Agent  [UB]
+JD: Analyzes deal tax structuring with finance tax (sealed).
+- Systems: the deal compartment · the finance tax seats · tax research.
+- Technical: structuring analysis — **338(h)(10)/336(e) · NOLs & §382 limitation · step-up · tax-free reorg (§368)** · entity/jurisdiction structuring.
+- Domain: transaction tax · M&A tax structuring · attribute preservation.
+- Regulatory: **IRC §§338/336/368/382**, cross-ref finance tax.
+- Maverick: **sealed** deal compartment; models for counsel/tax sign-off; never commits a position; MNPI walled.
 
 ---
 
@@ -2076,12 +2276,47 @@ JD: Run conflicts checks before matter intake; set up ethical walls.
 - Maverick: clearing a conflict is human; the ethical-wall setup point.
 
 ### Council-added agents
+*(seats the council flagged as missing; full profiles below.)*
 
-- **AI & Emerging-Tech Counsel Agent** — **EU AI Act, Colorado AI Act, the US state-privacy wave, AI/IP & training-data law, AI contracting**. *(The legal owner of AI governance, complementing GRC.)*
-- **Litigation Discovery-Response / Subpoena Agent** — responding to **subpoenas / CIDs / government investigations**, litigation-hold coordination (with 4.3), 30(b)(6) prep. *(Inbound-demand workflow, distinct from e-discovery review.)*
-- **Internal-Investigations (GC-led) Agent** — **privileged, counsel-led** investigations (FCPA, fraud, whistleblower-legal), Upjohn warnings, report to the board/audit committee. *(Distinct from HR 7.2; sealed, privileged.)*
-- **Insurance-Coverage Agent** — D&O / cyber / E&O coverage analysis, claim tender to carriers, reservation-of-rights review.
-- **Bankruptcy / Restructuring & Creditors'-Rights Agent** — **UCC Article 9 secured transactions, proof of claim, preference / fraudulent-transfer awareness** (the Finance/AR credit seam).
+#### C1 AI & Emerging-Tech Counsel Agent  [UB]
+JD: The legal owner of AI/emerging-tech matters, complementing the GRC AI-governance seats.
+- Systems: `knowledge_search` (the AI-law library) · `CourtListener` · the CLM · the GRC AI-gov seats.
+- Technical: AI-contract drafting/review · training-data & IP risk analysis · model-terms review · regulatory-mapping for AI features.
+- Domain: **EU AI Act · Colorado AI Act (SB 24-205) · the US state-privacy wave · AI/IP & training-data law · AI contracting**.
+- Regulatory: **EU AI Act, US state AI/privacy laws, copyright/IP**.
+- Maverick: drafts and analyzes — **not legal advice**; a licensed attorney reviews; every authority is citation-verified (no fabricated cases).
+
+#### C2 Litigation Discovery-Response / Subpoena Agent  [UB]
+JD: Runs the inbound-demand workflow — responding to subpoenas, CIDs, and investigations (distinct from e-discovery review).
+- Systems: the matter system · the litigation-hold seat (4.3) · the e-discovery platform · `knowledge_search`.
+- Technical: subpoena/CID response drafting · scope/objection analysis · litigation-hold coordination · **30(b)(6)** witness-prep support · production-tracking.
+- Domain: responding to **subpoenas / CIDs / government investigations** · meet-and-confer · privilege-log basics.
+- Regulatory: **FRCP (26/30/34/45), state discovery rules**.
+- Maverick: drafts responses for attorney sign-off; **not legal advice**; preserves privilege; citations verified.
+
+#### C3 Internal-Investigations (GC-led) Agent  [UB]
+JD: Supports privileged, counsel-led investigations (distinct from HR's workplace investigations; sealed, privileged).
+- Systems: a sealed/privileged compartment (`quarantine.py`/`capability.py`) · the document set · interview materials.
+- Technical: investigation-plan drafting · evidence organization · neutral timeline construction · **Upjohn-warning** scripting · board/audit-committee report drafting.
+- Domain: **privileged, counsel-led** investigations (**FCPA, fraud, whistleblower-legal**) · privilege preservation.
+- Regulatory: **FCPA, attorney-client privilege / work-product, whistleblower law**.
+- Maverick: **sealed, privileged** compartment — findings stay inside the wall; reaches no legal conclusion; the attorney/board decides; not legal advice.
+
+#### C4 Insurance-Coverage Agent  [UB]
+JD: Analyzes coverage and manages claim tender across the insurance program.
+- Systems: the policy library · `knowledge_search` · broker/carrier correspondence · the matter system.
+- Technical: **D&O / cyber / E&O coverage analysis** · claim-tender drafting · **reservation-of-rights** review · exclusion/retention analysis.
+- Domain: insurance coverage · claims handling · tower/limits structure.
+- Regulatory: insurance-law basics · notice-and-tender timing.
+- Maverick: analyzes and drafts tenders for attorney/risk sign-off; **a coverage position is human**; not legal advice; citations verified.
+
+#### C5 Bankruptcy / Restructuring & Creditors'-Rights Agent  [UB]
+JD: Owns the finance/AR credit seam — secured transactions, claims, and avoidance-risk awareness.
+- Systems: the contract/CLM · the finance AR/credit seats · `knowledge_search`.
+- Technical: **UCC Article 9** security-interest analysis · **proof-of-claim** drafting · **preference / fraudulent-transfer** awareness · lien/perfection checks.
+- Domain: bankruptcy & restructuring · creditors' rights · workout structures.
+- Regulatory: **Bankruptcy Code (§§547/548/362), UCC Article 9**.
+- Maverick: drafts and flags for counsel; **not legal advice**; a filing/position is attorney-owned; citations verified.
 
 ---
 
@@ -2311,26 +2546,76 @@ JD: Operational sustainability — carbon (Scope 1&2), waste/circularity, effici
 ---
 
 ### Council-added agents
+*(seats the council flagged as missing; full profiles below.)*
 
-- **OT / ICS-Security Agent** `[+Build]` — *Domain:* **IEC 62443, the Purdue model / IT-OT segmentation, NIST 800-82**; historian/SCADA/DCS (**OSIsoft PI/AVEVA, Rockwell, Siemens, Honeywell, Emerson**). *(No one owned security over the SCADA/historian the suite reads.)*
-- **Continuous-Improvement / OpEx (Lean) Agent** — **VSM, kaizen, 5S, SMED, kanban/pull, A3, standard work, DMAIC** — the lean operating system the suite claimed cross-cutting but no one owned.
-- **Process-Safety (PSM/RMP) Agent** — **OSHA PSM (1910.119), EPA RMP, PHA/HAZOP/LOPA, LOTO / confined-space / hot-work permits** — for chemical/process plants.
-- **Trade-Compliance / Export-Control Agent** — **ECCN/EAR (de minimis, deemed exports, Entity List, the 2022–23 semiconductor controls), ITAR/USML + DDTC, OFAC, UFLPA forced-labor, rules-of-origin / FTA (USMCA), CTPAT, FTZ / duty drawback** (in-band; cross-ref legal 6.3).
-- **Industrial / Production-Engineering Agent** — time/motion studies, line & **takt** design, capacity, ergonomics, automation/robotics integration (AS/RS, AMRs).
-- **Cold-Chain / Serialization Agent** — **pharma DSCSA** and **food FSMA 204 traceability**, lot/serial/aggregation, temperature-excursion handling. *(Regulated-vertical depth beyond generic lot tracking.)*
+#### C1 OT / ICS-Security Agent  [UB +Build]
+JD: Owns security over the SCADA/historian/DCS the rest of the suite only reads — the IT-OT seam.
+- Systems: historian/SCADA/DCS (**OSIsoft PI/AVEVA, Rockwell, Siemens, Honeywell, Emerson**) `[C]` · OT-IDS (Claroty/Nozomi/Dragos) · the IT secops seats.
+- Technical: OT asset inventory · IT-OT segmentation review · OT-protocol monitoring · OT vulnerability triage · safe patch-window planning.
+- Domain: **IEC 62443 · the Purdue model / IT-OT segmentation · NIST 800-82** · OT incident response.
+- Regulatory: **IEC 62443, NIST 800-82**, sector OT mandates (e.g. TSA pipeline, NERC CIP where applicable).
+- Maverick: read + recommend; **never writes to a control system or changes a setpoint** (refuses safety-critical actuation); remediation is human-gated.
+
+#### C2 Continuous-Improvement / OpEx (Lean) Agent  [UB +Data]
+JD: Owns the lean operating system the suite treated as cross-cutting but no one held.
+- Systems: the MES/ERP (for process data) · BI · the quality/planning seats.
+- Technical: **VSM · kaizen · 5S · SMED · kanban/pull · A3 · standard work · DMAIC** · process-data analysis · bottleneck/constraint analysis.
+- Domain: Lean / TPS · Six Sigma · theory of constraints · OpEx program design.
+- Regulatory: change-control discipline where processes touch quality systems.
+- Maverick: analyzes and proposes improvements; **process changes are human-approved**; never alters a running line or control parameter.
+
+#### C3 Process-Safety (PSM/RMP) Agent  [UB]
+JD: Process-safety management for chemical/process plants (distinct from general EHS).
+- Systems: the PHA/HAZOP toolset · the EHS suite · permit systems · `knowledge_search`.
+- Technical: **PHA/HAZOP/LOPA** facilitation support · **LOTO / confined-space / hot-work** permit review · MOC review · incident-investigation support.
+- Domain: **OSHA PSM (1910.119) · EPA RMP** · the 14 PSM elements · mechanical integrity.
+- Regulatory: **OSHA 1910.119, EPA RMP (40 CFR 68)**.
+- Maverick: **safety is a refusal, not a gate** — never authorizes a permit or overrides an interlock; drafts analyses for the human process-safety owner.
+
+#### C4 Trade-Compliance / Export-Control Agent  [UB]
+JD: Owns export-control and trade compliance in-band (cross-ref legal 6.3).
+- Systems: the ERP (item/BOM master) · denied-party-screening tools · classification databases · `knowledge_search`.
+- Technical: **ECCN/EAR** classification · **deemed-export** screening · denied-party / **Entity List** screening · **rules-of-origin / FTA (USMCA)** analysis · **FTZ / duty drawback** modeling.
+- Domain: **EAR (de minimis, Entity List, the 2022–23 semiconductor controls) · ITAR/USML + DDTC · OFAC · UFLPA forced-labor · CTPAT**.
+- Regulatory: **EAR, ITAR, OFAC, UFLPA, USMCA, CBP**.
+- Maverick: classifies and screens, drafts filings; **an export decision / license position is human (and counsel where required)**; blocks on a screening hit.
+
+#### C5 Industrial / Production-Engineering Agent  [UB +Data]
+JD: Designs the line and the work — capacity, flow, and automation integration.
+- Systems: the MES/ERP · simulation/CAD tools · the planning/manufacturing seats.
+- Technical: time/motion studies · line & **takt** design · capacity modeling · ergonomics analysis · **automation/robotics integration (AS/RS, AMRs)** specification.
+- Domain: industrial engineering · line balancing · work-design · throughput analysis.
+- Regulatory: machine-safety/ergonomics standards awareness (cross-ref EHS).
+- Maverick: designs and models for human approval; **never commissions equipment or changes a running line**; safety-critical specs route to EHS/process-safety.
+
+#### C6 Cold-Chain / Serialization Agent  [UB +Data]
+JD: Regulated-vertical traceability depth beyond generic lot tracking (pharma/food).
+- Systems: serialization/track-and-trace platforms · the WMS/ERP · temperature-monitoring (IoT) feeds.
+- Technical: lot/serial/aggregation management · **temperature-excursion** handling · chain-of-custody traceability · recall-trace support.
+- Domain: **pharma DSCSA** · **food FSMA 204 traceability** · cold-chain validation.
+- Regulatory: **DSCSA, FSMA 204, FDA 21 CFR Part 11** (records).
+- Maverick: maintains traceability and flags excursions; **a hold/release or recall decision is human**; never alters a physical shipment or environmental control.
 
 ---
 
 ## Coverage
 
-All eight suites have per-agent skill profiles. Base roster (38 · 47 · 45 · 41 · 40 · 26 · 31 ·
+Every agent has a per-agent skill profile. Base roster (38 · 47 · 45 · 41 · 40 · 26 · 31 ·
 33) = **301**, plus **45 council-added agents** (Finance +5 · IT-GRC +8 · GTM +5 · HR +5 ·
 Product & Engineering +6 · Strategy +5 · Legal +5 · Operations +6) = **~346 agents**.
+
+**Full profiles for the council-added seats (40/45).** The seven non-finance suites' council-added
+agents have been promoted from one-line bullets to **full profiles** (JD + Systems/Technical/
+Domain/Regulatory/Maverick), numbered `C1…Cn` under each "Council-added agents" block — so every
+one of those seats has the same depth as the base roster and can actually execute its JD. The
+**Finance** suite's 5 council-added seats are still summary bullets, left to land with the
+finance suite's own build (to avoid colliding with that in-flight work).
 
 **Council pass: complete.** A five-member adversarial council reviewed every suite; their
 CRITICAL/IMPORTANT findings are applied (accuracy fixes, the staleness sweep, the 45 added
 agents, and the new skill dimensions) — see "Adversarial council review (applied)" at the top.
 Remaining work is the **incremental rollout**: applying the new dimension tags (`[S]/[C]/[K]`,
-proficiency, Prereq/Verified/Judgment/Cert) and the MINOR depth items to *every* existing entry
-(they're applied to the council-added/updated ones now), and authoring the flagged new templates
+proficiency, Prereq/Verified/Judgment/Cert) and the MINOR depth items to *every* base entry
+(they're applied to the council-added/updated ones now), promoting the **Finance** council seats
+to full profiles alongside the finance build, and authoring the flagged new templates
 (`sox_control`, `itgc`, `outreach_compliance`, …) and connectors.
