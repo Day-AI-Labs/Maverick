@@ -199,6 +199,17 @@ def model_for_role(role: str) -> str:
             return spec
     except Exception:
         pass
+    # Local-first (opt-in, off by default). When [system] local_first is on and
+    # a configured local model's server is reachable, keep the work on-machine;
+    # returns None otherwise, so this is a no-op for the default install and
+    # gracefully falls through to remote.
+    try:
+        from .provider_local_first import pick_local
+        local = pick_local(role)
+        if local:
+            return local
+    except Exception:  # pragma: no cover -- never let local-first break resolution
+        pass
     # Cost-aware routing (opt-in, off by default). pick() returns None when
     # disabled or when no provider is configured, so this is a no-op for the
     # default install.
