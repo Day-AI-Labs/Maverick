@@ -570,6 +570,13 @@ class _StubAgent:
         self.tools = ToolRegistry()
         self.name = "tester-0-abc123"
 
+    async def _run_tool(self, name, args):
+        # learn_capability routes nested tool calls through the gated chokepoint
+        # (Agent._run_tool), not the bare registry. The stub models that path by
+        # delegating to its registry; real gating is covered by the Agent-based
+        # tests in test_learn_governed.py.
+        return await self.tools.run(name, args)
+
 
 def _fake_tool(name: str, result: str) -> Tool:
     async def fn(args):
