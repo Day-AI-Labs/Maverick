@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -226,7 +227,7 @@ class AssessmentSession:
     type: str = ""
     subject: str = ""
     answers: dict[str, dict] = field(default_factory=dict)
-    id: str = field(default_factory=lambda: f"{int(time.time())}-{id(object()) & 0xffff:04x}")
+    id: str = field(default_factory=lambda: uuid.uuid4().hex)
     created_at: float = field(default_factory=time.time)
 
     def template(self) -> AssessmentTemplate:
