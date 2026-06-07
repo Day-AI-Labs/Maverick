@@ -29,7 +29,7 @@ rides on, and (3) closing Maverick's own learning & eval loop. All three — plu
 reliability plumbing (D) — have since been substantially built out: (1) is complete
 (A1–A3, incl. context lifecycle + `code_exec`), (2) is largely done (MCP
 elicitation, tasks, remote-HTTP client, registry, cross-language quickstarts — only
-client OAuth + URL-mode elicitation remain), and (3) has the GAIA / τ²-bench /
+the OAuth authorization-code grant + URL-mode elicitation remain), and (3) has the GAIA / τ²-bench /
 terminal-bench harnesses + the learning-substrate decision. See the table.
 
 **Status:** ✅ shipped · 🟡 partial · ⬜ open. PR numbers cite where it landed;
@@ -421,8 +421,9 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 > (`provider_health.py`), retrieval-augmented compaction (`context_compactor.py`);
 > plugin-scaffolding CLI (`plugin_scaffold.py`), LangChain/LangGraph shim, Notion,
 > the generic OpenAI-compatible provider (`llm.py` `base_url`). **Remaining
-> (engineering):** long-context retrieval router, Obsidian/IRC, SBOM-in-CI; the
-> **1.0 release** + localized docs are founder-tracked.
+> (engineering):** long-context retrieval router and the IRC channel (Obsidian +
+> SBOM-in-CI have since shipped — see "Pulled forward" above); the **1.0 release**
+> + localized docs are founder-tracked.
 
 **Capabilities**
 - Kubernetes sandbox executor (jobs in a cluster, GPU/parallel workloads).
