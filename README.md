@@ -8,7 +8,7 @@
 
 Hand Maverick a goal. Its orchestrator decomposes it, spawns specialist sub-agents — researcher, coder, writer, verifier — that work in parallel, checks their output, and returns a result. Every step runs under a hard spending cap and through a safety layer, on the models *you* choose.
 
-- 🛡️ **Governed by default.** Role-based access control, capability tokens, per-tool ACLs, consent gates, and a kill switch bound every agent action — and Agent Shield screens every prompt, tool call, and output (full SDK scores F1 0.988 on prompt-injection).
+- 🛡️ **Governed & contained by default.** RBAC, capability tokens, per-tool ACLs, consent gates, and a kill switch bound every agent action — and in Enterprise mode an **egress lock** means even a successful prompt-injection can't move data out of your boundary. Agent Shield also screens every prompt, tool call, and output; detector strength depends on the configured backend (see [`docs/safety.md`](./docs/safety.md)).
 - 🧾 **Tamper-evident & audit-ready.** A signed, hash-chained, append-only audit log (`maverick audit verify`) with SIEM export, encryption-at-rest, DSAR, and SOC2-aligned evidence — built to survive a security review.
 - 🔒 **Self-host & air-gap.** Runs entirely in your environment — laptop, VPC, Kubernetes, or a disconnected network with no required data egress. No hyperscaler dependency, no telemetry.
 - 🧠 **Long-horizon multi-agent depth.** A recursive orchestrator spawns specialist sub-agents that work for hours under hard dollar / wall-clock / tool-call caps — the depth of Devin, Hermes, and OpenClaw, on the models *you* choose.
