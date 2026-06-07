@@ -5,6 +5,7 @@ Full detail lives in the two companion docs; this is the summary to skim later.
 
 - **Finance** → [`finance-agent-suite.md`](finance-agent-suite.md) — ~40 core agents, 7 towers (+ vertical packs)
 - **IT / GRC / Privacy / Security / AI-Governance** → [`it-grc-agent-suite.md`](it-grc-agent-suite.md) — 47 agents, 10 towers
+- **Sales / GTM (the revenue engine)** → [`sales-gtm-agent-suite.md`](sales-gtm-agent-suite.md) — ~45 agents, 8 towers
 
 Both build on [`../enterprise/architecture.md`](../enterprise/architecture.md)
 (the three-layer control plane) and [`agent-factory.md`](agent-factory.md)
@@ -129,12 +130,51 @@ the gap.
 
 ---
 
+## Sales / GTM suite — at a glance
+
+The full go-to-market motion (Marketing → SDR → Sales/AE → CS → Support, with RevOps
++ Enablement). **Rich substrate, greenfield workflow** — the *engagement* layer ships;
+the *business systems* don't.
+
+### Eight towers (~45 agents)
+1. **Marketing & Demand Gen** — campaigns · content/SEO · social · product marketing · brand/creative · lifecycle/nurture · marketing ops · events · PR
+2. **Sales Development** — inbound qual · outbound SDR · enrichment/research · cadence · meeting booking
+3. **Sales / AE & Deal Desk** — account plans · discovery · CPQ/quoting · deal desk · sales engineering · negotiation · contract/order form
+4. **Revenue Operations** — pipeline & forecasting · territory/quota · commissions · CRM hygiene · lead routing · GTM systems
+5. **Customer Success** — onboarding · health scoring · renewals · expansion · churn/save · QBRs · advocacy
+6. **Customer Support** — triage/deflection · KB · escalation · voice-of-customer
+7. **Partnerships & Channel** — recruitment · co-sell · marketplace
+8. **Enablement, Strategy & Intelligence** — enablement · call coaching · competitive/win-loss · GTM strategy
+
+### What's shipped (the substrate)
+The 13-adapter **channels layer** (email/SMS/voice/social/messaging), **AI/bot
+disclosure** (Art 50 / CA SB 1001, `compliance.py`), send-tools = `high`-risk + the
+**consent gate**, **scheduler/worker** (cadences), **intake** (lead intake), rate/spend
+caps, and PII/egress/DSAR. Live connectors: Gmail, Calendar, Drive, Figma, Wix.
+
+### Genuine gaps
+The systems of record + workflow: CRM, MAP, CPQ, CLM/e-sign, sales-engagement,
+conversation intelligence, enrichment/intent, ads, CS & support platforms; plus lead
+scoring, attribution, deal-desk workflow, forecast roll-up, commissions, territory/
+quota, churn models, and partner/PRM.
+
+### The control story
+Outward-facing, so the controls gate **what leaves the building**: the outbound gate,
+the **consent/suppression hard floor** (CAN-SPAM / GDPR-PECR / CASL / TCPA — never
+contact an opted-out party), AI disclosure, **discount / deal-desk authority**
+(amount-aware, shared with finance), brand/claims governance (FTC), and forecast
+integrity. Agents draft; humans send, sign, and commit price.
+
+---
+
 ## Suggested first builds (highest leverage)
 
 1. **Persona-wrapper packs** for the shipped engines — finance assessors and IT-GRC
    Towers 1–3/5 (fast wins, little new code).
 2. **The amount/severity-aware policy** + the **Operating Profile compiler** with
-   hard-floor validation — unlocks L3 automation and the DoA matrix in both suites.
+   hard-floor validation — unlocks L3 automation and the DoA/discount matrix across all three suites.
 3. **The SoD/access-conflict linter** + **capability expiry/revocation enforcement** —
    the two cross-cutting primitive gaps.
-4. **The GRC Supervisor operator console** (Layer A) — the keystone for live oversight.
+4. **The Supervisor operator console** (Layer A) — the keystone for live oversight (GRC + Revenue).
+5. **The outbound gate + consent/suppression hard floor** (GTM) — must precede any
+   sending agent; rides the shipped channels + consent + AI-disclosure layer.
