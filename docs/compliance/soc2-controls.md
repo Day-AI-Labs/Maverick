@@ -85,6 +85,7 @@ This is Maverick's strongest area.
 | CC6.3 Role-based access / modification | Capability attenuation (child ≤ parent); risk ceilings | Implemented (opt-in) | `maverick/capability.py` (`attenuate`); `controls.capability_enforcement` |
 | CC6.6 Boundary protection (external threats) | Agent Shield (prompt-injection/exfil); host-scope capability; network host allow-globs | Implemented | `maverick/safety/` (shield); `maverick/capability.py` (`allow_hosts`) |
 | CC6.7 Restricts data transmission/movement | Secret/PII redaction; exfil detection; capability path scopes | Implemented | `maverick/safety/secret_detector.py`; `maverick/capability.py` (`allow_paths`) |
+| CC6.7 Encryption at rest | AES-256-GCM authenticated encryption for sensitive local stores; opt-in, implied by enterprise mode | Implemented (opt-in) | `maverick/crypto_at_rest.py` (`at_rest_enabled`); `controls.encryption_at_rest` |
 | CC6.8 Prevents/detects unauthorized software | Sandbox isolation backends; tool ACLs; plugin manifest | Partial | sandbox `exec()`; `maverick/plugin_manifest.py` |
 
 ### CC7 — System Operations
@@ -137,6 +138,7 @@ This is Maverick's strongest area.
 | --- | --- | --- | --- |
 | C1.1 Identifies & protects confidential information | Multi-tenant isolation (per-tenant memory/audit/world.db); secret/PII redaction | Implemented (opt-in) | `maverick/paths.py` (`controls.tenant_isolation`); `maverick/safety/secret_detector.py` |
 | C1.1 Access boundaries for confidential data | Capability path/host scopes; tool ACLs | Implemented (opt-in) | `maverick/capability.py` (`allow_paths`/`allow_hosts`) |
+| C1.1 Encryption at rest | AES-256-GCM authenticated encryption of sensitive local stores (also CC6.7); opt-in, implied by enterprise mode | Implemented (opt-in) | `maverick/crypto_at_rest.py` (`at_rest_enabled`); `controls.encryption_at_rest` |
 | C1.2 Disposes of confidential information | **GDPR erase** (scrub/delete user + re-sign chain); audit retention | Implemented | `maverick/audit/erase.py`, `retention.py` |
 
 ## P — Privacy
@@ -150,7 +152,7 @@ is policy + notice, with a few technical anchors.
 | P2 Choice & consent | Consent/HITL gating for destructive actions | Implemented | `maverick/safety/consent.py` |
 | P3 Collection | Anonymous mode (strip identifying fields from logs/audit) | Partial | `maverick/privacy.py` (`anon_enabled`) |
 | P4 Use, retention & disposal | Audit retention policy; GDPR erase | Implemented | `maverick/audit/retention.py`, `erase.py` |
-| P5 Access (subject access) | GDPR erase (right to erasure); subject access export | Partial / Gap | `maverick/audit/erase.py` — erasure yes; full DSAR export is a Gap |
+| P5 Access (subject access) | GDPR erase (right to erasure) **and** DSAR export — Art. 15/20 access/portability bundle of all data held for a subject (world + audit) | Implemented | `maverick/dsar.py` (`export_subject_data`; `controls.data_subject_export`); `maverick/audit/erase.py` (erasure) |
 | P6 Disclosure to third parties | Secret redaction; sub-processor disclosure | Partial / Process-only | `maverick/safety/secret_detector.py`; company sub-processor list |
 | P7 Quality | Tenant isolation prevents cross-subject contamination | Partial | `maverick/paths.py` |
 | P8 Monitoring & enforcement | Audit log; privacy complaint handling | Partial / Process-only | `maverick/audit/`; company policy |
@@ -178,14 +180,12 @@ processes (or built where marked Gap):
 
 ### Engineering Gaps to close
 
-- **Full DSAR export (P5).** Erasure exists; a complete data-subject-access
-  *export* does not.
 - **Several controls are opt-in / off-by-default** (capabilities, tenant
-  isolation, quotas, OIDC, and audit signing). For a SOC 2 deployment these must
-  be turned **on** and shown enabled (`audit_log` = `ok`, not `unsigned`) in the
-  evidence snapshot — see "Verifying posture" below. The opt-in default is
-  intentional (single-tenant local use is unchanged), but a compliant
-  deployment must flip them on.
+  isolation, quotas, OIDC, encryption at rest, and audit signing). For a SOC 2
+  deployment these must be turned **on** and shown enabled (`audit_log` = `ok`,
+  not `unsigned`) in the evidence snapshot — see "Verifying posture" below. The
+  opt-in default is intentional (single-tenant local use is unchanged), but a
+  compliant deployment must flip them on.
 
 ## The evidence collector
 
@@ -206,12 +206,17 @@ It returns a JSON-serializable posture snapshot. Top-level keys:
 | `controls.tenant_isolation` | per-user tenant isolation on/off (C1.1) |
 | `controls.usage_quotas` | per-principal usage quotas on/off (CC9.1/A1.1) |
 | `controls.oidc_auth` | OIDC ID-token verifier on/off (CC6.1) |
+| `controls.encryption_at_rest` | AES-256-GCM at-rest encryption on/off (CC6.7/C1.1) |
+| `controls.data_subject_export` | DSAR access/portability export present (P5; presence probe → `enabled`/`absent`) |
 | `audit_log` | audit-chain plus anchor-ledger verification: `ok` / `broken` (tamper) / `unsigned` (signing off) / `empty` / `no_crypto` / `unknown` (CC2.1/PI1.5) |
 | `audit_signing_key` | audit signing-key presence (tamper-evidence trust anchor) |
 
 Each `controls.*` probe carries a `status` of `enabled` / `disabled` / `absent`
 / `unknown`. The collector is **fail-soft**: a missing optional module is
 `absent`, a probe that raises is `unknown`, and the call never throws.
+(`controls.data_subject_export` is a *presence* probe — it reports `enabled`
+when the capability is shipped or `absent` when it is not, and never `disabled`
+or `unknown`, since it checks only that the code exists rather than calling it.)
 
 ### Verifying posture
 
