@@ -879,6 +879,39 @@ async def deny_approval(approval_id: int) -> None:
         raise HTTPException(status_code=404, detail="no such pending approval")
 
 
+@router.get("/oversight/active")
+async def oversight_active(request: Request) -> dict:
+    """Active agents right now: running goals + their latest activity.
+
+    Owner-scoped (auth-off/admin -> all). Powers the live "Active now" panel on
+    the oversight console -- polled client-side so the operator watches the
+    fleet work without a full-page reload. Fail-soft per goal: a goal whose
+    event tail can't be read still lists with an empty activity.
+    """
+    w = _world()
+    goals = w.list_goals(
+        status="active", owner=goal_owner_filter(request), limit=50, order="desc",
+    )
+    out = []
+    for g in goals:
+        activity = ""
+        try:
+            row = w.conn.execute(
+                "SELECT kind, content FROM goal_events WHERE goal_id = ? "
+                "ORDER BY id DESC LIMIT 1",
+                (g.id,),
+            ).fetchone()
+            if row:
+                activity = f"{row[0] or ''}: {(row[1] or '')[:120]}".strip(": ").strip()
+        except Exception:
+            activity = ""
+        out.append({
+            "id": g.id, "title": g.title, "status": g.status,
+            "updated_at": g.updated_at, "activity": activity,
+        })
+    return {"goals": out}
+
+
 @router.get("/fleets")
 async def list_fleets_api(request: Request) -> dict:
     """The operator console roster: each fleet, its owner, and its agents.
