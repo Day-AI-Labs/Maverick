@@ -17,6 +17,7 @@ def _passing_evidence() -> dict:
             "tenant_isolation": {"status": "enabled", "enabled": True},
             "usage_quotas": {"status": "enabled", "enabled": True},
             "oidc_auth": {"status": "enabled", "enabled": True},
+            "encryption_at_rest": {"status": "enabled", "enabled": True},
         },
         "audit_log": {"status": "ok"},
         "audit_signing_key": {"status": "enabled", "present": True},
@@ -80,6 +81,23 @@ def test_soc2_fails_when_any_required_control_is_not_enabled(monkeypatch):
 
     assert result.exit_code == 1
     assert json.loads(result.output)["controls"]["usage_quotas"]["status"] == "disabled"
+
+
+def test_soc2_fails_when_encryption_at_rest_is_not_enabled(monkeypatch):
+    evidence = _passing_evidence()
+    evidence["controls"]["encryption_at_rest"] = {
+        "status": "disabled",
+        "enabled": False,
+    }
+    monkeypatch.setattr(soc2_module, "collect_soc2_evidence", lambda: evidence)
+
+    result = CliRunner().invoke(main, ["soc2", "--json"])
+
+    assert result.exit_code == 1
+    assert (
+        json.loads(result.output)["controls"]["encryption_at_rest"]["status"]
+        == "disabled"
+    )
 
 
 def test_soc2_fails_when_audit_log_is_not_ok(monkeypatch):
