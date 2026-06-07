@@ -3336,6 +3336,46 @@ def hunt_cmd(fmt: str, since: str | None, until: str | None, strict: bool) -> No
         )
 
 
+@main.command("remediate")
+@click.option("--apply", "do_apply", is_flag=True,
+              help="Apply the auto-fixable remediations (needs enterprise mode + "
+                   "[security] auto_fix opt-in).")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+def remediate_cmd(do_apply: bool, fmt: str) -> None:
+    """Assess security posture and (bounded) auto-fix it.
+
+    Reports control gaps + active breach signals and the remediation plan.
+    Low-risk, reversible fixes to Maverick's OWN config are auto-applied with
+    --apply -- but only under enterprise mode + a [security] auto_fix opt-in;
+    everything behaviour-changing is proposed for a human. Every applied fix is
+    audited and reports how to undo it.
+    """
+    from .remediation import (
+        apply_remediation,
+        plan,
+        render_plan_json,
+        render_plan_text,
+    )
+    p = plan()
+    click.echo(render_plan_json(p) if fmt == "json" else render_plan_text(p))
+    if not do_apply:
+        return
+    click.echo("")
+    applied_any = False
+    for g in p.gaps:
+        if not g.auto:
+            continue
+        res = apply_remediation(g, dry_run=False)
+        if res.applied:
+            applied_any = True
+            click.echo(f"  applied: {g.title}  (undo: {res.undo})")
+        else:
+            click.echo(f"  skipped: {g.title}  ({res.reason})")
+    if not applied_any:
+        click.echo("  (nothing auto-applied)")
+
+
 # ----- Compliance assessments (PIA / AIRA / vendor risk) ---------------
 
 @main.group("assess")

@@ -47,3 +47,29 @@ report rather than an error.
 the sweep, then investigates each signal — correlating events, pulling the goal
 that triggered it, and judging whether it's a real attack or a benign block — and
 reports for a human to action. It surfaces; a human responds.
+
+## Remediation (bounded auto-fix)
+
+`maverick remediate` assesses the deployment's security posture — control gaps
+(from `maverick compliance`) plus active breach signals (from the hunt) — and maps
+each gap to the fix that closes it:
+
+```bash
+maverick remediate           # show the plan (gaps, breaches, what would be fixed)
+maverick remediate --apply   # apply the auto-fixable fixes (only if enabled)
+```
+
+Fixes split two ways:
+
+- **Auto-fixable** — reversible, in-boundary flips of *Maverick's own* config
+  (enable audit signing, set retention). Applied by `--apply` **only** under
+  enterprise mode **plus** an explicit opt-in (`[security] auto_fix = true` /
+  `MAVERICK_SECURITY_AUTOFIX=1`), both off by default. The write is
+  least-destructive (it appends a config block only when that section is absent,
+  never editing an existing one), every applied fix is a `config_remediated` audit
+  event, and the command tells you how to undo it.
+- **Gated** — anything behaviour-changing (enterprise mode, at-rest encryption,
+  consent) or outward-facing is **proposed for a human**, never auto-applied.
+
+So the security assessor fixes the safe, reversible gaps on its own and leaves the
+consequential ones for a person — more throughput, bounded blast radius.
