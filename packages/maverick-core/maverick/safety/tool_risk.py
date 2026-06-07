@@ -83,6 +83,51 @@ _DEFAULT_RISK: dict[str, str] = {
     "ios_sim": "high",
     "spawn_subagent": "high",
     "spawn_swarm": "high",
+    # high: dedicated-module enterprise connectors that mutate external business
+    # state / move money / run remote code or SQL / send messages. (The long-tail
+    # REST connectors in enterprise_connectors.py are covered by name separately.)
+    "airtable": "high",
+    "asana": "high",
+    "bigquery": "high",
+    "calendar": "high",
+    "calendly": "high",
+    "clickup": "high",
+    "confluence": "high",
+    "database": "high",
+    "databricks": "high",
+    "datadog": "high",
+    "dropbox": "high",
+    "dynamics": "high",
+    "ga4": "high",
+    "gdrive": "high",
+    "gitlab": "high",
+    "http_fetch": "high",
+    "hubspot": "high",
+    "jira": "high",
+    "learn_capability": "high",
+    "linear": "high",
+    "mixpanel": "high",
+    "msgraph": "high",
+    "notebook_exec": "high",
+    "notify": "high",
+    "notion": "high",
+    "onetrust": "high",
+    "oracle": "high",
+    "pagerduty": "high",
+    "plausible": "high",
+    "posthog": "high",
+    "replicate": "high",
+    "salesforce": "high",
+    "sap": "high",
+    "sentry": "high",
+    "servicenow": "high",
+    "snowflake": "high",
+    "spotify": "high",
+    "spreadsheet": "high",
+    "teams": "high",
+    "trello": "high",
+    "workday": "high",
+    "zoom": "high",
     # low: read-only / pure lookups
     "read_file": "low",
     "list_dir": "low",
@@ -103,6 +148,28 @@ _DEFAULT_RISK: dict[str, str] = {
 }
 
 _DEFAULT_RISK_LEVEL = "medium"
+
+
+# The long-tail enterprise connectors (built by ``enterprise_connectors.py`` via
+# a shared REST/GraphQL factory) all expose write ops (post/put/patch/delete or
+# GraphQL mutations), so they fail safe to "high" -- resolved by name from the
+# connector spec list so newly-added connectors are covered automatically. The
+# list is loaded lazily (the tools package imports this module, so a top-level
+# import would be circular) and cached only on success; a config override or an
+# explicit ``_DEFAULT_RISK`` entry still wins.
+_ENTERPRISE_CONNECTORS: frozenset[str] | None = None
+
+
+def _enterprise_connector_names() -> frozenset[str]:
+    global _ENTERPRISE_CONNECTORS
+    if _ENTERPRISE_CONNECTORS is not None:
+        return _ENTERPRISE_CONNECTORS
+    try:
+        from ..tools.enterprise_connectors import ENTERPRISE_CONNECTOR_NAMES
+    except Exception:
+        return frozenset()  # tools not importable yet -- retry on the next call
+    _ENTERPRISE_CONNECTORS = frozenset(ENTERPRISE_CONNECTOR_NAMES)
+    return _ENTERPRISE_CONNECTORS
 
 
 def risk_rank(level: str) -> int:
@@ -135,12 +202,13 @@ def tool_risk(name: str, overrides: dict[str, str] | None = None) -> str:
     """Risk level for a tool: config override (exact then glob), then the
     built-in default.
 
-    An *unclassified* MCP tool (``mcp_*``) fails safe to ``high``: it runs
-    arbitrary code through a third-party server, so it is treated as dangerous
-    until a deployment says otherwise (an unclassified non-MCP tool still falls
-    back to ``medium``). A config override is checked first, so a trusted MCP
-    server can be relaxed deliberately, e.g. ``[security.tool_risk]``
-    ``"mcp_*" = "medium"``.
+    Two classes of tool fail safe to ``high`` when otherwise unclassified: an
+    MCP tool (``mcp_*``), which runs arbitrary code through a third-party
+    server; and an enterprise connector (the long-tail REST/GraphQL connectors
+    from ``enterprise_connectors.py``), which is write-capable by construction.
+    A config override is checked first, so either can be relaxed deliberately,
+    e.g. ``[security.tool_risk]`` ``"mcp_*" = "medium"`` or ``okta = "medium"``.
+    Any other unclassified tool falls back to ``medium``.
     """
     overrides = _load_overrides() if overrides is None else overrides
     if name in overrides:
@@ -151,9 +219,11 @@ def tool_risk(name: str, overrides: dict[str, str] | None = None) -> str:
     if name in _DEFAULT_RISK:
         return _DEFAULT_RISK[name]
     # Unclassified. An MCP tool is externally-defined arbitrary code reached
-    # through a third-party server -> fail safe to high. Anything else falls
-    # back to the medium default.
+    # through a third-party server, and an enterprise connector is write-capable
+    # by construction -> both fail safe to high. Anything else -> medium.
     if name.startswith("mcp_"):
+        return "high"
+    if name in _enterprise_connector_names():
         return "high"
     return _DEFAULT_RISK_LEVEL
 
