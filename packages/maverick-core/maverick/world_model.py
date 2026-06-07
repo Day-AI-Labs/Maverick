@@ -367,12 +367,16 @@ def _enc_field(text: str | None) -> str | None:
 
 
 def _dec_field(text: str | None) -> str | None:
-    """Unseal a stored field. A value written before encryption was enabled (no
-    marker) is returned unchanged, so reads stay backward-compatible."""
+    """Unseal a stored field when at-rest encryption is enabled.
+
+    When encryption is disabled, fields are stored as raw plaintext and may
+    legitimately begin with the public seal marker. Avoid parsing those marker
+    collisions as ciphertext on read.
+    """
     if text is None:
         return text
-    from .crypto_at_rest import unseal_from_str
-    return unseal_from_str(text)
+    from .crypto_at_rest import at_rest_enabled, unseal_from_str
+    return unseal_from_str(text) if at_rest_enabled() else text
 
 
 def _question_from_row(row) -> Question:
