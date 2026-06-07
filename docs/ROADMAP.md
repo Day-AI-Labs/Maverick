@@ -111,6 +111,7 @@ here as they land (the dense future-quarter prose lists are left as-is):
 - **Cost forecasting** (Q4 2026, UX) — ✅ `maverick start --dry-cost`: estimates cost from similar past priced runs (lexical Jaccard over goal titles, dependency-free) and exits without an LLM key or a run (`cost_forecast.py`, `tests/test_cost_forecast.py`).
 - **Query-plan regression guard** (2027 H1, Performance) — ✅ `tests/test_query_plans.py`: pins that hot world-model queries SEARCH using an index (never a full table scan), with a control test proving the assertion discriminates indexed from unindexed plans.
 - **Embed-integrations guide** (Q4 2026, Distribution) — ✅ [`docs/embedding.md`](./embedding.md): in-process kernel API + FastAPI/Flask/Django (with the run-in-a-thread rule), config-driven Slack/Discord/Telegram, MCP/A2A, and the dashboard REST.
+- **Cookbook growth** (Q4 2026, Distribution; "to 30 recipes") — 🟡 12 → 16: added flaky-test-hunt, dependency-CVE-triage, CSV-cleanup, bug-repro recipes (`docs/cookbook/`). A living doc — grows by contribution toward 30, not a discrete one-shot deliverable.
 
 **Accuracy caveats.** MCP Sampling / Roots / Logging appear to be on a deprecation
 path — don't build on sampling. Some ecosystem dates/specs (mid-2026 MCP RC,

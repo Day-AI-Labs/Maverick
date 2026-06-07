@@ -18,6 +18,10 @@ Each recipe is:
 | [Repo onboarding](./repo-onboarding.md) | First-day-on-the-job tour of a codebase you didn't write |
 | [Issue triage](./issue-triage.md)      | Inbox of GitHub issues you want to label and group |
 | [Research deep-dive](./research.md)    | Pick a paper / library / topic and produce a 1-page brief |
+| [Flaky-test hunt](./flaky-test-hunt.md) | A test fails intermittently; find + fix the root cause (no retries) |
+| [Dependency CVE triage](./cve-triage.md) | A scanner flagged a CVE; decide if it's reachable here + the safe bump |
+| [CSV cleanup](./csv-cleanup.md)        | Normalize + flag a messy CSV without fabricating values |
+| [Bug report → failing test](./bug-repro.md) | Turn a bug report into a minimal failing regression test (TDD step 1) |
 
 ## Quick hits (under 60 seconds)
 
