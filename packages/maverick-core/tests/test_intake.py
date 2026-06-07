@@ -135,3 +135,29 @@ class TestRunIntake:
         assert prof.name == "theta_inc"
         assert "HR helper" in prof.persona
         assert kb.search("theta_inc", "paid leave", k=3)  # docs were ingested
+
+
+class TestIntakeSession:
+    def test_records_and_finalizes(self, tmp_path):
+        from maverick.intake import IntakeSession
+        from maverick_knowledge import DeterministicEmbedder, KnowledgeBase
+        doc = tmp_path / "faq.txt"
+        doc.write_text("Returns are accepted within thirty days.")
+        s = IntakeSession()
+        assert s.is_ready() is False
+        s.name = "Iota Retail"
+        s.description = "an online store"
+        s.goals.append("answer customer questions")
+        s.doc_paths.append(str(doc))
+        assert s.is_ready() is True
+        assert s.to_spec().goals == ["answer customer questions"]
+
+        kb = KnowledgeBase(embedder=DeterministicEmbedder(dim=64))
+        prof = s.finalize(
+            llm=_StubLLM('{"persona": "store helper", "allow_tools": ["read_file"]}'),
+            kb=kb,
+        )
+        assert prof.name == "iota_retail"
+        assert "store helper" in prof.persona
+        assert prof.max_risk == "medium"
+        assert kb.search("iota_retail", "returns", k=3)  # ingested on finalize

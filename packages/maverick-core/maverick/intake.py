@@ -225,3 +225,60 @@ def run_intake(spec: IntakeSpec, *, llm=None, kb=None,
         build_llm_proposer(llm, model=model, budget=budget) if llm is not None else None
     )
     return generate_profile(spec, propose=propose)
+
+
+INTAKE_PERSONA = (
+    "You are Maverick's onboarding specialist. Interview the business to learn "
+    "what it does, its industry, and its goals, and ask for any documents or "
+    "process diagrams it can share. As you learn, call record_business, "
+    "add_goal, and add_document. Ask one focused question at a time -- don't "
+    "overwhelm. Once you have the business's name and a clear sense of what it "
+    "does, call finalize_intake to draft its specialist agent, then tell the "
+    "user the draft is ready for review. You NEVER activate an agent yourself; "
+    "a human approves it."
+)
+
+
+@dataclass
+class IntakeSession:
+    """Evolving state of a conversational intake. The intake agent fills it via
+    the intake tools; ``finalize`` turns it into a validated (unsaved) pack."""
+    name: str = ""
+    description: str = ""
+    industry: str = ""
+    goals: list[str] = field(default_factory=list)
+    doc_paths: list[str] = field(default_factory=list)
+
+    def to_spec(self) -> IntakeSpec:
+        return IntakeSpec(
+            name=self.name or "business", description=self.description,
+            industry=self.industry, goals=list(self.goals),
+            doc_paths=list(self.doc_paths),
+        )
+
+    def is_ready(self) -> bool:
+        """Enough to draft a pack: a name plus some sense of what they do."""
+        return bool(self.name and (self.description or self.industry))
+
+    def finalize(self, *, llm=None, kb=None) -> DomainProfile:
+        return run_intake(self.to_spec(), llm=llm, kb=kb)
+
+
+def build_intake_agent(ctx, session: IntakeSession | None = None, *, llm=None, kb=None):
+    """Construct the conversational intake agent: an Agent with the onboarding
+    persona and the intake tools bound to a shared IntakeSession. Returns
+    ``(agent, session)``. The live chat loop reuses the normal agent/channel
+    surface; this just assembles the interviewer."""
+    from .agent import Agent
+    from .tools.intake_tools import intake_tools
+
+    session = session or IntakeSession()
+    agent = Agent(
+        ctx=ctx, role="intake",
+        brief="Interview the business and assemble its specialist agent.",
+        persona=INTAKE_PERSONA,
+    )
+    for tool in intake_tools(session, llm=llm or getattr(ctx, "llm", None),
+                             kb=kb or getattr(ctx, "knowledge", None)):
+        agent.tools.register(tool)
+    return agent, session

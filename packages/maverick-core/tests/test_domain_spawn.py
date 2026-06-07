@@ -60,3 +60,11 @@ def test_agent_from_profile_sets_knowledge_sources(tmp_path):
                             allow_tools=["read_file"])
     agent = agent_from_profile(profile, ctx, "task")
     assert agent.knowledge_sources == ["finance"]
+
+
+def test_build_intake_agent_assembles_interviewer(tmp_path):
+    from maverick.intake import build_intake_agent
+    ctx = _ctx(tmp_path)
+    agent, session = build_intake_agent(ctx)
+    assert agent.role == "intake"
+    assert "onboarding specialist" in agent.system  # the intake persona is in the prompt
