@@ -387,6 +387,60 @@ def version() -> None:
 
 
 @main.command()
+@click.option("--principal", default=None,
+              help="Principal to inspect (default: user:local). Match your "
+                   "[role_assignments] key, e.g. user:<oidc-sub>.")
+@click.option("--channel", default=None, help="Channel for ACL resolution.")
+@click.option("--user", "user_id", default=None, help="Channel user id for ACL resolution.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON instead of text.")
+def whoami(principal: str | None, channel: str | None, user_id: str | None,
+           as_json: bool) -> None:
+    """Show the effective capability (and role) for a principal.
+
+    Resolves the grant exactly as the agent would -- the [security] ACL narrowed
+    by any assigned role ([role_assignments] / [roles]) -- so you can verify what
+    a principal is allowed to do before you deploy. Read-only.
+    """
+    import json as _json
+
+    from .capability import capability_enforced, capability_from_config
+
+    p = principal or "user:local"
+    cap = capability_from_config(p, channel=channel, user_id=user_id)
+    role = None
+    try:  # role_for_principal ships with RBAC; tolerate older kernels.
+        from .capability import role_for_principal
+        role = role_for_principal(p)
+    except Exception:
+        pass
+
+    info = {
+        "principal": cap.principal,
+        "role": role,
+        "enforcement": capability_enforced(),
+        "allow_tools": sorted(cap.allow_tools) or "all",
+        "deny_tools": sorted(cap.deny_tools),
+        "max_risk": cap.max_risk or "none",
+        "allow_paths": sorted(cap.allow_paths) or "all",
+        "allow_hosts": sorted(cap.allow_hosts) or "all",
+        "expires_at": cap.expires_at,
+    }
+    if as_json:
+        click.echo(_json.dumps(info, default=str))
+        return
+    click.echo(click.style(f"principal: {info['principal']}", bold=True))
+    click.echo(f"  role:         {role or '(none)'}")
+    click.echo(f"  enforcement:  {'ON' if info['enforcement'] else 'off (advisory)'}")
+    click.echo(f"  allow_tools:  {info['allow_tools']}")
+    click.echo(f"  deny_tools:   {info['deny_tools'] or '(none)'}")
+    click.echo(f"  max_risk:     {info['max_risk']}")
+    click.echo(f"  allow_paths:  {info['allow_paths']}")
+    click.echo(f"  allow_hosts:  {info['allow_hosts']}")
+    if info["expires_at"]:
+        click.echo(f"  expires_at:   {info['expires_at']}")
+
+
+@main.command()
 @click.argument("action", type=click.Choice(["show", "path", "edit"]), default="show")
 def config(action: str) -> None:
     """Show, locate, or edit ~/.maverick/config.toml."""
@@ -1104,14 +1158,24 @@ def debate(ctx, question: str, rounds: int, max_dollars: float,
 @main.command()
 @click.option("--idle-sleep", default=2.0, show_default=True,
               help="Seconds to wait when the queue is empty.")
-def worker(idle_sleep: float) -> None:
+@click.option("--once", is_flag=True,
+              help="Drain ready jobs and exit (for cron / systemd timers).")
+def worker(idle_sleep: float, once: bool) -> None:
     """Run the background job worker.
 
     Drains the job queue (``~/.maverick/jobs.db``) and runs jobs armed with
     ``maverick schedule add``. Runs until interrupted (Ctrl-C / SIGTERM).
+
+    With ``--once``, run all currently-ready jobs and exit instead of staying
+    resident -- run it from system cron or a systemd timer for scheduling
+    without a persistent daemon.
     """
     from .worker import Worker
     w = Worker(idle_sleep=idle_sleep)
+    if once:
+        n = w.drain()
+        click.echo(f"drained {n} job(s)")
+        return
     click.echo(f"worker: draining {w.queue.db_path} (Ctrl-C to stop)")
     w.run_forever()
 
@@ -1193,6 +1257,39 @@ def schedule_rm(job_id: int) -> None:
         sys.exit(1)
 
 
+@schedule.command("goal")
+@click.argument("cron_expr")
+@click.argument("text")
+@click.option("--title", default=None,
+              help="Short goal title (default: derived from TEXT).")
+def schedule_goal(cron_expr: str, text: str, title: str | None) -> None:
+    """Arm a recurring autonomous goal: run TEXT as a FRESH goal on CRON_EXPR.
+
+    Unlike `schedule add run_goal` (which re-runs one fixed goal id), every fire
+    creates a new goal from TEXT -- a true recurring task. Drain the queue with
+    `maverick worker`; manage it with `schedule list` / `schedule rm`.
+
+    Example: maverick schedule goal "0 9 * * 1-5" "Summarize my overnight emails"
+    """
+    from .job_queue import JobQueue
+    from .scheduler import CronError, next_run, schedule_cron
+    if not text.strip():
+        click.echo("ERROR: goal TEXT must not be empty.", err=True)
+        sys.exit(2)
+    try:
+        next_run(cron_expr)  # validate up front
+    except CronError as e:
+        click.echo(f"ERROR: bad cron expression: {e}", err=True)
+        sys.exit(2)
+    payload: dict = {"text": text, "__cron__": cron_expr}
+    if title:
+        payload["title"] = title
+    job_id, run_at = schedule_cron(JobQueue(), cron_expr, "start_goal", payload)
+    from datetime import datetime
+    when = datetime.fromtimestamp(run_at).strftime("%Y-%m-%d %H:%M:%S")
+    click.echo(f"scheduled goal job {job_id}; next run {when}")
+
+
 @main.command()
 @click.option("--max-depth", default=3, type=int)
 @click.option("--verbose", "-v", is_flag=True)
@@ -1272,6 +1369,60 @@ def status(ctx) -> None:
         click.echo("open questions:")
         for q in qs:
             click.echo(f"  #{q.id} (goal {q.goal_id}): {q.question}")
+
+
+@main.command()
+@click.option("-n", "--limit", default=10, show_default=True, type=int,
+              help="Max recent goals to include.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def ps(ctx, limit: int, as_json: bool) -> None:
+    """List the runtime's processes: recent goals + scheduled jobs.
+
+    A unified, read-only view across the two execution surfaces -- the world
+    model's goals (last activity) and the cron/job queue (next run) -- so you
+    can see what the runtime is doing or about to do in one place. Goals alone:
+    `maverick status`; scheduled jobs alone: `maverick schedule list`.
+    """
+    import datetime as _dt
+    import json as _json
+
+    from .world_model import open_world
+
+    def _when(ts: float | None) -> str:
+        if not ts:
+            return ""
+        return _dt.datetime.fromtimestamp(
+            ts, _dt.timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+    procs: list[dict] = []
+    try:
+        world = open_world(ctx.obj["db"])
+        for g in world.list_goals(limit=limit, order="desc"):
+            procs.append({"type": "goal", "id": g.id, "state": g.status,
+                          "when": _when(g.updated_at), "what": g.title})
+    except Exception:  # fail-soft: a missing/locked world shouldn't crash ps
+        pass
+    try:
+        from .job_queue import JobQueue
+        for j in JobQueue().list(status="pending"):
+            cron = j.payload.get("__cron__")
+            what = j.kind + (f"  [{cron}]" if cron else "")
+            procs.append({"type": "job", "id": j.id, "state": j.status,
+                          "when": _when(j.run_at), "what": what})
+    except Exception:
+        pass
+
+    if as_json:
+        click.echo(_json.dumps(procs, default=str))
+        return
+    if not procs:
+        click.echo("no goals or scheduled jobs.")
+        return
+    click.echo(f"{'TYPE':4}  {'ID':>5}  {'STATE':9}  {'WHEN (UTC)':16}  WHAT")
+    for p in procs:
+        click.echo(f"{p['type']:4}  {str(p['id']):>5}  {p['state']:9}  "
+                   f"{p['when']:16}  {p['what']}")
 
 
 @main.command()
@@ -2009,12 +2160,18 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
 @main.command("compliance")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
               help="Output format.")
+@click.option("--strict", is_flag=True,
+              help="Exit non-zero if any control needs action (gate CI / deploys).")
 @click.pass_context
-def compliance_cmd(ctx, fmt: str) -> None:
+def compliance_cmd(ctx, fmt: str, strict: bool) -> None:
     """Report GDPR + EU AI Act control coverage for this deployment.
 
     Maps each active control to the article it supports and flags opt-in
     controls that are off. Control coverage only -- not a legal attestation.
+
+    With --strict, exits non-zero if any control is "action needed", so a
+    regulated deployment can fail a CI job / release gate when its posture
+    regresses (the report still prints first).
     """
     from .compliance import (
         compliance_report,
@@ -2025,6 +2182,13 @@ def compliance_cmd(ctx, fmt: str) -> None:
     click.echo(
         render_report_json(checks) if fmt == "json" else render_report_text(checks)
     )
+    if strict:
+        needs_action = [c.control for c in checks if c.status == "action_needed"]
+        if needs_action:
+            raise click.ClickException(
+                f"{len(needs_action)} control(s) need action: "
+                + ", ".join(needs_action)
+            )
 
 
 @main.command("export-user")
@@ -2381,6 +2545,87 @@ def audit_verify(
         raise SystemExit(1)
 
 
+@audit.command("export")
+@click.option("--format", "fmt", type=click.Choice(["json", "cef"]), default="json",
+              help="Output format for SIEM ingestion (default: json).")
+@click.option("--day", default=None, help="YYYY-MM-DD (default: today).")
+@click.option("--all", "all_days", is_flag=True,
+              help="Export every YYYY-MM-DD.ndjson day-file in the audit dir.")
+@click.option("--since", default=None,
+              help="Start of an inclusive YYYY-MM-DD window (e.g. an incident).")
+@click.option("--until", default=None,
+              help="End of the inclusive YYYY-MM-DD window.")
+@click.option("--tenant", default=None,
+              help="Tenant whose audit dir to export (default: active/none).")
+@click.option("-o", "--output", "output", default=None, type=click.Path(),
+              help="Write to FILE (mode 0600; may contain PII). Default: stdout.")
+def audit_export(
+    fmt: str, day: str | None, all_days: bool, since: str | None,
+    until: str | None, tenant: str | None, output: str | None,
+) -> None:
+    """Export the audit log as JSONL or ArcSight CEF for a SIEM.
+
+    Read-only re-emission of the tamper-evident NDJSON log; it never mutates
+    the log or the signing chain. By default it exports today's day-file;
+    ``--since``/``--until`` export an inclusive date window (for incident
+    backfill) and ``--all`` sweeps every day-file. An empty/missing log exits 0
+    (a note goes to stderr) so cron/automation never fails on a quiet day.
+    """
+    import datetime as _dt
+    import os as _os
+    from pathlib import Path as _Path
+
+    for _label, _val in (("--since", since), ("--until", until)):
+        if _val is not None:
+            try:
+                _dt.datetime.strptime(_val, "%Y-%m-%d")
+            except ValueError:
+                click.echo(f"ERROR: {_label} must be YYYY-MM-DD", err=True)
+                sys.exit(2)
+
+    from .audit.export import audit_event_paths, iter_audit_events, to_cef, to_jsonl
+
+    render = to_cef if fmt == "cef" else to_jsonl
+    lines = (render(ev) for ev in iter_audit_events(
+        day=day, all_days=all_days, since=since, until=until, tenant=tenant,
+    ))
+
+    if output:
+        output_path = _Path(output)
+        output_resolved = output_path.resolve(strict=False)
+        source_paths = audit_event_paths(
+            day=day, all_days=all_days, since=since, until=until, tenant=tenant,
+        )
+        for source_path in source_paths:
+            if (output_resolved == source_path.resolve(strict=False)
+                    or (output_path.exists() and source_path.exists()
+                        and _os.path.samefile(output_path, source_path))):
+                raise click.ClickException(
+                    "refusing to write audit export over a source audit log file"
+                )
+
+        # 0600 from creation: the export may contain PII, mirroring the
+        # writer's own day-file permissions.
+        fd = _os.open(output, _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o600)
+        n = 0
+        with _os.fdopen(fd, "w", encoding="utf-8") as f:
+            for line in lines:
+                f.write(line + "\n")
+                n += 1
+        if n == 0:
+            click.echo("no audit events to export", err=True)
+        else:
+            click.echo(f"exported {n} event(s) to {output}", err=True)
+        return
+
+    n = 0
+    for line in lines:
+        click.echo(line)
+        n += 1
+    if n == 0:
+        click.echo("no audit events to export", err=True)
+
+
 # ----- Killswitch --------------------------------------------------------
 
 @main.command()
@@ -2581,6 +2826,32 @@ def soc2(compact: bool) -> None:
     else:
         click.echo(_json.dumps(evidence, default=str, indent=2))
     if not _soc2_posture_ready(evidence):
+        sys.exit(1)
+
+
+# ----- Enterprise (regulated-deployment) posture -----------------------
+
+@main.group("enterprise")
+def enterprise_group() -> None:
+    """Enterprise (regulated-deployment) posture."""
+
+
+@enterprise_group.command("verify")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+def enterprise_verify(fmt: str) -> None:
+    """Actively verify the regulated-deployment guarantees (exits non-zero if any fail).
+
+    Unlike 'maverick compliance' (which maps configured controls to articles),
+    this *exercises* the load-bearing guarantees: it proves the egress lock
+    refuses a cloud provider and that at-rest sealing round-trips on this box,
+    upgrading "the flag is on" to "the boundary holds." Wire it into CI / a
+    deploy gate the same way as 'maverick compliance --strict'.
+    """
+    from .deployment import all_passed, render_json, render_text, verify_deployment
+    checks = verify_deployment()
+    click.echo(render_json(checks) if fmt == "json" else render_text(checks))
+    if not all_passed(checks):
         sys.exit(1)
 
 

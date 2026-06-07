@@ -10,8 +10,11 @@ return cleanly to succeed. The worker handles retry / terminal
 failure / sleep-when-empty automatically.
 
 Built-in handlers:
-  - ``run_goal``  — payload {"goal_id": int} -> runs the goal via
+  - ``run_goal``  — payload {"goal_id": int} -> runs an EXISTING goal via
     maverick.runner.run_goal_in_thread (with a sync wait).
+  - ``start_goal`` — payload {"text": str, "title"?: str} -> creates a FRESH
+    goal from the prompt on each run, then runs it. This is the kind to pair
+    with cron for a recurring autonomous task (``maverick schedule goal``).
 
 Custom handlers are registered via :meth:`Worker.register`.
 
@@ -23,6 +26,7 @@ from __future__ import annotations
 import logging
 import signal
 import threading
+import time
 import traceback
 from collections.abc import Callable
 from pathlib import Path
@@ -38,7 +42,7 @@ Handler = Callable[[Job], None]
 # via Worker.register(); this is the set the bare ``maverick worker`` knows.
 # Exposed so ``maverick schedule add`` can warn on a likely-typo'd kind that
 # would otherwise sit in the queue and fail terminally only at worker time.
-BUILTIN_JOB_KINDS = frozenset({"run_goal"})
+BUILTIN_JOB_KINDS = frozenset({"run_goal", "start_goal"})
 
 
 class UnknownJobKind(Exception):
@@ -97,6 +101,41 @@ class Worker:
                 )
         self._handlers["run_goal"] = _run_goal
 
+        def _start_goal(job: Job) -> None:
+            # A recurring autonomous task creates a FRESH goal from the prompt
+            # on every fire -- unlike run_goal, which re-runs one fixed goal_id
+            # (re-executing the same world-model row). Pair with cron via
+            # `maverick schedule goal "<cron>" "<prompt>"`; _maybe_rearm carries
+            # the prompt forward in the payload so each occurrence is new.
+            text = (job.payload.get("text") or "").strip()
+            if not text:
+                raise ValueError("start_goal payload requires non-empty 'text'")
+            # Idempotent across retries: create the fresh goal only once, then
+            # persist its id into the job payload. A retry of THIS job reuses it
+            # (re-running the existing goal, like run_goal) instead of minting a
+            # duplicate goal row on every transient failure. _maybe_rearm runs
+            # before dispatch, so the next cron occurrence still gets the
+            # original (goal_id-free) payload and creates its own fresh goal.
+            goal_id = job.payload.get("goal_id")
+            if not goal_id:
+                title = (job.payload.get("title") or text).strip()[:80]
+                from .world_model import DEFAULT_DB, open_world
+                world = open_world(DEFAULT_DB)
+                try:
+                    goal_id = world.create_goal(title, text)
+                finally:
+                    world.close()
+                job.payload["goal_id"] = goal_id
+                self.queue.set_payload(job.id, job.payload)
+            # Same retry contract as run_goal: only transient outcomes requeue.
+            from .runner import run_goal_in_thread
+            status = run_goal_in_thread(int(goal_id))
+            if status is None or status in ("error", "failed"):
+                raise GoalRunFailed(
+                    f"scheduled goal {goal_id} terminal status={status!r}"
+                )
+        self._handlers["start_goal"] = _start_goal
+
     def stop(self) -> None:
         self._stop.set()
 
@@ -128,9 +167,16 @@ class Worker:
         except Exception:
             log.exception("worker: failed to re-arm cron job %d (%r)", job.id, expr)
 
-    def run_once(self) -> bool:
-        """Process at most one job. Returns True if a job ran."""
-        job = self.queue.claim()
+    def run_once(self, *, ready_at: float | None = None) -> bool:
+        """Process at most one job. Returns True if a job ran.
+
+        ``ready_at`` bounds which pending rows are considered ready. The
+        daemon leaves it unset so each claim uses the current wall clock;
+        one-shot drain mode passes its start time so jobs that become due
+        while an earlier long-running handler executes wait for the next
+        invocation.
+        """
+        job = self.queue.claim(now=ready_at)
         if job is None:
             return False
         self._maybe_rearm(job)
@@ -179,6 +225,27 @@ class Worker:
                 # Idle: wait, but wake up cleanly on stop().
                 self._stop.wait(self.idle_sleep)
         log.info("worker: stopped")
+
+    def drain(self) -> int:
+        """Run every currently-ready job, then return; for cron/systemd timers.
+
+        Reclaims stale jobs once (like ``run_forever``), snapshots the
+        drain start time, then processes only jobs whose ``run_at`` was ready
+        at that moment. Re-armed cron occurrences, retries, or other jobs
+        that become due while a long-running handler is executing wait for
+        the next ``--once`` invocation.
+        """
+        reclaimed = self.queue.reclaim_stale(
+            self.reclaim_lease, max_attempts=self.max_attempts,
+        )
+        if reclaimed:
+            log.info("worker: reclaimed %d stale job(s) from a prior crash",
+                     reclaimed)
+        ready_at = time.time()
+        count = 0
+        while self.run_once(ready_at=ready_at):
+            count += 1
+        return count
 
     def _wire_signals(self) -> None:
         # Only wire signals from the main thread (signal.signal is

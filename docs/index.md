@@ -61,11 +61,13 @@ You can support the project via
 ## Where to go next
 
 - [Getting started](getting-started.md) — install + first goal
+- [Architecture](architecture.md) — the governed agent runtime (OS-style primitives)
 - [Configuration](configuration.md) — providers, channels, budgets
 - [Deployment](deployment.md) — desktop / docker / VPS / phone modes
 - [Safety](safety.md) — shield, audit log, kill switches, consent
 - [Security hardening](security-hardening.md) — enterprise opt-in controls (capabilities, tenancy, quotas, OIDC, encryption-at-rest, audit signing) + compliance commands
 - [Plugins](plugins.md) — extending the tool / channel / skill surface
 - [Self-learning](self-learning.md) — acquire skills, tools, MCP servers, and APIs on demand
-- [Roadmap](ROADMAP.md) — 36-month plan, all open
+- [Features](FEATURES.md) — everything Maverick does today (shipped capabilities + tools)
+- [Roadmap](ROADMAP.md) — the forward backlog (what isn't built yet)
 - [Contributing](CONTRIBUTING.md) — how to send PRs

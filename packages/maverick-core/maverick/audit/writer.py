@@ -177,8 +177,10 @@ class AuditLog:
         String fields in the event payload are run through
         ``secret_detector.redact`` so API keys, OAuth tokens, JWTs, and
         ``.env`` fragments that leak via tool output never land on disk
-        in plaintext. Redaction failure is non-fatal: the event still
-        writes, but a warning logs.
+        in plaintext. When anonymous mode is enabled, the already-secret-
+        redacted payload is additionally passed through Maverick's privacy
+        anonymizer before it is serialized or signed. Redaction failure is
+        non-fatal: the event still writes, but a warning logs.
         """
         with self._lock:
             path = self._rotate_if_needed()
@@ -340,16 +342,16 @@ class AuditLog:
 
 
 def _redact_event(payload: dict[str, Any]) -> dict[str, Any]:
-    """Walk an audit event dict and redact any embedded secrets in string values.
+    """Walk an audit event dict and redact secrets plus anonymous-mode PII.
 
-    Lazy-imports the detector so the audit module stays usable in
-    environments where ``maverick.safety`` was stripped or vendored.
-    Returns a new dict; never mutates the input.
+    Lazy-imports the detectors so the audit module stays usable in
+    environments where optional safety/privacy modules were stripped or
+    vendored. Returns a new dict; never mutates the input.
     """
     try:
         from ..safety.secret_detector import redact
     except Exception:
-        return payload
+        redact = None
 
     def _walk(v: Any, depth: int = 0) -> Any:
         # Depth cap: the payload carries arbitrary **kwargs (tool args/results)
@@ -358,6 +360,8 @@ def _redact_event(payload: dict[str, Any]) -> dict[str, Any]:
         if depth > 64:
             return v if isinstance(v, (int, float, bool, type(None))) else str(v)
         if isinstance(v, str):
+            if redact is None:
+                return v
             redacted, _ = redact(v)
             return redacted
         if isinstance(v, dict):
@@ -366,7 +370,14 @@ def _redact_event(payload: dict[str, Any]) -> dict[str, Any]:
             return [_walk(vv, depth + 1) for vv in v]
         return v
 
-    return _walk(payload)
+    redacted_payload = _walk(payload)
+    try:
+        from ..privacy import anon_enabled, anonymize_dict
+        if anon_enabled():
+            return anonymize_dict(redacted_payload)
+    except Exception:
+        pass
+    return redacted_payload
 
 
 _default: AuditLog | None = None

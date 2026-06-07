@@ -38,10 +38,8 @@ Services Criteria lives in ``docs/compliance/soc2-controls.md``.
 """
 from __future__ import annotations
 
-import json
 import time
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 # Status vocabulary for a single technical control probe.
@@ -152,31 +150,24 @@ def _resolve_audit_dir():
     return data_dir("audit")
 
 
-def _day_files_are_plain_unsigned(day_files: list[Path]) -> bool:
-    """Return true when day-files contain only unsigned writer rows.
+def _audit_signing_expected() -> bool:
+    """Whether this deployment is expected to produce a signed/anchored log.
 
-    Audit signing is optional.  With signing disabled the writer emits plain
-    NDJSON rows that have none of the signing metadata fields; those logs are
-    expected not to have a signed anchor ledger.  Signed rows, partially signed
-    rows, or malformed JSON are not treated as this benign state.
+    True when audit signing is configured on (``[audit] sign`` / ``MAVERICK_AUDIT_SIGN``)
+    OR a signing key already exists on disk (the host has signed before). The
+    operator's signing config lives outside the audit dir, so an attacker who
+    can only write the audit dir cannot flip it -- a missing anchor ledger while
+    signing is *expected* therefore stays a real break (the tamper-downgrade
+    defence). A genuinely unsigned deployment -- no signing config and no key --
+    legitimately has no anchor ledger, so its missing ledger is the benign
+    ``unsigned`` state, not ``broken``.
     """
-    saw_row = False
-    for path in day_files:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                saw_row = True
-                try:
-                    data = json.loads(line)
-                except json.JSONDecodeError:
-                    return False
-                present = {
-                    field for field in ("hash", "sig", "key_id") if data.get(field)
-                }
-                if present:
-                    return False
-    return saw_row
+    from .audit import signing
+    from .audit.writer import _resolve_signing
+
+    if _resolve_signing(None):
+        return True
+    return any(signing._key_dir().glob("*.key"))
 
 
 def _probe_audit_chain() -> dict[str, Any]:
@@ -228,11 +219,6 @@ def _probe_audit_chain() -> dict[str, Any]:
         ),
         [],
     )
-    unsigned_anchor_gap = _safe(
-        lambda: _day_files_are_plain_unsigned(day_files)
-        and not (audit_dir / ".anchors.required").exists(),
-        False,
-    )
     real_breaks = 0  # genuine tamper/verify failures
     unsigned_rows = 0  # rows missing hash/sig/key_id (signing simply off)
     first_reason: str | None = None
@@ -267,15 +253,22 @@ def _probe_audit_chain() -> dict[str, Any]:
         result["status"] = STATUS_UNKNOWN
         result["error"] = "verify_anchors raised"
         return result
+    # Fail-safe to "expected" (stay strict) if the signal can't be read.
+    signing_expected = _safe(_audit_signing_expected, True)
     for b in anchor_breaks:
         reason = getattr(b, "reason", "")
         if reason == "no_crypto":
             no_crypto = True
             continue
-        # Unsigned deployments never create the cross-file anchor ledger.  A
-        # completed plain NDJSON day-file with no ledger marker is therefore
-        # the documented ``unsigned`` configuration state, not tampering.
-        if reason == "anchor_ledger_missing" and unsigned_anchor_gap:
+        # A *completely* absent anchor ledger on a deployment that never signs
+        # (no signing config, no key) is the benign "unsigned" state, not
+        # tampering -- otherwise every honest unsigned deployment reports
+        # "broken" the day after its first audit file. A signed deployment
+        # whose ledger was stripped still has signing expected (config/key), so
+        # it stays "broken": the downgrade defence is preserved. Other anchor
+        # breaks (e.g. an anchored day-file deleted) imply a ledger existed and
+        # are always real.
+        if reason == "anchor_ledger_missing" and not signing_expected:
             continue
         real_breaks += 1
         if first_reason is None:

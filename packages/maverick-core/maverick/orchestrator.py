@@ -96,6 +96,23 @@ def _compartments_enabled() -> bool:
         return False
 
 
+def _build_knowledge() -> Any | None:
+    """Build the per-domain knowledge base if ``[knowledge] enable`` is set.
+
+    Optional (the maverick-knowledge package may be absent) and fail-open per
+    kernel rule 1: any error yields None, so a misconfig never wedges a run."""
+    try:
+        from .config import get_knowledge
+        kcfg = get_knowledge()
+        if not kcfg.get("enable"):
+            return None
+        from maverick_knowledge import KnowledgeBase, build_embedder, build_store
+        return KnowledgeBase(store=build_store(kcfg), embedder=build_embedder(kcfg))
+    except Exception as e:  # pragma: no cover -- knowledge is optional
+        log.warning("knowledge base unavailable (fail-open): %s", e)
+        return None
+
+
 def _format_tree_of_thought_plan(winning_plan: str, *, shield: Any | None = None) -> str:
     """Render a ToT plan as scanned, explicitly untrusted prompt context."""
     plan = (winning_plan or "").strip()
@@ -255,6 +272,14 @@ def _record_skill_outcome(ctx: Any, *, success: bool) -> None:
             skill_stats.record_outcome(names, success=success)
     except Exception:  # pragma: no cover -- stats never block a run
         pass
+    # Feed the same run outcome to the adaptive thinking-budget controller
+    # (no-op unless [thinking] adaptive is on). Attributed to the orchestrator,
+    # the run's primary reasoner.
+    try:
+        from . import thinking_budget
+        thinking_budget.record("orchestrator", success)
+    except Exception:  # pragma: no cover -- never block a run on a stats write
+        pass
 
 
 def _maybe_record_reflexion(
@@ -393,6 +418,7 @@ async def run_goal(
         blackboard.attach_quarantine(quarantine)
     sandbox = sandbox or LocalBackend()
     shield = _build_shield()
+    knowledge = _build_knowledge()
 
     # Load operator-/plugin-supplied lifecycle hooks (idempotent) and fire
     # SessionStart once. Without this the [[hooks]] config section and the
@@ -455,7 +481,8 @@ async def run_goal(
         ctx = SwarmContext(
             llm=llm, world=world, budget=budget, blackboard=blackboard,
             sandbox=sandbox, goal_id=goal_id, max_depth=max_depth,
-            shield=shield, quarantine=quarantine, mcp_clients=mcp_clients,
+            shield=shield, quarantine=quarantine, knowledge=knowledge,
+            mcp_clients=mcp_clients,
             channel=channel, user_id=user_id, episode_id=episode_id,
         )
 
@@ -874,6 +901,18 @@ async def run_goal(
             except Exception:  # pragma: no cover -- fail open per kernel rule 1
                 log.exception("scan_output on summary failed (fail-open)")
 
+        # Compartment observability: record a one-line summary of the run's
+        # bulkhead activity (threats immunized, sealed agents/sectors) so it's
+        # visible in the run record / dashboard. No-op when compartments are off.
+        if quarantine is not None:
+            try:
+                from .quarantine import compartment_status, format_compartment_status
+                blackboard.post(
+                    "orchestrator", "observation",
+                    format_compartment_status(compartment_status(quarantine, shield)),
+                )
+            except Exception:  # pragma: no cover -- observability is best-effort
+                pass
         _end_episode_with_spend(world, episode_id, summary, "success", budget, goal_id)
         world.set_goal_status(goal_id, "done", result=summary)
         _record_quota_usage()

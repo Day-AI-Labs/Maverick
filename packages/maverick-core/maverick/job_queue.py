@@ -155,6 +155,16 @@ class JobQueue:
             )
             return cur.rowcount == 1
 
+    def set_payload(self, job_id: int, payload: dict) -> bool:
+        """Replace a job's payload. Lets a handler persist state across retries
+        (e.g. a created goal id) so a re-run reuses it instead of redoing work."""
+        with self._lock, self._conn() as c:
+            cur = c.execute(
+                "UPDATE jobs SET payload=?, updated_at=? WHERE id=?",
+                (json.dumps(payload, default=str), time.time(), job_id),
+            )
+            return cur.rowcount == 1
+
     def fail(
         self,
         job_id: int,

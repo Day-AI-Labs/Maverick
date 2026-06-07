@@ -26,11 +26,14 @@ The title can also contain ``{{ vars }}``.
 """
 from __future__ import annotations
 
+import json
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 USER_TEMPLATES = Path.home() / ".maverick" / "templates"
+log = logging.getLogger(__name__)
 
 # Bundled templates ship in the repo; locate via relative path from the
 # installed package. The agent kernel intentionally has no notion of the
@@ -50,10 +53,17 @@ class Template:
     budget_wall_seconds: float = 3600.0
     params: list[str] = field(default_factory=list)
     path: Path | None = None
+    sig: str | None = None
+    pubkey: str | None = None
+    verified: bool = False
 
     @classmethod
     def parse(cls, text: str, name: str, path: Path | None = None) -> Template:
         """Parse a template file. YAML frontmatter is optional."""
+        # Normalize CRLF/CR so the LF-anchored frontmatter regex matches files
+        # authored on Windows or served over HTTP with CRLF endings -- otherwise
+        # their frontmatter (title/params AND budgets) is silently ignored.
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
         m = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.DOTALL)
         if m:
             front, body = m.group(1), m.group(2)
@@ -68,6 +78,8 @@ class Template:
             budget_wall_seconds=float(meta.get("budget_wall_seconds", 3600)),
             params=meta.get("params", []) if isinstance(meta.get("params"), list) else [],
             path=path,
+            sig=meta.get("sig") if isinstance(meta.get("sig"), str) else None,
+            pubkey=meta.get("pubkey") if isinstance(meta.get("pubkey"), str) else None,
         )
 
     def render(self, **params: str) -> tuple[str, str]:
@@ -205,15 +217,136 @@ def browse_templates(*, indexes: list[str] | None = None):
         indexes=indexes if indexes is not None else _configured_template_indexes())
 
 
+def _strip_registry_budget_frontmatter(content: str) -> str:
+    """Drop run-budget fields from untrusted registry template content.
+
+    Local/user-authored templates may still declare budgets, but catalog
+    templates are remote prompt content. Persisting catalog-supplied budgets
+    would let an index raise spend/time limits later when the user runs the
+    template, so remote installs are normalized to the parser defaults unless
+    the user passes explicit CLI flags or edits the local file themselves.
+    """
+    # Normalize line endings first: a CRLF-served template would otherwise slip
+    # past the LF-anchored regex and keep its remote budget_* lines (which
+    # Template.parse, also normalized, would then honor) -- defeating the strip.
+    content = content.replace("\r\n", "\n").replace("\r", "\n")
+    m = re.match(r"^---\n(.*?)\n---\n(.*)$", content, re.DOTALL)
+    if not m:
+        return content
+    front, body = m.group(1), m.group(2)
+    budget_keys = {"budget_dollars", "budget_wall_seconds"}
+    kept: list[str] = []
+    for line in front.splitlines():
+        key = line.partition(":")[0].strip() if ":" in line else ""
+        if key in budget_keys:
+            continue
+        kept.append(line)
+    return "---\n" + "\n".join(kept).rstrip() + "\n---\n" + body
+
+
+def _canonical_template_signed_bytes(template: Template) -> bytes:
+    """Stable bytes for signed registry template prompt content."""
+    return json.dumps(
+        {
+            "title": template.title,
+            "body": template.body,
+            "params": list(template.params),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+
+def _verify_registry_template_signature(
+    template: Template, *, require_signature: bool = False
+) -> bool:
+    """Enforce trusted-publisher signatures for catalog template installs.
+
+    Reuses the same operator trust anchors as catalog skills: when
+    ``[skills].trusted_pubkeys`` is configured, or require_signed_catalog is
+    enabled, remote templates must carry an Ed25519 signature from a trusted
+    publisher. With no trust policy configured, unsigned installs remain
+    allowed for backward compatibility.
+    """
+    from . import config as _config
+    from .audit import signing
+
+    cfg = _config.get_skills()
+    trusted = cfg["trusted_pubkeys"]
+    must_verify = bool(cfg["require_signed_catalog"] or trusted or require_signature)
+    signed = bool(template.sig and template.pubkey)
+
+    if not signed:
+        if must_verify:
+            raise ValueError(
+                "template rejected: catalog template is unsigned, but trusted "
+                "publishers or require_signed_catalog are configured."
+            )
+        return False
+    if not signing._have_crypto():
+        raise ValueError(
+            "template rejected: cryptography is required to verify signed "
+            "registry templates."
+        )
+    if not trusted:
+        if must_verify:
+            raise ValueError(
+                "template rejected: signed registry template has no configured "
+                "[skills].trusted_pubkeys trust anchor."
+            )
+        return False
+    if template.pubkey not in trusted:
+        raise ValueError(
+            "template rejected: signed by an untrusted publisher key "
+            f"{template.pubkey[:16]!r} (not in [skills].trusted_pubkeys)."
+        )
+    if not signing.verify_ed25519(
+        template.pubkey, template.sig, _canonical_template_signed_bytes(template)
+    ):
+        raise ValueError(
+            "template rejected: Ed25519 signature does not verify over the "
+            "template's signed fields (title/params/body)."
+        )
+    return True
+
+
+def _shield_scan_registry_template(template: Template) -> None:
+    """Reject catalog templates blocked by Shield before writing them."""
+    try:
+        from maverick_shield import Shield  # type: ignore
+    except ImportError:
+        return
+    try:
+        verdict = Shield.from_config().scan_input(
+            f"Template title: {template.title}\n\nTemplate body:\n{template.body}"
+        )
+    except ValueError:
+        raise
+    except Exception as exc:  # pragma: no cover -- scanner bugs should not brick install
+        log.warning(
+            "Shield raised %s during template install; failing open",
+            type(exc).__name__,
+        )
+        return
+    if not verdict.allowed:
+        raise ValueError(
+            f"template rejected by Shield ({verdict.severity}): "
+            f"{'; '.join(verdict.reasons)}"
+        )
+
+
 def install_template_from_catalog(
     name: str, *, indexes: list[str] | None = None, dest: Path | None = None
 ) -> Template:
     """Install a template by name from the registry into ``~/.maverick/templates``.
 
     Resolves the entry, fetches its ``source`` (gh:/https:), verifies the pinned
-    ``sha256`` (integrity-in-transit, same trust model as the skills catalog),
-    validates it parses as a Template, then writes ``<name>.md``. Returns the
-    parsed Template. Raises ValueError on unknown name or hash mismatch."""
+    ``sha256``, strips remote budget frontmatter, enforces trusted-publisher
+    signatures when configured, Shield-scans the prompt surface when Shield is
+    installed, validates it parses as a Template, then writes ``<name>.md``.
+    Returns the parsed Template. Raises ValueError on unknown name, hash
+    mismatch, signature policy failure, or Shield rejection."""
     from . import catalog
     from .skills import _fetch_skill_source  # generic gh:/https: text fetcher
 
@@ -228,7 +361,13 @@ def install_template_from_catalog(
         raise ValueError(
             f"content hash mismatch for {name!r}: the fetched template does not "
             "match the registry's pinned sha256. Refusing to install.")
+    # Catalog templates are untrusted remote prompt content. Validate and scan
+    # the rendered prompt surface before persisting, and do not persist remote
+    # budget fields as future explicit run overrides.
+    content = _strip_registry_budget_frontmatter(content)
     template = Template.parse(content, name)  # validate it parses before writing
+    template.verified = _verify_registry_template_signature(template)
+    _shield_scan_registry_template(template)
     target_dir = dest if dest is not None else USER_TEMPLATES
     target_dir.mkdir(parents=True, exist_ok=True)
     (target_dir / f"{name}.md").write_text(content, encoding="utf-8")

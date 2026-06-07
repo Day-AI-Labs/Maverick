@@ -66,6 +66,9 @@ class SwarmContext:
     # of agents sealed off after a confirmed threat. None == disabled. Typed
     # Any to avoid importing the quarantine module here.
     quarantine: Any | None = None
+    # Per-domain document knowledge (vector RAG). None == disabled. Set when
+    # [knowledge] is enabled; the knowledge_search tool binds to it per agent.
+    knowledge: Any | None = None
     mcp_clients: list = field(default_factory=list)
     channel: str | None = None
     user_id: str | None = None

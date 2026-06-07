@@ -43,20 +43,40 @@ print(run("Summarize the top 3 AI papers this week into report.md"))
 Provider keys come from the environment / `~/.maverick/config.toml` exactly as
 for the CLI (`ANTHROPIC_API_KEY`, etc.).
 
+## Web-framework endpoints
+
+> **Security boundary:** Maverick goals can consume provider budget and may drive
+> configured tools (including shell-capable sandboxes). Treat any HTTP endpoint
+> that starts a goal as a privileged remote-execution surface. Do **not** expose
+> these routes on a public network unless your application enforces
+> authentication, per-user authorization, CSRF protection for browser sessions,
+> per-user/IP rate limits, request-body and goal-size limits, and conservative
+> budget/sandbox defaults. The snippets below keep the runner call in the right
+> thread, but leave the policy hooks as application-specific functions you must
+> implement before deployment.
+
 ## FastAPI
 
 Dispatch the blocking run on a thread so it never wedges the event loop:
 
 ```python
 import asyncio
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from myapp.auth import User, current_user, enforce_goal_quota, may_run_maverick
 from myapp.maverick_runner import run   # the run() above
 
 app = FastAPI()
 
+class GoalRequest(BaseModel):
+    goal: str = Field(min_length=1, max_length=2_000)
+
 @app.post("/goals")
-async def start_goal(goal: str):
-    result = await asyncio.to_thread(run, goal)   # blocking call off the loop
+async def start_goal(payload: GoalRequest, user: User = Depends(current_user)):
+    if not may_run_maverick(user):
+        raise HTTPException(status_code=403, detail="not allowed to run goals")
+    await enforce_goal_quota(user)
+    result = await asyncio.to_thread(run, payload.goal, max_dollars=1.0)
     return {"result": result}
 ```
 
@@ -66,14 +86,22 @@ Flask views are synchronous, so call `run()` directly (use a task queue —
 Celery/RQ — for long goals so the request doesn't hang):
 
 ```python
-from flask import Flask, request, jsonify
+from flask import Flask, abort, jsonify, request
+from flask_wtf import CSRFProtect
+from myapp.auth import current_user, enforce_goal_quota, may_run_maverick, require_login
 from myapp.maverick_runner import run
 
 app = Flask(__name__)
+csrf = CSRFProtect(app)
 
 @app.post("/goals")
+@require_login
 def start_goal():
-    return jsonify(result=run(request.json["goal"]))
+    goal = request.get_json(force=True).get("goal", "")
+    if not 1 <= len(goal) <= 2_000 or not may_run_maverick(current_user):
+        abort(403)
+    enforce_goal_quota(current_user)
+    return jsonify(result=run(goal, max_dollars=1.0))
 ```
 
 ## Django
@@ -84,11 +112,21 @@ runs it in a threadpool):
 ```python
 # async view
 from asgiref.sync import sync_to_async
-from django.http import JsonResponse
+from django.contrib.auth.decorators import login_required, permission_required
+from django.http import HttpResponseForbidden, JsonResponse
+from django.views.decorators.csrf import csrf_protect
+from myapp.limits import enforce_goal_quota
 from myapp.maverick_runner import run
 
+@csrf_protect
+@login_required
+@permission_required("myapp.run_maverick_goal", raise_exception=True)
 async def start_goal(request):
-    result = await sync_to_async(run, thread_sensitive=False)(request.POST["goal"])
+    goal = request.POST.get("goal", "")
+    if not 1 <= len(goal) <= 2_000:
+        return HttpResponseForbidden("invalid goal")
+    await sync_to_async(enforce_goal_quota, thread_sensitive=True)(request.user)
+    result = await sync_to_async(run, thread_sensitive=False)(goal, max_dollars=1.0)
     return JsonResponse({"result": result})
 ```
 

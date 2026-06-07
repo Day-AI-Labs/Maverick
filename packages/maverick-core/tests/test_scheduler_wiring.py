@@ -8,6 +8,7 @@ jobs. These tests cover the wiring: JobQueue.cancel, the worker re-arm
 """
 from __future__ import annotations
 
+import pytest
 from click.testing import CliRunner
 
 # ---------- JobQueue.cancel ----------
@@ -156,3 +157,216 @@ def test_worker_command_runs_forever(tmp_path, monkeypatch):
     res = CliRunner().invoke(main, ["worker", "--idle-sleep", "0"])
     assert res.exit_code == 0, res.output
     assert ran["forever"] is True
+
+
+# ---------- start_goal: recurring autonomous tasks ----------
+
+def test_start_goal_handler_creates_fresh_goal_and_runs_it(tmp_path, monkeypatch):
+    # The handler must CREATE a new goal from the prompt (not re-run a fixed id)
+    # and hand that fresh id to the runner.
+    monkeypatch.setattr("maverick.world_model.DEFAULT_DB", tmp_path / "world.db")
+    seen = {}
+
+    def _fake_run(goal_id, *a, **k):
+        seen["goal_id"] = goal_id
+        return "done"
+
+    monkeypatch.setattr("maverick.runner.run_goal_in_thread", _fake_run)
+
+    from maverick.job_queue import Job
+    from maverick.worker import Worker
+    w = Worker(db_path=tmp_path / "jobs.db")
+    w._handlers["start_goal"](Job(
+        id=1, kind="start_goal",
+        payload={"title": "Digest", "text": "Summarize overnight emails"},
+        run_at=0.0, status="running", attempts=1,
+    ))
+
+    from maverick.world_model import open_world
+    world = open_world(tmp_path / "world.db")
+    try:
+        g = world.get_goal(seen["goal_id"])
+    finally:
+        world.close()
+    assert g is not None
+    assert g.title == "Digest"
+    assert g.description == "Summarize overnight emails"
+
+
+def test_start_goal_idempotent_across_retries(tmp_path, monkeypatch):
+    # A transient run failure requeues the job; the retry must REUSE the goal
+    # created on the first attempt rather than mint a duplicate goal row each
+    # time (a flapping provider would otherwise accumulate orphan goals).
+    monkeypatch.setattr("maverick.world_model.DEFAULT_DB", tmp_path / "world.db")
+    monkeypatch.setattr(
+        "maverick.runner.run_goal_in_thread", lambda goal_id, *a, **k: "error"
+    )
+
+    from maverick.job_queue import JobQueue
+    from maverick.worker import Worker
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    q.enqueue("start_goal", {"text": "recurring task"}, run_at=0.0)
+    w = Worker(queue=q, retry_after=0.0)
+
+    assert w.run_once() is True   # attempt 1: creates goal #1, fails -> requeued
+    assert w.run_once() is True   # attempt 2: reuses goal #1, fails -> requeued
+
+    from maverick.world_model import open_world
+    world = open_world(tmp_path / "world.db")
+    try:
+        assert world.get_goal(1) is not None   # the one fresh goal
+        assert world.get_goal(2) is None       # no duplicate from the retry
+    finally:
+        world.close()
+
+
+def test_start_goal_requires_text(tmp_path):
+    from maverick.job_queue import Job
+    from maverick.worker import Worker
+    w = Worker(db_path=tmp_path / "jobs.db")
+    with pytest.raises(ValueError):
+        w._handlers["start_goal"](Job(
+            id=1, kind="start_goal", payload={"title": "x"},
+            run_at=0.0, status="running", attempts=1,
+        ))
+
+
+def test_start_goal_recurs_with_same_prompt(tmp_path, monkeypatch):
+    # End-to-end: a cron-armed start_goal runs and re-arms the next occurrence
+    # carrying the same prompt -- a true recurring autonomous task.
+    monkeypatch.setattr("maverick.world_model.DEFAULT_DB", tmp_path / "world.db")
+    monkeypatch.setattr(
+        "maverick.runner.run_goal_in_thread", lambda goal_id, *a, **k: "done"
+    )
+    from maverick.job_queue import JobQueue
+    from maverick.worker import Worker
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    jid = q.enqueue(
+        "start_goal",
+        {"text": "Summarize overnight emails", "title": "Digest",
+         "__cron__": "*/5 * * * *"},
+        run_at=1000.0,
+    )
+    w = Worker(queue=q, idle_sleep=0.0)
+    assert w.run_once() is True
+    assert q.get(jid).status == "done"
+    nxt = [j for j in q.list(status="pending") if j.payload.get("__cron__")]
+    assert len(nxt) == 1 and nxt[0].id != jid
+    assert nxt[0].kind == "start_goal"
+    assert nxt[0].payload["text"] == "Summarize overnight emails"
+    assert nxt[0].payload["title"] == "Digest"
+
+
+def test_schedule_goal_cli_enqueues_recurring_start_goal(tmp_path, monkeypatch):
+    from maverick.cli import main
+    monkeypatch.setattr("maverick.job_queue.DEFAULT_DB", tmp_path / "jobs.db")
+
+    res = CliRunner().invoke(main, [
+        "schedule", "goal", "0 9 * * 1-5",
+        "Summarize my overnight emails", "--title", "Digest",
+    ])
+    assert res.exit_code == 0, res.output
+    assert "scheduled goal job" in res.output
+
+    from maverick.job_queue import JobQueue
+    jobs = JobQueue(db_path=tmp_path / "jobs.db").list(status="pending")
+    assert len(jobs) == 1
+    j = jobs[0]
+    assert j.kind == "start_goal"
+    assert j.payload["text"] == "Summarize my overnight emails"
+    assert j.payload["title"] == "Digest"
+    assert j.payload["__cron__"] == "0 9 * * 1-5"
+    # It's a normal cron job, so `schedule list` shows it.
+    listed = CliRunner().invoke(main, ["schedule", "list"])
+    assert "start_goal" in listed.output
+
+
+def test_schedule_goal_cli_rejects_bad_cron_and_empty_text(tmp_path, monkeypatch):
+    from maverick.cli import main
+    monkeypatch.setattr("maverick.job_queue.DEFAULT_DB", tmp_path / "jobs.db")
+    bad_cron = CliRunner().invoke(
+        main, ["schedule", "goal", "not a cron", "do a thing"]
+    )
+    assert bad_cron.exit_code == 2 and "bad cron" in bad_cron.output
+    empty = CliRunner().invoke(main, ["schedule", "goal", "*/5 * * * *", "   "])
+    assert empty.exit_code == 2 and "must not be empty" in empty.output
+
+
+# ---------- worker drain (one-shot, cron-friendly) ----------
+
+def test_drain_runs_all_ready_jobs_and_returns_count(tmp_path):
+    from maverick.job_queue import JobQueue
+    from maverick.worker import Worker
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    for _ in range(3):
+        q.enqueue("noop", {}, run_at=1000.0)  # past run_at -> ready now
+
+    w = Worker(queue=q, idle_sleep=0.0)
+    w.register("noop", lambda job: None)
+    assert w.drain() == 3
+    assert q.claim() is None  # no ready jobs left
+
+
+def test_drain_does_not_run_rearmed_future_occurrence(tmp_path):
+    # A re-armed cron occurrence has a FUTURE run_at, so it must NOT run in the
+    # same drain -- exactly one future occurrence stays pending for next time.
+    from maverick.job_queue import JobQueue
+    from maverick.worker import Worker
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    jid = q.enqueue("noop", {"__cron__": "*/5 * * * *"}, run_at=1000.0)
+
+    w = Worker(queue=q, idle_sleep=0.0)
+    w.register("noop", lambda job: None)
+    assert w.drain() == 1                          # only the ready occurrence
+
+    assert q.get(jid).status == "done"
+    pend = [j for j in q.list(status="pending") if j.payload.get("__cron__")]
+    assert len(pend) == 1 and pend[0].id != jid    # next occurrence still armed
+
+
+def test_drain_snapshots_ready_time_for_slow_recurring_jobs(
+    tmp_path, monkeypatch
+):
+    # ``--once`` must drain the work that was ready when it started, not work
+    # that becomes ready while a long handler is still running. Simulate that
+    # by making the first cron re-arm due after the drain snapshot (200 > 100)
+    # but before the real wall clock used by the old dynamic drain loop.
+    from maverick.job_queue import JobQueue
+    from maverick.worker import Worker
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    jid = q.enqueue("noop", {"__cron__": "* * * * *"}, run_at=0.0)
+    monkeypatch.setattr("maverick.worker.time.time", lambda: 100.0)
+    rearmed = {"count": 0}
+
+    def _fake_schedule_cron(queue, expr, kind, payload):
+        rearmed["count"] += 1
+        run_at = 200.0 if rearmed["count"] == 1 else 1_000_000_000_000.0
+        return queue.enqueue(kind, payload, run_at=run_at), run_at
+
+    monkeypatch.setattr("maverick.scheduler.schedule_cron", _fake_schedule_cron)
+    runs = []
+    w = Worker(queue=q, idle_sleep=0.0)
+    w.register("noop", lambda job: runs.append(job.id))
+
+    assert w.drain() == 1
+    assert runs == [jid]
+    assert q.get(jid).status == "done"
+    pend = [j for j in q.list(status="pending") if j.payload.get("__cron__")]
+    assert len(pend) == 1
+    assert pend[0].run_at == 200.0
+
+
+def test_worker_command_once_drains(tmp_path, monkeypatch):
+    from maverick.cli import main
+    monkeypatch.setattr("maverick.job_queue.DEFAULT_DB", tmp_path / "jobs.db")
+    called = {"drain": False}
+
+    def _fake_drain(self):
+        called["drain"] = True
+        return 2
+
+    monkeypatch.setattr("maverick.worker.Worker.drain", _fake_drain)
+    res = CliRunner().invoke(main, ["worker", "--once"])
+    assert res.exit_code == 0, res.output
+    assert called["drain"] is True
+    assert "drained" in res.output

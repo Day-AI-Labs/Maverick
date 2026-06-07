@@ -156,7 +156,7 @@ def validate_skill_file(path: Path) -> SkillValidation:
         return SkillValidation(False, [f"file not found: {p}"], [])
     try:
         text = p.read_text(encoding="utf-8")
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:
         return SkillValidation(False, [f"cannot read {p}: {e}"], [])
     try:
         skill = Skill.parse(text, p)
@@ -168,7 +168,7 @@ def validate_skill_file(path: Path) -> SkillValidation:
     has_name = any(ln.strip().startswith("name:") for ln in front.splitlines())
     if not has_name:
         errors.append("missing 'name:' in frontmatter")
-    elif not _KEBAB_RE.match(skill.name):
+    elif not isinstance(skill.name, str) or not _KEBAB_RE.match(skill.name):
         errors.append(f"name {skill.name!r} must be kebab-case (lowercase a-z, 0-9, hyphens)")
 
     if not skill.triggers:

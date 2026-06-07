@@ -38,6 +38,8 @@ Alpha, but **installable today**: all six packages are on [PyPI](https://pypi.or
 | Distribution | PyPI (6 packages), GHCR image, PyInstaller binaries, **native installers on Releases** | Code signing; Homebrew tap |
 | Tests | 2000+ tests, ruff + pytest on Py 3.10/3.11/3.12 | Integration suite + benchmark RESULTS.md |
 
+**Full list of shipped features → [`docs/FEATURES.md`](./docs/FEATURES.md).** The forward backlog (what isn't built yet) lives in [`docs/ROADMAP.md`](./docs/ROADMAP.md).
+
 ## Install
 
 ### Download the app — no terminal needed (easiest)
@@ -108,6 +110,8 @@ maverick version                         # installed package versions
 | `maverick dashboard [--host --port --token]` | Local web UI + REST API |
 | `maverick mcp` | MCP server on stdio for Claude Code / Cursor / etc. |
 | `maverick logs / status / answer / resume` | Inspect + control running goals |
+| `maverick schedule goal / add / list / rm` | Schedule recurring autonomous goals via cron |
+| `maverick worker` | Drain the scheduled-job queue (runs the recurring tasks) |
 | `maverick fact / facts` | Get / set persistent facts |
 | `maverick skills` | List installed + distilled skills |
 | `maverick skill install / remove / info` | Manage the skill marketplace |
@@ -138,6 +142,7 @@ deploy/
   docker/ vps/ desktop/  Dockerfile, install.sh, systemd unit, Caddyfile
 docs/
   getting-started.md     Install + first run
+  architecture.md        The governed agent runtime (OS-style primitives)
   configuration.md       Full config schema reference
   deployment.md          Desktop / Docker / VPS / Phone-companion targets
   safety.md              Shield chokepoints and built-in rule set

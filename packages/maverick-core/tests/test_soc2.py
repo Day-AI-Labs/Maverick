@@ -297,12 +297,24 @@ def test_audit_chain_unsigned_when_signing_off():
     assert probe["status"] != "broken"
 
 
-def test_audit_chain_unsigned_past_day_without_anchor_is_not_broken(
+def test_audit_chain_unsigned_completed_day_without_signing_is_not_broken(
     tmp_path, monkeypatch
 ):
-    """Completed unsigned day-files do not require a signed anchor ledger."""
+    """A completed day-file with no anchor ledger is NOT tampering when the
+    deployment never signs (no signing config, no signing key).
+
+    The cross-file anchor ledger only exists for signed deployments, so an
+    honestly-unsigned deployment legitimately has none. Reporting that as
+    ``broken`` would falsely signal tampering on every unsigned deployment the
+    day after its first audit file (and fail ``maverick compliance --strict``).
+    A *signed* log whose ledger was stripped still reports ``broken`` -- that
+    case keeps a signing key, so signing stays expected (see the stripped-log
+    test below).
+    """
     import json
 
+    monkeypatch.delenv("MAVERICK_AUDIT_SIGN", raising=False)
+    monkeypatch.setattr(soc2, "_audit_signing_expected", lambda: False)
     past_day = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
     (tmp_path / f"{past_day}.ndjson").write_text(
         json.dumps({"kind": "tool_call", "ts": "2026-01-01T00:00:00+00:00"})
@@ -393,6 +405,38 @@ def test_audit_chain_broken_when_anchor_ledger_deleted(tmp_path, monkeypatch):
     probe = soc2.collect_soc2_evidence()["audit_log"]
     assert probe["status"] == "broken"
     assert probe["first_reason"] == "anchor_ledger_missing"
+    assert probe["files_checked"] == 1
+    assert probe["anchors_checked"] is True
+
+
+def test_audit_chain_broken_when_signed_log_stripped_and_anchors_deleted(
+    tmp_path, monkeypatch
+):
+    """Stripping signing fields must not downgrade a signed log to unsigned."""
+    day = _write_signed_past_day(tmp_path, monkeypatch)
+    monkeypatch.setattr(soc2, "_resolve_audit_dir", lambda: tmp_path)
+
+    import json
+
+    from maverick.audit import signing
+
+    day_file = tmp_path / f"{day}.ndjson"
+    stripped_rows = []
+    for line in day_file.read_text(encoding="utf-8").splitlines():
+        row = json.loads(line)
+        for field in ("hash", "sig", "key_id", "prev_hash"):
+            row.pop(field, None)
+        stripped_rows.append(json.dumps(row))
+    day_file.write_text("\n".join(stripped_rows) + "\n", encoding="utf-8")
+    (tmp_path / signing.ANCHOR_FILENAME).unlink()
+    (tmp_path / signing.ANCHOR_MARKER_FILENAME).unlink()
+
+    probe = soc2.collect_soc2_evidence()["audit_log"]
+
+    assert probe["status"] == "broken"
+    assert probe["first_reason"] == "anchor_ledger_missing"
+    # status == "broken" short-circuits before the unsigned-row count is added,
+    # so the key is intentionally absent on this path.
     assert probe["files_checked"] == 1
     assert probe["anchors_checked"] is True
 

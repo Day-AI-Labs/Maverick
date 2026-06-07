@@ -23,9 +23,12 @@ and how to confirm it's actually on.
 - [Always-on safety (not opt-in)](#always-on-safety-not-opt-in)
 - [Enterprise mode (the umbrella switch)](#enterprise-mode-the-umbrella-switch)
 - [Capability enforcement](#capability-enforcement)
+- [Role-based access control (RBAC)](#role-based-access-control-rbac)
 - [Multi-tenancy (per-user isolation)](#multi-tenancy-per-user-isolation)
 - [Usage quotas](#usage-quotas)
 - [OIDC SSO authentication](#oidc-sso-authentication)
+- [OIDC browser login (built-in)](#oidc-browser-login-built-in)
+- [Reverse-proxy SSO](#reverse-proxy-sso)
 - [Encryption at rest](#encryption-at-rest)
 - [Risk-proportional verification](#risk-proportional-verification)
 - [Audit-log signing (tamper-evidence)](#audit-log-signing-tamper-evidence)
@@ -156,6 +159,55 @@ that *require* verification must check for crypto first.
 
 **Verify it's on:** `maverick soc2` →
 `controls.capability_enforcement.status == "enabled"`.
+
+---
+
+## Role-based access control (RBAC)
+
+**What it does.** Binds principals to *named roles*, where each role is a
+capability scope. A principal's grant is the deployment ACL (the
+[capability](#capability-enforcement) ceiling) **narrowed** by their role — so a
+role can only ever *restrict*, never escalate past `[security]`. Roles fold into
+the grant wherever capabilities are built, so they bite under capability
+enforcement; with enforcement off they are inert.
+
+**config.toml**
+
+```toml
+# Roles are capability scopes (same fields as a capability).
+[roles.analyst]
+allow_tools = ["read_file", "search", "memory"]
+max_risk = "low"
+
+[roles.operator]
+deny_tools = ["shell"]
+allow_paths = ["/srv/work/*"]
+
+# Bind principals to roles. Keys are principal ids (an OIDC user maps to
+# `user:<sub>`); `default` is the fallback for unassigned principals.
+[role_assignments]
+"user:alice" = "analyst"
+"user:bob" = "operator"
+default = "analyst"
+```
+
+**How it narrows.** A role routes through capability *attenuation*: `allow_tools`
+intersects the ceiling, `deny_tools` unions it, `max_risk` only tightens, and
+`allow_paths`/`allow_hosts` intersect. A role that lists *broader* tools than
+`[security]` permits still cannot grant them — the ceiling wins, by construction.
+
+**Gotchas**
+
+- RBAC is opt-in: with no `[role_assignments]` the grant is exactly the ACL
+  (behaviour unchanged). An unknown role name (no matching `[roles.<name>]`) is a
+  no-op.
+- It is a *subset* model, not additive: an "admin" role is simply one with no
+  extra restrictions (it inherits the full ACL ceiling); narrower roles carve out
+  less.
+
+**Verify it's on:** roles fold into the capability grant, so the same
+`maverick soc2` → `controls.capability_enforcement` signal applies; grep the
+audit log for `capability_denied` to see a role's restrictions bite.
 
 ---
 
@@ -320,6 +372,167 @@ so OIDC does not 401 inbound webhooks.
 
 **Verify it's on:** `maverick soc2` → `controls.oidc_auth.status == "enabled"`
 (reports `absent` if the optional module/extra isn't installed).
+
+---
+
+## OIDC browser login (built-in)
+
+**What it does.** The [OIDC SSO](#oidc-sso-authentication) gate above verifies a
+bearer **ID token** that *something else* obtained — great for API clients, but a
+plain browser has no way to get one. The usual answer for browsers is to put an
+auth proxy in front of the dashboard (oauth2-proxy, an ALB OAuth listener, your
+IdP's proxy) and let it run the login. **If you can't run a proxy**, this
+built-in flow has the dashboard itself drive the OAuth2 / OpenID-Connect
+**authorization-code flow** (with PKCE): it redirects the browser to your IdP,
+exchanges the returned code for tokens server-side, verifies the ID token (reusing
+the same verifier as the bearer gate), and sets a signed session cookie. After
+that, the browser is authenticated by the cookie — no bearer header needed.
+
+> **Prefer the proxy.** The [reverse-proxy SSO](#reverse-proxy-sso) path below is
+> the simpler, lower-surface option: it keeps the OAuth client secret and the
+> login flow out of Maverick entirely. Reach for this built-in flow only when
+> running a proxy isn't practical.
+
+**Off by default, fail-closed.** The `/auth/login`, `/auth/callback`, and
+`/auth/logout` routes are inert (they return `404`) unless the flow is **fully
+configured**; an unconfigured deployment behaves exactly as before, and the
+bearer gate is untouched. "Fully configured" means OIDC is enabled **and**
+`client_id` **and** `session_secret` are set **and** the authorization/token
+endpoints are reachable (either an `issuer` for discovery, or both endpoints set
+explicitly).
+
+**config.toml** (extends the same `[auth.oidc]` table)
+
+```toml
+[auth.oidc]
+enabled = true
+issuer = "https://login.example.com/"     # used for discovery + ID-token verify
+audience = "maverick"                       # your client_id / API audience
+jwks_uri = "https://login.example.com/.well-known/jwks.json"
+
+# --- browser-login (authorization-code) flow ---
+client_id = "maverick-dashboard"            # the OAuth client registered for this app
+client_secret = "..."                       # the OAuth client secret
+redirect_uri = "https://dash.example.com/auth/callback"  # MUST match the IdP registration
+session_secret = "a-long-random-string"  # pragma: allowlist secret
+
+# Optional: skip discovery by pinning the endpoints explicitly.
+# authorization_endpoint = "https://login.example.com/authorize"
+# token_endpoint = "https://login.example.com/token"
+```
+
+**Environment variables**
+
+```bash
+export MAVERICK_OIDC_CLIENT_ID="maverick-dashboard"
+export MAVERICK_OIDC_CLIENT_SECRET="..."
+export MAVERICK_OIDC_REDIRECT_URI="https://dash.example.com/auth/callback"
+export MAVERICK_OIDC_SESSION_SECRET="a-long-random-string"  # pragma: allowlist secret
+# Optional explicit endpoints (otherwise discovered from the issuer):
+export MAVERICK_OIDC_AUTHORIZATION_ENDPOINT="https://login.example.com/authorize"
+export MAVERICK_OIDC_TOKEN_ENDPOINT="https://login.example.com/token"
+```
+
+**Wizard toggle:** yes — under "Enable OIDC SSO token verification?", a follow-up
+"Also enable the built-in browser login flow?" prompts for the client_id/secret,
+redirect URI, and session secret.
+
+**Security model** (these are the load-bearing controls):
+
+- **CSRF on the callback.** Each login mints an opaque `state` and stashes it in
+  a short-TTL (~10 min) signed transaction cookie; the callback rejects (HTTP
+  `400`) unless the returned `state` matches — *before* any token exchange.
+- **PKCE (S256).** A per-login `code_verifier` is generated; its S256
+  `code_challenge` is sent on the authorization request and the verifier on the
+  token exchange, so an intercepted authorization code can't be redeemed.
+- **HTTPS-only token exchange.** The token endpoint must be `https://` (the
+  client secret is POSTed to it); a non-https endpoint is refused. Discovery is
+  https-only too.
+- **ID token still fully verified.** The `id_token` from the exchange is verified
+  by the same `maverick.oidc.verify_oidc_token` as the bearer gate (asymmetric-
+  only, `exp`/`iat`/`aud`/`iss`/`sub` required, JWKS-by-`kid`). No second,
+  weaker verifier.
+- **Signed session cookie.** The session cookie is HMAC-SHA256 signed with
+  `session_secret` (stdlib only — no new dependency), carries `{sub, exp}`, and
+  is verified in constant time with expiry enforced. It is `HttpOnly`,
+  `SameSite=Lax`, and `Secure` (except on loopback for local dev). Tampered /
+  expired / wrong-secret cookies are simply not authenticated.
+- **Open-redirect defence.** A post-login `return_to` is honored only if it is a
+  safe *local* path (starts with a single `/`, no `//`, no backslash, no control
+  chars); anything else falls back to `/`.
+- **No secrets in logs.** Failures log a generic reason only — never the token,
+  the authorization code, the client secret, or the session value.
+
+**Identity precedence.** When login is on, a valid `mvk_session` cookie is
+accepted as the request identity (mapped to `user:<sub>`, recording
+`claims.via = "session"`), sitting between any reverse-proxy header and the OIDC
+bearer. Invalid/absent → falls through to the bearer path unchanged.
+
+**Gotchas**
+
+- The `redirect_uri` must **exactly** match what you registered at the IdP, and
+  must be the dashboard's public `…/auth/callback` URL.
+- Keep `session_secret` secret and stable: rotating it invalidates every live
+  session (users re-login); leaking it lets an attacker forge sessions.
+- This is **identity**, not network access — the dashboard's existing token /
+  loopback gate still governs who may connect. The `/auth/*` routes are exempt
+  from that gate (they bootstrap the session) but self-gate on full
+  configuration.
+
+---
+
+## Reverse-proxy SSO
+
+**What it does.** Lets a standard auth proxy in front of the dashboard
+(oauth2-proxy, your IdP's proxy, an ALB OAuth listener, ...) own the browser
+login, then forward the authenticated user's identity in a request header.
+Maverick maps that header to a `user:<id>` principal that flows into the
+[capability](#capability-enforcement) and tenant model — browser SSO without
+Maverick hand-rolling an OAuth flow. The [OIDC](#oidc-sso-authentication) bearer
+gate still serves API clients; this adds the browser path.
+
+**config.toml**
+
+```toml
+[auth.proxy]
+enabled = true
+header = "X-Forwarded-User"          # the identity header your proxy sets
+trusted_proxies = ["127.0.0.1"]      # peers allowed to assert it (default: loopback)
+```
+
+**Environment variables**
+
+```bash
+export MAVERICK_PROXY_AUTH=1
+export MAVERICK_PROXY_AUTH_HEADER="X-Forwarded-User"
+```
+
+**Security — read this.** A forwarded header is trivially spoofable by a direct
+client, so Maverick honors it **only when the request's network peer is a
+trusted upstream** (`trusted_proxies`; default loopback, since the proxy usually
+runs on the same host). For this to be safe you **must**:
+
+1. Make the proxy the **only** ingress to the dashboard (bind the dashboard to a
+   loopback/private interface the proxy reaches) so nobody can connect directly.
+2. Configure the proxy to **strip any client-supplied copy** of the identity
+   header before it sets its own.
+
+An explicit `trusted_proxies` list is exact — it *replaces* the loopback
+default, so include loopback if you still want it. An unknown/empty peer is
+never trusted (fail-closed).
+
+**Gotchas**
+
+- This sets *identity*, not network access — the dashboard's existing token /
+  loopback gate still governs who may connect.
+- The principal is `user:<header-value>`, so it lines up with `[role_assignments]`
+  keys for role-based access control; the verified principal records
+  `claims.via = "proxy"` so proxy-asserted identities are distinguishable from
+  signed ID tokens.
+
+**Verify it's on:** request a gated dashboard route through the proxy and confirm
+access matches the forwarded user (grep the audit log for `capability_denied` to
+see a role biting). Direct (non-proxy) requests must not carry a honored header.
 
 ---
 
