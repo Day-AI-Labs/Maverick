@@ -207,6 +207,127 @@ _SPECS: list[dict] = [
     dict(name="gusto", base_url_env="GUSTO_BASE_URL", token_env="GUSTO_TOKEN",
          description="Gusto REST. ops get/post/put (writes need confirm). e.g. "
          "/v1/companies/{id}/employees. Auth: GUSTO_BASE_URL + GUSTO_TOKEN."),
+
+    # --- Cloud / infra ---
+    dict(name="fastly", base_url_env="FASTLY_BASE_URL", token_env="FASTLY_TOKEN",
+         token_header="Fastly-Key", scheme="", description="Fastly REST. ops "
+         "get/post/put/delete (writes need confirm). Auth: FASTLY_BASE_URL + "
+         "FASTLY_TOKEN (Fastly-Key)."),
+    dict(name="akamai", base_url_env="AKAMAI_BASE_URL", token_env="AKAMAI_TOKEN",
+         description="Akamai REST. ops get/post/put/delete (writes need confirm). "
+         "Auth: AKAMAI_BASE_URL + AKAMAI_TOKEN."),
+    dict(name="digitalocean", base_url_env="DIGITALOCEAN_BASE_URL",
+         token_env="DIGITALOCEAN_TOKEN", description="DigitalOcean REST. ops "
+         "get/post/put/delete (writes need confirm). e.g. /v2/droplets. Auth: "
+         "DIGITALOCEAN_BASE_URL (https://api.digitalocean.com) + DIGITALOCEAN_TOKEN."),
+    dict(name="terraform", base_url_env="TERRAFORM_BASE_URL", token_env="TERRAFORM_TOKEN",
+         description="Terraform Cloud/Enterprise REST. ops get/post/patch/delete "
+         "(writes need confirm). e.g. /api/v2/organizations/{org}/workspaces. Auth: "
+         "TERRAFORM_BASE_URL + TERRAFORM_TOKEN."),
+    dict(name="vault", base_url_env="VAULT_BASE_URL", token_env="VAULT_TOKEN",
+         token_header="X-Vault-Token", scheme="", description="HashiCorp Vault REST. "
+         "ops get/post/delete (writes need confirm). e.g. /v1/secret/data/{path}. "
+         "Auth: VAULT_BASE_URL + VAULT_TOKEN (X-Vault-Token)."),
+
+    # --- Identity / IAM ---
+    dict(name="pingone", base_url_env="PINGONE_BASE_URL", token_env="PINGONE_TOKEN",
+         description="Ping Identity (PingOne) REST. ops get/post/put/delete (writes "
+         "need confirm). Auth: PINGONE_BASE_URL + PINGONE_TOKEN."),
+    dict(name="cyberark", base_url_env="CYBERARK_BASE_URL", token_env="CYBERARK_TOKEN",
+         description="CyberArk REST. ops get/post/put/delete (writes need confirm). "
+         "Auth: CYBERARK_BASE_URL + CYBERARK_TOKEN."),
+    dict(name="sailpoint", base_url_env="SAILPOINT_BASE_URL", token_env="SAILPOINT_TOKEN",
+         description="SailPoint IdentityNow REST. ops get/post/patch/delete (writes "
+         "need confirm). e.g. /v3/accounts. Auth: SAILPOINT_BASE_URL + SAILPOINT_TOKEN."),
+    dict(name="onelogin", base_url_env="ONELOGIN_BASE_URL", token_env="ONELOGIN_TOKEN",
+         description="OneLogin REST. ops get/post/put/delete (writes need confirm). "
+         "e.g. /api/2/users. Auth: ONELOGIN_BASE_URL + ONELOGIN_TOKEN."),
+    dict(name="auth0", base_url_env="AUTH0_BASE_URL", token_env="AUTH0_TOKEN",
+         description="Auth0 Management REST. ops get/post/patch/delete (writes need "
+         "confirm). e.g. /api/v2/users. Auth: AUTH0_BASE_URL + AUTH0_TOKEN."),
+    dict(name="duo", base_url_env="DUO_BASE_URL", token_env="DUO_TOKEN", basic=True,
+         description="Cisco Duo Admin REST. ops get/post (writes need confirm). "
+         "Auth: DUO_BASE_URL + DUO_TOKEN (ikey:skey, basic)."),
+
+    # --- Security / SIEM / endpoint ---
+    dict(name="crowdstrike", base_url_env="CROWDSTRIKE_BASE_URL",
+         token_env="CROWDSTRIKE_TOKEN", description="CrowdStrike Falcon REST. ops "
+         "get/post/patch/delete (writes need confirm). e.g. /detects/queries/detects/v1. "
+         "Auth: CROWDSTRIKE_BASE_URL + CROWDSTRIKE_TOKEN."),
+    dict(name="splunk", base_url_env="SPLUNK_BASE_URL", token_env="SPLUNK_TOKEN",
+         description="Splunk REST. ops get/post/delete (writes need confirm). e.g. "
+         "/services/search/jobs. Auth: SPLUNK_BASE_URL + SPLUNK_TOKEN."),
+    dict(name="zscaler", base_url_env="ZSCALER_BASE_URL", token_env="ZSCALER_TOKEN",
+         description="Zscaler REST. ops get/post/put/delete (writes need confirm). "
+         "Auth: ZSCALER_BASE_URL + ZSCALER_TOKEN."),
+    dict(name="tenable", base_url_env="TENABLE_BASE_URL", token_env="TENABLE_TOKEN",
+         token_header="X-ApiKeys", scheme="", description="Tenable.io REST. ops "
+         "get/post/put/delete (writes need confirm). Auth: TENABLE_BASE_URL + "
+         "TENABLE_TOKEN ('accessKey=...;secretKey=...')."),
+    dict(name="qualys", base_url_env="QUALYS_BASE_URL", token_env="QUALYS_TOKEN",
+         basic=True, description="Qualys REST. ops get/post (writes need confirm). "
+         "Auth: QUALYS_BASE_URL + QUALYS_TOKEN (user:pass, basic)."),
+    dict(name="rapid7", base_url_env="RAPID7_BASE_URL", token_env="RAPID7_TOKEN",
+         token_header="X-Api-Key", scheme="", description="Rapid7 InsightVM/IDR REST. "
+         "ops get/post/put/delete (writes need confirm). Auth: RAPID7_BASE_URL + "
+         "RAPID7_TOKEN (X-Api-Key)."),
+    dict(name="sentinelone", base_url_env="SENTINELONE_BASE_URL",
+         token_env="SENTINELONE_TOKEN", scheme="ApiToken", description="SentinelOne "
+         "REST. ops get/post/delete (writes need confirm). e.g. /web/api/v2.1/agents. "
+         "Auth: SENTINELONE_BASE_URL + SENTINELONE_TOKEN (ApiToken)."),
+    dict(name="proofpoint", base_url_env="PROOFPOINT_BASE_URL",
+         token_env="PROOFPOINT_TOKEN", basic=True, description="Proofpoint REST. ops "
+         "get/post (writes need confirm). Auth: PROOFPOINT_BASE_URL + PROOFPOINT_TOKEN "
+         "(principal:secret, basic)."),
+    dict(name="snyk", base_url_env="SNYK_BASE_URL", token_env="SNYK_TOKEN",
+         scheme="token", description="Snyk REST. ops get/post/delete (writes need "
+         "confirm). e.g. /rest/orgs. Auth: SNYK_BASE_URL + SNYK_TOKEN (token <key>)."),
+    dict(name="fortinet", base_url_env="FORTINET_BASE_URL", token_env="FORTINET_TOKEN",
+         description="Fortinet FortiGate/FortiManager REST. ops get/post/put/delete "
+         "(writes need confirm). Auth: FORTINET_BASE_URL + FORTINET_TOKEN."),
+
+    # --- BI / analytics ---
+    dict(name="qlik", base_url_env="QLIK_BASE_URL", token_env="QLIK_TOKEN",
+         description="Qlik Cloud REST. ops get/post/put/delete (writes need confirm). "
+         "e.g. /api/v1/apps. Auth: QLIK_BASE_URL + QLIK_TOKEN."),
+    dict(name="thoughtspot", base_url_env="THOUGHTSPOT_BASE_URL",
+         token_env="THOUGHTSPOT_TOKEN", description="ThoughtSpot REST. ops get/post "
+         "(writes need confirm). e.g. /api/rest/2.0/metadata/search. Auth: "
+         "THOUGHTSPOT_BASE_URL + THOUGHTSPOT_TOKEN."),
+    dict(name="sisense", base_url_env="SISENSE_BASE_URL", token_env="SISENSE_TOKEN",
+         description="Sisense REST. ops get/post/put/delete (writes need confirm). "
+         "Auth: SISENSE_BASE_URL + SISENSE_TOKEN."),
+    dict(name="domo", base_url_env="DOMO_BASE_URL", token_env="DOMO_TOKEN",
+         description="Domo REST. ops get/post/put/delete (writes need confirm). "
+         "e.g. /v1/datasets. Auth: DOMO_BASE_URL + DOMO_TOKEN."),
+    dict(name="mode", base_url_env="MODE_BASE_URL", token_env="MODE_TOKEN", basic=True,
+         description="Mode Analytics REST. ops get/post (writes need confirm). Auth: "
+         "MODE_BASE_URL + MODE_TOKEN (token:secret, basic)."),
+    dict(name="metabase", base_url_env="METABASE_BASE_URL", token_env="METABASE_TOKEN",
+         token_header="X-API-Key", scheme="", description="Metabase REST. ops "
+         "get/post/put/delete (writes need confirm). e.g. /api/card. Auth: "
+         "METABASE_BASE_URL + METABASE_TOKEN (X-API-Key)."),
+
+    # --- DevOps / CI ---
+    dict(name="jenkins", base_url_env="JENKINS_BASE_URL", token_env="JENKINS_TOKEN",
+         basic=True, description="Jenkins REST. ops get/post (writes need confirm). "
+         "e.g. /api/json, /job/{name}/build. Auth: JENKINS_BASE_URL + JENKINS_TOKEN "
+         "(user:apitoken, basic)."),
+    dict(name="circleci", base_url_env="CIRCLECI_BASE_URL", token_env="CIRCLECI_TOKEN",
+         token_header="Circle-Token", scheme="", description="CircleCI REST. ops "
+         "get/post (writes need confirm). e.g. /api/v2/project/{slug}/pipeline. Auth: "
+         "CIRCLECI_BASE_URL + CIRCLECI_TOKEN (Circle-Token)."),
+    dict(name="jfrog", base_url_env="JFROG_BASE_URL", token_env="JFROG_TOKEN",
+         description="JFrog Artifactory REST. ops get/post/put/delete (writes need "
+         "confirm). e.g. /artifactory/api/repositories. Auth: JFROG_BASE_URL + JFROG_TOKEN."),
+    dict(name="sonarqube", base_url_env="SONARQUBE_BASE_URL", token_env="SONARQUBE_TOKEN",
+         basic=True, description="SonarQube REST. ops get/post (writes need confirm). "
+         "e.g. /api/issues/search, /api/projects/search. Auth: SONARQUBE_BASE_URL + "
+         "SONARQUBE_TOKEN (token:, basic)."),
+    dict(name="azure_devops", base_url_env="AZURE_DEVOPS_BASE_URL",
+         token_env="AZURE_DEVOPS_TOKEN", basic=True, description="Azure DevOps REST. "
+         "ops get/post/patch/put (writes need confirm). e.g. /{org}/{proj}/_apis/wit/"
+         "workitems. Auth: AZURE_DEVOPS_BASE_URL + AZURE_DEVOPS_TOKEN (:PAT, basic)."),
 ]
 
 ENTERPRISE_CONNECTOR_NAMES: list[str] = [s["name"] for s in _SPECS]
