@@ -1,0 +1,75 @@
+"""Agent-attack hunter: sweep the audit trail for attack signals."""
+from __future__ import annotations
+
+import pytest
+from click.testing import CliRunner
+from maverick import threat_hunt
+from maverick.audit import export
+from maverick.cli import main
+
+_EVENTS = [
+    {"kind": "shield_block", "agent": "a1", "ts": 100.0, "reason": "injection"},
+    {"kind": "shield_block", "agent": "a2", "ts": 200.0},
+    {"kind": "egress_blocked", "agent": "a1", "ts": 150.0, "provider": "anthropic"},
+    {"kind": "capability_denied", "agent": "a3", "ts": 120.0, "tool": "shell"},
+    {"kind": "secret_redacted", "agent": "a1", "ts": 50.0},
+    {"kind": "tool_call", "agent": "a1", "ts": 10.0},     # not an indicator
+    {"kind": "goal_start", "agent": "a1", "ts": 5.0},      # not an indicator
+]
+
+
+def _feed(monkeypatch, events):
+    monkeypatch.setattr(export, "iter_audit_events", lambda **k: iter(list(events)))
+
+
+def test_hunt_aggregates_indicators_and_ignores_noise(monkeypatch):
+    _feed(monkeypatch, _EVENTS)
+    report = threat_hunt.hunt()
+
+    assert report.events_scanned == 7
+    assert report.risk_rating == "high"
+    by = {f.kind: f for f in report.findings}
+    assert "tool_call" not in by and "goal_start" not in by   # noise ignored
+    assert by["shield_block"].count == 2
+    assert by["shield_block"].agents == ["a1", "a2"]
+    assert by["shield_block"].last_seen == 200.0
+    assert by["egress_blocked"].samples[0]["provider"] == "anthropic"
+    # high-severity signals sort before the low-severity redaction
+    assert report.findings[0].severity == "high"
+    assert report.findings[-1].kind == "secret_redacted"
+
+
+def test_hunt_is_clear_with_no_signals(monkeypatch):
+    _feed(monkeypatch, [{"kind": "tool_call", "agent": "a", "ts": 1.0}])
+    report = threat_hunt.hunt()
+    assert report.risk_rating == "clear" and report.findings == []
+    assert "No attack signals" in threat_hunt.render_report_text(report)
+
+
+def test_hunt_is_fail_soft_on_a_broken_log(monkeypatch):
+    def _boom(**k):
+        raise OSError("unreadable audit dir")
+    monkeypatch.setattr(export, "iter_audit_events", _boom)
+    report = threat_hunt.hunt()           # must not raise
+    assert report.risk_rating == "clear"
+
+
+def test_cli_hunt_reports_and_strict_gates(monkeypatch):
+    _feed(monkeypatch, [{"kind": "egress_blocked", "agent": "a", "ts": 1.0}])
+    runner = CliRunner()
+
+    out = runner.invoke(main, ["hunt"])
+    assert out.exit_code == 0 and "Exfiltration" in out.output
+
+    strict = runner.invoke(main, ["hunt", "--strict"])
+    assert strict.exit_code != 0
+
+
+@pytest.mark.parametrize("severities,expected", [
+    ([], "clear"),
+    (["low"], "low"),
+    (["low", "high", "medium"], "high"),
+])
+def test_rollup(severities, expected):
+    findings = [threat_hunt.ThreatFinding("k", "t", s, 1, ["a"], 0.0) for s in severities]
+    assert threat_hunt._rollup(findings) == expected
