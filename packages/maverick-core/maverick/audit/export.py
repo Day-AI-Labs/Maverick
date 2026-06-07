@@ -17,6 +17,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from .events import is_valid_day
+
 log = logging.getLogger(__name__)
 
 # CEF severity (0-10). Default low; bump for denial/halt/block kinds so a
@@ -49,6 +51,12 @@ def audit_event_paths(
     tenant: str | None = None,
 ) -> list[Path]:
     """Return tenant-aware audit day-files selected for export."""
+    # Validate the path-forming input first -- before any filesystem check that
+    # could otherwise short-circuit (an empty dir) and let a crafted ``day``
+    # slip past. (``since``/``until`` are only compared lexically below, never
+    # built into a path.)
+    if day is not None and not is_valid_day(day):
+        raise ValueError(f"invalid audit day {day!r}: expected YYYY-MM-DD")
     from ..paths import data_dir
 
     audit_dir = data_dir("audit", tenant=tenant) if tenant else data_dir("audit")
@@ -69,6 +77,7 @@ def audit_event_paths(
             p for p in sorted(audit_dir.glob("*.ndjson")) if p.name != "anchors.ndjson"
         ]
 
+    # ``day`` was validated up front; default to today (UTC) when unset.
     d = day or _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
     return [audit_dir / f"{d}.ndjson"]
 
