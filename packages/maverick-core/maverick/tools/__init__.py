@@ -10,6 +10,7 @@ MCPClient. This is how Maverick consumes the wider MCP ecosystem.
 """
 from __future__ import annotations
 
+import asyncio
 import inspect
 import os
 from collections.abc import Awaitable, Callable
@@ -359,7 +360,17 @@ class ToolRegistry:
                 except ImportError:
                     pass
                 async def _invoke() -> str:
-                    out = self._tools[name].fn(args)
+                    _fn = self._tools[name].fn
+                    if inspect.iscoroutinefunction(_fn):
+                        # Native async tool: await directly on the loop.
+                        return await _fn(args)
+                    # Synchronous fn: offload to a worker thread so one slow or
+                    # blocking call (SaaS httpx, pymongo, dns, pyautogui, ...)
+                    # can't freeze the event loop and stall the whole swarm /
+                    # server / dashboard. Tools already assume threadpool
+                    # execution (see the threading.Lock / threading.local guards
+                    # in browser, mongodb, redis, repo_map).
+                    out = await asyncio.to_thread(_fn, args)
                     if inspect.isawaitable(out):
                         out = await out
                     return out
