@@ -1,0 +1,165 @@
+"""Oversight control plane: the policy decision point for agent actions.
+
+The keystone of Maverick's enterprise governance (see
+``docs/enterprise/architecture.md``, Layer A). Every consequential agent action
+is evaluated here against the principal's capability and org policy, yielding a
+single decision:
+
+  - ``ALLOW``          -- proceed
+  - ``DENY``           -- block (least-privilege or hard policy)
+  - ``REQUIRE_HUMAN``  -- pause for human sign-off (the EU AI Act Art 14
+                          human-oversight gate)
+
+Decisions are strictest-wins (``DENY`` > ``REQUIRE_HUMAN`` > ``ALLOW``) and carry
+a machine-readable ``rule`` + human ``reason`` so the choice lands in the audit
+record (Art 12).
+
+Default-open and opt-in: with no ``[governance]`` policy configured, ``evaluate``
+allows anything the capability already permits, so a non-enterprise deployment
+behaves exactly as before. Enterprise deployments set ``[governance]`` directly
+or via a compliance-regime pack, which compiles down to the same :class:`Policy`.
+
+This module is pure (no I/O, no network, no agent-loop coupling) so the decision
+logic is exhaustively unit-testable; wiring it into the kernel's tool path and
+recording verdicts to the audit chain are separate, deliberate steps.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+
+from .safety.tool_risk import risk_rank, tool_risk
+
+_RISK_LEVELS = ("low", "medium", "high")
+
+
+class Decision(str, Enum):
+    ALLOW = "allow"
+    DENY = "deny"
+    REQUIRE_HUMAN = "require_human"
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """The outcome of a policy evaluation.
+
+    ``rule`` names the policy clause that fired (``capability`` / ``deny_actions``
+    / ``deny_min_risk`` / ``require_human_actions`` / ``require_human_min_risk`` /
+    ``default``) so an auditor can see *why*, not just *what*.
+    """
+
+    decision: Decision
+    reason: str
+    rule: str
+
+    @property
+    def allowed(self) -> bool:
+        return self.decision is Decision.ALLOW
+
+    @property
+    def needs_human(self) -> bool:
+        return self.decision is Decision.REQUIRE_HUMAN
+
+
+def _risk_level(value: object) -> str | None:
+    return value if isinstance(value, str) and value in _RISK_LEVELS else None
+
+
+@dataclass(frozen=True)
+class Policy:
+    """Org-level action policy, layered on top of per-principal capabilities.
+
+    - ``deny_actions`` / ``require_human_actions``: exact action (tool) names.
+    - ``deny_min_risk`` / ``require_human_min_risk``: a risk *floor* -- any action
+      whose classified risk is at or above it gets the verdict. ``None`` == no
+      floor. (Risk order: low < medium < high.)
+    """
+
+    deny_actions: frozenset[str] = frozenset()
+    require_human_actions: frozenset[str] = frozenset()
+    deny_min_risk: str | None = None
+    require_human_min_risk: str | None = None
+
+    def is_empty(self) -> bool:
+        return not (
+            self.deny_actions
+            or self.require_human_actions
+            or self.deny_min_risk
+            or self.require_human_min_risk
+        )
+
+    @classmethod
+    def from_config(cls) -> Policy:
+        """Build the policy from the ``[governance]`` config table (opt-in)."""
+        try:
+            from .config import load_config
+            cfg = (load_config() or {}).get("governance") or {}
+        except Exception:
+            cfg = {}
+
+        def _names(key: str) -> frozenset[str]:
+            v = cfg.get(key)
+            if isinstance(v, (list, tuple, set)):
+                return frozenset(str(x) for x in v if str(x))
+            return frozenset()
+
+        return cls(
+            deny_actions=_names("deny_actions"),
+            require_human_actions=_names("require_human_actions"),
+            deny_min_risk=_risk_level(cfg.get("deny_min_risk")),
+            require_human_min_risk=_risk_level(cfg.get("require_human_min_risk")),
+        )
+
+
+def evaluate(
+    action: str,
+    *,
+    risk: str | None = None,
+    capability=None,
+    policy: Policy | None = None,
+) -> Verdict:
+    """Decide ALLOW / DENY / REQUIRE_HUMAN for ``action`` (a tool name).
+
+    Strictest-wins evaluation order:
+      1. capability (least privilege) -- a forbidden action is denied outright;
+      2. org hard-deny (``deny_actions`` / ``deny_min_risk``);
+      3. human-oversight gate (``require_human_actions`` / ``require_human_min_risk``);
+      4. otherwise allow.
+
+    ``risk`` overrides the classifier (``safety.tool_risk``) when given. ``policy``
+    defaults to :meth:`Policy.from_config`; ``capability`` is an optional
+    :class:`maverick.capability.Capability`.
+    """
+    if policy is None:
+        policy = Policy.from_config()
+    eff_risk = _risk_level(risk) or tool_risk(action)
+
+    # 1. Least privilege: the capability is the ceiling; deny below it wins.
+    if capability is not None and not capability.permits(action):
+        return Verdict(Decision.DENY, f"capability does not permit {action!r}",
+                       "capability")
+
+    # 2. Org hard-deny.
+    if action in policy.deny_actions:
+        return Verdict(Decision.DENY, f"{action!r} is denied by org policy",
+                       "deny_actions")
+    if policy.deny_min_risk and risk_rank(eff_risk) >= risk_rank(policy.deny_min_risk):
+        return Verdict(Decision.DENY,
+                       f"{eff_risk}-risk {action!r} denied by org policy",
+                       "deny_min_risk")
+
+    # 3. Human-oversight gate (EU AI Act Art 14).
+    if action in policy.require_human_actions:
+        return Verdict(Decision.REQUIRE_HUMAN,
+                       f"{action!r} requires human approval", "require_human_actions")
+    if (policy.require_human_min_risk
+            and risk_rank(eff_risk) >= risk_rank(policy.require_human_min_risk)):
+        return Verdict(Decision.REQUIRE_HUMAN,
+                       f"{eff_risk}-risk {action!r} requires human approval",
+                       "require_human_min_risk")
+
+    # 4. Default-allow.
+    return Verdict(Decision.ALLOW, "permitted", "default")
+
+
+__all__ = ["Decision", "Verdict", "Policy", "evaluate"]
