@@ -796,7 +796,7 @@ async def oversight_page(request: Request) -> HTMLResponse:
     /audit, /fleets) remain the deep dives; this is the at-a-glance roll-up.
     Fail-soft: an unreadable audit log yields empty panels, never a 500.
     """
-    from collections import Counter
+    from collections import Counter, deque
 
     from maverick.audit import default_audit_log
     try:
@@ -804,12 +804,43 @@ async def oversight_page(request: Request) -> HTMLResponse:
     except (TypeError, ValueError):
         n = 1000
     day = safe_audit_day(request.query_params.get("day"))
-    try:
-        raw = default_audit_log().tail(n, day=day)
-    except Exception:  # pragma: no cover - never 500 the console on a log error
-        raw = []
-    events = [e for e in raw if _is_intervention(e)]
-    by_kind = Counter(str(e.get("kind")) for e in events)
+    since = safe_audit_day(request.query_params.get("since"))
+    until = safe_audit_day(request.query_params.get("until"))
+    ranged = bool(since or until)
+
+    # Counts span the whole window; the trail keeps only the newest 150 (a
+    # bounded deque), so a wide incident-review range stays cheap in memory.
+    by_kind: Counter = Counter()
+    recent: deque = deque(maxlen=150)
+    total = 0
+    if ranged:
+        # Incident review: an inclusive [since, until] window across day-files,
+        # reusing the export reader's lexical date filter (open-ended if one
+        # bound is unset). Bound the file scan on a very wide window.
+        from maverick.audit.export import iter_audit_events
+        scanned = 0
+        try:
+            for e in iter_audit_events(since=since, until=until):
+                scanned += 1
+                if scanned > 200_000:
+                    break
+                if _is_intervention(e):
+                    by_kind[str(e.get("kind"))] += 1
+                    total += 1
+                    recent.append(e)
+        except Exception:  # pragma: no cover - never 500 the console on a log error
+            pass
+    else:
+        try:
+            raw = default_audit_log().tail(n, day=day)
+        except Exception:  # pragma: no cover - never 500 the console on a log error
+            raw = []
+        for e in raw:
+            if _is_intervention(e):
+                by_kind[str(e.get("kind"))] += 1
+                total += 1
+                recent.append(e)
+
     rows = [
         {
             "ts": e.get("ts"),
@@ -818,8 +849,8 @@ async def oversight_page(request: Request) -> HTMLResponse:
             "goal_id": e.get("goal_id"),
             "detail": _intervention_detail(e),
         }
-        for e in reversed(events)
-    ][:150]
+        for e in reversed(recent)
+    ]
 
     try:
         from maverick.killswitch import is_active
@@ -843,7 +874,10 @@ async def oversight_page(request: Request) -> HTMLResponse:
         {
             "events": rows,
             "by_kind": dict(by_kind),
-            "total": len(events),
+            "total": total,
+            "ranged": ranged,
+            "since": since,
+            "until": until,
             "halted": halted,
             "approvals": approvals,
             "sources": sources,
