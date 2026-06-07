@@ -138,6 +138,40 @@ def remove_fleet(name: str, *, tenant: str | None = "__active__") -> bool:
         return False
 
 
+def runs_path(name: str, *, tenant: str | None = "__active__") -> Path:
+    """The per-fleet run index (``<name>.runs.json``), tenant-aware."""
+    return fleets_dir(tenant=tenant) / f"{name}.runs.json"
+
+
+def load_runs(name: str, *, tenant: str | None = "__active__") -> list[dict]:
+    """Recent runs for a fleet (oldest first), or ``[]`` if none/unreadable."""
+    if not valid_name(name):
+        return []
+    try:
+        data = json.loads(runs_path(name, tenant=tenant).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    return [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
+
+
+def record_run(
+    name: str, agent: str, goal_id: int, *, tenant: str | None = "__active__"
+) -> None:
+    """Append a ``{agent, goal_id, ts}`` entry to the fleet's run index (0600)."""
+    if not valid_name(name):
+        raise ValueError(f"invalid fleet name: {name!r}")
+    runs = load_runs(name, tenant=tenant)
+    runs.append({"agent": agent, "goal_id": goal_id, "ts": time.time()})
+    d = fleets_dir(tenant=tenant)
+    d.mkdir(parents=True, exist_ok=True)
+    import os as _os
+    path = runs_path(name, tenant=tenant)
+    # 0600 from creation: the index names principals + their work.
+    fd = _os.open(path, _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o600)
+    with _os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(runs, f, indent=2)
+
+
 __all__ = [
     "FleetAgent",
     "Fleet",
@@ -147,4 +181,7 @@ __all__ = [
     "load_fleet",
     "list_fleets",
     "remove_fleet",
+    "runs_path",
+    "load_runs",
+    "record_run",
 ]

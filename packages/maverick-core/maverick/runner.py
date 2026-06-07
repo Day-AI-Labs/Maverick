@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from typing import Any
 
 from ._envparse import env_float, env_int
 
@@ -52,6 +53,7 @@ def run_goal_in_thread(
     *,
     channel: str | None = None,
     user_id: str | None = None,
+    capability: Any | None = None,
 ) -> str | None:
     """Synchronously run a goal under the global concurrency semaphore.
 
@@ -104,7 +106,8 @@ def run_goal_in_thread(
             run_goal_sync(
                 llm, world, budget,
                 goal_id, sandbox=sandbox, max_depth=max_depth,
-                channel=channel, user_id=user_id, resume=True,
+                channel=channel, user_id=user_id, capability=capability,
+                resume=True,
             )
         except Exception:
             # If the swarm raises an unexpected exception (anything not
@@ -147,11 +150,12 @@ def run_goal_in_background(
     *,
     channel: str | None = None,
     user_id: str | None = None,
+    capability: Any | None = None,
 ) -> str | None:
     """Alias for run_goal_in_thread. Reserved for future change to a
     proper task queue (Celery / arq / RQ) without breaking callers."""
     return run_goal_in_thread(
         goal_id=goal_id, max_dollars=max_dollars,
         max_wall_seconds=max_wall_seconds, max_depth=max_depth,
-        channel=channel, user_id=user_id,
+        channel=channel, user_id=user_id, capability=capability,
     )

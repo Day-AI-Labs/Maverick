@@ -588,6 +588,29 @@ def governance_check(action: str, risk: str | None, as_json: bool) -> None:
     click.echo(f"{action}: {v.decision.value.upper()}  ({v.rule}) — {v.reason}")
 
 
+def _governance_denied_counts(principals: set[str], *, limit: int = 500) -> dict[str, int]:
+    """Count recent policy-denial audit events per principal (fail-soft).
+
+    The oversight signal is a tool the control plane refused for an agent. On
+    this kernel that lands as ``capability_denied``; ``governance_denied`` is
+    matched too where a build records it, so the count is forward-compatible.
+    """
+    counts: dict[str, int] = {}
+    try:
+        from .audit import EventKind, default_audit_log
+        kinds = {EventKind.CAPABILITY_DENIED,
+                 getattr(EventKind, "GOVERNANCE_DENIED", "governance_denied")}
+        for ev in default_audit_log().tail(limit):
+            if ev.get("kind") not in kinds:
+                continue
+            p = ev.get("principal")
+            if p in principals:
+                counts[p] = counts.get(p, 0) + 1
+    except Exception:  # pragma: no cover -- the oversight view never blocks on audit
+        pass
+    return counts
+
+
 @main.group()
 def fleet() -> None:
     """Manage per-employee agent fleets (enterprise)."""
@@ -662,6 +685,101 @@ def fleet_rm(name: str) -> None:
     else:
         click.echo(f"no such fleet: {name}", err=True)
         sys.exit(1)
+
+
+@fleet.command("run")
+@click.argument("fleet_name")
+@click.argument("agent_name")
+@click.argument("prompt")
+@click.option("--max-dollars", default=None, type=float,
+              help="Spend cap for this run (else [budget] / the runner default).")
+@click.pass_context
+def fleet_run(ctx, fleet_name: str, agent_name: str, prompt: str,
+              max_dollars: float | None) -> None:
+    """Run a governed goal AS one of a fleet's agents.
+
+    The agent runs least-privileged under its RBAC role's capability and under
+    its own audit principal (``agent:<fleet>.<agent>``), so the oversight
+    control plane governs the work automatically.
+    """
+    from .capability import capability_for_role
+    from .fleet import load_fleet, record_run
+    from .runner import run_goal_in_thread
+
+    f = load_fleet(fleet_name)
+    if f is None:
+        click.echo(f"no such fleet: {fleet_name}", err=True)
+        sys.exit(1)
+    agent = next((a for a in f.agents if a.name == agent_name), None)
+    if agent is None:
+        click.echo(f"no such agent {agent_name!r} in fleet {fleet_name!r}", err=True)
+        sys.exit(1)
+
+    principal = f.principal_for(agent.name)
+    cap = capability_for_role(agent.role, principal=principal)
+    world = open_world(ctx.obj["db"])
+    try:
+        goal_id = world.create_goal(prompt)
+    finally:
+        world.close()
+    record_run(fleet_name, agent.name, goal_id)
+    click.echo(f"goal #{goal_id} created for {principal} (role {agent.role})")
+    status = run_goal_in_thread(goal_id, max_dollars=max_dollars,
+                                capability=cap, user_id=principal)
+    click.echo(f"goal #{goal_id}: {status or 'did not start'}")
+
+
+@fleet.command("status")
+@click.argument("name")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def fleet_status(ctx, name: str, as_json: bool) -> None:
+    """Supervisor oversight: each agent's recent runs + governance denials."""
+    import json as _json
+
+    from .fleet import load_fleet, load_runs
+    f = load_fleet(name)
+    if f is None:
+        click.echo(f"no such fleet: {name}", err=True)
+        sys.exit(1)
+
+    runs = load_runs(name)
+    by_agent: dict[str, list[dict]] = {a.name: [] for a in f.agents}
+    for r in runs:
+        by_agent.setdefault(str(r.get("agent")), []).append(r)
+    denied = _governance_denied_counts({f.principal_for(a.name) for a in f.agents})
+
+    world = open_world(ctx.obj["db"])
+    try:
+        def _row(r: dict) -> dict:
+            gid = r.get("goal_id")
+            g = world.get_goal(gid) if isinstance(gid, int) else None
+            return {"goal_id": gid, "status": g.status if g else "missing",
+                    "ts": r.get("ts")}
+        report = []
+        for a in f.agents:
+            recent = sorted(by_agent.get(a.name, []),
+                            key=lambda r: r.get("ts") or 0.0)[-10:]
+            report.append({
+                "agent": a.name, "role": a.role,
+                "principal": f.principal_for(a.name),
+                "runs": [_row(r) for r in recent],
+                "governance_denied": denied.get(f.principal_for(a.name), 0),
+            })
+    finally:
+        world.close()
+
+    if as_json:
+        click.echo(_json.dumps({"fleet": f.name, "agents": report}))
+        return
+    click.echo(click.style(f"fleet {f.name}  (owner {f.owner})", bold=True))
+    for a in report:
+        click.echo(f"  {a['agent']:16} role={a['role']:14} {a['principal']}  "
+                   f"denied={a['governance_denied']}")
+        if not a["runs"]:
+            click.echo("      (no runs)")
+        for r in a["runs"]:
+            click.echo(f"      goal #{r['goal_id']}: {r['status']}")
 
 
 @main.command()
