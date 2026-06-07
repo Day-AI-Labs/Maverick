@@ -131,6 +131,23 @@ def test_write_config_emits_mcp_servers(tmp_path: Path, monkeypatch):
     assert parsed["mcp_servers"]["fs"]["args"] == ["-y", "x"]
 
 
+def test_write_config_emits_mcp_registries(tmp_path: Path, monkeypatch):
+    parsed = _write_full_config(
+        tmp_path, monkeypatch,
+        mcp_registries=["https://registry.example.com/catalog",
+                        "https://internal.acme/catalog"],
+    )
+    assert parsed["mcp_registries"]["indexes"] == [
+        "https://registry.example.com/catalog", "https://internal.acme/catalog"]
+
+
+def test_write_config_omits_mcp_registries_by_default(tmp_path: Path, monkeypatch):
+    # No override -> no [mcp_registries] section (discovery uses the built-in
+    # default index, so the config stays minimal).
+    parsed = _write_full_config(tmp_path, monkeypatch)
+    assert "mcp_registries" not in parsed
+
+
 def test_write_config_emits_plugins(tmp_path: Path, monkeypatch):
     parsed = _write_full_config(
         tmp_path, monkeypatch, plugins=["weather", "github-issues"],

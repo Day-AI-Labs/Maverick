@@ -564,6 +564,82 @@ def mcp(use_http: bool, host: str, port: int) -> None:
         MCPServer().run()
 
 
+@main.group("mcp-registry")
+def mcp_registry_group() -> None:
+    """Discover + install external MCP servers from a registry.
+
+    A registry is a self-hostable `<base>/mcp/index.json` (point
+    `[mcp_registries] indexes` at your own). `add` writes the chosen server into
+    `[mcp_servers.<name>]` in ~/.maverick/config.toml; the kernel loads it on the
+    next run. (`maverick mcp` — without `-registry` — starts Maverick's own MCP
+    server; this group manages the servers Maverick *consumes*.)
+    """
+
+
+@mcp_registry_group.command("browse")
+def mcp_registry_browse() -> None:
+    """List MCP servers available in the registry."""
+    from .mcp_registry import load_mcp_registry
+    entries = load_mcp_registry()
+    if not entries:
+        click.echo("no registry entries (index empty or unreachable).")
+        return
+    for e in entries:
+        mark = " [verified]" if e.verified else ""
+        transport = "http" if (e.spec or {}).get("url") else "stdio"
+        click.echo(f"  {e.name}{mark}  v{e.version}  ({transport})")
+        if e.summary:
+            click.echo(f"    {e.summary}")
+    click.echo("")
+    click.echo("install one with:  maverick mcp-registry add <name>")
+
+
+@mcp_registry_group.command("add")
+@click.argument("name")
+def mcp_registry_add(name: str) -> None:
+    """Install a registry MCP server by name into config."""
+    from .mcp_registry import add_mcp_server_to_config, install_mcp_from_registry
+    try:
+        spec = install_mcp_from_registry(name)
+        add_mcp_server_to_config(spec.name, spec.to_dict())
+    except ValueError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    transport = "http" if spec.is_http else "stdio"
+    click.echo(f"added: {spec.name} ({transport}) -> [mcp_servers.{spec.name}]")
+    click.echo("it loads on your next `maverick start` / `maverick chat`.")
+
+
+@mcp_registry_group.command("remove")
+@click.argument("name")
+def mcp_registry_remove(name: str) -> None:
+    """Remove a configured MCP server from config."""
+    from .mcp_registry import remove_mcp_server_from_config
+    if remove_mcp_server_from_config(name):
+        click.echo(f"removed: {name}")
+    else:
+        click.echo(f"no MCP server {name!r} in config.", err=True)
+        sys.exit(2)
+
+
+@mcp_registry_group.command("list")
+@click.pass_context
+def mcp_registry_list(ctx) -> None:
+    """List MCP servers currently configured in ~/.maverick/config.toml."""
+    from .mcp_client import load_mcp_specs_from_config
+    specs = load_mcp_specs_from_config()
+    if not specs:
+        click.echo("no MCP servers configured. add one with "
+                   "`maverick mcp-registry add <name>`.")
+        return
+    for s in specs:
+        if s.is_http:
+            click.echo(f"  {s.name}  (http)  {s.url}")
+        else:
+            argstr = " ".join([s.command, *s.args])
+            click.echo(f"  {s.name}  (stdio)  {argstr}")
+
+
 @main.command()
 @click.argument("title", required=False)
 @click.option("--description", default="")
