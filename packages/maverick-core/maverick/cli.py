@@ -1193,6 +1193,39 @@ def schedule_rm(job_id: int) -> None:
         sys.exit(1)
 
 
+@schedule.command("goal")
+@click.argument("cron_expr")
+@click.argument("text")
+@click.option("--title", default=None,
+              help="Short goal title (default: derived from TEXT).")
+def schedule_goal(cron_expr: str, text: str, title: str | None) -> None:
+    """Arm a recurring autonomous goal: run TEXT as a FRESH goal on CRON_EXPR.
+
+    Unlike `schedule add run_goal` (which re-runs one fixed goal id), every fire
+    creates a new goal from TEXT -- a true recurring task. Drain the queue with
+    `maverick worker`; manage it with `schedule list` / `schedule rm`.
+
+    Example: maverick schedule goal "0 9 * * 1-5" "Summarize my overnight emails"
+    """
+    from .job_queue import JobQueue
+    from .scheduler import CronError, next_run, schedule_cron
+    if not text.strip():
+        click.echo("ERROR: goal TEXT must not be empty.", err=True)
+        sys.exit(2)
+    try:
+        next_run(cron_expr)  # validate up front
+    except CronError as e:
+        click.echo(f"ERROR: bad cron expression: {e}", err=True)
+        sys.exit(2)
+    payload: dict = {"text": text, "__cron__": cron_expr}
+    if title:
+        payload["title"] = title
+    job_id, run_at = schedule_cron(JobQueue(), cron_expr, "start_goal", payload)
+    from datetime import datetime
+    when = datetime.fromtimestamp(run_at).strftime("%Y-%m-%d %H:%M:%S")
+    click.echo(f"scheduled goal job {job_id}; next run {when}")
+
+
 @main.command()
 @click.option("--max-depth", default=3, type=int)
 @click.option("--verbose", "-v", is_flag=True)
