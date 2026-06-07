@@ -2785,6 +2785,20 @@ def audit() -> None:
     """Inspect the audit log (~/.maverick/audit/YYYY-MM-DD.ndjson)."""
 
 
+def _require_day_opt(day: str | None) -> None:
+    """Reject a ``--day`` that isn't a literal YYYY-MM-DD before it becomes a path.
+
+    ``day`` is resolved to ``<audit_dir>/<day>.ndjson``; a value like
+    ``../../etc/passwd`` would otherwise escape the audit dir. The writer/export
+    layer refuses it too (a backstop for non-CLI callers); this just turns it
+    into a friendly CLI error + exit 2, matching ``--since``/``--until``.
+    """
+    from .audit.events import is_valid_day
+    if day is not None and not is_valid_day(day):
+        click.echo("error: --day must be YYYY-MM-DD", err=True)
+        sys.exit(2)
+
+
 @audit.command("tail")
 @click.option("-n", "--num", default=50, type=int, help="Lines to tail.")
 @click.option("--day", default=None, help="YYYY-MM-DD (default: today).")
@@ -2792,6 +2806,7 @@ def audit_tail(num: int, day: str | None) -> None:
     """Print the last N audit events."""
     import json as _json
 
+    _require_day_opt(day)
     from .audit import default_audit_log
     for ev in default_audit_log().tail(num, day=day):
         click.echo(_json.dumps(ev, default=str))
@@ -2804,6 +2819,7 @@ def audit_grep(pattern: str, day: str | None) -> None:
     """Regex grep over today's audit log."""
     import json as _json
 
+    _require_day_opt(day)
     from .audit import default_audit_log
     try:
         events = default_audit_log().grep(pattern, day=day)
@@ -2847,6 +2863,7 @@ def audit_verify(
     import datetime as _dt
     from pathlib import Path as _Path
 
+    _require_day_opt(day)
     from .audit import verify_anchors, verify_chain
     from .paths import data_dir
 
@@ -2936,6 +2953,7 @@ def audit_export(
     import os as _os
     from pathlib import Path as _Path
 
+    _require_day_opt(day)
     for _label, _val in (("--since", since), ("--until", until)):
         if _val is not None:
             try:
@@ -3129,6 +3147,7 @@ def logs_cmd(pattern: str | None, num: int, day: str | None) -> None:
     """
     import json as _json
 
+    _require_day_opt(day)
     from .audit import default_audit_log
     al = default_audit_log()
     try:
