@@ -124,8 +124,8 @@ workflows · risk register/ERM · policy lifecycle · regulatory-change tracking
 internal-audit workflow · subprocessor registry · SIEM forwarder/correlation (CEF
 export exists) · security-IR workflow · threat intel · CVE/SBOM vuln scanning ·
 patch mgmt · IAM joiner-mover-leaver · CMDB · change-mgmt workflow · backup/DR ·
-ITSM. Two **primitive** gaps: runtime **capability expiry/revocation** (`expires_at`
-is modeled, not polled) and the **SoD/access-conflict linter**.
+ITSM. Two **primitive** gaps: a **mid-session capability-revocation sweep + revocation list**
+(expiry itself is already enforced at `permits()`) and the **SoD/access-conflict linter**.
 
 Many IT-ops items are **Process-only** — the agent orchestrates and *evidences* a
 human/org workflow (provisioning, access reviews, change control), it doesn't
@@ -237,7 +237,7 @@ there; the role personas aren't."*
 8. **Technical Research & Architecture** — design docs/ADRs · spikes · tech evaluation
 
 ### What's shipped (the most of any suite)
-The coding kernel, 8 sandbox backends, code review + the test-driven verifier + the
+The coding kernel, 7 sandbox backends (+ a network-policy egress layer), code review + the test-driven verifier + the
 SWE-bench eval harness, VCS/CI tools, the swarm/orchestrator — plus ~140 connectors incl.
 the full PM stack (Jira/Linear/Asana/ClickUp/Notion/Confluence), product analytics
 (GA4/Mixpanel/PostHog), DevOps (Datadog/Sentry/PagerDuty/Vercel/Cloudflare), Figma + a11y.
@@ -336,7 +336,7 @@ record (ERP/MRP/WMS/TMS/MES/CMMS/QMS/EHS) + industrial IoT (read-scoped).
    Towers 1–3/5 (fast wins, little new code).
 2. **The amount/severity-aware policy** + the **Operating Profile compiler** with
    hard-floor validation — unlocks L3 automation and the DoA/discount matrix across all three suites.
-3. **The SoD/access-conflict linter** + **capability expiry/revocation enforcement** —
+3. **The SoD/access-conflict linter** + **mid-session capability-revocation sweep** (expiry already enforced) —
    the two cross-cutting primitive gaps.
 4. **The Supervisor operator console** (Layer A) — the keystone for live oversight (GRC + Revenue).
 5. **The outbound gate + consent/suppression hard floor** (GTM) — must precede any

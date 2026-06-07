@@ -35,6 +35,14 @@ JD: <one-line job description>
 Not every line applies to every agent. **Baseline bundles** (below) are assumed and not
 repeated per agent — an entry lists only what it *adds* on top.
 
+**Skill dimensions (added in council review).** Deep skills may carry a **delivery tag** —
+`[S]` an installable SKILL.md, `[C]` an MCP connector/tool, `[K]` a knowledge source + persona
+— and a **proficiency** `{working | strong | expert}`. An entry may add: **Prereq:** (skills
+this seat presupposes), **Verified:** (how competence is checked — `assessment.py` / the eval
+harness / `continuous_benchmark`), **Judgment:** (the professional-judgment skills the seat
+can't be without), and **Cert:** (the human-credential-equivalent knowledge). These are
+applied to the council-added and updated entries below and roll out to the rest incrementally.
+
 ---
 
 ## Baseline bundles (assumed; referenced by tag)
@@ -67,12 +75,50 @@ evidence-cited findings + risk rating · the **"unknown is the honest answer"** 
 
 ---
 
+## Adversarial council review (applied)
+
+This catalog was put through a **five-member adversarial council** (ex-CFO/CPA/CIA · ex-CISO/DPO/GRC ·
+RevOps/CHRO/GC · ex-CTO/COO · a cross-cutting honesty/platform auditor). Their findings are
+applied throughout; the headline changes:
+
+- **Accuracy fixes (verified against source).** Sandbox count is **7 backends + a `network_policy`
+  egress layer** (not 8). Capability **expiry is enforced at `permits()`** — the real gap is a
+  *mid-session revocation sweep + revocation list*, not "expiry isn't enforced." `governance.py`
+  is a **risk-floor** gate today; **DoA/amount thresholds are a build**, not a shipped primitive.
+  The assessment flow is `start_assessment`→`answer_question`→`finalize_assessment` (there is no
+  `run_assessment` tool; shipped templates are `pia`/`aira`/`vendor_risk`; `sox_control`/`itgc`
+  are to author). **Figma/Wix are session-MCP, not in-repo** ("(MCP)", not "(live)").
+  `safety/consent.py` path corrected. Finance count = **38**.
+- **Staleness sweep** on dead endpoints / superseded standards: USPTO **Patent Public Search**
+  (PatFT retired) & **Trademark Search** (TESS retired); Salesforce **Flow** (Process Builder
+  retired) + **SOQL/governor limits**; **Marketing Cloud Account Engagement** (ex-Pardot);
+  **ASC 740-10** + **Pillar Two/GILTI/BEAT/CAMT** (ex-"FIN 48"); **ASC 958 / ASU 2016-14**
+  (ex-"FASB 116/117"); **FCCS** + **ASC 805/323/VIE** (HFM legacy); **SOFR / post-LIBOR**;
+  **NIST CSF 2.0 · ISO 27001:2022 · PCI-DSS v4.0.1 · IIA Global Internal Audit Standards 2024 ·
+  Colorado AI Act SB 24-205 · MECM (ex-SCCM)**.
+- **~45 council-recommended agents added** — each suite gains a **"Council-added agents"** block
+  for seats the reviewers found missing. Roster grows **301 → ~346**.
+- **New skill dimensions** (delivery `[S]/[C]/[K]`, proficiency, Prereq, Verified, Judgment, Cert)
+  per the "How to read" legend, applied to the council-added/updated entries.
+
+The full per-reviewer findings (every CRITICAL/IMPORTANT item) drove the edits below; remaining
+MINOR depth items are tracked for the incremental rollout.
+
+---
+
 ## Finance suite
 
-40 agents ([finance-agent-suite.md](finance-agent-suite.md)). Cross-cutting finance skills
-every agent here also carries: double-entry accounting fluency, the company **chart of
-accounts**, **materiality** judgment, and the **stage-not-post / require_human-for-money**
-discipline.
+38 agents ([finance-agent-suite.md](finance-agent-suite.md)). Cross-cutting finance skills
+every agent here also carries: double-entry accounting fluency; the **FASB ASC codification +
+GAAP hierarchy (ASC 105) / IFRS structure** and the accounting-research workflow (Big-4
+technical guides, SEC C&DIs); the **financial-statement assertions** (existence, completeness,
+rights/obligations, valuation, cutoff, presentation); **materiality computation** (overall /
+performance / clearly-trivial, **SAB 99 & SAB 108** quantitative *and* qualitative, rollover
+vs iron-curtain); **functional-currency literacy (ASC 830 / IAS 21)**; the company **chart of
+accounts**; **EUC / spreadsheet-control** discipline; and the **stage-not-post /
+require_human-for-money** discipline. *(Per-system note: cloud ERPs are queried through their
+native layer — NetSuite SuiteQL/saved-searches, S/4HANA CDS/OData, Oracle Fusion OTBI/BICC —
+not by direct SQL against the system-of-record DB, which is itself an ITGC finding.)*
 
 ### Tower 1 — Controllership
 
@@ -263,7 +309,7 @@ JD: Maintains the RCM, tests control operating effectiveness, tracks deficiencie
 - Systems: **AuditBoard, Workiva, ServiceNow GRC** · the **Maverick audit log** (as control evidence).
 - Technical: **control testing & sampling** · evidence evaluation · **SoD-conflict analysis** · ITGC testing (access/change/ops).
 - Domain: **SOX §302/§404** · **COSO 2013** (5 components/17 principles) · the Risk-Control Matrix · COBIT/ITGC.
-- Maverick: **independence (read-only)** · `run_assessment` (the `sox_control` / `itgc` templates) · deficiency = finding for a human owner.
+- Maverick: **independence (read-only)** · the assessment flow (`start_assessment`→`answer_question`→`finalize_assessment`) — *today's shipped templates are `pia`/`aira`/`vendor_risk`; `sox_control`/`itgc` are templates to author* · deficiency = finding for a human owner.
 
 #### 5.2 Internal Audit Agent  [UB +Assess]
 JD: Risk-based audit planning, fieldwork, workpapers, findings, follow-up.
@@ -328,7 +374,7 @@ JD: Spend cube, savings/consolidation, contract-compliance, PO drafting.
 #### 6.2 Vendor Master & Vendor-Risk Agent  [UB +Assess]
 JD: Vendor onboarding & master-data integrity — dedup, bank-detail validation, sanctions screening.
 - Systems: ERP vendor master · **OFAC / Dow Jones / ComplyAdvantage (KYB)** · tax-ID validation (W-9/W-8).
-- Technical: dedup · **bank-detail validation** · **sanctions/PEP screening** · `run_assessment` (vendor_risk).
+- Technical: dedup · **bank-detail validation** · **sanctions/PEP screening** · `start/answer/finalize_assessment` (vendor_risk).
 - Domain: TPRM · vendor onboarding · beneficial-ownership.
 - Maverick: **bank-detail changes always `require_human`** (BEC-fraud intercept) · sanctions hit blocks onboarding · SoD vs AP.
 
@@ -393,7 +439,7 @@ JD: Inventory of AI systems/models/agents — owner, purpose, data, risk tier, l
 #### 1.2 AI Risk Assessment (AIRA) Agent  [UB +Assess]
 JD: NIST AI RMF / EU AI Act risk assessment of an AI system.
 - Systems: the assessment engine (`_AIRA`).
-- Technical: `run_assessment` scoring · evidence-cited findings.
+- Technical: `start/answer/finalize_assessment` scoring · evidence-cited findings.
 - Domain: **NIST AI RMF** (Govern/Map/Measure/Manage) · EU AI Act risk tiers · bias/robustness/security concepts.
 - Maverick: drafts findings; never approves.
 
@@ -464,7 +510,7 @@ JD: Discover & classify personal/sensitive data; map data flows.
 
 #### 2.5 Consent Management Agent  [UB]
 JD: Data-subject consent by purpose/category, withdrawal, cookie consent.
-- Systems: consent platforms (**OneTrust CMP**) · `consent.py`.
+- Systems: consent platforms (**OneTrust CMP**) · `safety/consent.py`.
 - Technical: purpose/category consent records · withdrawal handling · cookie scanning.
 - Domain: GDPR/ePrivacy consent · CCPA opt-out.
 - Regulatory: GDPR, ePrivacy/PECR, CCPA/CPRA.
@@ -557,7 +603,7 @@ JD: Manage the SOC 2 / ISO PBC list, package evidence, track open items.
 #### 5.1 Vendor Risk Assessment Agent  [UB +Assess]
 JD: TPRM assessment — security, privacy, resilience.
 - Systems: TPRM (**OneTrust, Whistic, SecurityScorecard**) · `_VENDOR_RISK`.
-- Technical: `run_assessment` · **SIG/CAIQ** questionnaire review · SOC 2/ISO report analysis.
+- Technical: `start/answer/finalize_assessment` · **SIG/CAIQ** questionnaire review · SOC 2/ISO report analysis.
 - Domain: TPRM · fourth-party risk · concentration risk.
 
 #### 5.2 Subprocessor & DPA Agent  [UB]
@@ -669,7 +715,7 @@ JD: Just-in-time privileged access, session control, expiry enforcement.
 - Systems: **CyberArk, HashiCorp Vault, Teleport** · `capability.py` (`max_risk`/`expires_at`).
 - Technical: JIT access · session management · secret/credential vaulting.
 - Domain: privileged-access governance.
-- Maverick: **runtime capability expiry/revocation** (the primitive gap to build).
+- Maverick: capability **expiry is enforced at `permits()`** (an expired grant is denied at use-time); the gap to build is a **mid-session revocation sweep + a revocation list** for un-expired grants.
 
 #### 9.4 Authentication / SSO Agent  [UB]
 JD: SSO/MFA coverage & configuration; auth posture.
@@ -729,7 +775,7 @@ JD: Plan/orchestrate multi-channel campaigns, draft assets, measure pipeline con
 
 #### 1.2 Content & SEO Agent  [UB +Reach]
 JD: Content briefs/drafts (blog/landing/whitepaper), SEO, the content calendar.
-- Systems: CMS / **Wix** (live) · **Semrush, Ahrefs, Google Search Console** · GA4.
+- Systems: CMS / **Wix** (MCP) · **Semrush, Ahrefs, Google Search Console** · GA4.
 - Technical: keyword research · on-page SEO · content optimization · schema markup.
 - Domain: SEO/SEM · content strategy · E-E-A-T.
 - Maverick: brand/claims review before publish; WCAG.
@@ -749,7 +795,7 @@ JD: Positioning, messaging, launch plans, battlecards, competitive framing.
 
 #### 1.5 Brand & Creative Agent  [UB]
 JD: Brand-voice guardrails, creative briefs, design production.
-- Systems: **Figma** (live) · Google Drive · Adobe Creative Cloud.
+- Systems: **Figma** (MCP) · Google Drive · Adobe Creative Cloud.
 - Technical: creative-brief authoring · design generation · brand-asset management.
 - Domain: brand systems · visual/voice consistency.
 
@@ -836,7 +882,7 @@ JD: Generate quotes/proposals, configure products, apply the price book.
 
 #### 3.4 Deal Desk & Approvals Agent  [UB +Data]
 JD: Enforce the discount/term approval matrix, check margin, route approvals.
-- Systems: CPQ · `governance.py` (amount-aware) · the legal domain.
+- Systems: CPQ · `governance.py` (risk-floor gate today; **DoA/amount-aware policy to build**) · the legal domain.
 - Technical: **margin analysis** · approval-matrix routing · non-standard-term detection.
 - Domain: deal desk · DoA matrices · revenue/margin policy.
 - Maverick: discounts beyond floor `require_human`; never approves itself.
@@ -978,7 +1024,7 @@ JD: Run CSAT/NPS, synthesize sentiment, route to product.
 #### 7.1 Partner Recruitment & Onboarding Agent  [UB +Assess]
 JD: Recruit, vet, and onboard partners.
 - Systems: **PRM (Crossbeam, PartnerStack)** · the GRC vendor-risk assessment.
-- Technical: partner research · `run_assessment` (vendor_risk) · onboarding.
+- Technical: partner research · `start/answer/finalize_assessment` (vendor_risk) · onboarding.
 - Domain: channel/partner programs.
 
 #### 7.2 Partner Enablement & Co-Sell Agent  [UB +Reach]
@@ -1373,7 +1419,7 @@ JD: Usability studies, research synthesis, personas, journey maps.
 
 #### 2.2 Interaction & UI Design Agent  [UB]
 JD: UI design, wireframes, mockups, prototypes; design-to-code handoff.
-- Systems: **Figma** (live, incl. Code Connect) · `tools/diagram_tool`.
+- Systems: **Figma** (MCP, incl. Code Connect) · `tools/diagram_tool`.
 - Technical: UI/wireframe/prototype generation · **design-to-code** handoff.
 - Domain: interaction design · design heuristics.
 
@@ -1397,7 +1443,7 @@ JD: Microcopy, content design, product voice, localization prep.
 
 #### 3.1 Implementation / Coding Agent  [UB +Build]
 JD: Feature implementation — the core write-test loop against a spec.
-- Systems: the kernel (`agent`/`coding_mode`/`edit_format`) · `tools/{apply_patch,ast_edit,code_exec,repo_map}` · the **8 sandbox backends** · Git.
+- Systems: the kernel (`agent`/`coding_mode`/`edit_format`) · `tools/{apply_patch,ast_edit,code_exec,repo_map}` · the **7 sandbox backends** (+ a `network_policy` egress layer) · Git.
 - Technical: **multi-language coding** (Python, TypeScript/JS, Go, Java, Rust, …) · test-first development · debugging · the relevant frameworks.
 - Domain: software design · the codebase + its standards.
 - Maverick: edit-in-sandbox; opens PRs; **never merges, deploys, or `self_edit`s**.
@@ -1606,7 +1652,7 @@ JD: Build the acquisition pipeline; screen targets against the thesis.
 #### 2.2 Due-Diligence Agent  [UB +Assess]
 JD: Coordinate DD, analyze the data room, surface red flags.
 - Systems: **virtual data rooms (Datasite, Intralinks)** · finance + legal + GRC assessors · `assessment.py`.
-- Technical: **data-room analysis** · DD-coverage management · red-flag detection · `run_assessment`.
+- Technical: **data-room analysis** · DD-coverage management · red-flag detection · `start/answer/finalize_assessment`.
 - Domain: M&A diligence (financial/legal/tech/commercial).
 - Maverick: **sealed deal compartment** (`allow_hosts=[]`); MNPI cannot cross.
 
@@ -2009,7 +2055,7 @@ JD: Sourcing strategy, RFx, bid analysis, supplier selection.
 
 #### 2.2 Purchasing / PO Agent  [UB]
 JD: Create POs, run the 3-way match, manage confirmations.
-- Systems: ERP · finance AP (1.2) · `governance` (amount-aware).
+- Systems: ERP · finance AP (1.2) · `governance` (risk-floor gate today; **DoA/amount-aware policy to build**).
 - Technical: PO creation · **3-way match** · variance flagging.
 - Maverick: **PO commit beyond the DoA tier denied**; never releases payment; bank-detail-change → human.
 

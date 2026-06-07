@@ -7,7 +7,7 @@ suites; indexed in [`agent-suites-overview.md`](agent-suites-overview.md). Build
 
 > **Product & Engineering is the inverse of every other suite.** Finance and HR are
 > greenfield *workflow*; here, **Maverick itself is a software-engineering agent**, so
-> the engineering core — the recursive coding loop, sandboxed execution (8 backends),
+> the engineering core — the recursive coding loop, sandboxed execution (7 backends),
 > code review, the test-driven verifier, the SWE-bench eval harness, VCS/CI tools — is
 > the most mature capability in the whole platform. And the connector layer is
 > astonishingly complete: the `tools/` directory already ships **Jira, Linear, Asana,
@@ -63,7 +63,7 @@ This is the most "Shipped"-heavy reuse map of any suite.
 | Existing capability | Module / surface | Status | Reused by |
 |---|---|---|---|
 | **The coding kernel** (recursive loop, edit formats, patch/AST edits, code exec) | `agent.py`, `coding_mode.py`, `edit_format.py`, `tools/{apply_patch,ast_edit,str_edit,code_exec,repo_map,dep_graph,test_impact}.py` | **Shipped** | Software Eng (T3) |
-| **Sandboxed execution (8 backends)** | `sandbox/{docker,podman,firecracker,kubernetes,devcontainer,ssh,local,network_policy}.py` | **Shipped** | every agent that runs code (§3.1) |
+| **Sandboxed execution (7 backends + egress layer)** | `sandbox/{docker,podman,firecracker,kubernetes,devcontainer,ssh,local}.py` (7 backends) + `network_policy.py` (egress) | **Shipped** | every agent that runs code (§3.1) |
 | **Code review** | `reviewer.py` + `/code-review` skill + GitHub Copilot review | **Shipped** | Code Review (3.2) |
 | **Security review** | `/security-review` skill (+ IT-GRC AppSec, T7 there) | **Shipped** | review gate (§3.3) |
 | **Test-driven verifier (anti-cheat)** | `verifier.py` | **Shipped** | the ship gate (§3.2), Test authoring (3.5) |
@@ -111,7 +111,7 @@ Two specifics:
 ## 3. The control model (cross-cutting)
 
 ### 3.1 Sandbox-mediation (CLAUDE.md rule 4)
-All execution goes through `sandbox.exec()` — never a raw `subprocess`. The 8 backends
+All execution goes through `sandbox.exec()` — never a raw `subprocess`. The 7 backends
 (local → devcontainer → docker/podman → firecracker/kubernetes → ssh) + `network_policy`
 give the operator the isolation/egress posture they need. **Shipped.**
 
@@ -590,7 +590,7 @@ this is already shipped** (§1) — the rare ✅-heavy catalog.
 | **Product analytics** | GA4, Mixpanel, PostHog, Plausible | **✅ shipped** | 1.5, 6.5 |
 | **Design** | Figma (Code Connect), diagram, a11y, Wix | **✅ shipped/live** | T2 |
 | **Observability / DevOps** | Datadog, Sentry, PagerDuty, Vercel, Cloudflare, Lambda, S3 | **✅ shipped** | T5 |
-| **Data / compute** | SQL, pandas, notebooks, spreadsheet, HuggingFace, sandbox (8 backends) | **✅ shipped** | T6, T3 |
+| **Data / compute** | SQL, pandas, notebooks, spreadsheet, HuggingFace, sandbox (7 backends) | **✅ shipped** | T6, T3 |
 | **Docs** | pandoc, LaTeX, PDF, Confluence, Notion | **✅ shipped** | 7.1 |
 | **Cloud platforms (deep IaC/CSPM)** | AWS, Azure, GCP | ◻ build (P2) | 5.2 |
 | **Data warehouse / orchestration** | Snowflake, BigQuery, dbt, Airflow | ◻ build (P2) | T6 |

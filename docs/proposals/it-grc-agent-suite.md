@@ -139,7 +139,7 @@ Each wraps *every* agent below; all map to a shipped primitive.
 | **Evidence by construction** | capability grants, governance verdicts, and the signed chain *are* the audit evidence (`soc2.py` collects it). |
 | **Independence of assurance** | read-only capabilities for audit/assessor agents (cannot fix what they test). |
 | **Identity** | `oidc.py` verified subject → `user:{sub}` principal → capability/tenant. |
-| **Separation gap to build** | runtime **capability revocation/expiry enforcement** (`expires_at` is modeled but not actively polled) and an **access-conflict (SoD) linter** — see 9.2/9.3. |
+| **Separation gap to build** | a **mid-session capability-revocation sweep + revocation list** (expiry itself *is* enforced at `permits()` — an expired grant is denied at use-time) and an **access-conflict (SoD) linter** — see 9.2/9.3. |
 
 ---
 
@@ -676,8 +676,9 @@ IAM workflow is the gap.
 - **Connects to:** `capability.py` (`max_risk`, `expires_at`), consent gating.
 - **Capability:** read + `grant_jit_access` (time-boxed, gated).
 - **Controls:** **runtime capability revocation/expiry enforcement** must be built —
-  `expires_at` is modeled but not actively polled (a real gap the inventory flagged).
-- **Status:** **Partial** (the model exists; enforcement of expiry/revocation is the gap).
+  expiry *is* enforced at `permits()` (expired grants are denied at use-time); the gap is a
+  **mid-session revocation sweep + a revocation list** for un-expired grants.
+- **Status:** **Partial** (expiry enforced; JIT issuance + mid-session revocation are the gap).
 
 #### 9.4 Authentication / SSO Posture Agent
 - **Job:** Verify SSO/MFA coverage and configuration; report auth posture.
@@ -833,7 +834,7 @@ Wrap what's shipped first (fast wins), then close gaps controls-first.
 2. **The GRC Supervisor / operator console (§6).** Elevate the shipped governance +
    consent + quarantine + killswitch + fleet into the Layer-A approvals/oversight
    surface — the highest-leverage build and the keystone for every other tower.
-3. **Capability expiry/revocation enforcement + the SoD/access-conflict linter**
+3. **Mid-session capability-revocation sweep + the SoD/access-conflict linter** (expiry already enforced)
    (9.2/9.3/4.2) — close the two real primitive gaps the inventory found.
 4. **SIEM forwarder + IR workflow** (6.2/6.3) on the CEF export + quarantine base;
    **breach + AI-incident workflows** (2.6/1.7).
@@ -868,5 +869,5 @@ Wrap what's shipped first (fast wins), then close gaps controls-first.
   mis-configured oversight agent from dismantling the controls. They live in the
   profile compiler, not in per-tenant config.
 - **Two enforcement gaps are real, not cosmetic:** runtime **capability
-  expiry/revocation** (modeled, not polled) and the **access-conflict linter**.
+  revocation** (mid-session sweep + revocation list; expiry itself is already enforced) and the **access-conflict linter**.
   Until they land, PAM/JIT (9.3) and SoD claims (4.2) are partial.
