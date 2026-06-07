@@ -455,22 +455,27 @@ export MAVERICK_AUDIT_SIGN=1
 | `maverick dsar export --user <id>` | GDPR Art. 15/20 (access / portability): export everything Maverick holds for a subject as a JSON bundle. |
 | `maverick erase --channel <c> --user <id>` | GDPR Art. 17 (right to erasure): erase everything Maverick knows about a `(channel, user_id)` pair. |
 
-**`maverick audit verify` flags** (verify against your `cli.py` — see note):
+**`maverick audit verify` flags:**
 
 ```bash
-maverick audit verify --day 2026-06-07        # default: today (UTC)
-maverick audit verify --file path/to/log.ndjson
-maverick audit verify --pubkey <ed25519-hex>  # trusted external key for real
-                                              # third-party tamper-evidence
+maverick audit verify --day 2026-06-07           # default: today (UTC)
+maverick audit verify --all                      # sweep every day-file in the audit dir
+maverick audit verify --tenant acme              # verify a specific tenant's audit dir
+maverick audit verify --file path/to/log.ndjson  # one file (overrides --day/--all)
+maverick audit verify --pubkey <ed25519-hex>     # trusted external key for real
+                                                 # third-party tamper-evidence
 ```
 
-> **Flag accuracy note.** In the current source (`packages/maverick-core/maverick/cli.py`),
-> `audit verify` accepts **`--day`, `--file`, and `--pubkey`** only. It does
-> **not** expose `--all` or `--tenant` flags. To verify a specific tenant's log,
-> point `--file` at that tenant's audit directory under
-> `~/.maverick/tenants/<t>/audit/`. (Without `--pubkey` it trusts a locally-held
-> key and prints a warning; pass the externally-held pubkey for genuine
-> third-party tamper-evidence.)
+> **Flags.** `audit verify` accepts `--day`, `--all`, `--tenant`, `--file`, and
+> `--pubkey`. `--all` sweeps every `YYYY-MM-DD.ndjson` day-file in the audit dir
+> (the anchor ledger is verified separately as the cross-file tip-ledger).
+> `--tenant <t>` resolves that tenant's audit dir the same way the writer/signer
+> wrote it (`~/.maverick/tenants/<t>/audit/`); the default follows the active
+> tenant. `--file` pins a single file and overrides `--day`/`--all`. Without
+> `--pubkey` it trusts a locally-held key and prints a warning; pass the
+> externally-held pubkey for genuine third-party tamper-evidence. Exits 1 on any
+> break, 0 when clean; if `cryptography` is missing it can't verify and exits 0
+> (can't-verify ≠ tampered).
 
 **`maverick dsar export` flags:**
 
