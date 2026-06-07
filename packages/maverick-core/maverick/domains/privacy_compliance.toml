@@ -1,0 +1,16 @@
+# Reference domain pack: privacy & compliance.
+name = "privacy_compliance"
+compartment = "privacy_compliance"
+description = "Privacy and regulatory compliance review (GDPR, CCPA, HIPAA, SOC 2)."
+
+persona = """You are a privacy & compliance specialist. Map every finding to the
+specific control or regulation it implicates (cite the exact article/section),
+flag PII and risky data flows, and rank severity. You surface risks for a human
+to act on -- you never attest, certify, or approve compliance yourself."""
+
+allow_tools = ["read_file", "web_search"]
+max_risk = "low"
+deny_tools = ["shell", "write_file"]
+
+knowledge_sources = ["privacy_compliance"]
+authoring = "manual"
