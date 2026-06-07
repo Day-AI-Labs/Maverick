@@ -8,10 +8,13 @@ patching the source attribute is what it sees).
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import maverick.capability as capability
 import maverick.oidc as oidc
 import maverick.paths as paths
 import maverick.quotas as quotas
+import pytest
 from maverick import soc2
 
 
@@ -231,6 +234,84 @@ def test_audit_chain_unsigned_when_signing_off():
     # signing-off must not be mistaken for tampering.
     assert probe["status"] in {"unsigned", "no_crypto", soc2.STATUS_UNKNOWN}
     assert probe["status"] != "broken"
+
+
+def test_audit_chain_uses_anchor_verification(tmp_path, monkeypatch):
+    """Anchor breaks must make the SOC 2 audit status broken."""
+    import maverick.audit as audit
+
+    class Break:
+        reason = "anchored_file_deleted"
+        detail = "2026-01-01.ndjson is anchored but missing"
+
+    calls = {"anchors": 0}
+
+    def fake_verify_anchors(audit_dir):
+        assert audit_dir == tmp_path
+        calls["anchors"] += 1
+        return [Break()]
+
+    monkeypatch.setattr(soc2, "_resolve_audit_dir", lambda: tmp_path)
+    monkeypatch.setattr(audit, "verify_chain", lambda path: [])
+    monkeypatch.setattr(audit, "verify_anchors", fake_verify_anchors)
+
+    probe = soc2.collect_soc2_evidence()["audit_log"]
+    assert calls["anchors"] == 1
+    assert probe["status"] == "broken"
+    assert probe["first_reason"] == "anchored_file_deleted"
+    assert probe["files_checked"] == 0
+    assert probe["anchors_checked"] is True
+
+
+def _write_signed_past_day(audit_dir, monkeypatch, days_ago: int = 1, rows: int = 2):
+    """Create and anchor a signed completed day-file for audit-integrity tests."""
+    from maverick.audit import signing
+    from maverick.audit.signing import AuditSigner, ensure_anchors
+
+    try:
+        crypto_ok = signing._have_crypto()
+    except BaseException:  # noqa: BLE001 — broken native crypto backend panics
+        crypto_ok = False
+    if not crypto_ok:
+        pytest.skip("cryptography unavailable; no signed anchor chain to verify")
+
+    monkeypatch.setattr(signing, "KEY_DIR", audit_dir / "keys")
+    day = (datetime.now(timezone.utc) - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+    signer = AuditSigner(audit_dir / f"{day}.ndjson")
+    for i in range(rows):
+        signer.write({"kind": "tool_call", "i": i})
+    assert ensure_anchors(audit_dir) == 1
+    return day
+
+
+def test_audit_chain_broken_when_anchored_day_file_deleted(tmp_path, monkeypatch):
+    """SOC 2 evidence must include anchor verification for whole-file deletion."""
+    day = _write_signed_past_day(tmp_path, monkeypatch)
+    monkeypatch.setattr(soc2, "_resolve_audit_dir", lambda: tmp_path)
+
+    (tmp_path / f"{day}.ndjson").unlink()
+
+    probe = soc2.collect_soc2_evidence()["audit_log"]
+    assert probe["status"] == "broken"
+    assert probe["first_reason"] == "anchored_file_deleted"
+    assert probe["files_checked"] == 0
+    assert probe["anchors_checked"] is True
+
+
+def test_audit_chain_broken_when_anchor_ledger_deleted(tmp_path, monkeypatch):
+    """A clean per-day chain is not enough if the anchor ledger is missing."""
+    _write_signed_past_day(tmp_path, monkeypatch)
+    monkeypatch.setattr(soc2, "_resolve_audit_dir", lambda: tmp_path)
+
+    from maverick.audit import signing
+
+    (tmp_path / signing.ANCHOR_FILENAME).unlink()
+
+    probe = soc2.collect_soc2_evidence()["audit_log"]
+    assert probe["status"] == "broken"
+    assert probe["first_reason"] == "anchor_ledger_missing"
+    assert probe["files_checked"] == 1
+    assert probe["anchors_checked"] is True
 
 
 def test_audit_chain_ok_after_a_signed_write():

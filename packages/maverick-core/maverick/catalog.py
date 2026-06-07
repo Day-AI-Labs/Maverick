@@ -52,7 +52,7 @@ import hmac
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -91,30 +91,44 @@ class CatalogEntry:
     # compatibility / display only.
     verified: bool = False
     install_count: int = 0
+    # Inline payload for kinds whose installable artifact IS configuration rather
+    # than a separate fetched file. The MCP registry uses this to carry the
+    # server spec (command/args/env or url/headers) directly in the index, since
+    # an MCP server's supply-chain defense is pin_sha256 at spawn, not a hash of
+    # the (config-only) spec text. Empty for content kinds (skills/personas),
+    # which fetch `source` and verify `sha256`.
+    spec: dict = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, kind: str, d: dict) -> CatalogEntry:
-        if not d.get("name") or not d.get("source"):
+        # An inline-spec entry (e.g. MCP) is installable from `spec` alone, so
+        # `source` is optional there; content kinds still require it.
+        spec = d.get("spec") if isinstance(d.get("spec"), dict) else {}
+        if not d.get("name") or (not d.get("source") and not spec):
             raise CatalogError(f"catalog entry missing name/source: {d!r}")
         return cls(
             name=str(d["name"]),
             version=str(d.get("version", "0.0.0")),
             kind=kind,
             summary=str(d.get("summary", "")),
-            source=str(d["source"]),
+            source=str(d.get("source", "")),
             sha256=str(d.get("sha256", "")),
             author=str(d.get("author", "")),
             verified=bool(d.get("verified", False)),
             install_count=int(d.get("install_count", 0) or 0),
+            spec=spec,
         )
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "name": self.name, "version": self.version, "kind": self.kind,
             "summary": self.summary, "source": self.source, "sha256": self.sha256,
             "author": self.author, "verified": self.verified,
             "install_count": self.install_count,
         }
+        if self.spec:
+            d["spec"] = self.spec
+        return d
 
 
 def _configured_indexes() -> list[str]:

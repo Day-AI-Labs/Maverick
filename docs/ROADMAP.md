@@ -40,12 +40,12 @@ reliability plumbing (D) have since shipped — see the table.
 | B1 | Resource subscriptions | ✅ #694 | `http_transport.py` |
 | B1 | Streamable-HTTP transport | ✅ | `http_transport.py` |
 | B1 | Elicitation | 🟡 | client inbound (`mcp_client.py`) **and** server outbound form mode (`maverick_mcp/server.py`, `tests/test_server_elicitation.py`) shipped — a parked `ask_user` question surfaces as a capability-/stdio-gated `elicitation/create` form, shield-screened both legs, then resumes; only Phase 3 URL mode + eliciting arbitrary flows / the approvals-table surface remain (`specs/mcp-elicitation.md`) |
-| B1 | Async tasks | ✅ | MCP Tasks 2025-11-25 on the stdio server (`maverick_mcp/tasks.py`, `server.py`, `tests/test_server_tasks.py`) — task-augmented `tools/call` returns `CreateTaskResult` and runs on a background worker; `tasks/get`/`result`/`cancel`/`list` + `notifications/tasks/status` push + capability + `execution.taskSupport`. Only `input_required` + HTTP-transport tasks deferred (`specs/mcp-tasks.md`) |
-| B2 | MCP client OAuth 2.1 + Registry | 🟡 | remote-HTTP **client transport** shipped — `StreamableHttpMCPClient` (`mcp_client.py`, `tests/test_mcp_http_client.py`) consumes remote servers via `[mcp_servers.<name>] url`, JSON + SSE responses, session-id continuity, optional bearer `auth_token`. OAuth 2.1 (needs real accounts) + the Registry still open |
-| B3 | A2A vs. homegrown ACD | ⬜ decision | recommend adopting A2A's Agent Card; reframe/cut ACD |
-| C1 | Eval harness (GAIA / τ²-bench / terminal-bench) | 🟡 | GAIA shipped (#687); **τ²-bench-style** stateful verification harness shipped (`benchmarks/eval_tau2.py`, `test_eval_tau2.py`) — a tool domain + DB the tools mutate, graded on final state **and** required actions (not a string adapter), runnable in CI on a shipped retail fixture; only terminal-bench (needs container task envs) remains |
+| B1 | Async tasks | ✅ | MCP Tasks 2025-11-25 on **both** transports (`maverick_mcp/tasks.py`, `server.py`, `http_transport.py`, `tests/test_server_tasks.py`, `tests/test_http_transport.py`) — task-augmented `tools/call` returns `CreateTaskResult` and runs on a background worker; `tasks/get`/`result`/`cancel`/`list` (shared `handle_tasks_*` across stdio + HTTP) + stdio `notifications/tasks/status` push + capability + `execution.taskSupport`. HTTP tasks are opt-in via `MAVERICK_MCP_HTTP_TASKS` (poll-only, bearer-scoped store). Only `input_required` (task-driven elicitation) deferred (`specs/mcp-tasks.md`) |
+| B2 | MCP client OAuth 2.1 + Registry | 🟡 | remote-HTTP **client transport** shipped — `StreamableHttpMCPClient` (`mcp_client.py`, `tests/test_mcp_http_client.py`) consumes remote servers via `[mcp_servers.<name>] url`, JSON + SSE responses, session-id continuity, optional bearer `auth_token`. **Registry shipped** — `mcp_registry.py` (discovery via the federated `catalog` with an inline-spec entry, `install_mcp_from_registry` validated through `MCPServerSpec.from_config`, dependency-free config write), `maverick mcp-registry browse/add/remove/list`, `[mcp_registries]` knob + wizard emission (`specs/mcp-registry.md`). Only OAuth 2.1 (needs real accounts) still open |
+| B3 | A2A vs. homegrown ACD | ✅ decision | **Adopt A2A's Agent Card; cut homegrown ACD.** A2A already ships — discovery (`a2a.py`: `build_agent_card` + `/.well-known/agent-card.json`) and delegation (`a2a_tasks.py`: `/a2a/v1`, `message/send|stream`, `tasks/*`, auth, budget caps). ACD would re-answer the same question non-standardly; it's redundant with A2A and complementary to MCP. Recorded in [`specs/a2a-vs-acd-decision.md`](./specs/a2a-vs-acd-decision.md) |
+| C1 | Eval harness (GAIA / τ²-bench / terminal-bench) | ✅ | GAIA shipped (#687); **τ²-bench-style** stateful verification harness shipped (`benchmarks/eval_tau2.py`, `test_eval_tau2.py`); **terminal-bench-style** harness shipped (`benchmarks/eval_terminal_bench.py`, `test_eval_terminal_bench.py`) — a virtual-FS shell domain graded on final files **and** required commands (regex), runnable in CI on a shipped fixture with **no Docker**; the real container-backed + Maverick-driving solver (+ user simulator) plugs in at the injected-solver seam (documented follow-up, same shape as tau2's real solver) |
 | C1 | Skill quality gate / pruning | ✅ | gate (#396) + decay + active pruning (`skill_stats.evictable()` + `skills evict`), wired (`agent.py:274`, `orchestrator.py:227`), tested; only versioning absent |
-| C2 | Learning-substrate decision (close loop vs. prune) | ⬜ decision | `training/`, `prm.py`, compaction gate are scaffolds |
+| C2 | Learning-substrate decision (close loop vs. prune) | ✅ decision | **Park** — keep the wired half (`prm.py` interface + `HeuristicPRM` default + `donation.py`/`ingest.py` data-shaping, all fail-open/opt-in), don't close the outcome-reward loop yet (speculative pre-volume), don't prune the offline scaffolds (`training/rlaif.py`, learned compaction/reflexion gates — free when off). Revisit on a trajectory-volume + operator-pull tripwire. No code change required. [`specs/learning-substrate-decision.md`](./specs/learning-substrate-decision.md) |
 | C3 | Verifier default-on across goal types | ✅ | `agent.py:1155–1342` (not coding-gated) |
 | D1 | Shared tool-reliability layer | ✅ #684 | `tool_reliability.py`, `retry.py` |
 | D2 | Semantic memory wired into reflexion | ✅ #678 | `reflexion.py` cosine path |
@@ -57,27 +57,41 @@ reliability plumbing (D) have since shipped — see the table.
    directions: client-inbound (`mcp_client.py`, by policy + shield) and
    server-outbound form mode (`server.py` surfaces a parked `ask_user` question as
    a capability-/stdio-gated form, then resumes). Async tasks: MCP Tasks 2025-11-25
-   on the stdio server (`tasks.py` — task-augmented `tools/call` → `CreateTaskResult`
-   + background worker + `tasks/get|result|cancel|list` + `notifications/tasks/status`
-   push). Remaining elicitation slice is Phase 3 URL-mode (secrets-never-transit-model);
-   remaining tasks slices are the larger `input_required` (task-driven elicitation)
-   and task support over the HTTP transport (`specs/mcp-tasks.md`).
+   on **both** transports (`tasks.py` — task-augmented `tools/call` → `CreateTaskResult`
+   + background worker + `tasks/get|result|cancel|list` + stdio `notifications/tasks/status`
+   push); HTTP-transport tasks ship opt-in via `MAVERICK_MCP_HTTP_TASKS` (shared
+   `handle_tasks_*`, poll-only, bearer-scoped store). Remaining elicitation slice is
+   Phase 3 URL-mode (secrets-never-transit-model); remaining tasks slice is the larger
+   `input_required` (task-driven elicitation) + a per-caller (multi-tenant) HTTP task
+   store (`specs/mcp-tasks.md`).
 2. **MCP client OAuth 2.1 + Registry (B2)** — the remote-HTTP **client transport**
    has shipped (`StreamableHttpMCPClient`: `[mcp_servers.<name>] url`, JSON+SSE,
-   session continuity, static bearer `auth_token`), so Maverick now consumes remote
-   servers. Remaining: OAuth 2.1 (needs real accounts to validate) + the Registry.
+   session continuity, static bearer `auth_token`), and the **Registry** has shipped
+   (`mcp_registry.py` + `maverick mcp-registry browse/add/remove/list` + the
+   `[mcp_registries]` knob; discovery reuses the federated `catalog`, install validates
+   through `MCPServerSpec.from_config` and writes config without a TOML-writer dep —
+   `specs/mcp-registry.md`). Remaining: **OAuth 2.1** (needs real accounts to validate)
+   + optional signed registry entries.
 3. **Finish A3** — ✅ done: memory tool + loop bootstrap, and programmatic tool
    calling (`code_exec`); the full mid-execution bridge awaits interactive sandbox
    sessions.
-4. **Finish C1's benchmark coverage** — the **τ²-bench-style** verification harness
-   has shipped (`benchmarks/eval_tau2.py`: stateful tool domain + outcome/action
-   verifier, CI-runnable on a retail fixture; real tau2 task files plug in via
-   `--dataset`). Remaining: **terminal-bench** (needs container task envs, like
-   `swe_bench.py`) and wiring a real Maverick-driving solver (+ user simulator).
-5. **Decisions (need the founder):** C2 learning substrate (close the eval→reward
-   loop or prune the scaffolds); B3 A2A-vs-ACD; and the breadth-vs-depth call — see
-   [`specs/tool-inventory.md`](./specs/tool-inventory.md) (56 core tools vs. a
-   47-tool SaaS-connector tail).
+4. **Finish C1's benchmark coverage** — ✅ done. The **τ²-bench-style**
+   (`benchmarks/eval_tau2.py`) and **terminal-bench-style**
+   (`benchmarks/eval_terminal_bench.py`) verification harnesses have both shipped:
+   stateful domain + outcome/process verifier, CI-runnable on shipped fixtures, with
+   real task files plugging in via `--dataset`. The only remainder — common to both —
+   is wiring a real Maverick-driving solver (+ container task envs / user simulator)
+   at the injected-solver seam; that is operator/integration work, not harness work.
+5. **Decisions:** ✅ **C2 learning substrate** — decided: *park* (keep the wired
+   PRM/donation half, don't close the loop pre-volume, don't prune the scaffolds;
+   revisit on a trajectory-volume tripwire — [`specs/learning-substrate-decision.md`](./specs/learning-substrate-decision.md)).
+   ✅ **B3 A2A-vs-ACD** — decided: adopt A2A, cut ACD
+   ([`specs/a2a-vs-acd-decision.md`](./specs/a2a-vs-acd-decision.md)).
+   ✅ **Breadth-vs-depth** — decided: *freeze breadth, invest in depth*; re-home
+   (don't delete) the 47-connector tail to the plugin/registry tier (the B2 registry
+   that re-homing depends on now ships), telemetry-first then migrate with a
+   deprecation window ([`specs/breadth-vs-depth-decision.md`](./specs/breadth-vs-depth-decision.md),
+   grounded in [`specs/tool-inventory.md`](./specs/tool-inventory.md)).
 
 **Accuracy caveats.** MCP Sampling / Roots / Logging appear to be on a deprecation
 path — don't build on sampling. Some ecosystem dates/specs (mid-2026 MCP RC,
@@ -390,7 +404,7 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 
 **Ecosystem**
 - Plugin API v1.1 (additive: `tool.streaming`, `Channel.send_typing()`).
-- ACD spec v0.1 (Agent Capability Descriptor; published `docs/specs/acd.md`).
+- ~~ACD spec v0.1 (Agent Capability Descriptor; `docs/specs/acd.md`)~~ **— CUT.** Superseded by the shipped A2A Agent Card; see [`specs/a2a-vs-acd-decision.md`](./specs/a2a-vs-acd-decision.md) (B3 decision).
 - LangChain compat shim.
 - LangGraph adapter.
 - Kubernetes sandbox `sandbox/k8s.py`.
