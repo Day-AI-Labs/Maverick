@@ -104,6 +104,7 @@ here as they land (the dense future-quarter prose lists are left as-is):
 - **Coordinated-disclosure log** (2027 H1, Safety) — ✅ [`docs/DISCLOSURES.md`](./DISCLOSURES.md) (companion to `SECURITY.md`).
 - **SBOM (CycloneDX)** (Q4 2026, Safety) — ✅ non-blocking CycloneDX SBOM artifact in CI's `audit` job (`.github/workflows/ci.yml`). *(CI-only; runs on GitHub, not locally verifiable.)*
 - **Goal templates v2 community registry** (Q4 2026, UX) — ✅ `templates.browse_templates` / `install_template_from_catalog` (federated `catalog` "templates" kind, hash-verified), `maverick template browse/add`, `[template_registries]` knob + wizard emission (`tests/test_template_registry.py`).
+- **Cost forecasting** (Q4 2026, UX) — ✅ `maverick start --dry-cost`: estimates cost from similar past priced runs (lexical Jaccard over goal titles, dependency-free) and exits without an LLM key or a run (`cost_forecast.py`, `tests/test_cost_forecast.py`).
 
 **Accuracy caveats.** MCP Sampling / Roots / Logging appear to be on a deprecation
 path — don't build on sampling. Some ecosystem dates/specs (mid-2026 MCP RC,
