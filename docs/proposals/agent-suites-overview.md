@@ -2,7 +2,7 @@
 
 At-a-glance index of the business-function agent suites designed for the platform.
 Full detail lives in the per-suite docs below; this is the summary to skim later.
-**Six suites, ~225 agents.**
+**Seven suites, ~270 agents.**
 
 - **Finance** → [`finance-agent-suite.md`](finance-agent-suite.md) — ~40 core agents, 7 towers (+ vertical packs)
 - **IT / GRC / Privacy / Security / AI-Governance** → [`it-grc-agent-suite.md`](it-grc-agent-suite.md) — 47 agents, 10 towers
@@ -10,6 +10,7 @@ Full detail lives in the per-suite docs below; this is the summary to skim later
 - **HR / People** → [`hr-people-agent-suite.md`](hr-people-agent-suite.md) — ~41 agents, 8 towers
 - **Product & Engineering** → [`product-engineering-agent-suite.md`](product-engineering-agent-suite.md) — ~40 agents, 8 towers
 - **Strategy / Corp Dev / Executive** → [`strategy-corpdev-exec-agent-suite.md`](strategy-corpdev-exec-agent-suite.md) — ~26 agents, 7 towers
+- **Legal (the GC's office)** → [`legal-agent-suite.md`](legal-agent-suite.md) — ~31 agents, 8 towers (extends `legal.toml`)
 
 All build on [`../enterprise/architecture.md`](../enterprise/architecture.md)
 (the three-layer control plane) and [`agent-factory.md`](agent-factory.md)
@@ -267,6 +268,33 @@ workflows (M&A/board/IR/ESG) + connectors (board portal, data room, market data)
 
 ---
 
+## Legal suite — the GC's office — at a glance
+
+Horizontal — it touches every other suite — and the riskiest for AI (a fabricated citation
+gets lawyers sanctioned). Extends the shipped `legal.toml` research pack into a full office.
+
+### Eight towers (~31 agents)
+1. **Legal Research & Knowledge** — research · citation verification · KM *(the shipped core)*
+2. **Commercial Contracts (CLM)** — drafting · review/redline · negotiation · obligations/renewals · repository
+3. **Corporate, Governance & Securities** — entity mgmt · board *(sealed)* · securities/SEC · equity *(cross-ref finance/strategy)*
+4. **Litigation, Disputes & E-Discovery** — case mgmt · e-discovery *(sealed)* · legal hold · briefs · settlement
+5. **Intellectual Property** — patent · trademark · copyright/trade-secret · licensing/infringement
+6. **Regulatory, Antitrust & Trade** — regulatory counsel · antitrust/HSR · trade/sanctions
+7. **Employment & Privacy Law** — employment law *(cross-ref HR)* · data-protection law *(cross-ref privacy)*
+8. **Legal Operations** — matter mgmt · outside-counsel/e-billing · intake/triage · legal-tech · conflicts check
+
+### What's shipped & the control story
+The `legal.toml` research persona, **CourtListener** (case law / citation source), the doc
+tools, and — the keystone — **privilege/conflict ethical walls via `quarantine.py`** (the
+same seal Strategy uses for MNPI). Three distinctive controls: **citation integrity** (every
+authority verified or marked unverified — never fabricated), **"research, not legal advice"**
+(an attorney owns every position), and **privilege/conflicts** (sealed matter compartments;
+legal holds beat erasure). Agents draft; **attorneys file, sign, serve, and own the
+position**. The deep legal-owned towers are Contracts, Litigation, and IP; the rest is the
+legal lens on work another suite performs.
+
+---
+
 ## Suggested first builds (highest leverage)
 
 1. **Persona-wrapper packs** for the shipped engines — finance assessors and IT-GRC
@@ -286,3 +314,9 @@ workflows (M&A/board/IR/ESG) + connectors (board portal, data room, market data)
    `self_edit` stays off and safety-substrate changes route through a human.
 8. **The information-barrier topology + Reg-FD disclosure gate** (Strategy/Exec) — wire deal/
    board compartments onto `quarantine`/`capability` and the disclosure gate onto `governance`.
+9. **Citation-integrity pipeline + privilege/conflict walls** (Legal) — verify-every-cite on
+   CourtListener + the conflicts check / ethical-wall setup on `quarantine`/`capability`.
+
+> Note the convergence: items 2, 8, and 9 are the **same two primitives** — the amount/
+> severity-aware policy + Operating-Profile compiler, and the `quarantine`/`capability`
+> compartment walls. Build those once and every suite's keystone control lands.
