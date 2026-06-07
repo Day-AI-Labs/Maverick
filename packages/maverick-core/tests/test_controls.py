@@ -62,3 +62,11 @@ def test_privacy_analyst_pack_grants_find_controls():
 def test_cli_controls():
     r = CliRunner().invoke(main, ["controls", "vendor", "has", "no", "DPA"])
     assert r.exit_code == 0 and "VN-1" in r.output
+
+
+def test_find_controls_tool_tolerates_a_non_integer_limit():
+    import asyncio
+
+    from maverick.tools.control_tools import find_controls_tool
+    out = asyncio.run(find_controls_tool().fn({"query": "dpa", "limit": "abc"}))
+    assert "VN-1" in out          # bad limit -> default, not a crash

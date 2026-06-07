@@ -57,3 +57,15 @@ def test_persona_orchestrates_research_assess_and_controls():
 
 def test_builder_is_callable():
     assert callable(build_privacy_analyst_agent)
+
+
+def test_http_fetch_is_excluded_from_the_analyst_envelope():
+    # http_fetch can POST an arbitrary body to any URL -> a data-exfiltration
+    # channel; it must NOT be in the analyst's curated tools (the analyst ingests
+    # untrusted subject material, so it's the prompt-injection surface).
+    base = ToolRegistry()
+    for n in ("read_file", "web_search", "http_fetch", "find_controls"):
+        base.register(_tool(n))
+    names = {t.name for t in _privacy_analyst_tools(base, AssessmentSession()).all()}
+    assert "http_fetch" not in names
+    assert {"read_file", "web_search", "find_controls"} <= names
