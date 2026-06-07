@@ -96,6 +96,26 @@ maverick ropa --format json -o ropa.json
 
 It's a starting point for a DPO to finish, not a completed record.
 
+## Impact assessment (Art. 35) and AI-Act classification
+
+Two more scaffolds for the rest of the paperwork:
+
+```bash
+maverick dpia      # GDPR Art. 35 Data Protection Impact Assessment scaffold
+maverick ai-act    # EU AI Act risk classification (self-assessment)
+```
+
+`maverick dpia` pre-fills the processing description (consistent with the ROPA) and a
+**risk register** of the agent-on-personal-data risks — data egress to an LLM,
+unsupervised automated action, audit tampering, indefinite retention — each mapped to the
+Maverick control that mitigates it and flagged `OPEN` if that control is currently off.
+Necessity/proportionality and residual-risk sign-off are left to the controller.
+
+`maverick ai-act` reports the live Art. 50 transparency posture and hands you a checklist
+of the prohibited (Art. 5) and high-risk (Annex III) categories. A conversational agent
+that discloses it is AI is **limited-risk by default** — but you must rule out those lists
+for your use case. Both are self-assessment aids, not legal attestations.
+
 ## What this is *not*
 
 This is **control coverage, not a legal compliance attestation.** Full GDPR / EU AI Act

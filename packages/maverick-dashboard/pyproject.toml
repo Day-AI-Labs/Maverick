@@ -7,7 +7,7 @@ name = "maverick-dashboard"
 version = "0.1.6"
 description = "Local web dashboard + REST API for Maverick (FastAPI + htmx)"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { text = "LicenseRef-Proprietary" }
 authors = [{ name = "cdayAI" }]
 readme = "README.md"
 dependencies = [

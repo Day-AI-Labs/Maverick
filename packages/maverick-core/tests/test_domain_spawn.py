@@ -66,5 +66,12 @@ def test_build_intake_agent_assembles_interviewer(tmp_path):
     from maverick.intake import build_intake_agent
     ctx = _ctx(tmp_path)
     agent, session = build_intake_agent(ctx)
+    tool_names = {tool.name for tool in agent.tools.all()}
     assert agent.role == "intake"
     assert "onboarding specialist" in agent.system  # the intake persona is in the prompt
+    assert tool_names == {
+        "record_business", "add_goal", "add_document", "finalize_intake",
+    }
+    assert "shell" not in tool_names
+    assert "read_file" not in tool_names
+    assert "write_file" not in tool_names

@@ -7,7 +7,7 @@ name = "maverick-shield"
 version = "0.1.6"
 description = "Agent Shield integration + builtin fallback rules for Maverick"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { text = "LicenseRef-Proprietary" }
 authors = [{ name = "cdayAI" }]
 readme = "README.md"
 # Built-in rules ship as part of this package. agent-shield SDK is opt-in.

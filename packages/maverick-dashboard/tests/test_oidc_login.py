@@ -3,7 +3,7 @@
 Hermetic: no real network and no real JWT. We configure the login flow via
 ``MAVERICK_OIDC_*`` env (so the real ``login_enabled()`` / ``load_oidc_config()``
 gate is exercised), with explicit authorization/token endpoints so discovery is
-never called. The token exchange (``httpx.post``) and the ID-token verification
+never called. The token exchange helper and the ID-token verification
 (``maverick.oidc.verify_oidc_token``, imported into ``oidc_login``) are
 monkeypatched.
 
@@ -51,6 +51,13 @@ def login_env(monkeypatch, tmp_path):
     monkeypatch.delenv("MAVERICK_DASHBOARD_TOKEN", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def clear_consumed_transactions():
+    ol._CONSUMED_TX_IDS.clear()
+    yield
+    ol._CONSUMED_TX_IDS.clear()
+
+
 @pytest.fixture
 def client():
     return TestClient(app)
@@ -82,7 +89,8 @@ def test_login_redirects_with_state_and_pkce(login_env, client):
     assert tx is not None
     # The state in the cookie matches the state sent to the IdP.
     assert tx["state"] == q["state"][0]
-    assert tx["cv"]  # PKCE code_verifier stashed server-side (in the cookie)
+    assert tx["cv"]  # PKCE code_verifier stashed in the signed tx cookie
+    assert tx["jti"]  # opaque id used to reject callback replay
 
 
 def test_login_sanitizes_open_redirect_return_to(login_env, client):
@@ -119,20 +127,19 @@ def test_callback_happy_path_sets_session_and_redirects(login_env, client, monke
 
     posted = {}
 
-    class _TokenResp:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {"id_token": "fake.id.token", "access_token": "ignored"}
-
-    def _fake_post(url, data=None, auth=None, timeout=None):
+    async def _fake_exchange(url, *, cfg, code, code_verifier):
         posted["url"] = url
-        posted["data"] = data
-        posted["auth"] = auth
-        return _TokenResp()
+        posted["data"] = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": cfg.redirect_uri,
+            "client_id": cfg.client_id,
+            "code_verifier": code_verifier,
+        }
+        posted["auth"] = (cfg.client_id, cfg.client_secret)
+        return {"id_token": "fake.id.token", "access_token": "ignored"}
 
-    monkeypatch.setattr(ol.httpx, "post", _fake_post)
+    monkeypatch.setattr(ol, "_exchange_code_for_tokens", _fake_exchange)
     monkeypatch.setattr(
         ol, "verify_oidc_token",
         lambda token: VerifiedPrincipal(
@@ -168,14 +175,10 @@ def test_session_cookie_authenticates_gated_route(login_env, client, monkeypatch
     route (here /metrics), with OIDC enabled and no bearer header."""
     state, _ = _do_login(client)
 
-    class _TokenResp:
-        def raise_for_status(self):
-            return None
+    async def _fake_exchange(*a, **k):
+        return {"id_token": "fake.id.token"}
 
-        def json(self):
-            return {"id_token": "fake.id.token"}
-
-    monkeypatch.setattr(ol.httpx, "post", lambda *a, **k: _TokenResp())
+    monkeypatch.setattr(ol, "_exchange_code_for_tokens", _fake_exchange)
     monkeypatch.setattr(
         ol, "verify_oidc_token",
         lambda token: VerifiedPrincipal(
@@ -196,10 +199,10 @@ def test_session_cookie_authenticates_gated_route(login_env, client, monkeypatch
 def test_callback_state_mismatch_returns_400_no_exchange(login_env, client, monkeypatch):
     _do_login(client)
 
-    def _must_not_post(*a, **k):  # pragma: no cover - must not run
+    async def _must_not_exchange(*a, **k):  # pragma: no cover - must not run
         raise AssertionError("token exchange ran despite state mismatch")
 
-    monkeypatch.setattr(ol.httpx, "post", _must_not_post)
+    monkeypatch.setattr(ol, "_exchange_code_for_tokens", _must_not_exchange)
 
     resp = client.get(
         "/auth/callback?code=c&state=WRONG-STATE", follow_redirects=False
@@ -207,12 +210,47 @@ def test_callback_state_mismatch_returns_400_no_exchange(login_env, client, monk
     assert resp.status_code == 400
 
 
+def test_callback_replayed_tx_cookie_is_rejected_before_exchange(
+    login_env, client, monkeypatch
+):
+    state, tx_cookie = _do_login(client)
+    calls = []
+
+    async def _fake_exchange(url, *, cfg, code, code_verifier):
+        calls.append(code)
+        return {"id_token": "fake.id.token"}
+
+    monkeypatch.setattr(ol, "_exchange_code_for_tokens", _fake_exchange)
+    monkeypatch.setattr(
+        ol,
+        "verify_oidc_token",
+        lambda token: VerifiedPrincipal(
+            sub="user-xyz", issuer=ISSUER, audience="maverick", claims={},
+        ),
+    )
+
+    first = client.get(f"/auth/callback?code=first&state={state}", follow_redirects=False)
+    assert first.status_code == 303
+
+    # A non-browser attacker can keep sending the original Cookie header even
+    # after the response clears it. The consumed-jti guard must reject that
+    # replay before another outbound token exchange is attempted.
+    headers = {"cookie": f"{ol.TX_COOKIE}={tx_cookie}"}
+    replay = client.get(
+        f"/auth/callback?code=replay&state={state}",
+        headers=headers,
+        follow_redirects=False,
+    )
+    assert replay.status_code == 303
+    assert calls == ["first"]
+
+
 def test_callback_missing_tx_cookie_fails(login_env, client, monkeypatch):
     """No transaction cookie at all -> failure, no token exchange."""
-    def _must_not_post(*a, **k):  # pragma: no cover
+    async def _must_not_exchange(*a, **k):  # pragma: no cover
         raise AssertionError("token exchange ran without a tx cookie")
 
-    monkeypatch.setattr(ol.httpx, "post", _must_not_post)
+    monkeypatch.setattr(ol, "_exchange_code_for_tokens", _must_not_exchange)
     # Fresh client (no tx cookie).
     fresh = TestClient(app)
     resp = fresh.get("/auth/callback?code=c&state=whatever", follow_redirects=False)
@@ -229,14 +267,10 @@ def test_callback_verify_failure_sets_no_session(login_env, client, monkeypatch)
 
     state, _ = _do_login(client)
 
-    class _TokenResp:
-        def raise_for_status(self):
-            return None
+    async def _fake_exchange(*a, **k):
+        return {"id_token": "bad.token"}
 
-        def json(self):
-            return {"id_token": "bad.token"}
-
-    monkeypatch.setattr(ol.httpx, "post", lambda *a, **k: _TokenResp())
+    monkeypatch.setattr(ol, "_exchange_code_for_tokens", _fake_exchange)
 
     def _reject(token):
         raise OIDCError("verification failed")

@@ -290,6 +290,7 @@ def build_intake_agent(ctx, session: IntakeSession | None = None, *, llm=None, k
     ``(agent, session)``. The live chat loop reuses the normal agent/channel
     surface; this just assembles the interviewer."""
     from .agent import Agent
+    from .tools import ToolRegistry
     from .tools.intake_tools import intake_tools
 
     session = session or IntakeSession()
@@ -298,6 +299,10 @@ def build_intake_agent(ctx, session: IntakeSession | None = None, *, llm=None, k
         brief="Interview the business and assemble its specialist agent.",
         persona=INTAKE_PERSONA,
     )
+    # The intake chat is exposed to untrusted prospective users. A regular
+    # Agent starts with the full base registry (shell, filesystem, MCP, etc.),
+    # so replace it with an intake-only registry before adding onboarding tools.
+    agent.tools = ToolRegistry()
     for tool in intake_tools(session, llm=llm or getattr(ctx, "llm", None),
                              kb=kb or getattr(ctx, "knowledge", None)):
         agent.tools.register(tool)

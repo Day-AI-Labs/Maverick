@@ -214,6 +214,9 @@ def _validate_http_spec(spec: MCPServerSpec) -> None:
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise ValueError(
             f"MCP server {spec.name!r} url must be http(s)://host/…; got {url!r}")
+    if spec.oauth and parsed.scheme != "https":
+        raise ValueError(
+            f"MCP server {spec.name!r} url must be https:// when oauth is configured; got {url!r}")
 
 
 def _validate_subprocess_inputs(spec: MCPServerSpec) -> None:

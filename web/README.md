@@ -33,6 +33,6 @@ The primary CTA defaults to `releases/latest`. The JS at the bottom of `index.ht
 ## What's intentionally missing
 
 - Screenshots (the dashboard UI is still iterating; freeze the screenshot after Tier 2 lands)
-- Pricing (open-source, no tier)
+- Pricing (proprietary; handled per engagement — no public pricing yet)
 - Sign-up form (no service to sign up for)
 - Trust badges (add after first signed release)

@@ -8,10 +8,14 @@ The roadmap is the working backlog, not a contract. Items get re-prioritized
 as the community grows and as benchmarks reveal gaps. Track delivery in
 GitHub Projects; this doc is the strategic frame.
 
-Positioning: open-source-only, no paid tiers. Building the project as a
-brand for the founder. Target audience: general consumers running agents
-locally + technical users who want the deepest agent framework on the
-shelf (vs Devin, Hermes, OpenClaw, Cline, Aider).
+Positioning: **proprietary, commercially licensed enterprise software**,
+self-hosted in the customer's environment. A deliberately stripped-down
+**open-source "lite" edition** may follow later as a community on-ramp (once
+the platform is built out), but the full runtime + governance/compliance
+platform stay proprietary. Target audience: enterprise / regulated teams that
+need a self-hostable, governed, auditable agent runtime, plus technical users
+who want the deepest agent framework on the shelf (vs Devin, Hermes, OpenClaw,
+Cline, Aider).
 
 ---
 
@@ -43,8 +47,9 @@ of it is catalogued in [`FEATURES.md`](./FEATURES.md).
 - **gRPC API surface** — `StartGoal` / `StreamEpisode` / `Cancel`.
 - **IRC channel** and **LangChain / LangGraph adapters** — external-dependency
   connectors that need a live service to test meaningfully.
-- **Glasses / wearable channel** — Even Realities G2 BYOA bridge; see the
-  council note below.
+- **Glasses / wearable channel** — Even Realities G2 BYOA bridge, and wearable
+  integrations generally; expected to become table-stakes, so it stays a
+  standing roadmap commitment. See the council note below.
 - **MCP-client language analytics** — the one remaining language-bindings gate
   step (needs the telemetry-consent UI); see the council decision below.
 
@@ -235,7 +240,7 @@ sitting on seams that already exist:
 
 ### Constraints (house rules)
 
-- **Open-source-first / self-hostable.** OpenClaw's bridge is a Cloudflare Worker — a
+- **Self-hostable (no hosted dependency).** OpenClaw's bridge is a Cloudflare Worker — a
   hosted dependency. Ours ships with a "you can self-host this" path: the same thin
   shim runs either as a Worker **or** as a small local/edge service pointing at
   `POST /webhook/start`. No mandatory paid edge.
@@ -265,5 +270,5 @@ state" above.
 - **Re-prioritize**: items move freely. Anything in Q4 2028 can land sooner if a contributor wants to ship it. The quarter labels are guidance about scaling and team size, not constraints.
 - **Cross-concern dependencies**: marked implicitly by quarter alignment. If you tackle a Q3 2027 capability item, expect related UX/safety items the same quarter to be useful as prerequisites.
 - **Honest about scope**: each item should be sized at 1-2 weeks of one engineer's time. If something looks bigger when you start, slice it.
-- **Open-source first**: no item assumes paid infrastructure. Anything that requires hosted services (e.g., marketplace index) ships with a "you can self-host this" path.
+- **Self-host first**: the product runs in the customer's own environment; anything that would otherwise require a hosted service ships with a self-hostable path.
 - **Shipped items live in [`FEATURES.md`](./FEATURES.md)** — when you close one here, move it there.

@@ -197,7 +197,9 @@ def read_file(sandbox) -> Tool:
     )
 
 
-def write_file(sandbox) -> Tool:
+def write_file(sandbox, goal_id: str | int | None = "default") -> Tool:
+    quota_goal_id = "default" if goal_id is None else goal_id
+
     def fn(args: dict) -> str:
         try:
             target = _safe_resolve(sandbox, args["path"])
@@ -205,7 +207,10 @@ def write_file(sandbox) -> Tool:
             return f"ERROR: {e}"
         # Opt-in per-run file-write quota (default off -> no-op).
         from ..file_quota import check_and_add
-        ok, msg = check_and_add(len(args["content"].encode("utf-8", "replace")))
+        ok, msg = check_and_add(
+            len(args["content"].encode("utf-8", "replace")),
+            goal_id=quota_goal_id,
+        )
         if not ok:
             return f"ERROR: {msg}"
         try:

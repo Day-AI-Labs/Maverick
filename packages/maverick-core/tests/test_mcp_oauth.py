@@ -69,6 +69,14 @@ def test_from_config_roundtrips_oauth():
     assert spec.to_dict()["oauth"]["client_id"] == "c"
 
 
+def test_oauth_rejects_plaintext_mcp_url():
+    with pytest.raises(ValueError, match="https:// when oauth"):
+        MCPServerSpec.from_config("s", {
+            "url": "http://h/mcp",
+            "oauth": {"token_url": "https://i/t", "client_id": "c"},
+        })
+
+
 def test_bearer_uses_oauth(monkeypatch):
     monkeypatch.setattr(mcp_oauth, "_default_fetch",
                         lambda cfg: {"access_token": "tok-oauth", "expires_in": 3600})
