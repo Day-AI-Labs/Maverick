@@ -35,12 +35,16 @@ class KnowledgeBase:
     """
 
     def __init__(self, store=None, embedder=None, shield=None,
-                 chunk_size: int = 1000, chunk_overlap: int = 200):
+                 chunk_size: int = 1000, chunk_overlap: int = 200,
+                 image_describer=None):
         self.store = store or SqliteVectorStore()
         self.embedder = embedder or DeterministicEmbedder()
         self.shield = shield
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
+        # Optional callable(path) -> str for images / process diagrams (OCR or a
+        # vision model). Without it, image uploads are skipped (not read as bytes).
+        self.image_describer = image_describer
 
     def _safe(self, text: str) -> bool:
         """Shield-scan a chunk on the way in. Fail-open: a scanner error never
@@ -71,8 +75,24 @@ class KnowledgeBase:
         return len(items)
 
     def ingest_path(self, collection: str, path) -> int:
-        """Ingest a document from disk (parsed by extension)."""
-        return self.ingest_text(collection, extract_text(path), source=str(path))
+        """Ingest a document from disk (parsed by extension).
+
+        Images / process diagrams go through ``image_describer`` (OCR or a
+        vision model); without one they're skipped rather than read as bytes.
+        The resulting text is shield-scanned like any other document."""
+        from .parse import is_image
+        if is_image(path):
+            if self.image_describer is None:
+                log.info("knowledge: skipping image %s (no image_describer set)", path)
+                return 0
+            try:
+                text = self.image_describer(str(path))
+            except Exception as e:  # a describer failure must not abort ingestion
+                log.warning("knowledge: image describer failed on %s: %s", path, e)
+                return 0
+        else:
+            text = extract_text(path)
+        return self.ingest_text(collection, text, source=str(path))
 
     def search(self, collection: str, query: str, k: int = 5) -> list[Hit]:
         vector = self.embedder.embed([query])[0]
