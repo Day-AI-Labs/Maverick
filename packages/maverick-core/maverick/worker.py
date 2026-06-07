@@ -10,8 +10,11 @@ return cleanly to succeed. The worker handles retry / terminal
 failure / sleep-when-empty automatically.
 
 Built-in handlers:
-  - ``run_goal``  — payload {"goal_id": int} -> runs the goal via
+  - ``run_goal``  — payload {"goal_id": int} -> runs an EXISTING goal via
     maverick.runner.run_goal_in_thread (with a sync wait).
+  - ``start_goal`` — payload {"text": str, "title"?: str} -> creates a FRESH
+    goal from the prompt on each run, then runs it. This is the kind to pair
+    with cron for a recurring autonomous task (``maverick schedule goal``).
 
 Custom handlers are registered via :meth:`Worker.register`.
 
@@ -38,7 +41,7 @@ Handler = Callable[[Job], None]
 # via Worker.register(); this is the set the bare ``maverick worker`` knows.
 # Exposed so ``maverick schedule add`` can warn on a likely-typo'd kind that
 # would otherwise sit in the queue and fail terminally only at worker time.
-BUILTIN_JOB_KINDS = frozenset({"run_goal"})
+BUILTIN_JOB_KINDS = frozenset({"run_goal", "start_goal"})
 
 
 class UnknownJobKind(Exception):
@@ -96,6 +99,31 @@ class Worker:
                     f"goal {goal_id} terminal status={status!r}"
                 )
         self._handlers["run_goal"] = _run_goal
+
+        def _start_goal(job: Job) -> None:
+            # A recurring autonomous task creates a FRESH goal from the prompt
+            # on every fire -- unlike run_goal, which re-runs one fixed goal_id
+            # (re-executing the same world-model row). Pair with cron via
+            # `maverick schedule goal "<cron>" "<prompt>"`; _maybe_rearm carries
+            # the prompt forward in the payload so each occurrence is new.
+            text = (job.payload.get("text") or "").strip()
+            if not text:
+                raise ValueError("start_goal payload requires non-empty 'text'")
+            title = (job.payload.get("title") or text).strip()[:80]
+            from .world_model import DEFAULT_DB, open_world
+            world = open_world(DEFAULT_DB)
+            try:
+                goal_id = world.create_goal(title, text)
+            finally:
+                world.close()
+            # Same retry contract as run_goal: only transient outcomes requeue.
+            from .runner import run_goal_in_thread
+            status = run_goal_in_thread(int(goal_id))
+            if status is None or status in ("error", "failed"):
+                raise GoalRunFailed(
+                    f"scheduled goal {goal_id} terminal status={status!r}"
+                )
+        self._handlers["start_goal"] = _start_goal
 
     def stop(self) -> None:
         self._stop.set()

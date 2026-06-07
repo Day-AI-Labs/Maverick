@@ -8,6 +8,7 @@ jobs. These tests cover the wiring: JobQueue.cancel, the worker re-arm
 """
 from __future__ import annotations
 
+import pytest
 from click.testing import CliRunner
 
 # ---------- JobQueue.cancel ----------
@@ -156,3 +157,109 @@ def test_worker_command_runs_forever(tmp_path, monkeypatch):
     res = CliRunner().invoke(main, ["worker", "--idle-sleep", "0"])
     assert res.exit_code == 0, res.output
     assert ran["forever"] is True
+
+
+# ---------- start_goal: recurring autonomous tasks ----------
+
+def test_start_goal_handler_creates_fresh_goal_and_runs_it(tmp_path, monkeypatch):
+    # The handler must CREATE a new goal from the prompt (not re-run a fixed id)
+    # and hand that fresh id to the runner.
+    monkeypatch.setattr("maverick.world_model.DEFAULT_DB", tmp_path / "world.db")
+    seen = {}
+
+    def _fake_run(goal_id, *a, **k):
+        seen["goal_id"] = goal_id
+        return "done"
+
+    monkeypatch.setattr("maverick.runner.run_goal_in_thread", _fake_run)
+
+    from maverick.job_queue import Job
+    from maverick.worker import Worker
+    w = Worker(db_path=tmp_path / "jobs.db")
+    w._handlers["start_goal"](Job(
+        id=1, kind="start_goal",
+        payload={"title": "Digest", "text": "Summarize overnight emails"},
+        run_at=0.0, status="running", attempts=1,
+    ))
+
+    from maverick.world_model import open_world
+    world = open_world(tmp_path / "world.db")
+    try:
+        g = world.get_goal(seen["goal_id"])
+    finally:
+        world.close()
+    assert g is not None
+    assert g.title == "Digest"
+    assert g.description == "Summarize overnight emails"
+
+
+def test_start_goal_requires_text(tmp_path):
+    from maverick.job_queue import Job
+    from maverick.worker import Worker
+    w = Worker(db_path=tmp_path / "jobs.db")
+    with pytest.raises(ValueError):
+        w._handlers["start_goal"](Job(
+            id=1, kind="start_goal", payload={"title": "x"},
+            run_at=0.0, status="running", attempts=1,
+        ))
+
+
+def test_start_goal_recurs_with_same_prompt(tmp_path, monkeypatch):
+    # End-to-end: a cron-armed start_goal runs and re-arms the next occurrence
+    # carrying the same prompt -- a true recurring autonomous task.
+    monkeypatch.setattr("maverick.world_model.DEFAULT_DB", tmp_path / "world.db")
+    monkeypatch.setattr(
+        "maverick.runner.run_goal_in_thread", lambda goal_id, *a, **k: "done"
+    )
+    from maverick.job_queue import JobQueue
+    from maverick.worker import Worker
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    jid = q.enqueue(
+        "start_goal",
+        {"text": "Summarize overnight emails", "title": "Digest",
+         "__cron__": "*/5 * * * *"},
+        run_at=1000.0,
+    )
+    w = Worker(queue=q, idle_sleep=0.0)
+    assert w.run_once() is True
+    assert q.get(jid).status == "done"
+    nxt = [j for j in q.list(status="pending") if j.payload.get("__cron__")]
+    assert len(nxt) == 1 and nxt[0].id != jid
+    assert nxt[0].kind == "start_goal"
+    assert nxt[0].payload["text"] == "Summarize overnight emails"
+    assert nxt[0].payload["title"] == "Digest"
+
+
+def test_schedule_goal_cli_enqueues_recurring_start_goal(tmp_path, monkeypatch):
+    from maverick.cli import main
+    monkeypatch.setattr("maverick.job_queue.DEFAULT_DB", tmp_path / "jobs.db")
+
+    res = CliRunner().invoke(main, [
+        "schedule", "goal", "0 9 * * 1-5",
+        "Summarize my overnight emails", "--title", "Digest",
+    ])
+    assert res.exit_code == 0, res.output
+    assert "scheduled goal job" in res.output
+
+    from maverick.job_queue import JobQueue
+    jobs = JobQueue(db_path=tmp_path / "jobs.db").list(status="pending")
+    assert len(jobs) == 1
+    j = jobs[0]
+    assert j.kind == "start_goal"
+    assert j.payload["text"] == "Summarize my overnight emails"
+    assert j.payload["title"] == "Digest"
+    assert j.payload["__cron__"] == "0 9 * * 1-5"
+    # It's a normal cron job, so `schedule list` shows it.
+    listed = CliRunner().invoke(main, ["schedule", "list"])
+    assert "start_goal" in listed.output
+
+
+def test_schedule_goal_cli_rejects_bad_cron_and_empty_text(tmp_path, monkeypatch):
+    from maverick.cli import main
+    monkeypatch.setattr("maverick.job_queue.DEFAULT_DB", tmp_path / "jobs.db")
+    bad_cron = CliRunner().invoke(
+        main, ["schedule", "goal", "not a cron", "do a thing"]
+    )
+    assert bad_cron.exit_code == 2 and "bad cron" in bad_cron.output
+    empty = CliRunner().invoke(main, ["schedule", "goal", "*/5 * * * *", "   "])
+    assert empty.exit_code == 2 and "must not be empty" in empty.output
