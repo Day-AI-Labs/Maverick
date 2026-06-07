@@ -1496,8 +1496,9 @@ def ps(ctx, limit: int, as_json: bool) -> None:
         return
     click.echo(f"{'TYPE':4}  {'ID':>5}  {'STATE':9}  {'WHEN (UTC)':16}  WHAT")
     for p in procs:
+        what = _strip_terminal_control(str(p["what"]))
         click.echo(f"{p['type']:4}  {str(p['id']):>5}  {p['state']:9}  "
-                   f"{p['when']:16}  {p['what']}")
+                   f"{p['when']:16}  {what}")
 
 
 @main.command()
@@ -2961,6 +2962,52 @@ def ropa_cmd(fmt: str, output) -> None:
         click.echo(f"wrote {output}")
     else:
         click.echo(payload)
+
+
+@main.command("dpia")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+@click.option("--output", "-o", type=click.Path(), default=None,
+              help="Write to file (default stdout).")
+def dpia_cmd(fmt: str, output) -> None:
+    """Generate a GDPR Art. 35 DPIA scaffold for this deployment.
+
+    Pre-fills the processing description (consistent with 'maverick ropa') and a
+    risk register of the agent-on-personal-data risks -- each mapped to the
+    Maverick control that mitigates it and whether that control is active right
+    now -- leaving necessity/proportionality and residual-risk sign-off to the
+    controller. A scaffold for a DPO to finish, not a completed DPIA.
+    """
+    from .dpia import generate_dpia, render_dpia_json, render_dpia_text
+    dpia = generate_dpia()
+    payload = render_dpia_json(dpia) if fmt == "json" else render_dpia_text(dpia)
+    if output:
+        try:
+            fd = os.open(str(output), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload + "\n")
+        except OSError as e:
+            raise click.ClickException(f"could not write {output}: {e}")
+        click.echo(f"wrote {output}")
+    else:
+        click.echo(payload)
+
+
+@main.command("ai-act")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+def ai_act_cmd(fmt: str) -> None:
+    """Classify this deployment under the EU AI Act (self-assessment).
+
+    Reports the live Art. 50 transparency posture and hands you a checklist of
+    the prohibited (Art. 5) and high-risk (Annex III) categories plus the
+    obligations each tier triggers. A conversational agent that discloses it is
+    AI is limited-risk by default -- but you must rule out those lists for your
+    use case. A self-assessment aid, not a legal classification.
+    """
+    from .ai_act import assess_ai_act, render_ai_act_json, render_ai_act_text
+    report = assess_ai_act()
+    click.echo(render_ai_act_json(report) if fmt == "json" else render_ai_act_text(report))
 
 
 # ----- DSAR subject-data export ----------------------------------------

@@ -7,7 +7,7 @@ name = "maverick-mcp-server"
 version = "0.1.6"
 description = "Model Context Protocol server for Maverick (exposes the swarm to MCP clients)"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { text = "LicenseRef-Proprietary" }
 authors = [{ name = "cdayAI" }]
 readme = "README.md"
 dependencies = [

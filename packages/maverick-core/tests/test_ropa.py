@@ -53,6 +53,22 @@ def test_enterprise_profile_reports_local_only_and_no_transfer(monkeypatch):
     assert any("Data-egress control" in m for m in rec["security_measures"])
 
 
+def test_mistyped_retention_config_falls_back_to_indefinite(monkeypatch):
+    from maverick.ropa import generate_ropa
+
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda *a, **k: {"retention": "30 days"},
+    )
+
+    rec = generate_ropa()
+    assert "indefinitely" in rec["retention"]
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["ropa"])
+    assert result.exit_code == 0
+    assert "indefinitely" in result.output
+
 def test_cli_ropa_text_and_json(monkeypatch, tmp_path):
     runner = CliRunner()
 

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}compartments · Maverick{% endblock %}
+{% block content %}
+  <h2>compartments</h2>
+  <p class="muted" style="max-width: 48rem;">
+    The agent factory's roster — each domain pack and the bulkhead it runs in.
+    If one domain is attacked it can be sealed off (a sector seal) while the
+    others keep running and become immune.
+  </p>
+  <div class="panel">
+    {% if domains %}
+    <table>
+      <thead><tr>
+        <th scope="col">domain</th>
+        <th scope="col">compartment</th>
+        <th scope="col">source</th>
+        <th scope="col">max risk</th>
+        <th scope="col">tools</th>
+        <th scope="col">knowledge</th>
+      </tr></thead>
+      <tbody>
+      {% for d in domains %}
+        <tr>
+          <td>
+            <code>{{ d.name }}</code>
+            {% if d.persona %}
+              <div class="muted" style="max-width: 30rem;" title="{{ d.persona }}">{{ d.persona[:140] }}{% if d.persona|length > 140 %}…{% endif %}</div>
+            {% endif %}
+          </td>
+          <td><span class="badge">{{ d.compartment }}</span></td>
+          <td class="muted">{{ d.authoring }}</td>
+          <td>{{ d.max_risk or '—' }}</td>
+          <td class="muted" style="max-width: 24rem;">
+            {% if d.allow_tools %}<div>allow: {{ d.allow_tools|join(', ') }}</div>{% endif %}
+            {% if d.deny_tools %}<div>deny: {{ d.deny_tools|join(', ') }}</div>{% endif %}
+            {% if not d.allow_tools and not d.deny_tools %}—{% endif %}
+          </td>
+          <td class="muted">{{ d.knowledge_sources|join(', ') or '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <div style="text-align: center; padding: 2.5rem 1rem;">
+        <h3 style="margin: 0 0 0.75rem; text-transform: none; letter-spacing: 0; font-size: 1.1rem; color: var(--text);">No domain agents yet</h3>
+        <p class="muted" style="margin-bottom: 1.5rem;">Onboard a business to mint its first sealed agent.</p>
+        <pre style="background: var(--bg); padding: 0.85rem 1rem; border-radius: 6px; display: inline-block; text-align: left; margin: 0;">maverick onboard</pre>
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}

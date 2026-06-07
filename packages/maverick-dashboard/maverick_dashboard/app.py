@@ -35,7 +35,7 @@ from maverick import a2a
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .api import router as api_router
-from .auth import require_principal
+from .auth import execution_user_id_from_request, require_principal
 from .oidc_login import router as oidc_login_router
 
 log = logging.getLogger(__name__)
@@ -715,6 +715,21 @@ async def audit_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/compartments", response_class=HTMLResponse)
+async def compartments_page(request: Request) -> HTMLResponse:
+    """The agent factory's roster: each domain pack and the bulkhead it runs in.
+
+    Reads the discoverable domain packs (built-in + onboarded) so an operator
+    can see which sealed agents exist and the capability envelope each runs
+    under -- the compartments a Rung-2 seal acts on."""
+    try:
+        from maverick.domain import available_domains
+        domains = sorted(available_domains().values(), key=lambda d: d.name)
+    except Exception:  # never 500 the page if the factory layer is unavailable
+        domains = []
+    return templates.TemplateResponse(request, "compartments.html", {"domains": domains})
+
+
 @app.get("/safety", response_class=HTMLResponse)
 async def safety_page(request: Request) -> HTMLResponse:
     """Shield activity: what the safety layer blocked, by stage and reason."""
@@ -1011,7 +1026,11 @@ async def chat_send(
     # Use the shared runner so this path gets the same concurrency cap,
     # budget defaults, and error handling as the REST API and MCP server.
     from maverick.runner import run_goal_in_thread
-    bg.add_task(run_goal_in_thread, goal_id)
+    user_id = execution_user_id_from_request(request)
+    if user_id:
+        bg.add_task(run_goal_in_thread, goal_id, channel="dashboard", user_id=user_id)
+    else:
+        bg.add_task(run_goal_in_thread, goal_id)
     return RedirectResponse(f"/chat/goal/{goal_id}", status_code=303)
 
 

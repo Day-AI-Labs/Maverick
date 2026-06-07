@@ -21,8 +21,12 @@ the PR):
 - **PKCE (S256)**: a ``code_verifier`` is generated at login, its S256
   ``code_challenge`` is sent on the authorization request, and the verifier is
   sent on the token exchange — so an intercepted ``code`` can't be redeemed.
-- **HTTPS-only token exchange**: the token endpoint must be ``https://`` or we
-  refuse to POST the client secret to it.
+- **One-time login transactions**: the callback consumes each signed
+  transaction ID server-side before token exchange, preventing replay of a
+  captured transaction cookie.
+- **Async HTTPS-only token exchange**: the token endpoint must be ``https://`` or we
+  refuse to POST the client secret to it, and the network call uses
+  ``httpx.AsyncClient`` so failed IdP calls do not block the event loop.
 - **ID-token verification reuses** :func:`maverick.oidc.verify_oidc_token` — we
   do not re-implement JWT verification.
 - **Open-redirect defence**: ``return_to`` is only honored if it is a safe local
@@ -33,6 +37,7 @@ the PR):
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import logging
@@ -64,6 +69,12 @@ SESSION_COOKIE = "mvk_session"     # the authenticated browser session
 # Lifetimes (seconds).
 _TX_TTL = 600                      # 10 min to complete the round-trip
 _SESSION_TTL = 12 * 3600          # 12 h authenticated session
+
+# Best-effort, per-process replay guard for transaction cookies. The signed
+# cookie remains the source of transaction data, but the opaque tx id must be
+# consumed exactly once before any token exchange is attempted.
+_CONSUMED_TX_IDS: dict[str, int] = {}
+_CONSUMED_TX_LOCK = asyncio.Lock()
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 
@@ -111,6 +122,52 @@ def _code_challenge_s256(verifier: str) -> str:
     """The S256 PKCE code_challenge for ``verifier`` (b64url, no padding)."""
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+async def _consume_tx_once(tx_id: str, expires_at: int) -> bool:
+    """Atomically mark an OIDC login transaction as consumed.
+
+    Transaction cookies are self-contained so they can survive redirects without
+    external session middleware, but callbacks must not be replayable. This
+    per-process guard records the opaque transaction id before the token
+    exchange; repeated callbacks with the same cookie are rejected before making
+    an outbound IdP request. Expired entries are pruned opportunistically.
+    """
+    if not tx_id:
+        return False
+
+    now = _now()
+    async with _CONSUMED_TX_LOCK:
+        expired = [key for key, exp in _CONSUMED_TX_IDS.items() if exp <= now]
+        for key in expired:
+            _CONSUMED_TX_IDS.pop(key, None)
+
+        if tx_id in _CONSUMED_TX_IDS:
+            return False
+
+        _CONSUMED_TX_IDS[tx_id] = max(expires_at, now + 1)
+        return True
+
+
+async def _exchange_code_for_tokens(
+    token_endpoint: str, *, cfg, code: str, code_verifier: str
+) -> dict:
+    """Exchange an authorization code without blocking the event loop."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        token_resp = await client.post(
+            token_endpoint,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": cfg.redirect_uri,
+                "client_id": cfg.client_id,
+                "code_verifier": code_verifier,
+            },
+            auth=(cfg.client_id, cfg.client_secret),
+        )
+    token_resp.raise_for_status()
+    token_data = token_resp.json()
+    return token_data if isinstance(token_data, dict) else {}
 
 
 def _set_cookie(response, name: str, value: str, *, max_age: int, secure: bool) -> None:
@@ -189,6 +246,7 @@ async def auth_login(request: Request):
         "state": state,
         "cv": code_verifier,
         "return_to": return_to,
+        "jti": secrets.token_urlsafe(16),
         "exp": _now() + _TX_TTL,
     }
     tx_cookie = sign_session(tx_payload, cfg.session_secret)
@@ -277,22 +335,17 @@ async def auth_callback(request: Request):
         log.warning("OIDC callback: refusing non-https token endpoint")
         return _fail()
 
+    tx_id = str(tx.get("jti") or "")
+    tx_exp = int(tx.get("exp") or 0)
+    if not await _consume_tx_once(tx_id, tx_exp):
+        log.warning("OIDC callback: replayed or malformed transaction cookie")
+        return _fail()
+
     code_verifier = tx.get("cv") or ""
     try:
-        token_resp = httpx.post(
-            token_endpoint,
-            data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": cfg.redirect_uri,
-                "client_id": cfg.client_id,
-                "code_verifier": code_verifier,
-            },
-            auth=(cfg.client_id, cfg.client_secret),
-            timeout=10.0,
+        token_data = await _exchange_code_for_tokens(
+            token_endpoint, cfg=cfg, code=code, code_verifier=code_verifier
         )
-        token_resp.raise_for_status()
-        token_data = token_resp.json()
     except Exception:
         # Never log the exception payload: it can echo the code/secret back.
         log.warning("OIDC callback: token exchange failed")
@@ -357,4 +410,6 @@ __all__ = [
     "TX_COOKIE",
     "SESSION_COOKIE",
     "_principal_from_request_session",
+    "_consume_tx_once",
+    "_exchange_code_for_tokens",
 ]
