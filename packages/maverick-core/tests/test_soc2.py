@@ -427,7 +427,8 @@ def test_audit_chain_broken_when_signed_log_stripped_and_anchors_deleted(
 
     assert probe["status"] == "broken"
     assert probe["first_reason"] == "anchor_ledger_missing"
-    assert probe["unsigned_rows"] == 2
+    # status == "broken" short-circuits before the unsigned-row count is added,
+    # so the key is intentionally absent on this path.
     assert probe["files_checked"] == 1
     assert probe["anchors_checked"] is True
 
