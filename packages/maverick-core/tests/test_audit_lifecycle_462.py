@@ -100,6 +100,42 @@ def test_erase_does_not_match_substring_only_rows(tmp_path):
     assert path.read_text(encoding="utf-8").strip() != ""
 
 
+def test_erase_scrubs_capability_denial_with_structured_subject(tmp_path):
+    """Capability-denial audit events may carry an identifying principal.
+
+    They must also carry structured channel/user_id fields so user erasure can
+    tombstone the row and remove that principal instead of leaving it in audit
+    tail/search output.
+    """
+    from maverick.audit.erase import scrub_user
+
+    ad = tmp_path / "audit"
+    path = ad / "2026-01-04.ndjson"
+    _write_plain(
+        path,
+        [
+            {
+                "v": 1,
+                "ts": 1.0,
+                "kind": "capability_denied",
+                "tool": "shell",
+                "principal": "user:sms:+15551234567",
+                "channel": "sms",
+                "user_id": "sms:+15551234567",
+            },
+        ],
+    )
+
+    matched, scanned = scrub_user("sms", "sms:+15551234567", audit_dir=ad)
+    assert matched == 1
+    assert scanned == 1
+    row = json.loads(path.read_text(encoding="utf-8"))
+    assert row["kind"] == "capability_denied"
+    assert row["user_id"] == "[REDACTED]"
+    assert "principal" not in row
+    assert "+15551234567" not in json.dumps(row)
+
+
 # ---------------------------------------------------------------------------
 # Task 3: unsigned write path fsync
 # ---------------------------------------------------------------------------

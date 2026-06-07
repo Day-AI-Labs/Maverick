@@ -292,6 +292,43 @@ async def run_goal(
             "Run `maverick unhalt` to clear it, then try again."
         )
 
+    # Per-principal usage quota (P2 cost governance). Default-off and opt-in
+    # ([quotas] enforce / MAVERICK_QUOTA_*): with nothing configured this is a
+    # no-op. When enforcement is on and this principal is over its daily cap,
+    # refuse BEFORE the expensive agent run -- mirror the killswitch handler
+    # above (mark blocked, return the human-readable reason). The principal
+    # convention matches agent.py's capability resolution.
+    principal = f"user:{user_id or 'local'}"
+    try:
+        from . import quotas
+        _quota_reason = quotas.over_quota(principal) if quotas.quotas_enforced() else None
+    except Exception:  # pragma: no cover -- quotas are fully fail-soft
+        _quota_reason = None
+    if _quota_reason:
+        world.set_goal_status(goal_id, "blocked", result=f"over quota: {_quota_reason}")
+        log.warning("goal #%s refused: %s", goal_id, _quota_reason)
+        return _quota_reason
+
+    _quota_usage_recorded = False
+
+    def _record_quota_usage() -> None:
+        # Charge this run's current spend to the principal's daily usage ledger
+        # (P2 cost governance). Always safe to call -- recording is how the
+        # ledger accrues chargeback data even when enforcement is off -- and
+        # fail-soft, so a ledger error never affects the goal result. The guard
+        # prevents double-charging when multiple cleanup paths run.
+        nonlocal _quota_usage_recorded
+        if _quota_usage_recorded:
+            return
+        _quota_usage_recorded = True
+        try:
+            from . import quotas
+            quotas.record_usage(
+                principal, budget.dollars, budget.input_tokens, budget.output_tokens,
+            )
+        except Exception:  # pragma: no cover -- ledger is fully fail-soft
+            log.debug("usage ledger record skipped for %s", principal)
+
     # Bind trace context so every log line emitted in this task is
     # automatically tagged with goal_id (+ conversation_id when set). Capture
     # the reset tokens so the finally block restores the PRIOR context instead
@@ -608,6 +645,7 @@ async def run_goal(
                 pass
         except BudgetExceeded as e:
             _end_episode_with_spend(world, episode_id, f"budget: {e}", "failure", budget, goal_id)
+            _record_quota_usage()
             _maybe_record_reflexion(
                 goal, failure_class="budget", failure_msg=str(e),
                 blackboard=blackboard, shield=shield, channel=channel,
@@ -635,6 +673,7 @@ async def run_goal(
                 _end_episode_with_spend(
                     world, episode_id, f"error: {e}", "failure", budget, goal_id,
                 )
+                _record_quota_usage()
             except Exception:  # pragma: no cover
                 pass
             try:
@@ -647,6 +686,7 @@ async def run_goal(
             _end_episode_with_spend(
                 world, episode_id, "blocked awaiting user", "interrupted", budget, goal_id,
             )
+            _record_quota_usage()
             world.set_goal_status(goal_id, "blocked")
             _fire_webhook("goal_finished", {
                 "goal_id": goal_id, "status": "blocked",
@@ -678,6 +718,7 @@ async def run_goal(
                 _end_episode_with_spend(
                     world, episode_id, result.final_patch, "success", budget, goal_id,
                 )
+                _record_quota_usage()
                 world.set_goal_status(
                     goal_id, "done", result=result.final_patch,
                 )
@@ -700,6 +741,7 @@ async def run_goal(
                 budget.check()
             except BudgetExceeded as be:
                 _end_episode_with_spend(world, episode_id, f"budget: {be}", "failure", budget, goal_id)
+                _record_quota_usage()
                 _maybe_record_reflexion(
                     goal, failure_class="budget", failure_msg=str(be),
                     blackboard=blackboard, shield=shield, channel=channel,
@@ -721,6 +763,7 @@ async def run_goal(
             # 'resume' advice would just halt again).
             if "halt" in (result.error or "").lower():
                 _end_episode_with_spend(world, episode_id, "halted", "interrupted", budget, goal_id)
+                _record_quota_usage()
                 world.set_goal_status(goal_id, "blocked", result="halted")
                 _fire_webhook("goal_finished", {
                     "goal_id": goal_id, "status": "blocked", "result": "halted",
@@ -730,6 +773,7 @@ async def run_goal(
                     f"Run `maverick unhalt` to clear it, then `maverick resume {goal_id}`."
                 )
             _end_episode_with_spend(world, episode_id, result.error, "failure", budget, goal_id)
+            _record_quota_usage()
             _maybe_record_reflexion(
                 goal,
                 failure_class=(
@@ -790,12 +834,14 @@ async def run_goal(
                 if not getattr(out_v, "allowed", True):
                     reasons = "; ".join(getattr(out_v, "reasons", []) or []) or "blocked by Shield"
                     log.warning("output scan blocked goal #%s: %s", goal_id, reasons)
+                    _record_quota_usage()
                     return f"⚠ Output blocked by Shield: {reasons}"
             except Exception:  # pragma: no cover -- fail open per kernel rule 1
                 log.exception("scan_output on summary failed (fail-open)")
 
         _end_episode_with_spend(world, episode_id, summary, "success", budget, goal_id)
         world.set_goal_status(goal_id, "done", result=summary)
+        _record_quota_usage()
         # Index this finished goal into the semantic store (#432) so future
         # runs recall it via vector search. No-op unless a [memory] backend is
         # configured; re-reads the goal so the indexed status/result reflect

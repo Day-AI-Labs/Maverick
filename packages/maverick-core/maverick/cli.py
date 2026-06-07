@@ -1989,6 +1989,27 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         )
 
 
+@main.command("compliance")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+@click.pass_context
+def compliance_cmd(ctx, fmt: str) -> None:
+    """Report GDPR + EU AI Act control coverage for this deployment.
+
+    Maps each active control to the article it supports and flags opt-in
+    controls that are off. Control coverage only -- not a legal attestation.
+    """
+    from .compliance import (
+        compliance_report,
+        render_report_json,
+        render_report_text,
+    )
+    checks = compliance_report()
+    click.echo(
+        render_report_json(checks) if fmt == "json" else render_report_text(checks)
+    )
+
+
 @main.command("export-user")
 @click.option("--channel", required=True, help="Channel name.")
 @click.option("--user", required=True, help="The channel user_id to export.")
@@ -2454,6 +2475,78 @@ def logs_cmd(pattern: str | None, num: int, day: str | None) -> None:
         sys.exit(2)
     for r in rows[-num:]:
         click.echo(_json.dumps(r, default=str))
+
+
+# ----- SOC 2 evidence --------------------------------------------------
+
+@main.command("soc2")
+@click.option("--json", "compact", is_flag=True,
+              help="Emit compact single-line JSON (default: pretty, indent=2).")
+def soc2(compact: bool) -> None:
+    """Print a SOC 2 technical-posture snapshot as JSON.
+
+    Serializes ``collect_soc2_evidence()`` -- which controls are ON in this
+    deployment and whether the audit log verifies -- for auditors / CI /
+    automation. The collector is fail-soft (it never raises), so this command
+    always emits a JSON object and exits 0.
+    """
+    import json as _json
+
+    from .soc2 import collect_soc2_evidence
+    evidence = collect_soc2_evidence()
+    if compact:
+        click.echo(_json.dumps(evidence, default=str))
+    else:
+        click.echo(_json.dumps(evidence, default=str, indent=2))
+
+
+# ----- DSAR subject-data export ----------------------------------------
+
+@main.group("dsar")
+def dsar_group() -> None:
+    """Data-subject access requests (GDPR Art. 15 / 20)."""
+
+
+@dsar_group.command("export")
+@click.option("--user", "user_id", required=True,
+              help="The channel user_id (subject) to export.")
+@click.option("--tenant", default=None, help="Tenant to read from (default: active).")
+@click.option("--output", "-o", type=click.Path(), default=None,
+              help="Write JSON to file (default stdout).")
+@click.option("--json", "compact", is_flag=True,
+              help="Emit compact single-line JSON (default: pretty, indent=2).")
+def dsar_export(user_id: str, tenant: str | None, output, compact: bool) -> None:
+    """Export everything Maverick holds for a subject as a JSON bundle.
+
+    Serializes ``export_subject_data()`` -- the subject's conversations, the
+    turns/goals/episodes those reference, and their audit rows -- for the
+    right of access / portability. The exporter is fail-soft (an unknown
+    subject or empty install yields a structured, empty bundle), so this
+    command always emits a JSON object and exits 0.
+    """
+    import json as _json
+
+    from .dsar import export_subject_data
+    bundle = export_subject_data(user_id, tenant=tenant)
+    payload = (
+        _json.dumps(bundle, default=str)
+        if compact
+        else _json.dumps(bundle, default=str, indent=2)
+    )
+    if output:
+        # A DSAR export carries the subject's full conversation content.
+        # Create it 0o600 (not the umask's world-readable 0644) so a
+        # co-tenant can't read it, and fail cleanly instead of dumping a
+        # traceback on a bad/unwritable path.
+        try:
+            fd = os.open(str(output), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload)
+        except OSError as e:
+            raise click.ClickException(f"could not write {output}: {e}")
+        click.echo(f"exported to {output}")
+    else:
+        click.echo(payload)
 
 
 # ----- Cache management ------------------------------------------------

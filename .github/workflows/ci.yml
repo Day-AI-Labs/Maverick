@@ -194,11 +194,37 @@ jobs:
           pip install 'questionary>=2.0' 'rich>=13.7'
           pip install 'fastapi>=0.110' 'uvicorn>=0.27' 'jinja2>=3.1' \
                       'httpx>=0.27' 'python-multipart>=0.0.9'
-          pip install pytest pytest-asyncio
+          # OIDC (P4) verifier ships as the optional [oidc] extra (PyJWT);
+          # install it here so the adversarial security matrix in test_oidc.py
+          # actually RUNS in CI instead of self-skipping when PyJWT is absent.
+          pip install pytest pytest-asyncio 'pyjwt[crypto]'
       - name: Show installed packages
         run: pip list
       - name: Test
         run: pytest -vvs --tb=long
+
+  eval-smoke:
+    # Eval-gated-release foundation (ROADMAP P3). Real evals drive `maverick
+    # start` against a live provider -- no models/network in CI -- so this gate
+    # runs the eval harness machinery (registry + scorers + tau2 verifier +
+    # pass@1 aggregation) against scripted solvers and asserts grading still
+    # works. A code change that breaks the harness wiring fails here, fast,
+    # without any API key. Deterministic and offline by construction.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install packages
+        run: |
+          set -x
+          # Mirror the test job's core install. The smoke imports nothing that
+          # needs the network-facing extras, so we skip them to stay fast.
+          pip install -e ./packages/maverick-core
+          pip install pytest pytest-asyncio
+      - name: Eval-harness smoke (offline regression gate)
+        run: pytest -vvs --tb=long benchmarks/test_eval_smoke.py
 
   postgres:
     # DB-backed tests for the Postgres world-model backend. The default `test`

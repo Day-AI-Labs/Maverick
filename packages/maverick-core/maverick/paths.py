@@ -24,35 +24,48 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import os
-import re
 from pathlib import Path
 
 _TENANT: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "maverick_tenant", default=None
 )
 
-# A tenant id becomes a path segment, so confine it to a safe charset and
-# bound its length. Anything else collapses to a placeholder rather than
-# escaping the data root.
-_UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
-_DEFAULT_TENANT = "default"
+# A tenant id becomes a path segment. Keep already-safe identifiers readable,
+# but percent-encode every other UTF-8 byte so distinct tenant ids cannot
+# collapse onto the same on-disk namespace.
+_SAFE_TENANT_CHARS = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-"
+)
+MAX_TENANT_SEGMENT_LENGTH = 200
 
 
-def _sanitize(tenant: str) -> str:
-    cleaned = _UNSAFE.sub("_", tenant.strip()).strip(".")[:128]
-    return cleaned or _DEFAULT_TENANT
+class InvalidTenantError(ValueError):
+    """Raised when a tenant id cannot be represented safely on disk."""
+
+
+def _tenant_segment(tenant: str) -> str:
+    if tenant in {".", ".."}:
+        segment = "%2E" * len(tenant)
+    else:
+        segment = "".join(
+            chr(byte) if chr(byte) in _SAFE_TENANT_CHARS else f"%{byte:02X}"
+            for byte in tenant.encode("utf-8")
+        )
+    if len(segment) > MAX_TENANT_SEGMENT_LENGTH:
+        raise InvalidTenantError("tenant id is too long")
+    return segment
 
 
 def current_tenant() -> str | None:
-    """The active tenant id (sanitized), or ``None`` for the shared/legacy root.
+    """The active tenant id (path-encoded), or ``None`` for the shared/legacy root.
 
     Explicit :func:`set_tenant` scope wins over the ``MAVERICK_TENANT`` env var.
     """
     t = _TENANT.get()
     if t:
-        return _sanitize(t)
+        return _tenant_segment(t)
     env = os.environ.get("MAVERICK_TENANT", "").strip()
-    return _sanitize(env) if env else None
+    return _tenant_segment(env) if env else None
 
 
 def set_tenant(tenant: str | None):
@@ -87,10 +100,12 @@ def data_dir(*parts: str, tenant: str | None = "__active__") -> Path:
     of the active tenant.
     """
     if tenant == "__active__":
-        tenant = current_tenant()
+        segment = current_tenant()
+    else:
+        segment = _tenant_segment(tenant) if tenant else None
     base = maverick_home()
-    if tenant:
-        base = base / "tenants" / _sanitize(tenant)
+    if segment:
+        base = base / "tenants" / segment
     return base.joinpath(*parts)
 
 
@@ -140,6 +155,8 @@ __all__ = [
     "reset_tenant",
     "maverick_home",
     "data_dir",
+    "InvalidTenantError",
+    "MAX_TENANT_SEGMENT_LENGTH",
     "tenant_by_user_enabled",
     "tenant_scope",
 ]

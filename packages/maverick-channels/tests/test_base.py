@@ -78,3 +78,13 @@ def test_public_url_for_falls_back_to_raw_url(monkeypatch):
         headers={},
     )
     assert public_url_for(req) == "https://direct.example.com/webhook/sms"
+
+
+def test_incoming_message_principal_id_prefers_sender_id():
+    room_msg = IncomingMessage(
+        user_id="CROOM", text="hello", channel="slack", sender_id="UALICE",
+    )
+    assert room_msg.principal_id == "UALICE"
+
+    direct_msg = IncomingMessage(user_id="123", text="hello", channel="sms")
+    assert direct_msg.principal_id == "123"

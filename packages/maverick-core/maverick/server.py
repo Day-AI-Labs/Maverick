@@ -29,9 +29,52 @@ from .config import load_config
 from .llm import LLM
 from .orchestrator import run_goal
 from .sandbox import build_sandbox
-from .world_model import WorldModel, open_world
+from .world_model import WorldModel, open_world, world_for_tenant
 
 log = logging.getLogger(__name__)
+
+
+def _reclaim_tenant_orphans() -> int:
+    """Reclaim orphan goals across every per-tenant ``world.db`` on startup.
+
+    The default-world reclaim in :meth:`Server.run` only sweeps
+    ``~/.maverick/world.db``. With per-user tenancy on, each tenant has its own
+    ``~/.maverick/tenants/<t>/world.db`` whose goals left ``active``/``pending``
+    by a crash would otherwise never be reclaimed.
+
+    No-op (returns 0) when ``tenant_by_user_enabled()`` is off -- single-tenant
+    behaviour is unchanged. Otherwise enumerate the existing tenant dirs and
+    reclaim each tenant's world via the same cached :func:`world_for_tenant`
+    used to serve that tenant's writes, summing the counts.
+
+    Fail-soft: a missing tenants dir or a bad/unreadable tenant entry is
+    skipped, never crashing startup.
+    """
+    from urllib.parse import unquote
+
+    from .paths import maverick_home, tenant_by_user_enabled
+
+    if not tenant_by_user_enabled():
+        return 0
+    tenants_dir = maverick_home() / "tenants"
+    try:
+        entries = list(tenants_dir.iterdir())
+    except OSError:  # missing dir (no tenant has run yet) or unreadable -> nothing to sweep
+        return 0
+    total = 0
+    for entry in entries:
+        try:
+            if not entry.is_dir():
+                continue
+            # On-disk dir names are the percent-ENCODED tenant segment
+            # (paths._tenant_segment); world_for_tenant() re-encodes its
+            # argument, so decode the segment back to the raw tenant id first
+            # or it would resolve to a different, empty world.db.
+            tenant = unquote(entry.name)
+            total += world_for_tenant(tenant).reclaim_orphan_goals()
+        except Exception:  # one bad tenant dir must not abort the sweep
+            log.exception("orphan reclaim failed for tenant dir %s", entry.name)
+    return total
 
 
 class Server:
@@ -63,6 +106,34 @@ class Server:
             if not verdict.allowed:
                 return f"⚠ Blocked: {'; '.join(verdict.reasons)}"
 
+        from .paths import tenant_by_user_enabled, tenant_scope
+
+        # The authenticated sender. Room-based adapters keep msg.user_id as the
+        # reply target and expose the human via msg.principal_id; the tenant, the
+        # conversation key, and run_goal's user_id must ALL agree on it -- else a
+        # user's world.db lands under a different tenant than their memory/audit.
+        principal_id = getattr(msg, "principal_id", msg.user_id)
+
+        # Resolve the per-tenant world ONCE. When per-user tenancy is on, this
+        # message's goal/conversation/turns land in that user's own world.db
+        # (~/.maverick/tenants/<channel>:<principal_id>/world.db) -- the SAME
+        # tenant the tenant_scope() below pins for cross-session memory + audit,
+        # so all three stores stay co-located. Off (default) -> tenant is None and
+        # we reuse the SHARED self.world unchanged (``world is self.world``), so
+        # the legacy single-tenant path is byte-for-byte identical and we never
+        # open a second connection to ~/.maverick/world.db. self.world also still
+        # backs startup orphan-reclaim and the dashboard. If per-user tenant
+        # resolution fails, reject the message rather than running attacker input
+        # against the shared world and breaking tenant isolation.
+        tenant = None
+        if tenant_by_user_enabled():
+            tenant = f"{msg.channel or 'unknown'}:{principal_id}"
+        try:
+            world = self.world if tenant is None else world_for_tenant(tenant)
+        except Exception:
+            log.exception("tenant world resolution failed; rejecting message")
+            return "⚠ Tenant isolation is unavailable for this message. Try again later."
+
         # Multi-turn: a single (channel, user_id) gets one conversation
         # row. Every inbound message becomes a 'user' turn; the
         # orchestrator's final answer is appended as 'assistant' turn
@@ -73,37 +144,38 @@ class Server:
         # row (creates if needed) and returns None on follow-up turns.
         from .compliance import first_turn_disclosure
         disclosure = first_turn_disclosure(
-            self.world,
+            world,
             channel=msg.channel or "unknown",
-            user_id=msg.user_id,
+            user_id=principal_id,
         )
 
-        conversation = self.world.get_or_create_conversation(
+        conversation = world.get_or_create_conversation(
             channel=msg.channel or "unknown",
-            user_id=msg.user_id,
+            user_id=principal_id,
         )
-        self.world.append_turn(conversation.id, "user", msg.text)
+        world.append_turn(conversation.id, "user", msg.text)
 
         title = msg.text[:80]
-        goal_id = self.world.create_goal(title, msg.text)
+        goal_id = world.create_goal(title, msg.text)
 
         budget = budget_from_config()
-        from .paths import tenant_scope
         try:
             # Per-user tenant isolation when enabled (no-op otherwise): scopes
-            # the run's cross-session memory to this channel user, then restores.
-            with tenant_scope(channel=msg.channel, user_id=msg.user_id):
+            # the run's cross-session memory to the authenticated sender, then
+            # restores. Room-based adapters keep msg.user_id as the reply target
+            # and expose the sender via msg.principal_id.
+            with tenant_scope(channel=msg.channel, user_id=principal_id):
                 result = await run_goal(
-                    self.llm, self.world, budget, goal_id,
+                    self.llm, world, budget, goal_id,
                     sandbox=self.sandbox, max_depth=self.max_depth,
                     conversation_id=conversation.id,
                     channel=msg.channel or "unknown",
-                    user_id=f"{msg.channel or 'unknown'}:{msg.user_id}",
+                    user_id=f"{msg.channel or 'unknown'}:{principal_id}",
                 )
         except Exception:
             log.exception("goal #%s run failed", goal_id)
             try:
-                self.world.set_goal_status(goal_id, "blocked", result="internal error")
+                world.set_goal_status(goal_id, "blocked", result="internal error")
             except Exception:  # pragma: no cover
                 pass
             # Don't leak internal error details to untrusted channel users.
@@ -127,9 +199,12 @@ class Server:
             raise ValueError("no channels registered")
         # Reclaim any goals stuck in 'active'/'pending' from a prior
         # crash. Without this, SIGKILL/OOM mid-run leaves ghosts that
-        # show in /goals forever.
+        # show in /goals forever. Sweeps the default world; with per-user
+        # tenancy on, _reclaim_tenant_orphans() also sweeps every tenant's
+        # own world.db (a crash strands goals there too).
         try:
             reclaimed = self.world.reclaim_orphan_goals()
+            reclaimed += _reclaim_tenant_orphans()
             if reclaimed:
                 log.warning("reclaimed %d orphan goal(s) from prior crash", reclaimed)
         except Exception:  # pragma: no cover

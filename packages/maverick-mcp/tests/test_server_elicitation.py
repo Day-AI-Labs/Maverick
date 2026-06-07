@@ -175,6 +175,37 @@ def test_drain_elicits_answers_and_resumes(monkeypatch):
     assert resumed == [{"goal_id": 5}]             # resumed once, then no Qs left
 
 
+def test_drain_preserves_original_resume_limits(monkeypatch):
+    fake = _FakeWorld([_Q(1, 5, "Which branch?")])
+    monkeypatch.setattr("maverick.world_model.WorldModel", lambda *a, **k: fake)
+    monkeypatch.setattr(sys, "stdin", _stdin(
+        {"jsonrpc": "2.0", "id": "elicit-1",
+         "result": {"action": "accept", "content": {"answer": "main"}}}))
+    s = _capable()
+    s._structured_override = {"goal_id": 5}
+    s._send = lambda _m: None
+    resumed: list[dict] = []
+
+    def fake_resume(args):
+        resumed.append(args)
+        return "FINAL ANSWER"
+
+    monkeypatch.setattr(s, "_tool_resume", fake_resume)
+    out = s._maybe_elicit_open_questions({
+        "title": "ship it",
+        "max_dollars": 0.01,
+        "max_wall_seconds": 7,
+        "max_depth": 1,
+    })
+    assert out == "FINAL ANSWER"
+    assert resumed == [{
+        "goal_id": 5,
+        "max_dollars": 0.01,
+        "max_wall_seconds": 7,
+        "max_depth": 1,
+    }]
+
+
 def test_drain_decline_leaves_question_parked(monkeypatch):
     fake = _FakeWorld([_Q(1, 5, "Which branch?")])
     monkeypatch.setattr("maverick.world_model.WorldModel", lambda *a, **k: fake)

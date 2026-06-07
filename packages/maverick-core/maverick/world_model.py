@@ -1282,3 +1282,50 @@ def open_world(path: Path = DEFAULT_DB) -> Any:
 
         return open_postgres_world()
     return WorldModel(path)
+
+
+# Per-tenant WorldModel cache. P1 multi-tenancy: each tenant gets its own
+# world.db under ~/.maverick/tenants/<t>/, mirroring how cross-session memory
+# (tools/memory.py) and the audit log resolve their dirs via data_dir(). Keyed
+# by the RESOLVED db path so two raw tenant ids that sanitize to the same dir
+# share one connection -- a single SQLite file must have exactly one WorldModel
+# (its write lock serialises mutations within the process; two instances on the
+# same file would not coordinate). Cached for the life of the process, like the
+# audit log's default singleton: WorldModel opens with check_same_thread=False +
+# WAL + a write lock, so one instance is safely shared across the FastAPI
+# threadpool / goal tasks.
+MAX_TENANT_WORLDS = 128
+_tenant_worlds: dict[str, WorldModel] = {}
+_tenant_worlds_lock = threading.Lock()
+
+
+class TenantWorldLimitError(RuntimeError):
+    """Raised when the process has reached its tenant world cache limit."""
+
+
+def world_for_tenant(tenant: str | None = None) -> WorldModel:
+    """Return the process-cached ``WorldModel`` for ``tenant``.
+
+    ``tenant=None`` is the legacy shared world at ``~/.maverick/world.db``
+    (single-tenant behaviour unchanged); a tenant ``t`` gets an isolated
+    ``~/.maverick/tenants/<t>/world.db``. The path is resolved via
+    :func:`maverick.paths.data_dir`, the same primitive memory + audit use, so
+    world/memory/audit all land under the same tenant dir.
+
+    Repeated calls for the same tenant return the SAME instance; distinct
+    tenants get distinct DBs, up to ``MAX_TENANT_WORLDS`` cached tenant
+    connections. Does NOT consult the Postgres backend -- it is the per-tenant
+    SQLite factory the server uses for goal/conversation/turn writes.
+    """
+    from .paths import data_dir
+
+    path = data_dir("world.db", tenant=tenant)
+    key = str(path)
+    with _tenant_worlds_lock:
+        world = _tenant_worlds.get(key)
+        if world is None:
+            if tenant is not None and len(_tenant_worlds) >= MAX_TENANT_WORLDS:
+                raise TenantWorldLimitError("tenant world cache limit reached")
+            world = WorldModel(path)
+            _tenant_worlds[key] = world
+        return world

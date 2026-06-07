@@ -61,3 +61,56 @@ print(Shield().enabled)   # True if agent-shield is installed
 - All Agent Shield detection runs **locally**. Nothing is sent to any external service.
 - Your prompts go only to the LLM provider you chose during `maverick init`. If you pick Ollama, nothing leaves your machine.
 - The world model (SQLite) lives in `~/.maverick/world.db`. Inspect, back up, or wipe it freely.
+
+## Enterprise mode (private / sensitive data)
+
+The kernel ships fail-open and cloud-capable by design — right for a personal agent,
+wrong the moment it handles PHI / PII / financial / regulated data. **Enterprise mode**
+is one switch that flips those defaults to *fail-closed* and guarantees the property an
+enterprise needs before it lets an agent touch sensitive data: **the data never leaves
+your boundary.**
+
+```toml
+[enterprise]
+mode = true
+# Optional: extra self-hosted providers to treat as local (e.g. an internal vLLM
+# fronted by a generic OpenAI-compatible provider).
+local_providers = ["my-internal-vllm"]
+```
+
+Or set `MAVERICK_ENTERPRISE=1`, or pick it in `maverick init`. **Off by default.** When on:
+
+| Control | Default kernel behavior | Enterprise mode |
+|---|---|---|
+| **LLM egress** | any configured provider (incl. cloud) sees the prompt | **pinned to local/self-hosted** (`ollama`/`vllm`/`tgi` or an allow-listed endpoint); a cloud-routed call raises `EgressBlocked` **before any prompt is sent**, and the denial is audited |
+| **Consent** | `auto-approve` | `ask` (and therefore *deny* in non-interactive contexts) |
+| **Capabilities** | opt-in | enforced (least privilege; sub-agents can only narrow their grant) |
+
+The egress lock is enforced at the single LLM dispatch chokepoint (`maverick.llm.LLM.complete`),
+so it covers every agent, role, and tool-driven model call. An explicit env/config setting
+still wins per control, but the egress lock can never be satisfied by a cloud provider.
+
+## Compliance posture (`maverick compliance`)
+
+`maverick compliance` reports which GDPR + EU AI Act controls are active for your
+deployment, mapped to the article each supports, and flags the opt-in controls that are
+still off — with the exact knob to enable each:
+
+| Control | Article(s) | Status / enable with |
+|---|---|---|
+| AI transparency disclosure | EU AI Act Art. 50 | on by default (channel server) |
+| Audit logging (record-keeping) | EU AI Act Art. 12, GDPR Art. 30 | always on |
+| Tamper-evident audit | EU AI Act Art. 12 | `[audit] sign = true` |
+| Human oversight (consent) | EU AI Act Art. 14 | `MAVERICK_CONSENT_MODE=ask` or enterprise mode |
+| Kill switch | EU AI Act Art. 14 | `~/.maverick/HALT` |
+| Data-subject access & portability | GDPR Art. 15 & 20 | `maverick export-user` |
+| Right to erasure | GDPR Art. 17 | `maverick erase` |
+| Storage limitation (retention) | GDPR Art. 5(1)(e) | `[retention]` + `maverick retention enforce` |
+| Data-egress control | GDPR Art. 32 / AI Act Art. 15 | `[enterprise] mode = true` |
+| Secret/PII redaction in logs | GDPR Art. 25 & 32 | always on |
+| Encryption at rest (memory store) | GDPR Art. 32 | `[encryption] at_rest = true` (implied by enterprise mode) |
+| Log data minimization | GDPR Art. 5(1)(c) | `[privacy] anonymous = true` |
+
+`--format json` emits the same for pipelines/SIEM. **This is control coverage, not a
+legal attestation** — full GDPR / EU AI Act compliance also requires a DPA, ROPA (Art. 30
+records), a DPIA, AI-Act risk classification, and review by qualified counsel.
