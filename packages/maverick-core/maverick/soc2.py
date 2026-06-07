@@ -38,10 +38,8 @@ Services Criteria lives in ``docs/compliance/soc2-controls.md``.
 """
 from __future__ import annotations
 
-import json
 import time
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 # Status vocabulary for a single technical control probe.
@@ -152,33 +150,6 @@ def _resolve_audit_dir():
     return data_dir("audit")
 
 
-def _day_files_are_plain_unsigned(day_files: list[Path]) -> bool:
-    """Return true when day-files contain only unsigned writer rows.
-
-    Audit signing is optional.  With signing disabled the writer emits plain
-    NDJSON rows that have none of the signing metadata fields; those logs are
-    expected not to have a signed anchor ledger.  Signed rows, partially signed
-    rows, or malformed JSON are not treated as this benign state.
-    """
-    saw_row = False
-    for path in day_files:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                saw_row = True
-                try:
-                    data = json.loads(line)
-                except json.JSONDecodeError:
-                    return False
-                present = {
-                    field for field in ("hash", "sig", "key_id") if data.get(field)
-                }
-                if present:
-                    return False
-    return saw_row
-
-
 def _probe_audit_chain() -> dict[str, Any]:
     """Verify the append-only Ed25519 Merkle-chained audit log, fail-soft.
 
@@ -228,11 +199,6 @@ def _probe_audit_chain() -> dict[str, Any]:
         ),
         [],
     )
-    unsigned_anchor_gap = _safe(
-        lambda: _day_files_are_plain_unsigned(day_files)
-        and not (audit_dir / ".anchors.required").exists(),
-        False,
-    )
     real_breaks = 0  # genuine tamper/verify failures
     unsigned_rows = 0  # rows missing hash/sig/key_id (signing simply off)
     first_reason: str | None = None
@@ -271,11 +237,6 @@ def _probe_audit_chain() -> dict[str, Any]:
         reason = getattr(b, "reason", "")
         if reason == "no_crypto":
             no_crypto = True
-            continue
-        # Unsigned deployments never create the cross-file anchor ledger.  A
-        # completed plain NDJSON day-file with no ledger marker is therefore
-        # the documented ``unsigned`` configuration state, not tampering.
-        if reason == "anchor_ledger_missing" and unsigned_anchor_gap:
             continue
         real_breaks += 1
         if first_reason is None:

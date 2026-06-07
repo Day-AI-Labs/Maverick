@@ -297,10 +297,13 @@ def test_audit_chain_unsigned_when_signing_off():
     assert probe["status"] != "broken"
 
 
-def test_audit_chain_unsigned_past_day_without_anchor_is_not_broken(
-    tmp_path, monkeypatch
-):
-    """Completed unsigned day-files do not require a signed anchor ledger."""
+def test_audit_chain_completed_day_without_anchor_is_broken(tmp_path, monkeypatch):
+    """Completed day-files require the cross-file anchor ledger.
+
+    SOC 2 must not infer a benign unsigned deployment solely from mutable row
+    contents; otherwise a signed log can be downgraded by stripping signing
+    fields and deleting the anchor ledger plus marker.
+    """
     import json
 
     past_day = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -313,8 +316,9 @@ def test_audit_chain_unsigned_past_day_without_anchor_is_not_broken(
 
     probe = soc2.collect_soc2_evidence()["audit_log"]
 
-    assert probe["status"] in {"unsigned", "no_crypto"}
-    assert probe["status"] != "broken"
+    assert probe["status"] in {"broken", "no_crypto"}
+    if probe["status"] == "broken":
+        assert probe["first_reason"] == "anchor_ledger_missing"
     assert probe["files_checked"] == 1
     assert probe["anchors_checked"] is True
 
@@ -393,6 +397,37 @@ def test_audit_chain_broken_when_anchor_ledger_deleted(tmp_path, monkeypatch):
     probe = soc2.collect_soc2_evidence()["audit_log"]
     assert probe["status"] == "broken"
     assert probe["first_reason"] == "anchor_ledger_missing"
+    assert probe["files_checked"] == 1
+    assert probe["anchors_checked"] is True
+
+
+def test_audit_chain_broken_when_signed_log_stripped_and_anchors_deleted(
+    tmp_path, monkeypatch
+):
+    """Stripping signing fields must not downgrade a signed log to unsigned."""
+    day = _write_signed_past_day(tmp_path, monkeypatch)
+    monkeypatch.setattr(soc2, "_resolve_audit_dir", lambda: tmp_path)
+
+    import json
+
+    from maverick.audit import signing
+
+    day_file = tmp_path / f"{day}.ndjson"
+    stripped_rows = []
+    for line in day_file.read_text(encoding="utf-8").splitlines():
+        row = json.loads(line)
+        for field in ("hash", "sig", "key_id", "prev_hash"):
+            row.pop(field, None)
+        stripped_rows.append(json.dumps(row))
+    day_file.write_text("\n".join(stripped_rows) + "\n", encoding="utf-8")
+    (tmp_path / signing.ANCHOR_FILENAME).unlink()
+    (tmp_path / signing.ANCHOR_MARKER_FILENAME).unlink()
+
+    probe = soc2.collect_soc2_evidence()["audit_log"]
+
+    assert probe["status"] == "broken"
+    assert probe["first_reason"] == "anchor_ledger_missing"
+    assert probe["unsigned_rows"] == 2
     assert probe["files_checked"] == 1
     assert probe["anchors_checked"] is True
 
