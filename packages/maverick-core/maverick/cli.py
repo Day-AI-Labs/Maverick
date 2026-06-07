@@ -2431,6 +2431,32 @@ def logs_cmd(pattern: str | None, num: int, day: str | None) -> None:
 
 # ----- SOC 2 evidence --------------------------------------------------
 
+_REQUIRED_SOC2_CONTROLS = (
+    "capability_enforcement",
+    "tenant_isolation",
+    "usage_quotas",
+    "oidc_auth",
+)
+
+
+def _soc2_posture_ready(evidence) -> bool:
+    """Return True only when required SOC 2 controls report a ready posture."""
+    controls = evidence.get("controls", {}) if isinstance(evidence, dict) else {}
+    if not isinstance(controls, dict):
+        return False
+    for control in _REQUIRED_SOC2_CONTROLS:
+        probe = controls.get(control, {})
+        if not isinstance(probe, dict) or probe.get("status") != "enabled":
+            return False
+
+    audit_log = evidence.get("audit_log", {}) if isinstance(evidence, dict) else {}
+    if not isinstance(audit_log, dict) or audit_log.get("status") != "ok":
+        return False
+
+    signing_key = evidence.get("audit_signing_key", {}) if isinstance(evidence, dict) else {}
+    return isinstance(signing_key, dict) and signing_key.get("status") == "enabled"
+
+
 @main.command("soc2")
 @click.option("--json", "compact", is_flag=True,
               help="Emit compact single-line JSON (default: pretty, indent=2).")
@@ -2440,7 +2466,8 @@ def soc2(compact: bool) -> None:
     Serializes ``collect_soc2_evidence()`` -- which controls are ON in this
     deployment and whether the audit log verifies -- for auditors / CI /
     automation. The collector is fail-soft (it never raises), so this command
-    always emits a JSON object and exits 0.
+    always emits a JSON object. The command exits non-zero when required
+    controls or audit-log checks are not in a SOC 2-ready state.
     """
     import json as _json
 
@@ -2450,6 +2477,8 @@ def soc2(compact: bool) -> None:
         click.echo(_json.dumps(evidence, default=str))
     else:
         click.echo(_json.dumps(evidence, default=str, indent=2))
+    if not _soc2_posture_ready(evidence):
+        sys.exit(1)
 
 
 # ----- DSAR subject-data export ----------------------------------------
