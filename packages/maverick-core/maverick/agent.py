@@ -341,6 +341,7 @@ class Agent:
         capability=None,
         domain: str | None = None,
         persona: str | None = None,
+        knowledge_sources: list[str] | None = None,
     ):
         self.ctx = ctx
         self.role = role
@@ -354,6 +355,12 @@ class Agent:
         self.domain = domain if domain is not None else getattr(parent, "domain", None)
         # Optional domain-pack persona, appended to the system prompt below.
         self._domain_persona = persona
+        # Domain knowledge collections this agent may query (the DomainProfile's
+        # knowledge_sources). Children inherit the parent's, like ``domain``.
+        self.knowledge_sources = (
+            knowledge_sources if knowledge_sources is not None
+            else list(getattr(parent, "knowledge_sources", []) or [])
+        )
         # P0 identity layer: the capability grant this agent runs under. An
         # explicit arg (passed by an attenuating spawn) wins; otherwise inherit
         # the run's root grant; otherwise the depth-0 orchestrator mints the
@@ -468,6 +475,13 @@ class Agent:
         if self.depth < self.ctx.max_depth:
             reg.register(spawn_subagent_tool(self))
             reg.register(spawn_swarm_tool(self))
+        # Per-domain document knowledge: bind a knowledge_search tool to this
+        # agent's collections when a knowledge base is configured for the run.
+        kb = getattr(self.ctx, "knowledge", None)
+        sources = self.knowledge_sources or ([self.domain] if self.domain else [])
+        if kb is not None and sources:
+            from .tools.knowledge import knowledge_search_tool
+            reg.register(knowledge_search_tool(kb, sources))
         # Self-learning: bound to this agent so it can hot-register a newly
         # acquired tool / MCP server into THIS run's live registry. Off
         # unless [self_learning] enable is set (kernel rule 1).

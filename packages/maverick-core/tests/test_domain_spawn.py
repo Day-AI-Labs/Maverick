@@ -51,3 +51,12 @@ def test_children_inherit_parent_domain(tmp_path):
 
     child = Agent(ctx=ctx, role="researcher", brief="sub", depth=1, parent=parent)
     assert child.domain == "finance"  # inherited -> a sector seal catches the sub-tree
+    assert child.knowledge_sources == parent.knowledge_sources  # inherited too
+
+
+def test_agent_from_profile_sets_knowledge_sources(tmp_path):
+    ctx = _ctx(tmp_path)
+    profile = DomainProfile(name="finance", knowledge_sources=["finance"],
+                            allow_tools=["read_file"])
+    agent = agent_from_profile(profile, ctx, "task")
+    assert agent.knowledge_sources == ["finance"]

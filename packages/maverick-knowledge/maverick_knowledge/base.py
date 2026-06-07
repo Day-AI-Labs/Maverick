@@ -80,3 +80,18 @@ class KnowledgeBase:
             Hit(m.score, m.text, m.meta.get("source", ""))
             for m in self.store.search(collection, vector, k)
         ]
+
+    def search_formatted(self, collections, query: str, k: int = 5) -> str:
+        """Search one or more domain collections and render the top-k chunks with
+        their sources -- the string a domain agent's ``knowledge_search`` tool
+        returns. Merges across collections, then keeps the globally top-k."""
+        hits: list[Hit] = []
+        for c in collections:
+            hits.extend(self.search(c, query, k))
+        hits.sort(key=lambda h: h.score, reverse=True)
+        hits = hits[: max(1, k)]
+        if not hits:
+            return "No relevant documents found in this domain's knowledge base."
+        return "\n\n".join(
+            f"[source: {h.source or 'unknown'}]\n{h.text}" for h in hits
+        )

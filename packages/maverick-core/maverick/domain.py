@@ -156,4 +156,5 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
     return Agent(
         ctx=ctx, role=profile.name, brief=task, depth=depth, parent=parent,
         domain=profile.compartment, persona=profile.persona, capability=cap,
+        knowledge_sources=profile.knowledge_sources,
     )
