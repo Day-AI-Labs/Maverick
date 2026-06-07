@@ -51,6 +51,12 @@ def test_exchange_code_requires_https():
         exchange_code("http://idp/token", "c", "code", "https://app/cb")
 
 
+def test_exchange_code_default_fetch_uses_ssrf_guard(monkeypatch):
+    monkeypatch.delenv("MAVERICK_FETCH_ALLOW_PRIVATE", raising=False)
+    with pytest.raises(ValueError, match="SSRF guard|blocked address|private"):
+        exchange_code("https://127.0.0.1/token", "c", "code", "https://app/cb")
+
+
 def test_exchange_code_rejects_missing_access_token():
     with pytest.raises(ValueError):
         exchange_code("https://idp/token", "c", "code", "https://app/cb",

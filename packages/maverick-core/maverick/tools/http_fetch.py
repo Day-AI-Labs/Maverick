@@ -297,28 +297,30 @@ class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
         )
 
 
-def guarded_urlopen(url: str, *, timeout: float, allow_http: bool = False):
+def guarded_urlopen(url_or_req, *, timeout: float, allow_http: bool = False):
     """``urllib.request.urlopen`` with scheme + SSRF host checks, redirect
     revalidation, and DNS-rebind-proof connection pinning.
 
     The shared guarded fetch for paths that pull a user- or model-supplied
-    URL outside the http_fetch tool (skill install, catalog index). Enforces
-    https (http only when ``allow_http``) and refuses hosts resolving to a
-    private/loopback/link-local/reserved address (honoring
+    URL outside the http_fetch tool (skill install, catalog index, OIDC token
+    exchange). Enforces https (http only when ``allow_http``) and refuses hosts
+    resolving to a private/loopback/link-local/reserved address (honoring
     ``MAVERICK_FETCH_ALLOW_PRIVATE=1``). The host check is re-run on every
     redirect hop, and the connection is opened to the exact IP validated by
     ``_resolve_pinned`` — the name is resolved once and that IP is pinned for
     the socket, so a fast DNS rebind between check and connect cannot redirect
     the request onto an internal address. Returns the response, so callers use
-    it as ``with guarded_urlopen(url, timeout=...) as resp:``.
+    it as ``with guarded_urlopen(url, timeout=...) as resp:``; callers that need
+    custom methods or headers may pass a ``urllib.request.Request``.
     """
+    url = getattr(url_or_req, "full_url", url_or_req)
     _check_url_allowed(url, allow_http=allow_http)
     opener = urllib.request.build_opener(
         _PinnedHTTPHandler,
         _PinnedHTTPSHandler,
         _RevalidatingRedirectHandler(allow_http=allow_http),
     )
-    return opener.open(url, timeout=timeout)  # noqa: S310 (scheme+host checked, redirects revalidated, IP pinned)
+    return opener.open(url_or_req, timeout=timeout)  # noqa: S310 (scheme+host checked, redirects revalidated, IP pinned)
 
 
 def _check_robots(url: str, user_agent: str = "Maverick") -> bool:

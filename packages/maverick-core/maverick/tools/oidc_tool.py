@@ -57,12 +57,15 @@ def build_authorize_url(authorize_url: str, client_id: str, redirect_uri: str, *
 def _default_fetch(token_url: str, data: dict) -> dict:
     import json
     import urllib.request
+
+    from .http_fetch import guarded_urlopen
+
     body = urlencode(data).encode()
     req = urllib.request.Request(
         token_url, data=body, method="POST",
         headers={"Content-Type": "application/x-www-form-urlencoded",
                  "Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as r:  # noqa: S310 -- https-checked
+    with guarded_urlopen(req, timeout=30, allow_http=False) as r:
         return json.loads(r.read(200_000).decode("utf-8"))
 
 
@@ -73,7 +76,7 @@ def exchange_code(token_url: str, client_id: str, code: str, redirect_uri: str, 
     ``fetch(token_url, data) -> dict`` is injectable for tests. Raises
     ``ValueError`` on bad input or a token endpoint that returns no access_token.
     """
-    if not token_url.startswith("https://"):
+    if urlparse(token_url).scheme.lower() != "https":
         raise ValueError(f"token_url must be https://, got {token_url!r}")
     if not client_id or not code or not redirect_uri:
         raise ValueError("exchange needs client_id, code, redirect_uri")
