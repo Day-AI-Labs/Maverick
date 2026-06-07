@@ -832,10 +832,17 @@ class Agent:
     def _maybe_seal(self, quarantine, verdict) -> None:
         """Conservatively escalate a shield block to a Rung-1 seal.
 
-        Workers only; the orchestrator (the privileged promoter) is never
-        sealed. Fail-open -- containment must never break the agent loop.
+        Workers only; the trusted root orchestrator (the privileged promoter)
+        is never sealed. Do not trust ``role`` alone here: child agents receive
+        model-supplied role strings from spawn tools. Fail-open -- containment
+        must never break the agent loop.
         """
-        if quarantine is None or getattr(self, "role", "") == "orchestrator":
+        is_root_orchestrator = (
+            getattr(self, "role", "") == "orchestrator"
+            and getattr(self, "depth", None) == 0
+            and getattr(self, "parent", None) is None
+        )
+        if quarantine is None or is_root_orchestrator:
             return
         try:
             from .quarantine import triage_block

@@ -31,6 +31,22 @@ MAX_SWARM_FANOUT = env_int("MAVERICK_MAX_SWARM_FANOUT", 8)
 # actually produce the answer. Mirrors agent.py's per-worker soft-stop.
 SYNTHESIS_RESERVE = env_float("MAVERICK_SYNTHESIS_RESERVE", 0.25)
 
+_RESERVED_CHILD_ROLES = {"orchestrator"}
+
+
+def _reserved_role_error(role: object) -> str | None:
+    """Reject child roles reserved for kernel-created agents.
+
+    Spawn tool arguments are model-controlled, so role strings must not be able
+    to claim privileged kernel identities used by containment logic.
+    """
+    if isinstance(role, str) and role.strip().lower() in _RESERVED_CHILD_ROLES:
+        return (
+            f"ERROR: role '{role}' is reserved for the root orchestrator and "
+            "cannot be used for spawned agents"
+        )
+    return None
+
 
 def _fanout_cap_for_depth(depth: int) -> int:
     """Per-call fan-out width, DECAYING with depth.
@@ -87,6 +103,10 @@ def spawn_subagent_tool(parent: Agent) -> Tool:
         role = args["role"]
         task = args["task"]
         from ..agent import Agent
+
+        _blocked_role = _reserved_role_error(role)
+        if _blocked_role is not None:
+            return _blocked_role
 
         if parent.depth + 1 > parent.ctx.max_depth:
             return f"ERROR: max depth {parent.ctx.max_depth} reached"
@@ -145,7 +165,10 @@ def spawn_subagent_tool(parent: Agent) -> Tool:
         input_schema={
             "type": "object",
             "properties": {
-                "role": {"type": "string"},
+                "role": {
+                    "type": "string",
+                    "description": "Child specialist role; 'orchestrator' is reserved.",
+                },
                 "task": {"type": "string", "description": "Concrete sub-goal for the child."},
             },
             "required": ["role", "task"],
@@ -161,6 +184,13 @@ def spawn_swarm_tool(parent: Agent) -> Tool:
         agents_spec = args["agents"]
         if not isinstance(agents_spec, list) or not agents_spec:
             return "ERROR: 'agents' must be a non-empty list"
+
+        for spec in agents_spec:
+            if not isinstance(spec, dict):
+                return "ERROR: each swarm agent must be an object"
+            _blocked_role = _reserved_role_error(spec.get("role"))
+            if _blocked_role is not None:
+                return _blocked_role
 
         if parent.depth + 1 > parent.ctx.max_depth:
             return f"ERROR: max depth {parent.ctx.max_depth} reached"
@@ -289,7 +319,10 @@ def spawn_swarm_tool(parent: Agent) -> Tool:
                     "items": {
                         "type": "object",
                         "properties": {
-                            "role": {"type": "string"},
+                            "role": {
+                                "type": "string",
+                                "description": "Child specialist role; 'orchestrator' is reserved.",
+                            },
                             "task": {"type": "string"},
                         },
                         "required": ["role", "task"],
