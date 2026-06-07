@@ -68,6 +68,8 @@ platform remain proprietary.
 - [Deployment](deployment.md) — desktop / docker / VPS / phone modes
 - [Safety](safety.md) — shield, audit log, kill switches, consent
 - [Security hardening](security-hardening.md) — enterprise opt-in controls (capabilities, tenancy, quotas, OIDC, encryption-at-rest, audit signing) + compliance commands
+- [Security & compliance overview](enterprise/security-overview.md) — the data-boundary guarantee, identity, audit/evidence, reference architecture
+- [Editions](enterprise/editions.md) — Community vs Enterprise
 - [Plugins](plugins.md) — extending the tool / channel / skill surface
 - [Self-learning](self-learning.md) — acquire skills, tools, MCP servers, and APIs on demand
 - [Features](FEATURES.md) — everything Maverick does today (shipped capabilities + tools)
