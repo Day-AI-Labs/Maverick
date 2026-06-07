@@ -8,6 +8,7 @@ makes the verifier pass, seals real data on disk, and zeroes out
 from __future__ import annotations
 
 import importlib.util
+import os
 import sqlite3
 
 import pytest
@@ -26,8 +27,13 @@ def _isolate(monkeypatch, tmp_path):
     ):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr("maverick.config.load_config", lambda *a, **k: {})
-    # Keep generated at-rest keys off the real home dir.
+    # Keep generated at-rest/audit keys and audit probe files off the real home dir.
     from maverick import crypto_at_rest as car
+    from maverick import paths
+    from maverick.audit import signing
+
+    monkeypatch.setattr(paths, "maverick_home", lambda: tmp_path / "home")
+    monkeypatch.setattr(signing, "KEY_DIR", signing._LEGACY_KEY_DIR)
     monkeypatch.setattr(car, "_KEY_PATH", tmp_path / "keys" / "at_rest.key")
 
 
@@ -39,6 +45,28 @@ def test_bare_deployment_fails_the_boundary_guarantees():
     # The two load-bearing, actively-probed guarantees are off by default.
     assert checks["Egress lock"].passed is False
     assert checks["At-rest encryption"].passed is False
+
+
+@requires_crypto
+def test_verifier_fails_when_audit_signing_key_cannot_initialize(monkeypatch):
+    from maverick.deployment import verify_deployment
+    from maverick.paths import data_dir
+
+    monkeypatch.setenv("MAVERICK_AUDIT_SIGN", "1")
+
+    key_dir = data_dir("audit", "keys")
+    key_dir.mkdir(parents=True)
+    key_id = "0123456789abcdef"
+    (key_dir / f"{key_id}.key").write_bytes(b"bad")
+    (key_dir / f"{key_id}.pub").write_bytes(b"also-bad")
+    # Ensure the malformed key is selected as the newest available keypair.
+    newest_mtime = 2_000_000_000
+    os.utime(key_dir / f"{key_id}.key", (newest_mtime, newest_mtime))
+
+    checks = {c.name: c for c in verify_deployment()}
+
+    assert checks["Tamper-evident audit"].passed is False
+    assert "audit signing probe failed" in checks["Tamper-evident audit"].detail
 
 
 @requires_crypto
