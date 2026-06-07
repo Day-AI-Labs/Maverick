@@ -15,124 +15,44 @@ shelf (vs Devin, Hermes, OpenClaw, Cline, Aider).
 
 ---
 
-## Current state & gap analysis (reconciled June 2026)
+## How this doc works
 
-*Folded in from the former `ROADMAP-ADDITIONS.md`. The quarterly backlog below is
-the forward plan; this section is the **current-state truth**, reconciled against
-the code on `main`.*
+This roadmap is the **forward backlog — what isn't built yet.** When an item
+ships, it comes *off* this list and moves to [`FEATURES.md`](./FEATURES.md), the
+catalogue of built features and tools. So if something you remember seeing here
+is gone, it almost certainly shipped — check `FEATURES.md`.
 
-**Thesis.** The backlog is *breadth-heavy* (100+ tools, channels, integrations).
-The highest-leverage additions are **not** more breadth — they cluster in three
-under-invested places: (1) the agent-loop control surface (durable execution,
-hooks, context lifecycle), (2) the MCP / interop layer the cross-language strategy
-rides on, and (3) closing Maverick's own learning & eval loop. All three — plus the
-reliability plumbing (D) — have since been substantially built out: (1) is complete
-(A1–A3, incl. context lifecycle + `code_exec`), (2) is largely done (MCP
-elicitation, tasks, remote-HTTP client, registry, cross-language quickstarts — only
-the OAuth authorization-code grant + URL-mode elicitation remain), and (3) has the GAIA / τ²-bench /
-terminal-bench harnesses + the learning-substrate decision. See the table.
+## Current state (June 2026)
 
-**Status:** ✅ shipped · 🟡 partial · ⬜ open. PR numbers cite where it landed;
-`file:line` cites implementing code.
+The original gap analysis is **done**: the agent-loop control surface (A1–A3),
+the MCP / interop layer (B1–B3), the learning & eval loop (C1–C3), and the
+reliability plumbing (D1–D3) are built, along with a large
+**governed-agent-runtime + domain-pack** surface (conversational intake, RBAC,
+per-domain knowledge RAG, reverse-proxy SSO, SIEM audit export, scheduling). All
+of it is catalogued in [`FEATURES.md`](./FEATURES.md).
 
-| Item | Ask | Status | Evidence |
-|------|-----|--------|----------|
-| A1 | Durable/resumable execution + checkpoint/rewind | ✅ | `checkpoint.py`, `cli resume` |
-| A2 | Kernel lifecycle hooks (Pre/PostToolUse, UserPromptSubmit) | ✅ | `hooks.py` |
-| A3 | Context lifecycle — deferred tool loading / memory tool / programmatic calling | ✅ | deferred loading + `find_tools` (#693); cross-session **`memory`** tool shipped + wired into the loop (`tools/memory.py`, `memory_brief`); **programmatic tool calling** shipped as the run-to-completion slice (`tools/code_exec.py` — declared tool calls run shielded, outputs feed a sandboxed script, raw data stays out of context; opt-in). Full mid-execution tool-callback bridge needs interactive sandbox sessions (all backends are run-to-completion today) — future work |
-| B1 | Tool `outputSchema` | ✅ | `server.py` |
-| B1 | Resource subscriptions | ✅ #694 | `http_transport.py` |
-| B1 | Streamable-HTTP transport | ✅ | `http_transport.py` |
-| B1 | Elicitation | 🟡 | client inbound (`mcp_client.py`) **and** server outbound form mode (`maverick_mcp/server.py`, `tests/test_server_elicitation.py`) shipped — a parked `ask_user` question surfaces as a capability-/stdio-gated `elicitation/create` form, shield-screened both legs, then resumes; only Phase 3 URL mode + eliciting arbitrary flows / the approvals-table surface remain (`specs/mcp-elicitation.md`) |
-| B1 | Async tasks | ✅ | MCP Tasks 2025-11-25 on **both** transports (`maverick_mcp/tasks.py`, `server.py`, `http_transport.py`, `tests/test_server_tasks.py`, `tests/test_http_transport.py`) — task-augmented `tools/call` returns `CreateTaskResult` and runs on a background worker; `tasks/get`/`result`/`cancel`/`list` (shared `handle_tasks_*` across stdio + HTTP) + stdio `notifications/tasks/status` push + capability + `execution.taskSupport`. HTTP tasks are opt-in via `MAVERICK_MCP_HTTP_TASKS` (poll-only, bearer-scoped store). Only `input_required` (task-driven elicitation) deferred (`specs/mcp-tasks.md`) |
-| B2 | MCP client OAuth 2.1 + Registry | 🟡 | remote-HTTP **client transport** shipped — `StreamableHttpMCPClient` (`mcp_client.py`, `tests/test_mcp_http_client.py`) consumes remote servers via `[mcp_servers.<name>] url`, JSON + SSE responses, session-id continuity, optional bearer `auth_token`. **Registry shipped** — `mcp_registry.py` (discovery via the federated `catalog` with an inline-spec entry, `install_mcp_from_registry` validated through `MCPServerSpec.from_config`, dependency-free config write), `maverick mcp-registry browse/add/remove/list`, `[mcp_registries]` knob + wizard emission (`specs/mcp-registry.md`). **OAuth 2.1 client-credentials shipped** (`mcp_oauth.py` + `[mcp_servers.<name>.oauth]` + `StreamableHttpMCPClient._bearer`, cache+refresh, unit-tested against a mock token endpoint); only the user-redirect authorization-code grant + real-IdP validation remain |
-| B3 | A2A vs. homegrown ACD | ✅ decision | **Adopt A2A's Agent Card; cut homegrown ACD.** A2A already ships — discovery (`a2a.py`: `build_agent_card` + `/.well-known/agent-card.json`) and delegation (`a2a_tasks.py`: `/a2a/v1`, `message/send|stream`, `tasks/*`, auth, budget caps). ACD would re-answer the same question non-standardly; it's redundant with A2A and complementary to MCP. Recorded in [`specs/a2a-vs-acd-decision.md`](./specs/a2a-vs-acd-decision.md) |
-| C1 | Eval harness (GAIA / τ²-bench / terminal-bench) | ✅ | GAIA shipped (#687); **τ²-bench-style** stateful verification harness shipped (`benchmarks/eval_tau2.py`, `test_eval_tau2.py`); **terminal-bench-style** harness shipped (`benchmarks/eval_terminal_bench.py`, `test_eval_terminal_bench.py`) — a virtual-FS shell domain graded on final files **and** required commands (regex), runnable in CI on a shipped fixture with **no Docker**; the real container-backed + Maverick-driving solver (+ user simulator) plugs in at the injected-solver seam (documented follow-up, same shape as tau2's real solver) |
-| C1 | Skill quality gate / pruning | ✅ | gate (#396) + decay + active pruning (`skill_stats.evictable()` + `skills evict`), wired (`agent.py:274`, `orchestrator.py:227`), tested; only versioning absent |
-| C2 | Learning-substrate decision (close loop vs. prune) | ✅ decision | **Park** — keep the wired half (`prm.py` interface + `HeuristicPRM` default + `donation.py`/`ingest.py` data-shaping, all fail-open/opt-in), don't close the outcome-reward loop yet (speculative pre-volume), don't prune the offline scaffolds (`training/rlaif.py`, learned compaction/reflexion gates — free when off). Revisit on a trajectory-volume + operator-pull tripwire. No code change required. [`specs/learning-substrate-decision.md`](./specs/learning-substrate-decision.md) |
-| C3 | Verifier default-on across goal types | ✅ | `agent.py:1155–1342` (not coding-gated) |
-| D1 | Shared tool-reliability layer | ✅ #684 | `tool_reliability.py`, `retry.py` |
-| D2 | Semantic memory wired into reflexion | ✅ #678 | `reflexion.py` cosine path |
-| D3 | Session-provider tool-use gaps | ✅ #685 | de-scoped + documented |
+**Still open — near-term engineering:**
 
-**Still open — near-term focus**
+- **MCP elicitation, URL mode (B1, Phase 3)** — the secrets-never-transit-model
+  path; dovetails with remote-server OAuth (`specs/mcp-elicitation.md`).
+- **MCP client OAuth 2.1, authorization-code grant (B2)** — client-credentials
+  has shipped (`mcp_oauth.py`); the user-redirect grant + real-IdP validation
+  need a live authorization server to build and verify.
+- **Long-context retrieval router** — >200k-token auto-shard to a vector store
+  (Chroma/Qdrant adapters already exist; the router does not).
+- **gRPC API surface** — `StartGoal` / `StreamEpisode` / `Cancel`.
+- **IRC channel** and **LangChain / LangGraph adapters** — external-dependency
+  connectors that need a live service to test meaningfully.
+- **Glasses / wearable channel** — Even Realities G2 BYOA bridge; see the
+  council note below.
+- **MCP-client language analytics** — the one remaining language-bindings gate
+  step (needs the telemetry-consent UI); see the council decision below.
 
-1. **MCP elicitation + async tasks (B1)** — both shipped. Elicitation in both
-   directions: client-inbound (`mcp_client.py`, by policy + shield) and
-   server-outbound form mode (`server.py` surfaces a parked `ask_user` question as
-   a capability-/stdio-gated form, then resumes). Async tasks: MCP Tasks 2025-11-25
-   on **both** transports (`tasks.py` — task-augmented `tools/call` → `CreateTaskResult`
-   + background worker + `tasks/get|result|cancel|list` + stdio `notifications/tasks/status`
-   push); HTTP-transport tasks ship opt-in via `MAVERICK_MCP_HTTP_TASKS` (shared
-   `handle_tasks_*`, poll-only, bearer-scoped store). Remaining elicitation slice is
-   Phase 3 URL-mode (secrets-never-transit-model); remaining tasks slice is the larger
-   `input_required` (task-driven elicitation) + a per-caller (multi-tenant) HTTP task
-   store (`specs/mcp-tasks.md`).
-2. **MCP client OAuth 2.1 + Registry (B2)** — the remote-HTTP **client transport**
-   has shipped (`StreamableHttpMCPClient`: `[mcp_servers.<name>] url`, JSON+SSE,
-   session continuity, static bearer `auth_token`), and the **Registry** has shipped
-   (`mcp_registry.py` + `maverick mcp-registry browse/add/remove/list` + the
-   `[mcp_registries]` knob; discovery reuses the federated `catalog`, install validates
-   through `MCPServerSpec.from_config` and writes config without a TOML-writer dep —
-   `specs/mcp-registry.md`). **OAuth 2.1 client-credentials shipped** (`mcp_oauth.py`,
-   `[mcp_servers.<name>.oauth]`, cache+refresh, unit-tested vs a mock IdP). Remaining:
-   only the user-redirect **authorization-code grant** + real-IdP validation + optional
-   signed registry entries.
-3. **Finish A3** — ✅ done: memory tool + loop bootstrap, and programmatic tool
-   calling (`code_exec`); the full mid-execution bridge awaits interactive sandbox
-   sessions.
-4. **Finish C1's benchmark coverage** — ✅ done. The **τ²-bench-style**
-   (`benchmarks/eval_tau2.py`) and **terminal-bench-style**
-   (`benchmarks/eval_terminal_bench.py`) verification harnesses have both shipped:
-   stateful domain + outcome/process verifier, CI-runnable on shipped fixtures, with
-   real task files plugging in via `--dataset`. The only remainder — common to both —
-   is wiring a real Maverick-driving solver (+ container task envs / user simulator)
-   at the injected-solver seam; that is operator/integration work, not harness work.
-5. **Decisions:** ✅ **C2 learning substrate** — decided: *park* (keep the wired
-   PRM/donation half, don't close the loop pre-volume, don't prune the scaffolds;
-   revisit on a trajectory-volume tripwire — [`specs/learning-substrate-decision.md`](./specs/learning-substrate-decision.md)).
-   ✅ **B3 A2A-vs-ACD** — decided: adopt A2A, cut ACD
-   ([`specs/a2a-vs-acd-decision.md`](./specs/a2a-vs-acd-decision.md)).
-   ✅ **Breadth-vs-depth** — decided: *freeze breadth, invest in depth*; re-home
-   (don't delete) the 47-connector tail to the plugin/registry tier (the B2 registry
-   that re-homing depends on now ships), telemetry-first then migrate with a
-   deprecation window ([`specs/breadth-vs-depth-decision.md`](./specs/breadth-vs-depth-decision.md),
-   grounded in [`specs/tool-inventory.md`](./specs/tool-inventory.md)).
-
-**Pulled forward — far-future items shipped ahead of their quarter (June 2026).**
-A code-grounded audit of Q3 2026 → 2028 H2 found most far-future items already
-shipped, blocked on external accounts/infra, or non-code; the genuinely-open,
-buildable, depth-/compliance-aligned ones are being pulled forward and ticked
-here as they land (the dense future-quarter prose lists are left as-is):
-
-- **Structural compaction** (Q4 2026, Performance) — ✅ `compaction.py` content-addressed refs (`tests/test_compaction_structural_refs.py`).
-- **Skill validator** (2027 H1, Distribution) — ✅ `maverick skill validate` + `skills.validate_skill_file` (`tests/test_skill_validator.py`).
-- **Coordinated-disclosure log** (2027 H1, Safety) — ✅ [`docs/DISCLOSURES.md`](./DISCLOSURES.md) (companion to `SECURITY.md`).
-- **SBOM (CycloneDX)** (Q4 2026, Safety) — ✅ non-blocking CycloneDX SBOM artifact in CI's `audit` job (`.github/workflows/ci.yml`). *(CI-only; runs on GitHub, not locally verifiable.)*
-- **Goal templates v2 community registry** (Q4 2026, UX) — ✅ `templates.browse_templates` / `install_template_from_catalog` (federated `catalog` "templates" kind, hash-verified), `maverick template browse/add`, `[template_registries]` knob + wizard emission (`tests/test_template_registry.py`).
-- **Cost forecasting** (Q4 2026, UX) — ✅ `maverick start --dry-cost`: estimates cost from similar past priced runs (lexical Jaccard over goal titles, dependency-free) and exits without an LLM key or a run (`cost_forecast.py`, `tests/test_cost_forecast.py`).
-- **Query-plan regression guard** (2027 H1, Performance) — ✅ `tests/test_query_plans.py`: pins that hot world-model queries SEARCH using an index (never a full table scan), with a control test proving the assertion discriminates indexed from unindexed plans.
-- **Embed-integrations guide** (Q4 2026, Distribution) — ✅ [`docs/embedding.md`](./embedding.md): in-process kernel API + FastAPI/Flask/Django (with the run-in-a-thread rule), config-driven Slack/Discord/Telegram, MCP/A2A, and the dashboard REST.
-- **Adaptive thinking budget** (Q4 2026, Performance) — ✅ `thinking_budget.py`: closed loop over real run outcomes — trims a thinking role's budget when succeeding, raises it when failing (clamped). Read-side in `agent._thinking_budget`, write-side in the orchestrator's outcome path; opt-in `[thinking] adaptive`, default off (no-op until enabled + enough data) (`tests/test_thinking_budget.py`).
-- **Provider failover** (2027 H1, Performance) — ✅ `provider_failover.py` (`failover`/`afailover`/`fallback_models`) wired into `LLM.complete`/`complete_async` behind `[provider_failover] chains` (default off, guarded no-op when unset; original single-call path untouched) (`tests/test_provider_failover.py`).
-- **File-write quota** (Q4 2026, Safety) — ✅ `file_quota.py`: opt-in per-run byte cap (`[limits] file_write_quota_mb`, default off) enforced in the `write_file` tool; fail-open, guarded no-op when unset (`tests/test_file_quota.py`).
-- **MCP client OAuth 2.1 (client-credentials)** (B2) — ✅ `mcp_oauth.py`: cache+refresh token provider, `[mcp_servers.<name>.oauth]` spec field, wired as the HTTP bearer with static-token fallback. Unit-tested against a mock IdP (real-authorization-server validation pending) (`tests/test_mcp_oauth.py`).
-- **Spreadsheet tool** (2027 H1, Capabilities) — ✅ `tools/spreadsheet.py`: write-capable CSV (stdlib) + XLSX (openpyxl) — info/read/write/set_cell — complementing read-only `pandas_query`; registered; optional `[spreadsheet]` extra with a graceful install hint (the CLAUDE.md-#5 knob exemption) (`tests/test_spreadsheet.py`).
-- **Obsidian integration** (2027 H1, Ecosystem) — ✅ `tools/obsidian.py`: file-based vault read/write/search (list/read/create/append/search), vault-confined paths, no external service/auth; registered in the default registry (`tests/test_obsidian.py`).
-- **Per-tool latency profile** (2027 H1, Performance) — ✅ `tool_latency.py` (bounded in-memory p50/p95/p99 per tool) wired into `ToolRegistry.run` (records on success + error; never raises into the tool path); complements the OTel tool spans for always-on, exporter-free profiling (`tests/test_tool_latency.py`).
-- **Cookbook to 30 recipes** (Q4 2026, Distribution) — ✅ 12 → **30** (`docs/cookbook/`): added flaky-test-hunt, CVE-triage, CSV-cleanup, bug-repro, log-triage, slow-SQL, Dockerfile-harden, OpenAPI-client, README-refresh, license-audit, type-annotate, perf-profile, release-notes, coverage-gap, extract-god-function, config-migrate, JSON-schema-infer, a11y-audit — all real agent-goal recipes in the existing format, wired into `cookbook/index.md`.
-
-**Near-term focus: closed.** Every item above (A1–D3 + the pulled-forward set) is
-shipped or decided. What genuinely remains is **externally blocked, not unbuilt**:
-- **OAuth 2.1 authorization-code grant** + real-IdP validation (client-credentials
-  ships) — needs a real authorization server to build and verify.
-- **World-model sharding** — a faithful build is a live-SQLite data-plane rewrite
-  that can't be verified here and overlaps the shipped tenancy work; a routing stub
-  would be hollow.
-- **IRC channel / LangChain / LangGraph adapters** — need an external dependency
-  *and* a live service to build and meaningfully test.
-- The rest of the 2027–2028 quarterly prose is already shipped, owned by parallel
-  governance work on `main`, or non-code (conferences, translations, marketing).
+**Strategic decisions (settled).** Recorded under [`docs/specs/`](./specs/):
+*park* the learning substrate (revisit on a trajectory-volume tripwire); adopt
+A2A's Agent Card and *cut* the homegrown ACD; *freeze breadth, invest in depth*
+— re-home the ~47-connector tail to the plugin/registry tier with a deprecation
+window.
 
 **Accuracy caveats.** MCP Sampling / Roots / Logging appear to be on a deprecation
 path — don't build on sampling. Some ecosystem dates/specs (mid-2026 MCP RC,
@@ -140,378 +60,15 @@ LangGraph 1.2, terminal-bench 2.0) postdate the original author's cutoff —
 re-verify before committing. Vendor benchmark numbers are directional (contamination
 / single-run inflation) — run multi-seed.
 
----
-
-## Q1 2026
-
-> **Status (June 2026): ✅ shipped (engineering).** The Q1 capabilities, perf,
-> safety, and ecosystem/plugin items are in the tree (tools in `maverick/tools/`;
-> `hooks.py`, `checkpoint.py`, `secrets.py`, `killswitch.py`, `audit/`, plugin API;
-> CI / publish / release / docs workflows). Community/launch items (Discord,
-> HN/Reddit, landing page, good-first-issue sweep) are founder-tracked — not
-> code-verifiable here.
-
-**Capabilities**
-- **Web search tool**: unified `web_search` with Tavily/Brave/DDG/SerpAPI backends, BYOK, ranked snippets + citations. *(shipped this round)*
-- **PDF reader tool**: `read_pdf` via pypdf/pdfplumber with page-range slicing and table detection.
-- **Image understanding tool**: `view_image` sends inline images to vision-capable providers, auto-resize + tile-split for large images.
-- **HTTP fetch tool**: `http_fetch` with retries, robots.txt respect, HTML→markdown via readability/trafilatura.
-- **AST-aware editor**: `ast_edit` wrapping tree-sitter for Python/JS/TS/Go/Rust; supports rename-symbol, extract-function, insert-import.
-- **Reflexion retry loop**: on tool failure, an agent gets a `reflection` step to critique its last action before retrying.
-- **Streaming tool output**: pipe long shell stdout as incremental events; agent can interrupt runaways.
-- **Dependency-graph repo map**: extend repo_map with import + call graphs per language.
-- **Token budget tool**: `budget_status` returns remaining context, cost-so-far, per-tool cost breakdown for self-throttling.
-
-**UX**
-- **Plan-tree TUI viewer**: `maverick monitor` renders agent/task tree with Rich, refreshing on event stream. *(shipped this round)*
-- **Wizard progress bar**: step N/M with breadcrumb trail in `maverick init`.
-- **Skip-defaults flag**: `maverick init --fast` drops wizard to <30 seconds.
-- **Per-run cost report**: `maverick status --cost` breakdown by agent/model/tool.
-- **Budget warning banner**: TUI surfaces yellow/red bar at 50%/90% of configured budget.
-- **Trajectory JSONL exporter**: `maverick export <run-id>` writes a portable trace bundle.
-- **Web dashboard run list**: historical runs with status badges, duration, cost.
-- **Log search command**: `maverick logs grep <pattern>` with context lines.
-- **Wizard re-run from step**: `maverick init --resume` at last unanswered question.
-- **Starter goals library v1**: 10 curated templates (research, refactor, triage, scrape, ...).
-
-**Distribution**
-- **PyPI publish workflow**: GitHub Action with OIDC trusted publishing for all 6 packages on tag push.
-- **Conventional commits**: commitlint + commitizen hooks in pre-commit and CI.
-- **Semantic versioning automation**: release-please action wired to monorepo packages.
-- **CONTRIBUTING.md + CODE_OF_CONDUCT.md**: contributor guide + Contributor Covenant 2.1.
-- **Issue and PR templates**: bug/feature/docs/skill-request + PR checklist.
-- **"Good first issue" sweep**: label 30+ issues with file pointers.
-- **Discord server launch**: #general #help #skills #channels #contributors #showcase.
-- **MkDocs Material site**: versioned site at maverick.dev via Pages + mike.
-- **Landing page**: maverick.dev with pitch, animated terminal cast, install command, badges.
-- **HN/Reddit launch**: coordinated Show HN + r/Python + r/LocalLLaMA.
-
-**Performance**
-- **Provider streaming parity audit**: which providers stream tokens vs batch; tracking issue per gap.
-- **OpenAI prompt caching wiring**: auto cache_control hints for gpt-4.1/o-series ≥1024 tokens.
-- **Gemini implicit cache support**: restructure system+tools before user content so prefix hits.
-- **DeepSeek context-caching headers**: pass `prompt_cache_hit_tokens` into unified Usage.
-- **Per-turn cost ledger refactor**: structured `CostEvent` jsonl stream.
-- **CLI live cost meter**: render running `$0.0123 (cache 38%, in/out 4.1k/892)` line.
-- **Token preflight v1**: hard-refuse with actionable error if estimated tokens > context − reserve.
-- **World model index audit**: EXPLAIN QUERY PLAN on hot queries; add covering indices.
-- **Retry classifier scaffolding**: `ErrorClass` enum + per-class backoff policies.
-- **Benchmark baseline freeze**: capture wall-clock, $/task, cache-hit-rate on 50-task SWE-bench slice; pin as `baseline.q1-2026.json`.
-
-**Safety**
-- **Structured audit event schema**: versioned JSON event types in `maverick/audit/events.py`.
-- **Audit log writer**: append-only NDJSON sink at `~/.maverick/audit/YYYY-MM-DD.ndjson` with rotation.
-- **Tool allow-list config**: `agent.allowed_tools = [...]` in profile YAML; registry rejects undeclared tools.
-- **Secret detector v1**: regex pack (AWS/GCP/Azure/GitHub PATs/JWTs/Anthropic/OpenAI); redact in tool outputs.
-- **Consent prompt primitive**: `require_consent(action, risk_level)` for rm -rf, force-push, dd, mkfs.
-- **Killswitch file**: `~/.maverick/HALT` polled each tool call; presence aborts all running goals.
-- **Shield bypass test suite**: 50 known jailbreak prompts in CI; regressions fail the build.
-- **Threat model doc**: STRIDE pass; `docs/security/threat-model.md`.
-- **SECURITY.md**: PGP key, 90-day embargo, scope, safe-harbor language.
-
-**Ecosystem**
-- **Plugin API v1 freeze**: stable `maverick.tools`/`.channels`/`.skills`/`.personas` contract; `MAVERICK_API_VERSION`.
-- **Plugin lifecycle hooks**: register `PreToolUse`/`PostToolUse` via entry_points (not just TOML).
-- **Plugin manifest schema**: `maverick-plugin.toml` declaring API version, capabilities, permissions.
-- **VS Code extension MVP**: sidebar webview calling local `maverick serve` REST for goals/episodes/world-model.
-- **GitHub Actions wrapper**: `maverick-action@v1` runs the swarm on PR with configurable goal template.
-- **Generic OpenAI-compatible provider**: one provider class driven by `base_url`; vLLM/LM Studio/llama.cpp/Together/Groq.
-- **Webhook outbound**: `[webhooks] outbound = [...]` config emits signed POSTs for run events.
-- **Embeddable mode flag**: `MAVERICK_NO_CLI=1` skips Click imports so library users don't pay startup cost.
-
----
-
-## Q2 2026
-
-> **Status (June 2026): ✅ shipped (engineering).** Capabilities: voice in/out
-> (`tools/voice.py`), Docker sandbox, cross-agent bus (`agent_bus.py`), screen-OCR
-> (`tools/ocr.py`), pyright watch-mode type feedback (`watch_mode.py`), ReAct trace
-> compression (`context_compactor.py`), preview-diff / kv-memory / clipboard. Perf:
-> OpenTelemetry + Prometheus + Sentry (`observability.py`), repo-map + file caches
-> (`cache.py`, `file_cache.py`), parallel tools, `CostEvent` ledger + CLI cost meter,
-> token preflight (`preflight.py`), and the compaction regression suite
-> (`tests/test_compaction_regression.py`). Safety: per-channel + per-user ACLs
-> (`safety/tool_acl.py`), PII detector (`safety/pii_detector.py`), sandbox-escape
-> canaries (`safety/canaries.py`), jailbreak scoring on input
-> (`safety/jailbreak_heuristics.py`), the output-policy classifier
-> (system-prompt-regurgitation + refusal-leak detection —
-> `maverick_shield/output_policy.py`), and the Constitutional-Classifier-v2 cascade
-> (cheap-probe → optional LLM deep-scan after the regex floor, env-gated
-> `MAVERICK_CASCADE_SHIELD` — `maverick_shield/cascade.py`). Ecosystem:
-> Ed25519-signed skills, Postgres
-> world-model (`world_model_backends/postgres.py`), HF TGI provider, arXiv tool,
-> Chroma adapter, Bluesky + Mastodon channels, push-notification bridge
-> (`notifications.py`). **Remaining:** only the heavyweight DeBERTa-v3 injection
-> model as a drop-in for the cascade's pluggable deep-scanner (it ships an LLM-judge
-> seam, not a fine-tuned DeBERTa checkpoint), plus community/distribution
-> (playground, cookbook, socials, bug bounty) — founder-tracked, not code-verifiable
-> here.
-
-**Capabilities**
-- **Voice input (Whisper)**: `transcribe_audio` via faster-whisper + OpenAI/Groq Whisper API, diarization + timestamps.
-- **Voice output (TTS)**: `speak` via ElevenLabs/OpenAI/Piper, streamable, SSML support.
-- **Docker sandbox executor**: shell `--sandbox docker` spins ephemeral container per session.
-- **ReAct trace compression**: collapse repetitive thought/action loops into single observation.
-- **Cross-agent message bus**: `send_to_agent(id, payload)` + `recv_from_agent()` for non-parent-child swarms.
-- **Screen-OCR fallback**: Tesseract/PaddleOCR when computer-use can't see DOM.
-- **Type-aware refactor (Python)**: pyright watch mode gives type-error feedback after each edit.
-- **File-diff preview tool**: `preview_diff` shows unified diff of pending edits before commit.
-- **SQLite memory tool**: `kv_get/kv_set/kv_search` for cross-session fact persistence.
-- **Clipboard tool**: `clipboard_read/write` bridge between computer-use, browser, shell.
-
-**UX**
-- Web plan-tree visualization (D3/Cytoscape live tree in dashboard).
-- Agent trajectory replay with variable speed.
-- Event timeline view with filter by agent/severity.
-- Error inspector panel for failed turns.
-- Monthly cost summary with CSV export.
-- Channel rich formatting (code blocks, tables, inline images).
-- File attachment inline (drop into Slack/Discord).
-- Wizard undo (Backspace/<).
-- Theme presets (dark/light/solarized/hicontrast).
-- Push-notification bridge (ntfy.sh/Pushover).
-
-**Distribution**
-- Homebrew tap with auto-bump Action.
-- Docker Hub official multi-arch image, signed with cosign.
-- PyInstaller release binaries (Linux/macOS/Windows).
-- Playground site (try.maverick.dev) on Pyodide.
-- Cookbook section: 12 recipes runnable in <60s.
-- awesome-maverick-skills curated repo.
-- YouTube channel + first 3 tutorials (install, first skill, multi-agent swarm).
-- Twitter/X 90-day content calendar.
-- DevRel blog series (6 posts: architecture, channels, shield, comparisons).
-- GitHub Sponsors + Open Collective.
-
-**Performance**
-- OpenTelemetry traces (opt-in OTLP).
-- Prometheus `/metrics` endpoint.
-- Sentry integration (opt-in DSN).
-- Streaming-everywhere phase 1 (Anthropic, OpenAI, Gemini).
-- Hierarchical compaction v1 (two-tier: per-tool + per-phase).
-- Repo-map cache with content-addressed invalidation.
-- File-content read cache (LRU per run).
-- Parallel tool execution via asyncio.gather.
-- Failure-mode taxonomy doc + fault-injection tests.
-- Compaction quality regression suite (20 long-trajectory fixtures). ✅ shipped — `tests/test_compaction_regression.py` (generated long trajectories; guards goal/recent preservation, tool_use↔tool_result pairing, shrink, and idempotence).
-
-**Safety**
-- Prompt-injection classifier (DeBERTa-v3 stage after regex).
-- Jailbreak score on user input.
-- Output policy classifier (refusal leak, system-prompt regurgitation).
-- Per-channel ACL: channel ID → allowed_tools.
-- Per-user ACL: identity → max risk + tool subset.
-- PII detector (presidio-style) with redaction under strict profile.
-- Erase coverage extension: scrub audit log entries.
-- Sandbox-escape canaries.
-- Bug bounty launch (huntr.dev or HackerOne).
-- Signed releases via cosign on PyPI + Docker.
-
-**Ecosystem**
-- Skill marketplace index (static JSON at skills.maverick.dev).
-- Signed skills with Ed25519 sig in frontmatter.
-- Trusted publisher badge.
-- Bluesky + Mastodon channels.
-- Postgres world-model backend.
-- HuggingFace TGI provider.
-- arXiv tool (paper search + abstract fetch).
-- Chroma vector store adapter.
-
----
-
-## Q3 2026
-
-> **Status (June 2026): 🟡 mostly shipped (engineering).** Landed: tree-of-thought
-> (`tree_of_thought.py`), debate (`debate.py`), speculative decoding/finalization
-> (`speculative.py`); video / SQL / pandas / email / `apply_patch` tools; SSH /
-> Kubernetes / Podman / devcontainer sandboxes; A2A discovery + delegation
-> (`a2a.py`, `a2a_tasks.py`), the MCP registry (`mcp_registry.py`), the
-> cross-language quickstarts (`docs/clients/*`) + Streamable-HTTP, and the voice
-> channel (`maverick_channels/voice.py`). **Remaining (engineering):** the gRPC API
-> surface (no `grpc` module yet) and the **glasses/wearable channel** (not in
-> `maverick-channels`); the rest is community/distribution (marketplaces, conference
-> CFPs, newsletter) — founder-tracked.
-
-**Capabilities**
-- Video understanding (`view_video`: adaptive frame sampling + audio transcript → Gemini/GPT-4o).
-- Tree-of-thought planner mode (3-5 candidate plans, critic scores, execute winner).
-- SSH sandbox executor for remote deployment agents.
-- Browser session persistence (cookies/localStorage per-task survive crashes).
-- Multi-file atomic edits (`apply_patch` all-or-nothing).
-- Debate protocol primitive (`debate(question, [A, B], rounds, judge=C)`).
-- Symbolic math tool (SymPy: arithmetic, calculus, equations).
-- Data analysis tool (`pandas_query` on CSV/Parquet/JSON).
-- Email tool (SMTP send + IMAP/Gmail read).
-
-**UX**
-- iOS/Android companion app alphas (SwiftUI/Compose, QR-pair, push, ack-then-run).
-- Hotword wake-up (offline porcupine).
-- STT task issuance (`maverick voice` → Whisper → run).
-- TTS run summaries (system TTS or ElevenLabs).
-- Voice messages in channels (auto-transcribe).
-- Approval queue UI in dashboard.
-- Run sharing as gist (sanitized).
-- "Claim as bug report" pre-filled GitHub issue.
-- Locale scaffolding (gettext/Babel) + English + Spanish bundled.
-
-**Distribution**
-- apt/dnf repos via Cloudsmith.
-- AUR (Arch) packages.
-- Snap package with stable channel.
-- VS Code extension v1.
-- Plugin marketplace v1 (PyPI packages with `maverick-plugin` tag).
-- Channel marketplace v1.
-- Telemetry opt-in (privacy-respecting; quarterly public report).
-- Comparison benchmark suite v1 (Maverick/Devin-OSS/Cline/Aider on 30 SWE-bench-lite tasks).
-- Conference CFPs (PyCon US, EuroPython, PyData, KubeCon AI Day, OSS Summit).
-- Newsletter launch (monthly "Maverick Dispatch").
-
-**Performance**
-- KV-cache reuse across roles in best-of-N (shared immutable prefix).
-- Speculative decoding via vLLM (small draft + large target).
-- Ollama parallel-request tuning.
-- Cost-aware router v1 (auto-downgrade Opus→Sonnet under quality threshold).
-- Streaming-everywhere phase 2 (DeepSeek/Moonshot/xAI/Ollama/OpenRouter).
-- Distributed swarm tracing (parent-child OTel spans).
-- World model partitioning (shard events by run_id range).
-- Chaos test harness (`chaos/` package).
-- Network-partition simulator (ToxiProxy-style middleware in CI).
-- LLM-response cache (semantic, disk-backed, TTL).
-
-**Safety**
-- Audit log signing (Ed25519 prev-hash chain; `maverick audit verify`).
-- Append-only enforcement (`chattr +a` on Linux).
-- Provenance tags on artifacts (`.maverick-prov.json` sidecars).
-- Goal-budget enforcement (max tokens / tool calls / wall-clock).
-- Bot-detection on remote content (injection patterns, hidden Unicode).
-- Unicode/zero-width filter on inbound text.
-- Anti-spam heuristic (mass-send consent).
-- Credential-stuffing detector.
-- Telemetry opt-in only.
-- Anonymous mode (`MAVERICK_ANON=1` strips goal text/usernames).
-
-**Ecosystem**
-- JetBrains plugin MVP.
-- Linear + Jira integrations (issue-assigned → goal).
-- GitLab CI wrapper.
-- Voice channel (Twilio Voice in, TTS reply).
-- Generic inbound webhook (`POST /webhook/start` HMAC-signed).
-- **Wearable / smart-glasses channel — Even Realities G2 (BYOA bridge)**: thin self-hostable bridge (Cloudflare Worker *or* local edge service fronting `POST /webhook/start`) that exposes Maverick as the "bring-your-own-agent" backend for G2 glasses — on-device STT in, green-laser HUD out, with a quick-reply (<22 s) vs. ack-then-run split sized to the G2's ~30 s timeout and long-task results routed to a secondary channel. New `glasses` adapter in `maverick-channels` + wizard knob; see council note below.
-- Podman sandbox.
-- Devcontainer sandbox.
-- gRPC API surface (`StartGoal`/`StreamEpisode`/`Cancel`).
-- **MCP-as-cross-language-surface (council decision)**: ✅ shipped — the MCP
-  server is the official cross-language surface (stdio JSON-RPC + the B2
-  Streamable-HTTP transport), and quickstarts ship for **TypeScript, Go, Rust,
-  C#, and JVM** in `docs/clients/` (`{typescript,go,rust,csharp,java}-quickstart.md`)
-  — beyond the original TS/Go/Rust ask. See "Language Bindings — Council
-  Decision" below.
-
----
-
-## Q4 2026
-
-> **Status (June 2026): 🟡 mostly shipped (engineering).** Landed: Kubernetes
-> sandbox (`sandbox/kubernetes.py`), reflexion library (`reflexion.py`), Android +
-> iOS-sim tools (`tools/android.py`, `tools/ios_sim.py`), calendar / git-advanced /
-> coverage-guided test runner (`tools/test_impact.py`) / embeddings-as-a-tool /
-> `apply_patch`, browser form-fill (`tools/browser.py` `fill_form`); deterministic
-> replay (`replay_export.py`), capability tokens
-> (`capability.py`), file-write quota (`quotas.py`), provider health board
-> (`provider_health.py`), retrieval-augmented compaction (`context_compactor.py`);
-> plugin-scaffolding CLI (`plugin_scaffold.py`), LangChain/LangGraph shim, Notion,
-> the generic OpenAI-compatible provider (`llm.py` `base_url`). **Remaining
-> (engineering):** long-context retrieval router and the IRC channel (Obsidian +
-> SBOM-in-CI have since shipped — see "Pulled forward" above); the **1.0 release**
-> + localized docs are founder-tracked.
-
-**Capabilities**
-- Kubernetes sandbox executor (jobs in a cluster, GPU/parallel workloads).
-- Long-context retrieval router (>200k tokens auto-shard to FAISS/Chroma).
-- Reflexion library (persistent failure-pattern memory across sessions).
-- Browser form-fill helper (batch dozens of inputs).
-- Mobile emulator tool (Android via UIAutomator).
-- iOS simulator tool (Xcode simctl + accessibility tree).
-- Calendar tool (Google/Outlook/CalDAV).
-- Git advanced ops (bisect, rebase --onto, cherry-pick, worktree).
-- Coverage-guided test runner (pytest-testmon style).
-- Embedding-as-a-tool (Voyage/OpenAI/Cohere/local).
-
-**UX**
-- Replay-from-trajectory (`maverick replay <id> --from-step N`).
-- Diff viewer for plan revisions.
-- Cost forecasting (`maverick start --dry-cost` with embedding similarity).
-- Budget envelope alerts (per-channel daily caps).
-- Screen reader pass (TUI ARIA, NVDA/VoiceOver tested).
-- Keyboard-only dashboard with `?` shortcut overlay.
-- Channel digest mode (4-hour summary).
-- Inline image rendering (Kitty/iTerm image protocol).
-- Goal templates v2 community registry.
-- Onboarding tour (5-step interactive walkthrough).
-
-**Distribution**
-- Flatpak (Flathub).
-- Scoop + Chocolatey (Windows).
-- **1.0 stable release**: API freeze, semver guarantees, deprecation policy, signed artifacts.
-- Public ROADMAP page + GitHub Projects mirror.
-- Skill quality leaderboard on HuggingFace.
-- Embed integrations doc (FastAPI/Django/Flask/Slack/Discord/Telegram).
-- Cookbook to 30 recipes.
-- Localized docs phase 1 (zh-CN).
-- Maintainer team formalization (3-5 external committers).
-- Year-end retrospective post.
-
-**Performance**
-- Adaptive thinking budget controller (closed-loop Opus thinking adjustment).
-- Compaction v2 retrieval-augmented (embed locally; retrieve top-k chunks).
-- Structural compaction (collapse file-read tool_use/tool_result to path+sha refs). ✅ shipped — `compaction.py` `_shrink_tool_result` now emits a content-addressed ref (source tool + path/url + `sha256` + size) instead of an opaque "output dropped"; `compact_messages` threads the originating tool_use; `tests/test_compaction_structural_refs.py`.
-- Provider health board (per-provider success/latency/$).
-- Memory profiling baseline (tracemalloc + memray weekly soak).
-- GC tuning experiment (`gc.freeze()` post-warmup).
-- Token-prediction preflight v2 (regressor on collected runs).
-- WAL checkpoint scheduler (explicit checkpoint-on-idle).
-- HTTP/2 pool sizing audit.
-- 1-year retrospective benchmark (vs Q1 baseline).
-
-**Safety**
-- Shield v2 (bidirectional output scanning for exfil patterns).
-- Deterministic replay (`maverick replay <traj.jsonl>` with fixed seeds + mocked tools).
-- Trajectory storage (`~/.maverick/traj/<goal_id>.jsonl`).
-- Capability tokens (unforgeable handles passed by orchestrator).
-- Network egress allow-list in docker sandbox.
-- DNS-rebinding mitigation in browser tool.
-- File-write quota per goal.
-- SBOM (CycloneDX) per release.
-- Vendored-deps audit (pip-audit + osv-scanner in CI).
-- CODEOWNERS + security-team rotation.
-
-**Ecosystem**
-- Plugin API v1.1 (additive: `tool.streaming`, `Channel.send_typing()`).
-- ~~ACD spec v0.1 (Agent Capability Descriptor; `docs/specs/acd.md`)~~ **— CUT.** Superseded by the shipped A2A Agent Card; see [`specs/a2a-vs-acd-decision.md`](./specs/a2a-vs-acd-decision.md) (B3 decision).
-- LangChain compat shim.
-- LangGraph adapter.
-- Kubernetes sandbox `sandbox/k8s.py`.
-- Notion + Obsidian integrations.
-- IRC channel.
-- Plugin scaffolding CLI (`maverick plugin new <name>`).
+> **2026 backlog (Q1–Q4): shipped.** The four 2026 quarters' capabilities, UX,
+> performance, safety, and ecosystem items are built — see
+> [`FEATURES.md`](./FEATURES.md). Their few genuine remainders are captured in
+> "Still open" above; community/launch/marketing/localization items are
+> founder-tracked, not code. The forward plan below picks up at the 2027 horizon.
 
 ---
 
 ## 2027 — H1
-
-> **Status (June 2026): ⬜ forward plan, but several items shipped early.** Already
-> in the tree: Firecracker microVM sandbox (`sandbox/firecracker.py`), file watcher
-> (`tools/file_watcher.py`), per-tool rate limiter (`safety/rate_limiter.py`),
-> cost-aware routing (`cost_router.py`); and on the safety/enterprise side —
-> encrypted audit-at-rest (`crypto_at_rest.py`), SOC2-aligned audit export
-> (`soc2.py`), DSAR (`dsar.py`), per-user quotas (`quotas.py`), and the
-> enterprise/compliance scaffolds (`enterprise.py`, `compliance.py`); on the
-> capabilities side — image generation + edit tools (`tools/replicate_tool.py`,
-> `tools/imagemagick_tool.py`) and diff-aware code review (`reviewer.py`); and on the
-> ecosystem side — the WhatsApp channel (`maverick_channels/whatsapp.py`), the
-> Wikipedia (`tools/wikipedia.py`) and Semantic Scholar (`tools/semantic_scholar.py`)
-> tools, and the Qdrant vector store (`vector_store/qdrant_store.py`). The bulk of
-> 2027 H1 remains forward plan.
 
 **Capabilities**: Firecracker microVM sandbox; audio understanding (non-speech CLAP); 3D model viewer; DOM accessibility-tree extractor (5-10x token cut); plan-execute-reflect loop topology; cross-language LSP bridge; file watcher; spreadsheet tool; vector-store as first-class memory; speculative parallel tool calls. Constrained-generation tool; speech-to-action live-mic; GUI element memory; image gen + edit tools; web automation recorder; ASR meeting listener; auto-skill distillation v2; per-tool rate limiter; diff-aware code review.
 
@@ -529,11 +86,6 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 
 ## 2027 — H2
 
-> **Status (June 2026): ⬜ forward plan, with a few items already in the tree.** The
-> SQL agent tool (`tools/sql_query.py`, read-only by default) and the
-> shared-scratchpad / multi-agent observation channel (`blackboard.py`) shipped
-> early; everything else here remains forward plan.
-
 **Capabilities**: Multi-modal RAG; agent-to-agent debate over shared scratchpad; WASM sandbox; ROS robotics action tool; browser anti-bot evasion kit (opt-in); SQL agent tool (read-only by default); LaTeX render; diagramming (Mermaid/Graphviz/PlantUML); critic-agent template; cost-aware model router. Persistent task graph (checkpoint per step); browser auth vault; HTML-to-app scaffolder; notebook execution; real-time WebSocket tool; multi-agent observation channel; self-edit tool (human-gated); browser device emulation; Slack/Discord/Teams tool; continuous-benchmarking tool.
 
 **UX**: Native macOS/Windows/Linux GUI apps; browser extension; voice persona presets; multi-language voice; wizard branching paths; inline cost preview; run gallery; replay export to MP4. Collaborative supervision (multi-user dashboard); approval delegation rules; trace pinning to commit; VS Code + JetBrains live-run extensions; TUI mouse mode; cost anomaly alerts; "why this cost" drill-down; run-as-tutorial export; accessibility audit pass; i18n community portal.
@@ -550,12 +102,6 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 
 ## 2028 — H1
 
-> **Status (June 2026): ⬜ forward plan, with a few items already in the tree.** The
-> cron/scheduler tool (`scheduler.py`), the file-format converter
-> (`tools/pandoc_tool.py` + `tools/ffmpeg_tool.py`), and the Salesforce/HubSpot
-> adapters (`tools/salesforce_tool.py`, `tools/hubspot_tool.py`) shipped early; the
-> bulk of 2028 H1 remains forward plan.
-
 **Capabilities**: Live-DOM diff in browser tool; computer-use coordinate calibration; audio diarization + emotion; vision-grounded clicking; file-format converter (pandoc+ffmpeg+libreoffice); knowledge-graph builder; cron/scheduler tool; workspace snapshot/restore; tool-output cache; async tool invocation. Multi-monitor computer-use; process introspection; hardware sensor tool; voice cloning consent gate; semantic code search; cross-repo dependency graph; test generation (Hypothesis); mutation testing; container build tool; streaming reasoning trace channel.
 
 **UX**: Plan-tree minimap; conversational supervisor; voice-only mode; smart notification batching; mobile offline cache; augmented terminal (Rich inline charts); cost split by tag; multi-tenant view; personalized starter templates; replay annotation export. AR plan-tree (visionOS); live captions voice; visual goal templates marketplace; "diff to expected"; smart goal completion; adaptive UI density; embedded analytics web component; pluggable themes API; voice macros; RTL language support.
@@ -571,11 +117,6 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 ---
 
 ## 2028 — H2
-
-> **Status (June 2026): ⬜ forward plan, with a couple of items already in the
-> tree.** The Open Banking tool (`tools/plaid_tool.py`, Plaid) and the Home
-> Assistant integration (`tools/home_assistant_tool.py`) shipped early; the bulk of
-> 2028 H2 remains forward plan.
 
 **Capabilities**: WebRTC tool; browser extension bridge; ARIA-first navigation; adversarial self-test; sandbox-escape detector; embedded device tool (serial/JTAG/I2C); mixed-precision local inference; speculative decoding across providers; long-form writing (outline→draft→polish); citation verifier. Continuous-learning skill loop (local); agent simulator harness; multi-agent fairness scheduler; sub-second tool latency budget; network sandbox (per-tool egress); zero-config BYO-tool (`@tool` decorator); WebGPU local vision; synthetic data tool; federated swarm protocol; capability self-report tool.
 
@@ -602,6 +143,9 @@ AutoGen .NET, CrewAI, Mastra, OpenAI/Anthropic SDKs.
 **Thin API clients port well; opinionated frameworks don't.** Maverick
 is the second kind. We do **not** port `maverick-core` to a second
 language. Instead we expose Maverick to other languages **over MCP**.
+The MCP surface and the TypeScript / Go / Rust / C# / Java quickstarts
+have shipped (see [`FEATURES.md`](./FEATURES.md)); what remains is the
+measurement gate below.
 
 ### Top 5 target languages (priority order)
 
@@ -623,23 +167,16 @@ language. Instead we expose Maverick to other languages **over MCP**.
 
 ### Gate: don't decide, measure
 
-Smallest concrete first step (1–2 weeks, one engineer):
+The smallest concrete steps — polish the MCP server as the cross-language
+surface and ship TS/Go/Rust/C#/JVM quickstarts — are **done**. The one open
+step is **opt-in analytics on MCP-client language headers** (needs the
+telemetry-consent UI). Then:
 
-1. Polish the existing MCP server as the official cross-language
-   surface. *(✅ shipped — stdio JSON-RPC + the B2 Streamable-HTTP transport.)*
-2. Ship a 20-line **TypeScript quickstart** — uses the
-   official MCP SDK, connects to a locally running `maverick mcp`,
-   issues one tool call. *(✅ shipped — `docs/clients/typescript-quickstart.md`.)*
-3. Mirror that quickstart for **Go** and **Rust** before any
-   client-package decision. *(✅ shipped — plus C# and JVM:
-   `docs/clients/{go,rust,csharp,java}-quickstart.md`.)*
-4. Add opt-in analytics on MCP-client language headers.
-   *(⬜ open — Q4 2026; needs new telemetry consent UI.)*
-5. **Decision gate (Q1 2027):** if >15% of active installs are being
-   driven from non-Python MCP clients, fund **one** thin
-   `@maverick/client` TypeScript package (RPC wrapper, ~2k LOC,
-   Stainless-generated where possible). Under 15%, the answer is the
-   MCP surface, full stop.
+**Decision gate (Q1 2027):** if >15% of active installs are being
+driven from non-Python MCP clients, fund **one** thin
+`@maverick/client` TypeScript package (RPC wrapper, ~2k LOC,
+Stainless-generated where possible). Under 15%, the answer is the
+MCP surface, full stop.
 
 ### Hard constraints
 
@@ -652,15 +189,6 @@ Smallest concrete first step (1–2 weeks, one engineer):
 - Multi-agent topology (orchestrator + proposer + verifier + revisor +
   reflector) stays Python. Other languages drive Maverick; they do
   not re-implement it.
-
-### Roadmap placement
-
-The MCP-surface + quickstart deliverables (**✅ shipped** — MCP hardening + the
-TS/Go/Rust/C#/JVM quickstarts in `docs/clients/`) lived under **Q3 2026 —
-Ecosystem** and **Q4 2026 — Ecosystem**. The only remaining gate step is
-**MCP-client language analytics** (Q4 2026 — needs the telemetry consent UI). The
-binding decision itself is gated to **Q1 2027** based on measured non-Python MCP
-usage.
 
 ---
 
@@ -718,23 +246,13 @@ sitting on seams that already exist:
   long-horizon design shows up on a 30-second device — keep it the headline of the
   demo, not an afterthought.
 
-### Roadmap placement
-
-Headline item under **Q3 2026 — Ecosystem** (the channels cluster, beside the Voice
-channel and inbound webhook it depends on). Its prerequisites — ack-then-run
-(Q3 2026 UX), inbound/outbound webhooks (Q1/Q3 2026 Ecosystem), push-notification
-bridge (Q2 2026 UX) — all land by Q3 2026, so no new long-pole work is implied. The
-broader "smart-glasses / wearable channel" generalization (other devices, audio-out
-wearables) tracks alongside the **2027 H1** wearables cluster (Apple Watch glance,
-voice command grammar).
-
 ### Verify before committing
 
 Device-side specifics (the ~30 s timeout, on-device STT behavior, HUD payload limits)
 are third-party-reported — one community write-up plus Even's support center — and
 should be re-checked against Even Realities' own G2 SDK before this becomes a build
 commitment — the same caveat discipline as the **Accuracy caveats** under "Current
-state & gap analysis" above.
+state" above.
 
 **Sources:** [G2 × OpenClaw bridge write-up](https://blog.juchunko.com/en/even-realities-g2-openclaw-bridge/) ·
 [Even Support Center — G2 "Bring Your Own Agent"](https://support.evenrealities.com/hc/en-us/categories/13489714076815-G2) ·
@@ -743,10 +261,9 @@ state & gap analysis" above.
 
 ---
 
-
-
 - **Track items**: each line is a candidate GitHub issue. Slice into smaller PRs as needed.
-- **Re-prioritize**: items move freely. Anything in Q4 2028 can land Q1 2026 if a contributor wants to ship it. The quarter labels are guidance about scaling and team size, not constraints.
+- **Re-prioritize**: items move freely. Anything in Q4 2028 can land sooner if a contributor wants to ship it. The quarter labels are guidance about scaling and team size, not constraints.
 - **Cross-concern dependencies**: marked implicitly by quarter alignment. If you tackle a Q3 2027 capability item, expect related UX/safety items the same quarter to be useful as prerequisites.
 - **Honest about scope**: each item should be sized at 1-2 weeks of one engineer's time. If something looks bigger when you start, slice it.
 - **Open-source first**: no item assumes paid infrastructure. Anything that requires hosted services (e.g., marketplace index) ships with a "you can self-host this" path.
+- **Shipped items live in [`FEATURES.md`](./FEATURES.md)** — when you close one here, move it there.
