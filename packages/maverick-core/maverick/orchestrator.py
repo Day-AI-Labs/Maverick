@@ -96,6 +96,23 @@ def _compartments_enabled() -> bool:
         return False
 
 
+def _build_knowledge() -> Any | None:
+    """Build the per-domain knowledge base if ``[knowledge] enable`` is set.
+
+    Optional (the maverick-knowledge package may be absent) and fail-open per
+    kernel rule 1: any error yields None, so a misconfig never wedges a run."""
+    try:
+        from .config import get_knowledge
+        kcfg = get_knowledge()
+        if not kcfg.get("enable"):
+            return None
+        from maverick_knowledge import KnowledgeBase, build_embedder, build_store
+        return KnowledgeBase(store=build_store(kcfg), embedder=build_embedder(kcfg))
+    except Exception as e:  # pragma: no cover -- knowledge is optional
+        log.warning("knowledge base unavailable (fail-open): %s", e)
+        return None
+
+
 def _format_tree_of_thought_plan(winning_plan: str, *, shield: Any | None = None) -> str:
     """Render a ToT plan as scanned, explicitly untrusted prompt context."""
     plan = (winning_plan or "").strip()
@@ -393,6 +410,7 @@ async def run_goal(
         blackboard.attach_quarantine(quarantine)
     sandbox = sandbox or LocalBackend()
     shield = _build_shield()
+    knowledge = _build_knowledge()
 
     # Load operator-/plugin-supplied lifecycle hooks (idempotent) and fire
     # SessionStart once. Without this the [[hooks]] config section and the
@@ -455,7 +473,8 @@ async def run_goal(
         ctx = SwarmContext(
             llm=llm, world=world, budget=budget, blackboard=blackboard,
             sandbox=sandbox, goal_id=goal_id, max_depth=max_depth,
-            shield=shield, quarantine=quarantine, mcp_clients=mcp_clients,
+            shield=shield, quarantine=quarantine, knowledge=knowledge,
+            mcp_clients=mcp_clients,
             channel=channel, user_id=user_id, episode_id=episode_id,
         )
 
