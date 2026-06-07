@@ -13,6 +13,12 @@ Full detail lives in the per-suite docs below; this is the summary to skim later
 - **Legal (the GC's office)** → [`legal-agent-suite.md`](legal-agent-suite.md) — ~31 agents, 8 towers (extends `legal.toml`)
 - **Operations / Supply Chain (the COO's office)** → [`operations-supply-chain-agent-suite.md`](operations-supply-chain-agent-suite.md) — ~33 agents, 8 towers
 
+**Per-agent skills** — a job description + the deep, named competencies each agent needs
+(from Word/Excel to "query an Oracle DB for the trial balance", "stand up Oracle 23ai",
+"fix data/automation errors in Salesforce", "the finer points of litigation procedure") —
+are catalogued in [`agent-skills-catalog.md`](agent-skills-catalog.md). *(Finance done; the
+other seven suites appending.)*
+
 All build on [`../enterprise/architecture.md`](../enterprise/architecture.md)
 (the three-layer control plane) and [`agent-factory.md`](agent-factory.md)
 (domain packs). Status: draft design, on branch `claude/amazing-davinci-4Gw6P` (PR #915).
