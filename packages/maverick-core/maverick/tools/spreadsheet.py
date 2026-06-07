@@ -44,6 +44,32 @@ def _openpyxl():
             "Run: pip install 'maverick-agent[spreadsheet]'") from e
 
 
+def _safe_path(sandbox, user_path: str) -> Path:
+    """Resolve ``user_path`` confined to ``sandbox.workdir`` when available.
+
+    Spreadsheet operations read and write files, so model-supplied paths must
+    use the same workspace confinement as filesystem-like tools whenever the
+    default registry wires a sandbox into this tool. Without a sandbox, preserve
+    direct-path behavior for standalone/unit use.
+    """
+    if sandbox is None:
+        return Path(user_path).expanduser()
+    workdir = Path(sandbox.workdir).resolve()
+    candidate = Path(user_path)
+    candidate = (
+        candidate.resolve()
+        if candidate.is_absolute()
+        else (workdir / candidate).resolve()
+    )
+    try:
+        candidate.relative_to(workdir)
+    except ValueError as e:
+        raise ValueError(
+            f"path {user_path!r} escapes the workspace"
+        ) from e
+    return candidate
+
+
 # ---- CSV --------------------------------------------------------------------
 
 def _csv_read(path: Path, limit: int) -> list[list]:
@@ -95,13 +121,17 @@ def _xlsx_set_cell(path: Path, cell: str, value: Any, sheet: str | None) -> None
 
 # ---- dispatch ---------------------------------------------------------------
 
-def _run(args: dict[str, Any]) -> str:
+def _run(args: dict[str, Any], sandbox=None) -> str:
     op = args.get("op")
-    path = Path(str(args.get("path") or "")).expanduser()
+    raw_path = str(args.get("path") or "")
     if not op:
         return "ERROR: op is required"
-    if not args.get("path"):
+    if not raw_path:
         return "ERROR: path is required"
+    try:
+        path = _safe_path(sandbox, raw_path)
+    except ValueError as e:
+        return f"ERROR: {e}"
     limit = max(1, int(args.get("limit") or 50))
     sheet = args.get("sheet")
     try:
@@ -145,7 +175,7 @@ def _run(args: dict[str, Any]) -> str:
     return f"ERROR: unknown op {op!r}"
 
 
-def spreadsheet() -> Tool:
+def spreadsheet(sandbox=None) -> Tool:
     return Tool(
         name="spreadsheet",
         description=(
@@ -154,5 +184,5 @@ def spreadsheet() -> Tool:
             "A1-cell). Complements pandas_query (read-only analysis) with writes."
         ),
         input_schema=_SPREADSHEET_SCHEMA,
-        fn=_run,
+        fn=lambda args: _run(args, sandbox),
     )

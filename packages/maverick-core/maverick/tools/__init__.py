@@ -630,7 +630,7 @@ def base_registry(
     reg.register(youtube())
     reg.register(notion())
     reg.register(obsidian())
-    reg.register(spreadsheet())
+    reg.register(spreadsheet(sandbox))
     reg.register(translate())
     reg.register(slack_bot())
     reg.register(stripe_tool())
