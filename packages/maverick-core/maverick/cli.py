@@ -2009,12 +2009,18 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
 @main.command("compliance")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
               help="Output format.")
+@click.option("--strict", is_flag=True,
+              help="Exit non-zero if any control needs action (gate CI / deploys).")
 @click.pass_context
-def compliance_cmd(ctx, fmt: str) -> None:
+def compliance_cmd(ctx, fmt: str, strict: bool) -> None:
     """Report GDPR + EU AI Act control coverage for this deployment.
 
     Maps each active control to the article it supports and flags opt-in
     controls that are off. Control coverage only -- not a legal attestation.
+
+    With --strict, exits non-zero if any control is "action needed", so a
+    regulated deployment can fail a CI job / release gate when its posture
+    regresses (the report still prints first).
     """
     from .compliance import (
         compliance_report,
@@ -2025,6 +2031,13 @@ def compliance_cmd(ctx, fmt: str) -> None:
     click.echo(
         render_report_json(checks) if fmt == "json" else render_report_text(checks)
     )
+    if strict:
+        needs_action = [c.control for c in checks if c.status == "action_needed"]
+        if needs_action:
+            raise click.ClickException(
+                f"{len(needs_action)} control(s) need action: "
+                + ", ".join(needs_action)
+            )
 
 
 @main.command("export-user")
