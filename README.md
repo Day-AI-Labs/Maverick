@@ -138,6 +138,7 @@ deploy/
   docker/ vps/ desktop/  Dockerfile, install.sh, systemd unit, Caddyfile
 docs/
   getting-started.md     Install + first run
+  architecture.md        The governed agent runtime (OS-style primitives)
   configuration.md       Full config schema reference
   deployment.md          Desktop / Docker / VPS / Phone-companion targets
   safety.md              Shield chokepoints and built-in rule set

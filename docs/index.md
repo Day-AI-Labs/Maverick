@@ -61,6 +61,7 @@ You can support the project via
 ## Where to go next
 
 - [Getting started](getting-started.md) — install + first goal
+- [Architecture](architecture.md) — the governed agent runtime (OS-style primitives)
 - [Configuration](configuration.md) — providers, channels, budgets
 - [Deployment](deployment.md) — desktop / docker / VPS / phone modes
 - [Safety](safety.md) — shield, audit log, kill switches, consent
