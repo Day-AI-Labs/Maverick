@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -49,6 +50,11 @@ class IntakeSpec:
 def _slug(name: str) -> str:
     s = "".join(c if c.isalnum() else "_" for c in (name or "").lower())
     return "_".join(filter(None, s.split("_"))) or "business"
+
+
+def _pending_collection(name: str) -> str:
+    """Return an isolated, non-predictable collection for unapproved intake docs."""
+    return f"intake_pending_{_slug(name)}_{secrets.token_urlsafe(8)}"
 
 
 def _default_persona(spec: IntakeSpec) -> str:
@@ -218,13 +224,21 @@ def run_intake(spec: IntakeSpec, *, llm=None, kb=None,
     """Ingest the business's documents and generate a validated (but UNSAVED)
     DomainProfile for human approval. Pass ``llm`` to use the generative path;
     omit it for the deterministic fallback. Persisting is a separate, approved
-    step (``save_profile``)."""
-    if kb is not None:
-        ingest_docs(spec, kb)
+    step (``save_profile``).
+
+    Uploaded documents are stored in an isolated, non-predictable pending
+    collection until the generated profile is approved. This keeps unapproved
+    intake uploads from colliding with or poisoning existing domain collections.
+    """
     propose = (
         build_llm_proposer(llm, model=model, budget=budget) if llm is not None else None
     )
-    return generate_profile(spec, propose=propose)
+    profile = generate_profile(spec, propose=propose)
+    if kb is not None and spec.doc_paths:
+        collection = _pending_collection(profile.name)
+        ingest_docs(spec, kb, collection=collection)
+        profile.knowledge_sources = [collection]
+    return profile
 
 
 INTAKE_PERSONA = (
