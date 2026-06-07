@@ -215,6 +215,64 @@ def test_oidc_disabled_writes_no_section(tmp_path, monkeypatch):
     assert oidc_enabled() is False
 
 
+def test_oidc_browser_login_writes_and_enables(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's optional browser-login fields land in
+    [auth.oidc], round-trip through TOML, and the kernel sees login_enabled()."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for env in (
+        "MAVERICK_OIDC_ENABLED", "MAVERICK_OIDC_ISSUER", "MAVERICK_OIDC_AUDIENCE",
+        "MAVERICK_OIDC_JWKS_URI", "MAVERICK_OIDC_ALGORITHMS",
+        "MAVERICK_OIDC_CLIENT_ID", "MAVERICK_OIDC_CLIENT_SECRET",
+        "MAVERICK_OIDC_REDIRECT_URI", "MAVERICK_OIDC_SESSION_SECRET",
+    ):
+        monkeypatch.delenv(env, raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"oidc": {
+        "enabled": True,
+        "issuer": "https://issuer.example.com",
+        "audience": "maverick-client",
+        "jwks_uri": "https://issuer.example.com/jwks",
+        "client_id": "dash-client",
+        "client_secret": "shhh",  # pragma: allowlist secret
+        "redirect_uri": "https://dash.example.com/auth/callback",
+        "session_secret": "a-long-random-session-secret",  # pragma: allowlist secret
+    }})
+    assert cfg.count("[auth.oidc]") == 1
+    parsed = tomllib.loads(cfg)["auth"]["oidc"]
+    assert parsed["client_id"] == "dash-client"
+    assert parsed["redirect_uri"] == "https://dash.example.com/auth/callback"
+    assert parsed["session_secret"] == "a-long-random-session-secret"  # pragma: allowlist secret
+
+    from maverick.oidc import login_enabled
+    assert login_enabled() is True
+
+
+def test_oidc_bearer_only_omits_login_fields(tmp_path, monkeypatch):
+    """A bearer-only OIDC config (no browser-login opt-in) writes none of the
+    login keys, so the kernel leaves the login flow off."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for env in (
+        "MAVERICK_OIDC_ENABLED", "MAVERICK_OIDC_CLIENT_ID",
+        "MAVERICK_OIDC_SESSION_SECRET",
+    ):
+        monkeypatch.delenv(env, raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"oidc": {
+        "enabled": True,
+        "issuer": "https://issuer.example.com",
+        "audience": "maverick-client",
+        "jwks_uri": "https://issuer.example.com/jwks",
+    }})
+    assert "client_id" not in cfg
+    assert "session_secret" not in cfg
+
+    from maverick.oidc import login_enabled, oidc_enabled
+    assert oidc_enabled() is True
+    assert login_enabled() is False
+
+
 def test_enterprise_writes_and_is_read(tmp_path, monkeypatch):
     """Rule-6 loop: the wizard's enterprise toggle writes [enterprise] mode, and
     the kernel reads it back as enterprise_enabled()."""

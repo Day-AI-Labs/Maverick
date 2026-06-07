@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 import pytest
 from maverick import health
@@ -163,3 +164,26 @@ def test_is_outage_classification():
     assert health._is_outage(_make_status_error(anthropic, 502)) is True
     assert health._is_outage(_make_status_error(anthropic, 400)) is False
     assert health._is_outage(RuntimeError("nope")) is False
+
+
+def test_anonymous_mode_anonymizes_json_log_record(monkeypatch):
+    monkeypatch.setenv("MAVERICK_ANON", "1")
+    home_path = str(Path.home() / "case_notes.txt")
+
+    out = _fmt(
+        user_id="user-123",
+        channel="slack-C123",
+        title="Jane Patient diabetes plan",
+        msg="contact jane.patient@example.com at 415-555-1212 from " + home_path,
+        path=home_path,
+    )
+    body = json.dumps(out)
+    assert "user-123" not in body
+    assert "slack-C123" not in body
+    assert "Jane Patient" not in body
+    assert "jane.patient@example.com" not in body
+    assert "415-555-1212" not in body
+    assert home_path not in body
+    assert out["user_id"].startswith("user_id#")
+    assert out["channel"].startswith("channel#")
+    assert out["path"] == "case_notes.txt"

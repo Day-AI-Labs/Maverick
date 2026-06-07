@@ -38,6 +38,8 @@ Alpha, but **installable today**: all six packages are on [PyPI](https://pypi.or
 | Distribution | PyPI (6 packages), GHCR image, PyInstaller binaries, **native installers on Releases** | Code signing; Homebrew tap |
 | Tests | 2000+ tests, ruff + pytest on Py 3.10/3.11/3.12 | Integration suite + benchmark RESULTS.md |
 
+**Full list of shipped features → [`docs/FEATURES.md`](./docs/FEATURES.md).** The forward backlog (what isn't built yet) lives in [`docs/ROADMAP.md`](./docs/ROADMAP.md).
+
 ## Install
 
 ### Download the app — no terminal needed (easiest)

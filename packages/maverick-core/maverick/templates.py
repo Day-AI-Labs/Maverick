@@ -60,6 +60,10 @@ class Template:
     @classmethod
     def parse(cls, text: str, name: str, path: Path | None = None) -> Template:
         """Parse a template file. YAML frontmatter is optional."""
+        # Normalize CRLF/CR so the LF-anchored frontmatter regex matches files
+        # authored on Windows or served over HTTP with CRLF endings -- otherwise
+        # their frontmatter (title/params AND budgets) is silently ignored.
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
         m = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.DOTALL)
         if m:
             front, body = m.group(1), m.group(2)
@@ -222,6 +226,10 @@ def _strip_registry_budget_frontmatter(content: str) -> str:
     template, so remote installs are normalized to the parser defaults unless
     the user passes explicit CLI flags or edits the local file themselves.
     """
+    # Normalize line endings first: a CRLF-served template would otherwise slip
+    # past the LF-anchored regex and keep its remote budget_* lines (which
+    # Template.parse, also normalized, would then honor) -- defeating the strip.
+    content = content.replace("\r\n", "\n").replace("\r", "\n")
     m = re.match(r"^---\n(.*?)\n---\n(.*)$", content, re.DOTALL)
     if not m:
         return content

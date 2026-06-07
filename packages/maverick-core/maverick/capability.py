@@ -59,6 +59,8 @@ class Capability:
             return False
         if tool_name in self.deny_tools:
             return False
+        if self.allow_tools == frozenset({_DENY_ALL}):
+            return False
         if self.allow_tools and tool_name not in self.allow_tools:
             return False
         if (
@@ -104,11 +106,7 @@ class Capability:
         By construction, every tool/path/host the result permits is also
         permitted by ``self`` — children cannot escalate.
         """
-        if allow is None:
-            new_allow = self.allow_tools
-        else:
-            req = frozenset(allow)
-            new_allow = req if not self.allow_tools else (self.allow_tools & req)
+        new_allow = _narrow_tools(self.allow_tools, allow)
         new_deny = self.deny_tools | (frozenset(deny) if deny else frozenset())
         new_max = self.max_risk
         if max_risk is not None:
@@ -143,10 +141,26 @@ class Capability:
         ).encode("utf-8")
 
 
-# A glob that can never match any real path or host, used to represent an
-# empty (permits-nothing) scope without colliding with the "empty set == all"
-# convention -- NUL is illegal in POSIX paths and DNS names alike.
-_DENY_ALL_GLOB = "\x00"
+# A tool name/glob that can never match any real tool/path/host, used to
+# represent an empty (permits-nothing) allow-list without colliding with the
+# "empty set == all" convention -- NUL is illegal in the configured names.
+_DENY_ALL = "\x00"
+
+
+def _narrow_tools(
+    current: frozenset[str],
+    requested: set[str] | frozenset[str] | None,
+) -> frozenset[str]:
+    """Intersect two tool allow-lists without failing open on disjoint sets."""
+    if requested is None:
+        return current
+    req = frozenset(requested)
+    if not current:
+        return req
+    if not req:
+        return current
+    narrowed = current & req
+    return narrowed or frozenset({_DENY_ALL})
 
 
 def _narrow_globs(
@@ -169,7 +183,7 @@ def _narrow_globs(
     if not req:
         return current
     narrowed = current & req
-    return narrowed or frozenset({_DENY_ALL_GLOB})
+    return narrowed or frozenset({_DENY_ALL})
 
 
 def _have_crypto() -> bool:

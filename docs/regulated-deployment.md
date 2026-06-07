@@ -1,0 +1,91 @@
+# Regulated deployment
+
+**Run Maverick on private / sensitive data without it leaving your boundary.**
+
+The kernel ships fail-open and cloud-capable — right for a personal agent, wrong the
+moment it touches PHI, PII, financial, or otherwise regulated data. This page is the
+single reference for standing Maverick up in a *regulated* posture: one profile, the
+guarantees it gives you, and one command to **prove** they hold.
+
+## The guarantee
+
+With the profile below, every load-bearing control is fail-closed at once:
+
+| Guarantee | What it means | GDPR / EU AI Act |
+|---|---|---|
+| **Egress lock** | LLM calls are pinned to local / self-hosted models (`ollama` / `vllm` / `tgi`, or an allow-listed endpoint). A cloud-routed call raises `EgressBlocked` **before any prompt is sent**. Sensitive data physically cannot reach a third-party API. | GDPR Art. 32 / AI Act Art. 15 |
+| **Encryption at rest** | AES-256-GCM seals the memory store and the world-DB content (turns, facts, messages, questions). | GDPR Art. 32 |
+| **Tamper-evident audit** | Every event is Ed25519 hash-chained, so a forged or deleted log line is detectable. | EU AI Act Art. 12 |
+| **Human oversight** | Destructive-action consent defaults to `ask` — and therefore *deny* in non-interactive contexts — instead of auto-approve. | EU AI Act Art. 14 |
+| **Storage limitation** | Retention windows expire audit, episode, and event data on a schedule. | GDPR Art. 5(1)(e) |
+
+## The profile
+
+Put this in `~/.maverick/config.toml`. Enterprise mode alone gives you the egress lock,
+fail-closed consent, capability enforcement, **and** at-rest encryption; signing and
+retention are the two extra knobs.
+
+```toml
+[enterprise]
+mode = true            # egress lock + fail-closed consent + capabilities + at-rest encryption
+
+[audit]
+sign = true            # Ed25519 tamper-evident audit chain
+
+[retention]
+audit_days = 365       # storage limitation (GDPR Art. 5(1)(e)) -- tune to your policy
+episodes_days = 90
+events_days = 365
+```
+
+The env equivalents (for containers / CI, where a secrets manager injects the key):
+
+```bash
+export MAVERICK_ENTERPRISE=1
+export MAVERICK_AUDIT_SIGN=1
+export MAVERICK_ENCRYPTION_KEY=<32-byte key, hex or base64>   # else generated under ~/.maverick/keys
+```
+
+To seal data that already exists on disk from before encryption was enabled, run
+`maverick encryption migrate` once (see [Encryption at rest](encryption.md)).
+
+## Prove it
+
+Two commands, two audiences:
+
+```bash
+maverick enterprise verify     # ops / CI: actively exercise the guarantees
+maverick compliance --strict   # auditor / gate: map controls to articles, fail if any regress
+```
+
+`maverick enterprise verify` does **not** just read flags — it proves the egress lock
+refuses a real cloud provider and that at-rest sealing round-trips on *this* box (so a
+missing crypto backend or unreadable key fails here, not silently at write time). It
+exits non-zero if any guarantee fails, so it drops straight into a deploy gate:
+
+```text
+Regulated-deployment guarantees
+===============================
+
+  [PASS]  Egress lock           enterprise mode on; cloud provider 'anthropic' refused, self-hosted 'ollama' allowed ...
+  [PASS]  At-rest encryption    AES-256-GCM seal/unseal round-trips; plaintext absent from ciphertext
+  [PASS]  Tamper-evident audit  Ed25519 hash-chain on; verify with 'maverick audit verify'
+  [PASS]  Human oversight       consent mode = ask
+  [PASS]  Retention policy      configured; enforce with 'maverick retention enforce'
+
+5/5 guarantees hold
+```
+
+`maverick compliance --strict` is the broader GDPR + EU AI Act control map (it also
+covers transparency disclosure, redaction, the kill switch, and the data-subject-rights
+tooling); `--format json` feeds a SIEM or pipeline.
+
+## What this is *not*
+
+This is **control coverage, not a legal compliance attestation.** Full GDPR / EU AI Act
+compliance also needs organizational and legal measures the software cannot perform — a
+DPA, a ROPA (Art. 30 records), a DPIA, AI-Act risk classification, and review by qualified
+counsel. The data-subject rights (access, portability, erasure) are *available* on demand
+via `maverick dsar export`, `maverick export-user`, and `maverick erase`, not automatic.
+
+See also: [Encryption at rest](encryption.md) · [Safety & enterprise mode](safety.md#enterprise-mode-private--sensitive-data).
