@@ -554,6 +554,7 @@ def base_registry(
     from .sns_tool import sns_tool
     from .spend_report import spend_report
     from .spotify_tool import spotify_tool
+    from .spreadsheet import spreadsheet
     from .sql_query import sql_query
     from .stripe_tool import stripe_tool
     from .test_impact import test_impact
@@ -605,6 +606,7 @@ def base_registry(
     reg.register(youtube())
     reg.register(notion())
     reg.register(obsidian())
+    reg.register(spreadsheet())
     reg.register(translate())
     reg.register(slack_bot())
     reg.register(stripe_tool())
