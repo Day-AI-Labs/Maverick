@@ -2353,6 +2353,29 @@ def logs_cmd(pattern: str | None, num: int, day: str | None) -> None:
         click.echo(_json.dumps(r, default=str))
 
 
+# ----- SOC 2 evidence --------------------------------------------------
+
+@main.command("soc2")
+@click.option("--json", "compact", is_flag=True,
+              help="Emit compact single-line JSON (default: pretty, indent=2).")
+def soc2(compact: bool) -> None:
+    """Print a SOC 2 technical-posture snapshot as JSON.
+
+    Serializes ``collect_soc2_evidence()`` -- which controls are ON in this
+    deployment and whether the audit log verifies -- for auditors / CI /
+    automation. The collector is fail-soft (it never raises), so this command
+    always emits a JSON object and exits 0.
+    """
+    import json as _json
+
+    from .soc2 import collect_soc2_evidence
+    evidence = collect_soc2_evidence()
+    if compact:
+        click.echo(_json.dumps(evidence, default=str))
+    else:
+        click.echo(_json.dumps(evidence, default=str, indent=2))
+
+
 # ----- Cache management ------------------------------------------------
 
 @main.group("cache")
