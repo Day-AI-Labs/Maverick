@@ -119,6 +119,40 @@ async def test_blackboard_posts_mirror_into_goal_events(tmp_path: Path, fake_llm
 
 
 @pytest.mark.asyncio
+async def test_domain_build_failure_blocks_instead_of_falling_back(
+    tmp_path: Path, monkeypatch, fake_llm,
+):
+    domains_dir = tmp_path / "domains"
+    domains_dir.mkdir()
+    (domains_dir / "broken.toml").write_text(
+        'name = "broken"\n'
+        'allow_tools = 123\n'
+    )
+    monkeypatch.setenv("MAVERICK_DOMAINS_DIR", str(domains_dir))
+
+    world = WorldModel(path=tmp_path / "world.db")
+    gid = world.create_goal("run in broken domain", "")
+    budget = Budget(max_dollars=1.0)
+
+    out = await run_goal(
+        llm=fake_llm,
+        world=world,
+        budget=budget,
+        goal_id=gid,
+        sandbox=LocalBackend(workdir=tmp_path),
+        max_depth=1,
+        domain="broken",
+    )
+
+    assert "agent build failed" in out
+    assert "Refusing to run without the requested domain capability envelope" in out
+    assert fake_llm.calls == []
+    goal = world.get_goal(gid)
+    assert goal.status == "blocked"
+    assert "agent build failed" in (goal.result or "")
+
+
+@pytest.mark.asyncio
 async def test_unknown_goal_returns_error_message(tmp_path: Path, fake_llm):
     world = WorldModel(path=tmp_path / "world.db")
     budget = Budget(max_dollars=1.0)

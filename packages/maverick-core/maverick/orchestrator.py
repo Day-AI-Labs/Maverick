@@ -702,14 +702,29 @@ async def run_goal(
                 from .domain import agent_from_profile, available_domains
                 _profile = available_domains().get(domain)
                 if _profile is None:
-                    return (f"no such domain: {domain!r}. See `maverick "
-                            "compartments` for available domains.")
+                    msg = (f"no such domain: {domain!r}. See `maverick "
+                           "compartments` for available domains.")
+                    world.set_goal_status(goal_id, "blocked", result=msg)
+                    _end_episode_with_spend(world, episode_id, msg, "blocked", budget, goal_id)
+                    _record_quota_usage()
+                    _fire_webhook("goal_finished", {
+                        "goal_id": goal_id, "status": "blocked", "result": msg,
+                    })
+                    return msg
                 root = agent_from_profile(_profile, ctx, brief, depth=0)
-            except Exception as e:  # fall back to the generic orchestrator
-                log.error(
-                    "domain %r agent build failed (%s); using the orchestrator",
-                    domain, e,
+            except Exception as e:
+                msg = (
+                    f"domain {domain!r} agent build failed: {e}. "
+                    "Refusing to run without the requested domain capability envelope."
                 )
+                log.error("%s", msg)
+                world.set_goal_status(goal_id, "blocked", result=msg)
+                _end_episode_with_spend(world, episode_id, msg, "blocked", budget, goal_id)
+                _record_quota_usage()
+                _fire_webhook("goal_finished", {
+                    "goal_id": goal_id, "status": "blocked", "result": msg,
+                })
+                return msg
         if root is None:
             root = Agent(
                 ctx=ctx,
