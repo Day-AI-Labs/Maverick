@@ -3,7 +3,7 @@
 **Status:** design / roadmap. Companion to the finance, IT-GRC, sales-GTM, and HR
 suites; indexed in [`agent-suites-overview.md`](agent-suites-overview.md). Builds on
 [`../enterprise/architecture.md`](../enterprise/architecture.md) and
-[`agent-factory.md`](agent-factory.md). ~40 agents across eight towers.
+[`agent-factory.md`](agent-factory.md). ~46 agents (40 base + 6 council-added) across eight towers.
 
 > **Product & Engineering is the inverse of every other suite.** Finance and HR are
 > greenfield *workflow*; here, **Maverick itself is a software-engineering agent**, so
@@ -520,6 +520,20 @@ authoring = "manual"
 - **Connects to:** `web_search`, `license_scan.py`, `dep_graph`.
 - **Capability:** evaluate + `draft_tech_eval`. No adoption decision.
 - **Status:** **Partial**.
+
+---
+
+### Council-added agents (from the adversarial review)
+
+Six seats the council flagged — several with **shipped tooling but no persona** (the exact
+"tools there, agent missing" gap). Full skills in [`agent-skills-catalog.md`](agent-skills-catalog.md).
+
+- **Mobile Engineering Agent** *(Tower 3)* — `tools/android.py` + `tools/ios_sim.py` already ship. Swift/SwiftUI, Kotlin/Compose, React Native/Flutter; Fastlane/Gradle; mobile security (keychain, cert pinning). App-store release = hard-floor human. **Status: Gap** (tools shipped, agent absent).
+- **API Design & Contract Agent** *(Tower 3/8)* — `tools/openapi_runner.py` ships. OpenAPI 3.1, GraphQL/federation, gRPC/protobuf, AsyncAPI, versioning/deprecation, contract testing (Pact). **Status: Gap.**
+- **Database Engineering / DBA Agent** *(Tower 6)* — owns the **Oracle 23ai standup** + data modeling, query tuning, migrations (Flyway/Liquibase/Alembic), HA/PITR, and the shipped NoSQL connectors (`dynamodb`/`mongodb`/`redis`/`elasticsearch`). **Status: Gap** (DBA depth was mis-scoped into IaC).
+- **Platform Engineering Agent** *(Tower 5/7)* — Backstage/IDP, golden paths, ephemeral envs, secrets (Vault/SOPS), FinOps. **Status: Gap.**
+- **LLM-Application / Prompt-Engineering Agent** *(Tower 6)* — RAG pipelines, prompt engineering, eval (RAGAS/LLM-judge), guardrails, latency/cost. Distinct from classical ML (6.3/6.4) — Maverick is itself an AI product. **Status: Gap.**
+- **Performance / Load-Engineering Agent** *(Tower 4)* — k6/Gatling/JMeter/Locust, profiling (eBPF/Pyroscope), Core Web Vitals, capacity testing. **Status: Gap** (no non-functional-perf owner).
 
 ---
 

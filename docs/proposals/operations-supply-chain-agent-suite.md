@@ -3,7 +3,7 @@
 **Status:** design / roadmap. Companion to the finance, IT-GRC, sales-GTM, HR,
 product-engineering, strategy/exec, and legal suites; indexed in
 [`agent-suites-overview.md`](agent-suites-overview.md). Builds on
-[`../enterprise/architecture.md`](../enterprise/architecture.md). ~33 agents across eight
+[`../enterprise/architecture.md`](../enterprise/architecture.md). ~39 agents (33 base + 6 council-added) across eight
 towers.
 
 > **Operations is the only suite where agents act on the *physical* world.** Every other
@@ -515,6 +515,20 @@ authoring = "manual"
 - **Connects to:** ESG platforms `‹build›`, the finance ESG vertical.
 - **Capability:** read + `track_carbon`, `draft_sustainability_plan`.
 - **Status:** **Gap**.
+
+---
+
+### Council-added agents (from the adversarial review)
+
+Six seats the council flagged — most critically, no one owned **OT/ICS security** over the
+SCADA/historians the suite reads. Full skills in [`agent-skills-catalog.md`](agent-skills-catalog.md).
+
+- **OT / ICS-Security Agent** *(Tower 3/8)* — IEC 62443, the Purdue model / IT-OT segmentation, NIST 800-82; historian/SCADA/DCS (OSIsoft PI/AVEVA, Rockwell, Siemens, Honeywell, Emerson). **Status: Gap** (the suite reaches into OPC-UA/historians with no security owner — a critical hole).
+- **Continuous-Improvement / OpEx (Lean) Agent** *(Tower 3)* — VSM, kaizen, 5S, SMED, kanban/pull, A3, standard work, DMAIC — the lean operating system claimed cross-cutting but owned by no one. **Status: Gap.**
+- **Process-Safety (PSM/RMP) Agent** *(Tower 8)* — OSHA PSM (1910.119), EPA RMP, PHA/HAZOP/LOPA, LOTO/confined-space/hot-work permits — for chemical/process plants. **Status: Gap.**
+- **Trade-Compliance / Export-Control Agent** *(Tower 5)* — ECCN/EAR (de minimis, deemed exports, Entity List, the 2022–23 semiconductor controls), ITAR/USML + DDTC, OFAC, UFLPA forced-labor, rules-of-origin/FTA (USMCA), CTPAT, FTZ/duty drawback (in-band; cross-ref legal 6.3). **Status: Gap.**
+- **Industrial / Production-Engineering Agent** *(Tower 3)* — time/motion studies, line & takt design, capacity, ergonomics, automation/robotics integration (AS/RS, AMRs). **Status: Gap.**
+- **Cold-Chain / Serialization Agent** *(Tower 4/5)* — pharma DSCSA and food FSMA 204 traceability, lot/serial/aggregation, temperature-excursion handling. **Status: Gap** (regulated-vertical depth beyond generic lot tracking).
 
 ---
 

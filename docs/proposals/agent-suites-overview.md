@@ -2,16 +2,17 @@
 
 At-a-glance index of the business-function agent suites designed for the platform.
 Full detail lives in the per-suite docs below; this is the summary to skim later.
-**Eight suites, ~300 agents** — the core functional map of a company.
+**Eight suites, ~346 agents** — the core functional map of a company (301 base + 45 added in
+the adversarial-council review; counts below are base **+ council-added**).
 
-- **Finance** → [`finance-agent-suite.md`](finance-agent-suite.md) — ~40 core agents, 7 towers (+ vertical packs)
-- **IT / GRC / Privacy / Security / AI-Governance** → [`it-grc-agent-suite.md`](it-grc-agent-suite.md) — 47 agents, 10 towers
-- **Sales / GTM (the revenue engine)** → [`sales-gtm-agent-suite.md`](sales-gtm-agent-suite.md) — ~45 agents, 8 towers
-- **HR / People** → [`hr-people-agent-suite.md`](hr-people-agent-suite.md) — ~41 agents, 8 towers
-- **Product & Engineering** → [`product-engineering-agent-suite.md`](product-engineering-agent-suite.md) — ~40 agents, 8 towers
-- **Strategy / Corp Dev / Executive** → [`strategy-corpdev-exec-agent-suite.md`](strategy-corpdev-exec-agent-suite.md) — ~26 agents, 7 towers
-- **Legal (the GC's office)** → [`legal-agent-suite.md`](legal-agent-suite.md) — ~31 agents, 8 towers (extends `legal.toml`)
-- **Operations / Supply Chain (the COO's office)** → [`operations-supply-chain-agent-suite.md`](operations-supply-chain-agent-suite.md) — ~33 agents, 8 towers
+- **Finance** → [`finance-agent-suite.md`](finance-agent-suite.md) — 38 + 5 = **43** agents, 7 towers (+ vertical packs)
+- **IT / GRC / Privacy / Security / AI-Governance** → [`it-grc-agent-suite.md`](it-grc-agent-suite.md) — 47 + 8 = **55** agents, 10 towers
+- **Sales / GTM (the revenue engine)** → [`sales-gtm-agent-suite.md`](sales-gtm-agent-suite.md) — 45 + 5 = **50** agents, 8 towers
+- **HR / People** → [`hr-people-agent-suite.md`](hr-people-agent-suite.md) — 41 + 5 = **46** agents, 8 towers
+- **Product & Engineering** → [`product-engineering-agent-suite.md`](product-engineering-agent-suite.md) — 40 + 6 = **46** agents, 8 towers
+- **Strategy / Corp Dev / Executive** → [`strategy-corpdev-exec-agent-suite.md`](strategy-corpdev-exec-agent-suite.md) — 26 + 5 = **31** agents, 7 towers
+- **Legal (the GC's office)** → [`legal-agent-suite.md`](legal-agent-suite.md) — 31 + 5 = **36** agents, 8 towers (extends `legal.toml`)
+- **Operations / Supply Chain (the COO's office)** → [`operations-supply-chain-agent-suite.md`](operations-supply-chain-agent-suite.md) — 33 + 6 = **39** agents, 8 towers
 
 **Per-agent skills** — a job description + the deep, named competencies each agent needs
 (from Word/Excel to "query an Oracle DB for the trial balance", "stand up Oracle 23ai",

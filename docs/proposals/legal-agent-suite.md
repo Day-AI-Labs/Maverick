@@ -4,7 +4,7 @@
 product-engineering, and strategy/exec suites; indexed in
 [`agent-suites-overview.md`](agent-suites-overview.md). Extends the shipped
 [`legal.toml`](../../packages/maverick-core/maverick/domains/legal.toml) starter pack into
-a full suite. ~31 agents across eight towers.
+a full suite. ~36 agents (31 base + 5 council-added) across eight towers.
 
 > **Legal is horizontal — it touches every other suite — and uniquely risky for AI.** A
 > Legal agent that invents a case citation is not a bug, it's the failure mode that has
@@ -475,6 +475,18 @@ The privilege/work-product tower — **sealed matter compartments**.
 - **Capability:** `check_conflicts`, `propose_wall`. **Denies** clearing a conflict (human).
 - **Controls:** the **ethical-wall setup point** (§3.4) — reuses the seal primitive.
 - **Status:** **Partial** (the wall primitive ships; the conflicts DB/check is the build).
+
+---
+
+### Council-added agents (from the adversarial review)
+
+Five seats the council flagged. Full skills in [`agent-skills-catalog.md`](agent-skills-catalog.md).
+
+- **AI & Emerging-Tech Counsel Agent** *(Tower 6/7)* — EU AI Act, Colorado AI Act, the US state-privacy wave, AI/IP & training-data law, AI contracting. The legal owner of AI governance (complementing GRC). **Status: Gap.**
+- **Litigation Discovery-Response / Subpoena Agent** *(Tower 4 — sealed)* — responding to subpoenas/CIDs/government investigations, litigation-hold coordination (with 4.3), 30(b)(6) prep. Inbound-demand workflow, distinct from e-discovery review. **Status: Gap.**
+- **Internal-Investigations (GC-led) Agent** *(Tower 4 — sealed, privileged)* — privileged, counsel-led investigations (FCPA, fraud, whistleblower-legal), Upjohn warnings, report to the board/audit committee. Distinct from HR 7.2. **Status: Gap.**
+- **Insurance-Coverage Agent** *(Tower 6)* — D&O/cyber/E&O coverage analysis, claim tender to carriers, reservation-of-rights review. **Status: Gap.**
+- **Bankruptcy / Restructuring & Creditors'-Rights Agent** *(Tower 6)* — UCC Article 9 secured transactions, proof of claim, preference/fraudulent-transfer awareness (the Finance/AR credit seam). **Status: Gap.**
 
 ---
 

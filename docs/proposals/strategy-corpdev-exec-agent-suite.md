@@ -2,7 +2,7 @@
 
 **Status:** design / roadmap. Companion to the finance, IT-GRC, sales-GTM, HR, and
 product-engineering suites; indexed in [`agent-suites-overview.md`](agent-suites-overview.md).
-Builds on [`../enterprise/architecture.md`](../enterprise/architecture.md). ~26 agents
+Builds on [`../enterprise/architecture.md`](../enterprise/architecture.md). ~31 agents (26 base + 5 council-added)
 across seven towers.
 
 > **The "top of the house" — heavily cross-cutting, MNPI-heavy.** This is the CEO/CSO/
@@ -155,7 +155,7 @@ rule 6) compiling to capability + the wall topology + the disclosure gates.
 
 ## 5. The roster — seven towers
 
-~26 agents. For each: **Job**, **Connects to**, **Capability**, **Controls**, **Status**.
+~26 base agents (+ 5 council-added, end of roster). For each: **Job**, **Connects to**, **Capability**, **Controls**, **Status**.
 Heavy cross-references to finance/GTM/GRC (don't duplicate). Representative packs are TOML.
 
 ---
@@ -402,6 +402,19 @@ authoring = "manual"
 - **Connects to:** `knowledge_search`, channels.
 - **Capability:** `draft_csr_program`, `track_impact`.
 - **Status:** **Gap**.
+
+---
+
+### Council-added agents (from the adversarial review)
+
+Five seats the council flagged — the two hardest, most deal-defining (M&A modeling, antitrust/
+CFIUS) were falling between suites. Full skills in [`agent-skills-catalog.md`](agent-skills-catalog.md).
+
+- **M&A Financial-Modeling Agent** *(Tower 2 — sealed)* — closes the Strat↔Finance gap: three-statement model, LBO mechanics (debt schedule/cash sweep/circularity), DCF/WACC, PPA, accretion/dilution, returns (IRR/MOIC), deal structuring. **Status: Gap** (neither suite owned it).
+- **Antitrust / Merger-Clearance Agent** *(Tower 2)* — HSR thresholds + the 2024 HSR rule, 2023 Merger Guidelines, second requests, EU/UK & global merger control, **CFIUS**, gun-jumping. Awareness/flagging for counsel. **Status: Gap** (was "flag for counsel" with no skill).
+- **Activist-Defense / Shareholder-Engagement Agent** *(Tower 5)* — 13D/G monitoring (2024 deadlines), proxy season/ISS-Glass Lewis, say-on-pay, 10b5-1. **Status: Gap.**
+- **JV / Alliance / BD Agent** *(Tower 2)* — non-M&A inorganic growth: JV structuring, strategic alliances, licensing economics. **Status: Gap.**
+- **Transaction-Tax / Structuring Agent** *(Tower 2 — sealed)* — 338(h)(10)/336(e), NOLs & §382, step-up, tax-free reorg (§368) — cross-ref finance tax. **Status: Gap.**
 
 ---
 

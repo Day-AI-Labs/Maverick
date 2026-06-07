@@ -729,6 +729,22 @@ The weakest area (per the inventory) — most agents here orchestrate/evidence
 
 ---
 
+### Council-added agents (from the adversarial review)
+
+Eight seats the adversarial-council pass surfaced as missing (several were flagged only as
+"gaps" in §1 before); folded into the roster. Full skills in [`agent-skills-catalog.md`](agent-skills-catalog.md).
+
+- **Cloud Security / CSPM-CNAPP Agent** *(Tower 6/8)* — Wiz / Prisma Cloud / Orca / Defender for Cloud `‹build›`; CSPM/CIEM/CWPP, CIS benchmarks, K8s security (OPA/Falco), IaC drift. Read + recommend; remediation gated. **Status: Gap** (the biggest structural hole — no cloud-posture owner).
+- **DLP / Data-Protection Agent** *(Tower 2/6)* — Microsoft Purview / Forcepoint / Netskope `‹build›`; DLP across email/endpoint/cloud/SaaS, CASB/SSE/SASE, insider-risk. **Status: Gap.**
+- **DFIR / Digital-Forensics Agent** *(Tower 6)* — Velociraptor / Volatility 3 / Plaso / KAPE `‹build›`; memory/disk forensics, chain-of-custody, malware triage (NIST 800-86). Read + collect; no remediation. **Status: Gap** (6.3 claimed forensics with no stack).
+- **Business-Continuity / Resilience Agent** *(Tower 10)* — BIA, RTO/RPO, tabletop/DR-test orchestration (ISO 22301, NIST 800-34, DORA). **Status: Gap** (distinct from DR tech in 10.4).
+- **GRC-Automation / Continuous-Compliance Agent** *(Tower 3)* — the engineering side of Vanta/Drata: evidence collectors, control-to-test mapping, continuous-compliance scoring. **Status: Partial.**
+- **Email-Security / Phishing & Insider-Threat Agent** *(Tower 6)* — Proofpoint / Abnormal / Mimecast `‹build›`; BEC/phishing triage, DMARC/DKIM/SPF, UEBA. **Status: Gap** (phishing = #1 initial-access vector).
+- **AI Red-Team / Model-Security Agent** *(Tower 1)* — MITRE ATLAS, garak / PyRIT / promptfoo `‹build›`; jailbreak/injection/extraction/poisoning testing (NIST AI 100-2). The **offensive** counterpart to the defensive Shield (6.1). **Status: Gap.**
+- **SaaS Security Posture (SSPM) Agent** *(Tower 6)* — AppOmni / Obsidian `‹build›`; SaaS misconfig, OAuth-grant risk, least-privilege across SaaS. **Status: Gap.**
+
+---
+
 ## 6. The GRC Supervisor — oversight control plane (Layer A)
 
 Above the towers sits the **GRC Supervisor** — the same Layer-A control plane the

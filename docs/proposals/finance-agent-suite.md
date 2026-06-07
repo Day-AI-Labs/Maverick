@@ -320,7 +320,7 @@ timeout = "fail_closed"            # finance never fail-opens an approval
 
 ## 4. The roster — seven towers of the CFO's office
 
-~40 core agents across seven functional towers (each a sealed compartment), plus
+~43 agents (38 base + 5 council-added) across seven functional towers (each a sealed compartment), plus
 optional **vertical packs** (end of §4) a client switches on for its industry. For
 each: **Job** (what it does), **Connects to** (systems/knowledge), **Capability**
 (envelope + the high-risk actions it may *only draft*), and **Controls** (beyond
@@ -952,6 +952,43 @@ generic agents bent out of shape:
 
 Healthcare revenue cycle, real-estate property accounting, and oil-&-gas joint-
 interest billing/depletion are further verticals on the same opt-in model.
+
+---
+
+### Council-added agents (from the adversarial review)
+
+Five seats the adversarial-council pass surfaced as missing; folded into the roster under the
+same SoD + maker-checker + audit discipline. Full skills in [`agent-skills-catalog.md`](agent-skills-catalog.md).
+
+#### +1 Treasury Payments / Disbursements Agent  *(Tower 3 — the custody node)*
+- **Job:** Execute/release **approved** payments; positive-pay, sanctions-at-payment, payment-rail ops — the literal **custody** node of the four-way SoD the model assumed but never staffed.
+- **Connects to:** Kyriba / Modern Treasury / bank portals `‹build›`; Fedwire / ACH-NACHA / RTP / SWIFT-ISO 20022.
+- **Capability:** read approved batches + `propose_settlement`. **Denies** `release_payment`/`wire` (always `require_human`); sealed from AP (records) and the GL.
+- **Status:** **Partial** (governance gate shipped; rails + amount-aware DoA to build).
+
+#### +2 Model Risk Management / Validation Agent (SR 11-7)  *(Tower 5)*
+- **Job:** Independently validate the suite's models (CECL, VaR, ASC 718, forecasting, anomaly ML) — conceptual soundness, backtesting, outcome analysis.
+- **Connects to:** model owners' outputs (read), `pandas_query`/`sql_query`.
+- **Capability:** read-only + `validate_model`, `log_model_finding`. Independent of model owners.
+- **Status:** **Gap**.
+
+#### +3 Pension & Benefits-Accounting Agent  *(Tower 1)*
+- **Job:** DB/OPEB obligation, actuarial gain/loss, funded status; 401(k) Form 5500 + plan-audit support.
+- **Connects to:** actuary/benefits data, HRIS, the GL.
+- **Capability:** read + `draft_pension_entry`. No posting.
+- **Status:** **Gap** (ASC 715/712).
+
+#### +4 ESG Controllership Agent  *(Tower 1/7)*
+- **Job:** The controllership/data side of sustainability (external disclosure stays with Strategy 7.3) — GHG Scope 1/2/3 data, CSRD/ESRS controls, assurance-readiness over non-financial data.
+- **Connects to:** the finance ESG vertical, ops data, ESG platforms `‹build›`.
+- **Capability:** read + `collect_esg_data`, `draft_esg_controls`.
+- **Status:** **Gap** (deconflict with Strategy 7.3).
+
+#### +5 Government-Contract & Cost-Accounting Agent  *(Tower 1, vertical)*
+- **Job:** For gov contractors — FAR Part 31, CAS, DCAA incurred-cost & indirect-rate work.
+- **Connects to:** the gov-contract ERP, DCAA submission portals `‹build›`.
+- **Capability:** read + `draft_indirect_rates`, `prepare_incurred_cost`. Filing human.
+- **Status:** **Gap** (vertical).
 
 ---
 

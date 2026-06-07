@@ -5,7 +5,7 @@
 [`it-grc-agent-suite.md`](it-grc-agent-suite.md),
 [`sales-gtm-agent-suite.md`](sales-gtm-agent-suite.md), and
 [`../enterprise/architecture.md`](../enterprise/architecture.md). Indexed in
-[`agent-suites-overview.md`](agent-suites-overview.md). ~41 agents across eight towers.
+[`agent-suites-overview.md`](agent-suites-overview.md). ~46 agents (41 base + 5 council-added) across eight towers.
 
 > **What makes HR the most sensitive domain of all.** These agents make decisions
 > *about people*, using the company's **most protected data** (comp, health, performance,
@@ -654,6 +654,19 @@ authoring = "manual"
 - **Connects to:** the **channels layer**, intranet `‹build›`.
 - **Capability:** `draft_comms`. Sensitive comms (layoffs, policy) human-approved.
 - **Status:** **Partial** (channels shipped).
+
+---
+
+### Council-added agents (from the adversarial review)
+
+Five seats the council flagged (Checkr/HireRight had no home; HRIS-admin vs records was
+conflated). Full skills in [`agent-skills-catalog.md`](agent-skills-catalog.md).
+
+- **Background-Check / FCRA Adverse-Action Agent** *(Tower 1/2)* — Checkr / HireRight `‹build›`; FCRA pre-adverse/adverse-action, ban-the-box/fair-chance timing, EEOC arrest-vs-conviction, disputes. **Status: Gap.**
+- **Immigration / Global-Mobility Agent** *(Tower 2)* — visa lifecycle (H-1B/L-1/O-1/PERM/green card), LCA/public-access file, prevailing wage, expat + shadow-payroll triggers. **Status: Gap** (2.2 is I-9 only).
+- **HRIS / HCM Platform-Admin Agent** *(Tower 3)* — Workday (business processes, security groups, EIB/Studio, advanced reports) · SuccessFactors (MDF, RBP, business rules, Integration Center). Splits the admin role out of 3.2. **Status: Gap.**
+- **Workers'-Comp & HR-Safety Agent** *(Tower 3/8)* — OSHA recordability (300/301/300A) + ITA e-submission, fatality/hospitalization reporting, WC claims intake, return-to-work, OSHA↔FMLA/ADA interplay. **Status: Gap** (the HR/EHS seam).
+- **Total-Rewards Equity / LTI Agent** *(Tower 4)* — RSU/option/ESPP benchmarking, dilution/burn-rate/overhang, vesting, mobility & §83(b) tax (ties to finance 7.3). **Status: Gap.**
 
 ---
 

@@ -8,7 +8,7 @@
 
 "GTM" here is the **whole go-to-market motion** — Marketing → Sales Development →
 Sales/AE → Customer Success → Support, with RevOps and Enablement as the connective
-tissue. ~45 agents across eight towers.
+tissue. ~50 agents (45 base + 5 council-added) across eight towers.
 
 > **What makes GTM different from finance and GRC.** Those domains are *inward-
 > facing* — the blast radius is the books or the control set. GTM agents are
@@ -640,6 +640,19 @@ authoring = "manual"
 - **Connects to:** BI, CRM `‹build›`, finance.
 - **Capability:** read + `build_gtm_plan`, `analyze_pricing`. No commits.
 - **Status:** **Gap**.
+
+---
+
+### Council-added agents (from the adversarial review)
+
+Five seats the council flagged — the three the brief named (Salesforce-dev, deliverability,
+RevOps-data) were under-built. Full skills in [`agent-skills-catalog.md`](agent-skills-catalog.md).
+
+- **Salesforce Admin / Developer Agent** *(Tower 4)* — Flow, Apex (triggers + async), SOQL/SOSL, governor limits, LWC, deployment (SFDX/unlocked packages/Gearset), security model, CPQ→Revenue Cloud. Splits the overloaded 4.4. **Status: Gap** (the seat that can actually "fix Salesforce errors").
+- **Marketing-Ops / MarTech Engineer Agent** *(Tower 1)* — Marketo/HubSpot/MCAE build, lead scoring/lifecycle, GA4 + Consent Mode v2, server-side GTM, Meta CAPI/enhanced conversions, attribution. **Status: Gap** (1.7 is an analyst, not an ops engineer).
+- **Deliverability / Email-Infrastructure Agent** *(Tower 1/2)* — SPF/DKIM/DMARC enforcement, BIMI/VMC, Google/Yahoo 2024 bulk-sender rules, Postmaster/SNDS, IP warmup. **Status: Gap** (smeared across 1.6/2.4 with no owner).
+- **Revenue / GTM Data-Engineering Agent** *(Tower 4)* — warehouse-native GTM (Snowflake/BigQuery), reverse-ETL (Census/Hightouch), CDP (Segment), dbt funnel models, identity resolution. **Status: Gap** (the "RevOps engineering" the brief named).
+- **Marketing-Privacy / Consent Agent** *(Tower 1)* — CMP (OneTrust), Global Privacy Control, CCPA Do-Not-Sell/Share, cookie consent, suppression sync. **Status: Gap.**
 
 ---
 
