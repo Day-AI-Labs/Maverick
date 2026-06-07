@@ -23,6 +23,10 @@ When on, it enforces:
   (``anthropic`` / ``openai`` / ...) raises :class:`EgressBlocked` **before any prompt
   is sent**, and the denial is audited. Sensitive data physically cannot reach a
   third-party API. (Enforced in :func:`maverick.llm.LLM.complete`.)
+- **Tool egress lock.** Outbound *tool* HTTP (``http_fetch``, ``web_search``) is held
+  to local/private endpoints or hosts allow-listed under ``[enterprise]
+  allowed_hosts`` (default-deny), so a tool can't carry data off-box either.
+  (Enforced via :func:`enterprise_egress_denial` at each tool's request.)
 - **Consent fail-closed.** Destructive-action consent defaults to ``ask`` (and therefore
   *deny* in non-interactive contexts) instead of ``auto-approve``.
   (Enforced in :mod:`maverick.safety.consent`.)
@@ -257,10 +261,66 @@ def assert_provider_allowed(provider: str) -> None:
     raise EgressBlocked(canon)
 
 
+def _host_of(url: str) -> str:
+    try:
+        return (urlparse(url).hostname or "").strip().lower().rstrip(".")
+    except Exception:
+        return ""
+
+
+def _allowed_egress_hosts() -> frozenset[str]:
+    """Hosts an operator allows *tool* egress to in enterprise mode
+    (``[enterprise] allowed_hosts``). Empty by default -> default-deny."""
+    try:
+        from .config import load_config
+        raw = ((load_config() or {}).get("enterprise") or {}).get("allowed_hosts") or []
+    except Exception:
+        return frozenset()
+    return frozenset(str(h).strip().lower().rstrip(".") for h in raw if str(h).strip())
+
+
+def egress_permitted(url: str) -> bool:
+    """In enterprise mode, is outbound *tool* egress to ``url`` permitted?
+
+    True when enterprise mode is off, the endpoint is local/private, or its host is
+    on the ``[enterprise] allowed_hosts`` allow-list. Default-deny otherwise -- so a
+    tool (http_fetch, web_search, a connector) can't carry data off-box, the same
+    boundary the LLM egress lock already enforces for model calls.
+    """
+    if not enterprise_enabled():
+        return True
+    if _is_local_endpoint(url):
+        return True
+    host = _host_of(url)
+    return bool(host) and host in _allowed_egress_hosts()
+
+
+def enterprise_egress_denial(url: str, *, tool: str = "") -> str | None:
+    """Tool-egress guard for string-returning tools: returns a denial reason (and
+    audits an ``egress_blocked`` event) when enterprise mode forbids an outbound
+    request to ``url``, else ``None``. Lets a tool surface the block as an error
+    string without having to catch :class:`EgressBlocked`."""
+    if egress_permitted(url):
+        return None
+    host = _host_of(url) or (url or "?")
+    try:
+        from .audit import EventKind, record
+        record(EventKind.EGRESS_BLOCKED,
+               provider=f"tool:{tool}" if tool else "tool", host=host)
+    except Exception:
+        pass
+    return (
+        f"enterprise mode: refusing tool egress to {host!r} -- not a local endpoint "
+        "and not in [enterprise] allowed_hosts. The data boundary stays closed."
+    )
+
+
 __all__ = [
     "CLOUD_PROVIDERS",
     "LOCAL_PROVIDERS",
     "EgressBlocked",
+    "egress_permitted",
+    "enterprise_egress_denial",
     "enterprise_enabled",
     "is_local_provider",
     "assert_provider_allowed",
