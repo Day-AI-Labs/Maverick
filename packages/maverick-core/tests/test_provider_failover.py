@@ -43,6 +43,17 @@ def test_failover_empty_raises():
         pf.failover([])
 
 
+def test_llm_retry_policy_rejects_control_exceptions():
+    from maverick.budget import BudgetExceeded
+    from maverick.enterprise import EgressBlocked
+    from maverick.preflight import PreflightFailed
+
+    assert pf.should_retry_llm_error(RuntimeError("provider down")) is True
+    assert pf.should_retry_llm_error(BudgetExceeded("over budget")) is False
+    assert pf.should_retry_llm_error(EgressBlocked("openai")) is False
+    assert pf.should_retry_llm_error(PreflightFailed("tiny", 10, 8, 2)) is False
+
+
 def test_afailover_returns_first_success():
     async def boom():
         raise RuntimeError("down")
@@ -112,3 +123,53 @@ def test_complete_async_routes_through_afailover_when_chain_set(monkeypatch):
     labels = asyncio.run(
         LLM(model="a:m1").complete_async("sys", [{"role": "user", "content": "hi"}]))
     assert labels == ["a:m1", "b:m2"]
+
+
+def test_llm_failover_does_not_retry_budget_exceeded(monkeypatch):
+    from maverick.budget import BudgetExceeded
+
+    monkeypatch.setattr(pf, "fallback_models", lambda primary: ["openai:m2"])
+    monkeypatch.setattr("maverick.llm._run_preflight", lambda *a, **k: None)
+    calls = []
+
+    class _Client:
+        def __init__(self, provider):
+            self.provider = provider
+
+        def complete(self, **kwargs):
+            calls.append(self.provider)
+            if self.provider == "anthropic":
+                raise BudgetExceeded("input tokens 2 > 1")
+            return "fallback should not run"
+
+    monkeypatch.setattr(LLM, "_get_client", lambda self, provider: _Client(provider))
+
+    with pytest.raises(BudgetExceeded, match="input tokens"):
+        LLM(model="anthropic:m1").complete("sys", [{"role": "user", "content": "hi"}])
+    assert calls == ["anthropic"]
+
+
+def test_llm_failover_does_not_retry_budget_exceeded_async(monkeypatch):
+    from maverick.budget import Budget, BudgetExceeded
+
+    monkeypatch.setattr(pf, "fallback_models", lambda primary: ["openai:m2"])
+    monkeypatch.setattr("maverick.llm._run_preflight", lambda *a, **k: None)
+    calls = []
+
+    class _Client:
+        def __init__(self, provider):
+            self.provider = provider
+
+        async def complete_async(self, **kwargs):
+            calls.append(self.provider)
+            if self.provider == "anthropic":
+                raise BudgetExceeded("input tokens 2 > 1")
+            return "fallback should not run"
+
+    monkeypatch.setattr(LLM, "_get_client", lambda self, provider: _Client(provider))
+
+    with pytest.raises(BudgetExceeded, match="input tokens"):
+        asyncio.run(LLM(model="anthropic:m1").complete_async(
+            "sys", [{"role": "user", "content": "hi"}], budget=Budget(max_dollars=100.0),
+        ))
+    assert calls == ["anthropic"]

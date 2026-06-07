@@ -31,6 +31,38 @@ def fallback_models(primary: str) -> list[str]:
     return []
 
 
+def should_retry_llm_error(exc: Exception) -> bool:
+    """Return False for LLM control/policy exceptions that failover must not mask.
+
+    Provider failover is meant for transient provider/network failures. Budget,
+    egress, preflight, and consent denials are deliberate fail-closed control
+    signals; trying another model cannot safely remediate them and may dispatch
+    extra paid or disallowed requests.
+    """
+    non_retryable: list[type[BaseException]] = []
+    try:
+        from .budget import BudgetExceeded
+        non_retryable.append(BudgetExceeded)
+    except Exception:  # pragma: no cover -- import failure should not block retry policy
+        pass
+    try:
+        from .enterprise import EgressBlocked
+        non_retryable.append(EgressBlocked)
+    except Exception:  # pragma: no cover
+        pass
+    try:
+        from .preflight import PreflightFailed
+        non_retryable.append(PreflightFailed)
+    except Exception:  # pragma: no cover
+        pass
+    try:
+        from .safety.consent import ConsentDenied
+        non_retryable.append(ConsentDenied)
+    except Exception:  # pragma: no cover
+        pass
+    return not non_retryable or not isinstance(exc, tuple(non_retryable))
+
+
 def failover(attempts, *, should_retry=None):
     """Call each ``(label, thunk)`` in order; return the first success.
 
@@ -73,4 +105,4 @@ async def afailover(attempts, *, should_retry=None):
     raise last
 
 
-__all__ = ["fallback_models", "failover", "afailover"]
+__all__ = ["fallback_models", "should_retry_llm_error", "failover", "afailover"]
