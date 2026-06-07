@@ -412,6 +412,41 @@ class TestHTTPTasks:
         }, headers=self._AUTH).json()
         assert body["error"]["code"] == -32602
 
+    def test_http_tasks_are_isolated_by_client_session(self, monkeypatch):
+        self._enable(monkeypatch)
+        self._stub_start(monkeypatch)
+        from fastapi.testclient import TestClient
+        from maverick_mcp.http_transport import build_app
+        from maverick_mcp.server import MCPServer
+
+        app = build_app(MCPServer())
+        alice = TestClient(app)
+        bob = TestClient(app)
+
+        tid = self._create_task(alice, title="alice secret", req_id=50)["result"]["task"]["taskId"]
+        alice_result = alice.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 51, "method": "tasks/result",
+            "params": {"taskId": tid},
+        }, headers=self._AUTH).json()
+        assert "DONE: alice secret" in alice_result["result"]["content"][0]["text"]
+
+        bob_list = bob.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 52, "method": "tasks/list", "params": {},
+        }, headers=self._AUTH).json()
+        assert bob_list["result"]["tasks"] == []
+
+        bob_result = bob.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 53, "method": "tasks/result",
+            "params": {"taskId": tid},
+        }, headers=self._AUTH).json()
+        assert bob_result["error"]["code"] == -32602
+
+        bob_cancel = bob.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 54, "method": "tasks/cancel",
+            "params": {"taskId": tid},
+        }, headers=self._AUTH).json()
+        assert bob_cancel["error"]["code"] == -32602
+
     def test_tasks_disabled_returns_method_not_found(self, monkeypatch):
         monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
         monkeypatch.delenv("MAVERICK_MCP_HTTP_TASKS", raising=False)

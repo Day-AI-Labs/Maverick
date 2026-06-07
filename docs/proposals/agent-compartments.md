@@ -1,10 +1,9 @@
 # Agent compartments: per-agent threat isolation + swarm immunity
 
-**Status:** Rung 0 (swarm immunity) **IMPLEMENTED** behind `[safety] compartments`
-(off by default). Rungs 1–2 (containment + triage) **DESIGNED** here, not yet
-built. The containment half is architecturally significant (it's the safety
-foundation of the multi-domain "agent factory"), so per CLAUDE.md it is written
-up for sign-off before coding.
+**Status:** Rung 0 (swarm immunity) and Rung 1 (agent containment) **IMPLEMENTED**
+behind `[safety] compartments` (off by default). Rung 2 (latched *sector* seal)
+**DESIGNED** here, not yet built — it needs domain tagging and an unseal policy
+(see open decisions), so per CLAUDE.md it is written up for sign-off before coding.
 
 ## Vision
 
@@ -75,12 +74,32 @@ Enable: `[safety] compartments = true` (or `MAVERICK_COMPARTMENTS=1`), surfaced
 in the installer's advanced safety step. Off by default (back-compat, kernel
 rule 1).
 
+## What's implemented (Rung 1)
+
+`maverick/quarantine.py` (kernel-side, no shield dependency — kernel rule 1):
+
+- **`QuarantineRegistry`** — run-scoped, swarm-shared record of sealed agents
+  (plus per-agent strike counts), shared across the swarm via
+  `SwarmContext.quarantine`.
+- **`triage_block()`** — the conservative escalation policy: a shield block seals
+  the agent only on **critical** severity or once it is a **repeat offender**
+  (≥ `_STRIKE_SEAL_THRESHOLD`, default 2). One-off sub-critical blocks only
+  immunize (Rung 0), so the swarm can't self-DoS on deflected probes.
+- A sealed agent **runs no further tools** (`Agent._run_tool` refuses it) and its
+  **blackboard posts are withheld** from `render()` — the orchestrator's prompt
+  context — so a poisoned finding it already posted can't steer the rest of the
+  swarm. The orchestrator (the privileged promoter) is never sealed.
+
+Seal triggers fire from the agent's own chokepoint (`Agent._maybe_seal`),
+upholding the trust invariant (local detection → privileged promotion). Same
+`compartments` flag; fail-open.
+
 ## Decisions locked
 
 - **Run-scoped immunity first.** The ledger dies with the run.
 - **Triage-driven ladder**, not a fixed containment granularity.
 
-## Open decisions (need sign-off before building Rungs 1–2)
+## Open decisions (Rung 2 + tuning)
 
 1. **Persistence.** Run-scoped today. A cross-run ledger (via the world model)
    would *permanently harden* the factory — but the immunity channel then
@@ -99,10 +118,12 @@ rule 1).
 
 ## Verification
 
-- Implemented: `packages/maverick-shield/tests/test_compartment.py` — fingerprint
-  folding, ledger record/check/evict/hits, immunity short-circuit (base not
-  re-run on a repeat), obfuscation-variant immunity, tool-call immunity,
-  fail-open on a broken ledger, backend label, and the enable flag.
-- Rungs 1–2 (when built): a fake swarm asserting a compromised agent's
-  capability is revoked, its blackboard posts are withheld from siblings, and a
-  domain seal latches until cleared — without touching other domains.
+- Implemented (Rung 0): `packages/maverick-shield/tests/test_compartment.py` —
+  fingerprint folding, ledger record/check/evict/hits, immunity short-circuit
+  (base not re-run on a repeat), obfuscation-variant immunity, tool-call
+  immunity, fail-open on a broken ledger, backend label, and the enable flag.
+- Implemented (Rung 1): `packages/maverick-core/tests/test_quarantine.py` —
+  registry seal/strike, conservative triage (critical-first vs repeat-offender),
+  and blackboard withholding of a sealed agent's posts.
+- Rung 2 (when built): a fake swarm asserting a domain seal latches until
+  cleared — without touching other domains.

@@ -184,10 +184,10 @@ def _is_origin_allowed(request) -> bool:
 def _http_tasks_enabled() -> bool:
     """Whether async MCP tasks are offered over the HTTP transport.
 
-    Opt-in (default off): over HTTP a single bearer token is the trust boundary,
-    so an enabled task store is shared by all authenticated callers. That's fine
-    for single-tenant / trusted-bearer deployments; multi-tenant per-caller task
-    isolation is a later slice. Set MAVERICK_MCP_HTTP_TASKS=1 to enable.
+    Opt-in (default off): each HTTP caller gets an opaque MCP session id and
+    task records are bound to that session, so tasks/list, tasks/get,
+    tasks/result, and tasks/cancel only operate on the caller's own tasks.
+    Set MAVERICK_MCP_HTTP_TASKS=1 to enable.
     """
     return os.environ.get("MAVERICK_MCP_HTTP_TASKS", "").strip().lower() in (
         "1", "true", "yes", "on")
@@ -305,19 +305,19 @@ def build_app(server) -> FastAPI:
     a2a.mount(app)
 
     # Offer async tasks over HTTP when opted in (MAVERICK_MCP_HTTP_TASKS). The
-    # store lives on this server instance, so it persists across requests: a
-    # task-augmented tools/call returns a CreateTaskResult and the client polls
+    # store lives on this server instance, so task records are bound to the
+    # caller's opaque MCP session id before the client polls
     # tasks/get|result|cancel|list on later POSTs. Off by default -> task field
     # ignored and tasks/* return -32601, exactly as before.
     server._tasks_enabled = _http_tasks_enabled()
 
-    # One MCPServer handles the whole HTTP app, but resource subscriptions are
-    # per MCP HTTP client. Persist a small opaque session id in both the
-    # standard-ish MCP-Session-Id header and a same-site cookie fallback so
-    # clients that do not yet send a session header still get isolated state.
-    # Sessions are created only when a request needs persistent subscription
-    # state, and the map is capped so callers that ignore returned ids cannot
-    # grow process memory without bound.
+    # One MCPServer handles the whole HTTP app, but resource subscriptions and
+    # async task records are per MCP HTTP client. Persist a small opaque session
+    # id in both the standard-ish MCP-Session-Id header and a same-site cookie
+    # fallback so clients that do not yet send a session header still get
+    # isolated state. Sessions are created only when a request needs persistent
+    # subscription/task state, and the map is capped so callers that ignore
+    # returned ids cannot grow process memory without bound.
     resource_sessions: OrderedDict[str, set[str]] = OrderedDict()
     app.state.resource_sessions = resource_sessions
 
@@ -378,9 +378,19 @@ def build_app(server) -> FastAPI:
         accepts_sse = "text/event-stream" in (request.headers.get("accept") or "")
         sid = _supplied_session_id(request)
         subscriptions = resource_sessions[sid] if sid is not None else set()
-        should_persist_session = method == "resources/subscribe" or sid is not None
+        is_task_request = (
+            server._tasks_enabled
+            and (
+                method.startswith("tasks/")
+                or (method == "tools/call" and isinstance(params.get("task"), dict))
+            )
+        )
+        should_persist_session = (
+            method == "resources/subscribe" or sid is not None or is_task_request
+        )
         if should_persist_session and sid is None:
             sid = secrets.token_urlsafe(24)
+        task_owner = sid if is_task_request else None
 
         # Streamable HTTP: when the client accepts SSE and this is a real
         # request (not a fire-and-forget notification), stream progress
@@ -394,7 +404,7 @@ def build_app(server) -> FastAPI:
 
             def _dispatch_with_updates():
                 with server.resource_update_scope(subscriptions):
-                    result = _dispatch(server, method, params)
+                    result = _dispatch(server, method, params, task_owner=task_owner)
                     updates = server.drain_resource_updates()
                     return result, updates
 
@@ -425,10 +435,7 @@ def build_app(server) -> FastAPI:
                     yield _sse(_error_envelope(request_id, e))
                 else:
                     if should_persist_session and sid is not None:
-                        if subscriptions or method == "resources/subscribe":
-                            _store_session(sid, subscriptions)
-                        else:
-                            resource_sessions.pop(sid, None)
+                        _store_session(sid, subscriptions)
                     yield _sse(_result_envelope(request_id, result))
                     # HTTP analog of stdio's _flush_resource_updates: push any
                     # resources/updated the tool dirtied that this client
@@ -447,31 +454,25 @@ def build_app(server) -> FastAPI:
         # for the same asyncio.run reason as above.
         def _dispatch_for_session():
             with server.resource_update_scope(subscriptions):
-                return _dispatch(server, method, params)
+                return _dispatch(server, method, params, task_owner=task_owner)
 
         try:
             result = await asyncio.to_thread(_dispatch_for_session)
         except Exception as e:
-            if sid is not None and not subscriptions:
-                resource_sessions.pop(sid, None)
             if is_notification:
                 # 204 must carry no body; JSONResponse({}) writes "{}" which
                 # strict proxies (e.g. Cloudflare) reject as a protocol violation.
                 return _attach_session(
                     Response(status_code=204),
-                    sid if sid in resource_sessions else None,
+                    sid,
                 )
             return _attach_session(
                 JSONResponse(_error_envelope(request_id, e)),
-                sid if sid in resource_sessions else None,
+                sid,
             )
 
         if should_persist_session and sid is not None:
-            if subscriptions or method == "resources/subscribe":
-                _store_session(sid, subscriptions)
-            else:
-                resource_sessions.pop(sid, None)
-                sid = None
+            _store_session(sid, subscriptions)
 
         if is_notification:
             # 204 must carry no body (see above).
@@ -504,7 +505,13 @@ _METHOD_MAP = {
 }
 
 
-def _dispatch(server, method: str, params: dict) -> dict:
+def _dispatch(
+    server,
+    method: str,
+    params: dict,
+    *,
+    task_owner: str | None = None,
+) -> dict:
     """Route a JSON-RPC method to the corresponding handle_* method."""
     if method == "notifications/initialized":
         return {}
@@ -515,6 +522,8 @@ def _dispatch(server, method: str, params: dict) -> dict:
         from .server import _ProtocolError
         raise _ProtocolError(-32601, f"method not found: {method}")
     handler = getattr(server, handler_name)
+    if method == "tools/call" or method.startswith("tasks/"):
+        return handler(params, task_owner=task_owner)
     return handler(params)
 
 

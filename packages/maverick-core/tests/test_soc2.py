@@ -297,6 +297,28 @@ def test_audit_chain_unsigned_when_signing_off():
     assert probe["status"] != "broken"
 
 
+def test_audit_chain_unsigned_past_day_without_anchor_is_not_broken(
+    tmp_path, monkeypatch
+):
+    """Completed unsigned day-files do not require a signed anchor ledger."""
+    import json
+
+    past_day = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    (tmp_path / f"{past_day}.ndjson").write_text(
+        json.dumps({"kind": "tool_call", "ts": "2026-01-01T00:00:00+00:00"})
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(soc2, "_resolve_audit_dir", lambda: tmp_path)
+
+    probe = soc2.collect_soc2_evidence()["audit_log"]
+
+    assert probe["status"] in {"unsigned", "no_crypto"}
+    assert probe["status"] != "broken"
+    assert probe["files_checked"] == 1
+    assert probe["anchors_checked"] is True
+
+
 def test_audit_chain_uses_anchor_verification(tmp_path, monkeypatch):
     """Anchor breaks must make the SOC 2 audit status broken."""
     import maverick.audit as audit

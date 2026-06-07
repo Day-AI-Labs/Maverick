@@ -815,7 +815,33 @@ class Agent:
         except Exception:
             return False
 
+    def _maybe_seal(self, quarantine, verdict) -> None:
+        """Conservatively escalate a shield block to a Rung-1 seal.
+
+        Workers only; the orchestrator (the privileged promoter) is never
+        sealed. Fail-open -- containment must never break the agent loop.
+        """
+        if quarantine is None or getattr(self, "role", "") == "orchestrator":
+            return
+        try:
+            from .quarantine import triage_block
+            triage_block(
+                quarantine, self.name,
+                getattr(verdict, "severity", "high"),
+                "; ".join(getattr(verdict, "reasons", []) or []),
+            )
+        except Exception:  # pragma: no cover -- containment must never break the loop
+            pass
+
     async def _run_tool(self, name: str, args: dict) -> str:
+        # Compartment Rung 1: a sealed agent runs no further tools. Its prior
+        # blackboard posts are also withheld (see Blackboard.render).
+        q = getattr(self.ctx, "quarantine", None)
+        if q is not None and q.is_sealed(self.name):
+            return (
+                f"⚠ Agent sealed by compartment quarantine "
+                f"({q.reason(self.name)}). No further tools will run."
+            )
         shield = self.ctx.shield
         if shield is not None:
             verdict = shield.scan_tool_call(name, args)
@@ -824,6 +850,7 @@ class Agent:
                     self.name, "error",
                     f"tool={name} BLOCKED by Shield: {'; '.join(verdict.reasons)}",
                 )
+                self._maybe_seal(q, verdict)
                 return (
                     f"⚠ BLOCKED by Shield ({verdict.severity}): "
                     f"{'; '.join(verdict.reasons)}. The tool was not executed."
@@ -973,6 +1000,7 @@ class Agent:
                         f"tool={name} OUTPUT BLOCKED by Shield: "
                         f"{'; '.join(out_verdict.reasons)}",
                     )
+                    self._maybe_seal(q, out_verdict)
                     return (
                         f"⚠ Tool output BLOCKED by Shield ({out_verdict.severity}): "
                         f"{'; '.join(out_verdict.reasons)}. Result withheld."

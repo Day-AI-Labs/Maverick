@@ -97,6 +97,18 @@ terminal-bench harnesses + the learning-substrate decision. See the table.
    deprecation window ([`specs/breadth-vs-depth-decision.md`](./specs/breadth-vs-depth-decision.md),
    grounded in [`specs/tool-inventory.md`](./specs/tool-inventory.md)).
 
+**Pulled forward — far-future items shipped ahead of their quarter (June 2026).**
+A code-grounded audit of Q3 2026 → 2028 H2 found most far-future items already
+shipped, blocked on external accounts/infra, or non-code; the genuinely-open,
+buildable, depth-/compliance-aligned ones are being pulled forward and ticked
+here as they land (the dense future-quarter prose lists are left as-is):
+
+- **Structural compaction** (Q4 2026, Performance) — ✅ `compaction.py` content-addressed refs (`tests/test_compaction_structural_refs.py`).
+- **Skill validator** (2027 H1, Distribution) — ✅ `maverick skill validate` + `skills.validate_skill_file` (`tests/test_skill_validator.py`).
+- **Coordinated-disclosure log** (2027 H1, Safety) — ✅ [`docs/DISCLOSURES.md`](./DISCLOSURES.md) (companion to `SECURITY.md`).
+- **SBOM (CycloneDX)** (Q4 2026, Safety) — ✅ non-blocking CycloneDX SBOM artifact in CI's `audit` job (`.github/workflows/ci.yml`). *(CI-only; runs on GitHub, not locally verifiable.)*
+- **Goal templates v2 community registry** (Q4 2026, UX) — ✅ `templates.browse_templates` / `install_template_from_catalog` (federated `catalog` "templates" kind, hash-verified), `maverick template browse/add`, `[template_registries]` knob + wizard emission (`tests/test_template_registry.py`).
+
 **Accuracy caveats.** MCP Sampling / Roots / Logging appear to be on a deprecation
 path — don't build on sampling. Some ecosystem dates/specs (mid-2026 MCP RC,
 LangGraph 1.2, terminal-bench 2.0) postdate the original author's cutoff —
@@ -196,12 +208,19 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 > (`tests/test_compaction_regression.py`). Safety: per-channel + per-user ACLs
 > (`safety/tool_acl.py`), PII detector (`safety/pii_detector.py`), sandbox-escape
 > canaries (`safety/canaries.py`), jailbreak scoring on input
-> (`safety/jailbreak_heuristics.py`). Ecosystem: Ed25519-signed skills, Postgres
+> (`safety/jailbreak_heuristics.py`), the output-policy classifier
+> (system-prompt-regurgitation + refusal-leak detection —
+> `maverick_shield/output_policy.py`), and the Constitutional-Classifier-v2 cascade
+> (cheap-probe → optional LLM deep-scan after the regex floor, env-gated
+> `MAVERICK_CASCADE_SHIELD` — `maverick_shield/cascade.py`). Ecosystem:
+> Ed25519-signed skills, Postgres
 > world-model (`world_model_backends/postgres.py`), HF TGI provider, arXiv tool,
 > Chroma adapter, Bluesky + Mastodon channels, push-notification bridge
-> (`notifications.py`). **Remaining:** the DeBERTa prompt-injection + output-policy
-> classifiers (heavier ML), and community/distribution (playground, cookbook,
-> socials, bug bounty) — founder-tracked, not code-verifiable here.
+> (`notifications.py`). **Remaining:** only the heavyweight DeBERTa-v3 injection
+> model as a drop-in for the cascade's pluggable deep-scanner (it ships an LLM-judge
+> seam, not a fine-tuned DeBERTa checkpoint), plus community/distribution
+> (playground, cookbook, socials, bug bounty) — founder-tracked, not code-verifiable
+> here.
 
 **Capabilities**
 - **Voice input (Whisper)**: `transcribe_audio` via faster-whisper + OpenAI/Groq Whisper API, diarization + timestamps.
@@ -371,13 +390,14 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 > sandbox (`sandbox/kubernetes.py`), reflexion library (`reflexion.py`), Android +
 > iOS-sim tools (`tools/android.py`, `tools/ios_sim.py`), calendar / git-advanced /
 > coverage-guided test runner (`tools/test_impact.py`) / embeddings-as-a-tool /
-> `apply_patch`; deterministic replay (`replay_export.py`), capability tokens
+> `apply_patch`, browser form-fill (`tools/browser.py` `fill_form`); deterministic
+> replay (`replay_export.py`), capability tokens
 > (`capability.py`), file-write quota (`quotas.py`), provider health board
 > (`provider_health.py`), retrieval-augmented compaction (`context_compactor.py`);
 > plugin-scaffolding CLI (`plugin_scaffold.py`), LangChain/LangGraph shim, Notion,
 > the generic OpenAI-compatible provider (`llm.py` `base_url`). **Remaining
-> (engineering):** long-context retrieval router, browser form-fill, Obsidian/IRC,
-> SBOM-in-CI; the **1.0 release** + localized docs are founder-tracked.
+> (engineering):** long-context retrieval router, Obsidian/IRC, SBOM-in-CI; the
+> **1.0 release** + localized docs are founder-tracked.
 
 **Capabilities**
 - Kubernetes sandbox executor (jobs in a cluster, GPU/parallel workloads).
@@ -418,7 +438,7 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 **Performance**
 - Adaptive thinking budget controller (closed-loop Opus thinking adjustment).
 - Compaction v2 retrieval-augmented (embed locally; retrieve top-k chunks).
-- Structural compaction (collapse file-read tool_use/tool_result to path+sha refs).
+- Structural compaction (collapse file-read tool_use/tool_result to path+sha refs). ✅ shipped — `compaction.py` `_shrink_tool_result` now emits a content-addressed ref (source tool + path/url + `sha256` + size) instead of an opaque "output dropped"; `compact_messages` threads the originating tool_use; `tests/test_compaction_structural_refs.py`.
 - Provider health board (per-provider success/latency/$).
 - Memory profiling baseline (tracemalloc + memray weekly soak).
 - GC tuning experiment (`gc.freeze()` post-warmup).
@@ -459,8 +479,10 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 > cost-aware routing (`cost_router.py`); and on the safety/enterprise side —
 > encrypted audit-at-rest (`crypto_at_rest.py`), SOC2-aligned audit export
 > (`soc2.py`), DSAR (`dsar.py`), per-user quotas (`quotas.py`), and the
-> enterprise/compliance scaffolds (`enterprise.py`, `compliance.py`). The bulk of
-> 2027 H1 remains forward plan.
+> enterprise/compliance scaffolds (`enterprise.py`, `compliance.py`); and on the
+> ecosystem side — the WhatsApp channel (`maverick_channels/whatsapp.py`), the
+> Wikipedia (`tools/wikipedia.py`) and Semantic Scholar
+> (`tools/semantic_scholar.py`) tools. The bulk of 2027 H1 remains forward plan.
 
 **Capabilities**: Firecracker microVM sandbox; audio understanding (non-speech CLAP); 3D model viewer; DOM accessibility-tree extractor (5-10x token cut); plan-execute-reflect loop topology; cross-language LSP bridge; file watcher; spreadsheet tool; vector-store as first-class memory; speculative parallel tool calls. Constrained-generation tool; speech-to-action live-mic; GUI element memory; image gen + edit tools; web automation recorder; ASR meeting listener; auto-skill distillation v2; per-tool rate limiter; diff-aware code review.
 

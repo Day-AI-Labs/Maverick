@@ -1004,6 +1004,37 @@ def template_show(name: str) -> None:
     click.echo(t.body)
 
 
+@template.command("browse")
+def template_browse() -> None:
+    """List goal templates available in the community registry."""
+    from .templates import browse_templates
+    entries = browse_templates()
+    if not entries:
+        click.echo("no registry templates (index empty or unreachable).")
+        return
+    for e in entries:
+        mark = " [verified]" if e.verified else ""
+        click.echo(f"  {e.name}{mark}  v{e.version}")
+        if e.summary:
+            click.echo(f"    {e.summary}")
+    click.echo("")
+    click.echo("install one with:  maverick template add <name>")
+
+
+@template.command("add")
+@click.argument("name")
+def template_add(name: str) -> None:
+    """Install a registry goal template by name (hash-verified)."""
+    from .templates import install_template_from_catalog
+    try:
+        t = install_template_from_catalog(name)
+    except ValueError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    click.echo(f"installed: {t.name} -> {t.path}")
+    click.echo(f"run it with:  maverick start --template {t.name}")
+
+
 @main.command()
 @click.argument("question")
 @click.option("--rounds", default=2, show_default=True, type=int,
@@ -1567,6 +1598,23 @@ def skill_info(name: str) -> None:
             return
     click.echo(f"no skill named {name!r}", err=True)
     sys.exit(2)
+
+
+@skill.command("validate")
+@click.argument("path", type=click.Path())
+def skill_validate(path: str) -> None:
+    """Lint a SKILL.md for publish-readiness (offline; does not install)."""
+    from .skills import validate_skill_file
+    r = validate_skill_file(Path(path))
+    for w in r.warnings:
+        click.echo(click.style(f"  warning: {w}", fg="yellow"))
+    for e in r.errors:
+        click.echo(click.style(f"  error: {e}", fg="red"), err=True)
+    if r.ok:
+        click.echo(click.style("OK: skill is valid for publishing.", fg="green"))
+    else:
+        click.echo(f"INVALID: {len(r.errors)} error(s).", err=True)
+        sys.exit(1)
 
 
 @main.command()

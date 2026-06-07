@@ -75,7 +75,7 @@ def _resolve_world(tenant: str | None) -> Any:
         return None
 
 
-def _matches_user(conv_user_id: str, user_id: str, channel: str | None) -> bool:
+def _matches_user(conv_user_id: str, user_id: str) -> bool:
     """Whether a conversation belongs to the requested subject.
 
     Exact ``user_id`` equality only. This deliberately does NOT replicate the
@@ -101,13 +101,19 @@ def _export_world(world: Any, user_id: str, channel: str | None) -> dict[str, An
         return empty
 
     # --- conversations + turns -------------------------------------------
+    if channel is None:
+        # User ids are channel-scoped.  Exporting without a concrete channel is
+        # ambiguous once another channel reuses the same id, so fail closed
+        # rather than list every channel and risk cross-subject disclosure.
+        return empty
+
     try:
         all_convs = world.list_conversations(channel)
     except Exception as e:  # pragma: no cover - defensive
         log.warning("dsar: list_conversations failed: %s", e)
         return empty
 
-    convs = [c for c in all_convs if _matches_user(c.user_id, user_id, channel)]
+    convs = [c for c in all_convs if _matches_user(c.user_id, user_id)]
 
     conversations: list[dict[str, Any]] = []
     goal_ids: list[int] = []
@@ -189,36 +195,30 @@ def _export_world(world: Any, user_id: str, channel: str | None) -> dict[str, An
     return {"conversations": conversations, "goals": goals}
 
 
-def _export_audit(user_id: str, channel: str | None, tenant: str | None) -> list[dict[str, Any]]:
-    """Return the subject's audit rows from every day-file in the audit dir.
-
-    The audit log has no per-subject reader, so we iterate the tenant's
-    ``*.ndjson`` files directly and keep rows whose structured ``user_id`` (and,
-    when supplied, ``channel``) fields match — exactly the rule
-    :func:`maverick.audit.erase._event_matches` erases on, so a row that
-    *would* be erased is a row that *is* exported. Each kept row is JSON-safe by
-    construction (it was parsed from JSON); we round-trip with ``default=str``
-    only to neutralise any value json can't emit. Fail-soft: a missing dir,
-    unreadable file, or malformed line is skipped, never raised.
-    """
+def _audit_dir_for_tenant(tenant: str | None) -> Any:
+    """Resolve the audit directory for ``tenant`` fail-softly."""
     try:
         from .paths import data_dir
 
-        audit_dir = data_dir("audit", tenant=tenant) if tenant else data_dir("audit")
+        return data_dir("audit", tenant=tenant) if tenant else data_dir("audit")
     except Exception as e:  # pragma: no cover - defensive
         log.warning("dsar: could not resolve audit dir: %s", e)
+        return None
+
+
+def _iter_audit_events(tenant: str | None) -> list[dict[str, Any]]:
+    """Read audit NDJSON rows as dicts, skipping malformed/unreadable input."""
+    audit_dir = _audit_dir_for_tenant(tenant)
+    if audit_dir is None or not audit_dir.exists() or not audit_dir.is_dir():
         return []
 
-    if not audit_dir.exists() or not audit_dir.is_dir():
-        return []
-
-    out: list[dict[str, Any]] = []
     try:
         files = sorted(audit_dir.glob("*.ndjson"))
     except OSError as e:  # pragma: no cover - defensive
         log.warning("dsar: could not list audit dir %s: %s", audit_dir, e)
         return []
 
+    events: list[dict[str, Any]] = []
     for path in files:
         try:
             text = path.read_text(encoding="utf-8")
@@ -233,37 +233,110 @@ def _export_audit(user_id: str, channel: str | None, tenant: str | None) -> list
                 event = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if not isinstance(event, dict):
-                continue
-            if event.get("user_id") != user_id:
-                continue
-            if channel is not None and event.get("channel") != channel:
-                continue
-            # Render ts to ISO for consistency with the world section; keep the
-            # rest of the event verbatim so nothing the subject is owed is lost.
-            if "ts" in event:
-                event = {**event, "ts": _iso(event["ts"])}
-            # Round-trip through json with default=str so any stray
-            # non-serializable value (shouldn't happen for parsed JSON) is
-            # stringified rather than poisoning the whole bundle.
-            out.append(json.loads(json.dumps(event, default=str)))
+            if isinstance(event, dict):
+                events.append(event)
+    return events
+
+
+def _audit_channels_for_user(user_id: str, tenant: str | None) -> set[str]:
+    """Return structured audit channels observed for ``user_id``."""
+    return {
+        event["channel"]
+        for event in _iter_audit_events(tenant)
+        if event.get("user_id") == user_id and isinstance(event.get("channel"), str)
+    }
+
+
+def _resolve_subject_channel(
+    world: Any, user_id: str, channel: str | None, tenant: str | None
+) -> str | None:
+    """Return the concrete channel for a DSAR, or ``None`` if ambiguous.
+
+    ``channel`` is part of Maverick's subject identity.  For backward
+    compatibility with callers that exported a user id from a single-channel
+    install, an omitted channel is inferred only when the user's structured
+    world/audit rows identify exactly one channel.  If multiple channels reuse
+    the same ``user_id``, the export fails closed so one subject's DSAR cannot
+    disclose another subject's data.
+    """
+    if channel is not None:
+        return channel
+
+    channels: set[str] = set()
+    if world is not None:
+        try:
+            channels.update(
+                c.channel
+                for c in world.list_conversations(None)
+                if _matches_user(c.user_id, user_id) and isinstance(c.channel, str)
+            )
+        except Exception as e:  # pragma: no cover - defensive
+            log.warning("dsar: list_conversations failed while resolving channel: %s", e)
+
+    channels.update(_audit_channels_for_user(user_id, tenant))
+    if len(channels) == 1:
+        return next(iter(channels))
+    if len(channels) > 1:
+        log.warning(
+            "dsar: refusing ambiguous export for user_id %r across channels %s",
+            user_id,
+            sorted(channels),
+        )
+    return None
+
+
+def _export_audit(user_id: str, channel: str | None, tenant: str | None) -> list[dict[str, Any]]:
+    """Collect audit rows for the subject.
+
+    Audit events are plain dicts (``AuditEvent.to_dict`` spreads the payload),
+    and GDPR erasure keys off top-level ``channel`` + ``user_id``. That is exactly
+    the rule :func:`maverick.audit.erase._event_matches` erases on, so a row
+    that *would* be erased is a row that *is* exported. Each kept row is
+    JSON-safe by construction (it was parsed from JSON); we round-trip with
+    ``default=str`` only to neutralise any value json can't emit. Fail-soft: a
+    missing dir, unreadable file, or malformed line is skipped, never raised.
+    """
+    if channel is None:
+        # Channel is part of the subject identity.  Without one we cannot match
+        # the erase path's exact-field rule, so do not export audit rows.
+        return []
+
+    out: list[dict[str, Any]] = []
+    for event in _iter_audit_events(tenant):
+        if event.get("user_id") != user_id:
+            continue
+        if event.get("channel") != channel:
+            continue
+        # Render ts to ISO for consistency with the world section; keep the
+        # rest of the event verbatim so nothing the subject is owed is lost.
+        if "ts" in event:
+            event = {**event, "ts": _iso(event["ts"])}
+        # Round-trip through json with default=str so any stray non-serializable
+        # value (shouldn't happen for parsed JSON) is stringified rather than
+        # poisoning the whole bundle.
+        out.append(json.loads(json.dumps(event, default=str)))
     return out
 
 
-def export_subject_data(user_id: str, *, tenant: str | None = None) -> dict[str, Any]:
+def export_subject_data(
+    user_id: str, *, channel: str | None = None, tenant: str | None = None
+) -> dict[str, Any]:
     """Gather everything Maverick holds for ``user_id`` into one JSON bundle.
 
     GDPR Art. 15 (right of access) / Art. 20 (portability), and a SOC 2 Privacy
     expectation. Read-only and fail-soft: a missing world DB or audit dir
     produces an empty section rather than an error.
 
-    ``user_id`` is the channel-scoped subject identifier (the same value the
-    world model stores on ``conversations.user_id`` and that audit events carry
-    as their ``user_id`` field). ``tenant`` selects the data plane: when given,
-    the subject's world DB and audit chain are read from that tenant's isolated
-    directory via :func:`maverick.world_model.world_for_tenant` /
-    :func:`maverick.paths.data_dir`; when ``None`` the active tenant (env /
-    contextvar) is used, falling back to the legacy shared store.
+    ``user_id`` plus ``channel`` identify the subject (the same pair the world
+    model stores on ``conversations`` and that audit events carry as structured
+    fields). For compatibility, ``channel`` may be omitted only when existing
+    world/audit rows make it unambiguous; if the same ``user_id`` appears on
+    multiple channels, the export fails closed instead of over-exporting.
+    ``tenant`` selects the data plane: when given, the subject's world DB and
+    audit chain are read from that tenant's isolated directory via
+    :func:`maverick.world_model.world_for_tenant` / :func:`maverick.paths.data_dir`;
+    when ``None`` the active tenant (env / contextvar) is used, falling back to
+    the legacy shared store.
 
     The returned dict is guaranteed ``json.dumps``-able (timestamps are
     stringified to ISO-8601; no bytes leak through). Its shape::
@@ -278,14 +351,8 @@ def export_subject_data(user_id: str, *, tenant: str | None = None) -> dict[str,
                            "episodes", "audit_events"},
         }
     """
-    # Channel is not a separate argument: a DSAR is keyed on the subject id.
-    # ``None`` means "this user_id across every channel"; callers wanting a
-    # single channel can post-filter, and the audit/world matchers already
-    # honour an explicit channel when one is threaded through. We keep it None
-    # here so the export is complete by default.
-    channel: str | None = None
-
     world = _resolve_world(tenant)
+    channel = _resolve_subject_channel(world, user_id, channel, tenant)
     world_section = _export_world(world, user_id, channel)
     audit_section = _export_audit(user_id, channel, tenant)
 

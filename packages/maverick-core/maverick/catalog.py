@@ -57,7 +57,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-VALID_KINDS = ("skills", "plugins", "mcp", "personas")
+VALID_KINDS = ("skills", "plugins", "mcp", "personas", "templates")
 SCHEMA_VERSION = 1
 FETCH_TIMEOUT = 15.0
 _CACHE_TTL = 6 * 3600  # 6 hours

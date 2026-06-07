@@ -63,8 +63,10 @@ def test_dsar_export_prints_seeded_bundle_and_exits_zero():
     assert result.exit_code == 0
     bundle = json.loads(result.output)
 
-    # Envelope reflects the requested subject.
-    assert bundle["subject"] == {"user_id": "alice", "channel": None}
+    # Envelope reflects the requested subject. The subject was seeded on a
+    # single channel, so the exporter infers it (channel is part of subject
+    # identity; an unambiguous id resolves to its one channel).
+    assert bundle["subject"] == {"user_id": "alice", "channel": "telegram"}
     assert bundle["tenant"] is None
 
     # Counts/world reflect the seeded data.

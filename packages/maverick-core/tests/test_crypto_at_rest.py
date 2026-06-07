@@ -190,6 +190,7 @@ def test_memory_reads_legacy_plaintext(monkeypatch, tmp_path):
     assert "legacy note" in view       # transparent plaintext fallback
 
 
+@requires_crypto
 def test_seal_to_str_roundtrip_and_passthrough():
     tok = car.seal_to_str("hello secret")
     assert tok.startswith("MVKAR1:")
@@ -200,6 +201,46 @@ def test_seal_to_str_roundtrip_and_passthrough():
     assert car.is_sealed_str(tok) and not car.is_sealed_str("plain value")
 
 
+def test_unseal_from_str_treats_marker_collisions_as_plaintext():
+    invalid_b64 = "MVKAR1:A"
+    decoded_without_magic = "MVKAR1:" + base64.b64encode(b"Hello").decode("ascii")
+    decoded_truncated_magic = "MVKAR1:" + base64.b64encode(car._MAGIC).decode("ascii")
+
+    assert car.unseal_from_str(invalid_b64) == invalid_b64
+    assert car.unseal_from_str(decoded_without_magic) == decoded_without_magic
+    assert car.unseal_from_str(decoded_truncated_magic) == decoded_truncated_magic
+
+
+@requires_crypto
+def test_unseal_from_str_rejects_tampered_sealed_payload():
+    blob = bytearray(car.seal(b"important"))
+    blob[-1] ^= 0x01
+    tok = "MVKAR1:" + base64.b64encode(bytes(blob)).decode("ascii")
+
+    with pytest.raises(Exception):  # noqa: B017 - InvalidTag from the AEAD
+        car.unseal_from_str(tok)
+
+
+def test_world_db_reads_plaintext_marker_collisions(monkeypatch, tmp_path):
+    from maverick.world_model import WorldModel
+
+    db = tmp_path / "world.db"
+    wm = WorldModel(db)
+    conv = wm.get_or_create_conversation("slack", "mallory")
+    payloads = [
+        "MVKAR1:A",
+        "MVKAR1:" + base64.b64encode(b"Hello").decode("ascii"),
+    ]
+    wm.append_turn(conv.id, "user", payloads[0])
+    wm.upsert_fact("user:mallory:note", payloads[1])
+
+    assert wm.recent_turns(conv.id)[-1].content == payloads[0]
+    assert wm.get_facts()["user:mallory:note"] == payloads[1]
+    assert wm.get_fact("user:mallory:note") == payloads[1]
+    assert wm.search_facts("user:mallory", "note")[0][1] == payloads[1]
+
+
+@requires_crypto
 def test_world_db_seals_turns_and_facts(monkeypatch, tmp_path):
     import sqlite3
 
