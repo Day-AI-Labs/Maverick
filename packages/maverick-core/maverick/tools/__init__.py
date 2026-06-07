@@ -529,6 +529,7 @@ def base_registry(
     from .newsapi_tool import newsapi_tool
     from .notify import notify_tool
     from .notion import notion
+    from .obsidian import obsidian
     from .ocr import ocr
     from .openapi_runner import openapi_runner
     from .pagerduty_tool import pagerduty_tool
@@ -603,6 +604,7 @@ def base_registry(
     reg.register(test_impact())
     reg.register(youtube())
     reg.register(notion())
+    reg.register(obsidian())
     reg.register(translate())
     reg.register(slack_bot())
     reg.register(stripe_tool())
