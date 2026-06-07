@@ -18,6 +18,7 @@ Surfaced as ``maverick ropa``.
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from typing import Any
 
 # Organizational fields the software cannot know — the controller fills them in.
@@ -75,9 +76,17 @@ def _enterprise_on() -> bool:
     return enterprise_enabled()
 
 
-def _retention_cfg() -> dict:
+def _retention_cfg() -> dict[str, Any]:
     from .config import load_config
-    return (load_config() or {}).get("retention") or {}
+
+    cfg = load_config() or {}
+    if not isinstance(cfg, Mapping):
+        return {}
+
+    retention = cfg.get("retention") or {}
+    if not isinstance(retention, Mapping):
+        return {}
+    return dict(retention)
 
 
 def _active_security_measures() -> list[str]:
