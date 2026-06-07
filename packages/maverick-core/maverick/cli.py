@@ -2577,8 +2577,11 @@ def audit_export(
     for _label, _val in (("--since", since), ("--until", until)):
         if _val is not None:
             try:
-                _dt.datetime.strptime(_val, "%Y-%m-%d")
+                _parsed = _dt.datetime.strptime(_val, "%Y-%m-%d")
             except ValueError:
+                click.echo(f"ERROR: {_label} must be YYYY-MM-DD", err=True)
+                sys.exit(2)
+            if _parsed.strftime("%Y-%m-%d") != _val:
                 click.echo(f"ERROR: {_label} must be YYYY-MM-DD", err=True)
                 sys.exit(2)
 
