@@ -84,9 +84,15 @@ class Blackboard:
 
     def by_kind(self, kind: str) -> list[Entry]:
         with self._lock:
-            return [e for e in self.entries if e.kind == kind]
+            snapshot = list(self.entries)
+        # Withhold sealed agents' entries here too (not only in render): a sealed
+        # agent's finding must not reach the swarm through a structured read.
+        return [e for e in snapshot if e.kind == kind and not self._is_sealed(e.agent)]
 
     def by_agent(self, agent: str) -> list[Entry]:
+        # A sealed agent's posts are withheld wholesale (compartment Rung 1).
+        if self._is_sealed(agent):
+            return []
         with self._lock:
             return [e for e in self.entries if e.agent == agent]
 

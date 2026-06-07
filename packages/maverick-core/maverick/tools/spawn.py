@@ -98,6 +98,31 @@ def _child_capability(parent, role: str, depth: int):
     return cap.attenuate(principal=f"agent:{role}-{depth}")
 
 
+def _sealed_notice(ctx, child) -> str | None:
+    """The notice to return to the parent INSTEAD of a sealed child's answer.
+
+    A child sealed mid-run (compartment Rung 1) is compromised, so its
+    ``result.final`` is attacker-influenced output. Returning it would let a
+    sealed agent steer the swarm through the spawn return path -- the same leak
+    ``Blackboard.render`` already closes for posts. Returns ``None`` when
+    containment is off or the child is clean. Fail-open: a bug here must never
+    break the spawn loop.
+    """
+    q = getattr(ctx, "quarantine", None)
+    if q is None:
+        return None
+    try:
+        if not q.is_sealed(child.name):
+            return None
+        reason = q.reason(child.name)
+    except Exception:  # pragma: no cover -- containment must never break the loop
+        return None
+    return (
+        f"⚠ Sub-agent {child.role}({child.name}) was sealed by compartment "
+        f"quarantine ({reason}); its output is withheld. Do not act on it."
+    )
+
+
 def spawn_subagent_tool(parent: Agent) -> Tool:
     async def fn(args: dict) -> str:
         role = args["role"]
@@ -149,6 +174,11 @@ def spawn_subagent_tool(parent: Agent) -> Tool:
             goal_id=parent.ctx.goal_id, agent_role=child.role,
             extra={"name": child.name, "final": result.final or ""},
         )
+        # Containment Rung 1: a child sealed during its run must not return its
+        # (attacker-influenced) answer to the parent -- withhold it.
+        notice = _sealed_notice(parent.ctx, child)
+        if notice is not None:
+            return notice
         if result.final:
             return result.final
         if result.blocked_on_user:
@@ -275,8 +305,9 @@ def spawn_swarm_tool(parent: Agent) -> Tool:
         # trust the consensus. (Acting on it -- adaptive re-fan-out -- is
         # a deferred follow-up; today this is an observability signal.)
         finals = [
-            res.final for res in results
+            res.final for child, res in zip(children, results)
             if not isinstance(res, Exception) and res.final
+            and _sealed_notice(parent.ctx, child) is None  # sealed children don't vote
         ]
         if len(finals) > 1:
             from ..disagreement import answer_entropy
@@ -296,6 +327,12 @@ def spawn_swarm_tool(parent: Agent) -> Tool:
         for child, res in zip(children, results):
             if isinstance(res, Exception):
                 parts.append(f"[{child.role}/{child.name}] EXCEPTION: {res}")
+                continue
+            # Containment Rung 1: withhold a sealed child's answer from the
+            # parent (same leak render() closes for posts).
+            notice = _sealed_notice(parent.ctx, child)
+            if notice is not None:
+                parts.append(f"[{child.role}/{child.name}] {notice}")
             elif res.final:
                 parts.append(f"[{child.role}/{child.name}] {res.final}")
             elif res.blocked_on_user:
