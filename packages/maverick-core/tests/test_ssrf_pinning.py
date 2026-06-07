@@ -90,3 +90,28 @@ def test_safe_client_builds_pinned_client(monkeypatch):
     assert isinstance(client, httpx.Client)
     assert isinstance(client._transport, _ssrf._PinnedTransport)
     client.close()
+
+
+def test_safe_get_strips_follow_redirects(monkeypatch):
+    # A caller passing follow_redirects=True must NOT be able to re-enable
+    # redirect following on the pinned client: a 3xx would escape to an
+    # unvalidated/unpinned host, which is the exact SSRF safe_get prevents.
+    seen: dict = {}
+
+    class _FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url, **kwargs):
+            seen["kwargs"] = kwargs
+            return "resp"
+
+    monkeypatch.setattr(_ssrf, "safe_client", lambda url, **kw: _FakeClient())
+    out = _ssrf.safe_get("https://example.com/x", follow_redirects=True, params={"a": 1})
+    assert out == "resp"
+    assert "follow_redirects" not in seen["kwargs"]
+    # Genuine request kwargs are still forwarded untouched.
+    assert seen["kwargs"].get("params") == {"a": 1}

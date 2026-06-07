@@ -527,12 +527,15 @@ class TaskEngine:
             if parsed.scheme not in ("http", "https"):
                 raise BlockedHost(f"scheme {parsed.scheme!r} not allowed")
             resolve_pinned_ip(parsed.hostname or "")
+        except ImportError:  # pragma: no cover - SSRF guard unavailable
+            # Caught BEFORE the BlockedHost clause: if the import above failed,
+            # the BlockedHost name is unbound, and evaluating `except BlockedHost`
+            # would raise NameError instead of falling through here.
+            pass
         except BlockedHost as e:
             raise _RpcError(
                 _INVALID_PARAMS, f"pushNotificationConfig.url rejected: {e}",
             )
-        except ImportError:  # pragma: no cover - guard unavailable, fall through
-            pass
         task.push_config = cfg
         return {"taskId": task.id, "pushNotificationConfig": _redacted_push_config(cfg)}
 
