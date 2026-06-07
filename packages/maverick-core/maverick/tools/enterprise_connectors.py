@@ -529,6 +529,151 @@ _SPECS: list[dict] = [
     dict(name="amplitude", base_url_env="AMPLITUDE_BASE_URL", token_env="AMPLITUDE_TOKEN",
          basic=True, description="Amplitude Analytics REST. ops get/post (writes need "
          "confirm). Auth: AMPLITUDE_BASE_URL + AMPLITUDE_TOKEN (apikey:secret, basic)."),
+
+    # --- Payments / spend / financial close ---
+    dict(name="square", base_url_env="SQUARE_BASE_URL", token_env="SQUARE_TOKEN",
+         description="Square REST. ops get/post/put/delete (writes need confirm). Auth: "
+         "SQUARE_BASE_URL (https://connect.squareup.com) + SQUARE_TOKEN (bearer)."),
+    dict(name="paypal", base_url_env="PAYPAL_BASE_URL", token_env="PAYPAL_TOKEN",
+         description="PayPal REST. ops get/post/put/delete (writes need confirm). Auth: "
+         "PAYPAL_BASE_URL (https://api-m.paypal.com) + PAYPAL_TOKEN (OAuth bearer)."),
+    dict(name="adyen", base_url_env="ADYEN_BASE_URL", token_env="ADYEN_TOKEN",
+         token_header="X-API-Key", scheme="", description="Adyen REST. ops get/post "
+         "(writes need confirm). Auth: ADYEN_BASE_URL + ADYEN_TOKEN (X-API-Key)."),
+    dict(name="ramp", base_url_env="RAMP_BASE_URL", token_env="RAMP_TOKEN",
+         description="Ramp REST (spend). ops get/post/put/delete (writes need confirm). "
+         "Auth: RAMP_BASE_URL (https://api.ramp.com) + RAMP_TOKEN (bearer)."),
+    dict(name="brex", base_url_env="BREX_BASE_URL", token_env="BREX_TOKEN",
+         description="Brex REST (spend). ops get/post/put/delete (writes need confirm). "
+         "Auth: BREX_BASE_URL (https://platform.brexapis.com) + BREX_TOKEN (bearer)."),
+    dict(name="blackline", base_url_env="BLACKLINE_BASE_URL", token_env="BLACKLINE_TOKEN",
+         description="BlackLine REST (financial close). ops get/post (writes need "
+         "confirm). Auth: BLACKLINE_BASE_URL + BLACKLINE_TOKEN (bearer)."),
+    dict(name="workiva", base_url_env="WORKIVA_BASE_URL", token_env="WORKIVA_TOKEN",
+         description="Workiva (Wdesk) REST. ops get/post/put/delete (writes need "
+         "confirm). Auth: WORKIVA_BASE_URL + WORKIVA_TOKEN (bearer)."),
+
+    # --- HR / HCM / payroll / recruiting (additional) ---
+    dict(name="successfactors", base_url_env="SUCCESSFACTORS_BASE_URL",
+         token_env="SUCCESSFACTORS_TOKEN", basic=True, description="SAP SuccessFactors "
+         "OData REST. ops get/post (writes need confirm). Auth: SUCCESSFACTORS_BASE_URL + "
+         "SUCCESSFACTORS_TOKEN (user@company:pass, basic)."),
+    dict(name="cornerstone", base_url_env="CORNERSTONE_BASE_URL",
+         token_env="CORNERSTONE_TOKEN", description="Cornerstone OnDemand REST. ops "
+         "get/post (writes need confirm). Auth: CORNERSTONE_BASE_URL + CORNERSTONE_TOKEN (bearer)."),
+    dict(name="icims", base_url_env="ICIMS_BASE_URL", token_env="ICIMS_TOKEN", basic=True,
+         description="iCIMS REST (recruiting). ops get/post (writes need confirm). Auth: "
+         "ICIMS_BASE_URL + ICIMS_TOKEN (user:pass, basic)."),
+    dict(name="paylocity", base_url_env="PAYLOCITY_BASE_URL", token_env="PAYLOCITY_TOKEN",
+         description="Paylocity REST. ops get/post/put (writes need confirm). Auth: "
+         "PAYLOCITY_BASE_URL + PAYLOCITY_TOKEN (OAuth bearer)."),
+    dict(name="workable", base_url_env="WORKABLE_BASE_URL", token_env="WORKABLE_TOKEN",
+         description="Workable REST (recruiting). ops get/post (writes need confirm). "
+         "Auth: WORKABLE_BASE_URL + WORKABLE_TOKEN (bearer)."),
+    dict(name="deel", base_url_env="DEEL_BASE_URL", token_env="DEEL_TOKEN",
+         description="Deel REST (global payroll/EOR). ops get/post/put/delete (writes "
+         "need confirm). Auth: DEEL_BASE_URL + DEEL_TOKEN (bearer)."),
+
+    # --- Commerce platforms ---
+    dict(name="magento", base_url_env="MAGENTO_BASE_URL", token_env="MAGENTO_TOKEN",
+         description="Adobe Commerce (Magento) REST. ops get/post/put/delete (writes "
+         "need confirm). e.g. /rest/V1/products. Auth: MAGENTO_BASE_URL + MAGENTO_TOKEN (bearer)."),
+    dict(name="salesforce_commerce", base_url_env="SFCC_BASE_URL", token_env="SFCC_TOKEN",
+         description="Salesforce Commerce Cloud (SCAPI/OCAPI) REST. ops get/post/put/"
+         "delete (writes need confirm). Auth: SFCC_BASE_URL + SFCC_TOKEN (bearer)."),
+    dict(name="sap_commerce", base_url_env="SAP_COMMERCE_BASE_URL",
+         token_env="SAP_COMMERCE_TOKEN", description="SAP Commerce Cloud (Hybris) OCC "
+         "REST. ops get/post/put/delete (writes need confirm). Auth: SAP_COMMERCE_BASE_URL "
+         "+ SAP_COMMERCE_TOKEN (OAuth bearer)."),
+
+    # --- Observability / APM (additional) ---
+    dict(name="appdynamics", base_url_env="APPDYNAMICS_BASE_URL",
+         token_env="APPDYNAMICS_TOKEN", description="AppDynamics REST. ops get/post "
+         "(writes need confirm). Auth: APPDYNAMICS_BASE_URL + APPDYNAMICS_TOKEN (OAuth bearer)."),
+    dict(name="sumologic", base_url_env="SUMOLOGIC_BASE_URL", token_env="SUMOLOGIC_TOKEN",
+         basic=True, description="Sumo Logic REST. ops get/post/put/delete (writes need "
+         "confirm). Auth: SUMOLOGIC_BASE_URL + SUMOLOGIC_TOKEN (accessId:accessKey, basic)."),
+    dict(name="logicmonitor", base_url_env="LOGICMONITOR_BASE_URL",
+         token_env="LOGICMONITOR_TOKEN", description="LogicMonitor REST. ops get/post "
+         "(writes need confirm). Auth: LOGICMONITOR_BASE_URL + LOGICMONITOR_TOKEN (Bearer API token)."),
+
+    # --- Security / GRC (additional) ---
+    dict(name="netskope", base_url_env="NETSKOPE_BASE_URL", token_env="NETSKOPE_TOKEN",
+         token_header="Netskope-Api-Token", scheme="", description="Netskope REST. ops "
+         "get/post (writes need confirm). Auth: NETSKOPE_BASE_URL + NETSKOPE_TOKEN (Netskope-Api-Token)."),
+    dict(name="cisco_umbrella", base_url_env="UMBRELLA_BASE_URL", token_env="UMBRELLA_TOKEN",
+         description="Cisco Umbrella REST. ops get/post/put/delete (writes need confirm). "
+         "Auth: UMBRELLA_BASE_URL + UMBRELLA_TOKEN (OAuth bearer)."),
+    dict(name="vanta", base_url_env="VANTA_BASE_URL", token_env="VANTA_TOKEN",
+         description="Vanta REST (GRC/compliance). ops get/post (writes need confirm). "
+         "Auth: VANTA_BASE_URL + VANTA_TOKEN (OAuth bearer)."),
+    dict(name="drata", base_url_env="DRATA_BASE_URL", token_env="DRATA_TOKEN",
+         description="Drata REST (GRC/compliance). ops get/post (writes need confirm). "
+         "Auth: DRATA_BASE_URL + DRATA_TOKEN (bearer)."),
+    dict(name="logicgate", base_url_env="LOGICGATE_BASE_URL", token_env="LOGICGATE_TOKEN",
+         description="LogicGate Risk Cloud REST. ops get/post/put/delete (writes need "
+         "confirm). Auth: LOGICGATE_BASE_URL + LOGICGATE_TOKEN (bearer)."),
+
+    # --- Sales intelligence ---
+    dict(name="apollo", base_url_env="APOLLO_BASE_URL", token_env="APOLLO_TOKEN",
+         token_header="X-Api-Key", scheme="", description="Apollo.io REST. ops get/post "
+         "(writes need confirm). Auth: APOLLO_BASE_URL + APOLLO_TOKEN (X-Api-Key)."),
+    dict(name="zoominfo", base_url_env="ZOOMINFO_BASE_URL", token_env="ZOOMINFO_TOKEN",
+         description="ZoomInfo REST. ops get/post (writes need confirm). Auth: "
+         "ZOOMINFO_BASE_URL + ZOOMINFO_TOKEN (JWT bearer)."),
+    dict(name="clearbit", base_url_env="CLEARBIT_BASE_URL", token_env="CLEARBIT_TOKEN",
+         description="Clearbit REST. ops get/post (writes need confirm). Auth: "
+         "CLEARBIT_BASE_URL + CLEARBIT_TOKEN (bearer)."),
+
+    # --- DevOps / CD / registries (additional) ---
+    dict(name="argocd", base_url_env="ARGOCD_BASE_URL", token_env="ARGOCD_TOKEN",
+         description="Argo CD REST. ops get/post/put/delete (writes need confirm). Auth: "
+         "ARGOCD_BASE_URL + ARGOCD_TOKEN (bearer)."),
+    dict(name="harness", base_url_env="HARNESS_BASE_URL", token_env="HARNESS_TOKEN",
+         token_header="x-api-key", scheme="", description="Harness REST. ops get/post/put/"
+         "delete (writes need confirm). Auth: HARNESS_BASE_URL + HARNESS_TOKEN (x-api-key)."),
+    dict(name="octopus_deploy", base_url_env="OCTOPUS_BASE_URL", token_env="OCTOPUS_TOKEN",
+         token_header="X-Octopus-ApiKey", scheme="", description="Octopus Deploy REST. ops "
+         "get/post/put/delete (writes need confirm). Auth: OCTOPUS_BASE_URL + OCTOPUS_TOKEN (X-Octopus-ApiKey)."),
+    dict(name="dockerhub", base_url_env="DOCKERHUB_BASE_URL", token_env="DOCKERHUB_TOKEN",
+         description="Docker Hub REST. ops get/post/put/delete (writes need confirm). "
+         "Auth: DOCKERHUB_BASE_URL (https://hub.docker.com) + DOCKERHUB_TOKEN (JWT bearer)."),
+
+    # --- Marketing / product analytics (additional) ---
+    dict(name="iterable", base_url_env="ITERABLE_BASE_URL", token_env="ITERABLE_TOKEN",
+         token_header="Api-Key", scheme="", description="Iterable REST. ops get/post "
+         "(writes need confirm). Auth: ITERABLE_BASE_URL + ITERABLE_TOKEN (Api-Key)."),
+    dict(name="pendo", base_url_env="PENDO_BASE_URL", token_env="PENDO_TOKEN",
+         token_header="x-pendo-integration-key", scheme="", description="Pendo REST. ops "
+         "get/post (writes need confirm). Auth: PENDO_BASE_URL + PENDO_TOKEN (x-pendo-integration-key)."),
+
+    # --- Contact center / CX (additional) ---
+    dict(name="dialpad", base_url_env="DIALPAD_BASE_URL", token_env="DIALPAD_TOKEN",
+         description="Dialpad REST. ops get/post/put/delete (writes need confirm). Auth: "
+         "DIALPAD_BASE_URL + DIALPAD_TOKEN (bearer)."),
+    dict(name="aircall", base_url_env="AIRCALL_BASE_URL", token_env="AIRCALL_TOKEN",
+         basic=True, description="Aircall REST. ops get/post/put/delete (writes need "
+         "confirm). Auth: AIRCALL_BASE_URL + AIRCALL_TOKEN (api_id:api_token, basic)."),
+    dict(name="front", base_url_env="FRONT_BASE_URL", token_env="FRONT_TOKEN",
+         description="Front REST (shared inbox). ops get/post/put/delete (writes need "
+         "confirm). Auth: FRONT_BASE_URL + FRONT_TOKEN (bearer)."),
+    dict(name="gladly", base_url_env="GLADLY_BASE_URL", token_env="GLADLY_TOKEN",
+         basic=True, description="Gladly REST. ops get/post/put (writes need confirm). "
+         "Auth: GLADLY_BASE_URL + GLADLY_TOKEN (email:apitoken, basic)."),
+
+    # --- Design / diagramming / events ---
+    dict(name="figma", base_url_env="FIGMA_BASE_URL", token_env="FIGMA_TOKEN",
+         token_header="X-Figma-Token", scheme="", description="Figma REST. ops get/post "
+         "(writes need confirm). Auth: FIGMA_BASE_URL (https://api.figma.com) + FIGMA_TOKEN (X-Figma-Token)."),
+    dict(name="lucid", base_url_env="LUCID_BASE_URL", token_env="LUCID_TOKEN",
+         description="Lucid (Lucidchart) REST. ops get/post/put/delete (writes need "
+         "confirm). Auth: LUCID_BASE_URL + LUCID_TOKEN (bearer)."),
+    dict(name="eventbrite", base_url_env="EVENTBRITE_BASE_URL", token_env="EVENTBRITE_TOKEN",
+         description="Eventbrite REST. ops get/post/put/delete (writes need confirm). "
+         "Auth: EVENTBRITE_BASE_URL + EVENTBRITE_TOKEN (bearer)."),
+    dict(name="cvent", base_url_env="CVENT_BASE_URL", token_env="CVENT_TOKEN",
+         description="Cvent REST (events). ops get/post/put/delete (writes need confirm). "
+         "Auth: CVENT_BASE_URL + CVENT_TOKEN (OAuth bearer)."),
 ]
 
 # GraphQL services (single POST endpoint; mutations confirm-gated).
