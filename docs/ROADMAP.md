@@ -71,30 +71,60 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 > "Still open" above; community/launch/marketing/localization items are
 > founder-tracked, not code. The forward plan below picks up at the 2027 horizon.
 
-> **2027 H2 + 2028 build wave (June 2026): shipped.** A pull-forward pass built
-> every *code-buildable* item across 2027 H2, 2028 H1, and 2028 H2 — each behind a
-> default-OFF flag or optional-dependency extra where it touches a hot path, with
-> mock/unit tests. Shipped via PRs #862 (2028 H1 platform), #869 (2027 H2 tools),
-> and #887 (2028 H1/H2 runtime + introspection):
-> - **2027 H2**: LaTeX render, diagramming (Graphviz/Mermaid), persistent task
->   graph, browser auth vault, HTML-to-app scaffolder, notebook execution,
->   WebSocket tool, self-edit (human-gated), browser device emulation,
->   Slack/Discord/Teams (Teams) tool, continuous-benchmarking tool.
-> - **2028 H1**: live-DOM diff, tool-output cache, phishing-content detector,
->   license compliance scanner, replayable trace format, per-tool latency stats
->   (extended), network egress accounting, workspace snapshot/restore, cost split
->   by tag (async tool invocation was already shipped via MCP Tasks).
-> - **2028 H2**: zero-config BYO-tool (`@tool`), generic OIDC tool, run health
->   score, capability self-report, provider-cost-curve fitter, sub-second tool
->   latency budget, latency budget propagation across spans, network sandbox
->   (per-tool egress), local-first default mode, energy-aware routing,
->   continuous-learning skill loop (local), email channel v2 (IDLE + threading).
->
-> The 2027 H1 quarter has **no** remaining code-buildable items — its open entries
-> are frontend/native-GUI, external-service, ML-training, or non-code (community/
-> marketing) work. Remaining 2027 H2 / 2028 entries below are likewise blocked on
-> a live service, real hardware/GPU, a trained model, a frontend/native surface,
-> or are founder-tracked.
+### ✅ Shipped — 2027 H2 + 2028 build wave (June 2026)
+
+A pull-forward pass built **every code-buildable item** across 2027 H2, 2028 H1,
+and 2028 H2 — each module + test verified in-tree, each hot-path feature behind a
+default-OFF flag or optional-dependency extra. Shipped via **#862** (merged),
+**#869**, and **#887**. The items below have come off the quarter backlogs.
+
+**2027 H2** — agent capability tools _(PR #869)_:
+
+- [x] LaTeX render (math→MathML + doc→PDF) — `tools/latex_tool.py`
+- [x] Diagramming (Graphviz / Mermaid) — `tools/diagram_tool.py`
+- [x] Persistent task graph (dependency DAG, resumable) — `task_graph.py`
+- [x] Browser auth vault (Fernet-encrypted sessions) — `browser_auth_vault.py`
+- [x] HTML-to-app scaffolder — `html_to_app.py`
+- [x] Notebook execution (sandboxed .ipynb) — `tools/notebook_exec.py`
+- [x] Real-time WebSocket tool — `tools/websocket_tool.py`
+- [x] Self-edit tool (human-gated, path-confined) — `tools/self_edit.py`
+- [x] Browser device emulation (presets) — `browser_device.py`
+- [x] Slack/Discord/**Teams** tool (completes the trio) — `tools/teams_tool.py`
+- [x] Continuous-benchmarking tool — `continuous_benchmark.py`
+
+**2028 H1** — platform / runtime _(PR #862, merged; latency-stats extended in #887)_:
+
+- [x] Tool-output cache (memoize read-only tools) — `tool_cache.py` → `ToolRegistry.run`
+- [x] Live-DOM diff — `dom_diff.py`
+- [x] Phishing-content detector — `maverick_shield/phishing.py` → `Shield.scan_output`
+- [x] License compliance scanner — `license_scan.py`
+- [x] Replayable trace format — `replay_trace.py`
+- [x] Per-tool latency stats (extended) — `tool_latency.extended_report()`
+- [x] Network egress accounting — `egress_accounting.py` → `http_fetch`
+- [x] Workspace snapshot / restore — `workspace_snapshot.py`
+- [x] Cost split by tag — `cost_by_tag.py`
+- [x] Run health score — `health_score.py`
+- [x] Async tool invocation — _already shipped_ via MCP `TaskStore` (`maverick_mcp/tasks.py`)
+
+**2028 H2** — runtime + introspection _(PR #887)_:
+
+- [x] Zero-config BYO-tool (`@tool` decorator) — `tools/decorator.py`
+- [x] Generic OIDC tool — `tools/oidc_tool.py`
+- [x] Capability self-report tool — `tools/capability_query.py`
+- [x] Provider-cost-curve fitter — `cost_curve_fitter.py`
+- [x] Sub-second tool latency budget — `latency_budget.py` → `ToolRegistry.run`
+- [x] Latency budget propagation across spans — `latency_span_budget.py`
+- [x] Network sandbox (per-tool egress) — `sandbox/network_policy.py` → `http_fetch`
+- [x] Energy-aware routing — `energy_aware_router.py`
+- [x] Local-first default mode — `provider_local_first.py` → `llm.model_for_role`
+- [x] Continuous-learning skill loop (local) — `skill_distillation_local.py`
+- [x] Email channel v2 (IDLE + threading) — `maverick_channels/email_v2.py`
+
+> **2027 H1 has no remaining code-buildable items** — its open entries are
+> frontend/native-GUI, external-service, ML-training, or non-code (community/
+> marketing). The remaining 2027 H2 / 2028 entries below are likewise blocked on a
+> live service, real hardware/GPU, a trained model, a frontend/native surface, or
+> are founder-tracked.
 
 ---
 
