@@ -297,24 +297,18 @@ def test_audit_chain_unsigned_when_signing_off():
     assert probe["status"] != "broken"
 
 
-def test_audit_chain_unsigned_completed_day_without_signing_is_not_broken(
+def test_audit_chain_broken_for_completed_day_without_anchor_ledger(
     tmp_path, monkeypatch
 ):
-    """A completed day-file with no anchor ledger is NOT tampering when the
-    deployment never signs (no signing config, no signing key).
+    """A completed day-file with no anchor ledger is an integrity break.
 
-    The cross-file anchor ledger only exists for signed deployments, so an
-    honestly-unsigned deployment legitimately has none. Reporting that as
-    ``broken`` would falsely signal tampering on every unsigned deployment the
-    day after its first audit file (and fail ``maverick compliance --strict``).
-    A *signed* log whose ledger was stripped still reports ``broken`` -- that
-    case keeps a signing key, so signing stays expected (see the stripped-log
-    test below).
+    This stays fail-closed even when rows are missing signing fields and no
+    signing key is present, because key/config state is not reliable evidence
+    after audit-directory tampering.
     """
     import json
 
     monkeypatch.delenv("MAVERICK_AUDIT_SIGN", raising=False)
-    monkeypatch.setattr(soc2, "_audit_signing_expected", lambda: False)
     past_day = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
     (tmp_path / f"{past_day}.ndjson").write_text(
         json.dumps({"kind": "tool_call", "ts": "2026-01-01T00:00:00+00:00"})
@@ -325,8 +319,9 @@ def test_audit_chain_unsigned_completed_day_without_signing_is_not_broken(
 
     probe = soc2.collect_soc2_evidence()["audit_log"]
 
-    assert probe["status"] in {"unsigned", "no_crypto"}
-    assert probe["status"] != "broken"
+    assert probe["status"] in {"broken", "no_crypto"}
+    if probe["status"] == "broken":
+        assert probe["first_reason"] == "anchor_ledger_missing"
     assert probe["files_checked"] == 1
     assert probe["anchors_checked"] is True
 
@@ -409,14 +404,15 @@ def test_audit_chain_broken_when_anchor_ledger_deleted(tmp_path, monkeypatch):
     assert probe["anchors_checked"] is True
 
 
-def test_audit_chain_broken_when_signed_log_stripped_and_anchors_deleted(
+def test_audit_chain_broken_when_signed_log_stripped_anchors_and_keys_deleted(
     tmp_path, monkeypatch
 ):
-    """Stripping signing fields must not downgrade a signed log to unsigned."""
+    """Stripping signing fields, anchors, and keys must not downgrade to unsigned."""
     day = _write_signed_past_day(tmp_path, monkeypatch)
     monkeypatch.setattr(soc2, "_resolve_audit_dir", lambda: tmp_path)
 
     import json
+    import shutil
 
     from maverick.audit import signing
 
@@ -430,6 +426,7 @@ def test_audit_chain_broken_when_signed_log_stripped_and_anchors_deleted(
     day_file.write_text("\n".join(stripped_rows) + "\n", encoding="utf-8")
     (tmp_path / signing.ANCHOR_FILENAME).unlink()
     (tmp_path / signing.ANCHOR_MARKER_FILENAME).unlink()
+    shutil.rmtree(tmp_path / "keys")
 
     probe = soc2.collect_soc2_evidence()["audit_log"]
 
