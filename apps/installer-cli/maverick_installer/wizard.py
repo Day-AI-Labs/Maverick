@@ -896,14 +896,52 @@ def pick_durable() -> dict[str, Any]:
     return {"enabled": True, "keep_last": 5}
 
 
-def pick_advanced() -> dict[str, bool]:
+def pick_oidc() -> dict[str, Any]:
+    """Opt-in to OIDC ID-token verification for `maverick serve` (SSO).
+
+    Off by default. When enabled, the server verifies an OpenID-Connect ID
+    token (RS256/ES256 only — never HMAC/none) against the issuer + audience
+    you configure, and maps the verified ``sub`` to a ``user:<sub>`` principal.
+    Returns a dict written under ``[auth.oidc]``; ``{"enabled": False}`` when
+    declined (so the writer emits nothing).
+    """
+    console.print(
+        "[dim]OIDC SSO lets users authenticate to `maverick serve` with your "
+        "identity provider (Okta, Auth0, Entra, Google, ...). Tokens are "
+        "verified with the IdP's public keys; only RS256/ES256 are accepted "
+        "(HMAC/none are rejected to prevent algorithm-confusion). OFF by "
+        "default.[/dim]"
+    )
+    if not _q_confirm("Enable OIDC SSO token verification?", default=False):
+        return {"enabled": False}
+    issuer = _q_text(
+        "  Issuer URL (the IdP's 'iss', e.g. https://example.okta.com)",
+        default="",
+    ).strip()
+    audience = _q_text(
+        "  Audience (your app's client_id / API audience)", default="",
+    ).strip()
+    jwks_uri = _q_text(
+        "  JWKS URI (the IdP's signing-key endpoint, "
+        "e.g. https://example.okta.com/oauth2/v1/keys)",
+        default="",
+    ).strip()
+    return {
+        "enabled": True,
+        "issuer": issuer,
+        "audience": audience,
+        "jwks_uri": jwks_uri,
+    }
+
+
+def pick_advanced() -> dict[str, Any]:
     """Opt-in to advanced reasoning features that ship off by default.
 
     Each trades extra tokens/latency for quality on hard or long-running
     goals. All editable later in ~/.maverick/config.toml.
     """
     console.print()
-    return {
+    advanced: dict[str, Any] = {
         "cost_aware": _q_confirm(
             "Cost-aware routing? Use the cheapest capable model per role to cut spend.",
             default=False,
@@ -938,9 +976,28 @@ def pick_advanced() -> dict[str, bool]:
             "spawned sub-agents can only narrow it, never exceed it (least privilege).",
             default=False,
         ),
+        "enforce_quotas": _q_confirm(
+            "Enforce per-principal usage quotas? Track spend (dollars + tokens) per "
+            "user per day and refuse to start a new goal once the daily cap is hit "
+            "(chargeback / cost governance across runs, beyond the per-run budget).",
+            default=False,
+        ),
         "tenant_by_user": _q_confirm(
             "Isolate each user into their own tenant? Per-user cross-session memory "
             "is kept separate — recommended for multi-user servers.",
+            default=False,
+        ),
+        "enterprise": _q_confirm(
+            "Enterprise mode (private/sensitive data)? Pin every LLM call to a "
+            "local/self-hosted model so data never leaves your boundary, gate "
+            "destructive actions, and enforce per-agent capabilities. Recommended "
+            "when the agent handles PHI/PII/financial data.",
+            default=False,
+        ),
+        "encrypt_at_rest": _q_confirm(
+            "Encrypt sensitive local stores at rest? Seals the cross-session "
+            "memory store with AES-256-GCM (key in ~/.maverick/keys, chmod 600). "
+            "Implied by enterprise mode; recommended for PHI/PII/financial data.",
             default=False,
         ),
         "deferred_tools": _q_confirm(
@@ -950,6 +1007,11 @@ def pick_advanced() -> dict[str, bool]:
             default=False,
         ),
     }
+    # OIDC SSO is a string-bearing toggle (issuer/audience/jwks_uri), so it has
+    # its own prompt; the result is nested under the "oidc" key and the writer
+    # emits a single [auth.oidc] table for it.
+    advanced["oidc"] = pick_oidc()
+    return advanced
 
 
 def _docker_available() -> bool:
@@ -1670,7 +1732,7 @@ def write_config(
     keys: dict[str, str],
     capabilities: dict[str, bool] | None = None,
     *,
-    advanced: dict[str, bool] | None = None,
+    advanced: dict[str, Any] | None = None,
     mcp_servers: dict[str, dict[str, Any]] | None = None,
     mcp_registries: list[str] | None = None,
     plugins: list[str] | None = None,
@@ -1832,15 +1894,19 @@ def write_config(
         for k, v in durable.items():
             _emit_kv(lines, k, v)
 
-    if capabilities:
+    capability_config = dict(capabilities or {})
+    if web_search_enabled and not capability_config.get("web_search"):
+        # web_search is wired through enable_web_search at kernel
+        # boot; reflect the wizard's pick under [capabilities].
+        capability_config["web_search"] = True
+    if advanced and advanced.get("enforce_capabilities"):
+        capability_config["enforce"] = True
+
+    if capability_config:
         lines.append("")
         lines.append("[capabilities]")
-        for k, v in capabilities.items():
+        for k, v in capability_config.items():
             lines.append(f"{k} = {str(v).lower()}")
-        if web_search_enabled and not capabilities.get("web_search"):
-            # web_search is wired through enable_web_search at kernel
-            # boot; reflect the wizard's pick under [capabilities].
-            lines.append("web_search = true")
 
     if advanced:
         # Advanced reasoning toggles -> the kernel's config sections. Each is
@@ -1861,14 +1927,26 @@ def write_config(
             lines.append("")
             lines.append("[verification]")
             lines.append("risk_proportional = true")
-        if advanced.get("enforce_capabilities"):
+        if advanced.get("enforce_quotas"):
             lines.append("")
-            lines.append("[capabilities]")
+            lines.append("[quotas]")
             lines.append("enforce = true")
+            # Starter daily caps per principal; edit or set to 0 to disable a
+            # dimension. The kernel also reads MAVERICK_QUOTA_* env overrides.
+            lines.append("max_dollars_per_day = 25.0")
+            lines.append("max_tokens_per_day = 5000000")
         if advanced.get("tenant_by_user"):
             lines.append("")
             lines.append("[tenancy]")
             lines.append("by_user = true")
+        if advanced.get("enterprise"):
+            lines.append("")
+            lines.append("[enterprise]")
+            lines.append("mode = true")
+        if advanced.get("encrypt_at_rest"):
+            lines.append("")
+            lines.append("[encryption]")
+            lines.append("at_rest = true")
         if advanced.get("tree_of_thought"):
             lines.append("")
             lines.append("[planning]")
@@ -1885,6 +1963,17 @@ def write_config(
             lines.append("")
             lines.append("[tools]")
             lines.append("deferred_loading = true")
+        oidc = advanced.get("oidc") or {}
+        if isinstance(oidc, dict) and oidc.get("enabled"):
+            # SSO ID-token verification for `maverick serve`. Its own table
+            # (written once), so no duplicate-[auth.oidc] bug. The kernel reads
+            # it via maverick.oidc.oidc_enabled() / load_oidc_config().
+            lines.append("")
+            lines.append("[auth.oidc]")
+            lines.append("enabled = true")
+            _emit_kv(lines, "issuer", oidc.get("issuer", ""))
+            _emit_kv(lines, "audience", oidc.get("audience", ""))
+            _emit_kv(lines, "jwks_uri", oidc.get("jwks_uri", ""))
 
     if mcp_servers:
         for name, cfg in mcp_servers.items():

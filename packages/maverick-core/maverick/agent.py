@@ -7,6 +7,7 @@ without patching the kernel.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -14,6 +15,7 @@ import secrets as _secrets
 import time
 import uuid
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from . import killswitch
 from ._envparse import env_float, env_int
@@ -96,6 +98,37 @@ _LOOP_GUARD_THRESHOLD = max(2, env_int("MAVERICK_LOOP_GUARD_THRESHOLD", 3))
 # FINAL now -- otherwise a long run can get cut off mid-work with no answer.
 # 0 disables the nudge. Tune via MAVERICK_STEP_BUDGET_WARNING.
 _STEP_BUDGET_WARNING = max(0, env_int("MAVERICK_STEP_BUDGET_WARNING", 3))
+
+# P0 capability layer (path resource-scopes): the filesystem tools whose path
+# argument a capability's allow_paths globs gate at the _run_tool chokepoint,
+# mapped to the arg name that carries that path. Conservative on purpose --
+# only tools whose single path arg is verified against its real input_schema
+# appear here, so we never path-deny a call we can't confidently locate the
+# path for. `apply_patch` is intentionally absent: its `patch` arg is a
+# multi-file unified diff, not a single path. Empty allow_paths == all (the
+# capability's "empty == allow-all" convention), so this is a no-op unless
+# capability enforcement was opted in AND the active grant restricts paths.
+_FILE_TOOL_PATH_ARGS: dict[str, str] = {
+    "read_file": "path",
+    "write_file": "path",
+    "list_dir": "path",
+    "str_replace_editor": "path",
+    "ast_edit": "path",
+}
+
+# P0 capability layer (host resource-scopes): the network tools whose URL
+# argument a capability's allow_hosts globs gate at the _run_tool chokepoint,
+# mapped to the arg name that carries that URL. Conservative on purpose --
+# only tools whose URL arg is verified against its real input_schema appear
+# here. `web_search` is intentionally absent: it takes a query/site, not a URL
+# to reach. The host is parsed from the URL; a URL without a host (or a missing
+# arg) skips the check. Empty allow_hosts == all (the capability's "empty ==
+# allow-all" convention), so this is a no-op unless capability enforcement was
+# opted in AND the active grant restricts hosts.
+_NET_TOOL_URL_ARGS: dict[str, str] = {
+    "http_fetch": "url",
+    "browser": "url",
+}
 
 
 def _tool_call_failed(output: str) -> bool:
@@ -348,8 +381,9 @@ class Agent:
         # / `maverick budget` reflect accruing mid-run spend instead of
         # $0.00 / 0 tools. Throttled to once per _SPEND_MIRROR_INTERVAL s.
         self._last_spend_mirror = 0.0
-        # Loop guard: per-(tool,args) consecutive-failure streak. Grows while an
-        # identical call keeps failing; reset when that call finally succeeds.
+        # Loop guard: current consecutive failure streak. Grows only while the
+        # exact same tool call fails with the same raw error; any intervening
+        # different call or success starts a new streak.
         self._tool_fail_streak: dict[str, int] = {}
 
     def _resolve_capability(self, explicit):
@@ -503,12 +537,12 @@ class Agent:
             except (ImportError, FileNotFoundError, ValueError):
                 pass
 
-        # Cross-session memory (root agent only): surface the agent's long-term
-        # memory index so each run starts with what it learned in earlier
-        # sessions -- the long-horizon continuity layer. Mirrors skill
-        # injection; the agent pulls file detail on demand via the `memory`
-        # tool. Empty memory -> "" -> no change. Depth-gated so deep workers
-        # keep lean, focused context (they can still use the tool directly).
+        # Cross-session memory (root agent only): surface only a safe presence
+        # hint so each run knows durable memory exists. Memory filenames and
+        # contents are model-writable/untrusted and must re-enter through the
+        # `memory` tool's normal scanned, redacted, framed output path. Empty
+        # memory -> "" -> no change. Depth-gated so deep workers keep lean,
+        # focused context (they can still use the tool directly).
         if self.depth == 0:
             try:
                 from .tools.memory import memory_brief
@@ -762,14 +796,83 @@ class Agent:
             )
             try:  # tamper-evident record of the denial; never block on audit
                 from .audit import EventKind, record
-                record(EventKind.CAPABILITY_DENIED, agent=self.name,
-                       goal_id=self.ctx.goal_id, tool=name, principal=cap.principal)
+                record(
+                    EventKind.CAPABILITY_DENIED,
+                    agent=self.name,
+                    goal_id=self.ctx.goal_id,
+                    tool=name,
+                    principal=cap.principal,
+                    channel=getattr(self.ctx, "channel", None),
+                    user_id=getattr(self.ctx, "user_id", None),
+                )
             except Exception:  # pragma: no cover
                 pass
             return (
                 f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
                 f"not granted tool {name!r}. The tool was not executed."
             )
+
+        # P0 capability layer (path resource-scopes): for a known filesystem
+        # tool, the grant's allow_paths globs also gate the path it touches.
+        # No-op unless a path-restricted grant is active (empty == all). Fail-
+        # soft: if the path arg is missing/unusable we skip the check rather
+        # than error, so a malformed call still reaches the tool's own
+        # validation -- we never deny something we can't confidently locate.
+        path_arg = _FILE_TOOL_PATH_ARGS.get(name)
+        if cap is not None and path_arg is not None:
+            raw = args.get(path_arg) if isinstance(args, dict) else None
+            if isinstance(raw, str) and raw and not cap.permits_path(raw):
+                self.ctx.blackboard.post(
+                    self.name, "error",
+                    f"tool={name} path={raw} DENIED by capability "
+                    f"(principal={cap.principal})",
+                )
+                try:  # tamper-evident record of the denial; never block on audit
+                    from .audit import EventKind, record
+                    record(EventKind.CAPABILITY_DENIED, agent=self.name,
+                           goal_id=self.ctx.goal_id, tool=name,
+                           principal=cap.principal, path=raw)
+                except Exception:  # pragma: no cover
+                    pass
+                return (
+                    f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
+                    f"not granted path {raw!r} for tool {name!r}. "
+                    "The tool was not executed."
+                )
+
+        # P0 capability layer (host resource-scopes): for a known network tool,
+        # the grant's allow_hosts globs also gate the host its URL reaches.
+        # No-op unless a host-restricted grant is active (empty == all). Fail-
+        # soft: if the URL arg is missing/unparseable (no host) we skip the
+        # check rather than error -- we never deny something we can't
+        # confidently locate the host for.
+        url_arg = _NET_TOOL_URL_ARGS.get(name)
+        if cap is not None and url_arg is not None:
+            raw = args.get(url_arg) if isinstance(args, dict) else None
+            host = None
+            if isinstance(raw, str) and raw:
+                try:  # malformed URLs (e.g. bad IPv6) raise -- skip, don't crash
+                    host = urlsplit(raw).hostname
+                except ValueError:
+                    host = None
+            if host and not cap.permits_host(host):
+                self.ctx.blackboard.post(
+                    self.name, "error",
+                    f"tool={name} host={host} DENIED by capability "
+                    f"(principal={cap.principal})",
+                )
+                try:  # tamper-evident record of the denial; never block on audit
+                    from .audit import EventKind, record
+                    record(EventKind.CAPABILITY_DENIED, agent=self.name,
+                           goal_id=self.ctx.goal_id, tool=name,
+                           principal=cap.principal, host=host)
+                except Exception:  # pragma: no cover
+                    pass
+                return (
+                    f"⚠ DENIED by capability policy: principal {cap.principal!r} is "
+                    f"not granted host {host!r} for tool {name!r}. "
+                    "The tool was not executed."
+                )
 
         # PreToolUse hooks: any registered hook can BLOCK the call by
         # returning a non-zero exit code (shell hook) or a falsy value
@@ -866,17 +969,23 @@ class Agent:
             blob = repr(args)
         return f"{name}\x00{blob}"
 
+    @staticmethod
+    def _tool_failure_key(name: str, args: dict, raw_output: str) -> str:
+        error_hash = hashlib.sha256((raw_output or "").strip().encode()).hexdigest()
+        return f"{Agent._tool_call_key(name, args)}\x00{error_hash}"
+
     def _loop_guard_note(self, name: str, args: dict, raw_output: str) -> str:
         """Track this call's outcome; return a nudge when an identical call has
         failed the same way ``_LOOP_GUARD_THRESHOLD`` times in a row."""
         if not _LOOP_GUARD_ENABLED:
             return ""
-        key = self._tool_call_key(name, args)
         failed = _tool_call_failed(raw_output)
         if not failed:
-            self._tool_fail_streak.pop(key, None)  # success clears this call's streak
+            self._tool_fail_streak.clear()
             return ""
+        key = self._tool_failure_key(name, args, raw_output)
         streak = self._tool_fail_streak.get(key, 0) + 1
+        self._tool_fail_streak.clear()
         self._tool_fail_streak[key] = streak
         if streak < _LOOP_GUARD_THRESHOLD:
             return ""

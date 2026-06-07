@@ -156,7 +156,7 @@ def test_max_progress_events_env(monkeypatch):
 
 
 def test_http_subscribe_then_tool_pushes_resource_update(monkeypatch):
-    # Shared server instance so the subscription set survives across requests.
+    # The same HTTP client session should receive updates after subscribing.
     monkeypatch.setenv("MAVERICK_MCP_TOKEN", "test-token")
     server = MCPServer()
     server._shield = None
@@ -167,7 +167,6 @@ def test_http_subscribe_then_tool_pushes_resource_update(monkeypatch):
         "params": {"uri": "maverick://goals"},
     })
     assert r.status_code == 200
-    assert "maverick://goals" in server._subscriptions
 
     # Avoid real goal creation; the mutating tool still dirties the resource.
     monkeypatch.setattr(server, "_dispatch_tool", lambda name, args: "started")
@@ -192,3 +191,80 @@ def test_http_no_update_pushed_without_subscription(monkeypatch):
         "params": {"name": "maverick_start", "arguments": {"title": "x"}},
     })
     assert "notifications/resources/updated" not in resp.text
+
+
+def test_http_non_subscription_requests_do_not_create_sessions(monkeypatch):
+    monkeypatch.setenv("MAVERICK_MCP_TOKEN", "test-token")
+    app = ht.build_app(MCPServer())
+    client = TestClient(app)
+
+    for i in range(5):
+        client.cookies.clear()
+        resp = client.post("/mcp", headers=_AUTH, json={
+            "jsonrpc": "2.0", "id": i, "method": "tools/list",
+        })
+        assert resp.status_code == 200
+        assert "Mcp-Session-Id" not in resp.headers
+
+    assert len(app.state.resource_sessions) == 0
+
+
+def test_http_resource_sessions_are_capped(monkeypatch):
+    monkeypatch.setenv("MAVERICK_MCP_TOKEN", "test-token")
+    monkeypatch.setenv("MAVERICK_MCP_MAX_RESOURCE_SESSIONS", "2")
+    app = ht.build_app(MCPServer())
+    client = TestClient(app)
+    seen = []
+
+    for i in range(3):
+        client.cookies.clear()
+        resp = client.post("/mcp", headers=_AUTH, json={
+            "jsonrpc": "2.0", "id": i, "method": "resources/subscribe",
+            "params": {"uri": "maverick://goals"},
+        })
+        assert resp.status_code == 200
+        seen.append(resp.headers["Mcp-Session-Id"])
+
+    assert len(app.state.resource_sessions) == 2
+    assert seen[0] not in app.state.resource_sessions
+    assert seen[1] in app.state.resource_sessions
+    assert seen[2] in app.state.resource_sessions
+
+
+def test_http_resource_subscriptions_are_client_scoped(monkeypatch):
+    monkeypatch.setenv("MAVERICK_MCP_TOKEN", "test-token")
+    server = MCPServer()
+    server._shield = None
+    app = ht.build_app(server)
+    client_a = TestClient(app)
+    client_b = TestClient(app)
+
+    subscribe = client_a.post("/mcp", headers=_AUTH, json={
+        "jsonrpc": "2.0", "id": 1, "method": "resources/subscribe",
+        "params": {"uri": "maverick://goals"},
+    })
+    assert subscribe.status_code == 200
+
+    monkeypatch.setattr(server, "_dispatch_tool", lambda name, args: "started")
+
+    # A separate HTTP client has its own session and must not inherit A's
+    # subscription, even though both requests use the shared MCPServer object.
+    b_resp = client_b.post("/mcp", headers=_SSE, json={
+        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+        "params": {"name": "maverick_start", "arguments": {"title": "x"}},
+    })
+    assert "notifications/resources/updated" not in b_resp.text
+
+    unsubscribe = client_b.post("/mcp", headers=_AUTH, json={
+        "jsonrpc": "2.0", "id": 3, "method": "resources/unsubscribe",
+        "params": {"uri": "maverick://goals"},
+    })
+    assert unsubscribe.status_code == 200
+
+    # B's idempotent unsubscribe must not remove A's expected notification.
+    a_resp = client_a.post("/mcp", headers=_SSE, json={
+        "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+        "params": {"name": "maverick_start", "arguments": {"title": "x"}},
+    })
+    assert "notifications/resources/updated" in a_resp.text
+    assert "maverick://goals" in a_resp.text

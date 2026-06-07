@@ -107,7 +107,16 @@ class AuditLog:
     edits, not an attacker who can also write the key dir.
     """
 
-    def __init__(self, audit_dir: Path = DEFAULT_AUDIT_DIR, *, sign: bool | None = None):
+    def __init__(self, audit_dir: Path | None = None, *, sign: bool | None = None):
+        # Resolve the dir at construction (not as a default arg, which would
+        # freeze the path at import time). With no explicit dir, route through
+        # the tenant-aware helper: the no-tenant default is the legacy
+        # ``~/.maverick/audit`` and an active tenant gets its own audit chain
+        # under ``~/.maverick/tenants/<t>/audit``.
+        if audit_dir is None:
+            from ..paths import data_dir
+
+            audit_dir = data_dir("audit")
         self.audit_dir = audit_dir
         self._lock = threading.Lock()
         self._current_path: Path | None = None
@@ -361,16 +370,40 @@ def _redact_event(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 _default: AuditLog | None = None
+_defaults: dict[Path, AuditLog] = {}
 _default_lock = threading.Lock()
 
 
 def default_audit_log() -> AuditLog:
-    """Singleton AuditLog at ``~/.maverick/audit/``."""
+    """Return the default audit log for the active tenant context.
+
+    ``AuditLog`` resolves its output directory at construction time, so the
+    module-level shortcut must not share one tenant-dependent instance across
+    all callers in a long-lived process. Cache one default writer per resolved
+    audit directory instead: the no-tenant path keeps the legacy singleton
+    semantics, while tenant-scoped calls get an independent writer and chain.
+    """
     global _default
+    from ..paths import data_dir
+
+    audit_dir = data_dir("audit")
+    shared_audit_dir = data_dir("audit", tenant=None)
     with _default_lock:
-        if _default is None:
-            _default = AuditLog()
-        return _default
+        if audit_dir == shared_audit_dir:
+            # No active tenant: keep the legacy singleton semantics so callers
+            # that ASSIGN ``writer._default`` (the dashboard grep endpoint, the
+            # audit tests) keep overriding the writer that ``record()`` uses.
+            # Reading the new per-dir cache here would ignore that override and
+            # silently build a fresh empty writer at the real home dir.
+            if _default is None:
+                _default = AuditLog(audit_dir)
+            _defaults[audit_dir] = _default
+            return _default
+        log_obj = _defaults.get(audit_dir)
+        if log_obj is None:
+            log_obj = AuditLog(audit_dir)
+            _defaults[audit_dir] = log_obj
+        return log_obj
 
 
 def record(

@@ -74,6 +74,7 @@ class MatrixChannel(Channel):
             text=event.body,
             channel="matrix",
             raw=event,
+            sender_id=event.sender,
         )
         try:
             reply = await self.handler(msg)

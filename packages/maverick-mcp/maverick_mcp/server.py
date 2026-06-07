@@ -1,6 +1,8 @@
 """MCP server for Maverick."""
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import json
 import logging
 import math
@@ -12,6 +14,13 @@ from typing import Any
 from .tasks import TaskError
 
 log = logging.getLogger(__name__)
+
+_RESOURCE_SUBSCRIPTIONS_CTX: contextvars.ContextVar[set[str] | None] = contextvars.ContextVar(
+    "maverick_mcp_resource_subscriptions", default=None
+)
+_RESOURCE_PENDING_UPDATES_CTX: contextvars.ContextVar[list[str] | None] = contextvars.ContextVar(
+    "maverick_mcp_pending_resource_updates", default=None
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -430,6 +439,35 @@ class MCPServer:
 
     # ---- 2025-11-25 Prompts -------------------------------------------
 
+    @contextlib.contextmanager
+    def resource_update_scope(self, subscriptions: set[str]):
+        """Temporarily scope resource subscriptions/updates to one HTTP client.
+
+        stdio uses the instance fields below because one MCPServer maps to one
+        client process. HTTP reuses a single MCPServer for all clients, so the
+        transport supplies per-session subscription state with this context.
+        The pending list is per request and is shared with ``asyncio.to_thread``
+        through ContextVar propagation, preserving result-then-notification
+        ordering without leaking updates across clients.
+        """
+        pending: list[str] = []
+        sub_token = _RESOURCE_SUBSCRIPTIONS_CTX.set(subscriptions)
+        pending_token = _RESOURCE_PENDING_UPDATES_CTX.set(pending)
+        try:
+            yield
+        finally:
+            _RESOURCE_PENDING_UPDATES_CTX.reset(pending_token)
+            _RESOURCE_SUBSCRIPTIONS_CTX.reset(sub_token)
+
+    def _resource_subscriptions(self) -> set[str]:
+        subscriptions = _RESOURCE_SUBSCRIPTIONS_CTX.get()
+        if subscriptions is None:
+            return self._subscriptions
+        return subscriptions
+
+    def _resource_pending_updates(self) -> list[str] | None:
+        return _RESOURCE_PENDING_UPDATES_CTX.get()
+
     def handle_resources_subscribe(self, params: dict) -> dict:
         """Track a client's interest in a resource (2025-11-25 subscribe)."""
         uri = params.get("uri", "")
@@ -437,12 +475,12 @@ class MCPServer:
             raise _ProtocolError(
                 -32602, f"cannot subscribe to unknown resource: {uri!r}"
             )
-        self._subscriptions.add(uri)
+        self._resource_subscriptions().add(uri)
         return {}
 
     def handle_resources_unsubscribe(self, params: dict) -> dict:
         """Stop notifying a client about a resource. Idempotent."""
-        self._subscriptions.discard(params.get("uri", ""))
+        self._resource_subscriptions().discard(params.get("uri", ""))
         return {}
 
     def _queue_resource_update(self, tool_name: str) -> None:
@@ -450,7 +488,10 @@ class MCPServer:
         tool result has been sent (result-then-notification ordering)."""
         uri = self._TOOL_RESOURCE.get(tool_name)
         if uri is not None:
-            self._pending_updates.append(uri)
+            pending = self._resource_pending_updates()
+            if pending is None:
+                pending = self._pending_updates
+            pending.append(uri)
 
     def drain_resource_updates(self) -> list[str]:
         """Pop the queued updates, returning those a client subscribed to.
@@ -459,8 +500,15 @@ class MCPServer:
         a notification (_flush_resource_updates); the HTTP transport yields
         them on the SSE stream after the tool result.
         """
-        pending, self._pending_updates = self._pending_updates, []
-        return [uri for uri in pending if uri in self._subscriptions]
+        pending = self._resource_pending_updates()
+        if pending is None:
+            pending, self._pending_updates = self._pending_updates, []
+        else:
+            queued = pending[:]
+            pending.clear()
+            pending = queued
+        subscriptions = self._resource_subscriptions()
+        return [uri for uri in pending if uri in subscriptions]
 
     def _flush_resource_updates(self) -> None:
         """stdio: emit notifications/resources/updated for subscribed URIs."""
@@ -570,7 +618,11 @@ class MCPServer:
         # they stash their structured result here during dispatch; reset per
         # call so a prior call's value can't leak.
         self._structured_override = None
-        self._pending_updates = []
+        pending = self._resource_pending_updates()
+        if pending is None:
+            self._pending_updates = []
+        else:
+            pending.clear()
         try:
             result = self._dispatch_tool(name, arguments)
         except Exception as e:
@@ -585,7 +637,7 @@ class MCPServer:
         # dance. A no-op for HTTP clients or those without the capability,
         # leaving the async ask_user / maverick_answer flow unchanged.
         if name in ("maverick_start", "maverick_resume"):
-            elicited = self._maybe_elicit_open_questions()
+            elicited = self._maybe_elicit_open_questions(arguments)
             if elicited is not None:
                 result = elicited
         if self._shield is not None:
@@ -960,7 +1012,7 @@ class MCPServer:
                     return None
         return src.readline()
 
-    def _maybe_elicit_open_questions(self) -> str | None:
+    def _maybe_elicit_open_questions(self, original_args: dict | None = None) -> str | None:
         """Resolve questions the just-finished run parked, via elicitation.
 
         For an elicitation-capable stdio client: elicit each open question for
@@ -980,6 +1032,10 @@ class MCPServer:
             os.environ.get("MAVERICK_MCP_MAX_ELICIT_ROUNDS", 8),
             default=8, ceiling=64,
         )
+        resume_args = {"goal_id": goal_id}
+        for limit_name in ("max_dollars", "max_wall_seconds", "max_depth"):
+            if original_args and limit_name in original_args:
+                resume_args[limit_name] = original_args[limit_name]
         final_answer: str | None = None
         for _ in range(max_rounds):
             questions = [q for q in world.open_questions() if q.goal_id == goal_id]
@@ -994,7 +1050,7 @@ class MCPServer:
                 answered = True
             if not answered:
                 break
-            final_answer = self._tool_resume({"goal_id": goal_id})
+            final_answer = self._tool_resume(dict(resume_args))
         return final_answer
 
     def _elicit_question(self, question: str) -> str | None:

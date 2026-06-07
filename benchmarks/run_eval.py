@@ -46,17 +46,18 @@ def _dry_run_solver(task) -> str:
 
 def _maverick_solver(max_dollars: float, max_wall_seconds: float):
     """Build a solver that runs each task as a goal and returns its result."""
-    from maverick.world_model import DEFAULT_DB, WorldModel
 
     def solve(task) -> str:
-        subprocess.run(
-            ["maverick", "start", "--no-wait", "--max-dollars",
-             str(max_dollars), task.prompt],
-            capture_output=True, text=True, timeout=max_wall_seconds,
+        proc = subprocess.run(
+            [
+                "maverick", "start",
+                "--max-dollars", str(max_dollars),
+                "--max-wall-seconds", str(max_wall_seconds),
+                task.prompt,
+            ],
+            capture_output=True, text=True, timeout=max_wall_seconds, check=True,
         )
-        wm = WorldModel(DEFAULT_DB)
-        eps = wm.list_episodes(limit=1)
-        return (eps[0].outcome or "") if eps else ""
+        return proc.stdout
 
     return solve
 

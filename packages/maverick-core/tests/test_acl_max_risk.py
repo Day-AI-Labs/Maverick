@@ -31,6 +31,7 @@ def test_tool_risk_defaults():
     from maverick.safety.tool_risk import tool_risk
     assert tool_risk("shell") == "high"
     assert tool_risk("code_exec") == "high"
+    assert tool_risk("memory") == "high"
     assert tool_risk("read_file") == "low"
     # Unclassified tool falls back to medium.
     assert tool_risk("some_unknown_tool") == "medium"
@@ -92,6 +93,22 @@ max_risk = "low"
     assert "shell" not in names         # high-risk dropped
     assert "write_file" not in names    # high-risk dropped
     assert "read_file" in names         # low-risk kept
+
+
+def test_medium_ceiling_drops_memory_tool(tmp_path, monkeypatch):
+    """Persistent host-side memory mutation must not pass a medium ceiling."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _write_config(tmp_path, '''
+[security]
+max_risk = "medium"
+''')
+    from maverick.tools import base_registry
+
+    reg = base_registry(world=_FakeWorld(), sandbox=_FakeSandbox())
+    names = {t.name for t in reg.all()}
+    assert "memory" not in names
+    assert "write_file" not in names
+    assert "read_file" in names
 
 
 def test_user_high_ceiling_keeps_high_risk_tool(tmp_path, monkeypatch):

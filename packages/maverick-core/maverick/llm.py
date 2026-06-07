@@ -98,6 +98,14 @@ MODEL_PRICES: dict[str, tuple[float, float]] = {
     "gemini-3.5-flash":          (0.15, 0.60),
     "gemini-3-pro":              (2.50, 10.0),
     "gemini-3-flash":            (0.15, 0.60),
+    # OpenRouter vendor/model ids (cheap, near-frontier-on-coding open models).
+    # Keyed by the OpenRouter `vendor/model` id because that is the bare
+    # model_id _lookup_price sees after stripping the `openrouter:` prefix.
+    # TODO: verify each rate against https://openrouter.ai pricing before relying
+    # on these for billing — placeholders below are best-effort May/June 2026.
+    "minimax/minimax-m2.5":      (0.30, 1.20),    # MiniMax M2.5 — verify on openrouter.ai
+    "deepseek/deepseek-v4-pro":  (0.14, 0.55),    # DeepSeek V4 Pro via OpenRouter — verify
+    "qwen/qwen3-coder-next":     (0.20, 0.80),    # Qwen3 Coder Next via OpenRouter — verify
     # Open-weight defaults via Ollama: priced at zero (compute cost).
     "qwen3-coder-next":          (0.0, 0.0),
     "qwen3-32b":                 (0.0, 0.0),
@@ -249,6 +257,7 @@ def _provider_api_key(provider: str, anthropic_api_key: str | None) -> str | Non
         "moonshot": ("MOONSHOT_API_KEY",),
         "xai": ("XAI_API_KEY", "GROK_API_KEY"),
         "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        "openrouter": ("OPENROUTER_API_KEY",),
     }
     for env_key in env_keys.get(provider, ()):
         value = os.environ.get(env_key, "").strip()
@@ -363,6 +372,11 @@ class LLM:
         on_delta=None,
     ) -> LLMResponse:
         provider, model_id = _parse_spec(model or self.model)
+        # Egress lock (no-op unless enterprise mode is on): refuse to send data to a
+        # non-local provider so sensitive data never leaves the boundary. Raises
+        # EgressBlocked before any prompt is dispatched.
+        from .enterprise import assert_provider_allowed
+        assert_provider_allowed(provider)
         _run_preflight(model_id, system, messages, tools, max_tokens)
         client = self._get_client(provider)
         kwargs: dict[str, Any] = dict(
@@ -443,6 +457,9 @@ class LLM:
         model: str | None = None,
     ) -> LLMResponse:
         provider, model_id = _parse_spec(model or self.model)
+        # Egress lock (no-op unless enterprise mode is on): see complete().
+        from .enterprise import assert_provider_allowed
+        assert_provider_allowed(provider)
         _run_preflight(model_id, system, messages, tools, max_tokens)
         client = self._get_client(provider)
         import time as _time

@@ -4,6 +4,9 @@ Off by default. Three knobs:
 
   - ``MAVERICK_OTEL_EXPORTER=otlp``      enables OTLP span export
   - ``MAVERICK_OTEL_ENDPOINT=https://...``  override default collector URL
+  - ``MAVERICK_OTEL_HEADERS=k1=v1,k2=v2`` per-request headers on the OTLP
+    exporter (e.g. ``x-honeycomb-team=...`` / ``dd-api-key=...`` so traces
+    reach a managed backend like Honeycomb / Datadog / Grafana Cloud)
   - ``MAVERICK_PROMETHEUS_PORT=9100``    expose /metrics on this port
   - ``MAVERICK_PROMETHEUS_ADDR=127.0.0.1`` bind address for /metrics
 
@@ -48,6 +51,26 @@ def _prometheus_enabled() -> bool:
     return bool(os.environ.get("MAVERICK_PROMETHEUS_PORT"))
 
 
+def _otlp_headers() -> dict[str, str]:
+    """Parse ``MAVERICK_OTEL_HEADERS`` into a header dict for the exporter.
+
+    Format mirrors the OTel-standard ``OTEL_EXPORTER_OTLP_HEADERS``:
+    comma-separated ``key=value`` pairs (``x-honeycomb-team=abc,dd-api-key=xyz``).
+    Returns ``{}`` when unset/blank so the default (no headers) is unchanged.
+    Malformed pairs (no ``=``) are skipped rather than crashing init.
+    """
+    raw = os.environ.get("MAVERICK_OTEL_HEADERS", "").strip()
+    if not raw:
+        return {}
+    headers: dict[str, str] = {}
+    for pair in raw.split(","):
+        key, sep, value = pair.partition("=")
+        key = key.strip()
+        if sep and key:
+            headers[key] = value.strip()
+    return headers
+
+
 def _initialize() -> None:
     """Idempotent setup. Imports happen here so the module is cheap to
     import when observability is off."""
@@ -75,17 +98,27 @@ def _initialize() -> None:
             endpoint = os.environ.get(
                 "MAVERICK_OTEL_ENDPOINT", "http://localhost:4318/v1/traces"
             )
+            headers = _otlp_headers()
             resource = Resource.create({"service.name": "maverick"})
             provider = TracerProvider(resource=resource)
             try:
-                exporter = OTLPSpanExporter(endpoint=endpoint)
+                # Pass headers only when set so the no-header default path is
+                # byte-for-byte unchanged for collectors that don't need auth.
+                exporter = (
+                    OTLPSpanExporter(endpoint=endpoint, headers=headers)
+                    if headers
+                    else OTLPSpanExporter(endpoint=endpoint)
+                )
                 provider.add_span_processor(BatchSpanProcessor(exporter))
             except Exception as e:
                 log.warning("observability: OTLP exporter init failed: %s", e)
                 return
             trace.set_tracer_provider(provider)
             _tracer = trace.get_tracer("maverick")
-            log.info("observability: OTLP traces -> %s", endpoint)
+            log.info(
+                "observability: OTLP traces -> %s (%d header(s))",
+                endpoint, len(headers),
+            )
 
         if _prometheus_enabled():
             try:
@@ -232,7 +265,34 @@ def gen_ai_attributes(
     return attrs
 
 
+def gen_ai_tool_attributes(
+    tool_name: str,
+    *,
+    call_id: str | None = None,
+    description: str | None = None,
+    tool_type: str = "function",
+) -> dict[str, Any]:
+    """Build an OTel GenAI-semconv attribute dict for a tool-execution span.
+
+    The convention models a tool call as the ``execute_tool`` operation with
+    ``gen_ai.tool.name`` / ``gen_ai.tool.call.id`` / ``gen_ai.tool.type``, the
+    counterpart to :func:`gen_ai_attributes` for LLM spans. Optional fields are
+    omitted when unknown so a caller that only knows the tool name still emits a
+    valid span.
+    """
+    attrs: dict[str, Any] = {
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": tool_name,
+        "gen_ai.tool.type": tool_type,
+    }
+    if call_id is not None:
+        attrs["gen_ai.tool.call.id"] = call_id
+    if description is not None:
+        attrs["gen_ai.tool.description"] = description
+    return attrs
+
+
 __all__ = [
     "trace_span", "record_metric", "is_enabled",
-    "gen_ai_span_name", "gen_ai_attributes",
+    "gen_ai_span_name", "gen_ai_attributes", "gen_ai_tool_attributes",
 ]

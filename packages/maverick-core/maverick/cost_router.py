@@ -65,6 +65,12 @@ _TIERS: list[tuple[str, str, int]] = [
     # Gemini
     ("gemini",    "gemini-3.5-flash",   TIER_CHEAP),
     ("gemini",    "gemini-3.5-pro",     TIER_PREMIUM),
+    # OpenRouter: cheap, near-frontier-on-coding open models. Additive/opt-in —
+    # only considered when OPENROUTER_API_KEY (or [providers.openrouter]) is set
+    # AND cost routing is enabled. vendor/model ids resolve in llm.MODEL_PRICES.
+    ("openrouter", "minimax/minimax-m2.5",     TIER_CHEAP),
+    ("openrouter", "deepseek/deepseek-v4-pro", TIER_CHEAP),
+    ("openrouter", "qwen/qwen3-coder-next",    TIER_CHEAP),
 ]
 
 
@@ -188,6 +194,7 @@ def _provider_available(provider: str) -> bool:
         "moonshot":  ("MOONSHOT_API_KEY",),
         "xai":       ("XAI_API_KEY", "GROK_API_KEY"),
         "gemini":    ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        "openrouter": ("OPENROUTER_API_KEY",),
     }
     for var in env_keys.get(provider, ()):
         if os.environ.get(var, "").strip():
