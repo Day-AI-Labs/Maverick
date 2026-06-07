@@ -3071,6 +3071,125 @@ def ai_act_cmd(fmt: str) -> None:
     click.echo(render_ai_act_json(report) if fmt == "json" else render_ai_act_text(report))
 
 
+# ----- Compliance assessments (PIA / AIRA / vendor risk) ---------------
+
+@main.group("assess")
+def assess_group() -> None:
+    """Conduct compliance assessments of a subject (PIA, AIRA, vendor risk)."""
+
+
+@assess_group.command("templates")
+def assess_templates() -> None:
+    """List the available assessment types."""
+    from .assessment import list_templates
+    for t in list_templates():
+        click.echo(
+            f"  {t.type:12} {t.title}  "
+            f"({t.framework}; {len(t.questions)} questions)"
+        )
+
+
+@assess_group.command("questions")
+@click.argument("assessment_type")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+def assess_questions(assessment_type: str, fmt: str) -> None:
+    """Print an assessment's questionnaire (so you -- or the agent -- can answer it)."""
+    from .assessment import get_template, render_questions_json, render_questions_text
+    tpl = get_template(assessment_type)
+    if tpl is None:
+        raise click.ClickException(
+            f"unknown assessment type {assessment_type!r}; see 'maverick assess templates'"
+        )
+    click.echo(render_questions_json(tpl) if fmt == "json" else render_questions_text(tpl))
+
+
+@assess_group.command("score")
+@click.argument("assessment_type")
+@click.option("--subject", required=True,
+              help="What is being assessed (the vendor / system / activity).")
+@click.option("--answers", "answers_file", required=True,
+              type=click.Path(exists=True),
+              help="JSON {question_id: answer}; answer is yes/no/na/unknown "
+                   "or {\"answer\":..., \"note\":...}.")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+@click.option("--no-save", is_flag=True, help="Don't persist the assessment.")
+def assess_score(assessment_type: str, subject: str, answers_file: str,
+                 fmt: str, no_save: bool) -> None:
+    """Score a completed answer set into findings + a risk rating, and save it."""
+    import json as _json
+
+    from .assessment import (
+        AssessmentSession,
+        get_template,
+        render_result_json,
+        render_result_text,
+        save_session,
+    )
+    if get_template(assessment_type) is None:
+        raise click.ClickException(
+            f"unknown assessment type {assessment_type!r}; see 'maverick assess templates'"
+        )
+    try:
+        raw = _json.loads(Path(answers_file).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise click.ClickException(f"could not read answers: {e}")
+    if not isinstance(raw, dict):
+        raise click.ClickException("answers file must be a JSON object {question_id: answer}")
+    session = AssessmentSession(type=assessment_type, subject=subject)
+    for qid, val in raw.items():
+        answer = val.get("answer") if isinstance(val, dict) else val
+        note = val.get("note", "") if isinstance(val, dict) else ""
+        try:
+            session.record(str(qid), str(answer), str(note))
+        except (KeyError, ValueError) as e:
+            raise click.ClickException(str(e))
+    result = session.evaluate()
+    click.echo(render_result_json(result) if fmt == "json" else render_result_text(result))
+    if not no_save:
+        click.echo(f"\nsaved: {save_session(session)}")
+
+
+@assess_group.command("list")
+def assess_list() -> None:
+    """List saved assessments, newest first."""
+    from .assessment import list_saved
+    rows = list_saved()
+    if not rows:
+        click.echo("No saved assessments.")
+        return
+    for r in rows:
+        click.echo(
+            f"  {r['id']:20} {r['type']:12} {r['risk_rating']:8} "
+            f"{r['findings']} finding(s)  {r['subject']}"
+        )
+
+
+@assess_group.command("show")
+@click.argument("assessment_id")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+def assess_show(assessment_id: str, fmt: str) -> None:
+    """Show a saved assessment by id."""
+    import json as _json
+
+    from .assessment import AssessmentResult, Finding, load_saved, render_result_text
+    data = load_saved(assessment_id)
+    if data is None:
+        raise click.ClickException(f"no saved assessment {assessment_id!r}")
+    if fmt == "json":
+        click.echo(_json.dumps(data, indent=2, default=str))
+        return
+    res = data["result"]
+    result = AssessmentResult(
+        type=res["type"], subject=res["subject"], risk_rating=res["risk_rating"],
+        findings=[Finding(**f) for f in res["findings"]],
+        answered=res["answered"], total=res["total"],
+    )
+    click.echo(render_result_text(result))
+
+
 # ----- DSAR subject-data export ----------------------------------------
 
 @main.group("dsar")
