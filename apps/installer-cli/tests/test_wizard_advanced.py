@@ -228,3 +228,19 @@ def test_enterprise_writes_and_is_read(tmp_path, monkeypatch):
 
     from maverick.enterprise import enterprise_enabled
     assert enterprise_enabled() is True
+
+
+def test_encrypt_at_rest_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's encryption toggle writes [encryption] at_rest,
+    and the kernel reads it back as at_rest_enabled()."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_ENCRYPT_AT_REST", raising=False)
+    monkeypatch.delenv("MAVERICK_ENTERPRISE", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"encrypt_at_rest": True})
+    assert "[encryption]" in cfg
+    assert "at_rest = true" in cfg
+
+    from maverick.crypto_at_rest import at_rest_enabled
+    assert at_rest_enabled() is True
