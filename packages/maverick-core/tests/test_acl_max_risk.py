@@ -32,6 +32,7 @@ def test_tool_risk_defaults():
     assert tool_risk("shell") == "high"
     assert tool_risk("code_exec") == "high"
     assert tool_risk("memory") == "high"
+    assert tool_risk("obsidian") == "high"
     assert tool_risk("read_file") == "low"
     # Unclassified tool falls back to medium.
     assert tool_risk("some_unknown_tool") == "medium"
@@ -107,6 +108,7 @@ max_risk = "medium"
     reg = base_registry(world=_FakeWorld(), sandbox=_FakeSandbox())
     names = {t.name for t in reg.all()}
     assert "memory" not in names
+    assert "obsidian" not in names
     assert "write_file" not in names
     assert "read_file" in names
 
