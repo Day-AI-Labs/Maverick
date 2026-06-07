@@ -545,6 +545,56 @@ async def get_spend() -> dict:
     }
 
 
+@router.get("/security")
+async def security_register() -> dict:
+    """The privacy/security agent team's register, read-only and fail-soft:
+    live control posture (compliance), the audit-trail threat hunt, and the
+    remediation plan. One operator view over the three agents' outputs."""
+    controls: list[dict] = []
+    try:
+        from maverick.compliance import compliance_report
+        controls = [
+            {"control": c.control, "status": c.status, "regulation": c.regulation,
+             "detail": c.detail, "framework": c.framework}
+            for c in compliance_report()
+        ]
+    except Exception:
+        log.warning("security register: compliance probe failed", exc_info=True)
+
+    threat: dict = {"risk": "clear", "events_scanned": 0, "findings": []}
+    try:
+        from maverick.threat_hunt import hunt
+        r = hunt()
+        threat = {
+            "risk": r.risk_rating, "events_scanned": r.events_scanned,
+            "findings": [
+                {"kind": f.kind, "title": f.title, "severity": f.severity,
+                 "count": f.count, "agents": f.agents}
+                for f in r.findings
+            ],
+        }
+    except Exception:
+        log.warning("security register: threat hunt failed", exc_info=True)
+
+    remediation: dict = {"auto_fix_enabled": False, "gaps": [], "breaches": []}
+    try:
+        from maverick.remediation import plan
+        p = plan()
+        remediation = {
+            "auto_fix_enabled": p.auto_fix_enabled,
+            "gaps": [
+                {"control": g.control, "title": g.title, "auto": g.auto,
+                 "rationale": g.rationale}
+                for g in p.gaps
+            ],
+            "breaches": p.breaches,
+        }
+    except Exception:
+        log.warning("security register: remediation plan failed", exc_info=True)
+
+    return {"controls": controls, "threat_hunt": threat, "remediation": remediation}
+
+
 # ---------- council pass: control surface ----------
 
 class HaltIn(BaseModel):

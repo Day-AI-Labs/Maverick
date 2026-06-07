@@ -336,3 +336,15 @@ def test_anonymous_logs_writes_and_is_read(tmp_path, monkeypatch):
 
     from maverick.privacy import anon_enabled
     assert anon_enabled() is True
+
+
+def test_security_autofix_writes_security_section(tmp_path, monkeypatch):
+    # The remediate auto-fix opt-in is reachable from the wizard (rule 6) and
+    # writes [security] auto_fix = true for the kernel's auto_fix_enabled() gate.
+    text = _write(tmp_path, monkeypatch, {"security_autofix": True})
+    assert "[security]" in text and "auto_fix = true" in text
+
+
+def test_security_autofix_off_writes_no_security_section(tmp_path, monkeypatch):
+    text = _write(tmp_path, monkeypatch, {"security_autofix": False})
+    assert "auto_fix" not in text
