@@ -51,6 +51,11 @@ class SqliteVectorStore:
     """
 
     def __init__(self, path: str | Path = ":memory:"):
+        # Create the parent dir for a file-backed store (e.g. a tenant's
+        # ~/.maverick/tenants/<t>/knowledge.db) -- sqlite3.connect won't, and
+        # would raise on a missing directory. ":memory:" needs no dir.
+        if str(path) != ":memory:":
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(str(path))
         self._db.execute(
             "CREATE TABLE IF NOT EXISTS chunks ("

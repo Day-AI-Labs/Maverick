@@ -196,3 +196,18 @@ class TestImageIngestion:
 
         kb = KnowledgeBase(embedder=DeterministicEmbedder(dim=64), image_describer=boom)
         assert kb.ingest_path("ops", img) == 0  # failure swallowed, ingestion continues
+
+
+class TestStorePersistence:
+    def test_store_creates_parent_dir_and_persists(self, tmp_path):
+        from maverick_knowledge.store import SqliteVectorStore
+
+        e = DeterministicEmbedder(dim=32)
+        path = tmp_path / "nested" / "deep" / "knowledge.db"
+        store = SqliteVectorStore(path)  # parent dirs don't exist yet
+        assert path.parent.is_dir()
+        store.add("c", [("1", "refund policy", e.embed(["refund policy"])[0], {})])
+        del store
+        # A fresh store at the same path still has the data (persisted to disk).
+        reopened = SqliteVectorStore(path)
+        assert reopened.search("c", e.embed(["refund policy"])[0], k=1)
