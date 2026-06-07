@@ -63,7 +63,7 @@ The CC series is mandatory for every SOC 2 report.
 | TSC | Maverick control | Status | Evidence |
 | --- | --- | --- | --- |
 | CC4.1 Ongoing/separate evaluations | OpenTelemetry; health checks; circuit breakers; eval-gated CI | Implemented | `maverick/observability.py`, `health.py`, `circuit_breaker.py` |
-| CC4.2 Evaluates & communicates deficiencies | Audit-chain verification (`verify_chain`) surfaces tamper/breaks; issue reporting | Partial | `maverick/audit/signing.py`; `audit_log` evidence key; `maverick/issue_report.py` |
+| CC4.2 Evaluates & communicates deficiencies | Audit-chain and anchor-ledger verification (`verify_chain`, `verify_anchors`) surfaces tamper/breaks; issue reporting | Partial | `maverick/audit/signing.py`; `audit_log` evidence key; `maverick/issue_report.py` |
 
 ### CC5 — Control Activities
 
@@ -206,7 +206,7 @@ It returns a JSON-serializable posture snapshot. Top-level keys:
 | `controls.tenant_isolation` | per-user tenant isolation on/off (C1.1) |
 | `controls.usage_quotas` | per-principal usage quotas on/off (CC9.1/A1.1) |
 | `controls.oidc_auth` | OIDC ID-token verifier on/off (CC6.1) |
-| `audit_log` | audit-chain verification: `ok` / `broken` (tamper) / `unsigned` (signing off) / `empty` / `no_crypto` / `unknown` (CC2.1/PI1.5) |
+| `audit_log` | audit-chain plus anchor-ledger verification: `ok` / `broken` (tamper) / `unsigned` (signing off) / `empty` / `no_crypto` / `unknown` (CC2.1/PI1.5) |
 | `audit_signing_key` | audit signing-key presence (tamper-evidence trust anchor) |
 
 Each `controls.*` probe carries a `status` of `enabled` / `disabled` / `absent`
@@ -223,7 +223,8 @@ print(json.dumps(collect_soc2_evidence(), indent=2))"
 A SOC 2-ready deployment should show `capability_enforcement`,
 `tenant_isolation`, and `usage_quotas` as `enabled`, and `audit_log` as `ok`
 with `audit_signing_key` present. Note that `audit_log` is only `ok` when audit
-signing is turned on (`[audit] sign = true` / `MAVERICK_AUDIT_SIGN=1`); with
+signing is turned on (`[audit] sign = true` / `MAVERICK_AUDIT_SIGN=1`) and the
+per-day chains plus cross-file anchor ledger verify cleanly; with
 signing off the log exists but is reported `unsigned` — append-only, but not
 cryptographically tamper-evident. So OIDC and audit signing both default off and
 must be enabled (alongside capabilities/tenancy/quotas) for a SOC 2 posture.
