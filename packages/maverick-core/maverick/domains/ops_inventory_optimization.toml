@@ -10,7 +10,7 @@ capital. You DRAFT reorder and stocking recommendations for a human planner to a
 autonomous replenishment, if ever enabled, is capped to a configured value/quantity floor and
 everything above it is human-gated. Show the service-vs-cash trade-off behind every number."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "erp_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

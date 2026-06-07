@@ -1781,6 +1781,41 @@ def pick_a2a() -> tuple[dict[str, Any], list[str]]:
     return {"enabled": True}, ["MAVERICK_A2A_TOKEN"]
 
 
+# Business-function agent suites the factory can spawn from (domain packs under
+# maverick/domains/). The kernel's enabled_domains() honors the [suites] table
+# this writes; suites are ON by default (opt-out), so writing nothing keeps all.
+AGENT_SUITES: list[tuple[str, str]] = [
+    ("operations", "Operations / Supply Chain"),
+    ("legal", "Legal (General Counsel)"),
+    ("finance", "Finance"),
+    ("it_grc", "IT / GRC / Security / Privacy / AI-Governance"),
+    ("sales_gtm", "Sales / GTM"),
+    ("hr", "HR / People"),
+    ("product_engineering", "Product & Engineering"),
+    ("strategy", "Strategy / Corp Dev / Exec"),
+]
+
+
+def pick_suites() -> dict[str, bool]:
+    """Which business-function agent suites to enable. All on unless customized.
+
+    Returns a ``suite -> bool`` map for the ``[suites]`` config table (empty when
+    the operator keeps the default, so the kernel enables every suite)."""
+    console.print()
+    console.print("[bold]Agent suites[/bold] — the business functions the agent "
+                  "factory can spawn (finance, operations, legal, ...).")
+    console.print("[dim]All enabled by default. A disabled suite's agents can't be "
+                  "spawned. Editable later in ~/.maverick/config.toml under "
+                  "[suites].[/dim]")
+    if not _q_confirm("  Customize which suites are enabled? (No = keep all on)",
+                      default=False):
+        return {}
+    out: dict[str, bool] = {}
+    for key, label in AGENT_SUITES:
+        out[key] = _q_confirm(f"    Enable the {label} suite?", default=True)
+    return out
+
+
 def write_config(
     providers: list[str],
     role_models: dict[str, str],
@@ -1810,6 +1845,7 @@ def write_config(
     self_learning: dict[str, Any] | None = None,
     durable: dict[str, Any] | None = None,
     deployment: str | None = None,
+    suites: dict[str, bool] | None = None,
 ) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -1966,6 +2002,13 @@ def write_config(
         lines.append("")
         lines.append("[capabilities]")
         for k, v in capability_config.items():
+            lines.append(f"{k} = {str(v).lower()}")
+
+    if suites:
+        # Per-suite enable/disable; the kernel's enabled_domains() reads this.
+        lines.append("")
+        lines.append("[suites]")
+        for k, v in suites.items():
             lines.append(f"{k} = {str(v).lower()}")
 
     if advanced:
@@ -2770,6 +2813,8 @@ def run(fast: bool = False, resume: bool = False) -> int:
             "[bold]MAVERICK_ENABLE_SESSION_PROVIDERS=1[/bold]."
         )
 
+    suites = pick_suites()
+
     console.print()
     if not _q_confirm("Write config and finish?", default=True):
         # Be honest about where the state lives and what restore does.
@@ -2798,6 +2843,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
         skills=signed_skills if (signed_skills.get("trusted_pubkeys") or signed_skills.get("require_signed") or signed_skills.get("require_signed_catalog")) else None,
         self_learning=self_learning if self_learning.get("enable") else None,
         durable=durable if durable.get("enabled") else None,
+        suites=suites,
     )
     _clear_partial()
     ok = smoke_test()

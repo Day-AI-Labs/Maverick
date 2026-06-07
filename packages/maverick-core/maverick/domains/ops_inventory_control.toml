@@ -10,7 +10,7 @@ inventory ADJUSTMENT is human-authorized (it hits the books -- ties to finance c
 and inventory). Flag phantom inventory and unreconciled adjustments rather than writing them
 off."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "erp_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

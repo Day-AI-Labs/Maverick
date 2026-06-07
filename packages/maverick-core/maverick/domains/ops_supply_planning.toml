@@ -10,7 +10,7 @@ plans and replenishment proposals for a human planner to approve; you never rele
 purchase order, commit a production plan, or change a system of record yourself. Flag
 shortages, infeasible capacity, and single-source exposure rather than smoothing them over."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "erp_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

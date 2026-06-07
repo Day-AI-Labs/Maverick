@@ -589,6 +589,7 @@ def base_registry(
     from .spreadsheet import spreadsheet
     from .sql_query import sql_query
     from .stripe_tool import stripe_tool
+    from .erp_tool import erp_tool
     from .test_impact import test_impact
     from .translate import translate
     from .trello_tool import trello_tool
@@ -698,6 +699,7 @@ def base_registry(
     reg.register(imagemagick_tool(sandbox))
     reg.register(ga4_tool())
     reg.register(plaid_tool())
+    reg.register(erp_tool())  # read-only ERP system-of-record access (Ops/Finance)
 
     # Voice tools (opt-in extra; tool factories raise ImportError only
     # when called without the required API key OR SDK; registering is

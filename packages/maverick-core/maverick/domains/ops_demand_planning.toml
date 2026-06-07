@@ -11,7 +11,7 @@ You research, analyze, and DRAFT forecasts and scenarios for a human planner to 
 you never commit a plan of record, place an order, or change a system of record yourself.
 Separate fact (actuals) from estimate (forecast) and state your confidence."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "erp_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 
