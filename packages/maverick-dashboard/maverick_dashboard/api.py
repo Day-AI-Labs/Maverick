@@ -21,6 +21,7 @@ from .auth import (
     caller_principal,
     execution_user_id_from_request,
     goal_owner_filter,
+    is_dashboard_admin,
 )
 
 log = logging.getLogger(__name__)
@@ -935,6 +936,68 @@ async def list_fleets_api(request: Request) -> dict:
     if owner is not None:
         fleets = [f for f in fleets if f.owner == owner]
     return {"fleets": [f.to_dict() for f in fleets]}
+
+
+class FleetRunIn(BaseModel):
+    agent: str = Field(..., max_length=64)
+    prompt: str = Field(..., max_length=8000)
+    max_dollars: float | None = Field(None, ge=0.0, le=100.0)
+
+
+@router.post("/fleets/{fleet_name}/run", status_code=201)
+async def run_fleet_agent(
+    request: Request, fleet_name: str, payload: FleetRunIn, bg: BackgroundTasks,
+) -> dict:
+    """Dispatch a governed goal AS a fleet agent, from the operator console.
+
+    The agent runs least-privileged under its RBAC role's capability and its own
+    audit principal (``agent:<fleet>.<agent>``), so the oversight control plane
+    governs the work automatically (mirrors ``maverick fleet run``). Owner-scoped:
+    only the fleet's owner -- or an admin / auth-off caller -- may dispatch; a
+    cross-owner (or missing) fleet 404s, never revealing existence.
+    """
+    if not _any_provider_key_set():
+        raise HTTPException(
+            status_code=400,
+            detail="No LLM provider key configured (run 'maverick init').",
+        )
+    from maverick_dashboard.app import check_goal_rate_limit
+    check_goal_rate_limit(request)
+
+    from maverick.capability import capability_for_role
+    from maverick.fleet import load_fleet, record_run
+    from maverick.runner import run_goal_in_thread
+
+    fleet = load_fleet(fleet_name)
+    principal = caller_principal(request)
+    if fleet is None or (
+        principal is not None
+        and not is_dashboard_admin(principal)
+        and fleet.owner != principal
+    ):
+        raise HTTPException(status_code=404, detail="no such fleet")
+    agent = next((a for a in fleet.agents if a.name == payload.agent), None)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="no such agent in fleet")
+    prompt = (payload.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="prompt is required")
+
+    agent_principal = fleet.principal_for(agent.name)
+    cap = capability_for_role(agent.role, principal=agent_principal)
+    max_dollars = (
+        min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
+        if payload.max_dollars else DEFAULT_MAX_DOLLARS
+    )
+
+    w = _world()
+    goal_id = w.create_goal(prompt[:200], prompt, owner=fleet.owner)
+    record_run(fleet_name, agent.name, goal_id)
+    bg.add_task(
+        run_goal_in_thread, goal_id, max_dollars,
+        channel="fleet", user_id=agent_principal, capability=cap,
+    )
+    return {"goal_id": goal_id, "principal": agent_principal, "role": agent.role}
 
 
 @router.get("/cache/stats")
