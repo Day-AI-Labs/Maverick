@@ -149,9 +149,9 @@ redacted).
 ## License & contributions
 
 Maverick is **proprietary** software (see [`LICENSE`](./LICENSE)). External
-contributions are accepted only under a signed Contributor License Agreement
-(CLA) assigning the Licensor the rights needed to relicense the contribution;
-contact the maintainers before opening a PR. By contributing, you agree your
+contributions are accepted only under the signed Contributor License Agreement in
+[`CLA.md`](./CLA.md), which assigns the Licensor the rights needed to relicense the
+contribution; contact the maintainers before opening a PR. By contributing, you agree your
 contribution becomes part of the proprietary work owned by the Licensor. (The
 former inbound=outbound-MIT terms do not apply to contributions made after the
 relicense; versions previously published under MIT remain MIT for those
