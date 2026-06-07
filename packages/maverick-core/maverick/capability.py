@@ -244,11 +244,74 @@ def capability_from_config(
         max_risk = resolve_max_risk(channel=channel, user_id=user_id)
     except Exception:
         allowed, denied, max_risk = set(), set(), None
-    return Capability(
+    base = Capability(
         principal=principal,
         allow_tools=frozenset(allowed),
         deny_tools=frozenset(denied),
         max_risk=max_risk,
+    )
+    # RBAC: if this principal is assigned a role, narrow the deployment-ACL
+    # ceiling by that role's scope. It routes through attenuate(), so a role can
+    # only ever restrict -- never escalate past [security]. Opt-in: with no
+    # [role_assignments]/[roles] config the base grant is returned unchanged.
+    role = role_for_principal(principal)
+    if role:
+        base = _apply_role(base, role)
+    return base
+
+
+def _roles_config() -> dict:
+    """The ``[roles]`` table (role name -> scope dict), or empty."""
+    try:
+        from .config import load_config
+        return (load_config() or {}).get("roles") or {}
+    except Exception:
+        return {}
+
+
+def role_for_principal(principal: str) -> str | None:
+    """The RBAC role assigned to ``principal``, or ``None``.
+
+    Reads ``[role_assignments]`` (``"<principal>" = "<role>"``) and falls back to
+    a ``default`` assignment when set. RBAC is opt-in: with no
+    ``[role_assignments]`` config this returns ``None`` and the grant is
+    unchanged.
+    """
+    try:
+        from .config import load_config
+        assigns = (load_config() or {}).get("role_assignments") or {}
+    except Exception:
+        return None
+    role = assigns.get(principal) or assigns.get("default")
+    return role if isinstance(role, str) and role else None
+
+
+def _apply_role(base: Capability, role_name: str) -> Capability:
+    """Narrow ``base`` by the named role's ``[roles.<role_name>]`` scope.
+
+    Routes through :meth:`Capability.attenuate`, so a role can only ever
+    *restrict* the deployment ACL ceiling -- a misconfigured role that lists
+    broader tools/paths/hosts than ``[security]`` still cannot escalate a
+    principal past it. An unknown/empty role leaves ``base`` unchanged.
+
+    Scope keys mirror the :class:`Capability` fields: ``allow_tools``,
+    ``deny_tools``, ``max_risk``, ``allow_paths``, ``allow_hosts``.
+    """
+    scope = _roles_config().get(role_name)
+    if not isinstance(scope, dict):
+        return base
+
+    def _set(key: str) -> set[str] | None:
+        v = scope.get(key)
+        return set(v) if isinstance(v, (list, tuple, set)) and v else None
+
+    risk = scope.get("max_risk")
+    return base.attenuate(
+        allow=_set("allow_tools"),
+        deny=_set("deny_tools"),
+        max_risk=risk if isinstance(risk, str) else None,
+        allow_paths=_set("allow_paths"),
+        allow_hosts=_set("allow_hosts"),
     )
 
 
@@ -258,4 +321,5 @@ __all__ = [
     "verify_capability",
     "capability_enforced",
     "capability_from_config",
+    "role_for_principal",
 ]

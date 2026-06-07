@@ -23,6 +23,7 @@ and how to confirm it's actually on.
 - [Always-on safety (not opt-in)](#always-on-safety-not-opt-in)
 - [Enterprise mode (the umbrella switch)](#enterprise-mode-the-umbrella-switch)
 - [Capability enforcement](#capability-enforcement)
+- [Role-based access control (RBAC)](#role-based-access-control-rbac)
 - [Multi-tenancy (per-user isolation)](#multi-tenancy-per-user-isolation)
 - [Usage quotas](#usage-quotas)
 - [OIDC SSO authentication](#oidc-sso-authentication)
@@ -156,6 +157,55 @@ that *require* verification must check for crypto first.
 
 **Verify it's on:** `maverick soc2` →
 `controls.capability_enforcement.status == "enabled"`.
+
+---
+
+## Role-based access control (RBAC)
+
+**What it does.** Binds principals to *named roles*, where each role is a
+capability scope. A principal's grant is the deployment ACL (the
+[capability](#capability-enforcement) ceiling) **narrowed** by their role — so a
+role can only ever *restrict*, never escalate past `[security]`. Roles fold into
+the grant wherever capabilities are built, so they bite under capability
+enforcement; with enforcement off they are inert.
+
+**config.toml**
+
+```toml
+# Roles are capability scopes (same fields as a capability).
+[roles.analyst]
+allow_tools = ["read_file", "search", "memory"]
+max_risk = "low"
+
+[roles.operator]
+deny_tools = ["shell"]
+allow_paths = ["/srv/work/*"]
+
+# Bind principals to roles. Keys are principal ids (an OIDC user maps to
+# `user:<sub>`); `default` is the fallback for unassigned principals.
+[role_assignments]
+"user:alice" = "analyst"
+"user:bob" = "operator"
+default = "analyst"
+```
+
+**How it narrows.** A role routes through capability *attenuation*: `allow_tools`
+intersects the ceiling, `deny_tools` unions it, `max_risk` only tightens, and
+`allow_paths`/`allow_hosts` intersect. A role that lists *broader* tools than
+`[security]` permits still cannot grant them — the ceiling wins, by construction.
+
+**Gotchas**
+
+- RBAC is opt-in: with no `[role_assignments]` the grant is exactly the ACL
+  (behaviour unchanged). An unknown role name (no matching `[roles.<name>]`) is a
+  no-op.
+- It is a *subset* model, not additive: an "admin" role is simply one with no
+  extra restrictions (it inherits the full ACL ceiling); narrower roles carve out
+  less.
+
+**Verify it's on:** roles fold into the capability grant, so the same
+`maverick soc2` → `controls.capability_enforcement` signal applies; grep the
+audit log for `capability_denied` to see a role's restrictions bite.
 
 ---
 
