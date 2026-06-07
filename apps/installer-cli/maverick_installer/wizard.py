@@ -1005,6 +1005,12 @@ def pick_advanced() -> dict[str, Any]:
             "when the agent handles PHI/PII/financial data.",
             default=False,
         ),
+        "anonymous_logs": _q_confirm(
+            "Anonymous mode? Scrub user-identifying content (goal text, user/channel "
+            "ids, home paths, emails/phones) from logs and audit events — hashes or "
+            "sentinels instead of raw values. Good for shared/regulated environments.",
+            default=False,
+        ),
         "encrypt_at_rest": _q_confirm(
             "Encrypt sensitive local stores at rest? Seals the cross-session "
             "memory store with AES-256-GCM (key in ~/.maverick/keys, chmod 600). "
@@ -1962,6 +1968,10 @@ def write_config(
             lines.append("")
             lines.append("[enterprise]")
             lines.append("mode = true")
+        if advanced.get("anonymous_logs"):
+            lines.append("")
+            lines.append("[privacy]")
+            lines.append("anonymous = true")
         if advanced.get("encrypt_at_rest"):
             lines.append("")
             lines.append("[encryption]")
