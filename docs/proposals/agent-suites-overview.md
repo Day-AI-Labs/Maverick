@@ -6,6 +6,7 @@ Full detail lives in the two companion docs; this is the summary to skim later.
 - **Finance** → [`finance-agent-suite.md`](finance-agent-suite.md) — ~40 core agents, 7 towers (+ vertical packs)
 - **IT / GRC / Privacy / Security / AI-Governance** → [`it-grc-agent-suite.md`](it-grc-agent-suite.md) — 47 agents, 10 towers
 - **Sales / GTM (the revenue engine)** → [`sales-gtm-agent-suite.md`](sales-gtm-agent-suite.md) — ~45 agents, 8 towers
+- **HR / People** → [`hr-people-agent-suite.md`](hr-people-agent-suite.md) — ~41 agents, 8 towers
 
 Both build on [`../enterprise/architecture.md`](../enterprise/architecture.md)
 (the three-layer control plane) and [`agent-factory.md`](agent-factory.md)
@@ -167,6 +168,47 @@ integrity. Agents draft; humans send, sign, and commit price.
 
 ---
 
+## HR / People suite — at a glance
+
+The CHRO org — decisions *about people*, using the most sensitive data, under the
+heaviest anti-discrimination regime. The convergence of three already-built control
+stories: **privacy** (employee special-category PII), **AI governance** (employment =
+EU AI Act Annex III high-risk + NYC LL144), and **need-to-know access control**.
+
+### Eight towers (~41 agents)
+1. **Talent Acquisition** — sourcing · resume screening/ranking · candidate engagement · interview design · offers · employer brand · recruiting analytics
+2. **Onboarding & Offboarding** — onboarding · I-9/work-auth · offboarding/exit · internal mobility
+3. **HR Operations** — helpdesk · HRIS/records · employment verification · policy/docs · compliance reporting (EEO-1/OSHA/ACA)
+4. **Total Rewards** — comp analysis/bands · pay equity · benefits · leave/accommodation · payroll liaison
+5. **Performance & Talent** — goals/OKRs · reviews · calibration/promotion · succession · PIP/coaching
+6. **Learning & Development** — content · skills/career · LMS · compliance training
+7. **Employee Relations & Investigations** — ER · investigations · employment-law · EEO/AAP/accommodations · labor relations · ethics/whistleblower
+8. **People Analytics & Engagement** — analytics/attrition · workforce planning · engagement surveys · DEI analytics · internal comms
+
+### What's shipped (the substrate)
+EU AI Act classification (`ai_act.py` flags employment = Annex III, **emotion inference =
+Art 5 prohibited**), the **privacy suite** (employee PII/Art 9, DSAR/erase/ROPA, egress,
+encryption), the **consequential-decision human gate** (governance + consent),
+**need-to-know access** (capability path scopes), AI/bot disclosure, channels + intake,
+the assessment engine, and the audit chain.
+
+### Genuine gaps
+The keystone **employment-decision pack** (decision records + mandatory human review +
+bias-audit export — named in the architecture) and the **bias-eval** engine (shared with
+AI-Gov); plus HRIS/ATS/LMS/benefits/background-check connectors and the recruiting/perf/
+comp/ER workflows.
+
+### The control story
+The convergence point — and the **only suite with prohibited (refused) uses**, not just
+gated ones. Cardinal rule: agents screen/rank/draft/recommend, but a **human decides
+every consequential employment action** (hire/fire/promote/pay/discipline) with a
+documented, bias-audited rationale; **no protected-class data or proxies** in a decision;
+and the suite **refuses what the EU AI Act prohibits** (e.g. workplace emotion inference).
+Confidentiality is structural (ER/investigations/comp/medical compartments). Cross-suite
+SoD: HR decides people, finance owns payroll, IT owns provisioning.
+
+---
+
 ## Suggested first builds (highest leverage)
 
 1. **Persona-wrapper packs** for the shipped engines — finance assessors and IT-GRC
@@ -178,3 +220,6 @@ integrity. Agents draft; humans send, sign, and commit price.
 4. **The Supervisor operator console** (Layer A) — the keystone for live oversight (GRC + Revenue).
 5. **The outbound gate + consent/suppression hard floor** (GTM) — must precede any
    sending agent; rides the shipped channels + consent + AI-disclosure layer.
+6. **The employment-decision pack + bias-eval engine** (HR + AI-Gov) — consequential-
+   decision records + mandatory human review + bias-audit export; gates every consequential
+   HR agent and satisfies NYC LL144 / EEOC / EU AI Act Annex III.
