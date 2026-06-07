@@ -328,6 +328,115 @@ _SPECS: list[dict] = [
          token_env="AZURE_DEVOPS_TOKEN", basic=True, description="Azure DevOps REST. "
          "ops get/post/patch/put (writes need confirm). e.g. /{org}/{proj}/_apis/wit/"
          "workitems. Auth: AZURE_DEVOPS_BASE_URL + AZURE_DEVOPS_TOKEN (:PAT, basic)."),
+
+    # --- Marketing / commerce ---
+    dict(name="mailchimp", base_url_env="MAILCHIMP_BASE_URL", token_env="MAILCHIMP_TOKEN",
+         basic=True, description="Mailchimp Marketing REST. ops get/post/put/patch/"
+         "delete (writes need confirm). e.g. /3.0/lists. Auth: MAILCHIMP_BASE_URL + "
+         "MAILCHIMP_TOKEN (anystring:apikey, basic)."),
+    dict(name="klaviyo", base_url_env="KLAVIYO_BASE_URL", token_env="KLAVIYO_TOKEN",
+         scheme="Klaviyo-API-Key", description="Klaviyo REST. ops get/post/patch/delete "
+         "(writes need confirm). Auth: KLAVIYO_BASE_URL + KLAVIYO_TOKEN (Klaviyo-API-Key)."),
+    dict(name="braze", base_url_env="BRAZE_BASE_URL", token_env="BRAZE_TOKEN",
+         description="Braze REST. ops get/post (writes need confirm). e.g. "
+         "/users/export/ids, /messages/send. Auth: BRAZE_BASE_URL + BRAZE_TOKEN."),
+    dict(name="marketo", base_url_env="MARKETO_BASE_URL", token_env="MARKETO_TOKEN",
+         description="Adobe Marketo Engage REST. ops get/post (writes need confirm). "
+         "e.g. /rest/v1/leads.json. Auth: MARKETO_BASE_URL + MARKETO_TOKEN."),
+    dict(name="sfmc", base_url_env="SFMC_BASE_URL", token_env="SFMC_TOKEN",
+         description="Salesforce Marketing Cloud REST. ops get/post/put/delete (writes "
+         "need confirm). Auth: SFMC_BASE_URL + SFMC_TOKEN."),
+    dict(name="segment", base_url_env="SEGMENT_BASE_URL", token_env="SEGMENT_TOKEN",
+         description="Twilio Segment Public API. ops get/post/patch/delete (writes "
+         "need confirm). e.g. /workspaces, /sources. Auth: SEGMENT_BASE_URL + SEGMENT_TOKEN."),
+    dict(name="adobe_analytics", base_url_env="ADOBE_ANALYTICS_BASE_URL",
+         token_env="ADOBE_ANALYTICS_TOKEN", description="Adobe Analytics 2.0 REST. ops "
+         "get/post (writes need confirm). e.g. /reports. Auth: ADOBE_ANALYTICS_BASE_URL "
+         "+ ADOBE_ANALYTICS_TOKEN."),
+    dict(name="aem", base_url_env="AEM_BASE_URL", token_env="AEM_TOKEN", basic=True,
+         description="Adobe Experience Manager REST. ops get/post/put/delete (writes "
+         "need confirm). Auth: AEM_BASE_URL + AEM_TOKEN (user:pass, basic)."),
+    dict(name="bigcommerce", base_url_env="BIGCOMMERCE_BASE_URL",
+         token_env="BIGCOMMERCE_TOKEN", token_header="X-Auth-Token", scheme="",
+         description="BigCommerce REST. ops get/post/put/delete (writes need confirm). "
+         "e.g. /v3/catalog/products. Auth: BIGCOMMERCE_BASE_URL + BIGCOMMERCE_TOKEN "
+         "(X-Auth-Token)."),
+    dict(name="sendgrid", base_url_env="SENDGRID_BASE_URL", token_env="SENDGRID_TOKEN",
+         description="Twilio SendGrid REST. ops get/post/put/patch/delete (writes need "
+         "confirm). e.g. /v3/mail/send, /v3/marketing/contacts. Auth: SENDGRID_BASE_URL "
+         "(https://api.sendgrid.com) + SENDGRID_TOKEN."),
+
+    # --- Data / ETL / streaming ---
+    dict(name="fivetran", base_url_env="FIVETRAN_BASE_URL", token_env="FIVETRAN_TOKEN",
+         basic=True, description="Fivetran REST. ops get/post/patch/delete (writes need "
+         "confirm). e.g. /v1/connectors. Auth: FIVETRAN_BASE_URL + FIVETRAN_TOKEN "
+         "(apikey:apisecret, basic)."),
+    dict(name="dbt", base_url_env="DBT_BASE_URL", token_env="DBT_TOKEN", scheme="Token",
+         description="dbt Cloud REST. ops get/post (writes need confirm). e.g. "
+         "/api/v2/accounts/{id}/jobs. Auth: DBT_BASE_URL + DBT_TOKEN (Token <key>)."),
+    dict(name="airflow", base_url_env="AIRFLOW_BASE_URL", token_env="AIRFLOW_TOKEN",
+         basic=True, description="Apache Airflow REST. ops get/post/patch/delete "
+         "(writes need confirm). e.g. /api/v1/dags. Auth: AIRFLOW_BASE_URL + "
+         "AIRFLOW_TOKEN (user:pass, basic)."),
+    dict(name="confluent", base_url_env="CONFLUENT_BASE_URL", token_env="CONFLUENT_TOKEN",
+         basic=True, description="Confluent Cloud REST. ops get/post/patch/delete "
+         "(writes need confirm). e.g. /kafka/v3/clusters. Auth: CONFLUENT_BASE_URL + "
+         "CONFLUENT_TOKEN (key:secret, basic)."),
+    dict(name="informatica", base_url_env="INFORMATICA_BASE_URL",
+         token_env="INFORMATICA_TOKEN", description="Informatica IICS REST. ops "
+         "get/post (writes need confirm). Auth: INFORMATICA_BASE_URL + INFORMATICA_TOKEN."),
+    dict(name="talend", base_url_env="TALEND_BASE_URL", token_env="TALEND_TOKEN",
+         description="Talend Cloud REST. ops get/post/put/delete (writes need confirm). "
+         "Auth: TALEND_BASE_URL + TALEND_TOKEN."),
+    dict(name="matillion", base_url_env="MATILLION_BASE_URL", token_env="MATILLION_TOKEN",
+         basic=True, description="Matillion REST. ops get/post (writes need confirm). "
+         "Auth: MATILLION_BASE_URL + MATILLION_TOKEN (user:pass, basic)."),
+    dict(name="cloudera", base_url_env="CLOUDERA_BASE_URL", token_env="CLOUDERA_TOKEN",
+         basic=True, description="Cloudera Manager REST. ops get/post/put/delete "
+         "(writes need confirm). Auth: CLOUDERA_BASE_URL + CLOUDERA_TOKEN (user:pass, basic)."),
+
+    # --- Collaboration / PM ---
+    dict(name="miro", base_url_env="MIRO_BASE_URL", token_env="MIRO_TOKEN",
+         description="Miro REST. ops get/post/patch/delete (writes need confirm). "
+         "e.g. /v2/boards. Auth: MIRO_BASE_URL (https://api.miro.com) + MIRO_TOKEN."),
+    dict(name="coda", base_url_env="CODA_BASE_URL", token_env="CODA_TOKEN",
+         description="Coda REST. ops get/post/put/delete (writes need confirm). e.g. "
+         "/v1/docs. Auth: CODA_BASE_URL (https://coda.io/apis/v1) + CODA_TOKEN."),
+    dict(name="basecamp", base_url_env="BASECAMP_BASE_URL", token_env="BASECAMP_TOKEN",
+         description="Basecamp REST. ops get/post/put (writes need confirm). Auth: "
+         "BASECAMP_BASE_URL + BASECAMP_TOKEN."),
+    dict(name="planview", base_url_env="PLANVIEW_BASE_URL", token_env="PLANVIEW_TOKEN",
+         description="Planview REST. ops get/post/put/delete (writes need confirm). "
+         "Auth: PLANVIEW_BASE_URL + PLANVIEW_TOKEN."),
+
+    # --- ERP / HR (additional) ---
+    dict(name="infor", base_url_env="INFOR_BASE_URL", token_env="INFOR_TOKEN",
+         description="Infor CloudSuite (ION) REST. ops get/post/put/delete (writes "
+         "need confirm). Auth: INFOR_BASE_URL + INFOR_TOKEN."),
+    dict(name="netsuite", base_url_env="NETSUITE_BASE_URL", token_env="NETSUITE_TOKEN",
+         description="Oracle NetSuite SuiteTalk REST. ops get/post/patch/delete (writes "
+         "need confirm). e.g. /services/rest/record/v1/salesOrder. Auth: "
+         "NETSUITE_BASE_URL + NETSUITE_TOKEN."),
+    dict(name="adp", base_url_env="ADP_BASE_URL", token_env="ADP_TOKEN",
+         description="ADP Workforce Now REST. ops get/post (writes need confirm). e.g. "
+         "/hr/v2/workers. Auth: ADP_BASE_URL + ADP_TOKEN."),
+    dict(name="ukg", base_url_env="UKG_BASE_URL", token_env="UKG_TOKEN",
+         description="UKG (Ultimate Kronos) REST. ops get/post/put/delete (writes need "
+         "confirm). Auth: UKG_BASE_URL + UKG_TOKEN."),
+
+    # --- iPaaS / integration ---
+    dict(name="mulesoft", base_url_env="MULESOFT_BASE_URL", token_env="MULESOFT_TOKEN",
+         description="MuleSoft Anypoint REST. ops get/post/put/delete (writes need "
+         "confirm). Auth: MULESOFT_BASE_URL + MULESOFT_TOKEN."),
+    dict(name="boomi", base_url_env="BOOMI_BASE_URL", token_env="BOOMI_TOKEN", basic=True,
+         description="Boomi AtomSphere REST. ops get/post (writes need confirm). Auth: "
+         "BOOMI_BASE_URL + BOOMI_TOKEN (user:token, basic)."),
+    dict(name="workato", base_url_env="WORKATO_BASE_URL", token_env="WORKATO_TOKEN",
+         description="Workato REST. ops get/post/put/delete (writes need confirm). "
+         "Auth: WORKATO_BASE_URL + WORKATO_TOKEN."),
+    dict(name="zapier", base_url_env="ZAPIER_BASE_URL", token_env="ZAPIER_TOKEN",
+         description="Zapier NLA / REST. ops get/post (writes need confirm). Auth: "
+         "ZAPIER_BASE_URL + ZAPIER_TOKEN."),
 ]
 
 ENTERPRISE_CONNECTOR_NAMES: list[str] = [s["name"] for s in _SPECS]
