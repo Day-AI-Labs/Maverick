@@ -208,6 +208,28 @@ class Worker:
                 self._stop.wait(self.idle_sleep)
         log.info("worker: stopped")
 
+    def drain(self) -> int:
+        """Run every currently-ready job, then return; for cron/systemd timers.
+
+        Reclaims stale jobs once (like ``run_forever``), then loops
+        ``run_once()`` until no ready job remains, returning how many ran. A
+        re-armed cron occurrence gets a FUTURE ``run_at`` (see
+        ``_maybe_rearm``) and ``claim()`` only returns jobs with
+        ``run_at <= now``, so it is intentionally NOT run in the same drain --
+        it fires on the next invocation. That is what lets ``drain()``
+        terminate instead of spinning forever on a recurring job.
+        """
+        reclaimed = self.queue.reclaim_stale(
+            self.reclaim_lease, max_attempts=self.max_attempts,
+        )
+        if reclaimed:
+            log.info("worker: reclaimed %d stale job(s) from a prior crash",
+                     reclaimed)
+        count = 0
+        while self.run_once():
+            count += 1
+        return count
+
     def _wire_signals(self) -> None:
         # Only wire signals from the main thread (signal.signal is
         # main-thread-only). Background callers (tests) skip cleanly.
