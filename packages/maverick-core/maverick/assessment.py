@@ -423,10 +423,73 @@ def build_assessment_agent(ctx, session: AssessmentSession | None = None):
     return agent, session
 
 
+# --- The first-round privacy analyst ---------------------------------------
+
+PRIVACY_ANALYST_PERSONA = (
+    "You are Maverick's privacy & security analyst -- the first-round analyst. "
+    "Given a subject (a vendor, an AI system, or a processing activity) you "
+    "conduct the assessment end to end:\n"
+    "1. RESEARCH the subject from the documents/context you are given (read_file, "
+    "knowledge_search) and the web (web_search), gathering the evidence each "
+    "question needs.\n"
+    "2. start_assessment for the right type (vendor_risk / aira / pia), then answer "
+    "each question from that evidence with answer_question -- yes/no/na, or "
+    "'unknown' when the evidence is genuinely silent. NEVER guess.\n"
+    "3. For each risk, call find_controls to cite the specific control and framework "
+    "reference (GDPR / EU AI Act / ISO 27001 / SOC 2 / NIST / HIPAA) that closes it.\n"
+    "4. finalize_assessment to produce the scored findings.\n"
+    "You produce a DRAFT with cited controls for a human reviewer (DPO / risk owner) "
+    "to sign off. You never approve or certify compliance yourself."
+)
+
+# The analyst's safe envelope: read-only research + the control catalog. Anything
+# mutating or outward (shell, write_file, ...) is deliberately excluded.
+_ANALYST_RESEARCH_TOOLS = (
+    "read_file", "web_search", "knowledge_search", "find_controls", "http_fetch",
+)
+
+
+def _privacy_analyst_tools(base_registry, session: AssessmentSession):
+    """Curate the analyst's registry: keep the read-only research + control tools
+    from ``base_registry`` and add the assessment tools bound to ``session``."""
+    from .tools import ToolRegistry
+    from .tools.assessment_tools import assessment_tools
+
+    reg = ToolRegistry()
+    for name in _ANALYST_RESEARCH_TOOLS:
+        try:
+            reg.register(base_registry.get(name))
+        except KeyError:
+            continue  # tool not present in this build (e.g. web_search disabled)
+    for tool in assessment_tools(session):
+        reg.register(tool)
+    return reg
+
+
+def build_privacy_analyst_agent(ctx, session: AssessmentSession | None = None):
+    """Construct the first-round privacy analyst: an Agent that researches a subject
+    (read-only research tools), conducts the structured assessment, and cites the
+    control for each finding. Returns ``(agent, session)``. The agent's registry is
+    curated to the read-only research/control tools plus the assessment tools, so it
+    can gather evidence and score it but cannot take mutating/outward actions."""
+    from .agent import Agent
+
+    session = session or AssessmentSession()
+    agent = Agent(
+        ctx=ctx, role="privacy_analyst",
+        brief="Research the subject and conduct a scored compliance assessment.",
+        persona=PRIVACY_ANALYST_PERSONA,
+    )
+    agent.tools = _privacy_analyst_tools(agent.tools, session)
+    return agent, session
+
+
 __all__ = [
     "ANSWERS",
     "ASSESSMENT_PERSONA",
     "build_assessment_agent",
+    "PRIVACY_ANALYST_PERSONA",
+    "build_privacy_analyst_agent",
     "Question",
     "AssessmentTemplate",
     "Finding",
