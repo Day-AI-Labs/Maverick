@@ -2815,6 +2815,32 @@ def soc2(compact: bool) -> None:
         sys.exit(1)
 
 
+# ----- Enterprise (regulated-deployment) posture -----------------------
+
+@main.group("enterprise")
+def enterprise_group() -> None:
+    """Enterprise (regulated-deployment) posture."""
+
+
+@enterprise_group.command("verify")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+def enterprise_verify(fmt: str) -> None:
+    """Actively verify the regulated-deployment guarantees (exits non-zero if any fail).
+
+    Unlike 'maverick compliance' (which maps configured controls to articles),
+    this *exercises* the load-bearing guarantees: it proves the egress lock
+    refuses a cloud provider and that at-rest sealing round-trips on this box,
+    upgrading "the flag is on" to "the boundary holds." Wire it into CI / a
+    deploy gate the same way as 'maverick compliance --strict'.
+    """
+    from .deployment import all_passed, render_json, render_text, verify_deployment
+    checks = verify_deployment()
+    click.echo(render_json(checks) if fmt == "json" else render_text(checks))
+    if not all_passed(checks):
+        sys.exit(1)
+
+
 # ----- DSAR subject-data export ----------------------------------------
 
 @main.group("dsar")
