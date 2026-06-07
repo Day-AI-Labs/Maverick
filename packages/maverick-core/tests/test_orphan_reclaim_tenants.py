@@ -84,6 +84,29 @@ def test_reclaims_orphans_across_all_tenant_worlds(monkeypatch):
     _assert_reclaimed("b", b_goals)
 
 
+def test_reclaim_does_not_populate_tenant_world_cache(monkeypatch):
+    """Startup maintenance must not consume live tenant cache slots."""
+    monkeypatch.setenv("MAVERICK_TENANT_BY_USER", "1")
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    monkeypatch.setenv("MAVERICK_ORPHAN_RECLAIM_SECONDS", "0")
+
+    tenants = [f"tenant-{idx}" for idx in range(3)]
+    goals = {tenant: _stranded_tenant(tenant) for tenant in tenants}
+
+    import maverick.world_model as wm
+    for w in list(wm._tenant_worlds.values()):
+        w.close()
+    wm._tenant_worlds.clear()
+
+    reclaimed = server_mod._reclaim_tenant_orphans()
+
+    assert reclaimed == 6
+    assert wm._tenant_worlds == {}
+
+    for tenant, goal_ids in goals.items():
+        _assert_reclaimed(tenant, goal_ids)
+
+
 def test_reclaim_skips_unreadable_tenant_dir_fail_soft(monkeypatch):
     """A bad tenant entry is skipped; the good tenant is still reclaimed."""
     monkeypatch.setenv("MAVERICK_TENANT_BY_USER", "1")

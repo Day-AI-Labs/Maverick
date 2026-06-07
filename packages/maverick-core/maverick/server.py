@@ -44,14 +44,12 @@ def _reclaim_tenant_orphans() -> int:
 
     No-op (returns 0) when ``tenant_by_user_enabled()`` is off -- single-tenant
     behaviour is unchanged. Otherwise enumerate the existing tenant dirs and
-    reclaim each tenant's world via the same cached :func:`world_for_tenant`
-    used to serve that tenant's writes, summing the counts.
+    reclaim each tenant's world through a temporary ``WorldModel`` instance,
+    summing the counts without populating the live tenant cache.
 
     Fail-soft: a missing tenants dir or a bad/unreadable tenant entry is
     skipped, never crashing startup.
     """
-    from urllib.parse import unquote
-
     from .paths import maverick_home, tenant_by_user_enabled
 
     if not tenant_by_user_enabled():
@@ -66,12 +64,11 @@ def _reclaim_tenant_orphans() -> int:
         try:
             if not entry.is_dir():
                 continue
-            # On-disk dir names are the percent-ENCODED tenant segment
-            # (paths._tenant_segment); world_for_tenant() re-encodes its
-            # argument, so decode the segment back to the raw tenant id first
-            # or it would resolve to a different, empty world.db.
-            tenant = unquote(entry.name)
-            total += world_for_tenant(tenant).reclaim_orphan_goals()
+            world_db = entry / "world.db"
+            if not world_db.is_file():
+                continue
+            with WorldModel(world_db) as world:
+                total += world.reclaim_orphan_goals()
         except Exception:  # one bad tenant dir must not abort the sweep
             log.exception("orphan reclaim failed for tenant dir %s", entry.name)
     return total
