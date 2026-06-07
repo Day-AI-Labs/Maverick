@@ -27,6 +27,7 @@ a thin layer on top of this engine, exactly as the intake agent sits on
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -304,16 +305,25 @@ def save_session(session: AssessmentSession) -> Path:
     """Persist a session + its current evaluation as JSON. Returns the path."""
     d = _assessments_dir()
     d.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(d, 0o700)
+    except OSError:
+        pass
     result = session.evaluate()
     path = d / f"{session.id}.json"
-    path.write_text(json.dumps({
+    payload = json.dumps({
         "id": session.id,
         "type": session.type,
         "subject": session.subject,
         "created_at": session.created_at,
         "answers": session.answers,
         "result": asdict(result),
-    }, indent=2, default=str), encoding="utf-8")
+    }, indent=2, default=str)
+    # The assessment holds sensitive content (subject, answers, findings); write
+    # it 0600 so a co-tenant on a shared host can't read it (like dsar export).
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(payload)
     return path
 
 
@@ -341,7 +351,13 @@ def list_saved() -> list[dict]:
 
 
 def load_saved(assessment_id: str) -> dict | None:
-    path = _assessments_dir() / f"{assessment_id}.json"
+    base = _assessments_dir()
+    path = (base / f"{assessment_id}.json").resolve()
+    # Guard against path traversal: ``assessment_id`` is a server-generated id and
+    # the file must sit directly in the assessments dir. A ``../`` id resolves
+    # outside it and is refused (so `assess show ../../etc/passwd` can't read it).
+    if path.parent != base.resolve():
+        return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -455,10 +471,13 @@ PRIVACY_ANALYST_PERSONA = (
     "to sign off. You never approve or certify compliance yourself."
 )
 
-# The analyst's safe envelope: read-only research + the control catalog. Anything
-# mutating or outward (shell, write_file, ...) is deliberately excluded.
+# The analyst's safe envelope: read-only research + the control catalog. Mutating
+# tools (shell, write_file, ...) are excluded -- and so is ``http_fetch``: it can
+# POST an arbitrary body to any URL, which a prompt-injected analyst (it ingests
+# untrusted subject material) could use to exfiltrate what it read. ``web_search``
+# stays as the research channel (a query, not an arbitrary request body).
 _ANALYST_RESEARCH_TOOLS = (
-    "read_file", "web_search", "knowledge_search", "find_controls", "http_fetch",
+    "read_file", "web_search", "knowledge_search", "find_controls",
 )
 
 

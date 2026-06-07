@@ -17,7 +17,11 @@ def find_controls_tool() -> Tool:
         query = str(args.get("query", "")).strip()
         if not query:
             return "ERROR: 'query' is required (the risk or topic to find controls for)."
-        hits = find_controls(query, limit=int(args.get("limit", 5) or 5))
+        try:                                   # a model may emit a non-int limit
+            limit = max(1, int(args.get("limit", 5)))
+        except (TypeError, ValueError):
+            limit = 5
+        hits = find_controls(query, limit=limit)
         if not hits:
             return f"No catalog controls matched {query!r}."
         return "\n".join(render_control(c) for c in hits)
