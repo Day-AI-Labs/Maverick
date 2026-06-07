@@ -674,6 +674,17 @@ _SPECS: list[dict] = [
     dict(name="cvent", base_url_env="CVENT_BASE_URL", token_env="CVENT_TOKEN",
          description="Cvent REST (events). ops get/post/put/delete (writes need confirm). "
          "Auth: CVENT_BASE_URL + CVENT_TOKEN (OAuth bearer)."),
+
+    # --- Final checklist closers (CRM / payroll / incident mgmt) ---
+    dict(name="sugarcrm", base_url_env="SUGARCRM_BASE_URL", token_env="SUGARCRM_TOKEN",
+         description="SugarCRM REST (v11+). ops get/post/put/delete (writes need confirm). "
+         "Auth: SUGARCRM_BASE_URL + SUGARCRM_TOKEN (OAuth bearer)."),
+    dict(name="paychex", base_url_env="PAYCHEX_BASE_URL", token_env="PAYCHEX_TOKEN",
+         description="Paychex Flex REST. ops get/post (writes need confirm). Auth: "
+         "PAYCHEX_BASE_URL + PAYCHEX_TOKEN (OAuth bearer)."),
+    dict(name="opsgenie", base_url_env="OPSGENIE_BASE_URL", token_env="OPSGENIE_TOKEN",
+         scheme="GenieKey", description="Opsgenie REST (incident mgmt). ops get/post/put/"
+         "delete (writes need confirm). Auth: OPSGENIE_BASE_URL + OPSGENIE_TOKEN (GenieKey)."),
 ]
 
 # GraphQL services (single POST endpoint; mutations confirm-gated).
