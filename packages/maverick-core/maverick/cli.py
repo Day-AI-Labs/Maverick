@@ -573,6 +573,82 @@ def governance_check(action: str, risk: str | None, as_json: bool) -> None:
     click.echo(f"{action}: {v.decision.value.upper()}  ({v.rule}) — {v.reason}")
 
 
+@main.group()
+def fleet() -> None:
+    """Manage per-employee agent fleets (enterprise)."""
+
+
+@fleet.command("create")
+@click.argument("name")
+@click.option("--owner", required=True, help="Owning principal, e.g. user:alice.")
+@click.option("--agent", "agents", multiple=True, metavar="NAME:ROLE",
+              help="An agent as NAME:ROLE (repeatable). ROLE is an RBAC role.")
+def fleet_create(name: str, owner: str, agents: tuple[str, ...]) -> None:
+    """Create a fleet: an owner plus a roster of NAME:ROLE agents."""
+    from .fleet import Fleet, FleetAgent, save_fleet, valid_name
+    if not valid_name(name):
+        click.echo("ERROR: name must be [A-Za-z0-9_-] (<=64 chars)", err=True)
+        sys.exit(2)
+    roster = []
+    for spec in agents:
+        agent_name, _, role = spec.partition(":")
+        agent_name = agent_name.strip()
+        role = role.strip()
+        if not valid_name(agent_name) or not role:
+            click.echo(f"ERROR: bad --agent {spec!r}; use NAME:ROLE", err=True)
+            sys.exit(2)
+        roster.append(FleetAgent(name=agent_name, role=role))
+    path = save_fleet(Fleet(name=name, owner=owner, agents=tuple(roster)))
+    click.echo(f"created fleet {name!r} ({len(roster)} agent(s)) -> {path}")
+
+
+@fleet.command("list")
+def fleet_list() -> None:
+    """List fleets."""
+    from .fleet import list_fleets
+    fleets = list_fleets()
+    if not fleets:
+        click.echo("no fleets. create one with `maverick fleet create`")
+        return
+    for f in fleets:
+        click.echo(f"  {f.name}  (owner {f.owner}, {len(f.agents)} agent(s))")
+
+
+@fleet.command("show")
+@click.argument("name")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def fleet_show(name: str, as_json: bool) -> None:
+    """Show a fleet's roster (each agent + its role/principal)."""
+    import json as _json
+
+    from .fleet import load_fleet
+    f = load_fleet(name)
+    if f is None:
+        click.echo(f"no such fleet: {name}", err=True)
+        sys.exit(1)
+    if as_json:
+        click.echo(_json.dumps(f.to_dict()))
+        return
+    click.echo(click.style(f"fleet {f.name}  (owner {f.owner})", bold=True))
+    if not f.agents:
+        click.echo("  (no agents)")
+    for a in f.agents:
+        line = f"  {a.name:16} role={a.role:14} {f.principal_for(a.name)}"
+        click.echo(line + (f"  — {a.description}" if a.description else ""))
+
+
+@fleet.command("rm")
+@click.argument("name")
+def fleet_rm(name: str) -> None:
+    """Remove a fleet."""
+    from .fleet import remove_fleet
+    if remove_fleet(name):
+        click.echo(f"removed fleet {name!r}")
+    else:
+        click.echo(f"no such fleet: {name}", err=True)
+        sys.exit(1)
+
+
 @main.command()
 @click.argument("action", type=click.Choice(["show", "path", "edit"]), default="show")
 def config(action: str) -> None:
