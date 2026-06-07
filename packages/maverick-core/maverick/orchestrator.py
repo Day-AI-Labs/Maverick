@@ -332,6 +332,7 @@ async def run_goal(
     orchestrator_model_override: str | None = None,
     resume: bool = False,
     resume_episode_id: int | None = None,
+    domain: str | None = None,
 ) -> str:
     goal = world.get_goal(goal_id)
     if not goal:
@@ -691,13 +692,32 @@ async def run_goal(
         except Exception as e:  # pragma: no cover -- planning never blocks a run
             log.debug("tree-of-thought planning skipped: %s", e)
 
-        root = Agent(
-            ctx=ctx,
-            role="orchestrator",
-            brief=brief,
-            model_override=orchestrator_model_override,
-            depth=0,
-        )
+        # Domain routing: when a domain is named, the root runs AS that domain's
+        # specialist -- its persona, capability envelope, compartment tag, and
+        # knowledge_search -- instead of the generic orchestrator. This is how
+        # the factory's packs actually execute a task end to end.
+        root = None
+        if domain:
+            try:
+                from .domain import agent_from_profile, available_domains
+                _profile = available_domains().get(domain)
+                if _profile is None:
+                    return (f"no such domain: {domain!r}. See `maverick "
+                            "compartments` for available domains.")
+                root = agent_from_profile(_profile, ctx, brief, depth=0)
+            except Exception as e:  # fall back to the generic orchestrator
+                log.error(
+                    "domain %r agent build failed (%s); using the orchestrator",
+                    domain, e,
+                )
+        if root is None:
+            root = Agent(
+                ctx=ctx,
+                role="orchestrator",
+                brief=brief,
+                model_override=orchestrator_model_override,
+                depth=0,
+            )
 
         try:
             result = await root.run()
