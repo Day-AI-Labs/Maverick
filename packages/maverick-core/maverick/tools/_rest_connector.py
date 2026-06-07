@@ -109,3 +109,68 @@ def make_rest_tool(
             return f"ERROR: {name} request failed: {type(e).__name__}: {e}"
 
     return Tool(name=name, description=description, input_schema=_SCHEMA, fn=_run)
+
+
+_GQL_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "op": {"type": "string", "enum": ["query"]},
+        "query": {"type": "string", "description": "GraphQL query or mutation."},
+        "variables": {"type": "object"},
+        "confirm": {"type": "boolean", "description": "required for mutations."},
+    },
+    "required": ["op", "query"],
+}
+
+
+def make_graphql_tool(
+    *,
+    name: str,
+    base_url_env: str,
+    token_env: str,
+    description: str,
+    token_header: str = "Authorization",
+    scheme: str = "Bearer",
+) -> Tool:
+    """Build a GraphQL connector (single POST endpoint). Mutations (the query
+    text starts with ``mutation``) are confirm-gated; queries run."""
+
+    def _config() -> tuple[str, str]:
+        base = os.environ.get(base_url_env, "").strip().rstrip("/")
+        tok = os.environ.get(token_env, "").strip()
+        if not base or not tok:
+            raise RuntimeError(f"{name} requires {base_url_env} + {token_env}.")
+        return base, tok
+
+    def _run(args: dict[str, Any]) -> str:
+        q = (args.get("query") or "").strip()
+        if not q:
+            return "ERROR: query is required"
+        try:
+            import httpx  # noqa: F401
+        except ImportError:
+            return "ERROR: httpx not installed. Run: pip install 'maverick-agent[issue-trackers]'"
+        if q.lstrip("(").lower().startswith("mutation") and not as_bool(args.get("confirm")):
+            return "DRY RUN: GraphQL mutation. Re-run with confirm=true."
+        variables = args.get("variables") if isinstance(args.get("variables"), dict) else {}
+        try:
+            base, tok = _config()
+            import httpx
+            headers = {"Content-Type": "application/json",
+                       token_header: f"{scheme} {tok}".strip()}
+            r = httpx.post(base, headers=headers,
+                           json={"query": q, "variables": variables}, timeout=30.0)
+            try:
+                data = r.json()
+            except ValueError:
+                return f"ERROR: graphql ({r.status_code}): {(r.text or '')[:500]}"
+            if r.status_code >= 400 or (isinstance(data, dict) and data.get("errors")):
+                return f"ERROR: graphql ({r.status_code}): {data.get('errors', data)}"
+            return json.dumps(data.get("data", data), default=str)[:4000]
+        except RuntimeError as e:
+            return f"ERROR: {e}"
+        except Exception as e:  # noqa: BLE001
+            return f"ERROR: {name} request failed: {type(e).__name__}: {e}"
+
+    return Tool(name=name, description=description, input_schema=_GQL_SCHEMA, fn=_run)
+

@@ -693,6 +693,8 @@ def base_registry(
     from .enterprise_connectors import enterprise_connectors
     for _conn in enterprise_connectors():
         reg.register(_conn)
+    from .database_tool import database_tool
+    reg.register(database_tool())
     # Credentialed SaaS/cloud tools are opt-in (PR #124): they can use
     # ambient host credentials, so they only register when the operator
     # sets MAVERICK_ENABLE_CRED_TOOLS=true.
