@@ -71,6 +71,31 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 > "Still open" above; community/launch/marketing/localization items are
 > founder-tracked, not code. The forward plan below picks up at the 2027 horizon.
 
+> **2027 H2 + 2028 build wave (June 2026): shipped.** A pull-forward pass built
+> every *code-buildable* item across 2027 H2, 2028 H1, and 2028 H2 — each behind a
+> default-OFF flag or optional-dependency extra where it touches a hot path, with
+> mock/unit tests. Shipped via PRs #862 (2028 H1 platform), #869 (2027 H2 tools),
+> and #887 (2028 H1/H2 runtime + introspection):
+> - **2027 H2**: LaTeX render, diagramming (Graphviz/Mermaid), persistent task
+>   graph, browser auth vault, HTML-to-app scaffolder, notebook execution,
+>   WebSocket tool, self-edit (human-gated), browser device emulation,
+>   Slack/Discord/Teams (Teams) tool, continuous-benchmarking tool.
+> - **2028 H1**: live-DOM diff, tool-output cache, phishing-content detector,
+>   license compliance scanner, replayable trace format, per-tool latency stats
+>   (extended), network egress accounting, workspace snapshot/restore, cost split
+>   by tag (async tool invocation was already shipped via MCP Tasks).
+> - **2028 H2**: zero-config BYO-tool (`@tool`), generic OIDC tool, run health
+>   score, capability self-report, provider-cost-curve fitter, sub-second tool
+>   latency budget, latency budget propagation across spans, network sandbox
+>   (per-tool egress), local-first default mode, energy-aware routing,
+>   continuous-learning skill loop (local), email channel v2 (IDLE + threading).
+>
+> The 2027 H1 quarter has **no** remaining code-buildable items — its open entries
+> are frontend/native-GUI, external-service, ML-training, or non-code (community/
+> marketing) work. Remaining 2027 H2 / 2028 entries below are likewise blocked on
+> a live service, real hardware/GPU, a trained model, a frontend/native surface,
+> or are founder-tracked.
+
 ---
 
 ## 2027 — H1
@@ -91,7 +116,7 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 
 ## 2027 — H2
 
-**Capabilities**: Multi-modal RAG; agent-to-agent debate over shared scratchpad; WASM sandbox; ROS robotics action tool; browser anti-bot evasion kit (opt-in); SQL agent tool (read-only by default); LaTeX render; diagramming (Mermaid/Graphviz/PlantUML); critic-agent template; cost-aware model router. Persistent task graph (checkpoint per step); browser auth vault; HTML-to-app scaffolder; notebook execution; real-time WebSocket tool; multi-agent observation channel; self-edit tool (human-gated); browser device emulation; Slack/Discord/Teams tool; continuous-benchmarking tool.
+**Capabilities**: Multi-modal RAG; agent-to-agent debate over shared scratchpad; WASM sandbox; ROS robotics action tool; browser anti-bot evasion kit (opt-in); SQL agent tool (read-only by default); critic-agent template; cost-aware model router; multi-agent observation channel.
 
 **UX**: Native macOS/Windows/Linux GUI apps; browser extension; voice persona presets; multi-language voice; wizard branching paths; inline cost preview; run gallery; replay export to MP4. Collaborative supervision (multi-user dashboard); approval delegation rules; trace pinning to commit; VS Code + JetBrains live-run extensions; TUI mouse mode; cost anomaly alerts; "why this cost" drill-down; run-as-tutorial export; accessibility audit pass; i18n community portal.
 
@@ -107,15 +132,15 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 
 ## 2028 — H1
 
-**Capabilities**: Live-DOM diff in browser tool; computer-use coordinate calibration; audio diarization + emotion; vision-grounded clicking; file-format converter (pandoc+ffmpeg+libreoffice); knowledge-graph builder; cron/scheduler tool; workspace snapshot/restore; tool-output cache; async tool invocation. Multi-monitor computer-use; process introspection; hardware sensor tool; voice cloning consent gate; semantic code search; cross-repo dependency graph; test generation (Hypothesis); mutation testing; container build tool; streaming reasoning trace channel.
+**Capabilities**: computer-use coordinate calibration; audio diarization + emotion; vision-grounded clicking; file-format converter (pandoc+ffmpeg+libreoffice); knowledge-graph builder; cron/scheduler tool. Multi-monitor computer-use; process introspection; hardware sensor tool; voice cloning consent gate; semantic code search; cross-repo dependency graph; test generation (Hypothesis); mutation testing; container build tool; streaming reasoning trace channel.
 
-**UX**: Plan-tree minimap; conversational supervisor; voice-only mode; smart notification batching; mobile offline cache; augmented terminal (Rich inline charts); cost split by tag; multi-tenant view; personalized starter templates; replay annotation export. AR plan-tree (visionOS); live captions voice; visual goal templates marketplace; "diff to expected"; smart goal completion; adaptive UI density; embedded analytics web component; pluggable themes API; voice macros; RTL language support.
+**UX**: Plan-tree minimap; conversational supervisor; voice-only mode; smart notification batching; mobile offline cache; augmented terminal (Rich inline charts); multi-tenant view; personalized starter templates; replay annotation export. AR plan-tree (visionOS); live captions voice; visual goal templates marketplace; "diff to expected"; smart goal completion; adaptive UI density; embedded analytics web component; pluggable themes API; voice macros; RTL language support.
 
 **Distribution**: 2.0 stable release; migration playbook; marketplace v3 (donate-direct model); Maverick Summit v2 (hybrid); editor expansion (JetBrains/Neovim/Zed); localized docs phase 5 (top-15 langs + MT pipeline); "Built with Maverick" badge program; comparison benchmark v3 live dashboard; university curriculum kit; foundation paperwork submitted. ARM/RISC-V builds; iOS/Android skill execution (Pyodide/Kivy); skill + channel certification programs; community grants v1; regional meetup playbook; embeddable widget; hosted demo cluster (demo.maverick.dev); press push to major outlets; sponsor tier 2.
 
-**Performance**: Speculative best-of-N (kill underperformers at first reasoning checkpoint); compaction v6 hybrid (learned classifier picks strategy); sub-ms dispatch overhead (msgspec/orjson); continuous profiling daemon (py-spy); cost-aware routing v3 (contextual bandits); sandbox pool (warm Docker/Firecracker, <100ms acquire); replayable trace format; cache-aware prompt assembly DSL; SLA-breach automation; open metric standard. Multi-region failover; compaction v7 streaming; long-context cost guardrails (>$50/run gate); persistent KV-cache for local; network egress accounting; online schema migrations; p999 latency campaign; cost-of-quality study; battery-mode for laptops; ML cache eviction (ARC/LeCaR).
+**Performance**: Speculative best-of-N (kill underperformers at first reasoning checkpoint); compaction v6 hybrid (learned classifier picks strategy); sub-ms dispatch overhead (msgspec/orjson); continuous profiling daemon (py-spy); cost-aware routing v3 (contextual bandits); sandbox pool (warm Docker/Firecracker, <100ms acquire); cache-aware prompt assembly DSL; SLA-breach automation; open metric standard. Multi-region failover; compaction v7 streaming; long-context cost guardrails (>$50/run gate); persistent KV-cache for local; online schema migrations; p999 latency campaign; cost-of-quality study; battery-mode for laptops; ML cache eviction (ARC/LeCaR).
 
-**Safety**: Risk-tier auto-classifier (low/med/high goal scoring); containment mode (no-network ephemeral fs); capability negotiation protocol; cryptographic budget receipts; independent audit-log mirror; quorum approval for config changes; phishing-content detector; misuse leaderboard removal; license compliance scanner; safety steering group. Formal verification of sandbox interface (TLA+); capability-leak fuzzer; provenance chain across agents; multi-tenant isolation tests; right-to-explanation; bias eval suite; long-horizon goal review checkpoint; provider-level cost cap; backport security fixes; external SOC2 Type I.
+**Safety**: Risk-tier auto-classifier (low/med/high goal scoring); containment mode (no-network ephemeral fs); capability negotiation protocol; cryptographic budget receipts; independent audit-log mirror; quorum approval for config changes; misuse leaderboard removal; safety steering group. Formal verification of sandbox interface (TLA+); capability-leak fuzzer; provenance chain across agents; multi-tenant isolation tests; right-to-explanation; bias eval suite; long-horizon goal review checkpoint; provider-level cost cap; backport security fixes; external SOC2 Type I.
 
 **Ecosystem**: Plugin API v2 RFC; plugin compatibility matrix CI; multi-language plugin support (gRPC plugin host); TypeScript plugin SDK; generic SaaS-trigger framework; pgvector adapter; Apple Shortcuts integration; browser-extension chat. Plugin API v2 release; marketplace moderation tools; ACD interop tests; voice channel v2 (streaming ASR + barge-in); Discord slash-command framework; Slack workflow integration; Salesforce/HubSpot adapters; local-first embeddings cache (LMDB).
 
@@ -123,17 +148,17 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 
 ## 2028 — H2
 
-**Capabilities**: WebRTC tool; browser extension bridge; ARIA-first navigation; adversarial self-test; sandbox-escape detector; embedded device tool (serial/JTAG/I2C); mixed-precision local inference; speculative decoding across providers; long-form writing (outline→draft→polish); citation verifier. Continuous-learning skill loop (local); agent simulator harness; multi-agent fairness scheduler; sub-second tool latency budget; network sandbox (per-tool egress); zero-config BYO-tool (`@tool` decorator); WebGPU local vision; synthetic data tool; federated swarm protocol; capability self-report tool.
+**Capabilities**: WebRTC tool; browser extension bridge; ARIA-first navigation; adversarial self-test; sandbox-escape detector; embedded device tool (serial/JTAG/I2C); mixed-precision local inference; speculative decoding across providers; long-form writing (outline→draft→polish); citation verifier. Agent simulator harness; multi-agent fairness scheduler; WebGPU local vision; synthetic data tool; federated swarm protocol.
 
-**UX**: "Director" mode (outcomes → plans → autonomy); cross-device handoff; predictive approvals; run health score; embedded video walkthroughs; granular redaction UI; conversation memory across runs; voice biometric unlock; power-user keymap editor; localized currency display. Unified inbox; smart NL filters; 3D plan-tree (WebGL/VR); self-healing UX; channel auto-routing; onboarding personalization v2; "achievements"; cost retrospective AI; universal share link; 36-month UX retrospective + reset.
+**UX**: "Director" mode (outcomes → plans → autonomy); cross-device handoff; predictive approvals; embedded video walkthroughs; granular redaction UI; conversation memory across runs; voice biometric unlock; power-user keymap editor; localized currency display. Unified inbox; smart NL filters; 3D plan-tree (WebGL/VR); self-healing UX; channel auto-routing; onboarding personalization v2; "achievements"; cost retrospective AI; universal share link; 36-month UX retrospective + reset.
 
 **Distribution**: Maverick Conference v3 (in-person flagship); hackathon series; localized communities (top 5 non-English); skill marketplace federation; channel federation; public roadmap voting; press kit v2 + case studies; comparison benchmark v4 with reproducibility audits; handbook v2; "5-year vision" essay. Foundation hand-off; governance v2 launch (elected TSC); documentation rewrite; tutorial season 4; survey v3 + retrospective; sponsor renewal drive; HF Space spotlight; awards push; 2029 roadmap publication.
 
-**Performance**: Self-tuning budgets (per-task-class learned defaults); compaction v8 graph-structured; zstd compression on world_model; critical-path-aware parallel scheduling; provider-side caching analytics; chaos game-day script; cost telemetry retention policy; provider-cost-curve fitter; real-time SSE dashboards; reliability harness 2.0. Cost/perf canary system per release; compaction v9 plug-in API; latency budget propagation across spans; energy-aware routing; local-first default mode; full OpenTelemetry semconv; 3-year retrospective benchmark; reliability cert; public perf SLA; sunset deprecated paths.
+**Performance**: Self-tuning budgets (per-task-class learned defaults); compaction v8 graph-structured; zstd compression on world_model; critical-path-aware parallel scheduling; provider-side caching analytics; chaos game-day script; cost telemetry retention policy; real-time SSE dashboards; reliability harness 2.0. Cost/perf canary system per release; compaction v9 plug-in API; full OpenTelemetry semconv; 3-year retrospective benchmark; reliability cert; public perf SLA; sunset deprecated paths.
 
 **Safety**: Shield v3 (small-model ensemble: injection + jailbreak + exfil + policy, explainable reason codes); provable redaction; differential erasure verification; air-gapped mode (full stack, no outbound); confidential-compute support (SEV-SNP/TDX); per-jurisdiction data residency; adversarial-prompt corpus release; AI Act conformance package; vuln reward expansion; third-party pen test. Federated audit-log verification; capability revocation propagation; key rotation playbook; PIA generator; safety regression budget; polyglot injection defense; consent ergonomics pass; 36-month safety retrospective; sunset policy; LTS safety branch (2-year support).
 
-**Ecosystem**: Plugin signing CA; capability negotiation at swarm boot; gRPC API v1 stable; federated swarms over gRPC; KaTeX/Mermaid rich-render channel; Open Banking tool (Plaid/TrueLayer); HomeAssistant integration; email channel v2 (IDLE + threading); MCP server publishing. Marketplace stats dashboard; plugin API v3 RFC (if warranted); ACD spec v1.1; generic OIDC tool; multi-tenant `maverick serve`; channel SDK v2 (async-only); sandbox SDK v2; long-running plugin reliability suite; 3-year retrospective + 2029-2031 plan.
+**Ecosystem**: Plugin signing CA; capability negotiation at swarm boot; gRPC API v1 stable; federated swarms over gRPC; KaTeX/Mermaid rich-render channel; Open Banking tool (Plaid/TrueLayer); HomeAssistant integration; MCP server publishing. Marketplace stats dashboard; plugin API v3 RFC (if warranted); ACD spec v1.1; multi-tenant `maverick serve`; channel SDK v2 (async-only); sandbox SDK v2; long-running plugin reliability suite; 3-year retrospective + 2029-2031 plan.
 
 ---
 
