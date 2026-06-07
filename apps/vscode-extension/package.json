@@ -5,13 +5,13 @@
   "version": "0.1.0",
   "publisher": "cdayAI",
   "license": "MIT",
-  "homepage": "https://github.com/cdayAI/Maverick",
+  "homepage": "https://github.com/Day-AI-Labs/Maverick",
   "bugs": {
-    "url": "https://github.com/cdayAI/Maverick/issues"
+    "url": "https://github.com/Day-AI-Labs/Maverick/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/cdayAI/Maverick.git",
+    "url": "https://github.com/Day-AI-Labs/Maverick.git",
     "directory": "apps/vscode-extension"
   },
   "categories": ["AI", "Programming Languages", "Other"],

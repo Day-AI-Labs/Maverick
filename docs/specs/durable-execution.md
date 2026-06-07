@@ -1,6 +1,6 @@
 # Design Spec: Durable & Resumable Execution
 
-**Status:** Draft / proposal · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (A1) ([#396](https://github.com/cdayAI/Maverick/issues/396)) · **Date:** May 2026
+**Status:** Draft / proposal · **Roadmap ref:** [`ROADMAP.md`](../ROADMAP.md) → "Current state & gap analysis" (A1) ([#396](https://github.com/Day-AI-Labs/Maverick/issues/396)) · **Date:** May 2026
 
 > This is a proposal for discussion, not an accepted design. It deliberately
 > stops at the interface + phasing; implementation waits on sign-off.

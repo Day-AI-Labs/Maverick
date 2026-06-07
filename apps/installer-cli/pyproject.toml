@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/cdayAI/maverick"
+Homepage = "https://github.com/Day-AI-Labs/maverick"
 
 [project.scripts]
 maverick-init = "maverick_installer.main:main"

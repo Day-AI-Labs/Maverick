@@ -7,7 +7,7 @@ name: Maverick agent on PR (reusable)
 #
 #     jobs:
 #       review:
-#         uses: cdayAI/Maverick/.github/workflows/agent-on-pr.yml@main
+#         uses: Day-AI-Labs/Maverick/.github/workflows/agent-on-pr.yml@main
 #         with:
 #           goal: "Review this PR for logic bugs and missing edge cases."
 #           max_dollars: 0.50

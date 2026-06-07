@@ -20,7 +20,7 @@ jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      - uses: cdayAI/maverick/deploy/github-action@v0.1.6
+      - uses: Day-AI-Labs/maverick/deploy/github-action@v0.1.6
         with:
           goal: ${{ inputs.goal }}
           max-dollars: "0.50"

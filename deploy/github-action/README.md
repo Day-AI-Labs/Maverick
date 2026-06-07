@@ -7,7 +7,7 @@ give it, then writes the final answer to the job summary and exposes it as
 a step output.
 
 ```yaml
-- uses: cdayAI/maverick/deploy/github-action@v0.1.6
+- uses: Day-AI-Labs/maverick/deploy/github-action@v0.1.6
   with:
     goal: "Summarize the changes in this PR and flag anything risky."
     max-dollars: "0.50"
@@ -56,7 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: cdayAI/maverick/deploy/github-action@v0.1.6
+      - uses: Day-AI-Labs/maverick/deploy/github-action@v0.1.6
         with:
           template: code-review
           params: |
@@ -71,7 +71,7 @@ jobs:
 
 ```yaml
       - id: maverick
-        uses: cdayAI/maverick/deploy/github-action@v0.1.6
+        uses: Day-AI-Labs/maverick/deploy/github-action@v0.1.6
         with:
           goal: "Review the diff on this PR and list concrete risks."
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -99,7 +99,7 @@ composite-action steps inherit it:
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
-      - uses: cdayAI/maverick/deploy/github-action@v0.1.6
+      - uses: Day-AI-Labs/maverick/deploy/github-action@v0.1.6
         with:
           goal: "..."
           model: gpt-4.1

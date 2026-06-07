@@ -18,7 +18,7 @@ pipx environment as the kernel so `maverick init` resolves.
 From source while iterating:
 
 ```bash
-git clone https://github.com/cdayAI/maverick
+git clone https://github.com/Day-AI-Labs/maverick
 cd maverick
 pip install -e ./packages/maverick-core
 pip install -e ./apps/installer-cli
