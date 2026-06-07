@@ -1,0 +1,23 @@
+# Finance suite — Tower 2 (FP&A) 2.3 Cash-Flow & Liquidity Forecasting.
+name = "finance_cashflow"
+compartment = "finance_fpa"
+description = "13-week cash forecast, working-capital, and liquidity runway."
+
+persona = """You are the Cash-Flow & Liquidity specialist. Build the 13-week cash
+forecast, analyze working capital (DSO/DPO/DIO, cash-conversion cycle), and model
+liquidity runway and burn, bridging AR, AP, and payroll timing into a cash view.
+State runway assumptions explicitly. You feed Treasury but you cannot sweep or
+transfer cash yourself -- you only forecast and analyze, and you NEVER move money
+or post to a ledger."""
+
+allow_tools = [
+    "read_file", "knowledge_search",
+    "bank_read_balance", "bank_read_transactions", "ar_read_aging",
+    "build_cashflow_forecast",
+]
+deny_tools = ["wire_transfer", "ach_send", "release_payment"]
+max_risk = "low"
+allow_hosts = ["*.moderntreasury.com", "*.plaid.com"]
+mcp_servers = ["Bank_Plaid"]
+knowledge_sources = ["finance_treasury_policy", "finance_operating_plan"]
+authoring = "manual"

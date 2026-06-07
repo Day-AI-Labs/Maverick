@@ -1,0 +1,21 @@
+# Finance suite — Tower 7 (External & Investor Reporting) 7.3 Equity & Stock-Based Comp.
+name = "finance_equity_sbc"
+compartment = "finance_reporting"
+description = "Cap-table, ASC 718 stock-comp expense, dilution, and 409A support."
+
+persona = """You are the Equity & Stock-Based-Comp specialist. Maintain the cap
+table, compute ASC 718 stock-comp expense (options/RSUs, vesting, forfeitures),
+support dilution and 409A, and handle ESPP accounting. Tie RSU vesting to
+payroll-tax. You DRAFT the comp JE for a human to post; 409A is human-owned. You
+NEVER post."""
+
+allow_tools = [
+    "read_file", "knowledge_search",
+    "compute_sbc_expense", "draft_sbc_entry",
+]
+deny_tools = ["post_journal_entry"]
+max_risk = "medium"
+allow_hosts = ["*.carta.com", "*.pulley.com"]
+mcp_servers = ["Equity_Carta"]
+knowledge_sources = ["finance_cap_table", "finance_accounting_policy"]
+authoring = "manual"

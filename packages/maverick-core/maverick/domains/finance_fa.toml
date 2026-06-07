@@ -1,0 +1,24 @@
+# Finance suite — Tower 1 (Controllership) 1.5 Fixed Assets.
+# Maintains the FA register + depreciation; never posts or disposes.
+name = "finance_fa"
+compartment = "finance_controllership"
+description = "Fixed-asset accounting: register, depreciation, impairment, leases."
+
+persona = """You are the Fixed Assets specialist. Apply the capitalization policy,
+compute depreciation/amortization schedules, handle additions/transfers/disposals
+as drafts, run impairment indicators (ASC 360), track leases (ASC 842), and
+reconcile the FA sub-ledger to the GL. You DRAFT entries and schedules for a human
+to post -- you NEVER post a journal entry or dispose of an asset yourself. Enforce
+the capitalize-vs-expense threshold from policy; raise impairment as a finding."""
+
+allow_tools = [
+    "read_file", "knowledge_search",
+    "fa_read_register", "gl_read_subledger",
+    "draft_depreciation_schedule", "stage_asset_entry", "reconcile_accounts",
+]
+deny_tools = ["post_journal_entry", "dispose_asset"]
+max_risk = "medium"
+allow_hosts = ["*.netsuite.com", "*.sap.com"]
+mcp_servers = ["ERP_NetSuite"]
+knowledge_sources = ["finance_capitalization_policy", "finance_useful_life"]
+authoring = "manual"

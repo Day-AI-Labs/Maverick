@@ -25,7 +25,7 @@ recording verdicts to the audit chain are separate, deliberate steps.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from .safety.tool_risk import risk_rank, tool_risk
@@ -44,8 +44,9 @@ class Verdict:
     """The outcome of a policy evaluation.
 
     ``rule`` names the policy clause that fired (``capability`` / ``deny_actions``
-    / ``deny_min_risk`` / ``require_human_actions`` / ``require_human_min_risk`` /
-    ``default``) so an auditor can see *why*, not just *what*.
+    / ``deny_min_risk`` / ``deny_above`` / ``require_human_actions`` /
+    ``require_human_min_risk`` / ``require_human_above`` / ``default``) so an
+    auditor can see *why*, not just *what*.
     """
 
     decision: Decision
@@ -65,6 +66,23 @@ def _risk_level(value: object) -> str | None:
     return value if isinstance(value, str) and value in _RISK_LEVELS else None
 
 
+def _amount_table(value: object) -> dict[str, float]:
+    """Coerce a config value into an ``action -> threshold`` map.
+
+    Accepts a TOML table ``{action = amount}`` (a ``"*"`` key is the catch-all),
+    or a bare number which becomes the catch-all ``{"*": amount}``. Non-numeric
+    entries are dropped.
+    """
+    out: dict[str, float] = {}
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return {"*": float(value)}
+    if isinstance(value, dict):
+        for k, v in value.items():
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                out[str(k)] = float(v)
+    return out
+
+
 @dataclass(frozen=True)
 class Policy:
     """Org-level action policy, layered on top of per-principal capabilities.
@@ -73,12 +91,19 @@ class Policy:
     - ``deny_min_risk`` / ``require_human_min_risk``: a risk *floor* -- any action
       whose classified risk is at or above it gets the verdict. ``None`` == no
       floor. (Risk order: low < medium < high.)
+    - ``deny_above`` / ``require_human_above``: dollar-amount thresholds per action
+      (a ``"*"`` key applies to every action). When a call carries an ``amount``
+      above the threshold it gets the verdict — the finance delegation-of-authority
+      tier ("< $5k auto, $5k–50k human, > $50k denied"). Thresholds are in one
+      reporting currency; the caller normalises ``amount`` into it.
     """
 
     deny_actions: frozenset[str] = frozenset()
     require_human_actions: frozenset[str] = frozenset()
     deny_min_risk: str | None = None
     require_human_min_risk: str | None = None
+    deny_above: dict[str, float] = field(default_factory=dict)
+    require_human_above: dict[str, float] = field(default_factory=dict)
 
     def is_empty(self) -> bool:
         return not (
@@ -86,6 +111,8 @@ class Policy:
             or self.require_human_actions
             or self.deny_min_risk
             or self.require_human_min_risk
+            or self.deny_above
+            or self.require_human_above
         )
 
     @classmethod
@@ -108,7 +135,23 @@ class Policy:
             require_human_actions=_names("require_human_actions"),
             deny_min_risk=_risk_level(cfg.get("deny_min_risk")),
             require_human_min_risk=_risk_level(cfg.get("require_human_min_risk")),
+            deny_above=_amount_table(cfg.get("deny_above")),
+            require_human_above=_amount_table(cfg.get("require_human_above")),
         )
+
+
+def _threshold_for(table: dict[str, float], action: str) -> float | None:
+    """The amount threshold for ``action`` (exact key, else the ``"*"`` default)."""
+    if action in table:
+        return table[action]
+    return table.get("*")
+
+
+def _money(amount: float | None, currency: str) -> str:
+    if amount is None:
+        return ""
+    cur = f" {currency}" if currency else ""
+    return f"{amount:g}{cur}"
 
 
 def evaluate(
@@ -117,16 +160,21 @@ def evaluate(
     risk: str | None = None,
     capability=None,
     policy: Policy | None = None,
+    amount: float | None = None,
+    currency: str = "",
 ) -> Verdict:
     """Decide ALLOW / DENY / REQUIRE_HUMAN for ``action`` (a tool name).
 
     Strictest-wins evaluation order:
       1. capability (least privilege) -- a forbidden action is denied outright;
-      2. org hard-deny (``deny_actions`` / ``deny_min_risk``);
-      3. human-oversight gate (``require_human_actions`` / ``require_human_min_risk``);
+      2. org hard-deny (``deny_actions`` / ``deny_min_risk`` / ``deny_above``);
+      3. human-oversight gate (``require_human_actions`` / ``require_human_min_risk``
+         / ``require_human_above``);
       4. otherwise allow.
 
-    ``risk`` overrides the classifier (``safety.tool_risk``) when given. ``policy``
+    ``risk`` overrides the classifier (``safety.tool_risk``) when given. ``amount``
+    (in ``currency``) is the transaction value, checked against the policy's
+    dollar-threshold tiers — the finance delegation-of-authority gate. ``policy``
     defaults to :meth:`Policy.from_config`; ``capability`` is an optional
     :class:`maverick.capability.Capability`.
     """
@@ -147,6 +195,11 @@ def evaluate(
         return Verdict(Decision.DENY,
                        f"{eff_risk}-risk {action!r} denied by org policy",
                        "deny_min_risk")
+    deny_thresh = _threshold_for(policy.deny_above, action)
+    if amount is not None and deny_thresh is not None and amount > deny_thresh:
+        return Verdict(Decision.DENY,
+                       f"{action!r} amount {_money(amount, currency)} exceeds the "
+                       f"deny ceiling {_money(deny_thresh, currency)}", "deny_above")
 
     # 3. Human-oversight gate (EU AI Act Art 14).
     if action in policy.require_human_actions:
@@ -157,6 +210,12 @@ def evaluate(
         return Verdict(Decision.REQUIRE_HUMAN,
                        f"{eff_risk}-risk {action!r} requires human approval",
                        "require_human_min_risk")
+    hitl_thresh = _threshold_for(policy.require_human_above, action)
+    if amount is not None and hitl_thresh is not None and amount > hitl_thresh:
+        return Verdict(Decision.REQUIRE_HUMAN,
+                       f"{action!r} amount {_money(amount, currency)} exceeds the "
+                       f"approval threshold {_money(hitl_thresh, currency)}, "
+                       "requires human approval", "require_human_above")
 
     # 4. Default-allow.
     return Verdict(Decision.ALLOW, "permitted", "default")

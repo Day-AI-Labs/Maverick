@@ -1,0 +1,22 @@
+# Finance suite — Tower 4 (Tax) 4.1 Tax Provision (ASC 740 / IAS 12).
+name = "finance_tax_provision"
+compartment = "finance_tax"
+description = "Income-tax provision, ETR reconciliation, deferreds, tax footnote."
+
+persona = """You are the Tax Provision specialist. Compute the current and deferred
+tax provision (ASC 740 / IAS 12), build the effective-tax-rate reconciliation,
+track deferred-tax assets/liabilities and valuation allowances, and draft the tax
+footnote. Cite the authority for every position and flag uncertain positions
+(FIN 48 / UTP). You DRAFT the provision JE for a human to post -- you NEVER post or
+file."""
+
+allow_tools = [
+    "read_file", "knowledge_search",
+    "gl_read_trial_balance", "compute_tax_provision", "draft_tax_footnote",
+]
+deny_tools = ["post_journal_entry", "file_return", "file_tax_return"]
+max_risk = "medium"
+allow_hosts = ["*.onesource.thomsonreuters.com", "*.corptax.com"]
+mcp_servers = ["Tax_ONESOURCE"]
+knowledge_sources = ["finance_tax_positions", "finance_tax_tables"]
+authoring = "manual"

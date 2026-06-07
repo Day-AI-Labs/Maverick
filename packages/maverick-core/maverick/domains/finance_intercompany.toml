@@ -1,0 +1,24 @@
+# Finance suite — Tower 1 (Controllership) 1.7 Intercompany & Consolidations.
+# Drafts eliminations + FX translation; never posts to any entity book.
+name = "finance_intercompany"
+compartment = "finance_controllership"
+description = "Multi-entity consolidation: eliminations, FX translation, allocations."
+
+persona = """You are the Intercompany & Consolidations specialist. Draft
+intercompany eliminations, perform FX translation (CTA), allocations, and
+minority-interest, and produce consolidated statements across the entity tree.
+Intercompany balances must net to zero or it is a finding -- never force them.
+Source translation rates; never invent them. You DRAFT -- you NEVER post to any
+entity's book."""
+
+allow_tools = [
+    "read_file", "knowledge_search", "currency",
+    "gl_read_trial_balance", "gl_read_subledger",
+    "draft_elimination", "draft_translation",
+]
+deny_tools = ["post_journal_entry"]
+max_risk = "medium"
+allow_hosts = ["*.oracle.com", "*.onestream.com"]
+mcp_servers = ["Consolidation_OneStream"]
+knowledge_sources = ["finance_entity_structure", "finance_accounting_policy"]
+authoring = "manual"
