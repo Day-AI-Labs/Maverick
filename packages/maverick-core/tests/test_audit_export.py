@@ -239,3 +239,57 @@ def test_cli_export_empty_log_exits_zero(monkeypatch, tmp_path):
     from maverick.cli import main
     res = CliRunner().invoke(main, ["audit", "export"])
     assert res.exit_code == 0, res.output
+
+
+# --- since/until date window ------------------------------------------------
+
+def test_iter_since_until_window(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    audit_dir = tmp_path / ".maverick" / "audit"
+    _write_day(audit_dir, "2020-01-01", name="jan")
+    _write_day(audit_dir, "2020-06-15", name="jun")
+    _write_day(audit_dir, "2020-12-31", name="dec")
+
+    names = {e.get("name")
+             for e in iter_audit_events(since="2020-06-01", until="2020-07-01")}
+    assert names == {"jun"}
+
+
+def test_iter_since_is_inclusive_and_open_ended(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    audit_dir = tmp_path / ".maverick" / "audit"
+    _write_day(audit_dir, "2020-01-01", name="jan")
+    _write_day(audit_dir, "2020-06-15", name="jun")
+
+    # since only -> everything on/after that date (inclusive).
+    names = {e.get("name") for e in iter_audit_events(since="2020-06-15")}
+    assert names == {"jun"}
+
+
+def test_cli_export_since_until(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    audit_dir = tmp_path / ".maverick" / "audit"
+    _write_day(audit_dir, "2020-01-01", name="jan")
+    _write_day(audit_dir, "2020-06-15", name="jun")
+    _write_day(audit_dir, "2020-12-31", name="dec")
+
+    from maverick.cli import main
+    res = CliRunner().invoke(
+        main, ["audit", "export", "--since", "2020-06-01", "--until", "2020-07-01"]
+    )
+    assert res.exit_code == 0, res.output
+    names = {json.loads(line)["name"]
+             for line in res.output.splitlines() if line.strip()}
+    assert names == {"jun"}
+
+
+def test_cli_export_rejects_bad_date(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    from maverick.cli import main
+    res = CliRunner().invoke(main, ["audit", "export", "--since", "nope"])
+    assert res.exit_code == 2
+    assert "YYYY-MM-DD" in res.output
