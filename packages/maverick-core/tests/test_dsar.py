@@ -170,6 +170,35 @@ def test_export_with_channel_excludes_same_user_id_on_other_channels():
     assert {e["channel"] for e in bundle["audit"]} == {"telegram"}
 
 
+def test_export_with_blank_channel_fails_closed_for_same_user_id_collision():
+    """Blank explicit channels must not become an unscoped world export."""
+    wm = WorldModel(_world_db())
+
+    telegram = wm.get_or_create_conversation("telegram", "alice")
+    telegram_gid = wm.create_goal("telegram alice goal", "telegram private goal")
+    wm.append_turn(telegram.id, "user", "telegram alice secret", goal_id=telegram_gid)
+
+    discord = wm.get_or_create_conversation("discord", "alice")
+    discord_gid = wm.create_goal("discord alice goal", "discord private goal")
+    wm.append_turn(discord.id, "user", "discord alice secret", goal_id=discord_gid)
+    wm.close()
+
+    log = AuditLog(audit_dir=_audit_dir())
+    log.record(_audit_event("telegram", "alice", "telegram alice audited"))
+    log.record(_audit_event("discord", "alice", "discord alice audited"))
+
+    bundle = export_subject_data("alice", channel="")
+    blob = json.dumps(bundle)
+
+    assert bundle["subject"] == {"user_id": "alice", "channel": None}
+    assert bundle["world"] == {"conversations": [], "goals": []}
+    assert bundle["audit"] == []
+    assert "telegram alice secret" not in blob
+    assert "discord alice secret" not in blob
+    assert "telegram alice audited" not in blob
+    assert "discord alice audited" not in blob
+
+
 def test_export_without_channel_fails_closed_when_user_id_is_ambiguous():
     wm = WorldModel(_world_db())
     telegram = wm.get_or_create_conversation("telegram", "alice")
