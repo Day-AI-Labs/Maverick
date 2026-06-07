@@ -73,11 +73,12 @@ def _first_text(result: dict) -> str:
 class McpTask:
     """In-memory record of one task-augmented request's execution state."""
 
-    def __init__(self, *, ttl_ms: int, poll_interval_ms: int):
+    def __init__(self, *, ttl_ms: int, poll_interval_ms: int, owner: str | None = None):
         # No auth context on stdio (single client owns the pipe), so per the
         # spec's security guidance the id is cryptographically random with
         # ample entropy rather than guessable/sequential.
         self.id = secrets.token_hex(16)
+        self.owner = owner
         self.status = "working"
         self.status_message = "The operation is now in progress."
         self.created_at = _now_iso()
@@ -165,12 +166,20 @@ class TaskStore:
 
     # ---- lifecycle ------------------------------------------------------
 
-    def create(self, name: str, arguments: dict, task_param: dict) -> McpTask:
+    def create(
+        self,
+        name: str,
+        arguments: dict,
+        task_param: dict,
+        *,
+        owner: str | None = None,
+    ) -> McpTask:
         """Register a task (status working), kick off the worker, return it."""
         self._purge_expired()
         task = McpTask(
             ttl_ms=self._resolve_ttl(task_param),
             poll_interval_ms=self._poll_ms,
+            owner=owner,
         )
         with self._lock:
             self._make_room_for_task_locked()
@@ -225,11 +234,11 @@ class TaskStore:
 
     # ---- JSON-RPC task methods -----------------------------------------
 
-    def get(self, task_id: str) -> dict:
-        return self._require(task_id).to_dict()
+    def get(self, task_id: str, *, owner: str | None = None) -> dict:
+        return self._require(task_id, owner=owner).to_dict()
 
-    def result(self, task_id: str) -> dict:
-        task = self._require(task_id)
+    def result(self, task_id: str, *, owner: str | None = None) -> dict:
+        task = self._require(task_id, owner=owner)
         # Block until terminal (spec requirement). The worker always reaches a
         # terminal status (the tool is budget/wall-clock bounded), so the wait
         # is bounded; ttl is the backstop.
@@ -247,11 +256,11 @@ class TaskStore:
         out["_meta"] = meta
         return out
 
-    def cancel(self, task_id: str) -> dict:
+    def cancel(self, task_id: str, *, owner: str | None = None) -> dict:
         self._purge_expired()
         with self._lock:
             task = self._tasks.get(task_id or "")
-            if task is None:
+            if task is None or not self._owner_matches(task, owner):
                 raise TaskError(_INVALID_PARAMS, "task not found")
             if task.status in TASK_TERMINAL:
                 raise TaskError(
@@ -265,11 +274,14 @@ class TaskStore:
         self._notify(task)
         return snapshot
 
-    def list(self, cursor: str | None) -> dict:
+    def list(self, cursor: str | None, *, owner: str | None = None) -> dict:
         self._purge_expired()
         start = self._decode_cursor(cursor)
         with self._lock:
-            items = list(self._tasks.values())
+            items = [
+                task for task in self._tasks.values()
+                if self._owner_matches(task, owner)
+            ]
         if start > len(items):
             raise TaskError(_INVALID_PARAMS, "invalid cursor")
         chunk = items[start:start + self._page_size]
@@ -281,13 +293,20 @@ class TaskStore:
 
     # ---- helpers --------------------------------------------------------
 
-    def _require(self, task_id: str) -> McpTask:
+    def _require(self, task_id: str, *, owner: str | None = None) -> McpTask:
         self._purge_expired()
         with self._lock:
             task = self._tasks.get(task_id or "")
-        if task is None:
+        if task is None or not self._owner_matches(task, owner):
             raise TaskError(_INVALID_PARAMS, "task not found")
         return task
+
+    @staticmethod
+    def _owner_matches(task: McpTask, owner: str | None) -> bool:
+        # owner=None is the stdio/single-client mode: preserve existing behavior.
+        # HTTP passes a per-client session owner to isolate task records while
+        # returning the same "task not found" error for absent and foreign ids.
+        return owner is None or task.owner == owner
 
     def _decode_cursor(self, cursor: str | None) -> int:
         if not cursor:
