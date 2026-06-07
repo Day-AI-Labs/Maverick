@@ -112,7 +112,7 @@ class _FakePage:
     url = "about:blank"
 
     def goto(self, url, timeout, wait_until):
-        self.url = url
+        self.url = getattr(self, "goto_url", url)
 
 
 class _FakeSession:
@@ -162,3 +162,41 @@ def test_save_session_reports_when_not_saved(monkeypatch):
 def test_schema_includes_save_session():
     actions = browser().input_schema["properties"]["action"]["enum"]
     assert "save_session" in actions
+
+
+def test_navigate_denies_disallowed_redirect_final_host(monkeypatch):
+    monkeypatch.setenv("MAVERICK_BROWSER_DISABLE", "0")
+    fake = _FakeSession()
+    fake.page.goto_url = "https://evil.com/private"
+    monkeypatch.setattr(browser_mod, "_get_session", lambda: fake)
+    closed = []
+    monkeypatch.setattr(browser_mod, "close_browser", lambda: closed.append(True))
+
+    out = browser_mod._run_browser_action({
+        "action": "navigate",
+        "url": "https://allowed.example.com/redirect",
+        "_capability_allow_hosts": ("*.example.com",),
+    })
+
+    assert "DENIED by capability" in out
+    assert "evil.com" in out
+    assert fake.save_calls == 0
+    assert closed == [True]
+
+
+def test_url_less_browser_action_denies_disallowed_current_host(monkeypatch):
+    monkeypatch.setenv("MAVERICK_BROWSER_DISABLE", "0")
+    fake = _FakeSession()
+    fake.page.url = "https://evil.com/private"
+    monkeypatch.setattr(browser_mod, "_get_session", lambda: fake)
+    closed = []
+    monkeypatch.setattr(browser_mod, "close_browser", lambda: closed.append(True))
+
+    out = browser_mod._run_browser_action({
+        "action": "extract_text",
+        "_capability_allow_hosts": ("*.example.com",),
+    })
+
+    assert "DENIED by capability" in out
+    assert "evil.com" in out
+    assert closed == [True]

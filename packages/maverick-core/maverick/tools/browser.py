@@ -35,6 +35,7 @@ import os
 import re
 import threading
 import time
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -235,6 +236,33 @@ atexit.register(_save_on_exit)
 _SAFE_URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 
 
+def _capability_denied(host: str) -> str:
+    return (
+        "⚠ DENIED by capability policy: browser is not granted "
+        f"host {host!r}. The browser session was closed."
+    )
+
+
+def _browser_host_denial(url: str, allow_hosts: tuple[str, ...]) -> str | None:
+    """Return a denial string if ``url`` has a host outside ``allow_hosts``."""
+    if not allow_hosts:
+        return None
+    try:
+        host = (urlparse(url).hostname or "").strip().lower()
+    except ValueError:
+        return None
+    if not host or any(fnmatch(host, pat) for pat in allow_hosts):
+        return None
+    return _capability_denied(host)
+
+
+def _deny_and_close_current_page(page: Any, allow_hosts: tuple[str, ...]) -> str | None:
+    denial = _browser_host_denial(getattr(page, "url", ""), allow_hosts)
+    if denial is None:
+        return None
+    close_browser()
+    return denial
+
 def _is_safe_browser_url(url: str) -> bool:
     if not _SAFE_URL_RE.match(url):
         return False
@@ -275,6 +303,17 @@ def _run_browser_action(args: dict[str, Any]) -> str:
         return f"ERROR: {e}"
 
     timeout = int(args.get("timeout_ms") or 30_000)
+    raw_allow_hosts = args.get("_capability_allow_hosts")
+    allow_hosts = (
+        tuple(str(pat).lower() for pat in raw_allow_hosts)
+        if isinstance(raw_allow_hosts, (list, tuple, set, frozenset))
+        else ()
+    )
+
+    if action != "navigate":
+        denial = _deny_and_close_current_page(page, allow_hosts)
+        if denial is not None:
+            return denial
 
     if action == "navigate":
         url = args.get("url") or ""
@@ -285,6 +324,9 @@ def _run_browser_action(args: dict[str, Any]) -> str:
             )
         log.info("browser.navigate %s", url)
         page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+        denial = _deny_and_close_current_page(page, allow_hosts)
+        if denial is not None:
+            return denial
         session.save_state()  # checkpoint cookies after each navigation
         return f"navigated to {page.url} (status: loaded)"
 
@@ -293,10 +335,16 @@ def _run_browser_action(args: dict[str, Any]) -> str:
 
     if action == "go_back":
         page.go_back(timeout=timeout)
+        denial = _deny_and_close_current_page(page, allow_hosts)
+        if denial is not None:
+            return denial
         return f"back -> {page.url}"
 
     if action == "go_forward":
         page.go_forward(timeout=timeout)
+        denial = _deny_and_close_current_page(page, allow_hosts)
+        if denial is not None:
+            return denial
         return f"forward -> {page.url}"
 
     if action == "click":
@@ -305,6 +353,9 @@ def _run_browser_action(args: dict[str, Any]) -> str:
             return "ERROR: click requires selector"
         log.info("browser.click %s", selector)
         page.click(selector, timeout=timeout)
+        denial = _deny_and_close_current_page(page, allow_hosts)
+        if denial is not None:
+            return denial
         return f"clicked {selector!r} on {page.url}"
 
     if action == "type":
@@ -363,6 +414,9 @@ def _run_browser_action(args: dict[str, Any]) -> str:
             page.press(selector, text, timeout=timeout)
         else:
             page.keyboard.press(text)
+        denial = _deny_and_close_current_page(page, allow_hosts)
+        if denial is not None:
+            return denial
         return f"pressed {text!r}"
 
     if action == "scroll":
