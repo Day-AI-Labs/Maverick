@@ -260,6 +260,79 @@ class TestImageIngestion:
         kb = KnowledgeBase(embedder=DeterministicEmbedder(dim=64), image_describer=boom)
         assert kb.ingest_path("ops", img) == 0  # failure swallowed, ingestion continues
 
+    def test_ocr_describer_bounds_pixels_before_ocr(self, tmp_path, monkeypatch):
+        from maverick_knowledge.image import build_ocr_describer
+
+        img = tmp_path / "huge.png"
+        img.write_bytes(b"fake-image")
+        ocr_calls = []
+
+        class _FakeImage:
+            size = (101, 101)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def verify(self):
+                return None
+
+        fake_image_module = SimpleNamespace(
+            MAX_IMAGE_PIXELS=None,
+            DecompressionBombWarning=Warning,
+            open=lambda _path: _FakeImage(),
+        )
+        fake_pytesseract = SimpleNamespace(
+            image_to_string=lambda *_args, **_kwargs: ocr_calls.append(True) or "text"
+        )
+        monkeypatch.setitem(sys.modules, "PIL", SimpleNamespace(Image=fake_image_module))
+        monkeypatch.setitem(sys.modules, "pytesseract", fake_pytesseract)
+
+        describer = build_ocr_describer(max_image_pixels=10_000)
+        with pytest.raises(ValueError, match="too many pixels"):
+            describer(str(img))
+        assert ocr_calls == []
+
+    def test_ocr_describer_passes_timeout_to_tesseract(self, tmp_path, monkeypatch):
+        from maverick_knowledge.image import build_ocr_describer
+
+        img = tmp_path / "flow.png"
+        img.write_bytes(b"fake-image")
+        calls = []
+
+        class _FakeImage:
+            size = (10, 10)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def verify(self):
+                return None
+
+        fake_image_module = SimpleNamespace(
+            MAX_IMAGE_PIXELS=None,
+            DecompressionBombWarning=Warning,
+            open=lambda _path: _FakeImage(),
+        )
+
+        def image_to_string(image, **kwargs):
+            calls.append((image, kwargs))
+            return "ocr text"
+
+        monkeypatch.setitem(sys.modules, "PIL", SimpleNamespace(Image=fake_image_module))
+        monkeypatch.setitem(
+            sys.modules, "pytesseract", SimpleNamespace(image_to_string=image_to_string)
+        )
+
+        describer = build_ocr_describer(ocr_timeout_seconds=3)
+        assert describer(str(img)).endswith("ocr text")
+        assert calls and calls[0][1] == {"timeout": 3}
+
 
 class TestStorePersistence:
     def test_store_creates_parent_dir_and_persists(self, tmp_path):
