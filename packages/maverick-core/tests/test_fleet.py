@@ -59,6 +59,31 @@ def test_list_and_remove(monkeypatch, tmp_path):
     assert remove_fleet("missing") is False
 
 
+def test_load_rejects_malformed_fleet_json(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    from maverick.fleet import fleets_dir, list_fleets, load_fleet
+
+    d = fleets_dir()
+    d.mkdir(parents=True)
+    (d / "bad_agent.json").write_text(
+        '{"name":"bad_agent","owner":"x","agents":["notdict"]}',
+        encoding="utf-8",
+    )
+    (d / "bad_created.json").write_text(
+        '{"name":"bad_created","owner":"x","created_at":"nope"}',
+        encoding="utf-8",
+    )
+    (d / "bad_agents.json").write_text(
+        '{"name":"bad_agents","owner":"x","agents":{"not":"list"}}',
+        encoding="utf-8",
+    )
+
+    assert load_fleet("bad_agent") is None
+    assert load_fleet("bad_created") is None
+    assert load_fleet("bad_agents") is None
+    assert list_fleets() == []
+
 def test_cli_create_list_show_rm(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("MAVERICK_TENANT", raising=False)
