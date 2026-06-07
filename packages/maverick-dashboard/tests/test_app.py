@@ -53,6 +53,16 @@ def test_skills_page_renders(tmp_path, monkeypatch):
     assert resp.status_code == 200
 
 
+def test_compartments_page_renders(tmp_path, monkeypatch):
+    from maverick import world_model
+    monkeypatch.setattr(world_model, "DEFAULT_DB", tmp_path / "world.db")
+    resp = client.get("/compartments")
+    assert resp.status_code == 200
+    assert "compartments" in resp.text.lower()
+    # the built-in finance pack shows up as a domain in the roster
+    assert "finance" in resp.text
+
+
 def test_facts_page_renders(tmp_path, monkeypatch):
     from maverick import world_model
     monkeypatch.setattr(world_model, "DEFAULT_DB", tmp_path / "world.db")
