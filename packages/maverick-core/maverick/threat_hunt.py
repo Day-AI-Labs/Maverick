@@ -152,10 +152,47 @@ def render_report_text(report: ThreatReport) -> str:
     return "\n".join(lines)
 
 
+# --- The threat-hunter agent ----------------------------------------------
+
+THREAT_HUNTER_PERSONA = (
+    "You are Maverick's agent-attack hunter. Call run_threat_hunt to sweep the "
+    "audit trail for attack signals: blocked egress (exfiltration attempts), shield "
+    "blocks (prompt injection / jailbreak), capability or governance denials "
+    "(privilege escalation), and the kill switch. Triage each signal -- is it a "
+    "real attack (a repeated pattern, a suspicious agent or goal) or a benign "
+    "control firing once? Correlate related signals, name the likely cause and "
+    "which agent/goal triggered it, and rank what a human should investigate "
+    "first. You surface and prioritise; a human responds. You never take "
+    "remediation actions yourself."
+)
+
+
+def build_threat_hunter_agent(ctx):
+    """Construct the agent-attack hunter: an Agent with the hunter persona and the
+    hunt tool. Read-only over the audit log -- it triages and reports, it does not
+    remediate. Mirrors :func:`maverick.assessment.build_assessment_agent`."""
+    from .agent import Agent
+    from .tools import ToolRegistry
+    from .tools.hunt_tools import hunt_tools
+
+    agent = Agent(
+        ctx=ctx, role="threat_hunter",
+        brief="Hunt the audit trail for agent attacks and triage them for a human.",
+        persona=THREAT_HUNTER_PERSONA,
+    )
+    # Hunting is read-only; replace the full base registry with the hunt tool only.
+    agent.tools = ToolRegistry()
+    for tool in hunt_tools():
+        agent.tools.register(tool)
+    return agent
+
+
 __all__ = [
     "ThreatFinding",
     "ThreatReport",
     "hunt",
     "render_report_json",
     "render_report_text",
+    "THREAT_HUNTER_PERSONA",
+    "build_threat_hunter_agent",
 ]
