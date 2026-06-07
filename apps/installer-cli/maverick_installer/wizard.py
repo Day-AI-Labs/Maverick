@@ -879,11 +879,17 @@ def pick_self_learning() -> dict[str, Any]:
         "  Allow agent to propose catalog MCP servers (operator-approved)?",
         default=False,
     )
+    distill_local = _q_confirm(
+        "  Distill successful runs into local skills? After a successful run, "
+        "save a reusable skill under ~/.maverick/learned-skills.",
+        default=False,
+    )
     return {
         "enable": True,
         "preflight": preflight,
         "create_tools": create_tools,
         "allow_mcp_acquisition": allow_mcp,
+        "distill_local": distill_local,
         "max_acquisitions": 5,
     }
 
@@ -1063,6 +1069,22 @@ def pick_advanced() -> dict[str, Any]:
             "Deferred tool loading? Show the model a small core toolset plus a "
             "find_tools search tool, loading the long tail (80+ integrations, MCP) "
             "on demand. Big context savings when many tools are enabled.",
+            default=False,
+        ),
+        "output_cache": _q_confirm(
+            "Cache tool outputs? Memoize side-effect-free (read-only) tool calls "
+            "within a run so a repeated read isn't re-done. Off by default.",
+            default=False,
+        ),
+        "local_first": _q_confirm(
+            "Local-first models? When a configured local model's server is "
+            "reachable, prefer it over a remote provider (privacy + cost). Only "
+            "applies when you haven't pinned a model. Off by default.",
+            default=False,
+        ),
+        "energy_aware": _q_confirm(
+            "Energy-aware routing? On a laptop, downgrade to a cheaper/faster "
+            "model when the battery is low. Off by default.",
             default=False,
         ),
     }
@@ -1971,7 +1993,8 @@ def write_config(
     if advanced:
         # Advanced reasoning toggles -> the kernel's config sections. Each is
         # off unless the wizard wrote it, matching the modules' own defaults.
-        if advanced.get("cost_aware") or advanced.get("verify_ensemble"):
+        if (advanced.get("cost_aware") or advanced.get("verify_ensemble")
+                or advanced.get("energy_aware")):
             lines.append("")
             lines.append("[routing]")
             # Constrain routing features enabled by the wizard to the providers
@@ -1983,6 +2006,8 @@ def write_config(
                 lines.append("cost_aware = true")
             if advanced.get("verify_ensemble"):
                 lines.append("verify_ensemble = true")
+            if advanced.get("energy_aware"):
+                lines.append("energy_aware = true")
         if advanced.get("risk_proportional_verify"):
             lines.append("")
             lines.append("[verification]")
@@ -2027,10 +2052,19 @@ def write_config(
             lines.append("")
             lines.append("[reflexion]")
             lines.append("enable = true")
+        tool_lines: list[str] = []
         if advanced.get("deferred_tools"):
+            tool_lines.append("deferred_loading = true")
+        if advanced.get("output_cache"):
+            tool_lines.append("output_cache = true")
+        if tool_lines:
             lines.append("")
             lines.append("[tools]")
-            lines.append("deferred_loading = true")
+            lines.extend(tool_lines)
+        if advanced.get("local_first"):
+            lines.append("")
+            lines.append("[system]")
+            lines.append("local_first = true")
         oidc = advanced.get("oidc") or {}
         if isinstance(oidc, dict) and oidc.get("enabled"):
             # SSO ID-token verification for `maverick serve`. Its own table

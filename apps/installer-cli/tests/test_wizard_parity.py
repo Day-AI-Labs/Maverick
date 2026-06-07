@@ -399,3 +399,70 @@ def test_pick_web_search_skipped(monkeypatch):
     enabled, envs = pick_web_search()
     assert enabled is False
     assert envs == []
+
+
+# ---------- new advanced knobs (build-wave feature toggles) ----------
+
+def test_write_config_emits_tools_output_cache(tmp_path: Path, monkeypatch):
+    parsed = _write_full_config(
+        tmp_path, monkeypatch, advanced={"output_cache": True},
+    )
+    assert parsed["tools"]["output_cache"] is True
+
+
+def test_write_config_tools_block_coexists(tmp_path: Path, monkeypatch):
+    # deferred_loading + output_cache share a single [tools] table.
+    parsed = _write_full_config(
+        tmp_path, monkeypatch,
+        advanced={"deferred_tools": True, "output_cache": True},
+    )
+    assert parsed["tools"]["deferred_loading"] is True
+    assert parsed["tools"]["output_cache"] is True
+
+
+def test_write_config_emits_routing_energy_aware(tmp_path: Path, monkeypatch):
+    parsed = _write_full_config(
+        tmp_path, monkeypatch, advanced={"energy_aware": True},
+    )
+    assert parsed["routing"]["energy_aware"] is True
+    assert parsed["routing"]["allowed_providers"] == ["anthropic"]
+
+
+def test_write_config_emits_system_local_first(tmp_path: Path, monkeypatch):
+    parsed = _write_full_config(
+        tmp_path, monkeypatch, advanced={"local_first": True},
+    )
+    assert parsed["system"]["local_first"] is True
+
+
+def test_write_config_emits_self_learning_distill_local(tmp_path: Path, monkeypatch):
+    parsed = _write_full_config(
+        tmp_path, monkeypatch,
+        self_learning={"enable": True, "distill_local": True},
+    )
+    assert parsed["self_learning"]["distill_local"] is True
+
+
+def test_write_config_omits_new_knobs_when_off(tmp_path: Path, monkeypatch):
+    # Empty advanced -> no [system], no energy-aware-only [routing], no [tools].
+    parsed = _write_full_config(tmp_path, monkeypatch, advanced={})
+    assert "system" not in parsed
+    assert "routing" not in parsed
+    assert "tools" not in parsed
+
+
+def test_pick_advanced_includes_new_toggles(monkeypatch):
+    _StubQ(monkeypatch)
+    from maverick_installer.wizard import pick_advanced
+    adv = pick_advanced()
+    for key in ("output_cache", "local_first", "energy_aware"):
+        assert key in adv, f"{key} missing from pick_advanced()"
+
+
+def test_pick_self_learning_includes_distill_local(monkeypatch):
+    # Force every confirm to True so the enabled branch runs.
+    monkeypatch.setattr("maverick_installer.wizard._q_confirm", lambda *a, **kw: True)
+    from maverick_installer.wizard import pick_self_learning
+    result = pick_self_learning()
+    assert result["enable"] is True
+    assert result["distill_local"] is True
