@@ -180,12 +180,18 @@ def learn_capability(agent: Agent) -> Tool:
             spec_url = None
             if base_url:
                 spec_url = self_learning.probe_openapi_spec(base_url)
+            # Route nested tool calls through the agent's _run_tool chokepoint
+            # (shield + capability + governance + hooks), not the bare registry
+            # -- otherwise an agent granted `learn` could drive web_search /
+            # openapi_runner ungoverned. unframe_tool_output recovers the raw
+            # result (a denied/blocked call returns its notice, handled below).
+            from ..agent import unframe_tool_output
             if not spec_url and any(t.name == "web_search" for t in agent.tools.all()):
                 try:
-                    hits = await agent.tools.run(
+                    hits = unframe_tool_output(await agent._run_tool(
                         "web_search",
                         {"query": f"{need or base_url} OpenAPI specification json"},
-                    )
+                    ))
                 except Exception:
                     hits = ""
                 spec_url = self_learning.discover_openapi_spec(search_text=hits or "")
@@ -208,9 +214,9 @@ def learn_capability(agent: Agent) -> Tool:
             ops_preview = ""
             if any(t.name == "openapi_runner" for t in agent.tools.all()):
                 try:
-                    ops_preview = await agent.tools.run(
+                    ops_preview = unframe_tool_output(await agent._run_tool(
                         "openapi_runner", {"op": "list_ops", "spec": spec_url},
-                    )
+                    ))
                 except Exception:
                     ops_preview = ""
             msg = f"Found an OpenAPI spec for {need or base_url!r}:\n  {spec_url}\n\n"
