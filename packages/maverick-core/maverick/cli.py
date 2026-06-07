@@ -3300,6 +3300,32 @@ def controls_cmd(query: tuple[str, ...], limit: int) -> None:
     click.echo("\n".join(render_control(c) for c in hits))
 
 
+@main.command("hunt")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+@click.option("--since", default=None, help="Only events on/after this UTC date (YYYY-MM-DD).")
+@click.option("--until", default=None, help="Only events on/before this UTC date (YYYY-MM-DD).")
+@click.option("--strict", is_flag=True,
+              help="Exit non-zero if any attack signal is found (gate CI / monitoring).")
+def hunt_cmd(fmt: str, since: str | None, until: str | None, strict: bool) -> None:
+    """Hunt the audit trail for attacks by/against agents.
+
+    Sweeps the audit log for security signals -- shield blocks (prompt
+    injection), blocked egress (exfiltration attempts), capability/governance
+    denials (escalation), the kill switch -- and reports them risk-ranked. With
+    --strict, exits non-zero when any signal is present, so it can gate a
+    monitoring job.
+    """
+    from .threat_hunt import hunt, render_report_json, render_report_text
+    report = hunt(all_days=(since is None and until is None), since=since, until=until)
+    click.echo(render_report_json(report) if fmt == "json" else render_report_text(report))
+    if strict and report.findings:
+        raise click.ClickException(
+            f"{len(report.findings)} attack signal type(s) found "
+            f"(risk: {report.risk_rating})"
+        )
+
+
 # ----- Compliance assessments (PIA / AIRA / vendor risk) ---------------
 
 @main.group("assess")
