@@ -824,6 +824,9 @@ def mcp_registry_list(ctx) -> None:
 @click.option("--sandbox", "sandbox_backend", default=None,
               type=click.Choice(["local", "docker", "podman", "devcontainer",
                                  "kubernetes", "ssh", "firecracker"]))
+@click.option("--domain", default=None,
+              help="Run as a specific domain agent's specialist (see "
+                   "`maverick compartments` for available domains).")
 @click.option("--coding-mode", is_flag=True,
               help="Strict diff-only worker prompts + git apply --check "
                    "self-validation. Use for SWE-bench-style runs.")
@@ -843,7 +846,7 @@ def mcp_registry_list(ctx) -> None:
 def start(
     ctx, title, description, template_name, params,
     max_dollars, max_wall_seconds, max_depth, workdir, sandbox_backend,
-    coding_mode, best_of_n, fail_to_pass, pass_to_pass, dry_cost,
+    domain, coding_mode, best_of_n, fail_to_pass, pass_to_pass, dry_cost,
 ) -> None:
     """Start a new goal and run the swarm."""
     # Coding-mode flags propagate via env so coding_mode.from_env()
@@ -953,7 +956,7 @@ def start(
         else:
             result = k.run_goal_sync(
                 llm, world, bud, goal_id,
-                sandbox=sandbox, max_depth=max_depth,
+                sandbox=sandbox, max_depth=max_depth, domain=domain,
             )
     finally:
         stop_poll.set()
