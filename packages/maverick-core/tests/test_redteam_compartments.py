@@ -11,6 +11,8 @@ guarantee has regressed.
 """
 from __future__ import annotations
 
+import asyncio
+
 from maverick.blackboard import Blackboard
 from maverick.quarantine import QuarantineRegistry, triage_block
 from maverick_knowledge import DeterministicEmbedder, KnowledgeBase
@@ -117,3 +119,91 @@ class TestKnowledgeBulkhead:
         fin = kb.search_formatted(["finance"], "revenue", k=5)
         assert "revenue" in fin.lower()
         assert "indemnity" not in fin.lower()  # legal never leaks into a finance query
+
+
+class _ToolBlockingBase:
+    """Base shield that blocks a dangerous tool call (critical). Drives the seal
+    through the REAL agent chokepoint rather than calling triage_block directly."""
+    backend = "test"
+    enabled = True
+
+    def scan_input(self, text):
+        return ShieldVerdict.allow()
+
+    def scan_output(self, text, known_prompt=None):
+        return ShieldVerdict.allow()
+
+    def scan_tool_call(self, name, args):
+        blob = f"{name} {args}"
+        if "rm -rf" in blob or "exfiltrate" in blob:
+            return ShieldVerdict.block("critical", "dangerous_tool_call")
+        return ShieldVerdict.allow()
+
+
+def _compartment_ctx(tmp_path):
+    """A real SwarmContext with compartments on: ImmunizingShield + a shared
+    QuarantineRegistry wired into the blackboard, exactly as the orchestrator
+    assembles them when ``[safety] compartments`` is enabled."""
+    from maverick.budget import Budget
+    from maverick.sandbox import LocalBackend
+    from maverick.swarm import SwarmContext
+    from maverick.world_model import WorldModel
+
+    world = WorldModel(tmp_path / "world.db")
+    goal_id = world.create_goal("redteam", "")
+    bb = Blackboard()
+    reg = QuarantineRegistry()
+    bb.attach_quarantine(reg)
+    ctx = SwarmContext(
+        llm=None, world=world, budget=Budget(), blackboard=bb,
+        sandbox=LocalBackend(workdir=tmp_path), goal_id=goal_id,
+        max_depth=2, use_skills=False,
+        shield=ImmunizingShield(base=_ToolBlockingBase()), quarantine=reg,
+    )
+    return ctx, reg, bb
+
+
+class TestEndToEndCompartmentRun:
+    """The submarine door, end to end through the real Agent tool chokepoint:
+    a shield-blocked tool call seals the agent (Rung 1), withholds its posts,
+    refuses its further tools, and -- on a second compromised agent in the same
+    domain -- escalates to a sector seal (Rung 2) while a clean domain sails on."""
+
+    def test_blocked_tool_call_seals_and_contains_the_agent(self, tmp_path):
+        from maverick.agent import Agent
+
+        ctx, reg, bb = _compartment_ctx(tmp_path)
+        agent = Agent(ctx=ctx, role="analyst", brief="task", depth=1, domain="finance")
+        bb.post(agent.name, "finding", "a normal early finding from this agent")
+        assert "normal early finding" in bb.render()  # visible before compromise
+
+        # A dangerous tool call trips the shield at the real chokepoint.
+        out = asyncio.run(agent._run_tool("shell", {"cmd": "rm -rf /"}))
+        assert "BLOCKED by Shield" in out
+
+        # Rung 1: the critical block sealed the agent...
+        assert reg.is_sealed(agent.name) is True
+        # ...its earlier post is withheld from the swarm's view...
+        assert "normal early finding" not in bb.render()
+        # ...and it can run no further tools (the door is shut).
+        out2 = asyncio.run(agent._run_tool("read_file", {"path": "ok.txt"}))
+        assert "sealed by compartment quarantine" in out2
+
+    def test_two_compromised_agents_seal_the_sector_not_the_neighbor(self, tmp_path):
+        from maverick.agent import Agent
+
+        ctx, reg, bb = _compartment_ctx(tmp_path)
+        fin1 = Agent(ctx=ctx, role="analyst", brief="t", depth=1, domain="finance")
+        fin2 = Agent(ctx=ctx, role="researcher", brief="t", depth=1, domain="finance")
+        legal = Agent(ctx=ctx, role="analyst", brief="t", depth=1, domain="legal")
+        reg.register_agent(legal.name, "legal")  # known, so a sector seal *could* reach it
+
+        asyncio.run(fin1._run_tool("shell", {"cmd": "rm -rf /"}))
+        asyncio.run(fin2._run_tool("shell", {"cmd": "exfiltrate the secrets"}))
+
+        # Rung 2: two compromised finance agents seal the whole finance sector...
+        assert reg.is_sealed(fin1.name) and reg.is_sealed(fin2.name)
+        assert reg.is_domain_sealed("finance") is True
+        # ...but the bulkhead holds: legal is untouched and its chokepoint open.
+        assert reg.is_domain_sealed("legal") is False
+        assert reg.is_sealed(legal.name) is False
