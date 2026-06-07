@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import maverick.capability as capability
+import maverick.crypto_at_rest as crypto_at_rest
 import maverick.oidc as oidc
 import maverick.paths as paths
 import maverick.quotas as quotas
@@ -39,6 +40,8 @@ def test_returns_expected_shape():
         "tenant_isolation",
         "usage_quotas",
         "oidc_auth",
+        "encryption_at_rest",
+        "data_subject_export",
     }
     # Every control probe reports a status from the known vocabulary.
     known = {
@@ -71,6 +74,7 @@ def test_toggle_on_is_reflected(monkeypatch):
     monkeypatch.setattr(paths, "tenant_by_user_enabled", lambda: True)
     monkeypatch.setattr(quotas, "quotas_enforced", lambda: True)
     monkeypatch.setattr(oidc, "oidc_enabled", lambda: True)
+    monkeypatch.setattr(crypto_at_rest, "at_rest_enabled", lambda: True)
 
     controls = soc2.collect_soc2_evidence()["controls"]
     assert controls["capability_enforcement"] == {
@@ -83,6 +87,8 @@ def test_toggle_on_is_reflected(monkeypatch):
     assert controls["usage_quotas"]["enabled"] is True
     assert controls["oidc_auth"]["status"] == soc2.STATUS_ENABLED
     assert controls["oidc_auth"]["enabled"] is True
+    assert controls["encryption_at_rest"]["status"] == soc2.STATUS_ENABLED
+    assert controls["encryption_at_rest"]["enabled"] is True
 
 
 def test_toggle_off_is_reflected(monkeypatch):
@@ -91,6 +97,7 @@ def test_toggle_off_is_reflected(monkeypatch):
     monkeypatch.setattr(paths, "tenant_by_user_enabled", lambda: False)
     monkeypatch.setattr(quotas, "quotas_enforced", lambda: False)
     monkeypatch.setattr(oidc, "oidc_enabled", lambda: False)
+    monkeypatch.setattr(crypto_at_rest, "at_rest_enabled", lambda: False)
 
     controls = soc2.collect_soc2_evidence()["controls"]
     for cid in (
@@ -98,6 +105,7 @@ def test_toggle_off_is_reflected(monkeypatch):
         "tenant_isolation",
         "usage_quotas",
         "oidc_auth",
+        "encryption_at_rest",
     ):
         assert controls[cid]["status"] == soc2.STATUS_DISABLED
         assert controls[cid]["enabled"] is False
@@ -177,6 +185,59 @@ def test_failsoft_when_toggle_probe_raises_base_exception(monkeypatch):
     ev = soc2.collect_soc2_evidence()
     assert isinstance(ev, dict)
     assert ev["controls"]["capability_enforcement"]["status"] == soc2.STATUS_UNKNOWN
+
+
+def test_encryption_at_rest_toggle_changes_snapshot(monkeypatch):
+    """Encryption at rest is a real toggle: on -> ``enabled``, off -> ``disabled``.
+
+    ``maverick.crypto_at_rest`` ships, so the control is never ``absent``; only
+    its ``at_rest_enabled()`` predicate moves the status.
+    """
+    monkeypatch.setattr(crypto_at_rest, "at_rest_enabled", lambda: True)
+    on = soc2.collect_soc2_evidence()["controls"]["encryption_at_rest"]
+    monkeypatch.setattr(crypto_at_rest, "at_rest_enabled", lambda: False)
+    off = soc2.collect_soc2_evidence()["controls"]["encryption_at_rest"]
+
+    assert on == {"status": soc2.STATUS_ENABLED, "enabled": True}
+    assert off == {"status": soc2.STATUS_DISABLED, "enabled": False}
+
+
+def test_failsoft_when_encryption_probe_raises(monkeypatch):
+    """An ``at_rest_enabled()`` that throws -> ``unknown``; the dict still returns
+    and the blast radius is just this one control."""
+
+    def boom():
+        raise RuntimeError("crypto config blew up")
+
+    monkeypatch.setattr(crypto_at_rest, "at_rest_enabled", boom)
+
+    ev = soc2.collect_soc2_evidence()
+    assert isinstance(ev, dict)
+    probe = ev["controls"]["encryption_at_rest"]
+    assert probe["status"] == soc2.STATUS_UNKNOWN
+    assert probe["enabled"] is None
+    assert "crypto config blew up" in probe.get("error", "")
+    # data_subject_export (a sibling probe) is unaffected.
+    assert ev["controls"]["data_subject_export"]["status"] == soc2.STATUS_ENABLED
+
+
+def test_data_subject_export_present_is_enabled():
+    """``maverick.dsar.export_subject_data`` ships -> ``data_subject_export`` is
+    ``enabled``. It is a *presence* probe, so it never reports ``disabled``."""
+    probe = soc2.collect_soc2_evidence()["controls"]["data_subject_export"]
+    assert probe == {"status": soc2.STATUS_ENABLED, "enabled": True}
+
+
+def test_probe_present_absent_when_module_missing():
+    """The presence probe degrades to ``absent`` for a module/attr that does not
+    exist, mirroring ``_probe_toggle``'s absent path (and never raising)."""
+    assert soc2._probe_present(
+        "maverick._definitely_not_a_real_module", "anything"
+    ) == {"status": soc2.STATUS_ABSENT, "enabled": False}
+    assert soc2._probe_present("maverick.dsar", "no_such_export_xyz") == {
+        "status": soc2.STATUS_ABSENT,
+        "enabled": False,
+    }
 
 
 def test_failsoft_when_audit_probe_raises(monkeypatch):

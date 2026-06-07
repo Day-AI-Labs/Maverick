@@ -14,6 +14,8 @@ evidence request. It probes the live configuration:
   - per-user tenant isolation (``maverick.paths.tenant_by_user_enabled``)
   - per-principal usage quotas (``maverick.quotas.quotas_enforced``)
   - OIDC auth verifier (``maverick.oidc.oidc_enabled``) — optional module
+  - encryption at rest (``maverick.crypto_at_rest.at_rest_enabled``)
+  - data-subject export / DSAR (``maverick.dsar.export_subject_data`` present)
   - the append-only Ed25519 Merkle-chained audit log: does it verify, and is a
     signing key present?
 
@@ -89,6 +91,38 @@ def _probe_toggle(import_path: str, attr: str) -> dict[str, Any]:
         "status": STATUS_ENABLED if value else STATUS_DISABLED,
         "enabled": value,
     }
+
+
+def _probe_present(import_path: str, attr: str) -> dict[str, Any]:
+    """Probe whether a *capability* (a callable) is shipped, fail-soft.
+
+    Unlike :func:`_probe_toggle`, this reports the mere presence of an
+    implemented feature rather than a runtime on/off toggle: it never calls
+    ``attr``, only checks the module imports and the attribute is callable. Used
+    for controls whose existence is the control (e.g. a DSAR export endpoint:
+    GDPR Art. 15/20 access/portability is satisfied by the code being there).
+
+    Order of outcomes (same fail-soft discipline as :func:`_probe_toggle`):
+      - module missing / unimportable -> ``absent``
+      - attr missing / not callable   -> ``absent`` (an unshipped feature)
+      - both present                  -> ``enabled``
+
+    Returns ``status`` from the shared vocabulary plus ``enabled`` (``True`` iff
+    the capability is present). It never invokes the feature, so — unlike a
+    toggle probe — there is no ``disabled``/``unknown`` outcome here.
+    """
+    import importlib
+
+    try:
+        module = importlib.import_module(import_path)
+    except BaseException:  # noqa: BLE001 — fail-soft; absent OR unimportable
+        return {"status": STATUS_ABSENT, "enabled": False}
+
+    fn = getattr(module, attr, None)
+    if not callable(fn):
+        return {"status": STATUS_ABSENT, "enabled": False}
+
+    return {"status": STATUS_ENABLED, "enabled": True}
 
 
 def _safe(fn: Callable[[], Any], default: Any) -> Any:
@@ -277,6 +311,9 @@ def collect_soc2_evidence() -> dict[str, Any]:
           * ``tenant_isolation``       — per-user multi-tenant data isolation
           * ``usage_quotas``           — per-principal daily spend/token caps
           * ``oidc_auth``              — OIDC ID-token verifier (optional module)
+          * ``encryption_at_rest``     — AES-256-GCM at-rest encryption toggle
+          * ``data_subject_export``    — DSAR access/portability export present
+            (a presence probe: ``enabled``/``absent``, never a runtime toggle)
       - ``audit_log``    — audit-chain verification: ``ok`` / ``broken`` /
         ``unsigned`` / ``empty`` / ``no_crypto`` / ``unknown`` (see
         ``_probe_audit_chain``)
@@ -298,6 +335,12 @@ def collect_soc2_evidence() -> dict[str, Any]:
             ),
             "usage_quotas": _probe_toggle("maverick.quotas", "quotas_enforced"),
             "oidc_auth": _probe_toggle("maverick.oidc", "oidc_enabled"),
+            "encryption_at_rest": _probe_toggle(
+                "maverick.crypto_at_rest", "at_rest_enabled"
+            ),
+            "data_subject_export": _probe_present(
+                "maverick.dsar", "export_subject_data"
+            ),
         },
         "audit_log": _safe(_probe_audit_chain, {"status": STATUS_UNKNOWN}),
         "audit_signing_key": _safe(_probe_signing_key, {"status": STATUS_UNKNOWN}),
