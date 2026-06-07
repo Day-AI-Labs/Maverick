@@ -900,6 +900,13 @@ class Agent:
         # check rather than error -- we never deny something we can't
         # confidently locate the host for.
         url_arg = _NET_TOOL_URL_ARGS.get(name)
+        if cap is not None and name == "browser" and cap.allow_hosts and isinstance(args, dict):
+            # The browser can follow redirects and later URL-less actions read or
+            # interact with the current page. Pass the active host scope into the
+            # tool so it can gate the final/current page host before returning
+            # content or continuing a restricted session.
+            args = dict(args)
+            args["_capability_allow_hosts"] = tuple(cap.allow_hosts)
         if cap is not None and url_arg is not None:
             raw = args.get(url_arg) if isinstance(args, dict) else None
             host = None
