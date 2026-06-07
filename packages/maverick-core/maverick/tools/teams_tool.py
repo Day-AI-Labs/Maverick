@@ -2,9 +2,10 @@
 
 Completes the Slack/Discord/Teams trio (``slack_bot``, ``discord_bot`` already
 exist). Posts a plain message or a simple title+text card to a Teams incoming
-webhook URL (from the ``webhook`` arg or ``TEAMS_WEBHOOK_URL``). The webhook host
-runs through the same SSRF guard as ``http_fetch``. ``_build_card`` is pure and
-unit-tested; the POST is a thin ``httpx`` call tests monkeypatch.
+webhook URL (from the ``webhook`` arg or ``TEAMS_WEBHOOK_URL``). The POST goes
+through ``_ssrf.safe_client``, which resolves the host once and pins the
+connection to a validated public IP (DNS-rebind-safe, redirects disabled).
+``_build_card`` is pure and unit-tested.
 """
 from __future__ import annotations
 
@@ -59,16 +60,20 @@ def _run(args: dict[str, Any]) -> str:
     parsed = urlparse(url)
     if parsed.scheme != "https":
         return "ERROR: Teams webhook must be https://"
-    from .http_fetch import is_blocked_host
-    if is_blocked_host(parsed.hostname or ""):
-        return f"ERROR: refusing to post to private/loopback host {parsed.hostname!r}"
+    card = _build_card(text, (args.get("title") or "").strip())
+    # Pin the connection to the validated public IP (resolve-once-then-pin)
+    # rather than validate-then-reconnect with is_blocked_host, which is a
+    # DNS-rebinding TOCTOU: a hostile resolver could pass the check and then
+    # connect to an internal/metadata host. safe_client also disables redirects.
+    # (ImportError is caught FIRST so BlockedHost is never referenced unbound.)
     try:
-        import httpx
+        from ._ssrf import BlockedHost, safe_client
+        with safe_client(url, timeout=30.0) as client:
+            r = client.post(url, json=card)
     except ImportError:
         return "ERROR: httpx not installed. Run: pip install 'maverick-agent[notifications]'"
-    card = _build_card(text, (args.get("title") or "").strip())
-    try:
-        r = httpx.post(url, json=card, timeout=30.0)
+    except BlockedHost as e:
+        return f"ERROR: refusing to post to a private/disallowed host ({e})"
     except Exception as e:
         return f"ERROR: Teams request failed: {type(e).__name__}: {e}"
     if r.status_code >= 400:
