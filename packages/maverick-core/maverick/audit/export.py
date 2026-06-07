@@ -43,14 +43,18 @@ def _audit_version() -> str:
 
 
 def iter_audit_events(
-    *, day: str | None = None, all_days: bool = False, tenant: str | None = None
+    *, day: str | None = None, all_days: bool = False,
+    since: str | None = None, until: str | None = None,
+    tenant: str | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Yield audit event dicts from the tenant-aware audit dir.
 
-    ``--all`` sweeps every ``*.ndjson`` day-file except the cross-file
-    ``anchors.ndjson`` tip-ledger (matching ``audit verify``); otherwise a
-    single day-file is read (``day`` or today, UTC). Malformed/unreadable
-    lines and a missing dir are skipped silently (fail-soft).
+    Selection precedence: a ``since``/``until`` window (inclusive, over day-file
+    dates) wins; then ``all_days`` sweeps every ``*.ndjson`` day-file except the
+    cross-file ``anchors.ndjson`` tip-ledger (matching ``audit verify``);
+    otherwise a single day-file is read (``day`` or today, UTC).
+    Malformed/unreadable lines and a missing dir are skipped silently
+    (fail-soft).
     """
     from ..paths import data_dir
 
@@ -58,7 +62,16 @@ def iter_audit_events(
     if not audit_dir.exists() or not audit_dir.is_dir():
         return
 
-    if all_days:
+    if since or until:
+        # Inclusive [since, until] window over day-file dates. ISO YYYY-MM-DD
+        # sorts lexically, so a plain string compare on the file stem works.
+        lo = since or "0000-00-00"
+        hi = until or "9999-99-99"
+        paths = [
+            p for p in sorted(audit_dir.glob("*.ndjson"))
+            if p.name != "anchors.ndjson" and lo <= p.stem <= hi
+        ]
+    elif all_days:
         paths = [
             p for p in sorted(audit_dir.glob("*.ndjson")) if p.name != "anchors.ndjson"
         ]

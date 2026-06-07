@@ -2497,28 +2497,42 @@ def audit_verify(
 @click.option("--day", default=None, help="YYYY-MM-DD (default: today).")
 @click.option("--all", "all_days", is_flag=True,
               help="Export every YYYY-MM-DD.ndjson day-file in the audit dir.")
+@click.option("--since", default=None,
+              help="Start of an inclusive YYYY-MM-DD window (e.g. an incident).")
+@click.option("--until", default=None,
+              help="End of the inclusive YYYY-MM-DD window.")
 @click.option("--tenant", default=None,
               help="Tenant whose audit dir to export (default: active/none).")
 @click.option("-o", "--output", "output", default=None, type=click.Path(),
               help="Write to FILE (mode 0600; may contain PII). Default: stdout.")
 def audit_export(
-    fmt: str, day: str | None, all_days: bool, tenant: str | None,
-    output: str | None,
+    fmt: str, day: str | None, all_days: bool, since: str | None,
+    until: str | None, tenant: str | None, output: str | None,
 ) -> None:
     """Export the audit log as JSONL or ArcSight CEF for a SIEM.
 
     Read-only re-emission of the tamper-evident NDJSON log; it never mutates
     the log or the signing chain. By default it exports today's day-file;
-    ``--all`` sweeps every day-file. An empty/missing log exits 0 (a note goes
-    to stderr) so cron/automation never fails on a quiet day.
+    ``--since``/``--until`` export an inclusive date window (for incident
+    backfill) and ``--all`` sweeps every day-file. An empty/missing log exits 0
+    (a note goes to stderr) so cron/automation never fails on a quiet day.
     """
+    import datetime as _dt
     import os as _os
+
+    for _label, _val in (("--since", since), ("--until", until)):
+        if _val is not None:
+            try:
+                _dt.datetime.strptime(_val, "%Y-%m-%d")
+            except ValueError:
+                click.echo(f"ERROR: {_label} must be YYYY-MM-DD", err=True)
+                sys.exit(2)
 
     from .audit.export import iter_audit_events, to_cef, to_jsonl
 
     render = to_cef if fmt == "cef" else to_jsonl
     lines = (render(ev) for ev in iter_audit_events(
-        day=day, all_days=all_days, tenant=tenant,
+        day=day, all_days=all_days, since=since, until=until, tenant=tenant,
     ))
 
     if output:
