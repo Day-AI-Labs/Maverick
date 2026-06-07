@@ -493,6 +493,38 @@ def test_pii_detector_empty():
     assert redact("") == ("", [])
 
 
+def test_pii_value_preview_never_embeds_raw_pii():
+    # Previews are persisted to the audit log, so they must not leak raw PII
+    # (the old code stored the first 4 chars -> SSN area number, partial phone).
+    from maverick.safety.pii_detector import scan
+    matches = scan("SSN 123-45-6789, phone (415) 555-2671, ip 192.168.1.100")
+    assert matches
+    for m in matches:
+        assert "123" not in m.value_preview
+        assert "415" not in m.value_preview
+        assert "192" not in m.value_preview
+
+
+def test_pii_long_card_redacts_cleanly_without_phone_subrun():
+    # A 16-digit card must not also match a 10-digit phone sub-run: overlapping
+    # spans produced corrupt redactions ([REDACTED:credit_card]hone_us]) and
+    # leaked leading digits. Coalescing + the phone anchor keep it one clean span.
+    from maverick.safety.pii_detector import redact
+    out, matches = redact("pay 4532015112830366 now")
+    assert {m.kind for m in matches} == {"credit_card"}
+    assert "[REDACTED:credit_card]" in out
+    assert "phone" not in out  # no overlap-corruption fragment
+    assert "4532" not in out and "0366" not in out  # no raw digits leak
+
+
+def test_pii_long_nonluhn_number_not_partially_redacted():
+    # A 13-digit non-card, non-phone run must not be PARTIALLY redacted (which
+    # leaked its leading digits). It is left intact rather than half-masked.
+    from maverick.safety.pii_detector import redact
+    out, _ = redact("ref 4111111111111 end")
+    assert "[REDACTED" not in out
+
+
 # ---------- arxiv tool ----------
 
 def test_arxiv_search_requires_query():
