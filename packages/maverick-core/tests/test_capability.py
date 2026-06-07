@@ -14,6 +14,7 @@ from maverick.capability import (
     sign_capability,
     verify_capability,
 )
+from maverick.safety.tool_risk import tool_risk
 
 # --- permits ---------------------------------------------------------------
 
@@ -39,6 +40,16 @@ def test_max_risk_ceiling():
     cap = Capability(principal="p", max_risk="low")
     assert cap.permits("read_file") is True
     assert cap.permits("shell") is False
+
+
+def test_knowledge_search_is_low_risk_lookup():
+    cap = Capability(
+        principal="p",
+        allow_tools=frozenset({"knowledge_search"}),
+        max_risk="low",
+    )
+    assert tool_risk("knowledge_search") == "low"
+    assert cap.permits("knowledge_search") is True
 
 
 def test_expiry():

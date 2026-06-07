@@ -15,6 +15,7 @@ account without explicit human confirmation in the same turn."""
 allow_tools = [
     "read_file",
     "web_search",
+    "knowledge_search",
     "search_contracts",
     "get_price_snapshot",
     "get_price_history",
