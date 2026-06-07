@@ -437,6 +437,98 @@ _SPECS: list[dict] = [
     dict(name="zapier", base_url_env="ZAPIER_BASE_URL", token_env="ZAPIER_TOKEN",
          description="Zapier NLA / REST. ops get/post (writes need confirm). Auth: "
          "ZAPIER_BASE_URL + ZAPIER_TOKEN."),
+
+    # --- Cloud platforms / orchestration (control-plane REST) ---
+    dict(name="kubernetes", base_url_env="KUBERNETES_BASE_URL", token_env="KUBERNETES_TOKEN",
+         description="Kubernetes API server REST. ops get/post/patch/delete (writes "
+         "need confirm). e.g. /api/v1/namespaces/{ns}/pods. Auth: KUBERNETES_BASE_URL "
+         "+ KUBERNETES_TOKEN (service-account bearer)."),
+    dict(name="openshift", base_url_env="OPENSHIFT_BASE_URL", token_env="OPENSHIFT_TOKEN",
+         description="Red Hat OpenShift API REST. ops get/post/patch/delete (writes "
+         "need confirm). Auth: OPENSHIFT_BASE_URL + OPENSHIFT_TOKEN (bearer)."),
+    dict(name="vsphere", base_url_env="VSPHERE_BASE_URL", token_env="VSPHERE_TOKEN",
+         token_header="vmware-api-session-id", scheme="", description="VMware vSphere "
+         "REST. ops get/post/patch/delete (writes need confirm). e.g. /api/vcenter/vm. "
+         "Auth: VSPHERE_BASE_URL + VSPHERE_TOKEN (session id)."),
+    dict(name="azure", base_url_env="AZURE_BASE_URL", token_env="AZURE_TOKEN",
+         description="Microsoft Azure Resource Manager REST. ops get/put/post/patch/"
+         "delete (writes need confirm). e.g. /subscriptions/{id}/resourcegroups. Auth: "
+         "AZURE_BASE_URL (https://management.azure.com) + AZURE_TOKEN."),
+    dict(name="gcp", base_url_env="GCP_BASE_URL", token_env="GCP_TOKEN",
+         description="Google Cloud REST (Compute/Resource Manager/...). ops get/post/"
+         "patch/delete (writes need confirm). Auth: GCP_BASE_URL + GCP_TOKEN (OAuth "
+         "bearer, e.g. gcloud auth print-access-token)."),
+    dict(name="ibm_cloud", base_url_env="IBM_CLOUD_BASE_URL", token_env="IBM_CLOUD_TOKEN",
+         description="IBM Cloud REST. ops get/post/put/delete (writes need confirm). "
+         "Auth: IBM_CLOUD_BASE_URL + IBM_CLOUD_TOKEN (IAM bearer)."),
+    dict(name="alibaba_cloud", base_url_env="ALIBABA_CLOUD_BASE_URL",
+         token_env="ALIBABA_CLOUD_TOKEN", description="Alibaba Cloud REST. ops get/post "
+         "(writes need confirm). Auth: ALIBABA_CLOUD_BASE_URL + ALIBABA_CLOUD_TOKEN."),
+
+    # --- Security (cloud-native / SIEM) ---
+    dict(name="sentinel", base_url_env="SENTINEL_BASE_URL", token_env="SENTINEL_TOKEN",
+         description="Microsoft Sentinel REST (Azure). ops get/put/post/delete (writes "
+         "need confirm). e.g. .../providers/Microsoft.SecurityInsights/incidents. Auth: "
+         "SENTINEL_BASE_URL + SENTINEL_TOKEN."),
+    dict(name="defender", base_url_env="DEFENDER_BASE_URL", token_env="DEFENDER_TOKEN",
+         description="Microsoft Defender REST. ops get/post (writes need confirm). e.g. "
+         "/api/alerts, /api/machines. Auth: DEFENDER_BASE_URL + DEFENDER_TOKEN."),
+    dict(name="qradar", base_url_env="QRADAR_BASE_URL", token_env="QRADAR_TOKEN",
+         token_header="SEC", scheme="", description="IBM QRadar REST. ops get/post "
+         "(writes need confirm). e.g. /api/siem/offenses. Auth: QRADAR_BASE_URL + "
+         "QRADAR_TOKEN (SEC header)."),
+    dict(name="palo_alto", base_url_env="PALO_ALTO_BASE_URL", token_env="PALO_ALTO_TOKEN",
+         description="Palo Alto Networks (Cortex/Prisma) REST. ops get/post (writes "
+         "need confirm). Auth: PALO_ALTO_BASE_URL + PALO_ALTO_TOKEN."),
+    dict(name="jamf", base_url_env="JAMF_BASE_URL", token_env="JAMF_TOKEN",
+         description="Jamf Pro REST. ops get/post/put/delete (writes need confirm). "
+         "e.g. /api/v1/computers-inventory. Auth: JAMF_BASE_URL + JAMF_TOKEN."),
+
+    # --- Comms ---
+    dict(name="ringcentral", base_url_env="RINGCENTRAL_BASE_URL",
+         token_env="RINGCENTRAL_TOKEN", description="RingCentral REST. ops get/post/"
+         "put/delete (writes need confirm). e.g. /restapi/v1.0/account/~/extension. "
+         "Auth: RINGCENTRAL_BASE_URL + RINGCENTRAL_TOKEN."),
+    dict(name="vonage", base_url_env="VONAGE_BASE_URL", token_env="VONAGE_TOKEN",
+         description="Vonage REST. ops get/post (writes need confirm). Auth: "
+         "VONAGE_BASE_URL + VONAGE_TOKEN."),
+    dict(name="webex", base_url_env="WEBEX_BASE_URL", token_env="WEBEX_TOKEN",
+         description="Cisco Webex REST. ops get/post/put/delete (writes need confirm). "
+         "e.g. /v1/messages, /v1/rooms. Auth: WEBEX_BASE_URL (https://webexapis.com) + "
+         "WEBEX_TOKEN."),
+
+    # --- Databases / BI over REST ---
+    dict(name="neo4j", base_url_env="NEO4J_BASE_URL", token_env="NEO4J_TOKEN", basic=True,
+         description="Neo4j HTTP API (Cypher). op post (Cypher via /db/neo4j/tx/commit; "
+         "needs confirm). Auth: NEO4J_BASE_URL + NEO4J_TOKEN (user:pass, basic)."),
+    dict(name="teradata", base_url_env="TERADATA_BASE_URL", token_env="TERADATA_TOKEN",
+         basic=True, description="Teradata REST (Vantage). ops get/post (writes need "
+         "confirm). Auth: TERADATA_BASE_URL + TERADATA_TOKEN (user:pass, basic)."),
+    dict(name="microstrategy", base_url_env="MICROSTRATEGY_BASE_URL",
+         token_env="MICROSTRATEGY_TOKEN", token_header="X-MSTR-AuthToken", scheme="",
+         description="MicroStrategy REST. ops get/post/put/delete (writes need confirm). "
+         "Auth: MICROSTRATEGY_BASE_URL + MICROSTRATEGY_TOKEN (X-MSTR-AuthToken)."),
+    dict(name="cognos", base_url_env="COGNOS_BASE_URL", token_env="COGNOS_TOKEN",
+         description="IBM Cognos Analytics REST. ops get/post (writes need confirm). "
+         "Auth: COGNOS_BASE_URL + COGNOS_TOKEN."),
+
+    # --- Finance / ERP / HR / CS (additional) ---
+    dict(name="concur", base_url_env="CONCUR_BASE_URL", token_env="CONCUR_TOKEN",
+         description="SAP Concur REST. ops get/post/put/delete (writes need confirm). "
+         "e.g. /expensereports/v4/reports. Auth: CONCUR_BASE_URL + CONCUR_TOKEN."),
+    dict(name="anaplan", base_url_env="ANAPLAN_BASE_URL", token_env="ANAPLAN_TOKEN",
+         description="Anaplan REST. ops get/post/put (writes need confirm). Auth: "
+         "ANAPLAN_BASE_URL + ANAPLAN_TOKEN."),
+    dict(name="smartrecruiters", base_url_env="SMARTRECRUITERS_BASE_URL",
+         token_env="SMARTRECRUITERS_TOKEN", token_header="X-SmartToken", scheme="",
+         description="SmartRecruiters REST. ops get/post/put/delete (writes need "
+         "confirm). Auth: SMARTRECRUITERS_BASE_URL + SMARTRECRUITERS_TOKEN (X-SmartToken)."),
+    dict(name="gainsight", base_url_env="GAINSIGHT_BASE_URL", token_env="GAINSIGHT_TOKEN",
+         token_header="accesskey", scheme="", description="Gainsight REST. ops get/post "
+         "(writes need confirm). Auth: GAINSIGHT_BASE_URL + GAINSIGHT_TOKEN (accesskey)."),
+    dict(name="amplitude", base_url_env="AMPLITUDE_BASE_URL", token_env="AMPLITUDE_TOKEN",
+         basic=True, description="Amplitude Analytics REST. ops get/post (writes need "
+         "confirm). Auth: AMPLITUDE_BASE_URL + AMPLITUDE_TOKEN (apikey:secret, basic)."),
 ]
 
 ENTERPRISE_CONNECTOR_NAMES: list[str] = [s["name"] for s in _SPECS]
