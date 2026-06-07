@@ -381,7 +381,7 @@ re-verify before committing. Vendor benchmark numbers are directional (contamina
 **Performance**
 - Adaptive thinking budget controller (closed-loop Opus thinking adjustment).
 - Compaction v2 retrieval-augmented (embed locally; retrieve top-k chunks).
-- Structural compaction (collapse file-read tool_use/tool_result to path+sha refs).
+- Structural compaction (collapse file-read tool_use/tool_result to path+sha refs). ✅ shipped — `compaction.py` `_shrink_tool_result` now emits a content-addressed ref (source tool + path/url + `sha256` + size) instead of an opaque "output dropped"; `compact_messages` threads the originating tool_use; `tests/test_compaction_structural_refs.py`.
 - Provider health board (per-provider success/latency/$).
 - Memory profiling baseline (tracemalloc + memray weekly soak).
 - GC tuning experiment (`gc.freeze()` post-warmup).
