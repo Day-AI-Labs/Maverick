@@ -127,6 +127,7 @@ _FILE_TOOL_PATH_ARGS: dict[str, str] = {
 _NET_TOOL_URL_ARGS: dict[str, str] = {
     "http_fetch": "url",
     "browser": "url",
+    "oidc": "token_url",
 }
 
 
