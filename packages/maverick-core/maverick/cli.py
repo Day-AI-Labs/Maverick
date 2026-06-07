@@ -1004,6 +1004,37 @@ def template_show(name: str) -> None:
     click.echo(t.body)
 
 
+@template.command("browse")
+def template_browse() -> None:
+    """List goal templates available in the community registry."""
+    from .templates import browse_templates
+    entries = browse_templates()
+    if not entries:
+        click.echo("no registry templates (index empty or unreachable).")
+        return
+    for e in entries:
+        mark = " [verified]" if e.verified else ""
+        click.echo(f"  {e.name}{mark}  v{e.version}")
+        if e.summary:
+            click.echo(f"    {e.summary}")
+    click.echo("")
+    click.echo("install one with:  maverick template add <name>")
+
+
+@template.command("add")
+@click.argument("name")
+def template_add(name: str) -> None:
+    """Install a registry goal template by name (hash-verified)."""
+    from .templates import install_template_from_catalog
+    try:
+        t = install_template_from_catalog(name)
+    except ValueError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    click.echo(f"installed: {t.name} -> {t.path}")
+    click.echo(f"run it with:  maverick start --template {t.name}")
+
+
 @main.command()
 @click.argument("question")
 @click.option("--rounds", default=2, show_default=True, type=int,

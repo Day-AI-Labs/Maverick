@@ -148,6 +148,17 @@ def test_write_config_omits_mcp_registries_by_default(tmp_path: Path, monkeypatc
     assert "mcp_registries" not in parsed
 
 
+def test_write_config_emits_template_registries(tmp_path: Path, monkeypatch):
+    parsed = _write_full_config(
+        tmp_path, monkeypatch,
+        template_registries=["https://templates.example.com/catalog"],
+    )
+    assert parsed["template_registries"]["indexes"] == [
+        "https://templates.example.com/catalog"]
+    # default: omitted
+    assert "template_registries" not in _write_full_config(tmp_path, monkeypatch)
+
+
 def test_write_config_emits_plugins(tmp_path: Path, monkeypatch):
     parsed = _write_full_config(
         tmp_path, monkeypatch, plugins=["weather", "github-issues"],

@@ -1673,6 +1673,7 @@ def write_config(
     advanced: dict[str, bool] | None = None,
     mcp_servers: dict[str, dict[str, Any]] | None = None,
     mcp_registries: list[str] | None = None,
+    template_registries: list[str] | None = None,
     plugins: list[str] | None = None,
     plugin_grant: list[str] | None = None,
     plugin_enforce: bool = False,
@@ -1900,6 +1901,14 @@ def write_config(
         lines.append("")
         lines.append("[mcp_registries]")
         _emit_kv(lines, "indexes", mcp_registries)
+
+    # Custom/self-hosted goal-template registry indexes (`maverick template
+    # browse`). Like MCP registries: only emitted on override; the built-in
+    # default index works out of the box.
+    if template_registries:
+        lines.append("")
+        lines.append("[template_registries]")
+        _emit_kv(lines, "indexes", template_registries)
 
     if plugins:
         lines.append("")
