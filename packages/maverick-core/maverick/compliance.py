@@ -111,6 +111,7 @@ class ControlCheck:
     regulation: str
     status: str
     detail: str
+    framework: str = "eu"  # "eu" (EU AI Act / GDPR) or "us" (NIST RMF + US state)
 
 
 def _report_cfg() -> dict:
@@ -257,6 +258,50 @@ def compliance_report() -> list[ControlCheck]:
         else "enable [privacy] anonymous = true to hash identifiers in logs",
     ))
 
+    # ---- US frameworks (NIST AI RMF + enforceable state/sector law) --------
+    # There is no single US AI statute, so map the same live controls onto the
+    # US de-facto anchor (NIST AI RMF) and the enforceable state/sector laws.
+    # Several obligations are part legal/operator process -- flagged "available"
+    # (Maverick supplies the evidence trail) rather than "active".
+    checks.append(ControlCheck(
+        "Governance, accountability & records", "NIST AI RMF (GOVERN / MANAGE)",
+        "active" if (signing_on or oversight_on) else "available",
+        "signed audit + attenuating capabilities + consent gating + kill switch",
+        framework="us",
+    ))
+    checks.append(ControlCheck(
+        "Measurement & monitoring", "NIST AI RMF (MEASURE)", "available",
+        "eval harness (pass@1 / cost) + budget & quota metering + observability",
+        framework="us",
+    ))
+    checks.append(ControlCheck(
+        "Consumer notice of AI", "Colorado AI Act (SB 26-189) / CA SB 1001",
+        "active" if art50_on else "action_needed",
+        "first-turn AI disclosure shown to users" if art50_on
+        else "re-enable by unsetting [compliance] disclosure_text (empty = disabled)",
+        framework="us",
+    ))
+    checks.append(ControlCheck(
+        "Human review of consequential decisions",
+        "Colorado AI Act / EEOC (Title VII, ADA)",
+        "active" if oversight_on else "action_needed",
+        f"consent/oversight gate (mode = {mode})" if oversight_on
+        else "set MAVERICK_CONSENT_MODE=ask/dashboard to put a human in the loop",
+        framework="us",
+    ))
+    checks.append(ControlCheck(
+        "Automated employment-decision audit trail", "NYC Local Law 144",
+        "available",
+        "signed decision log is the evidence trail; the annual independent bias "
+        "audit itself is an operator/legal step",
+        framework="us",
+    ))
+    checks.append(ControlCheck(
+        "Consumer access & deletion", "CCPA / CPRA", "available",
+        "maverick export-user / maverick erase (data access + right to delete)",
+        framework="us",
+    ))
+
     return checks
 
 
@@ -275,7 +320,7 @@ def render_report_text(checks: list[ControlCheck]) -> str:
         rows.append(f"  {'':>13}    {'':<{width}}  -> {c.detail}")
     active = sum(1 for c in checks if c.status == "active")
     needed = sum(1 for c in checks if c.status == "action_needed")
-    head = "GDPR + EU AI Act — control coverage"
+    head = "GDPR + EU AI Act + US frameworks — control coverage"
     return "\n".join([
         head, "=" * len(head), "", *rows, "",
         f"{active} active, {needed} need action, {len(checks)} total", "",
