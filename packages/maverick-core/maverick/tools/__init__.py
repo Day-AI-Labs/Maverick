@@ -488,7 +488,7 @@ def base_registry(
     # sandbox host.
     if sandbox.__class__.__name__ != "SSHBackend":
         reg.register(read_file(sandbox))
-        reg.register(write_file(sandbox))
+        reg.register(write_file(sandbox, goal_id=goal_id))
         reg.register(list_dir(sandbox))
     reg.register(shell(sandbox))
     reg.register(ask_user(world, goal_id=goal_id))
