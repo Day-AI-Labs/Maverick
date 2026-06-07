@@ -74,7 +74,12 @@ class HostedEmbedder:
             timeout=60,
         )
         r.raise_for_status()
-        return [d["embedding"] for d in r.json()["data"]]
+        # OpenAI/Voyage-compatible responses are only guaranteed addressable by
+        # each item's `index`, not positional order, so reorder before zipping
+        # vectors back to their input chunks (a reordered batch would otherwise
+        # pair chunk text with the wrong vector and silently corrupt the index).
+        data = sorted(r.json()["data"], key=lambda d: d.get("index", 0))
+        return [d["embedding"] for d in data]
 
 
 def build_embedder(cfg: dict | None = None) -> Embedder:
@@ -95,6 +100,11 @@ def build_embedder(cfg: dict | None = None) -> Embedder:
                 dim=int(cfg.get("dim", 1024)),
             )
         if provider == "local":
+            import importlib.util
+            if importlib.util.find_spec("sentence_transformers") is None:
+                raise RuntimeError(
+                    "sentence-transformers not installed (the 'local' extra)"
+                )
             from .local_embed import LocalEmbedder  # optional 'local' extra
             return LocalEmbedder(cfg.get("model", "all-MiniLM-L6-v2"))
     except Exception as e:

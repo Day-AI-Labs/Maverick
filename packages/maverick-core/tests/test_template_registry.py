@@ -32,6 +32,24 @@ def test_templates_is_a_valid_catalog_kind():
     assert "templates" in catalog.VALID_KINDS
 
 
+def test_budget_strip_handles_crlf_frontmatter():
+    # A CRLF-served registry template must still have its remote budgets dropped
+    # (the LF-only regex used to no-op on CRLF, persisting attacker budgets).
+    crlf = (
+        "---\r\ntitle: T\r\nbudget_dollars: 99.0\r\n"
+        "budget_wall_seconds: 9999\r\n---\r\nBody\r\n"
+    )
+    stripped = templates._strip_registry_budget_frontmatter(crlf)
+    assert "budget_dollars" not in stripped
+    assert "budget_wall_seconds" not in stripped
+    # Parse the stripped content: remote budgets fall back to defaults, but
+    # other frontmatter (title) is still honored now that CRLF is normalized.
+    t = templates.Template.parse(stripped, "x")
+    assert t.budget_dollars == 5.0
+    assert t.budget_wall_seconds == 3600.0
+    assert t.title == "T"
+
+
 def test_browse(fake_registry):
     entries = templates.browse_templates(indexes=fake_registry)
     assert {e.name for e in entries} == {"trip-plan"}

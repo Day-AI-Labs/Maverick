@@ -2573,16 +2573,20 @@ def audit_export(
     """
     import datetime as _dt
     import os as _os
+    from pathlib import Path as _Path
 
     for _label, _val in (("--since", since), ("--until", until)):
         if _val is not None:
             try:
-                _dt.datetime.strptime(_val, "%Y-%m-%d")
+                _parsed = _dt.datetime.strptime(_val, "%Y-%m-%d")
             except ValueError:
                 click.echo(f"ERROR: {_label} must be YYYY-MM-DD", err=True)
                 sys.exit(2)
+            if _parsed.strftime("%Y-%m-%d") != _val:
+                click.echo(f"ERROR: {_label} must be YYYY-MM-DD", err=True)
+                sys.exit(2)
 
-    from .audit.export import iter_audit_events, to_cef, to_jsonl
+    from .audit.export import audit_event_paths, iter_audit_events, to_cef, to_jsonl
 
     render = to_cef if fmt == "cef" else to_jsonl
     lines = (render(ev) for ev in iter_audit_events(
@@ -2590,6 +2594,19 @@ def audit_export(
     ))
 
     if output:
+        output_path = _Path(output)
+        output_resolved = output_path.resolve(strict=False)
+        source_paths = audit_event_paths(
+            day=day, all_days=all_days, since=since, until=until, tenant=tenant,
+        )
+        for source_path in source_paths:
+            if (output_resolved == source_path.resolve(strict=False)
+                    or (output_path.exists() and source_path.exists()
+                        and _os.path.samefile(output_path, source_path))):
+                raise click.ClickException(
+                    "refusing to write audit export over a source audit log file"
+                )
+
         # 0600 from creation: the export may contain PII, mirroring the
         # writer's own day-file permissions.
         fd = _os.open(output, _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o600)
@@ -2813,6 +2830,62 @@ def soc2(compact: bool) -> None:
         click.echo(_json.dumps(evidence, default=str, indent=2))
     if not _soc2_posture_ready(evidence):
         sys.exit(1)
+
+
+# ----- Enterprise (regulated-deployment) posture -----------------------
+
+@main.group("enterprise")
+def enterprise_group() -> None:
+    """Enterprise (regulated-deployment) posture."""
+
+
+@enterprise_group.command("verify")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+def enterprise_verify(fmt: str) -> None:
+    """Actively verify the regulated-deployment guarantees (exits non-zero if any fail).
+
+    Unlike 'maverick compliance' (which maps configured controls to articles),
+    this *exercises* the load-bearing guarantees: it proves the egress lock
+    refuses a cloud provider and that at-rest sealing round-trips on this box,
+    upgrading "the flag is on" to "the boundary holds." Wire it into CI / a
+    deploy gate the same way as 'maverick compliance --strict'.
+    """
+    from .deployment import all_passed, render_json, render_text, verify_deployment
+    checks = verify_deployment()
+    click.echo(render_json(checks) if fmt == "json" else render_text(checks))
+    if not all_passed(checks):
+        sys.exit(1)
+
+
+@main.command("ropa")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+@click.option("--output", "-o", type=click.Path(), default=None,
+              help="Write to file (default stdout).")
+def ropa_cmd(fmt: str, output) -> None:
+    """Generate a GDPR Art. 30 record-of-processing scaffold for this deployment.
+
+    Pre-fills the technical half from the live config and schema -- personal-data
+    categories, recipients / international transfers (from the egress lock),
+    retention, and the active Art. 32 security measures -- and marks the
+    organizational fields (controller, DPO, lawful basis, purposes) for the
+    controller to complete. A scaffold for a DPO to finish, not a legal
+    attestation.
+    """
+    from .ropa import generate_ropa, render_ropa_json, render_ropa_text
+    record = generate_ropa()
+    payload = render_ropa_json(record) if fmt == "json" else render_ropa_text(record)
+    if output:
+        try:
+            fd = os.open(str(output), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(payload + "\n")
+        except OSError as e:
+            raise click.ClickException(f"could not write {output}: {e}")
+        click.echo(f"wrote {output}")
+    else:
+        click.echo(payload)
 
 
 # ----- DSAR subject-data export ----------------------------------------

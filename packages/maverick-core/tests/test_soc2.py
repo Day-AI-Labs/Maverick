@@ -297,15 +297,24 @@ def test_audit_chain_unsigned_when_signing_off():
     assert probe["status"] != "broken"
 
 
-def test_audit_chain_completed_day_without_anchor_is_broken(tmp_path, monkeypatch):
-    """Completed day-files require the cross-file anchor ledger.
+def test_audit_chain_unsigned_completed_day_without_signing_is_not_broken(
+    tmp_path, monkeypatch
+):
+    """A completed day-file with no anchor ledger is NOT tampering when the
+    deployment never signs (no signing config, no signing key).
 
-    SOC 2 must not infer a benign unsigned deployment solely from mutable row
-    contents; otherwise a signed log can be downgraded by stripping signing
-    fields and deleting the anchor ledger plus marker.
+    The cross-file anchor ledger only exists for signed deployments, so an
+    honestly-unsigned deployment legitimately has none. Reporting that as
+    ``broken`` would falsely signal tampering on every unsigned deployment the
+    day after its first audit file (and fail ``maverick compliance --strict``).
+    A *signed* log whose ledger was stripped still reports ``broken`` -- that
+    case keeps a signing key, so signing stays expected (see the stripped-log
+    test below).
     """
     import json
 
+    monkeypatch.delenv("MAVERICK_AUDIT_SIGN", raising=False)
+    monkeypatch.setattr(soc2, "_audit_signing_expected", lambda: False)
     past_day = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
     (tmp_path / f"{past_day}.ndjson").write_text(
         json.dumps({"kind": "tool_call", "ts": "2026-01-01T00:00:00+00:00"})
@@ -316,9 +325,8 @@ def test_audit_chain_completed_day_without_anchor_is_broken(tmp_path, monkeypatc
 
     probe = soc2.collect_soc2_evidence()["audit_log"]
 
-    assert probe["status"] in {"broken", "no_crypto"}
-    if probe["status"] == "broken":
-        assert probe["first_reason"] == "anchor_ledger_missing"
+    assert probe["status"] in {"unsigned", "no_crypto"}
+    assert probe["status"] != "broken"
     assert probe["files_checked"] == 1
     assert probe["anchors_checked"] is True
 

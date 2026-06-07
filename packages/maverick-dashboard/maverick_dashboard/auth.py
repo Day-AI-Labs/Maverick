@@ -45,6 +45,13 @@ _OIDC_EXEMPT_PATHS = frozenset(
         "/docs/oauth2-redirect",
         "/.well-known/agent-card.json",
         "/.well-known/agent.json",
+        # Built-in browser-login endpoints must answer without an existing
+        # session/bearer -- they ARE the way a browser gets one. They self-gate
+        # on login_enabled() (404 when the login flow is off).
+        "/auth/login",
+        "/auth/callback",
+        "/auth/logout",
+        "/auth/error",
     }
 )
 
@@ -75,6 +82,22 @@ def _proxy_principal(request: Request) -> VerifiedPrincipal | None:
     return principal_from_proxy(value)
 
 
+def _session_principal(request: Request) -> VerifiedPrincipal | None:
+    """Built-in browser-login identity: a valid ``mvk_session`` cookie.
+
+    Returns a principal only when the login flow is configured AND the cookie
+    verifies (correct HMAC + unexpired). Absent/invalid -> ``None`` so the
+    caller falls through to the OIDC bearer path unchanged. Imported lazily so
+    the dashboard (and the existing bearer/proxy paths) don't take a hard
+    dependency on the login module just to import this gate.
+    """
+    try:
+        from .oidc_login import _principal_from_request_session
+    except Exception:  # pragma: no cover - defensive; module should import
+        return None
+    return _principal_from_request_session(request)
+
+
 def require_principal(request: Request) -> VerifiedPrincipal | None:
     """FastAPI dependency enforcing OIDC bearer auth when OIDC is enabled.
 
@@ -91,6 +114,11 @@ def require_principal(request: Request) -> VerifiedPrincipal | None:
     Reverse-proxy SSO (``[auth.proxy]``) takes precedence: when enabled and the
     request comes from a trusted upstream, a forwarded identity header
     establishes the principal even with OIDC bearer off.
+
+    Built-in browser login: when the login flow is configured, a valid
+    ``mvk_session`` cookie (set by ``/auth/callback``) is accepted as the
+    identity, sitting between the reverse-proxy header and the OIDC bearer.
+    Invalid/absent -> falls through to the bearer path unchanged.
     """
     pp = _proxy_principal(request)
     if pp is not None:
@@ -99,6 +127,14 @@ def require_principal(request: Request) -> VerifiedPrincipal | None:
 
     if not oidc_enabled():
         return None
+
+    # Session-cookie identity (browser login). Only active when login is
+    # configured; otherwise this returns None and nothing changes.
+    sp = _session_principal(request)
+    if sp is not None:
+        request.state.principal = sp
+        return sp
+
     if request.url.path in _OIDC_EXEMPT_PATHS:
         return None
     # HMAC-signed webhooks (GitHub/Telegram/Linear/Jira/...) can't present an

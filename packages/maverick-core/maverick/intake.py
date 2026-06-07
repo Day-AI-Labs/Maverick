@@ -32,7 +32,7 @@ log = logging.getLogger(__name__)
 # the envelope at approval. Generation cannot self-escalate past this floor.
 _GENERATED_DENY = frozenset({
     "shell", "write_file", "edit_file", "delete_file", "code_exec",
-    "computer", "browser",
+    "computer", "browser", "clipboard",
 })
 _MAX_GENERATED_RISK = "medium"
 
@@ -68,15 +68,21 @@ def _default_persona(spec: IntakeSpec) -> str:
 
 def validate_profile(profile: DomainProfile) -> DomainProfile:
     """Clamp a generated pack to a safe envelope: union a baseline deny set,
-    strip denied tools out of allow, and cap ``max_risk``. Mutates and returns
-    the profile. A human widens this at approval; the generator cannot."""
-    from .safety.tool_risk import risk_rank
+    strip denied or over-ceiling tools out of allow, and cap ``max_risk``.
+    Mutates and returns the profile. A human widens this at approval; the
+    generator cannot."""
+    from .safety.tool_risk import risk_rank, tool_risk
 
-    deny = set(profile.deny_tools) | _GENERATED_DENY
-    profile.deny_tools = sorted(deny)
-    profile.allow_tools = [t for t in profile.allow_tools if t not in deny]
     if profile.max_risk is None or risk_rank(profile.max_risk) > risk_rank(_MAX_GENERATED_RISK):
         profile.max_risk = _MAX_GENERATED_RISK
+    ceiling = risk_rank(profile.max_risk)
+    over_ceiling = {
+        tool for tool in profile.allow_tools
+        if risk_rank(tool_risk(tool)) > ceiling
+    }
+    deny = set(profile.deny_tools) | _GENERATED_DENY | over_ceiling
+    profile.deny_tools = sorted(deny)
+    profile.allow_tools = [t for t in profile.allow_tools if t not in deny]
     if not profile.compartment:
         profile.compartment = profile.name
     profile.authoring = "generated"

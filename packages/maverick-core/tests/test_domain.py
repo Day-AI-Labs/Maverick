@@ -78,6 +78,13 @@ class TestBuiltinPacks:
             assert name in domains, f"missing built-in pack: {name}"
             assert domains[name].persona  # each carries specialist instructions
 
+    def test_builtin_knowledge_domains_permit_knowledge_search(self):
+        domains = available_domains()
+        for name in ("finance", "legal", "privacy_compliance", "generic"):
+            prof = domains[name]
+            assert prof.knowledge_sources, f"{name} should bind a knowledge collection"
+            assert prof.capability(f"agent:{name}-0").permits("knowledge_search") is True
+
 
 class TestDomainCapability:
     def test_mints_envelope_without_parent(self):
