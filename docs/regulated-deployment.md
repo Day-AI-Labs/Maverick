@@ -80,12 +80,29 @@ Regulated-deployment guarantees
 covers transparency disclosure, redaction, the kill switch, and the data-subject-rights
 tooling); `--format json` feeds a SIEM or pipeline.
 
+## Records of processing (Art. 30)
+
+GDPR Art. 30 requires the controller to keep a record of processing activities.
+`maverick ropa` generates a **scaffold** of it from the live deployment — pre-filling the
+technical half (the personal-data categories it stores, recipients / international
+transfers derived from the egress lock, retention, and the active Art. 32 security
+measures) and marking the organizational fields (controller identity, DPO, lawful basis,
+purposes) for your DPO to complete:
+
+```bash
+maverick ropa                       # readable scaffold
+maverick ropa --format json -o ropa.json
+```
+
+It's a starting point for a DPO to finish, not a completed record.
+
 ## What this is *not*
 
 This is **control coverage, not a legal compliance attestation.** Full GDPR / EU AI Act
 compliance also needs organizational and legal measures the software cannot perform — a
-DPA, a ROPA (Art. 30 records), a DPIA, AI-Act risk classification, and review by qualified
-counsel. The data-subject rights (access, portability, erasure) are *available* on demand
-via `maverick dsar export`, `maverick export-user`, and `maverick erase`, not automatic.
+DPA, a completed ROPA (`maverick ropa` scaffolds the Art. 30 record but a DPO must finish
+it), a DPIA, AI-Act risk classification, and review by qualified counsel. The data-subject
+rights (access, portability, erasure) are *available* on demand via `maverick dsar export`,
+`maverick export-user`, and `maverick erase`, not automatic.
 
 See also: [Encryption at rest](encryption.md) · [Safety & enterprise mode](safety.md#enterprise-mode-private--sensitive-data).
