@@ -19,6 +19,7 @@ import re
 # and "GPL"/"copyleft" before the permissive families.
 _RULES: list[tuple[str, str]] = [
     (r"\bagpl|affero", "strong-copyleft"),
+    (r"\bsspl\b|server[\s-]?side\s+public", "strong-copyleft"),
     (r"\blgpl|lesser general public", "weak-copyleft"),
     (r"\bgpl|general public license|gplv", "strong-copyleft"),
     (r"\bmpl|mozilla public|epl|eclipse public|cddl|cpl ", "weak-copyleft"),

@@ -148,6 +148,31 @@ jobs:
           python -m pip install 'bandit>=1.7'
           python -m bandit -q -r packages apps -lll -ii \
             -x '*/tests/*,*/test_*.py'
+      - name: License policy (no strong-copyleft — GPL / AGPL / SSPL)
+        # BLOCKING: a strong-copyleft dependency creates distribution
+        # obligations incompatible with the proprietary license. Runs the
+        # shipped scanner over the installed tree (the same env pip-audit saw).
+        run: |
+          python - <<'PY'
+          import sys
+          from maverick.license_scan import scan_distributions, policy_check
+          # OS/distro Python packages (Ubuntu base image) are not part of the
+          # shipped Maverick tree; their licenses create no obligation for us.
+          SYSTEM_PKGS = {
+              "python-apt", "launchpadlib", "lazr.restfulclient", "lazr.uri",
+              "wadllib", "pygobject", "dbus-python", "command-not-found",
+              "ubuntu-pro-client", "unattended-upgrades", "distro-info",
+          }
+          scanned = scan_distributions()
+          violations = [v for v in policy_check(scanned)  # default: strong-copyleft
+                        if v["name"].lower() not in SYSTEM_PKGS]
+          if violations:
+              print(f"::error::{len(violations)} strong-copyleft dependency(ies):")
+              for v in violations:
+                  print(f"  - {v['name']} {v['version']}: {v['license']} ({v['category']})")
+              sys.exit(1)
+          print(f"license policy OK: 0 strong-copyleft across {len(scanned)} packages")
+          PY
       - name: SBOM (CycloneDX, supply-chain transparency)
         # NON-BLOCKING (continue-on-error): emit a CycloneDX SBOM of the
         # resolved dependency tree as a build artifact for supply-chain review
