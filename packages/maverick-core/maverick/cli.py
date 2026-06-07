@@ -1104,14 +1104,24 @@ def debate(ctx, question: str, rounds: int, max_dollars: float,
 @main.command()
 @click.option("--idle-sleep", default=2.0, show_default=True,
               help="Seconds to wait when the queue is empty.")
-def worker(idle_sleep: float) -> None:
+@click.option("--once", is_flag=True,
+              help="Drain ready jobs and exit (for cron / systemd timers).")
+def worker(idle_sleep: float, once: bool) -> None:
     """Run the background job worker.
 
     Drains the job queue (``~/.maverick/jobs.db``) and runs jobs armed with
     ``maverick schedule add``. Runs until interrupted (Ctrl-C / SIGTERM).
+
+    With ``--once``, run all currently-ready jobs and exit instead of staying
+    resident -- run it from system cron or a systemd timer for scheduling
+    without a persistent daemon.
     """
     from .worker import Worker
     w = Worker(idle_sleep=idle_sleep)
+    if once:
+        n = w.drain()
+        click.echo(f"drained {n} job(s)")
+        return
     click.echo(f"worker: draining {w.queue.db_path} (Ctrl-C to stop)")
     w.run_forever()
 

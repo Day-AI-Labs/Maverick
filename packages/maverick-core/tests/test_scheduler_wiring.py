@@ -263,3 +263,51 @@ def test_schedule_goal_cli_rejects_bad_cron_and_empty_text(tmp_path, monkeypatch
     assert bad_cron.exit_code == 2 and "bad cron" in bad_cron.output
     empty = CliRunner().invoke(main, ["schedule", "goal", "*/5 * * * *", "   "])
     assert empty.exit_code == 2 and "must not be empty" in empty.output
+
+
+# ---------- worker drain (one-shot, cron-friendly) ----------
+
+def test_drain_runs_all_ready_jobs_and_returns_count(tmp_path):
+    from maverick.job_queue import JobQueue
+    from maverick.worker import Worker
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    for _ in range(3):
+        q.enqueue("noop", {}, run_at=1000.0)  # past run_at -> ready now
+
+    w = Worker(queue=q, idle_sleep=0.0)
+    w.register("noop", lambda job: None)
+    assert w.drain() == 3
+    assert q.claim() is None  # no ready jobs left
+
+
+def test_drain_does_not_run_rearmed_future_occurrence(tmp_path):
+    # A re-armed cron occurrence has a FUTURE run_at, so it must NOT run in the
+    # same drain -- exactly one future occurrence stays pending for next time.
+    from maverick.job_queue import JobQueue
+    from maverick.worker import Worker
+    q = JobQueue(db_path=tmp_path / "jobs.db")
+    jid = q.enqueue("noop", {"__cron__": "*/5 * * * *"}, run_at=1000.0)
+
+    w = Worker(queue=q, idle_sleep=0.0)
+    w.register("noop", lambda job: None)
+    assert w.drain() == 1                          # only the ready occurrence
+
+    assert q.get(jid).status == "done"
+    pend = [j for j in q.list(status="pending") if j.payload.get("__cron__")]
+    assert len(pend) == 1 and pend[0].id != jid    # next occurrence still armed
+
+
+def test_worker_command_once_drains(tmp_path, monkeypatch):
+    from maverick.cli import main
+    monkeypatch.setattr("maverick.job_queue.DEFAULT_DB", tmp_path / "jobs.db")
+    called = {"drain": False}
+
+    def _fake_drain(self):
+        called["drain"] = True
+        return 2
+
+    monkeypatch.setattr("maverick.worker.Worker.drain", _fake_drain)
+    res = CliRunner().invoke(main, ["worker", "--once"])
+    assert res.exit_code == 0, res.output
+    assert called["drain"] is True
+    assert "drained" in res.output
