@@ -283,6 +283,159 @@ class TestHTTPNotifications:
 
 
 @pytest.mark.skipif(not _have_fastapi(), reason="fastapi not installed")
+class TestHTTPTasks:
+    """Async MCP tasks over the Streamable HTTP transport (opt-in, ROADMAP B1).
+
+    Tasks are off by default over HTTP; MAVERICK_MCP_HTTP_TASKS=1 enables a
+    bearer-scoped task store shared across requests on the same server instance.
+    """
+
+    _AUTH = {"Authorization": "Bearer s3cr3t"}
+
+    def _client(self):
+        from fastapi.testclient import TestClient
+        from maverick_mcp.http_transport import build_app
+        from maverick_mcp.server import MCPServer
+        # build_app reads MAVERICK_MCP_HTTP_TASKS, so env must be set first.
+        return TestClient(build_app(MCPServer()))
+
+    def _enable(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        monkeypatch.setenv("MAVERICK_MCP_HTTP_TASKS", "1")
+
+    def _stub_start(self, monkeypatch):
+        """Make maverick_start deterministic (no LLM): patched at the class so
+        the fresh per-task worker MCPServer instance picks it up too."""
+        from maverick_mcp import server as srv
+
+        def _fake_start(self, args):
+            return "DONE: " + str(args.get("title", ""))
+
+        monkeypatch.setattr(srv.MCPServer, "_tool_start", _fake_start, raising=True)
+
+    def _create_task(self, client, title="hi", req_id=100):
+        resp = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": req_id, "method": "tools/call",
+            "params": {"name": "maverick_start", "arguments": {"title": title},
+                       "task": {"ttl": 60000}},
+        }, headers=self._AUTH)
+        return resp.json()
+
+    def test_initialize_advertises_tasks_when_enabled(self, monkeypatch):
+        self._enable(monkeypatch)
+        client = self._client()
+        body = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {},
+        }, headers=self._AUTH).json()
+        assert "tasks" in body["result"]["capabilities"]
+
+    def test_initialize_omits_tasks_by_default(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        monkeypatch.delenv("MAVERICK_MCP_HTTP_TASKS", raising=False)
+        client = self._client()
+        body = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {},
+        }, headers=self._AUTH).json()
+        assert "tasks" not in body["result"]["capabilities"]
+
+    def test_task_augmented_call_returns_create_task_result(self, monkeypatch):
+        self._enable(monkeypatch)
+        self._stub_start(monkeypatch)
+        client = self._client()
+        body = self._create_task(client, title="hi", req_id=2)
+        # CreateTaskResult: a frozen "working" snapshot, never the final status.
+        assert "task" in body["result"]
+        assert body["result"]["task"]["status"] == "working"
+        assert body["result"]["task"]["taskId"]
+
+    def test_task_result_returns_final_call_result(self, monkeypatch):
+        self._enable(monkeypatch)
+        self._stub_start(monkeypatch)
+        client = self._client()
+        tid = self._create_task(client, title="deep work", req_id=3)["result"]["task"]["taskId"]
+        # tasks/result blocks until terminal (in a worker thread, so the loop
+        # isn't wedged), then returns exactly the CallToolResult + related-task meta.
+        res = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 4, "method": "tasks/result",
+            "params": {"taskId": tid},
+        }, headers=self._AUTH).json()
+        assert res["result"]["isError"] is False
+        assert "DONE: deep work" in res["result"]["content"][0]["text"]
+        meta = res["result"]["_meta"]["io.modelcontextprotocol/related-task"]
+        assert meta["taskId"] == tid
+
+    def test_tasks_get_and_list(self, monkeypatch):
+        self._enable(monkeypatch)
+        self._stub_start(monkeypatch)
+        client = self._client()
+        tid = self._create_task(client, req_id=5)["result"]["task"]["taskId"]
+        # Drain so the status is settled, then poll get + list.
+        client.post("/mcp", json={"jsonrpc": "2.0", "id": 6, "method": "tasks/result",
+                                  "params": {"taskId": tid}}, headers=self._AUTH)
+        got = client.post("/mcp", json={"jsonrpc": "2.0", "id": 7, "method": "tasks/get",
+                                        "params": {"taskId": tid}}, headers=self._AUTH).json()
+        assert got["result"]["taskId"] == tid
+        assert got["result"]["status"] == "completed"
+        listed = client.post("/mcp", json={"jsonrpc": "2.0", "id": 8, "method": "tasks/list",
+                                           "params": {}}, headers=self._AUTH).json()
+        assert any(t["taskId"] == tid for t in listed["result"]["tasks"])
+
+    def test_tasks_cancel(self, monkeypatch):
+        import threading
+        self._enable(monkeypatch)
+        # A worker that blocks until released, so cancel wins the race.
+        from maverick_mcp import server as srv
+        release = threading.Event()
+
+        def _blocking_start(self, args):
+            release.wait(timeout=10)
+            return "DONE late"
+
+        monkeypatch.setattr(srv.MCPServer, "_tool_start", _blocking_start, raising=True)
+        client = self._client()
+        try:
+            tid = self._create_task(client, req_id=9)["result"]["task"]["taskId"]
+            cancelled = client.post("/mcp", json={
+                "jsonrpc": "2.0", "id": 10, "method": "tasks/cancel",
+                "params": {"taskId": tid},
+            }, headers=self._AUTH).json()
+            assert cancelled["result"]["status"] == "cancelled"
+        finally:
+            release.set()  # let the blocked worker exit cleanly
+
+    def test_unknown_task_id_returns_invalid_params(self, monkeypatch):
+        self._enable(monkeypatch)
+        client = self._client()
+        body = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 11, "method": "tasks/get",
+            "params": {"taskId": "nope"},
+        }, headers=self._AUTH).json()
+        assert body["error"]["code"] == -32602
+
+    def test_tasks_disabled_returns_method_not_found(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        monkeypatch.delenv("MAVERICK_MCP_HTTP_TASKS", raising=False)
+        client = self._client()
+        body = client.post("/mcp", json={
+            "jsonrpc": "2.0", "id": 12, "method": "tasks/get",
+            "params": {"taskId": "x"},
+        }, headers=self._AUTH).json()
+        assert body["error"]["code"] == -32601
+
+    def test_task_field_ignored_when_disabled(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        monkeypatch.delenv("MAVERICK_MCP_HTTP_TASKS", raising=False)
+        self._stub_start(monkeypatch)
+        client = self._client()
+        body = self._create_task(client, title="x", req_id=13)
+        # Tasks off -> the `task` field is ignored, the tool runs synchronously,
+        # and the response is a normal CallToolResult, not a CreateTaskResult.
+        assert "task" not in body["result"]
+        assert body["result"]["isError"] is False
+        assert "DONE: x" in body["result"]["content"][0]["text"]
+
+
+@pytest.mark.skipif(not _have_fastapi(), reason="fastapi not installed")
 class TestHTTPMalformedBody:
     def _client(self):
         from fastapi.testclient import TestClient
