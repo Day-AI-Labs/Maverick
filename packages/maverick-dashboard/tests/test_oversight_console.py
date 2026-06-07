@@ -127,3 +127,39 @@ def test_day_traversal_is_neutralized(monkeypatch, tmp_path):
     r = _client().get("/oversight?day=../../../etc/passwd")
     assert r.status_code == 200  # safe_audit_day collapses it; no 500, no escape
     assert "../../../etc/passwd" not in r.text
+
+
+# --- live "Active now" panel ------------------------------------------------
+
+def test_active_endpoint_lists_running_agents(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    from maverick.world_model import WorldModel
+    w = WorldModel(tmp_path / "world.db")
+    gid = w.create_goal("ship the thing", "do it")
+    w.set_goal_status(gid, "active")
+    w.append_event(gid, "coder", "tool_call", "shell: ls -la")
+    body = _client().get("/api/v1/oversight/active").json()
+    g = next((x for x in body["goals"] if x["id"] == gid), None)
+    assert g is not None
+    assert g["title"] == "ship the thing"
+    assert "shell" in g["activity"]  # latest event surfaces as current activity
+
+
+def test_active_endpoint_excludes_finished_goals(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    from maverick.world_model import WorldModel
+    w = WorldModel(tmp_path / "world.db")
+    done = w.create_goal("old", "x")
+    w.set_goal_status(done, "done")
+    running = w.create_goal("now", "y")
+    w.set_goal_status(running, "active")
+    ids = {g["id"] for g in _client().get("/api/v1/oversight/active").json()["goals"]}
+    assert running in ids
+    assert done not in ids
+
+
+def test_oversight_page_has_live_active_panel(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    text = _client().get("/oversight").text
+    assert 'id="active-now"' in text
+    assert "/api/v1/oversight/active" in text  # the client polls this endpoint

@@ -34,6 +34,47 @@
   </div>
 
   <div class="panel">
+    <h3 style="margin-top: 0;">Active now <span class="muted" style="font-size: 0.85rem; font-weight: normal;">— agents running right now (live)</span></h3>
+    <div id="active-now" aria-live="polite"><p class="muted">loading…</p></div>
+  </div>
+
+  <script>
+    // Live "Active now" panel: poll the owner-scoped endpoint and re-render
+    // just this table (no full-page reload, so the approve/deny panel below is
+    // never interrupted). Escapes all values via textContent.
+    (function() {
+      const box = document.getElementById('active-now');
+      if (!box) return;
+      function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+      function ago(ts) {
+        if (!ts) return '';
+        const s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
+        if (s < 60) return s + 's ago';
+        if (s < 3600) return Math.floor(s / 60) + 'm ago';
+        return Math.floor(s / 3600) + 'h ago';
+      }
+      async function tick() {
+        try {
+          const r = await fetch('/api/v1/oversight/active');
+          if (!r.ok) return;
+          const goals = (await r.json()).goals || [];
+          if (!goals.length) { box.innerHTML = '<p class="muted">No agents running right now.</p>'; return; }
+          let h = '<table><thead><tr><th scope="col">goal</th><th scope="col">title</th>'
+                + '<th scope="col">last activity</th><th scope="col">updated</th></tr></thead><tbody>';
+          for (const g of goals) {
+            h += '<tr><td class="muted">#' + esc(g.id) + '</td><td>' + esc(g.title) + '</td>'
+               + '<td><code>' + esc(g.activity || '—') + '</code></td>'
+               + '<td class="muted" style="white-space:nowrap;">' + esc(ago(g.updated_at)) + '</td></tr>';
+          }
+          box.innerHTML = h + '</tbody></table>';
+        } catch (e) { /* keep last render on a transient error */ }
+      }
+      tick();
+      setInterval(tick, 5000);
+    })();
+  </script>
+
+  <div class="panel">
     <h3 style="margin-top: 0;">Pending approvals <span class="muted" style="font-size: 0.85rem; font-weight: normal;">— act on REQUIRE_HUMAN holds (EU AI Act Art 14)</span></h3>
     {% include "_approvals_queue.html" %}
   </div>
