@@ -2251,25 +2251,14 @@ def audit_verify(
     ([audit] sign = true).
 
     If ``cryptography`` is unavailable the chain can't be verified at all; that
-    is reported and exits 0 (can't verify is not the same as tampered).
+    is reported as a verification break and exits 1 so automation cannot pass
+    unverifiable evidence as clean.
     """
     import datetime as _dt
     from pathlib import Path as _Path
 
     from .audit import verify_anchors, verify_chain
-    from .audit.signing import _have_crypto
     from .paths import data_dir
-
-    # Fail-soft on missing crypto: we cannot prove anything either way, so
-    # report it clearly and exit 0 rather than flag a (possibly intact) log as
-    # tampered. Matches the repo's fail-open crypto convention.
-    if not _have_crypto():
-        click.echo(
-            "cannot verify: 'cryptography' is not installed, so the audit "
-            "chain's signatures can't be checked (this is not evidence of "
-            "tampering). Install: pip install 'maverick-agent[audit-signing]'"
-        )
-        return
 
     # Resolve the audit dir tenant-aware (matching the writer/signer), unless an
     # explicit --file pins one file in some other location.
