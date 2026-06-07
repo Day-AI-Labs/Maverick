@@ -382,6 +382,13 @@ def _run_fetch(args: dict[str, Any]) -> str:
         if not _check_robots(url):
             return f"ERROR: blocked by robots.txt for {url!r}"
 
+    # Enterprise mode: tool egress is held to local/allow-listed hosts so the data
+    # boundary covers tools too, not just the LLM call.
+    from ..enterprise import enterprise_egress_denial
+    deny = enterprise_egress_denial(url, tool="http_fetch")
+    if deny:
+        return f"ERROR: {deny}"
+
     # Per-tool egress policy ([sandbox.tool.http_fetch] allow_egress/deny_egress).
     # No policy configured -> allow-all, so this is a no-op for the default install.
     try:
