@@ -534,6 +534,7 @@ def base_registry(
     from .elasticsearch_tool import elasticsearch_tool
     from .email_tool import email_tool
     from .embeddings import embeddings
+    from .erp_tool import erp_tool
     from .ffmpeg_tool import ffmpeg_tool
     from .file_watcher import file_watcher
     from .ga4_tool import ga4_tool
@@ -589,7 +590,6 @@ def base_registry(
     from .spreadsheet import spreadsheet
     from .sql_query import sql_query
     from .stripe_tool import stripe_tool
-    from .erp_tool import erp_tool
     from .test_impact import test_impact
     from .translate import translate
     from .trello_tool import trello_tool
