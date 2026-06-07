@@ -3167,6 +3167,21 @@ def ai_act_cmd(fmt: str) -> None:
     click.echo(render_ai_act_json(report) if fmt == "json" else render_ai_act_text(report))
 
 
+@main.command("controls")
+@click.argument("query", nargs=-1, required=True)
+@click.option("--limit", type=int, default=5, help="Max controls to return.")
+def controls_cmd(query: tuple[str, ...], limit: int) -> None:
+    """Find the privacy/security control(s) for a risk, with framework citations.
+
+    Example: maverick controls vendor has no DPA
+    """
+    from .controls import find_controls, render_control
+    hits = find_controls(" ".join(query), limit=limit)
+    if not hits:
+        raise click.ClickException(f"no controls matched {' '.join(query)!r}")
+    click.echo("\n".join(render_control(c) for c in hits))
+
+
 # ----- Compliance assessments (PIA / AIRA / vendor risk) ---------------
 
 @main.group("assess")

@@ -59,6 +59,19 @@ Completeness: 9/10 answered, 5 finding(s)
 
 Results are saved under `~/.maverick/assessments/<id>.json`.
 
+## Finding the control for a risk
+
+Every finding should point to the control that closes it. `find_controls` (a tool,
+and `maverick controls <risk>` for people) maps a risk to authoritative controls
+with citations across GDPR, the EU AI Act, ISO/IEC 27001, SOC 2, NIST, and HIPAA —
+so recommendations are grounded in a consistent catalog, not model recall:
+
+```text
+$ maverick controls vendor has no DPA
+VN-1: Bind processors with a data-processing agreement (DPA)
+   references: GDPR Art. 28; ISO 27001 A.5.19; SOC 2 CC9.2
+```
+
 ## Conducted by the agent
 
 The same engine backs the **assessment agent**: Maverick can be told "run a vendor
@@ -66,6 +79,10 @@ risk assessment of Acme" and it drives the questionnaire itself — filling answ
 from the documents and context it's given, flagging what it can't verify, and
 producing the scored result for a human to review. The agent never signs off the
 assessment; it produces the draft and the findings.
+
+The **privacy-analyst** domain pack pairs this with research: it reads the subject's
+documents, searches for evidence, and calls `find_controls` to cite the exact
+control for each finding — the first-pass analyst's legwork, for a human to sign off.
 
 !!! note
     Assessments are a structured-diligence aid, not legal advice. A qualified

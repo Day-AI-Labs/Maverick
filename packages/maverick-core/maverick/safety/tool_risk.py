@@ -91,6 +91,7 @@ _DEFAULT_RISK: dict[str, str] = {
     "recall_past_goals": "low",  # real registered name (was "recall" -> dead)
     "web_search": "low",
     "knowledge_search": "low",
+    "find_controls": "low",
     "wikipedia": "low",
     "arxiv": "low",
     "semantic_scholar": "low",
