@@ -51,7 +51,7 @@ def test_load_missing_entry_raises(tmp_path):
 def test_data_file_holds_only_ciphertext(tmp_path):
     key = generate_key()
     path = tmp_path / "vault.json"
-    Vault(key, path).store("acct", {"password": "hunter2"})
+    Vault(key, path).store("acct", {"password": "hunter2"})  # pragma: allowlist secret
     raw = path.read_text(encoding="utf-8")
     assert "hunter2" not in raw  # secret never stored in cleartext
 
