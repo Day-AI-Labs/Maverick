@@ -55,6 +55,9 @@ def test_onboard_persists_documents(tmp_path, monkeypatch):
     monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
     monkeypatch.delenv("MAVERICK_DOMAINS_DIR", raising=False)
     monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    # No embeddings key in CI: opt into deterministic retrieval explicitly so
+    # onboard actually ingests (build_embedder now fails loud on hosted+no-key).
+    monkeypatch.setenv("MAVERICK_EMBED_PROVIDER", "deterministic")
     doc = tmp_path / "policy.txt"
     doc.write_text("Our refund window is thirty days from purchase.")
 
@@ -77,7 +80,7 @@ def test_onboard_persists_documents(tmp_path, monkeypatch):
     coll = available_domains()["acme_co"].knowledge_sources[0]
     kb = KnowledgeBase(
         store=build_store({"path": str(Workspace.current().knowledge_path)}),
-        embedder=build_embedder(get_knowledge()),  # same fallback dim as onboard
+        embedder=build_embedder(get_knowledge()),  # same deterministic dim as onboard
     )
     hits = kb.search(coll, "refund window", k=3)
     assert hits and "refund" in hits[0].text.lower()

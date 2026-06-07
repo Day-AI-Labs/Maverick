@@ -63,12 +63,64 @@ class TestLocalEmbedder:
         assert e.model_name == "some-model"
         assert isinstance(e.dim, int)
 
-    def test_build_local_falls_back_or_loads_without_crashing(self):
+    def test_local_fails_loud_when_extra_missing(self):
+        import importlib.util
+
         from maverick_knowledge.embed import build_embedder
 
-        e = build_embedder({"embedder": "local"})
-        v = e.embed(["hello"])
-        assert v and isinstance(v[0], list)
+        if importlib.util.find_spec("sentence_transformers") is None:
+            # A missing extra must surface, not silently degrade to the hash
+            # fallback (which returns plausible-looking but meaningless hits).
+            with pytest.raises(RuntimeError, match="local"):
+                build_embedder({"embedder": "local"})
+        else:
+            e = build_embedder({"embedder": "local"})
+            v = e.embed(["hello"])
+            assert v and isinstance(v[0], list)
+
+
+class TestBuildEmbedderFailLoud:
+    """build_embedder must never silently fall back to the non-semantic hash
+    embedder -- a misconfigured provider raises; deterministic is opt-in only."""
+
+    def test_deterministic_is_explicit_opt_in(self):
+        from maverick_knowledge.embed import DeterministicEmbedder, build_embedder
+
+        e = build_embedder({"embedder": "deterministic", "dim": 64})
+        assert isinstance(e, DeterministicEmbedder)
+        assert e.dim == 64
+
+    def test_hosted_without_key_raises(self, monkeypatch):
+        from maverick_knowledge.embed import build_embedder
+
+        monkeypatch.delenv("MAVERICK_EMBED_PROVIDER", raising=False)
+        monkeypatch.delenv("MAVERICK_EMBED_API_KEY", raising=False)
+        # Default provider is hosted; with no key it must raise, not quietly
+        # return a hash embedder that scores garbage against the corpus.
+        with pytest.raises(RuntimeError, match="API key"):
+            build_embedder({})
+
+    def test_hosted_with_key_builds_hosted(self, monkeypatch):
+        from maverick_knowledge.embed import HostedEmbedder, build_embedder
+
+        monkeypatch.delenv("MAVERICK_EMBED_PROVIDER", raising=False)
+        e = build_embedder({"embedder": "hosted", "api_key": "k", "dim": 8})
+        assert isinstance(e, HostedEmbedder) and e.dim == 8
+
+    def test_unknown_provider_raises(self, monkeypatch):
+        from maverick_knowledge.embed import build_embedder
+
+        monkeypatch.delenv("MAVERICK_EMBED_PROVIDER", raising=False)
+        with pytest.raises(ValueError, match="unknown embedder"):
+            build_embedder({"embedder": "banana"})
+
+    def test_env_overrides_cfg_to_deterministic(self, monkeypatch):
+        from maverick_knowledge.embed import DeterministicEmbedder, build_embedder
+
+        # Operator escape hatch: force deterministic even if config says hosted.
+        monkeypatch.setenv("MAVERICK_EMBED_PROVIDER", "deterministic")
+        e = build_embedder({"embedder": "hosted"})  # would otherwise need a key
+        assert isinstance(e, DeterministicEmbedder)
 
 
 class TestChunk:
