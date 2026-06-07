@@ -9,7 +9,7 @@ spec here — no new module per connector. Systems that need a bespoke shape
 from __future__ import annotations
 
 from . import Tool
-from ._rest_connector import make_rest_tool
+from ._rest_connector import make_graphql_tool, make_rest_tool
 
 # name, base_url_env, token_env, description, **auth-overrides
 _SPECS: list[dict] = [
@@ -531,9 +531,23 @@ _SPECS: list[dict] = [
          "confirm). Auth: AMPLITUDE_BASE_URL + AMPLITUDE_TOKEN (apikey:secret, basic)."),
 ]
 
-ENTERPRISE_CONNECTOR_NAMES: list[str] = [s["name"] for s in _SPECS]
+# GraphQL services (single POST endpoint; mutations confirm-gated).
+_GRAPHQL_SPECS: list[dict] = [
+    dict(name="monday", base_url_env="MONDAY_BASE_URL", token_env="MONDAY_TOKEN",
+         scheme="", description="monday.com GraphQL. op query (queries run; mutations "
+         "need confirm). Auth: MONDAY_BASE_URL (https://api.monday.com/v2) + "
+         "MONDAY_TOKEN (raw Authorization)."),
+    dict(name="wiz", base_url_env="WIZ_BASE_URL", token_env="WIZ_TOKEN",
+         description="Wiz CNAPP GraphQL. op query (queries run; mutations need "
+         "confirm). Auth: WIZ_BASE_URL (your Wiz API endpoint) + WIZ_TOKEN (bearer)."),
+]
+
+ENTERPRISE_CONNECTOR_NAMES: list[str] = (
+    [s["name"] for s in _SPECS] + [s["name"] for s in _GRAPHQL_SPECS]
+)
 
 
 def enterprise_connectors() -> list[Tool]:
     """Instantiate every spec'd connector (registered in base_registry)."""
-    return [make_rest_tool(**spec) for spec in _SPECS]
+    return ([make_rest_tool(**spec) for spec in _SPECS]
+            + [make_graphql_tool(**spec) for spec in _GRAPHQL_SPECS])

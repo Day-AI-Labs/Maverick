@@ -124,3 +124,48 @@ def test_all_enterprise_connectors_register(tmp_path):
     # sanity: the batch is non-trivial and unique
     assert len(ENTERPRISE_CONNECTOR_NAMES) == len(set(ENTERPRISE_CONNECTOR_NAMES))
     assert len(ENTERPRISE_CONNECTOR_NAMES) >= 15
+
+
+def _gql(**kw):
+    from maverick.tools._rest_connector import make_graphql_tool
+    spec = dict(name="acmegql", base_url_env="ACMEGQL_URL", token_env="ACMEGQL_TOKEN",
+                description="Acme GraphQL")
+    spec.update(kw)
+    return make_graphql_tool(**spec)
+
+
+def test_graphql_query_runs(monkeypatch):
+    monkeypatch.setenv("ACMEGQL_URL", "https://gql.example.com")
+    monkeypatch.setenv("ACMEGQL_TOKEN", "tok")
+    post = MagicMock(return_value=_resp(200, {"data": {"me": {"id": 1}}}))
+    _fake_httpx(monkeypatch, post=post)
+    out = _gql().fn({"op": "query", "query": "query { me { id } }"})
+    assert "me" in out
+    assert post.call_args.args[0] == "https://gql.example.com"
+
+
+def test_graphql_mutation_needs_confirm(monkeypatch):
+    monkeypatch.setenv("ACMEGQL_URL", "https://gql.example.com")
+    monkeypatch.setenv("ACMEGQL_TOKEN", "tok")
+    post = MagicMock()
+    _fake_httpx(monkeypatch, post=post)
+    out = _gql().fn({"op": "query", "query": "mutation { delete_item(id: 1) { id } }"})
+    assert "DRY RUN" in out
+    post.assert_not_called()
+
+
+def test_graphql_requires_config(monkeypatch):
+    monkeypatch.delenv("ACMEGQL_URL", raising=False)
+    monkeypatch.delenv("ACMEGQL_TOKEN", raising=False)
+    _fake_httpx(monkeypatch, post=MagicMock())
+    out = _gql().fn({"op": "query", "query": "query { x }"})
+    assert "ERROR" in out and "ACMEGQL_URL" in out
+
+
+def test_graphql_errors_field_is_error(monkeypatch):
+    monkeypatch.setenv("ACMEGQL_URL", "https://gql.example.com")
+    monkeypatch.setenv("ACMEGQL_TOKEN", "tok")
+    post = MagicMock(return_value=_resp(200, {"errors": [{"message": "bad field"}]}))
+    _fake_httpx(monkeypatch, post=post)
+    out = _gql().fn({"op": "query", "query": "query { nope }"})
+    assert out.startswith("ERROR") and "bad field" in out
