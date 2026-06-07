@@ -81,7 +81,7 @@ def test_export_contains_subject_world_and_audit():
     bundle = export_subject_data("alice")
 
     # Envelope shape.
-    assert bundle["subject"] == {"user_id": "alice", "channel": None}
+    assert bundle["subject"] == {"user_id": "alice", "channel": "telegram"}
     assert bundle["tenant"] is None
     assert isinstance(bundle["generated_at"], str)
     assert set(bundle["counts"]) == {
@@ -133,6 +133,65 @@ def test_export_excludes_other_users():
     # And the bob goal id is not pulled in via the goals section.
     alice_goal_titles = {g["title"] for g in bundle["world"]["goals"]}
     assert alice_goal_titles == {"alice's goal"}
+
+
+def test_export_with_channel_excludes_same_user_id_on_other_channels():
+    """Channel is part of the subject identity, so ids may collide safely."""
+    wm = WorldModel(_world_db())
+
+    telegram = wm.get_or_create_conversation("telegram", "alice")
+    telegram_gid = wm.create_goal("telegram alice goal", "telegram private goal")
+    telegram_ep = wm.start_episode(telegram_gid)
+    wm.end_episode(telegram_ep, summary="telegram done", outcome="succeeded")
+    wm.append_turn(telegram.id, "user", "telegram alice secret", goal_id=telegram_gid)
+
+    discord = wm.get_or_create_conversation("discord", "alice")
+    discord_gid = wm.create_goal("discord alice goal", "discord private goal")
+    discord_ep = wm.start_episode(discord_gid)
+    wm.end_episode(discord_ep, summary="discord done", outcome="succeeded")
+    wm.append_turn(discord.id, "user", "discord alice secret", goal_id=discord_gid)
+    wm.close()
+
+    log = AuditLog(audit_dir=_audit_dir())
+    log.record(_audit_event("telegram", "alice", "telegram alice audited"))
+    log.record(_audit_event("discord", "alice", "discord alice audited"))
+
+    bundle = export_subject_data("alice", channel="telegram")
+    blob = json.dumps(bundle)
+
+    assert bundle["subject"] == {"user_id": "alice", "channel": "telegram"}
+    assert "telegram alice secret" in blob
+    assert "telegram alice goal" in blob
+    assert "telegram alice audited" in blob
+    assert "discord alice secret" not in blob
+    assert "discord alice goal" not in blob
+    assert "discord alice audited" not in blob
+    assert {c["channel"] for c in bundle["world"]["conversations"]} == {"telegram"}
+    assert {e["channel"] for e in bundle["audit"]} == {"telegram"}
+
+
+def test_export_without_channel_fails_closed_when_user_id_is_ambiguous():
+    wm = WorldModel(_world_db())
+    telegram = wm.get_or_create_conversation("telegram", "alice")
+    wm.append_turn(telegram.id, "user", "telegram alice secret")
+    discord = wm.get_or_create_conversation("discord", "alice")
+    wm.append_turn(discord.id, "user", "discord alice secret")
+    wm.close()
+
+    log = AuditLog(audit_dir=_audit_dir())
+    log.record(_audit_event("telegram", "alice", "telegram alice audited"))
+    log.record(_audit_event("discord", "alice", "discord alice audited"))
+
+    bundle = export_subject_data("alice")
+    blob = json.dumps(bundle)
+
+    assert bundle["subject"] == {"user_id": "alice", "channel": None}
+    assert bundle["world"] == {"conversations": [], "goals": []}
+    assert bundle["audit"] == []
+    assert "telegram alice secret" not in blob
+    assert "discord alice secret" not in blob
+    assert "telegram alice audited" not in blob
+    assert "discord alice audited" not in blob
 
 
 def test_unknown_user_returns_empty_structured_bundle():
