@@ -106,13 +106,26 @@ class Server:
             if not verdict.allowed:
                 return f"⚠ Blocked: {'; '.join(verdict.reasons)}"
 
+        from .oidc import OIDCError, oidc_enabled, verify_oidc_token
         from .paths import tenant_by_user_enabled, tenant_scope
 
         # The authenticated sender. Room-based adapters keep msg.user_id as the
         # reply target and expose the human via msg.principal_id; the tenant, the
         # conversation key, and run_goal's user_id must ALL agree on it -- else a
         # user's world.db lands under a different tenant than their memory/audit.
-        principal_id = getattr(msg, "principal_id", msg.user_id)
+        # When OIDC is enabled, do not trust the channel-provided principal:
+        # fail closed unless a verified ID token supplies the Maverick principal.
+        if oidc_enabled():
+            try:
+                principal_id = verify_oidc_token(_extract_oidc_token(msg)).principal
+            except OIDCError:
+                log.warning(
+                    "OIDC authentication failed for inbound %s message",
+                    msg.channel or "unknown",
+                )
+                return "⚠ Authentication failed: OIDC token is missing or invalid."
+        else:
+            principal_id = getattr(msg, "principal_id", msg.user_id)
 
         # Resolve the per-tenant world ONCE. When per-user tenancy is on, this
         # message's goal/conversation/turns land in that user's own world.db
@@ -438,3 +451,41 @@ def build_from_config() -> Server:
         )
 
     return server
+
+
+def _extract_oidc_token(msg) -> str:
+    """Best-effort extraction of an OIDC ID token from a channel message.
+
+    Channel adapters can pass the token explicitly as ``id_token``/``oidc_token``
+    or as a bearer token in ``authorization``. Webhook-style adapters may keep
+    the original request/dict on ``raw``; support those header shapes too.
+    """
+    for attr in ("id_token", "oidc_token"):
+        value = getattr(msg, attr, None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    authorization = getattr(msg, "authorization", None)
+    if not authorization:
+        raw = getattr(msg, "raw", None)
+        headers = getattr(raw, "headers", None)
+        if headers is None and isinstance(raw, dict):
+            headers = raw.get("headers")
+        if headers is not None:
+            try:
+                authorization = (
+                    headers.get("authorization") or headers.get("Authorization")
+                )
+            except AttributeError:
+                authorization = None
+        if not authorization and isinstance(raw, dict):
+            value = raw.get("id_token") or raw.get("oidc_token")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    if isinstance(authorization, str):
+        prefix = "Bearer "
+        if authorization.startswith(prefix):
+            return authorization[len(prefix):].strip()
+        return authorization.strip()
+    return ""
