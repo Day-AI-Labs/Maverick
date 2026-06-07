@@ -1,0 +1,404 @@
+"""Compliance assessment engine -- conduct PIAs, AIRAs, Vendor Risk Assessments.
+
+This is the OneTrust-style assessment core: a structured questionnaire is run
+against a *subject* (a processing activity, an AI system, a vendor), each answer
+is scored, and the result is a completed assessment with **findings** and an
+overall **risk rating**. Distinct from ``maverick ropa`` / ``dpia`` / ``ai-act``,
+which generate a scaffold from Maverick's *own* deployment config -- this assesses
+an arbitrary third-party subject.
+
+A template is plain data (:class:`AssessmentTemplate` -> :class:`Question`), so
+new assessment types are added by appending to :data:`TEMPLATES`, not by writing
+code. The three built in here:
+
+  - ``pia``         -- Privacy Impact Assessment (ISO 29134 / GDPR Art. 35 flavour)
+  - ``aira``        -- AI Risk Assessment (NIST AI RMF / EU AI Act flavour)
+  - ``vendor_risk`` -- Third-party / vendor risk assessment (TPRM flavour)
+
+The scoring is a transparent max-severity rollup: a question's *risk answer*
+raises a finding at its severity; ``unknown`` raises an "unverified" finding
+(diligence gap); ``na`` / the safe answer clear it. Overall rating = the highest
+finding severity present.
+
+The conversational assessor agent (``build_assessment_agent``) and its tools are
+a thin layer on top of this engine, exactly as the intake agent sits on
+:mod:`maverick.intake`.
+"""
+from __future__ import annotations
+
+import json
+import time
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+
+# Answer vocabulary. ``na`` = not applicable (clears the question); ``unknown`` =
+# the assessor could not confirm it (a diligence gap, scored as "unverified").
+ANSWERS = ("yes", "no", "na", "unknown")
+_SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3}
+
+
+@dataclass(frozen=True)
+class Question:
+    id: str
+    section: str
+    text: str
+    risk_answer: str          # the answer that indicates risk: "yes" or "no"
+    severity: str             # "low" | "medium" | "high"
+    guidance: str = ""        # how to remediate if this is a finding
+
+
+@dataclass(frozen=True)
+class AssessmentTemplate:
+    type: str
+    title: str
+    framework: str
+    description: str
+    questions: tuple[Question, ...]
+
+    def question(self, qid: str) -> Question | None:
+        return next((q for q in self.questions if q.id == qid), None)
+
+
+@dataclass(frozen=True)
+class Finding:
+    question_id: str
+    section: str
+    question: str
+    severity: str
+    answer: str
+    kind: str                 # "risk" (gave the risky answer) | "unverified" (unknown)
+    recommendation: str
+
+
+@dataclass
+class AssessmentResult:
+    type: str
+    subject: str
+    risk_rating: str          # "high" | "medium" | "low" | "minimal"
+    findings: list[Finding]
+    answered: int
+    total: int
+
+
+def _q(qid, section, text, risk_answer, severity, guidance=""):
+    return Question(qid, section, text, risk_answer, severity, guidance)
+
+
+# --- Built-in assessment templates ----------------------------------------
+
+_PIA = AssessmentTemplate(
+    type="pia",
+    title="Privacy Impact Assessment",
+    framework="ISO 29134 / GDPR Art. 35",
+    description="Assess the privacy risk of a processing activity.",
+    questions=(
+        _q("pia_necessity", "Necessity",
+           "Is the personal data collected strictly necessary for the stated purpose?",
+           "no", "high", "Minimize collection to what the purpose requires (Art. 5(1)(c))."),
+        _q("pia_lawful_basis", "Lawful basis",
+           "Is there a documented lawful basis for the processing (Art. 6)?",
+           "no", "high", "Identify and record a lawful basis before processing."),
+        _q("pia_special_category", "Lawful basis",
+           "Does it process special-category data (health, biometrics, etc.) without an Art. 9 condition?",
+           "yes", "high", "Establish an Art. 9 condition or stop processing special-category data."),
+        _q("pia_transparency", "Transparency",
+           "Are data subjects informed of the processing (privacy notice, Art. 13/14)?",
+           "no", "medium", "Provide a clear privacy notice at or before collection."),
+        _q("pia_rights", "Data-subject rights",
+           "Can data subjects exercise access / erasure / portability rights?",
+           "no", "medium", "Wire up DSAR handling (access, erasure, portability)."),
+        _q("pia_retention", "Storage limitation",
+           "Is there a defined retention period after which the data is deleted?",
+           "no", "medium", "Set and enforce a retention schedule (Art. 5(1)(e))."),
+        _q("pia_security", "Security",
+           "Is the personal data encrypted in transit and at rest?",
+           "no", "high", "Encrypt in transit (TLS) and at rest (Art. 32)."),
+        _q("pia_transfers", "International transfers",
+           "Is personal data transferred outside the EU/EEA without a Chapter V safeguard?",
+           "yes", "high", "Put an adequacy decision or SCCs in place before transferring."),
+        _q("pia_processors", "Processors",
+           "Is every processor bound by a data-processing agreement (Art. 28)?",
+           "no", "medium", "Execute an Art. 28 DPA with each processor."),
+        _q("pia_automated", "Automated decisions",
+           "Does it make solely-automated decisions with legal/significant effects (Art. 22)?",
+           "yes", "medium", "Add human review or an Art. 22 exception/safeguard."),
+    ),
+)
+
+_AIRA = AssessmentTemplate(
+    type="aira",
+    title="AI Risk Assessment",
+    framework="NIST AI RMF / EU AI Act",
+    description="Assess the risk of an AI system.",
+    questions=(
+        _q("aira_purpose", "Governance",
+           "Is the AI system's purpose and intended use documented?",
+           "no", "medium", "Document intended purpose, scope, and out-of-scope uses."),
+        _q("aira_prohibited", "Governance",
+           "Could the system fall under an EU AI Act prohibited practice (Art. 5)?",
+           "yes", "high", "Stop -- prohibited uses cannot be placed on the market."),
+        _q("aira_high_risk", "Governance",
+           "Is the use case in a high-risk domain (Annex III) without a conformity assessment?",
+           "yes", "high", "Run an Annex III conformity assessment before deployment."),
+        _q("aira_transparency", "Transparency",
+           "Are users informed they are interacting with / subject to AI (Art. 50)?",
+           "no", "medium", "Disclose AI use to affected users."),
+        _q("aira_oversight", "Human oversight",
+           "Is there meaningful human oversight of the system's decisions (Art. 14)?",
+           "no", "high", "Add a human-in-the-loop / override mechanism."),
+        _q("aira_bias", "Fairness",
+           "Has the system been evaluated for bias across affected groups?",
+           "no", "high", "Run a bias/fairness evaluation on representative data."),
+        _q("aira_accuracy", "Robustness",
+           "Are accuracy / robustness metrics measured and monitored in production?",
+           "no", "medium", "Define accuracy thresholds and monitor for drift."),
+        _q("aira_data_governance", "Data governance",
+           "Is the training/operating data of known provenance and lawful to use?",
+           "no", "high", "Establish data provenance and processing lawfulness."),
+        _q("aira_security", "Security",
+           "Is the system protected against adversarial / prompt-injection attacks?",
+           "no", "medium", "Add input validation and adversarial testing."),
+        _q("aira_logging", "Accountability",
+           "Are the system's decisions logged for traceability (Art. 12)?",
+           "no", "medium", "Enable tamper-evident decision logging."),
+    ),
+)
+
+_VENDOR_RISK = AssessmentTemplate(
+    type="vendor_risk",
+    title="Vendor Risk Assessment",
+    framework="Third-party risk management (TPRM)",
+    description="Assess the security and privacy risk of a third-party vendor.",
+    questions=(
+        _q("vr_soc2", "Certifications",
+           "Does the vendor hold a current SOC 2 Type II (or ISO 27001) report?",
+           "no", "high", "Request the report; treat absence as elevated risk."),
+        _q("vr_dpa", "Contractual",
+           "Is a data-processing agreement (DPA) in place with the vendor?",
+           "no", "high", "Execute a DPA before sharing personal data (Art. 28)."),
+        _q("vr_encryption", "Security",
+           "Does the vendor encrypt your data in transit and at rest?",
+           "no", "high", "Require TLS in transit and encryption at rest."),
+        _q("vr_access_control", "Security",
+           "Does the vendor enforce MFA and least-privilege access to your data?",
+           "no", "medium", "Require MFA and role-based access controls."),
+        _q("vr_breach_history", "History",
+           "Has the vendor had a reported data breach in the last 24 months?",
+           "yes", "medium", "Review the breach, root cause, and remediation."),
+        _q("vr_subprocessors", "Subprocessors",
+           "Does the vendor disclose its subprocessors and notify of changes?",
+           "no", "medium", "Require a subprocessor list and change notification."),
+        _q("vr_data_location", "Data residency",
+           "Is your data stored or processed outside the EU/EEA without safeguards?",
+           "yes", "high", "Confirm data location and Chapter V transfer safeguards."),
+        _q("vr_incident_sla", "Incident response",
+           "Does the contract commit the vendor to a breach-notification timeline?",
+           "no", "medium", "Require a defined breach-notification SLA (e.g. 72h)."),
+        _q("vr_deletion", "Offboarding",
+           "Will the vendor return or delete your data on contract termination?",
+           "no", "medium", "Require data return/deletion terms at offboarding."),
+        _q("vr_business_continuity", "Resilience",
+           "Does the vendor have a tested business-continuity / DR plan?",
+           "no", "low", "Request BC/DR evidence proportional to criticality."),
+    ),
+)
+
+TEMPLATES: dict[str, AssessmentTemplate] = {
+    t.type: t for t in (_PIA, _AIRA, _VENDOR_RISK)
+}
+
+
+def list_templates() -> list[AssessmentTemplate]:
+    return list(TEMPLATES.values())
+
+
+def get_template(assessment_type: str) -> AssessmentTemplate | None:
+    return TEMPLATES.get((assessment_type or "").strip().lower())
+
+
+# --- A running assessment --------------------------------------------------
+
+@dataclass
+class AssessmentSession:
+    """An in-progress assessment of ``subject`` against a template. Answers are
+    recorded by id; :meth:`evaluate` scores them into findings + a risk rating."""
+
+    type: str
+    subject: str
+    answers: dict[str, dict] = field(default_factory=dict)
+    id: str = field(default_factory=lambda: f"{int(time.time())}-{id(object()) & 0xffff:04x}")
+    created_at: float = field(default_factory=time.time)
+
+    def template(self) -> AssessmentTemplate:
+        tpl = get_template(self.type)
+        if tpl is None:
+            raise KeyError(f"unknown assessment type {self.type!r}")
+        return tpl
+
+    def record(self, question_id: str, answer: str, note: str = "") -> None:
+        answer = (answer or "").strip().lower()
+        if answer not in ANSWERS:
+            raise ValueError(f"answer must be one of {ANSWERS}, got {answer!r}")
+        if self.template().question(question_id) is None:
+            raise KeyError(f"no question {question_id!r} in {self.type!r}")
+        self.answers[question_id] = {"answer": answer, "note": note}
+
+    def evaluate(self) -> AssessmentResult:
+        tpl = self.template()
+        findings: list[Finding] = []
+        answered = 0
+        for q in tpl.questions:
+            rec = self.answers.get(q.id)
+            if not rec:
+                continue
+            ans = rec["answer"]
+            if ans in {"yes", "no", "na"}:
+                answered += 1
+            if ans == q.risk_answer:
+                findings.append(Finding(
+                    q.id, q.section, q.text, q.severity, ans, "risk", q.guidance,
+                ))
+            elif ans == "unknown":
+                findings.append(Finding(
+                    q.id, q.section, q.text, q.severity, ans, "unverified",
+                    q.guidance,
+                ))
+        return AssessmentResult(
+            type=self.type,
+            subject=self.subject,
+            risk_rating=_rollup([f.severity for f in findings]),
+            findings=findings,
+            answered=answered,
+            total=len(tpl.questions),
+        )
+
+
+def _rollup(severities: list[str]) -> str:
+    if not severities:
+        return "minimal"
+    top = max(_SEVERITY_RANK.get(s, 1) for s in severities)
+    return {3: "high", 2: "medium", 1: "low"}[top]
+
+
+# --- Persistence -----------------------------------------------------------
+
+def _assessments_dir() -> Path:
+    from .paths import data_dir
+    return data_dir("assessments")
+
+
+def save_session(session: AssessmentSession) -> Path:
+    """Persist a session + its current evaluation as JSON. Returns the path."""
+    d = _assessments_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    result = session.evaluate()
+    path = d / f"{session.id}.json"
+    path.write_text(json.dumps({
+        "id": session.id,
+        "type": session.type,
+        "subject": session.subject,
+        "created_at": session.created_at,
+        "answers": session.answers,
+        "result": asdict(result),
+    }, indent=2, default=str), encoding="utf-8")
+    return path
+
+
+def list_saved() -> list[dict]:
+    """Summaries of saved assessments, newest first."""
+    d = _assessments_dir()
+    if not d.exists():
+        return []
+    out: list[dict] = []
+    for p in d.glob("*.json"):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        res = data.get("result", {})
+        out.append({
+            "id": data.get("id", p.stem),
+            "type": data.get("type", "?"),
+            "subject": data.get("subject", "?"),
+            "risk_rating": res.get("risk_rating", "?"),
+            "findings": len(res.get("findings", [])),
+            "created_at": data.get("created_at", 0),
+        })
+    return sorted(out, key=lambda r: r["created_at"], reverse=True)
+
+
+def load_saved(assessment_id: str) -> dict | None:
+    path = _assessments_dir() / f"{assessment_id}.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+# --- Rendering -------------------------------------------------------------
+
+def render_questions_text(tpl: AssessmentTemplate) -> str:
+    head = f"{tpl.title} ({tpl.framework}) -- {len(tpl.questions)} questions"
+    lines = [head, "=" * len(head), ""]
+    section = None
+    for q in tpl.questions:
+        if q.section != section:
+            section = q.section
+            lines.append(f"[{section}]")
+        lines.append(f"  {q.id}  ({q.severity}; risk if {q.risk_answer})")
+        lines.append(f"     {q.text}")
+    return "\n".join(lines)
+
+
+def render_questions_json(tpl: AssessmentTemplate) -> str:
+    return json.dumps({
+        "type": tpl.type, "title": tpl.title, "framework": tpl.framework,
+        "questions": [asdict(q) for q in tpl.questions],
+    }, indent=2)
+
+
+def render_result_text(result: AssessmentResult) -> str:
+    tpl = get_template(result.type)
+    title = tpl.title if tpl else result.type
+    head = f"{title}: {result.subject}"
+    lines = [
+        head, "=" * len(head), "",
+        f"Risk rating: {result.risk_rating.upper()}",
+        f"Completeness: {result.answered}/{result.total} answered, "
+        f"{len(result.findings)} finding(s)",
+        "",
+    ]
+    if not result.findings:
+        lines.append("No findings recorded.")
+    else:
+        lines.append("Findings (highest severity first):")
+        order = {"high": 0, "medium": 1, "low": 2}
+        for f in sorted(result.findings, key=lambda f: order.get(f.severity, 3)):
+            flag = "UNVERIFIED" if f.kind == "unverified" else f.severity.upper()
+            lines.append(f"  [{flag}] {f.section}: {f.question}")
+            lines.append(f"      -> {f.recommendation}")
+    return "\n".join(lines)
+
+
+def render_result_json(result: AssessmentResult) -> str:
+    return json.dumps(asdict(result), indent=2, default=str)
+
+
+__all__ = [
+    "ANSWERS",
+    "Question",
+    "AssessmentTemplate",
+    "Finding",
+    "AssessmentResult",
+    "AssessmentSession",
+    "TEMPLATES",
+    "list_templates",
+    "get_template",
+    "save_session",
+    "list_saved",
+    "load_saved",
+    "render_questions_text",
+    "render_questions_json",
+    "render_result_text",
+    "render_result_json",
+]
