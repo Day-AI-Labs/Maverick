@@ -30,6 +30,30 @@ def test_errors():
     assert ss._run({"op": "bogus", "path": "x.csv"}).startswith("ERROR")
 
 
+def test_confines_paths_to_sandbox_workspace(tmp_path):
+    class _SB:
+        workdir = tmp_path / "ws"
+
+    (tmp_path / "ws").mkdir()
+    secret = tmp_path / "secret.csv"
+    secret.write_text("token,value\nHOST_SECRET,42\n")
+
+    tool = ss.spreadsheet(_SB())
+    assert "escapes the workspace" in tool.fn({"op": "read", "path": str(secret)})
+    assert "escapes the workspace" in tool.fn({
+        "op": "write", "path": "../out.csv", "rows": [["x"]],
+    })
+    assert not (tmp_path / "out.csv").exists()
+
+    out = tool.fn({
+        "op": "write", "path": "nested/data.csv", "rows": [["a", "b"], [1, 2]],
+    })
+    assert out.startswith("wrote 2")
+    assert (tmp_path / "ws" / "nested" / "data.csv").exists()
+    rows = json.loads(tool.fn({"op": "read", "path": "nested/data.csv"}))
+    assert rows == [["a", "b"], ["1", "2"]]
+
+
 # ---- XLSX (needs openpyxl) --------------------------------------------------
 
 def test_xlsx_write_read_setcell_info(tmp_path):
@@ -59,4 +83,4 @@ def test_xlsx_graceful_without_openpyxl(tmp_path, monkeypatch):
 
 def test_factory_shape():
     t = ss.spreadsheet()
-    assert t.name == "spreadsheet" and t.fn is ss._run
+    assert t.name == "spreadsheet" and callable(t.fn)
