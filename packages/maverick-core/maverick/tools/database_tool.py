@@ -5,9 +5,9 @@ etc. through a SQLAlchemy connection URL. Read statements run directly; non-read
 SQL (INSERT/UPDATE/DELETE/DDL) requires confirm=true.
 
 Auth: ``DATABASE_URL`` (a SQLAlchemy URL), e.g.
-  postgresql+psycopg://user:pass@host:5432/db
-  mysql+pymysql://user:pass@host/db
-  mssql+pyodbc://user:pass@host/db?driver=ODBC+Driver+18+for+SQL+Server
+  postgresql+psycopg://user:pass@host:5432/db  # pragma: allowlist secret
+  mysql+pymysql://user:pass@host/db  # pragma: allowlist secret
+  mssql+pyodbc://user:pass@host/db?driver=ODBC+Driver+18+for+SQL+Server  # pragma: allowlist secret
   cockroachdb://user@host:26257/db
 The matching driver (psycopg / pymysql / pyodbc / ...) must be installed.
 
