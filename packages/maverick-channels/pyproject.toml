@@ -7,7 +7,7 @@ name = "maverick-channels"
 version = "0.1.6"
 description = "Channel adapters for Maverick (Telegram, Discord, Slack, Signal, ...)"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { text = "LicenseRef-Proprietary" }
 authors = [{ name = "cdayAI" }]
 readme = "README.md"
 dependencies = [

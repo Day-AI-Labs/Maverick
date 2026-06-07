@@ -38,4 +38,4 @@ Next iterations of the extension (from `docs/ROADMAP.md`):
 
 ## License
 
-MIT, same as the main project.
+Proprietary — same as the main project; see [`LICENSE`](../../LICENSE).

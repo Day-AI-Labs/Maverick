@@ -7,7 +7,7 @@ name = "maverick-installer"
 version = "0.1.6"
 description = "Interactive setup wizard for Maverick"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { text = "LicenseRef-Proprietary" }
 authors = [{ name = "cdayAI" }]
 readme = "README.md"
 dependencies = [
