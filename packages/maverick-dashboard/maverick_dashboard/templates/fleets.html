@@ -37,6 +37,26 @@
             {% endfor %}
             </tbody>
           </table>
+          <form class="fleet-run-form" data-fleet="{{ fleet.name }}"
+                style="margin-top: 0.75rem; display: flex; gap: 0.5rem; align-items: end; flex-wrap: wrap;">
+            <label>
+              <div class="muted" style="font-size: 0.7rem; text-transform: uppercase;">assign to</div>
+              <select name="agent" aria-label="agent"
+                      style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);">
+                {% for agent in fleet.agents %}
+                  <option value="{{ agent.name }}">{{ agent.name }} ({{ agent.role or 'no role' }})</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label style="flex: 1; min-width: 14rem;">
+              <div class="muted" style="font-size: 0.7rem; text-transform: uppercase;">task</div>
+              <input name="prompt" type="text" placeholder="what should this agent do?"
+                     style="width: 100%; padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+            </label>
+            <button type="submit"
+                    style="padding: 0.45rem 1rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">Run</button>
+            <span class="fleet-run-msg muted" role="status" aria-live="polite" style="min-height: 1em;"></span>
+          </form>
         {% else %}
           <p class="muted" style="margin-bottom: 0;">No agents in this fleet yet.</p>
         {% endif %}
@@ -85,4 +105,41 @@
       </p>
     {% endif %}
   </div>
+
+  <script>
+    // Dispatch a goal AS a fleet agent (POST /api/v1/fleets/<fleet>/run). The
+    // agent runs under its role capability + its own audit principal, so the
+    // oversight control plane governs it. Values escaped via textContent.
+    (function() {
+      function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+      document.querySelectorAll('form.fleet-run-form').forEach(function(form) {
+        form.addEventListener('submit', async function(e) {
+          e.preventDefault();
+          const fleet = form.dataset.fleet;
+          const agent = form.querySelector('[name=agent]').value;
+          const prompt = form.querySelector('[name=prompt]').value.trim();
+          const msg = form.querySelector('.fleet-run-msg');
+          const btn = form.querySelector('button[type=submit]');
+          if (!prompt) { msg.style.color = 'var(--danger)'; msg.textContent = 'enter a task'; return; }
+          btn.disabled = true; msg.style.color = 'var(--muted)'; msg.textContent = 'dispatching…';
+          try {
+            const r = await fetch('/api/v1/fleets/' + encodeURIComponent(fleet) + '/run', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ agent: agent, prompt: prompt }),
+            });
+            const j = await r.json().catch(function() { return {}; });
+            if (r.ok || r.status === 201) {
+              msg.style.color = 'var(--accent)';
+              msg.innerHTML = 'dispatched as <code>' + esc(j.principal || agent) + '</code> → goal #' + esc(j.goal_id);
+              form.querySelector('[name=prompt]').value = '';
+            } else {
+              msg.style.color = 'var(--danger)'; msg.textContent = j.detail || ('failed: ' + r.status);
+            }
+          } catch (err) { msg.style.color = 'var(--danger)'; msg.textContent = String(err); }
+          btn.disabled = false;
+        });
+      });
+    })();
+  </script>
 {% endblock %}
