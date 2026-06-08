@@ -83,6 +83,24 @@ def resolve_pinned_ip(host: str) -> str:
     return ips[0]
 
 
+def _request_host_matches(request: Any, host: str) -> bool:
+    """True if ``request``'s host reconciles with the validated/pinned ``host``.
+
+    httpx decodes an IDN host to Unicode in ``url.host`` while ``urlparse`` keeps
+    the original (often punycode) form, so a naive ``url.host == host`` skips the
+    pin for IDN hosts -- reopening the DNS-rebinding TOCTOU. Match either the
+    Unicode or the ASCII/punycode (``raw_host``) form so a legitimate IDN host is
+    still recognized and pinned, and anything that doesn't reconcile is refused."""
+    candidates = {request.url.host}
+    try:
+        raw = request.url.raw_host
+        if raw:
+            candidates.add(raw.decode("ascii"))
+    except Exception:
+        pass
+    return host in candidates
+
+
 class _PinnedTransport:
     """httpx transport wrapper that connects to a pre-validated IP.
 
@@ -98,10 +116,14 @@ class _PinnedTransport:
         self._inner = inner
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        if request.url.host == self._host:
-            request.headers["Host"] = self._host_header
-            request.extensions = {**request.extensions, "sni_hostname": self._host}
-            request.url = request.url.copy_with(host=self._ip)
+        if not _request_host_matches(request, self._host):
+            # Host doesn't reconcile with the validated/pinned host -- refuse
+            # rather than let the inner transport re-resolve an unvalidated name.
+            raise BlockedHost(
+                f"unpinned host {request.url.host!r} != validated {self._host!r}")
+        request.headers["Host"] = self._host_header
+        request.extensions = {**request.extensions, "sni_hostname": self._host}
+        request.url = request.url.copy_with(host=self._ip)
         return self._inner.handle_request(request)
 
     def close(self) -> None:
@@ -168,10 +190,12 @@ class _AsyncPinnedTransport:
         self._inner = inner
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        if request.url.host == self._host:
-            request.headers["Host"] = self._host_header
-            request.extensions = {**request.extensions, "sni_hostname": self._host}
-            request.url = request.url.copy_with(host=self._ip)
+        if not _request_host_matches(request, self._host):
+            raise BlockedHost(
+                f"unpinned host {request.url.host!r} != validated {self._host!r}")
+        request.headers["Host"] = self._host_header
+        request.extensions = {**request.extensions, "sni_hostname": self._host}
+        request.url = request.url.copy_with(host=self._ip)
         return await self._inner.handle_async_request(request)
 
     async def aclose(self) -> None:
