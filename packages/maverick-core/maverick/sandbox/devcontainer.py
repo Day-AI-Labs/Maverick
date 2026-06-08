@@ -33,6 +33,12 @@ Config::
     project_dir = "/path/to/your/repo"  # contains .devcontainer/
     timeout = 60
     allow_network = true                # devcontainers usually need net
+    memory = "4g"                       # RAM cap (shared knob; "" / null disables)
+
+Every exec runs ``docker run`` with ``--cap-drop ALL``,
+``--security-opt no-new-privileges``, a pids limit, and the ``--memory`` cap
+above, matching the hardened DockerBackend. The container user follows the
+spec's ``remoteUser`` and the network follows ``allow_network``.
 """
 from __future__ import annotations
 
@@ -128,6 +134,7 @@ class DevcontainerBackend:
     project_dir: Path
     timeout: float = 60.0
     allow_network: bool = True
+    memory: str | None = "4g"
     spec_override: DevcontainerSpec | None = None
 
     def __post_init__(self) -> None:
@@ -173,6 +180,12 @@ class DevcontainerBackend:
             "--security-opt", "no-new-privileges",
             "--pids-limit", "512",
         ]
+        if self.memory:
+            # Cap container RAM and pin --memory-swap to it so the limit can't be
+            # sidestepped via swap -- parity with DockerBackend's DoS guard.
+            # Without it a prompt-injected agent could exhaust host memory.
+            args.extend(["--memory", str(self.memory),
+                         "--memory-swap", str(self.memory)])
         if self.spec.remote_user and self.spec.remote_user != "root":
             args.extend(["--user", self.spec.remote_user])
         for k, v in self.spec.container_env.items():
