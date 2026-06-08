@@ -39,6 +39,34 @@ def test_hunt_aggregates_indicators_and_ignores_noise(monkeypatch):
     assert report.findings[-1].kind == "secret_redacted"
 
 
+def test_hunt_skips_malformed_rows_and_keeps_scanning(monkeypatch):
+    _feed(monkeypatch, [
+        {"kind": [], "agent": "poison", "ts": 1},
+        {"kind": "egress_blocked", "agent": "a", "ts": 2.0},
+    ])
+
+    report = threat_hunt.hunt()
+
+    assert report.events_scanned == 2
+    assert report.risk_rating == "high"
+    assert [f.kind for f in report.findings] == ["egress_blocked"]
+
+
+def test_hunt_ignores_non_finite_timestamps(monkeypatch):
+    _feed(monkeypatch, [
+        {"kind": "shield_block", "agent": "poison", "ts": float("inf")},
+        {"kind": "shield_block", "agent": "a", "ts": "nan"},
+    ])
+
+    report = threat_hunt.hunt()
+
+    assert report.risk_rating == "high"
+    assert report.findings[0].count == 2
+    assert report.findings[0].last_seen == 0.0
+    assert all("ts" not in sample for sample in report.findings[0].samples)
+    assert "last ?" in threat_hunt.render_report_text(report)
+
+
 def test_hunt_is_clear_with_no_signals(monkeypatch):
     _feed(monkeypatch, [{"kind": "tool_call", "agent": "a", "ts": 1.0}])
     report = threat_hunt.hunt()
