@@ -38,6 +38,49 @@ def test_tool_risk_defaults():
     assert tool_risk("some_unknown_tool") == "medium"
 
 
+def test_sensitive_enterprise_connectors_are_high_risk():
+    """Sensitive enterprise connectors must not bypass max_risk=medium."""
+    from maverick.safety.tool_risk import tools_exceeding, tool_risk
+
+    sensitive_connectors = {
+        "fastly",
+        "akamai",
+        "digitalocean",
+        "terraform",
+        "vault",
+        "pingone",
+        "cyberark",
+        "sailpoint",
+        "onelogin",
+        "auth0",
+        "duo",
+        "crowdstrike",
+        "splunk",
+        "zscaler",
+        "tenable",
+        "qualys",
+        "rapid7",
+        "sentinelone",
+        "proofpoint",
+        "snyk",
+        "fortinet",
+        "qlik",
+        "thoughtspot",
+        "sisense",
+        "domo",
+        "mode",
+        "metabase",
+        "jenkins",
+        "circleci",
+        "jfrog",
+        "sonarqube",
+        "azure_devops",
+    }
+
+    assert all(tool_risk(name) == "high" for name in sensitive_connectors)
+    assert tools_exceeding(sensitive_connectors, "medium") == sensitive_connectors
+
+
 def test_tool_risk_config_override(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     _write_config(tmp_path, '''
@@ -111,6 +154,25 @@ max_risk = "medium"
     assert "obsidian" not in names
     assert "write_file" not in names
     assert "read_file" in names
+
+
+def test_medium_ceiling_drops_sensitive_enterprise_connectors(tmp_path, monkeypatch):
+    """Medium-capped registries must drop sensitive enterprise connectors."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _write_config(tmp_path, '''
+[security]
+max_risk = "medium"
+''')
+    from maverick.tools import base_registry
+
+    reg = base_registry(world=_FakeWorld(), sandbox=_FakeSandbox())
+    names = {t.name for t in reg.all()}
+    assert "read_file" in names
+    assert "vault" not in names
+    assert "terraform" not in names
+    assert "digitalocean" not in names
+    assert "jenkins" not in names
+    assert "azure_devops" not in names
 
 
 def test_user_high_ceiling_keeps_high_risk_tool(tmp_path, monkeypatch):
