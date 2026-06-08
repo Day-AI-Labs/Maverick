@@ -82,6 +82,7 @@ nav:
       - Operations: operations.md
       - Safety: safety.md
       - Plugins: plugins.md
+      - Connectors: connectors.md
       - Starter goals: starter-goals.md
   - Reference:
       - API: api.md
