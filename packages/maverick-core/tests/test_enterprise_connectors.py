@@ -154,6 +154,35 @@ def test_graphql_mutation_needs_confirm(monkeypatch):
     post.assert_not_called()
 
 
+def test_graphql_mutation_with_leading_comment_needs_confirm(monkeypatch):
+    monkeypatch.setenv("ACMEGQL_URL", "https://gql.example.com")
+    monkeypatch.setenv("ACMEGQL_TOKEN", "tok")
+    post = MagicMock()
+    _fake_httpx(monkeypatch, post=post)
+    out = _gql().fn({
+        "op": "query",
+        "query": "# leading comment\nmutation { delete_item(id: 1) { id } }",
+    })
+    assert "DRY RUN" in out
+    post.assert_not_called()
+
+
+def test_graphql_mutation_after_fragment_needs_confirm(monkeypatch):
+    monkeypatch.setenv("ACMEGQL_URL", "https://gql.example.com")
+    monkeypatch.setenv("ACMEGQL_TOKEN", "tok")
+    post = MagicMock()
+    _fake_httpx(monkeypatch, post=post)
+    out = _gql().fn({
+        "op": "query",
+        "query": (
+            "fragment ItemFields on Item { id }\n"
+            "mutation { delete_item(id: 1) { ...ItemFields } }"
+        ),
+    })
+    assert "DRY RUN" in out
+    post.assert_not_called()
+
+
 def test_graphql_requires_config(monkeypatch):
     monkeypatch.delenv("ACMEGQL_URL", raising=False)
     monkeypatch.delenv("ACMEGQL_TOKEN", raising=False)
