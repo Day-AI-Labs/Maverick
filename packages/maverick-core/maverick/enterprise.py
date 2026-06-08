@@ -41,8 +41,11 @@ the egress lock can never be satisfied by a cloud provider.
 from __future__ import annotations
 
 import ipaddress
+import logging
 import os
 from urllib.parse import urlparse
+
+log = logging.getLogger(__name__)
 
 # Built-in self-hosted providers: data stays on infrastructure the operator runs.
 # ``ollama`` (localhost:11434), ``vllm`` and ``tgi`` (self-hosted inference servers).
@@ -93,16 +96,37 @@ class EgressBlocked(RuntimeError):
         self.provider = provider
 
 
+_TRUE_WORDS = {"1", "true", "yes", "on", "enable", "enabled", "y", "t"}
+_FALSE_WORDS = {"0", "false", "no", "off", "disable", "disabled", "n", "f", ""}
+
+
 def _truthy(value: object) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_tristate(value: str) -> bool | None:
+    """Parse an env flag: True/False for a recognized affirmative/negative, None
+    for an unrecognized value -- so an ambiguous *security* flag is never silently
+    treated as 'off' (the ``MAVERICK_ENTERPRISE=enabled`` footgun)."""
+    v = value.strip().lower()
+    if v in _TRUE_WORDS:
+        return True
+    if v in _FALSE_WORDS:
+        return False
+    return None
+
+
 def enterprise_enabled() -> bool:
-    """True if enterprise mode is on. ``MAVERICK_ENTERPRISE`` env (set to a falsey
-    value to force-disable) wins over ``[enterprise] mode`` in config. Off by default."""
+    """True if enterprise mode is on. A recognized ``MAVERICK_ENTERPRISE`` env value
+    wins over ``[enterprise] mode`` in config; an *unrecognized* env value is ignored
+    (with a warning) rather than silently disabling the control. Off by default."""
     env = os.environ.get("MAVERICK_ENTERPRISE")
     if env is not None and env.strip() != "":
-        return _truthy(env)
+        decided = _env_tristate(env)
+        if decided is not None:
+            return decided
+        log.warning("MAVERICK_ENTERPRISE=%r is not a recognized boolean "
+                    "(use 1/0/true/false); ignoring it and reading config", env)
     try:
         from .config import load_config
         val = ((load_config() or {}).get("enterprise") or {}).get("mode")

@@ -272,6 +272,13 @@ def make_graphql_tool(
         variables = args.get("variables") if isinstance(args.get("variables"), dict) else {}
         try:
             base, tok = _config()
+            # Enterprise mode: a GraphQL connector POSTs agent-supplied query +
+            # variables to a third-party host -- hold it to the egress boundary
+            # too (the REST factory already does this).
+            from ..enterprise import enterprise_egress_denial
+            deny = enterprise_egress_denial(base, tool=name)
+            if deny:
+                return f"ERROR: {deny}"
             import httpx
             headers = {"Content-Type": "application/json",
                        token_header: f"{scheme} {tok}".strip()}
