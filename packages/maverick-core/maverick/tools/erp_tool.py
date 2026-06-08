@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 import os
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from . import Tool
 
@@ -80,8 +80,21 @@ def _config() -> tuple[str, str, str]:
     return base.rstrip("/"), tok, (system or "ERP")
 
 
+def _contains_dot_segment(path: str) -> bool:
+    """Return true when a path contains dot segments, including encoded variants."""
+    decoded = path
+    for _ in range(8):
+        if any(segment in (".", "..") for segment in decoded.replace("\\", "/").split("/")):
+            return True
+        next_decoded = unquote(decoded)
+        if next_decoded == decoded:
+            return False
+        decoded = next_decoded
+    return any(segment in (".", "..") for segment in decoded.replace("\\", "/").split("/"))
+
+
 def _safe_path(raw: Any) -> str:
-    """A model-supplied path must be RELATIVE (no scheme/host) -- no SSRF via path."""
+    """A model-supplied path must be relative and stay under the ERP base path."""
     path = str(raw or "").strip()
     if not path:
         raise ValueError("path is required.")
@@ -90,6 +103,8 @@ def _safe_path(raw: Any) -> str:
     parsed = urlparse(path)
     if parsed.scheme or parsed.netloc:
         raise ValueError("path must be relative (no scheme or host).")
+    if _contains_dot_segment(parsed.path):
+        raise ValueError("path must not contain dot-segment traversal.")
     return path if path.startswith("/") else "/" + path
 
 
