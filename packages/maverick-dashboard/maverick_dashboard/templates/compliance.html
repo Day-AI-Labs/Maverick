@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}compliance · Maverick{% endblock %}
+{% block content %}
+  <h2>compliance</h2>
+  <p class="muted">
+    Control-coverage for this deployment, mapped to GDPR + the EU AI Act + US
+    frameworks (NIST AI RMF, Colorado AI Act, NYC Local Law 144, CCPA/CPRA).
+    Control coverage only — not a legal attestation. Hand the export to an
+    auditor as the evidence trail.
+  </p>
+
+  <div class="panel">
+    <form method="get" action="/compliance" style="display: flex; gap: 1rem; align-items: end; flex-wrap: wrap;">
+      <label>
+        <div class="muted" style="font-size: 0.75rem; text-transform: uppercase;">framework</div>
+        <select name="framework"
+                style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);">
+          <option value="all" {% if framework == 'all' %}selected{% endif %}>all</option>
+          <option value="eu" {% if framework == 'eu' %}selected{% endif %}>EU (EU AI Act / GDPR)</option>
+          <option value="us" {% if framework == 'us' %}selected{% endif %}>US (NIST RMF + state/sector)</option>
+        </select>
+      </label>
+      <button type="submit"
+              style="padding: 0.45rem 1rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">
+        filter
+      </button>
+      <span style="margin-left: auto; display: flex; gap: 0.75rem; align-items: center;">
+        <a href="/api/v1/compliance/report.md?framework={{ framework }}">export .md</a>
+        <a href="/api/v1/compliance/report.csv?framework={{ framework }}">export .csv</a>
+      </span>
+    </form>
+  </div>
+
+  {% if summary %}
+  <div class="panel">
+    <h3 style="margin-top: 0;">Coverage</h3>
+    <div class="muted" style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+      <span>active: <strong>{{ summary.get('active', 0) }}</strong></span>
+      <span>need action: <strong>{{ summary.get('action_needed', 0) }}</strong></span>
+      <span>total: <strong>{{ summary.get('total', 0) }}</strong></span>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if groups %}
+    {% for fw, group in groups.items() %}
+    <div class="panel">
+      <h3 style="margin-top: 0;">{{ group.label }}</h3>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">status</th>
+            <th scope="col">control</th>
+            <th scope="col">regulation</th>
+            <th scope="col">detail</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for c in group.rows %}
+          <tr>
+            <td>
+              {% if c.status == 'active' %}
+                <span class="badge active">active</span>
+              {% elif c.status == 'action_needed' %}
+                <span class="badge blocked">action needed</span>
+              {% else %}
+                <span class="badge pending">on-demand</span>
+              {% endif %}
+            </td>
+            <td>{{ c.control }}</td>
+            <td><code>{{ c.regulation }}</code></td>
+            <td class="muted">{{ c.detail }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="panel">
+      <p class="muted">
+        No compliance controls to report — the core compliance module is
+        unavailable or returned nothing for this filter. Run
+        <code>maverick compliance --framework {{ framework }}</code> from the CLI
+        to see control coverage.
+      </p>
+    </div>
+  {% endif %}
+
+  {% if disclaimer %}
+  <div class="panel">
+    <p class="muted" style="margin: 0;">{{ disclaimer }}</p>
+  </div>
+  {% endif %}
+{% endblock %}

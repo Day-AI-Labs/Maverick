@@ -8,7 +8,15 @@ import json
 import logging
 import os
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    File,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
 from maverick.runner import (
     DEFAULT_MAX_DEPTH,
     DEFAULT_MAX_DOLLARS,
@@ -1063,6 +1071,72 @@ async def delete_fleet(request: Request, fleet_name: str) -> None:
     ):
         raise HTTPException(status_code=404, detail="no such fleet")
     remove_fleet(fleet_name)
+
+
+def _compliance_checks(framework: str):
+    """Run the core control-coverage report, filtered like the CLI.
+
+    Single source of truth for the /compliance page and these exports:
+    ``maverick.compliance.compliance_report()`` (GDPR + EU AI Act + US
+    frameworks). ``framework`` is one of ``eu``/``us``/``all``; anything else
+    falls back to ``all``. Fail-soft to an empty list so a missing core install
+    yields an empty (still-downloadable) report rather than a 500.
+    """
+    framework = framework if framework in {"eu", "us", "all"} else "all"
+    try:
+        from maverick.compliance import compliance_report
+        checks = compliance_report()
+    except Exception:  # pragma: no cover - never 500 the export if core is absent
+        return framework, []
+    if framework != "all":
+        checks = [c for c in checks if c.framework == framework]
+    return framework, checks
+
+
+@router.get("/compliance/report.md")
+async def compliance_report_md(framework: str = "all") -> Response:
+    """Download the control-coverage report as Markdown for an auditor.
+
+    Same data as the /compliance page (``maverick.compliance``). The
+    ``?framework=eu|us|all`` filter mirrors ``maverick compliance``. Returned as
+    an attachment so an operator can hand the file to an auditor.
+    """
+    from maverick.compliance import render_report_text
+    framework, checks = _compliance_checks(framework)
+    body = render_report_text(checks)
+    fname = f"maverick-compliance-{framework}.md"
+    return Response(
+        content=body,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@router.get("/compliance/report.csv")
+async def compliance_report_csv(framework: str = "all") -> Response:
+    """Download the control-coverage report as CSV for an auditor.
+
+    Same data source + ``?framework=`` filter as ``report.md``. One row per
+    control: framework, control, regulation, status, detail.
+    """
+    import csv
+    import io as _io
+
+    from maverick.compliance import COMPLIANCE_DISCLAIMER
+    framework, checks = _compliance_checks(framework)
+    buf = _io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["framework", "control", "regulation", "status", "detail"])
+    for c in checks:
+        writer.writerow([c.framework, c.control, c.regulation, c.status, c.detail])
+    writer.writerow([])
+    writer.writerow(["disclaimer", COMPLIANCE_DISCLAIMER])
+    fname = f"maverick-compliance-{framework}.csv"
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 @router.get("/cache/stats")

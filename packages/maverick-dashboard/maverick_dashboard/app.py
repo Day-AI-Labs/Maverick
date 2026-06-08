@@ -920,6 +920,58 @@ async def safety_page(request: Request) -> HTMLResponse:
     )
 
 
+def _compliance_view(framework: str) -> dict:
+    """Build the control-coverage view for the /compliance page + export.
+
+    Reuses ``maverick.compliance.compliance_report()`` (the same source the
+    ``maverick compliance`` CLI maps to GDPR + EU AI Act + US frameworks) and
+    applies the ``?framework=eu|us|all`` filter the CLI uses. Fail-soft: if the
+    core import or the report raises, return an empty view so the page renders an
+    empty state instead of 500ing. ``framework`` is normalised to one of
+    ``eu``/``us``/``all`` (default ``all``).
+    """
+    framework = framework if framework in {"eu", "us", "all"} else "all"
+    try:
+        from maverick.compliance import COMPLIANCE_DISCLAIMER, compliance_report
+        checks = compliance_report()
+    except Exception:  # pragma: no cover - never 500 the console if core is absent
+        return {"framework": framework, "groups": {}, "summary": {}, "disclaimer": ""}
+    if framework != "all":
+        checks = [c for c in checks if c.framework == framework]
+    # Group by framework bucket ("eu"/"us") for labelled tables on the page.
+    labels = {"eu": "EU AI Act / GDPR", "us": "NIST AI RMF + US state/sector law"}
+    groups: dict[str, dict] = {}
+    for c in checks:
+        bucket = groups.setdefault(
+            c.framework, {"label": labels.get(c.framework, c.framework), "rows": []}
+        )
+        bucket["rows"].append(c)
+    summary = {
+        "active": sum(1 for c in checks if c.status == "active"),
+        "action_needed": sum(1 for c in checks if c.status == "action_needed"),
+        "total": len(checks),
+    }
+    return {
+        "framework": framework,
+        "groups": groups,
+        "summary": summary,
+        "disclaimer": COMPLIANCE_DISCLAIMER,
+    }
+
+
+@app.get("/compliance", response_class=HTMLResponse)
+async def compliance_page(request: Request) -> HTMLResponse:
+    """Auditor-ready control-coverage report (GDPR + EU AI Act + US frameworks).
+
+    Org/system-level posture (like /safety), grouped by framework. The
+    ``?framework=eu|us|all`` query param mirrors ``maverick compliance``.
+    Control coverage only -- not a legal attestation. Fail-soft to an empty
+    state so a missing core install never 500s the console.
+    """
+    view = _compliance_view(request.query_params.get("framework") or "all")
+    return templates.TemplateResponse(request, "compliance.html", view)
+
+
 @app.get("/plugins", response_class=HTMLResponse)
 async def plugins_page(request: Request) -> HTMLResponse:
     """Discovered + enabled plugins."""
