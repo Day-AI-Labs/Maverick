@@ -280,6 +280,11 @@ class TestSpend:
 
 
 class TestSecurityRegister:
+    @pytest.fixture(autouse=True)
+    def _clear_security_cache(self):
+        from maverick_dashboard import api
+        api._security_register_cache = None
+
     def test_returns_posture_hunt_and_remediation(self):
         resp = client.get("/api/v1/security")
         assert resp.status_code == 200
@@ -289,6 +294,34 @@ class TestSecurityRegister:
         assert isinstance(data["threat_hunt"]["findings"], list)
         assert "auto_fix_enabled" in data["remediation"]
         assert isinstance(data["remediation"]["gaps"], list)
+
+    def test_security_register_bounds_hunt_and_avoids_second_scan(self, monkeypatch):
+        from maverick.threat_hunt import ThreatReport
+
+        hunt_calls = []
+        plan_calls = []
+
+        def fake_hunt(**kwargs):
+            hunt_calls.append(kwargs)
+            return ThreatReport([], 0, "clear")
+
+        def fake_plan(**kwargs):
+            plan_calls.append(kwargs)
+
+            class P:
+                auto_fix_enabled = False
+                gaps = []
+            return P()
+
+        monkeypatch.setattr("maverick.threat_hunt.hunt", fake_hunt)
+        monkeypatch.setattr("maverick.remediation.plan", fake_plan)
+
+        resp = client.get("/api/v1/security")
+        assert resp.status_code == 200
+        assert len(hunt_calls) == 1
+        assert hunt_calls[0]["all_days"] is False
+        assert hunt_calls[0]["since"] <= hunt_calls[0]["until"]
+        assert plan_calls == [{"include_breaches": False}]
 
 
 class TestOpenAPI:
