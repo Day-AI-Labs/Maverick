@@ -159,15 +159,26 @@ def _endpoint_validated_provider_is_local(provider: str) -> bool:
 
 
 def _configured_base_url(provider: str) -> str | None:
-    """The operator-configured endpoint for ``provider`` (``[providers.<name>]
-    base_url`` or its env override), or ``None`` if it uses its built-in default."""
+    """Return the endpoint that ``provider`` will use, if explicitly configured.
+
+    This must match the provider client's endpoint precedence: VLLM/TGI clients
+    read their dedicated environment variable before falling back to their
+    localhost default, while other provider names use ``[providers.<name>]
+    base_url``. Keeping the egress guard's view aligned with dispatch prevents a
+    local-looking config value from masking a public VLLM/TGI environment
+    override.
+    """
+    env_var = _LOCAL_PROVIDER_ENDPOINT_ENV.get(provider)
+    env_url = os.environ.get(env_var) if env_var else None
+    if env_url:
+        return str(env_url).strip()
+
     try:
         from .config import get_provider_config
         cfg = get_provider_config(provider)
     except Exception:
         cfg = {}
-    env_var = _LOCAL_PROVIDER_ENDPOINT_ENV.get(provider)
-    url = cfg.get("base_url") or (os.environ.get(env_var) if env_var else None)
+    url = cfg.get("base_url")
     return str(url).strip() if url else None
 
 
