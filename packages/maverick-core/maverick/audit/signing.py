@@ -295,9 +295,13 @@ class AuditSigner:
 
 def _segment_text(path: Path) -> str:
     """A day-file's NDJSON text, transparently decrypting an at-rest-sealed segment
-    so the verifier works on sealed and plaintext day-files alike."""
+    so the verifier works on sealed and plaintext day-files alike.
+
+    Unlike export readers, verification must fail closed: an unreadable or
+    undecryptable segment is signed evidence that cannot be proven intact.
+    """
     from .sealing import segment_text
-    return segment_text(path)
+    return segment_text(path, fail_soft=False)
 
 
 def verify_chain(path: Path, pubkey_hex: str | None = None) -> list[ChainBreak]:
@@ -339,7 +343,12 @@ def verify_chain(path: Path, pubkey_hex: str | None = None) -> list[ChainBreak]:
         pubkey_cache[key_id] = obj
         return obj
 
-    with io.StringIO(_segment_text(path)) as f:
+    try:
+        text = _segment_text(path)
+    except Exception as e:
+        return [ChainBreak(0, "unreadable_segment", str(e))]
+
+    with io.StringIO(text) as f:
         for n, line in enumerate(f, start=1):
             if not line.strip():
                 continue
@@ -576,7 +585,12 @@ def verify_anchors(audit_dir: Path, pubkey_hex: str | None = None) -> list[Chain
             breaks.append(ChainBreak(
                 0, "anchored_file_deleted", f"{day}.ndjson is anchored but missing"))
             continue
-        tip, count = _file_tip_and_count(day_file)
+        try:
+            tip, count = _file_tip_and_count(day_file)
+        except Exception as e:
+            breaks.append(ChainBreak(
+                0, "unreadable_segment", f"{day}: {e}"))
+            continue
         if tip != anc.get("tip_hash"):
             breaks.append(ChainBreak(
                 0, "anchor_tip_mismatch",
