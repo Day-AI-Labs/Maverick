@@ -1,6 +1,8 @@
 """Sanctions screening (finance-agent-suite §2.6)."""
 from __future__ import annotations
 
+import maverick.tools.sanctions_screen as sanctions_mod
+import pytest
 from maverick.tools.sanctions_screen import load_list, normalize, sanctions_screen, screen
 
 _SDN = ["Evil Corp LLC", "Bad Actor", "Sanctioned Holdings Ltd", "John Q Public"]
@@ -32,6 +34,23 @@ def test_token_overlap_match_at_lower_threshold():
     r = screen("Sanctioned Holdings", _SDN, threshold=0.6)
     assert r["match"] is True
     assert any("Sanctioned Holdings" in h["name"] for h in r["hits"])
+
+
+def test_screen_rejects_unsafe_thresholds():
+    for threshold in (-1, 0, 1.1):
+        with pytest.raises(ValueError):
+            screen("Totally Legit Inc", _SDN, threshold=threshold)
+
+
+def test_tool_rejects_negative_threshold_without_leaking_list(tmp_path, monkeypatch):
+    p = tmp_path / "sdn.txt"
+    p.write_text("Secret Watchlist One\nSecret Watchlist Two\n", encoding="utf-8")
+    monkeypatch.setattr(sanctions_mod, "_list_path", lambda: p)
+
+    out = sanctions_screen().fn({"name": "Totally Legit Inc", "threshold": -1})
+
+    assert out.startswith("ERROR: threshold")
+    assert "Secret Watchlist" not in out
 
 
 def test_load_list_newline(tmp_path):
