@@ -26,24 +26,39 @@ from pathlib import Path
 _DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def segment_text(path: Path) -> str:
+class SegmentReadError(RuntimeError):
+    """An audit segment could not be read or decoded for verification."""
+
+
+def segment_text(path: Path, *, fail_soft: bool = True) -> str:
     """Return an audit day-file's NDJSON text, transparently decrypting a sealed
-    segment. Fail-soft: returns ``""`` on a read/decrypt error (the readers then
-    simply yield nothing for that file, as they did for an unreadable file)."""
+    segment.
+
+    Export readers use the default fail-soft mode and receive ``""`` on a
+    read/decrypt error. Integrity verifiers must pass ``fail_soft=False`` so
+    unreadable or undecryptable signed evidence fails closed instead of being
+    mistaken for a valid empty chain.
+    """
     try:
         raw = Path(path).read_bytes()
-    except OSError:
-        return ""
+    except OSError as e:
+        if fail_soft:
+            return ""
+        raise SegmentReadError(f"cannot read audit segment {path}: {e}") from e
     from ..crypto_at_rest import is_sealed, unseal
     if is_sealed(raw):
         try:
             return unseal(raw).decode("utf-8")
-        except Exception:
-            return ""
+        except Exception as e:
+            if fail_soft:
+                return ""
+            raise SegmentReadError(f"cannot decrypt sealed audit segment {path}: {e}") from e
     try:
         return raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return ""
+    except UnicodeDecodeError as e:
+        if fail_soft:
+            return ""
+        raise SegmentReadError(f"cannot decode audit segment {path}: {e}") from e
 
 
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
@@ -113,4 +128,4 @@ def seal_closed_segments(audit_dir: Path | None = None, *,
     return report
 
 
-__all__ = ["segment_text", "seal_closed_segments"]
+__all__ = ["SegmentReadError", "segment_text", "seal_closed_segments"]

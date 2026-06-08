@@ -100,3 +100,29 @@ def test_dry_run_writes_nothing(monkeypatch, tmp_path):
     r = seal_closed_segments(audit_dir, today="2099-12-31", dry_run=True)
     assert r["2020-01-01.ndjson"] == "would seal"
     assert not is_sealed((audit_dir / "2020-01-01.ndjson").read_bytes())   # untouched
+
+
+@requires_crypto
+def test_verify_chain_fails_closed_on_corrupt_sealed_segment(monkeypatch, tmp_path):
+    from maverick.audit.sealing import SegmentReadError, seal_closed_segments, segment_text
+
+    audit_dir = tmp_path / "audit"
+    audit_dir.mkdir()
+    _signed_day(audit_dir, "2020-01-01", [{"kind": "tool_call", "detail": "SECRET"}])
+
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    assert seal_closed_segments(audit_dir, today="2099-12-31")["2020-01-01.ndjson"] == "sealed"
+
+    sealed = audit_dir / "2020-01-01.ndjson"
+    raw = bytearray(sealed.read_bytes())
+    raw[-1] ^= 0x01
+    sealed.write_bytes(bytes(raw))
+
+    # Export remains fail-soft, but verification must not treat unreadable
+    # signed evidence as a valid empty chain.
+    assert segment_text(sealed) == ""
+    with pytest.raises(SegmentReadError):
+        segment_text(sealed, fail_soft=False)
+    breaks = signing.verify_chain(sealed)
+    assert breaks
+    assert breaks[0].reason == "unreadable_segment"
