@@ -92,10 +92,18 @@ def _process_file(
     if not path.exists() or path.is_dir():
         return 0, 0
     try:
-        original = path.read_text(encoding="utf-8")
+        raw = path.read_bytes()
     except OSError as e:
         log.warning("audit erase: %s: %s", path, e)
         return 0, 0
+    # A closed day-file may be at-rest *sealed* (#1015). Read its NDJSON via the
+    # transparent decryptor (reading raw bytes as UTF-8 would crash on the
+    # ciphertext), and remember the sealed state so the rewrite below preserves
+    # it instead of silently unsealing a confidential segment to plaintext.
+    from ..crypto_at_rest import is_sealed
+    from .sealing import segment_text
+    was_sealed = is_sealed(raw)
+    original = segment_text(path)
 
     rows: list[tuple[str, dict | None]] = []
     matched = 0
@@ -134,28 +142,37 @@ def _process_file(
             )
             return 0, len(rows)
 
-    tmp = path.with_suffix(".ndjson.erasetmp")
+    parts: list[str] = []
     written = 0
+    for raw, event in rows:
+        if event is None:
+            parts.append(raw)
+            written += 1
+            continue
+        if not _event_matches(event, channel, user_id):
+            parts.append(raw)
+            written += 1
+            continue
+        if delete:
+            continue
+        parts.append(json.dumps(_tombstone(event, channel, user_id), default=str) + "\n")
+        written += 1
+
+    # Re-seal the rewritten NDJSON when the source segment was sealed, so an
+    # authorized erase scrubs the data without exposing the rest of a
+    # confidential day-file as plaintext on disk.
+    from .sealing import encode_segment
+    new_bytes = encode_segment("".join(parts), sealed=was_sealed)
+
+    tmp = path.with_suffix(".ndjson.erasetmp")
     try:
-        with open(tmp, "w", encoding="utf-8") as dst:
-            for raw, event in rows:
-                if event is None:
-                    dst.write(raw)
-                    written += 1
-                    continue
-                if not _event_matches(event, channel, user_id):
-                    dst.write(raw)
-                    written += 1
-                    continue
-                if delete:
-                    continue
-                dst.write(json.dumps(_tombstone(event, channel, user_id), default=str) + "\n")
-                written += 1
         # Preserve perms.
         try:
             mode = path.stat().st_mode & 0o777
         except OSError:
             mode = 0o600
+        with open(tmp, "wb") as dst:
+            dst.write(new_bytes)
         tmp.replace(path)
         try:
             os.chmod(path, mode)
