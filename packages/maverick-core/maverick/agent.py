@@ -25,7 +25,7 @@ from .budget import BudgetExceeded
 from .llm import model_for_role
 from .swarm import SwarmContext
 from .tools import ToolRegistry, base_registry
-from .tools.agent_bus_tool import recv_from_agent, send_to_agent
+from .tools.agent_bus_tool import delegate_to_agent, recv_from_agent, send_to_agent
 from .tools.spawn import (
     list_specialists_tool,
     spawn_specialist_tool,
@@ -522,7 +522,14 @@ class Agent:
         # Cross-agent bus tools, bound to this agent's id so send records
         # the right sender and recv drains the right inbox.
         reg.register(send_to_agent(self.name))
-        reg.register(recv_from_agent(self.name))
+        # recv is handoff-aware (verifies a signed delegation via the run's
+        # handoff authority); delegate_to_agent is the producer, offered only
+        # when capability enforcement is on -- otherwise a handoff is just a
+        # plain message and send_to_agent already covers it.
+        reg.register(recv_from_agent(self.name, agent=self))
+        from .capability import capability_enforced
+        if capability_enforced():
+            reg.register(delegate_to_agent(self))
         if self.depth < self.ctx.max_depth:
             reg.register(spawn_subagent_tool(self))
             reg.register(spawn_swarm_tool(self))

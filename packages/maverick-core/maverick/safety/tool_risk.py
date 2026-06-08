@@ -85,6 +85,7 @@ _DEFAULT_RISK: dict[str, str] = {
     "spawn_subagent": "high",
     "spawn_swarm": "high",
     "spawn_specialist": "high",
+    "delegate_to_agent": "high",
     # high (finance): money movement, posting to a system of record, filing with
     # an authority, or master-data mutation. Classified high so a max_risk="medium"
     # finance pack drops them from the registry and governance gates them as the
