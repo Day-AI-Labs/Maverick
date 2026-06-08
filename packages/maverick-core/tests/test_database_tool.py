@@ -57,6 +57,28 @@ def test_explain_prefixed_sql_needs_confirm(monkeypatch):
     assert "DRY RUN" in out
 
 
+def test_comment_prefixed_write_needs_confirm(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@localhost/db")
+    from maverick.tools.database_tool import database_tool
+
+    for sql in (
+        "/* select */ DELETE FROM users",
+        "-- SELECT\nDROP TABLE users",
+        "  (/* select */ UPDATE users SET admin = true)",
+    ):
+        out = database_tool().fn({"op": "query", "sql": sql})
+        assert "DRY RUN" in out
+
+
+def test_comment_prefixed_read_is_allowed(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    from maverick.tools.database_tool import database_tool
+
+    out = database_tool().fn({"op": "query", "sql": "/* allowed */ -- still allowed\nSELECT 1"})
+
+    assert "DATABASE_URL" in out
+
+
 def test_database_url_host_scope_applies_to_env_url(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@evil.com/db")
     from maverick.tools.database_tool import database_tool

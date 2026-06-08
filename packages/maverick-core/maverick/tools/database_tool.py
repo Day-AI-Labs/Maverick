@@ -46,8 +46,29 @@ _TOKEN_RE = re.compile(r"[a-zA-Z_]+")
 
 
 def _leading_keyword(sql: str) -> str:
-    """Return the first SQL keyword after leading whitespace/parentheses."""
-    match = _TOKEN_RE.search(sql.strip().lstrip("("))
+    """Return the first SQL keyword after leading whitespace/comments/parentheses."""
+    idx = 0
+    length = len(sql)
+    while idx < length:
+        while idx < length and sql[idx].isspace():
+            idx += 1
+        if idx < length and sql[idx] == "(":
+            idx += 1
+            continue
+        if sql.startswith("--", idx):
+            newline = sql.find("\n", idx + 2)
+            if newline == -1:
+                return ""
+            idx = newline + 1
+            continue
+        if sql.startswith("/*", idx):
+            end = sql.find("*/", idx + 2)
+            if end == -1:
+                return ""
+            idx = end + 2
+            continue
+        break
+    match = _TOKEN_RE.match(sql, idx)
     return match.group(0).lower() if match else ""
 
 
