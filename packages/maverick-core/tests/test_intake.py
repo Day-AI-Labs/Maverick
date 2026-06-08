@@ -6,6 +6,7 @@ import pytest
 from maverick.domain import DomainProfile, load_domain
 from maverick.intake import (
     IntakeSpec,
+    attach_docs_to_profile,
     generate_profile,
     ingest_docs,
     save_profile,
@@ -140,7 +141,7 @@ class TestLLMProposer:
 
 
 class TestRunIntake:
-    def test_ingests_and_generates(self, tmp_path):
+    def test_generates_without_ingesting_before_approval(self, tmp_path):
         from maverick.intake import run_intake
         from maverick_knowledge import DeterministicEmbedder, KnowledgeBase
         doc = tmp_path / "handbook.txt"
@@ -151,19 +152,21 @@ class TestRunIntake:
                           llm=llm, kb=kb)
         assert prof.name == "theta_inc"
         assert "HR helper" in prof.persona
-        assert prof.knowledge_sources[0].startswith("intake_pending_theta_inc_")
+        assert prof.knowledge_sources == ["theta_inc"]
         assert not kb.search("theta_inc", "paid leave", k=3)
-        assert kb.search(prof.knowledge_sources[0], "paid leave", k=3)  # docs were ingested
 
-    def test_uses_isolated_pending_collection(self, tmp_path):
+    def test_attach_docs_uses_isolated_pending_collection(self, tmp_path):
         from maverick.intake import run_intake
         from maverick_knowledge import DeterministicEmbedder, KnowledgeBase
 
         doc = tmp_path / "poison.txt"
         doc.write_text("POISONED FINANCE OVERRIDE")
         kb = KnowledgeBase(embedder=DeterministicEmbedder(dim=64))
-        prof = run_intake(IntakeSpec(name="Finance", doc_paths=[str(doc)]), kb=kb)
+        spec = IntakeSpec(name="Finance", doc_paths=[str(doc)])
+        prof = run_intake(spec, kb=kb)
+        chunks = attach_docs_to_profile(spec, prof, kb)
 
+        assert chunks >= 1
         assert prof.name == "finance"
         assert prof.knowledge_sources != ["finance"]
         assert prof.knowledge_sources[0].startswith("intake_pending_finance_")
@@ -194,9 +197,8 @@ class TestIntakeSession:
         assert prof.name == "iota_retail"
         assert "store helper" in prof.persona
         assert prof.max_risk == "medium"
-        assert prof.knowledge_sources[0].startswith("intake_pending_iota_retail_")
+        assert prof.knowledge_sources == ["iota_retail"]
         assert not kb.search("iota_retail", "returns", k=3)
-        assert kb.search(prof.knowledge_sources[0], "returns", k=3)  # ingested on finalize
 
 
 class TestPersonaSafety:

@@ -3,7 +3,7 @@
 Each tool is bound to a shared :class:`maverick.intake.IntakeSession`: as the
 agent interviews the business it calls these to record what it learns, attach
 documents, and finally draft the specialist pack. ``finalize_intake`` runs the
-generation engine (LLM-propose + clamp + ingest) and returns the draft for human
+generation engine (LLM-propose + clamp) and returns the draft for human
 approval -- it never activates or saves the agent itself.
 """
 from __future__ import annotations
@@ -35,7 +35,7 @@ def intake_tools(session, *, llm=None, kb=None) -> list[Tool]:
             return "ERROR: 'path' is required."
         session.doc_paths.append(path)
         return (f"Attached {path}. {len(session.doc_paths)} document(s) queued; "
-                "they're ingested when you finalize_intake.")
+                "they are ingested only after human approval.")
 
     async def _finalize(args: dict) -> str:
         if not session.is_ready():
