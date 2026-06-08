@@ -1240,15 +1240,19 @@ def _recent_governance_holds(limit: int = 10) -> list[dict]:
     return list(reversed(events))[:limit]
 
 
-def _fleet_recent_runs(fleet_name: str, limit: int = 12) -> list[dict]:
+def _fleet_recent_runs(
+    fleet_name: str, *, owner: str | None = None, limit: int = 12
+) -> list[dict]:
     """A fleet's recent agent runs for the operator console (newest-first).
 
     Mirrors ``maverick fleet status``: reads the per-fleet run index
     (``maverick.fleet.load_runs``) and resolves each run's goal via the
-    dashboard world to recover its ``status`` + ``title``. Returns at most
-    ``limit`` rows of ``{agent, goal_id, title, status, ts}``. Fail-soft: a
-    missing/garbled index or a vanished goal yields an empty/partial list,
-    never a 500.
+    dashboard world to recover its ``status`` + ``title``. When ``owner`` is
+    set, only goals owned by that principal are rendered, so a stale run index
+    from a deleted same-name fleet cannot be attached to a new owner's roster.
+    Returns at most ``limit`` rows of ``{agent, goal_id, title, status, ts}``.
+    Fail-soft: a missing/garbled index or a vanished goal yields an
+    empty/partial list, never a 500.
     """
     try:
         from maverick.fleet import load_runs
@@ -1257,8 +1261,10 @@ def _fleet_recent_runs(fleet_name: str, limit: int = 12) -> list[dict]:
         return []
     w = _world()
     rows: list[dict] = []
-    # Newest-first, capped: the index is oldest-first, so take the tail.
-    for r in reversed(runs[-limit:]):
+    # Newest-first, capped after owner filtering: the index is oldest-first.
+    for r in reversed(runs):
+        if len(rows) >= limit:
+            break
         gid = r.get("goal_id")
         goal = None
         try:
@@ -1266,6 +1272,8 @@ def _fleet_recent_runs(fleet_name: str, limit: int = 12) -> list[dict]:
                 goal = w.get_goal(gid)
         except Exception:  # pragma: no cover - a bad row must not break the page
             goal = None
+        if owner is not None and (goal is None or getattr(goal, "owner", "") != owner):
+            continue
         rows.append({
             "agent": r.get("agent") or "—",
             "goal_id": gid,
@@ -1295,7 +1303,7 @@ async def fleets_page(request: Request) -> HTMLResponse:
     if owner is not None:
         fleets = [f for f in fleets if f.owner == owner]
     # Per-fleet recent runs (newest-first), scoped to the fleets already shown.
-    runs_by_fleet = {f.name: _fleet_recent_runs(f.name) for f in fleets}
+    runs_by_fleet = {f.name: _fleet_recent_runs(f.name, owner=owner) for f in fleets}
     return templates.TemplateResponse(
         request, "fleets.html",
         {
