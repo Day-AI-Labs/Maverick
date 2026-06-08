@@ -91,6 +91,7 @@ nav:
       - Streaming parity: performance/streaming-parity.md
   - Security:
       - Threat model: security/threat-model.md
+      - Shield benchmark: security/shield-benchmark.md
       - Encryption at rest: encryption.md
       - Regulated deployment: regulated-deployment.md
       - Compliance assessments: compliance-assessments.md
