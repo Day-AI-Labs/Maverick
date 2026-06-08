@@ -58,6 +58,32 @@ def _ensure_runner(runner: str) -> str | None:
     return f"ERROR: {b} not found on PATH. Install with: {install}"
 
 
+def _check_url(url: str) -> str | None:
+    """Reject file://, non-http(s) schemes, and private/loopback/metadata hosts.
+
+    pa11y and axe drive a real headless browser, so a model-supplied
+    ``file:///etc/passwd`` would read local files and ``http://169.254.169.254/``
+    would hit the cloud metadata service (LFI / SSRF). Restrict ``check`` to
+    public http(s) hosts, honoring ``MAVERICK_FETCH_ALLOW_PRIVATE=1``. Returns an
+    error string when unsafe, else ``None``.
+    """
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ("http", "https"):
+        return f"ERROR: a11y check supports only http(s) URLs; got scheme={scheme!r}"
+    if not parsed.hostname:
+        return "ERROR: missing host in URL"
+    from .http_fetch import is_blocked_host
+    if is_blocked_host(parsed.hostname):
+        return (
+            f"ERROR: refusing to check {parsed.hostname!r}: resolves to a "
+            "private/loopback/reserved address (SSRF guard). "
+            "Set MAVERICK_FETCH_ALLOW_PRIVATE=1 to override."
+        )
+    return None
+
+
 def _confine_path(sandbox, user_path: str) -> str:
     """Confine a check_html file path to the sandbox workspace and block
     option-injection (a leading '-' would be parsed as a runner flag).
@@ -180,6 +206,9 @@ def _run(args: dict[str, Any], sandbox) -> str:
             url = (args.get("url") or "").strip()
             if not url:
                 return "ERROR: check requires url"
+            bad = _check_url(url)
+            if bad:
+                return bad
             return _op_check(url, runner, max_issues, sandbox)
         if op == "check_html":
             path = (args.get("path") or "").strip()
