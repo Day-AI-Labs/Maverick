@@ -1,7 +1,6 @@
 """Microsoft Teams tool (ROADMAP 2027 H2)."""
 from __future__ import annotations
 
-import httpx
 from maverick.tools.teams_tool import _build_card, teams_tool
 
 
@@ -25,17 +24,32 @@ def test_send_posts_card(monkeypatch):
         status_code = 200
         text = "1"
 
-    def _fake_post(url, json=None, timeout=None):
-        captured["url"] = url
-        captured["json"] = json
-        return _Resp()
+    class _FakeClient:
+        """Stands in for the pinned _ssrf.safe_client context manager."""
 
-    monkeypatch.setattr(httpx, "post", _fake_post)
+        def __init__(self, url, **kw):
+            captured["pinned_url"] = url
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, json=None):
+            captured["url"] = url
+            captured["json"] = json
+            return _Resp()
+
+    import maverick.tools._ssrf as ssrf
+    monkeypatch.setattr(ssrf, "safe_client", lambda url, **kw: _FakeClient(url, **kw))
     out = teams_tool().fn({"text": "deploy done", "title": "CI",
                            "webhook": "https://outlook.office.com/webhook/abc"})
     assert out == "posted to Teams"
     assert captured["json"]["text"] == "deploy done"
     assert captured["json"]["title"] == "CI"
+    # The POST went through the pinned client, not a raw httpx call.
+    assert captured["pinned_url"] == "https://outlook.office.com/webhook/abc"
 
 
 def test_send_requires_webhook(monkeypatch):
@@ -50,6 +64,7 @@ def test_send_rejects_non_https():
 
 
 def test_send_rejects_private_host(monkeypatch):
+    # A loopback/private webhook is rejected by the pinned client (BlockedHost).
     monkeypatch.delenv("MAVERICK_FETCH_ALLOW_PRIVATE", raising=False)
     out = teams_tool().fn({"text": "hi", "webhook": "https://127.0.0.1/webhook"})
     assert out.startswith("ERROR")
