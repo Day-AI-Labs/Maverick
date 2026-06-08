@@ -18,6 +18,45 @@ class TestBrowserSSRF:
         assert _is_safe_browser_url("http://localhost/") is False
         assert _is_safe_browser_url("https://example.com/") is True
 
+    def test_post_nav_blocks_redirect_to_internal_host(self, monkeypatch):
+        # page.goto/click follow 3xx transparently; a redirect that lands on the
+        # metadata IP must be caught AFTER navigation and the session closed so
+        # screenshot/extract can't read it.
+        from types import SimpleNamespace
+
+        from maverick.tools import browser
+        monkeypatch.delenv("MAVERICK_FETCH_ALLOW_PRIVATE", raising=False)
+        closed = {"n": 0}
+        monkeypatch.setattr(browser, "close_browser",
+                            lambda: closed.__setitem__("n", closed["n"] + 1))
+        page = SimpleNamespace(url="http://169.254.169.254/latest/meta-data/")
+        denial = browser._deny_and_close_current_page(page, ())
+        assert denial is not None and "private/internal" in denial
+        assert closed["n"] == 1
+
+    def test_post_nav_allows_public_host(self, monkeypatch):
+        from types import SimpleNamespace
+
+        from maverick.tools import browser
+        flag = {"closed": False}
+        monkeypatch.setattr(browser, "close_browser",
+                            lambda: flag.__setitem__("closed", True))
+        page = SimpleNamespace(url="https://example.com/page")
+        assert browser._deny_and_close_current_page(page, ()) is None
+        assert flag["closed"] is False
+
+    def test_post_nav_ignores_non_http_url(self, monkeypatch):
+        from types import SimpleNamespace
+
+        from maverick.tools import browser
+        flag = {"closed": False}
+        monkeypatch.setattr(browser, "close_browser",
+                            lambda: flag.__setitem__("closed", True))
+        # about:blank (fresh tab / failed nav) is not an internal-host exfil.
+        page = SimpleNamespace(url="about:blank")
+        assert browser._deny_and_close_current_page(page, ()) is None
+        assert flag["closed"] is False
+
 
 class TestCompactorPreservesSystem:
     def test_system_message_never_dropped(self):
