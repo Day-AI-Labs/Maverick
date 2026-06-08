@@ -99,3 +99,31 @@ def test_missing_goal_renders_fail_soft(monkeypatch, tmp_path):
     text = r.text
     assert "#999999" in text
     assert "missing" in text
+
+
+def test_authenticated_run_history_hides_other_owner_stale_index(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    import maverick_dashboard.app as dashboard_app
+    from maverick.fleet import Fleet, record_run, remove_fleet, save_fleet
+    from maverick.world_model import WorldModel
+
+    w = WorldModel(tmp_path / "world.db")
+    alice_gid = w.create_goal("Alice private board deck", owner="user:alice")
+    save_fleet(Fleet(name="acme", owner="user:alice"))
+    record_run("acme", "researcher", alice_gid)
+    remove_fleet("acme")
+
+    # Simulate an old orphaned run index left by a prior build, then reuse the
+    # same fleet name under a different authenticated owner.
+    record_run("acme", "researcher", alice_gid)
+    eve_gid = w.create_goal("Eve onboarding task", owner="user:eve")
+    record_run("acme", "coder", eve_gid)
+    save_fleet(Fleet(name="acme", owner="user:eve"))
+    monkeypatch.setattr(dashboard_app, "goal_owner_filter", lambda request: "user:eve")
+
+    r = _client().get("/fleets")
+    assert r.status_code == 200
+    text = r.text
+    assert "Eve onboarding task" in text
+    assert "Alice private board deck" not in text
+    assert f">#{alice_gid}</td>" not in text

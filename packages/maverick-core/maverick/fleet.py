@@ -145,9 +145,13 @@ def remove_fleet(name: str, *, tenant: str | None = "__active__") -> bool:
     path = fleets_dir(tenant=tenant) / f"{name}.json"
     try:
         path.unlink()
-        return True
     except OSError:
         return False
+    try:
+        runs_path(name, tenant=tenant).unlink()
+    except OSError:
+        pass
+    return True
 
 
 def runs_path(name: str, *, tenant: str | None = "__active__") -> Path:

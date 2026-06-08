@@ -118,3 +118,17 @@ def test_cli_show_missing(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     from maverick.cli import main
     assert CliRunner().invoke(main, ["fleet", "show", "ghost"]).exit_code == 1
+
+
+def test_remove_fleet_deletes_run_index(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    from maverick.fleet import Fleet, load_runs, record_run, remove_fleet, runs_path, save_fleet
+
+    save_fleet(Fleet(name="a", owner="x"))
+    record_run("a", "agent", 123)
+    assert runs_path("a").exists()
+
+    assert remove_fleet("a") is True
+    assert not runs_path("a").exists()
+    assert load_runs("a") == []
