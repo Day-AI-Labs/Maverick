@@ -100,21 +100,20 @@ def iter_audit_events(
         day=day, all_days=all_days, since=since, until=until, tenant=tenant,
     )
 
+    from .sealing import segment_text
     for path in paths:
-        try:
-            with path.open("r", encoding="utf-8") as handle:
-                for line in handle:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        event = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if isinstance(event, dict):
-                        yield event
-        except OSError:
-            continue
+        # segment_text transparently decrypts a sealed (at-rest) segment and is
+        # fail-soft (returns "" on a read/decrypt error).
+        for line in segment_text(path).splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict):
+                yield event
 
 
 def to_jsonl(event: dict[str, Any]) -> str:
