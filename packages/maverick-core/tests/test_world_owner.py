@@ -9,9 +9,9 @@ import sqlite3
 from maverick.world_model import SCHEMA_VERSION, WorldModel
 
 
-def test_schema_version_is_11(tmp_path):
-    assert SCHEMA_VERSION == 11
-    assert WorldModel(tmp_path / "w.db").schema_version == 11
+def test_schema_version_is_current(tmp_path):
+    assert SCHEMA_VERSION == 12  # bump when adding a migration
+    assert WorldModel(tmp_path / "w.db").schema_version == SCHEMA_VERSION
 
 
 def test_create_goal_stores_owner(tmp_path):
@@ -60,8 +60,8 @@ def test_migration_adds_owner_to_a_v10_db(tmp_path):
     conn.commit()
     conn.close()
 
-    w = WorldModel(db)  # opening runs the v11 migration
-    assert w.schema_version == 11
+    w = WorldModel(db)  # opening runs the v11 (owner) migration and any later
+    assert w.schema_version == SCHEMA_VERSION
     legacy = w.get_goal(1)
     assert legacy is not None and legacy.owner == ""   # migrated default
     gid = w.create_goal("new", owner="user:x")
