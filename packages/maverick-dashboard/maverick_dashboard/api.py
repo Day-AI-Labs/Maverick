@@ -1021,7 +1021,11 @@ async def run_fleet_agent(
     from maverick_dashboard.app import check_goal_rate_limit
     check_goal_rate_limit(request)
 
-    from maverick.capability import capability_for_role, capability_from_config
+    from maverick.capability import (
+        UnknownRoleError,
+        capability_for_role,
+        capability_from_config,
+    )
     from maverick.fleet import load_fleet, record_run
     from maverick.runner import run_goal_in_thread
 
@@ -1042,7 +1046,17 @@ async def run_fleet_agent(
         raise HTTPException(status_code=400, detail="prompt is required")
 
     agent_principal = fleet.principal_for(agent.name)
-    cap = capability_for_role(agent.role, principal=agent_principal)
+    try:
+        cap = capability_for_role(agent.role, principal=agent_principal)
+    except UnknownRoleError:
+        # A saved fleet may carry an undefined/empty role (created before role
+        # validation, or with RBAC roles opt-out). The CLI rejects these at
+        # `fleet create`, but the dashboard run endpoint stays lenient so a
+        # previously-runnable fleet keeps working: fall back to the base grant,
+        # which is attenuated to the caller below -- a non-admin can therefore
+        # never exceed their own capability. (capability_for_role was made
+        # strict in #931, which otherwise 500s this legacy path.)
+        cap = capability_from_config(agent_principal, user_id=agent_principal)
     if principal is not None and not is_admin:
         caller_cap = capability_from_config(principal, user_id=principal)
         cap = cap.attenuate(

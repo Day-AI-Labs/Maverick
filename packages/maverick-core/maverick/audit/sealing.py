@@ -61,6 +61,22 @@ def segment_text(path: Path, *, fail_soft: bool = True) -> str:
         raise SegmentReadError(f"cannot decode audit segment {path}: {e}") from e
 
 
+def encode_segment(text: str, *, sealed: bool) -> bytes:
+    """Encode NDJSON ``text`` for storage, re-sealing it when ``sealed``.
+
+    Lets a rewriter (GDPR erase, chain re-anchor) edit a day-file's content and
+    write it back in the *same* on-disk representation it had -- so a sealed,
+    confidential segment is never silently replaced with plaintext. ``sealed``
+    is the caller's observation of the original file (``is_sealed`` of its raw
+    bytes); a sealed file can only have been read because encryption is on, so
+    ``seal`` is available here."""
+    data = text.encode("utf-8")
+    if not sealed:
+        return data
+    from ..crypto_at_rest import seal
+    return seal(data)
+
+
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
     """Replace ``path`` with ``data`` atomically and privately (0600)."""
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".seal-", suffix=".tmp")
@@ -128,4 +144,4 @@ def seal_closed_segments(audit_dir: Path | None = None, *,
     return report
 
 
-__all__ = ["SegmentReadError", "segment_text", "seal_closed_segments"]
+__all__ = ["SegmentReadError", "segment_text", "encode_segment", "seal_closed_segments"]

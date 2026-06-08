@@ -681,15 +681,38 @@ class WorldModel:
             except ValueError:
                 pass
         cutoff = time.time() - max_age_seconds
+        now = time.time()
+        marker = " [process restarted mid-run]"
+        from .crypto_at_rest import at_rest_enabled
         with self._writing() as conn:
-            cur = conn.execute(
-                "UPDATE goals SET status = 'blocked', "
-                "result = COALESCE(result, '') || ' [process restarted mid-run]', "
-                "updated_at = ? "
+            if not at_rest_enabled():
+                cur = conn.execute(
+                    "UPDATE goals SET status = 'blocked', "
+                    "result = COALESCE(result, '') || ?, "
+                    "updated_at = ? "
+                    "WHERE status IN ('active', 'pending') AND updated_at < ?",
+                    (marker, now, cutoff),
+                )
+                return cur.rowcount
+            # At-rest encryption on: `result` is sealed ciphertext. Appending the
+            # marker in SQL would corrupt the ciphertext (unrecoverable on
+            # decrypt) or write bare plaintext into a sealed column (tripped as
+            # tampering). Append through the seal layer per row instead. The
+            # set of stale orphans on startup is tiny, so the row-by-row cost
+            # is negligible.
+            rows = conn.execute(
+                "SELECT id, result FROM goals "
                 "WHERE status IN ('active', 'pending') AND updated_at < ?",
-                (time.time(), cutoff),
-            )
-            return cur.rowcount
+                (cutoff,),
+            ).fetchall()
+            for row in rows:
+                prior = _dec_field(row["result"]) or ""
+                conn.execute(
+                    "UPDATE goals SET status = 'blocked', result = ?, "
+                    "updated_at = ? WHERE id = ?",
+                    (_enc_field(prior + marker), now, row["id"]),
+                )
+            return len(rows)
 
     def _init_schema_version(self) -> None:
         # Fast path: an already-initialized DB only needs a read. WAL readers
@@ -1071,14 +1094,35 @@ class WorldModel:
         """``(key, value)`` for facts under ``key_prefix`` whose key or value
         contains ``query`` (literal substring), newest first. Locked read."""
         pfx = self._like_escape(key_prefix) + "%"
-        q = "%" + self._like_escape(query) + "%"
+        from .crypto_at_rest import at_rest_enabled
+        if not at_rest_enabled():
+            q = "%" + self._like_escape(query) + "%"
+            rows = self._read_all(
+                "SELECT key, value FROM facts WHERE key LIKE ? ESCAPE '\\' "
+                "AND (key LIKE ? ESCAPE '\\' OR value LIKE ? ESCAPE '\\') "
+                "ORDER BY updated_at DESC LIMIT ?",
+                (pfx, q, q, limit),
+            )
+            return [(r["key"], _dec_field(r["value"])) for r in rows]
+        # Encryption on: `value` is sealed ciphertext, so a SQL LIKE over it can
+        # never match the plaintext query (the search would silently return
+        # nothing). Keys are stored plaintext, so narrow the scan by prefix in
+        # SQL, then decrypt and substring-match in Python. Case-insensitive to
+        # match SQLite LIKE's ASCII semantics on the plaintext path.
         rows = self._read_all(
             "SELECT key, value FROM facts WHERE key LIKE ? ESCAPE '\\' "
-            "AND (key LIKE ? ESCAPE '\\' OR value LIKE ? ESCAPE '\\') "
-            "ORDER BY updated_at DESC LIMIT ?",
-            (pfx, q, q, limit),
+            "ORDER BY updated_at DESC",
+            (pfx,),
         )
-        return [(r["key"], _dec_field(r["value"])) for r in rows]
+        needle = query.lower()
+        out: list[tuple[str, str]] = []
+        for r in rows:
+            val = _dec_field(r["value"])
+            if needle in r["key"].lower() or (val is not None and needle in val.lower()):
+                out.append((r["key"], val))
+                if len(out) >= limit:
+                    break
+        return out
 
     # ----- questions -----
     def ask(self, question: str, goal_id: int | None = None) -> int:

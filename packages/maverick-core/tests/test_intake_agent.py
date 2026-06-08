@@ -33,18 +33,14 @@ def test_intake_tools_drive_session_to_a_draft(tmp_path):
     assert session.goals == ["answer shipping questions"]
     assert session.doc_paths == [str(doc)]
 
-    import re
-
     out = asyncio.run(tools["finalize_intake"].fn({}))
     assert "DRAFT" in out and "kappa_shop" in out
-    # Unapproved intake docs ingest into an unpredictable *pending* collection
-    # (not the predictable domain slug), so they can't poison or collide with an
-    # existing domain's knowledge before a human approves the draft.
-    m = re.search(r"intake_pending_[\w\-]+", out)
-    assert m, out
-    pending = m.group(0)
-    assert kb.search(pending, "shipping", k=3)              # docs ingested there
-    assert kb.search("kappa_shop", "shipping", k=3) == []   # not the real slug
+    # Drafting never ingests the uploaded documents: ingestion is deferred until
+    # the human approves activation (attach_docs_to_profile), so nothing about
+    # an upload is stored or sent before the approval gate. The draft therefore
+    # carries no pending collection and the docs are not searchable yet.
+    assert "intake_pending_" not in out
+    assert kb.search("kappa_shop", "shipping", k=3) == []   # not ingested pre-approval
 
 
 def test_finalize_refuses_when_not_ready():

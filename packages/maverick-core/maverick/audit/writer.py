@@ -307,11 +307,12 @@ class AuditLog:
         path = self._path_for(day)
         if not path.exists():
             return []
-        try:
-            with open(path, encoding="utf-8") as f:
-                lines = f.readlines()
-        except OSError:
-            return []
+        # Route through segment_text so a sealed (closed, at-rest-encrypted)
+        # past day decrypts transparently. Reading it as raw UTF-8 would hit
+        # UnicodeDecodeError on the ciphertext -- not an OSError, so it would
+        # escape the guard and crash the caller.
+        from .sealing import segment_text
+        lines = segment_text(path).splitlines()
         out: list[dict[str, Any]] = []
         for line in lines[-n:]:
             try:
@@ -333,17 +334,16 @@ class AuditLog:
         path = self._path_for(day)
         if not path.exists():
             return []
+        # See tail(): segment_text decrypts a sealed past day transparently and
+        # fail-softs, so grep over a closed/sealed segment can't crash.
+        from .sealing import segment_text
         out: list[dict[str, Any]] = []
-        try:
-            with open(path, encoding="utf-8") as f:
-                for line in f:
-                    if rx.search(line):
-                        try:
-                            out.append(json.loads(line))
-                        except json.JSONDecodeError:
-                            continue
-        except OSError:
-            return []
+        for line in segment_text(path).splitlines():
+            if rx.search(line):
+                try:
+                    out.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
         return out
 
 

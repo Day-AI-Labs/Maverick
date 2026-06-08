@@ -31,7 +31,10 @@ log = logging.getLogger(__name__)
 
 
 _SENSITIVE_KEYS = frozenset({
-    "goal_text", "title", "description", "content",
+    # "text" covers Anthropic/OpenAI content blocks ({"type": "text",
+    # "text": ...}) nested under a message's "content" list -- without it the
+    # actual message text leaked unscrubbed in anon mode.
+    "goal_text", "title", "description", "content", "text",
     "prompt", "system", "messages", "answer", "msg", "message",
     "input_summary", "output_summary", "detail", "reason",
     "channel", "user_id", "goal_id", "conversation_id", "from", "to",
