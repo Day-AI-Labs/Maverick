@@ -36,14 +36,18 @@
   <div class="panel">
     <h3 style="margin-top: 0;">Active now <span class="muted" style="font-size: 0.85rem; font-weight: normal;">— agents running right now (live)</span></h3>
     <div id="active-now" aria-live="polite"><p class="muted">loading…</p></div>
+    <div id="why-panel" aria-live="polite"></div>
   </div>
 
   <script>
     // Live "Active now" panel: poll the owner-scoped endpoint and re-render
     // just this table (no full-page reload, so the approve/deny panel below is
-    // never interrupted). Escapes all values via textContent.
+    // never interrupted). Escapes all values via textContent. The "why?" button
+    // opens the governance drill-down (the reasoning/tool chain + cost) inline,
+    // so a supervisor answers "why is this agent doing this" without leaving.
     (function() {
       const box = document.getElementById('active-now');
+      const why = document.getElementById('why-panel');
       if (!box) return;
       function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
       function ago(ts) {
@@ -53,6 +57,40 @@
         if (s < 3600) return Math.floor(s / 60) + 'm ago';
         return Math.floor(s / 3600) + 'h ago';
       }
+      async function showWhy(id) {
+        if (!why) return;
+        why.innerHTML = '<p class="muted">loading reasoning for #' + esc(id) + '…</p>';
+        try {
+          const r = await fetch('/api/v1/oversight/why/' + encodeURIComponent(id));
+          if (!r.ok) { why.innerHTML = '<p class="muted">No drill-down available for #' + esc(id) + '.</p>'; return; }
+          const d = await r.json();
+          const sum = Object.entries(d.summary || {}).map(function(kv) { return esc(kv[0]) + ': ' + esc(kv[1]); }).join(' · ');
+          let h = '<div class="panel" style="border-color: var(--accent);">'
+                + '<div style="display:flex; justify-content:space-between; align-items:center;">'
+                + '<strong>Why #' + esc(id) + ' — ' + esc(d.title) + '</strong>'
+                + '<button onclick="document.getElementById(\'why-panel\').innerHTML=\'\'" '
+                + 'style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;padding:0.1rem 0.5rem;">close</button></div>'
+                + '<p class="muted" style="margin:0.3rem 0;">status <strong>' + esc(d.status) + '</strong>'
+                + ' · cost <strong>$' + esc((d.cost_dollars || 0).toFixed ? d.cost_dollars.toFixed(4) : d.cost_dollars) + '</strong>'
+                + (sum ? ' · ' + sum : '') + '</p>';
+          const evs = d.events || [];
+          if (!evs.length) {
+            h += '<p class="muted">No recorded steps yet.</p>';
+          } else {
+            h += '<ol style="margin:0.3rem 0; padding-left:1.2rem;">';
+            for (const e of evs) {
+              h += '<li style="margin-bottom:0.25rem;"><code>' + esc(e.kind) + '</code> '
+                 + '<span class="muted">' + esc(e.agent) + '</span> — ' + esc(e.content) + '</li>';
+            }
+            h += '</ol>';
+          }
+          why.innerHTML = h + '</div>';
+        } catch (e) { why.innerHTML = '<p class="muted">Could not load reasoning for #' + esc(id) + '.</p>'; }
+      }
+      box.addEventListener('click', function(ev) {
+        const b = ev.target.closest('button[data-why]');
+        if (b) showWhy(b.getAttribute('data-why'));
+      });
       async function tick() {
         try {
           const r = await fetch('/api/v1/oversight/active');
@@ -60,11 +98,13 @@
           const goals = (await r.json()).goals || [];
           if (!goals.length) { box.innerHTML = '<p class="muted">No agents running right now.</p>'; return; }
           let h = '<table><thead><tr><th scope="col">goal</th><th scope="col">title</th>'
-                + '<th scope="col">last activity</th><th scope="col">updated</th></tr></thead><tbody>';
+                + '<th scope="col">last activity</th><th scope="col">updated</th><th scope="col">why</th></tr></thead><tbody>';
           for (const g of goals) {
             h += '<tr><td class="muted">#' + esc(g.id) + '</td><td>' + esc(g.title) + '</td>'
                + '<td><code>' + esc(g.activity || '—') + '</code></td>'
-               + '<td class="muted" style="white-space:nowrap;">' + esc(ago(g.updated_at)) + '</td></tr>';
+               + '<td class="muted" style="white-space:nowrap;">' + esc(ago(g.updated_at)) + '</td>'
+               + '<td><button type="button" data-why="' + esc(g.id) + '" '
+               + 'style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--accent);cursor:pointer;padding:0.1rem 0.5rem;">why?</button></td></tr>';
           }
           box.innerHTML = h + '</tbody></table>';
         } catch (e) { /* keep last render on a transient error */ }
