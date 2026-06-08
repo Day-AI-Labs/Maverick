@@ -126,6 +126,14 @@ def test_all_enterprise_connectors_register(tmp_path):
     assert len(ENTERPRISE_CONNECTOR_NAMES) >= 15
 
 
+def test_enterprise_connectors_are_high_risk():
+    from maverick.safety.tool_risk import tool_risk, tools_exceeding
+    from maverick.tools.enterprise_connectors import ENTERPRISE_CONNECTOR_NAMES
+
+    assert all(tool_risk(n) == "high" for n in ENTERPRISE_CONNECTOR_NAMES)
+    assert tools_exceeding(ENTERPRISE_CONNECTOR_NAMES, "medium") == set(ENTERPRISE_CONNECTOR_NAMES)
+
+
 def _gql(**kw):
     from maverick.tools._rest_connector import make_graphql_tool
     spec = dict(name="acmegql", base_url_env="ACMEGQL_URL", token_env="ACMEGQL_TOKEN",

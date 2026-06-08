@@ -27,6 +27,7 @@ behaviour is unchanged unless a ceiling is configured.
 from __future__ import annotations
 
 import fnmatch
+import functools
 import logging
 
 log = logging.getLogger(__name__)
@@ -102,6 +103,14 @@ _DEFAULT_RISK: dict[str, str] = {
     "preview_diff": "low",
 }
 
+
+@functools.lru_cache(maxsize=1)
+def _enterprise_connector_names() -> frozenset[str]:
+    """Write-capable generic SaaS connectors that must fail closed as high risk."""
+    from ..tools.enterprise_connectors import ENTERPRISE_CONNECTOR_NAMES
+
+    return frozenset(ENTERPRISE_CONNECTOR_NAMES)
+
 _DEFAULT_RISK_LEVEL = "medium"
 
 
@@ -150,6 +159,8 @@ def tool_risk(name: str, overrides: dict[str, str] | None = None) -> str:
             return level
     if name in _DEFAULT_RISK:
         return _DEFAULT_RISK[name]
+    if name in _enterprise_connector_names():
+        return "high"
     # Unclassified. An MCP tool is externally-defined arbitrary code reached
     # through a third-party server -> fail safe to high. Anything else falls
     # back to the medium default.
