@@ -458,7 +458,7 @@ PRIVACY_ANALYST_PERSONA = (
 # The analyst's safe envelope: read-only research + the control catalog. Anything
 # mutating or outward (shell, write_file, ...) is deliberately excluded.
 _ANALYST_RESEARCH_TOOLS = (
-    "read_file", "web_search", "knowledge_search", "find_controls", "http_fetch",
+    "read_file", "web_search", "knowledge_search", "find_controls",
 )
 
 
