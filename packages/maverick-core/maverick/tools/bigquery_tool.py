@@ -49,7 +49,9 @@ def _op_query(sql: str, limit: int, confirm: bool) -> str:
     if not sql:
         return "ERROR: query requires sql"
     is_read = sql.strip().lstrip("(").lower().startswith(_READ_PREFIXES)
-    needs_confirm = not is_read or has_unconfirmed_statement_separator(sql)
+    needs_confirm = not is_read or has_unconfirmed_statement_separator(
+        sql, backslash_escapes=True
+    )
     if needs_confirm and not confirm:
         return "DRY RUN: non-read SQL (DML/DDL). Re-run with confirm=true."
     tok, proj = _config()

@@ -88,6 +88,20 @@ def test_oracle_multistatement_read_needs_confirm(monkeypatch):
     post.assert_not_called()
 
 
+def test_oracle_backslash_quote_multistatement_read_needs_confirm(monkeypatch):
+    monkeypatch.setenv("ORACLE_ORDS_URL", "https://h/ords/me")
+    monkeypatch.setenv("ORACLE_ORDS_TOKEN", "t")
+    post = MagicMock()
+    _fake_httpx(monkeypatch, post=post)
+    from maverick.tools.oracle_tool import oracle_tool
+    out = oracle_tool().fn({
+        "op": "sql",
+        "statement": "SELECT 'x\\' FROM dual; DELETE FROM t WHERE 1=1; --'",
+    })
+    assert "DRY RUN" in out
+    post.assert_not_called()
+
+
 # ------------------------------------- SAP ---------------------------------
 
 def test_sap_requires_config(monkeypatch):
