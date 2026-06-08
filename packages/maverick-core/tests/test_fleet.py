@@ -87,6 +87,12 @@ def test_load_rejects_malformed_fleet_json(monkeypatch, tmp_path):
 def test_cli_create_list_show_rm(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    # `fleet create` validates roles against config (undefined roles are
+    # rejected), so the roles this fleet declares must be configured.
+    monkeypatch.setattr("maverick.config.load_config", lambda *a, **k: {
+        "roles": {"analyst": {"allow_tools": ["read_file"]},
+                  "engineer": {"allow_tools": ["read_file", "write_file"]}},
+    })
     from maverick.cli import main
     r = CliRunner()
     c = r.invoke(main, ["fleet", "create", "acme", "--owner", "user:alice",
