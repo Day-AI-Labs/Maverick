@@ -5,7 +5,6 @@ reject every tampering, escalation, impersonation, and replay path."""
 from __future__ import annotations
 
 import pytest
-
 from maverick.capability import Capability
 from maverick.handoff import (
     Envelope,
