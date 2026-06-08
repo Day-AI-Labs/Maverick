@@ -122,6 +122,77 @@ def test_no_pending_holds_shows_empty_state(monkeypatch, tmp_path):
     assert "No pending approvals." in text
 
 
+def _enable_oidc_principal_map(monkeypatch):
+    """Map ``Bearer <name>`` to the dashboard principal ``user:<name>``."""
+    import maverick_dashboard.auth as auth
+    from maverick.oidc import VerifiedPrincipal
+
+    monkeypatch.setattr(auth, "oidc_enabled", lambda: True)
+
+    def _verify(token, **_kw):
+        return VerifiedPrincipal(
+            sub=token, issuer="https://issuer.example", audience="maverick",
+            claims={"sub": token},
+        )
+
+    monkeypatch.setattr(auth, "verify_oidc_token", _verify)
+
+
+def _as(user: str) -> dict:
+    return {"Authorization": f"Bearer {user}"}
+
+
+def test_oversight_audit_events_are_owner_scoped(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _enable_oidc_principal_map(monkeypatch)
+    monkeypatch.delenv("MAVERICK_DASHBOARD_ADMINS", raising=False)
+
+    from maverick.audit import record
+    from maverick.world_model import WorldModel
+
+    w = WorldModel(tmp_path / "world.db")
+    alice_goal = w.create_goal("alice active", owner="user:alice")
+    bob_goal = w.create_goal("bob active", owner="user:bob")
+    w.set_goal_status(alice_goal, "active")
+    w.set_goal_status(bob_goal, "active")
+    record(
+        "capability_denied", agent="alice.agent.internal", goal_id=alice_goal,
+        tool="alice-secret-tool", principal="user:alice",
+    )
+    record(
+        "capability_denied", agent="bob.agent.internal", goal_id=bob_goal,
+        tool="prod-admin-shell", principal="user:bob",
+    )
+
+    text = _client().get("/oversight", headers=_as("alice")).text
+
+    assert "alice.agent.internal" in text
+    assert "alice-secret-tool" in text
+    assert "bob.agent.internal" not in text
+    assert "prod-admin-shell" not in text
+    assert '<p style="font-size: 1.4rem; margin: 0.2rem 0;">1</p>' in text
+
+
+def test_oversight_admin_still_sees_all_audit_events(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _enable_oidc_principal_map(monkeypatch)
+    monkeypatch.setenv("MAVERICK_DASHBOARD_ADMINS", "user:root")
+
+    from maverick.audit import record
+    from maverick.world_model import WorldModel
+
+    w = WorldModel(tmp_path / "world.db")
+    alice_goal = w.create_goal("alice active", owner="user:alice")
+    bob_goal = w.create_goal("bob active", owner="user:bob")
+    record("shield_block", agent="alice.agent.internal", goal_id=alice_goal, reason="alice-block")
+    record("shield_block", agent="bob.agent.internal", goal_id=bob_goal, reason="bob-block")
+
+    text = _client().get("/oversight", headers=_as("root")).text
+
+    assert "alice-block" in text
+    assert "bob-block" in text
+
+
 def test_day_traversal_is_neutralized(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     r = _client().get("/oversight?day=../../../etc/passwd")

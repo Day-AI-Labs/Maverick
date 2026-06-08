@@ -784,6 +784,44 @@ def _intervention_detail(e: dict) -> str:
     return detail
 
 
+def _audit_event_visible_to_caller(
+    e: dict,
+    *,
+    principal: str | None,
+    owner_filter: str | None,
+    world,
+    goal_owner_cache: dict[int, str | None],
+) -> bool:
+    """Return whether an oversight audit row is visible to this dashboard user.
+
+    ``owner_filter is None`` is the dashboard's established bypass for auth-off
+    single-user mode and admins.  Authenticated non-admins only see events tied
+    to one of their goals, or ownerless events whose explicit user principal is
+    theirs.  Unknown/malformed ownership markers fail closed so the global audit
+    log cannot leak cross-tenant guardrail metadata.
+    """
+    if owner_filter is None:
+        return True
+    if principal is None:
+        return False
+
+    raw_goal_id = e.get("goal_id")
+    if raw_goal_id not in (None, ""):
+        try:
+            goal_id = int(raw_goal_id)
+        except (TypeError, ValueError):
+            return False
+        if goal_id not in goal_owner_cache:
+            try:
+                goal = world.get_goal(goal_id)
+                goal_owner_cache[goal_id] = getattr(goal, "owner", None) if goal else None
+            except Exception:
+                goal_owner_cache[goal_id] = None
+        return goal_owner_cache[goal_id] == owner_filter
+
+    return str(e.get("principal") or "") == principal
+
+
 @app.get("/oversight", response_class=HTMLResponse)
 async def oversight_page(request: Request) -> HTMLResponse:
     """Operator mission-control: every control-plane intervention in one pane.
@@ -807,6 +845,10 @@ async def oversight_page(request: Request) -> HTMLResponse:
     since = safe_audit_day(request.query_params.get("since"))
     until = safe_audit_day(request.query_params.get("until"))
     ranged = bool(since or until)
+    w = _world()
+    owner_filter = goal_owner_filter(request)
+    principal = caller_principal(request)
+    goal_owner_cache: dict[int, str | None] = {}
 
     # Counts span the whole window; the trail keeps only the newest 150 (a
     # bounded deque), so a wide incident-review range stays cheap in memory.
@@ -824,7 +866,10 @@ async def oversight_page(request: Request) -> HTMLResponse:
                 scanned += 1
                 if scanned > 200_000:
                     break
-                if _is_intervention(e):
+                if _is_intervention(e) and _audit_event_visible_to_caller(
+                    e, principal=principal, owner_filter=owner_filter,
+                    world=w, goal_owner_cache=goal_owner_cache,
+                ):
                     by_kind[str(e.get("kind"))] += 1
                     total += 1
                     recent.append(e)
@@ -836,7 +881,10 @@ async def oversight_page(request: Request) -> HTMLResponse:
         except Exception:  # pragma: no cover - never 500 the console on a log error
             raw = []
         for e in raw:
-            if _is_intervention(e):
+            if _is_intervention(e) and _audit_event_visible_to_caller(
+                e, principal=principal, owner_filter=owner_filter,
+                world=w, goal_owner_cache=goal_owner_cache,
+            ):
                 by_kind[str(e.get("kind"))] += 1
                 total += 1
                 recent.append(e)
@@ -858,14 +906,13 @@ async def oversight_page(request: Request) -> HTMLResponse:
     except Exception:
         halted = False
 
-    w = _world()
     try:
         approvals = list(w.pending_approvals())
     except Exception:
         approvals = []
     sources = {a.id: _approval_source(a.detail) for a in approvals}
     try:
-        active = len(w.list_goals(status="active", owner=goal_owner_filter(request)))
+        active = len(w.list_goals(status="active", owner=owner_filter))
     except Exception:
         active = 0
 
