@@ -14,6 +14,7 @@ allow_tools = [
     "read_file", "knowledge_search", "web_search",
     "bank_read_balance", "bank_read_transactions", "covenant_check",
     "propose_transfer", "build_cashflow_forecast",
+    "modern_treasury_read",   # GET-only banking reads (low) -- the executable read seat
 ]
 deny_tools = ["wire_transfer", "ach_send", "release_payment"]
 max_risk = "medium"                       # read/propose only; money tools are high -> dropped

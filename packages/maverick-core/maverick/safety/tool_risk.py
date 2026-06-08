@@ -230,6 +230,7 @@ _DEFAULT_RISK_LEVEL = "medium"
 # import would be circular) and cached only on success; a config override or an
 # explicit ``_DEFAULT_RISK`` entry still wins.
 _ENTERPRISE_CONNECTORS: frozenset[str] | None = None
+_READ_CONNECTORS: frozenset[str] | None = None
 
 
 def _enterprise_connector_names() -> frozenset[str]:
@@ -242,6 +243,19 @@ def _enterprise_connector_names() -> frozenset[str]:
         return frozenset()  # tools not importable yet -- retry on the next call
     _ENTERPRISE_CONNECTORS = frozenset(ENTERPRISE_CONNECTOR_NAMES)
     return _ENTERPRISE_CONNECTORS
+
+
+def _read_connector_names() -> frozenset[str]:
+    """Read-only (GET-only) connector variants -- low risk, not write-capable."""
+    global _READ_CONNECTORS
+    if _READ_CONNECTORS is not None:
+        return _READ_CONNECTORS
+    try:
+        from ..tools.enterprise_connectors import READ_CONNECTOR_NAMES
+    except Exception:
+        return frozenset()  # tools not importable yet -- retry on the next call
+    _READ_CONNECTORS = frozenset(READ_CONNECTOR_NAMES)
+    return _READ_CONNECTORS
 
 
 def risk_rank(level: str) -> int:
@@ -305,6 +319,8 @@ def tool_risk(name: str, overrides: dict[str, str] | None = None) -> str:
     # by construction -> both fail safe to high. Anything else -> medium.
     if name.startswith("mcp_"):
         return "high"
+    if name in _read_connector_names():
+        return "low"  # GET-only connector variant -- a read seat, not write-capable
     if name in _enterprise_connector_names():
         return "high"
     return _DEFAULT_RISK_LEVEL
