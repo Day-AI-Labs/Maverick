@@ -145,6 +145,10 @@ def safe_get(url: str, **kwargs: Any) -> httpx.Response:
     timeout = kwargs.pop("timeout", 30.0)
     headers = kwargs.pop("headers", None)
     verify = kwargs.pop("verify", True)
+    # Drop any caller-supplied follow_redirects: a per-request True would
+    # override the safe client's redirect-disabled default and let a 3xx escape
+    # to an unpinned/unvalidated host -- the exact SSRF this helper prevents.
+    kwargs.pop("follow_redirects", None)
     with safe_client(url, timeout=timeout, verify=verify) as client:
         return client.get(url, headers=headers, **kwargs)
 
