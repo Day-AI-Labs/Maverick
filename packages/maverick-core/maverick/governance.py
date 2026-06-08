@@ -104,6 +104,7 @@ class Policy:
     require_human_min_risk: str | None = None
     deny_above: dict[str, float] = field(default_factory=dict)
     require_human_above: dict[str, float] = field(default_factory=dict)
+    require_fresh_human_approval: bool = False
 
     def is_empty(self) -> bool:
         return not (
@@ -137,6 +138,7 @@ class Policy:
             require_human_min_risk=_risk_level(cfg.get("require_human_min_risk")),
             deny_above=_amount_table(cfg.get("deny_above")),
             require_human_above=_amount_table(cfg.get("require_human_above")),
+            require_fresh_human_approval=bool(cfg.get("require_fresh_human_approval")),
         )
 
 

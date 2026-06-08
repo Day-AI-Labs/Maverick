@@ -123,6 +123,59 @@ async def test_eval_error_open_when_no_policy(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_require_fresh_human_approval_bypasses_ledger(monkeypatch, tmp_path):
+    # Opt-in per-action oversight: a prior persistent ledger grant must NOT
+    # satisfy the Art-14 gate -- a fresh decision is required, so an
+    # auto-approve env (no human) is a denial.
+    import maverick.safety.consent as consent
+    monkeypatch.setattr(consent, "CONSENT_LEDGER_PATH", tmp_path / "consent.ledger")
+    consent.grant_persistent("ping")  # a standing grant exists
+    monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-approve")
+    _gov(monkeypatch, {"require_human_actions": ["ping"],
+                       "require_fresh_human_approval": True})
+    out = await _agent(tmp_path)._run_tool("ping", {})
+    assert "requires human approval" in out and "pong" not in out
+
+
+@pytest.mark.asyncio
+async def test_ledger_grant_satisfies_gate_by_default(monkeypatch, tmp_path):
+    # Default (flag off): a persistent ledger grant satisfies the gate, the
+    # documented backwards-compatible behavior.
+    import maverick.safety.consent as consent
+    monkeypatch.setattr(consent, "CONSENT_LEDGER_PATH", tmp_path / "consent.ledger")
+    consent.grant_persistent("ping")
+    monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-approve")
+    _gov(monkeypatch, {"require_human_actions": ["ping"]})  # flag defaults False
+    out = await _agent(tmp_path)._run_tool("ping", {})
+    assert "pong" in out
+
+
+def test_consult_ledger_false_ignores_prior_grant(monkeypatch, tmp_path):
+    # Unit: require_consent(consult_ledger=False) does not honor the ledger.
+    import maverick.safety.consent as consent
+    monkeypatch.setattr(consent, "CONSENT_LEDGER_PATH", tmp_path / "consent.ledger")
+    monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-approve")
+    consent.grant_persistent("rm-rf", scope="/tmp")
+    # Ledger honored by default...
+    assert consent.require_consent("rm-rf", scope="/tmp").granted is True
+    # ...but bypassed when a fresh decision is demanded.
+    d = consent.require_consent("rm-rf", scope="/tmp",
+                                allow_auto_approve=False, consult_ledger=False)
+    assert d.granted is False and d.source != "ledger"
+
+
+def test_scopeless_persistent_grant_is_honored(monkeypatch, tmp_path):
+    # Regression: a scope-less grant_persistent(action) must be matched by the
+    # ledger (a trailing-tab strip used to drop it, re-prompting forever).
+    import maverick.safety.consent as consent
+    monkeypatch.setattr(consent, "CONSENT_LEDGER_PATH", tmp_path / "consent.ledger")
+    monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-deny")  # only a real grant can pass
+    consent.grant_persistent("mass-dm")
+    assert consent._check_ledger("mass-dm", None) is True
+    assert consent.require_consent("mass-dm").granted is True
+
+
+@pytest.mark.asyncio
 async def test_require_human_above_amount_gates_through_chokepoint(monkeypatch, tmp_path):
     # The finance dollar-tier gate must fire through the agent chokepoint: a
     # tool call carrying an `amount` over the policy threshold needs human

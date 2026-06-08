@@ -500,6 +500,24 @@ def test_write_config_emits_finance_governance(tmp_path: Path, monkeypatch):
     assert parsed["screening"]["sdn_path"] == "/etc/ofac/sdn.txt"
 
 
+def test_write_config_emits_require_fresh_human_approval(tmp_path: Path, monkeypatch):
+    # Opt-in per-action oversight: the [governance] scalar is emitted only when
+    # the wizard pick set it.
+    parsed = _write_full_config(
+        tmp_path, monkeypatch,
+        finance={"enable": True, "regimes": ["sox"], "require_human_above": 5000.0,
+                 "deny_above": 0, "require_fresh_human_approval": True, "sdn_path": ""},
+    )
+    assert parsed["governance"]["require_fresh_human_approval"] is True
+    # Absent by default (backwards compatible).
+    parsed2 = _write_full_config(
+        tmp_path, monkeypatch,
+        finance={"enable": True, "regimes": ["sox"], "require_human_above": 5000.0,
+                 "deny_above": 0, "sdn_path": ""},
+    )
+    assert "require_fresh_human_approval" not in parsed2["governance"]
+
+
 def test_write_config_omits_finance_when_off(tmp_path: Path, monkeypatch):
     parsed = _write_full_config(tmp_path, monkeypatch)
     assert "finance" not in parsed
