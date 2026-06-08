@@ -32,6 +32,7 @@ import hashlib
 import hmac
 import logging
 import os
+import time
 from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
@@ -68,6 +69,61 @@ def verify_signature(
         secret.encode("utf-8"), body, hashlib.sha256,
     ).hexdigest()
     return hmac.compare_digest(expected, sig)
+
+
+def replay_window_seconds() -> int:
+    """Anti-replay freshness window (seconds).
+
+    Shares the ``[webhooks] max_age_seconds`` knob (env
+    ``MAVERICK_WEBHOOK_MAX_AGE_SECONDS``) with the Maverick-signed
+    ``/webhook/start`` path so operators tune one window. Defaults to 300s.
+    """
+    try:
+        from .webhooks import _default_max_age
+        return _default_max_age()
+    except Exception:  # pragma: no cover - webhooks helper unavailable
+        return 300
+
+
+def event_timestamp_ms(provider: str, payload: dict) -> float | None:
+    """The sender's authenticated event time in ms-epoch, or ``None``.
+
+    Linear carries ``webhookTimestamp`` and Jira ``timestamp`` at the top level
+    of the body. The body is HMAC-signed, so neither field can be altered or
+    stripped from a captured event without breaking the signature -- which makes
+    them a trustworthy basis for a freshness (anti-replay) check.
+    """
+    raw = payload.get("webhookTimestamp" if provider == "linear" else "timestamp")
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def is_fresh(
+    provider: str,
+    payload: dict,
+    *,
+    now: float | None = None,
+    max_age_seconds: int | None = None,
+) -> bool:
+    """True if the event's signed timestamp is within the replay window.
+
+    Fails CLOSED: a payload with no (or unparseable) timestamp is treated as
+    NOT fresh. Real Linear/Jira events always carry one, and a replayer can't
+    add or alter it without breaking the body HMAC, so the only events this
+    rejects are stale captures (replays) and far-future / clock-skew stamps.
+    """
+    ts_ms = event_timestamp_ms(provider, payload)
+    if ts_ms is None:
+        return False
+    # Linear/Jira send milliseconds; tolerate a seconds-valued stamp too.
+    ts_sec = ts_ms / 1000.0 if ts_ms > 1e11 else ts_ms
+    window = replay_window_seconds() if max_age_seconds is None else max_age_seconds
+    now = time.time() if now is None else now
+    return abs(now - ts_sec) <= window
 
 
 def _bot_id(provider: str) -> str:
@@ -185,4 +241,12 @@ def build_brief(event: IssueEvent) -> str:
     )
 
 
-__all__ = ["IssueEvent", "verify_signature", "parse_issue_event", "build_brief"]
+__all__ = [
+    "IssueEvent",
+    "verify_signature",
+    "parse_issue_event",
+    "build_brief",
+    "is_fresh",
+    "event_timestamp_ms",
+    "replay_window_seconds",
+]

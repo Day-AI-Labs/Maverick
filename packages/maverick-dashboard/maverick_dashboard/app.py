@@ -1514,6 +1514,41 @@ async def webhook_jira(request: Request, bg: BackgroundTasks) -> JSONResponse:
     return await _handle_issue_webhook("jira", "X-Hub-Signature", request, bg)
 
 
+# Per-process replay dedup for inbound issue webhooks, keyed on the request's
+# HMAC signature (unique per signed body), so a captured Linear/Jira delivery
+# replayed within the freshness window is rejected once per process. NOTE: this
+# is per-process -- with multiple workers the stateless freshness check
+# (issue_webhooks.is_fresh) is the cross-worker bound; a shared store would be
+# needed for cross-worker dedup.
+_issue_webhook_seen: dict[str, float] = {}
+_issue_webhook_seen_lock = threading.Lock()
+_ISSUE_WEBHOOK_SEEN_MAX = 4096
+
+
+def _issue_webhook_replay_seen(signature: str, ttl_seconds: int) -> bool:
+    """True if ``signature`` was already delivered within ``ttl_seconds``.
+
+    Records the signature with the current time and evicts expired/overflow
+    entries. The first delivery returns False (and is recorded); a replay
+    within the window returns True.
+    """
+    now = time.time()
+    with _issue_webhook_seen_lock:
+        for k, t in list(_issue_webhook_seen.items()):
+            if t < now - ttl_seconds:
+                _issue_webhook_seen.pop(k, None)
+        if signature in _issue_webhook_seen:
+            return True
+        _issue_webhook_seen[signature] = now
+        if len(_issue_webhook_seen) > _ISSUE_WEBHOOK_SEEN_MAX:
+            # Hard cap: drop the oldest half so a flood can't grow unbounded.
+            for k in sorted(_issue_webhook_seen, key=_issue_webhook_seen.get)[
+                : len(_issue_webhook_seen) // 2
+            ]:
+                _issue_webhook_seen.pop(k, None)
+        return False
+
+
 async def _handle_issue_webhook(
     provider: str, sig_header: str, request: Request, bg: BackgroundTasks,
 ) -> JSONResponse:
@@ -1527,7 +1562,9 @@ async def _handle_issue_webhook(
     """
     from maverick.issue_webhooks import (
         build_brief,
+        is_fresh,
         parse_issue_event,
+        replay_window_seconds,
         verify_signature,
     )
     from maverick.webhooks import inbound_secret
@@ -1560,6 +1597,16 @@ async def _handle_issue_webhook(
         # Wrong event type, unassigned, or assigned to someone other than the
         # bot -- acknowledge without driving the swarm.
         return JSONResponse({"ignored": True}, status_code=200)
+
+    # Replay defence for actionable (goal-spawning) events -- parity with
+    # /webhook/start. Linear/Jira sign only the body, but it carries an
+    # authenticated webhookTimestamp/timestamp we age-check, and the signature
+    # is a per-delivery dedup key. A captured signed event must not be able to
+    # re-create and re-run a paid goal indefinitely.
+    if not is_fresh(provider, payload):
+        raise HTTPException(status_code=403, detail="stale or undated webhook")
+    if _issue_webhook_replay_seen(signature, replay_window_seconds()):
+        raise HTTPException(status_code=409, detail="duplicate webhook delivery")
 
     if not _any_provider_key_set():
         raise HTTPException(
