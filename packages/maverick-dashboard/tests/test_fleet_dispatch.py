@@ -116,6 +116,20 @@ def test_dispatch_attenuates_legacy_bad_roles_to_caller_capability(monkeypatch, 
         assert cap.permits("shell") is False
 
 
+def test_dispatch_preserves_explicit_zero_budget(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _save_fleet()
+    calls = _stub_runner(monkeypatch)
+
+    r = _client().post(
+        "/api/v1/fleets/acme/run",
+        json={"agent": "coder", "prompt": "do no paid work", "max_dollars": 0.0},
+    )
+    assert r.status_code == 201, r.text
+    assert calls, "expected run_goal_in_thread to be scheduled"
+    assert calls[0]["args"][1] == 0.0
+
+
 def test_dispatch_unknown_agent_404(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     _save_fleet()
