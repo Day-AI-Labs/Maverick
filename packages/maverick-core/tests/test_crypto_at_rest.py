@@ -366,3 +366,23 @@ def test_world_db_plaintext_marker_questions_do_not_crash_when_encryption_off(
     q = wm.all_questions(gid)[0]
     assert q.question == malformed_question
     assert q.answer == sealed_like_answer
+
+
+@requires_crypto
+def test_unseal_wrong_key_or_tamper_raises_encryption_unavailable(monkeypatch, tmp_path):
+    """unseal() honors its documented contract: a genuinely-sealed blob that
+    can't be opened (tampered, wrong key, or truncated) raises
+    EncryptionUnavailable, not a leaking cryptography InvalidTag / ValueError."""
+    monkeypatch.setattr(car, "_KEY_PATH", tmp_path / "k.key")
+
+    blob = car.seal(b"secret data")
+    # Tampered GCM tag.
+    bad = bytearray(blob)
+    bad[-1] ^= 0xFF
+    with pytest.raises(car.EncryptionUnavailable):
+        car.unseal(bytes(bad))
+    # Truncated (no room for nonce + tag).
+    with pytest.raises(car.EncryptionUnavailable):
+        car.unseal(car._MAGIC + b"short")
+    # A clean round-trip still works.
+    assert car.unseal(blob) == b"secret data"
