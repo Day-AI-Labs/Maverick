@@ -147,6 +147,7 @@ def require_consent(
     risk: str = "medium",
     scope: str | None = None,
     detail: str | None = None,
+    provenance: str | None = None,
     raise_on_deny: bool = False,
     allow_auto_approve: bool = True,
 ) -> ConsentDecision:
@@ -155,7 +156,9 @@ def require_consent(
     ``action`` is a short identifier (e.g. "rm-rf", "force-push",
     "mass-dm"). ``scope`` is the resource being acted on (e.g.
     "/tmp/build", "main", "channel:#general"). ``detail`` is a
-    human-readable description shown in the prompt.
+    human-readable description shown in the prompt. ``provenance`` is trusted
+    caller-supplied metadata for dashboard labels; never derive it from
+    user/model-controlled ``detail`` text.
 
     Returns a ConsentDecision. If ``raise_on_deny``, denials raise
     ConsentDenied instead.
@@ -186,7 +189,7 @@ def require_consent(
             raise ConsentDenied(action)
         return d
     if mode == "dashboard":
-        d = _decide_via_dashboard(action, risk, scope, detail)
+        d = _decide_via_dashboard(action, risk, scope, detail, provenance)
         if d is not None:
             d = _emit(d, action, scope, detail)
             if not d.granted and raise_on_deny:
@@ -232,6 +235,7 @@ def _decide_via_dashboard(
     risk: str,
     scope: str | None,
     detail: str | None,
+    provenance: str | None,
 ) -> ConsentDecision | None:
     """Park the action in the world model and poll for a dashboard decision.
 
@@ -247,7 +251,9 @@ def _decide_via_dashboard(
         log.warning("consent: dashboard mode unavailable, falling back: %s", e)
         return None
     try:
-        approval_id = wm.create_approval(action, risk=risk, scope=scope, detail=detail)
+        approval_id = wm.create_approval(
+            action, risk=risk, scope=scope, detail=detail, provenance=provenance,
+        )
     except Exception as e:
         log.warning("consent: cannot queue approval, falling back: %s", e)
         return None

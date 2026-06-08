@@ -1183,24 +1183,16 @@ def _governance_event_kind() -> str:
         return "governance_denied"
 
 
-def _approval_source(detail: str | None) -> str | None:
-    """Label a parked approval as governance/Art-14 originated, else ``None``.
+def _approval_source(provenance: str | None) -> str | None:
+    """Label trusted governance/Art-14 approvals, else ``None``.
 
-    A governance ``REQUIRE_HUMAN`` hold reaches the queue through
-    ``safety.consent.require_consent`` with ``detail`` set to the governance
-    verdict's reason (see the kernel tool path), which reads e.g. "...requires
-    human approval" / "...denied by org policy". An ordinary high-risk consent
-    hold has no such reason, so the operator can't tell the two apart. Match the
-    governance phrasing and surface a short source label; everything else is an
-    ordinary consent hold (``None`` -> no badge).
+    Approval ``detail`` is free-form operator context and may include
+    model-, user-, or remote-server-controlled text. Only the explicit
+    trusted ``provenance`` field may drive source labels in the decision UI.
     """
-    if not detail:
-        return None
-    d = detail.lower()
-    if "requires human approval" in d or "denied by org policy" in d:
+    if provenance == "governance":
         return "governance · Art 14"
     return None
-
 
 @app.get("/approvals", response_class=HTMLResponse)
 async def approvals_page(request: Request) -> HTMLResponse:
@@ -1209,11 +1201,12 @@ async def approvals_page(request: Request) -> HTMLResponse:
     Populated when an agent runs with ``MAVERICK_CONSENT_MODE=dashboard``:
     ``safety.consent.require_consent`` parks each gated action here and
     polls for the decision this page writes back. Governance ``REQUIRE_HUMAN``
-    holds (EU AI Act Art 14) arrive the same way; ``_approval_source`` labels
-    them so an operator can distinguish a policy hold from a plain consent one.
+    holds (EU AI Act Art 14) arrive with trusted provenance metadata;
+    ``_approval_source`` labels them so an operator can distinguish a policy
+    hold from a plain consent one without trusting free-form detail text.
     """
     approvals = _world().pending_approvals()
-    sources = {a.id: _approval_source(a.detail) for a in approvals}
+    sources = {a.id: _approval_source(a.provenance) for a in approvals}
     return templates.TemplateResponse(
         request, "approvals.html",
         {"approvals": approvals, "sources": sources},

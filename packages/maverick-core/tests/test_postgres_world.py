@@ -185,6 +185,7 @@ def test_approval_queue_lifecycle(world):
     assert a is not None
     assert a.action == "rm -rf /tmp/x"
     assert a.risk == "high"
+    assert a.provenance is None
     assert a.status == "pending"
     assert a.decided_at is None
 

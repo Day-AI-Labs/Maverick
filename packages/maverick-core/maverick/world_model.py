@@ -25,7 +25,7 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
@@ -269,6 +269,10 @@ MIGRATIONS: dict[int, list[str]] = {
     # search_messages() silently missed. Rebuild once on upgrade -- a cheap
     # no-op on a DB that's already fully indexed.
     10: ["INSERT INTO messages_fts(messages_fts) VALUES('rebuild')"],
+    # v12: trusted approval provenance. Do not infer operator-visible source
+    # labels from the free-form detail text, which can contain model-, user-,
+    # or remote-server-controlled content.
+    12: ["ALTER TABLE approvals ADD COLUMN provenance TEXT"],
 }
 
 
@@ -303,6 +307,7 @@ class Approval:
     risk: str
     scope: str | None
     detail: str | None
+    provenance: str | None
     status: str
     requested_at: float
     decided_at: float | None
@@ -1120,14 +1125,20 @@ class WorldModel:
         risk: str = "medium",
         scope: str | None = None,
         detail: str | None = None,
+        provenance: str | None = None,
     ) -> int:
-        """Park a high-risk action for out-of-band (dashboard) approval."""
+        """Park a high-risk action for out-of-band (dashboard) approval.
+
+        ``provenance`` is trusted caller-supplied metadata used by operator UIs;
+        it must not be inferred from ``detail``, which may contain untrusted
+        model, user, or remote-server text.
+        """
         with self._writing() as conn:
             cur = conn.execute(
-                "INSERT INTO approvals(action, risk, scope, detail, status, requested_at) "
-                "VALUES(?, ?, ?, ?, 'pending', ?)",
+                "INSERT INTO approvals(action, risk, scope, detail, provenance, status, requested_at) "
+                "VALUES(?, ?, ?, ?, ?, 'pending', ?)",
                 (_enc_field(action), risk, _enc_field(scope), _enc_field(detail),
-                 time.time()),
+                 provenance, time.time()),
             )
             return cur.lastrowid
 

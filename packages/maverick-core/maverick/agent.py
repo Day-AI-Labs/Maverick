@@ -1082,6 +1082,7 @@ class Agent:
                 decision = await _asyncio.to_thread(
                     require_consent, name,
                     risk=tool_risk(name), detail=_gov.reason,
+                    provenance="governance",
                     allow_auto_approve=False,
                 )
                 granted = bool(decision.granted)
