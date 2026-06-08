@@ -72,6 +72,19 @@ def test_suite_packs_are_read_only_and_safe():
         )
 
 
+def test_legal_matter_packs_deny_external_web_search():
+    # Legal packs bound to privileged matter data are sealed: they may search the
+    # local knowledge base / CourtListener connectors, but must not send model-built
+    # queries to external web-search providers.
+    for name, p in _LEGAL.items():
+        if "legal_matter" not in p.knowledge_sources:
+            continue
+        cap = p.capability(f"agent:{name}")
+        assert "web_search" not in p.allow_tools, f"{name}: web_search allowed for legal matter"
+        assert "web_search" in p.deny_tools, f"{name}: web_search must be denied"
+        assert cap.permits("web_search") is False, f"{name}: web_search reachable!"
+
+
 def test_pe_builders_can_build_but_never_self_edit():
     # P&E coding agents legitimately need sandbox shell/code_exec; the floor that can
     # never relax is self-modification -- an agent never edits its own runtime/safety.
