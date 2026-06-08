@@ -30,10 +30,14 @@ _FIXED_HOST_TOOLS = {
     "hackernews": "ycombinator-hn",
 }
 
-# Lazily-created per-host semaphores. asyncio.Semaphore (3.10+) doesn't bind
-# to a loop at construction, and the agent loop runs gather on a single
-# loop, so a module-level registry is safe.
+# Lazily-created per-host semaphores for the CURRENT event loop. A Semaphore
+# binds to a loop the first time it is awaited, so reusing a module-level one
+# across loops -- a second asyncio.run(), the dashboard's loop, a worker
+# thread's loop -- raised "bound to a different loop" and broke same-host
+# fetches. We remember which loop the registry belongs to (by identity, so a
+# recycled id() can't alias a dead loop) and rebuild it when the loop changes.
 _semaphores: dict[str, asyncio.Semaphore] = {}
+_sem_loop: asyncio.AbstractEventLoop | None = None
 
 
 def _cap() -> int:
@@ -60,6 +64,16 @@ def host_key(tool_name: str, args: dict) -> str | None:
 
 
 def _get_semaphore(key: str, cap: int) -> asyncio.Semaphore:
+    global _sem_loop
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:  # pragma: no cover - limit() is only used under a loop
+        loop = None
+    if loop is not _sem_loop:
+        # The active event loop changed; semaphores bound to the previous loop
+        # can't be awaited here. Start a fresh registry for this loop.
+        _semaphores.clear()
+        _sem_loop = loop
     sem = _semaphores.get(key)
     if sem is None:
         sem = asyncio.Semaphore(cap)
@@ -84,7 +98,9 @@ def limit(tool_name: str, args: dict):
 
 def _reset_for_tests() -> None:
     """Clear the semaphore registry (tests that vary the cap)."""
+    global _sem_loop
     _semaphores.clear()
+    _sem_loop = None
 
 
 __all__ = ["host_key", "limit"]

@@ -72,6 +72,26 @@ class TestLimitContext:
         assert isinstance(limiter, asyncio.Semaphore)
 
 
+class TestCrossLoopSafety:
+    def test_semaphore_not_reused_across_event_loops(self, monkeypatch):
+        # A Semaphore binds to the loop it's awaited on; the module-level
+        # registry must not hand a loop-A semaphore to loop B (which would raise
+        # "bound to a different loop" and break the fetch). Each loop gets its
+        # own instance. Refs are kept so the two ids can't alias via GC.
+        monkeypatch.setenv("MAVERICK_NET_HOST_CONCURRENCY", "2")
+        nc._reset_for_tests()
+        captured: list = []
+
+        async def grab():
+            async with nc.limit("arxiv", {}):
+                pass
+            captured.append(nc._get_semaphore("svc:arxiv.org", 2))
+
+        asyncio.run(grab())
+        asyncio.run(grab())
+        assert captured[0] is not captured[1]
+
+
 def _net_tool(name: str, tracker: dict) -> Tool:
     async def fn(args: dict) -> str:
         tracker["active"] += 1
