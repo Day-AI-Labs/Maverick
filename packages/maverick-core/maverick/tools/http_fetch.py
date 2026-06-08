@@ -376,6 +376,15 @@ def _run_fetch(args: dict[str, Any]) -> str:
         return f"ERROR: only http/https supported; got scheme={parsed.scheme!r}"
     if not parsed.netloc:
         return "ERROR: missing host in URL"
+    # Enterprise mode: tool egress is held to local/allow-listed hosts so the data
+    # boundary covers tools too, not just the LLM call. Run this before any
+    # hostname-resolution or robots.txt preflight so a denied URL cannot leak via
+    # DNS, TLS SNI, redirects, or request metadata before the denial is returned.
+    from ..enterprise import enterprise_egress_denial
+    deny = enterprise_egress_denial(url, tool="http_fetch")
+    if deny:
+        return f"ERROR: {deny}"
+
     if os.environ.get("MAVERICK_FETCH_ALLOW_PRIVATE") != "1":
         if _is_private_ip(parsed.hostname or ""):
             return (
@@ -386,13 +395,6 @@ def _run_fetch(args: dict[str, Any]) -> str:
     if os.environ.get("MAVERICK_FETCH_RESPECT_ROBOTS") == "1":
         if not _check_robots(url):
             return f"ERROR: blocked by robots.txt for {url!r}"
-
-    # Enterprise mode: tool egress is held to local/allow-listed hosts so the data
-    # boundary covers tools too, not just the LLM call.
-    from ..enterprise import enterprise_egress_denial
-    deny = enterprise_egress_denial(url, tool="http_fetch")
-    if deny:
-        return f"ERROR: {deny}"
 
     # Per-tool egress policy ([sandbox.tool.http_fetch] allow_egress/deny_egress).
     # No policy configured -> allow-all, so this is a no-op for the default install.

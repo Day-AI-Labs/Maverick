@@ -53,6 +53,19 @@ def test_http_fetch_blocks_egress_under_enterprise(monkeypatch):
     assert out.startswith("ERROR:") and "enterprise mode" in out and "boundary" in out
 
 
+def test_http_fetch_enterprise_denial_happens_before_robots(monkeypatch):
+    _enterprise(monkeypatch)
+    monkeypatch.setenv("MAVERICK_FETCH_RESPECT_ROBOTS", "1")
+    from maverick.tools import http_fetch
+
+    def fail_if_called(_url):
+        raise AssertionError("robots.txt was checked before enterprise denial")
+
+    monkeypatch.setattr(http_fetch, "_check_robots", fail_if_called)
+    out = http_fetch._run_fetch({"url": "https://exfil.invalid/steal"})
+    assert out.startswith("ERROR:") and "enterprise mode" in out and "boundary" in out
+
+
 def test_web_search_disabled_under_enterprise_without_allowlist(monkeypatch):
     _enterprise(monkeypatch)
     from maverick.tools.web_search import _run_search
