@@ -144,7 +144,20 @@ def test_expired_grant_is_rejected():
 
 
 @crypto
-def test_replay_is_rejected_by_the_nonce_cache():
+def test_replay_is_rejected_by_the_default_nonce_cache():
+    priv, pub = _keypair()
+    env = mint_handoff(
+        sender="a", recipient="agent:finance_payroll-1", task="t", grant=_grant(),
+        issuer_private_hex=priv, issuer_pub_hex=pub,
+    )
+    first = verify_handoff(env, trusted_issuers={pub}, now=env.ts)
+    second = verify_handoff(env, trusted_issuers={pub}, now=env.ts)
+    assert first.ok
+    assert not second.ok and second.rule == "replay"
+
+
+@crypto
+def test_replay_is_rejected_by_a_supplied_nonce_cache():
     priv, pub = _keypair()
     env = mint_handoff(
         sender="a", recipient="agent:finance_payroll-1", task="t", grant=_grant(),
@@ -198,6 +211,25 @@ def test_mint_refuses_a_grant_not_minted_for_the_recipient():
             grant=_grant(principal="agent:someone-else-1"),
             issuer_private_hex=priv, issuer_pub_hex=pub,
         )
+
+
+def test_default_nonce_cache_rejects_replay_when_crypto_checks_pass(monkeypatch):
+    # Isolate replay handling from optional cryptography availability so the
+    # default verifier path cannot silently skip single-use nonce enforcement.
+    monkeypatch.setattr("maverick.audit.signing._have_crypto", lambda: True)
+    monkeypatch.setattr("maverick.handoff.verify_capability", lambda *args: True)
+    monkeypatch.setattr("maverick.audit.signing.verify_ed25519", lambda *args: True)
+    env = Envelope(
+        sender="a", recipient="agent:finance_payroll-1", task="t", grant=_grant(),
+        nonce="default-replay-test", ts=1000.0,
+        grant_sig="grant-signature", issuer_pub="trusted", sig="envelope-signature",
+    )
+
+    first = verify_handoff(env, trusted_issuers={"trusted"}, now=1000.0)
+    second = verify_handoff(env, trusted_issuers={"trusted"}, now=1000.0)
+
+    assert first.ok
+    assert not second.ok and second.rule == "replay"
 
 
 def test_fails_closed_without_cryptography(monkeypatch):

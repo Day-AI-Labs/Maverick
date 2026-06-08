@@ -111,7 +111,9 @@ class NonceCache:
 
     In-memory and per-process; a live multi-node bus would back this with a
     shared store (the interface is the same). ``seen`` reports prior use;
-    :func:`verify_handoff` calls ``remember`` only after a fully-valid handoff."""
+    :func:`verify_handoff` calls ``remember`` only after a fully-valid handoff.
+    When callers do not provide one, the verifier uses a process-local default
+    cache so replay protection remains enabled by default."""
 
     def __init__(self) -> None:
         self._seen: set[str] = set()
@@ -121,6 +123,9 @@ class NonceCache:
 
     def remember(self, nonce: str) -> None:
         self._seen.add(nonce)
+
+
+_DEFAULT_NONCE_CACHE = NonceCache()
 
 
 def _sign_ed25519(private_hex: str, data: bytes) -> str:
@@ -201,9 +206,13 @@ def verify_handoff(
       8. **not replayed** -- the nonce is unused;
       9. **in scope** -- the grant is unexpired and permits every required tool.
 
-    On success the verdict carries the grant the receiver must run under.
+    ``nonce_cache`` may be supplied by a bus or service to share replay state
+    across workers. If omitted, a process-local cache is used so the exported
+    verifier still enforces single-use nonces by default. On success the verdict
+    carries the grant the receiver must run under.
     """
     now = time.time() if now is None else now
+    nonce_cache = _DEFAULT_NONCE_CACHE if nonce_cache is None else nonce_cache
 
     if not signing._have_crypto():
         return HandoffVerdict(False, "no_crypto", "cryptography unavailable; cannot verify")
@@ -225,7 +234,7 @@ def verify_handoff(
         return HandoffVerdict(False, "future_ts", "timestamp is in the future")
     if now - env.ts > max_age_s:
         return HandoffVerdict(False, "stale", f"older than the {max_age_s:.0f}s window")
-    if nonce_cache is not None and nonce_cache.seen(env.nonce):
+    if nonce_cache.seen(env.nonce):
         return HandoffVerdict(False, "replay", "nonce has already been used")
     if env.grant.is_expired(now):
         return HandoffVerdict(False, "grant_expired", "the delegated grant has expired")
@@ -234,8 +243,7 @@ def verify_handoff(
             return HandoffVerdict(False, "out_of_scope",
                                   f"grant does not permit required tool {tool!r}")
 
-    if nonce_cache is not None:
-        nonce_cache.remember(env.nonce)
+    nonce_cache.remember(env.nonce)
     return HandoffVerdict(True, "ok", "handoff verified", grant=env.grant)
 
 
