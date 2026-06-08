@@ -4,7 +4,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from maverick.config import _interp, load_config
+from maverick.config import _interp, get_safety, load_config
 
 
 def test_missing_config_returns_empty_dict():
@@ -61,3 +61,24 @@ def test_nested_dict_interpolation(monkeypatch):
     assert out["a"] == "42"
     assert out["b"] == ["42", "plain"]
     assert out["c"]["inner"] == "42"
+
+
+def test_get_safety_preserves_constitution_rules(monkeypatch):
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
+        f.write(
+            '[safety]\n'
+            'block_threshold = "high"\n'
+            '[[safety.constitution]]\n'
+            'name = "no_zephyr"\n'
+            'pattern = "zephyr-token"\n'
+            'severity = "high"\n'
+        )
+        path = Path(f.name)
+    monkeypatch.setenv("MAVERICK_CONFIG", str(path))
+    try:
+        safety = get_safety()
+        assert safety["constitution"] == [
+            {"name": "no_zephyr", "pattern": "zephyr-token", "severity": "high"}
+        ]
+    finally:
+        path.unlink()
