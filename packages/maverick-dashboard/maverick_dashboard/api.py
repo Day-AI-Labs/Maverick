@@ -1006,7 +1006,7 @@ async def run_fleet_agent(
         )
     max_dollars = (
         min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
-        if payload.max_dollars else DEFAULT_MAX_DOLLARS
+        if payload.max_dollars is not None else DEFAULT_MAX_DOLLARS
     )
 
     w = _world()
