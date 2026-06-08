@@ -958,8 +958,9 @@ async def run_fleet_agent(
 ) -> dict:
     """Dispatch a governed goal AS a fleet agent, from the operator console.
 
-    The agent runs least-privileged under its RBAC role's capability and its own
-    audit principal (``agent:<fleet>.<agent>``), so the oversight control plane
+    The agent runs least-privileged under both its RBAC role's capability and
+    the dispatching user's capability, while keeping its own audit principal
+    (``agent:<fleet>.<agent>``), so the oversight control plane
     governs the work automatically (mirrors ``maverick fleet run``). Owner-scoped:
     only the fleet's owner -- or an admin / auth-off caller -- may dispatch; a
     cross-owner (or missing) fleet 404s, never revealing existence.
@@ -972,15 +973,16 @@ async def run_fleet_agent(
     from maverick_dashboard.app import check_goal_rate_limit
     check_goal_rate_limit(request)
 
-    from maverick.capability import capability_for_role
+    from maverick.capability import capability_for_role, capability_from_config
     from maverick.fleet import load_fleet, record_run
     from maverick.runner import run_goal_in_thread
 
     fleet = load_fleet(fleet_name)
     principal = caller_principal(request)
+    is_admin = principal is not None and is_dashboard_admin(principal)
     if fleet is None or (
         principal is not None
-        and not is_dashboard_admin(principal)
+        and not is_admin
         and fleet.owner != principal
     ):
         raise HTTPException(status_code=404, detail="no such fleet")
@@ -993,6 +995,15 @@ async def run_fleet_agent(
 
     agent_principal = fleet.principal_for(agent.name)
     cap = capability_for_role(agent.role, principal=agent_principal)
+    if principal is not None and not is_admin:
+        caller_cap = capability_from_config(principal, user_id=principal)
+        cap = cap.attenuate(
+            allow=caller_cap.allow_tools or None,
+            deny=caller_cap.deny_tools,
+            max_risk=caller_cap.max_risk,
+            allow_paths=caller_cap.allow_paths or None,
+            allow_hosts=caller_cap.allow_hosts or None,
+        )
     max_dollars = (
         min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
         if payload.max_dollars else DEFAULT_MAX_DOLLARS
@@ -1025,8 +1036,10 @@ async def create_fleet(request: Request, payload: FleetCreateIn) -> dict:
 
     Mirrors ``maverick fleet create`` so a non-technical operator never needs the
     CLI. Owner-scoped: replacing a fleet owned by someone else 404s (never
-    reveals it). Blank agent rows are dropped; an agent needs a valid name.
+    reveals it). Blank agent rows are dropped; each agent needs a valid name
+    and a configured RBAC role when roles are configured.
     """
+    from maverick.capability import configured_roles
     from maverick.fleet import Fleet, FleetAgent, load_fleet, save_fleet, valid_name
 
     if not valid_name(payload.name):
@@ -1037,9 +1050,14 @@ async def create_fleet(request: Request, payload: FleetCreateIn) -> dict:
         )
         for a in payload.agents if a.name.strip()
     )
+    configured = configured_roles()
     for a in agents:
         if not valid_name(a.name):
             raise HTTPException(status_code=400, detail=f"invalid agent name: {a.name!r}")
+        if not a.role:
+            raise HTTPException(status_code=400, detail=f"missing role for agent: {a.name!r}")
+        if configured and a.role not in configured:
+            raise HTTPException(status_code=400, detail=f"unknown role for agent: {a.name!r}")
 
     principal = caller_principal(request)
     owner = principal or ""
@@ -1064,9 +1082,10 @@ async def delete_fleet(request: Request, fleet_name: str) -> None:
 
     fleet = load_fleet(fleet_name)
     principal = caller_principal(request)
+    is_admin = principal is not None and is_dashboard_admin(principal)
     if fleet is None or (
         principal is not None
-        and not is_dashboard_admin(principal)
+        and not is_admin
         and fleet.owner != principal
     ):
         raise HTTPException(status_code=404, detail="no such fleet")

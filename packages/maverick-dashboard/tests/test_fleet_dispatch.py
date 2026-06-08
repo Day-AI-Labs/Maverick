@@ -83,6 +83,39 @@ def test_dispatch_runs_agent_under_role_capability(monkeypatch, tmp_path):
     assert kw["capability"].principal == "agent:acme.coder"
 
 
+def test_dispatch_attenuates_legacy_bad_roles_to_caller_capability(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda *a, **k: {
+            "role_assignments": {"user:eve": "restricted"},
+            "roles": {"restricted": {"allow_tools": ["read_file"]}},
+        },
+    )
+    import maverick_dashboard.api as api
+    monkeypatch.setattr(api, "caller_principal", lambda request: "user:eve")
+    monkeypatch.setattr(api, "is_dashboard_admin", lambda p: False)
+    from maverick.fleet import Fleet, FleetAgent, save_fleet
+    save_fleet(Fleet(name="acme", owner="user:eve", agents=(
+        FleetAgent("blank", ""),
+        FleetAgent("ghost", "ghost"),
+    )))
+    calls = _stub_runner(monkeypatch)
+
+    for agent in ("blank", "ghost"):
+        r = _client().post(
+            "/api/v1/fleets/acme/run",
+            json={"agent": agent, "prompt": "try to run shell"},
+        )
+        assert r.status_code == 201, r.text
+
+    for agent, call in zip(("blank", "ghost"), calls, strict=True):
+        cap = call["kwargs"]["capability"]
+        assert cap.principal == f"agent:acme.{agent}"
+        assert cap.permits("read_file") is True
+        assert cap.permits("shell") is False
+
+
 def test_dispatch_unknown_agent_404(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     _save_fleet()
