@@ -114,11 +114,13 @@ SCHEMA: list[str] = [
       risk         TEXT NOT NULL DEFAULT 'medium',
       scope        TEXT,
       detail       TEXT,
+      provenance   TEXT,
       status       TEXT NOT NULL DEFAULT 'pending',
       requested_at DOUBLE PRECISION NOT NULL,
       decided_at   DOUBLE PRECISION
     );
     """,
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS provenance TEXT;",
     "CREATE INDEX IF NOT EXISTS idx_pg_approvals_status ON approvals(status, id);",
     """
     CREATE TABLE IF NOT EXISTS conversations (
@@ -679,13 +681,17 @@ class PostgresWorldModel:
         risk: str = "medium",
         scope: str | None = None,
         detail: str | None = None,
+        provenance: str | None = None,
     ) -> int:
-        """Park a high-risk action for out-of-band (dashboard) approval."""
+        """Park a high-risk action for out-of-band (dashboard) approval.
+
+        ``provenance`` is trusted caller-supplied metadata for operator UIs; it
+        is not inferred from ``detail`` (which may carry untrusted text)."""
         with self._tx() as cur:
             cur.execute(
-                "INSERT INTO approvals(action, risk, scope, detail, status, requested_at) "
-                "VALUES(%s, %s, %s, %s, 'pending', %s) RETURNING id",
-                (action, risk, scope, detail, time.time()),
+                "INSERT INTO approvals(action, risk, scope, detail, provenance, status, "
+                "requested_at) VALUES(%s, %s, %s, %s, %s, 'pending', %s) RETURNING id",
+                (action, risk, scope, detail, provenance, time.time()),
             )
             row = cur.fetchone()
         return int(row[0])
@@ -694,8 +700,8 @@ class PostgresWorldModel:
         from ..world_model import Approval
         with self._tx() as cur:
             cur.execute(
-                "SELECT id, action, risk, scope, detail, status, requested_at, "
-                "decided_at FROM approvals WHERE id = %s",
+                "SELECT id, action, risk, scope, detail, provenance, status, "
+                "requested_at, decided_at FROM approvals WHERE id = %s",
                 (approval_id,),
             )
             row = cur.fetchone()
@@ -705,8 +711,8 @@ class PostgresWorldModel:
         from ..world_model import Approval
         with self._tx() as cur:
             cur.execute(
-                "SELECT id, action, risk, scope, detail, status, requested_at, "
-                "decided_at FROM approvals WHERE status = 'pending' ORDER BY id"
+                "SELECT id, action, risk, scope, detail, provenance, status, "
+                "requested_at, decided_at FROM approvals WHERE status = 'pending' ORDER BY id"
             )
             rows = cur.fetchall()
         return [Approval(*r) for r in rows]
