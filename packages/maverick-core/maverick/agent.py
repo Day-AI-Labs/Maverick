@@ -26,7 +26,12 @@ from .llm import model_for_role
 from .swarm import SwarmContext
 from .tools import ToolRegistry, base_registry
 from .tools.agent_bus_tool import recv_from_agent, send_to_agent
-from .tools.spawn import spawn_subagent_tool, spawn_swarm_tool
+from .tools.spawn import (
+    list_specialists_tool,
+    spawn_specialist_tool,
+    spawn_subagent_tool,
+    spawn_swarm_tool,
+)
 
 log = logging.getLogger(__name__)
 
@@ -521,6 +526,11 @@ class Agent:
         if self.depth < self.ctx.max_depth:
             reg.register(spawn_subagent_tool(self))
             reg.register(spawn_swarm_tool(self))
+            # The bridge from the suite roster to the running fleet: deploy a
+            # curated domain pack as a specialist child (persona + compartment +
+            # attenuated envelope), and discover what's available.
+            reg.register(spawn_specialist_tool(self))
+            reg.register(list_specialists_tool())
         # Per-domain document knowledge: bind a knowledge_search tool to this
         # agent's collections when a knowledge base is configured for the run.
         kb = getattr(self.ctx, "knowledge", None)

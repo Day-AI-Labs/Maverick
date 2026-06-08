@@ -123,6 +123,35 @@ def _sealed_notice(ctx, child) -> str | None:
     )
 
 
+async def _run_child_and_report(parent, child) -> str:
+    """Run a spawned child and return its answer (or a structured error).
+
+    Shared by ``spawn_subagent`` and ``spawn_specialist``: returns the spawn slot
+    if the child RAISES (#612), emits ``SUBAGENT_STOP``, withholds a sealed
+    child's (attacker-influenced) output (Rung 1), then normalizes the result.
+    """
+    try:
+        result = await child.run()
+    except BaseException:
+        parent.ctx.release_spawns(1)
+        raise
+    from ..hooks import HookEvent
+    from ..hooks import emit as _emit_hook
+    await _emit_hook(
+        HookEvent.SUBAGENT_STOP,
+        goal_id=parent.ctx.goal_id, agent_role=child.role,
+        extra={"name": child.name, "final": result.final or ""},
+    )
+    notice = _sealed_notice(parent.ctx, child)
+    if notice is not None:
+        return notice
+    if result.final:
+        return result.final
+    if result.blocked_on_user:
+        return "BLOCKED_ON_USER: child agent queued a question."
+    return f"ERROR: child finished without final answer: {result.error or 'unknown'}"
+
+
 def spawn_subagent_tool(parent: Agent) -> Tool:
     async def fn(args: dict) -> str:
         role = args["role"]
@@ -157,33 +186,7 @@ def spawn_subagent_tool(parent: Agent) -> Tool:
             max_steps=parent.max_steps,
             capability=_child_capability(parent, role, parent.depth + 1),
         )
-        # #612: a child that RAISES (budget/halt/unexpected error) never
-        # consumed its slot productively -- give it back so transient child
-        # failures don't permanently erode the per-goal spawn cap. A child
-        # that returns (even with result.error set) legitimately ran, so we
-        # keep its slot.
-        try:
-            result = await child.run()
-        except BaseException:
-            parent.ctx.release_spawns(1)
-            raise
-        from ..hooks import HookEvent
-        from ..hooks import emit as _emit_hook
-        await _emit_hook(
-            HookEvent.SUBAGENT_STOP,
-            goal_id=parent.ctx.goal_id, agent_role=child.role,
-            extra={"name": child.name, "final": result.final or ""},
-        )
-        # Containment Rung 1: a child sealed during its run must not return its
-        # (attacker-influenced) answer to the parent -- withhold it.
-        notice = _sealed_notice(parent.ctx, child)
-        if notice is not None:
-            return notice
-        if result.final:
-            return result.final
-        if result.blocked_on_user:
-            return "BLOCKED_ON_USER: child agent queued a question."
-        return f"ERROR: child finished without final answer: {result.error or 'unknown'}"
+        return await _run_child_and_report(parent, child)
 
     return Tool(
         name="spawn_subagent",
@@ -368,6 +371,116 @@ def spawn_swarm_tool(parent: Agent) -> Tool:
                 }
             },
             "required": ["agents"],
+        },
+        fn=fn,
+    )
+
+
+def spawn_specialist_tool(parent: Agent) -> Tool:
+    """Spawn a curated business-suite pack (a ``DomainProfile``) as a child.
+
+    Unlike ``spawn_subagent`` (an ad-hoc free-text role), this runs one of the
+    roster's specialists via ``domain.agent_from_profile`` -- so the child gets
+    the pack's persona, its **compartment seal**, and its tool/risk **envelope**,
+    attenuated against this parent's grant (a specialist can never out-scope the
+    parent or its own pack). This is the bridge from the suite roster to the
+    running fleet: the orchestrator deploys named specialists under itself.
+    """
+    async def fn(args: dict) -> str:
+        from ..domain import agent_from_profile, enabled_domains
+
+        domain = args["domain"]
+        task = args["task"]
+        domains = enabled_domains()
+        profile = domains.get(domain)
+        if profile is None:
+            sample = ", ".join(sorted(domains)[:30])
+            return (
+                f"ERROR: no enabled specialist domain {domain!r}. Call "
+                f"list_specialists to see the roster. Some available: {sample}"
+            )
+        if parent.depth + 1 > parent.ctx.max_depth:
+            return f"ERROR: max depth {parent.ctx.max_depth} reached"
+        _blocked = _synthesis_reserve_block(parent)
+        if _blocked is not None:
+            return _blocked
+        if not parent.ctx.try_reserve_spawns(1):
+            return f"ERROR: per-goal spawn cap ({parent.ctx.max_total_spawns}) reached"
+
+        child = agent_from_profile(
+            profile, parent.ctx, task, parent=parent, depth=parent.depth + 1
+        )
+        # Inherit the parent's step budget (matches spawn_subagent); agent_from_
+        # profile doesn't take max_steps, so apply it before the run.
+        child.max_steps = parent.max_steps
+        return await _run_child_and_report(parent, child)
+
+    return Tool(
+        name="spawn_specialist",
+        description=(
+            "Spawn a curated business-suite SPECIALIST (a domain pack) and block "
+            "until it returns. Unlike spawn_subagent (an ad-hoc role), this runs a "
+            "pack with its own persona, compartment seal, and tool/risk envelope "
+            "(finance, legal, operations, sales/GTM, HR, IT-GRC, product/eng, "
+            "strategy). Call list_specialists first to choose the domain."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string",
+                    "description": "Specialist domain-pack name, e.g. 'gtm_outbound_sdr' "
+                                   "(see list_specialists).",
+                },
+                "task": {"type": "string", "description": "Concrete sub-goal for the specialist."},
+            },
+            "required": ["domain", "task"],
+        },
+        fn=fn,
+    )
+
+
+def list_specialists_tool() -> Tool:
+    """List the spawnable specialist domains, honoring the operator's suite toggles."""
+    async def fn(args: dict) -> str:
+        from collections import Counter
+
+        from ..domain import enabled_domains, suite_for
+
+        domains = enabled_domains()
+        flt = (args.get("suite") or "").strip()
+        if not flt:
+            counts = Counter(suite_for(n) or "other" for n in domains)
+            lines = [f"- {s}: {c}" for s, c in sorted(counts.items())]
+            return (
+                "Specialist suites (call list_specialists with suite=<name> to list a "
+                "suite's packs, then spawn_specialist domain=<name>):\n" + "\n".join(lines)
+            )
+        rows = []
+        for name in sorted(domains):
+            if (suite_for(name) or "other") != flt and not name.startswith(flt):
+                continue
+            rows.append(f"- {name}: {(domains[name].description or '').strip()}")
+        if not rows:
+            return f"No specialist domains match {flt!r}. Call list_specialists (no arg) for suites."
+        return f"Specialists in {flt!r} (spawn with spawn_specialist):\n" + "\n".join(rows)
+
+    return Tool(
+        name="list_specialists",
+        description=(
+            "List the business-suite specialist domains you can spawn with "
+            "spawn_specialist. With no argument, returns each suite and its pack "
+            "count; pass suite=<name> (e.g. 'finance', 'legal') or a name prefix "
+            "(e.g. 'gtm_') to list that suite's packs with descriptions."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "suite": {
+                    "type": "string",
+                    "description": "Optional: a suite name or pack-name prefix to filter by.",
+                },
+            },
         },
         fn=fn,
     )
