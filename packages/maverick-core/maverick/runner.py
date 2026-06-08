@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any
+from typing import Any, Protocol
 
 from ._envparse import env_float, env_int
 
@@ -142,6 +142,69 @@ def run_goal_in_thread(
         _run_semaphore.release()
 
 
+class Dispatcher(Protocol):
+    """Where a goal runs. The seam between "execute in-process" (today) and a
+    distributed task queue (arq / Celery / Temporal) later.
+
+    ``submit`` runs a goal to completion and returns its terminal status string
+    (or ``None`` if it could not start), the same contract as
+    :func:`run_goal_in_thread`, so swapping the dispatcher never changes a
+    caller's interface. A queue-backed implementation would enqueue the goal and
+    wait on (or hand back) the result without callers noticing.
+    """
+
+    def submit(
+        self,
+        goal_id: int,
+        *,
+        max_dollars: float | None = None,
+        max_wall_seconds: float | None = None,
+        max_depth: int = DEFAULT_MAX_DEPTH,
+        channel: str | None = None,
+        user_id: str | None = None,
+        capability: Any | None = None,
+    ) -> str | None: ...
+
+
+class LocalThreadDispatcher:
+    """Default dispatcher: run the goal in-process under the concurrency
+    semaphore (the current behaviour). Delegates to
+    :func:`run_goal_in_thread` so there is exactly one execution path."""
+
+    def submit(
+        self,
+        goal_id: int,
+        *,
+        max_dollars: float | None = None,
+        max_wall_seconds: float | None = None,
+        max_depth: int = DEFAULT_MAX_DEPTH,
+        channel: str | None = None,
+        user_id: str | None = None,
+        capability: Any | None = None,
+    ) -> str | None:
+        return run_goal_in_thread(
+            goal_id=goal_id, max_dollars=max_dollars,
+            max_wall_seconds=max_wall_seconds, max_depth=max_depth,
+            channel=channel, user_id=user_id, capability=capability,
+        )
+
+
+_dispatcher: Dispatcher = LocalThreadDispatcher()
+
+
+def get_dispatcher() -> Dispatcher:
+    """The active goal dispatcher (default: in-process thread execution)."""
+    return _dispatcher
+
+
+def set_dispatcher(dispatcher: Dispatcher) -> None:
+    """Swap the goal dispatcher process-wide. The hook a queue/worker backend
+    (arq / Celery / Temporal) installs at startup to move execution off the API
+    process without touching any caller."""
+    global _dispatcher
+    _dispatcher = dispatcher
+
+
 def run_goal_in_background(
     goal_id: int,
     max_dollars: float | None = None,
@@ -152,10 +215,12 @@ def run_goal_in_background(
     user_id: str | None = None,
     capability: Any | None = None,
 ) -> str | None:
-    """Alias for run_goal_in_thread. Reserved for future change to a
-    proper task queue (Celery / arq / RQ) without breaking callers."""
-    return run_goal_in_thread(
-        goal_id=goal_id, max_dollars=max_dollars,
+    """Dispatch a goal through the active :class:`Dispatcher`. Defaults to
+    in-process thread execution; ``set_dispatcher`` swaps in a task queue
+    without breaking callers (the contract is unchanged: returns the terminal
+    status, or ``None`` if it could not start)."""
+    return get_dispatcher().submit(
+        goal_id, max_dollars=max_dollars,
         max_wall_seconds=max_wall_seconds, max_depth=max_depth,
         channel=channel, user_id=user_id, capability=capability,
     )
