@@ -114,7 +114,7 @@ prefers a reachable local model before remote (`provider_local_first.py`);
 - **MCP Tasks (2025-11-25)** — task-augmented `tools/call` → `CreateTaskResult`,
   background worker, `tasks/get|result|cancel|list`, status notifications.
 - **MCP client** (`mcp_client.py`) — consume remote HTTP servers; **OAuth 2.1
-  client-credentials** (`mcp_oauth.py`).
+  client-credentials and authorization-code + PKCE** grants (`mcp_oauth.py`).
 - **MCP registry** (`mcp_registry.py`) — `maverick mcp-registry browse/add/...`.
 - **A2A** (`a2a.py`, `a2a_tasks.py`) — Agent Card discovery + delegation.
 - **gRPC API** (`grpc_api/`) — typed, streaming surface for driving the runtime
@@ -200,7 +200,10 @@ trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
 
 - **CLI** — `maverick init` (wizard), `start`, `resume`, `monitor` (Rich plan-tree
   TUI), `status --cost`, `export`, `replay`, `logs`, `ps`, `whoami`.
-- **Web dashboard** — run list, plan-tree, chat at `/chat`, approval queue
+- **Web dashboard** — run list, plan-tree, chat at `/chat`, approval queue, and
+  an **oversight console** (`/oversight`): live fleet state, the approval queue,
+  a per-guardrail intervention roll-up, and an inline **"why this action"
+  drill-down** (the reasoning/tool chain + cost for a running agent, owner-scoped)
   (`maverick dashboard`).
 - **Cost** — per-run reports, live cost meter, `maverick start --dry-cost`
   forecasting (`cost_forecast.py`).
