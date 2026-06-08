@@ -291,14 +291,20 @@ def _command_looks_like_path(command: str, on_windows: bool | None = None) -> bo
     return "/" in command or (on_windows and "\\" in command)
 
 
-def _verify_command_pin(spec: MCPServerSpec) -> None:
-    """If spec.pin_sha256 is set, hash the resolved executable and refuse
-    to spawn on mismatch. Resolution uses shutil.which for argv[0].
-    Treat backslash as a path separator only on Windows so verifier
-    resolution matches subprocess execution semantics on each platform.
+def _verify_command_pin(spec: MCPServerSpec) -> str | None:
+    """If spec.pin_sha256 is set, hash the resolved executable, refuse to spawn
+    on mismatch, and return the resolved executable PATH so the caller spawns
+    exactly the file that was hashed. Resolution uses shutil.which for argv[0].
+    Treat backslash as a path separator only on Windows so verifier resolution
+    matches subprocess execution semantics on each platform.
+
+    Returning the path closes a verify-then-re-resolve TOCTOU: spawning the bare
+    command name let the OS re-run PATH resolution and could land on a different
+    (or newly-planted) binary than the one whose hash we just verified. Returns
+    None when no pin is set (legacy: the caller spawns the bare command).
     """
     if not spec.pin_sha256:
-        return
+        return None
     import hashlib as _hashlib
     import shutil as _shutil
     from pathlib import Path as _Path
@@ -319,6 +325,7 @@ def _verify_command_pin(spec: MCPServerSpec) -> None:
             f"MCP server {spec.name!r}: pin_sha256 mismatch. "
             f"Expected {spec.pin_sha256}, got {actual} for {resolved}"
         )
+    return resolved
 
 
 def _build_env(spec: MCPServerSpec) -> dict[str, str]:
@@ -364,15 +371,17 @@ class MCPClient:
 
     async def start(self) -> None:
         # Verify pinned hash before doing anything. This catches the
-        # CVE-2026-30615 / Postmark / Smithery supply-chain class --
-        # if the binary was replaced under us, refuse to launch.
-        _verify_command_pin(self.spec)
+        # CVE-2026-30615 / Postmark / Smithery supply-chain class -- if the
+        # binary was replaced under us, refuse to launch. Spawn the exact
+        # verified path (not the bare command) so the OS can't re-resolve PATH
+        # to a different binary between the hash check and exec.
+        pinned_path = _verify_command_pin(self.spec)
         env = _build_env(self.spec)
         log.info("MCP client starting server %r (command=%s, args=%d, env keys=%d)",
                  self.spec.name, self.spec.command, len(self.spec.args), len(env))
         try:
             self._proc = await asyncio.create_subprocess_exec(
-                self.spec.command, *self.spec.args,
+                pinned_path or self.spec.command, *self.spec.args,
                 env=env,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
