@@ -18,7 +18,7 @@ from pathlib import Path
 
 from .blackboard import Blackboard
 from .budget import Budget
-from .llm import LLM, MODEL_SONNET
+from .llm import LLM, model_for_role
 
 log = logging.getLogger(__name__)
 
@@ -625,7 +625,7 @@ def distill(
         messages=[{"role": "user", "content": prompt}],
         budget=budget,
         max_tokens=2048,
-        model=MODEL_SONNET,
+        model=model_for_role("skill_distiller"),
     )
     text = resp.text.strip()
     if text.startswith("```"):
