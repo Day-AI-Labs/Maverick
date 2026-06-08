@@ -238,12 +238,31 @@ def unseal(blob: bytes) -> bytes:
         raise EncryptionUnavailable(
             "found encrypted data but 'cryptography' is not installed"
         )
+    from cryptography.exceptions import InvalidTag
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
     key = _load_or_create_key()
     body = blob[len(_MAGIC):]
+    # A sealed blob is MAGIC || 12-byte nonce || ciphertext+16-byte GCM tag.
+    # Guard the length before slicing so a truncated blob raises the documented
+    # EncryptionUnavailable, not a bare ValueError from AESGCM.
+    if len(body) < _NONCE_BYTES + 16:
+        raise EncryptionUnavailable(
+            "sealed blob is truncated (too short to hold a nonce + GCM tag); "
+            "the data is corrupt or not a Maverick at-rest blob"
+        )
     nonce, ct = body[:_NONCE_BYTES], body[_NONCE_BYTES:]
-    return AESGCM(key).decrypt(nonce, ct, None)
+    try:
+        return AESGCM(key).decrypt(nonce, ct, None)
+    except InvalidTag as e:
+        # Wrong key (e.g. a rotated/restored key) or tampered ciphertext.
+        # Honor the documented contract: surface EncryptionUnavailable rather
+        # than leaking cryptography's InvalidTag, which callers that guard on
+        # EncryptionUnavailable would not catch.
+        raise EncryptionUnavailable(
+            "cannot decrypt sealed data: wrong at-rest key or the ciphertext "
+            "has been altered (GCM authentication failed)"
+        ) from e
 
 
 def seal_text(text: str) -> bytes:
