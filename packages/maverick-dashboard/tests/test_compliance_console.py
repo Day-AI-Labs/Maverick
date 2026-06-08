@@ -141,6 +141,35 @@ def test_compliance_export_csv_is_attachment(monkeypatch, tmp_path):
     assert "AI transparency disclosure" in body
 
 
+
+def test_compliance_export_md_falls_back_when_renderer_unavailable(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _stub_report(monkeypatch)
+    import maverick.compliance as compliance
+
+    monkeypatch.delattr(compliance, "render_report_text")
+    r = _client().get("/api/v1/compliance/report.md")
+
+    assert r.status_code == 200
+    assert "maverick-compliance-all.md" in r.headers["content-disposition"]
+    assert "AI transparency disclosure" in r.text
+    assert "Consumer notice of AI" in r.text
+
+
+def test_compliance_export_csv_falls_back_when_disclaimer_unavailable(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _stub_report(monkeypatch)
+    import maverick.compliance as compliance
+
+    monkeypatch.delattr(compliance, "COMPLIANCE_DISCLAIMER")
+    r = _client().get("/api/v1/compliance/report.csv")
+
+    assert r.status_code == 200
+    assert "maverick-compliance-all.csv" in r.headers["content-disposition"]
+    assert "AI transparency disclosure" in r.text
+    assert "Control-coverage report" in r.text
+
+
 def test_compliance_export_filter_changes_output(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     _stub_report(monkeypatch)

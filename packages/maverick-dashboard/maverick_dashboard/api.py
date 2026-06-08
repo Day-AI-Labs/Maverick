@@ -5,6 +5,7 @@ v0.1.6: BackgroundTask runner moved to maverick.runner.
 from __future__ import annotations
 
 import datetime as _dt
+import importlib
 import json
 import logging
 import os
@@ -1137,6 +1138,23 @@ async def delete_fleet(request: Request, fleet_name: str) -> None:
     remove_fleet(fleet_name)
 
 
+_COMPLIANCE_DISCLAIMER_FALLBACK = (
+    "Control-coverage report, not legal advice or a compliance attestation. "
+    "Full GDPR / EU AI Act compliance also requires organizational and legal "
+    "measures (DPA, ROPA/Art. 30 records, DPIA, AI-Act risk classification, and "
+    "review by qualified counsel)."
+)
+
+
+def _compliance_attr(name: str):
+    """Load an optional compliance module attribute without failing exports."""
+    try:
+        compliance = importlib.import_module("maverick.compliance")
+        return getattr(compliance, name)
+    except Exception:  # pragma: no cover - never 500 the export if core is absent
+        return None
+
+
 def _compliance_checks(framework: str):
     """Run the core control-coverage report, filtered like the CLI.
 
@@ -1147,14 +1165,39 @@ def _compliance_checks(framework: str):
     yields an empty (still-downloadable) report rather than a 500.
     """
     framework = framework if framework in {"eu", "us", "all"} else "all"
+    compliance_report = _compliance_attr("compliance_report")
+    if compliance_report is None:
+        return framework, []
     try:
-        from maverick.compliance import compliance_report
         checks = compliance_report()
     except Exception:  # pragma: no cover - never 500 the export if core is absent
         return framework, []
     if framework != "all":
         checks = [c for c in checks if c.framework == framework]
     return framework, checks
+
+
+def _render_compliance_report_text_fallback(checks) -> str:
+    """Render a compliance report without importing optional core helpers."""
+    width = max((len(c.control) for c in checks), default=10)
+    labels = {"active": "active", "available": "on-demand", "action_needed": "ACTION NEEDED"}
+    rows: list[str] = []
+    for c in checks:
+        rows.append(f"  [{labels.get(c.status, c.status):>13}]  {c.control:<{width}}  {c.regulation}")
+        rows.append(f"  {'':>13}    {'':<{width}}  -> {c.detail}")
+    active = sum(1 for c in checks if c.status == "active")
+    needed = sum(1 for c in checks if c.status == "action_needed")
+    head = "GDPR + EU AI Act + US frameworks — control coverage"
+    return "\n".join([
+        head, "=" * len(head), "", *rows, "",
+        f"{active} active, {needed} need action, {len(checks)} total", "",
+        _COMPLIANCE_DISCLAIMER_FALLBACK,
+    ])
+
+
+def _compliance_disclaimer() -> str:
+    """Return the core disclaimer, falling back when the core module is unavailable."""
+    return _compliance_attr("COMPLIANCE_DISCLAIMER") or _COMPLIANCE_DISCLAIMER_FALLBACK
 
 
 @router.get("/compliance/report.md")
@@ -1165,9 +1208,15 @@ async def compliance_report_md(framework: str = "all") -> Response:
     ``?framework=eu|us|all`` filter mirrors ``maverick compliance``. Returned as
     an attachment so an operator can hand the file to an auditor.
     """
-    from maverick.compliance import render_report_text
     framework, checks = _compliance_checks(framework)
-    body = render_report_text(checks)
+    render_report_text = _compliance_attr("render_report_text")
+    if render_report_text is None:
+        body = _render_compliance_report_text_fallback(checks)
+    else:
+        try:
+            body = render_report_text(checks)
+        except Exception:  # pragma: no cover - never 500 the export if core is absent
+            body = _render_compliance_report_text_fallback(checks)
     fname = f"maverick-compliance-{framework}.md"
     return Response(
         content=body,
@@ -1186,15 +1235,15 @@ async def compliance_report_csv(framework: str = "all") -> Response:
     import csv
     import io as _io
 
-    from maverick.compliance import COMPLIANCE_DISCLAIMER
     framework, checks = _compliance_checks(framework)
+    disclaimer = _compliance_disclaimer()
     buf = _io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["framework", "control", "regulation", "status", "detail"])
     for c in checks:
         writer.writerow([c.framework, c.control, c.regulation, c.status, c.detail])
     writer.writerow([])
-    writer.writerow(["disclaimer", COMPLIANCE_DISCLAIMER])
+    writer.writerow(["disclaimer", disclaimer])
     fname = f"maverick-compliance-{framework}.csv"
     return Response(
         content=buf.getvalue(),
