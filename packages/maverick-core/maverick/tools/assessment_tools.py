@@ -75,8 +75,9 @@ def assessment_tools(session) -> list[Tool]:
     return [
         Tool(
             name="list_assessments",
-            description="List the assessment types you can conduct (pia, aira, "
-                        "vendor_risk).",
+            description="List the compliance frameworks you can assess against "
+                        "(privacy: PIA/AIRA/vendor risk; security: HIPAA, SOC 2, "
+                        "PCI DSS).",
             input_schema={"type": "object", "properties": {}},
             fn=_list,
         ),
@@ -88,7 +89,8 @@ def assessment_tools(session) -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "type": {"type": "string",
-                             "description": "pia | aira | vendor_risk"},
+                             "description": "assessment type; call list_assessments "
+                                            "for the available set"},
                     "subject": {"type": "string",
                                 "description": "what is being assessed"},
                 },
