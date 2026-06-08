@@ -14,6 +14,7 @@ allow_tools = [
     "read_file", "knowledge_search",
     "ar_read_aging", "ar_read_invoice", "bank_read_transactions",
     "draft_invoice", "propose_cash_application",
+    "chargebee_read", "netsuite_read",   # read seat (low) -- pull vendor data
 ]
 deny_tools = ["send_invoice", "write_off_balance"]
 max_risk = "medium"

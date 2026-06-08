@@ -12,6 +12,7 @@ NEVER post."""
 allow_tools = [
     "read_file", "knowledge_search",
     "compute_sbc_expense", "draft_sbc_entry",
+    "carta_read",   # read seat (low) -- pull vendor data
 ]
 deny_tools = ["post_journal_entry"]
 max_risk = "medium"
