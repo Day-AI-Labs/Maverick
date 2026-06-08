@@ -209,6 +209,9 @@ def test_unseal_from_str_treats_marker_collisions_as_plaintext():
     assert car.unseal_from_str(invalid_b64) == invalid_b64
     assert car.unseal_from_str(decoded_without_magic) == decoded_without_magic
     assert car.unseal_from_str(decoded_truncated_magic) == decoded_truncated_magic
+    assert not car.is_sealed_str(invalid_b64)
+    assert not car.is_sealed_str(decoded_without_magic)
+    assert not car.is_sealed_str(decoded_truncated_magic)
 
 
 @requires_crypto

@@ -260,7 +260,20 @@ _STR_PREFIX = "MVKAR1:"
 
 
 def is_sealed_str(s: object) -> bool:
-    return isinstance(s, str) and s.startswith(_STR_PREFIX)
+    """Return True only for structurally valid sealed TEXT-column tokens.
+
+    The marker prefix is public, so callers must not treat a value as encrypted
+    just because it starts with ``MVKAR1:``.  A legacy plaintext value may collide
+    with that marker (or an attacker may forge the prefix).  Such values are not
+    sealed and must remain visible to strict-mode guards and migration.
+    """
+    if not isinstance(s, str) or not s.startswith(_STR_PREFIX):
+        return False
+    try:
+        blob = base64.b64decode(s[len(_STR_PREFIX):], validate=True)
+    except (ValueError, binascii.Error):
+        return False
+    return is_sealed(blob) and len(blob) >= len(_MAGIC) + _NONCE_BYTES + 16
 
 
 def seal_to_str(text: str) -> str:

@@ -82,6 +82,34 @@ def test_migrate_seals_existing_plaintext(monkeypatch, tmp_path):
 
 
 @requires_crypto
+def test_migrate_seals_malformed_prefixed_plaintext(monkeypatch, tmp_path):
+    from maverick.encryption_migrate import migrate_world_db
+    from maverick.world_model import WorldModel
+
+    db = tmp_path / "world.db"
+    wm = WorldModel(db)
+    gid = wm.create_goal("MVKAR1:legacy prefixed title", "d")
+    wm.append_event(gid, "agent-1", "note", "MVKAR1:legacy prefixed event")
+
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    report = migrate_world_db(db)
+    assert report["goals.title"] == 1
+    assert report["goal_events.content"] == 1
+
+    c = sqlite3.connect(str(db))
+    raw_title = c.execute("SELECT title FROM goals WHERE id=?", (gid,)).fetchone()[0]
+    raw_event = c.execute("SELECT content FROM goal_events WHERE goal_id=?", (gid,)).fetchone()[0]
+    assert car.is_sealed_str(raw_title)
+    assert car.is_sealed_str(raw_event)
+    assert raw_title != "MVKAR1:legacy prefixed title"
+    assert raw_event != "MVKAR1:legacy prefixed event"
+
+    wm2 = WorldModel(db)
+    assert wm2.get_goal(gid).title == "MVKAR1:legacy prefixed title"
+    assert wm2.goal_events(gid)[0].content == "MVKAR1:legacy prefixed event"
+
+
+@requires_crypto
 def test_migrate_dry_run_writes_nothing(monkeypatch, tmp_path):
     from maverick.encryption_migrate import migrate_world_db
     from maverick.world_model import WorldModel
