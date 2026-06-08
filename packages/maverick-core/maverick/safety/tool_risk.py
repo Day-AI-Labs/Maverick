@@ -84,6 +84,7 @@ _DEFAULT_RISK: dict[str, str] = {
     "ios_sim": "high",
     "spawn_subagent": "high",
     "spawn_swarm": "high",
+    "spawn_specialist": "high",
     # high (finance): money movement, posting to a system of record, filing with
     # an authority, or master-data mutation. Classified high so a max_risk="medium"
     # finance pack drops them from the registry and governance gates them as the
@@ -199,6 +200,7 @@ _DEFAULT_RISK: dict[str, str] = {
     # low: read-only / pure lookups
     "read_file": "low",
     "list_dir": "low",
+    "list_specialists": "low",
     "repo_map": "low",
     "dep_graph": "low",
     "recall_past_goals": "low",  # real registered name (was "recall" -> dead)
