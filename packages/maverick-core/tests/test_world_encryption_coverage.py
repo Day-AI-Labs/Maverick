@@ -160,3 +160,25 @@ def test_approval_fields_sealed_and_round_trip(monkeypatch, tmp_path):
     assert a.action == "rm -rf /data" and a.scope == "prod"
     assert a.detail == "delete the SSN export" and a.risk == "high"   # risk not sealed
     assert wm.pending_approvals()[0].action == "rm -rf /data"
+
+
+@requires_crypto
+def test_search_facts_matches_value_under_encryption(monkeypatch, tmp_path):
+    """Value substring search must still work when values are sealed.
+
+    `upsert_fact` seals the value, so a SQL ``value LIKE '%query%'`` can never
+    match the plaintext query -- the search would silently return nothing.
+    Under encryption the match has to happen after decryption.
+    """
+    monkeypatch.setenv("MAVERICK_ENCRYPT_AT_REST", "1")
+    from maverick.world_model import WorldModel
+    wm = WorldModel(tmp_path / "world.db")
+    wm.upsert_fact("user:bob:note", "the launch code is hunter2")
+    wm.upsert_fact("user:bob:other", "unrelated value")
+
+    # Match on a value substring that only exists in the decrypted plaintext.
+    hits = wm.search_facts("user:bob:", "hunter2")
+    assert hits == [("user:bob:note", "the launch code is hunter2")]
+
+    # Key-substring search keeps working too.
+    assert ("user:bob:other", "unrelated value") in wm.search_facts("user:bob:", "other")
