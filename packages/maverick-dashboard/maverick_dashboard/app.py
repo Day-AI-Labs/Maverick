@@ -1141,6 +1141,42 @@ def _recent_governance_holds(limit: int = 10) -> list[dict]:
     return list(reversed(events))[:limit]
 
 
+def _fleet_recent_runs(fleet_name: str, limit: int = 12) -> list[dict]:
+    """A fleet's recent agent runs for the operator console (newest-first).
+
+    Mirrors ``maverick fleet status``: reads the per-fleet run index
+    (``maverick.fleet.load_runs``) and resolves each run's goal via the
+    dashboard world to recover its ``status`` + ``title``. Returns at most
+    ``limit`` rows of ``{agent, goal_id, title, status, ts}``. Fail-soft: a
+    missing/garbled index or a vanished goal yields an empty/partial list,
+    never a 500.
+    """
+    try:
+        from maverick.fleet import load_runs
+        runs = load_runs(fleet_name)
+    except Exception:  # pragma: no cover - never 500 the console on a read error
+        return []
+    w = _world()
+    rows: list[dict] = []
+    # Newest-first, capped: the index is oldest-first, so take the tail.
+    for r in reversed(runs[-limit:]):
+        gid = r.get("goal_id")
+        goal = None
+        try:
+            if isinstance(gid, int):
+                goal = w.get_goal(gid)
+        except Exception:  # pragma: no cover - a bad row must not break the page
+            goal = None
+        rows.append({
+            "agent": r.get("agent") or "—",
+            "goal_id": gid,
+            "title": goal.title if goal else "",
+            "status": goal.status if goal else "missing",
+            "ts": r.get("ts"),
+        })
+    return rows
+
+
 @app.get("/fleets", response_class=HTMLResponse)
 async def fleets_page(request: Request) -> HTMLResponse:
     """Operator console: the per-employee agent fleets + their oversight.
@@ -1159,10 +1195,13 @@ async def fleets_page(request: Request) -> HTMLResponse:
     owner = goal_owner_filter(request)
     if owner is not None:
         fleets = [f for f in fleets if f.owner == owner]
+    # Per-fleet recent runs (newest-first), scoped to the fleets already shown.
+    runs_by_fleet = {f.name: _fleet_recent_runs(f.name) for f in fleets}
     return templates.TemplateResponse(
         request, "fleets.html",
         {
             "fleets": fleets,
+            "runs_by_fleet": runs_by_fleet,
             "holds": _recent_governance_holds(),
             "pending_count": len(_world().pending_approvals()),
         },
