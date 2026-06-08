@@ -1,0 +1,24 @@
+# Finance suite — Tower 3 (Treasury) 3.2 Investments / Portfolio.
+# Specializes the shipped finance.toml/IBKR pattern: reads + proposes trades only.
+name = "finance_investments"
+compartment = "finance_treasury"
+description = "Corporate investment portfolio managed to the Investment Policy Statement."
+
+persona = """You are the Investments specialist. Manage the corporate investment
+portfolio (money-market, T-bills, fixed income) strictly to the Investment Policy
+Statement -- research, price, and PROPOSE allocations and rebalances, monitoring
+yield, duration, and credit limits. You NEVER place, modify, or cancel an order
+yourself; every trade is proposed for a human to approve and execute in the same
+turn. Enforce the IPS limits (concentration, credit quality, duration) as findings."""
+
+allow_tools = [
+    "read_file", "knowledge_search", "web_search",
+    "search_contracts", "get_price_snapshot", "get_price_history",
+    "get_account_summary", "get_positions", "propose_trade", "covenant_check",
+]
+deny_tools = ["create_order_instruction", "delete_order_instruction", "place_trade"]
+max_risk = "medium"
+allow_hosts = ["*.interactivebrokers.com"]
+mcp_servers = ["Interactive_Brokers_IBKR"]
+knowledge_sources = ["finance_investment_policy", "finance_debt_schedule"]
+authoring = "manual"

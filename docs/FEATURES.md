@@ -143,6 +143,16 @@ prefers a reachable local model before remote (`provider_local_first.py`);
   domain configuration (intake agent + LLM proposer + `run_intake`).
 - **Domain packs** — spawn domain agents from profiles (legal / privacy / generic
   packs) on the sector-seal foundation.
+- **Finance suite (Office of the CFO)** — 31 domain packs across 7 towers
+  (Controllership, FP&A, Treasury, Tax, Assurance, Procurement, Reporting) + a
+  Finance Controller, each a sealed read-only/draft-by-default compartment with
+  the "never move money without a human" guardrail. The governance wrapper:
+  amount-aware authorization (`[governance] deny_above`/`require_human_above`
+  dollar tiers), a segregation-of-duties linter (`maverick finance lint-sod`),
+  OFAC/SDN sanctions screening (`screen_sanctions`), finance assessment templates
+  (sox_control / fraud_risk / itgc / credit_risk / close_readiness),
+  compliance-regime packs (SOX/COSO/GAAP/PCI/GLBA/AML/SEC/IRS, strictest-wins),
+  and the `maverick finance status` posture report (`maverick/finance/`).
 - **maverick-knowledge** — per-domain vector RAG package backing `knowledge_search`.
 - **Reverse-proxy SSO** — trusted forwarded-identity header for enterprise auth.
 - **Process table** — `maverick ps` (unified view of runs/workers).

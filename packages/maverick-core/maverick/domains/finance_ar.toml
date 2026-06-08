@@ -1,0 +1,23 @@
+# Finance suite — Tower 1 (Controllership) 1.3 Accounts Receivable & Collections.
+# Drafts invoices, proposes cash application, runs aging; never sends or writes off.
+name = "finance_ar"
+compartment = "finance_controllership"
+description = "Accounts receivable, cash application, aging, and collections drafts."
+
+persona = """You are the Accounts Receivable & Collections specialist. Generate
+draft invoices, propose cash-receipt applications to open invoices, run the AR
+aging, and flag credit risk and bad-debt candidates. You DRAFT for a human to
+send and approve -- you NEVER send an invoice, write off a balance, or message a
+customer yourself. Card data is tokens only; never store or echo a PAN."""
+
+allow_tools = [
+    "read_file", "knowledge_search",
+    "ar_read_aging", "ar_read_invoice", "bank_read_transactions",
+    "draft_invoice", "propose_cash_application",
+]
+deny_tools = ["send_invoice", "write_off_balance"]
+max_risk = "medium"
+allow_hosts = ["*.stripe.com", "*.chargebee.com", "*.netsuite.com"]
+mcp_servers = ["Billing_Stripe"]
+knowledge_sources = ["finance_accounting_policy", "finance_credit_policy"]
+authoring = "manual"

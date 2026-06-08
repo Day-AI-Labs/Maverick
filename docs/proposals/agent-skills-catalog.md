@@ -124,290 +124,290 @@ not by direct SQL against the system-of-record DB, which is itself an ITGC findi
 
 #### 1.1 General Ledger & Close Agent  [UB +Data]
 JD: Owns the period-end close — drafts journal entries, runs reconciliations and flux analysis, assembles the close binder.
-- Systems: NetSuite · SAP S/4HANA · Oracle Fusion/EBS · QuickBooks/Xero (GL) · **BlackLine, FloQast** (close & recon) · OneStream/FCCS (consolidation; Hyperion HFM = legacy).
-- Domain (added): **ASC 450** loss contingencies · **ASC 250** error correction (Big-R/little-R restatement) · accrual methodologies · management-review-control (MRC) evidence.
-- Technical: **SQL against the GL/sub-ledger DB (Oracle, SQL Server)** to pull the trial balance & JE detail · the CoA/dimension data model · advanced Excel (Power Query, pivots).
-- Domain: US GAAP / IFRS · R2R close mechanics (accruals, prepaids, reclasses) · balance-sheet reconciliations · **flux/variance analysis** · close-checklist management.
-- Regulatory: **SOX §404 (ICFR)** · audit-trail/evidence discipline.
+- Systems: NetSuite · SAP S/4HANA · Oracle Fusion/EBS · QuickBooks/Xero (GL) · **BlackLine, FloQast** (close & recon) · OneStream/FCCS (consolidation; Hyperion HFM = legacy) `[C]`.
+- Domain (added): **ASC 450** loss contingencies · **ASC 250** error correction (Big-R/little-R restatement) · accrual methodologies · management-review-control (MRC) evidence `[K]`.
+- Technical: **SQL against the GL/sub-ledger DB (Oracle, SQL Server)** to pull the trial balance & JE detail · the CoA/dimension data model · advanced Excel (Power Query, pivots) `[S]`.
+- Domain: US GAAP / IFRS · R2R close mechanics (accruals, prepaids, reclasses) · balance-sheet reconciliations · **flux/variance analysis** · close-checklist management `[K]`.
+- Regulatory: **SOX §404 (ICFR)** · audit-trail/evidence discipline `[K]`.
 - Maverick: stage-not-post · SoD vs AP/AR · cite the source document for every entry.
 
 #### 1.2 Accounts Payable Agent  [UB +Data]
 JD: Procure-to-pay — ingests invoices, runs the 3-way match, codes and stages payment batches.
-- Systems: **Bill.com, Coupa, Tipalti, Ramp, SAP Ariba** · ERP AP module · **OCR/IDP** (ABBYY, Ocrolus) for invoice capture.
-- Technical: SQL AP queries · **3-way-match logic** (PO↔receipt↔invoice) · duplicate/anomaly detection · vendor-bank-change detection.
-- Domain: P2P cycle · expense recognition (GAAP) · 1099/W-9, W-8 · accruals at close.
-- Regulatory: **OFAC payee screening** · SOX AP controls.
+- Systems: **Bill.com, Coupa, Tipalti, Ramp, SAP Ariba** · ERP AP module · **OCR/IDP** (ABBYY, Ocrolus) for invoice capture `[C]`.
+- Technical: SQL AP queries · **3-way-match logic** (PO↔receipt↔invoice) · duplicate/anomaly detection · vendor-bank-change detection `[S]`.
+- Domain: P2P cycle · expense recognition (GAAP) · 1099/W-9, W-8 · accruals at close `[K]`.
+- Regulatory: **OFAC payee screening** · SOX AP controls `[K]`.
 - Maverick: payment-staging gate · ghost-vendor/duplicate checks · invoices ingested through the shield (poisoned-PDF defense).
 
 #### 1.3 Accounts Receivable & Collections Agent  [UB +Data +Reach]
 JD: Order-to-cash — invoices, cash application, AR aging, dunning, bad-debt flags.
-- Systems: NetSuite · **Stripe, Chargebee, Zuora** (billing) · bank feeds (Plaid, Modern Treasury) · CRM (customer context).
-- Technical: SQL AR · **cash-application matching** · aging analysis · DSO computation.
-- Domain: O2C · ASC 606 basics · **CECL / allowance for doubtful accounts** · collections/dunning strategy.
+- Systems: NetSuite · **Stripe, Chargebee, Zuora** (billing) · bank feeds (Plaid, Modern Treasury) · CRM (customer context) `[C]`.
+- Technical: SQL AR · **cash-application matching** · aging analysis · DSO computation `[S]`.
+- Domain: O2C · ASC 606 basics · **CECL / allowance for doubtful accounts** · collections/dunning strategy `[K]`.
 - Maverick: collections comms gated (outbound) · write-offs `require_human` · SoD vs cash custody.
 
 #### 1.4 Payroll Agent  [UB +Data]
 JD: Gross-to-net — validates pay changes, computes payroll, reconciles the register, drafts payroll-tax filings.
-- Systems: **Workday, ADP, Gusto, Rippling, Paychex** (payroll/HCM) · ERP payroll JE.
-- Technical: **gross-to-net calculation** · garnishment & 401(k)/benefits deductions · payroll-register-to-GL reconciliation · multi-state allocation.
-- Domain: **FLSA** (wage/hour) · payroll tax (941, W-2, state/local) · off-cycle & retro pay.
-- Regulatory: IRS, state payroll tax, FLSA, garnishment law.
+- Systems: **Workday, ADP, Gusto, Rippling, Paychex** (payroll/HCM) · ERP payroll JE `[C]`.
+- Technical: **gross-to-net calculation** · garnishment & 401(k)/benefits deductions · payroll-register-to-GL reconciliation · multi-state allocation `[S]`.
+- Domain: **FLSA** (wage/hour) · payroll tax (941, W-2, state/local) · off-cycle & retro pay `[K]`.
+- Regulatory: IRS, state payroll tax, FLSA, garnishment law `[K]`.
 - Maverick: **highest-PII compartment** (encryption) · run-payroll & bank-detail edits `require_human` · SoD.
 
 #### 1.5 Fixed Assets Agent  [UB +Data]
 JD: Asset accounting — register, depreciation, capitalization, impairment, disposals.
-- Systems: ERP FA modules (**SAP Asset Accounting, NetSuite FAM, Oracle Assets**) · asset/lease systems.
-- Technical: **book depreciation** (SL/DDB/units-of-production) · **parallel tax book — MACRS, bonus §168(k), §179** + book-tax difference (feeds 4.1) · CWIP & **capitalized interest (ASC 835-20)**.
-- Domain: capitalization policy & useful lives · **ASC 360 impairment (two-step recoverability)** vs **ASC 350 goodwill** · **ASC 410 ARO** · disposals/transfers.
+- Systems: ERP FA modules (**SAP Asset Accounting, NetSuite FAM, Oracle Assets**) · asset/lease systems `[C]`.
+- Technical: **book depreciation** (SL/DDB/units-of-production) · **parallel tax book — MACRS, bonus §168(k), §179** + book-tax difference (feeds 4.1) · CWIP & **capitalized interest (ASC 835-20)** `[S]`.
+- Domain: capitalization policy & useful lives · **ASC 360 impairment (two-step recoverability)** vs **ASC 350 goodwill** · **ASC 410 ARO** · disposals/transfers `[K]`.
 - Maverick: capitalize-vs-expense threshold · disposal `require_human`.
 
 #### 1.6 Revenue Recognition Agent  [UB +Data]
 JD: ASC 606 — reads contracts, runs the 5-step model, builds deferred-revenue schedules.
-- Systems: Salesforce/CPQ · **Zuora / Stripe Billing / Zuora Revenue (RevPro)** · ERP rev JE · contract repository.
-- Technical: contract analysis · **deferred-revenue & rev-waterfall schedules** · SSP allocation · variable-consideration estimates.
-- Domain: **ASC 606 / IFRS 15 (5-step)** · **ASC 340-40 (capitalized commissions / costs to obtain & fulfill)** · variable-consideration constraint · significant financing component · material right/breakage · bill-and-hold · contract mods · principal-vs-agent.
+- Systems: Salesforce/CPQ · **Zuora / Stripe Billing / Zuora Revenue (RevPro)** · ERP rev JE · contract repository `[C]`.
+- Technical: contract analysis · **deferred-revenue & rev-waterfall schedules** · SSP allocation · variable-consideration estimates `[S]`.
+- Domain: **ASC 606 / IFRS 15 (5-step)** · **ASC 340-40 (capitalized commissions / costs to obtain & fulfill)** · variable-consideration constraint · significant financing component · material right/breakage · bill-and-hold · contract mods · principal-vs-agent `[K]`.
 - Maverick: cite the contract clause · flag judgmental calls (SSP, variable consideration).
 
 #### 1.7 Intercompany & Consolidations Agent  [UB +Data]
 JD: Multi-entity consolidation — eliminations, FX translation, minority interest, consolidated statements.
-- Systems: **Oracle FCCS, OneStream, SAP Group Reporting, Workiva** · multi-book ERP *(Hyperion HFM / SAP BPC = legacy)*.
-- Technical: **intercompany eliminations** · **FX translation (CTA)** · allocations · entity-tree roll-up.
-- Domain: **ASC 810** (consolidation — **voting-interest *and* VIE** models) · **ASC 805** (business combinations / PPA / goodwill / NCI at FV) · **ASC 323** (equity method) · **ASC 350** (goodwill impairment) · **ASC 830 / IAS 21** (FX, incl. CTA recycling on disposal).
+- Systems: **Oracle FCCS, OneStream, SAP Group Reporting, Workiva** · multi-book ERP *(Hyperion HFM / SAP BPC = legacy)* `[C]`.
+- Technical: **intercompany eliminations** · **FX translation (CTA)** · allocations · entity-tree roll-up `[S]`.
+- Domain: **ASC 810** (consolidation — **voting-interest *and* VIE** models) · **ASC 805** (business combinations / PPA / goodwill / NCI at FV) · **ASC 323** (equity method) · **ASC 350** (goodwill impairment) · **ASC 830 / IAS 21** (FX, incl. CTA recycling on disposal) `[K]`.
 - Maverick: intercompany nets to zero or it's a finding · tenancy-respecting cross-entity reads.
 
 #### 1.8 Expense & T&E Agent  [UB +Data]
 JD: Audits expense reports & corporate-card spend against policy; drafts the accrual.
-- Systems: **Concur, Expensify, Ramp, Brex** · corporate-card feeds.
-- Technical: policy-rule checking · card-statement reconciliation · duplicate/personal-spend detection.
-- Domain: T&E policy · IRS **accountable-plan** rules · per-diem.
-- Regulatory: **PCI-DSS** (card tokens, never PAN).
+- Systems: **Concur, Expensify, Ramp, Brex** · corporate-card feeds `[C]`.
+- Technical: policy-rule checking · card-statement reconciliation · duplicate/personal-spend detection `[S]`.
+- Domain: T&E policy · IRS **accountable-plan** rules · per-diem `[K]`.
+- Regulatory: **PCI-DSS** (card tokens, never PAN) `[K]`.
 - Maverick: reimbursement `require_human` · SoD vs AP.
 
 #### 1.9 Cost Accounting & Inventory Agent  [UB +Data]
 JD: Standard/actual costing, inventory valuation, manufacturing variances, COGS.
-- Systems: ERP cost modules (**SAP CO/Product Costing, NetSuite, Oracle Cost Mgmt**) · MES/WMS (read).
-- Technical: **standard- & actual-cost roll-ups** (BOM/routing) · **variance analysis** (PPV, usage, labor, overhead absorption) · inventory valuation calc.
-- Domain: **ASC 330** cost accounting · **FIFO/weighted-avg (lower-of-cost-or-NRV); LIFO (US-only, LIFO reserve + conformity rule, LCM)** · absorption costing + abnormal-idle-capacity expensing · variance capitalization · **E&O reserves** · landed cost.
+- Systems: ERP cost modules (**SAP CO/Product Costing, NetSuite, Oracle Cost Mgmt**) · MES/WMS (read) `[C]`.
+- Technical: **standard- & actual-cost roll-ups** (BOM/routing) · **variance analysis** (PPV, usage, labor, overhead absorption) · inventory valuation calc `[S]`.
+- Domain: **ASC 330** cost accounting · **FIFO/weighted-avg (lower-of-cost-or-NRV); LIFO (US-only, LIFO reserve + conformity rule, LCM)** · absorption costing + abnormal-idle-capacity expensing · variance capitalization · **E&O reserves** · landed cost `[K]`.
 - Maverick: write-downs/revaluations & cycle-count adjustments `require_human` · SoD vs warehouse custody.
 
 #### 1.10 Lease Accounting Agent  [UB +Data]
 JD: ASC 842 / IFRS 16 — classification, ROU/liability schedules, remeasurement.
-- Systems: **LeaseQuery, Visual Lease, Nakisa** · ERP lease JE.
-- Technical: **ROU-asset & lease-liability schedules** · incremental-borrowing-rate (IBR) determination · remeasurement on modification.
-- Domain: **ASC 842 / IFRS 16** · finance-vs-operating classification · **embedded-lease** detection · short-term/low-value elections.
+- Systems: **LeaseQuery, Visual Lease, Nakisa** · ERP lease JE `[C]`.
+- Technical: **ROU-asset & lease-liability schedules** · incremental-borrowing-rate (IBR) determination · remeasurement on modification `[S]`.
+- Domain: **ASC 842 / IFRS 16** · finance-vs-operating classification · **embedded-lease** detection · short-term/low-value elections `[K]`.
 - Maverick: classification judgment flagged · modifications gated.
 
 #### 1.11 Account Reconciliation Agent  [UB +Data]
 JD: The independent "reconcile" duty — reconciles BS accounts, ages items, certifies completeness.
-- Systems: **BlackLine, FloQast** · bank portals · ERP + all sub-ledgers (read both sides).
-- Technical: **reconciliation matching** · reconciling-item aging · subledger-to-GL tie-outs · bank reconciliation.
-- Domain: balance-sheet reconciliations · suspense/clearing accounts · escheatment-trigger awareness.
+- Systems: **BlackLine, FloQast** · bank portals · ERP + all sub-ledgers (read both sides) `[C]`.
+- Technical: **reconciliation matching** · reconciling-item aging · subledger-to-GL tie-outs · bank reconciliation `[S]`.
+- Domain: balance-sheet reconciliations · suspense/clearing accounts · escheatment-trigger awareness `[K]`.
 - Maverick: **independence — cannot post the adjustments it finds** (closes the SoD loop) · stale items escalate.
 
 #### 1.12 Financial Master-Data & CoA Governance Agent  [UB +Data]
 JD: Integrity of financial master data — CoA, cost/profit centers, dimensions, entities, bank master.
-- Systems: ERP master data · **MDM (SAP MDG, Reltio)** · mapping tables.
-- Technical: dedup · **local↔group CoA mapping** · validation rules · dimension governance.
-- Domain: chart-of-accounts design · cost/profit-center hierarchies · legal-entity structure.
+- Systems: ERP master data · **MDM (SAP MDG, Reltio)** · mapping tables `[C]`.
+- Technical: dedup · **local↔group CoA mapping** · validation rules · dimension governance `[S]`.
+- Domain: chart-of-accounts design · cost/profit-center hierarchies · legal-entity structure `[K]`.
 - Maverick: all master-data changes `require_human` (drives every report) · SoD vs transaction recording.
 
 ### Tower 2 — FP&A
 
 #### 2.1 FP&A / Management-Reporting Agent  [UB +Data]
 JD: Budget vs actuals, variance analysis with narrative, board/management reporting, KPIs.
-- Systems: **Anaplan, Workday Adaptive, Pigment** (EPM) · ERP actuals · BI (Power BI/Tableau/Looker).
-- Technical: **variance/bridge analysis** · driver-based models · SQL + advanced Excel · board-deck building (PowerPoint).
-- Domain: budgeting/planning · **unit economics & KPIs** · management reporting · cohort analysis.
+- Systems: **Anaplan, Workday Adaptive, Pigment** (EPM) · ERP actuals · BI (Power BI/Tableau/Looker) `[C]`.
+- Technical: **variance/bridge analysis** · driver-based models · SQL + advanced Excel · board-deck building (PowerPoint) `[S]`.
+- Domain: budgeting/planning · **unit economics & KPIs** · management reporting · cohort analysis `[K]`.
 - Maverick: cite the source query · state assumptions · read-only on the plan of record.
 
 #### 2.2 Forecasting Agent  [UB +Data]
 JD: Driver-based revenue/expense/headcount forecasts, scenario & sensitivity modeling, backtesting.
-- Systems: EPM (Adaptive/Anaplan) · FRED / market-data feeds.
-- Technical: **driver-based & statistical forecasting** (Python: statsmodels/Prophet) · scenario/sensitivity modeling · **backtesting & error reporting**.
-- Domain: forecasting methodology · seasonality · confidence intervals.
+- Systems: EPM (Adaptive/Anaplan) · FRED / market-data feeds `[C]`.
+- Technical: **driver-based & statistical forecasting** (Python: statsmodels/Prophet) · scenario/sensitivity modeling · **backtesting & error reporting** `[S]`.
+- Domain: forecasting methodology · seasonality · confidence intervals `[K]`.
 - Maverick: label estimates · methodology + confidence stated · sandboxed compute.
 
 #### 2.3 Cash-Flow & Liquidity Forecasting Agent  [UB +Data]
 JD: The 13-week cash forecast, working-capital analysis, liquidity/runway.
-- Systems: bank feeds (Plaid, Modern Treasury) · TMS · AP/AR sub-ledgers.
-- Technical: **13-week direct cash-flow model** · working-capital metrics (**DSO/DPO/DIO/CCC**) · burn/runway.
-- Domain: liquidity management · cash-conversion cycle.
+- Systems: bank feeds (Plaid, Modern Treasury) · TMS · AP/AR sub-ledgers `[C]`.
+- Technical: **13-week direct cash-flow model** · working-capital metrics (**DSO/DPO/DIO/CCC**) · burn/runway `[S]`.
+- Domain: liquidity management · cash-conversion cycle `[K]`.
 - Maverick: cannot sweep/transfer (feeds Treasury) · assumptions explicit.
 
 #### 2.4 CapEx & Capital-Planning Agent  [UB +Data]
 JD: Capital budgeting & appraisal — business cases, ROI, capex tracking, post-investment review.
-- Systems: EPM/capital-planning · ERP (capex) · procurement (capex POs).
-- Technical: **NPV / IRR / payback / discounted-payback** · business-case modeling · capex-vs-actual tracking.
-- Domain: capital budgeting · capex-vs-opex classification · hurdle rates / WACC.
+- Systems: EPM/capital-planning · ERP (capex) · procurement (capex POs) `[C]`.
+- Technical: **NPV / IRR / payback / discounted-payback** · business-case modeling · capex-vs-actual tracking `[S]`.
+- Domain: capital budgeting · capex-vs-opex classification · hurdle rates / WACC `[K]`.
 - Maverick: capital approval `require_human` per DoA · hands assets to FA.
 
 #### 2.5 Workforce & Headcount-Cost Planning Agent  [UB +Data]
 JD: People-cost planning — headcount plans, comp modeling, attrition, plan-to-actual.
-- Systems: HRIS (read — Workday/BambooHR) · EPM · payroll actuals.
-- Technical: **compensation modeling** (salary/bonus/benefits/payroll-tax/equity loading) · hiring-plan phasing · attrition modeling.
-- Domain: workforce planning · span-of-control · cost-per-head.
+- Systems: HRIS (read — Workday/BambooHR) · EPM · payroll actuals `[C]`.
+- Technical: **compensation modeling** (salary/bonus/benefits/payroll-tax/equity loading) · hiring-plan phasing · attrition modeling `[S]`.
+- Domain: workforce planning · span-of-control · cost-per-head `[K]`.
 - Maverick: high-PII · read-only HRIS · comp data least-privilege.
 
 ### Tower 3 — Treasury
 
 #### 3.1 Treasury & Cash-Management Agent  [UB +Data]
 JD: Daily cash positioning, proposes sweeps/funding, monitors debt covenants.
-- Systems: **Kyriba** (TMS) · **Modern Treasury, Plaid** (bank aggregation) · bank portals · payment rails (**Fedwire, ACH/NACHA, RTP, SWIFT MT→ISO 20022 / MX**).
-- Technical: **cash positioning** across accounts · covenant calculation · short-term liquidity forecasting · **bank-fee analysis (AFP codes)** · pooling (ZBA/notional).
-- Domain: liquidity & working capital · **debt covenants** · **SOFR / post-LIBOR (term SOFR, ARRC fallbacks)** · bank-account management (BAM) / FBAR · **ISO 20022 migration**.
-- Regulatory: bank KYC.
+- Systems: **Kyriba** (TMS) · **Modern Treasury, Plaid** (bank aggregation) · bank portals · payment rails (**Fedwire, ACH/NACHA, RTP, SWIFT MT→ISO 20022 / MX**) `[C]`.
+- Technical: **cash positioning** across accounts · covenant calculation · short-term liquidity forecasting · **bank-fee analysis (AFP codes)** · pooling (ZBA/notional) `[S]`.
+- Domain: liquidity & working capital · **debt covenants** · **SOFR / post-LIBOR (term SOFR, ARRC fallbacks)** · bank-account management (BAM) / FBAR · **ISO 20022 migration** `[K]`.
+- Regulatory: bank KYC `[K]`.
 - Maverick: **propose-not-send** (denies wire/ACH/release) · dual approval over DoA threshold · covenant breach → alert.
 
 #### 3.2 Investments / Portfolio Agent  [UB +Data]
 JD: Manages the corporate investment portfolio per the IPS — researches, prices, proposes allocations.
-- Systems: **Interactive Brokers (IBKR — already wired)** · **Bloomberg Terminal** · custodian APIs.
-- Technical: **portfolio analytics** (yield, **duration & convexity, OAS, yield-to-worst**, credit) · pricing · **investment accounting (ASC 320 HTM/AFS/trading, ASC 321 equity, ASC 326-30 AFS credit losses)** · **MMF Rule 2a-7**.
-- Domain: money-market & **fixed-income** instruments · the **Investment Policy Statement** · FINRA/SEC basics for corporate investing.
+- Systems: **Interactive Brokers (IBKR — already wired)** · **Bloomberg Terminal** · custodian APIs `[C]`.
+- Technical: **portfolio analytics** (yield, **duration & convexity, OAS, yield-to-worst**, credit) · pricing · **investment accounting (ASC 320 HTM/AFS/trading, ASC 321 equity, ASC 326-30 AFS credit losses)** · **MMF Rule 2a-7** `[S]`.
+- Domain: money-market & **fixed-income** instruments · the **Investment Policy Statement** · FINRA/SEC basics for corporate investing `[K]`.
 - Maverick: **trade-propose-not-execute** (denies order tools, verbatim from `finance.toml`) · IPS limit enforcement · egress pinned to IBKR hosts.
 
 #### 3.3 FX & Hedging Agent  [UB +Data]
 JD: Quantifies currency exposure, proposes hedges, supports hedge-accounting docs.
-- Systems: IBKR/bank FX · ERP exposure data · FX-rate feeds.
-- Technical: **exposure quantification** (transaction, translation/**net-investment**, economic) · **hedge-effectiveness testing** · instruments (forwards, options, collars, **cross-currency swaps, NDFs**).
-- Domain: **ASC 815 / IFRS 9 hedge accounting + ASU 2017-12** (the three hedge types; portfolio-layer; contemporaneous designation) · SOFR transition.
+- Systems: IBKR/bank FX · ERP exposure data · FX-rate feeds `[C]`.
+- Technical: **exposure quantification** (transaction, translation/**net-investment**, economic) · **hedge-effectiveness testing** · instruments (forwards, options, collars, **cross-currency swaps, NDFs**) `[S]`.
+- Domain: **ASC 815 / IFRS 9 hedge accounting + ASU 2017-12** (the three hedge types; portfolio-layer; contemporaneous designation) · SOFR transition `[K]`.
 - Maverick: hedge execution `require_human` · effectiveness method cited.
 
 #### 3.4 Capital Markets & Debt Agent  [UB +Data]
 JD: Debt/lease schedules, interest/amortization, covenant compliance, refinancing models.
-- Systems: debt register · market-rate feeds · agent/bank statements.
-- Technical: **effective-interest amortization** · refinancing/issuance models · covenant tests (**leverage, FCCR, DSCR/ICR**) · borrowing-base/maturity-ladder.
-- Domain: **ASC 470 (modification vs extinguishment 10% test, issuance costs), ASC 470-20 + ASU 2020-06 (convertibles), ASC 815-15 (embedded derivatives)** · SOFR · capital structure · credit ratings.
+- Systems: debt register · market-rate feeds · agent/bank statements `[C]`.
+- Technical: **effective-interest amortization** · refinancing/issuance models · covenant tests (**leverage, FCCR, DSCR/ICR**) · borrowing-base/maturity-ladder `[S]`.
+- Domain: **ASC 470 (modification vs extinguishment 10% test, issuance costs), ASC 470-20 + ASU 2020-06 (convertibles), ASC 815-15 (embedded derivatives)** · SOFR · capital structure · credit ratings `[K]`.
 - Maverick: covenant breaches escalate · any draw/issuance `require_human`.
 
 ### Tower 4 — Tax
 
 #### 4.1 Tax Provision Agent  [UB +Data]
 JD: ASC 740 — current/deferred provision, ETR reconciliation, deferred-tax balances, tax footnote.
-- Systems: **ONESOURCE Tax Provision, Corptax** · ERP trial balance · prior returns.
-- Technical: **current & deferred tax computation** · **effective-tax-rate reconciliation** · DTA/DTL roll-forward · valuation-allowance analysis.
-- Domain: **ASC 740 / IAS 12** · book-tax differences · **uncertain tax positions (ASC 740-10)** · **OECD Pillar Two / GloBE 15% min tax, GILTI/FDII/BEAT, §163(j), CAMT** · valuation-allowance (4 sources) · intraperiod allocation (740-20) · APB 23.
+- Systems: **ONESOURCE Tax Provision, Corptax** · ERP trial balance · prior returns `[C]`.
+- Technical: **current & deferred tax computation** · **effective-tax-rate reconciliation** · DTA/DTL roll-forward · valuation-allowance analysis `[S]`.
+- Domain: **ASC 740 / IAS 12** · book-tax differences · **uncertain tax positions (ASC 740-10)** · **OECD Pillar Two / GloBE 15% min tax, GILTI/FDII/BEAT, §163(j), CAMT** · valuation-allowance (4 sources) · intraperiod allocation (740-20) · APB 23 `[K]`.
 - Maverick: positions cite authority · uncertain positions flagged · ties to the GL provision JE.
 
 #### 4.2 Tax Compliance & Filing-Prep Agent  [UB +Data]
 JD: Prepares (not files) income, sales & use, VAT/GST returns; validates nexus/taxability.
-- Systems: **Avalara, Vertex, Sovos** (indirect tax) · ONESOURCE · ERP.
-- Technical: **nexus & taxability determination** · return preparation · tax-collected-vs-remitted reconciliation.
-- Domain: **sales & use / VAT / GST / income tax** · jurisdiction rules · filing calendar.
-- Regulatory: IRS, state & local, multi-jurisdiction indirect tax.
+- Systems: **Avalara, Vertex, Sovos** (indirect tax) · ONESOURCE · ERP `[C]`.
+- Technical: **nexus & taxability determination** · return preparation · tax-collected-vs-remitted reconciliation `[S]`.
+- Domain: **sales & use / VAT / GST / income tax** · jurisdiction rules · filing calendar `[K]`.
+- Regulatory: IRS, state & local, multi-jurisdiction indirect tax `[K]`.
 - Maverick: **filing & remittance always `require_human`** · jurisdiction rule cited.
 
 #### 4.3 Transfer Pricing Agent  [UB +Data]
 JD: Tests intercompany pricing for arm's-length, maintains BEPS documentation.
-- Systems: benchmarking DBs (**TP Catalyst / RoyaltyStat**) · intercompany ledger.
-- Technical: **arm's-length / comparables analysis** · TP-method selection · adjustment modeling.
-- Domain: **OECD BEPS** · master file / local file / **CbCR** · TP methods (CUP, TNMM, etc.).
+- Systems: benchmarking DBs (**TP Catalyst / RoyaltyStat**) · intercompany ledger `[C]`.
+- Technical: **arm's-length / comparables analysis** · TP-method selection · adjustment modeling `[S]`.
+- Domain: **OECD BEPS** · master file / local file / **CbCR** · TP methods (CUP, TNMM, etc.) `[K]`.
 - Maverick: method & comparables cited · adjustments routed to Consolidations.
 
 ### Tower 5 — Risk, Controls & Assurance
 
 #### 5.1 SOX / Internal Controls (ICFR) Agent  [UB +Assess]
 JD: Maintains the RCM, tests control operating effectiveness, tracks deficiencies, monitors SoD/ITGCs.
-- Systems: **AuditBoard, Workiva, ServiceNow GRC** · the **Maverick audit log** (as control evidence).
-- Technical: **control testing & sampling** · evidence evaluation · **SoD-conflict analysis** · ITGC testing (access/change/ops).
-- Domain: **SOX §302/§404** · **COSO 2013** (5 components/17 principles) · the Risk-Control Matrix · COBIT/ITGC.
+- Systems: **AuditBoard, Workiva, ServiceNow GRC** · the **Maverick audit log** (as control evidence) `[C]`.
+- Technical: **control testing & sampling** · evidence evaluation · **SoD-conflict analysis** · ITGC testing (access/change/ops) `[S]`.
+- Domain: **SOX §302/§404** · **COSO 2013** (5 components/17 principles) · the Risk-Control Matrix · COBIT/ITGC `[K]`.
 - Maverick: **independence (read-only)** · the assessment flow (`start_assessment`→`answer_question`→`finalize_assessment`) — *today's shipped templates are `pia`/`aira`/`vendor_risk`; `sox_control`/`itgc` are templates to author* · deficiency = finding for a human owner.
 
 #### 5.2 Internal Audit Agent  [UB +Assess]
 JD: Risk-based audit planning, fieldwork, workpapers, findings, follow-up.
-- Systems: **AuditBoard, TeamMate+** · all finance systems (read).
-- Technical: risk-based audit planning · workpaper drafting · sampling & testing.
-- Domain: **IIA Global Internal Audit Standards (2024/2025)** · audit methodology · three-lines model · CAATs / data analytics · QAIP · root-cause analysis.
+- Systems: **AuditBoard, TeamMate+** · all finance systems (read) `[C]`.
+- Technical: risk-based audit planning · workpaper drafting · sampling & testing `[S]`.
+- Domain: **IIA Global Internal Audit Standards (2024/2025)** · audit methodology · three-lines model · CAATs / data analytics · QAIP · root-cause analysis `[K]`.
 - Maverick: read-only (no operational capability) · evidence-cited · risk-ranked.
 
 #### 5.3 External-Audit / PBC Liaison Agent  [UB +Assess]
 JD: Manages the prepared-by-client list, packages evidence, tracks open items.
-- Systems: auditor data-request portals · the evidence collector (`soc2.py`) · the signed audit chain (`maverick audit verify`).
-- Technical: evidence extraction & packaging · PBC tracking.
-- Domain: **PCAOB / external-audit support** · audit-readiness.
+- Systems: auditor data-request portals · the evidence collector (`soc2.py`) · the signed audit chain (`maverick audit verify`) `[C]`.
+- Technical: evidence extraction & packaging · PBC tracking `[S]`.
+- Domain: **PCAOB / external-audit support** · audit-readiness `[K]`.
 - Maverick: external send `require_human` · data minimization in shares.
 
 #### 5.4 Fraud Detection Agent  [UB +Data]
 JD: Hunts financial fraud — ghost vendors/employees, duplicate/split payments, expense abuse.
-- Systems: GL/AP/payroll (read) · vendor/employee master · case management.
-- Technical: **Benford's Law · Beneish M-score · Altman Z-score** · duplicate/round-dollar/just-under-threshold detection · SQL forensics · vendor-bank-change detection.
-- Domain: **occupational fraud (ACFE fraud tree)** · fraud triangle · **AU-C 240 / SAS 145** (ex-SAS 99) · FSF screens (Beneish, **Dechow F-score**, Altman) vs transactional tests · link analysis/entity resolution (shared bank/address).
+- Systems: GL/AP/payroll (read) · vendor/employee master · case management `[C]`.
+- Technical: **Benford's Law · Beneish M-score · Altman Z-score** · duplicate/round-dollar/just-under-threshold detection · SQL forensics · vendor-bank-change detection `[S]`.
+- Domain: **occupational fraud (ACFE fraud tree)** · fraud triangle · **AU-C 240 / SAS 145** (ex-SAS 99) · FSF screens (Beneish, **Dechow F-score**, Altman) vs transactional tests · link analysis/entity resolution (shared bank/address) `[K]`.
 - Maverick: outputs are **risk-ranked leads, never accusations** · base rates stated · routed to a human investigator.
 
 #### 5.5 Anomaly Detection Agent  [UB +Data]
 JD: Continuous unsupervised monitoring of transaction streams for statistical outliers.
-- Systems: GL/AP/AR transaction feeds (read/stream) · the audit log.
-- Technical: **unsupervised outlier detection** (statistical/ML) · time-series analysis · baseline modeling · SQL/streaming.
-- Domain: transaction-monitoring patterns (manual-JE spikes, post-close/weekend entries).
+- Systems: GL/AP/AR transaction feeds (read/stream) · the audit log `[C]`.
+- Technical: **unsupervised outlier detection** (statistical/ML) · time-series analysis · baseline modeling · SQL/streaming `[S]`.
+- Domain: transaction-monitoring patterns (manual-JE spikes, post-close/weekend entries) `[K]`.
 - Maverick: tuned to reviewable alert volume (budget-bounded) · every alert carries its baseline.
 
 #### 5.6 Financial Risk / ERM Agent  [UB]
 JD: Maintains the enterprise risk register + KRIs, quantifies exposure, drafts risk reporting.
-- Systems: GRC risk register · BI.
-- Technical: **risk scoring** · KRI design · exposure quantification (VaR basics).
-- Domain: **COSO ERM / ISO 31000** · financial risks (liquidity, credit, market, concentration).
+- Systems: GRC risk register · BI `[C]`.
+- Technical: **risk scoring** · KRI design · exposure quantification (VaR basics) `[S]`.
+- Domain: **COSO ERM / ISO 31000** · financial risks (liquidity, credit, market, concentration) `[K]`.
 - Maverick: read-only over operations · methodology cited.
 
 #### 5.7 Credit Risk Agent  [UB +Data]
 JD: Sets/recommends customer credit limits, scores creditworthiness, drafts allowance estimates.
-- Systems: AR sub-ledger · **credit bureaus (D&B, Experian)** · payment history.
-- Technical: **credit scoring** · **CECL allowance modeling** · AR-portfolio risk analysis.
-- Domain: credit analysis · trade-credit terms.
-- Regulatory: **FCRA fairness** if consumer credit data (routes to privacy bias checks).
+- Systems: AR sub-ledger · **credit bureaus (D&B, Experian)** · payment history `[C]`.
+- Technical: **credit scoring** · **CECL allowance modeling** · AR-portfolio risk analysis `[S]`.
+- Domain: credit analysis · trade-credit terms `[K]`.
+- Regulatory: **FCRA fairness** if consumer credit data (routes to privacy bias checks) `[K]`.
 - Maverick: limit changes `require_human`.
 
 #### 5.8 AML / Financial-Crime Agent  [UB +Assess]
 JD: Customer-side financial-crime — KYC/CDD, transaction monitoring, SAR drafting.
-- Systems: **OFAC SDN, Dow Jones, ComplyAdvantage** (screening) · transaction-monitoring platform · case management.
-- Technical: **ML-typology / transaction monitoring** · alert triage · KYC/CDD/EDD · PEP screening.
-- Domain: **BSA/AML 5 pillars** · **FinCEN CDD rule + CTA beneficial-ownership (BOI)** · OFAC (SDN, 50% rule, licenses) · **SAR (30/60-day) / CTR ($10k aggregation, structuring)** · 314(a)/(b) · FATF typologies · TM engines (Actimize, Verafin).
-- Regulatory: FinCEN.
+- Systems: **OFAC SDN, Dow Jones, ComplyAdvantage** (screening) · transaction-monitoring platform · case management `[C]`.
+- Technical: **ML-typology / transaction monitoring** · alert triage · KYC/CDD/EDD · PEP screening `[S]`.
+- Domain: **BSA/AML 5 pillars** · **FinCEN CDD rule + CTA beneficial-ownership (BOI)** · OFAC (SDN, 50% rule, licenses) · **SAR (30/60-day) / CTR ($10k aggregation, structuring)** · 314(a)/(b) · FATF typologies · TM engines (Actimize, Verafin) `[K]`.
+- Regulatory: FinCEN `[K]`.
 - Maverick: **SAR filing is a human act** · customer blocking gated · independent of the business line.
 
 ### Tower 6 — Procurement & Vendor
 
 #### 6.1 Procurement & Spend-Analysis Agent  [UB +Data]
 JD: Spend cube, savings/consolidation, contract-compliance, PO drafting.
-- Systems: **Coupa, SAP Ariba, Ramp** · ERP spend.
-- Technical: **spend-cube analysis** · maverick-spend/off-contract detection · SQL.
-- Domain: P2P · category sourcing · savings/should-cost.
+- Systems: **Coupa, SAP Ariba, Ramp** · ERP spend `[C]`.
+- Technical: **spend-cube analysis** · maverick-spend/off-contract detection · SQL `[S]`.
+- Domain: P2P · category sourcing · savings/should-cost `[K]`.
 - Maverick: PO issuance `require_human` · SoD vs AP & vendor master.
 
 #### 6.2 Vendor Master & Vendor-Risk Agent  [UB +Assess]
 JD: Vendor onboarding & master-data integrity — dedup, bank-detail validation, sanctions screening.
-- Systems: ERP vendor master · **OFAC / Dow Jones / ComplyAdvantage (KYB)** · tax-ID validation (W-9/W-8).
-- Technical: dedup · **bank-detail validation** · **sanctions/PEP screening** · `start/answer/finalize_assessment` (vendor_risk).
-- Domain: TPRM · vendor onboarding · beneficial-ownership.
+- Systems: ERP vendor master · **OFAC / Dow Jones / ComplyAdvantage (KYB)** · tax-ID validation (W-9/W-8) `[C]`.
+- Technical: dedup · **bank-detail validation** · **sanctions/PEP screening** · `start/answer/finalize_assessment` (vendor_risk) `[S]`.
+- Domain: TPRM · vendor onboarding · beneficial-ownership `[K]`.
 - Maverick: **bank-detail changes always `require_human`** (BEC-fraud intercept) · sanctions hit blocks onboarding · SoD vs AP.
 
 ### Tower 7 — External & Investor Reporting
 
 #### 7.1 Financial / SEC Reporting Agent  [UB]
 JD: Drafts financial statements + footnotes, the 10-K/10-Q, and XBRL tagging.
-- Systems: **Workiva** · SEC **EDGAR** · consolidation output.
-- Technical: **XBRL / iXBRL tagging** · disclosure-checklist execution · financial-statement assembly · tie-to-trial-balance.
-- Domain: US GAAP · **Reg S-X / S-K** · 10-K/10-Q (MD&A, risk factors, footnotes).
-- Regulatory: SEC reporting.
+- Systems: **Workiva** · SEC **EDGAR** · consolidation output `[C]`.
+- Technical: **XBRL / iXBRL tagging** · disclosure-checklist execution · financial-statement assembly · tie-to-trial-balance `[S]`.
+- Domain: US GAAP · **Reg S-X / S-K** · 10-K/10-Q (MD&A, risk factors, footnotes) `[K]`.
+- Regulatory: SEC reporting `[K]`.
 - Maverick: filing `require_human` · §302/§906 certification is a human act.
 
 #### 7.2 Investor-Relations / Earnings Agent  [UB]
 JD: Earnings releases, board/investor decks, non-GAAP reconciliations, Q&A prep.
-- Systems: IR CRM · market-data feeds · prior IR materials.
-- Technical: earnings-materials drafting · **non-GAAP reconciliation (Reg G)** · consensus/estimate tracking.
-- Domain: IR · **Reg FD** (no selective disclosure) · non-GAAP measures.
+- Systems: IR CRM · market-data feeds · prior IR materials `[C]`.
+- Technical: earnings-materials drafting · **non-GAAP reconciliation (Reg G)** · consensus/estimate tracking `[S]`.
+- Domain: IR · **Reg FD** (no selective disclosure) · non-GAAP measures `[K]`.
 - Maverick: external release `require_human` · Reg FD discipline · forward-looking statements flagged.
 
 #### 7.3 Equity & Stock-Based-Comp Agent  [UB +Data]
 JD: Cap-table maintenance, ASC 718 stock-comp expense, dilution, 409A support.
-- Systems: **Carta, Pulley** (cap table) · payroll (RSU/ESPP tax) · ERP comp JE.
-- Technical: **ASC 718 expense** (Black-Scholes / lattice valuation) · forfeiture-rate estimation · dilution & waterfall analysis.
-- Domain: **ASC 718 / IFRS 2** · options/RSUs/ESPP · **409A** valuation support.
+- Systems: **Carta, Pulley** (cap table) · payroll (RSU/ESPP tax) · ERP comp JE `[C]`.
+- Technical: **ASC 718 expense** (Black-Scholes / lattice valuation) · forfeiture-rate estimation · dilution & waterfall analysis `[S]`.
+- Domain: **ASC 718 / IFRS 2** · options/RSUs/ESPP · **409A** valuation support `[K]`.
 - Maverick: ties to payroll-tax on vesting · 409A human-owned.
 
 #### 7.4 Statutory & Local-GAAP Reporting Agent  [UB]
 JD: Per-jurisdiction statutory statements, GAAP-to-local adjustments, local filings.
-- Systems: statutory-reporting tools · local filing portals · per-entity ledgers.
-- Technical: **GAAP-to-local-GAAP/stat adjustments** · entity-by-entity mapping.
-- Domain: **local GAAP** per jurisdiction · statutory filing requirements & calendars.
+- Systems: statutory-reporting tools · local filing portals · per-entity ledgers `[C]`.
+- Technical: **GAAP-to-local-GAAP/stat adjustments** · entity-by-entity mapping `[S]`.
+- Domain: **local GAAP** per jurisdiction · statutory filing requirements & calendars `[K]`.
 - Maverick: filing `require_human` · ties to Consolidations & Master-Data mapping.
 
 ### Vertical packs (skills delta when enabled)
@@ -422,13 +422,49 @@ JD: Per-jurisdiction statutory statements, GAAP-to-local adjustments, local fili
 ---
 
 ### Council-added agents
-*(Finance seats the council flagged as missing; folded into the roster. New dimension tags shown: delivery `[S]`/`[C]`/`[K]`, `{proficiency}`.)*
+*(Finance seats the council flagged as missing; full profiles below, matching the base roster's depth.)*
 
-- **Treasury Payments / Disbursements Agent — the custody node** — executes/releases *approved* payments; positive-pay, sanctions-at-payment, payment-rail ops. *Systems:* Kyriba / Modern Treasury / bank portals `[C]` · Fedwire/ACH-NACHA/RTP/SWIFT-ISO 20022. *Maverick:* the **custody** seat in the four-way SoD — `release_payment`/`wire` is `require_human`, sealed from AP (records) and the GL. *Cert:* CTP-equivalent.
-- **Model Risk Management / Validation Agent (SR 11-7)** `[+Data]{expert}` — independently validates the suite's models (CECL, VaR, ASC 718, forecasting, anomaly ML). *Domain:* **SR 11-7** validation, conceptual-soundness review, backtesting/benchmarking, outcome analysis. *Maverick:* independent of the model owners.
-- **Pension & Benefits-Accounting Agent (ASC 715)** — DB/OPEB obligation, actuarial gain/loss, funded status, 401(k) **Form 5500** + plan audit. *Domain:* ASC 715/712, ERISA plan accounting.
-- **ESG Controllership Agent** — the controllership/data side of sustainability (dedup with Strategy 7.3, which owns external disclosure). *Domain:* **GHG Protocol Scope 1/2/3**, CSRD/ESRS data, **limited-vs-reasonable assurance** readiness, controls over non-financial data.
-- **Government-Contract & Cost-Accounting Agent** — for gov contractors. *Domain:* **FAR Part 31, CAS, DCAA** incurred-cost & indirect-rate, provisional/final rates.
+#### C1 Treasury Payments / Disbursements Agent — the custody node  [UB +Data] {expert}
+JD: Executes/releases *approved* payments and runs payment-rail operations — the custody node of the finance SoD.
+- Systems: **Kyriba, Modern Treasury, bank portals** `[C]` · payment rails (**Fedwire, ACH/NACHA, RTP, SWIFT ISO 20022**) `[C]` · the GL (read).
+- Technical: payment execution/release `[S]` · **positive-pay** `[S]` · sanctions-at-payment (`screen_sanctions`) `[S]` · payment-rail ops & repair · returns/reversals.
+- Domain: treasury operations · cash positioning · payment formats (ISO 20022) `[K]`.
+- Regulatory: **OFAC** sanctions · **NACHA** rules · wire controls · SOX payment controls `[K]`.
+- Cert: CTP-equivalent.
+- Maverick: the **custody** seat in the four-way SoD — **`release_payment`/`wire_transfer` is `require_human`** and amount-gated (DoA tiers); sealed from AP (records) and the GL; never both creates and releases a payment.
+
+#### C2 Model Risk Management / Validation Agent (SR 11-7)  [UB +Data] {expert}
+JD: Independently validates the suite's models — the second line over CECL, VaR, ASC 718, forecasting, and anomaly ML.
+- Systems: the model inventory · the eval/benchmark harness `[C]` · `pandas_query` `[C]` · the finance modeling seats (as subjects, not owner).
+- Technical: **conceptual-soundness review** `[S]` · **backtesting / benchmarking** `[S]` · outcome analysis `[S]` · sensitivity/stress testing · model-inventory & tiering.
+- Domain: **SR 11-7** model-risk management · model lifecycle/validation · the models reviewed (CECL, VaR, ASC 718, forecasting, anomaly detection) `[K]`.
+- Regulatory: **SR 11-7 / OCC 2011-12** model governance `[K]`.
+- Verified: validation findings independently evidenced via the eval harness.
+- Maverick: **independent of the model owners** (never validates its own work); findings go to a human; recommends, never approves a model into production.
+
+#### C3 Pension & Benefits-Accounting Agent (ASC 715)  [UB +Data]
+JD: Accounts for defined-benefit/OPEB obligations and benefit-plan reporting.
+- Systems: the actuary's reports · ERP (benefits/GL) `[C]` · the HR benefits seat.
+- Technical: **DB/OPEB obligation accounting** `[S]` · actuarial gain/loss `[S]` · funded-status roll-forward `[S]` · **Form 5500** prep support · plan-audit support.
+- Domain: **ASC 715 / 712** · ERISA plan accounting · actuarial assumptions (discount rate, EROA) `[K]`.
+- Regulatory: **ERISA, ASC 715, Form 5500** `[K]`.
+- Maverick: drafts entries for human posting; relies on the qualified actuary for assumptions; never posts without review.
+
+#### C4 ESG Controllership Agent  [UB +Data]
+JD: The controllership/data side of sustainability — controls over non-financial data (Strategy 7.3 owns external disclosure).
+- Systems: ESG-data platforms (Persefoni, Workiva ESG) `[C]` · the GL/ERP `[C]` · the Strategy/finance ESG seats.
+- Technical: **GHG Protocol Scope 1/2/3 accounting** `[S]` · CSRD/ESRS data assembly `[S]` · controls over non-financial data `[S]` · **limited-vs-reasonable-assurance** readiness.
+- Domain: **GHG Protocol · CSRD/ESRS · ISSB (IFRS S1/S2)** data · assurance readiness `[K]`.
+- Regulatory: **CSRD/ESRS**, SEC climate where applicable `[K]`.
+- Maverick: owns the data + controls, not the disclosure (dedup with Strategy 7.3); external disclosure is gated and human-certified.
+
+#### C5 Government-Contract & Cost-Accounting Agent  [UB +Data]
+JD: Cost accounting and compliance for government contractors.
+- Systems: the cost-accounting/ERP system `[C]` · DCAA-audit workpapers · the contracts seat.
+- Technical: **incurred-cost submission** `[S]` · **indirect-rate** computation (provisional/final) `[S]` · cost-pool/allocation modeling `[S]` · unallowable-cost screening.
+- Domain: **FAR Part 31** cost principles · **CAS** (Cost Accounting Standards) · **DCAA** audit expectations `[K]`.
+- Regulatory: **FAR, CAS, DCAA** `[K]`.
+- Maverick: drafts submissions for human certification; never certifies a rate or files itself.
 
 ---
 
@@ -2618,26 +2654,22 @@ Every agent has a per-agent skill profile. Base roster (38 · 47 · 45 · 41 · 
 33) = **301**, plus **45 council-added agents** (Finance +5 · IT-GRC +8 · GTM +5 · HR +5 ·
 Product & Engineering +6 · Strategy +5 · Legal +5 · Operations +6) = **~346 agents**.
 
-**Full profiles for the council-added seats (40/45).** The seven non-finance suites' council-added
-agents have been promoted from one-line bullets to **full profiles** (JD + Systems/Technical/
-Domain/Regulatory/Maverick), numbered `C1…Cn` under each "Council-added agents" block — so every
-one of those seats has the same depth as the base roster and can actually execute its JD. The
-**Finance** suite's 5 council-added seats are still summary bullets, left to land with the
-finance suite's own build (to avoid colliding with that in-flight work).
+**Full profiles for the council-added seats (45/45).** Every suite's council-added agents have been
+promoted from one-line bullets to **full profiles** (JD + Systems/Technical/Domain/Regulatory/
+Maverick), numbered `C1…Cn` under each "Council-added agents" block — so every one of those seats
+has the same depth as the base roster and can actually execute its JD (Finance's 5 included).
 
 **Council pass: complete.** A five-member adversarial council reviewed every suite; their
 CRITICAL/IMPORTANT findings are applied (accuracy fixes, the staleness sweep, the 45 added
 agents, and the new skill dimensions) — see "Adversarial council review (applied)" at the top.
 
-**Dimension rollout (in progress).** The delivery tags (`[S]` installable SKILL.md / `[C]`
-connector·tool / `[K]` knowledge source) now annotate the **base entries of all seven
-non-finance suites** — every Systems line is a `[C]`, every Technical line an `[S]`, every
-Domain/Regulatory line a `[K]` (the catalog's own legend) — on top of the council-added seats,
-which already carry them. **Strategy** is the fuller exemplar (per-item tags + `{proficiency}` +
-`Verified`/`Judgment` on its marquee seats); `{proficiency}`/`Verified`/`Judgment`/`Cert` roll
-out to the marquee seats of the other suites next. The **Finance** base + council seats are left
-untouched, to land with the finance suite's own in-flight build.
+**Dimension rollout.** The delivery tags (`[S]` installable SKILL.md / `[C]` connector·tool /
+`[K]` knowledge source) now annotate the **base entries of all eight suites** — every Systems
+line is a `[C]`, every Technical line an `[S]`, every Domain/Regulatory line a `[K]` (the
+catalog's own legend) — on top of the council-added seats, which already carry them. **Strategy**
+is the fuller exemplar (per-item tags + `{proficiency}` + `Verified`/`Judgment` on its marquee
+seats).
 
 Remaining work: the `{proficiency}`/`Verified`/`Judgment`/`Cert` enrichment on each suite's
-marquee seats, the **Finance** rollout (with that build), and authoring the flagged new
-templates (`sox_control`, `itgc`, `outreach_compliance`, …) and connectors.
+marquee seats, and authoring the flagged new templates (`sox_control`, `itgc`,
+`outreach_compliance`, …) and connectors.

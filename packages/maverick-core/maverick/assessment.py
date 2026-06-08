@@ -212,6 +212,140 @@ _VENDOR_RISK = AssessmentTemplate(
     ),
 )
 
+# --- Finance assessment templates (finance-agent-suite §6) -----------------
+
+_SOX_CONTROL = AssessmentTemplate(
+    type="sox_control",
+    title="SOX Control Assessment",
+    framework="SOX §404 / COSO",
+    description="Test the design + operating effectiveness of an ICFR control.",
+    questions=(
+        _q("sox_evidence", "Operating effectiveness",
+           "Is the control's operating effectiveness evidenced for the period?",
+           "no", "high", "Obtain and retain sampled evidence of each execution."),
+        _q("sox_sod", "Segregation of duties",
+           "Is there an SoD conflict in the roles responsible for this control?",
+           "yes", "high", "Separate the incompatible duties (record/authorize/custody/reconcile)."),
+        _q("sox_design", "Control design",
+           "Does the control's design address the risk/assertion it is mapped to?",
+           "no", "high", "Redesign the control to cover the assertion (existence/completeness/...)."),
+        _q("sox_frequency", "Operation",
+           "Did the control operate at its defined frequency throughout the period?",
+           "no", "medium", "Remediate gaps; assess whether a deficiency must be reported."),
+        _q("sox_review", "Review",
+           "Is the control's execution independently reviewed and signed off?",
+           "no", "medium", "Add an independent reviewer with evidenced sign-off."),
+        _q("sox_itdependency", "IT dependency",
+           "Does the control rely on a report/system whose ITGCs are untested?",
+           "yes", "medium", "Test the supporting ITGCs (access, change, completeness)."),
+    ),
+)
+
+_FRAUD_RISK = AssessmentTemplate(
+    type="fraud_risk",
+    title="Fraud Risk Assessment",
+    framework="ACFE / SAS 99",
+    description="Assess fraud exposure in a financial process.",
+    questions=(
+        _q("fraud_vendor_create_approve", "Segregation",
+           "Can one person both create and approve a vendor?",
+           "yes", "high", "Split vendor creation from approval (SoD)."),
+        _q("fraud_bank_change", "Master data",
+           "Are vendor/employee bank-detail changes independently reviewed?",
+           "no", "high", "Require out-of-band verification for every bank-detail change."),
+        _q("fraud_dup_payment", "Payments",
+           "Are duplicate and split payments detected before release?",
+           "no", "high", "Run duplicate/split detection on every payment batch."),
+        _q("fraud_ghost", "Master data",
+           "Is the vendor/employee master periodically checked for ghost entries?",
+           "no", "medium", "Reconcile master data to active relationships regularly."),
+        _q("fraud_override", "Management override",
+           "Are manual journal entries and management overrides independently reviewed?",
+           "no", "high", "Review all top-side/manual JEs for business rationale."),
+        _q("fraud_whistleblower", "Detection",
+           "Is there a confidential channel to report suspected fraud?",
+           "no", "medium", "Provide an anonymous reporting hotline."),
+    ),
+)
+
+_ITGC = AssessmentTemplate(
+    type="itgc",
+    title="IT General Controls Assessment",
+    framework="COBIT / SOX ITGC",
+    description="Assess access, change, and operations controls over a financial system.",
+    questions=(
+        _q("itgc_access_least_priv", "Access",
+           "Is access to the posting/payment tool least-privileged and logged?",
+           "no", "high", "Restrict to least privilege and log every use (capability + audit)."),
+        _q("itgc_access_review", "Access",
+           "Is system access reviewed periodically and revoked on role change?",
+           "no", "medium", "Run periodic access recertification with evidenced removal."),
+        _q("itgc_change_mgmt", "Change",
+           "Are changes to the financial system tested and approved before release?",
+           "no", "high", "Require tested, approved, segregated change management."),
+        _q("itgc_audit_trail", "Operations",
+           "Is there a complete, tamper-evident audit trail of transactions?",
+           "no", "high", "Enable the signed append-only audit log and verify it."),
+        _q("itgc_backup", "Operations",
+           "Are backups taken and restoration periodically tested?",
+           "no", "medium", "Schedule backups and test restores on a cadence."),
+        _q("itgc_segregation", "Access",
+           "Does any one identity hold incompatible system duties?",
+           "yes", "high", "Separate incompatible system roles (SoD)."),
+    ),
+)
+
+_CREDIT_RISK = AssessmentTemplate(
+    type="credit_risk",
+    title="Customer Credit Risk Assessment",
+    framework="CECL / internal credit policy",
+    description="Assess the credit risk of a customer / receivable.",
+    questions=(
+        _q("credit_past_due", "Aging",
+           "Is the customer past terms by more than 90 days?",
+           "yes", "high", "Escalate to collections; reassess the credit limit."),
+        _q("credit_limit_breach", "Exposure",
+           "Does current exposure exceed the approved credit limit?",
+           "yes", "high", "Hold new orders pending a credit review."),
+        _q("credit_deteriorating", "Monitoring",
+           "Has the customer's payment behaviour deteriorated recently?",
+           "yes", "medium", "Tighten terms and increase the allowance estimate."),
+        _q("credit_concentration", "Concentration",
+           "Does this customer represent a concentration risk (>10% of AR)?",
+           "yes", "medium", "Diversify or secure the exposure (guarantee/insurance)."),
+        _q("credit_secured", "Mitigation",
+           "Is the exposure unsecured with no guarantee or insurance?",
+           "yes", "low", "Consider credit insurance or collateral for large balances."),
+    ),
+)
+
+_CLOSE_READINESS = AssessmentTemplate(
+    type="close_readiness",
+    title="Period-Close Readiness Assessment",
+    framework="internal close policy",
+    description="Assess whether the books are ready to close for the period.",
+    questions=(
+        _q("close_bs_recon", "Reconciliation",
+           "Are all balance-sheet accounts reconciled for the period?",
+           "no", "high", "Complete and review all balance-sheet reconciliations."),
+        _q("close_bank_rec", "Reconciliation",
+           "Is every bank account reconciled to the ledger?",
+           "no", "high", "Reconcile each bank account and clear stale items."),
+        _q("close_accruals", "Completeness",
+           "Are all known accruals and prepaids recorded?",
+           "no", "medium", "Record outstanding accruals/prepaids before close."),
+        _q("close_intercompany", "Intercompany",
+           "Do intercompany balances net to zero across entities?",
+           "no", "high", "Resolve intercompany mismatches before consolidation."),
+        _q("close_flux", "Review",
+           "Has flux/variance analysis been performed and explained?",
+           "no", "medium", "Complete flux analysis with documented explanations."),
+        _q("close_checklist", "Governance",
+           "Is the close checklist complete with sign-offs?",
+           "no", "medium", "Finish the checklist with evidenced approvals."),
+    ),
+)
+
 _HIPAA = AssessmentTemplate(
     type="hipaa",
     title="HIPAA Security Rule Assessment",
@@ -337,7 +471,11 @@ _PCI_DSS = AssessmentTemplate(
 )
 
 TEMPLATES: dict[str, AssessmentTemplate] = {
-    t.type: t for t in (_PIA, _AIRA, _VENDOR_RISK, _HIPAA, _SOC2, _PCI_DSS)
+    t.type: t for t in (
+        _PIA, _AIRA, _VENDOR_RISK,
+        _SOX_CONTROL, _FRAUD_RISK, _ITGC, _CREDIT_RISK, _CLOSE_READINESS,
+        _HIPAA, _SOC2, _PCI_DSS,
+    )
 }
 
 
