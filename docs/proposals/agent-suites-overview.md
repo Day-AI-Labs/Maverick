@@ -17,12 +17,19 @@ the adversarial-council review; counts below are base **+ council-added**).
 **Per-agent skills** — a job description + the deep, named competencies each agent needs
 (from Word/Excel to "query an Oracle DB for the trial balance", "stand up Oracle 23ai",
 "fix data/automation errors in Salesforce", "the finer points of litigation procedure") —
-are catalogued in [`agent-skills-catalog.md`](agent-skills-catalog.md). *(Finance done; the
-other seven suites appending.)*
+are catalogued in [`agent-skills-catalog.md`](agent-skills-catalog.md). *(All eight suites
+catalogued; the seven non-finance suites' council-added seats now carry full profiles.)*
+
+**Platform architecture** — how the roster comes alive and adapts:
+- [`self-extending-agent-factory.md`](self-extending-agent-factory.md) — the platform
+  synthesizes its own agents & skills per customer and ships them through a human
+  promotion gate ("genetic" self-extension, never self-modification).
+- [`agent-to-agent-protocol.md`](agent-to-agent-protocol.md) — agent identity, handoffs,
+  authorization, and verification (the trust fabric: signed, attenuating capabilities).
 
 All build on [`../enterprise/architecture.md`](../enterprise/architecture.md)
 (the three-layer control plane) and [`agent-factory.md`](agent-factory.md)
-(domain packs). Status: draft design, on branch `claude/amazing-davinci-4Gw6P` (PR #915).
+(domain packs). Status: draft design, on branch `claude/amazing-davinci-4Gw6P`.
 
 ---
 
