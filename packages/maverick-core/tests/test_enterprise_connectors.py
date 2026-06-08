@@ -126,6 +126,35 @@ def test_all_enterprise_connectors_register(tmp_path):
     assert len(ENTERPRISE_CONNECTOR_NAMES) >= 15
 
 
+def test_enterprise_connectors_are_high_risk():
+    from maverick.safety.tool_risk import tool_risk, tools_exceeding
+    from maverick.tools.enterprise_connectors import ENTERPRISE_CONNECTOR_NAMES
+
+    assert ENTERPRISE_CONNECTOR_NAMES
+    assert all(tool_risk(name) == "high" for name in ENTERPRISE_CONNECTOR_NAMES)
+    assert tools_exceeding(ENTERPRISE_CONNECTOR_NAMES, "medium") == set(
+        ENTERPRISE_CONNECTOR_NAMES
+    )
+
+
+def test_medium_max_risk_drops_enterprise_connectors(tmp_path, monkeypatch):
+    from maverick.sandbox.local import LocalBackend
+    from maverick.tools import base_registry
+    from maverick.tools.enterprise_connectors import ENTERPRISE_CONNECTOR_NAMES
+
+    config = tmp_path / "config.toml"
+    config.write_text('[security]\nmax_risk = "medium"\n')
+    monkeypatch.setenv("MAVERICK_CONFIG", str(config))
+
+    class _W:
+        def open_questions(self, gid):
+            return []
+
+    names = {t.name for t in base_registry(_W(), LocalBackend(workdir=tmp_path)).all()}
+    assert not (set(ENTERPRISE_CONNECTOR_NAMES) & names)
+    assert "read_file" in names
+
+
 def _gql(**kw):
     from maverick.tools._rest_connector import make_graphql_tool
     spec = dict(name="acmegql", base_url_env="ACMEGQL_URL", token_env="ACMEGQL_TOKEN",
