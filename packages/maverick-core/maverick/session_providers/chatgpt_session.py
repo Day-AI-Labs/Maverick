@@ -174,7 +174,10 @@ class ChatGPTSessionClient:
             "parent_message_id": str(uuid.uuid4()),
             "model": model,
             "timezone_offset_min": 0,
-            "history_and_training_disabled": False,
+            # Don't persist agent runs to the user's ChatGPT history or feed them
+            # to model training -- these prompts carry the user's private goals
+            # and data (matches claude_session's no-history behavior).
+            "history_and_training_disabled": True,
         }
 
     def complete(
