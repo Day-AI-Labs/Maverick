@@ -609,9 +609,22 @@ async def run_goal(
                 + "\n".join(qa_lines) + "\n"
             )
 
+        # Long-context retrieval router (opt-in via [context] retrieval_router):
+        # when a user pastes an oversized document into the goal description,
+        # shard it and keep only the parts relevant to the goal title instead of
+        # blowing past the model window. No-op (returns the text unchanged) when
+        # disabled or when the description is under the token threshold.
+        description = goal.description or "(none)"
+        if goal.description:
+            from . import long_context_router as _lcr
+            try:
+                description = _lcr.route(goal.description, goal.title)
+            except Exception:  # pragma: no cover -- never block a run on routing
+                description = goal.description
+
         brief = (
             f"Top-level goal: {goal.title}\n"
-            f"Description: {goal.description or '(none)'}\n"
+            f"Description: {description}\n"
             f"{history_block}"
             f"{qa_block}\n"
             f"Known facts about the user:\n{facts_block}\n\n"

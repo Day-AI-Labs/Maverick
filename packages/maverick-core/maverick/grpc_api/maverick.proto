@@ -1,0 +1,73 @@
+// Maverick gRPC API — the external contract for driving the agent runtime.
+//
+// Generate Python stubs with:
+//   python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. maverick.proto
+// (the server does this on demand when the [grpc] extra is installed.)
+syntax = "proto3";
+
+package maverick.v1;
+
+// Maverick drives one long-horizon goal at a time per call: start it, stream
+// its episode events, cancel it.
+service Maverick {
+  // Create a goal and dispatch it for background execution. Returns immediately
+  // with the goal id; the run proceeds asynchronously.
+  rpc StartGoal(StartGoalRequest) returns (StartGoalResponse);
+
+  // Stream the goal's events in order as they land, ending with a final
+  // status event when the goal reaches a terminal state.
+  rpc StreamEpisode(StreamEpisodeRequest) returns (stream Event);
+
+  // Mark a goal cancelled. Honoured at the next dispatch / turn boundary.
+  rpc Cancel(CancelRequest) returns (CancelResponse);
+
+  // Point-in-time status of a goal.
+  rpc GetStatus(GetStatusRequest) returns (GoalStatus);
+}
+
+message StartGoalRequest {
+  string title = 1;
+  string description = 2;
+  double max_dollars = 3;       // 0 = use server/config default
+  double max_wall_seconds = 4;  // 0 = use server/config default
+  string channel = 5;
+  string user_id = 6;
+}
+
+message StartGoalResponse {
+  int64 goal_id = 1;
+}
+
+message StreamEpisodeRequest {
+  int64 goal_id = 1;
+  int64 since_id = 2;       // resume after this event id (0 = from start)
+  double max_seconds = 3;   // 0 = stream until terminal
+}
+
+message Event {
+  int64 id = 1;
+  int64 goal_id = 2;
+  string agent = 3;
+  string kind = 4;
+  string content = 5;
+  double ts = 6;
+}
+
+message CancelRequest {
+  int64 goal_id = 1;
+}
+
+message CancelResponse {
+  bool cancelled = 1;
+}
+
+message GetStatusRequest {
+  int64 goal_id = 1;
+}
+
+message GoalStatus {
+  int64 goal_id = 1;
+  string status = 2;
+  string result = 3;
+  bool found = 4;
+}

@@ -34,11 +34,10 @@ from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
 
-# Reported by the schema_version property for parity with the SQLite backend
-# (read by health.py / audit events). The PG schema is applied idempotently
-# (CREATE ... IF NOT EXISTS + ALTER ... ADD COLUMN IF NOT EXISTS), not
-# version-stepped, so this is a flat constant kept in step with SQLite's.
-_PG_SCHEMA_VERSION = 9
+# Read by the schema_version property (health.py / audit events). Driven from
+# the migration ladder below: the highest migration version. PG now carries the
+# tenant-isolation migration (v10), which the SQLite backend implements
+# structurally instead (one world.db file per tenant under ~/.maverick/tenants/).
 
 
 # Schema mirror. Postgres-flavored types; sequence-based PKs instead of
@@ -185,6 +184,82 @@ SCHEMA: list[str] = [
 ]
 
 
+# --- Tenancy (migration v10) -------------------------------------------------
+# Multi-tenant seam for the shared-Postgres backend. The root tables get a
+# nullable ``tenant_id``; child rows (episodes, goal_events, turns, ...) inherit
+# their tenant through their goal/conversation FK, so they need no column of
+# their own for isolation. ``NULL`` is the legacy single-tenant install
+# (``paths.current_tenant()`` returns ``None``), so existing rows and every
+# default deployment are unaffected. This lands the column + write-stamping +
+# read-scoping for the root entity (goals) now -- the expensive-to-retrofit
+# part -- with the remaining root tables' read paths following the same
+# ``_tenant_scope`` pattern in a tracked follow-up.
+_TENANT_TABLES = ("goals", "facts", "conversations", "approvals", "processed_messages")
+_TENANT_MIGRATION: list[str] = [
+    f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS tenant_id TEXT;" for t in _TENANT_TABLES
+] + [
+    f"CREATE INDEX IF NOT EXISTS idx_pg_{t}_tenant ON {t}(tenant_id);"
+    for t in _TENANT_TABLES
+]
+
+
+# Ordered schema migrations: ``(version, statements)``. v1 is the consolidated
+# base schema (idempotent CREATEs, so a fresh DB and a pre-framework DB both
+# converge); higher versions are incremental. The applied set is tracked in the
+# ``schema_migrations`` table so a statement runs at most once and the first
+# schema change against live customer data has a safe, recorded path.
+MIGRATIONS: list[tuple[int, list[str]]] = [
+    (1, SCHEMA),
+    (10, _TENANT_MIGRATION),
+]
+
+# Highest migration version = the reported schema version.
+_PG_SCHEMA_VERSION = MIGRATIONS[-1][0]
+
+_MIGRATIONS_TABLE = (
+    "CREATE TABLE IF NOT EXISTS schema_migrations ("
+    "  version    INTEGER PRIMARY KEY,"
+    "  applied_at DOUBLE PRECISION NOT NULL"
+    ");"
+)
+
+
+def pending_migrations(
+    current_version: int,
+    migrations: list[tuple[int, list[str]]] | None = None,
+) -> list[tuple[int, list[str]]]:
+    """Migrations with ``version > current_version``, in ascending order.
+
+    Pure planner (no DB) so the upgrade logic is unit-tested directly.
+    """
+    migs = MIGRATIONS if migrations is None else migrations
+    return [(v, stmts) for v, stmts in sorted(migs) if v > current_version]
+
+
+def _active_tenant() -> str | None:
+    """The tenant scoping this call, or ``None`` for the legacy single-tenant
+    store. Lazy import keeps this module free of a hard ``paths`` dependency."""
+    try:
+        from ..paths import current_tenant
+        return current_tenant()
+    except Exception:  # pragma: no cover -- tenancy never blocks a query
+        return None
+
+
+def _tenant_scope(column: str = "tenant_id") -> tuple[str, list]:
+    """NULL-tolerant read predicate scoping rows to the active tenant.
+
+    Returns ``(sql_fragment, params)``. With **no** active tenant the fragment
+    is empty -- the default single-tenant install is unchanged. With a tenant
+    set, it matches that tenant's rows **plus** legacy ``NULL`` rows (visible
+    until backfilled); strict per-tenant isolation is the follow-up.
+    """
+    t = _active_tenant()
+    if t is None:
+        return "", []
+    return f"({column} = %s OR {column} IS NULL)", [t]
+
+
 @dataclass
 class PGGoal:
     """Mirror of maverick.world_model.Goal — same fields for drop-in compat."""
@@ -262,31 +337,48 @@ class PostgresWorldModel:
                 cur.close()
 
     def _migrate(self) -> None:
+        """Apply pending migrations atomically, recording each in
+        ``schema_migrations`` so a statement runs at most once."""
         with self._tx() as cur:
-            for stmt in SCHEMA:
-                cur.execute(stmt)
+            cur.execute(_MIGRATIONS_TABLE)
+            cur.execute("SELECT COALESCE(MAX(version), 0) FROM schema_migrations")
+            current = int((cur.fetchone() or [0])[0])
+            for version, statements in pending_migrations(current):
+                for stmt in statements:
+                    cur.execute(stmt)
+                cur.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) "
+                    "VALUES(%s, %s) ON CONFLICT (version) DO NOTHING",
+                    (version, time.time()),
+                )
 
     # ----- goal methods -----
 
     def create_goal(self, title: str, description: str = "", parent_id: int | None = None) -> int:
         now = time.time()
+        tenant = _active_tenant()
         with self._tx() as cur:
             cur.execute(
                 "INSERT INTO goals(parent_id, title, description, status, "
-                "created_at, updated_at) VALUES(%s, %s, %s, 'pending', %s, %s) "
-                "RETURNING id",
-                (parent_id, title, description, now, now),
+                "created_at, updated_at, tenant_id) "
+                "VALUES(%s, %s, %s, 'pending', %s, %s, %s) RETURNING id",
+                (parent_id, title, description, now, now, tenant),
             )
             row = cur.fetchone()
         return int(row[0])
 
     def get_goal(self, goal_id: int) -> PGGoal | None:
+        frag, params = _tenant_scope()
+        sql = (
+            "SELECT id, parent_id, title, description, status, "
+            "created_at, updated_at, deadline, result FROM goals WHERE id=%s"
+        )
+        p: list = [goal_id]
+        if frag:
+            sql += " AND " + frag
+            p += params
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, parent_id, title, description, status, "
-                "created_at, updated_at, deadline, result FROM goals WHERE id=%s",
-                (goal_id,),
-            )
+            cur.execute(sql, tuple(p))
             row = cur.fetchone()
         if row is None:
             return None
@@ -304,14 +396,20 @@ class PostgresWorldModel:
             )
 
     def list_active_goals(self, limit: int = 50) -> list[PGGoal]:
+        frag, params = _tenant_scope()
+        sql = (
+            "SELECT id, parent_id, title, description, status, "
+            "created_at, updated_at, deadline, result FROM goals "
+            "WHERE status IN ('pending', 'in_progress', 'running')"
+        )
+        p: list = []
+        if frag:
+            sql += " AND " + frag
+            p += params
+        sql += " ORDER BY updated_at DESC LIMIT %s"
+        p.append(limit)
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, parent_id, title, description, status, "
-                "created_at, updated_at, deadline, result FROM goals "
-                "WHERE status IN ('pending', 'in_progress', 'running') "
-                "ORDER BY updated_at DESC LIMIT %s",
-                (limit,),
-            )
+            cur.execute(sql, tuple(p))
             rows = cur.fetchall()
         return [PGGoal(*r) for r in rows]
 
@@ -330,9 +428,16 @@ class PostgresWorldModel:
             "created_at, updated_at, deadline, result FROM goals"
         )
         params: list = []
+        conds: list[str] = []
         if status:
-            sql += " WHERE status = %s"
+            conds.append("status = %s")
             params.append(status)
+        frag, fparams = _tenant_scope()
+        if frag:
+            conds.append(frag)
+            params += fparams
+        if conds:
+            sql += " WHERE " + " AND ".join(conds)
         sql += f" ORDER BY id {direction}"
         if limit is not None:
             sql += " LIMIT %s OFFSET %s"

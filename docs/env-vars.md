@@ -114,6 +114,9 @@ for false unless noted otherwise.
 | `MAVERICK_COMPACT_DIGEST_EVERY` | `10` | Digest older turns every N turns. |
 | `MAVERICK_COMPACT_MAX_TOOL_BYTES` | `2048` | Max bytes of tool output retained before truncation during compaction (applies to results behind the recent window). |
 | `MAVERICK_MAX_TOOL_RESULT_BYTES` | `100000` | Hard cap on a single tool result (head+tail kept) before it enters the context window, so one runaway `shell`/query output can't blow tokens/budget in a turn. |
+| `MAVERICK_RETRIEVAL_ROUTER` | config `[context] retrieval_router` (off) | Enable the long-context retrieval router: when a single payload (e.g. a pasted document in the goal description) exceeds the token threshold, shard it and keep only the shards relevant to the goal, instead of overflowing the model window. |
+| `MAVERICK_ROUTER_THRESHOLD_TOKENS` | config `[context]` (`200000`) | Payload size (approx tokens) above which the retrieval router activates. |
+| `MAVERICK_ROUTER_TOP_K` | config `[context]` (`12`) | Number of shards the retrieval router retains. |
 
 ## Sandbox & tools
 

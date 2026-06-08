@@ -35,6 +35,16 @@ reliability plumbing (D1–D3) are built, along with a large
 per-domain knowledge RAG, reverse-proxy SSO, SIEM audit export, scheduling). All
 of it is catalogued in [`FEATURES.md`](./FEATURES.md).
 
+**Framing (June 2026): this is now a governed agent _platform_, not just a
+local kernel.** The three-layer control plane is real — oversight
+(`governance.py`), compliance-regime engine, per-employee fleets (`fleet.py`) —
+on a tenant-aware substrate (`workspace.py` walls each tenant into
+`~/.maverick/tenants/<t>/`; the world model keeps a per-tenant DB; `data_dir()`
+routes audit/quotas/dsar/soc2/fleet; `quotas.py` enforces per-principal spend
+caps; OIDC + `[roles.<role>]` RBAC gate access). The forward backlog is now
+organised around **finishing the platform spine** (below) over the old quarter
+grid, which is mostly shipped.
+
 **Still open — near-term engineering:**
 
 - **MCP elicitation, URL mode (B1, Phase 3)** — the secrets-never-transit-model
@@ -42,9 +52,6 @@ of it is catalogued in [`FEATURES.md`](./FEATURES.md).
 - **MCP client OAuth 2.1, authorization-code grant (B2)** — client-credentials
   has shipped (`mcp_oauth.py`); the user-redirect grant + real-IdP validation
   need a live authorization server to build and verify.
-- **Long-context retrieval router** — >200k-token auto-shard to a vector store
-  (Chroma/Qdrant adapters already exist; the router does not).
-- **gRPC API surface** — `StartGoal` / `StreamEpisode` / `Cancel`.
 - **IRC channel** and **LangChain / LangGraph adapters** — external-dependency
   connectors that need a live service to test meaningfully.
 - **Glasses / wearable channel** — Even Realities G2 BYOA bridge, and wearable
@@ -52,6 +59,37 @@ of it is catalogued in [`FEATURES.md`](./FEATURES.md).
   standing roadmap commitment. See the council note below.
 - **MCP-client language analytics** — the one remaining language-bindings gate
   step (needs the telemetry-consent UI); see the council decision below.
+
+> **Shipped since this list was last cut:** **long-context retrieval router**
+> (`long_context_router.py`, opt-in `[context] retrieval_router`) and the
+> **gRPC API surface** (`grpc_api/`, `StartGoal` / `StreamEpisode` / `Cancel` /
+> `GetStatus` behind the `[grpc]` extra). Both are now in
+> [`FEATURES.md`](./FEATURES.md).
+
+**Platform spine — what's left to be a multi-tenant hosted platform.** The
+single-node, file-per-tenant model is solid (and is the right shape for
+self-hosted, one-tenant-per-deploy). Eventually-both (self-hosted **and** a
+hosted SaaS) means finishing these, roughly in dependency order. None is a
+code-red; the two seams are cheap-now/costly-later and are partly done.
+
+- **Shared-DB tenancy (Postgres).** A versioned migration runner + a nullable
+  `tenant_id` on the root tables + write-stamping + NULL-tolerant read-scoping
+  for goals have **shipped** (`world_model_backends/postgres.py`). Remaining:
+  extend read-scoping to the rest of the root tables, then move to Row-Level
+  Security + a connection pool for strict isolation and horizontal scale. _(#1
+  spine item.)_
+- **Control-plane / data-plane split.** Goals still run as threads in the API
+  process (`runner.py` `BoundedSemaphore`). Keep dispatch behind an interface
+  now; swap to a real queue (arq / Celery / Temporal) + isolated per-run workers
+  when one box can't keep up. _(#2 spine item.)_
+- **Tenant lifecycle / provisioning API** — create / suspend / delete / assign
+  quota, plus an operator cross-tenant console. Wake at ~3 hosted tenants.
+- **Metering → billing / entitlements** — `quotas.py` records & caps usage;
+  rating / invoicing / plan-gating is unbuilt. Wake at first hosted revenue.
+- **Per-tenant secrets / KMS** — `crypto_at_rest.py` is single-tenant; add a
+  per-tenant DEK wrapped by a KMS KEK. Wake at first sensitive hosted tenant.
+- **Per-tenant egress policy plane** — `sandbox/network_policy.py` is per-tool;
+  add a per-tenant allow-list/proxy above sandboxes. Wake at first shared host.
 
 **Strategic decisions (settled).** Recorded under [`docs/specs/`](./specs/):
 *park* the learning substrate (revisit on a trajectory-volume tripwire); adopt

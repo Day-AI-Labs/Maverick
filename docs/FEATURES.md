@@ -31,7 +31,12 @@ here.
 - **Context lifecycle** — deferred tool loading + `find_tools`, cross-session
   `memory` tool (`tools/memory.py`), programmatic tool calling
   (`tools/code_exec.py`), structural/retrieval-augmented compaction
-  (`compaction.py`, `context_compactor.py`).
+  (`compaction.py`, `context_compactor.py`), and a **long-context retrieval
+  router** (`long_context_router.py`) that shards an oversized payload (e.g. a
+  document pasted into a goal) and keeps only the query-relevant shards instead
+  of overflowing the model window — zero-dep lexical ranking by default, an
+  injected Chroma/Qdrant store for embedding-quality retrieval; opt-in via
+  `[context] retrieval_router`.
 - **Local continuous learning** — distill successful run trajectories into a
   reusable, validator-compliant `SKILL.md` under `~/.maverick/learned-skills`
   (`skill_distillation_local.py`), opt-in via `[self_learning] distill_local`.
@@ -112,6 +117,11 @@ prefers a reachable local model before remote (`provider_local_first.py`);
   client-credentials** (`mcp_oauth.py`).
 - **MCP registry** (`mcp_registry.py`) — `maverick mcp-registry browse/add/...`.
 - **A2A** (`a2a.py`, `a2a_tasks.py`) — Agent Card discovery + delegation.
+- **gRPC API** (`grpc_api/`) — typed, streaming surface for driving the runtime
+  from any language: `StartGoal` / `StreamEpisode` (server-stream of episode
+  events) / `Cancel` / `GetStatus`. Behaviour lives in a transport-agnostic
+  `GoalService`; the gRPC shim compiles stubs on demand from the bundled
+  `maverick.proto`. Behind the `[grpc]` extra; run via `python -m maverick.grpc_api`.
 - **Cross-language quickstarts** — TypeScript, Go, Rust, C#, Java (`docs/clients/`).
 
 ## Safety & security
@@ -155,6 +165,13 @@ prefers a reachable local model before remote (`provider_local_first.py`);
   and the `maverick finance status` posture report (`maverick/finance/`).
 - **maverick-knowledge** — per-domain vector RAG package backing `knowledge_search`.
 - **Reverse-proxy SSO** — trusted forwarded-identity header for enterprise auth.
+- **Tenant-aware persistence** — workspaces wall each tenant into
+  `~/.maverick/tenants/<t>/` (`workspace.py`, `paths.py`), with a per-tenant
+  world DB and `data_dir()`-routed audit / quotas / DSAR / fleets. The shared
+  **Postgres** backend (`[world_model] backend = "postgres"`) carries a
+  **versioned migration runner** (`schema_migrations` ledger) and a nullable
+  `tenant_id` on the root tables, stamped on writes and scoped on the primary
+  goal reads — the seam for shared-DB multi-tenancy.
 - **Process table** — `maverick ps` (unified view of runs/workers).
 - **Scheduling** — recurring autonomous goals from a prompt; `worker --once`
   cron-friendly drain (`scheduler.py`, `job_queue.py`, `worker.py`).
