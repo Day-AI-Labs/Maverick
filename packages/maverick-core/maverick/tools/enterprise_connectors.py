@@ -707,3 +707,114 @@ def enterprise_connectors() -> list[Tool]:
     """Instantiate every spec'd connector (registered in base_registry)."""
     return ([make_rest_tool(**spec) for spec in _SPECS]
             + [make_graphql_tool(**spec) for spec in _GRAPHQL_SPECS])
+
+
+# Bespoke (hand-written) strategic connectors live in their own modules, not in
+# _SPECS, and some use a non-uniform env shape (account/project/location rather
+# than base-URL + token). List their env vars here so the installer wizard can
+# collect them too. Each env entry is (ENV_NAME, is_secret).
+_BESPOKE_CATALOG: list[dict] = [
+    {"name": "servicenow", "label": "ServiceNow",
+     "env": [("SERVICENOW_INSTANCE_URL", False), ("SERVICENOW_TOKEN", True)]},
+    {"name": "snowflake", "label": "Snowflake",
+     "env": [("SNOWFLAKE_ACCOUNT", False), ("SNOWFLAKE_TOKEN", True)]},
+    {"name": "databricks", "label": "Databricks",
+     "env": [("DATABRICKS_HOST", False), ("DATABRICKS_TOKEN", True),
+             ("DATABRICKS_WAREHOUSE_ID", False)]},
+    {"name": "onetrust", "label": "OneTrust",
+     "env": [("ONETRUST_HOSTNAME", False), ("ONETRUST_TOKEN", True)]},
+    {"name": "vertex", "label": "Google Vertex AI",
+     "env": [("VERTEX_PROJECT", False), ("VERTEX_LOCATION", False),
+             ("VERTEX_ACCESS_TOKEN", True)]},
+    {"name": "oracle", "label": "Oracle (ORDS)",
+     "env": [("ORACLE_ORDS_URL", False), ("ORACLE_ORDS_TOKEN", True)]},
+    {"name": "sap", "label": "SAP (OData)",
+     "env": [("SAP_BASE_URL", False), ("SAP_TOKEN", True)]},
+    {"name": "workday", "label": "Workday",
+     "env": [("WORKDAY_BASE_URL", False), ("WORKDAY_TOKEN", True)]},
+    {"name": "bigquery", "label": "Google BigQuery",
+     "env": [("BIGQUERY_PROJECT", False), ("BIGQUERY_ACCESS_TOKEN", True)]},
+    {"name": "dynamics", "label": "Microsoft Dynamics 365",
+     "env": [("DYNAMICS_RESOURCE_URL", False), ("DYNAMICS_TOKEN", True),
+             ("DYNAMICS_API_VERSION", False)]},
+    {"name": "database", "label": "Relational database (SQLAlchemy URL)",
+     "env": [("DATABASE_URL", True)]},
+    # Other always-registered bespoke connectors (headline SaaS). (AWS s3/lambda/
+    # dynamodb/ses/sns and airtable/asana/clickup/vercel/gdrive are gated behind
+    # MAVERICK_ENABLE_CRED_TOOLS, so they're documented there, not offered here.)
+    {"name": "salesforce", "label": "Salesforce",
+     "env": [("SALESFORCE_INSTANCE_URL", False), ("SALESFORCE_ACCESS_TOKEN", True)]},
+    {"name": "hubspot", "label": "HubSpot", "env": [("HUBSPOT_TOKEN", True)]},
+    {"name": "stripe", "label": "Stripe", "env": [("STRIPE_SECRET_KEY", True)]},
+    {"name": "shopify", "label": "Shopify",
+     "env": [("SHOPIFY_STORE", False), ("SHOPIFY_ACCESS_TOKEN", True)]},
+    {"name": "twilio", "label": "Twilio",
+     "env": [("TWILIO_ACCOUNT_SID", False), ("TWILIO_AUTH_TOKEN", True),
+             ("TWILIO_FROM_NUMBER", False)]},
+    {"name": "sentry", "label": "Sentry",
+     "env": [("SENTRY_HOST", False), ("SENTRY_AUTH_TOKEN", True)]},
+    {"name": "datadog", "label": "Datadog",
+     "env": [("DATADOG_API_KEY", True), ("DATADOG_APP_KEY", True)]},
+    {"name": "pagerduty", "label": "PagerDuty",
+     "env": [("PAGERDUTY_API_TOKEN", True), ("PAGERDUTY_EVENTS_KEY", True)]},
+    {"name": "bitbucket", "label": "Bitbucket",
+     "env": [("BITBUCKET_ACCESS_TOKEN", True)]},
+    {"name": "cloudflare", "label": "Cloudflare",
+     "env": [("CLOUDFLARE_API_TOKEN", True), ("CLOUDFLARE_ZONE_ID", False)]},
+    {"name": "confluence", "label": "Confluence",
+     "env": [("CONFLUENCE_URL", False), ("CONFLUENCE_USER", False),
+             ("CONFLUENCE_API_TOKEN", True)]},
+    {"name": "elasticsearch", "label": "Elasticsearch",
+     "env": [("ES_URL", False), ("ES_API_KEY", True)]},
+    {"name": "plaid", "label": "Plaid",
+     "env": [("PLAID_CLIENT_ID", False), ("PLAID_SECRET", True)]},
+    {"name": "calendly", "label": "Calendly", "env": [("CALENDLY_TOKEN", True)]},
+    {"name": "trello", "label": "Trello",
+     "env": [("TRELLO_KEY", True), ("TRELLO_TOKEN", True)]},
+    {"name": "replicate", "label": "Replicate",
+     "env": [("REPLICATE_API_TOKEN", True)]},
+    {"name": "mixpanel", "label": "Mixpanel",
+     "env": [("MIXPANEL_PROJECT_ID", False), ("MIXPANEL_PROJECT_TOKEN", True),
+             ("MIXPANEL_SERVICE_SECRET", True)]},
+    {"name": "posthog", "label": "PostHog",
+     "env": [("POSTHOG_HOST", False), ("POSTHOG_PROJECT_ID", False),
+             ("POSTHOG_API_KEY", True), ("POSTHOG_PERSONAL_API_KEY", True)]},
+    {"name": "plausible", "label": "Plausible",
+     "env": [("PLAUSIBLE_HOST", False), ("PLAUSIBLE_SITE_ID", False),
+             ("PLAUSIBLE_API_KEY", True)]},
+    {"name": "ga4", "label": "Google Analytics 4",
+     "env": [("GA4_PROPERTY_ID", False), ("GA4_MEASUREMENT_ID", False),
+             ("GA4_ACCESS_TOKEN", True), ("GA4_API_SECRET", True)]},
+    {"name": "zoom", "label": "Zoom",
+     "env": [("ZOOM_USER_ID", False), ("ZOOM_OAUTH_TOKEN", True)]},
+    {"name": "teams", "label": "Microsoft Teams",
+     "env": [("TEAMS_WEBHOOK_URL", True)]},
+]
+
+
+def _label_from_desc(desc: str) -> str:
+    head = desc.split(". ")[0].strip().rstrip(".")
+    for suffix in (" GraphQL", " OData REST", " REST"):
+        if head.endswith(suffix):
+            return head[: -len(suffix)].strip()
+    return head
+
+
+def connector_catalog() -> list[dict]:
+    """The installer's source of truth for every connector and the env vars it
+    needs. Each entry is ``{"name", "label", "env": [(ENV_NAME, is_secret), ...]}``.
+
+    Connectors are always registered in the kernel; they only need their env
+    vars set to work. The wizard reads this to know what to prompt for, and
+    ``docs/connectors.md`` is generated from it.
+    """
+    out: list[dict] = []
+    for spec in _SPECS + _GRAPHQL_SPECS:
+        out.append({
+            "name": spec["name"],
+            "label": _label_from_desc(spec["description"]),
+            "env": [(spec["base_url_env"], False), (spec["token_env"], True)],
+        })
+    out.extend(_BESPOKE_CATALOG)
+    out.sort(key=lambda e: e["name"])
+    return out

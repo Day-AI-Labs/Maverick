@@ -1519,6 +1519,66 @@ def pick_webhooks() -> tuple[dict[str, Any], list[str]]:
     return cfg, envs
 
 
+def pick_connectors() -> dict[str, str]:
+    """Collect credentials for enterprise connectors (ServiceNow, Salesforce,
+    Snowflake, SAP, ...).
+
+    Connectors are always registered in the kernel; they only need their
+    BASE_URL/TOKEN env vars set to work. Returns ``{ENV_NAME: value}`` for the
+    systems the user chose to connect now, merged into ~/.maverick/.env. The
+    catalog (and ``docs/connectors.md``) come from ``connector_catalog()`` in
+    maverick-core, so this stays in sync as connectors are added. Secrets
+    collected here are never persisted to the partial-state file.
+    """
+    try:
+        from maverick.tools.enterprise_connectors import connector_catalog
+        entries = connector_catalog()
+    except Exception as e:  # maverick-core not importable / catalog moved
+        console.print(f"[yellow]Connector catalog unavailable: {e}[/yellow]")
+        return {}
+    if not entries:
+        return {}
+    console.print()
+    console.print(
+        f"[dim]Maverick ships {len(entries)} enterprise connectors "
+        "(ServiceNow, Salesforce, Snowflake, SAP, Workday, Datadog, ...). "
+        "Full list: docs/connectors.md. Connect any now, or add them later in "
+        "~/.maverick/.env.[/dim]"
+    )
+    if not _q_confirm("Connect any enterprise systems now?", default=False):
+        return {}
+    by_name = {e["name"]: e for e in entries}
+    raw = _q_text(
+        "  Which systems? (comma-separated names, e.g. servicenow, snowflake)",
+        default="",
+    )
+    picked = [n.strip().lower() for n in raw.split(",") if n.strip()]
+    keys: dict[str, str] = {}
+    for name in dict.fromkeys(picked):  # dedupe, preserve order
+        entry = by_name.get(name)
+        if entry is None:
+            console.print(
+                f"  [yellow]unknown connector '{name}' — skipped "
+                "(see docs/connectors.md for valid names)[/yellow]"
+            )
+            continue
+        console.print(f"  [bold]{entry['label']}[/bold]")
+        for env_name, is_secret in entry["env"]:
+            current = os.environ.get(env_name, "")
+            if is_secret:
+                masked = (current[:4] + "...") if current else "(none)"
+                val = _q_secret(
+                    f"    {env_name} [current: {masked}] (blank = keep current)"
+                )
+                if not val and current:
+                    val = current
+            else:
+                val = _q_text(f"    {env_name}", default=current)
+            if val:
+                keys[env_name] = val
+    return keys
+
+
 def collect_api_keys(providers: list[str], channel_envs: set[str]) -> dict[str, str]:
     keys: dict[str, str] = {}
     needed: list[str] = []
@@ -2955,6 +3015,10 @@ def run(fast: bool = False, resume: bool = False) -> int:
         | set(a2a_envs)
     )
     keys = collect_api_keys(providers, channel_envs | extra_envs)
+    # Enterprise connectors are always registered; collect any credentials the
+    # user wants to wire up now (merged into ~/.maverick/.env, never persisted
+    # to partial state). Editable later in the .env file.
+    keys.update(pick_connectors())
     captured_sessions = collect_browser_sessions(providers)
     if captured_sessions:
         console.print(

@@ -195,6 +195,20 @@ for false unless noted otherwise.
 | `MAVERICK_NTFY_TOPIC` | config `[notifications]` | ntfy topic for push notifications. |
 | `MAVERICK_ENABLE_SESSION_PROVIDERS` | config `[session_providers] enabled` (off) | Opt in to session providers. |
 
+## Connectors
+
+Each enterprise connector reads its own credentials from named environment
+variables — by convention `<SYSTEM>_BASE_URL` + `<SYSTEM>_TOKEN`, with a few
+system-specific shapes (e.g. `SERVICENOW_INSTANCE_URL`, `SNOWFLAKE_ACCOUNT`,
+`DATABASE_URL`). The full list of connectors and their exact variables lives in
+[connectors.md](connectors.md); `maverick init` can collect them for you.
+
+| Env var | Default | Description |
+| --- | --- | --- |
+| `<SYSTEM>_BASE_URL` / `<SYSTEM>_TOKEN` | unset | Per-connector endpoint + credential; see [connectors.md](connectors.md). Writes stay confirm-gated regardless. |
+| `DATABASE_URL` | unset | SQLAlchemy URL for the `database` tool (Postgres / MySQL / SQL Server / Oracle / Redshift / ...). |
+| `MAVERICK_ENABLE_CRED_TOOLS` | unset (off) | `1`/`true` registers connectors that can use ambient host credentials (AWS Lambda/DynamoDB, Google Drive, Airtable, Asana, ClickUp, Vercel). Off by default. |
+
 ## Agent-to-agent (A2A)
 
 | Env var | Default | Description |
