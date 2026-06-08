@@ -525,6 +525,19 @@ def test_pii_long_nonluhn_number_not_partially_redacted():
     assert "[REDACTED" not in out
 
 
+def test_pii_overlap_cluster_redacts_later_tail():
+    # The Luhn-valid prefix overlaps a standalone phone beginning after a hyphen;
+    # coalescing must redact the whole overlap cluster, not drop the phone tail.
+    from maverick.safety.pii_detector import redact
+
+    out, matches = redact("9444260960-415-555-2671")
+
+    assert len(matches) == 1
+    assert matches[0].span == (0, 23)
+    assert out == "[REDACTED:credit_card]"
+    assert "555-2671" not in out
+
+
 # ---------- arxiv tool ----------
 
 def test_arxiv_search_requires_query():

@@ -118,18 +118,26 @@ def scan(text: str) -> list[PIIMatch]:
         if _luhn_valid(m.group(0)):
             found.append(PIIMatch(kind="credit_card", span=m.span(), value_preview=_MASK))
 
-    # Coalesce overlapping spans (earliest start, then longest, wins). Two kinds
+    # Coalesce overlapping spans into one redaction range per cluster. Two kinds
     # can match overlapping regions (e.g. a credit-card span and a phone sub-run
     # of the same digits); reverse-order splicing of overlapping spans corrupts
-    # the output and can leave PII fragments, so keep one match per cluster -- a
-    # longer credit-card span beats a phone sub-run.
+    # output, while dropping later overlaps can leave the later match's tail
+    # exposed. Redacting the union ensures no portion of an overlap cluster leaks.
     found.sort(key=lambda m: (m.span[0], -(m.span[1] - m.span[0])))
     out: list[PIIMatch] = []
-    last_end = -1
     for m in found:
-        if m.span[0] >= last_end:
+        if not out or m.span[0] >= out[-1].span[1]:
             out.append(m)
-            last_end = m.span[1]
+            continue
+
+        prev = out[-1]
+        merged_end = max(prev.span[1], m.span[1])
+        if merged_end != prev.span[1]:
+            out[-1] = PIIMatch(
+                kind=prev.kind,
+                span=(prev.span[0], merged_end),
+                value_preview=prev.value_preview,
+            )
     return out
 
 
