@@ -1843,169 +1843,183 @@ disclosure), and fluency with the **`/deep-research`** harness.
 
 ### Tower 1 — Corporate Strategy & Planning
 
-#### 1.1 Strategy Research & Analysis Agent  [UB]
+#### 1.1 Strategy Research & Analysis Agent  [UB] {strong}
 JD: Industry/market analysis, strategic frameworks, option generation, strategy memos.
-- Systems: `/deep-research` · `web_search` · `tools/{newsapi_tool,semantic_scholar}`.
-- Technical: research synthesis · strategy-memo authoring.
-- Domain: **strategy frameworks** (Porter's Five Forces, value chain, 3-horizons, BCG matrix).
+- Systems: `/deep-research` `[C]` · `web_search` `[C]` · `tools/{newsapi_tool,semantic_scholar}` `[C]`.
+- Technical: research synthesis `[S]` · strategy-memo authoring `[S]`.
+- Domain: **strategy frameworks** (Porter's Five Forces, value chain, 3-horizons, BCG matrix) `[K]`.
+- Judgment: signal vs narrative; saying "unverified" when the evidence is thin.
 
-#### 1.2 Scenario-Planning & Wargaming Agent  [UB +Data]
+#### 1.2 Scenario-Planning & Wargaming Agent  [UB +Data] {strong}
 JD: Scenario construction, competitor/market war-gaming, sensitivity analysis.
-- Systems: `web_search` · the reasoning strategies (debate/ToT) · finance models.
-- Technical: scenario construction · war-gaming · **sensitivity/Monte-Carlo analysis**.
-- Domain: scenario planning · game theory basics.
+- Systems: `web_search` `[C]` · the reasoning strategies (debate/ToT) · finance models `[C]`.
+- Technical: scenario construction `[S]` · war-gaming `[S]` · **sensitivity/Monte-Carlo analysis** `[S]`.
+- Domain: scenario planning · game-theory basics `[K]`.
+- Judgment: avoiding false precision; stating every assumption.
 
 #### 1.3 Business-Model & Portfolio Agent  [UB +Data]
 JD: Business-model analysis, portfolio strategy, build/buy/partner framing.
-- Systems: the finance suite (unit economics) · `knowledge_search`.
-- Technical: business-model analysis · portfolio/BCG analysis · build-buy-partner framing.
+- Systems: the finance suite (unit economics) `[C]` · `knowledge_search` `[C]`.
+- Technical: business-model analysis `[S]` · portfolio/BCG analysis `[S]` · build-buy-partner framing `[S]`.
+- Domain: business-model patterns · portfolio theory `[K]`.
 
 #### 1.4 Strategy-Ops / OKR Agent  [UB]
 JD: Operationalize strategy — OKR cascade, strategic KPIs, alignment.
-- Systems: `tools/{notion,jira,linear}` · BI.
-- Technical: OKR cascade · strategic-KPI design · alignment mapping.
+- Systems: `tools/{notion,jira,linear}` `[C]` · BI `[C]`.
+- Technical: OKR cascade `[S]` · strategic-KPI design `[S]` · alignment mapping.
+- Domain: OKR methodology (Doerr) · MBO `[K]`.
 
 ### Tower 2 — Corporate Development / M&A  *(sealed deal compartments)*
 
-#### 2.1 Target-Sourcing & Screening Agent  [UB]
+#### 2.1 Target-Sourcing & Screening Agent  [UB] {strong}
 JD: Build the acquisition pipeline; screen targets against the thesis.
-- Systems: `web_search`, `tools/newsapi_tool` · market data · **PitchBook/CapIQ**.
-- Technical: target screening · pipeline building · thesis-fit analysis.
+- Systems: `web_search` `[C]`, `tools/newsapi_tool` `[C]` · market data · **PitchBook/CapIQ** `[C]`.
+- Technical: target screening `[S]` · pipeline building `[S]` · thesis-fit analysis `[S]`.
+- Domain: M&A sourcing · the acquisition thesis `[K]`.
 - Maverick: sealed; no approach/commitment.
 
-#### 2.2 Due-Diligence Agent  [UB +Assess]
+#### 2.2 Due-Diligence Agent  [UB +Assess] {expert}
 JD: Coordinate DD, analyze the data room, surface red flags.
-- Systems: **virtual data rooms (Datasite, Intralinks)** · finance + legal + GRC assessors · `assessment.py`.
-- Technical: **data-room analysis** · DD-coverage management · red-flag detection · `start/answer/finalize_assessment`.
-- Domain: M&A diligence (financial/legal/tech/commercial).
+- Systems: **virtual data rooms (Datasite, Intralinks)** `[C]` · finance + legal + GRC assessors `[C]` · `assessment.py` `[C]`.
+- Technical: **data-room analysis** `[S]` · DD-coverage management `[S]` · red-flag detection `[S]` · `start/answer/finalize_assessment`.
+- Domain: M&A diligence (financial/legal/tech/commercial) `[K]`.
+- Verified: the eval/`assessment` harness (DD-coverage completeness).
+- Judgment: deal-breaker vs price-adjuster; "unknown" over a confident guess.
 - Maverick: **sealed deal compartment** (`allow_hosts=[]`); MNPI cannot cross.
 
-#### 2.3 Valuation & Deal-Modeling Agent  [UB +Data]
+#### 2.3 Valuation & Deal-Modeling Agent  [UB +Data] {expert}
 JD: Valuation, deal models, synergy & accretion/dilution.
-- Systems: the finance suite (valuation/forecasting) · market data · Excel.
-- Technical: **DCF · comparable-companies · precedent transactions · LBO modeling** · synergy & accretion/dilution.
-- Domain: valuation theory · deal structures.
+- Systems: the finance suite (valuation/forecasting) `[C]` · market data · Excel `[S]`.
+- Technical: **DCF · comparable-companies · precedent transactions · LBO modeling** `[S]` · synergy & accretion/dilution `[S]`.
+- Domain: valuation theory · deal structures `[K]`.
+- Verified: model-integrity checks (balancing, no broken circularity) via the eval harness.
 - Maverick: sealed; reuses finance models.
 
 #### 2.4 Deal-Execution & Documentation Agent  [UB]
 JD: Term sheets, deal-doc assembly/redline (with legal), process management.
-- Systems: the legal domain (CLM) · the deal compartment.
-- Technical: term-sheet drafting · deal-doc redline · process management.
+- Systems: the legal domain (CLM) `[C]` · the deal compartment.
+- Technical: term-sheet drafting `[S]` · deal-doc redline `[S]` · process management.
+- Domain: deal-doc structure · closing mechanics `[K]`.
 - Maverick: never signs/commits (human + legal).
 
 #### 2.5 Post-Merger Integration (PMI) Agent  [UB]
 JD: Integration planning, synergy tracking, Day-1/Day-100 plans.
-- Systems: all suites (the integration workstreams) · PM tools.
-- Technical: integration planning · synergy tracking · cross-functional coordination.
+- Systems: all suites (the integration workstreams) `[C]` · PM tools `[C]`.
+- Technical: integration planning `[S]` · synergy tracking `[S]` · cross-functional coordination.
+- Domain: post-merger integration · Day-1/Day-100 playbooks `[K]`.
 
 ### Tower 3 — Competitive & Market Intelligence
 
 #### 3.1 Competitive-Intelligence Agent  [UB]
 JD: Track competitor moves, strategy, positioning; strategic implications.
-- Systems: `web_search`, `tools/{newsapi_tool,reddit_tool}` · GTM CI (8.3) · **Klue**.
-- Technical: competitor tracking · CI-brief authoring.
+- Systems: `web_search` `[C]`, `tools/{newsapi_tool,reddit_tool}` `[C]` · GTM CI (8.3) · **Klue** `[C]`.
+- Technical: competitor tracking `[S]` · CI-brief authoring `[S]`.
+- Domain: competitive analysis `[K]`.
 
 #### 3.2 Market-Research & Sizing Agent  [UB +Data]
 JD: TAM/SAM/SOM, market trends, demand modeling.
-- Systems: `/deep-research` · `web_search` · finance modeling · industry reports.
-- Technical: **TAM/SAM/SOM sizing** (top-down & bottom-up) · trend analysis.
+- Systems: `/deep-research` `[C]` · `web_search` `[C]` · finance modeling · industry reports `[K]`.
+- Technical: **TAM/SAM/SOM sizing** (top-down & bottom-up) `[S]` · trend analysis `[S]`.
+- Domain: market-sizing methodology `[K]`.
 
 #### 3.3 Industry & Trend-Monitoring Agent  [UB]
 JD: Monitor industry/tech/regulatory disruption; early-warning signals.
-- Systems: `tools/{newsapi_tool,arxiv,hackernews}` · `CourtListener` (regulatory).
-- Technical: signal monitoring · trend-brief authoring.
+- Systems: `tools/{newsapi_tool,arxiv,hackernews}` `[C]` · `CourtListener` (regulatory) `[C]`.
+- Technical: signal monitoring `[S]` · trend-brief authoring `[S]`.
 
 ### Tower 4 — PMO & Strategic Execution
 
 #### 4.1 Portfolio & Program-Management Agent  [UB]
 JD: Strategic portfolio/program oversight, dependencies, RAID.
-- Systems: `tools/{jira,linear,asana_tool,notion}` · Smartsheet.
-- Technical: portfolio tracking · dependency mapping · **RAID** logs.
-- Domain: program/portfolio management (PMI/PMBOK basics).
+- Systems: `tools/{jira,linear,asana_tool,notion}` `[C]` · Smartsheet `[C]`.
+- Technical: portfolio tracking `[S]` · dependency mapping `[S]` · **RAID** logs `[S]`.
+- Domain: program/portfolio management (PMI/PMBOK basics) `[K]`.
 
 #### 4.2 Strategic-Initiative-Tracking Agent  [UB]
 JD: Track strategic initiatives, milestones, risks; status synthesis.
-- Systems: PM tools · BI.
-- Technical: initiative tracking · milestone/risk synthesis · status reporting.
+- Systems: PM tools `[C]` · BI `[C]`.
+- Technical: initiative tracking `[S]` · milestone/risk synthesis `[S]` · status reporting `[S]`.
 
 #### 4.3 Execution-Cadence & OKR Agent  [UB]
 JD: Run the operating cadence (QBRs, business reviews), OKR tracking.
-- Systems: PM tools · `tools/calendar_tool` · BI.
-- Technical: QBR prep · OKR tracking · cadence management.
+- Systems: PM tools `[C]` · `tools/calendar_tool` `[C]` · BI `[C]`.
+- Technical: QBR prep `[S]` · OKR tracking `[S]` · cadence management.
 
 ### Tower 5 — Investor Relations & Capital Markets  *(Reg FD)*
 
-#### 5.1 Investor-Relations Agent  [UB]
+#### 5.1 Investor-Relations Agent  [UB] {strong}
 JD: Investor comms, shareholder analysis, Q&A prep, perception tracking.
-- Systems: the finance IR/reporting towers · **IR CRM (Q4, Irwin)** · `tools/salesforce_tool`.
-- Technical: investor-material drafting · shareholder/ownership analysis · Q&A prep.
-- Domain: IR · **Reg FD** · the equity story.
+- Systems: the finance IR/reporting towers `[C]` · **IR CRM (Q4, Irwin)** `[C]` · `tools/salesforce_tool` `[C]`.
+- Technical: investor-material drafting `[S]` · shareholder/ownership analysis `[S]` · Q&A prep `[S]`.
+- Domain: IR · **Reg FD** · the equity story `[K]`.
 - Maverick: external release gated; no selective disclosure.
 
-#### 5.2 Earnings & Disclosure Agent  [UB]
+#### 5.2 Earnings & Disclosure Agent  [UB] {strong}
 JD: Earnings materials, scripts, consistency with the filing; disclosure-control checklist.
-- Systems: the finance SEC-reporting tower.
-- Technical: earnings-material drafting · consistency checking · **non-GAAP (Reg G)** reconciliation.
-- Domain: earnings process · Reg FD/Reg G.
+- Systems: the finance SEC-reporting tower `[C]`.
+- Technical: earnings-material drafting `[S]` · consistency checking `[S]` · **non-GAAP (Reg G)** reconciliation `[S]`.
+- Domain: earnings process · Reg FD/Reg G `[K]`.
 - Maverick: release human (Reg FD).
 
 #### 5.3 Capital-Strategy & Markets Agent  [UB +Data]
 JD: Capital structure, financing options, analyst/coverage tracking.
-- Systems: the finance treasury/capital-markets tower · market data (**Bloomberg**).
-- Technical: capital-structure modeling · financing-option analysis · analyst tracking.
+- Systems: the finance treasury/capital-markets tower `[C]` · market data (**Bloomberg**) `[C]`.
+- Technical: capital-structure modeling `[S]` · financing-option analysis `[S]` · analyst tracking.
+- Domain: capital markets · cost of capital `[K]`.
 
 ### Tower 6 — Executive Office & Chief of Staff
 
-#### 6.1 Board & Governance-Support Agent  [UB]  *(sealed board compartment)*
+#### 6.1 Board & Governance-Support Agent  [UB] {strong}  *(sealed board compartment)*
 JD: Board materials, pre-reads, minutes, governance/calendar, action tracking.
-- Systems: **board portal (Diligent, Boardvantage)** · `gdrive_tool` · `tools/calendar_tool`.
-- Technical: board-deck/pre-read drafting · minutes · governance-action tracking.
-- Domain: corporate governance · board process.
+- Systems: **board portal (Diligent, Boardvantage)** `[C]` · `gdrive_tool` `[C]` · `tools/calendar_tool` `[C]`.
+- Technical: board-deck/pre-read drafting `[S]` · minutes `[S]` · governance-action tracking.
+- Domain: corporate governance · board process `[K]`.
 - Maverick: **sealed board compartment**; confidentiality/privilege; no board decisions.
 
 #### 6.2 Decision-Brief & Memo Agent  [UB]
 JD: Executive decision memos, pre-reads, options/recommendations, synthesis.
-- Systems: all suites (inputs) · `knowledge_search` · `pandoc_tool`.
-- Technical: **decision-memo authoring** (e.g., Amazon 6-pager) · options analysis · synthesis.
+- Systems: all suites (inputs) `[C]` · `knowledge_search` `[C]` · `pandoc_tool` `[C]`.
+- Technical: **decision-memo authoring** (e.g., Amazon 6-pager) `[S]` · options analysis `[S]` · synthesis.
+- Judgment: surfacing the real tradeoff and a recommendation, not just options.
 
 #### 6.3 Executive-Assistant / Scheduling Agent  [UB +Reach]
 JD: Scheduling, inbox triage, travel, meeting prep — exec operational support.
-- Systems: `tools/{calendar_tool,calendly_tool,gmail_tool,msgraph_tool,teams_tool}` · channels.
-- Technical: scheduling/coordination · inbox triage/prioritization · travel · meeting prep.
+- Systems: `tools/{calendar_tool,calendly_tool,gmail_tool,msgraph_tool,teams_tool}` `[C]` · channels `[C]`.
+- Technical: scheduling/coordination `[S]` · inbox triage/prioritization `[S]` · travel · meeting prep.
 - Maverick: external sends gated.
 
 #### 6.4 Executive-Communications Agent  [UB +Reach]
 JD: Exec/leadership comms — all-hands, leadership messages, internal narrative.
-- Systems: the channels layer · `knowledge_search`.
-- Technical: exec-comms drafting · narrative crafting.
+- Systems: the channels layer `[C]` · `knowledge_search` `[C]`.
+- Technical: exec-comms drafting `[S]` · narrative crafting `[S]`.
 - Maverick: sensitive/external comms human-approved.
 
 ### Tower 7 — Corporate Affairs & ESG
 
 #### 7.1 Corporate-Communications & PR Agent  [UB +Reach]
 JD: External narrative, press, crisis comms, message consistency *(cross-ref GTM PR)*.
-- Systems: the GTM PR agent · media DBs (Cision) · channels.
-- Technical: corp-comms drafting · crisis-comms playbooks.
+- Systems: the GTM PR agent · media DBs (Cision) `[C]` · channels `[C]`.
+- Technical: corp-comms drafting `[S]` · crisis-comms playbooks `[S]`.
 - Maverick: external release gated.
 
 #### 7.2 Government-Relations & Public-Affairs Agent  [UB]
 JD: Policy/regulatory monitoring, public-affairs positions, engagement prep.
-- Systems: `CourtListener`, `web_search`, `tools/newsapi_tool` · the GRC reg-change agent.
-- Technical: policy monitoring · position-paper drafting.
-- Domain: public policy · **lobbying-disclosure** awareness.
+- Systems: `CourtListener` `[C]`, `web_search` `[C]`, `tools/newsapi_tool` `[C]` · the GRC reg-change agent.
+- Technical: policy monitoring `[S]` · position-paper drafting `[S]`.
+- Domain: public policy · **lobbying-disclosure** awareness `[K]`.
 - Maverick: engagement gated.
 
-#### 7.3 ESG & Sustainability Agent  [UB +Data]
+#### 7.3 ESG & Sustainability Agent  [UB +Data] {strong}
 JD: ESG strategy + reporting (CSRD/ESRS, ISSB), carbon/impact tracking *(cross-ref finance ESG)*.
-- Systems: the finance ESG vertical · ESG-data platforms (Persefoni, Workiva ESG).
-- Technical: **ESG reporting** · carbon accounting (Scope 1/2/3) · materiality assessment.
-- Domain: **CSRD/ESRS, ISSB (IFRS S1/S2), GRI, TCFD, EU Taxonomy**.
+- Systems: the finance ESG vertical `[C]` · ESG-data platforms (Persefoni, Workiva ESG) `[C]`.
+- Technical: **ESG reporting** `[S]` · carbon accounting (Scope 1/2/3) `[S]` · materiality assessment `[S]`.
+- Domain: **CSRD/ESRS, ISSB (IFRS S1/S2), GRI, TCFD, EU Taxonomy** `[K]`.
 - Maverick: disclosure gated.
 
 #### 7.4 Corporate Social Responsibility Agent  [UB]
 JD: CSR programs, philanthropy, community impact, volunteering.
-- Systems: `knowledge_search` · channels · grants/giving platforms.
-- Technical: CSR-program drafting · impact tracking.
+- Systems: `knowledge_search` `[C]` · channels `[C]` · grants/giving platforms `[C]`.
+- Technical: CSR-program drafting `[S]` · impact tracking `[S]`.
 
 ### Council-added agents
 *(the deal-defining seats that fell between suites; full profiles below.)*
