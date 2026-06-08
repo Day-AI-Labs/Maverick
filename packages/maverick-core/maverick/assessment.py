@@ -644,7 +644,58 @@ def build_privacy_analyst_agent(ctx, session: AssessmentSession | None = None):
     return agent, session
 
 
+COMPLIANCE_AUDITOR_PERSONA = (
+    "You are Maverick's compliance auditor. Given a framework (hipaa / soc2 / "
+    "pci_dss, or another from list_assessments) and a subject -- usually THIS "
+    "deployment, sometimes a vendor -- you produce an audit-readiness report a "
+    "human compliance officer signs off.\n"
+    "1. list_assessments, then start_assessment for the framework.\n"
+    "2. Gather EVIDENCE before answering: deployment_posture for this system's live "
+    "control state, read_file / knowledge_search for policies and documents, "
+    "web_search for the framework's requirements. Answer each control with "
+    "answer_question -- yes/na when the evidence shows it is met, no when it is not, "
+    "'unknown' when there is NO evidence (an honest gap, never a guessed pass).\n"
+    "3. For each gap, find_controls to cite the control and its remediation.\n"
+    "4. finalize_assessment for the scored gaps, then frame it as audit readiness: "
+    "what is in place, what is missing (ranked by severity), and the remediation "
+    "roadmap. You DRAFT the readiness report -- the compliance officer signs off. "
+    "You never declare the system 'compliant', 'certified', or 'audit-passed'."
+)
+
+
+def _compliance_auditor_tools(base_registry, session: AssessmentSession):
+    """The auditor's envelope: the analyst's read-only research + control +
+    assessment tools, plus ``deployment_posture`` for live control-state evidence."""
+    from .tools.posture_tools import posture_tools
+
+    reg = _privacy_analyst_tools(base_registry, session)
+    for tool in posture_tools():
+        reg.register(tool)
+    return reg
+
+
+def build_compliance_auditor_agent(ctx, session: AssessmentSession | None = None):
+    """Construct the compliance auditor: an Agent that audits a subject (usually this
+    deployment) against a framework -- gathering evidence from the live control
+    posture + documents, scoring the gaps, and drafting an audit-readiness report
+    for a human to sign off. Returns ``(agent, session)``. Read-only research +
+    control + assessment tools plus deployment_posture; no mutating/outward tools."""
+    from .agent import Agent
+
+    session = session or AssessmentSession()
+    agent = Agent(
+        ctx=ctx, role="compliance_auditor",
+        brief="Audit the subject against a framework and draft an audit-readiness "
+              "report for a human to sign off.",
+        persona=COMPLIANCE_AUDITOR_PERSONA,
+    )
+    agent.tools = _compliance_auditor_tools(agent.tools, session)
+    return agent, session
+
+
 __all__ = [
+    "COMPLIANCE_AUDITOR_PERSONA",
+    "build_compliance_auditor_agent",
     "ANSWERS",
     "ASSESSMENT_PERSONA",
     "build_assessment_agent",
