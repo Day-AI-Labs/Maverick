@@ -17,6 +17,13 @@ from dataclasses import dataclass
 log = logging.getLogger(__name__)
 
 
+# Non-revealing preview persisted in the audit log. PIIMatch previews are
+# written to disk, so they must NOT embed any raw PII (the old code stored the
+# first 4 chars of the value -- leaking SSN area numbers, partial phones/emails/
+# IPs into the very log the redactor is meant to protect).
+_MASK = "[…]"
+
+
 @dataclass(frozen=True)
 class PIIMatch:
     kind: str
@@ -27,9 +34,12 @@ class PIIMatch:
 _EMAIL = re.compile(
     r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
 )
-# US phone: 555-555-5555, (555) 555-5555, +1 555 555 5555, 5555555555
+# US phone: 555-555-5555, (555) 555-5555, +1 555 555 5555, 5555555555.
+# The leading (?<!\d) stops the pattern from matching a 10-digit *sub-run* of a
+# longer number (e.g. a 13-19 digit string), which otherwise produced a partial
+# redaction that leaked the leading digits.
 _PHONE_US = re.compile(
-    r"(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b"
+    r"(?<!\d)(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b"
 )
 # SSN: NNN-NN-NNNN with reasonable bounds (no 000/666/9xx area, etc).
 _SSN = re.compile(
@@ -86,11 +96,10 @@ def _luhn_valid(digits: str) -> bool:
 
 
 def scan(text: str) -> list[PIIMatch]:
-    """Return all PII matches found in ``text``."""
+    """Return non-overlapping PII matches found in ``text``."""
     if not text:
         return []
-    out: list[PIIMatch] = []
-    seen: set[tuple[int, int]] = set()
+    found: list[PIIMatch] = []
 
     for name, pat in (
         ("email", _EMAIL),
@@ -101,33 +110,26 @@ def scan(text: str) -> list[PIIMatch]:
         ("street_address", _STREET),
     ):
         for m in pat.finditer(text):
-            sp = m.span()
-            if sp in seen:
-                continue
-            seen.add(sp)
-            raw = m.group(0)
-            out.append(PIIMatch(
-                kind=name, span=sp,
-                value_preview=raw[:4] + "…" if len(raw) > 8 else "…",
-            ))
+            found.append(PIIMatch(kind=name, span=m.span(), value_preview=_MASK))
 
     # Credit cards: extra step. Test candidates with Luhn so we don't
     # tag random 16-digit strings (UUIDs without dashes, hashes).
     for m in _CC.finditer(text):
-        sp = m.span()
-        if sp in seen:
-            continue
         if _luhn_valid(m.group(0)):
-            seen.add(sp)
-            out.append(PIIMatch(
-                kind="credit_card", span=sp,
-                # Constant placeholder -- do NOT embed the real last-4 digits.
-                # PIIMatch previews are persisted to the audit log, and card
-                # last-4 is regulated cardholder data; storing it defeats the
-                # redaction (every other kind uses a non-revealing preview).
-                value_preview="****",
-            ))
+            found.append(PIIMatch(kind="credit_card", span=m.span(), value_preview=_MASK))
 
+    # Coalesce overlapping spans (earliest start, then longest, wins). Two kinds
+    # can match overlapping regions (e.g. a credit-card span and a phone sub-run
+    # of the same digits); reverse-order splicing of overlapping spans corrupts
+    # the output and can leave PII fragments, so keep one match per cluster -- a
+    # longer credit-card span beats a phone sub-run.
+    found.sort(key=lambda m: (m.span[0], -(m.span[1] - m.span[0])))
+    out: list[PIIMatch] = []
+    last_end = -1
+    for m in found:
+        if m.span[0] >= last_end:
+            out.append(m)
+            last_end = m.span[1]
     return out
 
 
