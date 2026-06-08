@@ -182,6 +182,32 @@ def _capability_paths_for_tool(name: str, args: Any, sandbox: Any) -> list[str] 
     return [_workspace_relative_path(sandbox, raw)]
 
 
+def _governance_amount(args: Any) -> float | None:
+    """Extract a transaction ``amount`` from tool args for the governance gate.
+
+    The org policy's dollar-tier thresholds (``deny_above`` /
+    ``require_human_above`` -- the finance delegation-of-authority gate) compare
+    a transaction value, so the chokepoint passes the tool's conventional
+    ``amount`` arg through to :func:`maverick.governance.evaluate`. Accepts a
+    number or a numeric string; anything else (missing, non-numeric, bool)
+    yields ``None`` so the gate stays inert -- exactly as before for tools that
+    carry no amount.
+    """
+    if not isinstance(args, dict):
+        return None
+    v = args.get("amount")
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        try:
+            return float(v.strip())
+        except ValueError:
+            return None
+    return None
+
+
 def _tool_call_failed(output: str) -> bool:
     """Did a tool result represent a failure? Used for the is_error flag and the
     per-step success score.
@@ -1041,7 +1067,16 @@ class Agent:
             _gov_policy = None
         if _gov_policy is not None and not _gov_policy.is_empty():
             try:
-                _gov = _gov_evaluate(name, policy=_gov_policy)
+                # Pass the transaction amount/currency so the policy's
+                # dollar-tier gates (deny_above / require_human_above) actually
+                # fire -- without this the finance delegation-of-authority
+                # thresholds are dead at the chokepoint.
+                _gov_currency = args.get("currency") if isinstance(args, dict) else None
+                _gov = _gov_evaluate(
+                    name, policy=_gov_policy,
+                    amount=_governance_amount(args),
+                    currency=_gov_currency if isinstance(_gov_currency, str) else "",
+                )
             except Exception:
                 log.warning("governance: evaluation failed for %r; failing closed",
                             name, exc_info=True)

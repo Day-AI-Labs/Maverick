@@ -173,3 +173,27 @@ def test_scopeless_persistent_grant_is_honored(monkeypatch, tmp_path):
     consent.grant_persistent("mass-dm")
     assert consent._check_ledger("mass-dm", None) is True
     assert consent.require_consent("mass-dm").granted is True
+
+
+@pytest.mark.asyncio
+async def test_require_human_above_amount_gates_through_chokepoint(monkeypatch, tmp_path):
+    # The finance dollar-tier gate must fire through the agent chokepoint: a
+    # tool call carrying an `amount` over the policy threshold needs human
+    # approval, not a silent auto-approve.
+    monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-approve")
+    _gov(monkeypatch, {"require_human_above": {"ping": 5000}})
+    over = await _agent(tmp_path)._run_tool("ping", {"amount": 6000})
+    assert "requires human approval" in over and "pong" not in over
+    # Under the threshold -> the tool runs.
+    under = await _agent(tmp_path)._run_tool("ping", {"amount": 4000})
+    assert "pong" in under
+
+
+@pytest.mark.asyncio
+async def test_deny_above_amount_blocks_through_chokepoint(monkeypatch, tmp_path):
+    _gov(monkeypatch, {"deny_above": {"ping": 50000}})
+    out = await _agent(tmp_path)._run_tool("ping", {"amount": 60000})
+    assert "DENIED by org policy" in out and "pong" not in out
+    # A numeric string amount is honored too.
+    out2 = await _agent(tmp_path)._run_tool("ping", {"amount": "60000"})
+    assert "DENIED by org policy" in out2
