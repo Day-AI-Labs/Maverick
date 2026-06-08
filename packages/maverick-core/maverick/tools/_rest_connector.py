@@ -35,6 +35,16 @@ _SCHEMA: dict[str, Any] = {
     "required": ["op", "path"],
 }
 
+_READ_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "op": {"type": "string", "enum": ["get"], "description": "read-only: get."},
+        "path": {"type": "string", "description": "API path beginning with /..."},
+        "params": {"type": "object", "description": "query params."},
+    },
+    "required": ["path"],
+}
+
 
 def make_rest_tool(
     *,
@@ -45,6 +55,7 @@ def make_rest_tool(
     token_header: str = "Authorization",
     scheme: str = "Bearer",
     basic: bool = False,
+    read_only: bool = False,
 ) -> Tool:
     """Build a thin authenticated-REST ``Tool``.
 
@@ -54,6 +65,10 @@ def make_rest_tool(
         convention used by Freshdesk / Greenhouse / Lever / BambooHR).
       - else ``{token_header}: {scheme} {token}`` (``scheme=""`` sends the raw
         token, e.g. Tableau's ``X-Tableau-Auth``).
+
+    ``read_only=True`` exposes GET only -- a low-risk read seat (write ops are
+    refused), so a read-only agent/pack can pull data without a write-capable
+    tool. The connector's writes are simply unreachable from this seat.
     """
 
     def _config() -> tuple[str, str]:
@@ -77,7 +92,9 @@ def make_rest_tool(
         return p if p.startswith("/") else "/" + p
 
     def _run(args: dict[str, Any]) -> str:
-        op = (args.get("op") or "").strip().lower()
+        op = (args.get("op") or ("get" if read_only else "")).strip().lower()
+        if read_only and op != "get":
+            return f"ERROR: {name} is read-only -- only GET is permitted from this seat."
         if op not in ("get", "post", "put", "patch", "delete"):
             return f"ERROR: op must be get/post/put/patch/delete (got {op!r})"
         path = (args.get("path") or "").strip()
@@ -115,7 +132,8 @@ def make_rest_tool(
         except Exception as e:  # noqa: BLE001
             return f"ERROR: {name} request failed: {type(e).__name__}: {e}"
 
-    return Tool(name=name, description=description, input_schema=_SCHEMA, fn=_run)
+    return Tool(name=name, description=description,
+                input_schema=_READ_SCHEMA if read_only else _SCHEMA, fn=_run)
 
 
 def _is_gql_name_char(ch: str) -> bool:

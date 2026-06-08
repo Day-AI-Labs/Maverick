@@ -835,6 +835,22 @@ _GRAPHQL_SPECS: list[dict] = [
          "confirm). Auth: WIZ_BASE_URL (your Wiz API endpoint) + WIZ_TOKEN (bearer)."),
 ]
 
+# Read-only (GET-only, LOW-risk) variants for finance vendors -- the bridge that
+# lets a read-only pack (max_risk <= medium) actually pull data without handing it
+# a write-capable seat. Same env/creds as the write connector; writes are
+# structurally unreachable (the agent still supplies the path, so no endpoint is
+# hard-coded). Classified low via READ_CONNECTOR_NAMES in safety/tool_risk.
+_READ_SPECS: list[dict] = [
+    dict(name="modern_treasury_read", base_url_env="MODERN_TREASURY_BASE_URL",
+         token_env="MODERN_TREASURY_TOKEN", basic=True,
+         description="Modern Treasury REST, READ-ONLY (GET). e.g. /api/internal_accounts, "
+         "/api/transactions, /api/ledger_account_balances, /api/counterparties. Auth: "
+         "MODERN_TREASURY_BASE_URL (https://app.moderntreasury.com) + MODERN_TREASURY_TOKEN "
+         "(Basic org_id:api_key)."),
+]
+
+READ_CONNECTOR_NAMES: list[str] = [s["name"] for s in _READ_SPECS]
+
 ENTERPRISE_CONNECTOR_NAMES: list[str] = (
     [s["name"] for s in _SPECS] + [s["name"] for s in _GRAPHQL_SPECS]
 )
@@ -843,7 +859,8 @@ ENTERPRISE_CONNECTOR_NAMES: list[str] = (
 def enterprise_connectors() -> list[Tool]:
     """Instantiate every spec'd connector (registered in base_registry)."""
     return ([make_rest_tool(**spec) for spec in _SPECS]
-            + [make_graphql_tool(**spec) for spec in _GRAPHQL_SPECS])
+            + [make_graphql_tool(**spec) for spec in _GRAPHQL_SPECS]
+            + [make_rest_tool(read_only=True, **spec) for spec in _READ_SPECS])
 
 
 # Bespoke (hand-written) strategic connectors live in their own modules, not in
