@@ -86,6 +86,7 @@ nav:
       - Starter goals: starter-goals.md
   - Reference:
       - API: api.md
+      - gRPC API: grpc.md
       - A2A (Agent2Agent): a2a.md
   - Performance:
       - Streaming parity: performance/streaming-parity.md
