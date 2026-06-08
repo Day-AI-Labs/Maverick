@@ -19,6 +19,7 @@ import os
 from typing import Any
 
 from . import Tool, as_bool
+from .sql_safety import has_unconfirmed_statement_separator
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +48,9 @@ def _config() -> tuple[str, str]:
 def _op_query(sql: str, limit: int, confirm: bool) -> str:
     if not sql:
         return "ERROR: query requires sql"
-    if not sql.strip().lstrip("(").lower().startswith(_READ_PREFIXES) and not confirm:
+    is_read = sql.strip().lstrip("(").lower().startswith(_READ_PREFIXES)
+    needs_confirm = not is_read or has_unconfirmed_statement_separator(sql)
+    if needs_confirm and not confirm:
         return "DRY RUN: non-read SQL (DML/DDL). Re-run with confirm=true."
     tok, proj = _config()
     import httpx
