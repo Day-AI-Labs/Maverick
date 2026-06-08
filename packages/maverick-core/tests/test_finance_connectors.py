@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from maverick.safety.tool_risk import tool_risk
 from maverick.tools.enterprise_connectors import (
-    ENTERPRISE_CONNECTOR_NAMES,
     _SPECS,
+    ENTERPRISE_CONNECTOR_NAMES,
     enterprise_connectors,
 )
 
