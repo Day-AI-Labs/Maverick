@@ -685,6 +685,143 @@ _SPECS: list[dict] = [
     dict(name="opsgenie", base_url_env="OPSGENIE_BASE_URL", token_env="OPSGENIE_TOKEN",
          scheme="GenieKey", description="Opsgenie REST (incident mgmt). ops get/post/put/"
          "delete (writes need confirm). Auth: OPSGENIE_BASE_URL + OPSGENIE_TOKEN (GenieKey)."),
+
+    # --- Finance long-pole: banking / treasury / payments ---
+    dict(name="modern_treasury", base_url_env="MODERN_TREASURY_BASE_URL",
+         token_env="MODERN_TREASURY_TOKEN", basic=True,
+         description="Modern Treasury REST (payments/ledgers/reconciliation). ops get/post/"
+         "put/delete (writes need confirm). e.g. /api/payment_orders, /api/counterparties, "
+         "/api/internal_accounts. Auth: MODERN_TREASURY_BASE_URL "
+         "(https://app.moderntreasury.com) + MODERN_TREASURY_TOKEN (Basic org_id:api_key)."),
+    dict(name="mercury", base_url_env="MERCURY_BASE_URL", token_env="MERCURY_TOKEN",
+         description="Mercury banking REST (read balances/transactions; payments are "
+         "confirm-gated). e.g. /accounts, /account/{id}/transactions. Auth: MERCURY_BASE_URL "
+         "(https://api.mercury.com/api/v1) + MERCURY_TOKEN (bearer)."),
+    dict(name="wise", base_url_env="WISE_BASE_URL", token_env="WISE_TOKEN",
+         description="Wise (TransferWise) REST (multi-currency balances/transfers; writes "
+         "need confirm). e.g. /v1/profiles, /v1/borderless-accounts. Auth: WISE_BASE_URL "
+         "(https://api.wise.com) + WISE_TOKEN (bearer)."),
+
+    # --- Finance long-pole: AP / spend / travel & expense ---
+    dict(name="airbase", base_url_env="AIRBASE_BASE_URL", token_env="AIRBASE_TOKEN",
+         description="Airbase spend/AP REST. ops get/post/put/delete (writes need confirm). "
+         "Auth: AIRBASE_BASE_URL (https://api.airbase.io) + AIRBASE_TOKEN (bearer)."),
+    dict(name="navan", base_url_env="NAVAN_BASE_URL", token_env="NAVAN_TOKEN",
+         description="Navan (TripActions) travel & expense REST. ops get/post (writes need "
+         "confirm). Auth: NAVAN_BASE_URL (https://api.navan.com) + NAVAN_TOKEN (OAuth bearer)."),
+    dict(name="pleo", base_url_env="PLEO_BASE_URL", token_env="PLEO_TOKEN",
+         description="Pleo spend-management REST. ops get/post (writes need confirm). Auth: "
+         "PLEO_BASE_URL (https://external.pleo.io) + PLEO_TOKEN (bearer)."),
+
+    # --- Finance long-pole: tax ---
+    dict(name="avalara", base_url_env="AVALARA_BASE_URL", token_env="AVALARA_TOKEN",
+         basic=True, description="Avalara AvaTax REST (sales/use tax). ops get/post (writes "
+         "need confirm). e.g. /api/v2/transactions/create, /api/v2/companies. Auth: "
+         "AVALARA_BASE_URL (https://rest.avatax.com) + AVALARA_TOKEN (Basic account#:licensekey)."),
+    dict(name="vertex_tax", base_url_env="VERTEX_TAX_BASE_URL", token_env="VERTEX_TAX_TOKEN",
+         description="Vertex O Series tax REST (calculation/returns; distinct from the "
+         "Vertex AI tool). ops get/post (writes need confirm). Auth: VERTEX_TAX_BASE_URL "
+         "(your Vertex endpoint) + VERTEX_TAX_TOKEN (OAuth bearer)."),
+
+    # --- Finance long-pole: close / EPM-FP&A / equity ---
+    dict(name="floqast", base_url_env="FLOQAST_BASE_URL", token_env="FLOQAST_TOKEN",
+         description="FloQast close & reconciliation REST. ops get/post (writes need "
+         "confirm). Auth: FLOQAST_BASE_URL (https://api.floqast.com) + FLOQAST_TOKEN (bearer)."),
+    dict(name="pigment", base_url_env="PIGMENT_BASE_URL", token_env="PIGMENT_TOKEN",
+         description="Pigment EPM / planning REST. ops get/post (writes need confirm). Auth: "
+         "PIGMENT_BASE_URL (your Pigment API base) + PIGMENT_TOKEN (bearer)."),
+    dict(name="planful", base_url_env="PLANFUL_BASE_URL", token_env="PLANFUL_TOKEN",
+         description="Planful EPM REST. ops get/post (writes need confirm). Auth: "
+         "PLANFUL_BASE_URL (your Planful tenant) + PLANFUL_TOKEN (bearer)."),
+    dict(name="carta", base_url_env="CARTA_BASE_URL", token_env="CARTA_TOKEN",
+         description="Carta cap-table / equity REST. ops get/post (writes need confirm). "
+         "Auth: CARTA_BASE_URL (https://api.carta.com) + CARTA_TOKEN (OAuth bearer)."),
+
+    # --- Legal: contract lifecycle / practice management ---
+    dict(name="ironclad", base_url_env="IRONCLAD_BASE_URL", token_env="IRONCLAD_TOKEN",
+         description="Ironclad CLM REST. paths /public/api/v1/... (workflows, records). "
+         "ops get/post/put/delete (writes need confirm). Auth: IRONCLAD_BASE_URL "
+         "(https://ironcladapp.com) + IRONCLAD_TOKEN (bearer)."),
+    dict(name="contractbook", base_url_env="CONTRACTBOOK_BASE_URL",
+         token_env="CONTRACTBOOK_TOKEN",
+         description="Contractbook CLM REST. ops get/post/put/delete (writes need confirm). "
+         "Auth: CONTRACTBOOK_BASE_URL (https://api.contractbook.com) + CONTRACTBOOK_TOKEN (bearer)."),
+    dict(name="clio", base_url_env="CLIO_BASE_URL", token_env="CLIO_TOKEN",
+         description="Clio legal practice-management REST (v4). ops get/post/put/delete "
+         "(writes need confirm). Auth: CLIO_BASE_URL (https://app.clio.com) + CLIO_TOKEN "
+         "(OAuth bearer)."),
+
+    # --- HR / People ---
+    dict(name="hibob", base_url_env="HIBOB_BASE_URL", token_env="HIBOB_TOKEN", basic=True,
+         description="HiBob (bob) HRIS REST. ops get/post/put (writes need confirm). e.g. "
+         "/v1/people, /v1/people/search. Auth: HIBOB_BASE_URL (https://api.hibob.com) + "
+         "HIBOB_TOKEN (Basic service-user-id:token)."),
+    dict(name="lattice", base_url_env="LATTICE_BASE_URL", token_env="LATTICE_TOKEN",
+         description="Lattice performance/engagement REST. ops get/post (writes need "
+         "confirm). Auth: LATTICE_BASE_URL (https://api.latticehq.com) + LATTICE_TOKEN (bearer)."),
+
+    # --- Product / Engineering: feature management ---
+    dict(name="launchdarkly", base_url_env="LAUNCHDARKLY_BASE_URL",
+         token_env="LAUNCHDARKLY_TOKEN", scheme="",
+         description="LaunchDarkly feature-flag REST (v2). ops get/post/patch/delete (writes "
+         "need confirm). e.g. /api/v2/flags/{proj}. Auth: LAUNCHDARKLY_BASE_URL "
+         "(https://app.launchdarkly.com) + LAUNCHDARKLY_TOKEN (raw Authorization)."),
+    dict(name="split", base_url_env="SPLIT_BASE_URL", token_env="SPLIT_TOKEN",
+         description="Split feature-flag / experimentation REST. ops get/post/patch (writes "
+         "need confirm). Auth: SPLIT_BASE_URL (https://api.split.io) + SPLIT_TOKEN (bearer)."),
+
+    # --- Operations / supply chain / logistics ---
+    dict(name="samsara", base_url_env="SAMSARA_BASE_URL", token_env="SAMSARA_TOKEN",
+         description="Samsara fleet / IoT REST. ops get/post (writes need confirm). e.g. "
+         "/fleet/vehicles, /fleet/vehicles/locations. Auth: SAMSARA_BASE_URL "
+         "(https://api.samsara.com) + SAMSARA_TOKEN (bearer)."),
+    dict(name="easypost", base_url_env="EASYPOST_BASE_URL", token_env="EASYPOST_TOKEN",
+         basic=True, description="EasyPost shipping REST. ops get/post (writes need confirm). "
+         "e.g. /v2/shipments, /v2/trackers. Auth: EASYPOST_BASE_URL (https://api.easypost.com) "
+         "+ EASYPOST_TOKEN (Basic; API key as username)."),
+    dict(name="flexport", base_url_env="FLEXPORT_BASE_URL", token_env="FLEXPORT_TOKEN",
+         description="Flexport freight / logistics REST. ops get/post (writes need confirm). "
+         "Auth: FLEXPORT_BASE_URL (https://api.flexport.com) + FLEXPORT_TOKEN (bearer)."),
+    dict(name="shippo", base_url_env="SHIPPO_BASE_URL", token_env="SHIPPO_TOKEN",
+         scheme="ShippoToken", description="Shippo multi-carrier shipping REST. ops get/post "
+         "(writes need confirm). Auth: SHIPPO_BASE_URL (https://api.goshippo.com) + "
+         "SHIPPO_TOKEN (ShippoToken scheme)."),
+
+    # --- Strategy / market intelligence; IT-GRC ---
+    dict(name="crunchbase", base_url_env="CRUNCHBASE_BASE_URL", token_env="CRUNCHBASE_TOKEN",
+         token_header="X-cb-user-key", scheme="",
+         description="Crunchbase company / funding data REST (v4). op get (read-only). e.g. "
+         "/api/v4/entities/organizations/{id}, /api/v4/searches/organizations. Auth: "
+         "CRUNCHBASE_BASE_URL (https://api.crunchbase.com) + CRUNCHBASE_TOKEN (X-cb-user-key)."),
+    dict(name="secureframe", base_url_env="SECUREFRAME_BASE_URL",
+         token_env="SECUREFRAME_TOKEN",
+         description="Secureframe compliance-automation REST. ops get/post (writes need "
+         "confirm). Auth: SECUREFRAME_BASE_URL (https://api.secureframe.com) + "
+         "SECUREFRAME_TOKEN (bearer)."),
+
+    # --- Finance long-pole: subscription billing / revenue ---
+    dict(name="zuora", base_url_env="ZUORA_BASE_URL", token_env="ZUORA_TOKEN",
+         description="Zuora billing / revenue REST. ops get/post/put (writes need confirm). "
+         "e.g. /v1/subscriptions, /v1/accounts, /v1/invoices. Auth: ZUORA_BASE_URL "
+         "(https://rest.zuora.com) + ZUORA_TOKEN (OAuth bearer)."),
+    dict(name="chargebee", base_url_env="CHARGEBEE_BASE_URL", token_env="CHARGEBEE_TOKEN",
+         basic=True, description="Chargebee subscription-billing REST (v2). ops get/post "
+         "(writes need confirm). e.g. /api/v2/subscriptions, /api/v2/invoices. Auth: "
+         "CHARGEBEE_BASE_URL (https://{site}.chargebee.com) + CHARGEBEE_TOKEN (Basic; API "
+         "key as username)."),
+    dict(name="recurly", base_url_env="RECURLY_BASE_URL", token_env="RECURLY_TOKEN",
+         basic=True, description="Recurly subscription-billing REST (v3). ops get/post/put "
+         "(writes need confirm). e.g. /accounts, /subscriptions, /invoices. Auth: "
+         "RECURLY_BASE_URL (https://v3.recurly.com) + RECURLY_TOKEN (Basic; API key as username)."),
+    dict(name="gocardless", base_url_env="GOCARDLESS_BASE_URL", token_env="GOCARDLESS_TOKEN",
+         description="GoCardless bank-debit REST. ops get/post (writes need confirm; set "
+         "GoCardless-Version via the path/headers per their docs). e.g. /payments, /mandates, "
+         "/customers. Auth: GOCARDLESS_BASE_URL (https://api.gocardless.com) + GOCARDLESS_TOKEN "
+         "(bearer)."),
+    dict(name="freshbooks", base_url_env="FRESHBOOKS_BASE_URL", token_env="FRESHBOOKS_TOKEN",
+         description="FreshBooks accounting REST. ops get/post/put (writes need confirm). "
+         "e.g. /accounting/account/{id}/invoices/invoices. Auth: FRESHBOOKS_BASE_URL "
+         "(https://api.freshbooks.com) + FRESHBOOKS_TOKEN (OAuth bearer)."),
 ]
 
 # GraphQL services (single POST endpoint; mutations confirm-gated).
