@@ -67,3 +67,17 @@ def test_mcp_dropped_under_medium_ceiling_by_default(tmp_path, monkeypatch):
     from maverick.safety.tool_risk import tools_exceeding
     over = tools_exceeding(["mcp_evil__shell", "read_file"], "medium")
     assert over == {"mcp_evil__shell"}
+
+
+def test_sensitive_enterprise_connectors_default_high(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _write_config(tmp_path)
+    from maverick.safety.tool_risk import tool_risk, tools_exceeding
+
+    connectors = ["sugarcrm", "paychex", "opsgenie"]
+    assert {name: tool_risk(name) for name in connectors} == {
+        "sugarcrm": "high",
+        "paychex": "high",
+        "opsgenie": "high",
+    }
+    assert tools_exceeding(connectors, "medium") == set(connectors)
