@@ -1000,6 +1000,71 @@ async def run_fleet_agent(
     return {"goal_id": goal_id, "principal": agent_principal, "role": agent.role}
 
 
+class FleetAgentIn(BaseModel):
+    name: str = Field(..., max_length=64)
+    role: str = Field("", max_length=64)
+    description: str = Field("", max_length=500)
+
+
+class FleetCreateIn(BaseModel):
+    name: str = Field(..., max_length=64)
+    agents: list[FleetAgentIn] = Field(default_factory=list)
+
+
+@router.post("/fleets", status_code=201)
+async def create_fleet(request: Request, payload: FleetCreateIn) -> dict:
+    """Create (or replace) a fleet from the operator console, owned by the caller.
+
+    Mirrors ``maverick fleet create`` so a non-technical operator never needs the
+    CLI. Owner-scoped: replacing a fleet owned by someone else 404s (never
+    reveals it). Blank agent rows are dropped; an agent needs a valid name.
+    """
+    from maverick.fleet import Fleet, FleetAgent, load_fleet, save_fleet, valid_name
+
+    if not valid_name(payload.name):
+        raise HTTPException(status_code=400, detail="invalid fleet name")
+    agents = tuple(
+        FleetAgent(
+            name=a.name.strip(), role=a.role.strip(), description=a.description.strip(),
+        )
+        for a in payload.agents if a.name.strip()
+    )
+    for a in agents:
+        if not valid_name(a.name):
+            raise HTTPException(status_code=400, detail=f"invalid agent name: {a.name!r}")
+
+    principal = caller_principal(request)
+    owner = principal or ""
+    existing = load_fleet(payload.name)
+    if (
+        existing is not None and existing.owner != owner
+        and principal is not None and not is_dashboard_admin(principal)
+    ):
+        raise HTTPException(status_code=404, detail="no such fleet")
+
+    try:
+        save_fleet(Fleet(name=payload.name, owner=owner, agents=agents))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"fleet": load_fleet(payload.name).to_dict()}
+
+
+@router.delete("/fleets/{fleet_name}", status_code=204)
+async def delete_fleet(request: Request, fleet_name: str) -> None:
+    """Remove a fleet. Owner-scoped: a cross-owner or missing fleet 404s."""
+    from maverick.fleet import load_fleet, remove_fleet
+
+    fleet = load_fleet(fleet_name)
+    principal = caller_principal(request)
+    if fleet is None or (
+        principal is not None
+        and not is_dashboard_admin(principal)
+        and fleet.owner != principal
+    ):
+        raise HTTPException(status_code=404, detail="no such fleet")
+    remove_fleet(fleet_name)
+
+
 @router.get("/cache/stats")
 async def cache_stats() -> dict:
     """In-process cache sizes (file reads, repo-map, skill embeddings).

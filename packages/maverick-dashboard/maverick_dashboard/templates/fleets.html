@@ -13,6 +13,31 @@
     </p>
   </div>
 
+  <details class="panel">
+    <summary style="cursor: pointer; font-weight: 600;">+ Create a fleet</summary>
+    <form id="fleet-create-form" style="margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; max-width: 48rem;">
+      <input id="fleet-name" name="name" placeholder="fleet name (e.g. acme-ops)" required
+             style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+      <div id="agent-rows" style="display: flex; flex-direction: column; gap: 0.4rem;">
+        <div class="agent-row" style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+          <input class="a-name" placeholder="agent name" aria-label="agent name"
+                 style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+          <input class="a-role" placeholder="role" aria-label="role"
+                 style="padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+          <input class="a-desc" placeholder="description (optional)" aria-label="description"
+                 style="flex: 1; min-width: 10rem; padding: 0.4rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);" />
+        </div>
+      </div>
+      <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+        <button type="button" id="add-agent-row"
+                style="padding: 0.4rem 0.8rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">+ add agent</button>
+        <button type="submit"
+                style="padding: 0.45rem 1rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">Create fleet</button>
+        <span id="fleet-create-msg" class="muted" role="status" aria-live="polite" style="min-height: 1em;"></span>
+      </div>
+    </form>
+  </details>
+
   {% if fleets %}
     {% for fleet in fleets %}
       <div class="panel">
@@ -20,6 +45,8 @@
           <strong>{{ fleet.name }}</strong>
           <span class="muted">owner: <code>{{ fleet.owner or '—' }}</code></span>
           <span class="muted">{{ fleet.agents | length }} agent(s)</span>
+          <button class="fleet-remove-btn" data-fleet="{{ fleet.name }}"
+                  style="margin-left: auto; padding: 0.3rem 0.7rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Remove</button>
         </div>
         {% if fleet.agents %}
           <table style="margin-top: 0.75rem;">
@@ -64,11 +91,11 @@
     {% endfor %}
   {% else %}
     <div class="panel">
-      <p class="muted">
-        No fleets yet. Create one to give an employee a roster of role-scoped
-        agents:
+      <p class="muted" style="margin-bottom: 0;">
+        No fleets yet — use <strong>+ Create a fleet</strong> above (or
+        <code>maverick fleet create</code>) to give an employee a roster of
+        role-scoped agents.
       </p>
-      <pre style="margin: 0; white-space: pre-wrap;"><code>maverick fleet create</code></pre>
     </div>
   {% endif %}
 
@@ -138,6 +165,55 @@
             }
           } catch (err) { msg.style.color = 'var(--danger)'; msg.textContent = String(err); }
           btn.disabled = false;
+        });
+      });
+
+      // + add agent: clone the first (blank) row.
+      const addBtn = document.getElementById('add-agent-row');
+      if (addBtn) addBtn.addEventListener('click', function() {
+        const rows = document.getElementById('agent-rows');
+        const clone = rows.querySelector('.agent-row').cloneNode(true);
+        clone.querySelectorAll('input').forEach(function(i) { i.value = ''; });
+        rows.appendChild(clone);
+      });
+
+      // Create a fleet (POST /api/v1/fleets), then reload to show it.
+      const createForm = document.getElementById('fleet-create-form');
+      if (createForm) createForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const name = document.getElementById('fleet-name').value.trim();
+        const msg = document.getElementById('fleet-create-msg');
+        if (!name) { msg.style.color = 'var(--danger)'; msg.textContent = 'enter a fleet name'; return; }
+        const agents = [];
+        document.querySelectorAll('#agent-rows .agent-row').forEach(function(row) {
+          const an = row.querySelector('.a-name').value.trim();
+          if (!an) return;
+          agents.push({ name: an, role: row.querySelector('.a-role').value.trim(),
+                        description: row.querySelector('.a-desc').value.trim() });
+        });
+        msg.style.color = 'var(--muted)'; msg.textContent = 'creating…';
+        try {
+          const r = await fetch('/api/v1/fleets', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, agents: agents }),
+          });
+          if (r.ok || r.status === 201) { window.location.reload(); return; }
+          const j = await r.json().catch(function() { return {}; });
+          msg.style.color = 'var(--danger)'; msg.textContent = j.detail || ('failed: ' + r.status);
+        } catch (err) { msg.style.color = 'var(--danger)'; msg.textContent = String(err); }
+      });
+
+      // Remove a fleet (DELETE /api/v1/fleets/<name>), then reload.
+      document.querySelectorAll('button.fleet-remove-btn').forEach(function(btn) {
+        btn.addEventListener('click', async function() {
+          const fleet = btn.dataset.fleet;
+          if (!confirm('Remove fleet "' + fleet + '"? Its roster and run index are deleted.')) return;
+          btn.disabled = true;
+          try {
+            const r = await fetch('/api/v1/fleets/' + encodeURIComponent(fleet), { method: 'DELETE' });
+            if (r.ok || r.status === 204) { window.location.reload(); return; }
+            btn.disabled = false; alert('Remove failed: ' + r.status);
+          } catch (err) { btn.disabled = false; alert(String(err)); }
         });
       });
     })();
