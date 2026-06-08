@@ -17,6 +17,7 @@ each finding.
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 import time
 from dataclasses import asdict, dataclass, field
@@ -91,15 +92,29 @@ class ThreatReport:
     risk_rating: str          # "high" | "medium" | "low" | "clear"
 
 
+def _finite_timestamp(value: object) -> float | None:
+    """Return a finite timestamp value, or ``None`` when the audit row is bad."""
+    try:
+        ts = float(value or 0.0)
+    except (TypeError, ValueError):
+        return None
+    return ts if math.isfinite(ts) else None
+
+
 def _sample(event: dict) -> dict:
     """A compact, redaction-safe summary of one event.
 
     Audit fields may originate from model/tool activity and are consumed by the
     threat-hunter LLM as tool output, so arbitrary strings are summarized rather
     than echoed verbatim. This preserves useful metadata for normal identifiers
-    while preventing second-order prompt injection from crafted audit entries.
+    while preventing second-order prompt injection from crafted audit entries. A
+    non-finite ``ts`` (Infinity/NaN from a poisoned row) is dropped rather than
+    rendered.
     """
-    return {k: _sanitize_audit_value(event[k]) for k in _SAMPLE_KEYS if k in event}
+    sample = {k: _sanitize_audit_value(event[k]) for k in _SAMPLE_KEYS if k in event}
+    if "ts" in sample and _finite_timestamp(event.get("ts")) is None:
+        sample.pop("ts")
+    return sample
 
 
 def _rollup(findings: list[ThreatFinding]) -> str:
@@ -126,35 +141,42 @@ def hunt(*, all_days: bool = True, since: str | None = None,
             all_days=all_days, since=since, until=until, tenant=tenant,
         )
     except Exception:  # noqa: BLE001 -- a broken audit dir fails soft
-        events = []
+        events = ()
+
     try:
-        for ev in events:
-            scanned += 1
-            try:
-                kind = ev.get("kind")
-                if kind not in _INDICATORS:
-                    continue
-                # consent_result is a signal only when the action was refused.
-                if kind == "consent_result" and ev.get("decision") not in {
-                    "deny", "timeout",
-                }:
-                    continue
-                b = buckets.setdefault(
-                    kind, {"count": 0, "agents": set(), "last": 0.0, "samples": []})
-                b["count"] += 1
-                if len(b["agents"]) < _AGENT_CAP:
-                    b["agents"].add(str(_sanitize_audit_value(ev.get("agent", "system"))))
-                try:
-                    ts = float(ev.get("ts") or 0.0)
-                except (TypeError, ValueError):
-                    ts = 0.0
-                b["last"] = max(b["last"], ts)
-                if len(b["samples"]) < 3:
-                    b["samples"].append(_sample(ev))
-            except Exception:  # noqa: BLE001 -- one poisoned event must not abort
-                continue        # the sweep (else an attacker hides later signals)
-    except Exception:  # noqa: BLE001 -- never crash on a bad log
-        pass
+        iterator = iter(events)
+    except Exception:  # noqa: BLE001 -- a hunt must never crash on a bad log
+        iterator = iter(())
+
+    while True:
+        try:
+            ev = next(iterator)
+        except StopIteration:
+            break
+        except Exception:  # noqa: BLE001 -- a hunt must never crash on a bad log
+            break
+
+        scanned += 1
+        try:
+            kind = ev.get("kind")
+            if not isinstance(kind, str) or kind not in _INDICATORS:
+                continue
+            # consent_result is a signal only when the action was refused.
+            if kind == "consent_result" and ev.get("decision") not in {
+                "deny", "timeout",
+            }:
+                continue
+            b = buckets.setdefault(
+                kind, {"count": 0, "agents": set(), "last": 0.0, "samples": []})
+            b["count"] += 1
+            if len(b["agents"]) < _AGENT_CAP:
+                b["agents"].add(str(_sanitize_audit_value(ev.get("agent", "system"))))
+            ts = _finite_timestamp(ev.get("ts")) or 0.0
+            b["last"] = max(b["last"], ts)
+            if len(b["samples"]) < 3:
+                b["samples"].append(_sample(ev))
+        except Exception:  # noqa: BLE001 -- one poisoned event must not abort
+            continue        # the sweep (else an attacker hides later signals)
 
     findings = [
         ThreatFinding(
