@@ -16,6 +16,8 @@ each finding.
 """
 from __future__ import annotations
 
+import hashlib
+import re
 import time
 from dataclasses import asdict, dataclass, field
 
@@ -47,9 +49,28 @@ _SAMPLE_KEYS = (
     "kind", "agent", "ts", "goal_id", "provider", "tool", "decision",
     "reason", "rule", "detail",
 )
-# Free-text fields can carry attacker-controlled content (e.g. a blocked injection
-# string); they are truncated + control-char-stripped in _sample.
-_FREE_TEXT_SAMPLE_KEYS = frozenset({"reason", "rule", "detail"})
+# Audit metadata is later returned to an LLM tool caller. Keep simple identifiers
+# visible for triage, but do not echo arbitrary prose/instructions from audit
+# producers back into the model as evidence text.
+_SAFE_AUDIT_TEXT = re.compile(r"^[A-Za-z0-9_.@:/+,-]{1,96}$")
+_MAX_SAFE_AUDIT_TEXT = 96
+
+
+def _summarize_untrusted_text(value: object) -> str:
+    text = str(value).replace("\x00", "")
+    digest = hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()[:12]
+    return f"<untrusted text omitted: {len(text)} chars, sha256={digest}>"
+
+
+def _sanitize_audit_value(value: object) -> object:
+    if isinstance(value, str):
+        compact = " ".join(value.split())
+        if _SAFE_AUDIT_TEXT.fullmatch(compact):
+            return compact[:_MAX_SAFE_AUDIT_TEXT]
+        return _summarize_untrusted_text(value)
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    return _summarize_untrusted_text(value)
 
 
 @dataclass
@@ -71,19 +92,14 @@ class ThreatReport:
 
 
 def _sample(event: dict) -> dict:
-    """A compact, redaction-safe summary of one event. Free-text fields are
-    truncated + control-char-stripped so attacker-controlled content (e.g. a
-    blocked injection string) can't bloat the report or become a second-order
-    injection sink for the hunter agent that reads this output."""
-    out: dict = {}
-    for k in _SAMPLE_KEYS:
-        if k not in event:
-            continue
-        v = event[k]
-        if k in _FREE_TEXT_SAMPLE_KEYS:
-            v = (str(v).replace("\n", " ").replace("\r", " ").replace("\t", " "))[:160]
-        out[k] = v
-    return out
+    """A compact, redaction-safe summary of one event.
+
+    Audit fields may originate from model/tool activity and are consumed by the
+    threat-hunter LLM as tool output, so arbitrary strings are summarized rather
+    than echoed verbatim. This preserves useful metadata for normal identifiers
+    while preventing second-order prompt injection from crafted audit entries.
+    """
+    return {k: _sanitize_audit_value(event[k]) for k in _SAMPLE_KEYS if k in event}
 
 
 def _rollup(findings: list[ThreatFinding]) -> str:
@@ -127,7 +143,7 @@ def hunt(*, all_days: bool = True, since: str | None = None,
                     kind, {"count": 0, "agents": set(), "last": 0.0, "samples": []})
                 b["count"] += 1
                 if len(b["agents"]) < _AGENT_CAP:
-                    b["agents"].add(str(ev.get("agent", "system")))
+                    b["agents"].add(str(_sanitize_audit_value(ev.get("agent", "system"))))
                 try:
                     ts = float(ev.get("ts") or 0.0)
                 except (TypeError, ValueError):
