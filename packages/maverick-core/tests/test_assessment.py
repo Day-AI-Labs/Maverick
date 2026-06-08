@@ -19,7 +19,7 @@ def test_templates_registered_and_looked_up():
     from maverick.assessment import get_template, list_templates
 
     types = {t.type for t in list_templates()}
-    assert types == {"pia", "aira", "vendor_risk"}
+    assert types == {"pia", "aira", "vendor_risk", "hipaa", "soc2", "pci_dss"}
     assert get_template("VENDOR_RISK").title == "Vendor Risk Assessment"  # case-insensitive
     assert get_template("nope") is None
 

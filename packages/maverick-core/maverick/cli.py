@@ -3399,7 +3399,11 @@ def remediate_cmd(do_apply: bool, fmt: str) -> None:
 
 @main.group("assess")
 def assess_group() -> None:
-    """Conduct compliance assessments of a subject (PIA, AIRA, vendor risk)."""
+    """Conduct compliance assessments of a subject.
+
+    Privacy: PIA, AIRA, vendor risk. Security: HIPAA, SOC 2, PCI DSS.
+    Run 'maverick assess templates' for the full set.
+    """
 
 
 @assess_group.command("templates")
