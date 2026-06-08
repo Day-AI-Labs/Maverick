@@ -112,19 +112,25 @@ def _validate_registry_spec(spec: MCPServerSpec) -> None:
             "without pin_sha256; registry-installed commands must pin the "
             "executable hash"
         )
-    eval_flags = _REGISTRY_EVAL_FLAGS.get(_command_basename(spec.command))
-    if not eval_flags:
-        return
-    lowered_flags = {flag.lower() for flag in eval_flags}
-    for arg in spec.args:
-        flag = arg.split("=", 1)[0].lower()
-        if flag in lowered_flags:
-            raise ValueError(
-                f"MCP registry entry {spec.name!r} uses interpreter "
-                f"{spec.command!r} with inline execution flag {arg!r}; "
-                "registry entries must reference a pinned MCP executable or "
-                "script file instead"
-            )
+    # Reject inline-eval whether the interpreter is the command itself
+    # (``sh -c``) or smuggled through argv by a wrapper (``busybox sh -c``,
+    # ``env sh -c``, ``xargs sh -c``, ``nice sh -c``). Treat the command and
+    # every arg position as a potential interpreter and scan the tokens that
+    # follow it for that interpreter's eval flag.
+    argv = [spec.command, *spec.args]
+    for i, token in enumerate(argv):
+        eval_flags = _REGISTRY_EVAL_FLAGS.get(_command_basename(token))
+        if not eval_flags:
+            continue
+        lowered_flags = {flag.lower() for flag in eval_flags}
+        for arg in argv[i + 1:]:
+            if arg.split("=", 1)[0].lower() in lowered_flags:
+                raise ValueError(
+                    f"MCP registry entry {spec.name!r} reaches interpreter "
+                    f"{token!r} with inline execution flag {arg!r}; registry "
+                    "entries must reference a pinned MCP executable or script "
+                    "file instead"
+                )
 
 
 def spec_from_entry(entry: catalog.CatalogEntry) -> MCPServerSpec:
