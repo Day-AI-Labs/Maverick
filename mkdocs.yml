@@ -102,6 +102,9 @@ nav:
       - Security & compliance overview: enterprise/security-overview.md
       - Architecture: enterprise/architecture.md
       - Diligence data room: enterprise/diligence.md
+  - Strategy:
+      - Competitive landscape: strategy/competitive-landscape.md
+      - Oversight experience: ux/oversight-experience.md
   - Roadmap:
       - 36-month plan: ROADMAP.md
   - Community:

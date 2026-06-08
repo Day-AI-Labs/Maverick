@@ -49,9 +49,6 @@ grid, which is mostly shipped.
 
 - **MCP elicitation, URL mode (B1, Phase 3)** — the secrets-never-transit-model
   path; dovetails with remote-server OAuth (`specs/mcp-elicitation.md`).
-- **MCP client OAuth 2.1, authorization-code grant (B2)** — client-credentials
-  has shipped (`mcp_oauth.py`); the user-redirect grant + real-IdP validation
-  need a live authorization server to build and verify.
 - **IRC channel** and **LangChain / LangGraph adapters** — external-dependency
   connectors that need a live service to test meaningfully.
 - **Glasses / wearable channel** — Even Realities G2 BYOA bridge, and wearable
@@ -60,11 +57,14 @@ grid, which is mostly shipped.
 - **MCP-client language analytics** — the one remaining language-bindings gate
   step (needs the telemetry-consent UI); see the council decision below.
 
-> **Shipped since this list was last cut:** **long-context retrieval router**
-> (`long_context_router.py`, opt-in `[context] retrieval_router`) and the
-> **gRPC API surface** (`grpc_api/`, `StartGoal` / `StreamEpisode` / `Cancel` /
-> `GetStatus` behind the `[grpc]` extra). Both are now in
-> [`FEATURES.md`](./FEATURES.md).
+> **Shipped since this list was last cut:** the **long-context retrieval router**
+> (`long_context_router.py`, opt-in `[context] retrieval_router`); the **gRPC API
+> surface** (`grpc_api/`, `StartGoal` / `StreamEpisode` / `Cancel` / `GetStatus`
+> behind the `[grpc]` extra); **MCP client OAuth 2.1 authorization-code grant +
+> PKCE** (`AuthorizationCodeProvider`, `mcp_oauth.py` — joining the shipped
+> client-credentials grant); a **goal-execution Dispatcher seam** (`runner.py`,
+> threads now / queue later via `set_dispatcher`); and the oversight **"why this
+> action" drill-down**. All are in [`FEATURES.md`](./FEATURES.md).
 
 **Platform spine — what's left to be a multi-tenant hosted platform.** The
 single-node, file-per-tenant model is solid (and is the right shape for

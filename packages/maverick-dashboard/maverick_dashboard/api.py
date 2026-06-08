@@ -973,6 +973,50 @@ async def oversight_active(request: Request) -> dict:
     return {"goals": out}
 
 
+@router.get("/oversight/why/{goal_id}")
+async def oversight_why(request: Request, goal_id: int, limit: int = 40) -> dict:
+    """Explain *why* an agent is doing what it's doing — the governance drill-down.
+
+    For one goal: status, cost-so-far, a by-kind summary, and the most-recent
+    event chain (plan → tool → decision) that led here, so a supervisor can
+    answer "why is this agent acting / why is this approval being requested"
+    inline on the oversight console without hopping to the trajectory page.
+    Owner-scoped via ``assert_goal_access``; fail-soft on cost so a spend-read
+    error never 500s the drill-down.
+    """
+    from collections import Counter
+
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    limit = max(1, min(limit, 200))
+    # goal_events is ascending + backend-portable; take the most-recent `limit`
+    # from a bounded window so a long run stays cheap, kept in chronological order.
+    window = w.goal_events(goal_id, since_id=0, limit=400)
+    events = window[-limit:]
+    by_kind: Counter = Counter(e.kind for e in events)
+    cost = 0.0
+    try:
+        cost = sum(ep.cost_dollars for ep in w.list_episodes(goal_id=goal_id, limit=200))
+    except Exception:  # pragma: no cover -- cost is best-effort, never blocks
+        cost = 0.0
+    return {
+        "goal_id": goal_id,
+        "title": g.title,
+        "status": g.status,
+        "result": g.result,
+        "cost_dollars": round(cost, 4),
+        "summary": dict(by_kind),
+        "events": [
+            {"id": e.id, "agent": e.agent, "kind": e.kind,
+             "content": (e.content or "")[:400], "ts": e.ts}
+            for e in events
+        ],
+    }
+
+
 @router.get("/fleets")
 async def list_fleets_api(request: Request) -> dict:
     """The operator console roster: each fleet, its owner, and its agents.

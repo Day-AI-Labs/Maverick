@@ -190,16 +190,41 @@ SCHEMA: list[str] = [
 # their tenant through their goal/conversation FK, so they need no column of
 # their own for isolation. ``NULL`` is the legacy single-tenant install
 # (``paths.current_tenant()`` returns ``None``), so existing rows and every
-# default deployment are unaffected. This lands the column + write-stamping +
-# read-scoping for the root entity (goals) now -- the expensive-to-retrofit
-# part -- with the remaining root tables' read paths following the same
-# ``_tenant_scope`` pattern in a tracked follow-up.
+# default deployment are unaffected. v10 adds the columns + indexes; writes are
+# stamped and reads scoped across all root tables (goals/facts/conversations/
+# approvals/processed_messages), with v11 making their global UNIQUE constraints
+# tenant-aware so one tenant's upsert can't clobber another's row.
 _TENANT_TABLES = ("goals", "facts", "conversations", "approvals", "processed_messages")
 _TENANT_MIGRATION: list[str] = [
     f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS tenant_id TEXT;" for t in _TENANT_TABLES
 ] + [
     f"CREATE INDEX IF NOT EXISTS idx_pg_{t}_tenant ON {t}(tenant_id);"
     for t in _TENANT_TABLES
+]
+
+
+# --- Tenant-aware uniqueness (migration v11) ---------------------------------
+# The root tables with a global UNIQUE (facts.key, conversations(channel,
+# user_id), processed_messages(channel, external_id)) need that uniqueness made
+# per-tenant -- otherwise two tenants reusing the same key/channel collide and
+# one's write clobbers the other's row. We replace each global UNIQUE with a
+# expression unique index over ``COALESCE(tenant_id, '')`` + the natural key:
+# version-independent (no PG15 NULLS-NOT-DISTINCT needed), and NULL (the legacy
+# single-tenant install) collapses to '' so existing dedup/upsert is preserved
+# byte-for-byte. The upserts below target the same expression so ON CONFLICT
+# still fires. Dropping the old constraint by its deterministic default name is
+# IF EXISTS, so a re-run or a differently-named constraint is a safe no-op.
+_TENANT_UNIQUE_MIGRATION: list[str] = [
+    "ALTER TABLE facts DROP CONSTRAINT IF EXISTS facts_key_key;",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_pg_facts_tenant_key "
+    "ON facts (COALESCE(tenant_id, ''), key);",
+    "ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_channel_user_id_key;",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_pg_conversations_tenant_chan_user "
+    "ON conversations (COALESCE(tenant_id, ''), channel, user_id);",
+    "ALTER TABLE processed_messages "
+    "DROP CONSTRAINT IF EXISTS processed_messages_channel_external_id_key;",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_pg_processed_tenant_chan_ext "
+    "ON processed_messages (COALESCE(tenant_id, ''), channel, external_id);",
 ]
 
 
@@ -211,6 +236,7 @@ _TENANT_MIGRATION: list[str] = [
 MIGRATIONS: list[tuple[int, list[str]]] = [
     (1, SCHEMA),
     (10, _TENANT_MIGRATION),
+    (11, _TENANT_UNIQUE_MIGRATION),
 ]
 
 # Highest migration version = the reported schema version.
@@ -650,17 +676,23 @@ class PostgresWorldModel:
     def upsert_fact(self, key: str, value: str, episode_id: int | None = None) -> None:
         with self._tx() as cur:
             cur.execute(
-                "INSERT INTO facts(key, value, source_episode_id, updated_at) "
-                "VALUES(%s, %s, %s, %s) "
-                "ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, "
+                "INSERT INTO facts(key, value, source_episode_id, updated_at, tenant_id) "
+                "VALUES(%s, %s, %s, %s, %s) "
+                "ON CONFLICT ((COALESCE(tenant_id, '')), key) DO UPDATE SET "
+                "value = EXCLUDED.value, "
                 "source_episode_id = EXCLUDED.source_episode_id, "
                 "updated_at = EXCLUDED.updated_at",
-                (key, value, episode_id, time.time()),
+                (key, value, episode_id, time.time(), _active_tenant()),
             )
 
     def get_facts(self) -> dict[str, str]:
+        frag, params = _tenant_scope()
+        sql = "SELECT key, value FROM facts"
+        if frag:
+            sql += " WHERE " + frag
+        sql += " ORDER BY updated_at DESC"
         with self._tx() as cur:
-            cur.execute("SELECT key, value FROM facts ORDER BY updated_at DESC")
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return {r[0]: r[1] for r in rows}
 
@@ -690,24 +722,41 @@ class PostgresWorldModel:
         return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     def get_fact(self, key: str) -> str | None:
+        frag, params = _tenant_scope()
+        sql = "SELECT value FROM facts WHERE key = %s"
+        p: list = [key]
+        if frag:
+            sql += " AND " + frag
+            p += params
+        sql += " LIMIT 1"
         with self._tx() as cur:
-            cur.execute("SELECT value FROM facts WHERE key = %s LIMIT 1", (key,))
+            cur.execute(sql, tuple(p))
             row = cur.fetchone()
         return row[0] if row else None
 
     def delete_fact(self, key: str) -> int:
+        frag, params = _tenant_scope()
+        sql = "DELETE FROM facts WHERE key = %s"
+        p: list = [key]
+        if frag:
+            sql += " AND " + frag
+            p += params
         with self._tx() as cur:
-            cur.execute("DELETE FROM facts WHERE key = %s", (key,))
+            cur.execute(sql, tuple(p))
             return cur.rowcount
 
     def list_facts(self, key_prefix: str, limit: int = 50) -> list[tuple[str, int]]:
         like = self._like_escape(key_prefix) + "%"
+        frag, params = _tenant_scope()
+        sql = "SELECT key, length(value) AS sz FROM facts WHERE key LIKE %s ESCAPE '\\'"
+        p: list = [like]
+        if frag:
+            sql += " AND " + frag
+            p += params
+        sql += " ORDER BY updated_at DESC LIMIT %s"
+        p.append(limit)
         with self._tx() as cur:
-            cur.execute(
-                "SELECT key, length(value) AS sz FROM facts "
-                "WHERE key LIKE %s ESCAPE '\\' ORDER BY updated_at DESC LIMIT %s",
-                (like, limit),
-            )
+            cur.execute(sql, tuple(p))
             rows = cur.fetchall()
         return [(r[0], r[1]) for r in rows]
 
@@ -716,13 +765,19 @@ class PostgresWorldModel:
     ) -> list[tuple[str, str]]:
         pfx = self._like_escape(key_prefix) + "%"
         q = "%" + self._like_escape(query) + "%"
+        frag, params = _tenant_scope()
+        sql = (
+            "SELECT key, value FROM facts WHERE key LIKE %s ESCAPE '\\' "
+            "AND (key LIKE %s ESCAPE '\\' OR value LIKE %s ESCAPE '\\')"
+        )
+        p: list = [pfx, q, q]
+        if frag:
+            sql += " AND " + frag
+            p += params
+        sql += " ORDER BY updated_at DESC LIMIT %s"
+        p.append(limit)
         with self._tx() as cur:
-            cur.execute(
-                "SELECT key, value FROM facts WHERE key LIKE %s ESCAPE '\\' "
-                "AND (key LIKE %s ESCAPE '\\' OR value LIKE %s ESCAPE '\\') "
-                "ORDER BY updated_at DESC LIMIT %s",
-                (pfx, q, q, limit),
-            )
+            cur.execute(sql, tuple(p))
             rows = cur.fetchall()
         return [(r[0], r[1]) for r in rows]
 
@@ -795,30 +850,41 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(
                 "INSERT INTO approvals(action, risk, scope, detail, provenance, status, "
-                "requested_at) VALUES(%s, %s, %s, %s, %s, 'pending', %s) RETURNING id",
-                (action, risk, scope, detail, provenance, time.time()),
+                "requested_at, tenant_id) VALUES(%s, %s, %s, %s, %s, 'pending', %s, %s) "
+                "RETURNING id",
+                (action, risk, scope, detail, provenance, time.time(), _active_tenant()),
             )
             row = cur.fetchone()
         return int(row[0])
 
     def get_approval(self, approval_id: int):
         from ..world_model import Approval
+        frag, params = _tenant_scope()
+        sql = (
+            "SELECT id, action, risk, scope, detail, provenance, status, "
+            "requested_at, decided_at FROM approvals WHERE id = %s"
+        )
+        p: list = [approval_id]
+        if frag:
+            sql += " AND " + frag
+            p += params
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, action, risk, scope, detail, provenance, status, "
-                "requested_at, decided_at FROM approvals WHERE id = %s",
-                (approval_id,),
-            )
+            cur.execute(sql, tuple(p))
             row = cur.fetchone()
         return Approval(*row) if row else None
 
     def pending_approvals(self) -> list:
         from ..world_model import Approval
+        frag, params = _tenant_scope()
+        sql = (
+            "SELECT id, action, risk, scope, detail, provenance, status, "
+            "requested_at, decided_at FROM approvals WHERE status = 'pending'"
+        )
+        if frag:
+            sql += " AND " + frag
+        sql += " ORDER BY id"
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, action, risk, scope, detail, provenance, status, "
-                "requested_at, decided_at FROM approvals WHERE status = 'pending' ORDER BY id"
-            )
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return [Approval(*r) for r in rows]
 
@@ -844,18 +910,25 @@ class PostgresWorldModel:
         prune_conversations can retire idle ones. Mirrors SQLite."""
         from ..world_model import Conversation
         now = time.time()
+        tenant = _active_tenant()
+        frag, params = _tenant_scope()
+        sel = (
+            "SELECT id, channel, user_id, created_at, last_seen "
+            "FROM conversations WHERE channel = %s AND user_id = %s"
+        )
+        sp: list = [channel, user_id]
+        if frag:
+            sel += " AND " + frag
+            sp += params
         with self._tx() as cur:
             cur.execute(
-                "INSERT INTO conversations(channel, user_id, created_at, last_seen) "
-                "VALUES(%s, %s, %s, %s) "
-                "ON CONFLICT(channel, user_id) DO UPDATE SET last_seen = EXCLUDED.last_seen",
-                (channel, user_id, now, now),
+                "INSERT INTO conversations(channel, user_id, created_at, last_seen, tenant_id) "
+                "VALUES(%s, %s, %s, %s, %s) "
+                "ON CONFLICT ((COALESCE(tenant_id, '')), channel, user_id) "
+                "DO UPDATE SET last_seen = EXCLUDED.last_seen",
+                (channel, user_id, now, now, tenant),
             )
-            cur.execute(
-                "SELECT id, channel, user_id, created_at, last_seen "
-                "FROM conversations WHERE channel = %s AND user_id = %s",
-                (channel, user_id),
-            )
+            cur.execute(sel, tuple(sp))
             row = cur.fetchone()
         return Conversation(*row)
 
@@ -888,18 +961,21 @@ class PostgresWorldModel:
 
     def list_conversations(self, channel: str | None = None) -> list:
         from ..world_model import Conversation
+        frag, params = _tenant_scope()
+        sql = "SELECT id, channel, user_id, created_at, last_seen FROM conversations"
+        conds: list[str] = []
+        p: list = []
+        if channel:
+            conds.append("channel = %s")
+            p.append(channel)
+        if frag:
+            conds.append(frag)
+            p += params
+        if conds:
+            sql += " WHERE " + " AND ".join(conds)
+        sql += " ORDER BY last_seen DESC"
         with self._tx() as cur:
-            if channel:
-                cur.execute(
-                    "SELECT id, channel, user_id, created_at, last_seen FROM conversations "
-                    "WHERE channel = %s ORDER BY last_seen DESC",
-                    (channel,),
-                )
-            else:
-                cur.execute(
-                    "SELECT id, channel, user_id, created_at, last_seen FROM conversations "
-                    "ORDER BY last_seen DESC"
-                )
+            cur.execute(sql, tuple(p))
             rows = cur.fetchall()
         return [Conversation(*r) for r in rows]
 
@@ -1052,32 +1128,38 @@ class PostgresWorldModel:
         Twilio/iMessage webhook retries producing N goals + N spends."""
         with self._tx() as cur:
             cur.execute(
-                "INSERT INTO processed_messages(channel, external_id, goal_id, seen_at) "
-                "VALUES(%s, %s, %s, %s) ON CONFLICT(channel, external_id) DO NOTHING",
-                (channel, external_id, goal_id, time.time()),
+                "INSERT INTO processed_messages(channel, external_id, goal_id, seen_at, tenant_id) "
+                "VALUES(%s, %s, %s, %s, %s) "
+                "ON CONFLICT ((COALESCE(tenant_id, '')), channel, external_id) DO NOTHING",
+                (channel, external_id, goal_id, time.time(), _active_tenant()),
             )
             # rowcount is 1 on insert, 0 when the conflict skipped it.
             return cur.rowcount == 1
 
     def is_processed_message(self, channel: str, external_id: str) -> bool:
+        frag, params = _tenant_scope()
+        sql = "SELECT 1 FROM processed_messages WHERE channel = %s AND external_id = %s"
+        p: list = [channel, external_id]
+        if frag:
+            sql += " AND " + frag
+            p += params
+        sql += " LIMIT 1"
         with self._tx() as cur:
-            cur.execute(
-                "SELECT 1 FROM processed_messages "
-                "WHERE channel = %s AND external_id = %s LIMIT 1",
-                (channel, external_id),
-            )
+            cur.execute(sql, tuple(p))
             return cur.fetchone() is not None
 
     def lookup_processed_message(self, channel: str, external_id: str) -> int | None:
         """goal_id for an already-processed message, or None if unseen.
         Distinguishes 'no row' (None) from 'row exists but goal_id null' (0),
         mirroring SQLite."""
+        frag, params = _tenant_scope()
+        sql = "SELECT goal_id FROM processed_messages WHERE channel = %s AND external_id = %s"
+        p: list = [channel, external_id]
+        if frag:
+            sql += " AND " + frag
+            p += params
         with self._tx() as cur:
-            cur.execute(
-                "SELECT goal_id FROM processed_messages "
-                "WHERE channel = %s AND external_id = %s",
-                (channel, external_id),
-            )
+            cur.execute(sql, tuple(p))
             row = cur.fetchone()
         if row is None:
             return None
