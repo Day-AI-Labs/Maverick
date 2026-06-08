@@ -7,6 +7,7 @@ import time
 
 from maverick.issue_webhooks import (
     build_brief,
+    canonical_signature,
     event_timestamp_ms,
     is_fresh,
     parse_issue_event,
@@ -19,6 +20,13 @@ def _sig(body: bytes, secret: str) -> str:
 
 
 class TestSignature:
+    def test_canonical_signature_normalizes_equivalent_forms(self):
+        digest = "abc123"
+        assert canonical_signature(digest) == digest
+        assert canonical_signature("sha256=" + digest) == digest
+        assert canonical_signature("  sha256=" + digest + "  ") == digest
+        assert canonical_signature(None) is None
+
     def test_bare_hex_signature_accepts(self):
         secret = "s3cr3t"
         body = b'{"hello":"world"}'

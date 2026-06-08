@@ -48,6 +48,21 @@ class IssueEvent:
     assignee: str        # id/email the issue was assigned to (for logging)
 
 
+def canonical_signature(signature_header: str | None) -> str | None:
+    """Return the canonical HMAC digest accepted by ``verify_signature``.
+
+    Linear sends a bare hex digest and Jira senders commonly prefix the same
+    digest with ``sha256=``. Normalize those equivalent wire forms to the
+    digest that is actually compared so replay-dedup keys match verification.
+    """
+    if not signature_header:
+        return None
+    sig = signature_header.strip()
+    if sig.startswith("sha256="):
+        sig = sig[len("sha256="):]
+    return sig
+
+
 def verify_signature(
     body: bytes,
     signature_header: str | None,
@@ -60,11 +75,11 @@ def verify_signature(
     CLOSED when no secret is configured — these routes hang off the public
     dashboard app, so an unsigned request must be rejected, not accepted.
     """
-    if not secret or not signature_header:
+    if not secret:
         return False
-    sig = signature_header.strip()
-    if sig.startswith("sha256="):
-        sig = sig[len("sha256="):]
+    sig = canonical_signature(signature_header)
+    if not sig:
+        return False
     expected = hmac.new(
         secret.encode("utf-8"), body, hashlib.sha256,
     ).hexdigest()

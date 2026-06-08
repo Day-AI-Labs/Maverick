@@ -1562,6 +1562,7 @@ async def _handle_issue_webhook(
     """
     from maverick.issue_webhooks import (
         build_brief,
+        canonical_signature,
         is_fresh,
         parse_issue_event,
         replay_window_seconds,
@@ -1605,7 +1606,10 @@ async def _handle_issue_webhook(
     # re-create and re-run a paid goal indefinitely.
     if not is_fresh(provider, payload):
         raise HTTPException(status_code=403, detail="stale or undated webhook")
-    if _issue_webhook_replay_seen(signature, replay_window_seconds()):
+    dedup_signature = canonical_signature(signature)
+    if not dedup_signature:
+        raise HTTPException(status_code=403, detail="bad webhook signature")
+    if _issue_webhook_replay_seen(dedup_signature, replay_window_seconds()):
         raise HTTPException(status_code=409, detail="duplicate webhook delivery")
 
     if not _any_provider_key_set():

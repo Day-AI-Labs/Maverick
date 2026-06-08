@@ -308,3 +308,44 @@ def test_linear_duplicate_delivery_rejected(_configured, _no_real_run):
     second = client.post("/webhook/linear", content=body, headers=headers)
     assert second.status_code == 409
     assert len(_no_real_run) == 1
+
+
+def test_linear_duplicate_delivery_rejected_with_prefixed_variant(_configured, _no_real_run):
+    # Replay dedup must key on the canonical digest that verification accepts,
+    # not the raw header string, or a captured bare Linear signature can be
+    # replayed as an equivalent sha256=<digest> header within the fresh window.
+    body = json.dumps(_linear_assigned()).encode()
+    digest = _sign(body)
+    first = client.post(
+        "/webhook/linear",
+        content=body,
+        headers={"Linear-Signature": digest},
+    )
+    assert first.status_code == 201
+    second = client.post(
+        "/webhook/linear",
+        content=body,
+        headers={"Linear-Signature": "sha256=" + digest},
+    )
+    assert second.status_code == 409
+    assert len(_no_real_run) == 1
+
+
+def test_jira_duplicate_delivery_rejected_with_bare_variant(_configured, _no_real_run):
+    # Same bypass in the opposite direction for Jira: a prefixed signature and
+    # its bare digest form are the same verified delivery.
+    body = json.dumps(_jira_assigned()).encode()
+    digest = _sign(body)
+    first = client.post(
+        "/webhook/jira",
+        content=body,
+        headers={"X-Hub-Signature": "sha256=" + digest},
+    )
+    assert first.status_code == 201
+    second = client.post(
+        "/webhook/jira",
+        content=body,
+        headers={"X-Hub-Signature": digest},
+    )
+    assert second.status_code == 409
+    assert len(_no_real_run) == 1
