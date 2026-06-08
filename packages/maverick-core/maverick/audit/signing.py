@@ -638,10 +638,16 @@ def reanchor_file(path: Path, *, force: bool = False, preverified: bool = False)
     from cryptography.hazmat.primitives.asymmetric import ed25519
 
     try:
-        with io.StringIO(_segment_text(path)) as f:
-            original = f.read()
+        raw = path.read_bytes()
     except OSError:
         return -1
+    # A closed day-file may be at-rest *sealed* (#1015). Re-chain its decrypted
+    # NDJSON, but remember the sealed state so the rewrite below writes it back
+    # sealed -- a re-anchor (e.g. after a GDPR erase) must not silently unseal a
+    # confidential segment to plaintext.
+    from ..crypto_at_rest import is_sealed
+    was_sealed = is_sealed(raw)
+    original = _segment_text(path)
 
     parsed: list[tuple[str, object]] = []
     any_signed = False
@@ -701,14 +707,17 @@ def reanchor_file(path: Path, *, force: bool = False, preverified: bool = False)
     if new_content == original:
         return 0  # untouched rows under an unchanged key -> no rewrite
 
+    from .sealing import encode_segment
+    new_bytes = encode_segment(new_content, sealed=was_sealed)
+
     tmp = path.with_suffix(".ndjson.reanchortmp")
     try:
         mode = path.stat().st_mode & 0o777
     except OSError:
         mode = 0o600
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(new_content)
+        with open(tmp, "wb") as f:
+            f.write(new_bytes)
             f.flush()
             os.fsync(f.fileno())
         tmp.replace(path)
