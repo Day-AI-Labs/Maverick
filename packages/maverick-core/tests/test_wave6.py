@@ -147,7 +147,45 @@ class TestMCPPinSha256:
         from maverick.mcp_client import MCPServerSpec, _verify_command_pin
         # No pin set -> _verify_command_pin returns without touching disk.
         spec = MCPServerSpec(name="x", command="any-command-here")
-        _verify_command_pin(spec)  # no raise
+        assert _verify_command_pin(spec) is None  # no pin -> None, no raise
+
+    def test_pin_verification_returns_resolved_path(self, tmp_path):
+        # The verified path is returned so start() spawns exactly the file that
+        # was hashed, closing the verify-then-re-resolve PATH TOCTOU.
+        import hashlib
+
+        from maverick.mcp_client import MCPServerSpec, _verify_command_pin
+        exe = tmp_path / "mcp-tool"
+        exe.write_bytes(b"#!/bin/sh\necho ok\n")
+        exe.chmod(0o755)
+        sha = hashlib.sha256(exe.read_bytes()).hexdigest()
+        spec = MCPServerSpec(name="x", command=str(exe), pin_sha256=sha)
+        assert _verify_command_pin(spec) == str(exe)
+
+    @pytest.mark.asyncio
+    async def test_start_spawns_resolved_path_not_bare_command(self, tmp_path, monkeypatch):
+        # start() must exec the verified path; spawning the bare command would
+        # let the OS re-resolve PATH to a swapped binary after the hash check.
+        import hashlib
+
+        from maverick import mcp_client as mc
+        exe = tmp_path / "mcp-tool"
+        exe.write_bytes(b"#!/bin/sh\necho ok\n")
+        exe.chmod(0o755)
+        sha = hashlib.sha256(exe.read_bytes()).hexdigest()
+        # Bare command name resolves (via which) to exe; the spawn must use exe.
+        monkeypatch.setattr("shutil.which", lambda cmd: str(exe))
+        spec = mc.MCPServerSpec(name="x", command="mcp-tool", pin_sha256=sha)
+        captured: dict = {}
+
+        async def fake_exec(program, *args, **kwargs):
+            captured["program"] = program
+            raise RuntimeError("captured")
+
+        monkeypatch.setattr(mc.asyncio, "create_subprocess_exec", fake_exec)
+        with pytest.raises(RuntimeError, match="captured"):
+            await mc.MCPClient(spec).start()
+        assert captured["program"] == str(exe)
 
 
     def test_pin_posix_backslash_command_uses_path_lookup(
