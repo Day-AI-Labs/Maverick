@@ -53,7 +53,7 @@ _VIEW_VIDEO_INPUT_SCHEMA: dict[str, Any] = {
         },
         "model": {
             "type": "string",
-            "description": "Override vision model (provider:model). Defaults to MAVERICK_VISION_MODEL env or anthropic:claude-sonnet-4-6.",
+            "description": "Override vision model (provider:model). Defaults to MAVERICK_VISION_MODEL env or the configured vision model ([models].vision, default claude-sonnet-4-6).",
         },
     },
     "required": ["source"],
@@ -120,10 +120,11 @@ def _run_view_video(args: dict[str, Any], sandbox, *, budget=None) -> str:
     if not source:
         return "ERROR: source is required"
     prompt = (args.get("prompt") or "Describe what happens in this video.").strip()
+    from ..llm import model_for_role
     model = (
         args.get("model")
         or os.environ.get("MAVERICK_VISION_MODEL")
-        or "anthropic:claude-sonnet-4-6"
+        or model_for_role("vision")
     )
     try:
         num_frames = int(args.get("num_frames") or _DEFAULT_FRAMES)
