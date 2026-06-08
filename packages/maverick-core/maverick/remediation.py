@@ -184,13 +184,13 @@ def _parses_ok(text: str) -> bool:
 
 def _record_remediation(item: RemediationItem, block: str) -> bool:
     """Record the ``config_remediated`` audit event. Returns False if it could not
-    be written -- the caller then refuses to mutate config unlogged (audit is
-    load-bearing for a self-modifying-config change)."""
+    be written -- the caller then refuses to leave config mutated unlogged (audit
+    is load-bearing for a self-modifying-config change)."""
     try:
         from .audit import EventKind, record
-        record(EventKind.CONFIG_REMEDIATED, agent="security_assessor",
-               section=item.section, control=item.control, applied=block.strip())
-        return True
+        return bool(record(
+            EventKind.CONFIG_REMEDIATED, agent="security_assessor",
+            section=item.section, control=item.control, applied=block.strip()))
     except Exception:
         return False
 
@@ -267,8 +267,9 @@ def apply_remediation(item: RemediationItem, *, dry_run: bool = True) -> ApplyRe
     if dry_run:
         return ApplyResult(item.control, False, dry_run=True, block=block,
                            undo=f"remove the appended [{item.section}] block")
+    existed_before = path.exists()
     try:
-        existing = path.read_text(encoding="utf-8") if path.exists() else ""
+        existing = path.read_text(encoding="utf-8") if existed_before else ""
     except OSError as e:
         return ApplyResult(item.control, False, reason=f"could not read config: {e}")
     new_text = (existing.rstrip() + "\n\n" + block) if existing.strip() else block
@@ -280,16 +281,28 @@ def apply_remediation(item: RemediationItem, *, dry_run: bool = True) -> ApplyRe
             item.control, False, block=block,
             reason=f"appending [{item.section}] would make config.toml invalid "
                    "(it may already be malformed); fix it by hand")
-    # Audit is load-bearing here: refuse to mutate config we cannot record.
-    if not _record_remediation(item, block):
-        return ApplyResult(
-            item.control, False,
-            reason="could not write the audit record; refusing to change config "
-                   "unlogged")
     try:
         backup = _write_config_atomic(path, new_text, prior=existing)
     except OSError as e:
         return ApplyResult(item.control, False, reason=f"could not write config: {e}")
+    # Audit is load-bearing here: record only after the config commit succeeds,
+    # and roll the commit back if the audit writer reports failure. This avoids
+    # both unlogged config mutation and false-positive remediation audit rows.
+    if not _record_remediation(item, block):
+        try:
+            if existed_before:
+                _write_config_atomic(path, existing, prior=new_text)
+            else:
+                path.unlink(missing_ok=True)
+        except OSError as e:
+            return ApplyResult(
+                item.control, False,
+                reason="could not write the audit record; rollback failed: "
+                       f"{e}")
+        return ApplyResult(
+            item.control, False,
+            reason="could not write the audit record; rolled back config change "
+                   "rather than leave it unlogged")
     return ApplyResult(
         item.control, True, block=block,
         undo=f"restore {backup}" if backup
