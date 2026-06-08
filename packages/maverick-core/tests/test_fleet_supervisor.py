@@ -43,15 +43,26 @@ def test_capability_for_role_cannot_escalate_past_acl(monkeypatch):
     assert cap.permits("read_file") is True
 
 
-def test_capability_for_role_unknown_role_is_noop(monkeypatch):
+def test_capability_for_role_unknown_role_is_rejected(monkeypatch):
     _cfg(monkeypatch, {"roles": {"analyst": {"allow_tools": ["read_file"]}}})
-    from maverick.capability import capability_for_role
-    cap = capability_for_role("ghost", principal="agent:acme.g")
-    assert cap.permits("shell") is True  # unchanged: all-permissive base
+    import pytest
+    from maverick.capability import UnknownRoleError, capability_for_role
+
+    with pytest.raises(UnknownRoleError, match="undefined RBAC role"):
+        capability_for_role("ghost", principal="agent:acme.g")
+
+
+def test_capability_for_role_empty_role_is_rejected(monkeypatch):
+    _cfg(monkeypatch, {"roles": {"analyst": {"allow_tools": ["read_file"]}}})
+    import pytest
+    from maverick.capability import UnknownRoleError, capability_for_role
+
+    with pytest.raises(UnknownRoleError, match="undefined RBAC role"):
+        capability_for_role("", principal="agent:acme.g")
 
 
 def test_capability_for_role_default_principal(monkeypatch):
-    _cfg(monkeypatch, {})
+    _cfg(monkeypatch, {"roles": {"analyst": {"allow_tools": ["read_file"]}}})
     from maverick.capability import capability_for_role
     assert capability_for_role("analyst").principal == "agent"
 
@@ -143,6 +154,12 @@ def test_run_goal_in_thread_default_capability_is_none(monkeypatch):
 def _make_fleet(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    _cfg(monkeypatch, {
+        "roles": {
+            "analyst": {"allow_tools": ["read_file", "search"]},
+            "engineer": {"allow_tools": ["read_file", "write_file"]},
+        },
+    })
     from maverick.fleet import Fleet, FleetAgent, save_fleet
     save_fleet(Fleet(name="acme", owner="user:alice", agents=(
         FleetAgent("researcher", "analyst"),
@@ -193,6 +210,47 @@ def test_fleet_run_creates_goal_and_run_index(monkeypatch, tmp_path):
     assert runs[0]["agent"] == "researcher"
     assert runs[0]["goal_id"] == seen["goal_id"]
     assert stat.S_IMODE(runs_path("acme").stat().st_mode) == 0o600
+
+
+def test_fleet_run_rejects_undefined_role(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    _cfg(monkeypatch, {"roles": {"analyst": {"allow_tools": ["read_file"]}}})
+
+    from maverick.fleet import Fleet, FleetAgent, save_fleet
+    save_fleet(Fleet(name="acme", owner="user:alice", agents=(
+        FleetAgent("ghost", "ghost"),
+    )))
+
+    called = False
+
+    def fake_run(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        return "done"
+
+    monkeypatch.setattr("maverick.runner.run_goal_in_thread", fake_run)
+
+    from maverick.cli import main
+    res = CliRunner().invoke(main, [
+        "--db", str(tmp_path / "w.db"), "fleet", "run", "acme", "ghost", "do it",
+    ])
+    assert res.exit_code == 2
+    assert "undefined RBAC role" in res.output
+    assert called is False
+
+
+def test_fleet_create_rejects_undefined_role(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _cfg(monkeypatch, {"roles": {"analyst": {"allow_tools": ["read_file"]}}})
+
+    from maverick.cli import main
+    res = CliRunner().invoke(main, [
+        "fleet", "create", "acme", "--owner", "user:alice",
+        "--agent", "ghost:ghost",
+    ])
+    assert res.exit_code == 2
+    assert "undefined RBAC role" in res.output
 
 
 def test_fleet_run_missing_fleet(monkeypatch, tmp_path):
