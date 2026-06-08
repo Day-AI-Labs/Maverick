@@ -15,6 +15,7 @@ address / fuzzy-alias resolution here — see the honest caveats in the proposal
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -50,11 +51,20 @@ def _score(query: str, candidate: str) -> float:
     return inter / len(tq | tc)
 
 
+def _validate_threshold(value: Any) -> float:
+    """Return a finite screening threshold in the safe ``(0, 1]`` range."""
+    threshold = 0.85 if value is None else float(value)
+    if not math.isfinite(threshold) or threshold <= 0.0 or threshold > 1.0:
+        raise ValueError("threshold must be a finite number greater than 0 and no more than 1")
+    return threshold
+
+
 def screen(name: str, sdn_names, *, threshold: float = 0.85) -> dict:
     """Screen ``name`` against ``sdn_names``; return ``{match, hits, screened}``.
 
     ``hits`` are ``{name, score}`` at or above ``threshold``, highest first.
     """
+    threshold = _validate_threshold(threshold)
     hits = []
     for cand in sdn_names or []:
         s = _score(name, str(cand))
@@ -100,7 +110,12 @@ _SCHEMA = {
     "properties": {
         "op": {"type": "string", "enum": ["check"], "default": "check"},
         "name": {"type": "string", "description": "the payee / vendor / counterparty to screen"},
-        "threshold": {"type": "number", "description": "match threshold 0–1 (default 0.85)"},
+        "threshold": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1,
+            "description": "match threshold >0–1 (default 0.85)",
+        },
     },
     "required": ["name"],
 }
@@ -115,7 +130,10 @@ def _run(args: dict[str, Any]) -> str:
     if not sdn:
         return (f"ERROR: no sanctions list found at {path}. Set [screening] "
                 "sdn_path to an OFAC SDN export (newline or JSON name list).")
-    threshold = float(args.get("threshold") or 0.85)
+    try:
+        threshold = _validate_threshold(args.get("threshold"))
+    except (TypeError, ValueError):
+        return "ERROR: threshold must be a finite number greater than 0 and no more than 1"
     result = screen(name, sdn, threshold=threshold)
     if not result["match"]:
         return f"CLEAR: {name!r} not found on the sanctions list ({len(sdn)} names)."
