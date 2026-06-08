@@ -23,7 +23,7 @@ def _tool(name):
 def test_registry_keeps_research_and_controls_drops_mutating_adds_assessment():
     base = ToolRegistry()
     for n in ("read_file", "web_search", "knowledge_search", "find_controls",
-              "shell", "write_file", "apply_patch"):
+              "http_fetch", "shell", "write_file", "apply_patch"):
         base.register(_tool(n))
 
     reg = _privacy_analyst_tools(base, AssessmentSession())
@@ -32,7 +32,7 @@ def test_registry_keeps_research_and_controls_drops_mutating_adds_assessment():
     # read-only research + the control catalog are kept
     assert {"read_file", "web_search", "knowledge_search", "find_controls"} <= names
     # mutating / outward tools are excluded from the analyst envelope
-    assert names.isdisjoint({"shell", "write_file", "apply_patch"})
+    assert names.isdisjoint({"http_fetch", "shell", "write_file", "apply_patch"})
     # the assessment engine is wired in
     assert {"list_assessments", "start_assessment", "answer_question",
             "finalize_assessment"} <= names
