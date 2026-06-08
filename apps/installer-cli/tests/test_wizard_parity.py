@@ -433,6 +433,16 @@ def test_write_config_emits_system_local_first(tmp_path: Path, monkeypatch):
         tmp_path, monkeypatch, advanced={"local_first": True},
     )
     assert parsed["system"]["local_first"] is True
+    assert "local_first" not in parsed
+
+
+def test_write_config_emits_local_first_model_for_local_provider(tmp_path: Path, monkeypatch):
+    parsed = _write_full_config(
+        tmp_path, monkeypatch, providers=["anthropic", "ollama"],
+        advanced={"local_first": True},
+    )
+    assert parsed["system"]["local_first"] is True
+    assert parsed["local_first"]["model"].startswith("ollama:")
 
 
 def test_write_config_emits_self_learning_distill_local(tmp_path: Path, monkeypatch):

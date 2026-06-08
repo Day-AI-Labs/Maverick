@@ -517,6 +517,21 @@ def pick_providers() -> list[str]:
     return [p.split()[0] for p in picks]
 
 
+_LOCAL_FIRST_PROVIDERS = frozenset({"ollama", "tgi"})
+
+
+def _local_first_model(providers: list[str]) -> str | None:
+    """Return the default local model spec for the selected providers."""
+    for prov in providers:
+        if prov not in _LOCAL_FIRST_PROVIDERS:
+            continue
+        info = catalog.PROVIDERS.get(prov)
+        models = (info or {}).get("models") or []
+        if models:
+            return f"{prov}:{models[0]['id']}"
+    return None
+
+
 def pick_models_per_role(providers: list[str]) -> dict[str, str]:
     console.print()
     if _q_confirm(
@@ -2118,6 +2133,11 @@ def write_config(
             lines.append("")
             lines.append("[system]")
             lines.append("local_first = true")
+            local_model = _local_first_model(providers)
+            if local_model:
+                lines.append("")
+                lines.append("[local_first]")
+                _emit_kv(lines, "model", local_model)
         oidc = advanced.get("oidc") or {}
         if isinstance(oidc, dict) and oidc.get("enabled"):
             # SSO ID-token verification for `maverick serve`. Its own table
