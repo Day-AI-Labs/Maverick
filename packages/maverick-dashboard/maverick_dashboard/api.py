@@ -4,9 +4,12 @@ v0.1.6: BackgroundTask runner moved to maverick.runner.
 """
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import logging
 import os
+import threading
+import time
 
 from fastapi import (
     APIRouter,
@@ -23,6 +26,7 @@ from maverick.runner import (
     DEFAULT_MAX_WALL_SECONDS,
 )
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 from .auth import (
     assert_goal_access,
@@ -554,11 +558,19 @@ async def get_spend() -> dict:
     }
 
 
-@router.get("/security")
-async def security_register() -> dict:
-    """The privacy/security agent team's register, read-only and fail-soft:
-    live control posture (compliance), the audit-trail threat hunt, and the
-    remediation plan. One operator view over the three agents' outputs."""
+_SECURITY_REGISTER_CACHE_TTL_SECONDS = 60.0
+_SECURITY_REGISTER_HUNT_DAYS = 7
+_security_register_cache: tuple[float, dict] | None = None
+_security_register_cache_lock = threading.Lock()
+
+
+def _security_hunt_window() -> tuple[str, str]:
+    today = _dt.datetime.now(_dt.timezone.utc).date()
+    since = today - _dt.timedelta(days=_SECURITY_REGISTER_HUNT_DAYS - 1)
+    return since.isoformat(), today.isoformat()
+
+
+def _security_register_snapshot_uncached() -> dict:
     controls: list[dict] = []
     try:
         from maverick.compliance import compliance_report
@@ -571,24 +583,32 @@ async def security_register() -> dict:
         log.warning("security register: compliance probe failed", exc_info=True)
 
     threat: dict = {"risk": "clear", "events_scanned": 0, "findings": []}
+    breaches: list[dict] = []
     try:
         from maverick.threat_hunt import hunt
-        r = hunt()
+        since, until = _security_hunt_window()
+        r = hunt(all_days=False, since=since, until=until)
+        findings = [
+            {"kind": f.kind, "title": f.title, "severity": f.severity,
+             "count": f.count, "agents": f.agents}
+            for f in r.findings
+        ]
         threat = {
             "risk": r.risk_rating, "events_scanned": r.events_scanned,
-            "findings": [
-                {"kind": f.kind, "title": f.title, "severity": f.severity,
-                 "count": f.count, "agents": f.agents}
-                for f in r.findings
-            ],
+            "window": {"since": since, "until": until},
+            "findings": findings,
         }
+        breaches = [
+            {"kind": f.kind, "title": f.title, "severity": f.severity, "count": f.count}
+            for f in r.findings
+        ]
     except Exception:
         log.warning("security register: threat hunt failed", exc_info=True)
 
-    remediation: dict = {"auto_fix_enabled": False, "gaps": [], "breaches": []}
+    remediation: dict = {"auto_fix_enabled": False, "gaps": [], "breaches": breaches}
     try:
         from maverick.remediation import plan
-        p = plan()
+        p = plan(include_breaches=False)
         remediation = {
             "auto_fix_enabled": p.auto_fix_enabled,
             "gaps": [
@@ -596,12 +616,37 @@ async def security_register() -> dict:
                  "rationale": g.rationale}
                 for g in p.gaps
             ],
-            "breaches": p.breaches,
+            "breaches": breaches,
         }
     except Exception:
         log.warning("security register: remediation plan failed", exc_info=True)
 
     return {"controls": controls, "threat_hunt": threat, "remediation": remediation}
+
+
+def _security_register_snapshot() -> dict:
+    global _security_register_cache
+    with _security_register_cache_lock:
+        now = time.monotonic()
+        if (
+            _security_register_cache is not None
+            and now - _security_register_cache[0] < _SECURITY_REGISTER_CACHE_TTL_SECONDS
+        ):
+            return _security_register_cache[1]
+        snapshot = _security_register_snapshot_uncached()
+        _security_register_cache = (time.monotonic(), snapshot)
+        return snapshot
+
+
+@router.get("/security")
+async def security_register() -> dict:
+    """The privacy/security agent team's register, read-only and fail-soft.
+
+    The audit hunt is bounded to a recent window, cached briefly, and run off
+    the event loop so cross-site or repeated GETs cannot force unbounded
+    synchronous audit-log scans on every request.
+    """
+    return await run_in_threadpool(_security_register_snapshot)
 
 
 # ---------- council pass: control surface ----------

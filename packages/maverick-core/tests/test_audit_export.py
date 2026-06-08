@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 from click.testing import CliRunner
 from maverick.audit.events import AuditEvent, EventKind
@@ -136,6 +137,20 @@ def test_iter_all_spans_two_day_files_and_skips_anchors(monkeypatch, tmp_path):
     assert "today_tool" in names
     assert "old_tool" in names
     assert all(e.get("kind") != "anchor" for e in iter_audit_events(all_days=True))
+
+
+def test_iter_streams_file_lines_without_reading_whole_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    audit_dir = tmp_path / ".maverick" / "audit"
+    _write_day(audit_dir, "2020-01-01", name="streamed_tool")
+
+    def fail_read_text(self, *args, **kwargs):
+        raise AssertionError("iter_audit_events must stream instead of read_text()")
+
+    monkeypatch.setattr(Path, "read_text", fail_read_text)
+    names = {e.get("name") for e in iter_audit_events(day="2020-01-01")}
+    assert names == {"streamed_tool"}
 
 
 def test_iter_day_selects_one_file(monkeypatch, tmp_path):
