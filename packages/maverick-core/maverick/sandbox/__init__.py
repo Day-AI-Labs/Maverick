@@ -223,6 +223,7 @@ def build_sandbox(
         return DevcontainerBackend(
             project_dir=project_dir, timeout=timeout,
             allow_network=_config_bool(full_cfg.get("allow_network"), True),
+            memory=full_cfg.get("memory", "4g"),
         )
     if chosen == "kubernetes":
         return KubernetesBackend(

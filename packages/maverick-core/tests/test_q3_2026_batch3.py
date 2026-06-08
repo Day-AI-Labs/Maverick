@@ -116,6 +116,9 @@ def test_devcontainer_exec_builds_docker_run(tmp_path, monkeypatch):
     assert "--user" in args and "node" in args
     assert "-e" in args and any("NODE_ENV=test" in s for s in args)
     assert "alpine" in args
+    # DoS parity with DockerBackend: RAM is capped and swap pinned to it so the
+    # cap can't be sidestepped via swap.
+    assert "--memory" in args and "--memory-swap" in args
 
 
 def test_build_sandbox_constructs_devcontainer(monkeypatch, tmp_path):
