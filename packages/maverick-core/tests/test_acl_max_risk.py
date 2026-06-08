@@ -33,6 +33,14 @@ def test_tool_risk_defaults():
     assert tool_risk("code_exec") == "high"
     assert tool_risk("memory") == "high"
     assert tool_risk("obsidian") == "high"
+    for connector in (
+        "servicenow",
+        "snowflake",
+        "databricks",
+        "onetrust",
+        "vertex",
+    ):
+        assert tool_risk(connector) == "high"
     assert tool_risk("read_file") == "low"
     # Unclassified tool falls back to medium.
     assert tool_risk("some_unknown_tool") == "medium"
@@ -110,6 +118,28 @@ max_risk = "medium"
     assert "memory" not in names
     assert "obsidian" not in names
     assert "write_file" not in names
+    assert "read_file" in names
+
+
+def test_medium_ceiling_drops_strategic_connectors(tmp_path, monkeypatch):
+    """Credentialed enterprise connectors must not bypass medium risk caps."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _write_config(tmp_path, '''
+[security]
+max_risk = "medium"
+''')
+    from maverick.tools import base_registry
+
+    reg = base_registry(world=_FakeWorld(), sandbox=_FakeSandbox())
+    names = {t.name for t in reg.all()}
+    for connector in (
+        "servicenow",
+        "snowflake",
+        "databricks",
+        "onetrust",
+        "vertex",
+    ):
+        assert connector not in names
     assert "read_file" in names
 
 
