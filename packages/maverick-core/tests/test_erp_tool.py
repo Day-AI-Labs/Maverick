@@ -39,6 +39,28 @@ def test_rejects_absolute_path_no_ssrf(monkeypatch):
         assert out.startswith("ERROR:") and "relative" in out
 
 
+def test_rejects_dot_segment_path_escape(monkeypatch):
+    monkeypatch.setenv("ERP_BASE_URL", "https://erp.example.com/services/rest/record/v1")
+    monkeypatch.setenv("ERP_TOKEN", "tok")
+    monkeypatch.setattr(_config_mod, "load_config", lambda *a, **k: {})
+    import httpx
+
+    def fake_get(*args, **kwargs):  # pragma: no cover - must never be called
+        raise AssertionError("unsafe ERP path should be rejected before HTTP GET")
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    for evil in (
+        "../../admin/audit",
+        "/../admin/audit",
+        "purchaseOrder/../admin/audit",
+        "%2e%2e/admin/audit",
+        "%252e%252e/admin/audit",
+        "%2f..%2fadmin/audit",
+    ):
+        out = erp_tool().fn({"path": evil})
+        assert out.startswith("ERROR:") and "dot-segment" in out
+
+
 def test_get_builds_url_and_is_read_only(monkeypatch):
     monkeypatch.setenv("ERP_BASE_URL", "https://erp.example.com/api/")
     monkeypatch.setenv("ERP_TOKEN", "tok")
