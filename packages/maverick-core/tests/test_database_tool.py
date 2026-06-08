@@ -34,3 +34,38 @@ def test_read_returns_error_gracefully_without_server(monkeypatch):
     from maverick.tools.database_tool import database_tool
     out = database_tool().fn({"op": "query", "sql": "SELECT 1"})
     assert out.startswith("ERROR")
+
+
+def test_cte_prefixed_write_needs_confirm(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@localhost/db")
+    from maverick.tools.database_tool import database_tool
+
+    out = database_tool().fn({
+        "op": "query",
+        "sql": "WITH victims AS (SELECT id FROM users) DELETE FROM users USING victims",
+    })
+
+    assert "DRY RUN" in out
+
+
+def test_explain_prefixed_sql_needs_confirm(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@localhost/db")
+    from maverick.tools.database_tool import database_tool
+
+    out = database_tool().fn({"op": "query", "sql": "EXPLAIN ANALYZE DELETE FROM users"})
+
+    assert "DRY RUN" in out
+
+
+def test_database_url_host_scope_applies_to_env_url(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@evil.com/db")
+    from maverick.tools.database_tool import database_tool
+
+    out = database_tool().fn({
+        "op": "query",
+        "sql": "SELECT 1",
+        "_capability_allow_hosts": ("*.example.com",),
+    })
+
+    assert "DENIED by capability" in out
+    assert "evil.com" in out
