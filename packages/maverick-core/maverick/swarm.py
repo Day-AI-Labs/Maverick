@@ -77,6 +77,12 @@ class SwarmContext:
     # enabled; children inherit an *attenuated* copy so a sub-agent can never
     # exceed it. Typed Any to avoid importing the capability module here.
     capability: Any | None = None
+    # Verified peer-to-peer handoffs (bus_handoff): the run's signed-delegation
+    # trust domain -- an ephemeral issuer key + a process-wide replay nonce cache.
+    # Lazily installed by ``bus_handoff.authority_for`` when capability
+    # enforcement is on; None == plain, unverified bus messages. Typed Any to
+    # avoid importing bus_handoff here.
+    handoff_authority: Any | None = None
     # Durable execution: the episode this run belongs to. Discriminates
     # best-of-N attempts (same goal_id, distinct episodes) so a resumed
     # attempt doesn't pick up a sibling's checkpoint. Defaults to 0 for
