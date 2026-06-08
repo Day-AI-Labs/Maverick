@@ -100,7 +100,11 @@ def _append_ledger(line: str) -> None:
 def _check_ledger(action: str, scope: str | None) -> bool:
     """True if a prior ``grant`` for ``(action, scope)`` is recorded."""
     key = f"grant\t{action}\t{scope or ''}"
-    return any(line.split("|", 1)[-1].strip() == key for line in _ledger_lines())
+    # Compare the stored record verbatim. ``_ledger_lines`` already stripped the
+    # line terminator via splitlines(); a blanket .strip() here ate the trailing
+    # TAB of a scope-less grant (``grant\taction\t``), so a scope-less
+    # grant_persistent() never matched and was silently re-prompted forever.
+    return any(line.split("|", 1)[-1] == key for line in _ledger_lines())
 
 
 def grant_persistent(action: str, scope: str | None = None) -> None:
@@ -150,6 +154,7 @@ def require_consent(
     provenance: str | None = None,
     raise_on_deny: bool = False,
     allow_auto_approve: bool = True,
+    consult_ledger: bool = True,
 ) -> ConsentDecision:
     """Gate a destructive action through user (or env) approval.
 
@@ -168,10 +173,16 @@ def require_consent(
     ``auto-approve`` for backwards compatibility. Ledger grants, dashboard
     approvals, and TTY prompts still work; silent auto-approval is treated as
     a denial.
+
+    ``consult_ledger=False`` additionally disables the prior-grant fast-path, so
+    a *fresh* decision is required even when a persistent grant for this
+    ``(action, scope)`` exists. Used by the governance EU AI Act Art-14 gate
+    when an operator opts into per-action human oversight
+    (``[governance] require_fresh_human_approval``).
     """
     ts = time.time()
-    # 1) Ledger fast-path.
-    if _check_ledger(action, scope):
+    # 1) Ledger fast-path (skipped when a fresh decision is demanded).
+    if consult_ledger and _check_ledger(action, scope):
         return _emit(ConsentDecision(True, "ledger", risk, ts), action, scope, detail)
     # 2) Mode override.
     mode = _resolve_mode()

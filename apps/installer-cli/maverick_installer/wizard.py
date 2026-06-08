@@ -961,6 +961,11 @@ def pick_finance() -> dict[str, Any]:
                 default="0"),
         default=0.0,
     )
+    require_fresh = _q_confirm(
+        "  Require a FRESH human approval each time a paused action runs "
+        "(ignore any prior 'remember this' grant)?",
+        default=False,
+    )
     sdn_path = _q_text(
         "  OFAC SDN list path for sanctions screening (blank to set later)",
         default="",
@@ -970,6 +975,7 @@ def pick_finance() -> dict[str, Any]:
         "regimes": regimes,
         "require_human_above": require_human_above,
         "deny_above": deny_above,
+        "require_fresh_human_approval": require_fresh,
         "sdn_path": sdn_path,
     }
 
@@ -2151,6 +2157,10 @@ def write_config(
         lines.append("")
         lines.append("[governance]")
         lines.append('require_human_min_risk = "high"')
+        if finance.get("require_fresh_human_approval"):
+            # A prior persistent consent grant won't satisfy the Art-14 gate --
+            # each paused action needs a fresh human decision.
+            lines.append("require_fresh_human_approval = true")
         rha = finance.get("require_human_above") or 0
         if rha and rha > 0:
             lines.append("")

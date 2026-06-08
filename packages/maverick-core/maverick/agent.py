@@ -1084,6 +1084,10 @@ class Agent:
                     risk=tool_risk(name), detail=_gov.reason,
                     provenance="governance",
                     allow_auto_approve=False,
+                    # When the operator opts into per-action oversight, a prior
+                    # persistent ledger grant must NOT silently satisfy the
+                    # Art-14 gate -- demand a fresh human decision each time.
+                    consult_ledger=not _gov_policy.require_fresh_human_approval,
                 )
                 granted = bool(decision.granted)
             except Exception:  # pragma: no cover -- consent unavailable -> fail closed
