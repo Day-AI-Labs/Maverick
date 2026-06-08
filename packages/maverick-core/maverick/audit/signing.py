@@ -26,6 +26,7 @@ Optional [audit-signing] extra (cryptography>=42.0).
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import logging
 import os
@@ -292,6 +293,13 @@ class AuditSigner:
         return self._pub_bytes.hex()
 
 
+def _segment_text(path: Path) -> str:
+    """A day-file's NDJSON text, transparently decrypting an at-rest-sealed segment
+    so the verifier works on sealed and plaintext day-files alike."""
+    from .sealing import segment_text
+    return segment_text(path)
+
+
 def verify_chain(path: Path, pubkey_hex: str | None = None) -> list[ChainBreak]:
     """Walk every line; verify chain links + signatures.
 
@@ -331,7 +339,7 @@ def verify_chain(path: Path, pubkey_hex: str | None = None) -> list[ChainBreak]:
         pubkey_cache[key_id] = obj
         return obj
 
-    with open(path, encoding="utf-8") as f:
+    with io.StringIO(_segment_text(path)) as f:
         for n, line in enumerate(f, start=1):
             if not line.strip():
                 continue
@@ -385,7 +393,7 @@ def _file_tip_and_count(path: Path) -> tuple[str, int]:
     """Return ``(last_row_hash, non_empty_row_count)`` for a signed day-file."""
     tip = ""
     count = 0
-    with open(path, encoding="utf-8") as f:
+    with io.StringIO(_segment_text(path)) as f:
         for line in f:
             if not line.strip():
                 continue
@@ -409,7 +417,7 @@ def _anchored_days(audit_dir: Path) -> set[str]:
     days: set[str] = set()
     if not path.exists():
         return days
-    with open(path, encoding="utf-8") as f:
+    with io.StringIO(_segment_text(path)) as f:
         for line in f:
             if not line.strip():
                 continue
@@ -616,7 +624,7 @@ def reanchor_file(path: Path, *, force: bool = False, preverified: bool = False)
     from cryptography.hazmat.primitives.asymmetric import ed25519
 
     try:
-        with open(path, encoding="utf-8") as f:
+        with io.StringIO(_segment_text(path)) as f:
             original = f.read()
     except OSError:
         return -1

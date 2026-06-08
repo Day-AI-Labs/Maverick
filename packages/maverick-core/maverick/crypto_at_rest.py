@@ -26,9 +26,11 @@ Coverage (what is actually sealed today):
     — facts, conversation turns/messages, open questions, goal content
     (titles/descriptions/results) + per-agent goal events, episode
     summaries/outcomes, and parked-approval action/scope/detail.
-  The **audit log is NOT encrypted at rest** — it is *signed* for tamper-evidence
-  (see ``audit/signing.py``), which is integrity, not confidentiality. Treat audit
-  confidentiality as out of scope here until that is wired in.
+  The audit log's **closed day-files** can be sealed via ``maverick audit seal``
+  (``audit/sealing.py``); the *current* day-file stays plaintext for the live
+  append + signing path, and reads/``audit verify`` decrypt sealed segments
+  transparently. The log is independently *signed* for tamper-evidence
+  (``audit/signing.py``) -- integrity, orthogonal to this confidentiality.
 
 By default a sealed column read back unsealed (legacy/pre-migration) is passed
 through; :func:`strict_at_rest` makes that an integrity failure instead.

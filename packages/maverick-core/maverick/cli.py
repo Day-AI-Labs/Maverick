@@ -2923,6 +2923,29 @@ def audit_verify(
         raise SystemExit(1)
 
 
+@audit.command("seal")
+@click.option("--dry-run", is_flag=True,
+              help="Show which segments would be sealed; write nothing.")
+def audit_seal(dry_run: bool) -> None:
+    """Encrypt closed audit day-files at rest (confidentiality for the log).
+
+    Seals every day-file dated before today in place with AES-256-GCM. The current
+    day-file (live append) and the anchor ledger stay plaintext, and the readers +
+    'audit verify' transparently decrypt sealed segments. Requires at-rest
+    encryption to be enabled ([encryption] at_rest / MAVERICK_ENCRYPT_AT_REST).
+    """
+    from .audit.sealing import seal_closed_segments
+    from .crypto_at_rest import EncryptionUnavailable
+    try:
+        report = seal_closed_segments(dry_run=dry_run)
+    except EncryptionUnavailable as e:
+        raise click.ClickException(str(e))
+    for name, status in sorted(report.items()):
+        click.echo(f"  {name}: {status}")
+    done = sum(1 for s in report.values() if s in ("sealed", "would seal"))
+    click.echo(f"{'Would seal' if dry_run else 'Sealed'} {done} segment(s).")
+
+
 @audit.command("export")
 @click.option("--format", "fmt", type=click.Choice(["json", "cef"]), default="json",
               help="Output format for SIEM ingestion (default: json).")
