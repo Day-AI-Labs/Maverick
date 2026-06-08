@@ -74,6 +74,20 @@ def test_oracle_write_needs_confirm(monkeypatch):
     post.assert_not_called()
 
 
+def test_oracle_multistatement_read_needs_confirm(monkeypatch):
+    monkeypatch.setenv("ORACLE_ORDS_URL", "https://h/ords/me")
+    monkeypatch.setenv("ORACLE_ORDS_TOKEN", "t")
+    post = MagicMock()
+    _fake_httpx(monkeypatch, post=post)
+    from maverick.tools.oracle_tool import oracle_tool
+    out = oracle_tool().fn({
+        "op": "sql",
+        "statement": "SELECT 1 FROM dual; DELETE FROM t WHERE 1=1",
+    })
+    assert "DRY RUN" in out
+    post.assert_not_called()
+
+
 # ------------------------------------- SAP ---------------------------------
 
 def test_sap_requires_config(monkeypatch):
@@ -175,6 +189,31 @@ def test_bigquery_write_needs_confirm(monkeypatch):
     out = bigquery_tool().fn({"op": "query", "sql": "DELETE FROM d.t WHERE 1=1"})
     assert "DRY RUN" in out
     post.assert_not_called()
+
+
+def test_bigquery_multistatement_read_needs_confirm(monkeypatch):
+    monkeypatch.setenv("BIGQUERY_ACCESS_TOKEN", "t")
+    monkeypatch.setenv("BIGQUERY_PROJECT", "proj")
+    post = MagicMock()
+    _fake_httpx(monkeypatch, post=post)
+    from maverick.tools.bigquery_tool import bigquery_tool
+    out = bigquery_tool().fn({
+        "op": "query",
+        "sql": "SELECT 1; DELETE FROM d.t WHERE 1=1",
+    })
+    assert "DRY RUN" in out
+    post.assert_not_called()
+
+
+def test_bigquery_trailing_semicolon_read_runs(monkeypatch):
+    monkeypatch.setenv("BIGQUERY_ACCESS_TOKEN", "t")
+    monkeypatch.setenv("BIGQUERY_PROJECT", "proj")
+    post = MagicMock(return_value=_resp(200, {"totalRows": "0"}))
+    _fake_httpx(monkeypatch, post=post)
+    from maverick.tools.bigquery_tool import bigquery_tool
+    out = bigquery_tool().fn({"op": "query", "sql": "SELECT ';' AS semi;"})
+    assert "ok" in out
+    assert post.call_args.kwargs["json"]["query"] == "SELECT ';' AS semi;"
 
 
 # ---------------------------------- Dynamics -------------------------------
