@@ -80,7 +80,7 @@ def test_apply_appends_block_without_clobbering_and_audits(monkeypatch, tmp_path
 
     recorded = []
     import maverick.audit as audit
-    monkeypatch.setattr(audit, "record", lambda kind, **p: recorded.append((kind, p)))
+    monkeypatch.setattr(audit, "record", lambda kind, **p: recorded.append((kind, p)) or True)
 
     res = apply_remediation(_auto_item(), dry_run=False)
     assert res.applied is True
@@ -95,21 +95,49 @@ def test_apply_appends_block_without_clobbering_and_audits(monkeypatch, tmp_path
     assert "restore" in res.undo
 
 
-def test_apply_refuses_unloggable_change_without_writing(monkeypatch, tmp_path):
+@pytest.mark.parametrize("audit_result", [False, OSError("audit log unwritable")])
+def test_apply_refuses_unloggable_change_and_rolls_back(monkeypatch, tmp_path,
+                                                        audit_result):
     monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
     monkeypatch.setenv("MAVERICK_SECURITY_AUTOFIX", "1")
     cfg = tmp_path / "config.toml"
+    cfg.write_text('[providers]\ndefault = "ollama"\n')
     monkeypatch.setattr("maverick.config.config_path", lambda: cfg)
 
     import maverick.audit as audit
 
-    def _boom(kind, **p):
-        raise OSError("audit log unwritable")
-    monkeypatch.setattr(audit, "record", _boom)
+    def _record(kind, **p):
+        if isinstance(audit_result, Exception):
+            raise audit_result
+        return audit_result
+    monkeypatch.setattr(audit, "record", _record)
 
     res = apply_remediation(_auto_item(), dry_run=False)
-    assert res.applied is False and "unlogged" in res.reason
-    assert not cfg.exists()                       # audit is load-bearing -> no write
+    assert res.applied is False and "audit record" in res.reason
+    assert cfg.read_text() == '[providers]\ndefault = "ollama"\n'
+
+
+def test_apply_does_not_audit_when_config_write_fails(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
+    monkeypatch.setenv("MAVERICK_SECURITY_AUTOFIX", "1")
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[providers]\ndefault = "ollama"\n')
+    monkeypatch.setattr("maverick.config.config_path", lambda: cfg)
+
+    recorded = []
+    import maverick.audit as audit
+    import maverick.remediation as remediation
+
+    monkeypatch.setattr(audit, "record", lambda kind, **p: recorded.append((kind, p)) or True)
+
+    def _write_fails(path, text, *, prior):
+        raise OSError("disk full")
+    monkeypatch.setattr(remediation, "_write_config_atomic", _write_fails)
+
+    res = apply_remediation(_auto_item(), dry_run=False)
+    assert res.applied is False and "could not write config" in res.reason
+    assert recorded == []
+    assert cfg.read_text() == '[providers]\ndefault = "ollama"\n'
 
 
 def test_apply_refuses_when_result_would_be_invalid_toml(monkeypatch, tmp_path):
