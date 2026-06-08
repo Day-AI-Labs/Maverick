@@ -20,9 +20,11 @@ def test_pending_from_fresh_db_applies_everything():
 def test_pending_skips_already_applied():
     # A DB already at the latest version has nothing to do.
     assert pg.pending_migrations(pg._PG_SCHEMA_VERSION) == []
-    # A DB at v1 still needs the tenant migration.
+    # A DB at v1 still needs both tenant migrations (v10 columns, v11 uniques).
     pending = pg.pending_migrations(1)
-    assert [v for v, _ in pending] == [pg._PG_SCHEMA_VERSION]
+    assert [v for v, _ in pending] == [10, 11]
+    # A DB at v10 still needs the tenant-unique migration.
+    assert [v for v, _ in pg.pending_migrations(10)] == [11]
 
 
 def test_pending_is_ordered_with_custom_ladder():
@@ -32,11 +34,28 @@ def test_pending_is_ordered_with_custom_ladder():
 
 
 def test_tenant_migration_adds_column_and_index_for_root_tables():
-    stmts = dict(pg.MIGRATIONS)[pg._PG_SCHEMA_VERSION]
+    stmts = dict(pg.MIGRATIONS)[10]
     joined = "\n".join(stmts)
     for table in pg._TENANT_TABLES:
         assert f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS tenant_id TEXT" in joined
         assert f"idx_pg_{table}_tenant" in joined
+
+
+def test_tenant_unique_migration_makes_constraints_tenant_aware():
+    stmts = dict(pg.MIGRATIONS)[11]
+    joined = "\n".join(stmts)
+    # The global UNIQUEs are dropped and replaced with COALESCE(tenant_id,'')
+    # expression indexes so single-tenant (NULL) dedup is preserved.
+    assert "DROP CONSTRAINT IF EXISTS facts_key_key" in joined
+    assert "uq_pg_facts_tenant_key" in joined
+    assert "uq_pg_conversations_tenant_chan_user" in joined
+    assert "uq_pg_processed_tenant_chan_ext" in joined
+    assert joined.count("COALESCE(tenant_id, '')") == 3  # one per unique table
+
+
+def test_schema_version_is_latest_migration():
+    assert pg._PG_SCHEMA_VERSION == 11
+    assert pg._PG_SCHEMA_VERSION == max(v for v, _ in pg.MIGRATIONS)
 
 
 def test_tenant_scope_noop_without_active_tenant(monkeypatch):
