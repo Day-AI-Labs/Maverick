@@ -284,12 +284,22 @@ def tool_risk(name: str, overrides: dict[str, str] | None = None) -> str:
     """
     overrides = _load_overrides() if overrides is None else overrides
     if name in overrides:
-        return overrides[name]
+        return overrides[name]  # exact override wins, even lowering a built-in
+    builtin = _DEFAULT_RISK.get(name)
     for pattern, level in overrides.items():
         if any(ch in pattern for ch in "*?[") and fnmatch.fnmatchcase(name, pattern):
+            # A glob may raise risk or classify an unknown tool, but must not
+            # silently *lower* a built-in classification below its floor -- a
+            # broad wildcard (e.g. "s*"="low") would otherwise declassify
+            # shell / wire_transfer and defeat the max_risk ceiling + risk gate.
+            # Dropping a built-in below its floor requires an explicit exact
+            # override (handled above). mcp_*/connector fail-safes are not in
+            # the built-in table, so they stay glob-relaxable as documented.
+            if builtin is not None and risk_rank(level) < risk_rank(builtin):
+                return builtin
             return level
-    if name in _DEFAULT_RISK:
-        return _DEFAULT_RISK[name]
+    if builtin is not None:
+        return builtin
     # Unclassified. An MCP tool is externally-defined arbitrary code reached
     # through a third-party server, and an enterprise connector is write-capable
     # by construction -> both fail safe to high. Anything else -> medium.
