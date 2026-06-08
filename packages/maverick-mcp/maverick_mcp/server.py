@@ -642,12 +642,16 @@ class MCPServer:
             if elicited is not None:
                 result = elicited
         if self._shield is not None:
-            verdict = self._shield.scan_output(result)
-            if not verdict.allowed:
-                return {
-                    "isError": True,
-                    "content": [{"type": "text", "text": f"⚠ Output blocked: {'; '.join(verdict.reasons)}"}],
-                }
+            try:
+                verdict = self._shield.scan_output(result)
+                if not getattr(verdict, "allowed", True):
+                    reasons = "; ".join(getattr(verdict, "reasons", []) or []) or "blocked by Shield"
+                    return {
+                        "isError": True,
+                        "content": [{"type": "text", "text": f"⚠ Output blocked: {reasons}"}],
+                    }
+            except Exception:  # pragma: no cover -- fail open (kernel rule 1)
+                pass
         response: dict[str, Any] = {
             "isError": False,
             "content": [{"type": "text", "text": result}],
@@ -672,14 +676,18 @@ class MCPServer:
                 structured = None
             if structured is not None:
                 if self._shield is not None:
-                    verdict = self._shield.scan_output(
-                        json.dumps(structured, default=str, sort_keys=True)
-                    )
-                    if not verdict.allowed:
-                        return {
-                            "isError": True,
-                            "content": [{"type": "text", "text": f"⚠ Output blocked: {'; '.join(verdict.reasons)}"}],
-                        }
+                    try:
+                        verdict = self._shield.scan_output(
+                            json.dumps(structured, default=str, sort_keys=True)
+                        )
+                        if not getattr(verdict, "allowed", True):
+                            reasons = "; ".join(getattr(verdict, "reasons", []) or []) or "blocked by Shield"
+                            return {
+                                "isError": True,
+                                "content": [{"type": "text", "text": f"⚠ Output blocked: {reasons}"}],
+                            }
+                    except Exception:  # pragma: no cover -- fail open (kernel rule 1)
+                        pass
                 response["structuredContent"] = structured
         # A successful mutating tool dirties a resource; queue the update to
         # flush after the result is sent (run() calls _flush_resource_updates).
@@ -744,9 +752,13 @@ class MCPServer:
         title = args["title"]
         description = args.get("description", "")
         if self._shield is not None:
-            verdict = self._shield.scan_input(f"{title}\n{description}")
-            if not verdict.allowed:
-                return f"⚠ Blocked: {'; '.join(verdict.reasons)}"
+            try:
+                verdict = self._shield.scan_input(f"{title}\n{description}")
+                if not getattr(verdict, "allowed", True):
+                    reasons = "; ".join(getattr(verdict, "reasons", []) or []) or "blocked by Shield"
+                    return f"⚠ Blocked: {reasons}"
+            except Exception:  # pragma: no cover -- fail open (kernel rule 1)
+                pass
         # Clamp client-supplied limits to operator ceilings. Over the HTTP
         # transport the budget is 100% client-controlled, so without a cap
         # any authenticated caller could pass max_dollars=10000 and burn the

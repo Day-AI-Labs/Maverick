@@ -259,6 +259,45 @@ class TestProtocol:
             "skills": [{"name": "safe-skill", "triggers": ["summarize", "report"]}]
         }
 
+    def test_tools_call_fails_open_when_output_scan_errors(self, monkeypatch):
+        # CLAUDE.md rule 1: the shield is a chokepoint, not a hard dependency.
+        # A runtime bug in scan_output must NOT crash the serve loop -- the call
+        # fails open (the result is still returned) with the scan skipped.
+        s = MCPServer()
+
+        def _boom(_text):
+            raise RuntimeError("shield exploded")
+
+        s._shield = SimpleNamespace(scan_output=_boom)
+        monkeypatch.setattr(s, "_dispatch_tool", lambda *_a, **_k: "the result")
+
+        out = s.handle_tools_call({"name": "maverick_status", "arguments": {}})
+
+        assert out["isError"] is False
+        assert out["content"][0]["text"] == "the result"
+
+    def test_tools_call_fails_open_when_structured_scan_errors(self, monkeypatch):
+        # The structured-output scan must fail open too, so a shield bug can't
+        # wedge a typed query tool.
+        import maverick.skills
+
+        monkeypatch.setattr(
+            maverick.skills,
+            "load_skills",
+            lambda: [SimpleNamespace(name="safe-skill", triggers=["summarize"])],
+        )
+        s = MCPServer()
+
+        def _boom(_text):
+            raise RuntimeError("shield exploded")
+
+        s._shield = SimpleNamespace(scan_output=_boom)
+
+        out = s.handle_tools_call({"name": "maverick_skills_list", "arguments": {}})
+
+        assert out["isError"] is False
+        assert out["structuredContent"]["skills"][0]["name"] == "safe-skill"
+
 
 class TestProtocol2025_11_25:
     """Tests for the new MCP 2025-11-25 primitives."""
