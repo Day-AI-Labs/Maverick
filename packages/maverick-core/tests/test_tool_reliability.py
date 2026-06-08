@@ -110,3 +110,58 @@ class TestRegistryIntegration:
         out = asyncio.run(reg.run("shell", {}))
         assert out.startswith("ERROR:")
         assert calls["n"] == 1
+
+
+class TestEventLoopOffload:
+    """A synchronous tool fn must not block the dispatch event loop."""
+
+    def test_sync_fn_runs_off_the_event_loop(self):
+        import threading
+
+        seen = {}
+
+        def capture(_args):
+            seen["thread"] = threading.current_thread()
+            return "ok"
+
+        reg = ToolRegistry()
+        reg.register(Tool(name="blocking_read", description="d",
+                          input_schema={"type": "object", "properties": {}},
+                          fn=capture))
+
+        async def _drive():
+            # The loop runs on this coroutine's thread; a sync fn dispatched
+            # here must be pushed to a *different* (worker) thread.
+            loop_thread = threading.current_thread()
+            out = await reg.run("blocking_read", {})
+            return out, loop_thread
+
+        out, loop_thread = asyncio.run(_drive())
+        assert out == "ok"
+        # Pre-fix the fn ran inline on the loop thread (freezing the swarm on a
+        # slow call); post-fix it runs on a thread-pool worker.
+        assert seen["thread"] is not loop_thread
+
+    def test_async_fn_is_awaited_on_the_loop(self):
+        import threading
+
+        seen = {}
+
+        async def native(_args):
+            seen["thread"] = threading.current_thread()
+            return "async-ok"
+
+        reg = ToolRegistry()
+        reg.register(Tool(name="native_async", description="d",
+                          input_schema={"type": "object", "properties": {}},
+                          fn=native))
+
+        async def _drive():
+            loop_thread = threading.current_thread()
+            out = await reg.run("native_async", {})
+            return out, loop_thread
+
+        out, loop_thread = asyncio.run(_drive())
+        assert out == "async-ok"
+        # A coroutine fn is awaited directly on the loop, never double-offloaded.
+        assert seen["thread"] is loop_thread
