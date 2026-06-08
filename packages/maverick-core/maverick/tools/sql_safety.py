@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 
-def has_unconfirmed_statement_separator(sql: str) -> bool:
+def has_unconfirmed_statement_separator(
+    sql: str, *, backslash_escapes: bool = False
+) -> bool:
     """Return True when SQL contains a statement-separating semicolon.
 
     A single trailing semicolon is allowed for convenience, but semicolons that
     can introduce another statement require an explicit confirm gate. Semicolons
-    inside string literals, quoted identifiers, or comments are ignored.
+    inside string literals, quoted identifiers, or comments are ignored. By
+    default single-quoted literals use SQL-standard doubled-quote escaping; set
+    ``backslash_escapes`` only for dialects where backslash escapes quotes.
     """
     i = 0
     n = len(sql)
@@ -16,7 +20,7 @@ def has_unconfirmed_statement_separator(sql: str) -> bool:
         nxt = sql[i + 1] if i + 1 < n else ""
 
         if ch == "'":
-            i = _consume_single_quoted(sql, i)
+            i = _consume_single_quoted(sql, i, backslash_escapes=backslash_escapes)
             continue
         if ch == '"':
             i = _consume_double_quoted(sql, i)
@@ -39,7 +43,9 @@ def has_unconfirmed_statement_separator(sql: str) -> bool:
     return False
 
 
-def _consume_single_quoted(sql: str, start: int) -> int:
+def _consume_single_quoted(
+    sql: str, start: int, *, backslash_escapes: bool = False
+) -> int:
     i = start + 1
     while i < len(sql):
         if sql[i] == "'":
@@ -47,7 +53,7 @@ def _consume_single_quoted(sql: str, start: int) -> int:
                 i += 2
                 continue
             return i + 1
-        if sql[i] == "\\":
+        if backslash_escapes and sql[i] == "\\":
             i += 2
             continue
         i += 1
