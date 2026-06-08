@@ -443,331 +443,331 @@ fluency in those primitives and their CLIs.
 
 #### 1.1 AI Inventory & Registry Agent  [UB]
 JD: Inventory of AI systems/models/agents — owner, purpose, data, risk tier, lifecycle.
-- Systems: model registries (MLflow, HF Hub) · `fleet.py` (the live roster) · `domain.py` packs · CMDB.
-- Technical: metadata harvesting · model/agent lineage · the DomainProfile schema.
-- Domain: AI inventory practice · EU AI Act system definitions · NIST AI RMF "Map".
+- Systems: model registries (MLflow, HF Hub) · `fleet.py` (the live roster) · `domain.py` packs · CMDB `[C]`.
+- Technical: metadata harvesting · model/agent lineage · the DomainProfile schema `[S]`.
+- Domain: AI inventory practice · EU AI Act system definitions · NIST AI RMF "Map" `[K]`.
 - Maverick: read-only over fleet/packs/configs.
 
 #### 1.2 AI Risk Assessment (AIRA) Agent  [UB +Assess]
 JD: NIST AI RMF / EU AI Act risk assessment of an AI system.
-- Systems: the assessment engine (`_AIRA`).
-- Technical: `start/answer/finalize_assessment` scoring · evidence-cited findings.
-- Domain: **NIST AI RMF** (Govern/Map/Measure/Manage) · EU AI Act risk tiers · bias/robustness/security concepts.
+- Systems: the assessment engine (`_AIRA`) `[C]`.
+- Technical: `start/answer/finalize_assessment` scoring · evidence-cited findings `[S]`.
+- Domain: **NIST AI RMF** (Govern/Map/Measure/Manage) · EU AI Act risk tiers · bias/robustness/security concepts `[K]`.
 - Maverick: drafts findings; never approves.
 
 #### 1.3 EU AI Act Conformity Agent  [UB +Assess]
 JD: Classify risk tier, report Art 12/14/50 posture, assemble the high-risk conformity scaffold.
-- Systems: `ai_act.py`, `compliance.py`.
-- Technical: risk-tier classification · **Annex IV technical-documentation** assembly · conformity checklist.
-- Domain: **EU AI Act** (Art 5 prohibited, Annex III high-risk, Art 50 transparency, GPAI).
-- Regulatory: EU AI Act, GPAI Code of Practice.
+- Systems: `ai_act.py`, `compliance.py` `[C]`.
+- Technical: risk-tier classification · **Annex IV technical-documentation** assembly · conformity checklist `[S]`.
+- Domain: **EU AI Act** (Art 5 prohibited, Annex III high-risk, Art 50 transparency, GPAI) `[K]`.
+- Regulatory: EU AI Act, GPAI Code of Practice `[K]`.
 - Maverick: classifies; a human attests conformity.
 
 #### 1.4 Model & Agent Card / Transparency Agent  [UB]
 JD: Model/agent cards — intended use, limitations, data provenance, eval results; AI-content marking.
-- Systems: HF model cards · model registry.
-- Technical: model-card authoring · eval-result reporting · training-data provenance documentation.
-- Domain: **Model Cards / Datasheets for Datasets** · Art 50 transparency.
+- Systems: HF model cards · model registry `[C]`.
+- Technical: model-card authoring · eval-result reporting · training-data provenance documentation `[S]`.
+- Domain: **Model Cards / Datasheets for Datasets** · Art 50 transparency `[K]`.
 - Maverick: AI-generated-content marking.
 
 #### 1.5 Bias & Fairness Evaluation Agent  [UB +Data]
 JD: Evaluate consequential-decision systems for bias; produce the bias-audit export.
-- Systems: fairness toolkits (**Fairlearn, AIF360**) · the eval harness.
-- Technical: **disparate-impact metrics** (four-fifths, demographic parity, equalized odds) · statistical significance testing.
-- Domain: fairness definitions · adverse impact.
-- Regulatory: **NYC LL144** (independent bias audit; **impact-ratio**, incl. intersectional), **Colorado AI Act (SB 24-205)**, **Illinois (amended IHRA)**, EEOC (Title VII/ADA), **EU AI Act Annex III**, **ISO 42001**.
+- Systems: fairness toolkits (**Fairlearn, AIF360**) · the eval harness `[C]`.
+- Technical: **disparate-impact metrics** (four-fifths, demographic parity, equalized odds) · statistical significance testing `[S]`.
+- Domain: fairness definitions · adverse impact `[K]`.
+- Regulatory: **NYC LL144** (independent bias audit; **impact-ratio**, incl. intersectional), **Colorado AI Act (SB 24-205)**, **Illinois (amended IHRA)**, EEOC (Title VII/ADA), **EU AI Act Annex III**, **ISO 42001** `[K]`.
 - Maverick: bias-audit export; no protected-class proxies.
 
 #### 1.6 Agent Oversight / Supervisor Agent  [UB]
 JD: The live operator over the fleet — monitor, approve/deny/pause/kill, quarantine.
-- Systems: `governance.py`, `fleet.py`, `quarantine.py`, `killswitch.py`, the consent dashboard.
-- Technical: policy evaluation · approve/deny/pause/kill · seal/quarantine ops · audit reading.
-- Domain: **human oversight (Art 14)** · the control-plane model · the three-rung seal model.
+- Systems: `governance.py`, `fleet.py`, `quarantine.py`, `killswitch.py`, the consent dashboard `[C]`.
+- Technical: policy evaluation · approve/deny/pause/kill · seal/quarantine ops · audit reading `[S]`.
+- Domain: **human oversight (Art 14)** · the control-plane model · the three-rung seal model `[K]`.
 - Maverick: holds the parent capability; cannot widen any grant.
 
 #### 1.7 AI Incident Response Agent  [UB]
 JD: Triage AI incidents (harmful output, jailbreak, drift), contain, run the PIR.
-- Systems: Shield events + the audit log · `quarantine.py`/`killswitch.py`.
-- Technical: incident triage/severity · containment · post-incident review.
-- Domain: AI-incident taxonomy · jailbreak/drift patterns · the OWASP LLM Top 10.
+- Systems: Shield events + the audit log · `quarantine.py`/`killswitch.py` `[C]`.
+- Technical: incident triage/severity · containment · post-incident review `[S]`.
+- Domain: AI-incident taxonomy · jailbreak/drift patterns · the OWASP LLM Top 10 `[K]`.
 - Maverick: containment `require_human`; independent of the incident's cause.
 
 ### Tower 2 — Privacy / Data Protection
 
 #### 2.1 DPIA / PIA Agent  [UB +Assess]
 JD: GDPR Art 35 DPIA + ISO 29134 PIA — processing description, risk register, measures.
-- Systems: **OneTrust** · `dpia.py` + `_PIA`.
-- Technical: `generate_dpia` · necessity/proportionality analysis · risk-register construction.
-- Domain: **GDPR Art 35**, ISO 29134 · the agent-on-personal-data risk set.
+- Systems: **OneTrust** · `dpia.py` + `_PIA` `[C]`.
+- Technical: `generate_dpia` · necessity/proportionality analysis · risk-register construction `[S]`.
+- Domain: **GDPR Art 35**, ISO 29134 · the agent-on-personal-data risk set `[K]`.
 - Maverick: residual-risk sign-off is the DPO's.
 
 #### 2.2 ROPA / Records Agent  [UB]
 JD: GDPR Art 30 Records of Processing Activities.
-- Systems: OneTrust · `ropa.py`.
-- Technical: `generate_ropa` · data-flow capture.
-- Domain: **GDPR Art 30** · data categories/recipients/transfers/retention.
+- Systems: OneTrust · `ropa.py` `[C]`.
+- Technical: `generate_ropa` · data-flow capture `[S]`.
+- Domain: **GDPR Art 30** · data categories/recipients/transfers/retention `[K]`.
 
 #### 2.3 Data-Subject Rights (DSAR) Agent  [UB]
 JD: Access/portability (Art 15/20) and erasure (Art 17) fulfillment.
-- Systems: `dsar.py`, `audit/erase.py` · DSAR portals.
-- Technical: `export_subject_data` · `erase_subject` · identity verification · cross-system data location.
-- Domain: **GDPR Art 15/17/20**, CCPA access/delete.
+- Systems: `dsar.py`, `audit/erase.py` · DSAR portals `[C]`.
+- Technical: `export_subject_data` · `erase_subject` · identity verification · cross-system data location `[S]`.
+- Domain: **GDPR Art 15/17/20**, CCPA access/delete `[K]`.
 - Maverick: erasure `require_human` (irreversible); legal-hold overrides erasure.
 
 #### 2.4 Data Mapping & Classification Agent  [UB +Data]
 JD: Discover & classify personal/sensitive data; map data flows.
-- Systems: data-discovery (**BigID**, OneTrust) · `safety/pii_detector.py`.
-- Technical: PII discovery/classification · data-flow mapping · sensitivity tagging.
-- Domain: data-classification schemes · **special-category data (Art 9)**.
+- Systems: data-discovery (**BigID**, OneTrust) · `safety/pii_detector.py` `[C]`.
+- Technical: PII discovery/classification · data-flow mapping · sensitivity tagging `[S]`.
+- Domain: data-classification schemes · **special-category data (Art 9)** `[K]`.
 
 #### 2.5 Consent Management Agent  [UB]
 JD: Data-subject consent by purpose/category, withdrawal, cookie consent.
-- Systems: consent platforms (**OneTrust CMP**) · `safety/consent.py`.
-- Technical: purpose/category consent records · withdrawal handling · cookie scanning.
-- Domain: GDPR/ePrivacy consent · CCPA opt-out.
-- Regulatory: GDPR, ePrivacy/PECR, CCPA/CPRA.
+- Systems: consent platforms (**OneTrust CMP**) · `safety/consent.py` `[C]`.
+- Technical: purpose/category consent records · withdrawal handling · cookie scanning `[S]`.
+- Domain: GDPR/ePrivacy consent · CCPA opt-out `[K]`.
+- Regulatory: GDPR, ePrivacy/PECR, CCPA/CPRA `[K]`.
 
 #### 2.6 Breach Response & Notification Agent  [UB]
 JD: Assess a breach, run the 72-hour clock, draft regulator + subject notices.
-- Systems: incident/case mgmt · the audit log.
-- Technical: breach-severity assessment · the 72h clock · notification drafting.
-- Domain: **GDPR Art 33/34** · state breach laws · harm assessment.
+- Systems: incident/case mgmt · the audit log `[C]`.
+- Technical: breach-severity assessment · the 72h clock · notification drafting `[S]`.
+- Domain: **GDPR Art 33/34** · state breach laws · harm assessment `[K]`.
 - Maverick: notifying a regulator/subject is a hard-floor human act.
 
 #### 2.7 Cross-Border Transfer Agent  [UB]
 JD: Map transfers, check adequacy/SCCs, run the Transfer Impact Assessment.
-- Systems: `enterprise.py` egress lock · `ropa.py`.
-- Technical: transfer mapping · TIA · SCC selection.
-- Domain: **GDPR Chapter V** · adequacy · **SCCs / Schrems II / TIA**.
+- Systems: `enterprise.py` egress lock · `ropa.py` `[C]`.
+- Technical: transfer mapping · TIA · SCC selection `[S]`.
+- Domain: **GDPR Chapter V** · adequacy · **SCCs / Schrems II / TIA** `[K]`.
 
 #### 2.8 Retention & Minimization Agent  [UB]
 JD: Retention schedules, deletion enforcement, anonymization.
-- Systems: `audit/retention.py`, `privacy.py`.
-- Technical: schedule design · enforcement · anonymization/pseudonymization.
-- Domain: **GDPR 5(1)(c)/(e)**; the retention-vs-legal-hold interplay.
+- Systems: `audit/retention.py`, `privacy.py` `[C]`.
+- Technical: schedule design · enforcement · anonymization/pseudonymization `[S]`.
+- Domain: **GDPR 5(1)(c)/(e)**; the retention-vs-legal-hold interplay `[K]`.
 
 ### Tower 3 — GRC core: Risk, Policy & Compliance
 
 #### 3.1 Multi-Framework Compliance Agent  [UB +Assess]
 JD: Posture across SOC 2 / ISO 27001 / HIPAA / PCI / NIST; control mapping + gap analysis.
-- Systems: **Vanta, Drata, AuditBoard** · `soc2.py`, `compliance.py`.
-- Technical: control mapping · framework crosswalks · gap analysis · evidence collection.
-- Domain: **SOC 2 TSC · ISO 27001:2022 (Annex A) · HIPAA Security Rule · PCI-DSS v4.0.1 · NIST CSF 2.0 / 800-53 · HITRUST CSF · ISO 42001 (AI MS) · CIS Controls v8.1**.
+- Systems: **Vanta, Drata, AuditBoard** · `soc2.py`, `compliance.py` `[C]`.
+- Technical: control mapping · framework crosswalks · gap analysis · evidence collection `[S]`.
+- Domain: **SOC 2 TSC · ISO 27001:2022 (Annex A) · HIPAA Security Rule · PCI-DSS v4.0.1 · NIST CSF 2.0 / 800-53 · HITRUST CSF · ISO 42001 (AI MS) · CIS Controls v8.1** `[K]`.
 - Maverick: never marks a control effective without seeing evidence.
 
 #### 3.2 Evidence / Audit-Readiness Agent  [UB +Assess]
 JD: Continuously collect control evidence; assemble the auditor package.
-- Systems: GRC platforms · `collect_soc2_evidence`, `audit/export` (CEF).
-- Technical: continuous evidence collection · auditor-package assembly.
-- Domain: audit readiness · evidence types/sufficiency.
+- Systems: GRC platforms · `collect_soc2_evidence`, `audit/export` (CEF) `[C]`.
+- Technical: continuous evidence collection · auditor-package assembly `[S]`.
+- Domain: audit readiness · evidence types/sufficiency `[K]`.
 - Maverick: external send gated.
 
 #### 3.3 Risk Management / ERM Agent  [UB]
 JD: Enterprise risk register + KRIs; scoring; treatment tracking.
-- Systems: GRC risk register (**ServiceNow GRC, LogicGate, Archer**).
-- Technical: risk scoring (likelihood×impact) · KRI design · heat maps.
-- Domain: **COSO ERM, ISO 31000, NIST RMF**.
+- Systems: GRC risk register (**ServiceNow GRC, LogicGate, Archer**) `[C]`.
+- Technical: risk scoring (likelihood×impact) · KRI design · heat maps `[S]`.
+- Domain: **COSO ERM, ISO 31000, NIST RMF** `[K]`.
 
 #### 3.4 Policy Management Agent  [UB]
 JD: Policy lifecycle — author, review, version, attestation, exceptions.
-- Systems: policy mgmt (PolicyTech, Confluence).
-- Technical: policy lifecycle · attestation tracking · policy-to-control mapping.
-- Domain: policy frameworks · exception governance.
+- Systems: policy mgmt (PolicyTech, Confluence) `[C]`.
+- Technical: policy lifecycle · attestation tracking · policy-to-control mapping `[S]`.
+- Domain: policy frameworks · exception governance `[K]`.
 
 #### 3.5 Control Testing & Monitoring Agent  [UB +Assess]
 JD: Test control operating effectiveness; continuous control monitoring + drift detection.
-- Systems: GRC · `governance.py`, `soc2.py` probes.
-- Technical: control testing · sampling · continuous control monitoring · drift detection.
-- Domain: design vs operating effectiveness · ITGC · COBIT.
+- Systems: GRC · `governance.py`, `soc2.py` probes `[C]`.
+- Technical: control testing · sampling · continuous control monitoring · drift detection `[S]`.
+- Domain: design vs operating effectiveness · ITGC · COBIT `[K]`.
 - Maverick: reads the platform's own controls as evidence.
 
 #### 3.6 Regulatory Change Management Agent  [UB]
 JD: Track regulatory changes; map to affected controls; assess impact.
-- Systems: reg-intelligence feeds (Thomson Reuters Regulatory Intelligence) · `CourtListener` · `web_search`.
-- Technical: change tracking · control-impact mapping.
-- Domain: horizon scanning · regulatory taxonomies.
+- Systems: reg-intelligence feeds (Thomson Reuters Regulatory Intelligence) · `CourtListener` · `web_search` `[C]`.
+- Technical: change tracking · control-impact mapping `[S]`.
+- Domain: horizon scanning · regulatory taxonomies `[K]`.
 
 ### Tower 4 — Internal Audit & Assurance
 
 #### 4.1 Internal Audit Agent  [UB +Assess]
 JD: Risk-based planning, fieldwork, workpapers, findings, follow-up.
-- Systems: **AuditBoard, TeamMate+**.
-- Technical: risk-based planning · workpaper drafting · sampling & testing.
-- Domain: **IIA Global Internal Audit Standards (2024) · COBIT 2019 · three-lines model** · CAATs (IDEA/ACL→Diligent, Alteryx) · root-cause analysis.
+- Systems: **AuditBoard, TeamMate+** `[C]`.
+- Technical: risk-based planning · workpaper drafting · sampling & testing `[S]`.
+- Domain: **IIA Global Internal Audit Standards (2024) · COBIT 2019 · three-lines model** · CAATs (IDEA/ACL→Diligent, Alteryx) · root-cause analysis `[K]`.
 - Maverick: read-only, independent.
 
 #### 4.2 Controls Assurance & SoD Agent  [UB]
 JD: Independent control verification + SoD/access-conflict monitoring across the fleet.
-- Systems: `capability.py` grants · IAM.
-- Technical: **SoD-conflict scanning** · access-grant review · control verification.
-- Domain: SoD matrices · least-privilege.
+- Systems: `capability.py` grants · IAM `[C]`.
+- Technical: **SoD-conflict scanning** · access-grant review · control verification `[S]`.
+- Domain: SoD matrices · least-privilege `[K]`.
 - Maverick: read-only.
 
 #### 4.3 External-Audit / PBC Liaison Agent  [UB +Assess]
 JD: Manage the SOC 2 / ISO PBC list, package evidence, track open items.
-- Systems: evidence collector · auditor data-request portals.
-- Technical: PBC management · evidence packaging.
-- Domain: SOC 2 / ISO 27001 audit process · `maverick audit verify` as tamper-evidence.
+- Systems: evidence collector · auditor data-request portals `[C]`.
+- Technical: PBC management · evidence packaging `[S]`.
+- Domain: SOC 2 / ISO 27001 audit process · `maverick audit verify` as tamper-evidence `[K]`.
 - Maverick: external send gated.
 
 ### Tower 5 — Third-Party / Vendor Risk
 
 #### 5.1 Vendor Risk Assessment Agent  [UB +Assess]
 JD: TPRM assessment — security, privacy, resilience.
-- Systems: TPRM (**OneTrust, Whistic, SecurityScorecard**) · `_VENDOR_RISK`.
-- Technical: `start/answer/finalize_assessment` · **SIG/CAIQ** questionnaire review · SOC 2/ISO report analysis.
-- Domain: TPRM · fourth-party risk · concentration risk.
+- Systems: TPRM (**OneTrust, Whistic, SecurityScorecard**) · `_VENDOR_RISK` `[C]`.
+- Technical: `start/answer/finalize_assessment` · **SIG/CAIQ** questionnaire review · SOC 2/ISO report analysis `[S]`.
+- Domain: TPRM · fourth-party risk · concentration risk `[K]`.
 
 #### 5.2 Subprocessor & DPA Agent  [UB]
 JD: Subprocessor registry + change-notification; DPA terms.
-- Systems: subprocessor registry · CLM (DPAs).
-- Technical: subprocessor tracking · change-notification · DPA-term extraction.
-- Domain: **GDPR Art 28** · subprocessor obligations.
+- Systems: subprocessor registry · CLM (DPAs) `[C]`.
+- Technical: subprocessor tracking · change-notification · DPA-term extraction `[S]`.
+- Domain: **GDPR Art 28** · subprocessor obligations `[K]`.
 
 #### 5.3 Continuous Vendor Monitoring Agent  [UB +Data]
 JD: Monitor vendors for breaches, SOC 2 expiry, posture changes.
-- Systems: security ratings (**SecurityScorecard, BitSight**) · breach feeds.
-- Technical: posture monitoring · expiry tracking · re-assessment triggers.
+- Systems: security ratings (**SecurityScorecard, BitSight**) · breach feeds `[C]`.
+- Technical: posture monitoring · expiry tracking · re-assessment triggers `[S]`.
 
 ### Tower 6 — Security Operations
 
 #### 6.1 Runtime Threat Detection (Agent Shield)  [UB]
 JD: Prompt-injection/jailbreak/exfil detection at runtime; canaries; unicode filtering.
-- Systems: the Agent Shield (`safety/{jailbreak_heuristics,remote_scan,canaries,unicode_filter}.py`).
-- Technical: injection/jailbreak/exfil detection · canary tokens · unicode-attack filtering.
-- Domain: **OWASP LLM Top 10** · prompt-injection taxonomy · RAG poisoning.
+- Systems: the Agent Shield (`safety/{jailbreak_heuristics,remote_scan,canaries,unicode_filter}.py`) `[C]`.
+- Technical: injection/jailbreak/exfil detection · canary tokens · unicode-attack filtering `[S]`.
+- Domain: **OWASP LLM Top 10** · prompt-injection taxonomy · RAG poisoning `[K]`.
 - Maverick: kernel chokepoint (fail-open per rule 1).
 
 #### 6.2 SIEM / Detection & Alert-Triage Agent  [UB +Data]
 JD: Forward events to the SIEM, correlate, triage alerts, enrich.
-- Systems: **Splunk, Microsoft Sentinel, Elastic** · `audit/export` (CEF).
-- Technical: **SPL / KQL** detection rules · log correlation · alert triage · enrichment.
-- Domain: **detection engineering · MITRE ATT&CK** · SOC operations.
+- Systems: **Splunk, Microsoft Sentinel, Elastic** · `audit/export` (CEF) `[C]`.
+- Technical: **SPL / KQL** detection rules · log correlation · alert triage · enrichment `[S]`.
+- Domain: **detection engineering · MITRE ATT&CK** · SOC operations `[K]`.
 - Maverick: suppress/close gated (hard floor).
 
 #### 6.3 Security Incident Response Agent  [UB]
 JD: IR lifecycle — triage → contain → eradicate → recover → PIR.
-- Systems: SOAR (**Splunk SOAR, Tines**) · `quarantine.py`/`killswitch.py`.
-- Technical: IR lifecycle · severity matrix · containment · forensics · chain-of-custody.
-- Domain: **NIST 800-61 · SANS IR · MITRE ATT&CK**.
+- Systems: SOAR (**Splunk SOAR, Tines**) · `quarantine.py`/`killswitch.py` `[C]`.
+- Technical: IR lifecycle · severity matrix · containment · forensics · chain-of-custody `[S]`.
+- Domain: **NIST 800-61 · SANS IR · MITRE ATT&CK** `[K]`.
 - Maverick: containment `require_human`.
 
 #### 6.4 Threat Intelligence Agent  [UB]
 JD: Ingest threat intel/IOCs/advisories; correlate; brief the SOC.
-- Systems: **MISP** · threat feeds · VirusTotal.
-- Technical: IOC analysis · TTP mapping · threat correlation.
-- Domain: CTI · MITRE ATT&CK · the Diamond Model.
+- Systems: **MISP** · threat feeds · VirusTotal `[C]`.
+- Technical: IOC analysis · TTP mapping · threat correlation `[S]`.
+- Domain: CTI · MITRE ATT&CK · the Diamond Model `[K]`.
 
 ### Tower 7 — AppSec & Supply Chain
 
 #### 7.1 Secret Scanning Agent  [UB +Build]
 JD: Detect secrets in code/logs/config; redact before egress.
-- Systems: `safety/secret_detector.py` · GitHub secret scanning · **TruffleHog, Gitleaks**.
-- Technical: secret detection/redaction · entropy analysis · pre-commit hooks.
-- Domain: secret types · rotation hygiene.
+- Systems: `safety/secret_detector.py` · GitHub secret scanning · **TruffleHog, Gitleaks** `[C]`.
+- Technical: secret detection/redaction · entropy analysis · pre-commit hooks `[S]`.
+- Domain: secret types · rotation hygiene `[K]`.
 
 #### 7.2 SCA / Dependency & License Agent  [UB +Build]
 JD: Dependency CVEs + license risk + SBOM.
-- Systems: **Snyk, Dependabot, OWASP Dependency-Check** · `license_scan.py` · **CycloneDX/SPDX** SBOM.
-- Technical: CVE triage (**CVSS/EPSS** + reachability) · SBOM generation · license classification.
-- Domain: **supply-chain security · SLSA** · license families (copyleft/permissive).
+- Systems: **Snyk, Dependabot, OWASP Dependency-Check** · `license_scan.py` · **CycloneDX/SPDX** SBOM `[C]`.
+- Technical: CVE triage (**CVSS/EPSS** + reachability) · SBOM generation · license classification `[S]`.
+- Domain: **supply-chain security · SLSA** · license families (copyleft/permissive) `[K]`.
 
 #### 7.3 SAST / Secure Code Review Agent  [UB +Build]
 JD: Static analysis + secure code review of diffs.
-- Systems: **Semgrep, CodeQL, SonarQube** · `reviewer.py`, `/security-review`, Copilot review.
-- Technical: SAST rule authoring · secure code review · vuln-class detection (injection/authz/crypto).
-- Domain: **OWASP Top 10 / ASVS · CWE** · secure SDLC.
+- Systems: **Semgrep, CodeQL, SonarQube** · `reviewer.py`, `/security-review`, Copilot review `[C]`.
+- Technical: SAST rule authoring · secure code review · vuln-class detection (injection/authz/crypto) `[S]`.
+- Domain: **OWASP Top 10 / ASVS · CWE** · secure SDLC `[K]`.
 
 #### 7.4 Supply-Chain / MCP & Plugin Trust Agent  [UB +Build]
 JD: Vet MCP servers & plugins before install — pinning, manifest, provenance.
-- Systems: `mcp_registry.py` (`pin_sha256`), `plugin_manifest.py` · **Sigstore/cosign**.
-- Technical: dependency/plugin vetting · signature/provenance verification · pinning.
-- Domain: **SLSA** · supply-chain attacks (typosquatting, dependency confusion).
+- Systems: `mcp_registry.py` (`pin_sha256`), `plugin_manifest.py` · **Sigstore/cosign** `[C]`.
+- Technical: dependency/plugin vetting · signature/provenance verification · pinning `[S]`.
+- Domain: **SLSA** · supply-chain attacks (typosquatting, dependency confusion) `[K]`.
 - Maverick: install gated.
 
 ### Tower 8 — Vulnerability & Threat Management
 
 #### 8.1 Vulnerability Management Agent  [UB +Data]
 JD: Aggregate scanner findings, prioritize, track remediation.
-- Systems: **Tenable, Qualys, Wiz, Rapid7** · cloud CSPM.
-- Technical: vuln aggregation · prioritization (**CVSS/EPSS + reachability + KEV**) · remediation-SLA tracking.
-- Domain: vuln-management lifecycle · CISA KEV.
+- Systems: **Tenable, Qualys, Wiz, Rapid7** · cloud CSPM `[C]`.
+- Technical: vuln aggregation · prioritization (**CVSS/EPSS + reachability + KEV**) · remediation-SLA tracking `[S]`.
+- Domain: vuln-management lifecycle · CISA KEV `[K]`.
 
 #### 8.2 Patch Management Agent  [UB]
 JD: Patch cadence/compliance, maintenance windows, remediation verification.
-- Systems: **MECM (ex-SCCM), Intune / Windows Autopatch, Tanium, BigFix** · Linux patching (**Ansible, Red Hat Satellite**) · the asset inventory.
-- Technical: patch-compliance tracking · maintenance-window planning.
-- Domain: patch cadence · change control.
+- Systems: **MECM (ex-SCCM), Intune / Windows Autopatch, Tanium, BigFix** · Linux patching (**Ansible, Red Hat Satellite**) · the asset inventory `[C]`.
+- Technical: patch-compliance tracking · maintenance-window planning `[S]`.
+- Domain: patch cadence · change control `[K]`.
 - Maverick: patching `require_human`.
 
 #### 8.3 Attack-Surface & Pen-Test Agent  [UB +Build]
 JD: Map external attack surface, coordinate pen tests, red-team the agents' own controls.
-- Systems: ASM (**Censys, Shodan**) · `safety/remote_scan.py`, `chaos.py`.
-- Technical: attack-surface mapping · pen-test coordination · recon.
-- Domain: offensive-security basics · **threat modeling (STRIDE)**.
+- Systems: ASM (**Censys, Shodan**) · `safety/remote_scan.py`, `chaos.py` `[C]`.
+- Technical: attack-surface mapping · pen-test coordination · recon `[S]`.
+- Domain: offensive-security basics · **threat modeling (STRIDE)** `[K]`.
 
 ### Tower 9 — Identity & Access Management
 
 #### 9.1 Joiner-Mover-Leaver (Provisioning) Agent  [UB]
 JD: Orchestrate access provisioning/deprovisioning on lifecycle events.
-- Systems: **Okta, Microsoft Entra ID, SailPoint** · HRIS · SCIM.
-- Technical: provisioning/deprovisioning · **SCIM** · role assignment · JML automation.
-- Domain: identity lifecycle · **RBAC/ABAC**.
+- Systems: **Okta, Microsoft Entra ID, SailPoint** · HRIS · SCIM `[C]`.
+- Technical: provisioning/deprovisioning · **SCIM** · role assignment · JML automation `[S]`.
+- Domain: identity lifecycle · **RBAC/ABAC** `[K]`.
 - Maverick: grant/revoke `require_human` (hard floor); orchestrates an org process.
 
 #### 9.2 Access Review / Recertification Agent  [UB]
 JD: Periodic access recertification + least-privilege review (humans *and* agents).
-- Systems: IGA (**SailPoint, Saviynt**) · `capability.py` grants.
-- Technical: certification campaigns · least-privilege review · SoD scanning.
-- Domain: access governance · entitlement review.
+- Systems: IGA (**SailPoint, Saviynt**) · `capability.py` grants `[C]`.
+- Technical: certification campaigns · least-privilege review · SoD scanning `[S]`.
+- Domain: access governance · entitlement review `[K]`.
 - Maverick: revoke is human.
 
 #### 9.3 Privileged Access (PAM) Agent  [UB]
 JD: Just-in-time privileged access, session control, expiry enforcement.
-- Systems: **CyberArk, HashiCorp Vault, Teleport** · `capability.py` (`max_risk`/`expires_at`).
-- Technical: JIT access · session management · secret/credential vaulting.
-- Domain: privileged-access governance.
+- Systems: **CyberArk, HashiCorp Vault, Teleport** · `capability.py` (`max_risk`/`expires_at`) `[C]`.
+- Technical: JIT access · session management · secret/credential vaulting `[S]`.
+- Domain: privileged-access governance `[K]`.
 - Maverick: capability **expiry is enforced at `permits()`** (an expired grant is denied at use-time); the gap to build is a **mid-session revocation sweep + a revocation list** for un-expired grants.
 
 #### 9.4 Authentication / SSO Agent  [UB]
 JD: SSO/MFA coverage & configuration; auth posture.
-- Systems: Okta/Entra · `oidc.py`, `proxy_auth.py`, `mcp_oauth.py`.
-- Technical: **SAML / OIDC / OAuth2 / SCIM** · MFA config · SSO troubleshooting (alg-confusion, token validation).
-- Domain: federation · Zero Trust.
+- Systems: Okta/Entra · `oidc.py`, `proxy_auth.py`, `mcp_oauth.py` `[C]`.
+- Technical: **SAML / OIDC / OAuth2 / SCIM** · MFA config · SSO troubleshooting (alg-confusion, token validation) `[S]`.
+- Domain: federation · Zero Trust `[K]`.
 
 ### Tower 10 — IT Operations & Resilience
 
 #### 10.1 Asset & Configuration (CMDB) Agent  [UB +Data]
 JD: Asset/config inventory, baselines, drift — incl. database infrastructure.
-- Systems: **ServiceNow CMDB** · cloud inventory · **Oracle/PostgreSQL/SQL Server** estates.
-- Technical: asset/config discovery · drift detection · **DBA basics — install & configure Oracle 23ai, backup/restore, query, index/tune**.
-- Domain: ITIL configuration management · infrastructure topology.
+- Systems: **ServiceNow CMDB** · cloud inventory · **Oracle/PostgreSQL/SQL Server** estates `[C]`.
+- Technical: asset/config discovery · drift detection · **DBA basics — install & configure Oracle 23ai, backup/restore, query, index/tune** `[S]`.
+- Domain: ITIL configuration management · infrastructure topology `[K]`.
 
 #### 10.2 Change Management Agent  [UB]
 JD: Change request → impact → approval → audit → rollback.
-- Systems: ServiceNow/Jira Change · `governance.py` (approval) · `checkpoint.py` (rollback).
-- Technical: change-request workflow · impact assessment · CAB support.
-- Domain: **ITIL change management**.
+- Systems: ServiceNow/Jira Change · `governance.py` (approval) · `checkpoint.py` (rollback) `[C]`.
+- Technical: change-request workflow · impact assessment · CAB support `[S]`.
+- Domain: **ITIL change management** `[K]`.
 - Maverick: approval `require_human`.
 
 #### 10.3 Observability / SRE Agent  [UB +Build]
 JD: Monitor health/SLOs, tune alerts, drive reliability.
-- Systems: **Datadog, Grafana, Prometheus, Sentry, PagerDuty** · `observability.py`, `health.py`, `circuit_breaker.py`.
-- Technical: **SLO/SLI design** · alerting · dashboards · on-call/runbooks.
-- Domain: **SRE practices** · error budgets.
+- Systems: **Datadog, Grafana, Prometheus, Sentry, PagerDuty** · `observability.py`, `health.py`, `circuit_breaker.py` `[C]`.
+- Technical: **SLO/SLI design** · alerting · dashboards · on-call/runbooks `[S]`.
+- Domain: **SRE practices** · error budgets `[K]`.
 
 #### 10.4 Backup & Disaster-Recovery Agent  [UB]
 JD: Backup policy, point-in-time recovery, DR drills, BCP.
-- Systems: backup (**Veeam, Rubrik**) · cloud snapshots · `checkpoint.py`/`job_queue.py`.
-- Technical: backup policy · PITR · DR drills · **RPO/RTO** design.
-- Domain: BC/DR · **ISO 22301**.
+- Systems: backup (**Veeam, Rubrik**) · cloud snapshots · `checkpoint.py`/`job_queue.py` `[C]`.
+- Technical: backup policy · PITR · DR drills · **RPO/RTO** design `[S]`.
+- Domain: BC/DR · **ISO 22301** `[K]`.
 - Maverick: restore/failover gated.
 
 #### 10.5 Service Desk / ITSM Agent  [UB +Reach]
 JD: Ticketing, request fulfillment, KB, SLA — the employee IT front door.
-- Systems: **ServiceNow, Jira Service Management, Zendesk** · channels · `intake.py`.
-- Technical: ticket triage/deflection · request fulfillment · KB authoring · SLA tracking.
-- Domain: **ITIL service management**.
+- Systems: **ServiceNow, Jira Service Management, Zendesk** · channels · `intake.py` `[C]`.
+- Technical: ticket triage/deflection · request fulfillment · KB authoring · SLA tracking `[S]`.
+- Domain: **ITIL service management** `[K]`.
 - Maverick: AI disclosure; escalate sensitive.
 
 ### Council-added agents
@@ -849,303 +849,303 @@ AI-disclosure discipline** is a baseline skill, not optional.
 
 #### 1.1 Demand-Gen & Campaign Agent  [UB +Reach +Data]
 JD: Plan/orchestrate multi-channel campaigns, draft assets, measure pipeline contribution.
-- Systems: **Marketo, HubSpot, Marketing Cloud Account Engagement (ex-Pardot), Salesforce Marketing Cloud** (MAP/ESP) · **Google/Meta/LinkedIn Ads** · the channels layer.
-- Technical: campaign building · audience segmentation · UTM/attribution setup · A/B testing.
-- Domain: demand gen · funnel math · channel mix · budget pacing.
+- Systems: **Marketo, HubSpot, Marketing Cloud Account Engagement (ex-Pardot), Salesforce Marketing Cloud** (MAP/ESP) · **Google/Meta/LinkedIn Ads** · the channels layer `[C]`.
+- Technical: campaign building · audience segmentation · UTM/attribution setup · A/B testing `[S]`.
+- Domain: demand gen · funnel math · channel mix · budget pacing `[K]`.
 - Maverick: spend cap; launch `require_human`; consent/suppression floor.
 
 #### 1.2 Content & SEO Agent  [UB +Reach]
 JD: Content briefs/drafts (blog/landing/whitepaper), SEO, the content calendar.
-- Systems: CMS / **Wix** (MCP) · **Semrush, Ahrefs, Google Search Console** · GA4.
-- Technical: keyword research · on-page SEO · content optimization · schema markup.
-- Domain: SEO/SEM · content strategy · E-E-A-T.
+- Systems: CMS / **Wix** (MCP) · **Semrush, Ahrefs, Google Search Console** · GA4 `[C]`.
+- Technical: keyword research · on-page SEO · content optimization · schema markup `[S]`.
+- Domain: SEO/SEM · content strategy · E-E-A-T `[K]`.
 - Maverick: brand/claims review before publish; WCAG.
 
 #### 1.3 Social & Community Agent  [UB +Reach]
 JD: Draft/schedule social, monitor mentions, moderate community.
-- Systems: **Sprout Social, Hootsuite** · Bluesky/Mastodon/Discord (shipped) · LinkedIn/X.
-- Technical: social scheduling · listening/sentiment · engagement.
-- Domain: social strategy · community management · platform norms.
+- Systems: **Sprout Social, Hootsuite** · Bluesky/Mastodon/Discord (shipped) · LinkedIn/X `[C]`.
+- Technical: social scheduling · listening/sentiment · engagement `[S]`.
+- Domain: social strategy · community management · platform norms `[K]`.
 - Maverick: post gated; brand voice; AI disclosure.
 
 #### 1.4 Product Marketing Agent  [UB]
 JD: Positioning, messaging, launch plans, battlecards, competitive framing.
-- Systems: `knowledge_search` · the competitive-intel agent (8.3).
-- Technical: messaging frameworks · battlecard authoring · win/loss synthesis.
-- Domain: positioning · segmentation/personas · pricing/packaging input.
+- Systems: `knowledge_search` · the competitive-intel agent (8.3) `[C]`.
+- Technical: messaging frameworks · battlecard authoring · win/loss synthesis `[S]`.
+- Domain: positioning · segmentation/personas · pricing/packaging input `[K]`.
 
 #### 1.5 Brand & Creative Agent  [UB]
 JD: Brand-voice guardrails, creative briefs, design production.
-- Systems: **Figma** (MCP) · Google Drive · Adobe Creative Cloud.
-- Technical: creative-brief authoring · design generation · brand-asset management.
-- Domain: brand systems · visual/voice consistency.
+- Systems: **Figma** (MCP) · Google Drive · Adobe Creative Cloud `[C]`.
+- Technical: creative-brief authoring · design generation · brand-asset management `[S]`.
+- Domain: brand systems · visual/voice consistency `[K]`.
 
 #### 1.6 Lifecycle & Nurture Agent  [UB +Reach]
 JD: Lifecycle/nurture email sequences; deliverability & list hygiene.
-- Systems: the email channel (shipped) · MAP (Marketo/HubSpot).
-- Technical: sequence building · **deliverability** (SPF/DKIM/DMARC, warmup, bounce/spam management) · list segmentation.
-- Domain: lifecycle marketing · email best practice.
+- Systems: the email channel (shipped) · MAP (Marketo/HubSpot) `[C]`.
+- Technical: sequence building · **deliverability** (SPF/DKIM/DMARC, warmup, bounce/spam management) · list segmentation `[S]`.
+- Domain: lifecycle marketing · email best practice `[K]`.
 - Maverick: **consent/suppression hard floor**; CAN-SPAM/GDPR; rate caps.
 
 #### 1.7 Marketing Ops & Analytics Agent  [UB +Data]
 JD: Attribution, funnel analytics, lead scoring, MAP hygiene.
-- Systems: MAP · CRM · BI (Looker/Tableau) · GA4.
-- Technical: attribution modeling · **lead-scoring models** · MAP/CRM data hygiene · SQL.
-- Domain: marketing analytics · MQL/SQL definitions.
+- Systems: MAP · CRM · BI (Looker/Tableau) · GA4 `[C]`.
+- Technical: attribution modeling · **lead-scoring models** · MAP/CRM data hygiene · SQL `[S]`.
+- Domain: marketing analytics · MQL/SQL definitions `[K]`.
 
 #### 1.8 Events & Webinar Agent  [UB +Reach]
 JD: Event/webinar planning, invites, registration, follow-up.
-- Systems: **Google Calendar** (live) · event platforms (ON24, Cvent, Zoom Webinars).
-- Technical: event setup · invite/registration flows · follow-up sequences.
-- Domain: field/event marketing.
+- Systems: **Google Calendar** (live) · event platforms (ON24, Cvent, Zoom Webinars) `[C]`.
+- Technical: event setup · invite/registration flows · follow-up sequences `[S]`.
+- Domain: field/event marketing `[K]`.
 - Maverick: sends gated; suppression honored.
 
 #### 1.9 PR & Comms Agent  [UB +Reach]
 JD: Press materials, announcements, media monitoring.
-- Systems: **Cision, Meltwater** · `web_search`.
-- Technical: press-release drafting · media-list building · monitoring.
-- Domain: PR · crisis comms · messaging.
+- Systems: **Cision, Meltwater** · `web_search` `[C]`.
+- Technical: press-release drafting · media-list building · monitoring `[S]`.
+- Domain: PR · crisis comms · messaging `[K]`.
 - Maverick: external release gated.
 
 ### Tower 2 — Sales Development
 
 #### 2.1 Inbound Qualification Agent  [UB +Reach]
 JD: Qualify inbound leads (MQL→SQL), respond fast, route, book meetings.
-- Systems: **Salesforce / HubSpot** (CRM) · Google Calendar · the channels layer · `intake.py`.
-- Technical: lead qualification (BANT/MEDDIC-lite) · routing · meeting booking.
-- Domain: inbound SDR motion · SLAs.
+- Systems: **Salesforce / HubSpot** (CRM) · Google Calendar · the channels layer · `intake.py` `[C]`.
+- Technical: lead qualification (BANT/MEDDIC-lite) · routing · meeting booking `[S]`.
+- Domain: inbound SDR motion · SLAs `[K]`.
 - Maverick: AI disclosure; consent on follow-up.
 
 #### 2.2 Outbound Prospecting (SDR) Agent  [UB +Reach]
 JD: Research accounts/contacts, draft personalized outreach, run sequences.
-- Systems: **ZoomInfo, Apollo, 6sense** (enrichment/intent) · **Outreach, Salesloft** · the channels layer.
-- Technical: account/contact research · personalization · multi-touch sequencing.
-- Domain: outbound motion · ICP targeting.
+- Systems: **ZoomInfo, Apollo, 6sense** (enrichment/intent) · **Outreach, Salesloft** · the channels layer `[C]`.
+- Technical: account/contact research · personalization · multi-touch sequencing `[S]`.
+- Domain: outbound motion · ICP targeting `[K]`.
 - Maverick: **consent/suppression hard floor** + AI disclosure are the whole game; lead-source provenance.
 
 #### 2.3 Lead Enrichment & Account-Research Agent  [UB +Data]
 JD: Enrich firmographic/technographic data, intent signals, account/stakeholder research.
-- Systems: **ZoomInfo, Clearbit, Apollo, 6sense** · `web_search`.
-- Technical: enrichment · technographic/intent analysis · stakeholder mapping.
-- Domain: account research · data provenance/privacy.
+- Systems: **ZoomInfo, Clearbit, Apollo, 6sense** · `web_search` `[C]`.
+- Technical: enrichment · technographic/intent analysis · stakeholder mapping `[S]`.
+- Domain: account research · data provenance/privacy `[K]`.
 
 #### 2.4 Sequencing & Cadence Agent  [UB +Reach]
 JD: Orchestrate multi-touch cadences, A/B test, protect deliverability.
-- Systems: `scheduler.py`/`worker.py` · **Outreach, Salesloft** · the channels layer.
-- Technical: cadence design · A/B testing · deliverability protection.
+- Systems: `scheduler.py`/`worker.py` · **Outreach, Salesloft** · the channels layer `[C]`.
+- Technical: cadence design · A/B testing · deliverability protection `[S]`.
 - Maverick: sends only inside the gated sequence.
 
 #### 2.5 Meeting-Booking Agent  [UB +Reach]
 JD: Book demos, hand off to the AE with context.
-- Systems: **Google Calendar** (live), Calendly/Chili Piper · CRM.
-- Technical: scheduling · round-robin routing · handoff prep.
+- Systems: **Google Calendar** (live), Calendly/Chili Piper · CRM `[C]`.
+- Technical: scheduling · round-robin routing · handoff prep `[S]`.
 
 ### Tower 3 — Sales / AE & Deal Desk
 
 #### 3.1 Account-Plan & Research Agent  [UB]
 JD: Account intelligence, stakeholder maps, account/territory plans.
-- Systems: **Salesforce** · `web_search` · enrichment.
-- Technical: account planning · stakeholder/org mapping · whitespace analysis.
-- Domain: enterprise-sales methodology.
+- Systems: **Salesforce** · `web_search` · enrichment `[C]`.
+- Technical: account planning · stakeholder/org mapping · whitespace analysis `[S]`.
+- Domain: enterprise-sales methodology `[K]`.
 
 #### 3.2 Discovery & Solution Agent  [UB]
 JD: Discovery prep, qualification, solution mapping, demo scripts.
-- Systems: CRM · `knowledge_search` (product).
-- Technical: discovery frameworks (**MEDDIC/MEDDPICC, SPIN, Challenger**) · solution mapping.
-- Domain: value selling · the product.
+- Systems: CRM · `knowledge_search` (product) `[C]`.
+- Technical: discovery frameworks (**MEDDIC/MEDDPICC, SPIN, Challenger**) · solution mapping `[S]`.
+- Domain: value selling · the product `[K]`.
 
 #### 3.3 Proposal & Quoting (CPQ) Agent  [UB]
 JD: Generate quotes/proposals, configure products, apply the price book.
-- Systems: **Salesforce CPQ, DealHub, Conga** · `knowledge_search` (pricing).
-- Technical: product configuration · quote generation · proposal assembly.
-- Domain: pricing/packaging · discounting rules.
+- Systems: **Salesforce CPQ, DealHub, Conga** · `knowledge_search` (pricing) `[C]`.
+- Technical: product configuration · quote generation · proposal assembly `[S]`.
+- Domain: pricing/packaging · discounting rules `[K]`.
 - Maverick: list-price auto; discounts → Deal Desk (3.4).
 
 #### 3.4 Deal Desk & Approvals Agent  [UB +Data]
 JD: Enforce the discount/term approval matrix, check margin, route approvals.
-- Systems: CPQ · `governance.py` (risk-floor gate today; **DoA/amount-aware policy to build**) · the legal domain.
-- Technical: **margin analysis** · approval-matrix routing · non-standard-term detection.
-- Domain: deal desk · DoA matrices · revenue/margin policy.
+- Systems: CPQ · `governance.py` (risk-floor gate today; **DoA/amount-aware policy to build**) · the legal domain `[C]`.
+- Technical: **margin analysis** · approval-matrix routing · non-standard-term detection `[S]`.
+- Domain: deal desk · DoA matrices · revenue/margin policy `[K]`.
 - Maverick: discounts beyond floor `require_human`; never approves itself.
 
 #### 3.5 Sales Engineering / POC Agent  [UB]
 JD: Technical Q&A, POC plans, security questionnaires.
-- Systems: `knowledge_search` · the GRC compliance agent (security Qs) · CRM.
-- Technical: technical demos · POC design · **security-questionnaire response (SIG/CAIQ)**.
-- Domain: the product architecture · integration patterns.
+- Systems: `knowledge_search` · the GRC compliance agent (security Qs) · CRM `[C]`.
+- Technical: technical demos · POC design · **security-questionnaire response (SIG/CAIQ)** `[S]`.
+- Domain: the product architecture · integration patterns `[K]`.
 
 #### 3.6 Negotiation & Closing-Support Agent  [UB]
 JD: Negotiation prep, objection handling, mutual close plans.
-- Systems: CRM · `knowledge_search`.
-- Technical: negotiation prep · objection libraries · mutual-action-plan drafting.
-- Domain: negotiation tactics · closing methodology.
+- Systems: CRM · `knowledge_search` `[C]`.
+- Technical: negotiation prep · objection libraries · mutual-action-plan drafting `[S]`.
+- Domain: negotiation tactics · closing methodology `[K]`.
 
 #### 3.7 Contract / Order-Form Agent  [UB]
 JD: Assemble the order form, redline vs standard, hand off to CLM.
-- Systems: **DocuSign, Ironclad** (CLM/e-sign) · the legal domain.
-- Technical: order-form assembly · redline vs standard.
-- Domain: commercial terms · the contract playbook.
+- Systems: **DocuSign, Ironclad** (CLM/e-sign) · the legal domain `[C]`.
+- Technical: order-form assembly · redline vs standard `[S]`.
+- Domain: commercial terms · the contract playbook `[K]`.
 - Maverick: never signs; non-standard terms → legal/human.
 
 ### Tower 4 — Revenue Operations
 
 #### 4.1 Pipeline Analytics & Forecasting Agent  [UB +Data]
 JD: Pipeline health, deal inspection, forecast roll-up.
-- Systems: **Salesforce** · BI (Tableau/Looker) · **Clari/BoostUp** (forecasting).
-- Technical: pipeline analytics · deal inspection · **forecast methodology** (weighted/commit) · SQL.
-- Domain: forecasting discipline · pipeline hygiene.
+- Systems: **Salesforce** · BI (Tableau/Looker) · **Clari/BoostUp** (forecasting) `[C]`.
+- Technical: pipeline analytics · deal inspection · **forecast methodology** (weighted/commit) · SQL `[S]`.
+- Domain: forecasting discipline · pipeline hygiene `[K]`.
 - Maverick: forecast commit is human; feeds finance.
 
 #### 4.2 Territory, Quota & Capacity Agent  [UB +Data]
 JD: Territory design, quota setting, capacity/coverage modeling.
-- Systems: CRM · territory-planning (Fullcast, Anaplan) · the finance headcount agent.
-- Technical: territory modeling · quota setting · capacity/coverage analysis.
-- Domain: sales-capacity planning.
+- Systems: CRM · territory-planning (Fullcast, Anaplan) · the finance headcount agent `[C]`.
+- Technical: territory modeling · quota setting · capacity/coverage analysis `[S]`.
+- Domain: sales-capacity planning `[K]`.
 
 #### 4.3 Commissions & Incentive-Comp Agent  [UB +Data]
 JD: Calculate commissions/attainment against the comp plan; disputes.
-- Systems: **Xactly, CaptivateIQ, Spiff** · CRM · finance payroll.
-- Technical: commission calculation · attainment tracking · dispute resolution.
-- Domain: incentive-comp plans · SPM.
+- Systems: **Xactly, CaptivateIQ, Spiff** · CRM · finance payroll `[C]`.
+- Technical: commission calculation · attainment tracking · dispute resolution `[S]`.
+- Domain: incentive-comp plans · SPM `[K]`.
 - Maverick: payout gated (finance); SoD vs closing.
 
 #### 4.4 CRM Data Hygiene & Governance Agent  [UB +Data]
 JD: Dedup, enrich, validate, and govern CRM fields & data quality — **fix Salesforce errors**.
-- Systems: **Salesforce** (Admin) · HubSpot · enrichment · `pii_detector`.
-- Technical: **fixing Salesforce errors — Flow (record-triggered/scheduled/screen) + fault paths & Process-Builder→Flow migration, SOQL/SOSL, governor limits (CPU/SOQL-101/DML), Apex triggers & async (Batch/Queueable/Future), debug logs + Developer Console, validation & duplicate rules + dedup, Data Loader, deployment (change sets/SFDX/unlocked packages/Gearset), sharing model (OWD/roles/FLS), Optimizer/Health Check** · CRM data modeling. *(Admin + Developer depth; see also the council-added Salesforce Admin/Dev agent.)*
-- Domain: CRM data governance · field/object model.
+- Systems: **Salesforce** (Admin) · HubSpot · enrichment · `pii_detector` `[C]`.
+- Technical: **fixing Salesforce errors — Flow (record-triggered/scheduled/screen) + fault paths & Process-Builder→Flow migration, SOQL/SOSL, governor limits (CPU/SOQL-101/DML), Apex triggers & async (Batch/Queueable/Future), debug logs + Developer Console, validation & duplicate rules + dedup, Data Loader, deployment (change sets/SFDX/unlocked packages/Gearset), sharing model (OWD/roles/FLS), Optimizer/Health Check** · CRM data modeling. *(Admin + Developer depth; see also the council-added Salesforce Admin/Dev agent.)* `[S]`
+- Domain: CRM data governance · field/object model `[K]`.
 - Maverick: bulk writes gated; privacy; change audit.
 
 #### 4.5 Lead Routing & Assignment Agent  [UB]
 JD: Route leads/accounts by rules, round-robin, enforce SLAs.
-- Systems: **Salesforce, LeanData, Chili Piper**.
-- Technical: routing-rule configuration · round-robin · SLA tracking.
-- Domain: lead-to-account matching.
+- Systems: **Salesforce, LeanData, Chili Piper** `[C]`.
+- Technical: routing-rule configuration · round-robin · SLA tracking `[S]`.
+- Domain: lead-to-account matching `[K]`.
 
 #### 4.6 GTM Systems & Process Agent  [UB +Build]
 JD: Manage the GTM tech stack, workflow automation, RevOps process.
-- Systems: the GTM stack APIs · **Zapier/Workato/Tray** · Salesforce admin.
-- Technical: integration/automation building · process documentation.
-- Domain: RevOps architecture.
+- Systems: the GTM stack APIs · **Zapier/Workato/Tray** · Salesforce admin `[C]`.
+- Technical: integration/automation building · process documentation `[S]`.
+- Domain: RevOps architecture `[K]`.
 - Maverick: config changes gated.
 
 ### Tower 5 — Customer Success & Account Management
 
 #### 5.1 Onboarding & Implementation Agent  [UB +Reach]
 JD: Onboarding plans, kickoff, time-to-value.
-- Systems: **Gainsight, Catalyst, ChurnZero** · PM tools · the channels layer.
-- Technical: onboarding-plan design · TTV tracking · milestone management.
-- Domain: customer onboarding · adoption.
+- Systems: **Gainsight, Catalyst, ChurnZero** · PM tools · the channels layer `[C]`.
+- Technical: onboarding-plan design · TTV tracking · milestone management `[S]`.
+- Domain: customer onboarding · adoption `[K]`.
 
 #### 5.2 Adoption & Health-Scoring Agent  [UB +Data]
 JD: Usage/adoption analytics, health scores, risk signals.
-- Systems: **Amplitude, Pendo** · CS platform.
-- Technical: **health-score modeling** · usage analytics · risk-signal detection.
-- Domain: product-usage analytics · CS metrics.
+- Systems: **Amplitude, Pendo** · CS platform `[C]`.
+- Technical: **health-score modeling** · usage analytics · risk-signal detection `[S]`.
+- Domain: product-usage analytics · CS metrics `[K]`.
 
 #### 5.3 Renewals Agent  [UB +Reach]
 JD: Renewal forecasting, notices, paperwork prep.
-- Systems: CRM/CS · finance.
-- Technical: renewal forecasting · notice/paperwork drafting.
-- Domain: renewals motion · NRR/GRR.
+- Systems: CRM/CS · finance `[C]`.
+- Technical: renewal forecasting · notice/paperwork drafting `[S]`.
+- Domain: renewals motion · NRR/GRR `[K]`.
 - Maverick: never auto-renew or commit price (→ Deal Desk).
 
 #### 5.4 Expansion / Upsell Agent  [UB +Reach]
 JD: Whitespace analysis, expansion plays, upsell timing.
-- Systems: CS + product analytics.
-- Technical: whitespace analysis · expansion-play design · propensity modeling.
+- Systems: CS + product analytics `[C]`.
+- Technical: whitespace analysis · expansion-play design · propensity modeling `[S]`.
 - Maverick: outreach gated.
 
 #### 5.5 Churn-Risk & Save Agent  [UB +Data]
 JD: Churn prediction, save plays, escalation.
-- Systems: CS + product analytics.
-- Technical: **churn prediction** · save-play design · escalation.
-- Domain: retention analytics.
+- Systems: CS + product analytics `[C]`.
+- Technical: **churn prediction** · save-play design · escalation `[S]`.
+- Domain: retention analytics `[K]`.
 
 #### 5.6 QBR & Business-Review Agent  [UB]
 JD: QBR decks, success plans, executive business reviews.
-- Systems: BI · Google Drive/Figma (decks) · CS platform.
-- Technical: QBR-deck building · success-plan drafting · ROI/value storytelling.
+- Systems: BI · Google Drive/Figma (decks) · CS platform `[C]`.
+- Technical: QBR-deck building · success-plan drafting · ROI/value storytelling `[S]`.
 
 #### 5.7 Advocacy & References Agent  [UB +Reach]
 JD: Identify advocates, manage references, case studies, reviews.
-- Systems: CS platform · review sites (G2) · the channels layer.
-- Technical: advocate identification · case-study drafting · review generation.
+- Systems: CS platform · review sites (G2) · the channels layer `[C]`.
+- Technical: advocate identification · case-study drafting · review generation `[S]`.
 - Maverick: outreach gated + consented.
 
 ### Tower 6 — Customer Support & Service
 
 #### 6.1 Support Triage & Deflection Agent  [UB +Reach]
 JD: Tier-1 support — triage, KB answers, deflect, escalate.
-- Systems: **Zendesk, Intercom, Salesforce Service Cloud** · the channels layer · `knowledge_search` · `intake.py`.
-- Technical: ticket triage · KB-grounded answering · escalation routing.
-- Domain: support operations · CSAT drivers.
+- Systems: **Zendesk, Intercom, Salesforce Service Cloud** · the channels layer · `knowledge_search` · `intake.py` `[C]`.
+- Technical: ticket triage · KB-grounded answering · escalation routing `[S]`.
+- Domain: support operations · CSAT drivers `[K]`.
 - Maverick: AI disclosure; escalate the novel; no commitments.
 
 #### 6.2 Knowledge-Base & Self-Service Agent  [UB]
 JD: Author/maintain the KB & help content from tickets + product changes.
-- Systems: support platform + CMS · `knowledge_search`.
-- Technical: KB authoring · gap detection · content maintenance.
+- Systems: support platform + CMS · `knowledge_search` `[C]`.
+- Technical: KB authoring · gap detection · content maintenance `[S]`.
 - Maverick: publish gated.
 
 #### 6.3 Escalation & Customer-Incident Agent  [UB +Reach]
 JD: Manage escalations + customer-facing status comms during incidents.
-- Systems: support + **Statuspage** · the GRC incident agent.
-- Technical: escalation management · status-comms drafting.
+- Systems: support + **Statuspage** · the GRC incident agent `[C]`.
+- Technical: escalation management · status-comms drafting `[S]`.
 - Maverick: external posts gated.
 
 #### 6.4 Voice-of-Customer & CSAT Agent  [UB +Data]
 JD: Run CSAT/NPS, synthesize sentiment, route to product.
-- Systems: survey tools (Delighted, Qualtrics) · product.
-- Technical: survey design · **sentiment analysis** · feedback synthesis.
+- Systems: survey tools (Delighted, Qualtrics) · product `[C]`.
+- Technical: survey design · **sentiment analysis** · feedback synthesis `[S]`.
 - Maverick: surveys gated + consented.
 
 ### Tower 7 — Partnerships & Channel
 
 #### 7.1 Partner Recruitment & Onboarding Agent  [UB +Assess]
 JD: Recruit, vet, and onboard partners.
-- Systems: **PRM (Crossbeam, PartnerStack)** · the GRC vendor-risk assessment.
-- Technical: partner research · `start/answer/finalize_assessment` (vendor_risk) · onboarding.
-- Domain: channel/partner programs.
+- Systems: **PRM (Crossbeam, PartnerStack)** · the GRC vendor-risk assessment `[C]`.
+- Technical: partner research · `start/answer/finalize_assessment` (vendor_risk) · onboarding `[S]`.
+- Domain: channel/partner programs `[K]`.
 
 #### 7.2 Partner Enablement & Co-Sell Agent  [UB +Reach]
 JD: Enable partners, support co-sell, manage deal registration.
-- Systems: PRM · **Crossbeam** (account mapping) · CRM.
-- Technical: enablement-content delivery · co-sell support · deal-registration management.
-- Domain: co-sell motion.
+- Systems: PRM · **Crossbeam** (account mapping) · CRM `[C]`.
+- Technical: enablement-content delivery · co-sell support · deal-registration management `[S]`.
+- Domain: co-sell motion `[K]`.
 
 #### 7.3 Marketplace & Alliance Agent  [UB]
 JD: Manage marketplace listings (AWS/Azure/GCP/app stores) and alliances.
-- Systems: cloud marketplace consoles · app-store consoles.
-- Technical: listing management · private-offer setup.
-- Domain: marketplace/alliance strategy.
+- Systems: cloud marketplace consoles · app-store consoles `[C]`.
+- Technical: listing management · private-offer setup `[S]`.
+- Domain: marketplace/alliance strategy `[K]`.
 - Maverick: listing changes gated.
 
 ### Tower 8 — GTM Enablement, Strategy & Intelligence
 
 #### 8.1 Sales Enablement & Content Agent  [UB]
 JD: Playbooks, battlecards, enablement content, rep onboarding/certification.
-- Systems: **Highspot, Seismic** (enablement) · LMS · `knowledge_search`.
-- Technical: playbook/battlecard authoring · enablement-content management · certification design.
+- Systems: **Highspot, Seismic** (enablement) · LMS · `knowledge_search` `[C]`.
+- Technical: playbook/battlecard authoring · enablement-content management · certification design `[S]`.
 
 #### 8.2 Conversation Intelligence & Coaching Agent  [UB +Data]
 JD: Analyze recorded calls, coach reps, track talk-track adherence.
-- Systems: **Gong, Chorus** · the voice channel · CRM.
-- Technical: call analysis · coaching-insight extraction · talk-track/risk-language detection.
-- Domain: sales coaching · methodology adherence.
+- Systems: **Gong, Chorus** · the voice channel · CRM `[C]`.
+- Technical: call analysis · coaching-insight extraction · talk-track/risk-language detection `[S]`.
+- Domain: sales coaching · methodology adherence `[K]`.
 - Maverick: **call-recording consent** (two-party-consent states) — hard floor.
 
 #### 8.3 Competitive & Market-Intelligence Agent  [UB +Data]
 JD: Track competitors, win/loss analysis, market/TAM, ICP research.
-- Systems: **Klue, Crayon** · `web_search` · CRM (win/loss).
-- Technical: competitor tracking · **win/loss analysis** · TAM sizing.
-- Domain: competitive strategy · market research.
+- Systems: **Klue, Crayon** · `web_search` · CRM (win/loss) `[C]`.
+- Technical: competitor tracking · **win/loss analysis** · TAM sizing `[S]`.
+- Domain: competitive strategy · market research `[K]`.
 
 #### 8.4 GTM Strategy & Planning Agent  [UB +Data]
 JD: GTM planning, segmentation, ICP, pricing/packaging analytics.
-- Systems: BI · CRM · finance.
-- Technical: GTM modeling · segmentation · pricing analytics.
-- Domain: GTM strategy · ICP definition.
+- Systems: BI · CRM · finance `[C]`.
+- Technical: GTM modeling · segmentation · pricing analytics `[S]`.
+- Domain: GTM strategy · ICP definition `[K]`.
 
 ### Council-added agents
 *(the three the brief named — Salesforce-dev, deliverability, RevOps-data — were under-built. Full profiles below.)*
@@ -1204,285 +1204,285 @@ emotion inference).
 
 #### 1.1 Sourcing & Talent-Research Agent  [UB +Reach]
 JD: Source candidates, build pipelines, market/talent mapping.
-- Systems: **Greenhouse, Lever, Ashby** (ATS) · LinkedIn Recruiter · job boards.
-- Technical: Boolean/X-ray sourcing · pipeline building · talent-market mapping.
-- Domain: sourcing strategy · candidate-data privacy.
+- Systems: **Greenhouse, Lever, Ashby** (ATS) · LinkedIn Recruiter · job boards `[C]`.
+- Technical: Boolean/X-ray sourcing · pipeline building · talent-market mapping `[S]`.
+- Domain: sourcing strategy · candidate-data privacy `[K]`.
 - Maverick: outreach gated; no protected-class targeting.
 
 #### 1.2 Resume Screening & Ranking Agent  [UB +Assess]
 JD: Screen/rank applications against job-related criteria; draft a shortlist (Annex-III/LL144).
-- Systems: ATS (**Greenhouse, Lever, Workday Recruiting**) · the bias-eval engine.
-- Technical: structured screening against **job-related** criteria · **proxy detection/exclusion** · evidence-cited rationale.
-- Domain: **structured hiring** · validity · adverse impact (four-fifths).
-- Regulatory: **NYC LL144, EU AI Act Annex III, EEOC (Title VII/ADA/ADEA)**.
+- Systems: ATS (**Greenhouse, Lever, Workday Recruiting**) · the bias-eval engine `[C]`.
+- Technical: structured screening against **job-related** criteria · **proxy detection/exclusion** · evidence-cited rationale `[S]`.
+- Domain: **structured hiring** · validity · adverse impact (four-fifths) `[K]`.
+- Regulatory: **NYC LL144, EU AI Act Annex III, EEOC (Title VII/ADA/ADEA)** `[K]`.
 - Maverick: **L1 ceiling** (drafts only); bias-evaluated; no demographic inference.
 
 #### 1.3 Candidate Engagement & Scheduling Agent  [UB +Reach]
 JD: Candidate comms, interview scheduling, status updates, candidate experience.
-- Systems: the channels layer + **Google Calendar** (live) · ATS.
-- Technical: candidate messaging · interview scheduling/coordination.
+- Systems: the channels layer + **Google Calendar** (live) · ATS `[C]`.
+- Technical: candidate messaging · interview scheduling/coordination `[S]`.
 - Maverick: AI disclosure; consent on outreach; no commitments.
 
 #### 1.4 Interview & Assessment-Design Agent  [UB]
 JD: Structured interview kits, scorecards, job-related assessments, interviewer prep.
-- Systems: ATS · assessment platforms (HackerRank, Codility).
-- Technical: structured-interview-kit authoring · scorecard design · job-related assessment selection.
-- Domain: **structured interviewing** · validity/reliability · bias reduction by design.
+- Systems: ATS · assessment platforms (HackerRank, Codility) `[C]`.
+- Technical: structured-interview-kit authoring · scorecard design · job-related assessment selection `[S]`.
+- Domain: **structured interviewing** · validity/reliability · bias reduction by design `[K]`.
 
 #### 1.5 Offer Management Agent  [UB]
 JD: Draft offers within comp bands, route approvals, manage acceptance.
-- Systems: ATS + comp tools · Total Rewards (4.1).
-- Technical: offer drafting · band-compliance checking.
-- Domain: offer strategy · comp bands · pay-transparency law.
+- Systems: ATS + comp tools · Total Rewards (4.1) `[C]`.
+- Technical: offer drafting · band-compliance checking `[S]`.
+- Domain: offer strategy · comp bands · pay-transparency law `[K]`.
 - Maverick: comp commitment gated (DoA).
 
 #### 1.6 Employer Brand & Recruitment-Marketing Agent  [UB +Reach]
 JD: Careers content, job postings, candidate nurture.
-- Systems: career-site CMS · the channels layer · ATS.
-- Technical: job-posting authoring · **inclusive-language checking** · candidate nurture.
-- Regulatory: **EEO** (no discriminatory language in postings).
+- Systems: career-site CMS · the channels layer · ATS `[C]`.
+- Technical: job-posting authoring · **inclusive-language checking** · candidate nurture `[S]`.
+- Regulatory: **EEO** (no discriminatory language in postings) `[K]`.
 - Maverick: publish gated.
 
 #### 1.7 Recruiting Ops & Analytics Agent  [UB +Data]
 JD: Funnel metrics, time-to-fill, source quality, adverse-impact monitoring.
-- Systems: ATS + BI.
-- Technical: funnel analytics · **adverse-impact monitoring** (four-fifths across the funnel) · source-quality analysis.
-- Domain: recruiting metrics · DE&I funnel analytics.
+- Systems: ATS + BI `[C]`.
+- Technical: funnel analytics · **adverse-impact monitoring** (four-fifths across the funnel) · source-quality analysis `[S]`.
+- Domain: recruiting metrics · DE&I funnel analytics `[K]`.
 
 ### Tower 2 — Onboarding & Offboarding
 
 #### 2.1 Onboarding Agent  [UB +Reach]
 JD: Pre-boarding, day-1 plans, new-hire paperwork; triggers IT provisioning.
-- Systems: **HRIS (Workday, BambooHR, Rippling)** · the IT IAM agent · channels · `intake.py`.
-- Technical: onboarding-plan design · paperwork (tax/policy) · provisioning request (→ IAM).
+- Systems: **HRIS (Workday, BambooHR, Rippling)** · the IT IAM agent · channels · `intake.py` `[C]`.
+- Technical: onboarding-plan design · paperwork (tax/policy) · provisioning request (→ IAM) `[S]`.
 - Maverick: provisioning handed to IT (cross-suite SoD).
 
 #### 2.2 Work-Authorization (I-9 / E-Verify) Agent  [UB]
 JD: Work-auth verification, I-9 completeness, immigration/visa tracking.
-- Systems: **E-Verify, Tracker I-9** · HRIS.
-- Technical: I-9 completeness checking · work-auth/visa tracking.
-- Domain: **IRCA / I-9** · visa categories · anti-discrimination (no document abuse).
+- Systems: **E-Verify, Tracker I-9** · HRIS `[C]`.
+- Technical: I-9 completeness checking · work-auth/visa tracking `[S]`.
+- Domain: **IRCA / I-9** · visa categories · anti-discrimination (no document abuse) `[K]`.
 - Maverick: the verification decision is human; highly sensitive.
 
 #### 2.3 Offboarding & Exit Agent  [UB +Reach]
 JD: Offboarding checklist, access-revocation trigger, exit interviews, final-pay handoff.
-- Systems: HRIS · IT IAM · finance payroll · channels.
-- Technical: offboarding-checklist execution · deprovisioning request · exit-interview synthesis.
-- Domain: final-pay law · COBRA · timely access revocation (security).
+- Systems: HRIS · IT IAM · finance payroll · channels `[C]`.
+- Technical: offboarding-checklist execution · deprovisioning request · exit-interview synthesis `[S]`.
+- Domain: final-pay law · COBRA · timely access revocation (security) `[K]`.
 - Maverick: deprovisioning → IT; final pay → finance.
 
 #### 2.4 Internal Mobility & Transfer Agent  [UB]
 JD: Transfers, role changes, internal moves, redeployment.
-- Systems: HRIS · the talent-marketplace module.
-- Technical: transfer drafting · internal-match analysis.
+- Systems: HRIS · the talent-marketplace module `[C]`.
+- Technical: transfer drafting · internal-match analysis `[S]`.
 - Maverick: role/comp change gated (consequential).
 
 ### Tower 3 — HR Operations & Shared Services
 
 #### 3.1 HR Helpdesk / Employee-Service Agent  [UB +Reach]
 JD: Tier-1 HR Q&A (policy, PTO, benefits), case triage, escalation.
-- Systems: **ServiceNow HRSD** · the channels layer · `knowledge_search` · `intake.py`.
-- Technical: policy-grounded answering · case triage · escalation.
+- Systems: **ServiceNow HRSD** · the channels layer · `knowledge_search` · `intake.py` `[C]`.
+- Technical: policy-grounded answering · case triage · escalation `[S]`.
 - Maverick: AI disclosure; **escalate anything sensitive** (ER, comp, medical); never expose another employee's data.
 
 #### 3.2 HRIS & Employee-Records Agent  [UB +Data]
 JD: Employee master data, records management, data quality/governance.
-- Systems: **Workday, SuccessFactors, BambooHR** · `pii_detector`.
-- Technical: HRIS data management · validation · **Workday report/calc-field basics** · data quality.
-- Domain: HR data model · special-category privacy.
+- Systems: **Workday, SuccessFactors, BambooHR** · `pii_detector` `[C]`.
+- Technical: HRIS data management · validation · **Workday report/calc-field basics** · data quality `[S]`.
+- Domain: HR data model · special-category privacy `[K]`.
 - Maverick: record changes gated; need-to-know.
 
 #### 3.3 Employment-Verification & Letters Agent  [UB]
 JD: Verification of employment, letters (visa/mortgage), references.
-- Systems: HRIS · **The Work Number** (verification).
-- Technical: verification drafting · letter generation.
-- Domain: what may be disclosed; consent for references/comp.
+- Systems: HRIS · **The Work Number** (verification) `[C]`.
+- Technical: verification drafting · letter generation `[S]`.
+- Domain: what may be disclosed; consent for references/comp `[K]`.
 - Maverick: release without authorization gated.
 
 #### 3.4 HR Policy & Document Agent  [UB]
 JD: Policy/handbook lifecycle, acknowledgments, e-signatures.
-- Systems: policy repo (Drive) · e-sign · the GRC policy agent.
-- Technical: policy drafting · acknowledgment tracking · version control.
+- Systems: policy repo (Drive) · e-sign · the GRC policy agent `[C]`.
+- Technical: policy drafting · acknowledgment tracking · version control `[S]`.
 - Maverick: publish gated.
 
 #### 3.5 HR Compliance & Reporting Agent  [UB]
 JD: Mandatory reporting (EEO-1, OSHA 300, ACA, BLS, VETS-4212), retention, audit support.
-- Systems: HRIS + reporting portals.
-- Technical: compliance-report generation · data extraction.
-- Domain: **EEO-1, OSHA 300/300A, ACA 1094/1095, VETS-4212, BLS**.
-- Regulatory: EEOC, OSHA, IRS/ACA, DOL.
+- Systems: HRIS + reporting portals `[C]`.
+- Technical: compliance-report generation · data extraction `[S]`.
+- Domain: **EEO-1, OSHA 300/300A, ACA 1094/1095, VETS-4212, BLS** `[K]`.
+- Regulatory: EEOC, OSHA, IRS/ACA, DOL `[K]`.
 - Maverick: filing gated.
 
 ### Tower 4 — Total Rewards (Comp & Benefits)
 
 #### 4.1 Compensation Analysis & Bands Agent  [UB +Data]
 JD: Comp benchmarking, band design, range placement, merit-cycle modeling.
-- Systems: **Radford, Mercer, Pave** (survey/comp) · HRIS.
-- Technical: comp benchmarking · band design · **merit-cycle modeling** · compa-ratio analysis.
-- Domain: comp philosophy · **pay-transparency law** · job architecture.
+- Systems: **Radford, Mercer, Pave** (survey/comp) · HRIS `[C]`.
+- Technical: comp benchmarking · band design · **merit-cycle modeling** · compa-ratio analysis `[S]`.
+- Domain: comp philosophy · **pay-transparency law** · job architecture `[K]`.
 - Maverick: comp data need-to-know; changes gated (DoA).
 
 #### 4.2 Pay-Equity Agent  [UB +Data]
 JD: Pay-equity analysis, disparate-pay detection, remediation modeling.
-- Systems: HRIS + comp · the bias-eval engine.
-- Technical: **regression-based pay-equity analysis** · disparate-pay detection · remediation modeling.
-- Domain: pay equity · **EU Pay Transparency Directive** · state pay laws.
+- Systems: HRIS + comp · the bias-eval engine `[C]`.
+- Technical: **regression-based pay-equity analysis** · disparate-pay detection · remediation modeling `[S]`.
+- Domain: pay equity · **EU Pay Transparency Directive** · state pay laws `[K]`.
 - Maverick: often attorney-client-privileged → restricted compartment; aggregate.
 
 #### 4.3 Benefits Administration Agent  [UB +Reach]
 JD: Benefits enrollment, open enrollment, vendor liaison, questions.
-- Systems: **benefits platforms (Sequoia, bSwift), carriers** · HRIS.
-- Technical: enrollment guidance · open-enrollment support.
-- Domain: **ERISA, ACA, COBRA, HIPAA** (health data = Art 9).
+- Systems: **benefits platforms (Sequoia, bSwift), carriers** · HRIS `[C]`.
+- Technical: enrollment guidance · open-enrollment support `[S]`.
+- Domain: **ERISA, ACA, COBRA, HIPAA** (health data = Art 9) `[K]`.
 - Maverick: health-data privacy; elections gated.
 
 #### 4.4 Leave & Absence Agent  [UB]
 JD: FMLA/ADA leave administration, accommodation intake, absence tracking.
-- Systems: HRIS + leave platform (AbsenceSoft).
-- Technical: leave-eligibility checking · absence tracking · accommodation intake (→ ER 7.4).
-- Domain: **FMLA, ADA, PWFA** · state leave laws.
+- Systems: HRIS + leave platform (AbsenceSoft) `[C]`.
+- Technical: leave-eligibility checking · absence tracking · accommodation intake (→ ER 7.4) `[S]`.
+- Domain: **FMLA, ADA, PWFA** · state leave laws `[K]`.
 - Maverick: medical-data privacy; eligibility/accommodation decisions human-led.
 
 #### 4.5 Payroll Liaison Agent  [UB]
 JD: Feed comp/status changes to finance Payroll, reconcile, resolve queries.
-- Systems: HRIS ↔ the finance Payroll agent.
-- Technical: payroll-input sync · reconciliation.
+- Systems: HRIS ↔ the finance Payroll agent `[C]`.
+- Technical: payroll-input sync · reconciliation `[S]`.
 - Maverick: **never runs payroll** (finance owns); SoD across HR↔finance.
 
 ### Tower 5 — Performance & Talent Management
 
 #### 5.1 Goals & OKR Agent  [UB]
 JD: Goal/OKR setting, alignment, progress tracking.
-- Systems: **Lattice, 15Five, Workday** (performance).
-- Technical: goal/OKR drafting · alignment mapping · progress tracking.
+- Systems: **Lattice, 15Five, Workday** (performance) `[C]`.
+- Technical: goal/OKR drafting · alignment mapping · progress tracking `[S]`.
 
 #### 5.2 Performance-Review Agent  [UB +Assess]
 JD: Orchestrate the cycle; draft review summaries from documented inputs; calibration support.
-- Systems: performance platform · the bias-eval engine.
-- Technical: review synthesis from documented inputs · **bias-aware language** · calibration data.
-- Domain: performance management · rater-bias awareness (recency/halo).
+- Systems: performance platform · the bias-eval engine `[C]`.
+- Technical: review synthesis from documented inputs · **bias-aware language** · calibration data `[S]`.
+- Domain: performance management · rater-bias awareness (recency/halo) `[K]`.
 - Maverick: **L1 ceiling**; never assigns a rating/decision; decision record on the human rating.
 
 #### 5.3 Calibration & Promotion Agent  [UB +Data]
 JD: Calibration support, promotion-packet assembly, pay-for-performance modeling.
-- Systems: performance + comp.
-- Technical: calibration analysis · promo-packet assembly · **adverse-impact check on promotion rates**.
+- Systems: performance + comp `[C]`.
+- Technical: calibration analysis · promo-packet assembly · **adverse-impact check on promotion rates** `[S]`.
 - Maverick: consequential gate; the decision is human.
 
 #### 5.4 Succession & Talent-Review Agent  [UB]
 JD: Succession plans, 9-box, high-potential, talent reviews.
-- Systems: HRIS + performance.
-- Technical: succession-plan drafting · 9-box analysis.
-- Domain: talent management; bias-aware (no proxy-based potential).
+- Systems: HRIS + performance `[C]`.
+- Technical: succession-plan drafting · 9-box analysis `[S]`.
+- Domain: talent management; bias-aware (no proxy-based potential) `[K]`.
 - Maverick: sensitive/confidential.
 
 #### 5.5 Performance-Improvement & Coaching Agent  [UB]
 JD: Draft PIPs and coaching plans; manager guidance.
-- Systems: performance platform · ER (7.1).
-- Technical: PIP drafting · coaching-plan design.
-- Domain: progressive discipline; documentation; dignity.
+- Systems: performance platform · ER (7.1) `[C]`.
+- Technical: PIP drafting · coaching-plan design `[S]`.
+- Domain: progressive discipline; documentation; dignity `[K]`.
 - Maverick: **delivering it is human-owned**; legal review of PIP/termination paths.
 
 ### Tower 6 — Learning & Development
 
 #### 6.1 Learning Content & Curriculum Agent  [UB]
 JD: Course/curriculum design, microlearning, content from SMEs.
-- Systems: **LMS (Cornerstone, Docebo, Workday Learning)** · authoring (Articulate).
-- Technical: **instructional design (ADDIE/Bloom's)** · content authoring · microlearning.
+- Systems: **LMS (Cornerstone, Docebo, Workday Learning)** · authoring (Articulate) `[C]`.
+- Technical: **instructional design (ADDIE/Bloom's)** · content authoring · microlearning `[S]`.
 
 #### 6.2 Skills & Career-Pathing Agent  [UB +Data]
 JD: Skills taxonomy, gap analysis, career paths, IDPs.
-- Systems: HRIS + skills platform (Gloat, Eightfold).
-- Technical: **skills-taxonomy mapping** · gap analysis · IDP drafting.
-- Domain: skills-based talent · career architecture.
+- Systems: HRIS + skills platform (Gloat, Eightfold) `[C]`.
+- Technical: **skills-taxonomy mapping** · gap analysis · IDP drafting `[S]`.
+- Domain: skills-based talent · career architecture `[K]`.
 
 #### 6.3 Training Delivery & LMS Agent  [UB]
 JD: Assign/track training, LMS admin, completion nudges.
-- Systems: LMS · channels.
-- Technical: training assignment · completion tracking · LMS admin.
+- Systems: LMS · channels `[C]`.
+- Technical: training assignment · completion tracking · LMS admin `[S]`.
 - Maverick: low-risk → L3/L4 eligible.
 
 #### 6.4 Compliance-Training Agent  [UB]
 JD: Mandatory training (harassment, security, ethics, safety), completion + attestation.
-- Systems: LMS · the GRC compliance agent.
-- Technical: compliance-training tracking · attestation reporting.
-- Domain: mandatory-training requirements (state harassment-training laws).
+- Systems: LMS · the GRC compliance agent `[C]`.
+- Technical: compliance-training tracking · attestation reporting `[S]`.
+- Domain: mandatory-training requirements (state harassment-training laws) `[K]`.
 
 ### Tower 7 — Employee Relations, Compliance & Investigations
 
 #### 7.1 Employee-Relations Agent  [UB]
 JD: ER case intake, manager guidance, documentation, trend spotting.
-- Systems: ER case mgmt (HR Acuity) · `knowledge_search`.
-- Technical: case intake · manager-guidance drafting · trend analysis.
-- Domain: ER practice · consistency · documentation.
+- Systems: ER case mgmt (HR Acuity) · `knowledge_search` `[C]`.
+- Technical: case intake · manager-guidance drafting · trend analysis `[S]`.
+- Domain: ER practice · consistency · documentation `[K]`.
 - Maverick: confidential; escalate; decides no outcomes.
 
 #### 7.2 Investigations Agent  [UB]
 JD: Workplace-investigation support — interview plans, evidence organization, neutral report.
-- Systems: case mgmt (restricted) · the legal domain.
-- Technical: investigation planning · evidence organization · timeline building · neutral report drafting.
-- Domain: workplace-investigation protocol · interview techniques.
+- Systems: case mgmt (restricted) · the legal domain `[C]`.
+- Technical: investigation planning · evidence organization · timeline building · neutral report drafting `[S]`.
+- Domain: workplace-investigation protocol · interview techniques `[K]`.
 - Maverick: **independence + strict confidentiality + privilege**; isolated compartment; never concludes.
 
 #### 7.3 Employment-Law Compliance Agent  [UB]
 JD: FLSA/FMLA/ADA/Title VII/WARN/state-law compliance; policy/practice review.
-- Systems: the legal domain · GRC · `knowledge_search`.
-- Technical: compliance checking · risk flagging.
-- Domain: **FLSA, FMLA, ADA, Title VII, ADEA, NLRA, WARN** + state law.
+- Systems: the legal domain · GRC · `knowledge_search` `[C]`.
+- Technical: compliance checking · risk flagging `[S]`.
+- Domain: **FLSA, FMLA, ADA, Title VII, ADEA, NLRA, WARN** + state law `[K]`.
 - Maverick: drafts for counsel; not legal advice.
 
 #### 7.4 EEO / AAP & Accommodations Agent  [UB]
 JD: EEO compliance, affirmative-action plans, ADA/PWFA accommodation interactive process.
-- Systems: HRIS · the bias-eval engine · legal.
-- Technical: **AAP drafting (OFCCP)** · accommodation-process support · adverse-impact analysis.
-- Domain: **EEO, OFCCP/AAP, ADA/PWFA** interactive process.
+- Systems: HRIS · the bias-eval engine · legal `[C]`.
+- Technical: **AAP drafting (OFCCP)** · accommodation-process support · adverse-impact analysis `[S]`.
+- Domain: **EEO, OFCCP/AAP, ADA/PWFA** interactive process `[K]`.
 - Maverick: protected-class data aggregate/compliance-only; interactive process human-led.
 
 #### 7.5 Labor-Relations Agent  [UB]
 JD: Union/CBA support, grievances, works councils, NLRA.
-- Systems: `knowledge_search` (CBA) · case mgmt.
-- Technical: CBA interpretation · grievance tracking.
-- Domain: **NLRA · CBA administration · EU works councils / co-determination**.
+- Systems: `knowledge_search` (CBA) · case mgmt `[C]`.
+- Technical: CBA interpretation · grievance tracking `[S]`.
+- Domain: **NLRA · CBA administration · EU works councils / co-determination** `[K]`.
 - Maverick: jurisdiction-aware; sensitive; human-led.
 
 #### 7.6 Ethics & Whistleblower-Triage Agent  [UB]
 JD: Hotline intake, triage, routing (SOX §301 for finance matters).
-- Systems: the GRC ethics/whistleblower agent · case mgmt.
-- Technical: report intake · triage · routing.
-- Domain: whistleblower protection · anonymity preservation.
+- Systems: the GRC ethics/whistleblower agent · case mgmt `[C]`.
+- Technical: report intake · triage · routing `[S]`.
+- Domain: whistleblower protection · anonymity preservation `[K]`.
 - Maverick: confidential/anonymous-preserving.
 
 ### Tower 8 — People Analytics, Workforce Planning & Engagement
 
 #### 8.1 People-Analytics Agent  [UB +Data]
 JD: HR metrics, attrition/retention analytics, dashboards, flight-risk.
-- Systems: HRIS + BI (**Visier**, Tableau).
-- Technical: HR analytics · **attrition/flight-risk modeling** · re-identification protection.
-- Domain: people analytics; aggregate-only; flight-risk informs retention, never adverse action.
+- Systems: HRIS + BI (**Visier**, Tableau) `[C]`.
+- Technical: HR analytics · **attrition/flight-risk modeling** · re-identification protection `[S]`.
+- Domain: people analytics; aggregate-only; flight-risk informs retention, never adverse action `[K]`.
 
 #### 8.2 Workforce-Planning Agent  [UB +Data]
 JD: Headcount/workforce plans, org design, scenario modeling.
-- Systems: HRIS · the finance FP&A workforce-cost agent.
-- Technical: workforce modeling · org-design analysis · scenario planning.
+- Systems: HRIS · the finance FP&A workforce-cost agent `[C]`.
+- Technical: workforce modeling · org-design analysis · scenario planning `[S]`.
 - Maverick: HR owns the people plan, finance owns the cost (SoD); WARN if layoffs.
 
 #### 8.3 Engagement & Survey Agent  [UB]
 JD: Engagement/pulse surveys, consented & aggregated sentiment, action planning.
-- Systems: **Culture Amp, Glint, Qualtrics**.
-- Technical: survey design · **aggregate sentiment synthesis** (min-response threshold).
+- Systems: **Culture Amp, Glint, Qualtrics** `[C]`.
+- Technical: survey design · **aggregate sentiment synthesis** (min-response threshold) `[S]`.
 - Maverick: **REFUSES individual emotion inference / monitoring (EU AI Act Art 5)** — aggregate-only.
 
 #### 8.4 DEI Analytics & Programs Agent  [UB +Data]
 JD: Diversity representation analytics, DEI programs, inclusion metrics.
-- Systems: HRIS · BI.
-- Technical: representation analytics · inclusion metrics · DEI-program drafting.
-- Domain: DEI; **post-SFFA / jurisdiction limits** — aggregate-only, no protected attribute as a selection input.
+- Systems: HRIS · BI `[C]`.
+- Technical: representation analytics · inclusion metrics · DEI-program drafting `[S]`.
+- Domain: DEI; **post-SFFA / jurisdiction limits** — aggregate-only, no protected attribute as a selection input `[K]`.
 - Maverick: legal review; no protected-class-based decisions.
 
 #### 8.5 Internal-Communications Agent  [UB +Reach]
 JD: Employee communications, announcements, change comms.
-- Systems: the channels layer · intranet.
-- Technical: comms drafting · audience targeting.
+- Systems: the channels layer · intranet `[C]`.
+- Technical: comms drafting · audience targeting `[S]`.
 - Maverick: sensitive comms (layoffs, policy) human-approved.
 
 ### Council-added agents
@@ -1541,245 +1541,245 @@ kernel/`safety`/`capability`/`governance` without human authorization; `self_edi
 
 #### 1.1 Product Discovery & Research Agent  [UB]
 JD: User/market research, problem validation, opportunity assessment, JTBD.
-- Systems: `web_search`, `tools/newsapi_tool` · user-feedback sources · `knowledge_search`.
-- Technical: research synthesis · opportunity sizing · JTBD interviews.
-- Domain: product discovery (Continuous Discovery, JTBD).
+- Systems: `web_search`, `tools/newsapi_tool` · user-feedback sources · `knowledge_search` `[C]`.
+- Technical: research synthesis · opportunity sizing · JTBD interviews `[S]`.
+- Domain: product discovery (Continuous Discovery, JTBD) `[K]`.
 
 #### 1.2 Roadmap & Prioritization Agent  [UB]
 JD: Roadmap construction, prioritization, tradeoff analysis.
-- Systems: **Jira, Linear, Productboard, Notion**.
-- Technical: prioritization frameworks (**RICE, WSJF, Kano**) · roadmap building · tradeoff analysis.
+- Systems: **Jira, Linear, Productboard, Notion** `[C]`.
+- Technical: prioritization frameworks (**RICE, WSJF, Kano**) · roadmap building · tradeoff analysis `[S]`.
 - Maverick: roadmap is human-owned (product decision).
 
 #### 1.3 Requirements & Spec (PRD) Agent  [UB]
 JD: PRDs, user stories, acceptance criteria, edge-case enumeration.
-- Systems: **Confluence, Notion, Jira, Linear**.
-- Technical: PRD authoring · user-story/Gherkin acceptance criteria · edge-case enumeration.
-- Domain: product specs · requirements clarity.
+- Systems: **Confluence, Notion, Jira, Linear** `[C]`.
+- Technical: PRD authoring · user-story/Gherkin acceptance criteria · edge-case enumeration `[S]`.
+- Domain: product specs · requirements clarity `[K]`.
 
 #### 1.4 Backlog & Sprint Agent  [UB]
 JD: Backlog grooming, sprint planning, ticket hygiene, estimation.
-- Systems: **Jira, Linear, ClickUp, Asana**.
-- Technical: backlog grooming · sprint planning · estimation support.
-- Domain: Agile/Scrum/Kanban.
+- Systems: **Jira, Linear, ClickUp, Asana** `[C]`.
+- Technical: backlog grooming · sprint planning · estimation support `[S]`.
+- Domain: Agile/Scrum/Kanban `[K]`.
 
 #### 1.5 Product Analytics & Insights Agent  [UB +Data]
 JD: Usage/funnel/retention analytics, experiment analysis, insights.
-- Systems: **Amplitude, Mixpanel, PostHog, GA4** · SQL.
-- Technical: funnel/retention/cohort analysis · **A/B experiment analysis** (significance, power) · SQL.
-- Domain: product analytics · experimentation.
+- Systems: **Amplitude, Mixpanel, PostHog, GA4** · SQL `[C]`.
+- Technical: funnel/retention/cohort analysis · **A/B experiment analysis** (significance, power) · SQL `[S]`.
+- Domain: product analytics · experimentation `[K]`.
 
 #### 1.6 Customer-Feedback Synthesis Agent  [UB]
 JD: Synthesize feedback/reviews/tickets into themes & product signals.
-- Systems: support (cross-ref GTM 6.x) · `knowledge_search` · review sites.
-- Technical: thematic synthesis · sentiment · signal extraction.
+- Systems: support (cross-ref GTM 6.x) · `knowledge_search` · review sites `[C]`.
+- Technical: thematic synthesis · sentiment · signal extraction `[S]`.
 
 #### 1.7 Launch & Release-Coordination Agent  [UB]
 JD: Launch plans, release notes, internal/GTM coordination.
-- Systems: GTM suite · Jira/Linear · channels.
-- Technical: launch-plan drafting · release-notes authoring.
+- Systems: GTM suite · Jira/Linear · channels `[C]`.
+- Technical: launch-plan drafting · release-notes authoring `[S]`.
 - Maverick: external comms gated (GTM).
 
 ### Tower 2 — Design & UX
 
 #### 2.1 UX Research Agent  [UB]
 JD: Usability studies, research synthesis, personas, journey maps.
-- Systems: `web_search` · research repos (Dovetail) · `knowledge_search`.
-- Technical: usability-study design · research synthesis · persona/journey-map authoring.
-- Domain: UX research methods.
+- Systems: `web_search` · research repos (Dovetail) · `knowledge_search` `[C]`.
+- Technical: usability-study design · research synthesis · persona/journey-map authoring `[S]`.
+- Domain: UX research methods `[K]`.
 
 #### 2.2 Interaction & UI Design Agent  [UB]
 JD: UI design, wireframes, mockups, prototypes; design-to-code handoff.
-- Systems: **Figma** (MCP, incl. Code Connect) · `tools/diagram_tool`.
-- Technical: UI/wireframe/prototype generation · **design-to-code** handoff.
-- Domain: interaction design · design heuristics.
+- Systems: **Figma** (MCP, incl. Code Connect) · `tools/diagram_tool` `[C]`.
+- Technical: UI/wireframe/prototype generation · **design-to-code** handoff `[S]`.
+- Domain: interaction design · design heuristics `[K]`.
 
 #### 2.3 Design-System Agent  [UB +Build]
 JD: Components, design tokens, consistency, design↔code sync.
-- Systems: **Figma** (Code Connect) · the codebase (Storybook).
-- Technical: component/token management · **design-token sync** · design-system governance.
+- Systems: **Figma** (Code Connect) · the codebase (Storybook) `[C]`.
+- Technical: component/token management · **design-token sync** · design-system governance `[S]`.
 
 #### 2.4 Accessibility (a11y) Agent  [UB +Build]
 JD: WCAG audits, accessibility fixes, inclusive-design review.
-- Systems: `tools/a11y` (shipped) · **axe, Lighthouse** · the codebase.
-- Technical: **WCAG 2.2 auditing** · ARIA fixes · screen-reader testing.
-- Domain: accessibility (WCAG, Section 508, ADA).
+- Systems: `tools/a11y` (shipped) · **axe, Lighthouse** · the codebase `[C]`.
+- Technical: **WCAG 2.2 auditing** · ARIA fixes · screen-reader testing `[S]`.
+- Domain: accessibility (WCAG, Section 508, ADA) `[K]`.
 
 #### 2.5 Content & UX-Writing Agent  [UB]
 JD: Microcopy, content design, product voice, localization prep.
-- Systems: `knowledge_search` · `tools/translate`.
-- Technical: microcopy authoring · content-design systems · i18n prep.
+- Systems: `knowledge_search` · `tools/translate` `[C]`.
+- Technical: microcopy authoring · content-design systems · i18n prep `[S]`.
 
 ### Tower 3 — Software Engineering (the kernel)
 
 #### 3.1 Implementation / Coding Agent  [UB +Build]
 JD: Feature implementation — the core write-test loop against a spec.
-- Systems: the kernel (`agent`/`coding_mode`/`edit_format`) · `tools/{apply_patch,ast_edit,code_exec,repo_map}` · the **7 sandbox backends** (+ a `network_policy` egress layer) · Git.
-- Technical: **multi-language coding** (Python, TypeScript/JS, Go, Java, Rust, …) · test-first development · debugging · the relevant frameworks.
-- Domain: software design · the codebase + its standards.
+- Systems: the kernel (`agent`/`coding_mode`/`edit_format`) · `tools/{apply_patch,ast_edit,code_exec,repo_map}` · the **7 sandbox backends** (+ a `network_policy` egress layer) · Git `[C]`.
+- Technical: **multi-language coding** (Python, TypeScript/JS, Go, Java, Rust, …) · test-first development · debugging · the relevant frameworks `[S]`.
+- Domain: software design · the codebase + its standards `[K]`.
 - Maverick: edit-in-sandbox; opens PRs; **never merges, deploys, or `self_edit`s**.
 
 #### 3.2 Code-Review Agent  [UB +Build]
 JD: Review diffs for correctness, simplification, reuse; enforce standards.
-- Systems: `reviewer.py` · `/code-review` skill · GitHub Copilot review.
-- Technical: diff review · bug/edge-case detection · style/standards enforcement.
-- Domain: code-review rubrics · language idioms.
+- Systems: `reviewer.py` · `/code-review` skill · GitHub Copilot review `[C]`.
+- Technical: diff review · bug/edge-case detection · style/standards enforcement `[S]`.
+- Domain: code-review rubrics · language idioms `[K]`.
 
 #### 3.3 Refactoring & Tech-Debt Agent  [UB +Build]
 JD: Refactor, modernize, reduce duplication, plan/execute debt paydown.
-- Systems: `tools/{ast_edit,dep_graph,repo_map}` · the sandbox.
-- Technical: **safe refactoring** (AST-level) · dependency upgrades · debt prioritization.
+- Systems: `tools/{ast_edit,dep_graph,repo_map}` · the sandbox `[C]`.
+- Technical: **safe refactoring** (AST-level) · dependency upgrades · debt prioritization `[S]`.
 
 #### 3.4 Debugging & Fix Agent  [UB +Build]
 JD: Reproduce, diagnose, fix defects; root-cause analysis.
-- Systems: `tools/diagnose`, `code_exec`, the sandbox · `sentry_tool`.
-- Technical: reproduction · debugging · **root-cause analysis** · regression-test authoring.
+- Systems: `tools/diagnose`, `code_exec`, the sandbox · `sentry_tool` `[C]`.
+- Technical: reproduction · debugging · **root-cause analysis** · regression-test authoring `[S]`.
 
 #### 3.5 Test-Authoring Agent  [UB +Build]
 JD: Write unit/integration/E2E tests (TDD); raise coverage on risk.
-- Systems: `verifier.py` · `code_exec` · `test_impact` · test frameworks (pytest, Jest, Playwright).
-- Technical: **TDD** · test-pyramid design · coverage-on-risk.
+- Systems: `verifier.py` · `code_exec` · `test_impact` · test frameworks (pytest, Jest, Playwright) `[C]`.
+- Technical: **TDD** · test-pyramid design · coverage-on-risk `[S]`.
 - Maverick: the anti-test-cheating verifier discipline.
 
 #### 3.6 Code-Documentation Agent  [UB +Build]
 JD: Docstrings, API docs, READMEs, comments to house density.
-- Systems: `tools/{pandoc_tool,knowledge}` · the codebase.
-- Technical: docstring/API-doc authoring (Sphinx, TypeDoc) · README authoring.
+- Systems: `tools/{pandoc_tool,knowledge}` · the codebase `[C]`.
+- Technical: docstring/API-doc authoring (Sphinx, TypeDoc) · README authoring `[S]`.
 
 ### Tower 4 — Quality Engineering
 
 #### 4.1 Test-Strategy Agent  [UB]
 JD: Risk-based test plans, coverage strategy, test-pyramid design.
-- Systems: `knowledge_search` · `test_impact`.
-- Technical: risk-based test planning · coverage strategy.
+- Systems: `knowledge_search` · `test_impact` `[C]`.
+- Technical: risk-based test planning · coverage strategy `[S]`.
 
 #### 4.2 Test-Automation Agent  [UB +Build]
 JD: Build/maintain automated suites (unit→E2E); reduce flakiness.
-- Systems: `code_exec`, the sandbox · **Playwright, Cypress, Selenium**.
-- Technical: test-automation engineering · **flakiness reduction** · CI-test integration.
+- Systems: `code_exec`, the sandbox · **Playwright, Cypress, Selenium** `[C]`.
+- Technical: test-automation engineering · **flakiness reduction** · CI-test integration `[S]`.
 
 #### 4.3 Eval & Benchmark Agent  [UB +Build]
 JD: Run the eval/benchmark harness; track regressions.
-- Systems: `benchmarks/` (**SWE-bench, GAIA, τ², terminal-bench**) · `continuous_benchmark.py`.
-- Technical: eval-harness operation · regression tracking · pass@k/cost analysis.
+- Systems: `benchmarks/` (**SWE-bench, GAIA, τ², terminal-bench**) · `continuous_benchmark.py` `[C]`.
+- Technical: eval-harness operation · regression tracking · pass@k/cost analysis `[S]`.
 
 #### 4.4 Bug-Triage & Quality-Analytics Agent  [UB +Data]
 JD: Triage bugs, defect analytics, flakiness/quality trends.
-- Systems: `tools/{jira,linear,sentry_tool}`.
-- Technical: bug triage · defect/escape analytics · flakiness trending.
+- Systems: `tools/{jira,linear,sentry_tool}` `[C]`.
+- Technical: bug triage · defect/escape analytics · flakiness trending `[S]`.
 
 #### 4.5 Release-Readiness & Chaos Agent  [UB +Build]
 JD: Release gates/checklists, chaos & resilience testing.
-- Systems: `chaos.py` · `benchmarks/` · the sandbox.
-- Technical: release-gate execution · **chaos/fault-injection** testing.
+- Systems: `chaos.py` · `benchmarks/` · the sandbox `[C]`.
+- Technical: release-gate execution · **chaos/fault-injection** testing `[S]`.
 - Maverick: the release decision is human.
 
 ### Tower 5 — DevOps / Platform / Release
 
 #### 5.1 CI/CD Pipeline Agent  [UB +Build]
 JD: Pipeline authoring/maintenance, build/test automation, gate config.
-- Systems: **GitHub Actions, GitLab CI** · `deploy/`.
-- Technical: pipeline authoring (YAML) · build/test automation · caching/matrix.
+- Systems: **GitHub Actions, GitLab CI** · `deploy/` `[C]`.
+- Technical: pipeline authoring (YAML) · build/test automation · caching/matrix `[S]`.
 - Maverick: never disables a gate (hard floor).
 
 #### 5.2 Infrastructure-as-Code Agent  [UB +Build]
 JD: IaC, provisioning, environment config — incl. standing up databases.
-- Systems: **Terraform, Pulumi, Helm/Kubernetes** · `tools/{cloudflare_tool,vercel_tool,lambda_tool,s3_tool}` · AWS/Azure/GCP.
-- Technical: **IaC authoring** · **provisioning & configuring databases (e.g., stand up Oracle 23ai, Postgres, RDS — install, parameters, backup, HA)** · container orchestration.
-- Domain: cloud architecture · the Well-Architected frameworks.
+- Systems: **Terraform, Pulumi, Helm/Kubernetes** · `tools/{cloudflare_tool,vercel_tool,lambda_tool,s3_tool}` · AWS/Azure/GCP `[C]`.
+- Technical: **IaC authoring** · **provisioning & configuring databases (e.g., stand up Oracle 23ai, Postgres, RDS — install, parameters, backup, HA)** · container orchestration `[S]`.
+- Domain: cloud architecture · the Well-Architected frameworks `[K]`.
 - Maverick: plan-in-sandbox; **apply/provision gated** (human).
 
 #### 5.3 Release & Deployment Agent  [UB +Build]
 JD: Cut releases, orchestrate rollouts/canaries, rollback.
-- Systems: `deploy/` · **GitHub Actions, Vercel, ArgoCD/Spinnaker** · `checkpoint.py`.
-- Technical: release engineering · canary/blue-green rollouts · rollback.
+- Systems: `deploy/` · **GitHub Actions, Vercel, ArgoCD/Spinnaker** · `checkpoint.py` `[C]`.
+- Technical: release engineering · canary/blue-green rollouts · rollback `[S]`.
 - Maverick: **production deploy = hard floor (human)**.
 
 #### 5.4 Observability & SRE Agent  [UB +Build]
 JD: Monitoring, SLOs, alert tuning, reliability *(cross-ref IT-GRC 10.3)*.
-- Systems: **Datadog, Grafana, Prometheus, Sentry, PagerDuty** · `observability.py`, `health.py`.
-- Technical: **SLO/SLI design** · alert tuning · dashboards · incident on-call.
-- Domain: SRE · error budgets.
+- Systems: **Datadog, Grafana, Prometheus, Sentry, PagerDuty** · `observability.py`, `health.py` `[C]`.
+- Technical: **SLO/SLI design** · alert tuning · dashboards · incident on-call `[S]`.
+- Domain: SRE · error budgets `[K]`.
 
 #### 5.5 Dependency & Supply-Chain Agent  [UB +Build]
 JD: Dependency updates, SBOM, vuln remediation *(cross-ref IT-GRC 7.2/7.4)*.
-- Systems: `license_scan.py` · `dep_graph` · **Dependabot, Snyk**.
-- Technical: dependency updates · SBOM · CVE remediation.
+- Systems: `license_scan.py` · `dep_graph` · **Dependabot, Snyk** `[C]`.
+- Technical: dependency updates · SBOM · CVE remediation `[S]`.
 - Maverick: copyleft/critical-CVE deps = hard floor.
 
 ### Tower 6 — Data & ML Engineering
 
 #### 6.1 Data-Pipeline / Analytics-Engineering Agent  [UB +Build +Data]
 JD: ETL/ELT, transformations, data models, pipeline maintenance.
-- Systems: **dbt, Airflow/Dagster** · **Snowflake, BigQuery, Databricks** · `tools/{sql_query,pandas_query,notebook_exec}`.
-- Technical: **SQL/dbt modeling** · pipeline orchestration · **querying Oracle/Snowflake/etc. to extract data** · data testing.
-- Domain: dimensional modeling · ELT patterns.
+- Systems: **dbt, Airflow/Dagster** · **Snowflake, BigQuery, Databricks** · `tools/{sql_query,pandas_query,notebook_exec}` `[C]`.
+- Technical: **SQL/dbt modeling** · pipeline orchestration · **querying Oracle/Snowflake/etc. to extract data** · data testing `[S]`.
+- Domain: dimensional modeling · ELT patterns `[K]`.
 - Maverick: prod pipeline changes gated.
 
 #### 6.2 Data-Quality & Governance Agent  [UB +Data]
 JD: Data-quality tests, lineage, data contracts *(cross-ref GRC data gov)*.
-- Systems: **Great Expectations, Monte Carlo** · warehouses · `pii_detector`.
-- Technical: data-quality testing · lineage · data-contract enforcement.
+- Systems: **Great Expectations, Monte Carlo** · warehouses · `pii_detector` `[C]`.
+- Technical: data-quality testing · lineage · data-contract enforcement `[S]`.
 
 #### 6.3 ML / Model-Development Agent  [UB +Build +Data]
 JD: Model development, training, evaluation, experiment tracking.
-- Systems: **PyTorch/scikit-learn, MLflow, Weights & Biases** · `tools/{embeddings,huggingface,notebook_exec}` · the sandbox.
-- Technical: model development · training/eval · experiment tracking · feature engineering.
-- Domain: ML methods · evaluation rigor.
+- Systems: **PyTorch/scikit-learn, MLflow, Weights & Biases** · `tools/{embeddings,huggingface,notebook_exec}` · the sandbox `[C]`.
+- Technical: model development · training/eval · experiment tracking · feature engineering `[S]`.
+- Domain: ML methods · evaluation rigor `[K]`.
 - Maverick: model promotion gated.
 
 #### 6.4 MLOps & Model-Deployment Agent  [UB +Build]
 JD: Model serving, monitoring, drift detection, retraining *(model cards/AI risk → IT-GRC T1)*.
-- Systems: **SageMaker, Vertex AI, KServe/Seldon** · serving infra.
-- Technical: model serving · **drift/performance monitoring** · retraining pipelines.
+- Systems: **SageMaker, Vertex AI, KServe/Seldon** · serving infra `[C]`.
+- Technical: model serving · **drift/performance monitoring** · retraining pipelines `[S]`.
 - Maverick: deploy gated.
 
 #### 6.5 BI & Reporting Agent  [UB +Data]
 JD: Dashboards, reports, self-serve analytics.
-- Systems: **Looker, Tableau, Power BI** · `tools/{sql_query,spreadsheet}`.
-- Technical: dashboard/report building · semantic-layer modeling · SQL.
+- Systems: **Looker, Tableau, Power BI** · `tools/{sql_query,spreadsheet}` `[C]`.
+- Technical: dashboard/report building · semantic-layer modeling · SQL `[S]`.
 
 ### Tower 7 — Developer Experience & Productivity
 
 #### 7.1 Technical-Documentation Agent  [UB]
 JD: Internal docs, runbooks, ADRs, API references, onboarding guides.
-- Systems: `tools/{knowledge,confluence_tool,notion,pandoc_tool}` · the codebase · docs-as-code (MkDocs, Docusaurus).
-- Technical: tech-doc authoring · runbook/ADR writing · API-reference generation.
+- Systems: `tools/{knowledge,confluence_tool,notion,pandoc_tool}` · the codebase · docs-as-code (MkDocs, Docusaurus) `[C]`.
+- Technical: tech-doc authoring · runbook/ADR writing · API-reference generation `[S]`.
 
 #### 7.2 Internal-Tooling & Scaffolding Agent  [UB +Build]
 JD: Codegen scaffolds, internal CLIs/tools, plugin/skill scaffolding.
-- Systems: `plugin_scaffold.py`, `skills.py` · the sandbox.
-- Technical: scaffolding/codegen · internal-tool building · **authoring SKILL.md** + plugins.
+- Systems: `plugin_scaffold.py`, `skills.py` · the sandbox `[C]`.
+- Technical: scaffolding/codegen · internal-tool building · **authoring SKILL.md** + plugins `[S]`.
 
 #### 7.3 Engineering-Metrics (DORA) Agent  [UB +Data]
 JD: DORA + flow metrics, bottleneck analysis.
-- Systems: `git_advanced`, `tools/{jira,linear}` · CI.
-- Technical: **DORA metrics** (deploy freq, lead time, MTTR, change-fail rate) · flow metrics · bottleneck analysis.
+- Systems: `git_advanced`, `tools/{jira,linear}` · CI `[C]`.
+- Technical: **DORA metrics** (deploy freq, lead time, MTTR, change-fail rate) · flow metrics · bottleneck analysis `[S]`.
 
 #### 7.4 Developer-Support / Codebase-Q&A Agent  [UB +Build]
 JD: Answer "how does X work / where is Y", onboarding, codebase navigation.
-- Systems: `repo_map`, `knowledge_search` · the codebase.
-- Technical: codebase navigation/explanation · onboarding support.
+- Systems: `repo_map`, `knowledge_search` · the codebase `[C]`.
+- Technical: codebase navigation/explanation · onboarding support `[S]`.
 - Maverick: read-only.
 
 ### Tower 8 — Technical Research & Architecture
 
 #### 8.1 Architecture & Design-Doc Agent  [UB +Build]
 JD: System design, ADRs, design reviews, tradeoff analysis.
-- Systems: `knowledge_search` · `tools/diagram_tool` · the codebase.
-- Technical: **system design** · ADR authoring · design review · diagramming (C4).
-- Domain: architecture patterns · scalability/reliability tradeoffs.
+- Systems: `knowledge_search` · `tools/diagram_tool` · the codebase `[C]`.
+- Technical: **system design** · ADR authoring · design review · diagramming (C4) `[S]`.
+- Domain: architecture patterns · scalability/reliability tradeoffs `[K]`.
 
 #### 8.2 Technical-Investigation / Spike Agent  [UB +Build]
 JD: Research spikes, feasibility studies, throwaway PoCs in the sandbox.
-- Systems: the sandbox · `web_search` · the reasoning strategies (debate/ToT).
-- Technical: feasibility prototyping · spike investigation.
+- Systems: the sandbox · `web_search` · the reasoning strategies (debate/ToT) `[C]`.
+- Technical: feasibility prototyping · spike investigation `[S]`.
 - Maverick: PoCs don't ship without the gate.
 
 #### 8.3 Technology-Evaluation Agent  [UB +Build]
 JD: Library/framework/vendor evaluation, build-vs-buy, license screening.
-- Systems: `web_search` · `license_scan.py` · `dep_graph`.
-- Technical: tech evaluation · build-vs-buy analysis · license/maintenance-health screening.
+- Systems: `web_search` · `license_scan.py` · `dep_graph` `[C]`.
+- Technical: tech evaluation · build-vs-buy analysis · license/maintenance-health screening `[S]`.
 
 ### Council-added agents
 *(shipped tooling, no persona — the "tools there, agent missing" gap. Full profiles below.)*
@@ -2078,215 +2078,215 @@ compartments; **never file/serve/sign/send** without an attorney; jurisdiction-s
 
 #### 1.1 Legal Research Agent  [UB]
 JD: Research case law/statutes/regulations; write memos with precise, quoted authority.
-- Systems: **CourtListener** (live) · **Westlaw, LexisNexis** · `web_search` · `knowledge_search`.
-- Technical: case-law/statute research · **Bluebook citation** · memo drafting (IRAC/CRAC).
-- Domain: legal research method · primary vs secondary authority.
+- Systems: **CourtListener** (live) · **Westlaw, LexisNexis** · `web_search` · `knowledge_search` `[C]`.
+- Technical: case-law/statute research · **Bluebook citation** · memo drafting (IRAC/CRAC) `[S]`.
+- Domain: legal research method · primary vs secondary authority `[K]`.
 - Maverick: **verify every citation**; jurisdiction-scoped; not legal advice.
 
 #### 1.2 Citation-Verification Agent  [UB]
 JD: Verify every citation against a real source; flag/strip unverifiable authority.
-- Systems: **CourtListener** (live) · Westlaw/Lexis · Shepard's/KeyCite.
-- Technical: **citation verification** · quote/pin-cite checking · **Shepardizing** (good law check).
-- Domain: citation accuracy · the fabricated-citation failure mode.
+- Systems: **CourtListener** (live) · Westlaw/Lexis · Shepard's/KeyCite `[C]`.
+- Technical: **citation verification** · quote/pin-cite checking · **Shepardizing** (good law check) `[S]`.
+- Domain: citation accuracy · the fabricated-citation failure mode `[K]`.
 - Maverick: **the citation-integrity enforcement point** — unverifiable → `[UNVERIFIED]`, excluded.
 
 #### 1.3 Legal Knowledge-Management Agent  [UB]
 JD: Internal precedent/clause/memo library; surface prior work.
-- Systems: `knowledge_search` · `tools/{confluence_tool,notion}` · the matter system.
-- Technical: precedent indexing/retrieval · clause libraries.
+- Systems: `knowledge_search` · `tools/{confluence_tool,notion}` · the matter system `[C]`.
+- Technical: precedent indexing/retrieval · clause libraries `[S]`.
 
 ### Tower 2 — Commercial Contracts (CLM)
 
 #### 2.1 Contract-Drafting Agent  [UB]
 JD: Draft contracts from approved templates + the playbook (NDAs, MSAs, SOWs, DPAs).
-- Systems: **CLM (Ironclad, Icertis, DocuSign CLM)** · template library.
-- Technical: **contract drafting** from templates/playbook · clause assembly.
-- Domain: commercial contract law · the contract playbook.
+- Systems: **CLM (Ironclad, Icertis, DocuSign CLM)** · template library `[C]`.
+- Technical: **contract drafting** from templates/playbook · clause assembly `[S]`.
+- Domain: commercial contract law · the contract playbook `[K]`.
 - Maverick: never executes/signs.
 
 #### 2.2 Contract-Review & Redline Agent  [UB]
 JD: Review third-party paper against the playbook, redline, flag risk.
-- Systems: CLM · the playbook · privacy suite (DPA terms) · **contract-AI (Spellbook, LegalOn)**.
-- Technical: **contract review & redlining** (liability, indemnity, IP, data, termination) · playbook-deviation flagging.
-- Domain: commercial terms · risk allocation.
+- Systems: CLM · the playbook · privacy suite (DPA terms) · **contract-AI (Spellbook, LegalOn)** `[C]`.
+- Technical: **contract review & redlining** (liability, indemnity, IP, data, termination) · playbook-deviation flagging `[S]`.
+- Domain: commercial terms · risk allocation `[K]`.
 - Maverick: cite the playbook; attorney owns non-standard; never signs.
 
 #### 2.3 Contract-Negotiation-Support Agent  [UB]
 JD: Fallback positions, negotiation tracking, counterparty-position analysis.
-- Systems: CLM · the playbook.
-- Technical: fallback-position proposal · negotiation tracking.
+- Systems: CLM · the playbook `[C]`.
+- Technical: fallback-position proposal · negotiation tracking `[S]`.
 
 #### 2.4 Obligations & Renewals Agent  [UB +Data]
 JD: Extract obligations/key terms, track renewals/milestones/auto-renews.
-- Systems: CLM · finance (revenue/spend impact).
-- Technical: **obligation extraction** · renewal/milestone tracking.
+- Systems: CLM · finance (revenue/spend impact) `[C]`.
+- Technical: **obligation extraction** · renewal/milestone tracking `[S]`.
 
 #### 2.5 Contract Repository & Intake Agent  [UB]
 JD: Repository, intake/triage, metadata/tagging, search.
-- Systems: CLM · `intake.py` · channels.
-- Technical: contract intake/triage · metadata tagging · repository search.
+- Systems: CLM · `intake.py` · channels `[C]`.
+- Technical: contract intake/triage · metadata tagging · repository search `[S]`.
 
 ### Tower 3 — Corporate, Governance & Securities
 
 #### 3.1 Entity-Management Agent  [UB]
 JD: Entity formation/maintenance, subsidiary management, registered agents, annual filings.
-- Systems: **entity mgmt (Diligent Entities)** · state SOS portals.
-- Technical: entity tracking · corporate-filing drafting.
-- Domain: corporate law · entity structures.
+- Systems: **entity mgmt (Diligent Entities)** · state SOS portals `[C]`.
+- Technical: entity tracking · corporate-filing drafting `[S]`.
+- Domain: corporate law · entity structures `[K]`.
 - Maverick: filing gated.
 
 #### 3.2 Board & Governance Agent  [UB]  *(cross-ref Strategy 6.1 — sealed)*
 JD: Board materials, minutes, resolutions, governance.
-- Systems: the Strategy board agent · `gdrive_tool`.
-- Technical: resolution/minutes drafting · governance support.
+- Systems: the Strategy board agent · `gdrive_tool` `[C]`.
+- Technical: resolution/minutes drafting · governance support `[S]`.
 - Maverick: sealed board compartment; privilege; no board decisions.
 
 #### 3.3 Securities & SEC Agent  [UB]  *(cross-ref finance SEC tower)*
 JD: Securities-law compliance, disclosure review, filing legal review.
-- Systems: the finance SEC tower · CourtListener (rules) · EDGAR.
-- Technical: disclosure review · securities-risk flagging.
-- Domain: **'33/'34 Acts, Reg S-K/S-X, Section 16, 10b-5**.
+- Systems: the finance SEC tower · CourtListener (rules) · EDGAR `[C]`.
+- Technical: disclosure review · securities-risk flagging `[S]`.
+- Domain: **'33/'34 Acts, Reg S-K/S-X, Section 16, 10b-5** `[K]`.
 - Maverick: filing gated.
 
 #### 3.4 Equity & Cap-Table Legal Agent  [UB]
 JD: Equity-issuance legal, option grants, 409A legal, securities exemptions.
-- Systems: cap-table (Carta) · the finance equity agent.
-- Technical: equity-doc review · exemption analysis.
-- Domain: **Reg D/S, Rule 701, 409A, ISO/NSO** law.
+- Systems: cap-table (Carta) · the finance equity agent `[C]`.
+- Technical: equity-doc review · exemption analysis `[S]`.
+- Domain: **Reg D/S, Rule 701, 409A, ISO/NSO** law `[K]`.
 - Maverick: no issuance.
 
 ### Tower 4 — Litigation, Disputes & E-Discovery  *(sealed matter compartments)*
 
 #### 4.1 Litigation-Management Agent  [UB]
 JD: Case management, docketing/deadlines, strategy support, outside-counsel coordination.
-- Systems: matter system · `tools/calendar_tool` · CourtListener · **PACER**.
-- Technical: **docketing & deadline calculation** (FRCP/local rules) · case-status synthesis.
-- Domain: **the finer points of litigation procedure — FRCP, jurisdiction/venue, pleadings, motion practice, discovery sequencing, appeals**.
+- Systems: matter system · `tools/calendar_tool` · CourtListener · **PACER** `[C]`.
+- Technical: **docketing & deadline calculation** (FRCP/local rules) · case-status synthesis `[S]`.
+- Domain: **the finer points of litigation procedure — FRCP, jurisdiction/venue, pleadings, motion practice, discovery sequencing, appeals** `[K]`.
 - Maverick: **deadline integrity** (missed deadline = malpractice); sealed; no filings.
 
 #### 4.2 E-Discovery Agent  [UB]
 JD: Document review, responsiveness/relevance coding, privilege review/logging, production prep.
-- Systems: **Relativity, Everlaw, Disco** · `tools/{pdf_reader,ocr}`.
-- Technical: **TAR/predictive coding** · responsiveness/relevance review · **privilege review & logging** · production prep.
-- Domain: **EDRM / FRCP Rule 26-34** · privilege types · proportionality.
+- Systems: **Relativity, Everlaw, Disco** · `tools/{pdf_reader,ocr}` `[C]`.
+- Technical: **TAR/predictive coding** · responsiveness/relevance review · **privilege review & logging** · production prep `[S]`.
+- Domain: **EDRM / FRCP Rule 26-34** · privilege types · proportionality `[K]`.
 - Maverick: **privilege protection** (mis-coding waives privilege); sealed; production human.
 
 #### 4.3 Legal-Hold Agent  [UB]
 JD: Issue/track legal holds, custodian management, spoliation prevention.
-- Systems: the data stores · `audit/` (hold flags) · HRIS (custodians) · legal-hold tools.
-- Technical: hold issuance/tracking · custodian management · hold-reminder workflow.
-- Domain: **preservation duty / spoliation (FRCP Rule 37(e))**.
+- Systems: the data stores · `audit/` (hold flags) · HRIS (custodians) · legal-hold tools `[C]`.
+- Technical: hold issuance/tracking · custodian management · hold-reminder workflow `[S]`.
+- Domain: **preservation duty / spoliation (FRCP Rule 37(e))** `[K]`.
 - Maverick: **deletion of held data refused** (hold overrides retention/erasure — hard floor).
 
 #### 4.4 Brief & Motion-Drafting Agent  [UB]
 JD: Draft briefs, motions, pleadings; build the table of authorities.
-- Systems: CourtListener (live) · Westlaw/Lexis · the matter (sealed).
-- Technical: **brief/motion/pleading drafting** · legal argument (IRAC) · table-of-authorities assembly · **Bluebook**.
-- Domain: motion practice · standards of review · persuasive writing.
+- Systems: CourtListener (live) · Westlaw/Lexis · the matter (sealed) `[C]`.
+- Technical: **brief/motion/pleading drafting** · legal argument (IRAC) · table-of-authorities assembly · **Bluebook** `[S]`.
+- Domain: motion practice · standards of review · persuasive writing `[K]`.
 - Maverick: **citation integrity** (the courtroom is where fabricated cites get sanctioned); filing is the attorney's.
 
 #### 4.5 Settlement & Dispute Agent  [UB]
 JD: Settlement analysis, demand/response letters, ADR support, exposure modeling.
-- Systems: the matter (sealed) · finance (exposure).
-- Technical: settlement analysis · demand/response drafting · exposure modeling.
-- Domain: ADR (mediation/arbitration) · settlement strategy.
+- Systems: the matter (sealed) · finance (exposure) `[C]`.
+- Technical: settlement analysis · demand/response drafting · exposure modeling `[S]`.
+- Domain: ADR (mediation/arbitration) · settlement strategy `[K]`.
 - Maverick: never sends/commits.
 
 ### Tower 5 — Intellectual Property
 
 #### 5.1 Patent Agent  [UB]
 JD: Patent/prior-art search, application support, portfolio management.
-- Systems: **USPTO Patent Center** (filing) + **Patent Public Search** (PatFT/AppFT retired), **PEDS, Global Dossier, Google Patents, Espacenet**.
-- Technical: prior-art search · claim analysis · application-support drafting.
-- Domain: patent law (35 USC) · patentability · the PCT.
+- Systems: **USPTO Patent Center** (filing) + **Patent Public Search** (PatFT/AppFT retired), **PEDS, Global Dossier, Google Patents, Espacenet** `[C]`.
+- Technical: prior-art search · claim analysis · application-support drafting `[S]`.
+- Domain: patent law (35 USC) · patentability · the PCT `[K]`.
 - Maverick: filing gated.
 
 #### 5.2 Trademark Agent  [UB]
 JD: Trademark clearance/search, filing prep, watch/monitoring, oppositions.
-- Systems: **USPTO Trademark Search** (TESS retired) + **TSDR**, **ID Manual, Madrid/WIPO Global Brand DB, TTABVUE** · trademark watch services.
-- Technical: clearance/knockout search · filing prep · likelihood-of-confusion analysis.
-- Domain: trademark law (Lanham Act) · classes (Nice).
+- Systems: **USPTO Trademark Search** (TESS retired) + **TSDR**, **ID Manual, Madrid/WIPO Global Brand DB, TTABVUE** · trademark watch services `[C]`.
+- Technical: clearance/knockout search · filing prep · likelihood-of-confusion analysis `[S]`.
+- Domain: trademark law (Lanham Act) · classes (Nice) `[K]`.
 - Maverick: filing gated.
 
 #### 5.3 Copyright & Trade-Secret Agent  [UB]
 JD: Copyright registration, trade-secret programs, DMCA, NDAs.
-- Systems: U.S. Copyright Office · the contracts tower (NDAs).
-- Technical: copyright registration support · trade-secret-program design · DMCA notices.
-- Domain: copyright law · **DTSA/UTSA** trade-secret law.
+- Systems: U.S. Copyright Office · the contracts tower (NDAs) `[C]`.
+- Technical: copyright registration support · trade-secret-program design · DMCA notices `[S]`.
+- Domain: copyright law · **DTSA/UTSA** trade-secret law `[K]`.
 
 #### 5.4 IP Licensing & Infringement Agent  [UB]
 JD: Licensing-deal support, infringement analysis, enforcement/C&D.
-- Systems: the contracts tower · CourtListener.
-- Technical: license-agreement drafting · **infringement analysis** · cease-and-desist drafting.
+- Systems: the contracts tower · CourtListener `[C]`.
+- Technical: license-agreement drafting · **infringement analysis** · cease-and-desist drafting `[S]`.
 - Maverick: enforcement sends gated.
 
 ### Tower 6 — Regulatory, Antitrust & Trade
 
 #### 6.1 Regulatory-Counsel Agent  [UB]  *(cross-ref GRC)*
 JD: Regulatory advice, applicability analysis, regulatory-change legal impact.
-- Systems: CourtListener · `web_search` · the GRC suite · the **CFR/Federal Register**.
-- Technical: applicability analysis · regulatory-memo drafting.
-- Domain: administrative law · the relevant sector regulators.
+- Systems: CourtListener · `web_search` · the GRC suite · the **CFR/Federal Register** `[C]`.
+- Technical: applicability analysis · regulatory-memo drafting `[S]`.
+- Domain: administrative law · the relevant sector regulators `[K]`.
 
 #### 6.2 Antitrust & Competition Agent  [UB]  *(cross-ref Strategy M&A)*
 JD: Antitrust analysis, HSR/merger review, competition compliance.
-- Systems: the Strategy M&A tower · CourtListener.
-- Technical: antitrust analysis · **HSR filing support** · competition-risk assessment.
-- Domain: **Sherman/Clayton/HSR Acts** · merger guidelines · EU competition law.
+- Systems: the Strategy M&A tower · CourtListener `[C]`.
+- Technical: antitrust analysis · **HSR filing support** · competition-risk assessment `[S]`.
+- Domain: **Sherman/Clayton/HSR Acts** · merger guidelines · EU competition law `[K]`.
 - Maverick: no filings.
 
 #### 6.3 Trade & Sanctions Agent  [UB]  *(cross-ref finance AML + GTM screening)*
 JD: Export controls, sanctions/OFAC, trade compliance.
-- Systems: sanctions screening · the GRC/finance suites.
-- Technical: **export-control classification (ECCN)** · sanctions screening · trade-compliance review.
-- Domain: **EAR/ITAR, OFAC, customs**.
+- Systems: sanctions screening · the GRC/finance suites `[C]`.
+- Technical: **export-control classification (ECCN)** · sanctions screening · trade-compliance review `[S]`.
+- Domain: **EAR/ITAR, OFAC, customs** `[K]`.
 - Maverick: decisions gated.
 
 ### Tower 7 — Employment & Privacy Law
 
 #### 7.1 Employment-Law Agent  [UB]  *(cross-ref HR T7)*
 JD: Employment-law advice, policy legal review, dispute/claim analysis.
-- Systems: the HR employment-law agent · CourtListener.
-- Technical: employment-policy legal review · claim analysis.
-- Domain: **Title VII, ADA, ADEA, FLSA, FMLA, NLRA, WARN** + state.
+- Systems: the HR employment-law agent · CourtListener `[C]`.
+- Technical: employment-policy legal review · claim analysis `[S]`.
+- Domain: **Title VII, ADA, ADEA, FLSA, FMLA, NLRA, WARN** + state `[K]`.
 - Maverick: attorney-owned; not legal advice.
 
 #### 7.2 Privacy & Data-Protection-Law Agent  [UB]  *(cross-ref privacy suite)*
 JD: Privacy counsel, DPAs, breach legal analysis, GDPR/CCPA positions.
-- Systems: the privacy suite · CourtListener.
-- Technical: **DPA review** · breach legal analysis · privacy-position drafting.
-- Domain: **GDPR, CCPA/CPRA, sectoral (HIPAA/GLBA/FERPA)** · cross-border.
+- Systems: the privacy suite · CourtListener `[C]`.
+- Technical: **DPA review** · breach legal analysis · privacy-position drafting `[S]`.
+- Domain: **GDPR, CCPA/CPRA, sectoral (HIPAA/GLBA/FERPA)** · cross-border `[K]`.
 - Maverick: notification decisions human/attorney.
 
 ### Tower 8 — Legal Operations
 
 #### 8.1 Matter-Management Agent  [UB]
 JD: Matter intake/triage, lifecycle, status reporting, prioritization.
-- Systems: matter system (**Litera, Clio**) · `intake.py`.
-- Technical: matter intake/triage · lifecycle/status management.
+- Systems: matter system (**Litera, Clio**) · `intake.py` `[C]`.
+- Technical: matter intake/triage · lifecycle/status management `[S]`.
 
 #### 8.2 Outside-Counsel & Spend Agent  [UB +Data]
 JD: Outside-counsel guidelines, e-billing review, spend analytics, panel management.
-- Systems: **e-billing (Legal Tracker, Brightflag)** · finance (spend).
-- Technical: **e-billing/invoice review** (OCG compliance, LEDES) · legal-spend analytics.
+- Systems: **e-billing (Legal Tracker, Brightflag)** · finance (spend) `[C]`.
+- Technical: **e-billing/invoice review** (OCG compliance, LEDES) · legal-spend analytics `[S]`.
 - Maverick: approvals gated; SoD vs finance AP.
 
 #### 8.3 Legal-Intake & Triage Agent  [UB +Reach]
 JD: Legal-request intake, routing, self-service answers, SLA tracking.
-- Systems: `intake.py` · the channels layer · `knowledge_search`.
-- Technical: request intake · routing · self-service answering.
+- Systems: `intake.py` · the channels layer · `knowledge_search` `[C]`.
+- Technical: request intake · routing · self-service answering `[S]`.
 - Maverick: AI disclosure; **escalate substantive questions** (not legal advice).
 
 #### 8.4 Legal-Tech & KM-Ops Agent  [UB +Build]
 JD: Legal tech stack, workflow automation, legal metrics/reporting.
-- Systems: legal-ops tools · BI.
-- Technical: workflow automation · legal-metrics reporting.
+- Systems: legal-ops tools · BI `[C]`.
+- Technical: workflow automation · legal-metrics reporting `[S]`.
 
 #### 8.5 Conflicts-Check Agent  [UB]
 JD: Run conflicts checks before matter intake; set up ethical walls.
-- Systems: the matter/entity system · `quarantine.py`/`capability.py`.
-- Technical: **conflicts checking** · ethical-wall setup.
-- Domain: conflicts of interest · ethical-wall practice.
+- Systems: the matter/entity system · `quarantine.py`/`capability.py` `[C]`.
+- Technical: **conflicts checking** · ethical-wall setup `[S]`.
+- Domain: conflicts of interest · ethical-wall practice `[K]`.
 - Maverick: clearing a conflict is human; the ethical-wall setup point.
 
 ### Council-added agents
@@ -2346,216 +2346,216 @@ safety-critical equipment or override an interlock; worker safety overrides effi
 
 #### 1.1 Demand-Planning Agent  [UB +Data]
 JD: Demand forecasting, consensus demand, seasonality/promo effects.
-- Systems: **Kinaxis, o9, Blue Yonder** (planning) · ERP · GTM/finance forecast.
-- Technical: **statistical demand forecasting** · consensus planning · forecast-error (MAPE/bias) analysis.
-- Domain: demand planning · seasonality · promo lift.
+- Systems: **Kinaxis, o9, Blue Yonder** (planning) · ERP · GTM/finance forecast `[C]`.
+- Technical: **statistical demand forecasting** · consensus planning · forecast-error (MAPE/bias) analysis `[S]`.
+- Domain: demand planning · seasonality · promo lift `[K]`.
 
 #### 1.2 Supply-Planning & MRP Agent  [UB +Data]
 JD: Supply/materials planning, MRP runs, capacity-feasible plans.
-- Systems: **SAP, Oracle, Kinaxis** (MRP).
-- Technical: **MRP/MPS** · materials planning · capacity-feasibility checks.
-- Domain: supply planning · lead-time/lot-sizing.
+- Systems: **SAP, Oracle, Kinaxis** (MRP) `[C]`.
+- Technical: **MRP/MPS** · materials planning · capacity-feasibility checks `[S]`.
+- Domain: supply planning · lead-time/lot-sizing `[K]`.
 
 #### 1.3 S&OP / IBP Agent  [UB +Data]
 JD: Sales & operations planning, IBP, scenario balancing.
-- Systems: planning · finance (reconciliation) · GTM (demand).
-- Technical: S&OP scenario balancing · consensus-plan synthesis.
-- Domain: S&OP/IBP process.
+- Systems: planning · finance (reconciliation) · GTM (demand) `[C]`.
+- Technical: S&OP scenario balancing · consensus-plan synthesis `[S]`.
+- Domain: S&OP/IBP process `[K]`.
 
 #### 1.4 Inventory-Optimization Agent  [UB +Data]
 JD: Safety stock, reorder points, ABC/XYZ, multi-echelon optimization.
-- Systems: ERP/WMS · `pandas_query`.
-- Technical: **safety-stock / reorder-point math** · ABC/XYZ · multi-echelon optimization.
+- Systems: ERP/WMS · `pandas_query` `[C]`.
+- Technical: **safety-stock / reorder-point math** · ABC/XYZ · multi-echelon optimization `[S]`.
 - Maverick: reorder execution tiered.
 
 #### 1.5 Network & Capacity-Planning Agent  [UB +Data]
 JD: Network design, capacity planning, footprint/sourcing strategy.
-- Systems: planning · finance (cost) · Strategy (footprint).
-- Technical: network modeling · capacity analysis.
+- Systems: planning · finance (cost) · Strategy (footprint) `[C]`.
+- Technical: network modeling · capacity analysis `[S]`.
 
 ### Tower 2 — Procurement & Sourcing  *(money side → finance)*
 
 #### 2.1 Strategic-Sourcing Agent  [UB]
 JD: Sourcing strategy, RFx, bid analysis, supplier selection.
-- Systems: **SAP Ariba, Coupa** (sourcing) · finance.
-- Technical: RFx management · bid/should-cost analysis · supplier selection.
+- Systems: **SAP Ariba, Coupa** (sourcing) · finance `[C]`.
+- Technical: RFx management · bid/should-cost analysis · supplier selection `[S]`.
 - Maverick: award gated.
 
 #### 2.2 Purchasing / PO Agent  [UB]
 JD: Create POs, run the 3-way match, manage confirmations.
-- Systems: ERP · finance AP (1.2) · `governance` (risk-floor gate today; **DoA/amount-aware policy to build**).
-- Technical: PO creation · **3-way match** · variance flagging.
+- Systems: ERP · finance AP (1.2) · `governance` (risk-floor gate today; **DoA/amount-aware policy to build**) `[C]`.
+- Technical: PO creation · **3-way match** · variance flagging `[S]`.
 - Maverick: **PO commit beyond the DoA tier denied**; never releases payment; bank-detail-change → human.
 
 #### 2.3 Supplier-Management & Performance Agent  [UB +Data]
 JD: Supplier scorecards, performance/SLA tracking, relationship management.
-- Systems: **SRM** · ERP.
-- Technical: scorecard analysis · SLA tracking.
+- Systems: **SRM** · ERP `[C]`.
+- Technical: scorecard analysis · SLA tracking `[S]`.
 
 #### 2.4 Supplier-Risk & Resilience Agent  [UB +Assess]
 JD: Supplier risk, single-source/concentration, forced-labor/conflict-minerals, disruption.
-- Systems: the GRC vendor-risk tower + `_VENDOR_RISK` · risk feeds (Resilinc/Everstream).
-- Technical: supplier-risk assessment · concentration analysis · disruption monitoring.
-- Domain: supply-chain resilience · **forced-labor (UFLPA) / conflict-minerals** due diligence.
+- Systems: the GRC vendor-risk tower + `_VENDOR_RISK` · risk feeds (Resilinc/Everstream) `[C]`.
+- Technical: supplier-risk assessment · concentration analysis · disruption monitoring `[S]`.
+- Domain: supply-chain resilience · **forced-labor (UFLPA) / conflict-minerals** due diligence `[K]`.
 
 ### Tower 3 — Manufacturing & Production  *(safety-critical actuation refused)*
 
 #### 3.1 Production-Planning & Scheduling Agent  [UB +Data]
 JD: Production schedules, sequencing, line balancing, capacity feasibility.
-- Systems: **MES / ERP (SAP PP)** · the planning tower.
-- Technical: **finite scheduling** · sequencing · line balancing.
+- Systems: **MES / ERP (SAP PP)** · the planning tower `[C]`.
+- Technical: **finite scheduling** · sequencing · line balancing `[S]`.
 - Maverick: releasing to the floor is human/tier.
 
 #### 3.2 Shop-Floor / MES Agent  [UB +Data]
 JD: Work-order management, shop-floor status, OEE analysis (read; actuation refused).
-- Systems: **MES** · industrial IoT (read-only telemetry).
-- Technical: work-order management · **OEE analysis** · throughput/bottleneck analysis.
-- Domain: lean manufacturing · TPS.
+- Systems: **MES** · industrial IoT (read-only telemetry) `[C]`.
+- Technical: work-order management · **OEE analysis** · throughput/bottleneck analysis `[S]`.
+- Domain: lean manufacturing · TPS `[K]`.
 - Maverick: **refuses equipment actuation / safety control** (§ safety refusal); escalate unsafe conditions.
 
 #### 3.3 BOM & Routing Agent  [UB]  *(cross-ref P&E for design)*
 JD: BOM management, routings, engineering-change orders.
-- Systems: ERP/**PLM (Teamcenter, Windchill)** · the P&E suite.
-- Technical: BOM management · routing definition · **ECO** processing.
+- Systems: ERP/**PLM (Teamcenter, Windchill)** · the P&E suite `[C]`.
+- Technical: BOM management · routing definition · **ECO** processing `[S]`.
 - Maverick: changes gated.
 
 #### 3.4 Production-Quality & Yield Agent  [UB +Data]
 JD: Yield, scrap, statistical process control, first-pass yield.
-- Systems: MES · `pandas_query`.
-- Technical: **SPC (control charts, Cpk)** · yield/scrap analysis.
-- Domain: Six-Sigma · process capability.
+- Systems: MES · `pandas_query` `[C]`.
+- Technical: **SPC (control charts, Cpk)** · yield/scrap analysis `[S]`.
+- Domain: Six-Sigma · process capability `[K]`.
 
 ### Tower 4 — Quality Management
 
 #### 4.1 Quality-Control & Inspection Agent  [UB +Data]
 JD: Inspection plans, sampling, test-result capture/analysis.
-- Systems: **QMS (MasterControl, ETQ)** · MES.
-- Technical: inspection planning · **AQL sampling** · test-result analysis.
+- Systems: **QMS (MasterControl, ETQ)** · MES `[C]`.
+- Technical: inspection planning · **AQL sampling** · test-result analysis `[S]`.
 - Maverick: quality-hold decisions gated.
 
 #### 4.2 Nonconformance & CAPA Agent  [UB]
 JD: NCR management, root-cause, CAPA tracking to closure.
-- Systems: QMS.
-- Technical: NCR management · **root-cause (5-why, fishbone, 8D)** · CAPA tracking.
+- Systems: QMS `[C]`.
+- Technical: NCR management · **root-cause (5-why, fishbone, 8D)** · CAPA tracking `[S]`.
 - Maverick: closure gated.
 
 #### 4.3 Supplier-Quality Agent  [UB]  *(cross-ref Procurement)*
 JD: Incoming quality, supplier audits, SCARs.
-- Systems: QMS + SRM.
-- Technical: incoming-quality assessment · **supplier audits (PPAP, APQP)** · SCAR management.
+- Systems: QMS + SRM `[C]`.
+- Technical: incoming-quality assessment · **supplier audits (PPAP, APQP)** · SCAR management `[S]`.
 
 #### 4.4 Compliance & Recall Agent  [UB]
 JD: ISO 9001 / regulatory quality compliance, lot/serial traceability, recall scope.
-- Systems: QMS/ERP · legal (regulatory) · the audit chain.
-- Technical: **lot/serial traceability** · recall-scope assembly.
-- Domain: **ISO 9001** · industry quality (FDA QSR/21 CFR 820, IATF 16949).
+- Systems: QMS/ERP · legal (regulatory) · the audit chain `[C]`.
+- Technical: **lot/serial traceability** · recall-scope assembly `[S]`.
+- Domain: **ISO 9001** · industry quality (FDA QSR/21 CFR 820, IATF 16949) `[K]`.
 - Maverick: **recall execution is human-led** (safety/regulatory).
 
 ### Tower 5 — Logistics, Warehousing & Distribution
 
 #### 5.1 Transportation / TMS Agent  [UB +Data]
 JD: Carrier selection, route/load optimization, freight audit, tracking.
-- Systems: **TMS (project44, FourKites, MercuryGate)**.
-- Technical: **route/load optimization** · carrier selection · freight audit · ETA tracking.
+- Systems: **TMS (project44, FourKites, MercuryGate)** `[C]`.
+- Technical: **route/load optimization** · carrier selection · freight audit · ETA tracking `[S]`.
 - Maverick: **dispatch gated**; routing optimization is L3-eligible.
 
 #### 5.2 Warehouse / WMS Agent  [UB +Data]
 JD: Warehouse ops — pick/pack waves, slotting, labor/dock planning.
-- Systems: **WMS (Manhattan, Körber, Blue Yonder)**.
-- Technical: wave planning · **slotting optimization** · labor/dock planning.
+- Systems: **WMS (Manhattan, Körber, Blue Yonder)** `[C]`.
+- Technical: wave planning · **slotting optimization** · labor/dock planning `[S]`.
 - Maverick: physical task release gated.
 
 #### 5.3 Inventory-Control Agent  [UB +Data]  *(cross-ref finance 1.9)*
 JD: Inventory accuracy, cycle counts, adjustments.
-- Systems: WMS/ERP · finance.
-- Technical: cycle-count planning · variance analysis · accuracy (IRA) tracking.
+- Systems: WMS/ERP · finance `[C]`.
+- Technical: cycle-count planning · variance analysis · accuracy (IRA) tracking `[S]`.
 - Maverick: **adjustments gated**.
 
 #### 5.4 Fulfillment & Order-Ops Agent  [UB +Reach]
 JD: Order fulfillment, allocation, OTC operations, exceptions.
-- Systems: **Shopify** (shipped) · ERP/OMS.
-- Technical: fulfillment management · allocation · exception resolution.
+- Systems: **Shopify** (shipped) · ERP/OMS `[C]`.
+- Technical: fulfillment management · allocation · exception resolution `[S]`.
 - Maverick: customer comms gated.
 
 #### 5.5 Customs, Trade & Returns Agent  [UB]  *(cross-ref legal trade 6.3)*
 JD: Customs/import-export docs, HS classification, duties; reverse logistics.
-- Systems: customs/trade (Descartes) · the legal suite.
-- Technical: **HS classification** · customs-doc drafting · duty calculation · returns management.
-- Domain: customs · Incoterms · trade compliance.
+- Systems: customs/trade (Descartes) · the legal suite `[C]`.
+- Technical: **HS classification** · customs-doc drafting · duty calculation · returns management `[S]`.
+- Domain: customs · Incoterms · trade compliance `[K]`.
 - Maverick: filings gated.
 
 ### Tower 6 — Asset & Maintenance Management
 
 #### 6.1 Asset-Management Agent  [UB +Data]  *(physical assets; IT assets → IT-GRC)*
 JD: Physical-asset registry, lifecycle, utilization.
-- Systems: **EAM/CMMS (Maximo, Fiix, UpKeep)** · finance FA.
-- Technical: asset registry · lifecycle/utilization analysis.
+- Systems: **EAM/CMMS (Maximo, Fiix, UpKeep)** · finance FA `[C]`.
+- Technical: asset registry · lifecycle/utilization analysis `[S]`.
 
 #### 6.2 Preventive/Predictive-Maintenance Agent  [UB +Data]
 JD: PM schedules, condition monitoring, predictive maintenance.
-- Systems: **CMMS** · industrial IoT (read telemetry).
-- Technical: PM scheduling · **condition monitoring / predictive maintenance** (vibration, thermal).
+- Systems: **CMMS** · industrial IoT (read telemetry) `[C]`.
+- Technical: PM scheduling · **condition monitoring / predictive maintenance** (vibration, thermal) `[S]`.
 - Maverick: **equipment actuation refused**; work-order execution gated.
 
 #### 6.3 Reliability & Downtime Agent  [UB +Data]
 JD: Reliability engineering, downtime/RCA, spare-parts optimization.
-- Systems: CMMS · `pandas_query`.
-- Technical: **reliability analysis (MTBF/MTTR, Weibull)** · downtime RCA · spare-parts optimization.
-- Domain: RCM · TPM.
+- Systems: CMMS · `pandas_query` `[C]`.
+- Technical: **reliability analysis (MTBF/MTTR, Weibull)** · downtime RCA · spare-parts optimization `[S]`.
+- Domain: RCM · TPM `[K]`.
 
 ### Tower 7 — Facilities & Real Estate
 
 #### 7.1 Facilities-Management Agent  [UB +Reach]
 JD: Facilities ops, maintenance work orders, service-vendor coordination.
-- Systems: **CMMS/IWMS** · the channels layer.
-- Technical: facility-WO management · vendor coordination.
+- Systems: **CMMS/IWMS** · the channels layer `[C]`.
+- Technical: facility-WO management · vendor coordination `[S]`.
 - Maverick: vendor spend gated.
 
 #### 7.2 Real-Estate & Lease Agent  [UB]  *(cross-ref finance Lease 1.10 + legal)*
 JD: Real-estate portfolio, lease administration, site-selection support.
-- Systems: **lease/IWMS** · finance + legal.
-- Technical: lease administration · portfolio analysis · site-selection support.
+- Systems: **lease/IWMS** · finance + legal `[C]`.
+- Technical: lease administration · portfolio analysis · site-selection support `[S]`.
 - Maverick: commitments gated.
 
 #### 7.3 Workplace & Space Agent  [UB]
 JD: Space planning, workplace services, moves/adds/changes, occupancy.
-- Systems: **IWMS** · `tools/calendar_tool`.
-- Technical: space planning · move management · occupancy analytics.
+- Systems: **IWMS** · `tools/calendar_tool` `[C]`.
+- Technical: space planning · move management · occupancy analytics `[S]`.
 
 #### 7.4 Energy & Utilities Agent  [UB +Data]  *(cross-ref ESG)*
 JD: Utilities/energy management, consumption analytics, efficiency.
-- Systems: **BMS / energy-management** · finance ESG.
-- Technical: energy-consumption analytics · efficiency recommendations.
+- Systems: **BMS / energy-management** · finance ESG `[C]`.
+- Technical: energy-consumption analytics · efficiency recommendations `[S]`.
 - Maverick: **building-control actuation refused/gated**.
 
 ### Tower 8 — EHS & Sustainability Operations  *(safety paramount)*
 
 #### 8.1 Workplace-Safety (OSHA) Agent  [UB +Reach]
 JD: Safety programs, hazard/JSA management, incident/injury tracking, OSHA recordkeeping.
-- Systems: **EHS (Cority, Intelex, VelocityEHS)** · the channels layer.
-- Technical: hazard/JSA management · incident tracking · **OSHA 300/301/300A recordkeeping**.
-- Domain: **OSHA standards (29 CFR 1910/1926)** · safety management (ISO 45001).
+- Systems: **EHS (Cority, Intelex, VelocityEHS)** · the channels layer `[C]`.
+- Technical: hazard/JSA management · incident tracking · **OSHA 300/301/300A recordkeeping** `[S]`.
+- Domain: **OSHA standards (29 CFR 1910/1926)** · safety management (ISO 45001) `[K]`.
 - Maverick: **safety paramount**; incidents escalate; never recommends an unsafe shortcut.
 
 #### 8.2 Environmental-Compliance Agent  [UB]  *(cross-ref GRC/legal)*
 JD: Environmental permits, emissions/waste/water tracking, EPA reporting.
-- Systems: EHS · GRC + legal.
-- Technical: permit tracking · emissions/waste reporting · exceedance flagging.
-- Domain: **EPA (Clean Air/Water Acts, RCRA), hazmat (DOT/IATA)**.
+- Systems: EHS · GRC + legal `[C]`.
+- Technical: permit tracking · emissions/waste reporting · exceedance flagging `[S]`.
+- Domain: **EPA (Clean Air/Water Acts, RCRA), hazmat (DOT/IATA)** `[K]`.
 - Maverick: **permit-limit exceedance is a hard floor**; filing gated.
 
 #### 8.3 Incident & Emergency-Management Agent  [UB +Reach]  *(cross-ref IT-GRC IR/DR)*
 JD: Operational incident management, emergency response, physical BCP.
-- Systems: EHS · the IT-GRC incident agents · channels.
-- Technical: incident management · emergency-response coordination · BCP drafting.
-- Domain: emergency management · ISO 22301.
+- Systems: EHS · the IT-GRC incident agents · channels `[C]`.
+- Technical: incident management · emergency-response coordination · BCP drafting `[S]`.
+- Domain: emergency management · ISO 22301 `[K]`.
 - Maverick: actions gated.
 
 #### 8.4 Sustainability-Operations Agent  [UB +Data]  *(cross-ref finance ESG)*
 JD: Operational sustainability — carbon (Scope 1&2), waste/circularity, efficiency.
-- Systems: ESG platforms · the finance ESG vertical.
-- Technical: **carbon accounting (Scope 1/2/3)** · waste/circularity tracking · efficiency analysis.
-- Domain: sustainability · GHG Protocol.
+- Systems: ESG platforms · the finance ESG vertical `[C]`.
+- Technical: **carbon accounting (Scope 1/2/3)** · waste/circularity tracking · efficiency analysis `[S]`.
+- Domain: sustainability · GHG Protocol `[K]`.
 
 ---
 
@@ -2628,8 +2628,16 @@ finance suite's own build (to avoid colliding with that in-flight work).
 **Council pass: complete.** A five-member adversarial council reviewed every suite; their
 CRITICAL/IMPORTANT findings are applied (accuracy fixes, the staleness sweep, the 45 added
 agents, and the new skill dimensions) — see "Adversarial council review (applied)" at the top.
-Remaining work is the **incremental rollout**: applying the new dimension tags (`[S]/[C]/[K]`,
-proficiency, Prereq/Verified/Judgment/Cert) and the MINOR depth items to *every* base entry
-(they're applied to the council-added/updated ones now), promoting the **Finance** council seats
-to full profiles alongside the finance build, and authoring the flagged new templates
-(`sox_control`, `itgc`, `outreach_compliance`, …) and connectors.
+
+**Dimension rollout (in progress).** The delivery tags (`[S]` installable SKILL.md / `[C]`
+connector·tool / `[K]` knowledge source) now annotate the **base entries of all seven
+non-finance suites** — every Systems line is a `[C]`, every Technical line an `[S]`, every
+Domain/Regulatory line a `[K]` (the catalog's own legend) — on top of the council-added seats,
+which already carry them. **Strategy** is the fuller exemplar (per-item tags + `{proficiency}` +
+`Verified`/`Judgment` on its marquee seats); `{proficiency}`/`Verified`/`Judgment`/`Cert` roll
+out to the marquee seats of the other suites next. The **Finance** base + council seats are left
+untouched, to land with the finance suite's own in-flight build.
+
+Remaining work: the `{proficiency}`/`Verified`/`Judgment`/`Cert` enrichment on each suite's
+marquee seats, the **Finance** rollout (with that build), and authoring the flagged new
+templates (`sox_control`, `itgc`, `outreach_compliance`, …) and connectors.
