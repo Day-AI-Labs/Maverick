@@ -209,11 +209,19 @@ def test_active_endpoint_lists_running_agents(monkeypatch, tmp_path):
     gid = w.create_goal("ship the thing", "do it")
     w.set_goal_status(gid, "active")
     w.append_event(gid, "coder", "tool_call", "shell: ls -la")
+    event_ts = w.conn.execute(
+        "SELECT ts FROM goal_events WHERE goal_id = ? ORDER BY id DESC LIMIT 1",
+        (gid,),
+    ).fetchone()[0]
+    with w._writing() as conn:
+        conn.execute("UPDATE goals SET updated_at = ? WHERE id = ?", (event_ts - 7200, gid))
+
     body = _client().get("/api/v1/oversight/active").json()
     g = next((x for x in body["goals"] if x["id"] == gid), None)
     assert g is not None
     assert g["title"] == "ship the thing"
     assert "shell" in g["activity"]  # latest event surfaces as current activity
+    assert g["updated_at"] == event_ts
 
 
 def test_active_endpoint_excludes_finished_goals(monkeypatch, tmp_path):

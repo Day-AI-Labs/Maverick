@@ -950,9 +950,10 @@ async def oversight_active(request: Request) -> dict:
     out = []
     for g in goals:
         activity = ""
+        updated_at = g.updated_at
         try:
             row = w.conn.execute(
-                "SELECT kind, content FROM goal_events WHERE goal_id = ? "
+                "SELECT kind, content, ts FROM goal_events WHERE goal_id = ? "
                 "ORDER BY id DESC LIMIT 1",
                 (g.id,),
             ).fetchone()
@@ -961,11 +962,13 @@ async def oversight_active(request: Request) -> dict:
                 # kind is stored plain.
                 content = (_dec_field(row[1]) or "")[:120]
                 activity = f"{row[0] or ''}: {content}".strip(": ").strip()
+                updated_at = row[2]
         except Exception:
             activity = ""
+            updated_at = g.updated_at
         out.append({
             "id": g.id, "title": g.title, "status": g.status,
-            "updated_at": g.updated_at, "activity": activity,
+            "updated_at": updated_at, "activity": activity,
         })
     return {"goals": out}
 
