@@ -17,11 +17,28 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import re
 from typing import Any
 
 from . import Tool
 
 log = logging.getLogger(__name__)
+
+# A literal Jira issue key: project key (letter then letters/digits/_) + number.
+_ISSUE_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]+-\d+$")
+
+
+def _require_key(issue_key: str) -> str:
+    """Return ``issue_key`` if it is a literal ``PROJ-123`` token, else raise.
+
+    The key is interpolated straight into the REST path. Without this guard a
+    model-supplied value such as ``../myself`` or ``DEMO-1?expand=changelog``
+    lets httpx normalize ``..`` / append a query and reach other authenticated
+    Jira endpoints, so we validate the strict key shape and refuse anything else.
+    """
+    if not _ISSUE_KEY_RE.match(issue_key):
+        raise ValueError(f"invalid issue_key {issue_key!r} (expected like 'PROJ-123')")
+    return issue_key
 
 
 _JIRA_SCHEMA: dict[str, Any] = {
@@ -115,6 +132,7 @@ def _search(jql: str, limit: int) -> str:
 
 
 def _get(issue_key: str) -> str:
+    _require_key(issue_key)
     url, client = _client()
     with client:
         resp = client.get(f"{url}/rest/api/3/issue/{issue_key}")
@@ -171,6 +189,7 @@ def _create(project: str, summary: str, description: str, issue_type: str) -> st
 
 
 def _comment(issue_key: str, body: str) -> str:
+    _require_key(issue_key)
     url, client = _client()
     payload = {
         "body": {
@@ -189,6 +208,7 @@ def _comment(issue_key: str, body: str) -> str:
 
 
 def _transition(issue_key: str, target_status: str) -> str:
+    _require_key(issue_key)
     url, client = _client()
     with client:
         # Fetch valid transitions, pick by name.
@@ -254,7 +274,7 @@ def _run(args: dict[str, Any]) -> str:
             if not iid or not status:
                 return "ERROR: transition requires issue_key and status"
             return _transition(iid, status)
-    except RuntimeError as e:
+    except (RuntimeError, ValueError) as e:
         return f"ERROR: {e}"
     except Exception as e:
         return f"ERROR: Jira request failed: {type(e).__name__}: {e}"
