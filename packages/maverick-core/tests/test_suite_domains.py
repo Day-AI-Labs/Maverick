@@ -72,6 +72,17 @@ def test_suite_packs_are_read_only_and_safe():
         )
 
 
+def test_strat_sealed_deal_execution_has_no_web_egress():
+    # Deal-execution handles MNPI inside the sealed corp-dev compartment. Unlike
+    # target sourcing, it only uses the deal compartment and legal/knowledge inputs,
+    # so model-controlled web_search queries must be explicitly unreachable.
+    p = _STRAT["strat_deal_execution"]
+    cap = p.capability("agent:strat_deal_execution")
+    assert "web_search" not in p.allow_tools
+    assert "web_search" in p.deny_tools
+    assert cap.permits("web_search") is False
+
+
 def test_pe_builders_can_build_but_never_self_edit():
     # P&E coding agents legitimately need sandbox shell/code_exec; the floor that can
     # never relax is self-modification -- an agent never edits its own runtime/safety.
