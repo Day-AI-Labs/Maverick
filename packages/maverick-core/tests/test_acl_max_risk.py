@@ -38,6 +38,23 @@ def test_tool_risk_defaults():
     assert tool_risk("some_unknown_tool") == "medium"
 
 
+def test_new_enterprise_connectors_are_high_risk():
+    from maverick.safety.tool_risk import tool_risk, tools_exceeding
+
+    connector_names = {
+        "mailchimp", "klaviyo", "braze", "marketo", "sfmc",
+        "segment", "adobe_analytics", "aem", "bigcommerce", "sendgrid",
+        "fivetran", "dbt", "airflow", "confluent", "informatica",
+        "talend", "matillion", "cloudera", "miro", "coda",
+        "basecamp", "planview", "infor", "netsuite", "adp", "ukg",
+        "mulesoft", "boomi", "workato", "zapier",
+    }
+
+    high_risk_names = {name for name in connector_names if tool_risk(name) == "high"}
+    assert high_risk_names == connector_names
+    assert tools_exceeding(connector_names, "medium") == connector_names
+
+
 def test_tool_risk_config_override(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     _write_config(tmp_path, '''
