@@ -257,7 +257,21 @@ def _browser_host_denial(url: str, allow_hosts: tuple[str, ...]) -> str | None:
 
 
 def _deny_and_close_current_page(page: Any, allow_hosts: tuple[str, ...]) -> str | None:
-    denial = _browser_host_denial(getattr(page, "url", ""), allow_hosts)
+    url = getattr(page, "url", "") or ""
+    # SSRF re-check on the URL we ACTUALLY landed on. page.goto / click / back
+    # follow 3xx redirects transparently, so the front-door _is_safe_browser_url
+    # check on the *requested* URL isn't enough -- a redirect to
+    # http://169.254.169.254/ or another internal host would otherwise be
+    # readable via screenshot / extract_*. If the current page is an http(s) URL
+    # on a non-public host, close the session so nothing can read it.
+    if url and _SAFE_URL_RE.match(url) and not _is_safe_browser_url(url):
+        close_browser()
+        host = (urlparse(url).hostname or "").strip().lower()
+        return (
+            f"⚠ DENIED: navigation landed on a private/internal host {host!r} "
+            "(redirect to a non-public address); the browser session was closed."
+        )
+    denial = _browser_host_denial(url, allow_hosts)
     if denial is None:
         return None
     close_browser()
