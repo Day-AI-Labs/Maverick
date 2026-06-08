@@ -128,6 +128,7 @@ _NET_TOOL_URL_ARGS: dict[str, str] = {
     "http_fetch": "url",
     "browser": "url",
     "oidc": "token_url",
+    "database": "url",
 }
 
 
@@ -968,11 +969,13 @@ class Agent:
         # check rather than error -- we never deny something we can't
         # confidently locate the host for.
         url_arg = _NET_TOOL_URL_ARGS.get(name)
-        if cap is not None and name == "browser" and cap.allow_hosts and isinstance(args, dict):
+        if (cap is not None and name in {"browser", "database"}
+                and cap.allow_hosts and isinstance(args, dict)):
             # The browser can follow redirects and later URL-less actions read or
-            # interact with the current page. Pass the active host scope into the
-            # tool so it can gate the final/current page host before returning
-            # content or continuing a restricted session.
+            # interact with the current page. The database tool may also resolve
+            # its URL from DATABASE_URL instead of an explicit arg. Pass the
+            # active host scope into those tools so they can gate their final
+            # host before returning content or continuing a restricted session.
             args = dict(args)
             args["_capability_allow_hosts"] = tuple(cap.allow_hosts)
         if cap is not None and url_arg is not None:

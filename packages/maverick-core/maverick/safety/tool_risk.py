@@ -56,6 +56,7 @@ _DEFAULT_RISK: dict[str, str] = {
     # device / recursively spawn. These used to fall through to the "medium"
     # default, so a max_risk="medium" channel ceiling failed to drop them.
     "sql_query": "high",
+    "database": "high",
     "lambda": "high",
     "cloudflare": "high",
     "vercel": "high",

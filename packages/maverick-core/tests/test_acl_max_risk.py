@@ -33,6 +33,7 @@ def test_tool_risk_defaults():
     assert tool_risk("code_exec") == "high"
     assert tool_risk("memory") == "high"
     assert tool_risk("obsidian") == "high"
+    assert tool_risk("database") == "high"
     assert tool_risk("read_file") == "low"
     # Unclassified tool falls back to medium.
     assert tool_risk("some_unknown_tool") == "medium"
@@ -110,6 +111,7 @@ max_risk = "medium"
     assert "memory" not in names
     assert "obsidian" not in names
     assert "write_file" not in names
+    assert "database" not in names
     assert "read_file" in names
 
 

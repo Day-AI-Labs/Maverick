@@ -1,8 +1,8 @@
 """P0 capability layer: host resource-scope enforcement at the tool chokepoint.
 
 A capability whose ``allow_hosts`` is non-empty restricts which network hosts
-the known network tools (http_fetch/browser/oidc) may reach: the host is parsed from
-the tool's URL argument and denied if it matches no ``allow_hosts`` glob.
+the known network tools (http_fetch/browser/oidc/database) may reach: the host
+is parsed from the tool's URL argument and denied if it matches no ``allow_hosts`` glob.
 Default-open: an empty ``allow_hosts`` (the common case, and the only state
 reachable without opting into capability enforcement) is a no-op, so normal
 behaviour is unchanged.
@@ -213,5 +213,39 @@ async def test_browser_receives_active_host_scope(tmp_path):
         "action": "navigate",
         "url": "https://api.example.com/x",
     })
+    assert "DENIED" not in out
+    assert calls[0]["_capability_allow_hosts"] == ("*.example.com",)
+
+
+@pytest.mark.asyncio
+async def test_database_url_outside_scope_denied_and_tool_not_run(tmp_path):
+    agent = _agent(tmp_path)
+    agent.capability = Capability(principal="agent:coder-1",
+                                  allow_hosts=frozenset({"*.example.com"}))
+    calls: list = []
+    agent.tools.register(_spy_tool("database", calls))
+
+    out = await agent._run_tool("database", {"url": "postgresql://evil.com/db"})
+
+    assert "DENIED by capability" in out
+    assert "evil.com" in out
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_database_receives_active_host_scope_for_env_url(tmp_path):
+    agent = _agent(tmp_path)
+    agent.capability = Capability(principal="agent:coder-1",
+                                  allow_hosts=frozenset({"*.example.com"}))
+    calls: list = []
+    agent.tools.register(Tool(
+        name="database",
+        description="spy database",
+        fn=lambda args: calls.append(args) or "ran",
+        input_schema={"type": "object", "properties": {"url": {"type": "string"}}},
+    ))
+
+    out = await agent._run_tool("database", {"op": "query", "sql": "SELECT 1"})
+
     assert "DENIED" not in out
     assert calls[0]["_capability_allow_hosts"] == ("*.example.com",)
