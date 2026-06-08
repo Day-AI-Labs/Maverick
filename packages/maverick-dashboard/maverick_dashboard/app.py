@@ -690,6 +690,9 @@ async def providers_page(request: Request) -> HTMLResponse:
 # ----- Control surface pages (council pass) -----
 
 _AUDIT_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_OVERSIGHT_RANGE_MAX_EVENTS = 200_000
+_OVERSIGHT_RANGE_MAX_BYTES = 64 * 1024 * 1024
+_OVERSIGHT_RANGE_MAX_FILES = 3660
 
 
 def safe_audit_day(day: str | None) -> str | None:
@@ -818,12 +821,13 @@ async def oversight_page(request: Request) -> HTMLResponse:
         # reusing the export reader's lexical date filter (open-ended if one
         # bound is unset). Bound the file scan on a very wide window.
         from maverick.audit.export import iter_audit_events
-        scanned = 0
         try:
-            for e in iter_audit_events(since=since, until=until):
-                scanned += 1
-                if scanned > 200_000:
-                    break
+            for e in iter_audit_events(
+                since=since, until=until,
+                max_events=_OVERSIGHT_RANGE_MAX_EVENTS,
+                max_bytes=_OVERSIGHT_RANGE_MAX_BYTES,
+                max_files=_OVERSIGHT_RANGE_MAX_FILES,
+            ):
                 if _is_intervention(e):
                     by_kind[str(e.get("kind"))] += 1
                     total += 1

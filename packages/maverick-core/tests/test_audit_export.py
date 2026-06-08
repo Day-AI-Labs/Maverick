@@ -311,6 +311,50 @@ def test_iter_since_is_inclusive_and_open_ended(monkeypatch, tmp_path):
     assert names == {"jun"}
 
 
+def test_iter_streams_day_files_without_read_text(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    audit_dir = tmp_path / ".maverick" / "audit"
+    _write_day(audit_dir, "2020-06-15", name="streamed")
+
+    path_type = type(audit_dir / "2020-06-15.ndjson")
+
+    def forbidden_read_text(self, *args, **kwargs):
+        raise AssertionError("iter_audit_events must stream, not read_text()")
+
+    monkeypatch.setattr(path_type, "read_text", forbidden_read_text)
+
+    names = {e.get("name") for e in iter_audit_events(since="2020-06-01")}
+    assert names == {"streamed"}
+
+
+def test_iter_range_max_bytes_stops_before_later_files(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    audit_dir = tmp_path / ".maverick" / "audit"
+    _write_day(audit_dir, "2020-01-01", name="too-large")
+    _write_day(audit_dir, "2020-01-02", name="later")
+
+    names = {
+        e.get("name")
+        for e in iter_audit_events(since="2020-01-01", max_bytes=1)
+    }
+    assert names == set()
+
+
+def test_iter_range_max_events_caps_yielded_events(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    audit_dir = tmp_path / ".maverick" / "audit"
+    _write_day(audit_dir, "2020-01-01", name="first")
+    _write_day(audit_dir, "2020-01-02", name="second")
+
+    names = [
+        e.get("name")
+        for e in iter_audit_events(since="2020-01-01", max_events=1)
+    ]
+    assert names == ["first"]
+
 def test_cli_export_since_until(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("MAVERICK_TENANT", raising=False)

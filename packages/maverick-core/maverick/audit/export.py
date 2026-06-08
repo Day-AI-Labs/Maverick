@@ -19,6 +19,9 @@ from typing import Any
 
 from .events import is_valid_day
 
+_AUDIT_READ_CHUNK_BYTES = 64 * 1024
+_MAX_AUDIT_LINE_BYTES = 1024 * 1024
+
 log = logging.getLogger(__name__)
 
 # CEF severity (0-10). Default low; bump for denial/halt/block kinds so a
@@ -82,10 +85,66 @@ def audit_event_paths(
     return [audit_dir / f"{d}.ndjson"]
 
 
+def _iter_audit_lines(
+    path: Path,
+    *,
+    max_bytes: int | None = None,
+) -> Iterator[str]:
+    """Yield decoded audit lines without materializing the whole file.
+
+    A malicious or corrupt day-file can otherwise force consumers to allocate
+    the complete file (or a single giant line) before caller-side limits run.
+    Read in fixed-size binary chunks so range views can place an effective cap
+    on total bytes read. Overlong or undecodable lines are skipped fail-soft,
+    matching the event parser's malformed-line behavior.
+    """
+    bytes_read = 0
+    pending = b""
+    dropping_long_line = False
+    with path.open("rb") as fh:
+        while True:
+            if max_bytes is not None and bytes_read >= max_bytes:
+                return
+            read_size = _AUDIT_READ_CHUNK_BYTES
+            if max_bytes is not None:
+                read_size = min(read_size, max_bytes - bytes_read)
+                if read_size <= 0:
+                    return
+            chunk = fh.read(read_size)
+            if not chunk:
+                if pending and not dropping_long_line:
+                    try:
+                        yield pending.decode("utf-8")
+                    except UnicodeDecodeError:
+                        pass
+                return
+            bytes_read += len(chunk)
+            parts = chunk.split(b"\n")
+            parts[0] = pending + parts[0]
+            for raw_line in parts[:-1]:
+                if dropping_long_line:
+                    dropping_long_line = False
+                    pending = b""
+                    continue
+                if len(raw_line) > _MAX_AUDIT_LINE_BYTES:
+                    continue
+                try:
+                    yield raw_line.decode("utf-8")
+                except UnicodeDecodeError:
+                    continue
+            pending = parts[-1]
+            if len(pending) > _MAX_AUDIT_LINE_BYTES:
+                pending = b""
+                dropping_long_line = True
+
+
 def iter_audit_events(
     *, day: str | None = None, all_days: bool = False,
     since: str | None = None, until: str | None = None,
     tenant: str | None = None,
+    max_events: int | None = None,
+    max_bytes: int | None = None,
+    max_files: int | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Yield audit event dicts from the tenant-aware audit dir.
 
@@ -94,27 +153,44 @@ def iter_audit_events(
     cross-file ``anchors.ndjson`` tip-ledger (matching ``audit verify``);
     otherwise a single day-file is read (``day`` or today, UTC).
     Malformed/unreadable lines and a missing dir are skipped silently
-    (fail-soft).
+    (fail-soft). Optional caps let HTTP callers bound work before reading
+    attacker-selectable historical ranges.
     """
     paths = audit_event_paths(
         day=day, all_days=all_days, since=since, until=until, tenant=tenant,
     )
 
+    if max_files is not None:
+        paths = paths[:max(0, max_files)]
+
+    yielded = 0
+    bytes_remaining = max_bytes
     for path in paths:
         try:
-            text = path.read_text(encoding="utf-8")
+            before = bytes_remaining
+            for line in _iter_audit_lines(path, max_bytes=bytes_remaining):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(event, dict):
+                    yield event
+                    yielded += 1
+                    if max_events is not None and yielded >= max_events:
+                        return
+            if before is not None:
+                try:
+                    used = min(path.stat().st_size, before)
+                except OSError:
+                    used = before
+                bytes_remaining = max(0, before - used)
+                if bytes_remaining <= 0:
+                    return
         except OSError:
             continue
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(event, dict):
-                yield event
 
 
 def to_jsonl(event: dict[str, Any]) -> str:

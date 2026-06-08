@@ -194,6 +194,30 @@ def test_multiday_range_spans_day_files(monkeypatch, tmp_path):
     assert "2026-01-01" in text and "2026-02-28" in text  # range shown in label
 
 
+def test_multiday_range_uses_bounded_export_reader(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    import maverick.audit.export as export
+    import maverick_dashboard.app as app_mod
+
+    captured = {}
+
+    def fake_iter_audit_events(**kwargs):
+        captured.update(kwargs)
+        yield {
+            "kind": "shield_block",
+            "stage": "tool",
+            "reason": "bounded-reader",
+        }
+
+    monkeypatch.setattr(export, "iter_audit_events", fake_iter_audit_events)
+
+    text = _client().get("/oversight?since=2026-01-01").text
+
+    assert "bounded-reader" in text
+    assert captured["max_events"] == app_mod._OVERSIGHT_RANGE_MAX_EVENTS
+    assert captured["max_bytes"] == app_mod._OVERSIGHT_RANGE_MAX_BYTES
+    assert captured["max_files"] == app_mod._OVERSIGHT_RANGE_MAX_FILES
+
 def test_range_inputs_present(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     text = _client().get("/oversight").text
