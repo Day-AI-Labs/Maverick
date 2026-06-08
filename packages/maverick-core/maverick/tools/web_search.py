@@ -162,6 +162,45 @@ def _try_serpapi(query: str, num: int) -> list[dict] | None:
     return out
 
 
+# Length-bounded result matcher. Every quantifier is capped so a hostile or
+# malformed page can't drive catastrophic backtracking (ReDoS): the old
+# unbounded `(.+?) ... .*? ... (.+?)` with DOTALL scanned to EOF for each of
+# many result anchors -> quadratic blow-up on a large response. Titles/snippets
+# longer than the cap are skipped rather than scanned, which real DDG lite
+# output never hits.
+_MAX_DDG_HTML = 1_000_000
+_DDG_RESULT_RE = re.compile(
+    r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.{0,500}?)</a>'
+    r'.{0,4000}?<a[^>]+class="result__snippet"[^>]*>(.{0,4000}?)</a>',
+    re.DOTALL,
+)
+
+
+def _parse_ddg_results(html: str, num: int) -> list[dict]:
+    """Extract up to ``num`` (title, url, snippet) rows from DDG lite HTML.
+
+    Pure + length-bounded (see ``_DDG_RESULT_RE``) so it can't hang on a
+    pathological page. DDG wraps the real URL in a ``/l/?uddg=`` redirector,
+    which is unwrapped here; non-http targets are dropped.
+    """
+    out: list[dict] = []
+    for m in _DDG_RESULT_RE.finditer(html):
+        url_redirect = m.group(1)
+        title_html = re.sub(r"<.*?>", "", m.group(2)).strip()
+        snippet_html = re.sub(r"<.*?>", "", m.group(3)).strip()
+        real = url_redirect
+        m_uddg = re.search(r"uddg=([^&]+)", url_redirect)
+        if m_uddg:
+            from urllib.parse import unquote
+            real = unquote(m_uddg.group(1))
+        if not real.startswith("http"):
+            continue
+        out.append({"title": title_html, "url": real, "snippet": snippet_html})
+        if len(out) >= num:
+            break
+    return out
+
+
 def _try_duckduckgo(query: str, num: int) -> list[dict] | None:
     """Last-resort: DuckDuckGo HTML scrape via the official lite endpoint."""
     try:
@@ -181,31 +220,11 @@ def _try_duckduckgo(query: str, num: int) -> list[dict] | None:
     except Exception as e:
         log.warning("duckduckgo search failed: %s", e)
         return None
-    # DDG HTML lite returns <a class="result__a" href="...">...</a> with
-    # adjacent <a class="result__snippet">. Extract via regex (not a
-    # general HTML parser -- the lite endpoint output is stable enough).
-    pattern = re.compile(
-        r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.+?)</a>'
-        r'.*?<a[^>]+class="result__snippet"[^>]*>(.+?)</a>',
-        re.DOTALL,
-    )
-    out: list[dict] = []
-    for m in pattern.finditer(html):
-        url_redirect = m.group(1)
-        title_html = re.sub(r"<.*?>", "", m.group(2)).strip()
-        snippet_html = re.sub(r"<.*?>", "", m.group(3)).strip()
-        # DDG wraps real URLs in a redirector ("/l/?uddg=..."); extract.
-        real = url_redirect
-        m_uddg = re.search(r"uddg=([^&]+)", url_redirect)
-        if m_uddg:
-            from urllib.parse import unquote
-            real = unquote(m_uddg.group(1))
-        if not real.startswith("http"):
-            continue
-        out.append({"title": title_html, "url": real, "snippet": snippet_html})
-        if len(out) >= num:
-            break
-    return out
+    # DDG HTML lite returns <a class="result__a" href="...">...</a> with an
+    # adjacent <a class="result__snippet">. Parse via a length-bounded regex
+    # (capped input size as defense-in-depth) -- not a general HTML parser; the
+    # lite endpoint output is stable enough.
+    return _parse_ddg_results(html[:_MAX_DDG_HTML], num)
 
 
 _BACKENDS = {
