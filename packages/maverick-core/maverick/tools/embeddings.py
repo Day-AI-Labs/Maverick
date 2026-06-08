@@ -108,12 +108,23 @@ def _op_similarity(a: str, b: str, model_name: str) -> str:
     return f"cosine = {_cosine(va, vb):.4f}"
 
 
+_MAX_RANK_CANDIDATES = 1000
+
+
 def _op_rank(query: str, candidates: list[str], top_k: int, model_name: str) -> str:
     if not query.strip():
         return "ERROR: rank requires query"
     candidates = [c for c in (candidates or []) if c and c.strip()]
     if not candidates:
         return "ERROR: rank requires non-empty candidates"
+    # Bound the work: each candidate is embedded, so an unbounded model-supplied
+    # list (tens of thousands of strings) is a memory / compute DoS. Refuse past
+    # a generous cap rather than embed them all.
+    if len(candidates) > _MAX_RANK_CANDIDATES:
+        return (
+            f"ERROR: rank supports at most {_MAX_RANK_CANDIDATES} candidates "
+            f"(got {len(candidates)}); narrow the set first"
+        )
     model = _load_model(model_name)
     qv = _embed_one(model, query)
     scored: list[tuple[float, int, str]] = []
