@@ -280,6 +280,28 @@ def test_anonymize_scrubs_text_keys():
     assert isinstance(out["summary"], str)
 
 
+def test_anonymize_scrubs_nested_message_content_blocks():
+    # Anthropic/OpenAI messages nest the real text under content[].text. In anon
+    # mode that nested text must be scrubbed (home path -> ~), not passed through
+    # verbatim. Uses the unconditional home-path rewrite for a deterministic check.
+    from pathlib import Path
+
+    from maverick.privacy import anonymize_dict
+
+    home = str(Path.home())
+    payload = {
+        "messages": [
+            {"role": "user", "content": [
+                {"type": "text", "text": f"secret lives at {home}/vault"},
+            ]},
+        ],
+    }
+    out = anonymize_dict(payload)
+    nested = out["messages"][0]["content"][0]["text"]
+    assert home not in nested
+    assert "~/vault" in nested
+
+
 # ---------- unicode filter ----------
 
 def test_unicode_strips_zero_width():
