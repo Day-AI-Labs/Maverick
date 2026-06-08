@@ -87,6 +87,32 @@
         {% else %}
           <p class="muted" style="margin-bottom: 0;">No agents in this fleet yet.</p>
         {% endif %}
+        {% set runs = runs_by_fleet.get(fleet.name) %}
+        <div class="muted" style="margin-top: 0.9rem; font-size: 0.7rem; text-transform: uppercase;">recent runs</div>
+        {% if runs %}
+          <table style="margin-top: 0.4rem;">
+            <thead><tr>
+              <th scope="col">agent</th><th scope="col">goal</th>
+              <th scope="col">title</th><th scope="col">status</th>
+              <th scope="col">when</th>
+            </tr></thead>
+            <tbody>
+            {% for run in runs %}
+              <tr>
+                <td><code>{{ run.agent }}</code></td>
+                <td class="muted" style="white-space: nowrap;">#{{ run.goal_id }}</td>
+                <td>{{ run.title }}</td>
+                <td><span class="badge {{ run.status }}">{{ run.status }}</span></td>
+                <td class="muted" style="white-space: nowrap;">{{ run.ts | datetime }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="muted" style="margin: 0.4rem 0 0;">
+            No runs yet — dispatch a task above (or <code>maverick fleet run</code>).
+          </p>
+        {% endif %}
       </div>
     {% endfor %}
   {% else %}
