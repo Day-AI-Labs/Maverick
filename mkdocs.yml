@@ -96,6 +96,11 @@ nav:
       - Regulated deployment: regulated-deployment.md
       - Compliance assessments: compliance-assessments.md
       - Agent threat hunting: threat-hunting.md
+  - Enterprise:
+      - Editions: enterprise/editions.md
+      - Security & compliance overview: enterprise/security-overview.md
+      - Architecture: enterprise/architecture.md
+      - Diligence data room: enterprise/diligence.md
   - Roadmap:
       - 36-month plan: ROADMAP.md
   - Community:
