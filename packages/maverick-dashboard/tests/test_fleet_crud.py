@@ -61,6 +61,28 @@ def test_create_rejects_bad_agent_name(monkeypatch, tmp_path):
     assert r.status_code == 400
 
 
+def test_create_rejects_missing_agent_role(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    r = _client().post(
+        "/api/v1/fleets",
+        json={"name": "ok", "agents": [{"name": "worker", "role": "   "}]},
+    )
+    assert r.status_code == 400
+
+
+def test_create_rejects_unknown_configured_role(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda *a, **k: {"roles": {"analyst": {"allow_tools": ["read_file"]}}},
+    )
+    r = _client().post(
+        "/api/v1/fleets",
+        json={"name": "ok", "agents": [{"name": "worker", "role": "ghost"}]},
+    )
+    assert r.status_code == 400
+
+
 def test_create_owned_by_caller(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     _as(monkeypatch, "user:dana")
