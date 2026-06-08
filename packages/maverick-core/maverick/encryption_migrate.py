@@ -32,6 +32,15 @@ _SEALED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("messages", "content"),
     ("questions", "question"),
     ("questions", "answer"),
+    ("goals", "title"),
+    ("goals", "description"),
+    ("goals", "result"),
+    ("goal_events", "content"),
+    ("episodes", "summary"),
+    ("episodes", "outcome"),
+    ("approvals", "action"),
+    ("approvals", "scope"),
+    ("approvals", "detail"),
 )
 
 
@@ -55,6 +64,10 @@ def migrate_world_db(db_path: Path, *, dry_run: bool = False) -> dict[str, int]:
     conn.row_factory = sqlite3.Row
     try:
         conn.execute("PRAGMA busy_timeout=5000")
+        # Zero freed cells as rows are re-sealed in place, so the pre-encryption
+        # plaintext can't be recovered from the DB file's free list.
+        if not dry_run:
+            conn.execute("PRAGMA secure_delete=ON")
         for table, col in _SEALED_COLUMNS:
             try:
                 rows = conn.execute(
@@ -76,10 +89,34 @@ def migrate_world_db(db_path: Path, *, dry_run: bool = False) -> dict[str, int]:
             report[f"{table}.{col}"] = sealed
         if not dry_run:
             conn.commit()
+            _shred_residue(conn, report)
     finally:
         conn.close()
     log.info("encryption migrate (dry_run=%s): %s", dry_run, report)
     return report
+
+
+def _shred_residue(conn: sqlite3.Connection, report: dict[str, int]) -> None:
+    """Make the pre-encryption plaintext unrecoverable from the DB file.
+
+    ``secure_delete=ON`` already zeroed the freed cells as rows were re-sealed in
+    place; this additionally flushes + truncates the WAL sidecar (which can still
+    hold pre-migration plaintext frames) and VACUUMs to rebuild the file with no
+    residual free pages. Best-effort: if the DB is locked (e.g. the agent is
+    running) the rebuild is skipped with a warning -- the in-place zeroing stands.
+    """
+    if not any(report.values()):
+        return
+    conn.isolation_level = None   # autocommit: VACUUM / checkpoint need no open txn
+    try:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.execute("VACUUM")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except sqlite3.OperationalError as e:
+        log.warning(
+            "encryption migrate: could not VACUUM/checkpoint to shred residue "
+            "(%s); freed pages were still zeroed in place via secure_delete", e,
+        )
 
 
 __all__ = ["migrate_world_db"]

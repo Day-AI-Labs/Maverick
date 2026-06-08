@@ -294,7 +294,7 @@ class TestHooks:
 
     @pytest.mark.asyncio
     async def test_hook_exception_is_isolated(self):
-        """A buggy hook must not take down the agent."""
+        """A buggy hook must not take down the agent (no exception propagates)."""
         from maverick import hooks
         from maverick.hooks import HookContext, HookEvent
 
@@ -302,11 +302,13 @@ class TestHooks:
             raise RuntimeError("oops")
 
         hooks.register(HookEvent.PRE_TOOL_USE, bad)
-        # Doesn't propagate; bad hook fails open.
+        # The exception is caught (the agent doesn't crash). PRE_TOOL_USE is a
+        # blocking gate, so a hook that errors now fails CLOSED -- the action is
+        # denied rather than silently allowed past a broken guard.
         allowed = await hooks.dispatch(HookContext(
             event=HookEvent.PRE_TOOL_USE, tool_name="shell",
         ))
-        assert allowed is True
+        assert allowed is False
 
     @pytest.mark.asyncio
     async def test_async_callable_hook(self):

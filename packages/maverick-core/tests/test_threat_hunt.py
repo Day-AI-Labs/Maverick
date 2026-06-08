@@ -73,3 +73,33 @@ def test_cli_hunt_reports_and_strict_gates(monkeypatch):
 def test_rollup(severities, expected):
     findings = [threat_hunt.ThreatFinding("k", "t", s, 1, ["a"], 0.0) for s in severities]
     assert threat_hunt._rollup(findings) == expected
+
+
+def test_one_poisoned_event_does_not_blind_the_sweep(monkeypatch):
+    # A well-formed event with a hostile ts must not abort the scan and hide
+    # the later attack signals.
+    _feed(monkeypatch, [
+        {"kind": "egress_blocked", "agent": "a", "ts": 1.0},
+        {"kind": "shield_block", "agent": "b", "ts": "NOT-A-NUMBER"},
+        {"kind": "capability_denied", "agent": "c", "ts": 3.0},
+    ])
+    kinds = {f.kind for f in threat_hunt.hunt().findings}
+    assert {"egress_blocked", "shield_block", "capability_denied"} <= kinds
+
+
+def test_consent_denial_is_a_signal_but_approval_is_not(monkeypatch):
+    _feed(monkeypatch, [
+        {"kind": "consent_result", "agent": "a", "ts": 1.0, "decision": "deny"},
+        {"kind": "consent_result", "agent": "a", "ts": 2.0, "decision": "approve"},
+        {"kind": "consent_result", "agent": "a", "ts": 3.0, "decision": "timeout"},
+    ])
+    cr = [f for f in threat_hunt.hunt().findings if f.kind == "consent_result"]
+    assert len(cr) == 1 and cr[0].count == 2     # deny + timeout, not approve
+
+
+def test_free_text_samples_are_truncated_and_control_stripped(monkeypatch):
+    _feed(monkeypatch, [
+        {"kind": "shield_block", "agent": "a", "ts": 1.0, "reason": "x\n" * 500},
+    ])
+    reason = threat_hunt.hunt().findings[0].samples[0]["reason"]
+    assert "\n" not in reason and len(reason) <= 160

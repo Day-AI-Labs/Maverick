@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .events import AuditEvent, EventKind
+from .events import AuditEvent, EventKind, is_valid_day
 
 log = logging.getLogger(__name__)
 
@@ -128,6 +128,12 @@ class AuditLog:
             _live_logs.add(self)
 
     def _path_for(self, day_str: str) -> Path:
+        # ``day_str`` becomes a path component; refuse anything that isn't a
+        # bare YYYY-MM-DD so a crafted ``day`` (e.g. ``../../etc/passwd``)
+        # can't escape the audit dir. ``_rotate_if_needed`` only ever passes a
+        # strftime value, so the write path is unaffected.
+        if not is_valid_day(day_str):
+            raise ValueError(f"invalid audit day {day_str!r}: expected YYYY-MM-DD")
         return self.audit_dir / f"{day_str}.ndjson"
 
     def _ensure_dir(self) -> bool:

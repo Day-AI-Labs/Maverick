@@ -121,6 +121,19 @@ def _parse(text: str) -> VerifierVerdict:
     issues_raw = data.get("issues", []) or []
     issues = [str(x) for x in issues_raw if x]
 
+    # Enforce the confidence floor in code -- VERIFIER_CONFIDENCE_ACCEPT was
+    # dead, so the model's raw `accepts` boolean was trusted verbatim. The
+    # verifier is the last correctness gate before FINAL, so accepting a
+    # low-confidence verdict is a fail-open a miscalibrated/jailbroken verifier
+    # could exploit (accepts=true, confidence=0.1). Below the threshold the
+    # verdict is forced to a reject with a revision brief.
+    if accepts and confidence < VERIFIER_CONFIDENCE_ACCEPT:
+        accepts = False
+        critique = critique or (
+            f"verifier confidence {confidence:.2f} is below the accept "
+            f"threshold {VERIFIER_CONFIDENCE_ACCEPT:.2f}"
+        )
+
     return VerifierVerdict(
         confidence=confidence,
         accepts=accepts,

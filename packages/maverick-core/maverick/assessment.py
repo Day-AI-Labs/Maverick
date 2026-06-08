@@ -9,11 +9,14 @@ an arbitrary third-party subject.
 
 A template is plain data (:class:`AssessmentTemplate` -> :class:`Question`), so
 new assessment types are added by appending to :data:`TEMPLATES`, not by writing
-code. The three built in here:
+code. The frameworks built in here:
 
   - ``pia``         -- Privacy Impact Assessment (ISO 29134 / GDPR Art. 35 flavour)
   - ``aira``        -- AI Risk Assessment (NIST AI RMF / EU AI Act flavour)
   - ``vendor_risk`` -- Third-party / vendor risk assessment (TPRM flavour)
+  - ``hipaa``       -- HIPAA Security Rule safeguards (45 CFR Part 164)
+  - ``soc2``        -- SOC 2 Trust Services Criteria readiness (AICPA)
+  - ``pci_dss``     -- PCI DSS v4.0 cardholder-data controls
 
 The scoring is a transparent max-severity rollup: a question's *risk answer*
 raises a finding at its severity; ``unknown`` raises an "unverified" finding
@@ -27,6 +30,7 @@ a thin layer on top of this engine, exactly as the intake agent sits on
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -342,10 +346,135 @@ _CLOSE_READINESS = AssessmentTemplate(
     ),
 )
 
+_HIPAA = AssessmentTemplate(
+    type="hipaa",
+    title="HIPAA Security Rule Assessment",
+    framework="HIPAA Security Rule (45 CFR Part 164)",
+    description="Assess safeguards for electronic protected health information (ePHI).",
+    questions=(
+        _q("hipaa_risk_analysis", "Administrative safeguards",
+           "Has a security risk analysis of ePHI been conducted and documented?",
+           "no", "high", "Conduct + document a risk analysis (164.308(a)(1)(ii)(A))."),
+        _q("hipaa_access_control", "Technical safeguards",
+           "Is access to ePHI restricted by unique user IDs and role-based controls?",
+           "no", "high", "Enforce unique user IDs + least-privilege access (164.312(a))."),
+        _q("hipaa_encryption", "Technical safeguards",
+           "Is ePHI encrypted in transit and at rest?",
+           "no", "high", "Encrypt ePHI at rest and in transit, or document the "
+           "addressable rationale (164.312(a)(2)(iv)/(e))."),
+        _q("hipaa_audit_controls", "Technical safeguards",
+           "Are audit controls in place to record and examine ePHI access?",
+           "no", "high", "Enable audit logging of ePHI access + review (164.312(b))."),
+        _q("hipaa_baa", "Administrative safeguards",
+           "Is a Business Associate Agreement in place with every vendor that "
+           "handles ePHI?",
+           "no", "high", "Execute a BAA before a business associate touches ePHI "
+           "(164.308(b))."),
+        _q("hipaa_training", "Administrative safeguards",
+           "Does the workforce receive periodic HIPAA security awareness training?",
+           "no", "medium", "Provide + document security training (164.308(a)(5))."),
+        _q("hipaa_contingency", "Administrative safeguards",
+           "Is there a tested data-backup and disaster-recovery / contingency plan?",
+           "no", "medium", "Maintain + test backup/contingency plans (164.308(a)(7))."),
+        _q("hipaa_breach_notification", "Breach Notification Rule",
+           "Is there a documented breach-notification process meeting the 60-day rule?",
+           "no", "high", "Document breach assessment + notification (164.404, 60 days)."),
+        _q("hipaa_minimum_necessary", "Privacy Rule",
+           "Is the 'minimum necessary' standard applied to ePHI use and disclosure?",
+           "no", "medium", "Limit ePHI use/disclosure to minimum necessary (164.502(b))."),
+        _q("hipaa_integrity", "Technical safeguards",
+           "Are mechanisms in place to ensure ePHI is not improperly altered or "
+           "destroyed?",
+           "no", "medium", "Implement integrity controls for ePHI (164.312(c))."),
+    ),
+)
+
+_SOC2 = AssessmentTemplate(
+    type="soc2",
+    title="SOC 2 Readiness Assessment",
+    framework="SOC 2 Trust Services Criteria (AICPA)",
+    description="Assess readiness against the SOC 2 common/security criteria.",
+    questions=(
+        _q("soc2_access", "CC6 Logical access",
+           "Are logical access controls (unique IDs, MFA, least privilege) enforced?",
+           "no", "high", "Enforce MFA, RBAC, and unique IDs for all access (CC6.1)."),
+        _q("soc2_change_mgmt", "CC8 Change management",
+           "Are changes to production reviewed, tested, and approved before release?",
+           "no", "high", "Adopt a documented change-management process (CC8.1)."),
+        _q("soc2_risk", "CC3 Risk assessment",
+           "Is a formal risk assessment performed and documented at least annually?",
+           "no", "medium", "Run + document an annual risk assessment (CC3.1)."),
+        _q("soc2_monitoring", "CC7 System operations",
+           "Are systems monitored for security events with alerting?",
+           "no", "high", "Deploy monitoring + alerting for anomalies (CC7.2)."),
+        _q("soc2_incident", "CC7 System operations",
+           "Is there a documented and tested incident-response plan?",
+           "no", "high", "Document + test an incident-response plan (CC7.4)."),
+        _q("soc2_vendor", "CC9 Risk mitigation",
+           "Are vendors risk-assessed before onboarding and monitored over time?",
+           "no", "medium", "Run vendor due diligence + ongoing monitoring (CC9.2)."),
+        _q("soc2_encryption", "CC6 Logical access",
+           "Is data encrypted in transit and at rest?",
+           "no", "high", "Encrypt data in transit (TLS) and at rest (CC6.7)."),
+        _q("soc2_backup", "A1 Availability",
+           "Are backups performed and recovery periodically tested?",
+           "no", "medium", "Perform backups + test restores periodically (A1.2)."),
+        _q("soc2_policies", "CC1/CC2 Control environment",
+           "Are information-security policies documented, approved, and communicated?",
+           "no", "medium", "Maintain approved, communicated security policies "
+           "(CC1.1/CC2.2)."),
+        _q("soc2_deprovision", "CC6 Logical access",
+           "Is access revoked promptly when personnel are terminated?",
+           "no", "medium", "Automate timely deprovisioning on termination (CC6.2/6.3)."),
+    ),
+)
+
+_PCI_DSS = AssessmentTemplate(
+    type="pci_dss",
+    title="PCI DSS Assessment",
+    framework="PCI DSS v4.0",
+    description="Assess controls protecting cardholder data (the CDE).",
+    questions=(
+        _q("pci_segmentation", "Req 1 Network security",
+           "Is the cardholder data environment (CDE) segmented from other networks?",
+           "no", "high", "Segment + firewall the CDE from untrusted networks (Req 1)."),
+        _q("pci_defaults", "Req 2 Secure configuration",
+           "Have vendor-default passwords and settings been changed on CDE systems?",
+           "no", "high", "Remove/replace all vendor defaults before deployment (Req 2)."),
+        _q("pci_stored_pan", "Req 3 Protect stored data",
+           "Is stored cardholder data (PAN) rendered unreadable "
+           "(encryption / truncation / tokenization)?",
+           "no", "high", "Encrypt or tokenize stored PAN; never store sensitive "
+           "authentication data (Req 3)."),
+        _q("pci_transit", "Req 4 Protect data in transit",
+           "Is cardholder data encrypted with strong cryptography over open networks?",
+           "no", "high", "Use TLS 1.2+ for cardholder data in transit (Req 4)."),
+        _q("pci_malware", "Req 5 Malware protection",
+           "Is anti-malware deployed and kept current on applicable CDE systems?",
+           "no", "medium", "Deploy + update anti-malware on applicable systems (Req 5)."),
+        _q("pci_secure_dev", "Req 6 Secure systems",
+           "Are systems patched promptly and software developed securely?",
+           "no", "high", "Patch promptly + follow a secure SDLC (Req 6)."),
+        _q("pci_need_to_know", "Req 7 Restrict access",
+           "Is access to cardholder data restricted by business need-to-know?",
+           "no", "high", "Enforce least-privilege need-to-know access to CHD (Req 7)."),
+        _q("pci_auth", "Req 8 Authenticate access",
+           "Is MFA with unique IDs enforced for all access to the CDE?",
+           "no", "high", "Require MFA + unique credentials for all CDE access (Req 8)."),
+        _q("pci_logging", "Req 10 Log and monitor",
+           "Is all access to cardholder data and CDE systems logged and reviewed?",
+           "no", "high", "Log + review access to cardholder data (Req 10)."),
+        _q("pci_testing", "Req 11 Test security",
+           "Are vulnerability scans and penetration tests performed regularly?",
+           "no", "medium", "Run quarterly ASV scans + annual penetration tests (Req 11)."),
+    ),
+)
+
 TEMPLATES: dict[str, AssessmentTemplate] = {
     t.type: t for t in (
         _PIA, _AIRA, _VENDOR_RISK,
         _SOX_CONTROL, _FRAUD_RISK, _ITGC, _CREDIT_RISK, _CLOSE_READINESS,
+        _HIPAA, _SOC2, _PCI_DSS,
     )
 }
 
@@ -441,16 +570,25 @@ def save_session(session: AssessmentSession) -> Path:
     """Persist a session + its current evaluation as JSON. Returns the path."""
     d = _assessments_dir()
     d.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(d, 0o700)
+    except OSError:
+        pass
     result = session.evaluate()
     path = d / f"{session.id}.json"
-    path.write_text(json.dumps({
+    payload = json.dumps({
         "id": session.id,
         "type": session.type,
         "subject": session.subject,
         "created_at": session.created_at,
         "answers": session.answers,
         "result": asdict(result),
-    }, indent=2, default=str), encoding="utf-8")
+    }, indent=2, default=str)
+    # The assessment holds sensitive content (subject, answers, findings); write
+    # it 0600 so a co-tenant on a shared host can't read it (like dsar export).
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(payload)
     return path
 
 
@@ -478,7 +616,13 @@ def list_saved() -> list[dict]:
 
 
 def load_saved(assessment_id: str) -> dict | None:
-    path = _assessments_dir() / f"{assessment_id}.json"
+    base = _assessments_dir()
+    path = (base / f"{assessment_id}.json").resolve()
+    # Guard against path traversal: ``assessment_id`` is a server-generated id and
+    # the file must sit directly in the assessments dir. A ``../`` id resolves
+    # outside it and is refused (so `assess show ../../etc/passwd` can't read it).
+    if path.parent != base.resolve():
+        return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -582,7 +726,8 @@ PRIVACY_ANALYST_PERSONA = (
     "1. RESEARCH the subject from the documents/context you are given (read_file, "
     "knowledge_search) and the web (web_search), gathering the evidence each "
     "question needs.\n"
-    "2. start_assessment for the right type (vendor_risk / aira / pia), then answer "
+    "2. start_assessment for the right framework (call list_assessments for the set "
+    "-- privacy: vendor_risk/aira/pia; security: hipaa/soc2/pci_dss), then answer "
     "each question from that evidence with answer_question -- yes/no/na, or "
     "'unknown' when the evidence is genuinely silent. NEVER guess.\n"
     "3. For each risk, call find_controls to cite the specific control and framework "
@@ -592,10 +737,13 @@ PRIVACY_ANALYST_PERSONA = (
     "to sign off. You never approve or certify compliance yourself."
 )
 
-# The analyst's safe envelope: read-only research + the control catalog. Anything
-# mutating or outward (shell, write_file, ...) is deliberately excluded.
+# The analyst's safe envelope: read-only research + the control catalog. Mutating
+# tools (shell, write_file, ...) are excluded -- and so is ``http_fetch``: it can
+# POST an arbitrary body to any URL, which a prompt-injected analyst (it ingests
+# untrusted subject material) could use to exfiltrate what it read. ``web_search``
+# stays as the research channel (a query, not an arbitrary request body).
 _ANALYST_RESEARCH_TOOLS = (
-    "read_file", "web_search", "knowledge_search", "find_controls", "http_fetch",
+    "read_file", "web_search", "knowledge_search", "find_controls",
 )
 
 
@@ -634,7 +782,58 @@ def build_privacy_analyst_agent(ctx, session: AssessmentSession | None = None):
     return agent, session
 
 
+COMPLIANCE_AUDITOR_PERSONA = (
+    "You are Maverick's compliance auditor. Given a framework (hipaa / soc2 / "
+    "pci_dss, or another from list_assessments) and a subject -- usually THIS "
+    "deployment, sometimes a vendor -- you produce an audit-readiness report a "
+    "human compliance officer signs off.\n"
+    "1. list_assessments, then start_assessment for the framework.\n"
+    "2. Gather EVIDENCE before answering: deployment_posture for this system's live "
+    "control state, read_file / knowledge_search for policies and documents, "
+    "web_search for the framework's requirements. Answer each control with "
+    "answer_question -- yes/na when the evidence shows it is met, no when it is not, "
+    "'unknown' when there is NO evidence (an honest gap, never a guessed pass).\n"
+    "3. For each gap, find_controls to cite the control and its remediation.\n"
+    "4. finalize_assessment for the scored gaps, then frame it as audit readiness: "
+    "what is in place, what is missing (ranked by severity), and the remediation "
+    "roadmap. You DRAFT the readiness report -- the compliance officer signs off. "
+    "You never declare the system 'compliant', 'certified', or 'audit-passed'."
+)
+
+
+def _compliance_auditor_tools(base_registry, session: AssessmentSession):
+    """The auditor's envelope: the analyst's read-only research + control +
+    assessment tools, plus ``deployment_posture`` for live control-state evidence."""
+    from .tools.posture_tools import posture_tools
+
+    reg = _privacy_analyst_tools(base_registry, session)
+    for tool in posture_tools():
+        reg.register(tool)
+    return reg
+
+
+def build_compliance_auditor_agent(ctx, session: AssessmentSession | None = None):
+    """Construct the compliance auditor: an Agent that audits a subject (usually this
+    deployment) against a framework -- gathering evidence from the live control
+    posture + documents, scoring the gaps, and drafting an audit-readiness report
+    for a human to sign off. Returns ``(agent, session)``. Read-only research +
+    control + assessment tools plus deployment_posture; no mutating/outward tools."""
+    from .agent import Agent
+
+    session = session or AssessmentSession()
+    agent = Agent(
+        ctx=ctx, role="compliance_auditor",
+        brief="Audit the subject against a framework and draft an audit-readiness "
+              "report for a human to sign off.",
+        persona=COMPLIANCE_AUDITOR_PERSONA,
+    )
+    agent.tools = _compliance_auditor_tools(agent.tools, session)
+    return agent, session
+
+
 __all__ = [
+    "COMPLIANCE_AUDITOR_PERSONA",
+    "build_compliance_auditor_agent",
     "ANSWERS",
     "ASSESSMENT_PERSONA",
     "build_assessment_agent",

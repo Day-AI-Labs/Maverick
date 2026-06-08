@@ -125,6 +125,60 @@ def available_domains() -> dict[str, DomainProfile]:
     return domains
 
 
+# A pack's name prefix maps it to a business *suite* (finance, operations, legal,
+# ...), so an operator can enable/disable a whole suite at once. The installer
+# wizard writes the choices to ``[suites]`` in config.toml; ``enabled_domains``
+# applies them. Forward-looking entries (gtm_/hr_/...) are ready for those suites.
+SUITE_PREFIXES: dict[str, str] = {
+    "finance_": "finance",
+    "ops_": "operations",
+    "legal_": "legal",
+    "itgrc_": "it_grc",
+    "gtm_": "sales_gtm",
+    "hr_": "hr",
+    "pe_": "product_engineering",
+    "strat_": "strategy",
+}
+
+
+def suite_for(name: str) -> str | None:
+    """The business suite a domain pack belongs to, or ``None`` (legacy/generic)."""
+    for prefix, suite in SUITE_PREFIXES.items():
+        if name.startswith(prefix):
+            return suite
+    return None
+
+
+def _disabled_suites(cfg: dict | None = None) -> set[str]:
+    """Suites turned OFF in the ``[suites]`` table (``suite = false``).
+
+    Opt-out: a suite is enabled unless explicitly set false, so an empty/absent
+    ``[suites]`` table leaves every suite on (behaviour unchanged)."""
+    try:
+        if cfg is None:
+            from .config import load_config
+            cfg = load_config() or {}
+        table = cfg.get("suites") or {}
+    except Exception:
+        return set()
+    return {str(k) for k, v in table.items() if v is False}
+
+
+def enabled_domains(cfg: dict | None = None) -> dict[str, DomainProfile]:
+    """:func:`available_domains` minus the packs of any suite disabled in ``[suites]``.
+
+    Backward compatible: with no ``[suites]`` config every domain is returned.
+    Legacy/generic packs (no recognized suite prefix) are always kept."""
+    domains = available_domains()
+    disabled = _disabled_suites(cfg)
+    if not disabled:
+        return domains
+    return {
+        name: prof for name, prof in domains.items()
+        if (suite_for(name) is None) or (suite_for(name) not in disabled)
+    }
+
+
 def domain_capability(profile: DomainProfile, parent_cap, principal: str):
     """The Capability a domain agent runs under.
 

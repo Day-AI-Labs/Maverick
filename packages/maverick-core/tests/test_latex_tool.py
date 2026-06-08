@@ -9,9 +9,12 @@ from maverick.tools.latex_tool import latex_tool, to_mathml
 
 
 class _FakeSandbox:
-    """Sandbox whose exec creates the TeX engine's output PDF, then succeeds."""
+    """Sandbox whose exec creates the TeX engine's output PDF, then succeeds.
 
-    def __init__(self, succeed=True):
+    ``workdir`` is the confinement root the tool resolves ``out`` against."""
+
+    def __init__(self, workdir=".", succeed=True):
+        self.workdir = str(workdir)
         self.succeed = succeed
 
     def exec(self, cmd, timeout=None):
@@ -47,20 +50,30 @@ def test_mathml_op_via_tool():
 
 
 def test_render_success(tmp_path):
-    out_pdf = tmp_path / "out" / "paper.pdf"
-    tool = latex_tool(_FakeSandbox(succeed=True))
+    # `out` is workspace-relative; the PDF lands under the sandbox workdir.
+    tool = latex_tool(_FakeSandbox(tmp_path, succeed=True))
     out = tool.fn({"op": "render", "latex": r"\documentclass{article}\begin{document}hi\end{document}",
-                   "out": str(out_pdf)})
+                   "out": "out/paper.pdf"})
     assert "rendered PDF" in out
-    assert out_pdf.exists()
+    assert (tmp_path / "out" / "paper.pdf").exists()
 
 
 def test_render_engine_missing(tmp_path):
-    tool = latex_tool(_FakeSandbox(succeed=False))
+    tool = latex_tool(_FakeSandbox(tmp_path, succeed=False))
     out = tool.fn({"op": "render", "latex": r"\documentclass{article}\begin{document}x\end{document}",
-                   "out": str(tmp_path / "x.pdf")})
+                   "out": "x.pdf"})
     assert out.startswith("ERROR") and "installed" in out
 
 
 def test_empty_latex():
     assert latex_tool(_FakeSandbox()).fn({"op": "mathml", "latex": "  "}).startswith("ERROR")
+
+
+def test_render_out_escaping_workspace_is_rejected(tmp_path):
+    # A model-supplied absolute/`..` `out` must not write outside the sandbox.
+    tool = latex_tool(_FakeSandbox(tmp_path, succeed=True))
+    out = tool.fn({"op": "render",
+                   "latex": r"\documentclass{article}\begin{document}hi\end{document}",
+                   "out": "../escaped.pdf"})
+    assert out.startswith("ERROR") and "escape" in out.lower()
+    assert not (tmp_path.parent / "escaped.pdf").exists()

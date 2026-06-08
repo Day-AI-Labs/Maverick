@@ -1,7 +1,8 @@
-"""Blocking (Pre*) hooks are a guardrail: a TIMEOUT must fail CLOSED (a
-large/slow tool arg could otherwise trip the deadline to bypass the guard),
-and hooks must not be handed the kernel's secret env. Hook *bugs* (exceptions)
-and missing binaries stay fail-open per the module's isolation contract.
+"""Blocking (Pre*) hooks are a guardrail: a TIMEOUT, a missing binary, or an
+exception must all fail CLOSED -- an attacker who can slow, delete/rename, or
+crash a guard hook (e.g. via a model-influenced tool arg) would otherwise
+bypass it. Hooks must not be handed the kernel's secret env. Post* hooks have
+nothing to block, so they stay fail-open.
 """
 import sys
 
@@ -47,13 +48,43 @@ async def test_post_hook_timeout_stays_fail_open():
 
 
 @pytest.mark.asyncio
-async def test_blocking_missing_binary_stays_fail_open():
-    # Missing binary is operator misconfig, not the attacker-triggerable
-    # bypass; per the module contract it's logged and does not block.
+async def test_blocking_missing_binary_fails_closed():
+    # A blocking hook whose binary is missing never vetted the action -- an
+    # attacker who deletes/renames/chmod-x's the guard must not disarm it.
     hooks.register(
         HookEvent.PRE_TOOL_USE, "/nonexistent/guardrail", matcher="*",
     )
     allowed = await _dispatch(HookEvent.PRE_TOOL_USE, tool_name="shell")
+    assert allowed is False
+
+
+@pytest.mark.asyncio
+async def test_post_missing_binary_stays_fail_open():
+    # Post* hooks have nothing to block; a missing one just doesn't run.
+    hooks.register(HookEvent.POST_TOOL_USE, "/nonexistent/x", matcher="*")
+    allowed = await _dispatch(HookEvent.POST_TOOL_USE, tool_name="write_file")
+    assert allowed is True
+
+
+@pytest.mark.asyncio
+async def test_blocking_callable_exception_fails_closed():
+    # A guard callable that raises (e.g. on a model-influenced tool arg) hasn't
+    # vetted the action, so a blocking hook must block rather than wave it.
+    def _raise(ctx):
+        raise RuntimeError("hook bug")
+
+    hooks.register(HookEvent.PRE_TOOL_USE, _raise, matcher="*")
+    allowed = await _dispatch(HookEvent.PRE_TOOL_USE, tool_name="shell")
+    assert allowed is False
+
+
+@pytest.mark.asyncio
+async def test_post_callable_exception_stays_fail_open():
+    def _raise(ctx):
+        raise RuntimeError("boom")
+
+    hooks.register(HookEvent.POST_TOOL_USE, _raise, matcher="*")
+    allowed = await _dispatch(HookEvent.POST_TOOL_USE, tool_name="x")
     assert allowed is True
 
 

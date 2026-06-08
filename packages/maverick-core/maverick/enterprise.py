@@ -23,6 +23,10 @@ When on, it enforces:
   (``anthropic`` / ``openai`` / ...) raises :class:`EgressBlocked` **before any prompt
   is sent**, and the denial is audited. Sensitive data physically cannot reach a
   third-party API. (Enforced in :func:`maverick.llm.LLM.complete`.)
+- **Tool egress lock.** Outbound *tool* HTTP (``http_fetch``, ``web_search``) is held
+  to local/private endpoints or hosts allow-listed under ``[enterprise]
+  allowed_hosts`` (default-deny), so a tool can't carry data off-box either.
+  (Enforced via :func:`enterprise_egress_denial` at each tool's request.)
 - **Consent fail-closed.** Destructive-action consent defaults to ``ask`` (and therefore
   *deny* in non-interactive contexts) instead of ``auto-approve``.
   (Enforced in :mod:`maverick.safety.consent`.)
@@ -65,6 +69,15 @@ CLOUD_PROVIDERS = frozenset({
 # endpoint or an arbitrary public gateway. In enterprise mode it is only treated as
 # local when its configured endpoint is provably local/private.
 _ENDPOINT_VALIDATED_PROVIDERS = frozenset({"openai_compatible"})
+
+# Built-in local providers can be redirected off-box via [providers.<name>]
+# base_url or these env vars. A configured non-local endpoint must NOT satisfy the
+# egress lock just because the provider *name* is "local" (ollama has no env
+# override -- it reads [providers.ollama] base_url).
+_LOCAL_PROVIDER_ENDPOINT_ENV = {
+    "vllm": "VLLM_BASE_URL",
+    "tgi": "TGI_BASE_URL",
+}
 
 
 class EgressBlocked(RuntimeError):
@@ -145,6 +158,30 @@ def _endpoint_validated_provider_is_local(provider: str) -> bool:
     return _is_local_endpoint(_configured_openai_compatible_base_url())
 
 
+def _configured_base_url(provider: str) -> str | None:
+    """The operator-configured endpoint for ``provider`` (``[providers.<name>]
+    base_url`` or its env override), or ``None`` if it uses its built-in default."""
+    try:
+        from .config import get_provider_config
+        cfg = get_provider_config(provider)
+    except Exception:
+        cfg = {}
+    env_var = _LOCAL_PROVIDER_ENDPOINT_ENV.get(provider)
+    url = cfg.get("base_url") or (os.environ.get(env_var) if env_var else None)
+    return str(url).strip() if url else None
+
+
+def _builtin_local_provider_is_local(provider: str) -> bool:
+    """A built-in local provider (ollama/vllm/tgi) is local unless it has been
+    pointed at a non-local endpoint. No configured endpoint -> the built-in
+    localhost default -> local. A public base_url -> NOT local: this is the
+    egress-lock bypass (a "local" provider name aimed off-box) that we close."""
+    url = _configured_base_url(provider)
+    if url is None:
+        return True
+    return _is_local_endpoint(url)
+
+
 def _extra_local_providers() -> frozenset[str]:
     """Operator-declared additional self-hosted providers (``[enterprise]
     local_providers``), canonicalized and fail-closed. Known cloud providers are
@@ -169,24 +206,34 @@ def _extra_local_providers() -> frozenset[str]:
                 if _endpoint_validated_provider_is_local(canon):
                     providers.add(canon)
             else:
-                providers.add(canon)
+                # Operator-vouched custom provider: admit it (a bare name is a
+                # deliberate vouch), but never when it carries an explicitly
+                # non-local base_url -- a public endpoint can't be "local".
+                url = _configured_base_url(canon)
+                if url is None or _is_local_endpoint(url):
+                    providers.add(canon)
         return frozenset(providers)
     except Exception:
         return frozenset()
 
 
 def is_local_provider(provider: str) -> bool:
-    """True if ``provider`` is self-hosted (built-in local set or operator allow-list).
+    """True if ``provider`` is self-hosted AND its endpoint is provably local.
 
-    The name is canonicalized first, so the ``ollama`` alias ``local`` and any
-    capitalization resolve correctly.
+    The name is canonicalized first (so the ``ollama`` alias ``local`` and any
+    capitalization resolve). A built-in local provider (ollama/vllm/tgi) only
+    counts as local when its resolved endpoint is local/private -- a ``base_url``
+    or ``VLLM_BASE_URL``/``TGI_BASE_URL`` pointing off-box does NOT satisfy the
+    egress lock just because the provider name is "local".
     """
     try:
         from .providers import _canonical
         canon = _canonical(provider)
     except Exception:
         canon = (provider or "").strip().lower()
-    return canon in LOCAL_PROVIDERS or canon in _extra_local_providers()
+    if canon in LOCAL_PROVIDERS:
+        return _builtin_local_provider_is_local(canon)
+    return canon in _extra_local_providers()
 
 
 def assert_provider_allowed(provider: str) -> None:
@@ -214,10 +261,66 @@ def assert_provider_allowed(provider: str) -> None:
     raise EgressBlocked(canon)
 
 
+def _host_of(url: str) -> str:
+    try:
+        return (urlparse(url).hostname or "").strip().lower().rstrip(".")
+    except Exception:
+        return ""
+
+
+def _allowed_egress_hosts() -> frozenset[str]:
+    """Hosts an operator allows *tool* egress to in enterprise mode
+    (``[enterprise] allowed_hosts``). Empty by default -> default-deny."""
+    try:
+        from .config import load_config
+        raw = ((load_config() or {}).get("enterprise") or {}).get("allowed_hosts") or []
+    except Exception:
+        return frozenset()
+    return frozenset(str(h).strip().lower().rstrip(".") for h in raw if str(h).strip())
+
+
+def egress_permitted(url: str) -> bool:
+    """In enterprise mode, is outbound *tool* egress to ``url`` permitted?
+
+    True when enterprise mode is off, the endpoint is local/private, or its host is
+    on the ``[enterprise] allowed_hosts`` allow-list. Default-deny otherwise -- so a
+    tool (http_fetch, web_search, a connector) can't carry data off-box, the same
+    boundary the LLM egress lock already enforces for model calls.
+    """
+    if not enterprise_enabled():
+        return True
+    if _is_local_endpoint(url):
+        return True
+    host = _host_of(url)
+    return bool(host) and host in _allowed_egress_hosts()
+
+
+def enterprise_egress_denial(url: str, *, tool: str = "") -> str | None:
+    """Tool-egress guard for string-returning tools: returns a denial reason (and
+    audits an ``egress_blocked`` event) when enterprise mode forbids an outbound
+    request to ``url``, else ``None``. Lets a tool surface the block as an error
+    string without having to catch :class:`EgressBlocked`."""
+    if egress_permitted(url):
+        return None
+    host = _host_of(url) or (url or "?")
+    try:
+        from .audit import EventKind, record
+        record(EventKind.EGRESS_BLOCKED,
+               provider=f"tool:{tool}" if tool else "tool", host=host)
+    except Exception:
+        pass
+    return (
+        f"enterprise mode: refusing tool egress to {host!r} -- not a local endpoint "
+        "and not in [enterprise] allowed_hosts. The data boundary stays closed."
+    )
+
+
 __all__ = [
     "CLOUD_PROVIDERS",
     "LOCAL_PROVIDERS",
     "EgressBlocked",
+    "egress_permitted",
+    "enterprise_egress_denial",
     "enterprise_enabled",
     "is_local_provider",
     "assert_provider_allowed",

@@ -38,11 +38,18 @@ _INDICATORS: dict[str, tuple[str, str]] = {
         "Kill switch engaged (HALT)", "medium"),
     "secret_redacted": (
         "Secret detected and redacted before write", "low"),
+    "consent_result": (
+        "Destructive action denied or timed out at the consent gate", "medium"),
 }
 _SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3}
+_AGENT_CAP = 64          # bound the per-signal agent set vs a high-cardinality log
 _SAMPLE_KEYS = (
-    "kind", "agent", "ts", "goal_id", "provider", "tool", "reason", "rule", "detail",
+    "kind", "agent", "ts", "goal_id", "provider", "tool", "decision",
+    "reason", "rule", "detail",
 )
+# Free-text fields can carry attacker-controlled content (e.g. a blocked injection
+# string); they are truncated + control-char-stripped in _sample.
+_FREE_TEXT_SAMPLE_KEYS = frozenset({"reason", "rule", "detail"})
 
 
 @dataclass
@@ -64,8 +71,19 @@ class ThreatReport:
 
 
 def _sample(event: dict) -> dict:
-    """A compact, redaction-safe summary of one event (metadata only)."""
-    return {k: event[k] for k in _SAMPLE_KEYS if k in event}
+    """A compact, redaction-safe summary of one event. Free-text fields are
+    truncated + control-char-stripped so attacker-controlled content (e.g. a
+    blocked injection string) can't bloat the report or become a second-order
+    injection sink for the hunter agent that reads this output."""
+    out: dict = {}
+    for k in _SAMPLE_KEYS:
+        if k not in event:
+            continue
+        v = event[k]
+        if k in _FREE_TEXT_SAMPLE_KEYS:
+            v = (str(v).replace("\n", " ").replace("\r", " ").replace("\t", " "))[:160]
+        out[k] = v
+    return out
 
 
 def _rollup(findings: list[ThreatFinding]) -> str:
@@ -91,20 +109,35 @@ def hunt(*, all_days: bool = True, since: str | None = None,
         events = iter_audit_events(
             all_days=all_days, since=since, until=until, tenant=tenant,
         )
+    except Exception:  # noqa: BLE001 -- a broken audit dir fails soft
+        events = []
+    try:
         for ev in events:
             scanned += 1
-            kind = ev.get("kind")
-            if kind not in _INDICATORS:
-                continue
-            b = buckets.setdefault(
-                kind, {"count": 0, "agents": set(), "last": 0.0, "samples": []})
-            b["count"] += 1
-            b["agents"].add(str(ev.get("agent", "system")))
-            ts = float(ev.get("ts") or 0.0)
-            b["last"] = max(b["last"], ts)
-            if len(b["samples"]) < 3:
-                b["samples"].append(_sample(ev))
-    except Exception:  # noqa: BLE001 -- a hunt must never crash on a bad log
+            try:
+                kind = ev.get("kind")
+                if kind not in _INDICATORS:
+                    continue
+                # consent_result is a signal only when the action was refused.
+                if kind == "consent_result" and ev.get("decision") not in {
+                    "deny", "timeout",
+                }:
+                    continue
+                b = buckets.setdefault(
+                    kind, {"count": 0, "agents": set(), "last": 0.0, "samples": []})
+                b["count"] += 1
+                if len(b["agents"]) < _AGENT_CAP:
+                    b["agents"].add(str(ev.get("agent", "system")))
+                try:
+                    ts = float(ev.get("ts") or 0.0)
+                except (TypeError, ValueError):
+                    ts = 0.0
+                b["last"] = max(b["last"], ts)
+                if len(b["samples"]) < 3:
+                    b["samples"].append(_sample(ev))
+            except Exception:  # noqa: BLE001 -- one poisoned event must not abort
+                continue        # the sweep (else an attacker hides later signals)
+    except Exception:  # noqa: BLE001 -- never crash on a bad log
         pass
 
     findings = [
@@ -119,7 +152,7 @@ def hunt(*, all_days: bool = True, since: str | None = None,
         )
         for kind, b in buckets.items()
     ]
-    findings.sort(key=lambda f: (_SEVERITY_RANK[f.severity], f.count), reverse=True)
+    findings.sort(key=lambda f: (_SEVERITY_RANK.get(f.severity, 1), f.count), reverse=True)
     return ThreatReport(findings, scanned, _rollup(findings))
 
 
@@ -152,10 +185,47 @@ def render_report_text(report: ThreatReport) -> str:
     return "\n".join(lines)
 
 
+# --- The threat-hunter agent ----------------------------------------------
+
+THREAT_HUNTER_PERSONA = (
+    "You are Maverick's agent-attack hunter. Call run_threat_hunt to sweep the "
+    "audit trail for attack signals: blocked egress (exfiltration attempts), shield "
+    "blocks (prompt injection / jailbreak), capability or governance denials "
+    "(privilege escalation), and the kill switch. Triage each signal -- is it a "
+    "real attack (a repeated pattern, a suspicious agent or goal) or a benign "
+    "control firing once? Correlate related signals, name the likely cause and "
+    "which agent/goal triggered it, and rank what a human should investigate "
+    "first. You surface and prioritise; a human responds. You never take "
+    "remediation actions yourself."
+)
+
+
+def build_threat_hunter_agent(ctx):
+    """Construct the agent-attack hunter: an Agent with the hunter persona and the
+    hunt tool. Read-only over the audit log -- it triages and reports, it does not
+    remediate. Mirrors :func:`maverick.assessment.build_assessment_agent`."""
+    from .agent import Agent
+    from .tools import ToolRegistry
+    from .tools.hunt_tools import hunt_tools
+
+    agent = Agent(
+        ctx=ctx, role="threat_hunter",
+        brief="Hunt the audit trail for agent attacks and triage them for a human.",
+        persona=THREAT_HUNTER_PERSONA,
+    )
+    # Hunting is read-only; replace the full base registry with the hunt tool only.
+    agent.tools = ToolRegistry()
+    for tool in hunt_tools():
+        agent.tools.register(tool)
+    return agent
+
+
 __all__ = [
     "ThreatFinding",
     "ThreatReport",
     "hunt",
     "render_report_json",
     "render_report_text",
+    "THREAT_HUNTER_PERSONA",
+    "build_threat_hunter_agent",
 ]

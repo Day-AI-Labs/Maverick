@@ -26,10 +26,26 @@ Payload shapes (kind -> required fields, all events also carry
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
 SCHEMA_VERSION = 1
+
+_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def is_valid_day(day: Any) -> bool:
+    """True iff ``day`` is a literal ``YYYY-MM-DD`` string.
+
+    An audit ``day`` becomes a filesystem path component
+    (``<audit_dir>/<day>.ndjson``), so anything that isn't this exact shape
+    -- ``..``, a path separator, an absolute path, a NUL -- could escape the
+    audit dir. Every code path that builds a day-file path from an untrusted
+    ``day`` must gate on this first. (Mirrors the dashboard's own
+    ``safe_audit_day`` HTTP-boundary guard.)
+    """
+    return isinstance(day, str) and bool(_DAY_RE.match(day))
 
 
 class EventKind:
@@ -49,6 +65,7 @@ class EventKind:
     SECRET_REDACTED = "secret_redacted"
     ERASE           = "erase"
     HALT            = "halt"
+    CONFIG_REMEDIATED = "config_remediated"
 
 
 @dataclass

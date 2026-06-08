@@ -18,8 +18,20 @@ Key resolution (first match wins):
 
 Sealed blobs carry a magic header (:data:`_MAGIC`), so :func:`unseal` transparently
 returns plaintext written *before* encryption was enabled — a gradual migration
-with no flag-day re-encrypt. This increment wires it into the cross-session
-**memory** store (the most leak-sensitive per-tenant store).
+with no flag-day re-encrypt.
+
+Coverage (what is actually sealed today):
+  - the cross-session **memory** store (files), and
+  - the **world-DB content columns** sealed via ``encryption_migrate._SEALED_COLUMNS``
+    — facts, conversation turns/messages, open questions, goal content
+    (titles/descriptions/results) + per-agent goal events, episode
+    summaries/outcomes, and parked-approval action/scope/detail.
+  The **audit log is NOT encrypted at rest** — it is *signed* for tamper-evidence
+  (see ``audit/signing.py``), which is integrity, not confidentiality. Treat audit
+  confidentiality as out of scope here until that is wired in.
+
+By default a sealed column read back unsealed (legacy/pre-migration) is passed
+through; :func:`strict_at_rest` makes that an integrity failure instead.
 """
 from __future__ import annotations
 
@@ -74,6 +86,27 @@ def at_rest_enabled() -> bool:
         return enterprise_enabled()
     except Exception:
         return False
+
+
+def strict_at_rest() -> bool:
+    """Opt-in strict read mode (default off). When on -- and at-rest is enabled --
+    a value read back from a *sealed column* that is NOT sealed is treated as an
+    integrity failure (withheld) instead of trusted as plaintext.
+
+    Enable it only AFTER ``maverick encryption migrate`` has sealed legacy rows:
+    before migration, pre-existing plaintext in those columns is expected, and
+    strict mode would (correctly) withhold it. ``MAVERICK_ENCRYPT_STRICT`` env wins
+    over ``[encryption] strict``."""
+    env = os.environ.get("MAVERICK_ENCRYPT_STRICT")
+    if env is not None and env.strip() != "":
+        return _truthy(env)
+    try:
+        from .config import load_config
+        cfg = (load_config() or {}).get("encryption") or {}
+    except Exception:
+        return False
+    v = cfg.get("strict")
+    return _truthy(v) if isinstance(v, str) else bool(v)
 
 
 def _decode_injected_key(raw: str) -> bytes:

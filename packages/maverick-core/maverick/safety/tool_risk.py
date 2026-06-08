@@ -19,7 +19,7 @@ Config (``~/.maverick/config.toml``):
 
     [security.tool_risk]
     my_plugin_tool = "high"      # override / classify a tool
-    "mcp_*"        = "medium"    # glob -- applies to any matching name
+    "mcp_*"        = "medium"    # glob -- relax MCP tools (they default to high)
 
 Default ceiling is *unset*, meaning no cap (all risk levels allowed), so
 behaviour is unchanged unless a ceiling is configured.
@@ -150,6 +150,51 @@ _DEFAULT_RISK: dict[str, str] = {
     "draft_filing": "low", "tag_xbrl": "low", "run_disclosure_checklist": "low",
     "draft_earnings_materials": "low", "compute_sbc_expense": "low",
     "draft_sbc_entry": "low",
+    # high: dedicated-module enterprise connectors that mutate external business
+    # state / move money / run remote code or SQL / send messages. (The long-tail
+    # REST connectors in enterprise_connectors.py are covered by name separately.)
+    "airtable": "high",
+    "asana": "high",
+    "bigquery": "high",
+    "calendar": "high",
+    "calendly": "high",
+    "clickup": "high",
+    "confluence": "high",
+    "database": "high",
+    "databricks": "high",
+    "datadog": "high",
+    "dropbox": "high",
+    "dynamics": "high",
+    "ga4": "high",
+    "gdrive": "high",
+    "gitlab": "high",
+    "http_fetch": "high",
+    "hubspot": "high",
+    "jira": "high",
+    "learn_capability": "high",
+    "linear": "high",
+    "mixpanel": "high",
+    "msgraph": "high",
+    "notebook_exec": "high",
+    "notify": "high",
+    "notion": "high",
+    "onetrust": "high",
+    "oracle": "high",
+    "pagerduty": "high",
+    "plausible": "high",
+    "posthog": "high",
+    "replicate": "high",
+    "salesforce": "high",
+    "sap": "high",
+    "sentry": "high",
+    "servicenow": "high",
+    "snowflake": "high",
+    "spotify": "high",
+    "spreadsheet": "high",
+    "teams": "high",
+    "trello": "high",
+    "workday": "high",
+    "zoom": "high",
     # low: read-only / pure lookups
     "read_file": "low",
     "list_dir": "low",
@@ -167,9 +212,32 @@ _DEFAULT_RISK: dict[str, str] = {
     "dns_lookup": "low",
     "currency": "low",
     "preview_diff": "low",
+    "erp_read": "low",  # read-only (GET) ERP access; no writes / host mutation
 }
 
 _DEFAULT_RISK_LEVEL = "medium"
+
+
+# The long-tail enterprise connectors (built by ``enterprise_connectors.py`` via
+# a shared REST/GraphQL factory) all expose write ops (post/put/patch/delete or
+# GraphQL mutations), so they fail safe to "high" -- resolved by name from the
+# connector spec list so newly-added connectors are covered automatically. The
+# list is loaded lazily (the tools package imports this module, so a top-level
+# import would be circular) and cached only on success; a config override or an
+# explicit ``_DEFAULT_RISK`` entry still wins.
+_ENTERPRISE_CONNECTORS: frozenset[str] | None = None
+
+
+def _enterprise_connector_names() -> frozenset[str]:
+    global _ENTERPRISE_CONNECTORS
+    if _ENTERPRISE_CONNECTORS is not None:
+        return _ENTERPRISE_CONNECTORS
+    try:
+        from ..tools.enterprise_connectors import ENTERPRISE_CONNECTOR_NAMES
+    except Exception:
+        return frozenset()  # tools not importable yet -- retry on the next call
+    _ENTERPRISE_CONNECTORS = frozenset(ENTERPRISE_CONNECTOR_NAMES)
+    return _ENTERPRISE_CONNECTORS
 
 
 def risk_rank(level: str) -> int:
@@ -200,14 +268,32 @@ def _load_overrides() -> dict[str, str]:
 
 def tool_risk(name: str, overrides: dict[str, str] | None = None) -> str:
     """Risk level for a tool: config override (exact then glob), then the
-    built-in default, then ``medium``."""
+    built-in default.
+
+    Two classes of tool fail safe to ``high`` when otherwise unclassified: an
+    MCP tool (``mcp_*``), which runs arbitrary code through a third-party
+    server; and an enterprise connector (the long-tail REST/GraphQL connectors
+    from ``enterprise_connectors.py``), which is write-capable by construction.
+    A config override is checked first, so either can be relaxed deliberately,
+    e.g. ``[security.tool_risk]`` ``"mcp_*" = "medium"`` or ``okta = "medium"``.
+    Any other unclassified tool falls back to ``medium``.
+    """
     overrides = _load_overrides() if overrides is None else overrides
     if name in overrides:
         return overrides[name]
     for pattern, level in overrides.items():
         if any(ch in pattern for ch in "*?[") and fnmatch.fnmatchcase(name, pattern):
             return level
-    return _DEFAULT_RISK.get(name, _DEFAULT_RISK_LEVEL)
+    if name in _DEFAULT_RISK:
+        return _DEFAULT_RISK[name]
+    # Unclassified. An MCP tool is externally-defined arbitrary code reached
+    # through a third-party server, and an enterprise connector is write-capable
+    # by construction -> both fail safe to high. Anything else -> medium.
+    if name.startswith("mcp_"):
+        return "high"
+    if name in _enterprise_connector_names():
+        return "high"
+    return _DEFAULT_RISK_LEVEL
 
 
 def tools_exceeding(

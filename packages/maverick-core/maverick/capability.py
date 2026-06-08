@@ -297,6 +297,15 @@ def _roles_config() -> dict:
         return {}
 
 
+def configured_roles() -> frozenset[str]:
+    """The configured RBAC role names that fleet agents may declare."""
+    roles = _roles_config()
+    return frozenset(
+        name for name, scope in roles.items()
+        if isinstance(name, str) and isinstance(scope, dict)
+    )
+
+
 def role_for_principal(principal: str) -> str | None:
     """The RBAC role assigned to ``principal``, or ``None``.
 
@@ -350,5 +359,6 @@ __all__ = [
     "capability_enforced",
     "capability_from_config",
     "capability_for_role",
+    "configured_roles",
     "role_for_principal",
 ]

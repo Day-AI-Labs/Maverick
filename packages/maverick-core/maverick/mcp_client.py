@@ -834,6 +834,13 @@ class StreamableHttpMCPClient:
         return self.spec.auth_token
 
     async def start(self) -> None:
+        # Enterprise mode: this client POSTs tool args to a remote MCP server.
+        # Refuse to connect to a non-local, non-allow-listed host so data stays
+        # in the boundary (the egress lock covers MCP-HTTP, not just LLM calls).
+        from .enterprise import enterprise_egress_denial
+        deny = enterprise_egress_denial(self.spec.url, tool=f"mcp:{self.spec.name}")
+        if deny:
+            raise MCPClientError(deny)
         import httpx
         headers = {"User-Agent": "maverick-mcp-client/0.1"}
         if self.spec.headers:

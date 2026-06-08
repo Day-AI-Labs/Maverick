@@ -215,6 +215,15 @@ _BACKENDS = {
     "ddg":      _try_duckduckgo,
 }
 
+# The third-party host each backend sends the query to (for the enterprise
+# tool-egress gate -- the query leaves the boundary to whichever one runs).
+_BACKEND_HOSTS = {
+    "tavily":  "api.tavily.com",
+    "brave":   "api.search.brave.com",
+    "serpapi": "serpapi.com",
+    "ddg":     "html.duckduckgo.com",
+}
+
 
 def _run_search(args: dict[str, Any]) -> str:
     query = (args.get("query") or "").strip()
@@ -236,6 +245,21 @@ def _run_search(args: dict[str, Any]) -> str:
             ("serpapi", _try_serpapi),
             ("ddg",     _try_duckduckgo),
         ]
+
+    # Enterprise mode: the query egresses to a third-party search API. Keep only
+    # backends whose host the operator allow-listed; if none, the boundary wins.
+    from ..enterprise import egress_permitted, enterprise_enabled
+    if enterprise_enabled():
+        backends = [
+            (name, fn) for name, fn in backends
+            if egress_permitted(f"https://{_BACKEND_HOSTS.get(name, '')}")
+        ]
+        if not backends:
+            return (
+                "ERROR: web_search is disabled in enterprise mode -- the query would "
+                "leave your boundary. Allow-list a search host (e.g. api.tavily.com) "
+                "in [enterprise] allowed_hosts to enable it."
+            )
 
     last_err: str | None = None
     for name, fn in backends:

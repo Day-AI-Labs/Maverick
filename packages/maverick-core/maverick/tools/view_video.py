@@ -60,9 +60,10 @@ _VIEW_VIDEO_INPUT_SCHEMA: dict[str, Any] = {
 }
 
 
-def _probe_duration(src: str) -> float | None:
+def _probe_duration(src: str, sandbox) -> float | None:
     """Return the video duration in seconds via ffprobe, or None."""
     code, out, _err = _run_cmd(
+        sandbox,
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
          "-of", "default=noprint_wrappers=1:nokey=1", src],
         timeout=30,
@@ -80,12 +81,13 @@ def _evenly_spaced(duration: float, n: int) -> list[float]:
     return [duration * (i + 0.5) / n for i in range(n)]
 
 
-def _extract_frames(src: str, timestamps: list[float], tmpdir: str) -> list[tuple[float, bytes]]:
+def _extract_frames(src: str, timestamps: list[float], tmpdir: str, sandbox) -> list[tuple[float, bytes]]:
     """Grab one downscaled JPEG per timestamp. Returns (ts, jpeg_bytes) pairs."""
     frames: list[tuple[float, bytes]] = []
     for i, ts in enumerate(timestamps):
         out = Path(tmpdir) / f"frame_{i:03d}.jpg"
         code, _o, _e = _run_cmd(
+            sandbox,
             ["ffmpeg", "-y", "-ss", f"{ts:.3f}", "-i", src,
              "-frames:v", "1", "-vf", f"scale={_FRAME_WIDTH}:-1",
              "-f", "image2", str(out)],
@@ -96,10 +98,11 @@ def _extract_frames(src: str, timestamps: list[float], tmpdir: str) -> list[tupl
     return frames
 
 
-def _transcribe_track(src: str, tmpdir: str) -> str | None:
+def _transcribe_track(src: str, tmpdir: str, sandbox) -> str | None:
     """Extract the audio track and transcribe it via the voice tool. None on failure."""
     audio = Path(tmpdir) / "audio.mp3"
     code, _o, _e = _run_cmd(
+        sandbox,
         ["ffmpeg", "-y", "-i", src, "-vn", "-b:a", "128k", str(audio)],
         timeout=300,
     )
@@ -140,16 +143,16 @@ def _run_view_video(args: dict[str, Any], sandbox, *, budget=None) -> str:
     if not Path(src).is_file():
         return f"ERROR: video file not found: {source!r}"
 
-    duration = _probe_duration(src)
+    duration = _probe_duration(src, sandbox)
     if not duration or duration <= 0:
         return f"ERROR: could not probe video duration for {source!r}"
 
     timestamps = _evenly_spaced(duration, num_frames)
     with tempfile.TemporaryDirectory(prefix="maverick-view-video-") as tmp:
-        frames = _extract_frames(src, timestamps, tmp)
+        frames = _extract_frames(src, timestamps, tmp, sandbox)
         if not frames:
             return f"ERROR: ffmpeg extracted no frames from {source!r}"
-        transcript = _transcribe_track(src, tmp) if transcribe else None
+        transcript = _transcribe_track(src, tmp, sandbox) if transcribe else None
 
     # Anthropic format -- providers' adapters translate to OpenAI / Gemini.
     content: list[dict[str, Any]] = []

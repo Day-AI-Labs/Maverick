@@ -8,7 +8,15 @@ import json
 import logging
 import os
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    File,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
 from maverick.runner import (
     DEFAULT_MAX_DEPTH,
     DEFAULT_MAX_DOLLARS,
@@ -16,7 +24,13 @@ from maverick.runner import (
 )
 from pydantic import BaseModel, Field
 
-from .auth import execution_user_id_from_request
+from .auth import (
+    assert_goal_access,
+    caller_principal,
+    execution_user_id_from_request,
+    goal_owner_filter,
+    is_dashboard_admin,
+)
 
 log = logging.getLogger(__name__)
 
@@ -147,7 +161,7 @@ async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) ->
     if not title:
         raise HTTPException(status_code=400, detail="title is required")
     w = _world()
-    goal_id = w.create_goal(title[:200], description)
+    goal_id = w.create_goal(title[:200], description, owner=caller_principal(request) or "")
     from maverick.runner import run_goal_in_thread
     # Enforce server-side execution caps even when callers request larger values.
     max_dollars = min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
@@ -174,6 +188,7 @@ async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) ->
 
 @router.get("/goals", response_model=list[GoalOut])
 async def list_goals(
+    request: Request,
     status: str | None = None,
     limit: int = 50,
     offset: int = 0,
@@ -183,30 +198,38 @@ async def list_goals(
     Council perf fix: previous version pulled every goal ever into
     Python via ``list_goals()``, then sliced. Now the LIMIT/OFFSET are
     pushed to SQL.
+
+    Owner-scoped: a non-admin authenticated caller sees only their own goals;
+    auth-off and admin callers see all (``goal_owner_filter`` returns None).
     """
     w = _world()
     limit = max(1, min(int(limit or 50), 500))
     offset = max(0, int(offset or 0))
-    goals = w.list_goals(status=status, limit=limit, offset=offset, order="desc")
+    goals = w.list_goals(
+        status=status, owner=goal_owner_filter(request),
+        limit=limit, offset=offset, order="desc",
+    )
     return [_to_goal_out(g) for g in goals]
 
 
 @router.get("/goals/{goal_id}", response_model=GoalOut)
-async def get_goal(goal_id: int) -> GoalOut:
+async def get_goal(request: Request, goal_id: int) -> GoalOut:
     g = _world().get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     return _to_goal_out(g)
 
 
 @router.get("/goals/{goal_id}/events", response_model=GoalEventsResponse)
 async def goal_events(
-    goal_id: int, since: int = 0, limit: int = 200,
+    request: Request, goal_id: int, since: int = 0, limit: int = 200,
 ) -> GoalEventsResponse:
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     events = w.goal_events(goal_id, since_id=since, limit=max(1, min(limit, 500)))
     return GoalEventsResponse(
         status=g.status,
@@ -221,8 +244,12 @@ async def goal_events(
 
 
 @router.post("/goals/{goal_id}/answer", status_code=204)
-async def answer_question(goal_id: int, payload: AnswerIn) -> None:
+async def answer_question(request: Request, goal_id: int, payload: AnswerIn) -> None:
     w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     answer = (payload.answer or "").strip()
     if not answer:
         raise HTTPException(status_code=400, detail="answer is required")
@@ -245,7 +272,9 @@ class AttachmentOut(BaseModel):
     response_model=AttachmentOut,
     status_code=201,
 )
-async def upload_attachment(goal_id: int, file: UploadFile = File(...)) -> AttachmentOut:
+async def upload_attachment(
+    request: Request, goal_id: int, file: UploadFile = File(...),
+) -> AttachmentOut:
     """Upload a file (text, image, or PDF) and attach it to a goal.
 
     Size and mime-type validation are enforced server-side; the agent's
@@ -253,8 +282,10 @@ async def upload_attachment(goal_id: int, file: UploadFile = File(...)) -> Attac
     attachments are auto-embedded as vision blocks on the first message.
     """
     w = _world()
-    if w.get_goal(goal_id) is None:
+    g = w.get_goal(goal_id)
+    if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
 
     from maverick.attachments import (
         MAX_FILE_BYTES,
@@ -304,10 +335,12 @@ async def upload_attachment(goal_id: int, file: UploadFile = File(...)) -> Attac
 
 
 @router.get("/goals/{goal_id}/attachments", response_model=list[AttachmentOut])
-async def list_goal_attachments(goal_id: int) -> list[AttachmentOut]:
+async def list_goal_attachments(request: Request, goal_id: int) -> list[AttachmentOut]:
     w = _world()
-    if w.get_goal(goal_id) is None:
+    g = w.get_goal(goal_id)
+    if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     return [
         AttachmentOut(
             id=a.id, filename=a.filename, mime=a.mime,
@@ -521,6 +554,56 @@ async def get_spend() -> dict:
     }
 
 
+@router.get("/security")
+async def security_register() -> dict:
+    """The privacy/security agent team's register, read-only and fail-soft:
+    live control posture (compliance), the audit-trail threat hunt, and the
+    remediation plan. One operator view over the three agents' outputs."""
+    controls: list[dict] = []
+    try:
+        from maverick.compliance import compliance_report
+        controls = [
+            {"control": c.control, "status": c.status, "regulation": c.regulation,
+             "detail": c.detail, "framework": c.framework}
+            for c in compliance_report()
+        ]
+    except Exception:
+        log.warning("security register: compliance probe failed", exc_info=True)
+
+    threat: dict = {"risk": "clear", "events_scanned": 0, "findings": []}
+    try:
+        from maverick.threat_hunt import hunt
+        r = hunt()
+        threat = {
+            "risk": r.risk_rating, "events_scanned": r.events_scanned,
+            "findings": [
+                {"kind": f.kind, "title": f.title, "severity": f.severity,
+                 "count": f.count, "agents": f.agents}
+                for f in r.findings
+            ],
+        }
+    except Exception:
+        log.warning("security register: threat hunt failed", exc_info=True)
+
+    remediation: dict = {"auto_fix_enabled": False, "gaps": [], "breaches": []}
+    try:
+        from maverick.remediation import plan
+        p = plan()
+        remediation = {
+            "auto_fix_enabled": p.auto_fix_enabled,
+            "gaps": [
+                {"control": g.control, "title": g.title, "auto": g.auto,
+                 "rationale": g.rationale}
+                for g in p.gaps
+            ],
+            "breaches": p.breaches,
+        }
+    except Exception:
+        log.warning("security register: remediation plan failed", exc_info=True)
+
+    return {"controls": controls, "threat_hunt": threat, "remediation": remediation}
+
+
 # ---------- council pass: control surface ----------
 
 class HaltIn(BaseModel):
@@ -588,7 +671,7 @@ async def halt_clear() -> None:
 
 
 @router.post("/goals/{goal_id}/cancel", status_code=204)
-async def cancel_goal(goal_id: int) -> None:
+async def cancel_goal(request: Request, goal_id: int) -> None:
     """Mark a goal as cancelled.
 
     The agent loop checks status at each tool-call boundary; setting
@@ -599,17 +682,20 @@ async def cancel_goal(goal_id: int) -> None:
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     if g.status in ("done", "cancelled", "failed"):
         return
     w.set_goal_status(goal_id, "cancelled", result="cancelled via dashboard")
 
 
 @router.get("/goals/{goal_id}/open_questions")
-async def goal_open_questions(goal_id: int) -> dict:
+async def goal_open_questions(request: Request, goal_id: int) -> dict:
     """List unanswered questions an agent has parked for this goal."""
     w = _world()
-    if w.get_goal(goal_id) is None:
+    g = w.get_goal(goal_id)
+    if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     qs = w.open_questions(goal_id=goal_id)
     return {
         "open_questions": [
@@ -802,19 +888,274 @@ async def deny_approval(approval_id: int) -> None:
         raise HTTPException(status_code=404, detail="no such pending approval")
 
 
+@router.get("/oversight/active")
+async def oversight_active(request: Request) -> dict:
+    """Active agents right now: running goals + their latest activity.
+
+    Owner-scoped (auth-off/admin -> all). Powers the live "Active now" panel on
+    the oversight console -- polled client-side so the operator watches the
+    fleet work without a full-page reload. Fail-soft per goal: a goal whose
+    event tail can't be read still lists with an empty activity.
+    """
+    from maverick.world_model import _dec_field
+    w = _world()
+    goals = w.list_goals(
+        status="active", owner=goal_owner_filter(request), limit=50, order="desc",
+    )
+    out = []
+    for g in goals:
+        activity = ""
+        try:
+            row = w.conn.execute(
+                "SELECT kind, content FROM goal_events WHERE goal_id = ? "
+                "ORDER BY id DESC LIMIT 1",
+                (g.id,),
+            ).fetchone()
+            if row:
+                # content is sealed at rest -> decode (no-op when encryption off);
+                # kind is stored plain.
+                content = (_dec_field(row[1]) or "")[:120]
+                activity = f"{row[0] or ''}: {content}".strip(": ").strip()
+        except Exception:
+            activity = ""
+        out.append({
+            "id": g.id, "title": g.title, "status": g.status,
+            "updated_at": g.updated_at, "activity": activity,
+        })
+    return {"goals": out}
+
+
 @router.get("/fleets")
-async def list_fleets_api() -> dict:
+async def list_fleets_api(request: Request) -> dict:
     """The operator console roster: each fleet, its owner, and its agents.
 
     Read-only mirror of the ``/fleets`` page (Layer C of the enterprise control
     plane). Fail-soft to an empty list so a missing registry never 500s.
+
+    Owner-scoped: a non-admin authenticated caller sees only the fleets they
+    own; auth-off and admin callers see all (``goal_owner_filter`` returns None).
     """
     try:
         from maverick.fleet import list_fleets
         fleets = list_fleets()
     except Exception:
         fleets = []
+    owner = goal_owner_filter(request)
+    if owner is not None:
+        fleets = [f for f in fleets if f.owner == owner]
     return {"fleets": [f.to_dict() for f in fleets]}
+
+
+class FleetRunIn(BaseModel):
+    agent: str = Field(..., max_length=64)
+    prompt: str = Field(..., max_length=8000)
+    max_dollars: float | None = Field(None, ge=0.0, le=100.0)
+
+
+@router.post("/fleets/{fleet_name}/run", status_code=201)
+async def run_fleet_agent(
+    request: Request, fleet_name: str, payload: FleetRunIn, bg: BackgroundTasks,
+) -> dict:
+    """Dispatch a governed goal AS a fleet agent, from the operator console.
+
+    The agent runs least-privileged under both its RBAC role's capability and
+    the dispatching user's capability, while keeping its own audit principal
+    (``agent:<fleet>.<agent>``), so the oversight control plane
+    governs the work automatically (mirrors ``maverick fleet run``). Owner-scoped:
+    only the fleet's owner -- or an admin / auth-off caller -- may dispatch; a
+    cross-owner (or missing) fleet 404s, never revealing existence.
+    """
+    if not _any_provider_key_set():
+        raise HTTPException(
+            status_code=400,
+            detail="No LLM provider key configured (run 'maverick init').",
+        )
+    from maverick_dashboard.app import check_goal_rate_limit
+    check_goal_rate_limit(request)
+
+    from maverick.capability import capability_for_role, capability_from_config
+    from maverick.fleet import load_fleet, record_run
+    from maverick.runner import run_goal_in_thread
+
+    fleet = load_fleet(fleet_name)
+    principal = caller_principal(request)
+    is_admin = principal is not None and is_dashboard_admin(principal)
+    if fleet is None or (
+        principal is not None
+        and not is_admin
+        and fleet.owner != principal
+    ):
+        raise HTTPException(status_code=404, detail="no such fleet")
+    agent = next((a for a in fleet.agents if a.name == payload.agent), None)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="no such agent in fleet")
+    prompt = (payload.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="prompt is required")
+
+    agent_principal = fleet.principal_for(agent.name)
+    cap = capability_for_role(agent.role, principal=agent_principal)
+    if principal is not None and not is_admin:
+        caller_cap = capability_from_config(principal, user_id=principal)
+        cap = cap.attenuate(
+            allow=caller_cap.allow_tools or None,
+            deny=caller_cap.deny_tools,
+            max_risk=caller_cap.max_risk,
+            allow_paths=caller_cap.allow_paths or None,
+            allow_hosts=caller_cap.allow_hosts or None,
+        )
+    max_dollars = (
+        min(payload.max_dollars, DEFAULT_MAX_DOLLARS)
+        if payload.max_dollars else DEFAULT_MAX_DOLLARS
+    )
+
+    w = _world()
+    goal_id = w.create_goal(prompt[:200], prompt, owner=fleet.owner)
+    record_run(fleet_name, agent.name, goal_id)
+    bg.add_task(
+        run_goal_in_thread, goal_id, max_dollars,
+        channel="fleet", user_id=agent_principal, capability=cap,
+    )
+    return {"goal_id": goal_id, "principal": agent_principal, "role": agent.role}
+
+
+class FleetAgentIn(BaseModel):
+    name: str = Field(..., max_length=64)
+    role: str = Field("", max_length=64)
+    description: str = Field("", max_length=500)
+
+
+class FleetCreateIn(BaseModel):
+    name: str = Field(..., max_length=64)
+    agents: list[FleetAgentIn] = Field(default_factory=list)
+
+
+@router.post("/fleets", status_code=201)
+async def create_fleet(request: Request, payload: FleetCreateIn) -> dict:
+    """Create (or replace) a fleet from the operator console, owned by the caller.
+
+    Mirrors ``maverick fleet create`` so a non-technical operator never needs the
+    CLI. Owner-scoped: replacing a fleet owned by someone else 404s (never
+    reveals it). Blank agent rows are dropped; each agent needs a valid name
+    and a configured RBAC role when roles are configured.
+    """
+    from maverick.capability import configured_roles
+    from maverick.fleet import Fleet, FleetAgent, load_fleet, save_fleet, valid_name
+
+    if not valid_name(payload.name):
+        raise HTTPException(status_code=400, detail="invalid fleet name")
+    agents = tuple(
+        FleetAgent(
+            name=a.name.strip(), role=a.role.strip(), description=a.description.strip(),
+        )
+        for a in payload.agents if a.name.strip()
+    )
+    configured = configured_roles()
+    for a in agents:
+        if not valid_name(a.name):
+            raise HTTPException(status_code=400, detail=f"invalid agent name: {a.name!r}")
+        if not a.role:
+            raise HTTPException(status_code=400, detail=f"missing role for agent: {a.name!r}")
+        if configured and a.role not in configured:
+            raise HTTPException(status_code=400, detail=f"unknown role for agent: {a.name!r}")
+
+    principal = caller_principal(request)
+    owner = principal or ""
+    existing = load_fleet(payload.name)
+    if (
+        existing is not None and existing.owner != owner
+        and principal is not None and not is_dashboard_admin(principal)
+    ):
+        raise HTTPException(status_code=404, detail="no such fleet")
+
+    try:
+        save_fleet(Fleet(name=payload.name, owner=owner, agents=agents))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"fleet": load_fleet(payload.name).to_dict()}
+
+
+@router.delete("/fleets/{fleet_name}", status_code=204)
+async def delete_fleet(request: Request, fleet_name: str) -> None:
+    """Remove a fleet. Owner-scoped: a cross-owner or missing fleet 404s."""
+    from maverick.fleet import load_fleet, remove_fleet
+
+    fleet = load_fleet(fleet_name)
+    principal = caller_principal(request)
+    is_admin = principal is not None and is_dashboard_admin(principal)
+    if fleet is None or (
+        principal is not None
+        and not is_admin
+        and fleet.owner != principal
+    ):
+        raise HTTPException(status_code=404, detail="no such fleet")
+    remove_fleet(fleet_name)
+
+
+def _compliance_checks(framework: str):
+    """Run the core control-coverage report, filtered like the CLI.
+
+    Single source of truth for the /compliance page and these exports:
+    ``maverick.compliance.compliance_report()`` (GDPR + EU AI Act + US
+    frameworks). ``framework`` is one of ``eu``/``us``/``all``; anything else
+    falls back to ``all``. Fail-soft to an empty list so a missing core install
+    yields an empty (still-downloadable) report rather than a 500.
+    """
+    framework = framework if framework in {"eu", "us", "all"} else "all"
+    try:
+        from maverick.compliance import compliance_report
+        checks = compliance_report()
+    except Exception:  # pragma: no cover - never 500 the export if core is absent
+        return framework, []
+    if framework != "all":
+        checks = [c for c in checks if c.framework == framework]
+    return framework, checks
+
+
+@router.get("/compliance/report.md")
+async def compliance_report_md(framework: str = "all") -> Response:
+    """Download the control-coverage report as Markdown for an auditor.
+
+    Same data as the /compliance page (``maverick.compliance``). The
+    ``?framework=eu|us|all`` filter mirrors ``maverick compliance``. Returned as
+    an attachment so an operator can hand the file to an auditor.
+    """
+    from maverick.compliance import render_report_text
+    framework, checks = _compliance_checks(framework)
+    body = render_report_text(checks)
+    fname = f"maverick-compliance-{framework}.md"
+    return Response(
+        content=body,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@router.get("/compliance/report.csv")
+async def compliance_report_csv(framework: str = "all") -> Response:
+    """Download the control-coverage report as CSV for an auditor.
+
+    Same data source + ``?framework=`` filter as ``report.md``. One row per
+    control: framework, control, regulation, status, detail.
+    """
+    import csv
+    import io as _io
+
+    from maverick.compliance import COMPLIANCE_DISCLAIMER
+    framework, checks = _compliance_checks(framework)
+    buf = _io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["framework", "control", "regulation", "status", "detail"])
+    for c in checks:
+        writer.writerow([c.framework, c.control, c.regulation, c.status, c.detail])
+    writer.writerow([])
+    writer.writerow(["disclaimer", COMPLIANCE_DISCLAIMER])
+    fname = f"maverick-compliance-{framework}.csv"
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 @router.get("/cache/stats")
@@ -856,6 +1197,7 @@ async def resume_goal(goal_id: int, request: Request, bg: BackgroundTasks) -> No
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     # Block resuming things that have no parked work.
     if g.status not in ("blocked", "cancelled", "failed"):
         raise HTTPException(

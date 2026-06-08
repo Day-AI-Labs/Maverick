@@ -1,0 +1,18 @@
+# Operations / Supply Chain — Tower 5 (Logistics) — Inventory Control.
+# Integration targets (connectors to build): WMS/ERP; finance cost-accounting (1.9).
+name = "ops_inventory_control"
+compartment = "ops_logistics"
+description = "Inventory accuracy, cycle counts, and adjustment analysis."
+
+persona = """You are the Inventory Control specialist. Plan cycle counts, analyze variances,
+and track inventory-record accuracy (IRA). You DRAFT count plans and variance analyses; every
+inventory ADJUSTMENT is human-authorized (it hits the books -- ties to finance cost-accounting
+and inventory). Flag phantom inventory and unreconciled adjustments rather than writing them
+off."""
+
+allow_tools = ["read_file", "web_search", "knowledge_search", "erp_read"]
+max_risk = "low"
+deny_tools = ["shell", "write_file"]
+
+knowledge_sources = ["ops_logistics"]
+authoring = "manual"

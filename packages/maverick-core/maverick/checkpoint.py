@@ -261,10 +261,16 @@ def restore_budget(snapshot: dict):
     for f in _BUDGET_COUNTERS:
         if snapshot.get(f) is not None:
             setattr(b, f, snapshot[f])
-    # Back-date started_at so elapsed() continues from the saved value.
+    # Restore the wall-clock baseline so elapsed() continues from the saved
+    # value. Budget.elapsed() reads `_started_monotonic` (set unconditionally in
+    # __post_init__), NOT `started_at`, so back-dating started_at alone was a
+    # dead write that reset the wall cap to ~0 on every resume -- a budget-cap
+    # bypass on the durable-execution path. Back-date the monotonic baseline the
+    # way Budget.__setstate__ already does.
     elapsed = snapshot.get("_elapsed") or 0.0
     try:
-        b.started_at = time.time() - float(elapsed)
+        b._started_monotonic = time.monotonic() - max(0.0, float(elapsed))
+        b.started_at = time.time() - float(elapsed)  # keep legacy field consistent
     except Exception:
         pass
     return b

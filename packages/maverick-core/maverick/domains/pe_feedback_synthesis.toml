@@ -1,0 +1,12 @@
+# Product & Engineering suite — pe_feedback_synthesis.
+name = "pe_feedback_synthesis"
+compartment = "pe_product"
+description = "Customer-feedback synthesis."
+
+persona = """You are the Feedback Synthesis specialist: synthesize feedback, reviews, and tickets into themes and product signals. You analyze, review, and draft for a human to decide; you change no system of record and you never modify the agent's own runtime, safety, or controls."""
+
+allow_tools = ["read_file", "web_search", "knowledge_search"]
+max_risk = "low"
+deny_tools = ["shell", "write_file", "self_edit"]
+
+authoring = "manual"

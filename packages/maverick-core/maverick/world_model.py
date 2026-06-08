@@ -12,6 +12,7 @@ v0.1.6 reliability hardening:
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 import sqlite3
 import threading
@@ -20,6 +21,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
 SCHEMA_VERSION = 11
@@ -371,17 +374,42 @@ def _enc_field(text: str | None) -> str | None:
     return seal_to_str(text) if at_rest_enabled() else text
 
 
-def _dec_field(text: str | None) -> str | None:
-    """Unseal a stored field when at-rest encryption is enabled.
+# Returned in strict mode when a sealed column holds an unsealed value (legacy
+# plaintext that wasn't migrated, or tampering) -- never the real plaintext.
+_UNSEALED_WITHHELD = "‹withheld: unsealed value in an encrypted store›"
 
-    When encryption is disabled, fields are stored as raw plaintext and may
-    legitimately begin with the public seal marker. Avoid parsing those marker
-    collisions as ciphertext on read.
+
+def _dec_field(text: str | None) -> str | None:
+    """Unseal a stored field from a sealed column when at-rest encryption is on.
+
+    When encryption is disabled, fields are raw plaintext (which may legitimately
+    begin with the public seal marker), so they pass through untouched.
+
+    When encryption is on but the stored value is NOT sealed, it is either
+    pre-migration legacy plaintext or tampering. By default it is passed through
+    (so a not-yet-migrated store stays readable) with a warning; under
+    :func:`strict_at_rest` it is withheld and logged as an integrity failure --
+    closing the read-side plaintext-passthrough hole.
     """
     if text is None:
         return text
-    from .crypto_at_rest import at_rest_enabled, unseal_from_str
-    return unseal_from_str(text) if at_rest_enabled() else text
+    from .crypto_at_rest import (
+        at_rest_enabled,
+        is_sealed_str,
+        strict_at_rest,
+        unseal_from_str,
+    )
+    if not at_rest_enabled():
+        return text
+    if is_sealed_str(text):
+        return unseal_from_str(text)
+    if strict_at_rest():
+        log.error("at-rest strict: withholding an unsealed value in a sealed column "
+                  "(run 'maverick encryption migrate'; tampering if already migrated)")
+        return _UNSEALED_WITHHELD
+    log.warning("at-rest: unsealed value in a sealed column (pre-migration legacy or "
+                "tampering); run 'maverick encryption migrate'")
+    return text
 
 
 def _question_from_row(row) -> Question:
@@ -390,6 +418,40 @@ def _question_from_row(row) -> Question:
     d["question"] = _dec_field(d.get("question"))
     d["answer"] = _dec_field(d.get("answer"))
     return Question(**d)
+
+
+def _goal_from_row(row) -> Goal:
+    """Build a Goal from a row, decrypting the sealed content fields."""
+    d = dict(row)
+    d["title"] = _dec_field(d.get("title"))
+    d["description"] = _dec_field(d.get("description"))
+    if "result" in d:
+        d["result"] = _dec_field(d.get("result"))
+    return Goal(**d)
+
+
+def _goal_event_from_row(row) -> GoalEvent:
+    """Build a GoalEvent from a row, decrypting the sealed content field."""
+    d = dict(row)
+    d["content"] = _dec_field(d.get("content"))
+    return GoalEvent(**d)
+
+
+def _episode_spend_from_row(row) -> EpisodeSpend:
+    """Build an EpisodeSpend from a row, decrypting the sealed outcome field."""
+    d = dict(row)
+    if "outcome" in d:
+        d["outcome"] = _dec_field(d.get("outcome"))
+    return EpisodeSpend(**d)
+
+
+def _approval_from_row(row) -> Approval:
+    """Build an Approval from a row, decrypting the sealed action/scope/detail."""
+    d = dict(row)
+    d["action"] = _dec_field(d.get("action"))
+    d["scope"] = _dec_field(d.get("scope"))
+    d["detail"] = _dec_field(d.get("detail"))
+    return Approval(**d)
 
 
 class WorldModel:
@@ -703,7 +765,7 @@ class WorldModel:
             cur = conn.execute(
                 "INSERT INTO goals(parent_id, title, description, status, "
                 "created_at, updated_at, owner) VALUES(?, ?, ?, 'pending', ?, ?, ?)",
-                (parent_id, title, description, now, now, owner),
+                (parent_id, _enc_field(title), _enc_field(description), now, now, owner),
             )
             return cur.lastrowid
 
@@ -711,12 +773,12 @@ class WorldModel:
         with self._writing() as conn:
             conn.execute(
                 "UPDATE goals SET status = ?, updated_at = ?, result = COALESCE(?, result) WHERE id = ?",
-                (status, time.time(), result, goal_id),
+                (status, time.time(), _enc_field(result), goal_id),
             )
 
     def get_goal(self, goal_id: int) -> Goal | None:
         row = self._read_one("SELECT * FROM goals WHERE id = ?", (goal_id,))
-        return Goal(**dict(row)) if row else None
+        return _goal_from_row(row) if row else None
 
     def list_goals(
         self,
@@ -751,18 +813,18 @@ class WorldModel:
             sql += " LIMIT ? OFFSET ?"
             params = params + (max(1, int(limit)), max(0, int(offset)))
         rows = self._read_all(sql, params)
-        return [Goal(**dict(r)) for r in rows]
+        return [_goal_from_row(r) for r in rows]
 
     def most_recent_goal(self) -> Goal | None:
         """Most-recently-updated goal regardless of status. Locked read."""
         row = self._read_one("SELECT * FROM goals ORDER BY updated_at DESC LIMIT 1")
-        return Goal(**dict(row)) if row else None
+        return _goal_from_row(row) if row else None
 
     def active_goal(self) -> Goal | None:
         row = self._read_one(
             "SELECT * FROM goals WHERE status IN ('active', 'blocked') ORDER BY updated_at DESC LIMIT 1"
         )
-        return Goal(**dict(row)) if row else None
+        return _goal_from_row(row) if row else None
 
     def inflight_goal(self) -> Goal | None:
         """Most-recently-updated goal still in flight (``active``/``pending``).
@@ -774,7 +836,7 @@ class WorldModel:
             "SELECT * FROM goals WHERE status IN ('active', 'pending') "
             "ORDER BY updated_at DESC LIMIT 1"
         )
-        return Goal(**dict(row)) if row else None
+        return _goal_from_row(row) if row else None
 
     def candidate_goals(self, include_running: bool, limit: int = 500) -> list[Goal]:
         """Goals with comparable text, for cross-run recall. Locked read.
@@ -796,7 +858,7 @@ class WorldModel:
             "ORDER BY updated_at DESC LIMIT ?",
             (limit,),
         )
-        return [Goal(**dict(r)) for r in rows]
+        return [_goal_from_row(r) for r in rows]
 
     def subgoals(self, parent_id: int, limit: int = 50) -> list[Goal]:
         """Immediate children of a goal, oldest first. Locked read."""
@@ -806,7 +868,7 @@ class WorldModel:
             "ORDER BY created_at ASC LIMIT ?",
             (parent_id, limit),
         )
-        return [Goal(**dict(r)) for r in rows]
+        return [_goal_from_row(r) for r in rows]
 
     # ----- episodes -----
     def start_episode(self, goal_id: int) -> int:
@@ -861,7 +923,7 @@ class WorldModel:
                 "UPDATE episodes SET ended_at = ?, summary = ?, outcome = ?, "
                 "cost_dollars = ?, input_tokens = ?, output_tokens = ?, tool_calls = ? "
                 "WHERE id = ?",
-                (time.time(), summary, outcome, cost_dollars,
+                (time.time(), _enc_field(summary), _enc_field(outcome), cost_dollars,
                  input_tokens, output_tokens, tool_calls, episode_id),
             )
 
@@ -891,7 +953,7 @@ class WorldModel:
                 "FROM episodes ORDER BY started_at DESC LIMIT ?",
                 (limit,),
             )
-        return [EpisodeSpend(**dict(r)) for r in rows]
+        return [_episode_spend_from_row(r) for r in rows]
 
     def total_spend(self) -> dict[str, float]:
         row = self._read_one(
@@ -912,7 +974,7 @@ class WorldModel:
         with self._writing() as conn:
             cur = conn.execute(
                 "INSERT INTO goal_events(goal_id, agent, kind, content, ts) VALUES(?, ?, ?, ?, ?)",
-                (goal_id, agent, kind, content, time.time()),
+                (goal_id, agent, kind, _enc_field(content), time.time()),
             )
             return cur.lastrowid
 
@@ -922,7 +984,7 @@ class WorldModel:
             "WHERE goal_id = ? AND id > ? ORDER BY id ASC LIMIT ?",
             (goal_id, since_id, limit),
         )
-        return [GoalEvent(**dict(r)) for r in rows]
+        return [_goal_event_from_row(r) for r in rows]
 
     def prune_goal_events(self, older_than_seconds: float = 30 * 24 * 3600) -> int:
         """Delete goal_events rows older than N seconds. Returns rows removed."""
@@ -1064,7 +1126,8 @@ class WorldModel:
             cur = conn.execute(
                 "INSERT INTO approvals(action, risk, scope, detail, status, requested_at) "
                 "VALUES(?, ?, ?, ?, 'pending', ?)",
-                (action, risk, scope, detail, time.time()),
+                (_enc_field(action), risk, _enc_field(scope), _enc_field(detail),
+                 time.time()),
             )
             return cur.lastrowid
 
@@ -1072,13 +1135,13 @@ class WorldModel:
         row = self._read_one(
             "SELECT * FROM approvals WHERE id = ?", (approval_id,)
         )
-        return Approval(**dict(row)) if row else None
+        return _approval_from_row(row) if row else None
 
     def pending_approvals(self) -> list[Approval]:
         rows = self._read_all(
             "SELECT * FROM approvals WHERE status = 'pending' ORDER BY id"
         )
-        return [Approval(**dict(r)) for r in rows]
+        return [_approval_from_row(r) for r in rows]
 
     def decide_approval(self, approval_id: int, status: str) -> bool:
         """Flip a pending approval to 'approved' or 'denied'.

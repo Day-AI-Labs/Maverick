@@ -534,6 +534,7 @@ def base_registry(
     from .elasticsearch_tool import elasticsearch_tool
     from .email_tool import email_tool
     from .embeddings import embeddings
+    from .erp_tool import erp_tool
     from .ffmpeg_tool import ffmpeg_tool
     from .file_watcher import file_watcher
     from .ga4_tool import ga4_tool
@@ -668,6 +669,35 @@ def base_registry(
     reg.register(s3_tool())
     reg.register(elasticsearch_tool())
     reg.register(github_actions())
+    # Strategic-fit connectors (ITSM / data / cloud-ML / GRC). Explicit-token
+    # auth (no ambient creds), so registered unconditionally like salesforce.
+    from .bigquery_tool import bigquery_tool
+    from .databricks_tool import databricks_tool
+    from .dynamics_tool import dynamics_tool
+    from .onetrust_tool import onetrust_tool
+    from .oracle_tool import oracle_tool
+    from .sap_tool import sap_tool
+    from .servicenow_tool import servicenow_tool
+    from .snowflake_tool import snowflake_tool
+    from .vertex_tool import vertex_tool
+    from .workday_tool import workday_tool
+    reg.register(servicenow_tool())
+    reg.register(snowflake_tool())
+    reg.register(databricks_tool())
+    reg.register(onetrust_tool())
+    reg.register(vertex_tool())
+    reg.register(oracle_tool())
+    reg.register(sap_tool())
+    reg.register(workday_tool())
+    reg.register(bigquery_tool())
+    reg.register(dynamics_tool())
+    # The long tail of token-authed REST connectors (one spec each, built on
+    # make_rest_tool). Same house rules: explicit env auth, confirm-gated writes.
+    from .enterprise_connectors import enterprise_connectors
+    for _conn in enterprise_connectors():
+        reg.register(_conn)
+    from .database_tool import database_tool
+    reg.register(database_tool())
     # Credentialed SaaS/cloud tools are opt-in (PR #124): they can use
     # ambient host credentials, so they only register when the operator
     # sets MAVERICK_ENABLE_CRED_TOOLS=true.
@@ -702,6 +732,7 @@ def base_registry(
     reg.register(imagemagick_tool(sandbox))
     reg.register(ga4_tool())
     reg.register(plaid_tool())
+    reg.register(erp_tool())  # read-only ERP system-of-record access (Ops/Finance)
 
     # Voice tools (opt-in extra; tool factories raise ImportError only
     # when called without the required API key OR SDK; registering is
@@ -722,11 +753,11 @@ def base_registry(
     from ..workspace_snapshot import workspace_snapshot
     reg.register(dom_diff())
     reg.register(license_scan())
-    reg.register(workspace_snapshot())
+    reg.register(workspace_snapshot(sandbox))
     reg.register(task_graph())
     reg.register(browser_device())
     reg.register(bench_track())
-    reg.register(html_to_app())
+    reg.register(html_to_app(sandbox))
     reg.register(browser_auth_vault())
 
     # Subpackage capability tools (ROADMAP 2027 H2). The sandbox-backed ones

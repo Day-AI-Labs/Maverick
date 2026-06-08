@@ -143,28 +143,22 @@ def compliance_report() -> list[ControlCheck]:
         "Audit logging (record-keeping)", "EU AI Act Art. 12 / GDPR Art. 30",
         "active", "append-only event log at ~/.maverick/audit/YYYY-MM-DD.ndjson",
     ))
-    signing_requested = False
-    signing_available = False
+    # Reuse the ACTIVE signing probe (it writes + verifies a signed row to a
+    # throwaway probe file, then deletes it -- no real-log side effect, and no I/O
+    # at all when signing isn't requested) instead of inferring from "signing
+    # requested AND cryptography importable". The inference could read "active"
+    # while live writes silently fall back to unsigned; the probe reflects a real
+    # signed write, so this agrees with 'maverick enterprise verify'.
+    signing_on = False
+    signing_detail = "enable [audit] sign = true (or MAVERICK_AUDIT_SIGN=1)"
     try:
-        from .audit.writer import _resolve_signing
+        from .deployment import _verify_audit_signing
 
-        signing_requested = bool(_resolve_signing(None))
-        if signing_requested:
-            from .audit.signing import _have_crypto
-
-            signing_available = _have_crypto()
+        probe = _verify_audit_signing()
+        signing_on = probe.passed
+        signing_detail = probe.detail
     except Exception:
-        signing_available = False
-    signing_on = signing_requested and signing_available
-    if signing_on:
-        signing_detail = "Ed25519 hash-chain on; verify with 'maverick audit verify'"
-    elif signing_requested:
-        signing_detail = (
-            "install audit signing support with "
-            "pip install 'maverick-agent[audit-signing]'"
-        )
-    else:
-        signing_detail = "enable [audit] sign = true (or MAVERICK_AUDIT_SIGN=1)"
+        pass
     checks.append(ControlCheck(
         "Tamper-evident audit", "EU AI Act Art. 12",
         "active" if signing_on else "action_needed",
@@ -240,7 +234,9 @@ def compliance_report() -> list[ControlCheck]:
     checks.append(ControlCheck(
         "Encryption at rest", "GDPR Art. 32",
         "active" if enc_on else "action_needed",
-        "AES-256-GCM seals the memory store + world-DB content (turns, facts, messages, questions)"
+        "AES-256-GCM seals the memory store + world-DB content (goals, episodes, "
+        "approvals, turns, facts, messages, questions, events); the audit log is "
+        "signed, not sealed"
         if enc_on
         else "enable [encryption] at_rest = true (or enterprise mode) to seal it",
     ))

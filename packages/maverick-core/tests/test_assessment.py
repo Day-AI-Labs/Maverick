@@ -22,6 +22,7 @@ def test_templates_registered_and_looked_up():
     # Core compliance templates + the finance suite (finance-agent-suite §6).
     assert types == {
         "pia", "aira", "vendor_risk",
+        "hipaa", "soc2", "pci_dss",
         "sox_control", "fraud_risk", "itgc", "credit_risk", "close_readiness",
     }
     assert get_template("VENDOR_RISK").title == "Vendor Risk Assessment"  # case-insensitive
@@ -124,3 +125,17 @@ def test_cli_assess_flow(tmp_path):
 
     shown = runner.invoke(main, ["assess", "show", list_saved()[0]["id"]])
     assert shown.exit_code == 0 and "Acme" in shown.output
+
+
+def test_load_saved_rejects_path_traversal():
+    from maverick.assessment import load_saved
+    # `assess show ../../etc/passwd` must not read outside the assessments dir.
+    assert load_saved("../../etc/passwd") is None
+    assert load_saved("../secret") is None
+    assert load_saved("does-not-exist") is None
+
+
+def test_save_session_is_written_private_0600():
+    from maverick.assessment import AssessmentSession, save_session
+    path = save_session(AssessmentSession(type="pia", subject="Acme"))
+    assert oct(path.stat().st_mode)[-3:] == "600"

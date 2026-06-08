@@ -69,12 +69,19 @@ def test_checkpointer_clear(tmp_path: Path):
 
 
 def test_budget_snapshot_restore_round_trip():
+    import time
+
     b = Budget(max_dollars=7.0, max_tool_calls=99)
     b.input_tokens = 1234
     b.output_tokens = 567
     b.dollars = 1.25
     b.tool_calls = 8
+    # Simulate ~40s of wall time already spent. Budget.elapsed() reads
+    # _started_monotonic, so back-date it (a fresh Budget has ~0 elapsed, which
+    # made the old `>= _elapsed - 1.0` assertion vacuous and hid the resume bug).
+    b._started_monotonic = time.monotonic() - 40.0
     snap = ckpt_mod.snapshot_budget(b)
+    assert snap["_elapsed"] >= 39.0
     r = ckpt_mod.restore_budget(snap)
     assert r.max_dollars == 7.0
     assert r.max_tool_calls == 99
@@ -82,8 +89,10 @@ def test_budget_snapshot_restore_round_trip():
     assert r.output_tokens == 567
     assert r.dollars == 1.25
     assert r.tool_calls == 8
-    # elapsed() continues from the snapshot, not reset to ~0.
-    assert r.elapsed() >= snap["_elapsed"] - 1.0
+    # Regression: the wall-clock cap must NOT reset on resume -- elapsed()
+    # continues from the snapshot rather than ~0 (restore must back-date the
+    # monotonic baseline that elapsed() actually reads, not just started_at).
+    assert r.elapsed() >= 39.0
 
 
 def test_enabled_env_overrides(monkeypatch):

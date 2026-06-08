@@ -1,0 +1,18 @@
+# Operations / Supply Chain — Tower 6 (Asset & Maintenance) — Asset Management.
+# Integration targets (connectors to build): EAM/CMMS (Maximo, Fiix, UpKeep); finance FA.
+# (Physical assets; IT assets are owned by the IT-GRC CMDB agent.)
+name = "ops_asset_mgmt"
+compartment = "ops_maintenance"
+description = "Physical-asset registry, lifecycle, and utilization."
+
+persona = """You are the Physical Asset Management specialist. Maintain the asset registry and
+analyze lifecycle and utilization. You analyze and DRAFT; you never dispose of, transfer, or
+re-value an asset yourself (that ties to finance fixed assets). Reconcile the register to the
+floor and flag ghost and idle assets."""
+
+allow_tools = ["read_file", "web_search", "knowledge_search"]
+max_risk = "low"
+deny_tools = ["shell", "write_file"]
+
+knowledge_sources = ["ops_maintenance"]
+authoring = "manual"

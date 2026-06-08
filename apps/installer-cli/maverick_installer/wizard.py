@@ -1111,6 +1111,14 @@ def pick_advanced() -> dict[str, Any]:
             "Needs the [audit-signing] extra; falls back to unsigned if absent.",
             default=False,
         ),
+        "security_autofix": _q_confirm(
+            "Let the security assessor auto-fix low-risk gaps? With enterprise mode "
+            "on, `maverick remediate --apply` may auto-apply reversible, in-boundary "
+            "config fixes (enable audit signing, set retention); anything "
+            "behaviour-changing stays gated for a human. Off by default; every fix "
+            "is audited and reversible.",
+            default=False,
+        ),
         "deferred_tools": _q_confirm(
             "Deferred tool loading? Show the model a small core toolset plus a "
             "find_tools search tool, loading the long tail (80+ integrations, MCP) "
@@ -1844,9 +1852,46 @@ def pick_a2a() -> tuple[dict[str, Any], list[str]]:
     console.print(
         "  [dim]A2A serves an agent card at /.well-known/agent-card.json and a "
         "task endpoint at /a2a/v1 (on `maverick dashboard`). Budget is clamped "
-        "to operator caps; a bearer token is required.[/dim]"
+        "to operator caps; a bearer token is required. A2A goals run under a "
+        "tool ceiling (max_risk=medium by default -- edit [a2a].max_risk to "
+        "tighten to \"low\" or open to \"high\"/\"none\").[/dim]"
     )
-    return {"enabled": True}, ["MAVERICK_A2A_TOKEN"]
+    return {"enabled": True, "max_risk": "medium"}, ["MAVERICK_A2A_TOKEN"]
+
+
+# Business-function agent suites the factory can spawn from (domain packs under
+# maverick/domains/). The kernel's enabled_domains() honors the [suites] table
+# this writes; suites are ON by default (opt-out), so writing nothing keeps all.
+AGENT_SUITES: list[tuple[str, str]] = [
+    ("operations", "Operations / Supply Chain"),
+    ("legal", "Legal (General Counsel)"),
+    ("finance", "Finance"),
+    ("it_grc", "IT / GRC / Security / Privacy / AI-Governance"),
+    ("sales_gtm", "Sales / GTM"),
+    ("hr", "HR / People"),
+    ("product_engineering", "Product & Engineering"),
+    ("strategy", "Strategy / Corp Dev / Exec"),
+]
+
+
+def pick_suites() -> dict[str, bool]:
+    """Which business-function agent suites to enable. All on unless customized.
+
+    Returns a ``suite -> bool`` map for the ``[suites]`` config table (empty when
+    the operator keeps the default, so the kernel enables every suite)."""
+    console.print()
+    console.print("[bold]Agent suites[/bold] — the business functions the agent "
+                  "factory can spawn (finance, operations, legal, ...).")
+    console.print("[dim]All enabled by default. A disabled suite's agents can't be "
+                  "spawned. Editable later in ~/.maverick/config.toml under "
+                  "[suites].[/dim]")
+    if not _q_confirm("  Customize which suites are enabled? (No = keep all on)",
+                      default=False):
+        return {}
+    out: dict[str, bool] = {}
+    for key, label in AGENT_SUITES:
+        out[key] = _q_confirm(f"    Enable the {label} suite?", default=True)
+    return out
 
 
 def write_config(
@@ -1879,6 +1924,7 @@ def write_config(
     durable: dict[str, Any] | None = None,
     finance: dict[str, Any] | None = None,
     deployment: str | None = None,
+    suites: dict[str, bool] | None = None,
 ) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -2065,6 +2111,13 @@ def write_config(
         for k, v in capability_config.items():
             lines.append(f"{k} = {str(v).lower()}")
 
+    if suites:
+        # Per-suite enable/disable; the kernel's enabled_domains() reads this.
+        lines.append("")
+        lines.append("[suites]")
+        for k, v in suites.items():
+            lines.append(f"{k} = {str(v).lower()}")
+
     if advanced:
         # Advanced reasoning toggles -> the kernel's config sections. Each is
         # off unless the wizard wrote it, matching the modules' own defaults.
@@ -2193,14 +2246,17 @@ def write_config(
         if plugin_enforce:
             _emit_kv(lines, "enforce_permissions", plugin_enforce)
 
-    if tool_acl:
+    autofix = bool((advanced or {}).get("security_autofix"))
+    if tool_acl or autofix:
         lines.append("")
         lines.append("[security]")
-        for k, v in tool_acl.items():
+        if autofix:
+            lines.append("auto_fix = true")
+        for k, v in (tool_acl or {}).items():
             if k == "channels":
                 continue
             _emit_kv(lines, k, v)
-        for ch_id, ch_cfg in (tool_acl.get("channels") or {}).items():
+        for ch_id, ch_cfg in ((tool_acl or {}).get("channels") or {}).items():
             lines.append("")
             lines.append(f"[security.channels.{ch_id}]")
             for k, v in ch_cfg.items():
@@ -2618,6 +2674,9 @@ _COMPLIANCE_COMMANDS: list[tuple[str, str]] = [
     ("maverick ropa", "GDPR Art. 30 record-of-processing scaffold"),
     ("maverick dpia", "GDPR Art. 35 impact-assessment scaffold"),
     ("maverick ai-act", "EU AI Act risk classification"),
+    ("maverick assess", "run a PIA / AIRA / vendor-risk assessment"),
+    ("maverick hunt", "hunt the audit trail for agent attacks"),
+    ("maverick remediate", "assess security posture + fix low-risk gaps"),
 ]
 
 
@@ -2629,6 +2688,7 @@ def _regulated_deployment(advanced: dict[str, Any]) -> bool:
         advanced.get("enterprise")
         or advanced.get("encrypt_at_rest")
         or advanced.get("audit_sign")
+        or advanced.get("security_autofix")
     )
 
 
@@ -2884,6 +2944,8 @@ def run(fast: bool = False, resume: bool = False) -> int:
             "[bold]MAVERICK_ENABLE_SESSION_PROVIDERS=1[/bold]."
         )
 
+    suites = pick_suites()
+
     console.print()
     if not _q_confirm("Write config and finish?", default=True):
         # Be honest about where the state lives and what restore does.
@@ -2913,6 +2975,7 @@ def run(fast: bool = False, resume: bool = False) -> int:
         self_learning=self_learning if self_learning.get("enable") else None,
         durable=durable if durable.get("enabled") else None,
         finance=finance if finance.get("enable") else None,
+        suites=suites,
     )
     _clear_partial()
     ok = smoke_test()

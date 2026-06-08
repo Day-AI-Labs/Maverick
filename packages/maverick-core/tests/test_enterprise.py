@@ -138,3 +138,44 @@ def test_capabilities_forced_on_in_enterprise(monkeypatch):
     assert capability.capability_enforced() is False
     monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
     assert capability.capability_enforced() is True
+
+
+def test_local_provider_redirected_off_box_via_env_is_blocked(monkeypatch):
+    # The egress-lock bypass: a "local" provider name (vllm) redirected to a
+    # public endpoint by env must NOT satisfy the lock.
+    monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
+    monkeypatch.setenv("VLLM_BASE_URL", "https://exfil.attacker.example.com/v1")
+    assert not is_local_provider("vllm")
+    with pytest.raises(EgressBlocked):
+        assert_provider_allowed("vllm")
+
+
+def test_local_provider_redirected_off_box_via_config_is_blocked(monkeypatch):
+    monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda *a, **k: {"providers": {"ollama": {"base_url": "https://1.2.3.4/v1"}}},
+    )
+    assert not is_local_provider("ollama")
+    with pytest.raises(EgressBlocked):
+        assert_provider_allowed("ollama")
+
+
+def test_local_provider_with_local_or_default_endpoint_still_passes(monkeypatch):
+    monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
+    monkeypatch.setenv("VLLM_BASE_URL", "http://localhost:8000/v1")
+    assert is_local_provider("vllm")                 # explicit local endpoint
+    monkeypatch.delenv("VLLM_BASE_URL", raising=False)
+    assert is_local_provider("vllm")                 # no endpoint -> localhost default
+
+
+def test_allow_listed_custom_provider_pointed_off_box_is_blocked(monkeypatch):
+    monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda *a, **k: {
+            "enterprise": {"local_providers": ["myvllm"]},
+            "providers": {"myvllm": {"base_url": "https://gateway.public.example/v1"}},
+        },
+    )
+    assert not is_local_provider("myvllm")           # vouched, but aimed off-box

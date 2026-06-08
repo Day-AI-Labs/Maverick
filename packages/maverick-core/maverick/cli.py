@@ -2837,6 +2837,20 @@ def audit() -> None:
     """Inspect the audit log (~/.maverick/audit/YYYY-MM-DD.ndjson)."""
 
 
+def _require_day_opt(day: str | None) -> None:
+    """Reject a ``--day`` that isn't a literal YYYY-MM-DD before it becomes a path.
+
+    ``day`` is resolved to ``<audit_dir>/<day>.ndjson``; a value like
+    ``../../etc/passwd`` would otherwise escape the audit dir. The writer/export
+    layer refuses it too (a backstop for non-CLI callers); this just turns it
+    into a friendly CLI error + exit 2, matching ``--since``/``--until``.
+    """
+    from .audit.events import is_valid_day
+    if day is not None and not is_valid_day(day):
+        click.echo("error: --day must be YYYY-MM-DD", err=True)
+        sys.exit(2)
+
+
 @audit.command("tail")
 @click.option("-n", "--num", default=50, type=int, help="Lines to tail.")
 @click.option("--day", default=None, help="YYYY-MM-DD (default: today).")
@@ -2844,6 +2858,7 @@ def audit_tail(num: int, day: str | None) -> None:
     """Print the last N audit events."""
     import json as _json
 
+    _require_day_opt(day)
     from .audit import default_audit_log
     for ev in default_audit_log().tail(num, day=day):
         click.echo(_json.dumps(ev, default=str))
@@ -2856,6 +2871,7 @@ def audit_grep(pattern: str, day: str | None) -> None:
     """Regex grep over today's audit log."""
     import json as _json
 
+    _require_day_opt(day)
     from .audit import default_audit_log
     try:
         events = default_audit_log().grep(pattern, day=day)
@@ -2899,6 +2915,7 @@ def audit_verify(
     import datetime as _dt
     from pathlib import Path as _Path
 
+    _require_day_opt(day)
     from .audit import verify_anchors, verify_chain
     from .paths import data_dir
 
@@ -2988,6 +3005,7 @@ def audit_export(
     import os as _os
     from pathlib import Path as _Path
 
+    _require_day_opt(day)
     for _label, _val in (("--since", since), ("--until", until)):
         if _val is not None:
             try:
@@ -3181,6 +3199,7 @@ def logs_cmd(pattern: str | None, num: int, day: str | None) -> None:
     """
     import json as _json
 
+    _require_day_opt(day)
     from .audit import default_audit_log
     al = default_audit_log()
     try:
@@ -3388,11 +3407,55 @@ def hunt_cmd(fmt: str, since: str | None, until: str | None, strict: bool) -> No
         )
 
 
+@main.command("remediate")
+@click.option("--apply", "do_apply", is_flag=True,
+              help="Apply the auto-fixable remediations (needs enterprise mode + "
+                   "[security] auto_fix opt-in).")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format.")
+def remediate_cmd(do_apply: bool, fmt: str) -> None:
+    """Assess security posture and (bounded) auto-fix it.
+
+    Reports control gaps + active breach signals and the remediation plan.
+    Low-risk, reversible fixes to Maverick's OWN config are auto-applied with
+    --apply -- but only under enterprise mode + a [security] auto_fix opt-in;
+    everything behaviour-changing is proposed for a human. Every applied fix is
+    audited and reports how to undo it.
+    """
+    from .remediation import (
+        apply_remediation,
+        plan,
+        render_plan_json,
+        render_plan_text,
+    )
+    p = plan()
+    click.echo(render_plan_json(p) if fmt == "json" else render_plan_text(p))
+    if not do_apply:
+        return
+    click.echo("")
+    applied_any = False
+    for g in p.gaps:
+        if not g.auto:
+            continue
+        res = apply_remediation(g, dry_run=False)
+        if res.applied:
+            applied_any = True
+            click.echo(f"  applied: {g.title}  (undo: {res.undo})")
+        else:
+            click.echo(f"  skipped: {g.title}  ({res.reason})")
+    if not applied_any:
+        click.echo("  (nothing auto-applied)")
+
+
 # ----- Compliance assessments (PIA / AIRA / vendor risk) ---------------
 
 @main.group("assess")
 def assess_group() -> None:
-    """Conduct compliance assessments of a subject (PIA, AIRA, vendor risk)."""
+    """Conduct compliance assessments of a subject.
+
+    Privacy: PIA, AIRA, vendor risk. Security: HIPAA, SOC 2, PCI DSS.
+    Run 'maverick assess templates' for the full set.
+    """
 
 
 @assess_group.command("templates")

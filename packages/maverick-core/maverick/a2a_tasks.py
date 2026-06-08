@@ -118,6 +118,54 @@ def _redacted_push_config(cfg: dict | None) -> dict | None:
 Runner = Callable[..., str]
 
 
+def _a2a_capability() -> Any:
+    """Tool ceiling for A2A-initiated goals.
+
+    A2A is a remote, machine-to-machine surface, so its goals run under a
+    capability instead of inheriting full local tool access. Defaults to
+    ``max_risk="medium"`` -- high-risk tools (shell / code_exec / write / send /
+    infra, plus the unclassified MCP tools that now default to high) are off
+    unless an operator opts in. Configurable via the ``[a2a]`` config section
+    (``max_risk``, ``tools`` allowlist, ``deny_tools``) with a
+    ``MAVERICK_A2A_MAX_RISK`` env override; set the risk to ``none``/``off`` to
+    lift the ceiling entirely (the prior behaviour).
+    """
+    from .capability import Capability
+    from .safety.tool_risk import RISK_LEVELS
+
+    try:
+        from .config import load_config
+        cfg = (load_config() or {}).get("a2a") or {}
+    except Exception:
+        cfg = {}
+
+    raw = os.environ.get("MAVERICK_A2A_MAX_RISK")
+    if raw is None:
+        raw = cfg.get("max_risk", "medium")
+    raw = str(raw).strip().lower()
+    if raw in ("none", "off", "any", "unlimited", ""):
+        max_risk: str | None = None
+    elif raw in RISK_LEVELS:
+        max_risk = raw
+    else:
+        max_risk = "medium"  # unrecognized value -> safe default
+
+    def _names(cfg_key: str, env_key: str) -> frozenset[str]:
+        vals = cfg.get(cfg_key)
+        if vals is None:
+            vals = os.environ.get(env_key, "").split(",")
+        if isinstance(vals, str):
+            vals = [vals]
+        return frozenset(str(v).strip() for v in vals if str(v).strip())
+
+    return Capability(
+        principal="a2a",
+        allow_tools=_names("tools", "MAVERICK_A2A_TOOLS"),
+        deny_tools=_names("deny_tools", "MAVERICK_A2A_DENY_TOOLS"),
+        max_risk=max_risk,
+    )
+
+
 def _default_runner(
     text: str, *, max_dollars: float, max_wall: float, max_depth: int,
 ) -> str:
@@ -133,8 +181,11 @@ def _default_runner(
     goal_id = world.create_goal(text[:120] or "a2a task", text)
     llm = LLM()
     sandbox = build_sandbox()
+    # A2A goals run under a tool ceiling (default max_risk="medium") so a remote
+    # caller can't reach full local tool access; see _a2a_capability.
     return run_goal_sync(
         llm, world, budget, goal_id, sandbox=sandbox, max_depth=max_depth,
+        capability=_a2a_capability(),
     )
 
 

@@ -35,7 +35,13 @@ from maverick import a2a
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .api import router as api_router
-from .auth import execution_user_id_from_request, require_principal
+from .auth import (
+    assert_goal_access,
+    caller_principal,
+    execution_user_id_from_request,
+    goal_owner_filter,
+    require_principal,
+)
 from .oidc_login import router as oidc_login_router
 
 log = logging.getLogger(__name__)
@@ -608,10 +614,18 @@ def _load_skills():
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
     w = _world()
-    # Use SQL aggregation instead of pulling every goal into Python.
-    rows = w.conn.execute(
-        "SELECT status, COUNT(*) FROM goals GROUP BY status"
-    ).fetchall()
+    # Use SQL aggregation instead of pulling every goal into Python. Owner-scope
+    # the rollup to the caller (auth-off/admin -> all; see goal_owner_filter).
+    owner = goal_owner_filter(request)
+    if owner is None:
+        rows = w.conn.execute(
+            "SELECT status, COUNT(*) FROM goals GROUP BY status"
+        ).fetchall()
+    else:
+        rows = w.conn.execute(
+            "SELECT status, COUNT(*) FROM goals WHERE owner = ? GROUP BY status",
+            (owner,),
+        ).fetchall()
     by_status = {r[0]: int(r[1]) for r in rows}
     counts = {
         "total":   sum(by_status.values()),
@@ -620,7 +634,7 @@ async def index(request: Request) -> HTMLResponse:
         "blocked": by_status.get("blocked", 0),
     }
     # Bounded recent slice instead of "load every goal ever, take last 20".
-    recent = w.list_goals(limit=20, order="desc")
+    recent = w.list_goals(owner=owner, limit=20, order="desc")
     facts = w.get_facts()
     skills = _load_skills()
     return templates.TemplateResponse(
@@ -632,7 +646,7 @@ async def index(request: Request) -> HTMLResponse:
 
 @app.get("/goals", response_class=HTMLResponse)
 async def goals_page(request: Request) -> HTMLResponse:
-    goals = _world().list_goals(limit=200, order="desc")
+    goals = _world().list_goals(owner=goal_owner_filter(request), limit=200, order="desc")
     return templates.TemplateResponse(request, "goals.html", {"goals": goals})
 
 
@@ -730,6 +744,151 @@ async def compartments_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "compartments.html", {"domains": domains})
 
 
+_OVERSIGHT_KINDS = frozenset({
+    "governance_denied", "shield_block", "capability_denied",
+    "egress_blocked", "consent_result", "halt",
+})
+
+
+def _is_intervention(e: dict) -> bool:
+    """True iff an audit event is a control-plane intervention.
+
+    A ``consent_result`` only counts when it denied/timed out -- an approval is
+    not an intervention.
+    """
+    kind = e.get("kind")
+    if kind == "consent_result":
+        return str(e.get("decision") or "").lower() in {"deny", "timeout"}
+    return kind in _OVERSIGHT_KINDS
+
+
+def _intervention_detail(e: dict) -> str:
+    """A one-line, human summary of an intervention, by kind."""
+    kind = e.get("kind")
+    if kind == "shield_block":
+        return f"{e.get('stage') or '?'}: {e.get('reason') or ''}".strip()
+    if kind == "capability_denied":
+        return f"tool={e.get('tool') or '?'} principal={e.get('principal') or '?'}"
+    if kind == "egress_blocked":
+        return f"provider={e.get('provider') or '?'}"
+    if kind == "consent_result":
+        return f"{e.get('decision') or '?'}: {e.get('action') or ''}".strip()
+    if kind == "halt":
+        return f"{e.get('source') or '?'}: {e.get('detail') or ''}".strip()
+    # governance_denied (and any future kind): the reason, plus which policy
+    # rule fired so the operator can see why it was held.
+    detail = str(e.get("reason") or e.get("detail") or e.get("tool") or "")
+    rule = e.get("rule")
+    if kind == "governance_denied" and rule:
+        detail = f"{detail} [{rule}]".strip()
+    return detail
+
+
+@app.get("/oversight", response_class=HTMLResponse)
+async def oversight_page(request: Request) -> HTMLResponse:
+    """Operator mission-control: every control-plane intervention in one pane.
+
+    Unifies what each guardrail did to the fleet -- org-policy DENY /
+    REQUIRE_HUMAN (governance, EU AI Act Art 14), shield blocks, capability
+    denials, the enterprise egress lock, consent denials, and killswitch halts
+    -- next to the live halt state, the pending human-approval queue, and the
+    count of active agents. The per-guardrail pages (/safety, /approvals,
+    /audit, /fleets) remain the deep dives; this is the at-a-glance roll-up.
+    Fail-soft: an unreadable audit log yields empty panels, never a 500.
+    """
+    from collections import Counter, deque
+
+    from maverick.audit import default_audit_log
+    try:
+        n = max(1, min(int(request.query_params.get("n") or 1000), 5000))
+    except (TypeError, ValueError):
+        n = 1000
+    day = safe_audit_day(request.query_params.get("day"))
+    since = safe_audit_day(request.query_params.get("since"))
+    until = safe_audit_day(request.query_params.get("until"))
+    ranged = bool(since or until)
+
+    # Counts span the whole window; the trail keeps only the newest 150 (a
+    # bounded deque), so a wide incident-review range stays cheap in memory.
+    by_kind: Counter = Counter()
+    recent: deque = deque(maxlen=150)
+    total = 0
+    if ranged:
+        # Incident review: an inclusive [since, until] window across day-files,
+        # reusing the export reader's lexical date filter (open-ended if one
+        # bound is unset). Bound the file scan on a very wide window.
+        from maverick.audit.export import iter_audit_events
+        scanned = 0
+        try:
+            for e in iter_audit_events(since=since, until=until):
+                scanned += 1
+                if scanned > 200_000:
+                    break
+                if _is_intervention(e):
+                    by_kind[str(e.get("kind"))] += 1
+                    total += 1
+                    recent.append(e)
+        except Exception:  # pragma: no cover - never 500 the console on a log error
+            pass
+    else:
+        try:
+            raw = default_audit_log().tail(n, day=day)
+        except Exception:  # pragma: no cover - never 500 the console on a log error
+            raw = []
+        for e in raw:
+            if _is_intervention(e):
+                by_kind[str(e.get("kind"))] += 1
+                total += 1
+                recent.append(e)
+
+    rows = [
+        {
+            "ts": e.get("ts"),
+            "kind": e.get("kind"),
+            "agent": e.get("agent") or "-",
+            "goal_id": e.get("goal_id"),
+            "detail": _intervention_detail(e),
+        }
+        for e in reversed(recent)
+    ]
+
+    try:
+        from maverick.killswitch import is_active
+        halted = bool(is_active())
+    except Exception:
+        halted = False
+
+    w = _world()
+    try:
+        approvals = list(w.pending_approvals())
+    except Exception:
+        approvals = []
+    sources = {a.id: _approval_source(a.detail) for a in approvals}
+    try:
+        active = len(w.list_goals(status="active", owner=goal_owner_filter(request)))
+    except Exception:
+        active = 0
+
+    return templates.TemplateResponse(
+        request, "oversight.html",
+        {
+            "events": rows,
+            "by_kind": dict(by_kind),
+            "total": total,
+            "ranged": ranged,
+            "since": since,
+            "until": until,
+            "halted": halted,
+            "approvals": approvals,
+            "sources": sources,
+            "pending": len(approvals),
+            "active": active,
+            "n": n,
+            "day": day,
+        },
+    )
+
+
 @app.get("/safety", response_class=HTMLResponse)
 async def safety_page(request: Request) -> HTMLResponse:
     """Shield activity: what the safety layer blocked, by stage and reason."""
@@ -759,6 +918,58 @@ async def safety_page(request: Request) -> HTMLResponse:
             "day": day,
         },
     )
+
+
+def _compliance_view(framework: str) -> dict:
+    """Build the control-coverage view for the /compliance page + export.
+
+    Reuses ``maverick.compliance.compliance_report()`` (the same source the
+    ``maverick compliance`` CLI maps to GDPR + EU AI Act + US frameworks) and
+    applies the ``?framework=eu|us|all`` filter the CLI uses. Fail-soft: if the
+    core import or the report raises, return an empty view so the page renders an
+    empty state instead of 500ing. ``framework`` is normalised to one of
+    ``eu``/``us``/``all`` (default ``all``).
+    """
+    framework = framework if framework in {"eu", "us", "all"} else "all"
+    try:
+        from maverick.compliance import COMPLIANCE_DISCLAIMER, compliance_report
+        checks = compliance_report()
+    except Exception:  # pragma: no cover - never 500 the console if core is absent
+        return {"framework": framework, "groups": {}, "summary": {}, "disclaimer": ""}
+    if framework != "all":
+        checks = [c for c in checks if c.framework == framework]
+    # Group by framework bucket ("eu"/"us") for labelled tables on the page.
+    labels = {"eu": "EU AI Act / GDPR", "us": "NIST AI RMF + US state/sector law"}
+    groups: dict[str, dict] = {}
+    for c in checks:
+        bucket = groups.setdefault(
+            c.framework, {"label": labels.get(c.framework, c.framework), "rows": []}
+        )
+        bucket["rows"].append(c)
+    summary = {
+        "active": sum(1 for c in checks if c.status == "active"),
+        "action_needed": sum(1 for c in checks if c.status == "action_needed"),
+        "total": len(checks),
+    }
+    return {
+        "framework": framework,
+        "groups": groups,
+        "summary": summary,
+        "disclaimer": COMPLIANCE_DISCLAIMER,
+    }
+
+
+@app.get("/compliance", response_class=HTMLResponse)
+async def compliance_page(request: Request) -> HTMLResponse:
+    """Auditor-ready control-coverage report (GDPR + EU AI Act + US frameworks).
+
+    Org/system-level posture (like /safety), grouped by framework. The
+    ``?framework=eu|us|all`` query param mirrors ``maverick compliance``.
+    Control coverage only -- not a legal attestation. Fail-soft to an empty
+    state so a missing core install never 500s the console.
+    """
+    view = _compliance_view(request.query_params.get("framework") or "all")
+    return templates.TemplateResponse(request, "compliance.html", view)
 
 
 @app.get("/plugins", response_class=HTMLResponse)
@@ -982,6 +1193,42 @@ def _recent_governance_holds(limit: int = 10) -> list[dict]:
     return list(reversed(events))[:limit]
 
 
+def _fleet_recent_runs(fleet_name: str, limit: int = 12) -> list[dict]:
+    """A fleet's recent agent runs for the operator console (newest-first).
+
+    Mirrors ``maverick fleet status``: reads the per-fleet run index
+    (``maverick.fleet.load_runs``) and resolves each run's goal via the
+    dashboard world to recover its ``status`` + ``title``. Returns at most
+    ``limit`` rows of ``{agent, goal_id, title, status, ts}``. Fail-soft: a
+    missing/garbled index or a vanished goal yields an empty/partial list,
+    never a 500.
+    """
+    try:
+        from maverick.fleet import load_runs
+        runs = load_runs(fleet_name)
+    except Exception:  # pragma: no cover - never 500 the console on a read error
+        return []
+    w = _world()
+    rows: list[dict] = []
+    # Newest-first, capped: the index is oldest-first, so take the tail.
+    for r in reversed(runs[-limit:]):
+        gid = r.get("goal_id")
+        goal = None
+        try:
+            if isinstance(gid, int):
+                goal = w.get_goal(gid)
+        except Exception:  # pragma: no cover - a bad row must not break the page
+            goal = None
+        rows.append({
+            "agent": r.get("agent") or "—",
+            "goal_id": gid,
+            "title": goal.title if goal else "",
+            "status": goal.status if goal else "missing",
+            "ts": r.get("ts"),
+        })
+    return rows
+
+
 @app.get("/fleets", response_class=HTMLResponse)
 async def fleets_page(request: Request) -> HTMLResponse:
     """Operator console: the per-employee agent fleets + their oversight.
@@ -996,10 +1243,17 @@ async def fleets_page(request: Request) -> HTMLResponse:
         fleets = list_fleets()
     except Exception:  # pragma: no cover - never 500 the console if the registry errors
         fleets = []
+    # Owner-scope the roster to the caller (auth-off/admin -> all).
+    owner = goal_owner_filter(request)
+    if owner is not None:
+        fleets = [f for f in fleets if f.owner == owner]
+    # Per-fleet recent runs (newest-first), scoped to the fleets already shown.
+    runs_by_fleet = {f.name: _fleet_recent_runs(f.name) for f in fleets}
     return templates.TemplateResponse(
         request, "fleets.html",
         {
             "fleets": fleets,
+            "runs_by_fleet": runs_by_fleet,
             "holds": _recent_governance_holds(),
             "pending_count": len(_world().pending_approvals()),
         },
@@ -1071,7 +1325,7 @@ async def providers_api() -> JSONResponse:
 
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request) -> HTMLResponse:
-    recent = _world().list_goals(limit=10, order="desc")
+    recent = _world().list_goals(owner=goal_owner_filter(request), limit=10, order="desc")
     return templates.TemplateResponse(request, "chat.html", {"recent": recent})
 
 
@@ -1101,7 +1355,10 @@ async def chat_send(
     # The optional "Add details" textarea gives the agent a real brief; fall
     # back to the title when empty (prior behavior was description == title).
     description = (description or "").strip()
-    goal_id = w.create_goal(title[:200], (description or title)[:8000])
+    goal_id = w.create_goal(
+        title[:200], (description or title)[:8000],
+        owner=caller_principal(request) or "",
+    )
     # Use the shared runner so this path gets the same concurrency cap,
     # budget defaults, and error handling as the REST API and MCP server.
     from maverick.runner import run_goal_in_thread
@@ -1174,7 +1431,11 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
 
     check_goal_rate_limit(request, source="webhook")
     w = _world()
-    goal_id = w.create_goal(title[:200], description[:8000])
+    # HMAC webhooks carry no OIDC principal, so this resolves to "" (unowned):
+    # reachable only by no-auth/admin callers, never another tenant.
+    goal_id = w.create_goal(
+        title[:200], description[:8000], owner=caller_principal(request) or "",
+    )
 
     from maverick.runner import DEFAULT_MAX_DOLLARS, run_goal_in_thread
     budget = payload.get("budget")
@@ -1261,7 +1522,8 @@ async def _handle_issue_webhook(
     check_goal_rate_limit(request, source=f"webhook:{provider}")
     w = _world()
     title = f"{event.issue_id}: {event.title}".strip()
-    goal_id = w.create_goal(title[:200], build_brief(event)[:8000])
+    # Webhook-driven goal: no authenticated principal -> unowned ("").
+    goal_id = w.create_goal(title[:200], build_brief(event)[:8000], owner="")
     from maverick.runner import run_goal_in_thread
     bg.add_task(run_goal_in_thread, goal_id, None)
     return JSONResponse({"goal_id": goal_id}, status_code=201)
@@ -1272,14 +1534,16 @@ async def chat_goal(request: Request, goal_id: int) -> HTMLResponse:
     g = _world().get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     return templates.TemplateResponse(request, "chat_goal.html", {"goal": g})
 
 
 @app.get("/api/goal/{goal_id}")
-async def api_goal_legacy(goal_id: int) -> dict:
+async def api_goal_legacy(request: Request, goal_id: int) -> dict:
     g = _world().get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     return {"id": g.id, "status": g.status, "title": g.title, "result": g.result or ""}
 
 
@@ -1330,12 +1594,16 @@ def _build_plan_tree(world, goal_id: int, depth_cap: int = 6) -> dict:
         (goal_id, per_parent_cap, depth_cap),
     ).fetchall()
 
+    # This tree reads goals.title via raw SQL, so decrypt it the same way the
+    # WorldModel accessors do when at-rest encryption seals the column.
+    from maverick.world_model import _dec_field
+
     nodes: dict[int, dict] = {}
     for r in rows:
         nodes[r["id"]] = {
             "id":        r["id"],
             "parent_id": r["parent_id"],
-            "title":     r["title"],
+            "title":     _dec_field(r["title"]),
             "status":    r["status"],
             "dollars":   float(r["dollars"] or 0.0),
             "children":  [],
@@ -1358,12 +1626,13 @@ def _build_plan_tree(world, goal_id: int, depth_cap: int = 6) -> dict:
 
 
 @app.get("/api/v1/goals/{goal_id}/tree")
-async def api_plan_tree(goal_id: int) -> dict:
+async def api_plan_tree(request: Request, goal_id: int) -> dict:
     """Plan-tree JSON: root + recursive children with status + cost."""
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     return _build_plan_tree(w, goal_id)
 
 
@@ -1412,6 +1681,7 @@ async def plan_tree_page(request: Request, goal_id: int) -> HTMLResponse:
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     root = _build_plan_tree(w, goal_id)
     tree_html = _render_tree_html(root)
     return templates.TemplateResponse(
@@ -1427,6 +1697,7 @@ async def trajectory_page(request: Request, goal_id: int) -> HTMLResponse:
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     events = w.goal_events(goal_id, limit=10_000)
     return templates.TemplateResponse(
         request, "trajectory.html",
@@ -1441,6 +1712,7 @@ async def errors_page(request: Request, goal_id: int) -> HTMLResponse:
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     errors = [e for e in w.goal_events(goal_id, limit=10_000) if e.kind == "error"]
     return templates.TemplateResponse(
         request, "errors.html",
@@ -1511,11 +1783,14 @@ async def cost_csv(month: str | None = None) -> StreamingResponse:
             params = (start_ts, end_ts)
         sql += " ORDER BY id"
 
+        # outcome is a sealed column when at-rest encryption is on; this CSV reads
+        # it via raw SQL, so decrypt it like the WorldModel accessors do.
+        from maverick.world_model import _dec_field
         for row in w.conn.execute(sql, params):
             writer.writerow([
                 row["id"], row["goal_id"],
                 row["started_at"], row["ended_at"] or "",
-                row["outcome"] or "",
+                _dec_field(row["outcome"]) or "",
                 f"{(row['cost_dollars'] or 0):.6f}",
                 row["input_tokens"], row["output_tokens"], row["tool_calls"],
             ])
@@ -1531,11 +1806,14 @@ async def cost_csv(month: str | None = None) -> StreamingResponse:
 
 
 @app.get("/api/goal/{goal_id}/events")
-async def api_goal_events_legacy(goal_id: int, since: int = 0, limit: int = 200) -> dict:
+async def api_goal_events_legacy(
+    request: Request, goal_id: int, since: int = 0, limit: int = 200,
+) -> dict:
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     limit = max(1, min(limit, 500))
     events = w.goal_events(goal_id, since_id=since, limit=limit)
     return {
@@ -1570,8 +1848,10 @@ async def api_goal_events_stream(request: Request, goal_id: int, since: int = 0)
     import json as _json
 
     w = _world()
-    if w.get_goal(goal_id) is None:
+    g = w.get_goal(goal_id)
+    if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
 
     # Cap concurrent streams so thousands of EventSource opens can't exhaust
     # FDs/tasks. Acquire non-blocking and return 503 when full; release in the
