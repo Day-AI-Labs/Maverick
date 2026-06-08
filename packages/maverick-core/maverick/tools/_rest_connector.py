@@ -111,6 +111,116 @@ def make_rest_tool(
     return Tool(name=name, description=description, input_schema=_SCHEMA, fn=_run)
 
 
+def _is_gql_name_char(ch: str) -> bool:
+    return ch == "_" or ch.isalnum()
+
+
+def _skip_gql_ignored(text: str, pos: int) -> int:
+    while pos < len(text):
+        ch = text[pos]
+        if ch.isspace() or ch == ",":
+            pos += 1
+            continue
+        if ch == "#":
+            newline = text.find("\n", pos)
+            if newline == -1:
+                return len(text)
+            pos = newline + 1
+            continue
+        break
+    return pos
+
+
+def _gql_word_at(text: str, pos: int, word: str) -> bool:
+    end = pos + len(word)
+    return (
+        text[pos:end].lower() == word
+        and (pos == 0 or not _is_gql_name_char(text[pos - 1]))
+        and (end == len(text) or not _is_gql_name_char(text[end]))
+    )
+
+
+def _skip_gql_string(text: str, pos: int) -> int:
+    if text.startswith('"""', pos):
+        end = text.find('"""', pos + 3)
+        return len(text) if end == -1 else end + 3
+
+    pos += 1
+    while pos < len(text):
+        ch = text[pos]
+        if ch == "\\":
+            pos += 2
+        elif ch == '"':
+            return pos + 1
+        else:
+            pos += 1
+    return pos
+
+
+def _skip_gql_braced(text: str, pos: int) -> int:
+    depth = 0
+    while pos < len(text):
+        pos = _skip_gql_ignored(text, pos)
+        if pos >= len(text):
+            return pos
+        ch = text[pos]
+        if ch == '"':
+            pos = _skip_gql_string(text, pos)
+        elif ch == "{":
+            depth += 1
+            pos += 1
+        elif ch == "}":
+            depth -= 1
+            pos += 1
+            if depth <= 0:
+                return pos
+        else:
+            pos += 1
+    return pos
+
+
+def _skip_gql_definition(text: str, pos: int) -> int:
+    paren_depth = 0
+    while pos < len(text):
+        pos = _skip_gql_ignored(text, pos)
+        if pos >= len(text):
+            return pos
+        ch = text[pos]
+        if ch == '"':
+            pos = _skip_gql_string(text, pos)
+            continue
+        if ch == "(":
+            paren_depth += 1
+        elif ch == ")" and paren_depth:
+            paren_depth -= 1
+        elif ch == "{":
+            if paren_depth == 0:
+                return _skip_gql_braced(text, pos)
+            pos = _skip_gql_braced(text, pos)
+            continue
+        pos += 1
+    return pos
+
+
+def _graphql_has_mutation(text: str) -> bool:
+    """Return whether a GraphQL document contains a mutation operation."""
+    pos = 0
+    while True:
+        pos = _skip_gql_ignored(text, pos)
+        while pos < len(text) and text[pos] == "(":
+            pos = _skip_gql_ignored(text, pos + 1)
+        if pos >= len(text):
+            return False
+        if _gql_word_at(text, pos, "mutation"):
+            return True
+        if _gql_word_at(text, pos, "query") or _gql_word_at(text, pos, "subscription"):
+            pos = _skip_gql_definition(text, pos)
+            continue
+        if _gql_word_at(text, pos, "fragment") or text[pos] == "{":
+            pos = _skip_gql_definition(text, pos)
+            continue
+        return False
+
 _GQL_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -132,8 +242,8 @@ def make_graphql_tool(
     token_header: str = "Authorization",
     scheme: str = "Bearer",
 ) -> Tool:
-    """Build a GraphQL connector (single POST endpoint). Mutations (the query
-    text starts with ``mutation``) are confirm-gated; queries run."""
+    """Build a GraphQL connector (single POST endpoint). Mutations are
+    confirm-gated; queries run."""
 
     def _config() -> tuple[str, str]:
         base = os.environ.get(base_url_env, "").strip().rstrip("/")
@@ -150,7 +260,7 @@ def make_graphql_tool(
             import httpx  # noqa: F401
         except ImportError:
             return "ERROR: httpx not installed. Run: pip install 'maverick-agent[issue-trackers]'"
-        if q.lstrip("(").lower().startswith("mutation") and not as_bool(args.get("confirm")):
+        if _graphql_has_mutation(q) and not as_bool(args.get("confirm")):
             return "DRY RUN: GraphQL mutation. Re-run with confirm=true."
         variables = args.get("variables") if isinstance(args.get("variables"), dict) else {}
         try:
