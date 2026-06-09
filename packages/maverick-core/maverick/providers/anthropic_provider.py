@@ -226,6 +226,7 @@ class AnthropicClient:
         max_tokens: int,
         thinking_budget: int | None,
         model: str | None,
+        effort: str | None = None,
     ) -> dict[str, Any]:
         # Wave 10: cache the most recent stable user message so repeated
         # tool-use turns hit the cache for the history (40-55% input
@@ -357,6 +358,19 @@ class AnthropicClient:
                 kwargs["temperature"] = float(temp_str)
             except ValueError:
                 pass
+
+        # Per-role reasoning effort (output_config.effort) — the biggest
+        # cost/latency lever on Opus 4.7/4.8. Caller resolves it model-gated via
+        # maverick.effort.effort_for_role, so None = omit (API default = high).
+        # Defence-in-depth: re-check support here so a stray effort never 400s.
+        if effort:
+            from ..effort import effort_supported
+            if effort_supported(model_id):
+                oc = kwargs.get("output_config")
+                if isinstance(oc, dict):
+                    oc["effort"] = effort
+                else:
+                    kwargs["output_config"] = {"effort": effort}
         return kwargs
 
     def _parse_response(
@@ -483,8 +497,10 @@ class AnthropicClient:
         thinking_budget: int | None = None,
         model: str | None = None,
         on_delta: Callable[[str], None] | None = None,
+        effort: str | None = None,
     ) -> LLMResponse:
-        kwargs = self._build_request(system, messages, tools, max_tokens, thinking_budget, model)
+        kwargs = self._build_request(
+            system, messages, tools, max_tokens, thinking_budget, model, effort)
         if on_delta is None:
             resp = sync_retry(lambda: self.client.messages.create(**kwargs))
             return self._parse_response(resp, budget, model=kwargs.get("model"))
@@ -510,7 +526,9 @@ class AnthropicClient:
         max_tokens: int = 4096,
         thinking_budget: int | None = None,
         model: str | None = None,
+        effort: str | None = None,
     ) -> LLMResponse:
-        kwargs = self._build_request(system, messages, tools, max_tokens, thinking_budget, model)
+        kwargs = self._build_request(
+            system, messages, tools, max_tokens, thinking_budget, model, effort)
         resp = await async_retry(lambda: self.aclient.messages.create(**kwargs))
         return self._parse_response(resp, budget, model=kwargs.get("model"))

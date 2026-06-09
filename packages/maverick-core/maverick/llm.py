@@ -382,6 +382,7 @@ class LLM:
         thinking_budget: int | None = None,
         model: str | None = None,
         on_delta=None,
+        effort: str | None = None,
         _no_failover: bool = False,
     ) -> LLMResponse:
         # Provider failover (opt-in, default off): when a fallback chain is
@@ -395,7 +396,7 @@ class LLM:
                     (m, (lambda m=m: self.complete(
                         system, messages, tools=tools, budget=budget,
                         max_tokens=max_tokens, thinking_budget=thinking_budget,
-                        model=m, on_delta=on_delta, _no_failover=True)))
+                        model=m, on_delta=on_delta, effort=effort, _no_failover=True)))
                     for m in [model or self.model, *_chain]
                 ], should_retry=should_retry_llm_error)
         provider, model_id = _parse_spec(model or self.model)
@@ -412,6 +413,10 @@ class LLM:
         )
         if on_delta is not None and provider == "anthropic":
             kwargs["on_delta"] = on_delta
+        # Per-role effort is an Anthropic-only output_config knob; other
+        # providers don't accept it, so only thread it to the anthropic provider.
+        if effort and provider == "anthropic":
+            kwargs["effort"] = effort
         import time as _time
         try:
             from .chaos import maybe_fail
@@ -492,6 +497,7 @@ class LLM:
         max_tokens: int = 4096,
         thinking_budget: int | None = None,
         model: str | None = None,
+        effort: str | None = None,
         _no_failover: bool = False,
     ) -> LLMResponse:
         # Provider failover (opt-in, default off) — see complete(). No configured
@@ -504,7 +510,7 @@ class LLM:
                     (m, (lambda m=m: self.complete_async(
                         system, messages, tools=tools, budget=budget,
                         max_tokens=max_tokens, thinking_budget=thinking_budget,
-                        model=m, _no_failover=True)))
+                        model=m, effort=effort, _no_failover=True)))
                     for m in [model or self.model, *_chain]
                 ], should_retry=should_retry_llm_error)
         provider, model_id = _parse_spec(model or self.model)
@@ -559,9 +565,11 @@ class LLM:
                     **_gen_ai_attributes(provider, model_id),
                 },
             ):
+                _ekw = {"effort": effort} if (effort and provider == "anthropic") else {}
                 return await client.complete_async(
                     system=system, messages=messages, tools=tools, budget=budget,
                     max_tokens=max_tokens, thinking_budget=thinking_budget, model=model_id,
+                    **_ekw,
                 )
         except Exception:
             _err = True

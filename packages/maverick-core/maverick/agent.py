@@ -454,6 +454,11 @@ class Agent:
         self.tools = self._build_tools()
         self.system = self._build_system()
         self.model = model_override or model_for_role(role)
+        # Per-role reasoning effort (opt-in; None unless configured). Resolved
+        # once against this agent's role + model so the cost/latency lever rides
+        # every LLM call this agent makes. Model-gated -> never 400s.
+        from .effort import effort_for_role
+        self.effort = effort_for_role(role, self.model)
         # Tracks whether we've already given one LLM-verifier-driven
         # revision pass for this agent run. Separate from
         # `_already_verified` so revised FINALs can be re-verified once
@@ -1505,6 +1510,7 @@ class Agent:
                     max_tokens=4096,
                     thinking_budget=self._thinking_budget(),
                     model=self.model,
+                    effort=self.effort,
                 )
             except BudgetExceeded as e:
                 bb.post(self.name, "error", f"budget exceeded: {e}")
