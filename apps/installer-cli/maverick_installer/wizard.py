@@ -1103,6 +1103,26 @@ def pick_advanced() -> dict[str, Any]:
             "your labeled set, so the system never learns from a drifted evaluator.",
             default=False,
         ),
+        "adaptive_compute": _q_confirm(
+            "Adaptive test-time compute? Concentrate effort on uncertain sub-tasks "
+            "and spend less when the swarm agrees (cheaper, focused).",
+            default=False,
+        ),
+        "best_of_n": _q_confirm(
+            "Best-of-N answers? Sample a few candidate answers and keep the one the "
+            "verifier scores highest (stronger, more tokens).",
+            default=False,
+        ),
+        "skill_synthesis": _q_confirm(
+            "Test-time skill synthesis? Write a short task-specific cheat-sheet for "
+            "each goal before working on it.",
+            default=False,
+        ),
+        "experience_guidance": _q_confirm(
+            "Experience-guided orchestration? Steer planning with how similar past "
+            "goals turned out (what worked, what failed).",
+            default=False,
+        ),
         "enforce_capabilities": _q_confirm(
             "Enforce agent capabilities? Each agent runs under a scoped grant and "
             "spawned sub-agents can only narrow it, never exceed it (least privilege).",
@@ -2246,6 +2266,22 @@ def write_config(  # noqa: C901
             lines.append("")
             lines.append("[calibration]")
             lines.append("enforce = true")
+        if advanced.get("adaptive_compute"):
+            lines.append("")
+            lines.append("[adaptive_compute]")
+            lines.append("enable = true")
+        if advanced.get("best_of_n"):
+            lines.append("")
+            lines.append("[search]")
+            lines.append("enable = true")
+        if advanced.get("skill_synthesis"):
+            lines.append("")
+            lines.append("[skill_synthesis]")
+            lines.append("enable = true")
+        if advanced.get("experience_guidance"):
+            lines.append("")
+            lines.append("[experience]")
+            lines.append("enable = true")
         if advanced.get("enforce_quotas"):
             lines.append("")
             lines.append("[quotas]")

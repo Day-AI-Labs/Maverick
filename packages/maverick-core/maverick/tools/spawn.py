@@ -239,6 +239,21 @@ def spawn_swarm_tool(parent: Agent) -> Tool:  # noqa: C901
         # explode geometrically (#611). An agent asking for 50 siblings on a
         # trivial sub-goal is almost always confused / under attack too.
         cap = _fanout_cap_for_depth(parent.depth)
+        # Adaptive test-time compute (opt-in): when the run is confident (low
+        # disagreement, high verifier confidence) concentrate compute by
+        # narrowing fan-out below the safety cap. Only ever narrows; fail-open.
+        try:
+            from .. import adaptive_compute
+            if adaptive_compute.enabled():
+                cap = adaptive_compute.adjust_width(
+                    cap,
+                    disagreement=float(getattr(parent.ctx, "last_disagreement", 0.0) or 0.0),
+                    verifier_confidence=float(
+                        getattr(parent.ctx, "last_verifier_confidence", 1.0) or 1.0
+                    ),
+                ).width
+        except Exception:  # pragma: no cover -- never break the spawn loop
+            pass
         if len(agents_spec) > cap:
             parent.ctx.blackboard.post(
                 parent.name, "error",

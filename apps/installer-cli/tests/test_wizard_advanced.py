@@ -113,6 +113,29 @@ def test_calibration_enforce_writes_and_is_read(tmp_path, monkeypatch):
     assert get_calibration()["enforce"] is True
 
 
+def test_sota_loop_toggles_write_and_are_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's SOTA-loop toggles write their config sections,
+    and the kernel reads each back."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for env in ("MAVERICK_ADAPTIVE_COMPUTE", "MAVERICK_BEST_OF_N",
+                "MAVERICK_SKILL_SYNTHESIS", "MAVERICK_EXPERIENCE_GUIDANCE"):
+        monkeypatch.delenv(env, raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {
+        "adaptive_compute": True, "best_of_n": True,
+        "skill_synthesis": True, "experience_guidance": True,
+    })
+    for section in ("[adaptive_compute]", "[search]", "[skill_synthesis]", "[experience]"):
+        assert section in cfg
+
+    from maverick import adaptive_compute, best_of_n, experience, skill_synthesis
+    assert adaptive_compute.enabled() is True
+    assert best_of_n.enabled() is True
+    assert skill_synthesis.enabled() is True
+    assert experience.enabled() is True
+
+
 def test_enforce_capabilities_writes_and_is_read(tmp_path, monkeypatch):
     """Rule-6 loop: the wizard's capability toggle writes [capabilities]
     enforce, and the kernel reads it back."""
