@@ -9,6 +9,7 @@ from __future__ import annotations
 from . import config_space
 from .archive import Archive, Candidate
 from .eval_harness import EvalCase, EvalReport, evaluate
+from .loop import evolve_continuous
 from .runner import EvolutionFrozen, calibration_frozen, evolve_with_eval
 from .search import evolve
 
@@ -21,6 +22,7 @@ __all__ = [
     "evolve",
     "config_space",
     "evolve_with_eval",
+    "evolve_continuous",
     "calibration_frozen",
     "EvolutionFrozen",
 ]
