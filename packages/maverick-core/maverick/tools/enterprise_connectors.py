@@ -828,17 +828,24 @@ for _spec in (*_SPECS, *_GRAPHQL_SPECS):
     _fill_env(_spec)
 
 # Read-only (GET-only) variants for finance vendors -- the bridge that
-# lets a read-only pack (max_risk <= medium) actually pull data without handing it
-# a write-capable seat. Same env/creds as the write connector; writes are
-# structurally unreachable (the agent still supplies the path, so no endpoint is
-# hard-coded). Risk is tracked explicitly in READ_CONNECTOR_RISKS so read-only
-# seats for sensitive systems do not bypass low-risk ceilings.
+# lets a read-only pack (max_risk <= medium) pull narrowly-scoped data without
+# handing it a write-capable seat. Same env/creds as the write connector; writes
+# are structurally unreachable, and reads are constrained by explicit endpoint
+# allowlists (allowed_read_paths). Risk is tracked explicitly in
+# READ_CONNECTOR_RISKS so read-only seats for sensitive systems do not bypass
+# low-risk ceilings.
 _READ_SPECS: list[dict] = [
     dict(name="modern_treasury_read", base_url_env="MODERN_TREASURY_BASE_URL",
          token_env="MODERN_TREASURY_TOKEN", basic=True,
-         description="Modern Treasury REST, READ-ONLY (GET). e.g. /api/internal_accounts, "
-         "/api/transactions, /api/ledger_account_balances, /api/counterparties. Auth: "
-         "MODERN_TREASURY_BASE_URL (https://app.moderntreasury.com) + MODERN_TREASURY_TOKEN "
+         allowed_read_paths=(
+             "/api/internal_accounts",
+             "/api/transactions",
+             "/api/ledger_account_balances",
+         ),
+         description="Modern Treasury REST, READ-ONLY (GET) for cash-positioning paths "
+         "only: /api/internal_accounts, /api/transactions, "
+         "/api/ledger_account_balances. Auth: MODERN_TREASURY_BASE_URL "
+         "(https://app.moderntreasury.com) + MODERN_TREASURY_TOKEN "
          "(Basic org_id:api_key)."),
 ]
 _READ_CONNECTOR_RISKS: dict[str, str] = {"modern_treasury_read": "low"}
