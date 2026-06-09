@@ -65,14 +65,91 @@ def test_tenant_scope_noop_without_active_tenant(monkeypatch):
     assert params == []
 
 
-def test_tenant_scope_filters_to_active_tenant_null_tolerant(monkeypatch):
+def test_tenant_scope_filters_strictly_to_active_tenant(monkeypatch):
     monkeypatch.setattr(pg, "_active_tenant", lambda: "acme")
     frag, params = pg._tenant_scope()
-    assert frag == "(tenant_id = %s OR tenant_id IS NULL)"
+    assert frag == "tenant_id = %s"
+    assert "IS NULL" not in frag
     assert params == ["acme"]
 
 
 def test_tenant_scope_custom_column(monkeypatch):
     monkeypatch.setattr(pg, "_active_tenant", lambda: "acme")
     frag, _ = pg._tenant_scope("goals.tenant_id")
-    assert frag == "(goals.tenant_id = %s OR goals.tenant_id IS NULL)"
+    assert frag == "goals.tenant_id = %s"
+
+
+class _RecordingCursor:
+    rowcount = 0
+
+    def __init__(self):
+        self.statements: list[tuple[str, tuple]] = []
+
+    def execute(self, sql, params=()):
+        self.statements.append((sql, tuple(params or ())))
+
+    def fetchone(self):
+        return None
+
+    def fetchall(self):
+        return []
+
+
+class _RecordingTx:
+    def __init__(self, cur: _RecordingCursor):
+        self.cur = cur
+
+    def __enter__(self):
+        return self.cur
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _recording_world() -> tuple[pg.PostgresWorldModel, _RecordingCursor]:
+    cur = _RecordingCursor()
+    world = pg.PostgresWorldModel.__new__(pg.PostgresWorldModel)
+    world._tx = lambda: _RecordingTx(cur)  # type: ignore[method-assign]
+    return world, cur
+
+
+def _sql_for(method_name: str, *args, tenant: str = "acme", **kwargs) -> str:
+    world, cur = _recording_world()
+    old = pg._active_tenant
+    try:
+        pg._active_tenant = lambda: tenant  # type: ignore[assignment]
+        getattr(world, method_name)(*args, **kwargs)
+    finally:
+        pg._active_tenant = old  # type: ignore[assignment]
+    return "\n".join(sql for sql, _ in cur.statements)
+
+
+def test_goal_helper_reads_are_tenant_scoped():
+    for method_name, args in (
+        ("most_recent_goal", ()),
+        ("active_goal", ()),
+        ("inflight_goal", ()),
+        ("candidate_goals", (True,)),
+        ("subgoals", (123,)),
+    ):
+        sql = _sql_for(method_name, *args)
+        assert "tenant_id = %s" in sql
+        assert "IS NULL" not in sql
+
+
+def test_tenant_root_mutations_are_tenant_scoped():
+    assert "tenant_id = %s" in _sql_for("set_goal_status", 1, "done")
+    assert "tenant_id = %s" in _sql_for("reclaim_orphan_goals")
+    assert "tenant_id = %s" in _sql_for("decide_approval", 10, "approved")
+
+
+def test_delete_facts_matching_includes_tenant_scope(monkeypatch):
+    world, cur = _recording_world()
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "acme")
+    monkeypatch.setattr(world, "facts_matching", lambda token: {"user:alice:secret": "v"})
+
+    assert world.delete_facts_matching("alice") == ["user:alice:secret"]
+    sql = "\n".join(stmt for stmt, _ in cur.statements)
+    assert "DELETE FROM facts" in sql
+    assert "tenant_id = %s" in sql
+    assert "IS NULL" not in sql

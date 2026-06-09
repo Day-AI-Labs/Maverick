@@ -273,17 +273,17 @@ def _active_tenant() -> str | None:
 
 
 def _tenant_scope(column: str = "tenant_id") -> tuple[str, list]:
-    """NULL-tolerant read predicate scoping rows to the active tenant.
+    """Read predicate scoping rows to the active tenant.
 
     Returns ``(sql_fragment, params)``. With **no** active tenant the fragment
     is empty -- the default single-tenant install is unchanged. With a tenant
-    set, it matches that tenant's rows **plus** legacy ``NULL`` rows (visible
-    until backfilled); strict per-tenant isolation is the follow-up.
+    set, only rows stamped with that tenant are visible; legacy ``NULL`` rows
+    remain visible only to the legacy single-tenant mode.
     """
     t = _active_tenant()
     if t is None:
         return "", []
-    return f"({column} = %s OR {column} IS NULL)", [t]
+    return f"{column} = %s", [t]
 
 
 @dataclass
@@ -412,14 +412,19 @@ class PostgresWorldModel:
 
     def set_goal_status(self, goal_id: int, status: str, *, result: str | None = None) -> None:
         now = time.time()
+        frag, params = _tenant_scope()
+        sql = (
+            # COALESCE so a status-only update (result=None) doesn't wipe
+            # an existing result -- matches the SQLite backend.
+            "UPDATE goals SET status=%s, result=COALESCE(%s, result), "
+            "updated_at=%s WHERE id=%s"
+        )
+        p: list = [status, result, now, goal_id]
+        if frag:
+            sql += " AND " + frag
+            p += params
         with self._tx() as cur:
-            cur.execute(
-                # COALESCE so a status-only update (result=None) doesn't wipe
-                # an existing result -- matches the SQLite backend.
-                "UPDATE goals SET status=%s, result=COALESCE(%s, result), "
-                "updated_at=%s WHERE id=%s",
-                (status, result, now, goal_id),
-            )
+            cur.execute(sql, tuple(p))
 
     def list_active_goals(self, limit: int = 50) -> list[PGGoal]:
         frag, params = _tenant_scope()
@@ -475,33 +480,47 @@ class PostgresWorldModel:
 
     def most_recent_goal(self) -> PGGoal | None:
         """Most-recently-updated goal regardless of status; mirrors SQLite."""
+        frag, params = _tenant_scope()
+        sql = (
+            "SELECT id, parent_id, title, description, status, "
+            "created_at, updated_at, deadline, result FROM goals"
+        )
+        if frag:
+            sql += " WHERE " + frag
+        sql += " ORDER BY updated_at DESC LIMIT 1"
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, parent_id, title, description, status, "
-                "created_at, updated_at, deadline, result FROM goals "
-                "ORDER BY updated_at DESC LIMIT 1"
-            )
+            cur.execute(sql, tuple(params))
             row = cur.fetchone()
         return PGGoal(*row) if row else None
 
     def active_goal(self) -> PGGoal | None:
+        frag, params = _tenant_scope()
+        sql = (
+            "SELECT id, parent_id, title, description, status, "
+            "created_at, updated_at, deadline, result FROM goals "
+            "WHERE status IN ('active', 'blocked')"
+        )
+        if frag:
+            sql += " AND " + frag
+        sql += " ORDER BY updated_at DESC LIMIT 1"
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, parent_id, title, description, status, "
-                "created_at, updated_at, deadline, result FROM goals "
-                "WHERE status IN ('active', 'blocked') ORDER BY updated_at DESC LIMIT 1"
-            )
+            cur.execute(sql, tuple(params))
             row = cur.fetchone()
         return PGGoal(*row) if row else None
 
     def inflight_goal(self) -> PGGoal | None:
         """Most-recently-updated in-flight goal (active/pending); mirrors SQLite."""
+        frag, params = _tenant_scope()
+        sql = (
+            "SELECT id, parent_id, title, description, status, "
+            "created_at, updated_at, deadline, result FROM goals "
+            "WHERE status IN ('active', 'pending')"
+        )
+        if frag:
+            sql += " AND " + frag
+        sql += " ORDER BY updated_at DESC LIMIT 1"
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, parent_id, title, description, status, "
-                "created_at, updated_at, deadline, result FROM goals "
-                "WHERE status IN ('active', 'pending') ORDER BY updated_at DESC LIMIT 1"
-            )
+            cur.execute(sql, tuple(params))
             row = cur.fetchone()
         return PGGoal(*row) if row else None
 
@@ -510,28 +529,36 @@ class PostgresWorldModel:
         is the written vocabulary done/blocked/cancelled, not the never-written
         succeeded/failed the old query used."""
         text_clause = "(COALESCE(title, '') != '' OR COALESCE(description, '') != '')"
-        if include_running:
-            where = f"WHERE {text_clause}"
-        else:
-            where = f"WHERE status IN ('done', 'blocked', 'cancelled') AND {text_clause}"
+        conds = [text_clause]
+        if not include_running:
+            conds.insert(0, "status IN ('done', 'blocked', 'cancelled')")
+        frag, params = _tenant_scope()
+        if frag:
+            conds.append(frag)
         with self._tx() as cur:
             cur.execute(
                 "SELECT id, parent_id, title, description, status, created_at, "
-                f"updated_at, deadline, result FROM goals {where} "
+                f"updated_at, deadline, result FROM goals WHERE {' AND '.join(conds)} "
                 "ORDER BY updated_at DESC LIMIT %s",
-                (limit,),
+                (*params, limit),
             )
             rows = cur.fetchall()
         return [PGGoal(*r) for r in rows]
 
     def subgoals(self, parent_id: int, limit: int = 50) -> list[PGGoal]:
+        frag, params = _tenant_scope()
+        sql = (
+            "SELECT id, parent_id, title, description, status, created_at, "
+            "updated_at, deadline, result FROM goals WHERE parent_id = %s"
+        )
+        p: list = [parent_id]
+        if frag:
+            sql += " AND " + frag
+            p += params
+        sql += " ORDER BY created_at ASC LIMIT %s"
+        p.append(limit)
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, parent_id, title, description, status, created_at, "
-                "updated_at, deadline, result FROM goals WHERE parent_id = %s "
-                "ORDER BY created_at ASC LIMIT %s",
-                (parent_id, limit),
-            )
+            cur.execute(sql, tuple(p))
             rows = cur.fetchall()
         return [PGGoal(*r) for r in rows]
 
@@ -546,14 +573,19 @@ class PostgresWorldModel:
         """
         cutoff = time.time() - max_age_seconds
         now = time.time()
+        frag, params = _tenant_scope()
+        sql = (
+            "UPDATE goals SET status = 'blocked', "
+            "result = COALESCE(result, '') || ' [process restarted mid-run]', "
+            "updated_at = %s "
+            "WHERE status IN ('active', 'pending') AND updated_at < %s"
+        )
+        p: list = [now, cutoff]
+        if frag:
+            sql += " AND " + frag
+            p += params
         with self._tx() as cur:
-            cur.execute(
-                "UPDATE goals SET status = 'blocked', "
-                "result = COALESCE(result, '') || ' [process restarted mid-run]', "
-                "updated_at = %s "
-                "WHERE status IN ('active', 'pending') AND updated_at < %s",
-                (now, cutoff),
-            )
+            cur.execute(sql, tuple(p))
             return cur.rowcount
 
     # ----- episodes -----
@@ -714,7 +746,13 @@ class PostgresWorldModel:
         if keys:
             ph = ",".join(["%s"] * len(keys))
             with self._tx() as cur:
-                cur.execute(f"DELETE FROM facts WHERE key IN ({ph})", keys)
+                frag, params = _tenant_scope()
+                sql = f"DELETE FROM facts WHERE key IN ({ph})"
+                p: list = list(keys)
+                if frag:
+                    sql += " AND " + frag
+                    p += params
+                cur.execute(sql, tuple(p))
         return keys
 
     @staticmethod
@@ -894,12 +932,17 @@ class PostgresWorldModel:
         double-click is a no-op)."""
         if status not in ("approved", "denied"):
             raise ValueError("status must be 'approved' or 'denied'")
+        frag, params = _tenant_scope()
+        sql = (
+            "UPDATE approvals SET status = %s, decided_at = %s "
+            "WHERE id = %s AND status = 'pending'"
+        )
+        p: list = [status, time.time(), approval_id]
+        if frag:
+            sql += " AND " + frag
+            p += params
         with self._tx() as cur:
-            cur.execute(
-                "UPDATE approvals SET status = %s, decided_at = %s "
-                "WHERE id = %s AND status = 'pending'",
-                (status, time.time(), approval_id),
-            )
+            cur.execute(sql, tuple(p))
             affected = cur.rowcount
         return affected > 0
 
@@ -938,24 +981,42 @@ class PostgresWorldModel:
     ) -> int:
         if role not in ("user", "assistant"):
             raise ValueError(f"role must be 'user' or 'assistant', got {role!r}")
+        frag, params = _tenant_scope("tenant_id")
+        sql = (
+            "INSERT INTO turns(conversation_id, goal_id, role, content, ts) "
+            "SELECT %s, %s, %s, %s, %s WHERE EXISTS "
+            "(SELECT 1 FROM conversations WHERE id = %s"
+        )
+        p: list = [conversation_id, goal_id, role, content, time.time(), conversation_id]
+        if frag:
+            sql += " AND " + frag
+            p += params
+        sql += ") RETURNING id"
         with self._tx() as cur:
-            cur.execute(
-                "INSERT INTO turns(conversation_id, goal_id, role, content, ts) "
-                "VALUES(%s, %s, %s, %s, %s) RETURNING id",
-                (conversation_id, goal_id, role, content, time.time()),
-            )
-            return int(cur.fetchone()[0])
+            cur.execute(sql, tuple(p))
+            row = cur.fetchone()
+            if row is None:
+                raise ValueError("conversation does not exist for the active tenant")
+            return int(row[0])
 
     def recent_turns(self, conversation_id: int, limit: int = 20) -> list:
         """Most recent N turns in chronological (ascending) order, ready to feed
         into a chat-format prompt. Mirrors SQLite."""
         from ..world_model import Turn
+        frag, params = _tenant_scope("c.tenant_id")
+        sql = (
+            "SELECT t.id, t.conversation_id, t.goal_id, t.role, t.content, t.ts "
+            "FROM turns t JOIN conversations c ON c.id = t.conversation_id "
+            "WHERE t.conversation_id = %s"
+        )
+        p: list = [conversation_id]
+        if frag:
+            sql += " AND " + frag
+            p += params
+        sql += " ORDER BY t.id DESC LIMIT %s"
+        p.append(limit)
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, conversation_id, goal_id, role, content, ts FROM turns "
-                "WHERE conversation_id = %s ORDER BY id DESC LIMIT %s",
-                (conversation_id, limit),
-            )
+            cur.execute(sql, tuple(p))
             rows = cur.fetchall()
         return list(reversed([Turn(*r) for r in rows]))
 
@@ -983,13 +1044,19 @@ class PostgresWorldModel:
         """Delete conversations idle for N seconds and their turns. Turns first
         (no ON DELETE CASCADE). Returns conversations removed. Mirrors SQLite."""
         cutoff = time.time() - idle_for_seconds
+        frag, params = _tenant_scope()
+        conv_where = "last_seen < %s"
+        p: list = [cutoff]
+        if frag:
+            conv_where += " AND " + frag
+            p += params
         with self._tx() as cur:
             cur.execute(
                 "DELETE FROM turns WHERE conversation_id IN "
-                "(SELECT id FROM conversations WHERE last_seen < %s)",
-                (cutoff,),
+                f"(SELECT id FROM conversations WHERE {conv_where})",
+                tuple(p),
             )
-            cur.execute("DELETE FROM conversations WHERE last_seen < %s", (cutoff,))
+            cur.execute(f"DELETE FROM conversations WHERE {conv_where}", tuple(p))
             return cur.rowcount
 
     def erase_conversations(self, conversation_ids: list[int]) -> tuple[set[int], list[str], int]:
@@ -1004,8 +1071,19 @@ class PostgresWorldModel:
         if not conversation_ids:
             return set(), [], 0
 
-        conv_ids = [int(cid) for cid in conversation_ids]
+        requested_conv_ids = [int(cid) for cid in conversation_ids]
+        frag, params = _tenant_scope()
+        conv_sql = "SELECT id FROM conversations WHERE id = ANY(%s)"
+        conv_params: list = [requested_conv_ids]
+        if frag:
+            conv_sql += " AND " + frag
+            conv_params += params
         with self._tx() as cur:
+            cur.execute(conv_sql, tuple(conv_params))
+            conv_ids = [int(row[0]) for row in cur.fetchall()]
+            if not conv_ids:
+                return set(), [], 0
+
             cur.execute(
                 "SELECT DISTINCT goal_id FROM turns "
                 "WHERE conversation_id = ANY(%s) AND goal_id IS NOT NULL",
