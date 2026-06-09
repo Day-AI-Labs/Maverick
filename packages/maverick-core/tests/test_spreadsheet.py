@@ -17,6 +17,28 @@ def test_csv_write_read_info(tmp_path):
     assert "rows=3" in ss._run({"op": "info", "path": str(p)})
 
 
+def test_neutralize_formula_helper():
+    assert ss._neutralize_formula("=1+1") == "'=1+1"
+    assert ss._neutralize_formula("+x") == "'+x"
+    assert ss._neutralize_formula("-x") == "'-x"
+    assert ss._neutralize_formula("@x") == "'@x"
+    assert ss._neutralize_formula("\tx") == "'\tx"
+    assert ss._neutralize_formula("\rx") == "'\rx"
+    assert ss._neutralize_formula("safe") == "safe"
+    assert ss._neutralize_formula(42) == 42       # numbers untouched
+    assert ss._neutralize_formula("") == ""       # empty untouched
+
+
+def test_csv_write_neutralizes_formula_injection(tmp_path):
+    p = tmp_path / "evil.csv"
+    rows = [["=HYPERLINK(1)", "+1", "-2", "@SUM(A1)", "safe"]]
+    ss._run({"op": "write", "path": str(p), "rows": rows})
+    out = json.loads(ss._run({"op": "read", "path": str(p)}))
+    # Every formula-leading cell is prefixed with ' so a spreadsheet app renders
+    # it as text; benign cells are unchanged.
+    assert out[0] == ["'=HYPERLINK(1)", "'+1", "'-2", "'@SUM(A1)", "safe"]
+
+
 def test_set_cell_rejects_csv(tmp_path):
     p = tmp_path / "data.csv"
     ss._run({"op": "write", "path": str(p), "rows": [["x"]]})
