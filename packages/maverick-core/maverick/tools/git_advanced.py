@@ -108,8 +108,8 @@ def _shape(code: int, out: str, err: str, *, label: str) -> str:
     return f"[{label}] FAILED (exit {code})\n{err}".rstrip() if err else f"[{label}] FAILED (exit {code})"
 
 
-def _make_run(sandbox):
-    def _run(args: dict[str, Any]) -> str:
+def _make_run(sandbox):  # noqa: C901
+    def _run(args: dict[str, Any]) -> str:  # noqa: C901
         op = args.get("op")
         if not op:
             return "ERROR: op is required"

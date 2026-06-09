@@ -592,7 +592,7 @@ _ALLOWLIST_HINT = {
 }
 
 
-def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]:
+def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]:  # noqa: C901
     """Returns (channels_config, env_vars_needed)."""
     console.print()
     if deployment == "desktop":
@@ -1975,7 +1975,7 @@ def pick_suites() -> dict[str, bool]:
     return out
 
 
-def write_config(
+def write_config(  # noqa: C901
     providers: list[str],
     role_models: dict[str, str],
     channels: dict[str, dict[str, Any]],
@@ -2804,7 +2804,7 @@ def show_compliance_commands(advanced: dict[str, Any]) -> None:
     ))
 
 
-def run(fast: bool = False, resume: bool = False) -> int:
+def run(fast: bool = False, resume: bool = False) -> int:  # noqa: C901
     if fast:
         return run_fast()
     # A non-interactive stdin (CI, Docker build, `... | maverick init`) can't

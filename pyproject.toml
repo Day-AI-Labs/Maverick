@@ -22,12 +22,34 @@ target-version = "py310"
 #                 py310 keeps every rewrite 3.10-safe.
 # B (bugbear) still off: its findings (B904 raise-from, B905 zip strict) are a
 # style commitment with no autofix; defer to its own focused PR.
-select = ["E", "F", "W", "I", "UP"]
+# C90 (mccabe): cyclomatic-complexity ceiling -- the "keep functions small"
+#               ratchet (see [tool.ruff.lint.mccabe]). New code must stay under
+#               the cap; the ~30 functions already over it carry an explicit
+#               `# noqa: C901` marking them as refactor debt to pay down.
+select = ["E", "F", "W", "I", "UP", "C90"]
 ignore = [
     "E501",   # line length
     "UP036",  # "outdated" version blocks -- ours are intentional runtime
               # "Python 3.10+ required" guards (installer/preflight), not dead code.
 ]
+
+[tool.ruff.lint.mccabe]
+# Cap cyclomatic complexity. 20 is the current high-water mark we're willing
+# to grandfather: every function above it is annotated `# noqa: C901` so the
+# gate stays green today while blocking NEW over-complex functions. Ratchet
+# this down as the noqa'd backlog gets simplified.
+max-complexity = 20
+
+[tool.vulture]
+# Dead-code gate. min_confidence 80 keeps it to high-signal findings
+# (unused imports/vars/params) and avoids the framework false positives
+# (FastAPI routes, pydantic validators) that lower confidences surface.
+# ruff already covers F401/F841; vulture catches the unused *parameters*
+# and module-level symbols those miss. Tests are excluded -- fixtures and
+# parametrize helpers read as "unused" to static analysis.
+min_confidence = 80
+paths = ["packages", "apps", "benchmarks"]
+exclude = ["*/tests/*", "*/test_*.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["packages", "apps", "benchmarks"]

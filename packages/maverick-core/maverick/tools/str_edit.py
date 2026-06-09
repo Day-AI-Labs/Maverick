@@ -68,8 +68,8 @@ def _view_dir(target: Path) -> str:
     return "\n".join(rows) if rows else "(empty)"
 
 
-def str_replace_editor(sandbox) -> Tool:
-    def fn(args: dict) -> str:
+def str_replace_editor(sandbox) -> Tool:  # noqa: C901
+    def fn(args: dict) -> str:  # noqa: C901
         cmd = args.get("command", "")
         path_arg = args.get("path", "")
         if not cmd:

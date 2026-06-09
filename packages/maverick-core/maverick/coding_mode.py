@@ -772,7 +772,7 @@ def _ast_check_python_files(workdir: Path, paths: list[str]) -> list[str]:
     return errors
 
 
-def defensive_validate(patch: str, *, fail_to_pass: list[str] = None,
+def defensive_validate(patch: str, *, fail_to_pass: list[str] = None,  # noqa: C901
                        pass_to_pass: list[str] = None,
                        gold_patch: str = "",
                        opaque: bool = True) -> DefensiveValidation:

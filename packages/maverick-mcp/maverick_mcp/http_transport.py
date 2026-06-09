@@ -280,7 +280,7 @@ def _progress_token(params: dict, http_exc):
     return token
 
 
-def build_app(server) -> FastAPI:
+def build_app(server) -> FastAPI:  # noqa: C901
     """Wrap an MCPServer instance in a Streamable HTTP transport.
 
     `server` is an instance of `maverick_mcp.server.MCPServer`. We
@@ -350,7 +350,7 @@ def build_app(server) -> FastAPI:
         return response
 
     @app.post("/mcp")
-    async def mcp_endpoint(
+    async def mcp_endpoint(  # noqa: C901
         request: Request,
         authorization: str | None = Header(None),
     ):

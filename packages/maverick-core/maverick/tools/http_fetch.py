@@ -365,7 +365,7 @@ def _check_robots(url: str, user_agent: str = "Maverick") -> bool:
     return allowed
 
 
-def _run_fetch(args: dict[str, Any]) -> str:
+def _run_fetch(args: dict[str, Any]) -> str:  # noqa: C901
     import os
 
     url = (args.get("url") or "").strip()

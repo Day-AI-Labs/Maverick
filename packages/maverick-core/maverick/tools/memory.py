@@ -142,7 +142,7 @@ def _run(args: dict) -> str:
         return f"ERROR: at-rest encryption unavailable: {e}"
 
 
-def _run_impl(args: dict) -> str:
+def _run_impl(args: dict) -> str:  # noqa: C901
     cmd = (args.get("command") or "").strip()
     if not cmd:
         return ("ERROR: missing `command` (view, create, str_replace, insert, "

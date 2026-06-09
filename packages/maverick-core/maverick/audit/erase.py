@@ -81,7 +81,7 @@ def _tombstone(event: dict, channel: str, user_id: str) -> dict:
     return out
 
 
-def _process_file(
+def _process_file(  # noqa: C901
     path: Path,
     channel: str,
     user_id: str,

@@ -914,7 +914,7 @@ class Agent:
         except Exception:  # pragma: no cover -- containment must never break the loop
             pass
 
-    async def _run_tool(self, name: str, args: dict) -> str:
+    async def _run_tool(self, name: str, args: dict) -> str:  # noqa: C901
         # Compartment Rung 1: a sealed agent runs no further tools. Its prior
         # blackboard posts are also withheld (see Blackboard.render).
         q = getattr(self.ctx, "quarantine", None)
@@ -1365,7 +1365,7 @@ class Agent:
         except Exception as e:  # pragma: no cover -- observability never blocks
             log.debug("live-spend mirror skipped: %s", e)
 
-    async def run(self) -> AgentResult:
+    async def run(self) -> AgentResult:  # noqa: C901
         bb = self.ctx.blackboard
         bb.post(self.name, "plan", f"role={self.role} depth={self.depth} brief={self.brief}")
 

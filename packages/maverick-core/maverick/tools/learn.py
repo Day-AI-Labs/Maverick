@@ -42,10 +42,10 @@ def _fmt_candidates(cands: list) -> str:
     return "\n".join(lines)
 
 
-def learn_capability(agent: Agent) -> Tool:
+def learn_capability(agent: Agent) -> Tool:  # noqa: C901
     ctx = agent.ctx
 
-    async def fn(args: dict) -> str:
+    async def fn(args: dict) -> str:  # noqa: C901
         from .. import self_learning
 
         op = (args.get("op") or "").strip()

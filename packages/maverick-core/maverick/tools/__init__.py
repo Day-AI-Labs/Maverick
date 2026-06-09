@@ -458,7 +458,7 @@ def _deferred_loading_enabled() -> bool:
         return False
 
 
-def base_registry(
+def base_registry(  # noqa: C901
     world,
     sandbox,
     mcp_clients: list | None = None,

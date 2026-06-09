@@ -175,7 +175,7 @@ def _safe_parse_expr(expr: str, *, evaluate: bool):
 _VALID_OPS = {"evaluate", "simplify", "solve", "diff", "integrate"}
 
 
-def _run(args: dict[str, Any]) -> str:
+def _run(args: dict[str, Any]) -> str:  # noqa: C901
     op = args.get("op")
     if not op:
         return "ERROR: op is required"

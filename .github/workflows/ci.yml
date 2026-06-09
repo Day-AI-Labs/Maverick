@@ -16,7 +16,20 @@ jobs:
       - name: Install ruff
         run: python -m pip install 'ruff>=0.5'
       - name: Lint
+        # Also enforces the C901 cyclomatic-complexity ceiling (max 20, see
+        # pyproject [tool.ruff.lint.mccabe]). Functions already over it carry
+        # an explicit `# noqa: C901`; new over-complex code fails here.
         run: python -m ruff check .
+      - name: Dead-code scan (vulture)
+        # Catches unused parameters / module-level symbols that ruff's
+        # F401/F841 don't (e.g. a vestigial function arg nothing passes).
+        # Config + paths + the 80% confidence floor live in pyproject
+        # [tool.vulture]; the repo is clean at that floor, so any new finding
+        # fails the gate. Add a real false positive to [tool.vulture]
+        # ignore_names rather than lowering the floor.
+        run: |
+          python -m pip install 'vulture>=2.11'
+          python -m vulture
       - name: Reject bare `import tomllib` (3.11+ stdlib without 3.10 fallback)
         # Three PRs in a row broke CI on Python 3.10 by importing tomllib
         # without the documented tomli fallback. Catch it here so the

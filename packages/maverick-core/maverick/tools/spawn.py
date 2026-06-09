@@ -210,8 +210,8 @@ def spawn_subagent_tool(parent: Agent) -> Tool:
     )
 
 
-def spawn_swarm_tool(parent: Agent) -> Tool:
-    async def fn(args: dict) -> str:
+def spawn_swarm_tool(parent: Agent) -> Tool:  # noqa: C901
+    async def fn(args: dict) -> str:  # noqa: C901
         from ..agent import Agent
 
         agents_spec = args["agents"]
