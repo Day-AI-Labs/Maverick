@@ -92,6 +92,7 @@ STEPS: list[tuple[str, str]] = [
     ("tool_acl", "Tool ACL"),
     ("rate_limits", "Rate limits"),
     ("retention", "Retention"),
+    ("analytics", "Analytics"),
     ("persona", "Persona"),
     ("notifications", "Notifications"),
     ("webhooks", "Webhooks"),
@@ -1505,6 +1506,29 @@ def pick_retention() -> dict[str, int]:
     }
 
 
+def pick_analytics() -> dict[str, Any]:
+    """Consent step for MCP-client language analytics. OFF by default.
+
+    When granted, the MCP server tallies a coarse language bucket from each
+    client's User-Agent (typescript / go / rust / c# / java / python) into a
+    local counts file — no request content, no identifiers, nothing leaves
+    the machine. The tally feeds the Q1-2027 language-bindings gate
+    (``maverick.mcp_analytics.non_python_share()``). Returns a dict written
+    under ``[analytics]``.
+    """
+    console.print()
+    console.print(
+        "[dim]Optional: count which languages drive this agent over MCP "
+        "(a coarse bucket from each client's User-Agent). Counts stay in a "
+        "local file — no request content, no identifiers, nothing is "
+        "uploaded. The tally feeds the decision on funding native client "
+        "libraries; OFF by default.[/dim]"
+    )
+    if not _q_confirm("Count MCP client languages locally?", default=False):
+        return {}
+    return {"mcp_client_language": True}
+
+
 def pick_persona() -> dict[str, str]:
     """Agent identity: name + voice."""
     if not _q_confirm(
@@ -2067,6 +2091,7 @@ def write_config(  # noqa: C901
     tool_acl: dict[str, Any] | None = None,
     rate_limits: dict[str, str] | None = None,
     retention: dict[str, int] | None = None,
+    analytics: dict[str, Any] | None = None,
     persona: dict[str, str] | None = None,
     notifications: dict[str, Any] | None = None,
     webhooks: dict[str, Any] | None = None,
@@ -2479,6 +2504,12 @@ def write_config(  # noqa: C901
         lines.append("")
         lines.append("[retention]")
         for k, v in retention.items():
+            _emit_kv(lines, k, v)
+
+    if analytics:
+        lines.append("")
+        lines.append("[analytics]")
+        for k, v in analytics.items():
             _emit_kv(lines, k, v)
 
     if persona:
@@ -3112,6 +3143,13 @@ def run(fast: bool = False, resume: bool = False) -> int:  # noqa: C901
         _save_partial(state)
 
     _announce()
+    analytics = state.get("analytics")
+    if analytics is None:
+        analytics = pick_analytics()
+        state["analytics"] = analytics
+        _save_partial(state)
+
+    _announce()
     persona = state.get("persona")
     if persona is None:
         persona = pick_persona()
@@ -3175,6 +3213,7 @@ def run(fast: bool = False, resume: bool = False) -> int:  # noqa: C901
         tool_acl=tool_acl,
         rate_limits=rate_limits,
         retention=retention,
+        analytics=analytics,
         persona=persona,
         notifications=notifications,
         webhooks=webhooks,

@@ -75,10 +75,11 @@ single-run inflation) — run multi-seed.
 
 > **2026 quarters and the 2027 H2 / 2028 build wave are shipped** — their
 > code-buildable items are in [`FEATURES.md`](./FEATURES.md). What remains
-> below is genuinely unbuilt: blocked on a live service, real hardware/GPU, a
-> trained model, a frontend/native surface, or founder-tracked (community /
-> launch / marketing / localization). 2027 H1 in particular is now entirely
-> non-code-buildable work.
+> below is genuinely unbuilt. Much of it is blocked on a live service, real
+> hardware/GPU, a trained model, a frontend/native surface, or is
+> founder-tracked (community / launch / marketing / localization) — but not
+> all of it: the tables still hold ordinary code-buildable engineering items.
+> Those are future-planned, not blocked.
 
 ---
 
@@ -86,12 +87,12 @@ single-run inflation) — run multi-seed.
 
 | Concern | Planned (not yet built) |
 |---|---|
-| **Capabilities** | Audio understanding (non-speech CLAP) · plan-execute-reflect loop topology · cross-language LSP bridge · vector-store as first-class memory · speculative parallel tool calls · speech-to-action live-mic · GUI element memory · image gen + edit tools · ASR meeting listener · auto-skill distillation v2 |
+| **Capabilities** | Audio understanding (non-speech CLAP) · plan-execute-reflect loop topology · cross-language LSP bridge · speculative parallel tool calls · speech-to-action live-mic · GUI element memory · image gen + edit tools · ASR meeting listener · auto-skill distillation v2 |
 | **UX** | Multi-run dashboard · pinned watch list · annotated traces · comparative replay · mobile push v2 · Apple Watch glance · voice command grammar · voice in channels v2 (Discord stages) · high-contrast & dyslexic fonts · i18n expansion (fr/de/ja/zh) · visual graph editor · tool-call inspector · latency heatmap · saved dashboard views · "what changed" digest · channel reply threading · drag-and-drop goal builder · plain-language explanations |
 | **Distribution** | Localized docs phase 2 (es/ja) · reproducible benchmark v2 (terminal-bench, weblinx, HumanEval-fix) · marketplaces v2 with ratings · tutorial video season 2 · university outreach (5 partnerships) · skill validator service · comparison page · press kit · devcontainer + Codespaces template · Maverick Summit v1 (virtual) · showcase wall · integration partnerships (LangSmith/Helicone/OpenRouter) · reference architectures (k8s/ECS/Fly.io/Railway) · browser extension v1 · skill + channel template generators · localized docs phase 3 (de/fr/pt-BR) · GitHub Stars campaign · office hours |
 | **Performance** | Tiered storage (hot SQLite + cold parquet) · query plan regression CI · async compaction · cost-aware router v2 (per-role policies) · streaming tool_result · Sentry performance tab · provider failover policy engine · adversarial-cost benchmark suite · continuous batching local · compaction v3 learned summarizer · speculative tool execution · gRPC dispatch · WAL contention audit (N=16) · cache-warm-on-start · memory-leak quarantine · cost-attribution API · public perf dashboard |
-| **Safety** | HIPAA mode profile · differential privacy on usage stats · consent ledger · shield calibration dashboard · adversarial eval harness · coordinated-disclosure log · multi-agent collusion detector · per-agent identity + signing · capability delegation graph · watermark detector · image-content classifier · voice safety pass · data-retention enforcement · privacy budget per user · red-team CI |
-| **Ecosystem** | Marketplace ratings + install verification · Voyage + Cohere embeddings · Qdrant + Weaviate vector stores · Bitbucket Pipelines · Emacs integration · WhatsApp Cloud API rewrite · plugin sandboxing (subinterpreter) · hot plugin reload · Vim/Neovim plugin · GitHub + GitLab Issues integrations · S3-backed attachments |
+| **Safety** | HIPAA mode profile · differential privacy on usage stats · shield calibration dashboard · adversarial eval harness · coordinated-disclosure log · multi-agent collusion detector · per-agent identity + signing · capability delegation graph · watermark detector · image-content classifier · voice safety pass · privacy budget per user · red-team CI |
+| **Ecosystem** | Marketplace ratings + install verification · Cohere embeddings · Weaviate vector store · Emacs integration · WhatsApp Cloud API rewrite · plugin sandboxing (subinterpreter) · hot plugin reload · Vim/Neovim plugin · GitHub + GitLab Issues integrations · S3-backed attachments |
 
 ---
 
@@ -102,7 +103,7 @@ single-run inflation) — run multi-seed.
 | **Capabilities** | Multi-modal RAG · WASM sandbox · ROS robotics action tool · browser anti-bot evasion kit (opt-in) · multi-agent observation channel |
 | **UX** | Native macOS/Windows/Linux GUI apps · browser extension · voice persona presets · multi-language voice · wizard branching paths · inline cost preview · run gallery · replay export to MP4 · collaborative supervision (multi-user dashboard) · trace pinning to commit · VS Code + JetBrains live-run extensions · TUI mouse mode · cost anomaly alerts · "why this cost" drill-down · run-as-tutorial export · accessibility audit pass · i18n community portal |
 | **Distribution** | Windows MSI · marketplace moderation tooling · sponsorship tiers · conference physical booth · swag store · ambassadors program · long-form handbook · Skill of the Year award · 2.0 RFC · backwards-compat tooling (`maverick migrate`) · mobile companion app v1 (read-only) · self-hosted relay reference · localized docs phase 4 (ko/ru/it/hi) · video season 3 · skill search engine (HF) · annual community survey · foundation exploration |
-| **Performance** | Anthropic 1h extended cache adoption · token-level cost projection at plan time · compaction v4 structural diff · distributed cache (Redis) · cold-start optimization (<300ms `--help`) · JIT consideration (mypyc/cython on hot path) · reliability SLO publication (99.5%) · compaction v5 multi-modal · cross-run learning cache · autoscaling local backends · energy/CO2 accounting · real-time anomaly detection · failure-mode telemetry shipping (opt-in) · tail-latency hunting · KV-cache offload to disk · provider migration cost calculator · 2-year retrospective |
+| **Performance** | Token-level cost projection at plan time · compaction v4 structural diff · distributed cache (Redis) · cold-start optimization (<300ms `--help`) · JIT consideration (mypyc/cython on hot path) · reliability SLO publication (99.5%) · compaction v5 multi-modal · cross-run learning cache · autoscaling local backends · energy/CO2 accounting · real-time anomaly detection · failure-mode telemetry shipping (opt-in) · tail-latency hunting · KV-cache offload to disk · provider migration cost calculator · 2-year retrospective |
 | **Safety** | Refusal calibration · gVisor tool sandbox · eBPF syscall monitor · memory-safe parsers · supply-chain pinning · sigstore keyless signing · out-of-process model proxy · rate-limit shield calls per goal · public safety bulletin RSS · federated shield model updates · model card per LLM · behavioral diff on upgrades · cross-run anomaly detection · honeytoken planting · tamper-evident screenshots · right-to-rectification · crash-only logging · annual safety report |
 | **Ecosystem** | ACD spec v1.0 · AutoGen + CrewAI adapters · Threads + RCS channels · Anki integration · web archive tool · GitHub repo search · Redis world-model · plugin telemetry opt-in · marketplace v2 (federated indexes) · IDE protocol unification (one MCP server, multiple editors) · run-events firehose (WebSocket) · generic OAuth helper · DuckDB world-model · Cloudflare Workers + Modal sandboxes · plugin version-pinning lockfile |
 
@@ -112,7 +113,7 @@ single-run inflation) — run multi-seed.
 
 | Concern | Planned (not yet built) |
 |---|---|
-| **Capabilities** | Computer-use coordinate calibration · audio diarization + emotion · vision-grounded clicking · file-format converter (pandoc+ffmpeg+libreoffice) · multi-monitor computer-use · process introspection · hardware sensor tool · voice cloning consent gate · streaming reasoning trace channel |
+| **Capabilities** | Computer-use coordinate calibration · audio diarization + emotion · vision-grounded clicking · office-doc converter (libreoffice) · multi-monitor computer-use · process introspection · hardware sensor tool · voice cloning consent gate · streaming reasoning trace channel |
 | **UX** | Plan-tree minimap · conversational supervisor · voice-only mode · smart notification batching · mobile offline cache · augmented terminal (Rich inline charts) · multi-tenant view · personalized starter templates · replay annotation export · AR plan-tree (visionOS) · live captions voice · visual goal templates marketplace · "diff to expected" · smart goal completion · adaptive UI density · embedded analytics web component · pluggable themes API · voice macros · RTL language support |
 | **Distribution** | 2.0 stable release · migration playbook · marketplace v3 (donate-direct model) · Maverick Summit v2 (hybrid) · editor expansion (JetBrains/Neovim/Zed) · localized docs phase 5 (top-15 langs + MT pipeline) · "Built with Maverick" badge program · comparison benchmark v3 live dashboard · university curriculum kit · foundation paperwork submitted · ARM/RISC-V builds · iOS/Android skill execution (Pyodide/Kivy) · skill + channel certification programs · community grants v1 · regional meetup playbook · embeddable widget · hosted demo cluster (demo.maverick.dev) · press push to major outlets · sponsor tier 2 |
 | **Performance** | Speculative best-of-N (kill underperformers at first reasoning checkpoint) · compaction v6 hybrid (learned classifier picks strategy) · sub-ms dispatch overhead (msgspec/orjson) · continuous profiling daemon (py-spy) · cost-aware routing v3 (contextual bandits) · sandbox pool (warm Docker/Firecracker, <100ms acquire) · cache-aware prompt assembly DSL · SLA-breach automation · open metric standard · multi-region failover · compaction v7 streaming · long-context cost guardrails (>$50/run gate) · persistent KV-cache for local · online schema migrations · p999 latency campaign · cost-of-quality study · ML cache eviction (ARC/LeCaR) |
@@ -130,7 +131,7 @@ single-run inflation) — run multi-seed.
 | **Distribution** | Maverick Conference v3 (in-person flagship) · hackathon series · localized communities (top 5 non-English) · skill marketplace federation · channel federation · public roadmap voting · press kit v2 + case studies · comparison benchmark v4 with reproducibility audits · handbook v2 · "5-year vision" essay · foundation hand-off · governance v2 launch (elected TSC) · documentation rewrite · tutorial season 4 · survey v3 + retrospective · sponsor renewal drive · HF Space spotlight · awards push · 2029 roadmap publication |
 | **Performance** | Self-tuning budgets (per-task-class learned defaults) · compaction v8 graph-structured · zstd compression on world_model · critical-path-aware parallel scheduling · provider-side caching analytics · chaos game-day script · cost telemetry retention policy · real-time SSE dashboards · reliability harness 2.0 · cost/perf canary system per release · compaction v9 plug-in API · full OpenTelemetry semconv · 3-year retrospective benchmark · reliability cert · public perf SLA · sunset deprecated paths |
 | **Safety** | Shield v3 (small-model ensemble: injection + jailbreak + exfil + policy, explainable reason codes) · provable redaction · differential erasure verification · air-gapped mode (full stack, no outbound) · confidential-compute support (SEV-SNP/TDX) · per-jurisdiction data residency · adversarial-prompt corpus release · AI Act conformance package · vuln reward expansion · third-party pen test · federated audit-log verification · capability revocation propagation · key rotation playbook · PIA generator · safety regression budget · polyglot injection defense · consent ergonomics pass · 36-month safety retrospective · sunset policy · LTS safety branch (2-year support) |
-| **Ecosystem** | Plugin signing CA · capability negotiation at swarm boot · gRPC API v1 stable · federated swarms over gRPC · KaTeX/Mermaid rich-render channel · Open Banking tool (Plaid/TrueLayer) · MCP server publishing · marketplace stats dashboard · plugin API v3 RFC (if warranted) · ACD spec v1.1 · multi-tenant `maverick serve` · channel SDK v2 (async-only) · sandbox SDK v2 · long-running plugin reliability suite · 3-year retrospective + 2029-2031 plan |
+| **Ecosystem** | Plugin signing CA · capability negotiation at swarm boot · gRPC API v1 stable · federated swarms over gRPC · KaTeX/Mermaid rich-render channel · Open Banking tool (TrueLayer) · MCP server publishing · marketplace stats dashboard · plugin API v3 RFC (if warranted) · ACD spec v1.1 · multi-tenant `maverick serve` · channel SDK v2 (async-only) · sandbox SDK v2 · long-running plugin reliability suite · 3-year retrospective + 2029-2031 plan |
 
 ---
 
@@ -169,8 +170,10 @@ TypeScript / Go / Rust / C# / Java quickstarts are shipped (see
 ### Gate: don't decide, measure
 
 The cross-language surface (MCP server + TS/Go/Rust/C#/JVM quickstarts) is
-built. The one open step is **opt-in analytics on MCP-client language headers**
-(needs the telemetry-consent UI). Then:
+built, and the **opt-in analytics on MCP-client language headers** ship with
+their telemetry-consent step in the installer wizard (`maverick init` →
+Analytics; off by default). What remains is letting opt-in install-base data
+accumulate. Then:
 
 **Decision gate (Q1 2027):** if >15% of active installs are being driven from
 non-Python MCP clients, fund **one** thin `@maverick/client` TypeScript package
