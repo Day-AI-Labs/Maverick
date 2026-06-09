@@ -369,17 +369,19 @@ class AnthropicClient:
                 pass
 
         # Per-role reasoning effort (output_config.effort) — the biggest
-        # cost/latency lever on Opus 4.7/4.8. Caller resolves it model-gated via
-        # maverick.effort.effort_for_role, so None = omit (API default = high).
-        # Defence-in-depth: re-check support here so a stray effort never 400s.
+        # cost/latency lever on Opus 4.7/4.8. Caller usually resolves it via
+        # maverick.effort.effort_for_role, but provider failover can carry a
+        # primary model's effort to a lower-ceiling fallback. Defence-in-depth:
+        # validate and re-clamp for the actual model so a stray effort never 400s.
         if effort:
-            from ..effort import effort_supported
-            if effort_supported(model_id):
+            from ..effort import effort_for_model
+            model_effort = effort_for_model(effort, model_id)
+            if model_effort:
                 oc = kwargs.get("output_config")
                 if isinstance(oc, dict):
-                    oc["effort"] = effort
+                    oc["effort"] = model_effort
                 else:
-                    kwargs["output_config"] = {"effort": effort}
+                    kwargs["output_config"] = {"effort": model_effort}
         return kwargs
 
     def _parse_response(

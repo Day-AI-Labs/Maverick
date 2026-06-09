@@ -462,7 +462,10 @@ class LLM:
         # Per-role effort is an Anthropic-only output_config knob; other
         # providers don't accept it, so only thread it to the anthropic provider.
         if effort and provider == "anthropic":
-            kwargs["effort"] = effort
+            from .effort import effort_for_model
+            model_effort = effort_for_model(effort, model_id)
+            if model_effort:
+                kwargs["effort"] = model_effort
         import time as _time
         try:
             from .chaos import maybe_fail
@@ -613,7 +616,12 @@ class LLM:
                     **_gen_ai_attributes(provider, model_id),
                 },
             ):
-                _ekw = {"effort": effort} if (effort and provider == "anthropic") else {}
+                _ekw = {}
+                if effort and provider == "anthropic":
+                    from .effort import effort_for_model
+                    model_effort = effort_for_model(effort, model_id)
+                    if model_effort:
+                        _ekw["effort"] = model_effort
                 return await client.complete_async(
                     system=system, messages=messages, tools=tools, budget=budget,
                     max_tokens=max_tokens, thinking_budget=thinking_budget, model=model_id,
