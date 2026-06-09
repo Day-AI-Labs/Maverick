@@ -85,7 +85,9 @@ here.
   `semantic_code_search` (rank functions/classes by intent via ast + lexical
   scoring), `mutation_test` (plan source mutants a strong suite should catch),
   `constrained_output` (validate/coerce a value to a typed/enum/range/regex
-  shape — the guard half of constrained generation).
+  shape — the guard half of constrained generation), `model3d_inspect`
+  (headless 3D-mesh stats — triangle/vertex counts + bounding box for STL/OBJ),
+  `synthetic_data` (deterministic synthetic rows from a field spec, json/csv).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
