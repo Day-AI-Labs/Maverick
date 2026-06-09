@@ -68,6 +68,11 @@ class TrajectoryRecord:
     # (learn more from the sub-agents that actually earned the outcome) instead
     # of treating every contributor equally. Empty when CSCA was off/not run.
     agent_credit: dict = field(default_factory=dict)
+    # Per-sub-agent trajectories (role, name, tool-name actions, credit, weight)
+    # -- the credit-weighted units to learn from, not just the goal-level record.
+    # Populated from ctx.last_subtrajectories when CSCA ran. Action sequences are
+    # tool NAMES only, so this carries no argument/result text.
+    sub_trajectories: list = field(default_factory=list)
     wall_seconds: float = 0.0
     cost_dollars: float = 0.0
     tokens_in: int = 0

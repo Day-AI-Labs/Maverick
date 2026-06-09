@@ -110,6 +110,10 @@ class SwarmContext:
     # credit from the most recent fan-out, when CSCA is enabled. Read by the
     # donation selector / routing; empty when not computed.
     last_credit: dict = field(default_factory=dict)
+    # Per-sub-agent trajectories from the most recent fan-out (role, name,
+    # tool-name actions, credit, learn-weight) -- the credit-weighted units the
+    # data engine learns from. Empty when CSCA didn't run.
+    last_subtrajectories: list = field(default_factory=list)
     _spawns_used: int = 0
     _workdir_lock: asyncio.Lock | None = field(default=None, repr=False)
 

@@ -96,9 +96,35 @@ def normalize_credit(credit: dict[str, float]) -> dict[str, float]:
     return {k: round(v / total, 4) for k, v in pos.items()}
 
 
+def build_subtrajectories(
+    items: list[tuple[str, str, list[str]]],
+    credit_map: dict[str, float],
+) -> list[dict]:
+    """Assemble per-sub-agent trajectories tagged with credit + learn-weight.
+
+    ``items`` is ``(role, name, action_sequence)`` per sub-agent. Each output
+    dict carries the role, name, tool-name action sequence (no args -> no
+    secrets), the agent's marginal ``credit``, and a normalized ``weight`` (its
+    share of the positive credit) so the data engine can learn MORE from the
+    sub-trajectories that actually earned the outcome and skip the freeloaders.
+    """
+    weights = normalize_credit(credit_map)
+    out: list[dict] = []
+    for role, name, actions in items:
+        out.append({
+            "role": role,
+            "name": name,
+            "actions": list(actions or []),
+            "credit": round(float(credit_map.get(name, 0.0)), 4),
+            "weight": weights.get(name, 0.0),
+        })
+    return out
+
+
 __all__ = [
     "enabled",
     "passes_required",
     "counterfactual_credit",
     "normalize_credit",
+    "build_subtrajectories",
 ]
