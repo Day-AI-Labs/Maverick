@@ -105,7 +105,8 @@ here.
   minimal + obligations; heuristic, not legal advice), `geofence` (region
   allow/deny policy check — ISO codes or groups EU/EEA/FIVE_EYES, deny-precedence), `two_person_rule` (validate
   dual-control sign-off — distinct approvers, separation of duties, optional roles), `differential_privacy` (Laplace
-  mechanism for (epsilon)-DP noisy counts/sums on published stats).
+  mechanism for (epsilon)-DP noisy counts/sums on published stats), `watermark_detector` (find hidden
+  text watermarks/steganography — zero-width, tag chars, variation selectors, homoglyphs).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
