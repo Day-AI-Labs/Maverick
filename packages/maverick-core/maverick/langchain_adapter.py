@@ -37,13 +37,19 @@ def run_maverick_goal(
     description: str = "",
     *,
     max_dollars: float = 2.0,
+    channel: str | None = None,
+    user_id: str | None = None,
+    capability: Any | None = None,
     world_factory: Callable[[], Any] | None = None,
     dispatch: Callable[..., Any] | None = None,
 ) -> str:
     """Delegate a goal to the Maverick swarm and return its result text.
 
     Creates the goal, runs it to completion, and returns its result (or a short
-    status line if it produced none). Dependencies are injected for testing."""
+    status line if it produced none). ``channel``, ``user_id``, and
+    ``capability`` are forwarded to the runner so host integrations can bind
+    Maverick execution to the authenticated caller's policy context.
+    Dependencies are injected for testing."""
     if not (goal or "").strip():
         raise ValueError("goal is required")
     world = (world_factory or _default_world)()
@@ -51,7 +57,13 @@ def run_maverick_goal(
         goal_id = int(world.create_goal(goal.strip(), description or ""))
     finally:
         _close(world)
-    status = (dispatch or _default_dispatch)(goal_id, max_dollars=max_dollars)
+    status = (dispatch or _default_dispatch)(
+        goal_id,
+        max_dollars=max_dollars,
+        channel=channel,
+        user_id=user_id,
+        capability=capability,
+    )
     world = (world_factory or _default_world)()
     try:
         g = world.get_goal(goal_id)
@@ -70,8 +82,20 @@ def _close(world: Any) -> None:
             pass
 
 
-def maverick_langchain_tool(*, max_dollars: float = 2.0):
-    """A LangChain ``StructuredTool`` that delegates a goal to Maverick."""
+def maverick_langchain_tool(
+    *,
+    max_dollars: float = 2.0,
+    channel: str | None = None,
+    user_id: str | None = None,
+    capability: Any | None = None,
+):
+    """A LangChain ``StructuredTool`` that delegates a goal to Maverick.
+
+    Pass ``channel``, ``user_id``, and/or ``capability`` from the trusted host
+    application when constructing this tool for an authenticated request. Those
+    values are not exposed as model-controlled tool inputs; they are forwarded
+    with each Maverick goal dispatch for ACLs, quotas, and capability checks.
+    """
     try:
         from langchain_core.tools import StructuredTool
     except ImportError as e:
@@ -80,7 +104,14 @@ def maverick_langchain_tool(*, max_dollars: float = 2.0):
             "(pip install 'maverick-agent[langchain]')") from e
 
     def _run(goal: str, description: str = "") -> str:
-        return run_maverick_goal(goal, description, max_dollars=max_dollars)
+        return run_maverick_goal(
+            goal,
+            description,
+            max_dollars=max_dollars,
+            channel=channel,
+            user_id=user_id,
+            capability=capability,
+        )
 
     return StructuredTool.from_function(
         _run,
