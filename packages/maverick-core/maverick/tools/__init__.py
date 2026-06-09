@@ -533,6 +533,7 @@ def base_registry(  # noqa: C901
     reg.register(str_replace_editor(sandbox))
 
     from .a11y import a11y
+    from .a11y_tree import a11y_tree
     from .airtable_tool import airtable_tool
     from .android import android
     from .apply_patch import apply_patch
@@ -698,6 +699,7 @@ def base_registry(  # noqa: C901
     reg.register(model3d_inspect())
     reg.register(synthetic_data())
     reg.register(web_recorder())
+    reg.register(a11y_tree())
     reg.register(openapi_runner(sandbox))
     reg.register(ocr(sandbox))
     reg.register(posthog_tool())

@@ -89,7 +89,9 @@ here.
   (headless 3D-mesh stats — triangle/vertex counts + bounding box for STL/OBJ),
   `synthetic_data` (deterministic synthetic rows from a field spec, json/csv),
   `web_recorder` (generate a runnable Playwright script from a list of browser
-  steps — deterministic codegen with escaped literals).
+  steps — deterministic codegen with escaped literals), `a11y_tree` (distill raw
+  HTML into a compact accessibility tree — landmarks/headings/links/controls —
+  for a 5-10x token cut).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
