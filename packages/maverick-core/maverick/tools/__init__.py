@@ -631,6 +631,7 @@ def base_registry(  # noqa: C901
     from .vercel_tool import vercel_tool
     from .view_image import view_image
     from .view_video import view_video
+    from .web_recorder import web_recorder
     from .wikipedia import wikipedia
     from .wolfram_tool import wolfram_tool
     from .youtube import youtube
@@ -696,6 +697,7 @@ def base_registry(  # noqa: C901
     reg.register(constrained_output())
     reg.register(model3d_inspect())
     reg.register(synthetic_data())
+    reg.register(web_recorder())
     reg.register(openapi_runner(sandbox))
     reg.register(ocr(sandbox))
     reg.register(posthog_tool())
