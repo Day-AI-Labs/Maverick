@@ -10,7 +10,6 @@ Covers the three loops we wired:
 from __future__ import annotations
 
 import pytest
-
 from maverick import autonomy
 
 
