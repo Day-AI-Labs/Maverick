@@ -83,6 +83,11 @@ def _default_fetch(cfg: OAuthConfig) -> dict:
     import json
     import urllib.parse
     import urllib.request
+    # token_url is https-validated in from_dict, but OAuthConfig is directly
+    # constructable too -- re-check here so this sink is never reached with a
+    # plaintext/file scheme, matching _default_token_post.
+    if not cfg.token_url.startswith("https://"):
+        raise ValueError(f"oauth token_url must be https://, got {cfg.token_url!r}")
     data = {"grant_type": cfg.grant_type, "client_id": cfg.client_id}
     if cfg.client_secret:
         data["client_secret"] = cfg.client_secret

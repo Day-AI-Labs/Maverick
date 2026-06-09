@@ -977,12 +977,21 @@ class PostgresWorldModel:
         double-click is a no-op)."""
         if status not in ("approved", "denied"):
             raise ValueError("status must be 'approved' or 'denied'")
+        # Tenant-scope the write like get_approval/pending_approvals: the
+        # dashboard approve/deny endpoints pass a raw URL id with no ownership
+        # gate, so without this a tenant could decide another tenant's parked
+        # high-risk action by enumerating ids it can't even see.
+        frag, params = _tenant_scope()
+        sql = (
+            "UPDATE approvals SET status = %s, decided_at = %s "
+            "WHERE id = %s AND status = 'pending'"
+        )
+        p: list = [status, time.time(), approval_id]
+        if frag:
+            sql += " AND " + frag
+            p += params
         with self._tx() as cur:
-            cur.execute(
-                "UPDATE approvals SET status = %s, decided_at = %s "
-                "WHERE id = %s AND status = 'pending'",
-                (status, time.time(), approval_id),
-            )
+            cur.execute(sql, tuple(p))
             affected = cur.rowcount
         return affected > 0
 
