@@ -611,6 +611,7 @@ def base_registry(  # noqa: C901
     from .plausible_tool import plausible_tool
     from .posthog_tool import posthog_tool
     from .preview_diff import preview_diff
+    from .privacy_budget import privacy_budget
     from .recall import recall
     from .reddit_tool import reddit_tool
     from .redis_tool import redis_tool
@@ -719,6 +720,7 @@ def base_registry(  # noqa: C901
     reg.register(ocr(sandbox))
     reg.register(container_build(sandbox))
     reg.register(posthog_tool())
+    reg.register(privacy_budget())
     reg.register(shopify_tool())
     reg.register(mongodb_tool())
     reg.register(redis_tool())
