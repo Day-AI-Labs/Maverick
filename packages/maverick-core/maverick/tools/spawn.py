@@ -303,10 +303,11 @@ def spawn_swarm_tool(parent: Agent) -> Tool:
                 )
 
         # Karpathy SOTA-review item: measure disagreement across the
-        # children's FINAL answers and record it on the blackboard so
-        # the orchestrator can decide whether to spend more compute or
-        # trust the consensus. (Acting on it -- adaptive re-fan-out -- is
-        # a deferred follow-up; today this is an observability signal.)
+        # children's FINAL answers and record it on the blackboard. The
+        # autonomy gate (Loop 1) acts on it -- escalating FINAL verification
+        # to the cross-family ensemble when the swarm diverged -- so it is no
+        # longer observability-only. The donation selector also reads it.
+        escalated = False
         finals = [
             res.final for child, res in zip(children, results)
             if not isinstance(res, Exception) and res.final
@@ -319,14 +320,42 @@ def spawn_swarm_tool(parent: Agent) -> Tool:
                 parent.name, "verify",
                 f"swarm disagreement entropy={entropy:.3f} across {len(finals)} answers",
             )
-            # Stamp on the context so the orchestrator's verify branch
-            # and the donation selector can read it.
-            try:
-                parent.ctx.last_disagreement = entropy  # type: ignore[attr-defined]
-            except Exception:
-                pass
+            # Stamp on the context so the orchestrator's verify branch, the
+            # autonomy gate, and the donation selector can read it.
+            parent.ctx.last_disagreement = entropy
+
+            # Loop 1: act on high disagreement. Ask the orchestrator's FINAL to
+            # be verified by the cross-family ensemble (a stronger, lockstep-
+            # resistant label exactly where it matters most) and instruct the
+            # caller to reconcile the divergent answers rather than cherry-pick.
+            from .. import autonomy
+            if autonomy.should_escalate_verification(entropy):
+                parent.ctx.escalate_verification = True
+                escalated = True
+                parent.ctx.blackboard.post(
+                    parent.name, "verify",
+                    f"high swarm disagreement ({entropy:.3f}); escalating FINAL "
+                    "verification to the cross-family ensemble",
+                )
+                try:  # tamper-evident record of the escalation; never block
+                    from ..audit import EventKind, record
+                    record(
+                        EventKind.AUTONOMY_ESCALATED,
+                        agent=parent.name,
+                        goal_id=parent.ctx.goal_id,
+                        disagreement=round(entropy, 4),
+                        answers=len(finals),
+                    )
+                except Exception:  # pragma: no cover -- audit must never break the loop
+                    pass
 
         parts: list[str] = []
+        if escalated:
+            parts.append(
+                "[swarm] NOTE: the sub-agents disagreed substantially. Do not "
+                "simply pick one answer -- reconcile the differences, and expect "
+                "the FINAL to face stricter (ensemble) verification."
+            )
         for child, res in zip(children, results):
             if isinstance(res, Exception):
                 parts.append(f"[{child.role}/{child.name}] EXCEPTION: {res}")

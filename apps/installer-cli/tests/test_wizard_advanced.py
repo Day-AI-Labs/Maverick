@@ -84,6 +84,21 @@ def test_risk_proportional_verify_writes_and_is_read(tmp_path, monkeypatch):
     assert _risk_proportional_verify_enabled() is True
 
 
+def test_autonomy_gate_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's autonomy toggle writes [autonomy] enable,
+    and the kernel's autonomy gate reads it back."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_AUTONOMY_GATE", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"autonomy_gate": True})
+    assert "[autonomy]" in cfg
+    assert "enable = true" in cfg
+
+    from maverick import autonomy
+    assert autonomy.autonomy_enabled() is True
+
+
 def test_enforce_capabilities_writes_and_is_read(tmp_path, monkeypatch):
     """Rule-6 loop: the wizard's capability toggle writes [capabilities]
     enforce, and the kernel reads it back."""

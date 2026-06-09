@@ -388,15 +388,17 @@ async def verify_final(
     budget: Budget | None = None,
     *,
     proposer_model: str | None = None,
+    force_ensemble: bool = False,
 ) -> VerifierVerdict:
     """Verify a FINAL answer using whichever verifier the operator chose.
 
     Single dispatch point for the live agent loop: returns the adversarial
-    cross-family ensemble when opted in (``_ensemble_enabled``), else the
-    standard single cross-family verifier. Same signature + return type as
+    cross-family ensemble when opted in (``_ensemble_enabled``) OR when the
+    autonomy gate escalates a high-disagreement run (``force_ensemble``), else
+    the standard single cross-family verifier. Same signature + return type as
     ``verify_proposal`` so the call site is verifier-agnostic.
     """
-    if _ensemble_enabled():
+    if force_ensemble or _ensemble_enabled():
         return await verify_proposal_ensemble(
             brief, proposal, llm, budget, proposer_model=proposer_model,
         )

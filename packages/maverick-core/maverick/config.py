@@ -267,6 +267,36 @@ def get_self_learning() -> dict:
     }
 
 
+def get_autonomy() -> dict:
+    """Return the ``[autonomy]`` section with defaults filled in.
+
+    The autonomy gate (``maverick.autonomy``) is OFF by default so the kernel
+    runs unchanged out of the box. When enabled, the sub-toggles default ON:
+    ``escalate_verification`` runs the cross-family ensemble verifier on FINAL
+    answers when the swarm disagreed (Loop 1); ``tighten_on_low_trust`` drops
+    the effective risk ceiling for high-risk tools when run trust is low (Loop
+    2). ``disagreement_high`` is the swarm-entropy threshold above which both
+    fire; ``min_confidence`` is the verifier-confidence floor below which the
+    ceiling tightens. Both are clamped to [0, 1].
+    """
+    cfg = load_config().get("autonomy", {})
+
+    def _clamp01(key: str, default: float) -> float:
+        try:
+            v = float(cfg.get(key, default))
+        except (TypeError, ValueError):
+            v = default
+        return max(0.0, min(1.0, v))
+
+    return {
+        "enable": bool(cfg.get("enable", False)),
+        "min_confidence": _clamp01("min_confidence", 0.5),
+        "disagreement_high": _clamp01("disagreement_high", 0.5),
+        "escalate_verification": bool(cfg.get("escalate_verification", True)),
+        "tighten_on_low_trust": bool(cfg.get("tighten_on_low_trust", True)),
+    }
+
+
 def get_durable() -> dict:
     """Return the ``[durable]`` section with defaults filled in.
 
