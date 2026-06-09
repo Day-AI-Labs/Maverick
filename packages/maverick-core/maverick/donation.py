@@ -63,6 +63,11 @@ class TrajectoryRecord:
     verifier_confidence: float = 0.0
     verifier_critique: str = ""
     disagreement_entropy: float = 0.0
+    # Counterfactual swarm credit (maverick.credit): agent name -> marginal
+    # credit, when CSCA ran. Lets the data engine credit-WEIGHT the trajectory
+    # (learn more from the sub-agents that actually earned the outcome) instead
+    # of treating every contributor equally. Empty when CSCA was off/not run.
+    agent_credit: dict = field(default_factory=dict)
     wall_seconds: float = 0.0
     cost_dollars: float = 0.0
     tokens_in: int = 0

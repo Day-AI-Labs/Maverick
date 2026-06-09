@@ -681,6 +681,17 @@ async def run_goal(  # noqa: C901
         except Exception as e:  # pragma: no cover -- never blocks a run
             log.debug("experience guidance skipped: %s", e)
 
+        # Routing memory (opt-in, fed by CSCA): nudge toward roles that have
+        # historically earned the most counterfactual credit. No-op unless
+        # credit assignment is enabled and there's enough history.
+        try:
+            from . import role_stats
+            _rg = role_stats.guidance()
+            if _rg:
+                brief = brief + "\n\n" + _rg
+        except Exception as e:  # pragma: no cover -- never blocks a run
+            log.debug("role-stats guidance skipped: %s", e)
+
         # Test-time skill synthesis (opt-in, SOTA SkillTTA): synthesize a short
         # task-specific cheat-sheet for THIS goal and inject it. No-op unless
         # [skill_synthesis] is enabled; spend is metered; fail-open.
@@ -1057,6 +1068,7 @@ async def run_goal(  # noqa: C901
                     verifier_confidence=result.verifier_confidence,
                     verifier_critique=result.verifier_critique,
                     disagreement_entropy=float(entropy or 0.0),
+                    agent_credit=dict(getattr(ctx, "last_credit", {}) or {}),
                     wall_seconds=budget.elapsed(),
                     cost_dollars=budget.dollars,
                     tokens_in=budget.input_tokens,
