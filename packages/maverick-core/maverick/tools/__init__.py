@@ -534,6 +534,7 @@ def base_registry(  # noqa: C901
 
     from .a11y import a11y
     from .a11y_tree import a11y_tree
+    from .ai_act_classifier import ai_act_classifier
     from .airtable_tool import airtable_tool
     from .android import android
     from .apply_patch import apply_patch
@@ -704,6 +705,7 @@ def base_registry(  # noqa: C901
     reg.register(synthetic_data())
     reg.register(web_recorder())
     reg.register(a11y_tree())
+    reg.register(ai_act_classifier())
     reg.register(cache_admin())
     reg.register(openapi_runner(sandbox))
     reg.register(ocr(sandbox))
