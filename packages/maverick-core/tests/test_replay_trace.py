@@ -1,6 +1,9 @@
 """Replayable trace format (ROADMAP 2028 H1)."""
 from __future__ import annotations
 
+import os
+import stat
+
 from maverick.replay_trace import TraceWriter, read_trace, replay
 
 
@@ -58,3 +61,34 @@ def test_replay_dispatches_in_seq_order(tmp_path):
 
 def test_read_missing_file_is_empty(tmp_path):
     assert read_trace(tmp_path / "nope.jsonl") == []
+
+
+def test_trace_writer_locks_down_trace_permissions(tmp_path):
+    old_umask = os.umask(0o022)
+    try:
+        trace_dir = tmp_path / "traces"
+        path = trace_dir / "run.jsonl"
+        with TraceWriter(path) as w:
+            w.record("observation", content="SECRET_TOKEN=topsecret")
+    finally:
+        os.umask(old_umask)
+
+    assert stat.S_IMODE(trace_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert read_trace(path)[0]["content"] == "SECRET_TOKEN=topsecret"
+
+
+def test_trace_writer_repairs_permissive_existing_permissions(tmp_path):
+    trace_dir = tmp_path / "traces"
+    trace_dir.mkdir()
+    trace_dir.chmod(0o755)
+    path = trace_dir / "run.jsonl"
+    path.write_text("", encoding="utf-8")
+    path.chmod(0o644)
+
+    with TraceWriter(path) as w:
+        w.record("observation", content="still private")
+
+    assert stat.S_IMODE(trace_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert read_trace(path)[0]["content"] == "still private"
