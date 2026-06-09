@@ -381,6 +381,21 @@ def _wire_imessage(server, cfg):
     ))
 
 
+def _wire_irc(server, cfg):
+    from maverick_channels.irc import IRCChannel
+    allowed_user_ids = cfg.get("allowed_user_ids")
+    server.add_channel(IRCChannel(
+        server._handle_message,
+        cfg.get("server") or os.environ.get("IRC_SERVER"),
+        nick=cfg.get("nick", "maverick"),
+        port=cfg.get("port", 6697),
+        tls=cfg.get("tls", True),
+        channels=cfg.get("channels"),
+        password=cfg.get("password") or os.environ.get("IRC_PASSWORD"),
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+    ))
+
+
 def _wire_voice(server, cfg):
     from maverick_channels.voice import VoiceChannel
     server.add_channel(VoiceChannel(
@@ -410,6 +425,7 @@ _WIRES = {
     "sms":      _wire_sms,
     "imessage": _wire_imessage,
     "voice":    _wire_voice,
+    "irc":      _wire_irc,
 }
 
 

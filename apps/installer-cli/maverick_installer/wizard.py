@@ -51,6 +51,7 @@ CHANNELS: list[tuple[str, str, list[str]]] = [
     ("matrix",   "Matrix (federated)",                  ["MATRIX_ACCESS_TOKEN"]),
     ("bluesky",  "Bluesky (AT Protocol)",               ["BLUESKY_HANDLE", "BLUESKY_PASSWORD"]),
     ("mastodon", "Mastodon (any instance)",             ["MASTODON_ACCESS_TOKEN"]),
+    ("irc",      "IRC (channels + DMs)",                 []),
     # Voice API key is provider-specific (VAPI/RETELL/BLAND), resolved in the
     # voice block below; only the webhook token is static here.
     ("voice",    "Voice (Vapi/Retell/Bland)",            ["VAPI_WEBHOOK_TOKEN"]),
