@@ -28,8 +28,8 @@ from .sandbox.network_policy import host_allowed as _tool_host_allowed
 
 def _resolve_tenant(tenant: str | None) -> str | None:
     if tenant == "__active__":
-        from .paths import current_tenant
-        return current_tenant()
+        from .paths import current_tenant_id
+        return current_tenant_id()
     return tenant
 
 
