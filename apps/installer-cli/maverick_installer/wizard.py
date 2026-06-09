@@ -576,7 +576,7 @@ def pick_models_per_role(providers: list[str]) -> dict[str, str]:
 # the channel refuses to start. See maverick_channels.base.is_allowed.
 _ALLOWLIST_CHANNELS = {
     "telegram", "discord", "slack", "signal", "email",
-    "matrix", "bluesky", "mastodon", "imessage", "sms", "whatsapp",
+    "matrix", "bluesky", "mastodon", "irc", "imessage", "sms", "whatsapp",
 }
 _ALLOWLIST_HINT = {
     "telegram": "numeric Telegram user IDs",
@@ -587,6 +587,7 @@ _ALLOWLIST_HINT = {
     "matrix": "MXIDs, e.g. @you:matrix.org",
     "bluesky": "handles or DIDs",
     "mastodon": "acct names, e.g. you@instance",
+    "irc": "authenticated IRC account names (requires IRCv3 account-tag)",
     "imessage": "phone numbers or emails",
     "sms": "phone numbers, e.g. +14155551234",
     "whatsapp": "senders as Twilio sends them, e.g. whatsapp:+14155551234",
@@ -722,9 +723,14 @@ def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]
             if ids:
                 cfg["allowed_user_ids"] = ids
             else:
+                env_name = (
+                    "IRC_ALLOWED_ACCOUNTS"
+                    if ch_id == "irc"
+                    else ch_id.upper() + "_ALLOWED_USER_IDS"
+                )
                 console.print(
                     "  [yellow]No allowlist set — this channel will refuse "
-                    f"all senders until you set {ch_id.upper()}_ALLOWED_USER_IDS "
+                    f"all senders until you set {env_name} "
                     "or add allowed_user_ids to config.[/yellow]"
                 )
         elif ch_id == "voice":
@@ -2246,7 +2252,8 @@ def write_config(  # noqa: C901
         # Advanced reasoning toggles -> the kernel's config sections. Each is
         # off unless the wizard wrote it, matching the modules' own defaults.
         if (advanced.get("cost_aware") or advanced.get("verify_ensemble")
-                or advanced.get("energy_aware")):
+                or advanced.get("energy_aware")
+                or advanced.get("autonomy_gate")):
             lines.append("")
             lines.append("[routing]")
             # Constrain routing features enabled by the wizard to the providers

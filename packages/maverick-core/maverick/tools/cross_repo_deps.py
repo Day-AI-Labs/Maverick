@@ -10,40 +10,91 @@ ops:
                      edges cross from one given root into another.
   - cycles(paths)  — strongly-connected import cycles among the packages.
 
-Read-only: it walks ``*.py`` files and parses them with ``ast`` (no import
-execution). ``parallel_safe``.
+Read-only: it walks bounded ``*.py`` files below ``sandbox.workdir`` and
+parses them with ``ast`` (no import execution).
 """
 from __future__ import annotations
 
 import ast
 import os
+import stat
+from pathlib import Path
 from typing import Any
 
 from . import Tool
 
 _SKIP_DIRS = {".git", "__pycache__", ".venv", "venv", "node_modules", ".tox", "build", "dist"}
+_MAX_ROOTS = 8
+_MAX_WALK_DEPTH = 12
+_MAX_PY_FILES = 2_000
+_MAX_PARSE_BYTES = 1_000_000
+_MAX_OUTPUT_ROWS = 1_000
 
 
-def _py_files(root: str) -> list[str]:
-    out: list[str] = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+def _safe_roots(sandbox: Any | None, raw_paths: list[str]) -> tuple[list[Path], str | None]:
+    """Resolve user roots inside ``sandbox.workdir`` and refuse escapes."""
+    if len(raw_paths) > _MAX_ROOTS:
+        return [], f"too many paths (max {_MAX_ROOTS})"
+
+    workdir = Path(getattr(sandbox, "workdir", ".")).resolve()
+    if not workdir.is_dir():
+        return [], f"workdir {workdir} not found"
+
+    roots: list[Path] = []
+    for raw in raw_paths:
+        candidate = (workdir / raw).resolve()
+        try:
+            candidate.relative_to(workdir)
+        except ValueError:
+            return [], f"path {raw!r} escapes the workspace"
+        if candidate.is_dir():
+            roots.append(candidate)
+    return roots, None
+
+
+def _py_files(root: Path) -> list[Path]:
+    out: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        base = Path(dirpath)
+        try:
+            depth = len(base.relative_to(root).parts)
+        except ValueError:
+            dirnames[:] = []
+            continue
+        if depth >= _MAX_WALK_DEPTH:
+            dirnames[:] = []
+        else:
+            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
         for f in filenames:
-            if f.endswith(".py"):
-                out.append(os.path.join(dirpath, f))
+            if not f.endswith(".py"):
+                continue
+            path = base / f
+            try:
+                st = path.stat(follow_symlinks=False)
+            except OSError:
+                continue
+            if not stat.S_ISREG(st.st_mode) or st.st_size > _MAX_PARSE_BYTES:
+                continue
+            out.append(path)
+            if len(out) >= _MAX_PY_FILES:
+                return out
     return out
 
 
-def _top_package(path: str, root: str) -> str:
+def _top_package(path: Path, root: Path) -> str:
     """First path component of ``path`` relative to ``root`` (the package)."""
-    rel = os.path.relpath(path, root)
-    parts = rel.split(os.sep)
-    return parts[0] if len(parts) > 1 else os.path.splitext(parts[0])[0]
+    rel = path.relative_to(root)
+    parts = rel.parts
+    return parts[0] if len(parts) > 1 else path.stem
 
 
-def _imports(path: str) -> set[str]:
+def _imports(path: Path) -> set[str]:
     try:
-        tree = ast.parse(open(path, encoding="utf-8", errors="replace").read())
+        with path.open("rb") as fh:
+            raw = fh.read(_MAX_PARSE_BYTES + 1)
+        if len(raw) > _MAX_PARSE_BYTES:
+            return set()
+        tree = ast.parse(raw.decode("utf-8", errors="replace"), filename=str(path))
     except (SyntaxError, OSError):
         return set()
     mods: set[str] = set()
@@ -57,11 +108,11 @@ def _imports(path: str) -> set[str]:
     return mods
 
 
-def _build(paths: list[str]) -> tuple[dict[tuple[str, str], int], dict[str, str]]:
+def _build(paths: list[Path]) -> tuple[dict[tuple[str, str], int], dict[str, Path]]:
     """Return (edges: (src_pkg,dst_pkg)->file_count, pkg->owning_root)."""
-    pkg_root: dict[str, str] = {}
+    pkg_root: dict[str, Path] = {}
     local_pkgs: set[str] = set()
-    files_by_root: dict[str, list[str]] = {}
+    files_by_root: dict[Path, list[Path]] = {}
     for root in paths:
         files = _py_files(root)
         files_by_root[root] = files
@@ -121,28 +172,40 @@ def _cycles(edges: dict[tuple[str, str], int]) -> list[list[str]]:
     return sccs
 
 
-def _run(args: dict[str, Any]) -> str:
-    op = args.get("op")
-    paths = [p for p in (args.get("paths") or []) if isinstance(p, str) and p.strip()]
-    paths = [p for p in paths if os.path.isdir(p)]
-    if not paths:
-        return "ERROR: paths must include at least one existing directory"
+def _run_factory(sandbox: Any | None):
+    def _run(args: dict[str, Any]) -> str:
+        op = args.get("op")
+        raw_paths = [p for p in (args.get("paths") or []) if isinstance(p, str) and p.strip()]
+        paths, err = _safe_roots(sandbox, raw_paths)
+        if err:
+            return f"ERROR: {err}"
+        if not paths:
+            return "ERROR: paths must include at least one existing directory in the workspace"
 
-    edges, pkg_root = _build(paths)
-    if op == "graph":
-        if not edges:
-            return "no inter-package import edges found"
-        rows = []
-        for (s, d), n in sorted(edges.items(), key=lambda kv: (-kv[1], kv[0])):
-            cross = "  [cross-root]" if pkg_root.get(s) != pkg_root.get(d) else ""
-            rows.append(f"{s} -> {d}  ({n} import{'s' if n != 1 else ''}){cross}")
-        return "\n".join(rows)
-    if op == "cycles":
-        cyc = _cycles(edges)
-        if not cyc:
-            return "no import cycles among packages"
-        return "\n".join(" <-> ".join(c) for c in cyc)
-    return f"ERROR: unknown op {op!r}"
+        edges, pkg_root = _build(paths)
+        if op == "graph":
+            if not edges:
+                return "no inter-package import edges found"
+            rows = []
+            try:
+                cap_raw = int(args.get("max_results") or _MAX_OUTPUT_ROWS)
+            except (TypeError, ValueError):
+                cap_raw = _MAX_OUTPUT_ROWS
+            cap = max(1, min(cap_raw, _MAX_OUTPUT_ROWS))
+            for (s, d), n in sorted(edges.items(), key=lambda kv: (-kv[1], kv[0]))[:cap]:
+                cross = "  [cross-root]" if pkg_root.get(s) != pkg_root.get(d) else ""
+                rows.append(f"{s} -> {d}  ({n} import{'s' if n != 1 else ''}){cross}")
+            if len(edges) > cap:
+                rows.append(f"... [truncated, {len(edges) - cap} more edges]")
+            return "\n".join(rows)
+        if op == "cycles":
+            cyc = _cycles(edges)[:_MAX_OUTPUT_ROWS]
+            if not cyc:
+                return "no import cycles among packages"
+            return "\n".join(" <-> ".join(c) for c in cyc)
+        return f"ERROR: unknown op {op!r}"
+
+    return _run
 
 
 _SCHEMA: dict[str, Any] = {
@@ -152,24 +215,28 @@ _SCHEMA: dict[str, Any] = {
         "paths": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "one or more repo/package root directories to scan",
+            "description": "one or more repo/package root directories under the workspace to scan",
+        },
+        "max_results": {
+            "type": "integer",
+            "description": "maximum graph rows to return (default/cap 1000)",
         },
     },
     "required": ["op", "paths"],
 }
 
 
-def cross_repo_deps() -> Tool:
+def cross_repo_deps(sandbox: Any | None = None) -> Tool:
     return Tool(
         name="cross_repo_deps",
         description=(
             "Cross-repo Python dependency graph. ops: graph (top-level "
             "package -> package import edges with counts; flags edges that "
             "cross from one root into another), cycles (import cycles among "
-            "packages). Parses with ast, never executes imports. Pass one or "
-            "more repo root dirs in 'paths'."
+            "packages). Parses with ast, never executes imports. Paths are "
+            "resolved under the workspace."
         ),
         input_schema=_SCHEMA,
-        fn=_run,
-        parallel_safe=True,
+        fn=_run_factory(sandbox),
+        parallel_safe=False,
     )

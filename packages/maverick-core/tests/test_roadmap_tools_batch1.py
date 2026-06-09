@@ -9,6 +9,12 @@ from maverick.tools.cross_repo_deps import cross_repo_deps
 from maverick.tools.knowledge_graph import knowledge_graph
 from maverick.tools.test_gen import test_gen as make_test_gen
 
+
+class _FakeSandbox:
+    def __init__(self, workdir):
+        self.workdir = str(workdir)
+
+
 # ---- knowledge_graph ----
 
 def test_kg_extract_structured_and_heuristic():
@@ -76,8 +82,8 @@ def test_cross_repo_graph_and_cross_root(tmp_path):
     _write(root_a, "pkga/main.py", "import pkgb\n")          # cross-root edge
     _write(root_b, "pkgb/__init__.py", "")
     _write(root_b, "pkgb/util.py", "x = 1\n")
-    t = cross_repo_deps()
-    out = t.fn({"op": "graph", "paths": [str(root_a), str(root_b)]})
+    t = cross_repo_deps(_FakeSandbox(tmp_path))
+    out = t.fn({"op": "graph", "paths": ["repoA", "repoB"]})
     assert "pkga -> pkgb" in out and "[cross-root]" in out
 
 
@@ -85,14 +91,27 @@ def test_cross_repo_cycles(tmp_path):
     root = tmp_path / "mono"
     _write(root, "p/__init__.py", "import q\n")
     _write(root, "q/__init__.py", "import p\n")
-    t = cross_repo_deps()
-    out = t.fn({"op": "cycles", "paths": [str(root)]})
+    t = cross_repo_deps(_FakeSandbox(tmp_path))
+    out = t.fn({"op": "cycles", "paths": ["mono"]})
     assert "p <-> q" in out or "q <-> p" in out
 
 
-def test_cross_repo_requires_existing_dir():
-    t = cross_repo_deps()
+def test_cross_repo_requires_existing_dir(tmp_path):
+    t = cross_repo_deps(_FakeSandbox(tmp_path))
     assert t.fn({"op": "graph", "paths": ["/no/such/dir"]}).startswith("ERROR")
+
+
+def test_cross_repo_rejects_workspace_escape(tmp_path):
+    inside = tmp_path / "inside"
+    outside = tmp_path.parent / f"{tmp_path.name}_outside"
+    _write(inside, "pkga/__init__.py", "import secretpkg\n")
+    _write(outside, "secretpkg/__init__.py", "import os\n")
+    t = cross_repo_deps(_FakeSandbox(tmp_path))
+
+    out = t.fn({"op": "graph", "paths": [str(outside)]})
+
+    assert out.startswith("ERROR")
+    assert "escapes the workspace" in out
 
 
 # ---- test_gen ----
@@ -125,16 +144,18 @@ def test_test_gen_errors():
 
 # ---- registration ----
 
-def test_batch1_tools_registered():
+def test_batch1_tools_registered(tmp_path):
     from maverick.tools import base_registry
 
     class _FakeWorld:
         pass
 
-    class _FakeSandbox:
-        pass
+    class _RegistrySandbox:
+        workdir = str(tmp_path)
 
-    reg = base_registry(world=_FakeWorld(), sandbox=_FakeSandbox())
-    all_names = set(getattr(reg, "_tools", {}).keys())
+    reg = base_registry(world=_FakeWorld(), sandbox=_RegistrySandbox())
+    tools = getattr(reg, "_tools", {})
+    all_names = set(tools.keys())
     for n in ("knowledge_graph", "citation_verifier", "cross_repo_deps", "test_gen"):
         assert n in all_names, f"{n} not registered"
+    assert tools["cross_repo_deps"].parallel_safe is False

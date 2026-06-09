@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shlex
 import subprocess
 import tempfile
 from pathlib import Path
@@ -113,7 +114,10 @@ def _make_run(sandbox):
         # exit_code/stderr, which is all `git apply` needs. The tempfile
         # was written into workdir, so we reference it by basename. Fall
         # back to host subprocess (env-scrubbed) when there's no exec.
-        rel = os.path.basename(tmp_path)
+        # Tempfile names are generated alphanumerics, but exec runs a shell
+        # string -- quote anyway so a different tempdir/suffix can never
+        # smuggle shell metacharacters (same pattern as preview_diff).
+        rel = shlex.quote(os.path.basename(tmp_path))
         use_exec = hasattr(sandbox, "exec")
         try:
             if use_exec:

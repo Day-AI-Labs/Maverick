@@ -11,8 +11,8 @@ ops:
 from __future__ import annotations
 
 import os
-import re
 import struct
+from pathlib import Path
 from typing import Any
 
 from . import Tool
@@ -20,38 +20,54 @@ from . import Tool
 _MAX_BYTES = 80 * 1024 * 1024  # refuse absurd files
 
 
-def _bbox(verts: list[tuple[float, float, float]]) -> str:
-    xs = [v[0] for v in verts]
-    ys = [v[1] for v in verts]
-    zs = [v[2] for v in verts]
-    lo = (min(xs), min(ys), min(zs))
-    hi = (max(xs), max(ys), max(zs))
-    dim = tuple(round(hi[i] - lo[i], 4) for i in range(3))
-    return (
-        f"bbox_min: ({lo[0]:.4g}, {lo[1]:.4g}, {lo[2]:.4g})\n"
-        f"bbox_max: ({hi[0]:.4g}, {hi[1]:.4g}, {hi[2]:.4g})\n"
-        f"dimensions (w,h,d): ({dim[0]:g}, {dim[1]:g}, {dim[2]:g})"
-    )
+class _Bounds:
+    """Incrementally track vertex count and an axis-aligned bounding box."""
+
+    def __init__(self) -> None:
+        self.count = 0
+        self.min_x = self.min_y = self.min_z = float("inf")
+        self.max_x = self.max_y = self.max_z = float("-inf")
+
+    def add(self, x: float, y: float, z: float) -> None:
+        self.count += 1
+        self.min_x = min(self.min_x, x)
+        self.min_y = min(self.min_y, y)
+        self.min_z = min(self.min_z, z)
+        self.max_x = max(self.max_x, x)
+        self.max_y = max(self.max_y, y)
+        self.max_z = max(self.max_z, z)
+
+    def render(self) -> str:
+        dim = (
+            round(self.max_x - self.min_x, 4),
+            round(self.max_y - self.min_y, 4),
+            round(self.max_z - self.min_z, 4),
+        )
+        return (
+            f"bbox_min: ({self.min_x:.4g}, {self.min_y:.4g}, {self.min_z:.4g})\n"
+            f"bbox_max: ({self.max_x:.4g}, {self.max_y:.4g}, {self.max_z:.4g})\n"
+            f"dimensions (w,h,d): ({dim[0]:g}, {dim[1]:g}, {dim[2]:g})"
+        )
 
 
-def _parse_obj(text: str) -> tuple[int, int, list[tuple[float, float, float]]]:
-    verts: list[tuple[float, float, float]] = []
+def _parse_obj(text: str) -> tuple[int, int, _Bounds]:
+    bounds = _Bounds()
     faces = 0
     for line in text.splitlines():
         if line.startswith("v "):
             parts = line.split()
             if len(parts) >= 4:
                 try:
-                    verts.append((float(parts[1]), float(parts[2]), float(parts[3])))
+                    bounds.add(float(parts[1]), float(parts[2]), float(parts[3]))
                 except ValueError:
                     continue
         elif line.startswith("f "):
             faces += 1
-    return len(verts), faces, verts
+    return bounds.count, faces, bounds
 
 
-def _parse_ascii_stl(text: str) -> tuple[int, list[tuple[float, float, float]]]:
-    verts: list[tuple[float, float, float]] = []
+def _parse_ascii_stl(text: str) -> tuple[int, _Bounds]:
+    bounds = _Bounds()
     facets = 0
     for line in text.splitlines():
         s = line.strip()
@@ -59,29 +75,29 @@ def _parse_ascii_stl(text: str) -> tuple[int, list[tuple[float, float, float]]]:
             parts = s.split()
             if len(parts) >= 4:
                 try:
-                    verts.append((float(parts[1]), float(parts[2]), float(parts[3])))
+                    bounds.add(float(parts[1]), float(parts[2]), float(parts[3]))
                 except ValueError:
                     continue
         elif s.startswith("facet"):
             facets += 1
-    return facets, verts
+    return facets, bounds
 
 
-def _parse_binary_stl(data: bytes) -> tuple[int, list[tuple[float, float, float]]]:
+def _parse_binary_stl(data: bytes) -> tuple[int, _Bounds]:
     if len(data) < 84:
-        return 0, []
+        return 0, _Bounds()
     (count,) = struct.unpack_from("<I", data, 80)
-    verts: list[tuple[float, float, float]] = []
+    bounds = _Bounds()
     off = 84
     n = min(count, (len(data) - 84) // 50)
     for _ in range(n):
         # 12 floats: normal(3) + v1(3) + v2(3) + v3(3), then 2-byte attr.
         vals = struct.unpack_from("<12f", data, off)
-        verts.extend([(vals[3], vals[4], vals[5]),
-                      (vals[6], vals[7], vals[8]),
-                      (vals[9], vals[10], vals[11])])
+        bounds.add(vals[3], vals[4], vals[5])
+        bounds.add(vals[6], vals[7], vals[8])
+        bounds.add(vals[9], vals[10], vals[11])
         off += 50
-    return n, verts
+    return n, bounds
 
 
 def _inspect(path: str) -> str:
@@ -93,39 +109,54 @@ def _inspect(path: str) -> str:
         data = f.read()
 
     if ext == ".obj":
-        nv, nf, verts = _parse_obj(data.decode("utf-8", errors="replace"))
-        if not verts:
+        nv, nf, bounds = _parse_obj(data.decode("utf-8", errors="replace"))
+        if bounds.count == 0:
             return "ERROR: no vertices found in OBJ"
-        return f"format: OBJ\nvertices: {nv}\nfaces: {nf}\n{_bbox(verts)}"
+        return f"format: OBJ\nvertices: {nv}\nfaces: {nf}\n{bounds.render()}"
 
     # STL: detect ASCII vs binary. ASCII starts with 'solid' AND contains 'facet'.
     head = data[:512].decode("ascii", errors="replace").lower()
     is_ascii = head.lstrip().startswith("solid") and "facet" in \
         data[:4096].decode("ascii", errors="replace").lower()
     if is_ascii:
-        facets, verts = _parse_ascii_stl(data.decode("ascii", errors="replace"))
+        facets, bounds = _parse_ascii_stl(data.decode("ascii", errors="replace"))
     else:
-        facets, verts = _parse_binary_stl(data)
-    if not verts:
+        facets, bounds = _parse_binary_stl(data)
+    if bounds.count == 0:
         return "ERROR: no triangles found in STL"
     return (
         f"format: STL ({'ascii' if is_ascii else 'binary'})\n"
-        f"triangles: {facets}\nvertices: {len(verts)}\n{_bbox(verts)}"
+        f"triangles: {facets}\nvertices: {bounds.count}\n{bounds.render()}"
     )
 
 
-def _run(args: dict[str, Any]) -> str:
+def _resolve_path(path: str, workdir: Path) -> tuple[Path | None, str | None]:
+    raw = Path(path)
+    if raw.suffix.lower() not in {".stl", ".obj"}:
+        return None, "ERROR: only .stl and .obj are supported"
+    candidate = raw.resolve() if raw.is_absolute() else (workdir / raw).resolve()
+    try:
+        candidate.relative_to(workdir)
+    except ValueError:
+        return None, f"ERROR: path escapes workspace: {path}"
+    if not candidate.is_file():
+        return None, f"ERROR: no such file: {path}"
+    return candidate, None
+
+
+def _run(args: dict[str, Any], workdir: Path | None = None) -> str:
     if args.get("op") not in (None, "inspect"):
         return f"ERROR: unknown op {args.get('op')!r}"
     path = (args.get("path") or "").strip()
     if not path:
         return "ERROR: path is required"
-    if not os.path.isfile(path):
-        return f"ERROR: no such file: {path}"
-    if not re.search(r"\.(stl|obj)$", path, re.I):
-        return "ERROR: only .stl and .obj are supported"
+    root = (workdir or Path.cwd()).resolve()
+    resolved, error = _resolve_path(path, root)
+    if error is not None:
+        return error
+    assert resolved is not None
     try:
-        return _inspect(path)
+        return _inspect(str(resolved))
     except Exception as e:  # pragma: no cover - defensive
         return f"ERROR: parse failed: {type(e).__name__}: {e}"
 
@@ -140,7 +171,8 @@ _SCHEMA: dict[str, Any] = {
 }
 
 
-def model3d_inspect() -> Tool:
+def model3d_inspect(sandbox: Any = None) -> Tool:
+    workdir = Path(getattr(sandbox, "workdir", Path.cwd())).resolve()
     return Tool(
         name="model3d_inspect",
         description=(
@@ -149,6 +181,6 @@ def model3d_inspect() -> Tool:
             "the model's width/height/depth. op=inspect with a 'path'."
         ),
         input_schema=_SCHEMA,
-        fn=_run,
-        parallel_safe=True,
+        fn=lambda args: _run(args, workdir),
+        parallel_safe=False,
     )

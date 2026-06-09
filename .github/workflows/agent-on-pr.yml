@@ -72,21 +72,39 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           MAVERICK_CONSENT_MODE: auto-deny
           MAVERICK_FETCH_RESPECT_ROBOTS: '1'
+          # Caller inputs reach the script ONLY via env. Expression-
+          # interpolating them into `run:` would let a goal/model string
+          # containing `$(...)`, quotes, or newlines inject shell or TOML.
+          AGENT_GOAL: ${{ inputs.goal }}
+          AGENT_MODEL: ${{ inputs.model }}
+          AGENT_MAX_DOLLARS: ${{ inputs.max_dollars }}
+          AGENT_TIMEOUT_MINUTES: ${{ inputs.timeout_minutes }}
+          AGENT_WORKDIR: ${{ github.workspace }}
         run: |
           set -e
           mkdir -p ~/.maverick
-          cat > ~/.maverick/config.toml <<EOF
+          # Build the config in Python: json.dumps emits valid TOML basic
+          # strings, and the numeric inputs are validated as numbers.
+          python - <<'PY'
+          import json, os, pathlib
+
+          model = json.dumps(os.environ["AGENT_MODEL"])
+          workdir = json.dumps(os.environ["AGENT_WORKDIR"])
+          max_dollars = float(os.environ["AGENT_MAX_DOLLARS"])
+          max_wall_seconds = int(float(os.environ["AGENT_TIMEOUT_MINUTES"]) * 60)
+
+          config = f"""\
           [providers.anthropic]
-          api_key = "\${ANTHROPIC_API_KEY}"
+          api_key = "${{ANTHROPIC_API_KEY}}"
 
           [models]
-          orchestrator = "${{ inputs.model }}"
-          coder        = "${{ inputs.model }}"
-          researcher   = "${{ inputs.model }}"
+          orchestrator = {model}
+          coder        = {model}
+          researcher   = {model}
 
           [budget]
-          max_dollars = ${{ inputs.max_dollars }}
-          max_wall_seconds = $(( ${{ inputs.timeout_minutes }} * 60 ))
+          max_dollars = {max_dollars}
+          max_wall_seconds = {max_wall_seconds}
           max_tool_calls = 200
 
           [safety]
@@ -98,16 +116,17 @@ jobs:
 
           [sandbox]
           backend = "local"
-          workdir = "${{ github.workspace }}"
+          workdir = {workdir}
           timeout = 60
-          EOF
+          """
+          path = pathlib.Path.home() / ".maverick" / "config.toml"
+          path.write_text(config, encoding="utf-8")
+          PY
 
           # Run; capture output for the PR comment.
-          printf "%s" "${{ inputs.goal }}" > /tmp/goal.txt
           python - <<'PY' 2>&1 | tee /tmp/agent-output.txt
-          import subprocess
-          goal = open("/tmp/goal.txt", "r", encoding="utf-8").read()
-          p = subprocess.run(["maverick", "start", goal], check=False)
+          import os, subprocess
+          p = subprocess.run(["maverick", "start", os.environ["AGENT_GOAL"]], check=False)
           raise SystemExit(p.returncode)
           PY
           echo "exit=$?" >> "$GITHUB_OUTPUT"

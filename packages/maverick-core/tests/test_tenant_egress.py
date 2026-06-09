@@ -69,3 +69,32 @@ def test_http_fetch_uses_tenant_egress(monkeypatch):
     from maverick.tools.http_fetch import http_fetch
     out = http_fetch().fn({"url": "https://blocked.test/data"})
     assert isinstance(out, str) and "egress policy blocks" in out
+
+
+def test_active_tenant_lookup_uses_raw_tenant_id(monkeypatch):
+    import maverick.config as cfg
+    from maverick.paths import tenant_scope
+
+    monkeypatch.setenv("MAVERICK_TENANT_BY_USER", "1")
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    monkeypatch.setattr(cfg, "load_config", lambda: {
+        "tenancy": {"egress": {"slack:U123": {"deny": ["attacker.example"]}}},
+    })
+
+    with tenant_scope(channel="slack", user_id="U123"):
+        assert te.load_tenant_egress() == {"deny": ["attacker.example"]}
+        assert te.host_allowed("attacker.example") is False
+        assert te.egress_allowed("http_fetch", "attacker.example") is False
+
+
+def test_active_tenant_lookup_uses_raw_env_tenant_id(monkeypatch):
+    import maverick.config as cfg
+
+    monkeypatch.delenv("MAVERICK_TENANT_BY_USER", raising=False)
+    monkeypatch.setenv("MAVERICK_TENANT", "slack:U123")
+    monkeypatch.setattr(cfg, "load_config", lambda: {
+        "tenancy": {"egress": {"slack:U123": {"allow": ["api.allowed.test"]}}},
+    })
+
+    assert te.host_allowed("api.allowed.test") is True
+    assert te.host_allowed("attacker.example") is False

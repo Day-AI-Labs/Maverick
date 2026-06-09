@@ -1525,9 +1525,12 @@ async def webhook_github(request: Request, bg: BackgroundTasks) -> JSONResponse:
     import os as _os
 
     from maverick.github_app import parse_webhook, process_issue, verify_signature
+    from maverick.issue_webhooks import canonical_signature, replay_window_seconds
+
+    signature = request.headers.get("X-Hub-Signature-256")
     body = await _read_limited_webhook_body(request)
     secret = _os.environ.get("MAVERICK_GH_APP_WEBHOOK_SECRET", "")
-    if not verify_signature(body, request.headers.get("X-Hub-Signature-256"), secret):
+    if not verify_signature(body, signature, secret):
         return JSONResponse({"detail": "invalid signature"}, status_code=401)
     try:
         payload = parse_webhook(request.headers.get("X-GitHub-Event", ""), _json.loads(body))
@@ -1535,6 +1538,20 @@ async def webhook_github(request: Request, bg: BackgroundTasks) -> JSONResponse:
         return JSONResponse({"detail": "bad payload"}, status_code=400)
     if payload is None:
         return JSONResponse({"status": "ignored"})
+
+    # GitHub signs only the raw body, not a freshness timestamp.  Require its
+    # delivery id for operator traceability, but key replay rejection on the
+    # canonical body HMAC so a captured delivery cannot be resent with a
+    # different X-GitHub-Delivery value to re-run the paid issue→PR workflow.
+    if not (request.headers.get("X-GitHub-Delivery") or "").strip():
+        return JSONResponse({"detail": "missing delivery id"}, status_code=403)
+    dedup_signature = canonical_signature(signature)
+    if not dedup_signature:
+        return JSONResponse({"detail": "bad webhook signature"}, status_code=403)
+    if _issue_webhook_replay_seen(dedup_signature, replay_window_seconds()):
+        return JSONResponse({"detail": "duplicate webhook delivery"}, status_code=409)
+
+    check_goal_rate_limit(request, source="webhook:github")
 
     async def _run() -> None:
         try:
@@ -1547,9 +1564,9 @@ async def webhook_github(request: Request, bg: BackgroundTasks) -> JSONResponse:
 
 
 # Per-process replay dedup for inbound issue webhooks, keyed on the request's
-# HMAC signature (unique per signed body), so a captured Linear/Jira delivery
-# replayed within the freshness window is rejected once per process. NOTE: this
-# is per-process -- with multiple workers the stateless freshness check
+# HMAC signature (unique per signed body), so a captured delivery replayed
+# within the freshness window is rejected once per process. NOTE: this is
+# per-process -- with multiple workers the stateless Linear/Jira freshness check
 # (issue_webhooks.is_fresh) is the cross-worker bound; a shared store would be
 # needed for cross-worker dedup.
 _issue_webhook_seen: dict[str, float] = {}

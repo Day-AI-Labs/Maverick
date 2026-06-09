@@ -199,20 +199,29 @@ def delete_tenant(tenant_id: str, *, purge: bool = False) -> bool:
 
 
 def is_active(tenant_id: str | None) -> bool:
-    """Whether a tenant may do work. Unprovisioned/None tenants are active
-    (the registry is opt-in; no roster ⇒ no enforcement)."""
+    """Whether a tenant may do work.
+
+    The registry is opt-in: before any roster file exists, named tenants are
+    accepted for single-tenant and unprovisioned deployments. Once a roster
+    exists, only provisioned active tenants may do work; unknown tenant IDs
+    include deleted tenants and are refused.
+    """
     tid = (tenant_id or "").strip()
     if not tid:
         return True
     rec = _load().get(tid)
-    return True if rec is None else rec.active
+    if rec is None:
+        return not _registry_path().exists()
+    return rec.active
 
 
 def assert_tenant_active(tenant_id: str | None) -> None:
-    """Enforcement hook: raise :class:`TenantSuspended` for a suspended tenant.
-    No-op for None / unprovisioned tenants, so existing flows are unchanged."""
+    """Enforcement hook: raise :class:`TenantSuspended` for inactive tenants.
+    No-op for None / deployments without a registry, so existing flows are
+    unchanged until tenant provisioning is enabled.
+    """
     if not is_active(tenant_id):
-        raise TenantSuspended(f"tenant is suspended: {tenant_id!r}")
+        raise TenantSuspended(f"tenant is suspended or unknown: {tenant_id!r}")
 
 
 __all__ = [

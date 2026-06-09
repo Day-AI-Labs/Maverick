@@ -81,8 +81,13 @@ def test_long_task_acks_and_delivers_to_secondary():
 
 
 def test_slow_quick_query_falls_back_to_ack_then_run():
+    calls = 0
+    release = asyncio.Event()
+
     async def slow_handler(msg):
-        await asyncio.sleep(1.0)
+        nonlocal calls
+        calls += 1
+        await release.wait()
         return "late answer"
 
     delivered = []
@@ -96,11 +101,19 @@ def test_slow_quick_query_falls_back_to_ack_then_run():
         slow_handler, deadline_s=0.01, secondary_channel="Telegram",
         deliver=deliver, spawn=lambda c: spawned.append(c),
     )
-    out = asyncio.run(ch.handle_utterance("alice", "what is the meaning of life"))
-    # The quick path timed out -> acked, and a background task was scheduled.
-    assert "working on it" in out.lower()
-    assert len(spawned) == 1
-    spawned[0].close()  # close the un-awaited fallback coroutine
+
+    async def go():
+        out = await ch.handle_utterance("alice", "what is the meaning of life")
+        # The quick path timed out -> acked, and a background delivery was scheduled.
+        assert "working on it" in out.lower()
+        assert len(spawned) == 1
+        assert calls == 1
+        release.set()
+        await spawned[0]
+
+    asyncio.run(go())
+    assert calls == 1
+    assert delivered == [("alice", "late answer")]
 
 
 def test_unauthorized_user_refused():

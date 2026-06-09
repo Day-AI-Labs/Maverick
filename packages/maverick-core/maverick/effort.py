@@ -98,16 +98,14 @@ def _configured_level(role: str) -> str | None:
     return None
 
 
-def effort_for_role(role: str, model_id: str) -> str | None:
-    """The effort level to send for ``(role, model)``, or ``None`` to omit it.
+def effort_for_model(level: str | None, model_id: str) -> str | None:
+    """Validate and clamp a preselected effort level for ``model_id``.
 
-    Returns ``None`` (omit ``output_config.effort``, API default applies) when the
-    feature is off, the model doesn't support effort, or the configured value is
-    invalid — so this can never break a request."""
-    if not effort_supported(model_id):
-        return None
-    level = _configured_level(role)
-    if not level:
+    This is the provider/failover-side companion to :func:`effort_for_role`: an
+    agent may have resolved its configured effort against a primary model, but a
+    later failover attempt still has to respect the fallback model's ceiling.
+    """
+    if not effort_supported(model_id) or not level:
         return None
     level = level.strip().lower()
     if level not in _LEVELS:
@@ -115,4 +113,13 @@ def effort_for_role(role: str, model_id: str) -> str | None:
     return _clamp(level, model_id)
 
 
-__all__ = ["effort_for_role", "effort_supported"]
+def effort_for_role(role: str, model_id: str) -> str | None:
+    """The effort level to send for ``(role, model)``, or ``None`` to omit it.
+
+    Returns ``None`` (omit ``output_config.effort``, API default applies) when the
+    feature is off, the model doesn't support effort, or the configured value is
+    invalid — so this can never break a request."""
+    return effort_for_model(_configured_level(role), model_id)
+
+
+__all__ = ["effort_for_model", "effort_for_role", "effort_supported"]

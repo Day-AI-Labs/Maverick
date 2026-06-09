@@ -110,12 +110,62 @@ class TestDonationCarriesCredit:
             task_brief_hash="h", outcome="success",
             verifier_confidence=0.95, disagreement_entropy=0.9,
             agent_credit={"researcher-1": 0.6, "coder-2": -0.1},
+            sub_trajectories=[
+                {"role": "researcher", "name": "researcher-1",
+                 "actions": ["web_search"], "credit": 0.6, "weight": 1.0},
+            ],
         )
         path = donation.write_record(rec, outbox=tmp_path / "outbox")
         assert path is not None
         import json
         data = json.loads(path.read_text())
         assert data["agent_credit"]["researcher-1"] == 0.6
+        assert data["sub_trajectories"][0]["actions"] == ["web_search"]
+        assert data["sub_trajectories"][0]["weight"] == 1.0
+
+
+class TestSubTrajectories:
+    def test_build_pairs_actions_credit_weight(self):
+        items = [
+            ("researcher", "researcher-1", ["web_search", "read_file"]),
+            ("coder", "coder-2", ["shell"]),
+        ]
+        cmap = {"researcher-1": 0.6, "coder-2": 0.2}
+        out = credit.build_subtrajectories(items, cmap)
+        by_name = {d["name"]: d for d in out}
+        assert by_name["researcher-1"]["actions"] == ["web_search", "read_file"]
+        assert by_name["researcher-1"]["credit"] == 0.6
+        # weights are the positive-credit shares (0.6 / 0.8 = 0.75)
+        assert abs(by_name["researcher-1"]["weight"] - 0.75) < 1e-6
+        assert abs(by_name["coder-2"]["weight"] - 0.25) < 1e-6
+
+    def test_harmful_agent_zero_weight(self):
+        items = [("a", "a", ["x"]), ("bad", "bad", ["y"])]
+        cmap = {"a": 0.9, "bad": -0.3}
+        out = {d["name"]: d for d in credit.build_subtrajectories(items, cmap)}
+        assert out["bad"]["weight"] == 0.0 and out["a"]["weight"] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_agent_records_action_sequence(self, tmp_path, fake_llm):
+        from maverick.agent import Agent
+        from maverick.blackboard import Blackboard
+        from maverick.budget import Budget
+        from maverick.sandbox import LocalBackend
+        from maverick.swarm import SwarmContext
+        from maverick.world_model import WorldModel
+
+        world = WorldModel(tmp_path / "w.db")
+        gid = world.create_goal("t", "")
+        ctx = SwarmContext(
+            llm=fake_llm, world=world, budget=Budget(max_dollars=1.0),
+            blackboard=Blackboard(), sandbox=LocalBackend(workdir=tmp_path),
+            goal_id=gid, max_depth=1,
+        )
+        agent = Agent(ctx=ctx, role="researcher", brief="t", depth=1)
+        # _run_tool records the tool name at the top, before dispatch -- so even
+        # an unknown tool name lands on the action sequence.
+        await agent._run_tool("nonexistent_tool", {})
+        assert "nonexistent_tool" in getattr(agent, "_actions", [])
 
 
 class TestEnabled:

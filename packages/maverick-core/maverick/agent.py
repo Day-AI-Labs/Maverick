@@ -872,7 +872,8 @@ class Agent:
                 ) as tmp:
                     tmp.write(patch)
                     tmp_path = tmp.name
-                rel = _os.path.basename(tmp_path)
+                import shlex as _shlex
+                rel = _shlex.quote(_os.path.basename(tmp_path))
                 res = sandbox.exec(f"git apply {rel}", timeout=30)
                 return getattr(res, "exit_code", 1) == 0
             except Exception:
@@ -920,6 +921,14 @@ class Agent:
             pass
 
     async def _run_tool(self, name: str, args: dict) -> str:  # noqa: C901
+        # Record the tool name on this agent's action sequence so a parent can
+        # capture per-sub-agent trajectories (maverick.credit.build_subtrajectories).
+        # Tool NAMES only -- never args -- so this carries no secrets. Lazy-init
+        # to avoid touching the constructor.
+        acts = getattr(self, "_actions", None)
+        if acts is None:
+            acts = self._actions = []
+        acts.append(name)
         # Compartment Rung 1: a sealed agent runs no further tools. Its prior
         # blackboard posts are also withheld (see Blackboard.render).
         q = getattr(self.ctx, "quarantine", None)
@@ -1421,8 +1430,10 @@ class Agent:
             try:
                 from .llm import cache_prewarm_enabled
                 if cache_prewarm_enabled():
+                    self.ctx.budget.check()
                     self.ctx.llm.prewarm(
-                        self.system, self.tools.to_anthropic(), self.model)
+                        self.system, self.tools.to_anthropic(), self.model,
+                        budget=self.ctx.budget)
             except Exception:  # pragma: no cover -- prewarm never blocks a run
                 pass
 

@@ -17,6 +17,9 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/Day-AI-Labs/maverick"
 
+[project.scripts]
+maverick-evolve = "maverick_evolve.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["maverick_evolve*"]

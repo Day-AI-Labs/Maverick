@@ -16,6 +16,7 @@ Temporal / SQS are the same shape. Install it at startup with
 by the worker and read back by polling, not synchronously from ``submit`` — the
 same observable contract callers already use for background runs.
 """
+
 from __future__ import annotations
 
 import logging
@@ -27,11 +28,59 @@ log = logging.getLogger(__name__)
 JOB_NAME = "maverick.run_goal"
 
 
+def _serialize_capability(capability: Any | None) -> dict[str, Any] | None:
+    """Return a JSON-safe representation of an explicit capability grant."""
+    if capability is None:
+        return None
+
+    from .capability import Capability
+
+    if not isinstance(capability, Capability):
+        raise TypeError(
+            "queue dispatch requires capability to be a maverick.capability.Capability"
+        )
+    return {
+        "principal": capability.principal,
+        "allow_tools": sorted(capability.allow_tools),
+        "deny_tools": sorted(capability.deny_tools),
+        "max_risk": capability.max_risk,
+        "expires_at": capability.expires_at,
+        "allow_paths": sorted(capability.allow_paths),
+        "allow_hosts": sorted(capability.allow_hosts),
+    }
+
+
+def _deserialize_capability(raw: Any) -> Any | None:
+    """Rehydrate a queued capability grant, preserving default-open ``None``."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise TypeError("queued capability payload must be a mapping")
+
+    from .capability import Capability
+
+    return Capability(
+        principal=str(raw["principal"]),
+        allow_tools=frozenset(raw.get("allow_tools") or ()),
+        deny_tools=frozenset(raw.get("deny_tools") or ()),
+        max_risk=raw.get("max_risk"),
+        expires_at=raw.get("expires_at"),
+        allow_paths=frozenset(raw.get("allow_paths") or ()),
+        allow_hosts=frozenset(raw.get("allow_hosts") or ()),
+    )
+
+
 def _payload(
-    goal_id: int, *, max_dollars, max_wall_seconds, max_depth, channel, user_id,
+    goal_id: int,
+    *,
+    max_dollars,
+    max_wall_seconds,
+    max_depth,
+    channel,
+    user_id,
+    capability: Any | None,
 ) -> dict:
-    """JSON-safe job payload. ``capability`` is intentionally omitted (it is not
-    serializable); the worker re-resolves it from the goal's owner/role."""
+    """JSON-safe job payload, including the explicit security capability grant."""
     return {
         "goal_id": int(goal_id),
         "max_dollars": max_dollars,
@@ -39,6 +88,7 @@ def _payload(
         "max_depth": max_depth,
         "channel": channel,
         "user_id": user_id,
+        "capability": _serialize_capability(capability),
     }
 
 
@@ -60,11 +110,15 @@ class QueueDispatcher:
         capability: Any | None = None,
     ) -> str | None:
         from .runner import DEFAULT_MAX_DEPTH
+
         payload = _payload(
             goal_id,
-            max_dollars=max_dollars, max_wall_seconds=max_wall_seconds,
+            max_dollars=max_dollars,
+            max_wall_seconds=max_wall_seconds,
             max_depth=DEFAULT_MAX_DEPTH if max_depth is None else max_depth,
-            channel=channel, user_id=user_id,
+            channel=channel,
+            user_id=user_id,
+            capability=capability,
         )
         self._enqueue(JOB_NAME, payload)
         log.info("queued goal #%s for worker execution", goal_id)
@@ -78,6 +132,7 @@ def run_queued_goal(payload: dict) -> str | None:
     payload. Returns the terminal status so the worker's own retry/backoff can
     act on a failed run."""
     from .runner import DEFAULT_MAX_DEPTH, LocalThreadDispatcher
+
     return LocalThreadDispatcher().submit(
         int(payload["goal_id"]),
         max_dollars=payload.get("max_dollars"),
@@ -85,6 +140,7 @@ def run_queued_goal(payload: dict) -> str | None:
         max_depth=payload.get("max_depth") or DEFAULT_MAX_DEPTH,
         channel=payload.get("channel"),
         user_id=payload.get("user_id"),
+        capability=_deserialize_capability(payload.get("capability")),
     )
 
 
@@ -106,7 +162,9 @@ def arq_enqueue(redis_settings: Any | None = None) -> Callable[[str, dict], None
 
     settings = redis_settings or RedisSettings()
 
-    def _enqueue(job_name: str, payload: dict) -> None:  # pragma: no cover -- needs Redis
+    def _enqueue(
+        job_name: str, payload: dict
+    ) -> None:  # pragma: no cover -- needs Redis
         async def _go() -> None:
             pool = await create_pool(settings)
             try:
@@ -124,11 +182,15 @@ def install_from_config() -> bool:
     if a queue dispatcher was installed, False if execution stays in-process."""
     try:
         from .config import load_config
-        backend = str((load_config() or {}).get("queue", {}).get("backend") or "").strip()
+
+        backend = str(
+            (load_config() or {}).get("queue", {}).get("backend") or ""
+        ).strip()
     except Exception:  # pragma: no cover
         backend = ""
     if backend == "arq":
         from .runner import set_dispatcher
+
         set_dispatcher(QueueDispatcher(arq_enqueue()))
         log.info("installed arq queue dispatcher (out-of-process goal execution)")
         return True
@@ -136,6 +198,9 @@ def install_from_config() -> bool:
 
 
 __all__ = [
-    "JOB_NAME", "QueueDispatcher", "run_queued_goal", "arq_enqueue",
+    "JOB_NAME",
+    "QueueDispatcher",
+    "run_queued_goal",
+    "arq_enqueue",
     "install_from_config",
 ]
