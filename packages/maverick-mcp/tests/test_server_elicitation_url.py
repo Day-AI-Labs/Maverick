@@ -46,7 +46,8 @@ def test_url_mode_never_returns_content(monkeypatch):
     # Even if a (misbehaving) client returns content, URL mode yields only the action.
     monkeypatch.setattr(sys, "stdin", _stdin(
         {"jsonrpc": "2.0", "id": "elicit-1",
-         "result": {"action": "accept", "content": {"secret": "leak"}}}))
+         "result": {"action": "accept",
+                    "content": {"secret": "leak"}}}))  # pragma: allowlist secret
     s = _capable()
     s._send = lambda m: None
     assert s.elicit_url_action("Authorize", "https://idp.example/cb") == "accept"
