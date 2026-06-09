@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "maverick-evolve"
+version = "0.1.0"
+description = "Governed self-evolution for Maverick: a trusted fitness function (eval harness), a diverse config archive, and config-only evolutionary search. Code self-modification is deliberately out of scope here."
+requires-python = ">=3.10"
+license = { text = "LicenseRef-Proprietary" }
+authors = [{ name = "cdayAI" }]
+readme = "README.md"
+dependencies = [
+    "maverick-agent>=0.1.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/Day-AI-Labs/maverick"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["maverick_evolve*"]

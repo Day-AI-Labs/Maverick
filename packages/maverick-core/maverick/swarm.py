@@ -106,6 +106,10 @@ class SwarmContext:
     last_disagreement: float = 0.0
     last_verifier_confidence: float = 1.0
     escalate_verification: bool = False
+    # Counterfactual swarm credit (maverick.credit): agent name -> marginal
+    # credit from the most recent fan-out, when CSCA is enabled. Read by the
+    # donation selector / routing; empty when not computed.
+    last_credit: dict = field(default_factory=dict)
     _spawns_used: int = 0
     _workdir_lock: asyncio.Lock | None = field(default=None, repr=False)
 

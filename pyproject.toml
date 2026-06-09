@@ -7,6 +7,7 @@ members = [
     "packages/maverick-core",
     "packages/maverick-shield",
     "packages/maverick-channels",
+    "packages/maverick-evolve",
     "apps/installer-cli",
 ]
 

@@ -1,0 +1,104 @@
+"""Counterfactual swarm credit assignment (CSCA).
+
+When a swarm produces a synthesized answer, the data engine
+(``donation.should_donate``) and routing have no idea *which* sub-agent
+actually moved the needle -- so they learn from noise. CSCA fixes that: ablate
+each sub-agent's contribution and re-score; the drop in the verifier's score
+when agent *k* is removed **is** agent *k*'s marginal credit (a leave-one-out
+Shapley estimate, with the cross-family verifier as the value oracle).
+
+This is the novel primitive (counterfactual/Shapley credit for an LLM
+multi-agent system, gated by a calibrated verifier). It is dependency-injected
+-- the caller supplies an async ``score(subset_of_contributions) -> float`` --
+so this module imports nothing heavy and is trivially testable; ``spawn_swarm``
+wires it to ``verifier.verify_proposal`` against the goal brief.
+
+OFF by default + fail-open (``[credit] enable`` / ``MAVERICK_CREDIT=1``). It
+costs N+1 verifier passes per swarm, so the call site also budget-gates it and
+caps the swarm size it will attribute. Credit is only trustworthy when the
+verifier is calibrated, so the caller skips it when ``calibration`` is frozen.
+"""
+from __future__ import annotations
+
+import logging
+import os
+from collections.abc import Awaitable, Callable
+
+log = logging.getLogger(__name__)
+
+_DEFAULTS = {"enable": False, "max_children": 6, "min_budget_headroom": 0.4}
+
+
+def _settings() -> dict:
+    try:
+        from .config import get_credit
+        return get_credit()
+    except Exception:  # pragma: no cover -- config never blocks a run
+        return dict(_DEFAULTS)
+
+
+def enabled() -> bool:
+    env = os.environ.get("MAVERICK_CREDIT", "").strip().lower()
+    if env in {"1", "true", "yes", "on"}:
+        return True
+    if env in {"0", "false", "no", "off"}:
+        return False
+    return bool(_settings()["enable"])
+
+
+def passes_required(n: int) -> int:
+    """Number of score() calls a full LOO attribution of ``n`` agents costs."""
+    return 0 if n < 2 else n + 1
+
+
+async def counterfactual_credit(
+    contributions: dict[str, str],
+    score: Callable[[list[str]], Awaitable[float]],
+) -> dict[str, float]:
+    """Leave-one-out marginal credit for each contributor.
+
+    ``contributions`` maps agent name -> its contribution text. ``score`` takes
+    a list of contributions and returns a value in roughly [0,1] (e.g. verifier
+    confidence that the combined findings answer the goal). Returns name ->
+    marginal credit (``full_score - score_without_k``); credit can be **negative**
+    (a contributor that made the answer worse). An empty input returns ``{}``; a
+    single contributor trivially gets the full score.
+    """
+    names = list(contributions)
+    if not names:
+        return {}
+    if len(names) == 1:
+        return {names[0]: round(await score(list(contributions.values())), 4)}
+
+    full = await score(list(contributions.values()))
+    out: dict[str, float] = {}
+    for n in names:
+        subset = [v for m, v in contributions.items() if m != n]
+        without = await score(subset)
+        out[n] = round(full - without, 4)
+    return out
+
+
+def normalize_credit(credit: dict[str, float]) -> dict[str, float]:
+    """Normalize positive credit into shares summing to 1 (negatives -> 0).
+
+    Useful for weighting which sub-trajectories to learn from. When no
+    contributor has positive credit (all neutral/harmful), returns an equal
+    split so a degenerate round doesn't divide by zero.
+    """
+    if not credit:
+        return {}
+    pos = {k: max(0.0, v) for k, v in credit.items()}
+    total = sum(pos.values())
+    if total <= 0:
+        share = 1.0 / len(credit)
+        return {k: round(share, 4) for k in credit}
+    return {k: round(v / total, 4) for k, v in pos.items()}
+
+
+__all__ = [
+    "enabled",
+    "passes_required",
+    "counterfactual_credit",
+    "normalize_credit",
+]

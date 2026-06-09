@@ -327,6 +327,29 @@ def get_calibration() -> dict:
     }
 
 
+def get_credit() -> dict:
+    """Return the ``[credit]`` section (counterfactual swarm credit assignment).
+
+    OFF by default: CSCA costs N+1 verifier passes per swarm. ``max_children``
+    caps the swarm size it will attribute (skip larger ones); ``min_budget_
+    headroom`` is the fraction of budget that must remain before it runs.
+    """
+    cfg = load_config().get("credit", {})
+    try:
+        maxc = max(2, int(cfg.get("max_children", 6)))
+    except (TypeError, ValueError):
+        maxc = 6
+    try:
+        head = float(cfg.get("min_budget_headroom", 0.4))
+    except (TypeError, ValueError):
+        head = 0.4
+    return {
+        "enable": bool(cfg.get("enable", False)),
+        "max_children": maxc,
+        "min_budget_headroom": max(0.0, min(1.0, head)),
+    }
+
+
 def get_adaptive_compute() -> dict:
     """Return the ``[adaptive_compute]`` section (SOTA: spend compute on
     uncertainty). OFF by default. ``low_uncertainty`` is the threshold below
