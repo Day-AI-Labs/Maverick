@@ -565,6 +565,7 @@ def base_registry(  # noqa: C901
     from .email_tool import email_tool
     from .embeddings import embeddings
     from .erp_tool import erp_tool
+    from .error_patterns import error_patterns
     from .ffmpeg_tool import ffmpeg_tool
     from .file_watcher import file_watcher
     from .ga4_tool import ga4_tool
@@ -666,6 +667,7 @@ def base_registry(  # noqa: C901
     reg.register(jira())
     reg.register(gitlab())
     reg.register(embeddings())
+    reg.register(error_patterns())
     reg.register(huggingface())
     reg.register(notify_tool())
     reg.register(diagnose())

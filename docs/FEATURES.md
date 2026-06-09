@@ -92,7 +92,8 @@ here.
   steps — deterministic codegen with escaped literals), `a11y_tree` (distill raw
   HTML into a compact accessibility tree — landmarks/headings/links/controls —
   for a 5-10x token cut), `cache_admin` (inspect/purge the
-  tool-output cache — stats or targeted purge).
+  tool-output cache — stats or targeted purge), `error_patterns` (cluster noisy
+  error/log lines into ranked patterns by normalised signature).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
