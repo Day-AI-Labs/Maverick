@@ -261,6 +261,18 @@ def _decide_via_dashboard(
     except Exception as e:  # world model missing/unwritable -> fail-open
         log.warning("consent: dashboard mode unavailable, falling back: %s", e)
         return None
+    # Approval-delegation routing (opt-in via [governance.delegation] rules):
+    # a risk/tool rule can route this approval to a specific delegate. No-op
+    # (route returns None) when no rules are configured, so the default queue
+    # behaviour is unchanged. The delegate is recorded in detail for the
+    # operator console.
+    try:
+        from ..approval_delegation import route as _delegate_route
+        delegate = _delegate_route({"risk": risk, "tool": action})
+        if delegate:
+            detail = f"{detail or ''}\n[delegated to: {delegate}]".strip()
+    except Exception:  # pragma: no cover -- delegation never blocks consent
+        pass
     try:
         approval_id = wm.create_approval(
             action, risk=risk, scope=scope, detail=detail, provenance=provenance,

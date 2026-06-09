@@ -1081,6 +1081,26 @@ async def run_goal(  # noqa: C901
                 _WARNED_DISTILL_DISABLED = True
                 skill_note = "\n\n[skill distill disabled: set MAVERICK_AUTO_DISTILL=1 to enable]"
 
+        # Local continuous learning (opt-in, [self_learning] distill_local):
+        # an LLM-free, injection-safe distillation that turns recent SUCCESSFUL
+        # goals into a reusable SKILL.md under ~/.maverick/learned-skills. Uses
+        # the persisted goal history as trajectories, so no extra store is
+        # needed. No-op unless enabled; never raises into the run.
+        try:
+            from . import skill_distillation_local as _sdl
+            if _sdl.enabled():
+                trajectories = [
+                    {"goal": g.title, "success": True, "tools": [],
+                     "t": getattr(g, "updated_at", 0.0)}
+                    for g in world.list_goals(status="done", limit=10, order="desc")
+                ]
+                path = _sdl.distill_and_save(trajectories)
+                if path:
+                    blackboard.post("orchestrator", "skill",
+                                    f"distilled local skill -> {path}")
+        except Exception as e:  # pragma: no cover -- learning never blocks a run
+            log.debug("local skill distillation skipped: %s", e)
+
         # Join the speculative side effects before returning, so the turn /
         # donation writes are guaranteed durable to any caller that reads them
         # back. The closures swallow their own errors, so result() won't raise.

@@ -221,7 +221,52 @@ def model_for_role(role: str) -> str:
             return routed
     except Exception:  # pragma: no cover -- never let routing break resolution
         pass
-    return ROLE_MODELS.get(role, DEFAULT_MODEL)
+    final = ROLE_MODELS.get(role, DEFAULT_MODEL)
+    # Energy-aware downgrade (opt-in, off by default): on a laptop low on
+    # battery, step the default-tier model down (Opus->Sonnet->Haiku) to extend
+    # runtime, then revert on wall power. No-op unless [routing] energy_aware is
+    # on AND battery is low, and only on the default path -- an explicit
+    # override/config/router choice above is never downgraded.
+    try:
+        from .energy_aware_router import route as _energy_route
+        cheaper = _cheaper_model(final)
+        if cheaper != final:
+            final = _energy_route(final, cheaper)
+    except Exception:  # pragma: no cover -- never let energy routing break resolution
+        pass
+    return final
+
+
+def _record_provider_call(provider: str) -> None:
+    """Feed the proactive rate-limit predictor one call timestamp. Cheap
+    in-memory ring buffer; powers ``maverick diag ratelimits`` and lets the
+    predictor estimate wait-before-429. Never raises into the dispatch path."""
+    try:
+        from .rate_limit_predictor import record
+        record(provider)
+    except Exception:  # pragma: no cover -- prediction never blocks a call
+        pass
+
+
+def _feed_circuit(provider: str, error: bool) -> None:
+    """Record a provider call's outcome on its circuit breaker so repeated
+    failures trip it (observable via ``maverick diag circuits``). Observe-only
+    here -- it does not short-circuit the call path. Never raises."""
+    try:
+        from .circuit_breaker import get
+        br = get(f"llm:{provider}")
+        br.record_failure() if error else br.record_success()
+    except Exception:  # pragma: no cover -- breaker never blocks a call
+        pass
+
+
+def _cheaper_model(model: str) -> str:
+    """One tier cheaper for energy-aware downgrade: Opus->Sonnet->Haiku."""
+    if model == MODEL_OPUS or model == MODEL_OPUS_FAST:
+        return MODEL_SONNET
+    if model == MODEL_SONNET:
+        return MODEL_HAIKU
+    return model
 
 
 def _parse_spec(spec: str) -> tuple[str, str]:
@@ -404,6 +449,7 @@ class LLM:
         # EgressBlocked before any prompt is dispatched.
         from .enterprise import assert_provider_allowed
         assert_provider_allowed(provider)
+        _record_provider_call(provider)
         _run_preflight(model_id, system, messages, tools, max_tokens)
         client = self._get_client(provider)
         kwargs: dict[str, Any] = dict(
@@ -470,6 +516,7 @@ class LLM:
                             latency_ms=_dt_ms, dollars=_spent, error=_err)
             except Exception:  # pragma: no cover -- never fail on stats
                 pass
+            _feed_circuit(provider, _err)
             try:
                 from .observability import record_metric as _rm
                 _rm("llm_calls", labels={"provider": provider, "model": model_id})
@@ -511,6 +558,7 @@ class LLM:
         # Egress lock (no-op unless enterprise mode is on): see complete().
         from .enterprise import assert_provider_allowed
         assert_provider_allowed(provider)
+        _record_provider_call(provider)
         _run_preflight(model_id, system, messages, tools, max_tokens)
         client = self._get_client(provider)
         import time as _time
@@ -577,6 +625,7 @@ class LLM:
                             latency_ms=_dt_ms, dollars=_spent, error=_err)
             except Exception:  # pragma: no cover
                 pass
+            _feed_circuit(provider, _err)
             try:
                 from .observability import record_metric as _rm
                 _rm("llm_calls", labels={"provider": provider, "model": model_id})

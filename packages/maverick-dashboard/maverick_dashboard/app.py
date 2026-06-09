@@ -201,6 +201,19 @@ async def _reclaim_orphans() -> None:
     except Exception:
         log.exception("orphan reclaim failed on startup")
 
+
+@app.on_event("startup")
+async def _install_queue_dispatcher() -> None:
+    """If ``[queue] backend`` selects a task queue, install the QueueDispatcher
+    so this (producer) process enqueues goals for the worker pool instead of
+    running them in-process. No-op for the default in-process install."""
+    try:
+        from maverick.queue_dispatcher import install_from_config
+        if install_from_config():
+            log.info("queue dispatcher installed: goals run out-of-process")
+    except Exception:
+        log.exception("queue dispatcher install failed (running in-process)")
+
 _AUTH_EXEMPT = {
     "/healthz", "/livez", "/readyz",
     "/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect",
