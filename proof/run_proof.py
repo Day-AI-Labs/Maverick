@@ -76,7 +76,7 @@ def claim_dollar_tier_authority_gate():
     assert auto.decision is Decision.ALLOW, auto
     assert human.decision is Decision.REQUIRE_HUMAN, human
     assert denied.decision is Decision.DENY, denied
-    return "$4k release auto, $6k release -> REQUIRE_HUMAN, $60k wire -> DENY (rule=%s)" % denied.rule
+    return f"$4k release auto, $6k release -> REQUIRE_HUMAN, $60k wire -> DENY (rule={denied.rule})"
 
 
 def claim_fleet_can_read_but_not_write():
@@ -124,6 +124,7 @@ def claim_audit_is_tamper_evident():
     """The action ledger is a signed hash-chain: altering a row breaks verification."""
     import tempfile
     from pathlib import Path
+
     from maverick.audit import signing
     with tempfile.TemporaryDirectory() as td:
         signing.KEY_DIR = Path(td) / "keys"
