@@ -6,8 +6,10 @@ testable without a live model.
 """
 from __future__ import annotations
 
+from . import config_space
 from .archive import Archive, Candidate
 from .eval_harness import EvalCase, EvalReport, evaluate
+from .runner import EvolutionFrozen, calibration_frozen, evolve_with_eval
 from .search import evolve
 
 __all__ = [
@@ -17,4 +19,8 @@ __all__ = [
     "Archive",
     "Candidate",
     "evolve",
+    "config_space",
+    "evolve_with_eval",
+    "calibration_frozen",
+    "EvolutionFrozen",
 ]
