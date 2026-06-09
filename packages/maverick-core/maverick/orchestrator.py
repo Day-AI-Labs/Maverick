@@ -417,6 +417,18 @@ async def run_goal(  # noqa: C901
         episode_id = world.start_episode(goal_id)
     blackboard = Blackboard()
     blackboard.attach_world(world, goal_id)  # persist every post for live streaming
+    # Replayable trace (opt-in via MAVERICK_TRACE_DIR): write this run's events
+    # to a JSONL file so it can be reconstructed/replayed offline with
+    # `maverick diag replay`. Off by default; never blocks a run.
+    _trace_writer = None
+    _trace_dir = os.environ.get("MAVERICK_TRACE_DIR")
+    if _trace_dir:
+        try:
+            from .replay_trace import TraceWriter
+            _trace_writer = TraceWriter(os.path.join(_trace_dir, f"goal-{goal_id}.jsonl"))
+            blackboard.attach_trace(_trace_writer)
+        except Exception:  # pragma: no cover -- tracing never blocks a run
+            _trace_writer = None
     # Agent compartments (Rung 1): wire a run-scoped quarantine registry so a
     # sealed agent's posts are withheld and its tools refused. Off by default.
     quarantine = None
@@ -1107,6 +1119,26 @@ async def run_goal(  # noqa: C901
             else:
                 _WARNED_DISTILL_DISABLED = True
                 skill_note = "\n\n[skill distill disabled: set MAVERICK_AUTO_DISTILL=1 to enable]"
+
+        # Local continuous learning (opt-in, [self_learning] distill_local):
+        # an LLM-free, injection-safe distillation that turns recent SUCCESSFUL
+        # goals into a reusable SKILL.md under ~/.maverick/learned-skills. Uses
+        # the persisted goal history as trajectories, so no extra store is
+        # needed. No-op unless enabled; never raises into the run.
+        try:
+            from . import skill_distillation_local as _sdl
+            if _sdl.enabled():
+                trajectories = [
+                    {"goal": g.title, "success": True, "tools": [],
+                     "t": getattr(g, "updated_at", 0.0)}
+                    for g in world.list_goals(status="done", limit=10, order="desc")
+                ]
+                path = _sdl.distill_and_save(trajectories)
+                if path:
+                    blackboard.post("orchestrator", "skill",
+                                    f"distilled local skill -> {path}")
+        except Exception as e:  # pragma: no cover -- learning never blocks a run
+            log.debug("local skill distillation skipped: %s", e)
 
         # Join the speculative side effects before returning, so the turn /
         # donation writes are guaranteed durable to any caller that reads them

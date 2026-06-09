@@ -1176,6 +1176,100 @@ def billing_entitlements(tenant_id: str) -> None:
     click.echo(f"  max spend/day: {cap}   max concurrent goals: {goals}")
 
 
+@main.group()
+def diag() -> None:
+    """Diagnostics: circuit breakers, rate-limit predictions, run health, cost-by-tag."""
+
+
+@diag.command("circuits")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def diag_circuits(as_json: bool) -> None:
+    """Show the provider circuit-breaker states (closed/open/half-open)."""
+    import json as _json
+
+    from .circuit_breaker import snapshot
+    snaps = snapshot()
+    if as_json:
+        click.echo(_json.dumps(snaps, indent=2))
+        return
+    if not snaps:
+        click.echo("no circuit breakers tripped this process.")
+        return
+    for s in snaps:
+        click.echo(f"  {s.get('key')}: {s.get('state')} "
+                   f"(failures={s.get('consecutive_failures', 0)})")
+
+
+@diag.command("ratelimits")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def diag_ratelimits(as_json: bool) -> None:
+    """Show recent per-provider call rates (feeds the rate-limit predictor)."""
+    import json as _json
+
+    from .rate_limit_predictor import report
+    rows = report()
+    if as_json:
+        click.echo(_json.dumps(rows, indent=2))
+        return
+    if not rows:
+        click.echo("no provider calls recorded yet this process.")
+        return
+    for r in rows:
+        click.echo(f"  {r.get('provider')}: {r.get('recorded', 0)} call(s) in window")
+
+
+@diag.command("health")
+@click.argument("goal_id", type=int)
+def diag_health(goal_id: int) -> None:
+    """Compute a 0-100 health score for a finished goal from its episode."""
+    from .health_score import compute_health, render
+    from .world_model import DEFAULT_DB, WorldModel
+    w = WorldModel(DEFAULT_DB)
+    g = w.get_goal(goal_id)
+    if g is None:
+        click.echo(f"ERROR: no such goal {goal_id}", err=True)
+        sys.exit(2)
+    eps = w.list_episodes(goal_id=goal_id, limit=50)
+    in_tok = sum(getattr(e, "input_tokens", 0) for e in eps)
+    out_tok = sum(getattr(e, "output_tokens", 0) for e in eps)
+    success = g.status == "done"
+    h = compute_health(success=success, in_tok=in_tok, out_tok=out_tok)
+    click.echo(f"goal #{goal_id} ({g.status}):")
+    click.echo(render(h))
+
+
+@diag.command("replay")
+@click.argument("trace_file", type=click.Path(exists=True))
+@click.option("--kind", default=None, help="Only show events of this kind.")
+def diag_replay(trace_file: str, kind: str | None) -> None:
+    """Read a replayable run trace (written when MAVERICK_TRACE_DIR is set)."""
+    from .replay_trace import read_trace
+    events = read_trace(trace_file)
+    shown = 0
+    for e in events:
+        if kind and e.get("kind") != kind:
+            continue
+        shown += 1
+        click.echo(f"  [{e.get('seq')}] {e.get('kind')}  "
+                   f"{e.get('agent', '')}: {str(e.get('content', ''))[:100]}")
+    click.echo(f"  ({shown} of {len(events)} event(s))")
+
+
+@diag.command("cost-by-tag")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def diag_cost_by_tag(as_json: bool) -> None:
+    """Split run cost across tags (from priced episodes)."""
+    import json as _json
+
+    from .cost_by_tag import gather, render
+    from .world_model import DEFAULT_DB, WorldModel
+    buckets = gather(WorldModel(DEFAULT_DB))
+    if as_json:
+        click.echo(_json.dumps(buckets, indent=2))
+        return
+    click.echo(render(buckets))
+
+
 @main.group("mcp-registry")
 def mcp_registry_group() -> None:
     """Discover + install external MCP servers from a registry.

@@ -463,6 +463,14 @@ def build_from_config() -> Server:
             "~/.maverick/config.toml and set [channels.<name>] enabled = true."
         )
 
+    # If [queue] backend selects a task queue, run goals out-of-process on a
+    # worker pool instead of in this channel-server process. No-op by default.
+    try:
+        from .queue_dispatcher import install_from_config
+        install_from_config()
+    except Exception:  # pragma: no cover -- never block server boot
+        log.exception("queue dispatcher install failed (running in-process)")
+
     return server
 
 

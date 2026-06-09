@@ -201,6 +201,19 @@ async def _reclaim_orphans() -> None:
     except Exception:
         log.exception("orphan reclaim failed on startup")
 
+
+@app.on_event("startup")
+async def _install_queue_dispatcher() -> None:
+    """If ``[queue] backend`` selects a task queue, install the QueueDispatcher
+    so this (producer) process enqueues goals for the worker pool instead of
+    running them in-process. No-op for the default in-process install."""
+    try:
+        from maverick.queue_dispatcher import install_from_config
+        if install_from_config():
+            log.info("queue dispatcher installed: goals run out-of-process")
+    except Exception:
+        log.exception("queue dispatcher install failed (running in-process)")
+
 _AUTH_EXEMPT = {
     "/healthz", "/livez", "/readyz",
     "/openapi.json", "/docs", "/redoc", "/docs/oauth2-redirect",
@@ -209,10 +222,11 @@ _AUTH_EXEMPT = {
     # the dashboard bearer / same-origin checks (external senders have
     # neither), so it must bypass the centralized middleware.
     "/webhook/start",
-    # Linear/Jira issue-assigned webhooks authenticate the same way (their
+    # Linear/Jira/GitHub issue webhooks authenticate the same way (their
     # own HMAC signature), so they bypass the bearer/same-origin checks too.
     "/webhook/linear",
     "/webhook/jira",
+    "/webhook/github",
     # Built-in OIDC browser-login endpoints: they bootstrap a session and carry
     # their own flow-level security (state/PKCE/signed cookies). They must be
     # reachable by a browser that has no dashboard token yet; each self-gates on
@@ -1499,6 +1513,37 @@ async def webhook_linear(request: Request, bg: BackgroundTasks) -> JSONResponse:
 async def webhook_jira(request: Request, bg: BackgroundTasks) -> JSONResponse:
     """Jira issue-assigned webhook -> goal. Signature in ``X-Hub-Signature``."""
     return await _handle_issue_webhook("jira", "X-Hub-Signature", request, bg)
+
+
+@app.post("/webhook/github")
+async def webhook_github(request: Request, bg: BackgroundTasks) -> JSONResponse:
+    """GitHub App webhook -> issue→PR. A labeled/`/maverick`-commented issue
+    drives a swarm that clones the repo, fixes it, and opens a PR
+    (``maverick.github_app``). HMAC-verified via ``X-Hub-Signature-256`` against
+    ``MAVERICK_GH_APP_WEBHOOK_SECRET`` (fails closed)."""
+    import json as _json
+    import os as _os
+
+    from maverick.github_app import parse_webhook, process_issue, verify_signature
+    body = await _read_limited_webhook_body(request)
+    secret = _os.environ.get("MAVERICK_GH_APP_WEBHOOK_SECRET", "")
+    if not verify_signature(body, request.headers.get("X-Hub-Signature-256"), secret):
+        return JSONResponse({"detail": "invalid signature"}, status_code=401)
+    try:
+        payload = parse_webhook(request.headers.get("X-GitHub-Event", ""), _json.loads(body))
+    except (ValueError, TypeError):
+        return JSONResponse({"detail": "bad payload"}, status_code=400)
+    if payload is None:
+        return JSONResponse({"status": "ignored"})
+
+    async def _run() -> None:
+        try:
+            await process_issue(payload)
+        except Exception:  # pragma: no cover -- never crash the worker
+            log.exception("github_app: issue→PR run failed")
+
+    bg.add_task(_run)
+    return JSONResponse({"status": "accepted", "issue": payload.issue_number})
 
 
 # Per-process replay dedup for inbound issue webhooks, keyed on the request's
