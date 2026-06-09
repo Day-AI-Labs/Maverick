@@ -843,6 +843,48 @@ class WorldModel:
         rows = self._read_all(sql, params)
         return [_goal_from_row(r) for r in rows]
 
+    def search_goals(
+        self,
+        query: str,
+        *,
+        owner: str | None = None,
+        limit: int = 50,
+        scan: int = 1000,
+    ) -> list[Goal]:
+        """Search across goals (runs) by text in title / description / result.
+
+        Title and description are encrypted at rest, so a SQL ``LIKE`` can't
+        match plaintext. We fetch a bounded window of the most-recent goals
+        (``scan``), decrypt them via ``_goal_from_row``, and filter in Python on
+        a case-insensitive substring match -- the same scan-then-decrypt shape
+        as ``candidate_goals``. Owner-scoped like :meth:`list_goals`; returns up
+        to ``limit`` matches, newest first.
+        """
+        q = (query or "").strip().lower()
+        if not q:
+            return []
+        sql = (
+            "SELECT id, parent_id, title, description, status, created_at, "
+            "updated_at, deadline, result, owner FROM goals"
+        )
+        params: tuple[Any, ...] = ()
+        if owner is not None:
+            sql += " WHERE owner = ?"
+            params = (owner,)
+        sql += " ORDER BY updated_at DESC LIMIT ?"
+        params = params + (max(1, int(scan)),)
+        rows = self._read_all(sql, params)
+        out: list[Goal] = []
+        cap = max(1, int(limit))
+        for r in rows:
+            g = _goal_from_row(r)
+            hay = " ".join(p for p in (g.title, g.description, g.result) if p).lower()
+            if q in hay:
+                out.append(g)
+                if len(out) >= cap:
+                    break
+        return out
+
     def most_recent_goal(self) -> Goal | None:
         """Most-recently-updated goal regardless of status. Locked read."""
         row = self._read_one("SELECT * FROM goals ORDER BY updated_at DESC LIMIT 1")
