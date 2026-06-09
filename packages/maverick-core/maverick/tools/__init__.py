@@ -542,6 +542,7 @@ def base_registry(  # noqa: C901
     from .ast_edit import ast_edit
     from .bitbucket_tool import bitbucket_tool
     from .budget_status import budget_status
+    from .cache_admin import cache_admin
     from .calendar_tool import calendar_tool
     from .calendly_tool import calendly_tool
     from .citation_verifier import citation_verifier
@@ -700,6 +701,7 @@ def base_registry(  # noqa: C901
     reg.register(synthetic_data())
     reg.register(web_recorder())
     reg.register(a11y_tree())
+    reg.register(cache_admin())
     reg.register(openapi_runner(sandbox))
     reg.register(ocr(sandbox))
     reg.register(posthog_tool())
