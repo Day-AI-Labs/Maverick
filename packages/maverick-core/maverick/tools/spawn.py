@@ -406,6 +406,15 @@ def spawn_swarm_tool(parent: Agent) -> Tool:  # noqa: C901
                             sorted(cmap.items(), key=lambda x: -x[1])
                         ),
                     )
+                    # Routing memory: accumulate per-role credit so future runs
+                    # can prefer roles that historically contribute (role_stats).
+                    try:
+                        from .. import role_stats
+                        role_stats.record_credit(
+                            cmap, {c.name: c.role for c in children},
+                        )
+                    except Exception:  # pragma: no cover -- stats never block
+                        pass
         except (_BE, _ks.Halted):
             raise
         except Exception:  # pragma: no cover -- CSCA must never break the loop
