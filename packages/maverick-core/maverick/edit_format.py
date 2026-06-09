@@ -666,7 +666,7 @@ def render_diff(workdir: Path,
 # ---- Inference-time edit repair (the Aider "reflection" pattern) ----
 
 
-def repair_prompt_for_failure(result: ApplyResult, file_content: str = "") -> str:
+def repair_prompt_for_failure(result: ApplyResult) -> str:
     """Build a targeted re-prompt for a failed SEARCH/REPLACE block.
 
     Per Aider's published research, re-prompting the model with the

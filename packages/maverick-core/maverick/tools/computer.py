@@ -163,7 +163,7 @@ _VALID_ACTIONS = frozenset({
 })
 
 
-def _run_computer_action(args: dict[str, Any]) -> str:
+def _run_computer_action(args: dict[str, Any]) -> str:  # noqa: C901
     if os.environ.get("MAVERICK_COMPUTER_DISABLE") == "1":
         return "ERROR: computer-use tool disabled by MAVERICK_COMPUTER_DISABLE=1"
     action = args.get("action")

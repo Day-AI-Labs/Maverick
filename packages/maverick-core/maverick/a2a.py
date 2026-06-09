@@ -143,7 +143,7 @@ def mount(app: Any) -> None:
     _mount_task_endpoint(app)
 
 
-def _mount_task_endpoint(app: Any) -> None:
+def _mount_task_endpoint(app: Any) -> None:  # noqa: C901
     """Register the A2A JSON-RPC task endpoint at ``POST /a2a/v1``.
 
     Imports FastAPI lazily so the kernel still imports without it; this

@@ -295,7 +295,7 @@ def _reset_workdir(workdir, base_commit: str = "") -> None:
         raise _ResetWorkdirError(f"workdir reset failed: {e}") from e
 
 
-def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:
+def run_maverick(instance_id: str, brief: str, **kwargs) -> Row:  # noqa: C901
     """Spin up a Maverick swarm against the instance brief.
 
     Wave 8: coding-mode + best-of-N support. The harness sets
@@ -1220,7 +1220,7 @@ def already_done(out_path: Path) -> set[tuple[str, str]]:
 _TERMINATE_REQUESTED: bool = False
 
 
-def _on_sigterm(signum, frame) -> None:  # pragma: no cover (signal)
+def _on_sigterm(_signum, _frame) -> None:  # pragma: no cover (signal)
     global _TERMINATE_REQUESTED
     _TERMINATE_REQUESTED = True
     # Single line, no stdlib calls beyond stdio — signal handlers are
@@ -1234,7 +1234,7 @@ def _on_sigterm(signum, frame) -> None:  # pragma: no cover (signal)
         pass
 
 
-def main() -> int:
+def main() -> int:  # noqa: C901
     # Wave 12 (F11a): install SIGTERM handler so cloud schedulers
     # (kubelet, systemd, AWS Batch) get a clean shutdown instead of
     # an unflushed CSV. SIGINT (Ctrl-C) is already caught by the

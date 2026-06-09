@@ -256,7 +256,7 @@ def _pipeline_get(project: str, pid: int) -> str:
     )
 
 
-def _run(args: dict[str, Any]) -> str:
+def _run(args: dict[str, Any]) -> str:  # noqa: C901
     op = args.get("op")
     if not op:
         return "ERROR: op is required"

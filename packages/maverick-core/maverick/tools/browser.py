@@ -299,7 +299,7 @@ def _is_safe_browser_url(url: str) -> bool:
     return not is_blocked_host(host)
 
 
-def _run_browser_action(args: dict[str, Any]) -> str:
+def _run_browser_action(args: dict[str, Any]) -> str:  # noqa: C901
     if os.environ.get("MAVERICK_BROWSER_DISABLE") == "1":
         return "ERROR: browser tool disabled by MAVERICK_BROWSER_DISABLE=1"
     action = args.get("action")

@@ -1218,7 +1218,7 @@ class MCPServer:
         worker._shield = self._shield  # reuse the (stateless) shield scanner
         return worker.handle_tools_call({"name": name, "arguments": arguments})
 
-    def run(self) -> None:
+    def run(self) -> None:  # noqa: C901
         log.info("Maverick MCP server starting (protocol %s)", PROTOCOL_VERSION)
         # Mark the stdio transport: server-initiated elicitation is only valid
         # here (it needs the bidirectional pipe; the HTTP path can't do a

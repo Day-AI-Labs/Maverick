@@ -319,7 +319,7 @@ def _maybe_record_reflexion(
         log.debug("reflexion record skipped: %s", e)
 
 
-async def run_goal(
+async def run_goal(  # noqa: C901
     llm: LLM,
     world: WorldModel,
     budget: Budget,

@@ -137,7 +137,7 @@ def _check_openai() -> None:
             _row(YELLOW, "openai", f"validation skipped: {type(e).__name__}")
 
 
-def _check_sandbox(cfg: dict) -> None:
+def _check_sandbox(cfg: dict) -> None:  # noqa: C901
     # Match build_sandbox(): the backend is user-typed config and is compared
     # case-sensitively below, so normalize or a valid "Docker" misreports as
     # the "unsupported" catch-all while build_sandbox actually runs it.
