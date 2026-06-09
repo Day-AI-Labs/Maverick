@@ -122,7 +122,7 @@ def revoke(action: str, scope: str | None = None) -> bool:
     if not lines:
         return False
     key = f"grant\t{action}\t{scope or ''}"
-    kept = [line for line in lines if line.split("|", 1)[-1].strip() != key]
+    kept = [line for line in lines if line.split("|", 1)[-1] != key]
     if len(kept) == len(lines):
         return False
     try:
