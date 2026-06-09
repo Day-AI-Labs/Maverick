@@ -175,6 +175,21 @@ def test_scopeless_persistent_grant_is_honored(monkeypatch, tmp_path):
     assert consent.require_consent("mass-dm").granted is True
 
 
+def test_scopeless_persistent_grant_can_be_revoked(monkeypatch, tmp_path):
+    # Regression: revoke() must compare ledger records verbatim too. Scope-less
+    # grants keep a significant trailing tab (``grant\taction\t``), so stripping
+    # the record made those grants impossible to remove.
+    import maverick.safety.consent as consent
+    monkeypatch.setattr(consent, "CONSENT_LEDGER_PATH", tmp_path / "consent.ledger")
+    monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-deny")
+    consent.grant_persistent("mass-dm")
+
+    assert consent.revoke("mass-dm") is True
+    assert consent._check_ledger("mass-dm", None) is False
+    decision = consent.require_consent("mass-dm", allow_auto_approve=False)
+    assert decision.granted is False and decision.source == "auto"
+
+
 @pytest.mark.asyncio
 async def test_require_human_above_amount_gates_through_chokepoint(monkeypatch, tmp_path):
     # The finance dollar-tier gate must fire through the agent chokepoint: a
