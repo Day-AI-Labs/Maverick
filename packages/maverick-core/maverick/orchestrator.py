@@ -675,7 +675,9 @@ async def run_goal(  # noqa: C901
         # No-op unless [experience] is enabled; fail-open.
         try:
             from . import experience
-            _exp = experience.recall(world, f"{goal.title}\n{goal.description or ''}")
+            _exp = experience.recall(
+                world, f"{goal.title}\n{goal.description or ''}", shield=shield
+            )
             if _exp:
                 brief = brief + "\n\n" + _exp
         except Exception as e:  # pragma: no cover -- never blocks a run
@@ -699,12 +701,10 @@ async def run_goal(  # noqa: C901
             from . import skill_synthesis
             if skill_synthesis.enabled():
                 _sk = await skill_synthesis.synthesize_task_skill(
-                    f"{goal.title}\n{goal.description or ''}", llm, budget,
+                    f"{goal.title}\n{goal.description or ''}", llm, budget, shield=shield,
                 )
                 if _sk:
-                    brief = brief + (
-                        "\n\nTask-specific notes (synthesized for this goal):\n" + _sk
-                    )
+                    brief = brief + "\n\n" + skill_synthesis.frame_task_skill(_sk)
         except Exception as e:  # pragma: no cover -- never blocks a run
             log.debug("skill synthesis skipped: %s", e)
 
