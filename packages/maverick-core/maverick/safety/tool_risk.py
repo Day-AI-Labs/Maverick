@@ -231,6 +231,7 @@ _DEFAULT_RISK_LEVEL = "medium"
 # explicit ``_DEFAULT_RISK`` entry still wins.
 _ENTERPRISE_CONNECTORS: frozenset[str] | None = None
 _READ_CONNECTORS: frozenset[str] | None = None
+_SENSITIVE_READ_CONNECTORS: frozenset[str] | None = None
 
 
 def _enterprise_connector_names() -> frozenset[str]:
@@ -256,6 +257,19 @@ def _read_connector_names() -> frozenset[str]:
         return frozenset()  # tools not importable yet -- retry on the next call
     _READ_CONNECTORS = frozenset(READ_CONNECTOR_NAMES)
     return _READ_CONNECTORS
+
+
+def _sensitive_read_connector_names() -> frozenset[str]:
+    """GET-only connector variants that can disclose confidential SaaS data."""
+    global _SENSITIVE_READ_CONNECTORS
+    if _SENSITIVE_READ_CONNECTORS is not None:
+        return _SENSITIVE_READ_CONNECTORS
+    try:
+        from ..tools.enterprise_connectors import SENSITIVE_READ_CONNECTOR_NAMES
+    except Exception:
+        return frozenset()  # tools not importable yet -- retry on the next call
+    _SENSITIVE_READ_CONNECTORS = frozenset(SENSITIVE_READ_CONNECTOR_NAMES)
+    return _SENSITIVE_READ_CONNECTORS
 
 
 def risk_rank(level: str) -> int:
@@ -315,12 +329,16 @@ def tool_risk(name: str, overrides: dict[str, str] | None = None) -> str:
     if builtin is not None:
         return builtin
     # Unclassified. An MCP tool is externally-defined arbitrary code reached
-    # through a third-party server, and an enterprise connector is write-capable
-    # by construction -> both fail safe to high. Anything else -> medium.
+    # through a third-party server, and an enterprise connector can reach
+    # credentialed business systems. Sensitive read connectors fail closed to
+    # high too: GET-only prevents writes, but can still disclose confidential
+    # payroll, tax, balance, cap-table, or ERP data. Anything else -> medium.
     if name.startswith("mcp_"):
         return "high"
+    if name in _sensitive_read_connector_names():
+        return "high"
     if name in _read_connector_names():
-        return "low"  # GET-only connector variant -- a read seat, not write-capable
+        return "low"  # non-sensitive GET-only connector variant
     if name in _enterprise_connector_names():
         return "high"
     return _DEFAULT_RISK_LEVEL

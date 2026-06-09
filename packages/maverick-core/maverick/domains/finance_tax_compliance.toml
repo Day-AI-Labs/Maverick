@@ -13,10 +13,10 @@ deadline risk. You NEVER file a return or remit tax -- both are human acts."""
 allow_tools = [
     "read_file", "knowledge_search",
     "gl_read_subledger", "prepare_return", "validate_nexus",
-    "avalara_read",   # read seat (low) -- pull vendor data
+    "avalara_read",   # sensitive read seat -- pull vendor data
 ]
 deny_tools = ["file_return", "remit_tax", "file_tax_return"]
-max_risk = "medium"
+max_risk = "high"
 allow_hosts = ["*.avalara.com", "*.vertexinc.com", "*.sovos.com"]
 mcp_servers = ["Tax_Avalara"]
 knowledge_sources = ["finance_tax_positions", "finance_jurisdiction_rules"]

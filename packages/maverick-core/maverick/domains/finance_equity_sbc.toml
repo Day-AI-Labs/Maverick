@@ -12,10 +12,10 @@ NEVER post."""
 allow_tools = [
     "read_file", "knowledge_search",
     "compute_sbc_expense", "draft_sbc_entry",
-    "carta_read",   # read seat (low) -- pull vendor data
+    "carta_read",   # sensitive read seat -- pull vendor data
 ]
 deny_tools = ["post_journal_entry"]
-max_risk = "medium"
+max_risk = "high"
 allow_hosts = ["*.carta.com", "*.pulley.com"]
 mcp_servers = ["Equity_Carta"]
 knowledge_sources = ["finance_cap_table", "finance_accounting_policy"]

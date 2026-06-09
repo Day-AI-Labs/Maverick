@@ -15,10 +15,10 @@ allow_tools = [
     "read_file", "knowledge_search",
     "ap_read_invoice", "ap_read_po", "ap_read_receipt", "gl_read_subledger",
     "stage_payment_batch", "screen_sanctions",
-    "billdotcom_read", "coupa_read",   # read seat (low) -- pull vendor data
+    "billdotcom_read", "coupa_read",   # sensitive read seat -- pull vendor data
 ]
 deny_tools = ["release_payment", "vendor_master_change", "ach_send", "wire_transfer"]
-max_risk = "medium"
+max_risk = "high"
 allow_hosts = ["*.bill.com", "*.coupa.com", "*.tipalti.com"]
 mcp_servers = ["AP_BillCom"]
 knowledge_sources = ["finance_accounting_policy", "finance_ap_policy"]

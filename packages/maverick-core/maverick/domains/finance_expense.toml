@@ -14,10 +14,10 @@ allow_tools = [
     "read_file", "knowledge_search",
     "expense_read_report", "expense_read_card",
     "flag_policy_violation", "draft_accrual", "reconcile_accounts",
-    "concur_read", "ramp_read",   # read seat (low) -- pull vendor data
+    "concur_read", "ramp_read",   # sensitive read seat -- pull vendor data
 ]
 deny_tools = ["approve_expense", "reimburse"]
-max_risk = "medium"
+max_risk = "high"
 allow_hosts = ["*.concur.com", "*.expensify.com", "*.ramp.com"]
 mcp_servers = ["Expense_Ramp"]
 knowledge_sources = ["finance_te_policy", "finance_accounting_policy"]

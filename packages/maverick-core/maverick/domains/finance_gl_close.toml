@@ -15,10 +15,10 @@ allow_tools = [
     "read_file", "knowledge_search", "web_search",
     "gl_read_trial_balance", "gl_read_subledger", "gl_read_journal",
     "stage_journal_entry", "reconcile_accounts", "flux_analysis",
-    "netsuite_read",   # read seat (low) -- pull vendor data
+    "netsuite_read",   # sensitive read seat -- pull vendor data
 ]
 deny_tools = ["post_journal_entry", "close_period", "edit_chart_of_accounts"]
-max_risk = "medium"
+max_risk = "high"
 allow_hosts = ["*.netsuite.com", "*.sap.com"]
 mcp_servers = ["ERP_NetSuite"]
 knowledge_sources = ["finance_accounting_policy", "finance_close"]

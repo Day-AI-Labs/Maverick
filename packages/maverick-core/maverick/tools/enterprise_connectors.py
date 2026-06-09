@@ -827,11 +827,12 @@ _GRAPHQL_SPECS: list[dict] = [
 for _spec in (*_SPECS, *_GRAPHQL_SPECS):
     _fill_env(_spec)
 
-# Read-only (GET-only, LOW-risk) variants for finance vendors -- the bridge that
-# lets a read-only pack (max_risk <= medium) actually pull data without handing it
-# a write-capable seat. Same env/creds as the write connector; writes are
-# structurally unreachable (the agent still supplies the path, so no endpoint is
-# hard-coded). Classified low via READ_CONNECTOR_NAMES in safety/tool_risk.
+# Read-only (GET-only) variants for finance vendors -- the bridge that
+# lets an explicitly trusted pack pull data without handing it a write-capable
+# seat. Same env/creds as the write connector; writes are structurally
+# unreachable (the agent still supplies the path, so no endpoint is hard-coded).
+# Sensitive finance readers are classified high-risk in safety/tool_risk because
+# read-only SaaS access can expose confidential payroll, tax, balance, or ERP data.
 _READ_SPECS: list[dict] = [
     dict(name="modern_treasury_read", base_url_env="MODERN_TREASURY_BASE_URL",
          token_env="MODERN_TREASURY_TOKEN", basic=True,
@@ -864,14 +865,20 @@ def _read_specs_for(vendors: list[str]) -> list[dict]:
     return out
 
 
-# Finance vendors whose read-only/draft packs need to pull data: each gets a
-# GET-only, LOW-risk variant (wired into the matching pack's allow_tools), so the
-# whole CFO office can read its systems while money tools stay denied.
+# Finance vendors whose trusted read-only/draft packs need to pull data: each
+# gets a GET-only variant wired into the matching pack's allow_tools. These are
+# sensitive seats, not globally low-risk tools, so low/medium ceilings still drop
+# them unless an operator explicitly overrides their risk.
 _FINANCE_READ_VENDORS: list[str] = [
     "billdotcom", "coupa", "ariba", "chargebee", "netsuite", "carta",
     "concur", "ramp", "adp", "gusto", "workiva", "avalara",
 ]
 _READ_SPECS += _read_specs_for(_FINANCE_READ_VENDORS)
+
+SENSITIVE_READ_CONNECTOR_NAMES: list[str] = [
+    "modern_treasury_read",
+    *(f"{vendor}_read" for vendor in _FINANCE_READ_VENDORS),
+]
 
 # Read seats for the OTHER suites' systems, derived the same way (GET-only, low,
 # reuse the write connector's creds). Bespoke-module vendors (Salesforce, HubSpot,

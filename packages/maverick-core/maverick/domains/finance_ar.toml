@@ -14,10 +14,10 @@ allow_tools = [
     "read_file", "knowledge_search",
     "ar_read_aging", "ar_read_invoice", "bank_read_transactions",
     "draft_invoice", "propose_cash_application",
-    "chargebee_read", "netsuite_read",   # read seat (low) -- pull vendor data
+    "chargebee_read", "netsuite_read",   # sensitive read seat -- pull vendor data
 ]
 deny_tools = ["send_invoice", "write_off_balance"]
-max_risk = "medium"
+max_risk = "high"
 allow_hosts = ["*.stripe.com", "*.chargebee.com", "*.netsuite.com"]
 mcp_servers = ["Billing_Stripe"]
 knowledge_sources = ["finance_accounting_policy", "finance_credit_policy"]

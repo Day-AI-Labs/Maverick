@@ -14,10 +14,10 @@ human-released."""
 allow_tools = [
     "read_file", "knowledge_search",
     "gl_read_trial_balance", "draft_filing", "tag_xbrl", "run_disclosure_checklist",
-    "workiva_read",   # read seat (low) -- pull vendor data
+    "workiva_read",   # sensitive read seat -- pull vendor data
 ]
 deny_tools = ["file_with_sec"]
-max_risk = "medium"
+max_risk = "high"
 allow_hosts = ["*.workiva.com", "*.sec.gov"]
 mcp_servers = ["SEC_Workiva"]
 knowledge_sources = ["finance_prior_filings", "finance_accounting_policy"]

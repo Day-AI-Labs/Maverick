@@ -15,13 +15,13 @@ allow_tools = [
     "read_file", "knowledge_search",
     "hcm_read_employee", "payroll_read_register", "payroll_read_timesheet",
     "stage_payroll_run", "reconcile_payroll", "draft_payroll_tax",
-    "adp_read", "gusto_read",   # read seat (low) -- pull vendor data
+    "adp_read", "gusto_read",   # sensitive read seat -- pull vendor data
 ]
 deny_tools = [
     "run_payroll", "release_payroll_payment",
     "edit_employee_bank_details", "file_tax_return",
 ]
-max_risk = "medium"
+max_risk = "high"
 allow_hosts = ["*.workday.com", "*.adp.com", "*.gusto.com"]
 mcp_servers = ["HCM_Workday"]
 knowledge_sources = ["finance_payroll_policy", "finance_tax_tables"]

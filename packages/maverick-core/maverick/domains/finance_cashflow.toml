@@ -14,10 +14,10 @@ allow_tools = [
     "read_file", "knowledge_search",
     "bank_read_balance", "bank_read_transactions", "ar_read_aging",
     "build_cashflow_forecast",
-    "modern_treasury_read",   # GET-only banking reads (low) -- the executable read seat
+    "modern_treasury_read",   # GET-only sensitive banking reads -- the executable read seat
 ]
 deny_tools = ["wire_transfer", "ach_send", "release_payment"]
-max_risk = "low"
+max_risk = "high"
 allow_hosts = ["*.moderntreasury.com", "*.plaid.com"]
 mcp_servers = ["Bank_Plaid"]
 knowledge_sources = ["finance_treasury_policy", "finance_operating_plan"]

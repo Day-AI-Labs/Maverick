@@ -1,8 +1,8 @@
-"""Finance read-seat rollout: every read/draft tower now has an executable,
-LOW-risk vendor read connector wired into its allow_tools (extending the #1054
-treasury reference across the suite), so the whole CFO office can pull its own
-data -- while each tower's money seal stays intact. This closes, for finance, the
-domain-action gap that test_fleet_spine documented as "wired on paper"."""
+"""Finance read-seat rollout: every trusted read/draft tower has an executable
+vendor read connector wired into its allow_tools (extending the #1054 treasury
+reference across the suite), so the CFO office can pull its own data without
+classifying sensitive SaaS reads as globally low-risk. Money tools remain
+explicitly denied."""
 from __future__ import annotations
 
 from maverick.capability import Capability
@@ -38,13 +38,16 @@ def test_every_wired_tower_reaches_a_read_seat_and_still_denies_money():
     for pack, seat in _WIRED.items():
         cap = domain_capability(d[pack], parent, f"agent:{pack}-1")
         assert cap.permits(seat), f"{pack} cannot reach its read seat {seat}"
-        assert tool_risk(seat) == "low", f"{seat} must be low to pass a read-only ceiling"
+        assert not Capability(
+            principal=f"agent:{pack}-low", allow_tools=frozenset({seat}), max_risk="low"
+        ).permits(seat), f"{seat} must not pass a low-risk ceiling"
+        assert tool_risk(seat) == "high", f"{seat} exposes sensitive SaaS data"
         for money in _MONEY:
             assert not cap.permits(money), f"{pack} permits money tool {money!r}"
 
 
-def test_read_seats_are_low_while_their_write_connectors_stay_high():
+def test_sensitive_read_seats_and_write_connectors_are_high():
     for seat in set(_WIRED.values()):
-        assert tool_risk(seat) == "low"
+        assert tool_risk(seat) == "high"
         write = seat[: -len("_read")]
         assert tool_risk(write) == "high", f"{write} (write seat) must stay high-risk"

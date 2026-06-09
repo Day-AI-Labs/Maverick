@@ -15,10 +15,10 @@ allow_tools = [
     "read_file", "knowledge_search",
     "ar_read_invoice", "gl_read_subledger",
     "draft_revrec_schedule", "stage_deferred_revenue",
-    "chargebee_read",   # read seat (low) -- pull vendor data
+    "chargebee_read",   # sensitive read seat -- pull vendor data
 ]
 deny_tools = ["post_journal_entry"]
-max_risk = "medium"
+max_risk = "high"
 allow_hosts = ["*.salesforce.com", "*.stripe.com", "*.chargebee.com"]
 mcp_servers = ["Billing_Stripe"]
 knowledge_sources = ["finance_revrec_policy", "finance_contracts"]
