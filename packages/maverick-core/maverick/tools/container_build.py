@@ -2,18 +2,18 @@
 
 Builds a container image from a Dockerfile + context directory by issuing
 ``docker build`` through the sandbox chokepoint (CLAUDE.md rule #4 — never a
-bare ``subprocess``). The agent supplies the context dir, image tag, and
-optional build-args; the tag and build-arg keys are validated so nothing
-model-supplied can break out of the argv. Returns the build status + a tail of
-the output.
+bare ``subprocess``). The context dir and Dockerfile are confined to
+``sandbox.workdir`` (model-supplied paths can't escape the workspace), and the
+tag + build-arg keys are validated so nothing breaks out of the argv. Returns
+the build status + a tail of the output.
 
 ops:
   - build(context, tag[, dockerfile][, build_args][, timeout])
 """
 from __future__ import annotations
 
-import os
 import re
+from pathlib import Path
 from typing import Any
 
 from . import Tool, sandbox_run
@@ -23,26 +23,48 @@ _TAG = re.compile(r"^[a-z0-9]([a-z0-9._/-]*[a-z0-9])?(:[A-Za-z0-9._-]+)?$")
 _ARG_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+def _confine(base: Path, raw: str, workdir: Path) -> Path | None:
+    """Resolve ``raw`` (relative to ``base``) and refuse it if it escapes ``workdir``."""
+    cand = Path(raw)
+    cand = (base / cand).resolve() if not cand.is_absolute() else cand.resolve()
+    try:
+        cand.relative_to(workdir)
+    except ValueError:
+        return None
+    return cand
+
+
 def _build(sandbox: Any, args: dict[str, Any]) -> str:
-    context = (args.get("context") or ".").strip()
-    if not os.path.isdir(context):
-        return f"ERROR: context dir not found: {context}"
+    workdir = Path(getattr(sandbox, "workdir", ".")).resolve()
+    if not workdir.is_dir():
+        return f"ERROR: workdir {workdir} not found"
+
+    context_raw = (args.get("context") or ".").strip()
+    context = _confine(workdir, context_raw, workdir)
+    if context is None:
+        return f"ERROR: context {context_raw!r} escapes the workspace"
+    if not context.is_dir():
+        return f"ERROR: context dir not found: {context_raw}"
+
     tag = (args.get("tag") or "").strip()
     if not tag or not _TAG.match(tag):
         return "ERROR: missing or invalid 'tag' (expected name[:tag])"
-    dockerfile = (args.get("dockerfile") or "Dockerfile").strip()
-    df_path = dockerfile if os.path.isabs(dockerfile) else os.path.join(context, dockerfile)
-    if not os.path.isfile(df_path):
-        return f"ERROR: Dockerfile not found: {df_path}"
 
-    argv = ["docker", "build", "-t", tag, "-f", df_path]
+    dockerfile_raw = (args.get("dockerfile") or "Dockerfile").strip()
+    df = _confine(context, dockerfile_raw, workdir)
+    if df is None:
+        return f"ERROR: dockerfile {dockerfile_raw!r} escapes the workspace"
+    if not df.is_file():
+        return f"ERROR: Dockerfile not found: {dockerfile_raw}"
+
+    argv = ["docker", "build", "-t", tag, "-f", str(df)]
     bargs = args.get("build_args") or {}
     if isinstance(bargs, dict):
         for k, v in bargs.items():
             if not _ARG_KEY.match(str(k)):
                 return f"ERROR: invalid build-arg key {k!r}"
             argv += ["--build-arg", f"{k}={v}"]
-    argv.append(context)
+    argv.append(str(context))
 
     try:
         timeout = float(args.get("timeout", 600))
@@ -60,7 +82,7 @@ _SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "op": {"type": "string", "enum": ["build"]},
-        "context": {"type": "string", "description": "build context directory"},
+        "context": {"type": "string", "description": "build context dir (within the workspace)"},
         "tag": {"type": "string", "description": "image tag, e.g. myapp:dev"},
         "dockerfile": {"type": "string", "description": "Dockerfile path (default: <context>/Dockerfile)"},
         "build_args": {"type": "object", "description": "--build-arg KEY=VALUE pairs"},
@@ -75,10 +97,10 @@ def container_build(sandbox: Any) -> Tool:
         name="container_build",
         description=(
             "Build a container image from a Dockerfile + context via 'docker "
-            "build', routed through the sandbox. op=build with 'context' (dir) "
-            "and 'tag' (name[:tag]); optional 'dockerfile', 'build_args' (object), "
-            "'timeout'. Tag and build-arg keys are validated. Returns status + "
-            "an output tail."
+            "build', routed through the sandbox. op=build with 'context' (dir, "
+            "workspace-confined) and 'tag' (name[:tag]); optional 'dockerfile', "
+            "'build_args' (object), 'timeout'. Paths can't escape the workspace; "
+            "tag and build-arg keys are validated. Returns status + output tail."
         ),
         input_schema=_SCHEMA,
         fn=lambda args: _build(sandbox, args),
