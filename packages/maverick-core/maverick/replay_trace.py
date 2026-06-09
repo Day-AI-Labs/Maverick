@@ -10,6 +10,7 @@ killed mid-write). Dependency-free.
 from __future__ import annotations
 
 import json
+import os
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -22,8 +23,23 @@ class TraceWriter:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # Traces mirror blackboard posts, which may contain private run data.
+        # Do not let the process umask create group/world-readable artifacts.
+        try:
+            os.chmod(self.path.parent, 0o700)
+        except OSError:
+            pass
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        if hasattr(os, "O_CLOEXEC"):
+            flags |= os.O_CLOEXEC
         self._seq = 0
-        self._fh = self.path.open("a", encoding="utf-8")
+        fd = os.open(self.path, flags, 0o600)
+        try:
+            os.chmod(self.path, 0o600)
+            self._fh = os.fdopen(fd, "a", encoding="utf-8")
+        except Exception:
+            os.close(fd)
+            raise
 
     def record(self, kind: str, **fields: Any) -> int:
         """Write one ordered event; returns its sequence number."""
