@@ -40,6 +40,32 @@ def test_one_tenant_cannot_open_anothers_data(tmp_path):
 
 
 @requires_crypto
+def test_wrapped_dek_is_authenticated_to_tenant_path(tmp_path):
+    from maverick import tenant_kms as k
+    blob = k.seal_for_tenant("acme", b"acme-only")
+    # Ensure beta has its own key path, then replace it with acme's wrapped DEK.
+    k.tenant_dek("beta")
+    acme_wrapped = tmp_path / "tenants" / "acme" / "keys" / "dek.wrapped"
+    beta_wrapped = tmp_path / "tenants" / "beta" / "keys" / "dek.wrapped"
+    beta_wrapped.write_bytes(acme_wrapped.read_bytes())
+
+    k._clear_cache()
+    with pytest.raises(k.EncryptionUnavailable):
+        k.unseal_for_tenant("beta", blob)
+
+
+@requires_crypto
+def test_sealed_data_is_authenticated_to_tenant_id(monkeypatch):
+    from maverick import tenant_kms as k
+    shared_dek = b"\x11" * 32
+    monkeypatch.setattr(k, "tenant_dek", lambda tenant_id, *, kms=None: shared_dek)
+
+    blob = k.seal_for_tenant("acme", b"acme-only")
+    with pytest.raises(k.EncryptionUnavailable):
+        k.unseal_for_tenant("beta", blob)
+
+
+@requires_crypto
 def test_dek_is_persisted_wrapped_not_plaintext(tmp_path):
     from maverick import tenant_kms as k
     dek = k.tenant_dek("acme")
