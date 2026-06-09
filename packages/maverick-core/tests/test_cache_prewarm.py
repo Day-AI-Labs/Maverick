@@ -1,6 +1,10 @@
 """Prompt-cache pre-warming: max_tokens=0 prefill writes the system+tools cache."""
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import pytest
+
 
 def test_provider_prewarm_sends_max_tokens_zero(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
@@ -26,6 +30,36 @@ def test_provider_prewarm_sends_max_tokens_zero(monkeypatch):
     assert req["messages"] == [{"role": "user", "content": "warmup"}]
     # max_tokens=0 forbids thinking/output_config/tool_choice -> none present.
     assert "thinking" not in req and "output_config" not in req and "tool_choice" not in req
+
+
+def test_provider_prewarm_records_budget_usage(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    from maverick.budget import Budget
+    from maverick.providers.anthropic_provider import AnthropicClient
+
+    p = AnthropicClient()
+
+    class _Msgs:
+        def create(self, **kw):
+            return SimpleNamespace(
+                content=[],
+                stop_reason="end_turn",
+                usage=SimpleNamespace(
+                    input_tokens=10,
+                    output_tokens=0,
+                    cache_read_input_tokens=20,
+                    cache_creation_input_tokens=1000,
+                ),
+            )
+
+    monkeypatch.setattr(p.client, "messages", _Msgs())
+    budget = Budget(max_dollars=100.0)
+
+    assert p.prewarm("sys", None, "claude-opus-4-8", budget=budget) is True
+    assert budget.input_tokens == 10
+    assert budget.cache_read_tokens == 20
+    assert budget.cache_write_tokens == 1000
+    assert budget.dollars == pytest.approx(0.01006)
 
 
 def test_provider_prewarm_failsoft(monkeypatch):
@@ -77,3 +111,21 @@ def test_cache_prewarm_enabled_flag(monkeypatch):
     assert llm_mod.cache_prewarm_enabled() is False
     monkeypatch.setenv("MAVERICK_CACHE_PREWARM", "1")
     assert llm_mod.cache_prewarm_enabled() is True
+
+
+def test_llm_prewarm_reserves_budget_before_provider_call(monkeypatch):
+    from maverick.budget import Budget
+    from maverick.llm import LLM
+
+    llm = LLM(model="claude-opus-4-8")
+
+    class _Fake:
+        def prewarm(self, system, tools, model, *, budget=None):
+            raise AssertionError("provider prewarm must not run after reserve failure")
+
+    monkeypatch.setattr(llm, "_get_client", lambda provider: _Fake())
+    monkeypatch.setattr("maverick.enterprise.assert_provider_allowed", lambda p: None)
+
+    budget = Budget(max_dollars=0.0)
+    assert llm.prewarm("billable system prompt", budget=budget) is False
+    assert budget.dollars == 0.0

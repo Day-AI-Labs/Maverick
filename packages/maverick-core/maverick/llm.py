@@ -21,7 +21,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from .budget import Budget
+from .budget import Budget, _cache_write_mult_from_ttl
 
 # Latest Claude family as of 2026-05.
 MODEL_OPUS = "claude-opus-4-8"
@@ -656,13 +656,19 @@ class LLM:
                 pass
 
     def prewarm(
-        self, system: str, tools: list[dict] | None = None, model: str | None = None,
+        self,
+        system: str,
+        tools: list[dict] | None = None,
+        model: str | None = None,
+        *,
+        budget: Budget | None = None,
     ) -> bool:
         """Pre-warm the prompt cache for ``(system, tools, model)``.
 
         Anthropic-only (other providers cache implicitly with no warm hook), and
-        a no-op unless caching is on. Returns whether a warm request was sent;
-        never raises."""
+        a no-op unless caching is on. When a budget is provided, reserve an
+        estimated cache-write cost before sending and let the provider record
+        returned usage. Returns whether a warm request was sent; never raises."""
         if os.environ.get("MAVERICK_CACHE_MESSAGES", "1") == "0":
             return False
         provider, model_id = _parse_spec(model or self.model)
@@ -673,7 +679,24 @@ class LLM:
             assert_provider_allowed(provider)
             client = self._get_client(provider)
             warm = getattr(client, "prewarm", None)
-            return bool(warm(system, tools, model_id)) if callable(warm) else False
+            if not callable(warm):
+                return False
+            messages = [{"role": "user", "content": "warmup"}]
+            # A prewarm can bill prompt-cache creation/read tokens even though
+            # max_tokens=0. Reserve the worst-case Anthropic cache-write input
+            # multiplier before dispatch so zero/low dollar caps cannot be
+            # bypassed by opt-in prewarming. The provider records exact usage.
+            _held = budget.reserve(
+                _estimate_call_cost(model_id, system, messages, tools, 0)
+                * _cache_write_mult_from_ttl("1h")
+            ) if budget is not None else 0.0
+            try:
+                if budget is not None:
+                    return bool(warm(system, tools, model_id, budget=budget))
+                return bool(warm(system, tools, model_id))
+            finally:
+                if _held:
+                    budget.release(_held)
         except Exception:  # pragma: no cover -- prewarm is best-effort
             return False
 
