@@ -47,7 +47,7 @@ _READ_SCHEMA: dict[str, Any] = {
 }
 
 
-def make_rest_tool(
+def make_rest_tool(  # noqa: C901  (ruff 0.15 bumped its measured complexity to 21)
     *,
     name: str,
     base_url_env: str,

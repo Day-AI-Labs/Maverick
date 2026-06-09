@@ -94,7 +94,9 @@ here.
   for a 5-10x token cut), `cache_admin` (inspect/purge the
   tool-output cache — stats or targeted purge), `error_patterns` (cluster noisy
   error/log lines into ranked patterns by normalised signature), `container_build` (build a
-  container image from a Dockerfile via sandbox-mediated `docker build`).
+  container image from a Dockerfile via sandbox-mediated `docker build`), `ai_act_classifier` (EU AI Act
+  risk-tier screening for a described AI use-case — prohibited/high/limited/
+  minimal + obligations; heuristic, not legal advice).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
