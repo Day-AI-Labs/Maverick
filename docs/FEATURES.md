@@ -77,7 +77,15 @@ here.
   (classify deps + flag copyleft), `self_capability` (report the run's capability
   grant), `oidc` (OIDC authorization-code client), `cost_curve` (per-provider cost
   model), `bench_track` (record benchmark scores + flag regressions), `teams`
-  (Microsoft Teams webhook).
+  (Microsoft Teams webhook), `knowledge_graph` (extract/query/render
+  subject-relation-object triples; no external graph DB), `cross_repo_deps`
+  (cross-repo Python package import graph + cycle detection via `ast`),
+  `citation_verifier` (check cited quotes against their source text), `test_gen`
+  (generate a Hypothesis property-test scaffold from a function's signature),
+  `semantic_code_search` (rank functions/classes by intent via ast + lexical
+  scoring), `mutation_test` (plan source mutants a strong suite should catch),
+  `constrained_output` (validate/coerce a value to a typed/enum/range/regex
+  shape — the guard half of constrained generation).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
