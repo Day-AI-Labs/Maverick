@@ -194,3 +194,29 @@ def test_over_quota_isolates_principals(monkeypatch):
     record_usage("alice", 10.0, 0, 0)
     assert over_quota("alice") is not None
     assert over_quota("bob") is None  # bob hasn't spent
+
+
+def test_record_is_concurrency_safe(tmp_path):
+    """Concurrent records must not lose updates. The load-modify-save in record()
+    races without a lock, so simultaneous runs clobber each other -- undercounting
+    spend and letting a principal slip past its daily quota."""
+    import threading
+
+    ledger = UsageLedger(path=tmp_path / "ledger.json")
+    threads_n, per = 16, 40
+
+    def worker():
+        for _ in range(per):
+            ledger.record("user:alice", 1.0, 10, 5)
+
+    threads = [threading.Thread(target=worker) for _ in range(threads_n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    used = ledger.usage("user:alice")
+    total = threads_n * per
+    assert used["dollars"] == float(total)
+    assert used["in_tokens"] == total * 10
+    assert used["out_tokens"] == total * 5
