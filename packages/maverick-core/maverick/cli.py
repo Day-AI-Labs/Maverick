@@ -1238,6 +1238,23 @@ def diag_health(goal_id: int) -> None:
     click.echo(render(h))
 
 
+@diag.command("replay")
+@click.argument("trace_file", type=click.Path(exists=True))
+@click.option("--kind", default=None, help="Only show events of this kind.")
+def diag_replay(trace_file: str, kind: str | None) -> None:
+    """Read a replayable run trace (written when MAVERICK_TRACE_DIR is set)."""
+    from .replay_trace import read_trace
+    events = read_trace(trace_file)
+    shown = 0
+    for e in events:
+        if kind and e.get("kind") != kind:
+            continue
+        shown += 1
+        click.echo(f"  [{e.get('seq')}] {e.get('kind')}  "
+                   f"{e.get('agent', '')}: {str(e.get('content', ''))[:100]}")
+    click.echo(f"  ({shown} of {len(events)} event(s))")
+
+
 @diag.command("cost-by-tag")
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
 def diag_cost_by_tag(as_json: bool) -> None:

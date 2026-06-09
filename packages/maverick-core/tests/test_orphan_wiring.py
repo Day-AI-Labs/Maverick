@@ -104,6 +104,22 @@ def test_queue_install_noop_without_backend(monkeypatch):
 
 # ---- local skill distillation reachable -------------------------------------
 
+def test_replay_trace_wired_into_blackboard(tmp_path):
+    from maverick.blackboard import Blackboard
+    from maverick.replay_trace import TraceWriter, read_trace
+    bb = Blackboard()
+    # Default: no trace writer -> posts don't crash and nothing is written.
+    bb.post("a", "plan", "x")
+    # Attach a writer -> every post is mirrored to the JSONL trace.
+    path = tmp_path / "g.jsonl"
+    bb.attach_trace(TraceWriter(path))
+    bb.post("orchestrator", "plan", "do the thing")
+    bb.post("coder", "tool", "ran tests")
+    events = read_trace(path)
+    assert [e["kind"] for e in events] == ["plan", "tool"]
+    assert events[0]["agent"] == "orchestrator"
+
+
 @pytest.mark.parametrize("enabled", [False, True])
 def test_skill_distillation_local_gate(monkeypatch, enabled):
     import maverick.skill_distillation_local as sdl

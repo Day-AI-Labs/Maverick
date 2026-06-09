@@ -417,6 +417,18 @@ async def run_goal(  # noqa: C901
         episode_id = world.start_episode(goal_id)
     blackboard = Blackboard()
     blackboard.attach_world(world, goal_id)  # persist every post for live streaming
+    # Replayable trace (opt-in via MAVERICK_TRACE_DIR): write this run's events
+    # to a JSONL file so it can be reconstructed/replayed offline with
+    # `maverick diag replay`. Off by default; never blocks a run.
+    _trace_writer = None
+    _trace_dir = os.environ.get("MAVERICK_TRACE_DIR")
+    if _trace_dir:
+        try:
+            from .replay_trace import TraceWriter
+            _trace_writer = TraceWriter(os.path.join(_trace_dir, f"goal-{goal_id}.jsonl"))
+            blackboard.attach_trace(_trace_writer)
+        except Exception:  # pragma: no cover -- tracing never blocks a run
+            _trace_writer = None
     # Agent compartments (Rung 1): wire a run-scoped quarantine registry so a
     # sealed agent's posts are withheld and its tools refused. Off by default.
     quarantine = None
