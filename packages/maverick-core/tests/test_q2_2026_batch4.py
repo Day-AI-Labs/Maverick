@@ -237,3 +237,104 @@ def test_dashboard_theme_switcher_options_in_header(dashboard_client):
         assert (f'value="{theme}"' in body) or (f"?theme={theme}" in body), (
             f"theme {theme} not exposed via the theme switcher"
         )
+
+
+class _CapturingCursor:
+    def __init__(self):
+        self.calls = []
+
+    def execute(self, sql, params=()):
+        self.calls.append((" ".join(sql.split()), tuple(params)))
+
+    def fetchall(self):
+        return []
+
+    def fetchone(self):
+        return (0, 0, 0, 0)
+
+
+class _CursorTx:
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    def __enter__(self):
+        return self.cursor
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _postgres_model_with_cursor(cursor):
+    from maverick.world_model_backends import PostgresWorldModel
+
+    world = PostgresWorldModel.__new__(PostgresWorldModel)
+    world._tx = lambda: _CursorTx(cursor)
+    return world
+
+
+def test_postgres_recall_candidates_are_tenant_scoped(monkeypatch):
+    from maverick.paths import reset_tenant, set_tenant
+
+    monkeypatch.setenv("MAVERICK_STRICT_TENANT_ISOLATION", "1")
+    token = set_tenant("tenant-a")
+    try:
+        cursor = _CapturingCursor()
+        _postgres_model_with_cursor(cursor).candidate_goals(False, limit=7)
+    finally:
+        reset_tenant(token)
+
+    sql, params = cursor.calls[-1]
+    assert "FROM goals WHERE" in sql
+    assert "tenant_id = %s" in sql
+    assert params == ("tenant-a", 7)
+
+
+def test_postgres_spend_reads_join_tenant_scoped_goals(monkeypatch):
+    from maverick.paths import reset_tenant, set_tenant
+
+    monkeypatch.setenv("MAVERICK_STRICT_TENANT_ISOLATION", "1")
+    token = set_tenant("tenant-a")
+    try:
+        cursor = _CapturingCursor()
+        world = _postgres_model_with_cursor(cursor)
+        world.total_spend()
+        world.list_episodes(limit=30)
+    finally:
+        reset_tenant(token)
+
+    total_sql, total_params = cursor.calls[0]
+    list_sql, list_params = cursor.calls[1]
+    assert "FROM episodes e JOIN goals g ON g.id = e.goal_id" in total_sql
+    assert "g.tenant_id = %s" in total_sql
+    assert total_params == ("tenant-a",)
+    assert "FROM episodes e JOIN goals g ON g.id = e.goal_id" in list_sql
+    assert "g.tenant_id = %s" in list_sql
+    assert list_params == ("tenant-a", 30)
+
+
+def test_postgres_goal_child_reads_join_tenant_scoped_goals(monkeypatch):
+    from maverick.paths import reset_tenant, set_tenant
+
+    monkeypatch.setenv("MAVERICK_STRICT_TENANT_ISOLATION", "1")
+    token = set_tenant("tenant-a")
+    try:
+        cursor = _CapturingCursor()
+        world = _postgres_model_with_cursor(cursor)
+        world.goal_events(42)
+        world.search_messages("secret")
+        world.list_attachments(42)
+    finally:
+        reset_tenant(token)
+
+    events_sql, events_params = cursor.calls[0]
+    messages_sql, messages_params = cursor.calls[1]
+    attachments_sql, attachments_params = cursor.calls[2]
+    assert "FROM goal_events ge JOIN goals g ON g.id = ge.goal_id" in events_sql
+    assert "g.tenant_id = %s" in events_sql
+    assert events_params == (42, 0, "tenant-a", 200)
+    assert "FROM messages m JOIN goals g ON g.id = m.goal_id" in messages_sql
+    assert "g.tenant_id = %s" in messages_sql
+    assert messages_params == ("secret", "tenant-a", 10)
+    assert "FROM attachments a JOIN goals g ON g.id = a.goal_id" in attachments_sql
+    assert "g.tenant_id = %s" in attachments_sql
+    assert attachments_params == (42, "tenant-a")
