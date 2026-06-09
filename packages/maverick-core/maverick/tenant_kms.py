@@ -37,10 +37,15 @@ _SEAL_MAGIC = b"MVKTEN1\n"   # a tenant-sealed blob
 
 
 class KMS(Protocol):
-    """Key Encryption Key operations. ``wrap``/``unwrap`` a 32-byte DEK."""
+    """Key Encryption Key operations. ``wrap``/``unwrap`` a 32-byte DEK.
 
-    def wrap(self, dek: bytes) -> bytes: ...
-    def unwrap(self, wrapped: bytes) -> bytes: ...
+    ``context`` is authenticated metadata (for example tenant id and purpose)
+    that must match on unwrap, preventing wrapped DEKs from being transplanted
+    between tenants or uses.
+    """
+
+    def wrap(self, dek: bytes, *, context: bytes | None = None) -> bytes: ...
+    def unwrap(self, wrapped: bytes, *, context: bytes | None = None) -> bytes: ...
 
 
 def _aesgcm(key: bytes):
@@ -52,13 +57,23 @@ def _aesgcm(key: bytes):
     return AESGCM(key)
 
 
-def _gcm_seal(key: bytes, magic: bytes, plaintext: bytes) -> bytes:
+def _gcm_seal(
+    key: bytes,
+    magic: bytes,
+    plaintext: bytes,
+    associated_data: bytes | None = None,
+) -> bytes:
     nonce = secrets.token_bytes(_NONCE_BYTES)
-    ct = _aesgcm(key).encrypt(nonce, plaintext, None)
+    ct = _aesgcm(key).encrypt(nonce, plaintext, associated_data)
     return magic + nonce + ct
 
 
-def _gcm_open(key: bytes, magic: bytes, blob: bytes) -> bytes:
+def _gcm_open(
+    key: bytes,
+    magic: bytes,
+    blob: bytes,
+    associated_data: bytes | None = None,
+) -> bytes:
     from cryptography.exceptions import InvalidTag
 
     if blob[: len(magic)] != magic:
@@ -68,10 +83,23 @@ def _gcm_open(key: bytes, magic: bytes, blob: bytes) -> bytes:
         raise EncryptionUnavailable("KMS envelope is truncated")
     nonce, ct = body[:_NONCE_BYTES], body[_NONCE_BYTES:]
     try:
-        return _aesgcm(key).decrypt(nonce, ct, None)
+        return _aesgcm(key).decrypt(nonce, ct, associated_data)
     except InvalidTag as e:
         raise EncryptionUnavailable(
             "cannot open KMS envelope: wrong key or altered ciphertext") from e
+
+
+def _tenant_context(tenant_id: str | None, purpose: bytes) -> bytes:
+    """Canonical AEAD/KMS context for tenant-bound envelopes."""
+    tenant = (tenant_id or "__default__").encode("utf-8")
+    return (
+        b"maverick-tenant-kms/v1\x00"
+        + purpose
+        + b"\x00"
+        + str(len(tenant)).encode("ascii")
+        + b":"
+        + tenant
+    )
 
 
 def _resolve_local_kek() -> bytes:
@@ -101,11 +129,11 @@ class LocalKMS:
         if len(self._kek) != _DEK_BYTES:
             raise EncryptionUnavailable("KEK must be 32 bytes")
 
-    def wrap(self, dek: bytes) -> bytes:
-        return _gcm_seal(self._kek, _WRAP_MAGIC, dek)
+    def wrap(self, dek: bytes, *, context: bytes | None = None) -> bytes:
+        return _gcm_seal(self._kek, _WRAP_MAGIC, dek, context)
 
-    def unwrap(self, wrapped: bytes) -> bytes:
-        return _gcm_open(self._kek, _WRAP_MAGIC, wrapped)
+    def unwrap(self, wrapped: bytes, *, context: bytes | None = None) -> bytes:
+        return _gcm_open(self._kek, _WRAP_MAGIC, wrapped, context)
 
 
 def get_kms() -> KMS:
@@ -140,14 +168,15 @@ def tenant_dek(tenant_id: str | None, *, kms: KMS | None = None) -> bytes:
             return cached
         kms = kms or get_kms()
         path = _wrapped_dek_path(tenant_id)
+        context = _tenant_context(tenant_id, b"dek-wrap")
         if path.exists():
-            dek = kms.unwrap(path.read_bytes())
+            dek = kms.unwrap(path.read_bytes(), context=context)
             if len(dek) != _DEK_BYTES:
                 raise EncryptionUnavailable("unwrapped DEK is malformed")
         else:
             dek = secrets.token_bytes(_DEK_BYTES)
             path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-            wrapped = kms.wrap(dek)
+            wrapped = kms.wrap(dek, context=context)
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(fd, "wb") as f:
                 f.write(wrapped)
@@ -157,12 +186,14 @@ def tenant_dek(tenant_id: str | None, *, kms: KMS | None = None) -> bytes:
 
 def seal_for_tenant(tenant_id: str | None, plaintext: bytes, *, kms: KMS | None = None) -> bytes:
     """AES-256-GCM ``plaintext`` under the tenant's DEK."""
-    return _gcm_seal(tenant_dek(tenant_id, kms=kms), _SEAL_MAGIC, plaintext)
+    context = _tenant_context(tenant_id, b"tenant-data")
+    return _gcm_seal(tenant_dek(tenant_id, kms=kms), _SEAL_MAGIC, plaintext, context)
 
 
 def unseal_for_tenant(tenant_id: str | None, blob: bytes, *, kms: KMS | None = None) -> bytes:
     """Inverse of :func:`seal_for_tenant`."""
-    return _gcm_open(tenant_dek(tenant_id, kms=kms), _SEAL_MAGIC, blob)
+    context = _tenant_context(tenant_id, b"tenant-data")
+    return _gcm_open(tenant_dek(tenant_id, kms=kms), _SEAL_MAGIC, blob, context)
 
 
 def seal_text_for_tenant(tenant_id: str | None, text: str, **kw) -> bytes:
@@ -179,10 +210,11 @@ def rotate_kek(tenant_id: str | None, *, old_kms: KMS, new_kms: KMS) -> None:
     path = _wrapped_dek_path(tenant_id)
     if not path.exists():
         raise EncryptionUnavailable(f"no wrapped DEK for tenant {tenant_id!r} to rotate")
-    dek = old_kms.unwrap(path.read_bytes())
+    context = _tenant_context(tenant_id, b"dek-wrap")
+    dek = old_kms.unwrap(path.read_bytes(), context=context)
     if len(dek) != _DEK_BYTES:
         raise EncryptionUnavailable("unwrapped DEK is malformed")
-    rewrapped = new_kms.wrap(dek)
+    rewrapped = new_kms.wrap(dek, context=context)
     tmp = path.with_suffix(".wrapped.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "wb") as f:
