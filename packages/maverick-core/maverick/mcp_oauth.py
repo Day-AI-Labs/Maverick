@@ -98,9 +98,16 @@ def _default_fetch(cfg: OAuthConfig) -> dict:
 
 
 class OAuthTokenProvider:
-    """Cache + refresh an OAuth access token. Thread-safe; ``token()`` is sync."""
+    """Cache + refresh a client-credentials OAuth access token.
+
+    Thread-safe; ``token()`` is sync. Authorization-code configurations must use
+    :class:`AuthorizationCodeProvider` so the code, redirect URI, and PKCE
+    verifier are sent during token exchange.
+    """
 
     def __init__(self, cfg: OAuthConfig, *, fetch=None):
+        if cfg.grant_type != "client_credentials":
+            raise ValueError("OAuthTokenProvider requires the client_credentials grant")
         self._cfg = cfg
         self._fetch = fetch or _default_fetch
         self._lock = threading.Lock()
