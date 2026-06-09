@@ -10,6 +10,7 @@ import pytest
 from maverick.blackboard import Blackboard
 from maverick.budget import Budget
 from maverick.domain import enabled_domains, suite_for
+from maverick.quarantine import QuarantineRegistry
 from maverick.tools.spawn import list_specialists_tool, spawn_specialist_tool
 
 
@@ -97,3 +98,38 @@ async def test_spawn_specialist_deploys_pack_and_inherits_max_steps(monkeypatch)
     assert rec["depth"] == 1                    # spawned one level down
     assert rec["parent"] is parent              # under the orchestrator (attenuation)
     assert rec["child"].max_steps == 17         # inherited the parent's step budget
+
+
+@pytest.mark.asyncio
+async def test_spawn_specialist_withholds_already_sealed_domain_without_running(monkeypatch):
+    dom = sorted(enabled_domains())[0]
+    ran = False
+
+    def fake_agent_from_profile(profile, ctx, task, *, parent=None, depth=0, principal=None):
+        async def _run():
+            nonlocal ran
+            ran = True
+            return SimpleNamespace(final="SHOULD NOT LEAK", blocked_on_user=False, error=None)
+
+        child = SimpleNamespace(
+            role=profile.name,
+            name=f"agent:{profile.name}-{depth}",
+            domain=profile.compartment,
+            max_steps=None,
+            run=_run,
+        )
+        return child
+
+    quarantine = QuarantineRegistry()
+    quarantine.seal_domain(dom, "prior compromise")
+    parent = _fake_parent(depth=0)
+    parent.ctx.quarantine = quarantine
+
+    monkeypatch.setattr("maverick.domain.agent_from_profile", fake_agent_from_profile)
+
+    out = await spawn_specialist_tool(parent).fn({"domain": dom, "task": "do it"})
+
+    assert not ran
+    assert "output is withheld" in out
+    assert "SHOULD NOT LEAK" not in out
+    assert quarantine.status()["agents_tracked"] == 1
