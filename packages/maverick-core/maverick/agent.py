@@ -872,7 +872,8 @@ class Agent:
                 ) as tmp:
                     tmp.write(patch)
                     tmp_path = tmp.name
-                rel = _os.path.basename(tmp_path)
+                import shlex as _shlex
+                rel = _shlex.quote(_os.path.basename(tmp_path))
                 res = sandbox.exec(f"git apply {rel}", timeout=30)
                 return getattr(res, "exit_code", 1) == 0
             except Exception:

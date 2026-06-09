@@ -494,3 +494,41 @@ class TestHTTPMalformedBody:
                            headers={"Authorization": "Bearer s3cr3t",
                                     "Content-Type": "application/json"})
         assert resp.status_code == 400
+
+
+@pytest.mark.skipif(not _have_fastapi(), reason="fastapi not installed")
+class TestSessionCookieHardening:
+    """The session cookie must never leak over plain HTTP off-box and must
+    not live forever: Secure on non-loopback peers, bounded Max-Age."""
+
+    _AUTH = {"Authorization": "Bearer s3cr3t"}
+    _SUBSCRIBE = {
+        "jsonrpc": "2.0", "id": 1, "method": "resources/subscribe",
+        "params": {"uri": "maverick://runs/recent"},
+    }
+
+    def _app(self):
+        from maverick_mcp.http_transport import build_app
+        from maverick_mcp.server import MCPServer
+        return build_app(MCPServer())
+
+    def test_loopback_peer_cookie_attributes(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        from fastapi.testclient import TestClient
+        resp = TestClient(self._app()).post(
+            "/mcp", json=self._SUBSCRIBE, headers=self._AUTH)
+        cookie = resp.headers["set-cookie"]
+        assert "maverick_mcp_session=" in cookie
+        assert "HttpOnly" in cookie
+        assert "Max-Age=3600" in cookie
+        # Loopback dev over plain http must still receive the cookie.
+        assert "Secure" not in cookie
+
+    def test_non_loopback_peer_gets_secure_cookie(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_MCP_TOKEN", "s3cr3t")
+        from starlette.testclient import TestClient
+        resp = TestClient(self._app(), client=("203.0.113.9", 4444)).post(
+            "/mcp", json=self._SUBSCRIBE, headers=self._AUTH)
+        cookie = resp.headers["set-cookie"]
+        assert "maverick_mcp_session=" in cookie
+        assert "Secure" in cookie

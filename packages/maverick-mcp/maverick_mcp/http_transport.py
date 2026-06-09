@@ -51,6 +51,8 @@ log = logging.getLogger(__name__)
 _MAX_PROGRESS_TOKEN_CHARS = 128
 _DEFAULT_MAX_PROGRESS_EVENTS = 240
 _DEFAULT_MAX_RESOURCE_SESSIONS = 1024
+_SESSION_COOKIE_MAX_AGE = 3600  # seconds; header-based clients re-mint freely
+_LOOPBACK_PEERS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 
 
 try:
@@ -179,6 +181,17 @@ def _is_origin_allowed(request) -> bool:
     if _origin_host_is_loopback(normalized):
         return True
     return normalized in _allowed_origins()
+
+
+def _is_loopback_request(request) -> bool:
+    """True when the request's peer is loopback/in-process.
+
+    Mirrors the dashboard: decides only the cookie ``Secure`` flag, so a
+    real (non-loopback) deployment never sends the session cookie over
+    plain HTTP, while loopback dev over http still works.
+    """
+    host = request.client.host if request.client else ""
+    return host in _LOOPBACK_PEERS
 
 
 def _http_tasks_enabled() -> bool:
@@ -337,15 +350,17 @@ def build_app(server) -> FastAPI:  # noqa: C901
         while len(resource_sessions) > _max_resource_sessions():
             resource_sessions.popitem(last=False)
 
-    def _attach_session(response, sid: str | None):
+    def _attach_session(response, sid: str | None, request: Request):
         if sid is None:
             return response
         response.headers["Mcp-Session-Id"] = sid
         response.set_cookie(
             "maverick_mcp_session",
             sid,
+            max_age=_SESSION_COOKIE_MAX_AGE,
             httponly=True,
             samesite="lax",
+            secure=not _is_loopback_request(request),
         )
         return response
 
@@ -455,7 +470,7 @@ def build_app(server) -> FastAPI:  # noqa: C901
                         })
 
             response = StreamingResponse(_stream(), media_type="text/event-stream")
-            return _attach_session(response, sid)
+            return _attach_session(response, sid, request)
 
         # Blocking JSON path (default). Dispatch runs in a worker thread
         # for the same asyncio.run reason as above.
@@ -472,10 +487,12 @@ def build_app(server) -> FastAPI:  # noqa: C901
                 return _attach_session(
                     Response(status_code=204),
                     sid,
+                    request,
                 )
             return _attach_session(
                 JSONResponse(_error_envelope(request_id, e)),
                 sid,
+                request,
             )
 
         if should_persist_session and sid is not None:
@@ -483,8 +500,8 @@ def build_app(server) -> FastAPI:  # noqa: C901
 
         if is_notification:
             # 204 must carry no body (see above).
-            return _attach_session(Response(status_code=204), sid)
-        return _attach_session(JSONResponse(_result_envelope(request_id, result)), sid)
+            return _attach_session(Response(status_code=204), sid, request)
+        return _attach_session(JSONResponse(_result_envelope(request_id, result)), sid, request)
 
     @app.get("/healthz")
     async def healthz():
