@@ -11,6 +11,7 @@ The API is behind an optional extra:
 
 ```bash
 pip install 'maverick-agent[grpc]'
+export MAVERICK_GRPC_BEARER_TOKEN='replace-with-a-long-random-token'
 python -m maverick.grpc_api --address 127.0.0.1:50051
 ```
 
@@ -43,11 +44,24 @@ service Maverick {
 The full message definitions are in
 [`maverick.proto`](https://github.com/Day-AI-Labs/maverick/blob/main/packages/maverick-core/maverick/grpc_api/maverick.proto).
 
+## Authentication
+
+The server refuses to start unless a bearer token is configured, either with
+`MAVERICK_GRPC_BEARER_TOKEN` or `--bearer-token`. Every RPC must send the token
+in gRPC metadata:
+
+```text
+authorization: Bearer <token>
+```
+
+Clients that omit the token or send the wrong token receive `UNAUTHENTICATED`
+before the request reaches `GoalService`.
+
 ## Notes
 
 - The behaviour lives in a transport-agnostic `GoalService`
   (`maverick.grpc_api.service`); the gRPC layer is a thin protobuf shim, so the
   same logic could back a second transport.
-- The server binds an **insecure** port by default — front it with TLS
+- The server still binds an **insecure** port by default — front it with TLS
   termination / mTLS at your proxy, and gate it with the same network controls
   you use for the dashboard. Do not expose it directly to untrusted networks.
