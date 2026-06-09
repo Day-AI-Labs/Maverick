@@ -110,7 +110,7 @@ for false unless noted otherwise.
 | `MAVERICK_STRICT_TENANT_ISOLATION` | config `[world_model] strict_tenant_isolation` (off) | Postgres reads return ONLY the active tenant's rows (drop NULL-legacy tolerance). Enable after backfilling `tenant_id`. |
 | `MAVERICK_KMS_KEK` | derived from the at-rest key | The per-tenant-DEK Key Encryption Key (32 bytes, hex/base64) for `tenant_kms`. |
 | `MAVERICK_MCP_ANALYTICS` | config `[analytics] mcp_client_language` (off) | Opt-in, consent-gated tally of MCP-client language (feeds the language-bindings gate). |
-| `IRC_ALLOWED_NICKS` | — | Comma-separated allowlist of nicks that may drive the agent over the IRC channel. |
+| `IRC_ALLOWED_ACCOUNTS` | — | Comma-separated allowlist of authenticated IRC account names that may drive the agent over the IRC channel. Requires an IRC server that provides the IRCv3 `account-tag` capability. |
 | `GLASSES_ALLOWED_USER_IDS` | — | Allowlist for the glasses/wearable channel. |
 | `IRC_SERVER` / `IRC_PASSWORD` | config `[channels.irc]` | IRC server host / password. |
 
