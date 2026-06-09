@@ -107,7 +107,8 @@ here.
   dual-control sign-off — distinct approvers, separation of duties, optional roles), `differential_privacy` (Laplace
   mechanism for (epsilon)-DP noisy counts/sums on published stats), `watermark_detector` (find hidden
   text watermarks/steganography — zero-width, tag chars, variation selectors, homoglyphs), `privacy_budget` (account a
-  user's differential-privacy budget — remaining epsilon + allow/deny a query).
+  user's differential-privacy budget — remaining epsilon + allow/deny a query), `capability_delegation` (validate a
+  delegation graph for privilege escalation — fixpoint from root capabilities).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.

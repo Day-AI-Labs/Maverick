@@ -546,6 +546,7 @@ def base_registry(  # noqa: C901
     from .cache_admin import cache_admin
     from .calendar_tool import calendar_tool
     from .calendly_tool import calendly_tool
+    from .capability_delegation import capability_delegation
     from .citation_verifier import citation_verifier
     from .clickup_tool import clickup_tool
     from .clipboard import clipboard
@@ -669,6 +670,7 @@ def base_registry(  # noqa: C901
     reg.register(pandas_query(sandbox))
     reg.register(git_advanced(sandbox))
     reg.register(calendar_tool())
+    reg.register(capability_delegation())
     reg.register(file_watcher(sandbox))
     reg.register(linear())
     reg.register(jira())
