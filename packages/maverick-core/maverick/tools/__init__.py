@@ -572,6 +572,7 @@ def base_registry(  # noqa: C901
     from .linear import linear
     from .memory import memory
     from .mixpanel_tool import mixpanel_tool
+    from .model3d_inspect import model3d_inspect
     from .mongodb_tool import mongodb_tool
     from .msgraph_tool import msgraph_tool
     from .mutation_test import mutation_test
@@ -607,6 +608,7 @@ def base_registry(  # noqa: C901
     from .spreadsheet import spreadsheet
     from .sql_query import sql_query
     from .stripe_tool import stripe_tool
+    from .synthetic_data import synthetic_data
     from .test_gen import test_gen
     from .test_impact import test_impact
     from .translate import translate
@@ -678,6 +680,8 @@ def base_registry(  # noqa: C901
     reg.register(semantic_code_search())
     reg.register(mutation_test())
     reg.register(constrained_output())
+    reg.register(model3d_inspect())
+    reg.register(synthetic_data())
     reg.register(openapi_runner(sandbox))
     reg.register(ocr(sandbox))
     reg.register(posthog_tool())
