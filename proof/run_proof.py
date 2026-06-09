@@ -34,6 +34,12 @@ def _finance(d):
     return {k: v for k, v in d.items() if k.startswith("finance_")}
 
 
+def _check(condition: bool, message: object) -> None:
+    """Raise even when Python assertions are disabled with -O/PYTHONOPTIMIZE."""
+    if not condition:
+        raise AssertionError(message)
+
+
 # --- the guarantees -------------------------------------------------------
 
 def claim_least_privilege():
@@ -43,10 +49,10 @@ def claim_least_privilege():
     d = load_domains(builtin_dir())
     parent = Capability(principal="agent:finance_controller-0", max_risk="high")
     cap = domain_capability(d["finance_ap"], parent, "agent:finance_ap-1")
-    assert cap.max_risk != "high", "pack did not narrow the parent ceiling"
-    assert cap.permits("billdotcom_read"), "can't do its job (read AP)"
-    assert not cap.permits("shell"), "leaked the parent's arbitrary reach"
-    assert not cap.permits("release_payment"), "custody seal broken"
+    _check(cap.max_risk != "high", "pack did not narrow the parent ceiling")
+    _check(cap.permits("billdotcom_read"), "can't do its job (read AP)")
+    _check(not cap.permits("shell"), "leaked the parent's arbitrary reach")
+    _check(not cap.permits("release_payment"), "custody seal broken")
     return f"finance_ap runs at max_risk={cap.max_risk!r} (parent=high): reads AP, no shell, no payments"
 
 
@@ -61,7 +67,7 @@ def claim_no_money_without_a_human():
     for name, prof in d.items():
         cap = domain_capability(prof, parent, f"agent:{name}-1")
         for m in money:
-            assert not cap.permits(m), f"{name} permits money tool {m!r}"
+            _check(not cap.permits(m), f"{name} permits money tool {m!r}")
     return f"no money/posting tool is permitted by any of {len(d)} finance packs"
 
 
@@ -73,9 +79,9 @@ def claim_dollar_tier_authority_gate():
     auto = evaluate("release_payment", policy=p, amount=4000, currency="USD")
     human = evaluate("release_payment", policy=p, amount=6000, currency="USD")
     denied = evaluate("wire_transfer", policy=p, amount=60000, currency="USD")
-    assert auto.decision is Decision.ALLOW, auto
-    assert human.decision is Decision.REQUIRE_HUMAN, human
-    assert denied.decision is Decision.DENY, denied
+    _check(auto.decision is Decision.ALLOW, auto)
+    _check(human.decision is Decision.REQUIRE_HUMAN, human)
+    _check(denied.decision is Decision.DENY, denied)
     return f"$4k release auto, $6k release -> REQUIRE_HUMAN, $60k wire -> DENY (rule={denied.rule})"
 
 
@@ -86,11 +92,14 @@ def claim_fleet_can_read_but_not_write():
     from maverick.tools.enterprise_connectors import enterprise_connectors
     tools = {t.name: t for t in enterprise_connectors()}
     refused = tools["billdotcom_read"].fn({"op": "post", "path": "/x", "confirm": True})
-    assert "read-only" in refused, "read seat accepted a write"
+    _check("read-only" in refused, "read seat accepted a write")
     cap = domain_capability(load_domains(builtin_dir())["finance_ap"],
                             Capability(principal="agent:finance_controller-0", max_risk="high"),
                             "agent:finance_ap-1")
-    assert cap.permits("billdotcom_read") and not cap.permits("billdotcom")
+    _check(
+        cap.permits("billdotcom_read") and not cap.permits("billdotcom"),
+        "finance_ap capability grants unexpected Bill.com access",
+    )
     return "finance_ap reaches billdotcom_read (GET-only); the write connector is refused + capability-denied"
 
 
@@ -100,7 +109,7 @@ def claim_segregation_of_duties_clean():
     from maverick.finance.sod_linter import lint_roster
     d = _finance(load_domains(builtin_dir()))
     conflicts = lint_roster(d)
-    assert not conflicts, f"{len(conflicts)} SoD conflict(s): {conflicts[:2]}"
+    _check(not conflicts, f"{len(conflicts)} SoD conflict(s): {conflicts[:2]}")
     return f"all {len(d)} finance packs SoD-clean (no compartment unions incompatible duties)"
 
 
@@ -115,8 +124,8 @@ def claim_handoffs_are_verified():
                     grant=grant, task="read the invoice")
     ok = auth.verify(env)
     bad = auth.verify(dataclasses.replace(env, task="wire the funds out"))
-    assert ok.ok and ok.grant.permits("ap_read_invoice"), ok
-    assert not bad.ok and bad.rule == "tampered", bad
+    _check(ok.ok and ok.grant.permits("ap_read_invoice"), ok)
+    _check(not bad.ok and bad.rule == "tampered", bad)
     return f"authentic handoff verifies (rule={ok.rule}); tampered copy rejected (rule={bad.rule})"
 
 
@@ -133,11 +142,11 @@ def claim_audit_is_tamper_evident():
         signer.write({"event": "release_payment", "amount": 6000, "decision": "REQUIRE_HUMAN"})
         signer.write({"event": "human_approval", "by": "cfo", "decision": "approved"})
         clean = signing.verify_chain(path, signer.public_key_hex)
-        assert not clean, f"clean chain reported breaks: {clean}"
+        _check(not clean, f"clean chain reported breaks: {clean}")
         rows = path.read_text().splitlines()
         path.write_text("\n".join(rows).replace('"amount": 6000', '"amount": 60') + "\n")
         broken = signing.verify_chain(path, signer.public_key_hex)
-        assert broken, "tampering an audited row was NOT detected"
+        _check(broken, "tampering an audited row was NOT detected")
     return f"2-row signed chain verifies clean; altering an amount is caught ({broken[0].reason})"
 
 

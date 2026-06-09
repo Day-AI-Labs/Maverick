@@ -18,3 +18,18 @@ def test_proof_of_guarantees_passes():
     # the five always-on guarantees must have run and passed
     assert r.stdout.count("[PASS]") >= 5, r.stdout
     assert "[FAIL]" not in r.stdout, r.stdout
+
+
+def test_proof_runtime_checks_survive_optimized_python():
+    repo = Path(__file__).resolve().parents[3]
+    script = repo / "proof" / "run_proof.py"
+    code = (
+        "import importlib.util; "
+        f"spec = importlib.util.spec_from_file_location('run_proof', {str(script)!r}); "
+        "module = importlib.util.module_from_spec(spec); "
+        "spec.loader.exec_module(module); "
+        "module._check(False, 'optimized check still raises')"
+    )
+    r = subprocess.run([sys.executable, "-O", "-c", code], capture_output=True, text=True)
+    assert r.returncode != 0, "proof checks were stripped under optimized Python"
+    assert "optimized check still raises" in r.stderr, r.stderr
