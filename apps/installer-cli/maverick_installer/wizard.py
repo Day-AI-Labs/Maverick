@@ -2246,7 +2246,8 @@ def write_config(  # noqa: C901
         # Advanced reasoning toggles -> the kernel's config sections. Each is
         # off unless the wizard wrote it, matching the modules' own defaults.
         if (advanced.get("cost_aware") or advanced.get("verify_ensemble")
-                or advanced.get("energy_aware")):
+                or advanced.get("energy_aware")
+                or advanced.get("autonomy_gate")):
             lines.append("")
             lines.append("[routing]")
             # Constrain routing features enabled by the wizard to the providers
