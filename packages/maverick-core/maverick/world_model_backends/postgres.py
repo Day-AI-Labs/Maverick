@@ -432,14 +432,19 @@ class PostgresWorldModel:
 
     def set_goal_status(self, goal_id: int, status: str, *, result: str | None = None) -> None:
         now = time.time()
+        frag, fparams = _tenant_scope()
+        sql = (
+            # COALESCE so a status-only update (result=None) doesn't wipe
+            # an existing result -- matches the SQLite backend.
+            "UPDATE goals SET status=%s, result=COALESCE(%s, result), "
+            "updated_at=%s WHERE id=%s"
+        )
+        params: list = [status, result, now, goal_id]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
         with self._tx() as cur:
-            cur.execute(
-                # COALESCE so a status-only update (result=None) doesn't wipe
-                # an existing result -- matches the SQLite backend.
-                "UPDATE goals SET status=%s, result=COALESCE(%s, result), "
-                "updated_at=%s WHERE id=%s",
-                (status, result, now, goal_id),
-            )
+            cur.execute(sql, tuple(params))
 
     def list_active_goals(self, limit: int = 50) -> list[PGGoal]:
         frag, params = _tenant_scope()
@@ -495,33 +500,51 @@ class PostgresWorldModel:
 
     def most_recent_goal(self) -> PGGoal | None:
         """Most-recently-updated goal regardless of status; mirrors SQLite."""
+        frag, params = _tenant_scope()
+        sql = (
+            "SELECT id, parent_id, title, description, status, "
+            "created_at, updated_at, deadline, result FROM goals"
+        )
+        if frag:
+            sql += " WHERE " + frag
+        sql += " ORDER BY updated_at DESC LIMIT 1"
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, parent_id, title, description, status, "
-                "created_at, updated_at, deadline, result FROM goals "
-                "ORDER BY updated_at DESC LIMIT 1"
-            )
+            cur.execute(sql, tuple(params))
             row = cur.fetchone()
         return PGGoal(*row) if row else None
 
     def active_goal(self) -> PGGoal | None:
+        frag, fparams = _tenant_scope()
+        sql = (
+            "SELECT id, parent_id, title, description, status, "
+            "created_at, updated_at, deadline, result FROM goals "
+            "WHERE status IN ('active', 'blocked')"
+        )
+        params: list = []
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        sql += " ORDER BY updated_at DESC LIMIT 1"
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, parent_id, title, description, status, "
-                "created_at, updated_at, deadline, result FROM goals "
-                "WHERE status IN ('active', 'blocked') ORDER BY updated_at DESC LIMIT 1"
-            )
+            cur.execute(sql, tuple(params))
             row = cur.fetchone()
         return PGGoal(*row) if row else None
 
     def inflight_goal(self) -> PGGoal | None:
         """Most-recently-updated in-flight goal (active/pending); mirrors SQLite."""
+        frag, fparams = _tenant_scope()
+        sql = (
+            "SELECT id, parent_id, title, description, status, "
+            "created_at, updated_at, deadline, result FROM goals "
+            "WHERE status IN ('active', 'pending')"
+        )
+        params: list = []
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        sql += " ORDER BY updated_at DESC LIMIT 1"
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, parent_id, title, description, status, "
-                "created_at, updated_at, deadline, result FROM goals "
-                "WHERE status IN ('active', 'pending') ORDER BY updated_at DESC LIMIT 1"
-            )
+            cur.execute(sql, tuple(params))
             row = cur.fetchone()
         return PGGoal(*row) if row else None
 
@@ -529,29 +552,40 @@ class PostgresWorldModel:
         """Goals with comparable text for recall (mirrors SQLite). Finished set
         is the written vocabulary done/blocked/cancelled, not the never-written
         succeeded/failed the old query used."""
-        text_clause = "(COALESCE(title, '') != '' OR COALESCE(description, '') != '')"
-        if include_running:
-            where = f"WHERE {text_clause}"
-        else:
-            where = f"WHERE status IN ('done', 'blocked', 'cancelled') AND {text_clause}"
+        conds = ["(COALESCE(title, '') != '' OR COALESCE(description, '') != '')"]
+        params: list = []
+        if not include_running:
+            conds.insert(0, "status IN ('done', 'blocked', 'cancelled')")
+        frag, fparams = _tenant_scope()
+        if frag:
+            conds.append(frag)
+            params += fparams
+        params.append(limit)
         with self._tx() as cur:
             cur.execute(
                 "SELECT id, parent_id, title, description, status, created_at, "
-                f"updated_at, deadline, result FROM goals {where} "
-                "ORDER BY updated_at DESC LIMIT %s",
-                (limit,),
+                "updated_at, deadline, result FROM goals WHERE "
+                + " AND ".join(conds)
+                + " ORDER BY updated_at DESC LIMIT %s",
+                tuple(params),
             )
             rows = cur.fetchall()
         return [PGGoal(*r) for r in rows]
 
     def subgoals(self, parent_id: int, limit: int = 50) -> list[PGGoal]:
+        frag, fparams = _tenant_scope()
+        sql = (
+            "SELECT id, parent_id, title, description, status, created_at, "
+            "updated_at, deadline, result FROM goals WHERE parent_id = %s"
+        )
+        params: list = [parent_id]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        sql += " ORDER BY created_at ASC LIMIT %s"
+        params.append(limit)
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, parent_id, title, description, status, created_at, "
-                "updated_at, deadline, result FROM goals WHERE parent_id = %s "
-                "ORDER BY created_at ASC LIMIT %s",
-                (parent_id, limit),
-            )
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return [PGGoal(*r) for r in rows]
 
@@ -566,14 +600,19 @@ class PostgresWorldModel:
         """
         cutoff = time.time() - max_age_seconds
         now = time.time()
+        frag, fparams = _tenant_scope()
+        sql = (
+            "UPDATE goals SET status = 'blocked', "
+            "result = COALESCE(result, '') || ' [process restarted mid-run]', "
+            "updated_at = %s "
+            "WHERE status IN ('active', 'pending') AND updated_at < %s"
+        )
+        params: list = [now, cutoff]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
         with self._tx() as cur:
-            cur.execute(
-                "UPDATE goals SET status = 'blocked', "
-                "result = COALESCE(result, '') || ' [process restarted mid-run]', "
-                "updated_at = %s "
-                "WHERE status IN ('active', 'pending') AND updated_at < %s",
-                (now, cutoff),
-            )
+            cur.execute(sql, tuple(params))
             return cur.rowcount
 
     # ----- episodes -----
@@ -634,32 +673,46 @@ class PostgresWorldModel:
     def list_episodes(self, limit: int = 50, goal_id: int | None = None) -> list:
         from ..world_model import EpisodeSpend
         cols = (
-            "id, goal_id, started_at, ended_at, outcome, "
-            "COALESCE(cost_dollars, 0), COALESCE(input_tokens, 0), "
-            "COALESCE(output_tokens, 0), COALESCE(tool_calls, 0)"
+            "e.id, e.goal_id, e.started_at, e.ended_at, e.outcome, "
+            "COALESCE(e.cost_dollars, 0), COALESCE(e.input_tokens, 0), "
+            "COALESCE(e.output_tokens, 0), COALESCE(e.tool_calls, 0)"
         )
+        frag, fparams = _tenant_scope("g.tenant_id")
+        conds: list[str] = []
+        params: list = []
+        table = "episodes e"
+        if frag:
+            table += " JOIN goals g ON g.id = e.goal_id"
+        if goal_id is not None:
+            conds.append("e.goal_id = %s")
+            params.append(goal_id)
+        if frag:
+            conds.append(frag)
+            params += fparams
+        sql = f"SELECT {cols} FROM {table}"
+        if conds:
+            sql += " WHERE " + " AND ".join(conds)
+        sql += " ORDER BY e.started_at DESC LIMIT %s"
+        params.append(limit)
         with self._tx() as cur:
-            if goal_id is not None:
-                cur.execute(
-                    f"SELECT {cols} FROM episodes WHERE goal_id = %s "
-                    "ORDER BY started_at DESC LIMIT %s",
-                    (goal_id, limit),
-                )
-            else:
-                cur.execute(
-                    f"SELECT {cols} FROM episodes ORDER BY started_at DESC LIMIT %s",
-                    (limit,),
-                )
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return [EpisodeSpend(*r) for r in rows]
 
     def total_spend(self) -> dict[str, float]:
+        frag, params = _tenant_scope("g.tenant_id")
+        table = "episodes e"
+        if frag:
+            table += " JOIN goals g ON g.id = e.goal_id"
+        sql = (
+            "SELECT COALESCE(SUM(e.cost_dollars), 0), COALESCE(SUM(e.input_tokens), 0), "
+            "COALESCE(SUM(e.output_tokens), 0), COUNT(*) "
+            f"FROM {table} WHERE e.ended_at IS NOT NULL"
+        )
+        if frag:
+            sql += " AND " + frag
         with self._tx() as cur:
-            cur.execute(
-                "SELECT COALESCE(SUM(cost_dollars), 0), COALESCE(SUM(input_tokens), 0), "
-                "COALESCE(SUM(output_tokens), 0), COUNT(*) "
-                "FROM episodes WHERE ended_at IS NOT NULL"
-            )
+            cur.execute(sql, tuple(params))
             row = cur.fetchone()
         return {
             "dollars": row[0],
@@ -682,12 +735,22 @@ class PostgresWorldModel:
 
     def goal_events(self, goal_id: int, since_id: int = 0, limit: int = 200) -> list:
         from ..world_model import GoalEvent
+        frag, fparams = _tenant_scope("g.tenant_id")
+        table = "goal_events ge"
+        if frag:
+            table += " JOIN goals g ON g.id = ge.goal_id"
+        sql = (
+            "SELECT ge.id, ge.goal_id, ge.agent, ge.kind, ge.content, ge.ts "
+            f"FROM {table} WHERE ge.goal_id=%s AND ge.id > %s"
+        )
+        params: list = [goal_id, since_id]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        sql += " ORDER BY ge.id ASC LIMIT %s"
+        params.append(limit)
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, goal_id, agent, kind, content, ts FROM goal_events "
-                "WHERE goal_id=%s AND id > %s ORDER BY id ASC LIMIT %s",
-                (goal_id, since_id, limit),
-            )
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return [GoalEvent(*r) for r in rows]
 
@@ -1101,13 +1164,23 @@ class PostgresWorldModel:
         if not query or not query.strip():
             return []
         cols = ["id", "goal_id", "role", "content", "ts"]
+        select_cols = [f"m.{c}" for c in cols]
+        frag, fparams = _tenant_scope("g.tenant_id")
+        table = "messages m"
+        if frag:
+            table += " JOIN goals g ON g.id = m.goal_id"
+        sql = (
+            f"SELECT {', '.join(select_cols)} FROM {table} "
+            "WHERE to_tsvector('english', m.content) @@ plainto_tsquery('english', %s)"
+        )
+        params: list = [query]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        sql += " ORDER BY m.ts DESC LIMIT %s"
+        params.append(limit)
         with self._tx() as cur:
-            cur.execute(
-                f"SELECT {', '.join(cols)} FROM messages "
-                "WHERE to_tsvector('english', content) @@ plainto_tsquery('english', %s) "
-                "ORDER BY ts DESC LIMIT %s",
-                (query, limit),
-            )
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return [dict(zip(cols, r)) for r in rows]
 
@@ -1128,12 +1201,21 @@ class PostgresWorldModel:
 
     def list_attachments(self, goal_id: int) -> list:
         from ..world_model import Attachment
+        frag, fparams = _tenant_scope("g.tenant_id")
+        table = "attachments a"
+        if frag:
+            table += " JOIN goals g ON g.id = a.goal_id"
+        sql = (
+            "SELECT a.id, a.goal_id, a.filename, a.mime, a.size_bytes, a.sha256, "
+            f"a.path, a.created_at FROM {table} WHERE a.goal_id = %s"
+        )
+        params: list = [goal_id]
+        if frag:
+            sql += " AND " + frag
+            params += fparams
+        sql += " ORDER BY a.id"
         with self._tx() as cur:
-            cur.execute(
-                "SELECT id, goal_id, filename, mime, size_bytes, sha256, path, "
-                "created_at FROM attachments WHERE goal_id = %s ORDER BY id",
-                (goal_id,),
-            )
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
         return [Attachment(*r) for r in rows]
 
