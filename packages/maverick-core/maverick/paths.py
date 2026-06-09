@@ -55,16 +55,27 @@ def _tenant_segment(tenant: str) -> str:
     return segment
 
 
+def current_tenant_id() -> str | None:
+    """The active raw tenant id, or ``None`` for the shared/legacy root.
+
+    Explicit :func:`set_tenant` scope wins over the ``MAVERICK_TENANT`` env var.
+    Unlike :func:`current_tenant`, this returns the operator-facing tenant id
+    before path encoding so config lookups can use natural tenant keys.
+    """
+    t = _TENANT.get()
+    if t:
+        return t
+    env = os.environ.get("MAVERICK_TENANT", "").strip()
+    return env or None
+
+
 def current_tenant() -> str | None:
     """The active tenant id (path-encoded), or ``None`` for the shared/legacy root.
 
     Explicit :func:`set_tenant` scope wins over the ``MAVERICK_TENANT`` env var.
     """
-    t = _TENANT.get()
-    if t:
-        return _tenant_segment(t)
-    env = os.environ.get("MAVERICK_TENANT", "").strip()
-    return _tenant_segment(env) if env else None
+    tenant = current_tenant_id()
+    return _tenant_segment(tenant) if tenant else None
 
 
 def set_tenant(tenant: str | None):
@@ -155,6 +166,7 @@ def tenant_scope(
 
 
 __all__ = [
+    "current_tenant_id",
     "current_tenant",
     "set_tenant",
     "reset_tenant",
