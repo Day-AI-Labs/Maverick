@@ -1069,6 +1069,7 @@ async def run_goal(  # noqa: C901
                     verifier_critique=result.verifier_critique,
                     disagreement_entropy=float(entropy or 0.0),
                     agent_credit=dict(getattr(ctx, "last_credit", {}) or {}),
+                    sub_trajectories=list(getattr(ctx, "last_subtrajectories", []) or []),
                     wall_seconds=budget.elapsed(),
                     cost_dollars=budget.dollars,
                     tokens_in=budget.input_tokens,

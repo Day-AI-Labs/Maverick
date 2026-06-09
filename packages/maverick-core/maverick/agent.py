@@ -920,6 +920,14 @@ class Agent:
             pass
 
     async def _run_tool(self, name: str, args: dict) -> str:  # noqa: C901
+        # Record the tool name on this agent's action sequence so a parent can
+        # capture per-sub-agent trajectories (maverick.credit.build_subtrajectories).
+        # Tool NAMES only -- never args -- so this carries no secrets. Lazy-init
+        # to avoid touching the constructor.
+        acts = getattr(self, "_actions", None)
+        if acts is None:
+            acts = self._actions = []
+        acts.append(name)
         # Compartment Rung 1: a sealed agent runs no further tools. Its prior
         # blackboard posts are also withheld (see Blackboard.render).
         q = getattr(self.ctx, "quarantine", None)

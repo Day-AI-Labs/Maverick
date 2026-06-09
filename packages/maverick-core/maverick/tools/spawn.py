@@ -415,6 +415,17 @@ def spawn_swarm_tool(parent: Agent) -> Tool:  # noqa: C901
                         )
                     except Exception:  # pragma: no cover -- stats never block
                         pass
+                    # Per-sub-agent trajectory capture: pair each contributor's
+                    # action sequence with its credit + learn-weight so the data
+                    # engine learns from real sub-trajectories, not just a credit
+                    # map on the goal record.
+                    _items = [
+                        (c.role, c.name, list(getattr(c, "_actions", []) or []))
+                        for c in children if c.name in contribs
+                    ]
+                    parent.ctx.last_subtrajectories = _credit.build_subtrajectories(
+                        _items, cmap,
+                    )
         except (_BE, _ks.Halted):
             raise
         except Exception:  # pragma: no cover -- CSCA must never break the loop

@@ -12,6 +12,7 @@ import hashlib
 import json
 import random
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 def _config_id(config: dict) -> str:
@@ -98,6 +99,42 @@ class Archive:
             return 0.0
         differing = sum(1 for k in keys if a.get(k) != b.get(k))
         return differing / len(keys)
+
+    # -- persistence: a continuous evolution loop accumulates across rounds/runs --
+    def to_dict(self) -> dict:
+        return {
+            "capacity": self.capacity,
+            "candidates": [
+                {"config": c.config, "score": c.score, "id": c.id}
+                for c in self.candidates
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Archive:
+        arch = cls(capacity=int(data.get("capacity", 50)))
+        for c in data.get("candidates", []):
+            if isinstance(c, dict) and isinstance(c.get("config"), dict):
+                arch.candidates.append(
+                    Candidate(config=c["config"], score=float(c.get("score", 0.0)))
+                )
+        return arch
+
+    def save(self, path: str | Path) -> None:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
+
+    @classmethod
+    def load(cls, path: str | Path) -> Archive:
+        """Load a persisted archive, or return a fresh one if absent/corrupt."""
+        p = Path(path)
+        if not p.exists():
+            return cls()
+        try:
+            return cls.from_dict(json.loads(p.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
+            return cls()
 
 
 __all__ = ["Candidate", "Archive"]
