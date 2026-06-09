@@ -14,12 +14,19 @@ from maverick_channels.irc import (
 )
 
 
-def test_parse_line_with_prefix_and_trailing():
-    m = parse_line(":alice!u@host PRIVMSG #room :hello world\r\n")
+def test_parse_line_with_prefix_tags_and_trailing():
+    m = parse_line("@account=alice :alice!u@host PRIVMSG #room :hello world\r\n")
     assert m.command == "PRIVMSG"
     assert m.sender_nick == "alice"
+    assert m.sender_account == "alice"
     assert m.params == ["#room"]
     assert m.trailing == "hello world"
+
+
+def test_parse_line_unauthenticated_account_is_empty():
+    m = parse_line("@account=* :alice!u@host PRIVMSG #room :hello world")
+    assert m.sender_nick == "alice"
+    assert m.sender_account == ""
 
 
 def test_parse_line_blank_is_none():
@@ -34,10 +41,10 @@ def test_ping_pong():
 
 
 def test_parse_privmsg_room_vs_dm():
-    room = parse_privmsg(parse_line(":bob!u@h PRIVMSG #chan :hi"), own_nick="mav")
+    room = parse_privmsg(parse_line("@account=bob :bob!u@h PRIVMSG #chan :hi"), own_nick="mav")
     assert room == ("bob", "#chan", "hi")  # reply to the channel
-    dm = parse_privmsg(parse_line(":bob!u@h PRIVMSG mav :hi"), own_nick="mav")
-    assert dm == ("bob", "bob", "hi")      # reply to the sender
+    dm = parse_privmsg(parse_line("@account=bob :bob!u@h PRIVMSG mav :hi"), own_nick="mav")
+    assert dm == ("bob", "bob", "hi")      # reply to the sender nick
 
 
 def test_parse_privmsg_ignores_non_privmsg():
@@ -81,7 +88,7 @@ def test_dispatch_allowed_sender_replies():
         sent.append(line)
 
     ch._send_line = fake_send  # type: ignore[assignment]
-    asyncio.run(ch._handle_raw(":alice!u@h PRIVMSG #chan :do it\r\n"))
+    asyncio.run(ch._handle_raw("@account=alice :alice!u@h PRIVMSG #chan :do it\r\n"))
     assert sent == ["PRIVMSG #chan :on it"]
 
 
@@ -97,8 +104,42 @@ def test_dispatch_blocks_disallowed_sender():
         sent.append(line)
 
     ch._send_line = fake_send  # type: ignore[assignment]
-    asyncio.run(ch._handle_raw(":mallory!u@h PRIVMSG #chan :pwn\r\n"))
+    asyncio.run(ch._handle_raw("@account=mallory :mallory!u@h PRIVMSG #chan :pwn\r\n"))
     assert sent == []  # ignored
+
+
+def test_dispatch_blocks_allowlisted_nick_without_account_tag():
+    sent = []
+
+    async def handler(msg):  # pragma: no cover -- must not be called
+        return "should not run"
+
+    ch = IRCChannel(handler, "irc.example", nick="mav", allowed_user_ids=["alice"])
+
+    async def fake_send(line):
+        sent.append(line)
+
+    ch._send_line = fake_send  # type: ignore[assignment]
+    asyncio.run(ch._handle_raw(":alice!evil@attacker.invalid PRIVMSG #chan :pwn\r\n"))
+    assert sent == []  # ignored; nick alone is not authentication
+
+
+def test_dispatch_blocks_allowlisted_nick_with_different_account():
+    sent = []
+
+    async def handler(msg):  # pragma: no cover -- must not be called
+        return "should not run"
+
+    ch = IRCChannel(handler, "irc.example", nick="mav", allowed_user_ids=["alice"])
+
+    async def fake_send(line):
+        sent.append(line)
+
+    ch._send_line = fake_send  # type: ignore[assignment]
+    asyncio.run(ch._handle_raw(
+        "@account=mallory :alice!evil@attacker.invalid PRIVMSG #chan :pwn\r\n",
+    ))
+    assert sent == []  # ignored; authorization uses the authenticated account
 
 
 def test_ping_is_answered_in_loop():

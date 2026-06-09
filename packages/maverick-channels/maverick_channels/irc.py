@@ -1,8 +1,9 @@
 """IRC channel adapter (RFC 1459 / 2812).
 
 Drives Maverick from an IRC channel or direct message. The agent joins one or
-more channels on a server, answers messages from allow-listed nicks, and replies
-with PRIVMSG. TLS is supported (``[channels.irc] tls = true``).
+more channels on a server, answers messages from allow-listed authenticated IRC
+accounts, and replies with PRIVMSG. TLS is supported
+(``[channels.irc] tls = true``).
 
 Set up (``[channels.irc]``)::
 
@@ -11,7 +12,8 @@ Set up (``[channels.irc]``)::
     tls      = true
     nick     = "maverickbot"
     channels = ["#maverick"]
-    # IRC_ALLOWED_NICKS, comma-separated, restricts who can drive the agent.
+    # IRC_ALLOWED_ACCOUNTS, comma-separated, restricts who can drive the agent.
+    # The IRC server must support the IRCv3 account-tag capability.
 
 The wire protocol is line-based; the parse/format helpers below are pure and
 unit-tested. The socket transport (:meth:`IRCChannel.start`) needs a live IRC
@@ -38,11 +40,50 @@ class IRCMessage:
     command: str
     params: list[str]
     trailing: str
+    tags: dict[str, str]
 
     @property
     def sender_nick(self) -> str:
         """The nick from ``nick!user@host``, or the bare prefix."""
         return self.prefix.split("!", 1)[0] if self.prefix else ""
+
+    @property
+    def sender_account(self) -> str:
+        """The authenticated IRCv3 account name, or empty if unauthenticated."""
+        account = self.tags.get("account", "").strip()
+        return "" if account == "*" else account
+
+
+def _unescape_tag_value(value: str) -> str:
+    """Decode IRCv3 message-tag escapes."""
+    replacements = {
+        ":": ";",
+        "s": " ",
+        "\\": "\\",
+        "r": "\r",
+        "n": "\n",
+    }
+    out: list[str] = []
+    i = 0
+    while i < len(value):
+        char = value[i]
+        if char == "\\" and i + 1 < len(value):
+            i += 1
+            out.append(replacements.get(value[i], value[i]))
+        else:
+            out.append(char)
+        i += 1
+    return "".join(out)
+
+
+def _parse_tags(raw_tags: str) -> dict[str, str]:
+    tags: dict[str, str] = {}
+    for item in raw_tags.split(";"):
+        if not item:
+            continue
+        key, sep, value = item.partition("=")
+        tags[key] = _unescape_tag_value(value) if sep else ""
+    return tags
 
 
 def parse_line(line: str) -> IRCMessage | None:
@@ -50,6 +91,10 @@ def parse_line(line: str) -> IRCMessage | None:
     line = line.rstrip("\r\n")
     if not line:
         return None
+    tags: dict[str, str] = {}
+    if line.startswith("@"):
+        raw_tags, _, line = line[1:].partition(" ")
+        tags = _parse_tags(raw_tags)
     prefix = ""
     if line.startswith(":"):
         prefix, _, line = line[1:].partition(" ")
@@ -61,7 +106,7 @@ def parse_line(line: str) -> IRCMessage | None:
     command = tokens[0].upper()
     params = tokens[1:]
     return IRCMessage(prefix=prefix, command=command, params=params,
-                      trailing=trailing if sep else "")
+                      trailing=trailing if sep else "", tags=tags)
 
 
 def is_ping(msg: IRCMessage) -> bool:
@@ -75,16 +120,17 @@ def pong_for(msg: IRCMessage) -> str:
 
 
 def parse_privmsg(msg: IRCMessage, *, own_nick: str) -> tuple[str, str, str] | None:
-    """For a PRIVMSG, return ``(sender_nick, reply_target, text)``.
+    """For a PRIVMSG, return ``(sender_account, reply_target, text)``.
 
-    ``reply_target`` is the channel for a room message, or the sender for a DM
-    (a PRIVMSG addressed to our own nick). Returns ``None`` for non-PRIVMSG."""
+    ``sender_account`` is the authenticated account from the IRCv3 account tag.
+    ``reply_target`` is the channel for a room message, or the sender nick for a
+    DM (a PRIVMSG addressed to our own nick). Returns ``None`` for non-PRIVMSG."""
     if msg.command != "PRIVMSG" or not msg.params:
         return None
     target = msg.params[0]
-    sender = msg.sender_nick
+    sender = msg.sender_account
     text = msg.trailing
-    reply_target = sender if target == own_nick else target
+    reply_target = msg.sender_nick if target == own_nick else target
     return sender, reply_target, text
 
 
@@ -128,10 +174,15 @@ class IRCChannel(Channel):
         self.tls = bool(tls)
         self.channels = list(channels or [])
         self.password = password
-        # Without an allowlist any nick could drive the agent; default-deny.
-        self.allowed_user_ids = normalize_allowlist(allowed_user_ids, "IRC_ALLOWED_NICKS")
+        # Without an account allowlist any authenticated IRC account could drive
+        # the agent; default-deny. Do not authorize by nick, which is spoofable.
+        self.allowed_user_ids = normalize_allowlist(
+            allowed_user_ids, "IRC_ALLOWED_ACCOUNTS",
+        )
         if not self.allowed_user_ids:
-            raise ValueError("Set IRC_ALLOWED_NICKS to restrict who can drive the agent")
+            raise ValueError(
+                "Set IRC_ALLOWED_ACCOUNTS to restrict who can drive the agent",
+            )
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._running = False
@@ -149,8 +200,11 @@ class IRCChannel(Channel):
         self._running = True
         if self.password:
             await self._send_line(f"PASS {self.password}")
+        await self._send_line("CAP LS 302")
+        await self._send_line("CAP REQ :account-tag")
         await self._send_line(f"NICK {self.nick}")
         await self._send_line(f"USER {self.nick} 0 * :Maverick agent")
+        await self._send_line("CAP END")
         for chan in self.channels:
             await self._send_line(f"JOIN {chan}")
         while self._running:
