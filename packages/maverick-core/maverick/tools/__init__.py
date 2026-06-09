@@ -529,11 +529,13 @@ def base_registry(  # noqa: C901
     from .budget_status import budget_status
     from .calendar_tool import calendar_tool
     from .calendly_tool import calendly_tool
+    from .citation_verifier import citation_verifier
     from .clickup_tool import clickup_tool
     from .clipboard import clipboard
     from .cloudflare_tool import cloudflare_tool
     from .compute import compute
     from .confluence_tool import confluence_tool
+    from .cross_repo_deps import cross_repo_deps
     from .currency import currency
     from .datadog_tool import datadog_tool
     from .dep_graph import dep_graph
@@ -563,6 +565,7 @@ def base_registry(  # noqa: C901
     from .imagemagick_tool import imagemagick_tool
     from .ios_sim import ios_sim
     from .jira import jira
+    from .knowledge_graph import knowledge_graph
     from .kv_memory import kv_memory
     from .lambda_tool import lambda_tool
     from .linear import linear
@@ -601,6 +604,7 @@ def base_registry(  # noqa: C901
     from .spreadsheet import spreadsheet
     from .sql_query import sql_query
     from .stripe_tool import stripe_tool
+    from .test_gen import test_gen
     from .test_impact import test_impact
     from .translate import translate
     from .trello_tool import trello_tool
@@ -664,6 +668,10 @@ def base_registry(  # noqa: C901
     reg.register(hackernews())
     reg.register(dns_lookup())
     reg.register(geocode())
+    reg.register(knowledge_graph())
+    reg.register(citation_verifier())
+    reg.register(cross_repo_deps())
+    reg.register(test_gen())
     reg.register(openapi_runner(sandbox))
     reg.register(ocr(sandbox))
     reg.register(posthog_tool())
