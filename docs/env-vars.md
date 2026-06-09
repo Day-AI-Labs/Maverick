@@ -103,6 +103,22 @@ for false unless noted otherwise.
 | `MAVERICK_ORPHAN_RECLAIM_SECONDS` | code default | Seconds before orphaned world-model goal locks are reclaimed. |
 | `MAVERICK_BLACKBOARD_MAX_ENTRIES` | `5000` (min 100) | Max entries retained in the shared blackboard. |
 
+## Hosted control plane & multi-tenancy
+
+| Env var | Default | Description |
+| --- | --- | --- |
+| `MAVERICK_STRICT_TENANT_ISOLATION` | config `[world_model] strict_tenant_isolation` (off) | Postgres reads return ONLY the active tenant's rows (drop NULL-legacy tolerance). Enable after backfilling `tenant_id`. |
+| `MAVERICK_KMS_KEK` | derived from the at-rest key | The per-tenant-DEK Key Encryption Key (32 bytes, hex/base64) for `tenant_kms`. |
+| `MAVERICK_MCP_ANALYTICS` | config `[analytics] mcp_client_language` (off) | Opt-in, consent-gated tally of MCP-client language (feeds the language-bindings gate). |
+| `IRC_ALLOWED_NICKS` | — | Comma-separated allowlist of nicks that may drive the agent over the IRC channel. |
+| `GLASSES_ALLOWED_USER_IDS` | — | Allowlist for the glasses/wearable channel. |
+| `IRC_SERVER` / `IRC_PASSWORD` | config `[channels.irc]` | IRC server host / password. |
+
+Config-only knobs (no env var): `[queue] backend = "arq"` (out-of-process goal
+execution), `[billing.plans]` (override plan entitlements), `[egress]` /
+`[tenancy.egress.<t>]` (per-tenant egress plane). Tenants are managed with
+`maverick tenant …`; invoices/entitlements with `maverick billing …`.
+
 ## Compaction & context
 
 | Env var | Default | Description |
