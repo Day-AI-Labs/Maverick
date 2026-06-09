@@ -552,6 +552,7 @@ def base_registry(  # noqa: C901
     from .compute import compute
     from .confluence_tool import confluence_tool
     from .constrained_output import constrained_output
+    from .container_build import container_build
     from .cross_repo_deps import cross_repo_deps
     from .currency import currency
     from .datadog_tool import datadog_tool
@@ -706,6 +707,7 @@ def base_registry(  # noqa: C901
     reg.register(cache_admin())
     reg.register(openapi_runner(sandbox))
     reg.register(ocr(sandbox))
+    reg.register(container_build(sandbox))
     reg.register(posthog_tool())
     reg.register(shopify_tool())
     reg.register(mongodb_tool())

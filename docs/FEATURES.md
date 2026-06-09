@@ -93,7 +93,8 @@ here.
   HTML into a compact accessibility tree — landmarks/headings/links/controls —
   for a 5-10x token cut), `cache_admin` (inspect/purge the
   tool-output cache — stats or targeted purge), `error_patterns` (cluster noisy
-  error/log lines into ranked patterns by normalised signature).
+  error/log lines into ranked patterns by normalised signature), `container_build` (build a
+  container image from a Dockerfile via sandbox-mediated `docker build`).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
