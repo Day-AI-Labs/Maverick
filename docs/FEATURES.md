@@ -40,6 +40,11 @@ here.
 - **Local continuous learning** — distill successful run trajectories into a
   reusable, validator-compliant `SKILL.md` under `~/.maverick/learned-skills`
   (`skill_distillation_local.py`), opt-in via `[self_learning] distill_local`.
+- **Vector-store cross-run memory** — opt-in `[memory] backend` routes
+  cross-run recall through a persistent **Chroma / Qdrant** store
+  (`vector_store/`, `semantic_recall.py`) so similarity search is indexed and
+  incremental instead of a linear re-embed scan; fail-open and
+  dependency-injectable — the kernel never *requires* a vector store.
 
 ## Tools
 
@@ -64,7 +69,8 @@ here.
   `diagram` (Graphviz / Mermaid render).
 - **Knowledge** — `knowledge_search` (per-domain RAG over collected docs),
   `recall`, `kv_memory`.
-- **Productivity & SaaS connectors (~47)** — GitHub Actions, GitLab, Jira, Linear,
+- **Productivity & SaaS connectors (~47)** — GitHub Actions, GitLab,
+  Bitbucket (issues / PRs / pipelines), Jira, Linear,
   Asana, Trello, ClickUp, Confluence, Notion, Obsidian, Slack, Discord, Gmail,
   Google Drive, Dropbox, Calendar, Salesforce, HubSpot, Stripe, Shopify, Plaid,
   Twilio, Zoom, S3, DynamoDB, MongoDB, Redis, Elasticsearch, Datadog, Sentry,
@@ -142,8 +148,9 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
 
 - **MCP server** (`packages/maverick-mcp/`) — stdio JSON-RPC **and** Streamable
   HTTP transport; tool `outputSchema`, resource subscriptions.
-- **Elicitation** — client inbound (policy + shield) and server outbound form
-  mode.
+- **Elicitation** — client inbound (policy + shield); server outbound **form
+  mode** and **URL mode** (https-only, shield-screened prompt, action-only
+  response so secrets never transit the model).
 - **MCP Tasks (2025-11-25)** — task-augmented `tools/call` → `CreateTaskResult`,
   background worker, `tasks/get|result|cancel|list`, status notifications.
 - **MCP client** (`mcp_client.py`) — consume remote HTTP servers; **OAuth 2.1
@@ -161,7 +168,8 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   LangChain `BaseTool` as a Maverick tool.
 - **MCP-client language analytics** (`mcp_analytics.py`) — opt-in, consent-gated
   tally of client language (from the User-Agent) that feeds the language-bindings
-  decision gate (`non_python_share()`); off by default.
+  decision gate (`non_python_share()`); off by default, consent step in the
+  installer wizard (`maverick init` → Analytics).
 
 ## Safety & security
 
@@ -174,7 +182,9 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   **operator-defined constitutional rules** (custom regex policy via `[safety]
   constitution`, `maverick_shield/constitutional.py`),
   Constitutional-Classifier-v2 cascade (`safety/`, `maverick_shield/`).
-- **Access control** — tool ACLs, consent prompts, capability tokens
+- **Access control** — tool ACLs, consent prompts + a persistent **consent
+  ledger** (`safety/consent.py`; `MAVERICK_CONSENT_MODE` =
+  auto-approve / auto-deny / ask / dashboard), capability tokens
   (`capability.py`), role-based access control over capabilities, the
   `self_capability` self-report tool, **approval delegation rules**
   (risk/scope-based routing, `approval_delegation.py`), per-tool network egress
@@ -182,6 +192,8 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
 - **Audit & compliance** — signed append-only audit log (`maverick audit verify`),
   date-windowed **SIEM export**, encryption-at-rest (`crypto_at_rest.py`,
   `maverick encryption migrate`), SOC2 readiness (`soc2.py`), DSAR (`dsar.py`),
+  **data-retention enforcement** (`audit/retention.py`, opt-in `[retention]`
+  config, `maverick retention enforce [--dry-run]`),
   per-run file-write + tool quotas, `maverick compliance --strict`, CycloneDX
   SBOM in CI.
 - **Sandbox-escape canaries**, per-tool rate limiter, killswitch.
@@ -202,7 +214,10 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   (sox_control / fraud_risk / itgc / credit_risk / close_readiness),
   compliance-regime packs (SOX/COSO/GAAP/PCI/GLBA/AML/SEC/IRS, strictest-wins),
   and the `maverick finance status` posture report (`maverick/finance/`).
-- **maverick-knowledge** — per-domain vector RAG package backing `knowledge_search`.
+- **maverick-knowledge** — per-domain vector RAG package backing
+  `knowledge_search`; config-selected embedders (`embed.py`): hosted **Voyage**
+  (or any OpenAI-compatible endpoint), local, or deterministic — fails loud
+  rather than silently degrading.
 - **Reverse-proxy SSO** — trusted forwarded-identity header for enterprise auth.
 - **Tenant-aware persistence** — workspaces wall each tenant into
   `~/.maverick/tenants/<t>/` (`workspace.py`, `paths.py`), with a per-tenant
