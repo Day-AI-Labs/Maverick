@@ -23,6 +23,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import tempfile
+import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
 from .paths import data_dir
@@ -30,6 +33,42 @@ from .paths import data_dir
 log = logging.getLogger(__name__)
 
 _TRUE = {"1", "true", "yes", "on"}
+
+# Serializes the ledger read-modify-write across threads in this process; the
+# flock below extends that across processes (dashboard + serve sharing a tenant
+# ledger). Without it, two concurrent record()s load the same totals and the
+# second save clobbers the first -- spend is undercounted and a principal slips
+# past its quota.
+_RECORD_LOCK = threading.Lock()
+
+
+@contextmanager
+def _cross_process_lock(target):
+    """Advisory exclusive lock over the ledger's read-modify-write, keyed on a
+    stable sidecar file (never the ledger itself -- os.replace swaps its inode).
+    POSIX-only; degrades to a no-op where fcntl/flock is unavailable."""
+    lock_path = target.parent / (target.name + ".lock")
+    fd = None
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o600)
+    except OSError:
+        yield  # cannot create the lock file -> proceed best-effort
+        return
+    try:
+        try:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        except (ImportError, OSError):
+            pass  # non-POSIX / exotic FS -> in-process lock still applies
+        yield
+    finally:
+        try:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        except (ImportError, OSError):
+            pass
+        os.close(fd)
 
 
 def _ledger_path():
@@ -69,11 +108,22 @@ class UsageLedger:
     def _save(self, data: dict) -> None:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.path.with_suffix(".json.tmp")
-            fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f)
-            os.replace(tmp, self.path)
+            # A UNIQUE temp file: a fixed ".json.tmp" name collides under
+            # concurrent saves (one os.replace moves it out from under another,
+            # dropping the write). mkstemp keeps each writer's temp private.
+            fd, tmp = tempfile.mkstemp(
+                dir=str(self.path.parent), prefix=".ledger-", suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(data, f)
+                os.chmod(tmp, 0o600)
+                os.replace(tmp, self.path)
+            except BaseException:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                raise
         except OSError as e:
             log.warning("quotas: cannot write ledger %s: %s", self.path, e)
 
@@ -91,13 +141,17 @@ class UsageLedger:
         if not principal:
             return
         day = day or _today()
-        data = self._load()
-        bucket = data.setdefault(principal, {})
-        cell = bucket.setdefault(day, {"dollars": 0.0, "in_tokens": 0, "out_tokens": 0})
-        cell["dollars"] = float(cell.get("dollars", 0.0)) + max(0.0, float(dollars or 0.0))
-        cell["in_tokens"] = int(cell.get("in_tokens", 0)) + max(0, int(in_tokens or 0))
-        cell["out_tokens"] = int(cell.get("out_tokens", 0)) + max(0, int(out_tokens or 0))
-        self._save(data)
+        # Serialize the whole load-modify-save so concurrent records accumulate
+        # instead of clobbering each other (in-process lock + cross-process
+        # flock on a sidecar file).
+        with _RECORD_LOCK, _cross_process_lock(self.path):
+            data = self._load()
+            bucket = data.setdefault(principal, {})
+            cell = bucket.setdefault(day, {"dollars": 0.0, "in_tokens": 0, "out_tokens": 0})
+            cell["dollars"] = float(cell.get("dollars", 0.0)) + max(0.0, float(dollars or 0.0))
+            cell["in_tokens"] = int(cell.get("in_tokens", 0)) + max(0, int(in_tokens or 0))
+            cell["out_tokens"] = int(cell.get("out_tokens", 0)) + max(0, int(out_tokens or 0))
+            self._save(data)
 
     def usage(self, principal: str, *, day: str | None = None) -> dict:
         """Return ``{dollars, in_tokens, out_tokens}`` for ``(principal, day)``;
