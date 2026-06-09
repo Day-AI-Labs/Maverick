@@ -97,7 +97,8 @@ here.
   container image from a Dockerfile via sandbox-mediated `docker build`), `ai_act_classifier` (EU AI Act
   risk-tier screening for a described AI use-case — prohibited/high/limited/
   minimal + obligations; heuristic, not legal advice), `geofence` (region
-  allow/deny policy check — ISO codes or groups EU/EEA/FIVE_EYES, deny-precedence).
+  allow/deny policy check — ISO codes or groups EU/EEA/FIVE_EYES, deny-precedence), `two_person_rule` (validate
+  dual-control sign-off — distinct approvers, separation of duties, optional roles).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
