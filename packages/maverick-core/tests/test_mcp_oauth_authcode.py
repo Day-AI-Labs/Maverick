@@ -11,9 +11,11 @@ import hashlib
 import urllib.parse
 
 import pytest
+from maverick.mcp_client import MCPServerSpec, StreamableHttpMCPClient
 from maverick.mcp_oauth import (
     AuthorizationCodeProvider,
     OAuthConfig,
+    OAuthTokenProvider,
     build_authorization_url,
     generate_pkce,
 )
@@ -146,3 +148,68 @@ def test_provider_requires_authcode_grant():
     cc = OAuthConfig.from_dict({"token_url": "https://idp/token", "client_id": "c"})
     with pytest.raises(ValueError):
         AuthorizationCodeProvider(cc)
+
+
+def test_client_authcode_flow_uses_authorization_code_provider(monkeypatch):
+    calls = []
+
+    def fake_post(token_url, data):
+        calls.append((token_url, data))
+        return {"access_token": "AT1", "refresh_token": "RT1", "expires_in": 9999999999}
+
+    monkeypatch.setattr("maverick.mcp_oauth._default_token_post", fake_post)
+    spec = MCPServerSpec(
+        name="s",
+        url="https://h/mcp",
+        oauth={
+            "token_url": "https://idp.example/token",
+            "authorize_url": "https://idp.example/authorize",
+            "client_id": "client-123",
+            "redirect_uri": "https://app.example/callback",
+            "grant_type": "authorization_code",
+            "scope": "mcp.read",
+        },
+    )
+    client = StreamableHttpMCPClient(spec)
+
+    url, _state, verifier = client.oauth_authorization_start()
+    q = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
+    assert q["response_type"] == "code"
+    assert q["code_challenge_method"] == "S256"
+
+    assert client.oauth_authorization_complete("auth-code", verifier, now=100.0) == "AT1"
+    assert client._bearer() == "AT1"
+    assert isinstance(client._oauth_provider, AuthorizationCodeProvider)
+    assert calls == [(
+        "https://idp.example/token",
+        {
+            "grant_type": "authorization_code",
+            "code": "auth-code",
+            "redirect_uri": "https://app.example/callback",
+            "client_id": "client-123",
+            "code_verifier": verifier,
+        },
+    )]
+
+
+def test_client_authcode_bearer_requires_completion():
+    spec = MCPServerSpec(
+        name="s",
+        url="https://h/mcp",
+        oauth={
+            "token_url": "https://idp.example/token",
+            "authorize_url": "https://idp.example/authorize",
+            "client_id": "client-123",
+            "redirect_uri": "https://app.example/callback",
+            "grant_type": "authorization_code",
+        },
+    )
+    client = StreamableHttpMCPClient(spec)
+    with pytest.raises(ValueError, match="complete"):
+        client._bearer()
+    assert isinstance(client._oauth_provider, AuthorizationCodeProvider)
+
+
+def test_client_credentials_provider_rejects_authcode_config():
+    with pytest.raises(ValueError, match="client_credentials"):
+        OAuthTokenProvider(_cfg())
