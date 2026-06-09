@@ -62,6 +62,11 @@ def _leading_keyword(sql: str) -> str:
             idx = newline + 1
             continue
         if sql.startswith("/*", idx):
+            # MySQL/MariaDB executable comments (`/*! ... */` and versioned
+            # forms like `/*!80000 ... */`) are parsed and executed by the
+            # server, so treating them as ordinary comments can hide writes.
+            if sql.startswith("/*!", idx):
+                return ""
             end = sql.find("*/", idx + 2)
             if end == -1:
                 return ""
