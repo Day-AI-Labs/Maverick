@@ -535,6 +535,7 @@ def base_registry(  # noqa: C901
     from .cloudflare_tool import cloudflare_tool
     from .compute import compute
     from .confluence_tool import confluence_tool
+    from .constrained_output import constrained_output
     from .cross_repo_deps import cross_repo_deps
     from .currency import currency
     from .datadog_tool import datadog_tool
@@ -573,6 +574,7 @@ def base_registry(  # noqa: C901
     from .mixpanel_tool import mixpanel_tool
     from .mongodb_tool import mongodb_tool
     from .msgraph_tool import msgraph_tool
+    from .mutation_test import mutation_test
     from .newsapi_tool import newsapi_tool
     from .notify import notify_tool
     from .notion import notion
@@ -593,6 +595,7 @@ def base_registry(  # noqa: C901
     from .replicate_tool import replicate_tool
     from .s3_tool import s3_tool
     from .salesforce_tool import salesforce_tool
+    from .semantic_code_search import semantic_code_search
     from .semantic_scholar import semantic_scholar
     from .sentry_tool import sentry_tool
     from .ses_tool import ses_tool
@@ -672,6 +675,9 @@ def base_registry(  # noqa: C901
     reg.register(citation_verifier())
     reg.register(cross_repo_deps())
     reg.register(test_gen())
+    reg.register(semantic_code_search())
+    reg.register(mutation_test())
+    reg.register(constrained_output())
     reg.register(openapi_runner(sandbox))
     reg.register(ocr(sandbox))
     reg.register(posthog_tool())
