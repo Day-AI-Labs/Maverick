@@ -54,6 +54,14 @@ def test_enforcement_is_noop_for_unprovisioned_and_none():
     tr.assert_tenant_active("never-provisioned")  # no raise
 
 
+def test_unknown_tenant_refused_once_registry_exists():
+    tr.create_tenant("acme")
+    assert tr.is_active(None) is True
+    assert tr.is_active("ghost") is False
+    with pytest.raises(tr.TenantSuspended):
+        tr.assert_tenant_active("ghost")
+
+
 def test_set_quota_and_plan():
     tr.create_tenant("acme")
     assert tr.set_quota("acme", 12.5).max_daily_dollars == 12.5
@@ -73,6 +81,9 @@ def test_delete_without_purge_keeps_data(tmp_path):
     assert tr.get_tenant("acme") is None
     # Data dir survives a non-purging delete.
     assert data.exists()
+    assert tr.is_active("acme") is False
+    with pytest.raises(tr.TenantSuspended):
+        tr.assert_tenant_active("acme")
     assert tr.delete_tenant("acme") is False  # already gone
 
 
