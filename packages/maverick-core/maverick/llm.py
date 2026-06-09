@@ -597,3 +597,40 @@ class LLM:
                     _rm("budget_dollars", _spent)
             except Exception:  # pragma: no cover
                 pass
+
+    def prewarm(
+        self, system: str, tools: list[dict] | None = None, model: str | None = None,
+    ) -> bool:
+        """Pre-warm the prompt cache for ``(system, tools, model)``.
+
+        Anthropic-only (other providers cache implicitly with no warm hook), and
+        a no-op unless caching is on. Returns whether a warm request was sent;
+        never raises."""
+        if os.environ.get("MAVERICK_CACHE_MESSAGES", "1") == "0":
+            return False
+        provider, model_id = _parse_spec(model or self.model)
+        if provider != "anthropic":
+            return False
+        try:
+            from .enterprise import assert_provider_allowed
+            assert_provider_allowed(provider)
+            client = self._get_client(provider)
+            warm = getattr(client, "prewarm", None)
+            return bool(warm(system, tools, model_id)) if callable(warm) else False
+        except Exception:  # pragma: no cover -- prewarm is best-effort
+            return False
+
+
+def cache_prewarm_enabled() -> bool:
+    """Opt-in, default-OFF. ``MAVERICK_CACHE_PREWARM=1`` or ``[cache] prewarm =
+    true`` pre-warms the prompt cache at orchestrator start so the first turn's
+    time-to-first-token doesn't pay the cold cache write."""
+    _true = {"1", "true", "yes", "on"}
+    if os.environ.get("MAVERICK_CACHE_PREWARM", "").strip().lower() in _true:
+        return True
+    try:
+        from .config import load_config
+        v = (load_config() or {}).get("cache", {}).get("prewarm")
+        return str(v).strip().lower() in _true if isinstance(v, str) else bool(v)
+    except Exception:  # pragma: no cover
+        return False

@@ -1374,6 +1374,20 @@ class Agent:
         bb = self.ctx.blackboard
         bb.post(self.name, "plan", f"role={self.role} depth={self.depth} brief={self.brief}")
 
+        # Opt-in prompt-cache pre-warm (default OFF). Warm only the orchestrator
+        # -- the first, largest, user-facing prompt -- once before its loop, so
+        # the first real turn reads the system+tools cache instead of paying the
+        # cold-write latency. Subagents are skipped (each has a distinct prompt;
+        # warming them would be a wasted write). Never blocks the run.
+        if self.role == "orchestrator":
+            try:
+                from .llm import cache_prewarm_enabled
+                if cache_prewarm_enabled():
+                    self.ctx.llm.prewarm(
+                        self.system, self.tools.to_anthropic(), self.model)
+            except Exception:  # pragma: no cover -- prewarm never blocks a run
+                pass
+
         # If the goal has image attachments, embed them as vision content
         # blocks on the first user message so the agent can see them.
         # Text/PDF attachments are reachable via `list_attachments` +

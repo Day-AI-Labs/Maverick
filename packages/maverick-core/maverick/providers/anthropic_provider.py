@@ -457,6 +457,28 @@ class AnthropicClient:
                 cache_write_ttl=_default_cache_ttl(),
             )
 
+        # Prometheus token + cache-effectiveness metrics (no-op unless the
+        # exporter is on). Records billed tokens by direction and the three
+        # prompt-cache buckets so a `cache_read / (cache_read + input)` hit-rate
+        # panel makes a silent cache invalidator visible as a metric, not just a
+        # cost bump. Fail-soft: metrics never break a turn.
+        try:
+            from ..observability import record_metric as _rm
+            _m = model or self.DEFAULT_MODEL or "default"
+            _lbl = {"provider": "anthropic", "model": _m}
+            if in_tok:
+                _rm("llm_tokens", in_tok, labels={**_lbl, "direction": "input"})
+            if out_tok:
+                _rm("llm_tokens", out_tok, labels={**_lbl, "direction": "output"})
+            if cache_read:
+                _rm("llm_cache_tokens", cache_read, labels={**_lbl, "kind": "read"})
+            if cache_creation:
+                _rm("llm_cache_tokens", cache_creation, labels={**_lbl, "kind": "creation"})
+            if in_tok:
+                _rm("llm_cache_tokens", in_tok, labels={**_lbl, "kind": "uncached"})
+        except Exception:  # pragma: no cover -- metrics never break a turn
+            pass
+
         # Per-turn observability — log model + cache stats so operators
         # can verify caching is actually engaging on real API calls.
         # Gated on MAVERICK_LOG_TURNS to keep production logs quiet.
@@ -532,3 +554,35 @@ class AnthropicClient:
             system, messages, tools, max_tokens, thinking_budget, model, effort)
         resp = await async_retry(lambda: self.aclient.messages.create(**kwargs))
         return self._parse_response(resp, budget, model=kwargs.get("model"))
+
+    def prewarm(
+        self, system: str, tools: list[dict] | None = None, model: str | None = None,
+    ) -> bool:
+        """Pre-warm the prompt cache with a ``max_tokens=0`` prefill.
+
+        Writes the cache at the system + tools breakpoint and returns
+        immediately (``content: []``, no output tokens billed), so the *first*
+        real turn reads the cache instead of paying the cold-write latency.
+        Built without ``_build_request`` on purpose: ``max_tokens=0`` rejects
+        ``thinking``/``output_config``/``tool_choice``, and toggling thinking
+        leaves the system+tools cache intact (it only invalidates the messages
+        tier), so a thinking-free warm still serves a thinking-enabled real call.
+        Never raises into the caller; returns whether the warm was sent."""
+        try:
+            kwargs: dict[str, Any] = {
+                "model": model or self.DEFAULT_MODEL,
+                "system": _cached_system(system),
+                "max_tokens": 0,
+                # Placeholder turn (any non-whitespace string); the breakpoint is
+                # on system/tools, so this message is read during prefill but not
+                # cached and never answered.
+                "messages": [{"role": "user", "content": "warmup"}],
+            }
+            if tools:
+                kwargs["tools"] = _cached_tools(tools)
+            self.client.messages.create(**kwargs)
+            return True
+        except Exception:  # pragma: no cover -- prewarm is best-effort
+            log.debug("prompt-cache prewarm skipped", exc_info=True)
+            return False
+
