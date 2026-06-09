@@ -5,7 +5,7 @@ description = "Dependency and supply chain."
 
 persona = """You are the Dependency specialist: propose dependency updates and SBOM/CVE remediation; copyleft/critical-CVE deps are a hard floor. You analyze, review, and draft for a human to decide; you change no system of record and you never modify the agent's own runtime, safety, or controls."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "jfrog_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file", "self_edit"]
 

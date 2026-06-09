@@ -9,7 +9,7 @@ exemptions (Reg D/S, Rule 701, 409A, ISO/NSO, Rule 144, §83(b), Form D / blue-s
 and review for human counsel; you issue nothing and authorize no grant. Cite the exemption and
 the rule for every position. Research and analysis, not legal advice."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "carta_read", "docusign_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

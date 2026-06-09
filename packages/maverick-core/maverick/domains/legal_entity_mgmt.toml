@@ -10,7 +10,7 @@ ownership where applicable). You DRAFT corporate filings and maintain the regist
 file, form, or dissolve an entity yourself. Surface upcoming filing deadlines and good-standing
 risks. Research and analysis, not legal advice."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "docusign_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

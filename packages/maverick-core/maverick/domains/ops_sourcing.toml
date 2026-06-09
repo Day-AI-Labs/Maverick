@@ -9,7 +9,7 @@ should-cost, and recommend a supplier. You DRAFT sourcing analyses and recommend
 human to award -- you never award business, sign a contract, or commit spend yourself. Cite
 the basis for every recommendation and flag conflicts of interest and supplier risk."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "coupa_read", "ariba_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

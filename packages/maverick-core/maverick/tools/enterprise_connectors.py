@@ -881,6 +881,40 @@ _FINANCE_READ_VENDORS: list[str] = [
 ]
 _READ_SPECS += _read_specs_for(_FINANCE_READ_VENDORS)
 
+# Read seats for the OTHER suites' systems, derived the same way (GET-only, low,
+# reuse the write connector's creds). Bespoke-module vendors (Salesforce, HubSpot,
+# Jira, GitHub, Datadog, ...) aren't in _SPECS, so they're skipped here -- this
+# covers the spec'd long-tail systems each suite reads.
+_SUITE_READ_VENDORS: list[str] = [
+    # GTM / Sales -- sales engagement, marketing, enrichment, CS, analytics
+    "salesloft", "outreach", "gong", "clari", "apollo", "zoominfo", "clearbit",
+    "marketo", "klaviyo", "braze", "mailchimp", "sfmc", "iterable", "segment",
+    "amplitude", "gainsight", "pendo", "pipedrive", "sugarcrm", "eventbrite",
+    "cvent", "sprinklr",
+    # Legal -- CLM, e-signature, practice management
+    "ironclad", "contractbook", "clio", "docusign",
+    # Operations / supply chain -- logistics, fleet, shipping (coupa/ariba reuse finance)
+    "flexport", "samsara", "easypost", "shippo",
+    # HR / People -- HRIS, recruiting, performance (gusto/adp reuse finance)
+    "bamboohr", "greenhouse", "lever", "rippling", "smartrecruiters", "workable",
+    "deel", "paylocity", "paychex", "lattice", "cornerstone", "icims", "hibob",
+    "ukg", "successfactors",
+    # IT / GRC / Security -- identity, EDR/SIEM, vuln, GRC automation
+    "okta", "auth0", "onelogin", "pingone", "duo", "cyberark", "sailpoint",
+    "crowdstrike", "splunk", "zscaler", "tenable", "qualys", "rapid7",
+    "sentinelone", "proofpoint", "snyk", "fortinet", "vanta", "drata", "logicgate",
+    "netskope", "cisco_umbrella", "defender", "qradar", "palo_alto", "jamf",
+    "secureframe", "sumologic", "logicmonitor", "appdynamics",
+    # Product / Engineering -- CI/CD, code quality, feature flags, observability
+    "jenkins", "circleci", "jfrog", "sonarqube", "azure_devops", "launchdarkly",
+    "split", "argocd", "harness", "octopus_deploy", "dockerhub", "newrelic",
+    "dynatrace", "grafana", "opsgenie",
+    # Strategy / CorpDev -- market intel, BI / analytics, EPM
+    "crunchbase", "tableau", "powerbi", "looker", "qlik", "thoughtspot",
+    "sisense", "domo", "mode", "metabase", "anaplan", "microstrategy", "cognos",
+]
+_READ_SPECS += _read_specs_for(_SUITE_READ_VENDORS)
+
 READ_CONNECTOR_NAMES: list[str] = [s["name"] for s in _READ_SPECS]
 
 ENTERPRISE_CONNECTOR_NAMES: list[str] = (

@@ -11,7 +11,7 @@ physical equipment, and you NEVER touch, override, or disable a safety interlock
 control -- those are out of scope; escalate to a human every time. Worker safety overrides
 throughput; if a reading suggests an unsafe condition, raise it immediately."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "samsara_read"]
 max_risk = "low"
 # Belt-and-suspenders: the read-only whitelist already excludes these; deny makes the
 # safety boundary explicit.

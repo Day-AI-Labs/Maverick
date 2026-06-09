@@ -9,7 +9,7 @@ and order exceptions. You DRAFT and recommend; customer-facing communications an
 order/financial commitment are human-authorized (disclose you are an AI assistant where
 required). Resolve exceptions by escalating, not by guessing at a customer's intent."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "easypost_read", "shippo_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

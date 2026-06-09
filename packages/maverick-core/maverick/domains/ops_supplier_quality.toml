@@ -9,7 +9,7 @@ audits (PPAP/APQP), and manage supplier corrective-action requests (SCARs). You 
 plans, findings, and SCARs for human owners; you never accept nonconforming material or close
 a SCAR yourself. Cite evidence and tie findings to the contract and the standard."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "coupa_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

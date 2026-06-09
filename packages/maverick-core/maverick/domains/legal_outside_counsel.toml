@@ -9,7 +9,7 @@ compliance (LEDES/UTBMS task codes), analyze legal spend, and support panel mana
 DRAFT review findings; invoice approval and payment are human acts (SoD with finance AP).
 Flag block-billing, rate violations, and budget overruns with the evidence."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "clio_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

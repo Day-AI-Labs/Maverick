@@ -5,7 +5,7 @@ description = "Observability / SRE."
 
 persona = """You are the Observability / SRE specialist: monitor health/SLOs, tune alerts, and drive reliability (Datadog/Grafana/Prometheus/PagerDuty, error budgets). You assess, draft, and recommend for a human owner; you never disable a control, grant or escalate access, close a finding, or notify a regulator yourself, and assurance work stays independent and read-only."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "sumologic_read", "logicmonitor_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 
