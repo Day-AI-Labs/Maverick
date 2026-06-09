@@ -132,3 +132,65 @@ def test_expired_grant_is_rejected():
     agent_bus.send("agent:lead-0", "agent:worker-1", env)
     d = receive_handoff(auth, "agent:worker-1", now=time.time())
     assert not d.ok and d.verdict.rule == "grant_expired"
+
+
+def test_recv_verified_handoff_installs_grant_for_tool_enforcement(monkeypatch, tmp_path):
+    """A verified handoff must constrain subsequent tools, not just prompt text."""
+    from maverick.agent import Agent
+    from maverick.blackboard import Blackboard
+    from maverick.budget import Budget
+    from maverick.bus_handoff import HandoffDelivery
+    from maverick.handoff import HandoffVerdict
+    from maverick.sandbox import LocalBackend
+    from maverick.swarm import SwarmContext
+    from maverick.tools import Tool
+    from maverick.world_model import WorldModel
+
+    world = WorldModel(tmp_path / "world.db")
+    goal_id = world.create_goal("g", "")
+    ctx = SwarmContext(
+        llm=None, world=world, budget=Budget(max_dollars=1.0),
+        blackboard=Blackboard(), sandbox=LocalBackend(workdir=tmp_path),
+        goal_id=goal_id, use_skills=False,
+    )
+    agent = Agent(ctx=ctx, role="worker", brief="b")
+    agent.capability = Capability(
+        principal=agent.name,
+        allow_tools=frozenset({"recv_from_agent", "read_file", "shell"}),
+    )
+    agent.tools.register(Tool(
+        name="read_file", description="read", fn=lambda args: "READ_EXECUTED",
+        input_schema={"type": "object", "properties": {}},
+    ))
+    agent.tools.register(Tool(
+        name="shell", description="shell", fn=lambda args: "SHELL_EXECUTED",
+        input_schema={"type": "object", "properties": {}},
+    ))
+
+    delegated = Capability(principal=agent.name, allow_tools=frozenset({"read_file"}))
+    env = Envelope(
+        sender="lead-0", recipient=agent.name, task="read only", grant=delegated,
+        nonce="n", ts=time.time(), required_tools=("read_file",),
+    )
+
+    def fake_receive_handoff(authority, agent_id, *, timeout=0.0, now=None):
+        return HandoffDelivery(
+            sender="lead-0", payload=env,
+            verdict=HandoffVerdict(True, "ok", "handoff verified", grant=delegated),
+        )
+
+    monkeypatch.setattr("maverick.bus_handoff.authority_for", lambda ctx: object())
+    monkeypatch.setattr("maverick.bus_handoff.receive_handoff", fake_receive_handoff)
+
+    import asyncio
+
+    recv_out = asyncio.run(agent.tools.get("recv_from_agent").fn({"timeout": 0}))
+    assert "VERIFIED handoff" in recv_out
+    assert getattr(agent, "_handoff_capability") is delegated
+
+    denied = asyncio.run(agent._run_tool("shell", {}))
+    assert "DENIED by capability policy" in denied
+    assert "SHELL_EXECUTED" not in denied
+
+    allowed = asyncio.run(agent._run_tool("read_file", {}))
+    assert "READ_EXECUTED" in allowed

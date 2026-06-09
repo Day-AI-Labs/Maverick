@@ -123,13 +123,38 @@ def _sealed_notice(ctx, child) -> str | None:
     )
 
 
+def _register_child_with_quarantine(ctx, child) -> None:
+    """Register a spawned child's domain before it can run or report output.
+
+    ``Agent._run_tool`` also registers the domain, but a specialist can produce
+    a final answer without calling a tool. Registering at spawn time lets
+    existing sector seals reach domain-profile children before any potentially
+    compromised output is generated or returned. Fail-open: containment bugs must
+    never break spawning.
+    """
+    q = getattr(ctx, "quarantine", None)
+    if q is None:
+        return
+    try:
+        q.register_agent(child.name, getattr(child, "domain", None))
+    except Exception:  # pragma: no cover -- containment must never break the loop
+        return
+
+
 async def _run_child_and_report(parent, child) -> str:
     """Run a spawned child and return its answer (or a structured error).
 
-    Shared by ``spawn_subagent`` and ``spawn_specialist``: returns the spawn slot
-    if the child RAISES (#612), emits ``SUBAGENT_STOP``, withholds a sealed
-    child's (attacker-influenced) output (Rung 1), then normalizes the result.
+    Shared by ``spawn_subagent`` and ``spawn_specialist``: registers the child
+    with quarantine before execution, refuses already sealed children, returns
+    the spawn slot if the child RAISES (#612), emits ``SUBAGENT_STOP``, withholds
+    a sealed child's (attacker-influenced) output (Rung 1), then normalizes the
+    result.
     """
+    _register_child_with_quarantine(parent.ctx, child)
+    notice = _sealed_notice(parent.ctx, child)
+    if notice is not None:
+        return notice
+
     try:
         result = await child.run()
     except BaseException:

@@ -18,6 +18,7 @@ import base64
 import json
 import os
 from typing import Any
+from urllib.parse import urlsplit
 
 from . import Tool, as_bool
 
@@ -56,6 +57,7 @@ def make_rest_tool(
     scheme: str = "Bearer",
     basic: bool = False,
     read_only: bool = False,
+    allowed_read_paths: tuple[str, ...] | None = None,
 ) -> Tool:
     """Build a thin authenticated-REST ``Tool``.
 
@@ -69,6 +71,10 @@ def make_rest_tool(
     ``read_only=True`` exposes GET only -- a low-risk read seat (write ops are
     refused), so a read-only agent/pack can pull data without a write-capable
     tool. The connector's writes are simply unreachable from this seat.
+
+    ``allowed_read_paths`` optionally narrows a read-only connector to known-safe
+    API resource prefixes. This is intended for credentialed finance APIs where
+    GET-only is not, by itself, an adequate data-access boundary.
     """
 
     def _config() -> tuple[str, str]:
@@ -91,6 +97,24 @@ def make_rest_tool(
         p = path.strip()
         return p if p.startswith("/") else "/" + p
 
+    read_prefixes = tuple(_norm(p) for p in (allowed_read_paths or ()))
+
+    def _request_path(path: str) -> str:
+        # Keep endpoint authorization independent from query strings. Agents may
+        # pass query params separately via ``params``; embedding a query in path
+        # must not help bypass or broaden endpoint checks.
+        parsed = urlsplit(_norm(path))
+        return parsed.path or "/"
+
+    def _read_path_allowed(path: str) -> bool:
+        if not read_prefixes:
+            return True
+        request_path = _request_path(path)
+        return any(
+            request_path == prefix or request_path.startswith(f"{prefix}/")
+            for prefix in read_prefixes
+        )
+
     def _run(args: dict[str, Any]) -> str:
         op = (args.get("op") or ("get" if read_only else "")).strip().lower()
         if read_only and op != "get":
@@ -100,6 +124,9 @@ def make_rest_tool(
         path = (args.get("path") or "").strip()
         if not path:
             return "ERROR: path is required"
+        if read_only and not _read_path_allowed(path):
+            allowed = ", ".join(read_prefixes) or "(none)"
+            return f"ERROR: {name} read path is not allowed. Allowed prefixes: {allowed}"
         try:
             import httpx  # noqa: F401
         except ImportError:

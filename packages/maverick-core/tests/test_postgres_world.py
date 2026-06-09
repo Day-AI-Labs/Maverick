@@ -211,6 +211,38 @@ def test_decide_approval_rejects_bad_status(world):
         world.decide_approval(aid, "maybe")
 
 
+def test_decide_approval_is_tenant_scoped(world):
+    """A tenant must not decide another tenant's parked high-risk action.
+
+    The approve/deny dashboard endpoints pass a raw id with no ownership gate,
+    so decide_approval itself has to scope to the active tenant (like
+    get_approval / pending_approvals do)."""
+    from maverick.paths import reset_tenant, set_tenant
+
+    tok = set_tenant("acme")
+    try:
+        aid = world.create_approval("rm -rf", risk="high")
+    finally:
+        reset_tenant(tok)
+
+    # Another tenant cannot see it...
+    tok = set_tenant("globex")
+    try:
+        assert all(x.id != aid for x in world.pending_approvals())
+        # ...and cannot decide it either (the bug: this used to return True).
+        assert world.decide_approval(aid, "approved") is False
+    finally:
+        reset_tenant(tok)
+
+    # The owning tenant still can, and it's still pending until they do.
+    tok = set_tenant("acme")
+    try:
+        assert world.get_approval(aid).status == "pending"
+        assert world.decide_approval(aid, "approved") is True
+    finally:
+        reset_tenant(tok)
+
+
 # ---------- #469: reclaim_orphan_goals + schema_version ----------
 
 def test_reclaim_orphan_goals(world):

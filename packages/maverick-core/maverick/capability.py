@@ -82,6 +82,37 @@ class Capability:
             return True
         return any(fnmatch(host, pat) for pat in self.allow_hosts)
 
+    def intersect(self, other: Capability, *, principal: str | None = None) -> Capability:
+        """Return the least-authority intersection of two grants.
+
+        Empty allow/tool/path/host sets mean "all", so intersection must preserve
+        that convention without letting a restricted peer grant broaden an
+        ambient grant (or vice versa). Denies union, risk ceilings tighten, and
+        the earliest expiry wins.
+        """
+        if self.max_risk is None:
+            max_risk = other.max_risk
+        elif other.max_risk is None:
+            max_risk = self.max_risk
+        else:
+            max_risk = min(self.max_risk, other.max_risk, key=risk_rank)
+        expiries = [e for e in (self.expires_at, other.expires_at) if e is not None]
+        return Capability(
+            principal=principal or self.principal,
+            allow_tools=_narrow_tools(
+                self.allow_tools, other.allow_tools if other.allow_tools else None
+            ),
+            deny_tools=self.deny_tools | other.deny_tools,
+            max_risk=max_risk,
+            expires_at=min(expiries) if expiries else None,
+            allow_paths=_narrow_globs(
+                self.allow_paths, other.allow_paths if other.allow_paths else None
+            ),
+            allow_hosts=_narrow_globs(
+                self.allow_hosts, other.allow_hosts if other.allow_hosts else None
+            ),
+        )
+
     def attenuate(
         self,
         *,

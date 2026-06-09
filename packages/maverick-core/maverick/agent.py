@@ -444,6 +444,10 @@ class Agent:
         # root grant from config when enforcement is enabled. None ==
         # unrestricted, so enforcement is a no-op unless opted in.
         self.capability = self._resolve_capability(capability)
+        # Verified peer handoffs install an attenuated task grant here; _run_tool
+        # intersects it with ambient authority so verified delegations are bound
+        # to execution instead of existing only as model-facing text.
+        self._handoff_capability = None
         # Wave 11: Scale Labs' Pro empirical study (arxiv 2509.16941)
         # shows "most successful solutions resolve in ~25 rounds; long-
         # tail iteration past that has diminishing returns." Allow ops
@@ -920,6 +924,24 @@ class Agent:
         except Exception:  # pragma: no cover -- containment must never break the loop
             pass
 
+    def _effective_capability(self, tool_name: str):
+        """Capability that gates a tool call, including active verified handoffs."""
+        ambient = getattr(self, "capability", None)
+        # Receiving bus messages is the control-plane path that lets an agent
+        # accept a replacement handoff. Keep it governed by ambient authority so
+        # an older task grant cannot strand the peer from future coordination.
+        if tool_name == "recv_from_agent":
+            return ambient
+        handoff = getattr(self, "_handoff_capability", None)
+        if handoff is None:
+            return ambient
+        if ambient is None:
+            return handoff
+        try:
+            return ambient.intersect(handoff, principal=handoff.principal)
+        except AttributeError:  # pragma: no cover -- defensive for foreign caps
+            return ambient
+
     async def _run_tool(self, name: str, args: dict) -> str:  # noqa: C901
         # Record the tool name on this agent's action sequence so a parent can
         # capture per-sub-agent trajectories (maverick.credit.build_subtrajectories).
@@ -958,7 +980,7 @@ class Agent:
         # on spawn) gates the tool surface. None == unrestricted, so this is a
         # no-op unless capability enforcement was opted in. Deny wins -- the
         # tool never runs and the model gets a clear, non-leaky refusal.
-        cap = getattr(self, "capability", None)
+        cap = self._effective_capability(name)
         if cap is not None and not cap.permits(name):
             self.ctx.blackboard.post(
                 self.name, "error",

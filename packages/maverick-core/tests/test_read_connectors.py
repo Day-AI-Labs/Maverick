@@ -30,6 +30,29 @@ def test_read_connector_is_registered_low_and_get_only():
     assert tools["modern_treasury_read"].input_schema["properties"]["op"]["enum"] == ["get"]
 
 
+def test_read_connector_blocks_unapproved_modern_treasury_paths_before_auth():
+    fn = _tools()["modern_treasury_read"].fn
+
+    blocked_paths = (
+        "/api/payment_orders/po_sensitive_123?include=counterparty,internal_account,bank_details",
+        "/api/counterparties",
+        "/api/ledger_accounts",
+    )
+    for path in blocked_paths:
+        out = fn({"path": path})
+        assert "read path is not allowed" in out
+        assert "Allowed prefixes" in out
+
+
+def test_read_connector_advertises_cash_positioning_allowlist():
+    tool = _tools()["modern_treasury_read"]
+
+    assert "/api/internal_accounts" in tool.description
+    assert "/api/transactions" in tool.description
+    assert "/api/ledger_account_balances" in tool.description
+    assert "/api/counterparties" not in tool.description
+
+
 def test_read_connector_refuses_writes_while_the_write_seat_stays_high():
     fn = _tools()["modern_treasury_read"].fn
     for op in ("post", "put", "patch", "delete"):
