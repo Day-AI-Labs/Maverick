@@ -41,7 +41,7 @@ here.
   reusable, validator-compliant `SKILL.md` under `~/.maverick/learned-skills`
   (`skill_distillation_local.py`), opt-in via `[self_learning] distill_local`.
 - **Vector-store cross-run memory** — opt-in `[memory] backend` routes
-  cross-run recall through a persistent **Chroma / Qdrant** store
+  cross-run recall through a persistent **Chroma / Qdrant / Weaviate** store
   (`vector_store/`, `semantic_recall.py`) so similarity search is indexed and
   incremental instead of a linear re-embed scan; fail-open and
   dependency-injectable — the kernel never *requires* a vector store.
@@ -114,7 +114,29 @@ here.
   decoy credentials + exfiltration tripwire scan), `dp_stats` (differentially-
   private aggregate release via the Laplace mechanism — noisy count/sum with a
   per-record clamp), `cost_attribution` (rank spend across principal/tenant/tool/
-  tag/model/role dimensions with shares).
+  tag/model/role dimensions with shares), `coordinated_disclosure` (CVD-ledger
+  lifecycle validation + status roll-up), `model_card` (render/validate a
+  per-LLM model card), `supply_chain_pin` (flag unpinned/unhashed/range
+  dependencies), `quorum_approval` (M-of-N quorum check with distinct-role
+  option), `crypto_budget_receipt` (HMAC-signed budget receipt issue/verify),
+  `provenance_chain` (verify a hash-linked chain of agent actions),
+  `migration_cost` (provider-switch cost/savings calculator), `energy_accounting`
+  (Wh + gram-CO2e estimate with documented assumptions), `cost_guardrail`
+  (ALLOW/WARN/BLOCK against a per-run dollar gate), `cache_eviction` (LRU/LFU
+  cache hit-rate simulator), `latency_slo` (p50–p999 nearest-rank percentiles +
+  SLO pass/fail), `cost_of_quality` (spend on passing vs failing runs +
+  cost-per-success), `outline_writer` (long-form outline→draft→polish
+  structuring), `agent_simulator` (deterministic scripted-agent replay harness),
+  `fairness_scheduler` (weighted largest-remainder slot allocation across
+  agents), `process_introspect` (top-N / orphan analysis of a supplied process
+  snapshot — never reads live /proc), `adversarial_self_test` (policy-pattern
+  probe + injection-style prompt mutations for self-red-teaming), `reflect_loop`
+  (plan-execute-reflect control-flow scaffold: plan steps, then
+  retry/advance/replan), `github_repo_search` (GitHub repo/code search),
+  `github_issues` / `gitlab_issues` (list/get/create issues), `web_archive`
+  (Wayback closest-snapshot lookup + save endpoint), `anki` (AnkiConnect
+  add-note / decks), `s3_attachments` (content-addressed S3 keys + virtual-hosted
+  URLs).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
@@ -228,8 +250,9 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   and the `maverick finance status` posture report (`maverick/finance/`).
 - **maverick-knowledge** — per-domain vector RAG package backing
   `knowledge_search`; config-selected embedders (`embed.py`): hosted **Voyage**
-  (or any OpenAI-compatible endpoint), local, or deterministic — fails loud
-  rather than silently degrading.
+  (or any OpenAI-compatible endpoint), **Cohere** (`/v2/embed`, asymmetric
+  search_document/search_query input types), local, or deterministic — fails
+  loud rather than silently degrading.
 - **Reverse-proxy SSO** — trusted forwarded-identity header for enterprise auth.
 - **Tenant-aware persistence** — workspaces wall each tenant into
   `~/.maverick/tenants/<t>/` (`workspace.py`, `paths.py`), with a per-tenant

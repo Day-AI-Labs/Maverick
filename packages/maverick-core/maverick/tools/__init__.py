@@ -534,9 +534,12 @@ def base_registry(  # noqa: C901
 
     from .a11y import a11y
     from .a11y_tree import a11y_tree
+    from .adversarial_self_test import adversarial_self_test
+    from .agent_simulator import agent_simulator
     from .ai_act_classifier import ai_act_classifier
     from .airtable_tool import airtable_tool
     from .android import android
+    from .anki import anki
     from .apply_patch import apply_patch
     from .arxiv import arxiv
     from .asana_tool import asana_tool
@@ -544,30 +547,41 @@ def base_registry(  # noqa: C901
     from .bitbucket_tool import bitbucket_tool
     from .budget_status import budget_status
     from .cache_admin import cache_admin
+    from .cache_eviction import cache_eviction
     from .calendar_tool import calendar_tool
     from .calendly_tool import calendly_tool
+    from .capability_delegation_graph import capability_delegation_graph
     from .citation_verifier import citation_verifier
     from .clickup_tool import clickup_tool
     from .clipboard import clipboard
     from .cloudflare_tool import cloudflare_tool
+    from .collusion_detector import collusion_detector
     from .compute import compute
     from .confluence_tool import confluence_tool
     from .constrained_output import constrained_output
     from .container_build import container_build
+    from .coordinated_disclosure import coordinated_disclosure
+    from .cost_attribution import cost_attribution
+    from .cost_guardrail import cost_guardrail
+    from .cost_of_quality import cost_of_quality
     from .cross_repo_deps import cross_repo_deps
+    from .crypto_budget_receipt import crypto_budget_receipt
     from .currency import currency
     from .datadog_tool import datadog_tool
     from .dep_graph import dep_graph
     from .diagnose import diagnose
     from .discord_bot import discord_bot
     from .dns_lookup import dns_lookup
+    from .dp_stats import dp_stats
     from .dropbox_tool import dropbox_tool
     from .dynamodb_tool import dynamodb_tool
     from .elasticsearch_tool import elasticsearch_tool
     from .email_tool import email_tool
     from .embeddings import embeddings
+    from .energy_accounting import energy_accounting
     from .erp_tool import erp_tool
     from .error_patterns import error_patterns
+    from .fairness_scheduler import fairness_scheduler
     from .ffmpeg_tool import ffmpeg_tool
     from .file_watcher import file_watcher
     from .ga4_tool import ga4_tool
@@ -576,10 +590,14 @@ def base_registry(  # noqa: C901
     from .geofence import geofence
     from .git_advanced import git_advanced
     from .github_actions import github_actions
+    from .github_issues import github_issues
+    from .github_repo_search import github_repo_search
     from .gitlab import gitlab
+    from .gitlab_issues import gitlab_issues
     from .gmail_tool import gmail_tool
     from .hackernews import hackernews
     from .home_assistant_tool import home_assistant_tool
+    from .honeytoken import honeytoken
     from .http_fetch import http_fetch
     from .hubspot_tool import hubspot_tool
     from .huggingface import huggingface
@@ -589,10 +607,13 @@ def base_registry(  # noqa: C901
     from .knowledge_graph import knowledge_graph
     from .kv_memory import kv_memory
     from .lambda_tool import lambda_tool
+    from .latency_slo import latency_slo
     from .linear import linear
     from .memory import memory
+    from .migration_cost import migration_cost
     from .mixpanel_tool import mixpanel_tool
     from .model3d_inspect import model3d_inspect
+    from .model_card import model_card
     from .mongodb_tool import mongodb_tool
     from .msgraph_tool import msgraph_tool
     from .mutation_test import mutation_test
@@ -602,6 +623,7 @@ def base_registry(  # noqa: C901
     from .obsidian import obsidian
     from .ocr import ocr
     from .openapi_runner import openapi_runner
+    from .outline_writer import outline_writer
     from .pagerduty_tool import pagerduty_tool
     from .pandas_query import pandas_query
     from .pandoc_tool import pandoc_tool
@@ -610,10 +632,15 @@ def base_registry(  # noqa: C901
     from .plausible_tool import plausible_tool
     from .posthog_tool import posthog_tool
     from .preview_diff import preview_diff
+    from .process_introspect import process_introspect
+    from .provenance_chain import provenance_chain
+    from .quorum_approval import quorum_approval
     from .recall import recall
     from .reddit_tool import reddit_tool
     from .redis_tool import redis_tool
+    from .reflect_loop import reflect_loop
     from .replicate_tool import replicate_tool
+    from .s3_attachments import s3_attachments
     from .s3_tool import s3_tool
     from .salesforce_tool import salesforce_tool
     from .semantic_code_search import semantic_code_search
@@ -628,6 +655,7 @@ def base_registry(  # noqa: C901
     from .spreadsheet import spreadsheet
     from .sql_query import sql_query
     from .stripe_tool import stripe_tool
+    from .supply_chain_pin import supply_chain_pin
     from .synthetic_data import synthetic_data
     from .test_gen import test_gen
     from .test_impact import test_impact
@@ -635,15 +663,11 @@ def base_registry(  # noqa: C901
     from .trello_tool import trello_tool
     from .twilio_tool import twilio_tool
     from .two_person_rule import two_person_rule
-    from .watermark_detector import watermark_detector
-    from .collusion_detector import collusion_detector
-    from .capability_delegation_graph import capability_delegation_graph
-    from .honeytoken import honeytoken
-    from .dp_stats import dp_stats
-    from .cost_attribution import cost_attribution
     from .vercel_tool import vercel_tool
     from .view_image import view_image
     from .view_video import view_video
+    from .watermark_detector import watermark_detector
+    from .web_archive import web_archive
     from .web_recorder import web_recorder
     from .wikipedia import wikipedia
     from .wolfram_tool import wolfram_tool
@@ -714,6 +738,30 @@ def base_registry(  # noqa: C901
     reg.register(honeytoken())
     reg.register(dp_stats())
     reg.register(cost_attribution())
+    reg.register(coordinated_disclosure())
+    reg.register(model_card())
+    reg.register(supply_chain_pin())
+    reg.register(quorum_approval())
+    reg.register(crypto_budget_receipt())
+    reg.register(provenance_chain())
+    reg.register(migration_cost())
+    reg.register(energy_accounting())
+    reg.register(cost_guardrail())
+    reg.register(cache_eviction())
+    reg.register(latency_slo())
+    reg.register(cost_of_quality())
+    reg.register(outline_writer())
+    reg.register(agent_simulator())
+    reg.register(fairness_scheduler())
+    reg.register(process_introspect())
+    reg.register(adversarial_self_test())
+    reg.register(reflect_loop())
+    reg.register(github_repo_search())
+    reg.register(github_issues())
+    reg.register(gitlab_issues())
+    reg.register(web_archive())
+    reg.register(anki())
+    reg.register(s3_attachments())
     reg.register(semantic_code_search(sandbox))
     reg.register(mutation_test())
     reg.register(constrained_output())
