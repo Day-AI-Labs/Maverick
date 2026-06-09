@@ -34,6 +34,8 @@ from fastapi.templating import Jinja2Templates
 from maverick import a2a
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from ._shared import _any_provider_key_set, _world
+from ._shared import _world_cache as _world_cache  # re-export: tests clear app._world_cache
 from .api import router as api_router
 from .auth import (
     assert_goal_access,
@@ -442,22 +444,6 @@ async def security_headers(request: Request, call_next):
     return response
 
 
-_PROVIDER_ENV_VARS = (
-    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY",
-    "OPENROUTER_API_KEY", "MOONSHOT_API_KEY", "DEEPSEEK_API_KEY",
-    "XAI_API_KEY",
-)
-
-
-def _any_provider_key_set() -> bool:
-    """True if at least one supported provider's env var is populated.
-
-    Council UX fix: the dashboard used to hard-fail on missing
-    ANTHROPIC_API_KEY even when the user had OpenAI or Gemini set up.
-    """
-    return any(os.environ.get(v) for v in _PROVIDER_ENV_VARS)
-
-
 # ----- goal-creation rate limit -----
 # Council safety-seat (round 1): nothing throttled /chat/send or
 # POST /api/v1/goals. A runaway loop or a flood of same-origin posts
@@ -582,28 +568,6 @@ def _get_sse_semaphore() -> asyncio.Semaphore:
     if _sse_semaphore is None:
         _sse_semaphore = asyncio.Semaphore(_max_sse_streams())
     return _sse_semaphore
-
-
-_world_cache: dict[str, Any] = {}
-
-
-def _world():
-    """Return a per-DB-path cached WorldModel.
-
-    Council perf finding: opening a new WorldModel on every request
-    re-runs the PRAGMAs and the schema-migration check, leaks the
-    connection (no close()), and serialises the asyncio loop because
-    sqlite3 is sync. Cache by absolute DB path so test fixtures that
-    monkeypatch ``DEFAULT_DB`` to a fresh ``tmp_path`` still get an
-    isolated WorldModel per test.
-    """
-    from maverick.world_model import DEFAULT_DB, WorldModel
-    key = str(DEFAULT_DB)
-    cached = _world_cache.get(key)
-    if cached is None:
-        cached = WorldModel(DEFAULT_DB)
-        _world_cache[key] = cached
-    return cached
 
 
 def _load_skills():
