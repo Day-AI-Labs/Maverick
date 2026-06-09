@@ -136,7 +136,30 @@ here.
   `github_issues` / `gitlab_issues` (list/get/create issues), `web_archive`
   (Wayback closest-snapshot lookup + save endpoint), `anki` (AnkiConnect
   add-note / decks), `s3_attachments` (content-addressed S3 keys + virtual-hosted
-  URLs).
+  URLs), `template_generator` (scaffold a valid SKILL.md or a base.Channel
+  adapter stub), `generic_oauth` (OAuth2 client-credentials/authorize-URL
+  builder with PKCE, https-enforced), `plugin_lockfile` (generate/verify a
+  version+hash plugin lockfile), `saas_trigger` (HMAC webhook-signature verify
+  + event→goal routing), `apple_shortcuts` (Shortcuts run / x-callback URL
+  builder), `discord_slash` (slash-command registration JSON), `slack_workflow`
+  (workflow custom-step + trigger JSON), `risk_tier_classifier` (LOW/MED/HIGH
+  goal-risk score from irreversibility/money/PII/egress/blast-radius signals),
+  `containment_mode` (no-network/ephemeral-fs restriction plan + per-action
+  allow/deny), `capability_leak_fuzzer` (find tools that would run without their
+  required capability + over-grants), `bias_eval` (per-group selection rate +
+  disparate-impact 80%-rule), `right_to_explanation` (ranked decision
+  explanation + rectification record), `audit_mirror` (verify primary vs mirror
+  audit logs agree, gap-free), `tiered_storage` (hot/cold partition + migration
+  plan), `async_compaction` (compact-now/defer/keep scheduling plan),
+  `wal_contention` (superlinear-degradation analysis + writer ceiling),
+  `memleak_quarantine` (least-squares RSS-slope leak detection), `openmetrics`
+  (OpenMetrics/Prometheus exposition renderer), `sla_breach` (SLO breach
+  detector + severity action), `whats_changed` (added/removed/changed digest +
+  unified-diff summary), `comparative_replay` (align two run traces, first
+  divergence + similarity), `tool_call_inspector` (per-tool counts / success
+  rate / latency / cost roll-up), `latency_heatmap` (per-bucket percentile
+  heatmap), `plain_language` (plan/trace → plain-English narration),
+  `multimodal_rag` (lexical text/image/table chunk ranker).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.

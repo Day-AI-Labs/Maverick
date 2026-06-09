@@ -540,10 +540,14 @@ def base_registry(  # noqa: C901
     from .airtable_tool import airtable_tool
     from .android import android
     from .anki import anki
+    from .apple_shortcuts import apple_shortcuts
     from .apply_patch import apply_patch
     from .arxiv import arxiv
     from .asana_tool import asana_tool
     from .ast_edit import ast_edit
+    from .async_compaction import async_compaction
+    from .audit_mirror import audit_mirror
+    from .bias_eval import bias_eval
     from .bitbucket_tool import bitbucket_tool
     from .budget_status import budget_status
     from .cache_admin import cache_admin
@@ -551,15 +555,18 @@ def base_registry(  # noqa: C901
     from .calendar_tool import calendar_tool
     from .calendly_tool import calendly_tool
     from .capability_delegation_graph import capability_delegation_graph
+    from .capability_leak_fuzzer import capability_leak_fuzzer
     from .citation_verifier import citation_verifier
     from .clickup_tool import clickup_tool
     from .clipboard import clipboard
     from .cloudflare_tool import cloudflare_tool
     from .collusion_detector import collusion_detector
+    from .comparative_replay import comparative_replay
     from .compute import compute
     from .confluence_tool import confluence_tool
     from .constrained_output import constrained_output
     from .container_build import container_build
+    from .containment_mode import containment_mode
     from .coordinated_disclosure import coordinated_disclosure
     from .cost_attribution import cost_attribution
     from .cost_guardrail import cost_guardrail
@@ -571,6 +578,7 @@ def base_registry(  # noqa: C901
     from .dep_graph import dep_graph
     from .diagnose import diagnose
     from .discord_bot import discord_bot
+    from .discord_slash import discord_slash
     from .dns_lookup import dns_lookup
     from .dp_stats import dp_stats
     from .dropbox_tool import dropbox_tool
@@ -586,6 +594,7 @@ def base_registry(  # noqa: C901
     from .file_watcher import file_watcher
     from .ga4_tool import ga4_tool
     from .gdrive_tool import gdrive_tool
+    from .generic_oauth import generic_oauth
     from .geocode import geocode
     from .geofence import geofence
     from .git_advanced import git_advanced
@@ -607,8 +616,10 @@ def base_registry(  # noqa: C901
     from .knowledge_graph import knowledge_graph
     from .kv_memory import kv_memory
     from .lambda_tool import lambda_tool
+    from .latency_heatmap import latency_heatmap
     from .latency_slo import latency_slo
     from .linear import linear
+    from .memleak_quarantine import memleak_quarantine
     from .memory import memory
     from .migration_cost import migration_cost
     from .mixpanel_tool import mixpanel_tool
@@ -616,6 +627,7 @@ def base_registry(  # noqa: C901
     from .model_card import model_card
     from .mongodb_tool import mongodb_tool
     from .msgraph_tool import msgraph_tool
+    from .multimodal_rag import multimodal_rag
     from .mutation_test import mutation_test
     from .newsapi_tool import newsapi_tool
     from .notify import notify_tool
@@ -623,13 +635,16 @@ def base_registry(  # noqa: C901
     from .obsidian import obsidian
     from .ocr import ocr
     from .openapi_runner import openapi_runner
+    from .openmetrics import openmetrics
     from .outline_writer import outline_writer
     from .pagerduty_tool import pagerduty_tool
     from .pandas_query import pandas_query
     from .pandoc_tool import pandoc_tool
     from .pdf_reader import read_pdf
     from .plaid_tool import plaid_tool
+    from .plain_language import plain_language
     from .plausible_tool import plausible_tool
+    from .plugin_lockfile import plugin_lockfile
     from .posthog_tool import posthog_tool
     from .preview_diff import preview_diff
     from .process_introspect import process_introspect
@@ -640,15 +655,20 @@ def base_registry(  # noqa: C901
     from .redis_tool import redis_tool
     from .reflect_loop import reflect_loop
     from .replicate_tool import replicate_tool
+    from .right_to_explanation import right_to_explanation
+    from .risk_tier_classifier import risk_tier_classifier
     from .s3_attachments import s3_attachments
     from .s3_tool import s3_tool
+    from .saas_trigger import saas_trigger
     from .salesforce_tool import salesforce_tool
     from .semantic_code_search import semantic_code_search
     from .semantic_scholar import semantic_scholar
     from .sentry_tool import sentry_tool
     from .ses_tool import ses_tool
     from .shopify_tool import shopify_tool
+    from .sla_breach import sla_breach
     from .slack_bot import slack_bot
+    from .slack_workflow import slack_workflow
     from .sns_tool import sns_tool
     from .spend_report import spend_report
     from .spotify_tool import spotify_tool
@@ -657,8 +677,11 @@ def base_registry(  # noqa: C901
     from .stripe_tool import stripe_tool
     from .supply_chain_pin import supply_chain_pin
     from .synthetic_data import synthetic_data
+    from .template_generator import template_generator
     from .test_gen import test_gen
     from .test_impact import test_impact
+    from .tiered_storage import tiered_storage
+    from .tool_call_inspector import tool_call_inspector
     from .translate import translate
     from .trello_tool import trello_tool
     from .twilio_tool import twilio_tool
@@ -666,9 +689,11 @@ def base_registry(  # noqa: C901
     from .vercel_tool import vercel_tool
     from .view_image import view_image
     from .view_video import view_video
+    from .wal_contention import wal_contention
     from .watermark_detector import watermark_detector
     from .web_archive import web_archive
     from .web_recorder import web_recorder
+    from .whats_changed import whats_changed
     from .wikipedia import wikipedia
     from .wolfram_tool import wolfram_tool
     from .youtube import youtube
@@ -762,6 +787,31 @@ def base_registry(  # noqa: C901
     reg.register(web_archive())
     reg.register(anki())
     reg.register(s3_attachments())
+    reg.register(template_generator())
+    reg.register(generic_oauth())
+    reg.register(plugin_lockfile())
+    reg.register(saas_trigger())
+    reg.register(apple_shortcuts())
+    reg.register(discord_slash())
+    reg.register(slack_workflow())
+    reg.register(risk_tier_classifier())
+    reg.register(containment_mode())
+    reg.register(capability_leak_fuzzer())
+    reg.register(bias_eval())
+    reg.register(right_to_explanation())
+    reg.register(audit_mirror())
+    reg.register(tiered_storage())
+    reg.register(async_compaction())
+    reg.register(wal_contention())
+    reg.register(memleak_quarantine())
+    reg.register(openmetrics())
+    reg.register(sla_breach())
+    reg.register(whats_changed())
+    reg.register(comparative_replay())
+    reg.register(tool_call_inspector())
+    reg.register(latency_heatmap())
+    reg.register(plain_language())
+    reg.register(multimodal_rag())
     reg.register(semantic_code_search(sandbox))
     reg.register(mutation_test())
     reg.register(constrained_output())
