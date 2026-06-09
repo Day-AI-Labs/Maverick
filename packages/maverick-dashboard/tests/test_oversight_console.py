@@ -103,7 +103,10 @@ def test_pending_holds_are_actionable_inline(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     from maverick.world_model import WorldModel
     w = WorldModel(tmp_path / "world.db")
-    w.create_approval("shell", risk="high", detail="'shell' requires human approval")
+    w.create_approval(
+        "shell", risk="high", detail="'shell' requires human approval",
+        provenance="governance",
+    )
     text = _client().get("/oversight").text
     assert 'href="/approvals"' in text          # still links to the full queue
     # ...but the hold is also actionable right here: the action + inline
@@ -114,6 +117,28 @@ def test_pending_holds_are_actionable_inline(monkeypatch, tmp_path):
     assert "/api/v1/approvals/" in text
     # Governance REQUIRE_HUMAN holds are labelled (EU AI Act Art 14).
     assert "Art 14" in text
+
+
+def test_oversight_approval_sources_use_trusted_provenance(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    from maverick.world_model import WorldModel
+
+    w = WorldModel(tmp_path / "world.db")
+    w.create_approval(
+        "governed-shell", risk="high", detail="policy requires operator review",
+        provenance="governance",
+    )
+    w.create_approval(
+        "ordinary-shell", risk="high", detail="governance",
+        provenance=None,
+    )
+
+    text = _client().get("/oversight").text
+
+    assert "governed-shell" in text
+    assert "ordinary-shell" in text
+    assert text.count("governance · Art 14") == 1
+    assert text.count(">consent</span>") == 1
 
 
 def test_no_pending_holds_shows_empty_state(monkeypatch, tmp_path):
