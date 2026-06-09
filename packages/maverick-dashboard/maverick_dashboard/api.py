@@ -28,6 +28,8 @@ from maverick.runner import (
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
+from ._shared import _any_provider_key_set, _world
+from ._shared import _world_cache as _world_cache  # re-export: tests clear api._world_cache
 from .auth import (
     assert_goal_access,
     caller_principal,
@@ -92,37 +94,6 @@ class SkillOut(BaseModel):
     name: str
     triggers: list[str]
     tools_needed: list[str]
-
-
-_world_cache: dict[str, object] = {}
-
-
-_PROVIDER_ENV_VARS = (
-    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY",
-    "OPENROUTER_API_KEY", "MOONSHOT_API_KEY", "DEEPSEEK_API_KEY",
-    "XAI_API_KEY",
-)
-
-
-def _any_provider_key_set() -> bool:
-    """True iff at least one supported provider's env var is populated."""
-    return any(os.environ.get(v) for v in _PROVIDER_ENV_VARS)
-
-
-def _world():
-    """Return a per-DB-path cached WorldModel (council perf fix).
-
-    See ``maverick_dashboard.app._world`` for the rationale; both
-    modules share the same cache pattern but keep their own dicts to
-    avoid an import cycle.
-    """
-    from maverick.world_model import DEFAULT_DB, WorldModel
-    key = str(DEFAULT_DB)
-    cached = _world_cache.get(key)
-    if cached is None:
-        cached = WorldModel(DEFAULT_DB)
-        _world_cache[key] = cached
-    return cached
 
 
 def _to_goal_out(g) -> GoalOut:
