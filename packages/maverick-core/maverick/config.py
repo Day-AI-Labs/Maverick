@@ -323,6 +323,7 @@ def get_calibration() -> dict:
         "enforce": bool(cfg.get("enforce", False)),
         "min_samples": _int("min_samples", 20),
         "min_discrimination": max(0.0, min(1.0, min_disc)),
+        "collect_from_coding": bool(cfg.get("collect_from_coding", False)),
     }
 
 

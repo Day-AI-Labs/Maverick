@@ -107,6 +107,24 @@ class TestLearningFrozen:
         assert calibration.learning_frozen(verdict_path=vp) is False
 
 
+class TestCollectFromCoding:
+    def test_off_by_default(self, monkeypatch):
+        monkeypatch.delenv("MAVERICK_CALIBRATION_COLLECT_CODING", raising=False)
+        monkeypatch.setattr(calibration, "_settings", lambda: dict(calibration._DEFAULTS))
+        assert calibration.collect_from_coding_enabled() is False
+
+    def test_env_enables(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_CALIBRATION_COLLECT_CODING", "1")
+        assert calibration.collect_from_coding_enabled() is True
+
+    def test_config_enables(self, monkeypatch):
+        monkeypatch.delenv("MAVERICK_CALIBRATION_COLLECT_CODING", raising=False)
+        monkeypatch.setattr(calibration, "_settings", lambda: {
+            **calibration._DEFAULTS, "collect_from_coding": True,
+        })
+        assert calibration.collect_from_coding_enabled() is True
+
+
 class TestDonationInterlock:
     def test_frozen_learning_blocks_gold_trajectory(self, tmp_path, monkeypatch):
         """A trajectory that WOULD donate is refused when calibration is frozen."""

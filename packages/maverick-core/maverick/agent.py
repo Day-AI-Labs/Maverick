@@ -1993,6 +1993,26 @@ class Agent:
                                     self.name, "verify",
                                     f"test-driven verifier: {test_result.summary()}",
                                 )
+                                # Calibration auto-collection: tests are GROUND
+                                # TRUTH here, so also ask the LLM verifier and
+                                # record (confidence, correct) -- this is how the
+                                # calibration interlock learns whether the judge
+                                # still tracks reality. Opt-in (one extra verifier
+                                # call) + fail-open.
+                                try:
+                                    from . import calibration
+                                    if calibration.collect_from_coding_enabled():
+                                        from .verifier import verify_proposal
+                                        _cv = await verify_proposal(
+                                            self.brief, final, self.ctx.llm,
+                                            self.ctx.budget, proposer_model=self.model,
+                                        )
+                                        calibration.record_sample(
+                                            _cv.confidence, test_result.all_pass,
+                                            source="coding",
+                                        )
+                                except Exception:  # pragma: no cover -- never break the loop
+                                    pass
                                 if test_result.all_pass:
                                     # Tests pass → accept FINAL. Skip LLM verifier.
                                     self._already_verified = True
