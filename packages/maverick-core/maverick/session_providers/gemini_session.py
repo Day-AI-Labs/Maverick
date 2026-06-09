@@ -23,8 +23,14 @@ import uuid
 
 from ..budget import Budget
 from ..llm import LLMResponse
-from . import cookie_store
-from .base import approx_record_budget, stringify_messages, tool_use_unsupported
+from .base import (
+    approx_record_budget,
+    cookie_header,
+    require_httpx,
+    resolve_session,
+    stringify_messages,
+    tool_use_unsupported,
+)
 
 log = logging.getLogger(__name__)
 
@@ -152,28 +158,22 @@ class GeminiSessionClient:
     DEFAULT_MODEL = "gemini-3-pro"
 
     def __init__(self, session: dict | None = None):
-        try:
-            import httpx  # noqa: F401
-        except ImportError as e:
-            raise ImportError(
-                "httpx not installed. Run: pip install 'maverick-agent[session]'"
-            ) from e
-        self._session = session or cookie_store.load_session(self.PROVIDER_KEY)
-        if not self._session:
-            raise RuntimeError(
-                "No Gemini session stored. Capture via "
-                "`maverick session import gemini`. Note: Gemini's free BYOK "
-                "tier is generous; if session capture flakes, use BYOK."
-            )
+        require_httpx()
+        self._session = resolve_session(
+            session,
+            self.PROVIDER_KEY,
+            "No Gemini session stored. Capture via "
+            "`maverick session import gemini`. Note: Gemini's free BYOK "
+            "tier is generous; if session capture flakes, use BYOK.",
+        )
 
     def _cookie_header(self) -> str:
-        cookies = self._session.get("cookies") or {}
-        if not cookies.get("__Secure-1PSID"):
-            raise RuntimeError(
-                "Gemini session missing __Secure-1PSID cookie. Re-capture from "
-                "gemini.google.com (NOT google.com)."
-            )
-        return "; ".join(f"{k}={v}" for k, v in cookies.items())
+        return cookie_header(
+            self._session.get("cookies") or {},
+            "Gemini session missing __Secure-1PSID cookie. Re-capture from "
+            "gemini.google.com (NOT google.com).",
+            require_key="__Secure-1PSID",
+        )
 
     def _headers(self) -> dict:
         headers = dict(_BASE_HEADERS)

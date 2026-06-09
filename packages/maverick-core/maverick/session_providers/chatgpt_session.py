@@ -23,10 +23,12 @@ import uuid
 
 from ..budget import Budget
 from ..llm import LLMResponse
-from . import cookie_store
 from .base import (
     approx_record_budget,
+    cookie_header,
     iter_sse_data_payloads,
+    require_httpx,
+    resolve_session,
     stringify_messages,
     tool_use_unsupported,
 )
@@ -98,27 +100,20 @@ class ChatGPTSessionClient:
     DEFAULT_MODEL = "gpt-4o"
 
     def __init__(self, session: dict | None = None):
-        try:
-            import httpx  # noqa: F401
-        except ImportError as e:
-            raise ImportError(
-                "httpx not installed. Run: pip install 'maverick-agent[session]'"
-            ) from e
-        self._session = session or cookie_store.load_session(self.PROVIDER_KEY)
-        if not self._session:
-            raise RuntimeError(
-                "No ChatGPT session stored. Run `maverick init` and pick "
-                "'browser session' for the ChatGPT provider, or paste your "
-                "session cookie via `maverick session import chatgpt`."
-            )
+        require_httpx()
+        self._session = resolve_session(
+            session,
+            self.PROVIDER_KEY,
+            "No ChatGPT session stored. Run `maverick init` and pick "
+            "'browser session' for the ChatGPT provider, or paste your "
+            "session cookie via `maverick session import chatgpt`.",
+        )
 
     def _cookie_header(self) -> str:
-        cookies = self._session.get("cookies") or {}
-        if not cookies:
-            raise RuntimeError(
-                "ChatGPT session has no cookies. Re-capture from your browser."
-            )
-        return "; ".join(f"{k}={v}" for k, v in cookies.items())
+        return cookie_header(
+            self._session.get("cookies") or {},
+            "ChatGPT session has no cookies. Re-capture from your browser.",
+        )
 
     def _auth_headers(self, access_token: str | None = None) -> dict:
         headers = dict(_BASE_HEADERS)

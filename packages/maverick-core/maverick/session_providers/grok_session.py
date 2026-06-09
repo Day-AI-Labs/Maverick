@@ -17,8 +17,14 @@ import uuid
 
 from ..budget import Budget
 from ..llm import LLMResponse
-from . import cookie_store
-from .base import approx_record_budget, stringify_messages, tool_use_unsupported
+from .base import (
+    approx_record_budget,
+    cookie_header,
+    require_httpx,
+    resolve_session,
+    stringify_messages,
+    tool_use_unsupported,
+)
 
 log = logging.getLogger(__name__)
 
@@ -96,23 +102,18 @@ class GrokSessionClient:
     DEFAULT_MODEL = "grok-4-latest"
 
     def __init__(self, session: dict | None = None):
-        try:
-            import httpx  # noqa: F401
-        except ImportError as e:
-            raise ImportError(
-                "httpx not installed. Run: pip install 'maverick-agent[session]'"
-            ) from e
-        self._session = session or cookie_store.load_session(self.PROVIDER_KEY)
-        if not self._session:
-            raise RuntimeError(
-                "No Grok session stored. Capture via `maverick session import grok`."
-            )
+        require_httpx()
+        self._session = resolve_session(
+            session,
+            self.PROVIDER_KEY,
+            "No Grok session stored. Capture via `maverick session import grok`.",
+        )
 
     def _cookie_header(self) -> str:
-        cookies = self._session.get("cookies") or {}
-        if not cookies:
-            raise RuntimeError("Grok session has no cookies. Re-capture.")
-        return "; ".join(f"{k}={v}" for k, v in cookies.items())
+        return cookie_header(
+            self._session.get("cookies") or {},
+            "Grok session has no cookies. Re-capture.",
+        )
 
     def _headers(self) -> dict:
         headers = dict(_BASE_HEADERS)
