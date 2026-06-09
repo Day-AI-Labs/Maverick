@@ -104,7 +104,17 @@ here.
   risk-tier screening for a described AI use-case — prohibited/high/limited/
   minimal + obligations; heuristic, not legal advice), `geofence` (region
   allow/deny policy check — ISO codes or groups EU/EEA/FIVE_EYES, deny-precedence), `two_person_rule` (validate
-  dual-control sign-off — distinct approvers, separation of duties, optional roles).
+  dual-control sign-off — distinct approvers, separation of duties, optional roles),
+  `watermark_detector` (scan text for invisible watermarking — zero-width chars,
+  Unicode tag-block steganography with payload decode, bidi/Trojan-Source
+  controls, homoglyphs), `collusion_detector` (heuristic multi-agent collusion
+  scan over a message log — back-channels, scripted payloads, reciprocal-approval
+  loops), `capability_delegation_graph` (delegation-cycle / over-broad-fan-out /
+  sensitive-holder analysis of a grant graph), `honeytoken` (mint never-valid
+  decoy credentials + exfiltration tripwire scan), `dp_stats` (differentially-
+  private aggregate release via the Laplace mechanism — noisy count/sum with a
+  per-record clamp), `cost_attribution` (rank spend across principal/tenant/tool/
+  tag/model/role dimensions with shares).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.

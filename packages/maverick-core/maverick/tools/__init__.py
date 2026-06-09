@@ -635,6 +635,12 @@ def base_registry(  # noqa: C901
     from .trello_tool import trello_tool
     from .twilio_tool import twilio_tool
     from .two_person_rule import two_person_rule
+    from .watermark_detector import watermark_detector
+    from .collusion_detector import collusion_detector
+    from .capability_delegation_graph import capability_delegation_graph
+    from .honeytoken import honeytoken
+    from .dp_stats import dp_stats
+    from .cost_attribution import cost_attribution
     from .vercel_tool import vercel_tool
     from .view_image import view_image
     from .view_video import view_video
@@ -702,6 +708,12 @@ def base_registry(  # noqa: C901
     reg.register(cross_repo_deps(sandbox))
     reg.register(test_gen())
     reg.register(two_person_rule())
+    reg.register(watermark_detector())
+    reg.register(collusion_detector())
+    reg.register(capability_delegation_graph())
+    reg.register(honeytoken())
+    reg.register(dp_stats())
+    reg.register(cost_attribution())
     reg.register(semantic_code_search(sandbox))
     reg.register(mutation_test())
     reg.register(constrained_output())
