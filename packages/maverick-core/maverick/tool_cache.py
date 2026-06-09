@@ -136,6 +136,25 @@ def reset() -> None:
         _misses = 0
 
 
+def purge(tool_name: str | None = None) -> int:
+    """Drop cached entries -- all of them, or just those for ``tool_name``.
+
+    Returns the number of entries removed. Unlike :func:`reset`, the hit/miss
+    counters are left intact, so a targeted purge (e.g. after a tool's
+    underlying data changed) doesn't throw away the run's hit-rate history.
+    """
+    with _lock:
+        if tool_name:
+            prefix = f"{tool_name}:"
+            keys = [k for k in _store if k.startswith(prefix)]
+            for k in keys:
+                del _store[k]
+            return len(keys)
+        n = len(_store)
+        _store.clear()
+        return n
+
+
 __all__ = [
     "enabled", "cacheable", "get_cached", "store_cached", "stats", "reset",
 ]

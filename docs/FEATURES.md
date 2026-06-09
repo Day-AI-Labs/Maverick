@@ -91,7 +91,8 @@ here.
   `web_recorder` (generate a runnable Playwright script from a list of browser
   steps — deterministic codegen with escaped literals), `a11y_tree` (distill raw
   HTML into a compact accessibility tree — landmarks/headings/links/controls —
-  for a 5-10x token cut).
+  for a 5-10x token cut), `cache_admin` (inspect/purge the
+  tool-output cache — stats or targeted purge).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
