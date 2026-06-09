@@ -639,6 +639,7 @@ def base_registry(  # noqa: C901
     from .vercel_tool import vercel_tool
     from .view_image import view_image
     from .view_video import view_video
+    from .watermark_detector import watermark_detector
     from .web_recorder import web_recorder
     from .wikipedia import wikipedia
     from .wolfram_tool import wolfram_tool
@@ -710,6 +711,7 @@ def base_registry(  # noqa: C901
     reg.register(model3d_inspect(sandbox))
     reg.register(synthetic_data())
     reg.register(web_recorder())
+    reg.register(watermark_detector())
     reg.register(a11y_tree())
     reg.register(ai_act_classifier())
     reg.register(cache_admin())
