@@ -230,6 +230,13 @@ class ToolRegistry:
         self._core_names: set[str] = set()
         self._core: set[str] = set()
         self._activated: set[str] = set()
+        # Memoized to_anthropic() payload. The exposed tool set is stable
+        # across turns (it only changes on register / set_acl /
+        # enable_deferred / activate), but the agent loop re-serialises all
+        # 80+ tool schemas every model turn. Cache it and invalidate at those
+        # four mutation points. Consumers copy before mutating (the Anthropic
+        # provider does ``[dict(t) for t in ...]``), so sharing is safe.
+        self._anthropic_cache: list[dict[str, Any]] | None = None
 
     def set_acl(
         self,
@@ -241,6 +248,7 @@ class ToolRegistry:
         self._acl_allowed = set(allowed or set())
         self._acl_denied = set(denied or set())
         self._acl_max_risk = max_risk
+        self._anthropic_cache = None
 
     def _acl_allows(self, name: str) -> bool:
         if self._acl_allowed and name not in self._acl_allowed:
@@ -260,6 +268,7 @@ class ToolRegistry:
         self._tools[tool.name] = tool
         if self._deferred and tool.name in self._core_names:
             self._core.add(tool.name)
+        self._anthropic_cache = None
 
     def get(self, name: str) -> Tool:
         return self._tools[name]
@@ -281,6 +290,7 @@ class ToolRegistry:
         self._deferred = True
         self._core_names = set(core)
         self._core = {n for n in self._core_names if n in self._tools}
+        self._anthropic_cache = None
 
     def deferred_enabled(self) -> bool:
         return self._deferred
@@ -292,7 +302,9 @@ class ToolRegistry:
         """Reveal deferred tools to the model. Returns the names that
         resolved to a registered tool (unknown names are ignored)."""
         resolved = [n for n in names if n in self._tools]
-        self._activated.update(resolved)
+        if resolved:
+            self._activated.update(resolved)
+            self._anthropic_cache = None
         return resolved
 
     def exposed(self) -> list[Tool]:
@@ -312,7 +324,9 @@ class ToolRegistry:
         return [t for n, t in self._tools.items() if n not in names]
 
     def to_anthropic(self) -> list[dict[str, Any]]:
-        return [t.to_anthropic() for t in self.exposed()]
+        if self._anthropic_cache is None:
+            self._anthropic_cache = [t.to_anthropic() for t in self.exposed()]
+        return self._anthropic_cache
 
     async def run(self, name: str, args: dict[str, Any]) -> str:
         if name not in self._tools:
