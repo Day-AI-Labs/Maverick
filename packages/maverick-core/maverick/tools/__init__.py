@@ -573,6 +573,7 @@ def base_registry(  # noqa: C901
     from .ga4_tool import ga4_tool
     from .gdrive_tool import gdrive_tool
     from .geocode import geocode
+    from .geofence import geofence
     from .git_advanced import git_advanced
     from .github_actions import github_actions
     from .gitlab import gitlab
@@ -694,6 +695,7 @@ def base_registry(  # noqa: C901
     reg.register(hackernews())
     reg.register(dns_lookup())
     reg.register(geocode())
+    reg.register(geofence())
     reg.register(knowledge_graph())
     reg.register(citation_verifier())
     reg.register(cross_repo_deps(sandbox))
