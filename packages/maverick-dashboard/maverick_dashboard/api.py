@@ -1092,15 +1092,8 @@ async def run_fleet_agent(
     agent_principal = fleet.principal_for(agent.name)
     try:
         cap = capability_for_role(agent.role, principal=agent_principal)
-    except UnknownRoleError:
-        # A saved fleet may carry an undefined/empty role (created before role
-        # validation, or with RBAC roles opt-out). The CLI rejects these at
-        # `fleet create`, but the dashboard run endpoint stays lenient so a
-        # previously-runnable fleet keeps working: fall back to the base grant,
-        # which is attenuated to the caller below -- a non-admin can therefore
-        # never exceed their own capability. (capability_for_role was made
-        # strict in #931, which otherwise 500s this legacy path.)
-        cap = capability_from_config(agent_principal, user_id=agent_principal)
+    except UnknownRoleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if principal is not None and not is_admin:
         caller_cap = capability_from_config(principal, user_id=principal)
         cap = cap.attenuate(

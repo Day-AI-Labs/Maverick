@@ -30,6 +30,15 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setattr(api, "_any_provider_key_set", lambda: True)
     import maverick_dashboard.app as dash_app
     monkeypatch.setattr(dash_app, "check_goal_rate_limit", lambda request: None)
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda *a, **k: {
+            "roles": {
+                "analyst": {"allow_tools": ["read_file"]},
+                "engineer": {"allow_tools": ["read_file", "write_file"]},
+            },
+        },
+    )
 
 
 def _save_fleet(owner="user:dana"):
@@ -83,18 +92,14 @@ def test_dispatch_runs_agent_under_role_capability(monkeypatch, tmp_path):
     assert kw["capability"].principal == "agent:acme.coder"
 
 
-def test_dispatch_attenuates_legacy_bad_roles_to_caller_capability(monkeypatch, tmp_path):
+def test_dispatch_rejects_legacy_bad_roles_without_scheduling(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     monkeypatch.setattr(
         "maverick.config.load_config",
         lambda *a, **k: {
-            "role_assignments": {"user:eve": "restricted"},
-            "roles": {"restricted": {"allow_tools": ["read_file"]}},
+            "roles": {"analyst": {"allow_tools": ["read_file"]}},
         },
     )
-    import maverick_dashboard.api as api
-    monkeypatch.setattr(api, "caller_principal", lambda request: "user:eve")
-    monkeypatch.setattr(api, "is_dashboard_admin", lambda p: False)
     from maverick.fleet import Fleet, FleetAgent, save_fleet
     save_fleet(Fleet(name="acme", owner="user:eve", agents=(
         FleetAgent("blank", ""),
@@ -107,13 +112,10 @@ def test_dispatch_attenuates_legacy_bad_roles_to_caller_capability(monkeypatch, 
             "/api/v1/fleets/acme/run",
             json={"agent": agent, "prompt": "try to run shell"},
         )
-        assert r.status_code == 201, r.text
+        assert r.status_code == 400, r.text
+        assert "undefined RBAC role" in r.json()["detail"]
 
-    for agent, call in zip(("blank", "ghost"), calls, strict=True):
-        cap = call["kwargs"]["capability"]
-        assert cap.principal == f"agent:acme.{agent}"
-        assert cap.permits("read_file") is True
-        assert cap.permits("shell") is False
+    assert calls == []
 
 
 def test_dispatch_preserves_explicit_zero_budget(monkeypatch, tmp_path):
