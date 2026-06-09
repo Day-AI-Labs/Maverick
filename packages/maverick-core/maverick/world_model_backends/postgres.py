@@ -671,6 +671,19 @@ class PostgresWorldModel:
             rows = cur.fetchall()
         return [GoalEvent(*r) for r in rows]
 
+    def recent_goal_events(self, goal_id: int, limit: int = 200) -> list:
+        from ..world_model import GoalEvent
+        with self._tx() as cur:
+            cur.execute(
+                "SELECT id, goal_id, agent, kind, content, ts FROM ("
+                "SELECT id, goal_id, agent, kind, content, ts FROM goal_events "
+                "WHERE goal_id=%s ORDER BY id DESC LIMIT %s"
+                ") recent ORDER BY id ASC",
+                (goal_id, limit),
+            )
+            rows = cur.fetchall()
+        return [GoalEvent(*r) for r in rows]
+
     # ----- facts (global key/value memory) -----
 
     def upsert_fact(self, key: str, value: str, episode_id: int | None = None) -> None:

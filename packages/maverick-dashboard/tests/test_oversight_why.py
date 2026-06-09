@@ -55,6 +55,22 @@ def test_why_returns_status_cost_summary_and_chain(monkeypatch, tmp_path):
     assert d["events"][1]["content"] == "ran pytest: 12 passed"
 
 
+def test_why_returns_most_recent_events_for_long_running_goal(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    from maverick.world_model import WorldModel
+
+    w = WorldModel(tmp_path / "world.db")
+    gid = w.create_goal("long run", "many events")
+    for i in range(450):
+        kind = "safe" if i < 400 else "unsafe"
+        w.append_event(gid, "agent", kind, f"event-{i + 1}")
+
+    d = _client().get(f"/api/v1/oversight/why/{gid}?limit=40").json()
+
+    assert [e["content"] for e in d["events"]] == [f"event-{i}" for i in range(411, 451)]
+    assert d["summary"] == {"unsafe": 40}
+
+
 def test_why_404_for_unknown_goal(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     r = _client().get("/api/v1/oversight/why/99999")

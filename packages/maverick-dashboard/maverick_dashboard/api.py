@@ -992,10 +992,7 @@ async def oversight_why(request: Request, goal_id: int, limit: int = 40) -> dict
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
     limit = max(1, min(limit, 200))
-    # goal_events is ascending + backend-portable; take the most-recent `limit`
-    # from a bounded window so a long run stays cheap, kept in chronological order.
-    window = w.goal_events(goal_id, since_id=0, limit=400)
-    events = window[-limit:]
+    events = w.recent_goal_events(goal_id, limit=limit)
     by_kind: Counter = Counter(e.kind for e in events)
     cost = 0.0
     try:

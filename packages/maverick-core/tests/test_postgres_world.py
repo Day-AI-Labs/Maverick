@@ -84,6 +84,10 @@ def test_events_round_trip(world):
     after = world.goal_events(gid, since_id=e1)
     assert [e.content for e in after] == ["ran ls"]
 
+    world.append_event(gid, "verifier", "decision", "accepted")
+    recent = world.recent_goal_events(gid, limit=2)
+    assert [e.content for e in recent] == ["ran ls", "accepted"]
+
 
 def test_facts_upsert_overwrites(world):
     world.upsert_fact("pg:color", "blue")
