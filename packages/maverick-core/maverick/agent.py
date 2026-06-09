@@ -454,6 +454,11 @@ class Agent:
         self.tools = self._build_tools()
         self.system = self._build_system()
         self.model = model_override or model_for_role(role)
+        # Per-role reasoning effort (opt-in; None unless configured). Resolved
+        # once against this agent's role + model so the cost/latency lever rides
+        # every LLM call this agent makes. Model-gated -> never 400s.
+        from .effort import effort_for_role
+        self.effort = effort_for_role(role, self.model)
         # Tracks whether we've already given one LLM-verifier-driven
         # revision pass for this agent run. Separate from
         # `_already_verified` so revised FINALs can be re-verified once
@@ -1407,6 +1412,20 @@ class Agent:
         bb = self.ctx.blackboard
         bb.post(self.name, "plan", f"role={self.role} depth={self.depth} brief={self.brief}")
 
+        # Opt-in prompt-cache pre-warm (default OFF). Warm only the orchestrator
+        # -- the first, largest, user-facing prompt -- once before its loop, so
+        # the first real turn reads the system+tools cache instead of paying the
+        # cold-write latency. Subagents are skipped (each has a distinct prompt;
+        # warming them would be a wasted write). Never blocks the run.
+        if self.role == "orchestrator":
+            try:
+                from .llm import cache_prewarm_enabled
+                if cache_prewarm_enabled():
+                    self.ctx.llm.prewarm(
+                        self.system, self.tools.to_anthropic(), self.model)
+            except Exception:  # pragma: no cover -- prewarm never blocks a run
+                pass
+
         # If the goal has image attachments, embed them as vision content
         # blocks on the first user message so the agent can see them.
         # Text/PDF attachments are reachable via `list_attachments` +
@@ -1535,6 +1554,9 @@ class Agent:
                 # so a goal at 99% of budget would otherwise still fire one
                 # more (potentially expensive) call.
                 self.ctx.budget.check()
+                # Pass effort only when configured (None by default) so the call
+                # signature is unchanged when the feature is off.
+                _effort_kw = {"effort": self.effort} if self.effort else {}
                 resp = await self.ctx.llm.complete_async(
                     system=self.system,
                     messages=messages,
@@ -1543,6 +1565,7 @@ class Agent:
                     max_tokens=4096,
                     thinking_budget=self._thinking_budget(),
                     model=self.model,
+                    **_effort_kw,
                 )
             except BudgetExceeded as e:
                 bb.post(self.name, "error", f"budget exceeded: {e}")

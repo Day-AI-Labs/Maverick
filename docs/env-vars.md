@@ -119,6 +119,20 @@ execution), `[billing.plans]` (override plan entitlements), `[egress]` /
 `[tenancy.egress.<t>]` (per-tenant egress plane). Tenants are managed with
 `maverick tenant …`; invoices/entitlements with `maverick billing …`.
 
+## LLM cost & latency
+
+| Env var | Default | Description |
+| --- | --- | --- |
+| `MAVERICK_EFFORT_ENABLED` | config `[effort] enabled` (off) | Turn on the built-in per-role reasoning-effort profile (`output_config.effort`): orchestrator/coder/revisor stay `high`, bulk roles (researcher/verifier/writer) drop to `medium`, reflector/distiller to `low`. The biggest cost/latency lever on Opus 4.7/4.8. Model-gated (Opus 4.5+/Sonnet 4.6) so it never 400s. |
+| `MAVERICK_EFFORT` | unset | Global effort for **all** roles (`low`/`medium`/`high`/`xhigh`/`max`). Wins over config. |
+| `MAVERICK_EFFORT_<ROLE>` | unset | Per-role override, e.g. `MAVERICK_EFFORT_CODER=xhigh`. Highest precedence. |
+| `MAVERICK_CACHE_PREWARM` | config `[cache] prewarm` (off) | Pre-warm the prompt cache at orchestrator start (`max_tokens=0` prefill) so the first turn's time-to-first-token doesn't pay the cold cache write. Best for interactive surfaces. |
+| `MAVERICK_CACHE_MESSAGES` | `1` | Cache the stable message-history prefix (set `0` to disable). |
+| `MAVERICK_LOG_TURNS` | unset | Print per-turn `in/out/cache_read/cache_write` token stats to stderr. The Prometheus `maverick_llm_cache_tokens_total` counter (kind=`read`/`creation`/`uncached`) is the metric form — a hit-rate panel surfaces a silent cache invalidator. |
+
+Config equivalents live under `[effort]` (`enabled`, `default`, `<role>`) and
+`[cache]` (`prewarm`).
+
 ## Compaction & context
 
 | Env var | Default | Description |

@@ -1,0 +1,118 @@
+"""Per-role reasoning effort — the biggest cost/latency lever on Opus 4.7/4.8.
+
+`output_config.effort` controls how much a model thinks *and acts*: lower effort
+means fewer, more-consolidated tool calls, less preamble, and terser output.
+On Opus 4.7/4.8 it matters more than almost any other knob. Maverick already
+tiers *models* by role (orchestrator/revisor → Opus, the rest → Sonnet/Haiku);
+this tiers *effort* the same way — keep the critical reasoning roles
+(orchestrator, coder, revisor) at ``high`` and drop the high-volume bulk roles
+(researcher, verifier, writer) to ``medium``/``low`` for real token savings with
+no loss on the critical path.
+
+**Opt-in, default-OFF** (CLAUDE.md: users own model choice). With nothing
+configured :func:`effort_for_role` returns ``None`` and behaviour is unchanged.
+Turn it on with ``[effort] enabled = true`` (then per-role overrides), a global
+``MAVERICK_EFFORT=medium``, or per-role ``MAVERICK_EFFORT_<ROLE>=low``.
+
+Model-gated so it never 400s: effort is supported on Opus 4.5+ and Sonnet 4.6;
+``xhigh`` is Opus 4.7/4.8 only and ``max`` is Opus-tier (4.6+), so a level above
+the model's ceiling is clamped down rather than rejected.
+"""
+from __future__ import annotations
+
+import os
+
+_LEVELS = ("low", "medium", "high", "xhigh", "max")
+_TRUE = {"1", "true", "yes", "on"}
+
+# Built-in cost-optimized profile, activated by ``[effort] enabled = true``.
+# Intelligence-sensitive roles stay high; bulk/throwaway roles drop down.
+_ROLE_DEFAULTS: dict[str, str] = {
+    "orchestrator": "high",
+    "coder": "high",
+    "revisor": "high",
+    "researcher": "medium",
+    "verifier": "medium",
+    "writer": "medium",
+    "analyst": "medium",
+    "vision": "medium",
+    "reflector": "low",
+    "skill_distiller": "low",
+    "summarizer": "low",
+}
+
+
+def effort_supported(model_id: str) -> bool:
+    """Whether ``model_id`` accepts ``output_config.effort`` at all (Opus 4.5+ and
+    Sonnet 4.6; Sonnet 4.5 and Haiku 4.5 reject it with a 400)."""
+    m = model_id or ""
+    return (
+        m.startswith(("claude-opus-4-5", "claude-opus-4-6",
+                      "claude-opus-4-7", "claude-opus-4-8"))
+        or m.startswith("claude-sonnet-4-6")
+    )
+
+
+def _clamp(level: str, model_id: str) -> str:
+    """Lower a level the model can't take to one it can (never 400)."""
+    m = model_id or ""
+    is_opus_78 = m.startswith(("claude-opus-4-7", "claude-opus-4-8"))
+    is_opus_tier = m.startswith(("claude-opus-4-6", "claude-opus-4-7", "claude-opus-4-8"))
+    if level == "xhigh" and not is_opus_78:
+        return "high"
+    if level == "max" and not is_opus_tier:
+        return "high"
+    return level
+
+
+def _config_effort() -> dict:
+    try:
+        from .config import load_config
+        cfg = (load_config() or {}).get("effort", {})
+        return cfg if isinstance(cfg, dict) else {}
+    except Exception:  # pragma: no cover -- config never blocks a run
+        return {}
+
+
+def _configured_level(role: str) -> str | None:
+    """The effort level chosen for ``role``, or ``None`` if the feature is off.
+
+    Precedence: per-role env > global env > per-role config > config default >
+    the built-in profile (only when ``[effort] enabled``)."""
+    role_l = (role or "").strip().lower()
+    env_role = os.environ.get(f"MAVERICK_EFFORT_{role_l.upper()}")
+    if env_role:
+        return env_role
+    env_global = os.environ.get("MAVERICK_EFFORT")
+    if env_global:
+        return env_global
+    cfg = _config_effort()
+    if role_l in cfg and isinstance(cfg[role_l], str):
+        return cfg[role_l]
+    if isinstance(cfg.get("default"), str):
+        return cfg["default"]
+    enabled = cfg.get("enabled")
+    on = enabled in _TRUE if isinstance(enabled, str) else bool(enabled)
+    if on or os.environ.get("MAVERICK_EFFORT_ENABLED", "").strip().lower() in _TRUE:
+        return _ROLE_DEFAULTS.get(role_l)
+    return None
+
+
+def effort_for_role(role: str, model_id: str) -> str | None:
+    """The effort level to send for ``(role, model)``, or ``None`` to omit it.
+
+    Returns ``None`` (omit ``output_config.effort``, API default applies) when the
+    feature is off, the model doesn't support effort, or the configured value is
+    invalid — so this can never break a request."""
+    if not effort_supported(model_id):
+        return None
+    level = _configured_level(role)
+    if not level:
+        return None
+    level = level.strip().lower()
+    if level not in _LEVELS:
+        return None
+    return _clamp(level, model_id)
+
+
+__all__ = ["effort_for_role", "effort_supported"]

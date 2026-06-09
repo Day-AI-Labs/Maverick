@@ -149,6 +149,16 @@ def _initialize() -> None:
                 "maverick_llm_tokens_total",
                 "Total tokens billed", ["provider", "model", "direction"],
             )
+            # Prompt-cache effectiveness: input tokens served from cache
+            # (~0.1x cost), written to cache (~1.25-2x), and processed fresh
+            # (full price). Hit rate = cache_read / (cache_read + input). A
+            # value stuck near zero across a run flags a silent cache
+            # invalidator (a date/UUID in the system prompt, an unstable tool
+            # order) -- the cheapest regression to catch and the dearest to miss.
+            _metrics["llm_cache_tokens"] = Counter(
+                "maverick_llm_cache_tokens_total",
+                "Prompt-cache input tokens", ["provider", "model", "kind"],
+            )
             _metrics["tool_calls"] = Counter(
                 "maverick_tool_calls_total",
                 "Tool invocations", ["tool", "status"],

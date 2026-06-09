@@ -109,6 +109,16 @@ prefers a reachable local model before remote (`provider_local_first.py`);
 **energy-aware routing** downgrades to a cheaper model on low battery
 (`energy_aware_router.py`); both opt-in and default-OFF.
 
+**Per-role reasoning effort** (`effort.py`) — the biggest cost/latency lever on
+Opus 4.7/4.8: model-gated `output_config.effort` tiered by role (critical roles
+`high`, bulk roles `medium`/`low`), opt-in via `[effort] enabled`.
+
+**Prompt caching** (`providers/anthropic_provider.py`) — frozen system prompt +
+name-sorted tool catalog + a stable-history-prefix breakpoint (with a secondary
+breakpoint on long turns for the 20-block lookback), 1h TTL; opt-in **cache
+pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
+`maverick_llm_cache_tokens_total` hit-rate metric.
+
 ## MCP & agent interop
 
 - **MCP server** (`packages/maverick-mcp/`) — stdio JSON-RPC **and** Streamable
