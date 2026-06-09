@@ -697,7 +697,7 @@ def base_registry(  # noqa: C901
     reg.register(semantic_code_search())
     reg.register(mutation_test())
     reg.register(constrained_output())
-    reg.register(model3d_inspect())
+    reg.register(model3d_inspect(sandbox))
     reg.register(synthetic_data())
     reg.register(web_recorder())
     reg.register(a11y_tree())

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import struct
+from types import SimpleNamespace
 
 from maverick.tools.model3d_inspect import model3d_inspect
 from maverick.tools.synthetic_data import synthetic_data
@@ -31,7 +32,7 @@ endsolid cube
 def test_inspect_ascii_stl(tmp_path):
     f = tmp_path / "m.stl"
     f.write_text(_ASCII_STL)
-    out = model3d_inspect().fn({"op": "inspect", "path": str(f)})
+    out = model3d_inspect(SimpleNamespace(workdir=tmp_path)).fn({"op": "inspect", "path": f.name})
     assert "format: STL (ascii)" in out
     assert "triangles: 2" in out
     assert "vertices: 6" in out
@@ -44,7 +45,7 @@ def test_inspect_binary_stl(tmp_path):
     data = b"\x00" * 80 + struct.pack("<I", 1) + tri
     f = tmp_path / "m.stl"
     f.write_bytes(data)
-    out = model3d_inspect().fn({"op": "inspect", "path": str(f)})
+    out = model3d_inspect(SimpleNamespace(workdir=tmp_path)).fn({"op": "inspect", "path": f.name})
     assert "format: STL (binary)" in out
     assert "triangles: 1" in out and "vertices: 3" in out
     assert "dimensions (w,h,d): (4, 5, 6)" in out
@@ -53,16 +54,35 @@ def test_inspect_binary_stl(tmp_path):
 def test_inspect_obj(tmp_path):
     f = tmp_path / "m.obj"
     f.write_text("v 0 0 0\nv 2 0 0\nv 0 2 0\nf 1 2 3\n")
-    out = model3d_inspect().fn({"op": "inspect", "path": str(f)})
+    out = model3d_inspect(SimpleNamespace(workdir=tmp_path)).fn({"op": "inspect", "path": f.name})
     assert "format: OBJ" in out and "vertices: 3" in out and "faces: 1" in out
 
 
 def test_inspect_errors(tmp_path):
-    assert model3d_inspect().fn({"op": "inspect", "path": ""}).startswith("ERROR")
-    assert model3d_inspect().fn({"op": "inspect", "path": "/no/such.stl"}).startswith("ERROR")
+    tool = model3d_inspect(SimpleNamespace(workdir=tmp_path))
+    assert tool.fn({"op": "inspect", "path": ""}).startswith("ERROR")
+    assert tool.fn({"op": "inspect", "path": "/no/such.stl"}).startswith("ERROR")
     bad = tmp_path / "x.png"
     bad.write_text("x")
-    assert "only .stl and .obj" in model3d_inspect().fn({"op": "inspect", "path": str(bad)})
+    assert "only .stl and .obj" in tool.fn({"op": "inspect", "path": bad.name})
+
+
+def test_inspect_rejects_paths_outside_workspace(tmp_path):
+    outside = tmp_path.parent / "outside.obj"
+    outside.write_text("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n")
+    tool = model3d_inspect(SimpleNamespace(workdir=tmp_path))
+
+    assert "path escapes workspace" in tool.fn({"op": "inspect", "path": str(outside)})
+
+
+def test_inspect_rejects_symlink_escape(tmp_path):
+    outside = tmp_path.parent / "outside_symlink.obj"
+    outside.write_text("v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n")
+    link = tmp_path / "linked.obj"
+    link.symlink_to(outside)
+    tool = model3d_inspect(SimpleNamespace(workdir=tmp_path))
+
+    assert "path escapes workspace" in tool.fn({"op": "inspect", "path": link.name})
 
 
 # ---- synthetic_data ----
