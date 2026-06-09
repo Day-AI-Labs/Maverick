@@ -57,7 +57,8 @@ async def race_first_success(
                     return task.result()  # first success wins
                 errors.append(exc)
         raise AllAttemptsFailed(
-            f"all {len(tasks)} attempts failed; last: {errors[-1]!r}")
+            f"all {len(tasks)} attempts failed; last: {errors[-1]!r}"
+        ) from (errors[-1] if errors else None)
     finally:
         for task in tasks:
             if not task.done():

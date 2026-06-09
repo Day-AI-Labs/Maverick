@@ -285,6 +285,95 @@ def test_world_db_reads_legacy_plaintext(monkeypatch, tmp_path):
     assert wm2.get_fact("user:bob:n") == "plain legacy fact"
 
 
+# --- per-tenant envelope encryption (opt-in) -------------------------------
+
+
+def _per_tenant_env(monkeypatch, tmp_path, tenant="acme"):
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("MAVERICK_KMS_KEK", "ab" * 32)  # deterministic 32-byte KEK
+    monkeypatch.setenv("MAVERICK_ENCRYPT_PER_TENANT", "1")
+    if tenant is not None:
+        monkeypatch.setenv("MAVERICK_TENANT", tenant)
+    else:
+        monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    from maverick import tenant_kms
+    tenant_kms._clear_cache()
+
+
+def test_per_tenant_off_by_default():
+    assert car.per_tenant_at_rest() is False
+
+
+def test_per_tenant_enabled_by_env(monkeypatch):
+    monkeypatch.setenv("MAVERICK_ENCRYPT_PER_TENANT", "1")
+    assert car.per_tenant_at_rest() is True
+    monkeypatch.setenv("MAVERICK_ENCRYPT_PER_TENANT", "0")
+    assert car.per_tenant_at_rest() is False
+
+
+def test_per_tenant_enabled_by_config(monkeypatch):
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda *a, **k: {"encryption": {"per_tenant": True}},
+    )
+    assert car.per_tenant_at_rest() is True
+
+
+def test_tenant_magic_matches_tenant_kms():
+    # The duplicated header constant must stay in lock-step with tenant_kms.
+    from maverick import tenant_kms
+    assert car._TENANT_MAGIC == tenant_kms._SEAL_MAGIC
+
+
+@requires_crypto
+def test_per_tenant_seal_uses_tenant_envelope(monkeypatch, tmp_path):
+    _per_tenant_env(monkeypatch, tmp_path, tenant="acme")
+    blob = car.seal(b"tenant secret 42")
+    assert blob[: len(car._TENANT_MAGIC)] == car._TENANT_MAGIC
+    assert car.is_sealed(blob)
+    assert b"tenant secret 42" not in blob
+    assert car.unseal(blob) == b"tenant secret 42"
+
+
+@requires_crypto
+def test_per_tenant_text_column_helpers(monkeypatch, tmp_path):
+    _per_tenant_env(monkeypatch, tmp_path, tenant="acme")
+    tok = car.seal_to_str("invoice total")
+    assert tok.startswith("MVKAR1:")        # TEXT-column wrapper is unchanged
+    assert "invoice total" not in tok
+    assert car.is_sealed_str(tok)
+    assert car.unseal_from_str(tok) == "invoice total"
+
+
+@requires_crypto
+def test_global_sealed_data_still_opens_after_per_tenant_on(monkeypatch, tmp_path):
+    # Data sealed with the process-wide key (per-tenant OFF) must keep opening
+    # once per-tenant mode is switched on — reads auto-detect by magic header.
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("MAVERICK_ENCRYPTION_KEY", bytes(range(32)).hex())
+    legacy = car.seal(b"sealed before the switch")
+    assert legacy[: len(car._MAGIC)] == car._MAGIC
+
+    monkeypatch.setenv("MAVERICK_KMS_KEK", "ab" * 32)
+    monkeypatch.setenv("MAVERICK_ENCRYPT_PER_TENANT", "1")
+    monkeypatch.setenv("MAVERICK_TENANT", "acme")
+    from maverick import tenant_kms
+    tenant_kms._clear_cache()
+    assert car.unseal(legacy) == b"sealed before the switch"
+
+
+@requires_crypto
+def test_one_tenant_cannot_open_anothers_data(monkeypatch, tmp_path):
+    _per_tenant_env(monkeypatch, tmp_path, tenant="acme")
+    blob = car.seal(b"acme only")
+    from maverick import tenant_kms
+    # Re-pin to a different tenant; the GCM context no longer matches.
+    monkeypatch.setenv("MAVERICK_TENANT", "beta")
+    tenant_kms._clear_cache()
+    with pytest.raises(car.EncryptionUnavailable):
+        car.unseal(blob)
+
+
 @requires_crypto
 def test_world_db_seals_messages(monkeypatch, tmp_path):
     import sqlite3
