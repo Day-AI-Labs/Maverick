@@ -187,6 +187,22 @@ async def list_goals(
     return [_to_goal_out(g) for g in goals]
 
 
+@router.get("/goals/search", response_model=list[GoalOut])
+async def search_goals(request: Request, q: str, limit: int = 50) -> list[GoalOut]:
+    """Search across runs (goals) by text in title / description / result.
+
+    Owner-scoped: a non-admin authenticated caller searches only their own
+    goals; auth-off and admin callers search all. Declared before
+    ``/goals/{goal_id}`` so the literal ``search`` path wins over the int param.
+    """
+    query = (q or "").strip()
+    if not query:
+        return []
+    limit = max(1, min(int(limit or 50), 200))
+    goals = _world().search_goals(query, owner=goal_owner_filter(request), limit=limit)
+    return [_to_goal_out(g) for g in goals]
+
+
 @router.get("/goals/{goal_id}", response_model=GoalOut)
 async def get_goal(request: Request, goal_id: int) -> GoalOut:
     g = _world().get_goal(goal_id)

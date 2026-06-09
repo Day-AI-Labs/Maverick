@@ -4,6 +4,10 @@
   <h2>all goals</h2>
   <div class="panel">
     {% if goals %}
+    <input id="run-search-q" type="search" placeholder="Search across runs…"
+           aria-label="Search runs by title or description"
+           autocomplete="off"
+           style="width: 100%; max-width: 30rem; padding: 0.5rem 0.65rem; margin-bottom: 1rem;">
     <table>
       <thead><tr><th scope="col">id</th><th scope="col">status</th><th scope="col">title</th><th scope="col">description</th><th scope="col"></th></tr></thead>
       <tbody>
@@ -32,4 +36,48 @@
       </div>
     {% endif %}
   </div>
+  <script>
+  (function () {
+    var input = document.getElementById('run-search-q');
+    var tbody = document.querySelector('.panel table tbody');
+    if (!input || !tbody) return;
+    var original = tbody.innerHTML;
+    var timer = null;
+    function esc(s) {
+      return (s == null ? '' : String(s)).replace(/[&<>"]/g, function (c) {
+        return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c];
+      });
+    }
+    function render(goals) {
+      if (!goals.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="muted">no matching runs</td></tr>';
+        return;
+      }
+      tbody.innerHTML = goals.map(function (g) {
+        var d = (g.description || '').slice(0, 120);
+        return '<tr id="' + g.id + '">' +
+          '<td><code>#' + g.id + '</code></td>' +
+          '<td><span class="badge ' + esc(g.status) + '">' + esc(g.status) + '</span></td>' +
+          '<td>' + esc(g.title) + '</td>' +
+          '<td class="muted">' + esc(d) + '</td>' +
+          '<td class="muted" style="white-space: nowrap;">' +
+          '<a href="/goals/' + g.id + '/plan">plan</a> · ' +
+          '<a href="/goals/' + g.id + '/trajectory">replay</a> · ' +
+          '<a href="/goals/' + g.id + '/errors">errors</a></td></tr>';
+      }).join('');
+    }
+    input.addEventListener('input', function () {
+      var q = input.value.trim();
+      clearTimeout(timer);
+      if (!q) { tbody.innerHTML = original; return; }
+      timer = setTimeout(function () {
+        fetch('/api/v1/goals/search?q=' + encodeURIComponent(q) + '&limit=100',
+              {headers: {'Accept': 'application/json'}})
+          .then(function (r) { return r.ok ? r.json() : []; })
+          .then(render)
+          .catch(function () { /* keep current rows on error */ });
+      }, 200);
+    });
+  })();
+  </script>
 {% endblock %}

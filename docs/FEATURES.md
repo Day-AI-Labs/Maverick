@@ -255,7 +255,10 @@ trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
   an **oversight console** (`/oversight`): live fleet state, the approval queue,
   a per-guardrail intervention roll-up, and an inline **"why this action"
   drill-down** (the reasoning/tool chain + cost for a running agent, owner-scoped)
-  (`maverick dashboard`).
+  (`maverick dashboard`). **Search across runs** — a live search box on the
+  goals page over `GET /api/v1/goals/search` (text match on title/description/
+  result, owner-scoped, decrypt-then-filter since those fields are encrypted at
+  rest).
 - **Cost** — per-run reports, live cost meter, `maverick start --dry-cost`
   forecasting (`cost_forecast.py`).
 - **Templates** — starter-goals library + community template registry
