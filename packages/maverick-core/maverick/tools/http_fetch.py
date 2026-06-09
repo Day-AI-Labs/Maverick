@@ -396,13 +396,14 @@ def _run_fetch(args: dict[str, Any]) -> str:
         if not _check_robots(url):
             return f"ERROR: blocked by robots.txt for {url!r}"
 
-    # Per-tool egress policy ([sandbox.tool.http_fetch] allow_egress/deny_egress).
-    # No policy configured -> allow-all, so this is a no-op for the default install.
+    # Egress policy: the per-tenant plane ([egress] / [tenancy.egress.<t>]) AND
+    # the per-tool policy ([sandbox.tool.http_fetch]). No policy configured ->
+    # allow-all, so this is a no-op for the default install.
     try:
-        from ..sandbox.network_policy import host_allowed
-        if not host_allowed("http_fetch", parsed.hostname or ""):
+        from ..tenant_egress import egress_allowed
+        if not egress_allowed("http_fetch", parsed.hostname or ""):
             return (f"ERROR: egress policy blocks http_fetch from reaching "
-                    f"{parsed.hostname!r} (see [sandbox.tool.http_fetch]).")
+                    f"{parsed.hostname!r} (see [egress] / [sandbox.tool.http_fetch]).")
     except Exception:  # pragma: no cover -- policy never breaks a fetch
         pass
 

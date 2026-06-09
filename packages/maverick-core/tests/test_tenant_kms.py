@@ -1,0 +1,90 @@
+"""Per-tenant envelope encryption: DEK-per-tenant wrapped by a KMS KEK."""
+from __future__ import annotations
+
+import importlib.util
+
+import pytest
+
+requires_crypto = pytest.mark.skipif(
+    importlib.util.find_spec("cryptography") is None,
+    reason="cryptography extra is not installed",
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolate(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+    monkeypatch.setenv("MAVERICK_KMS_KEK", "ab" * 32)  # deterministic 32-byte KEK
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    from maverick import tenant_kms
+    tenant_kms._clear_cache()
+    yield
+    tenant_kms._clear_cache()
+
+
+@requires_crypto
+def test_seal_unseal_round_trip_per_tenant():
+    from maverick import tenant_kms as k
+    blob = k.seal_text_for_tenant("acme", "secret invoice")
+    assert k.unseal_text_for_tenant("acme", blob) == "secret invoice"
+
+
+@requires_crypto
+def test_one_tenant_cannot_open_anothers_data(tmp_path):
+    from maverick import tenant_kms as k
+    blob = k.seal_for_tenant("acme", b"acme-only")
+    k._clear_cache()
+    # beta has a different DEK -> GCM auth fails.
+    with pytest.raises(k.EncryptionUnavailable):
+        k.unseal_for_tenant("beta", blob)
+
+
+@requires_crypto
+def test_dek_is_persisted_wrapped_not_plaintext(tmp_path):
+    from maverick import tenant_kms as k
+    dek = k.tenant_dek("acme")
+    wrapped_path = tmp_path / "tenants" / "acme" / "keys" / "dek.wrapped"
+    assert wrapped_path.exists()
+    on_disk = wrapped_path.read_bytes()
+    # The stored DEK is wrapped (magic header) and never the raw DEK.
+    assert on_disk.startswith(b"MVKDEK1\n")
+    assert dek not in on_disk
+
+
+@requires_crypto
+def test_dek_is_stable_across_cache_clears():
+    from maverick import tenant_kms as k
+    d1 = k.tenant_dek("acme")
+    k._clear_cache()
+    d2 = k.tenant_dek("acme")  # reloaded + unwrapped from disk
+    assert d1 == d2
+
+
+@requires_crypto
+def test_rotate_kek_keeps_data_readable():
+    from maverick import tenant_kms as k
+    blob = k.seal_for_tenant("acme", b"durable")
+    old = k.LocalKMS()
+    new = k.LocalKMS(kek=b"\x01" * 32)
+    k.rotate_kek("acme", old_kms=old, new_kms=new)
+    # The DEK is unchanged, so old ciphertext still opens — but only via the new KEK.
+    assert k.unseal_for_tenant("acme", blob, kms=new) == b"durable"
+    # The old KEK can no longer unwrap the re-wrapped DEK.
+    k._clear_cache()
+    with pytest.raises(k.EncryptionUnavailable):
+        k.tenant_dek("acme", kms=old)
+
+
+@requires_crypto
+def test_rotate_missing_tenant_raises():
+    from maverick import tenant_kms as k
+    with pytest.raises(k.EncryptionUnavailable):
+        k.rotate_kek("ghost", old_kms=k.LocalKMS(), new_kms=k.LocalKMS())
+
+
+@requires_crypto
+def test_local_kms_wrap_unwrap_round_trip():
+    from maverick import tenant_kms as k
+    kms = k.LocalKMS()
+    dek = b"\x07" * 32
+    assert kms.unwrap(kms.wrap(dek)) == dek

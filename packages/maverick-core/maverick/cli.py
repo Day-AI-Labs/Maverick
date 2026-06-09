@@ -968,6 +968,152 @@ def mcp(use_http: bool, host: str, port: int) -> None:
         MCPServer().run()
 
 
+@main.group()
+def tenant() -> None:
+    """Provision and manage tenants (hosted control plane)."""
+
+
+@tenant.command("create")
+@click.argument("tenant_id")
+@click.option("--plan", default="free", help="Plan name (free/pro/enterprise/...).")
+@click.option("--name", "display_name", default="", help="Human display name.")
+@click.option("--max-daily-dollars", type=float, default=0.0,
+              help="Per-tenant daily spend cap (USD); 0 = unlimited.")
+def tenant_create(tenant_id: str, plan: str, display_name: str,
+                  max_daily_dollars: float) -> None:
+    """Provision a tenant + its isolated workspace."""
+    from .tenant_registry import create_tenant
+    try:
+        rec = create_tenant(tenant_id, plan=plan, display_name=display_name,
+                             max_daily_dollars=max_daily_dollars)
+    except ValueError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    click.echo(f"created tenant {rec.id!r} (plan {rec.plan}, status {rec.status})")
+
+
+@tenant.command("list")
+def tenant_list() -> None:
+    """List provisioned tenants."""
+    from .tenant_registry import list_tenants
+    rows = list_tenants()
+    if not rows:
+        click.echo("no tenants. create one with `maverick tenant create`")
+        return
+    for t in rows:
+        cap = f"${t.max_daily_dollars:g}/day" if t.max_daily_dollars else "unlimited"
+        click.echo(f"  {t.id}  [{t.status}]  plan={t.plan}  quota={cap}")
+
+
+@tenant.command("suspend")
+@click.argument("tenant_id")
+def tenant_suspend(tenant_id: str) -> None:
+    """Suspend a tenant (its requests are refused until resumed)."""
+    from .tenant_registry import UnknownTenant, suspend_tenant
+    try:
+        suspend_tenant(tenant_id)
+    except UnknownTenant:
+        click.echo(f"ERROR: no such tenant {tenant_id!r}", err=True)
+        sys.exit(2)
+    click.echo(f"suspended {tenant_id!r}")
+
+
+@tenant.command("resume")
+@click.argument("tenant_id")
+def tenant_resume(tenant_id: str) -> None:
+    """Resume a suspended tenant."""
+    from .tenant_registry import UnknownTenant, resume_tenant
+    try:
+        resume_tenant(tenant_id)
+    except UnknownTenant:
+        click.echo(f"ERROR: no such tenant {tenant_id!r}", err=True)
+        sys.exit(2)
+    click.echo(f"resumed {tenant_id!r}")
+
+
+@tenant.command("quota")
+@click.argument("tenant_id")
+@click.argument("max_daily_dollars", type=float)
+def tenant_quota(tenant_id: str, max_daily_dollars: float) -> None:
+    """Set a tenant's daily spend cap (USD; 0 = unlimited)."""
+    from .tenant_registry import UnknownTenant, set_quota
+    try:
+        rec = set_quota(tenant_id, max_daily_dollars)
+    except UnknownTenant:
+        click.echo(f"ERROR: no such tenant {tenant_id!r}", err=True)
+        sys.exit(2)
+    click.echo(f"{rec.id!r} quota -> ${rec.max_daily_dollars:g}/day")
+
+
+@tenant.command("delete")
+@click.argument("tenant_id")
+@click.option("--purge", is_flag=True,
+              help="Also delete the tenant's data directory (irreversible).")
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
+def tenant_delete(tenant_id: str, purge: bool, yes: bool) -> None:
+    """Remove a tenant from the registry (optionally purging its data)."""
+    from .tenant_registry import delete_tenant
+    if purge and not yes and not click.confirm(
+        f"PURGE all data for tenant {tenant_id!r}? This cannot be undone."
+    ):
+        click.echo("aborted")
+        return
+    if delete_tenant(tenant_id, purge=purge):
+        click.echo(f"deleted {tenant_id!r}" + (" (data purged)" if purge else ""))
+    else:
+        click.echo(f"ERROR: no such tenant {tenant_id!r}", err=True)
+        sys.exit(2)
+
+
+@main.group()
+def billing() -> None:
+    """Rate metered usage into invoices and inspect plan entitlements."""
+
+
+@billing.command("invoice")
+@click.argument("tenant_id")
+@click.option("--since", default=None, help="Start day (YYYY-MM-DD, inclusive).")
+@click.option("--until", default=None, help="End day (YYYY-MM-DD, inclusive).")
+@click.option("--markup-pct", type=float, default=0.0, help="Markup on provider cost.")
+@click.option("--min-charge", type=float, default=0.0, help="Minimum invoice total.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def billing_invoice(tenant_id: str, since: str | None, until: str | None,
+                    markup_pct: float, min_charge: float, as_json: bool) -> None:
+    """Generate an invoice for a tenant from its metered usage."""
+    import json as _json
+
+    from .billing import RateCard, generate_invoice
+    inv = generate_invoice(
+        tenant_id, RateCard(markup_pct=markup_pct, minimum_charge=min_charge),
+        since=since, until=until,
+    )
+    if as_json:
+        click.echo(_json.dumps(inv.to_dict(), indent=2))
+        return
+    click.echo(f"Invoice for {tenant_id!r}  {inv.period_start or '…'} → {inv.period_end or '…'}")
+    for li in inv.line_items:
+        click.echo(f"  {li.day}  {li.principal:<24} ${li.charge:.4f} "
+                   f"({li.in_tokens}+{li.out_tokens} tok)")
+    click.echo(f"  {'-' * 40}")
+    click.echo(f"  TOTAL: ${inv.total:.2f} {inv.currency}")
+
+
+@billing.command("entitlements")
+@click.argument("tenant_id")
+def billing_entitlements(tenant_id: str) -> None:
+    """Show a tenant's plan entitlements (features + limits)."""
+    from .billing import entitlements_for
+    from .tenant_registry import get_tenant
+    rec = get_tenant(tenant_id)
+    plan = rec.plan if rec else "free"
+    ent = entitlements_for(plan)
+    click.echo(f"{tenant_id!r}  plan={plan}")
+    click.echo(f"  features: {', '.join(sorted(ent.features)) or '(none)'}")
+    cap = f"${ent.max_daily_dollars:g}/day" if ent.max_daily_dollars else "unlimited"
+    goals = ent.max_concurrent_goals or "unlimited"
+    click.echo(f"  max spend/day: {cap}   max concurrent goals: {goals}")
+
+
 @main.group("mcp-registry")
 def mcp_registry_group() -> None:
     """Discover + install external MCP servers from a registry.

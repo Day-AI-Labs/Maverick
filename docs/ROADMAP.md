@@ -45,51 +45,52 @@ caps; OIDC + `[roles.<role>]` RBAC gate access). The forward backlog is now
 organised around **finishing the platform spine** (below) over the old quarter
 grid, which is mostly shipped.
 
-**Still open — near-term engineering:**
+**Still open — near-term engineering:** *(the code-buildable items here have
+shipped — see below)*
 
-- **MCP elicitation, URL mode (B1, Phase 3)** — the secrets-never-transit-model
-  path; dovetails with remote-server OAuth (`specs/mcp-elicitation.md`).
-- **IRC channel** and **LangChain / LangGraph adapters** — external-dependency
-  connectors that need a live service to test meaningfully.
-- **Glasses / wearable channel** — Even Realities G2 BYOA bridge, and wearable
-  integrations generally; expected to become table-stakes, so it stays a
-  standing roadmap commitment. See the council note below.
-- **MCP-client language analytics** — the one remaining language-bindings gate
-  step (needs the telemetry-consent UI); see the council decision below.
+- **Language-bindings decision (Q1 2027 gate)** — not code: the consent-gated
+  **MCP-client language analytics** that feeds it has shipped (`mcp_analytics.py`,
+  `non_python_share()`); the decision is a *measurement* — fund a native client
+  only if >15% of active installs drive Maverick from non-Python MCP clients.
+- **Live-service validation** — the IRC, glasses/wearable, and LangChain
+  connectors and the queue/KMS backends ship with their protocol/logic
+  unit-tested; end-to-end validation against a live IRC server, a real G2 device,
+  a langchain install, and a Redis broker is the remaining gate, not new code.
 
-> **Shipped since this list was last cut:** the **long-context retrieval router**
-> (`long_context_router.py`, opt-in `[context] retrieval_router`); the **gRPC API
-> surface** (`grpc_api/`, `StartGoal` / `StreamEpisode` / `Cancel` / `GetStatus`
-> behind the `[grpc]` extra); **MCP client OAuth 2.1 authorization-code grant +
-> PKCE** (`AuthorizationCodeProvider`, `mcp_oauth.py` — joining the shipped
-> client-credentials grant); a **goal-execution Dispatcher seam** (`runner.py`,
-> threads now / queue later via `set_dispatcher`); and the oversight **"why this
-> action" drill-down**. All are in [`FEATURES.md`](./FEATURES.md).
+> **Shipped since this list was last cut:** **long-context retrieval router**;
+> **gRPC API surface**; **MCP OAuth 2.1 authorization-code + PKCE**; a
+> **goal-execution Dispatcher seam** + a **queue-backed dispatcher**
+> (`queue_dispatcher.py`, arq behind `[queue]`); the oversight **"why this action"
+> drill-down**; **MCP elicitation URL mode** (Phase 3); **IRC**, **glasses/
+> wearable**, and **LangChain/LangGraph** connectors; **MCP-client language
+> analytics**; and the platform-spine items below. All are in
+> [`FEATURES.md`](./FEATURES.md).
 
-**Platform spine — what's left to be a multi-tenant hosted platform.** The
+**Platform spine — what's built and what's left for multi-tenant hosting.** The
 single-node, file-per-tenant model is solid (and is the right shape for
-self-hosted, one-tenant-per-deploy). Eventually-both (self-hosted **and** a
-hosted SaaS) means finishing these, roughly in dependency order. None is a
-code-red; the two seams are cheap-now/costly-later and are partly done.
+self-hosted, one-tenant-per-deploy). The hosted-SaaS spine is now largely built:
 
-- **Shared-DB tenancy (Postgres).** A versioned migration runner + a nullable
-  `tenant_id` on the root tables + write-stamping + NULL-tolerant read-scoping
-  for goals have **shipped** (`world_model_backends/postgres.py`). Remaining:
-  extend read-scoping to the rest of the root tables, then move to Row-Level
-  Security + a connection pool for strict isolation and horizontal scale. _(#1
-  spine item.)_
-- **Control-plane / data-plane split.** Goals still run as threads in the API
-  process (`runner.py` `BoundedSemaphore`). Keep dispatch behind an interface
-  now; swap to a real queue (arq / Celery / Temporal) + isolated per-run workers
-  when one box can't keep up. _(#2 spine item.)_
-- **Tenant lifecycle / provisioning API** — create / suspend / delete / assign
-  quota, plus an operator cross-tenant console. Wake at ~3 hosted tenants.
-- **Metering → billing / entitlements** — `quotas.py` records & caps usage;
-  rating / invoicing / plan-gating is unbuilt. Wake at first hosted revenue.
-- **Per-tenant secrets / KMS** — `crypto_at_rest.py` is single-tenant; add a
-  per-tenant DEK wrapped by a KMS KEK. Wake at first sensitive hosted tenant.
-- **Per-tenant egress policy plane** — `sandbox/network_policy.py` is per-tool;
-  add a per-tenant allow-list/proxy above sandboxes. Wake at first shared host.
+- ✅ **Shared-DB tenancy (Postgres).** Versioned migration runner + `tenant_id`
+  on all root tables + write-stamping + read-scoping, with **tenant-aware UNIQUE
+  constraints** and a **strict-isolation mode** (`[world_model]
+  strict_tenant_isolation`) that drops NULL-legacy tolerance — the app-layer
+  RLS equivalent. _Remaining (live-infra):_ database-native Row-Level Security +
+  a `psycopg_pool` connection pool for horizontal scale.
+- ✅ **Control-plane / data-plane split.** Dispatcher seam + a **QueueDispatcher**
+  (`queue_dispatcher.py`) that enqueues goals for out-of-process workers (arq
+  adapter behind `[queue]`; `install_from_config` wires it). _Remaining
+  (live-infra):_ run it against a real Redis + a worker pool.
+- ✅ **Tenant lifecycle / provisioning API** — `tenant_registry.py` +
+  `maverick tenant create/list/suspend/resume/quota/delete`.
+- ✅ **Metering → billing / entitlements** — `billing.py` (rating, invoices,
+  plan entitlements) + `maverick billing invoice/entitlements`.
+- ✅ **Per-tenant secrets / KMS** — `tenant_kms.py`: per-tenant DEK wrapped by a
+  KMS KEK (LocalKMS default; cloud KMS is a drop-in).
+- ✅ **Per-tenant egress policy plane** — `tenant_egress.py`, composed with the
+  per-tool policy at the egress chokepoint.
+- ✅ **Operator console** — a cross-tenant `/tenants` dashboard view (admin-only)
+  over the tenant registry (status / plan / quota), alongside the `maverick
+  tenant` / `maverick billing` CLIs.
 
 **Strategic decisions (settled).** Recorded under [`docs/specs/`](./specs/):
 *park* the learning substrate (revisit on a trajectory-volume tripwire); adopt
