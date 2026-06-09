@@ -910,7 +910,7 @@ async def oversight_page(request: Request) -> HTMLResponse:
         approvals = list(w.pending_approvals())
     except Exception:
         approvals = []
-    sources = {a.id: _approval_source(a.detail) for a in approvals}
+    sources = {a.id: _approval_source(a.provenance) for a in approvals}
     try:
         active = len(w.list_goals(status="active", owner=owner_filter))
     except Exception:
