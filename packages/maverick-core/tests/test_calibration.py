@@ -74,6 +74,19 @@ class TestLedgerAndVerdict:
         assert report.adequate is True
         assert vp.exists()
 
+    def test_load_samples_skips_non_object_json_lines(self, tmp_path):
+        p = tmp_path / "cal.ndjson"
+        p.write_text(
+            '[]\n"x"\n{"confidence": 0.7, "correct": true, "ts": 1, "source": "t"}\n',
+            encoding="utf-8",
+        )
+
+        loaded = calibration.load_samples(path=p)
+
+        assert len(loaded) == 1
+        assert loaded[0].confidence == 0.7
+        assert loaded[0].correct is True
+
 
 class TestLearningFrozen:
     def test_off_by_default(self, tmp_path, monkeypatch):
@@ -104,6 +117,14 @@ class TestLearningFrozen:
         })
         vp = tmp_path / "verdict.json"
         vp.write_text('{"adequate": true}', encoding="utf-8")
+        assert calibration.learning_frozen(verdict_path=vp) is False
+
+    def test_enforced_non_object_verdict_fails_open(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(calibration, "_settings", lambda: {
+            "enforce": True, "min_samples": 20, "min_discrimination": 0.15,
+        })
+        vp = tmp_path / "verdict.json"
+        vp.write_text('[]', encoding="utf-8")
         assert calibration.learning_frozen(verdict_path=vp) is False
 
 
