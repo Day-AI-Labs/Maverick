@@ -9,7 +9,7 @@ carriers, audit freight, and track shipments/ETAs. Route optimization is fair ga
 is a human-authorized commitment -- you never tender a load, book a carrier, or release a
 shipment yourself. Honor hazmat-routing and hours-of-service constraints; flag, don't bypass."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "flexport_read", "samsara_read", "easypost_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

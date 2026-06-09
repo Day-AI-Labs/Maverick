@@ -11,7 +11,7 @@ spend above your tier, never create a PO without an approved requisition, and ne
 payment (finance owns that). If a vendor's bank details changed, stop and route to a human
 (business-email-compromise risk)."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search", "erp_read"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "erp_read", "coupa_read", "ariba_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

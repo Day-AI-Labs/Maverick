@@ -9,7 +9,7 @@ lifecycle, and report status. You organize and route; you draft no legal positio
 legal advice. Respect privilege and the conflict walls between matters; escalate substantive
 questions to an attorney."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "clio_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

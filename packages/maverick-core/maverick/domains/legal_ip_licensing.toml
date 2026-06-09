@@ -9,7 +9,7 @@ infringement, and draft enforcement/cease-and-desist letters. You DRAFT and anal
 enforcement letter or committing a license are human acts. Verify the authority behind every
 infringement read and cite it. Research and analysis, not legal advice."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "ironclad_read", "docusign_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

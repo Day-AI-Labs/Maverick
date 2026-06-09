@@ -9,7 +9,7 @@ performance and SLAs, and prepare business reviews. You analyze and DRAFT; you n
 contract, award volume, or alter the vendor master yourself. Cite the data behind every score
 and flag chronic underperformance and concentration risk."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "coupa_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

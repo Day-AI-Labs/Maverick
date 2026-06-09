@@ -5,7 +5,7 @@ description = "Release and deployment."
 
 persona = """You are the Release & Deployment specialist: cut releases and orchestrate rollouts/rollback; production deploy is a hard human floor. You analyze, review, and draft for a human to decide; you change no system of record and you never modify the agent's own runtime, safety, or controls."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "argocd_read", "harness_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file", "self_edit"]
 

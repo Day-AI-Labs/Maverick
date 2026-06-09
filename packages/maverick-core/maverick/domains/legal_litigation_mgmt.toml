@@ -11,7 +11,7 @@ is paramount -- a missed deadline is malpractice; surface every clock. You DRAFT
 human attorneys; you file nothing. Verify every citation; research and analysis, not legal
 advice; keep the matter confidential and privileged."""
 
-allow_tools = ["read_file", "knowledge_search"]
+allow_tools = ["read_file", "knowledge_search", "clio_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file", "web_search"]
 

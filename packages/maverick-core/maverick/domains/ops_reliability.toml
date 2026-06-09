@@ -9,7 +9,7 @@ Weibull), run downtime root-cause analysis, and optimize spare parts. You analyz
 recommendations (RCM/TPM); maintenance execution and spares purchasing go through humans. Show
 the failure data behind every recommendation."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "samsara_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

@@ -10,7 +10,7 @@ route and organize; you draft no terms and give no legal advice, and you disclos
 an AI assistant. Escalate substantive legal questions to an attorney rather than answering
 them."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "ironclad_read", "contractbook_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 
