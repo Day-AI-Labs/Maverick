@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 from maverick import effort
-from maverick.effort import effort_for_role, effort_supported
+from maverick.effort import effort_for_model, effort_for_role, effort_supported
 
 OPUS = "claude-opus-4-8"
 SONNET = "claude-sonnet-4-6"
@@ -94,6 +94,15 @@ def test_invalid_level_is_ignored(monkeypatch):
     assert effort_for_role("orchestrator", OPUS) is None
 
 
+def test_preselected_effort_clamps_for_actual_model():
+    # Provider failover can pass a primary model's resolved effort to a fallback;
+    # the fallback model must still get its own model-specific ceiling.
+    assert effort_for_model("xhigh", OPUS) == "xhigh"
+    assert effort_for_model("xhigh", SONNET) == "high"
+    assert effort_for_model("max", SONNET) == "high"
+    assert effort_for_model("medium", HAIKU) is None
+
+
 # ---- provider request shaping ----------------------------------------------
 
 def test_effort_lands_in_anthropic_output_config(monkeypatch):
@@ -108,3 +117,63 @@ def test_effort_lands_in_anthropic_output_config(monkeypatch):
     assert p._build_request("sys", msgs, None, 4096, None, OPUS, None).get("output_config") is None
     # Unsupported model -> effort is dropped defensively (never 400).
     assert p._build_request("sys", msgs, None, 4096, None, HAIKU, "medium").get("output_config") is None
+    # Stale primary-model effort is re-clamped for the actual fallback model.
+    kw = p._build_request("sys", msgs, None, 4096, None, SONNET, "xhigh")
+    assert kw["output_config"]["effort"] == "high"
+
+
+def test_sync_failover_reclamps_effort_for_fallback(monkeypatch):
+    from maverick import provider_failover
+    from maverick.llm import LLM, LLMResponse
+
+    calls = []
+
+    class FakeClient:
+        def complete(self, **kwargs):
+            calls.append({"model": kwargs["model"], "effort": kwargs.get("effort")})
+            if kwargs["model"] == OPUS:
+                raise RuntimeError("primary down")
+            return LLMResponse(text="ok", thinking=None, tool_calls=[], stop_reason="end_turn")
+
+    monkeypatch.setattr(provider_failover, "fallback_models", lambda primary: [SONNET])
+    monkeypatch.setattr(LLM, "_get_client", lambda self, provider: FakeClient())
+
+    resp = LLM(model=OPUS).complete("sys", [{"role": "user", "content": "hi"}], effort="xhigh")
+
+    assert resp.text == "ok"
+    assert calls == [
+        {"model": OPUS, "effort": "xhigh"},
+        {"model": SONNET, "effort": "high"},
+    ]
+
+
+def test_async_failover_reclamps_effort_for_fallback(monkeypatch):
+    from maverick import provider_failover
+    from maverick.llm import LLM, LLMResponse
+
+    calls = []
+
+    class FakeClient:
+        async def complete_async(self, **kwargs):
+            calls.append({"model": kwargs["model"], "effort": kwargs.get("effort")})
+            if kwargs["model"] == OPUS:
+                raise RuntimeError("primary down")
+            return LLMResponse(text="ok", thinking=None, tool_calls=[], stop_reason="end_turn")
+
+    monkeypatch.setattr(provider_failover, "fallback_models", lambda primary: [SONNET])
+    monkeypatch.setattr(LLM, "_get_client", lambda self, provider: FakeClient())
+
+    import asyncio
+
+    async def run_call():
+        return await LLM(model=OPUS).complete_async(
+            "sys", [{"role": "user", "content": "hi"}], effort="xhigh"
+        )
+
+    resp = asyncio.run(run_call())
+
+    assert resp.text == "ok"
+    assert calls == [
+        {"model": OPUS, "effort": "xhigh"},
+        {"model": SONNET, "effort": "high"},
+    ]
