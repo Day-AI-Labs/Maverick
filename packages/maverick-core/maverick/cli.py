@@ -1065,6 +1065,55 @@ def tenant_delete(tenant_id: str, purge: bool, yes: bool) -> None:
         sys.exit(2)
 
 
+@main.group()
+def billing() -> None:
+    """Rate metered usage into invoices and inspect plan entitlements."""
+
+
+@billing.command("invoice")
+@click.argument("tenant_id")
+@click.option("--since", default=None, help="Start day (YYYY-MM-DD, inclusive).")
+@click.option("--until", default=None, help="End day (YYYY-MM-DD, inclusive).")
+@click.option("--markup-pct", type=float, default=0.0, help="Markup on provider cost.")
+@click.option("--min-charge", type=float, default=0.0, help="Minimum invoice total.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def billing_invoice(tenant_id: str, since: str | None, until: str | None,
+                    markup_pct: float, min_charge: float, as_json: bool) -> None:
+    """Generate an invoice for a tenant from its metered usage."""
+    import json as _json
+
+    from .billing import RateCard, generate_invoice
+    inv = generate_invoice(
+        tenant_id, RateCard(markup_pct=markup_pct, minimum_charge=min_charge),
+        since=since, until=until,
+    )
+    if as_json:
+        click.echo(_json.dumps(inv.to_dict(), indent=2))
+        return
+    click.echo(f"Invoice for {tenant_id!r}  {inv.period_start or '…'} → {inv.period_end or '…'}")
+    for li in inv.line_items:
+        click.echo(f"  {li.day}  {li.principal:<24} ${li.charge:.4f} "
+                   f"({li.in_tokens}+{li.out_tokens} tok)")
+    click.echo(f"  {'-' * 40}")
+    click.echo(f"  TOTAL: ${inv.total:.2f} {inv.currency}")
+
+
+@billing.command("entitlements")
+@click.argument("tenant_id")
+def billing_entitlements(tenant_id: str) -> None:
+    """Show a tenant's plan entitlements (features + limits)."""
+    from .billing import entitlements_for
+    from .tenant_registry import get_tenant
+    rec = get_tenant(tenant_id)
+    plan = rec.plan if rec else "free"
+    ent = entitlements_for(plan)
+    click.echo(f"{tenant_id!r}  plan={plan}")
+    click.echo(f"  features: {', '.join(sorted(ent.features)) or '(none)'}")
+    cap = f"${ent.max_daily_dollars:g}/day" if ent.max_daily_dollars else "unlimited"
+    goals = ent.max_concurrent_goals or "unlimited"
+    click.echo(f"  max spend/day: {cap}   max concurrent goals: {goals}")
+
+
 @main.group("mcp-registry")
 def mcp_registry_group() -> None:
     """Discover + install external MCP servers from a registry.
