@@ -41,6 +41,29 @@ def test_search_requires_query_and_paths():
     assert t.fn({"op": "search", "paths": ["/tmp"], "query": ""}).startswith("ERROR")
 
 
+def test_search_registered_tool_confines_paths_to_workspace(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    inside = workspace / "inside.py"
+    inside.write_text("def find_inside_workspace():\n    pass\n")
+    outside = tmp_path / "outside.py"
+    outside.write_text("def leak_outside_workspace():\n    pass\n")
+
+    class _Sandbox:
+        workdir = workspace
+
+    t = semantic_code_search(_Sandbox())
+    assert "find_inside_workspace" in t.fn({"op": "search", "paths": ["inside.py"], "query": "inside workspace"})
+    out = t.fn({"op": "search", "paths": [str(outside)], "query": "outside workspace"})
+    assert out.startswith("ERROR")
+    assert "escapes the workspace" in out
+
+
+def test_search_rejects_non_python_and_special_files():
+    t = semantic_code_search()
+    assert t.fn({"op": "search", "paths": ["/dev/zero"], "query": "anything"}).startswith("ERROR")
+
+
 # ---- mutation_test ----
 
 def test_mutants_cover_operators():
