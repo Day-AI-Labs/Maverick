@@ -842,6 +842,68 @@ def budget(ctx) -> None:
         )
 
 
+@main.command()
+@click.option("--sample", "sample", nargs=2, type=str, default=None,
+              metavar="CONFIDENCE CORRECT",
+              help="Record one labeled sample: verifier confidence (0-1) and "
+                   "whether the answer was actually correct (true/false). "
+                   "Build the set across calls, then run with no args to assess.")
+@click.option("--json", "as_json", is_flag=True, help="Emit the verdict as JSON.")
+def calibrate(sample, as_json) -> None:
+    """Assess verifier calibration -- the self-improvement safety interlock.
+
+    The verifier's confidence is the label the trajectory-donation flywheel
+    learns from, so a drifted verifier would teach the system its own mistakes.
+    With ``--sample`` append one ``(confidence, ground_truth)`` pair to the
+    calibration set; with no arguments, assess the set and persist the verdict
+    that gates donation. If the verifier no longer separates correct from
+    incorrect answers (and ``[calibration] enforce`` is on), learning freezes.
+    """
+    import json as _json
+
+    from . import calibration
+
+    if sample is not None:
+        conf_s, correct_s = sample
+        try:
+            conf = float(conf_s)
+        except ValueError as e:
+            raise click.ClickException(
+                f"confidence must be a number in [0,1], got {conf_s!r}"
+            ) from e
+        correct = correct_s.strip().lower() in {"1", "true", "yes", "y", "pass"}
+        ok = calibration.record_sample(conf, correct, source="cli")
+        click.echo("recorded calibration sample" if ok else "failed to record sample")
+        return
+
+    report = calibration.run_assessment()
+    if as_json:
+        click.echo(_json.dumps(report.to_dict(), indent=2))
+        return
+    status = (
+        click.style("ADEQUATE", fg="green") if report.adequate
+        else click.style("INADEQUATE", fg="red")
+    )
+    click.echo(click.style("Verifier calibration", bold=True))
+    click.echo(f"  status:          {status}")
+    click.echo(
+        f"  samples:         {report.n} "
+        f"({report.n_correct} correct / {report.n_incorrect} incorrect)"
+    )
+    click.echo(f"  discrimination:  {report.discrimination:.3f}")
+    click.echo(f"  brier score:     {report.brier:.3f}")
+    click.echo(f"  {report.reason}")
+    if not report.adequate:
+        from .config import get_calibration
+        if get_calibration()["enforce"]:
+            click.echo(click.style(
+                "  learning is FROZEN (trajectory donation gated) until this passes.",
+                fg="yellow",
+            ))
+        else:
+            click.echo("  note: [calibration] enforce is off, so learning is not frozen.")
+
+
 @main.command("runs")
 @click.option("--json", "as_json", is_flag=True,
               help="Emit machine-readable JSON (array of run objects).")

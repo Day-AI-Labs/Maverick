@@ -297,6 +297,35 @@ def get_autonomy() -> dict:
     }
 
 
+def get_calibration() -> dict:
+    """Return the ``[calibration]`` section with defaults filled in.
+
+    The verifier-calibration interlock (``maverick.calibration``) is OFF by
+    default: ``enforce`` must be true for a failed assessment to freeze
+    self-improvement (trajectory donation). ``min_samples`` is the minimum
+    labeled samples before an assessment is trusted; ``min_discrimination`` is
+    the floor on mean(confidence|correct) - mean(confidence|incorrect) below
+    which the verifier is judged to have drifted.
+    """
+    cfg = load_config().get("calibration", {})
+
+    def _int(key: str, default: int) -> int:
+        try:
+            return max(1, int(cfg.get(key, default)))
+        except (TypeError, ValueError):
+            return default
+
+    try:
+        min_disc = float(cfg.get("min_discrimination", 0.15))
+    except (TypeError, ValueError):
+        min_disc = 0.15
+    return {
+        "enforce": bool(cfg.get("enforce", False)),
+        "min_samples": _int("min_samples", 20),
+        "min_discrimination": max(0.0, min(1.0, min_disc)),
+    }
+
+
 def get_durable() -> dict:
     """Return the ``[durable]`` section with defaults filled in.
 

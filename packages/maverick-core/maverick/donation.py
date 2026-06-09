@@ -134,6 +134,22 @@ def write_record(
     """
     if not _donations_enabled():
         return None
+    # Calibration interlock: if the verifier has drifted (no longer
+    # discriminates correct from incorrect on the labeled set), freeze learning
+    # rather than harvest trajectories labeled by an untrustworthy evaluator.
+    # Off by default + fail-open, so this is a no-op until calibration is
+    # enforced and an assessment has found the verifier inadequate.
+    try:
+        from .calibration import learning_frozen
+        if learning_frozen():
+            log.warning(
+                "trajectory donation skipped: verifier calibration inadequate "
+                "(learning frozen). Run `maverick calibrate` after re-checking "
+                "the verifier against a labeled set."
+            )
+            return None
+    except Exception:  # pragma: no cover -- interlock must never block a run
+        pass
     if not should_donate(
         record.outcome, record.verifier_confidence, record.disagreement_entropy,
     ):

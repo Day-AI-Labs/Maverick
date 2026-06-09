@@ -99,6 +99,20 @@ def test_autonomy_gate_writes_and_is_read(tmp_path, monkeypatch):
     assert autonomy.autonomy_enabled() is True
 
 
+def test_calibration_enforce_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's calibration toggle writes [calibration]
+    enforce, and the kernel's config reads it back."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"calibration_enforce": True})
+    assert "[calibration]" in cfg
+    assert "enforce = true" in cfg
+
+    from maverick.config import get_calibration
+    assert get_calibration()["enforce"] is True
+
+
 def test_enforce_capabilities_writes_and_is_read(tmp_path, monkeypatch):
     """Rule-6 loop: the wizard's capability toggle writes [capabilities]
     enforce, and the kernel reads it back."""

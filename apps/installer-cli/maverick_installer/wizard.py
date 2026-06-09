@@ -1097,6 +1097,12 @@ def pick_advanced() -> dict[str, Any]:
             "disagreement is resolved or a human approves.",
             default=False,
         ),
+        "calibration_enforce": _q_confirm(
+            "Calibration interlock? Freeze self-improvement (trajectory donation) "
+            "if the verifier stops telling correct answers from incorrect ones on "
+            "your labeled set, so the system never learns from a drifted evaluator.",
+            default=False,
+        ),
         "enforce_capabilities": _q_confirm(
             "Enforce agent capabilities? Each agent runs under a scoped grant and "
             "spawned sub-agents can only narrow it, never exceed it (least privilege).",
@@ -2236,6 +2242,10 @@ def write_config(  # noqa: C901
             lines.append("")
             lines.append("[autonomy]")
             lines.append("enable = true")
+        if advanced.get("calibration_enforce"):
+            lines.append("")
+            lines.append("[calibration]")
+            lines.append("enforce = true")
         if advanced.get("enforce_quotas"):
             lines.append("")
             lines.append("[quotas]")
