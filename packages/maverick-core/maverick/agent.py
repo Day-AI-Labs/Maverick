@@ -1045,6 +1045,44 @@ class Agent:
                     "The tool was not executed."
                 )
 
+        # Autonomy servo (Loop 2): tighten the leash with live trust. When the
+        # run's trust is low -- a high-disagreement swarm fan-out or a low
+        # verifier verdict -- the effective risk ceiling drops, so an unresolved
+        # disagreement can't drive an irreversible (high-risk) action
+        # unattended. Composes WITH the capability ceiling above (it tightens
+        # from the grant's max_risk, never broadens). No-op unless [autonomy] is
+        # enabled. Fail-open: a bug here must never block a tool.
+        try:
+            from . import autonomy
+            _av = autonomy.gate_tool(
+                name,
+                disagreement=float(getattr(self.ctx, "last_disagreement", 0.0) or 0.0),
+                verifier_confidence=float(
+                    getattr(self.ctx, "last_verifier_confidence", 1.0) or 1.0
+                ),
+                configured_max_risk=getattr(cap, "max_risk", None),
+            )
+        except Exception:  # pragma: no cover -- autonomy gate must never break the loop
+            _av = None
+        if _av is not None and not _av.allowed:
+            self.ctx.blackboard.post(
+                self.name, "error", f"tool={name} GATED by autonomy: {_av.reason}",
+            )
+            try:  # tamper-evident record of the gate; never block on audit
+                from .audit import EventKind, record
+                record(
+                    EventKind.AUTONOMY_GATED, agent=self.name,
+                    goal_id=self.ctx.goal_id, tool=name,
+                    effective_max_risk=_av.effective_max_risk,
+                )
+            except Exception:  # pragma: no cover
+                pass
+            return (
+                f"⚠ GATED by autonomy policy: {_av.reason}. The tool was not "
+                "executed. Resolve the disagreement (reconcile the divergent "
+                "findings) or get human approval via ask_user before retrying."
+            )
+
         # Org oversight control plane (enterprise): on top of the per-principal
         # capability above, an org-level policy can DENY an action outright or
         # REQUIRE_HUMAN sign-off (EU AI Act Art 14). Default-open -- an empty
@@ -2034,10 +2072,18 @@ class Agent:
                             try:
                                 from .verifier import verify_final
                                 verifier_attempted = True
+                                # Loop 1: a high-disagreement swarm fan-out asks
+                                # FINAL to face the cross-family ensemble.
                                 verdict = await verify_final(
                                     self.brief, final, self.ctx.llm, self.ctx.budget,
                                     proposer_model=self.model,
+                                    force_ensemble=bool(
+                                        getattr(self.ctx, "escalate_verification", False)
+                                    ),
                                 )
+                                # Stamp the verdict so the autonomy servo (Loop 2)
+                                # can tighten the leash on low-confidence runs.
+                                self.ctx.last_verifier_confidence = verdict.confidence
                             except BudgetExceeded:
                                 verdict = None
                             except Exception as e:  # pragma: no cover

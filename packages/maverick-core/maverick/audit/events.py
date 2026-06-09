@@ -59,6 +59,8 @@ class EventKind:
     SHIELD_BLOCK    = "shield_block"
     CAPABILITY_DENIED = "capability_denied"
     GOVERNANCE_DENIED = "governance_denied"
+    AUTONOMY_ESCALATED = "autonomy_escalated"
+    AUTONOMY_GATED = "autonomy_gated"
     EGRESS_BLOCKED  = "egress_blocked"
     CONSENT_PROMPT  = "consent_prompt"
     CONSENT_RESULT  = "consent_result"

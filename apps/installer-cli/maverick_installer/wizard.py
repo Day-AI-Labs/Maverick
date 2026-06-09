@@ -1091,6 +1091,12 @@ def pick_advanced() -> dict[str, Any]:
             "answers (short, prose-only, no tools or code) to save tokens and latency.",
             default=False,
         ),
+        "autonomy_gate": _q_confirm(
+            "Autonomy gate? When sub-agents disagree, cross-check the answer with a "
+            "model panel AND hold irreversible (high-risk) actions until the "
+            "disagreement is resolved or a human approves.",
+            default=False,
+        ),
         "enforce_capabilities": _q_confirm(
             "Enforce agent capabilities? Each agent runs under a scoped grant and "
             "spawned sub-agents can only narrow it, never exceed it (least privilege).",
@@ -2226,6 +2232,10 @@ def write_config(  # noqa: C901
             lines.append("")
             lines.append("[verification]")
             lines.append("risk_proportional = true")
+        if advanced.get("autonomy_gate"):
+            lines.append("")
+            lines.append("[autonomy]")
+            lines.append("enable = true")
         if advanced.get("enforce_quotas"):
             lines.append("")
             lines.append("[quotas]")

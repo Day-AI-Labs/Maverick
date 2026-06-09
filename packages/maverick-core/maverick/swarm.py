@@ -95,6 +95,17 @@ class SwarmContext:
     # across the swarm; mutated only on the single event loop, so a plain set
     # is safe.
     skills_used: set[str] = field(default_factory=set)
+    # Live trust signals consumed by the autonomy gate (maverick.autonomy) and
+    # the trajectory-donation selector. ``last_disagreement`` is the normalized
+    # answer entropy of the most recent swarm fan-out (0 == consensus); it is
+    # stamped by ``spawn_swarm``. ``last_verifier_confidence`` is the most
+    # recent verifier verdict's confidence (1.0 == not yet verified, i.e. no
+    # tightening). ``escalate_verification`` is set when a high-disagreement
+    # fan-out asks the orchestrator's FINAL to be verified by the cross-family
+    # ensemble instead of a single judge.
+    last_disagreement: float = 0.0
+    last_verifier_confidence: float = 1.0
+    escalate_verification: bool = False
     _spawns_used: int = 0
     _workdir_lock: asyncio.Lock | None = field(default=None, repr=False)
 
