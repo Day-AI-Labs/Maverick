@@ -56,6 +56,32 @@ def _sanitize_persisted_prompt_text(
     return safe
 
 
+def _shield_input_block_reason(shield: Any | None, text: str) -> str | None:
+    """Return a Shield block reason for model-bound user prompt text.
+
+    The orchestrator transforms user-controlled goal text before it becomes an
+    agent prompt (for example, long-context routing can shard and rejoin a goal
+    description). Scan the exact transformed prompt surface too, not only the
+    original request, so a post-scan rewrite cannot assemble a blocked pattern.
+    Shield remains optional/fail-open per kernel rule 1.
+    """
+    if shield is None:
+        return None
+    try:
+        safe = text
+        try:
+            from .safety.unicode_filter import normalize as _uni_normalize
+            safe = _uni_normalize(safe).cleaned
+        except Exception:  # pragma: no cover
+            pass
+        verdict = shield.scan_input(safe)
+        if not getattr(verdict, "allowed", True):
+            return "; ".join(getattr(verdict, "reasons", []) or []) or "blocked by Shield"
+    except Exception:  # pragma: no cover
+        log.exception("scan_input failed (fail-open)")
+    return None
+
+
 def _build_shield() -> Any | None:
     try:
         from maverick_shield import Shield
@@ -439,29 +465,17 @@ async def run_goal(
     # primary `maverick start "..."` / MCP `maverick_start` / chat paths
     # funnel the goal straight here -- so this is where the first scan
     # must live. Fail-open per kernel rule 1 (the shield is optional).
-    if shield is not None:
+    reason = _shield_input_block_reason(
+        shield, f"{goal.title}\n{goal.description or ''}"
+    )
+    if reason is not None:
+        world.set_goal_status(goal_id, "blocked", result=f"input blocked: {reason}")
         try:
-            goal_text = f"{goal.title}\n{goal.description or ''}"
-            # Normalize (NFKC + strip zero-width/bidi/tag-block) BEFORE
-            # scanning so homoglyph / zero-width-encoded injections can't
-            # slip past the regex rules. Fail-open if unavailable.
-            try:
-                from .safety.unicode_filter import normalize as _uni_normalize
-                goal_text = _uni_normalize(goal_text).cleaned
-            except Exception:  # pragma: no cover
-                pass
-            verdict = shield.scan_input(goal_text)
-            if not getattr(verdict, "allowed", True):
-                reason = "; ".join(getattr(verdict, "reasons", []) or []) or "blocked by Shield"
-                world.set_goal_status(goal_id, "blocked", result=f"input blocked: {reason}")
-                try:
-                    world.end_episode(episode_id, "input blocked by Shield", "blocked")
-                except Exception:  # pragma: no cover
-                    pass
-                log.warning("goal #%s input blocked by Shield: %s", goal_id, reason)
-                return f"BLOCKED: goal input rejected by Shield ({reason})"
+            world.end_episode(episode_id, "input blocked by Shield", "blocked")
         except Exception:  # pragma: no cover
-            log.exception("scan_input on goal text failed (fail-open)")
+            pass
+        log.warning("goal #%s input blocked by Shield: %s", goal_id, reason)
+        return f"BLOCKED: goal input rejected by Shield ({reason})"
 
     # UserPromptSubmit hooks: let operators gate or annotate the incoming
     # goal text before the orchestrator acts on it. A hook returning a falsy
@@ -706,6 +720,21 @@ async def run_goal(
                     )
         except Exception as e:  # pragma: no cover -- planning never blocks a run
             log.debug("tree-of-thought planning skipped: %s", e)
+
+        # Chokepoint #2: rescan the final agent brief after every prompt-surface
+        # transformation above. In particular, the long-context router rewrites
+        # oversized descriptions after the initial goal scan by selecting and
+        # concatenating shards; scanning the assembled brief prevents that
+        # post-scan rewrite from creating a blocked phrase at the model sink.
+        reason = _shield_input_block_reason(shield, brief)
+        if reason is not None:
+            world.set_goal_status(goal_id, "blocked", result=f"brief blocked: {reason}")
+            try:
+                world.end_episode(episode_id, "brief blocked by Shield", "blocked")
+            except Exception:  # pragma: no cover
+                pass
+            log.warning("goal #%s assembled brief blocked by Shield: %s", goal_id, reason)
+            return f"BLOCKED: goal brief rejected by Shield ({reason})"
 
         # Domain routing: when a domain is named, the root runs AS that domain's
         # specialist -- its persona, capability envelope, compartment tag, and
