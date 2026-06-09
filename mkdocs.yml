@@ -79,6 +79,7 @@ nav:
       - Configuration: configuration.md
       - Environment variables: env-vars.md
       - Deployment: deployment.md
+      - Reference architectures: reference-architectures.md
       - Operations: operations.md
       - Safety: safety.md
       - Plugins: plugins.md

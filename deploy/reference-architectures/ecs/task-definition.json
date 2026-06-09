@@ -1,0 +1,55 @@
+{
+  "//": "Maverick on AWS ECS Fargate — reference task definition. Register with: aws ecs register-task-definition --cli-input-json file://deploy/reference-architectures/ecs/task-definition.json . State persists on an EFS volume; secrets come from AWS Secrets Manager (replace the ARNs). Run behind an ALB targeting container port 8765.",
+  "family": "maverick",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "1024",
+  "memory": "2048",
+  "runtimePlatform": { "operatingSystemFamily": "LINUX", "cpuArchitecture": "X86_64" },
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/maverick-ecs-execution",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/maverick-task",
+  "volumes": [
+    {
+      "name": "maverick-state",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-REPLACE",
+        "transitEncryption": "ENABLED",
+        "rootDirectory": "/maverick"
+      }
+    }
+  ],
+  "containerDefinitions": [
+    {
+      "name": "maverick",
+      "image": "ghcr.io/day-ai-labs/maverick:latest",
+      "essential": true,
+      "command": ["dashboard", "--host", "0.0.0.0", "--port", "8765"],
+      "portMappings": [{ "containerPort": 8765, "protocol": "tcp" }],
+      "environment": [
+        { "name": "MAVERICK_CONFIG", "value": "/state/config.toml" }
+      ],
+      "secrets": [
+        { "name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:maverick/anthropic_api_key" },
+        { "name": "MAVERICK_DASHBOARD_TOKEN", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:maverick/dashboard_token" }
+      ],
+      "mountPoints": [
+        { "sourceVolume": "maverick-state", "containerPath": "/state", "readOnly": false }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8765/healthz').status==200 else 1)\""],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 15
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/maverick",
+          "awslogs-region": "REGION",
+          "awslogs-stream-prefix": "maverick"
+        }
+      }
+    }
+  ]
+}

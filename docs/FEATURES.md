@@ -335,7 +335,14 @@ trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
 - **Packaging** — 6 packages on PyPI, GHCR Docker image, PyInstaller binaries,
   native double-click installers (Tauri; `.exe` / `.dmg` / `.AppImage`).
 - **IDE / CI** — VS Code extension (`apps/vscode-extension/`), GitHub Action
-  wrapper (`maverick-action`).
+  wrapper (`maverick-action`), **devcontainer + Codespaces template**
+  (`.devcontainer/`: editable install of all packages + the test toolchain,
+  dashboard port forwarded).
+- **Reference architectures** — self-hostable deploy blueprints for
+  **Kubernetes / AWS ECS Fargate / Fly.io / Railway**
+  (`deploy/reference-architectures/`, [docs](./reference-architectures.md)):
+  one container image, state on a persistent volume, secrets from the platform
+  store, `/healthz`-probed.
 - **Docs** — MkDocs site, [getting started](./getting-started.md), 30-recipe
   [cookbook](./cookbook/), [architecture](./architecture.md),
   [embedding guide](./embedding.md), [security hardening](./security-hardening.md).

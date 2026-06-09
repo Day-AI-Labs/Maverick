@@ -1,0 +1,95 @@
+# Maverick on Kubernetes — reference architecture.
+#
+# A single governed-runtime Deployment serving the dashboard + control plane,
+# with persistent state on a PVC and secrets pulled from a Secret. This is a
+# self-hostable reference (CLAUDE.md: self-host first) — point image at your
+# own registry mirror of the GHCR image if you don't pull from ghcr directly.
+#
+#   kubectl apply -f deploy/reference-architectures/kubernetes/maverick.yaml
+#
+# Scale-out (queue dispatch + Postgres world model) is opt-in: set
+# [world_model] backend = "postgres" and [queue] in config, then add a worker
+# Deployment that runs `maverick worker`.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: maverick
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: maverick-secrets
+  namespace: maverick
+type: Opaque
+stringData:
+  # Populate from your secret manager; do NOT commit real keys.
+  ANTHROPIC_API_KEY: "replace-me"
+  MAVERICK_DASHBOARD_TOKEN: "replace-me"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: maverick-state
+  namespace: maverick
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maverick
+  namespace: maverick
+  labels: { app: maverick }
+spec:
+  replicas: 1            # the dashboard/control plane is single-writer on SQLite;
+                         # use the Postgres backend before raising this.
+  selector:
+    matchLabels: { app: maverick }
+  template:
+    metadata:
+      labels: { app: maverick }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: maverick
+          image: ghcr.io/day-ai-labs/maverick:latest
+          args: ["dashboard", "--host", "0.0.0.0", "--port", "8765"]
+          ports:
+            - containerPort: 8765
+          envFrom:
+            - secretRef: { name: maverick-secrets }
+          env:
+            - name: MAVERICK_CONFIG
+              value: /state/config.toml
+          volumeMounts:
+            - name: state
+              mountPath: /state
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8765 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits: { cpu: "2", memory: "2Gi" }
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: maverick-state
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: maverick
+  namespace: maverick
+spec:
+  selector: { app: maverick }
+  ports:
+    - port: 80
+      targetPort: 8765
+  type: ClusterIP
