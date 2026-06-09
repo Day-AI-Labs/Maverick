@@ -47,6 +47,7 @@ _DEFAULTS = {
     "enforce": False,
     "min_samples": 20,
     "min_discrimination": 0.15,
+    "collect_from_coding": False,
 }
 
 _lock = threading.Lock()
@@ -58,6 +59,24 @@ def _settings() -> dict:
         return get_calibration()
     except Exception:  # pragma: no cover -- config must never block a run
         return dict(_DEFAULTS)
+
+
+def collect_from_coding_enabled() -> bool:
+    """Whether to auto-record calibration samples from coding-mode runs.
+
+    When a coding-mode run has ground truth (tests pass/fail), the agent loop
+    can also ask the LLM verifier and record ``(confidence, correct)`` so the
+    interlock learns whether the judge still tracks reality -- without an
+    operator hand-feeding a labeled set. Off by default (it costs one extra
+    verifier call per coding FINAL). ``MAVERICK_CALIBRATION_COLLECT_CODING``
+    overrides ``[calibration] collect_from_coding``.
+    """
+    env = os.environ.get("MAVERICK_CALIBRATION_COLLECT_CODING", "").strip().lower()
+    if env in {"1", "true", "yes", "on"}:
+        return True
+    if env in {"0", "false", "no", "off"}:
+        return False
+    return bool(_settings().get("collect_from_coding", False))
 
 
 @dataclass
@@ -258,6 +277,7 @@ __all__ = [
     "CalibrationSample",
     "CalibrationReport",
     "assess",
+    "collect_from_coding_enabled",
     "record_sample",
     "load_samples",
     "run_assessment",
