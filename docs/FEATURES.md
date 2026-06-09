@@ -108,7 +108,9 @@ here.
   mechanism for (epsilon)-DP noisy counts/sums on published stats), `watermark_detector` (find hidden
   text watermarks/steganography — zero-width, tag chars, variation selectors, homoglyphs), `privacy_budget` (account a
   user's differential-privacy budget — remaining epsilon + allow/deny a query), `capability_delegation` (validate a
-  delegation graph for privilege escalation — fixpoint from root capabilities).
+  delegation graph for privilege escalation — fixpoint from root capabilities),
+  `coordinated_disclosure` (track vulnerability disclosure timelines — embargo
+  window per report, flags EMBARGOED/DUE_SOON/OVERDUE/PATCHED/DISCLOSED).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.

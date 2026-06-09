@@ -555,6 +555,7 @@ def base_registry(  # noqa: C901
     from .confluence_tool import confluence_tool
     from .constrained_output import constrained_output
     from .container_build import container_build
+    from .coordinated_disclosure import coordinated_disclosure
     from .cross_repo_deps import cross_repo_deps
     from .currency import currency
     from .datadog_tool import datadog_tool
@@ -671,6 +672,7 @@ def base_registry(  # noqa: C901
     reg.register(git_advanced(sandbox))
     reg.register(calendar_tool())
     reg.register(capability_delegation())
+    reg.register(coordinated_disclosure())
     reg.register(file_watcher(sandbox))
     reg.register(linear())
     reg.register(jira())
