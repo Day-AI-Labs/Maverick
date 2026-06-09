@@ -1516,6 +1516,9 @@ class Agent:
                 # so a goal at 99% of budget would otherwise still fire one
                 # more (potentially expensive) call.
                 self.ctx.budget.check()
+                # Pass effort only when configured (None by default) so the call
+                # signature is unchanged when the feature is off.
+                _effort_kw = {"effort": self.effort} if self.effort else {}
                 resp = await self.ctx.llm.complete_async(
                     system=self.system,
                     messages=messages,
@@ -1524,7 +1527,7 @@ class Agent:
                     max_tokens=4096,
                     thinking_budget=self._thinking_budget(),
                     model=self.model,
-                    effort=self.effort,
+                    **_effort_kw,
                 )
             except BudgetExceeded as e:
                 bb.post(self.name, "error", f"budget exceeded: {e}")
