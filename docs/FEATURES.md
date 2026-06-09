@@ -107,7 +107,12 @@ here.
   dual-control sign-off — distinct approvers, separation of duties, optional roles), `differential_privacy` (Laplace
   mechanism for (epsilon)-DP noisy counts/sums on published stats), `watermark_detector` (find hidden
   text watermarks/steganography — zero-width, tag chars, variation selectors, homoglyphs), `privacy_budget` (account a
-  user's differential-privacy budget — remaining epsilon + allow/deny a query).
+  user's differential-privacy budget — remaining epsilon + allow/deny a query),
+  `collusion_detector` (flag collusion between independent swarm agents —
+  echoed reasoning + rubber-stamping), `coordinated_disclosure` (run a CVD
+  timeline offline — embargo OPEN/EXPIRED + advisory render), `capability_delegation_graph`
+  (static analysis over capability delegations — cycles, privilege escalation,
+  transitive holders), `agent_identity` (per-agent stable id + HMAC sign/verify).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.

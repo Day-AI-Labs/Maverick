@@ -713,6 +713,14 @@ def base_registry(  # noqa: C901
     reg.register(synthetic_data())
     reg.register(web_recorder())
     reg.register(watermark_detector())
+    from .agent_identity import agent_identity
+    from .capability_delegation_graph import capability_delegation_graph
+    from .collusion_detector import collusion_detector
+    from .coordinated_disclosure import coordinated_disclosure
+    reg.register(collusion_detector())
+    reg.register(coordinated_disclosure())
+    reg.register(capability_delegation_graph())
+    reg.register(agent_identity())
     reg.register(a11y_tree())
     reg.register(ai_act_classifier())
     reg.register(cache_admin())
