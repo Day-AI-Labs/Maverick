@@ -827,11 +827,12 @@ _GRAPHQL_SPECS: list[dict] = [
 for _spec in (*_SPECS, *_GRAPHQL_SPECS):
     _fill_env(_spec)
 
-# Read-only (GET-only, LOW-risk) variants for finance vendors -- the bridge that
+# Read-only (GET-only) variants for finance vendors -- the bridge that
 # lets a read-only pack (max_risk <= medium) actually pull data without handing it
 # a write-capable seat. Same env/creds as the write connector; writes are
 # structurally unreachable (the agent still supplies the path, so no endpoint is
-# hard-coded). Classified low via READ_CONNECTOR_NAMES in safety/tool_risk.
+# hard-coded). Risk is tracked explicitly in READ_CONNECTOR_RISKS so read-only
+# seats for sensitive systems do not bypass low-risk ceilings.
 _READ_SPECS: list[dict] = [
     dict(name="modern_treasury_read", base_url_env="MODERN_TREASURY_BASE_URL",
          token_env="MODERN_TREASURY_TOKEN", basic=True,
@@ -840,6 +841,7 @@ _READ_SPECS: list[dict] = [
          "MODERN_TREASURY_BASE_URL (https://app.moderntreasury.com) + MODERN_TREASURY_TOKEN "
          "(Basic org_id:api_key)."),
 ]
+_READ_CONNECTOR_RISKS: dict[str, str] = {"modern_treasury_read": "low"}
 
 
 def _read_specs_for(vendors: list[str]) -> list[dict]:
@@ -871,10 +873,15 @@ _FINANCE_READ_VENDORS: list[str] = [
     "billdotcom", "coupa", "ariba", "chargebee", "netsuite", "carta",
     "concur", "ramp", "adp", "gusto", "workiva", "avalara",
 ]
-_READ_SPECS += _read_specs_for(_FINANCE_READ_VENDORS)
+_FINANCE_READ_SPECS = _read_specs_for(_FINANCE_READ_VENDORS)
+_READ_SPECS += _FINANCE_READ_SPECS
+_READ_CONNECTOR_RISKS.update({s["name"]: "low" for s in _FINANCE_READ_SPECS})
 
-# Read seats for the OTHER suites' systems, derived the same way (GET-only, low,
-# reuse the write connector's creds). Bespoke-module vendors (Salesforce, HubSpot,
+# Read seats for the OTHER suites' systems, derived the same way (GET-only,
+# reuse the write connector's creds). These systems often contain high-confidentiality
+# identity, HR, security, CI/CD, legal, and customer data, so the read seats are
+# fail-closed as high risk unless an operator deliberately overrides them.
+# Bespoke-module vendors (Salesforce, HubSpot,
 # Jira, GitHub, Datadog, ...) aren't in _SPECS, so they're skipped here -- this
 # covers the spec'd long-tail systems each suite reads.
 _SUITE_READ_VENDORS: list[str] = [
@@ -905,9 +912,14 @@ _SUITE_READ_VENDORS: list[str] = [
     "crunchbase", "tableau", "powerbi", "looker", "qlik", "thoughtspot",
     "sisense", "domo", "mode", "metabase", "anaplan", "microstrategy", "cognos",
 ]
-_READ_SPECS += _read_specs_for(_SUITE_READ_VENDORS)
+_SUITE_READ_SPECS = _read_specs_for(_SUITE_READ_VENDORS)
+_READ_SPECS += _SUITE_READ_SPECS
+_READ_CONNECTOR_RISKS.update({s["name"]: "high" for s in _SUITE_READ_SPECS})
 
 READ_CONNECTOR_NAMES: list[str] = [s["name"] for s in _READ_SPECS]
+READ_CONNECTOR_RISKS: dict[str, str] = {
+    name: _READ_CONNECTOR_RISKS.get(name, "high") for name in READ_CONNECTOR_NAMES
+}
 
 ENTERPRISE_CONNECTOR_NAMES: list[str] = (
     [s["name"] for s in _SPECS] + [s["name"] for s in _GRAPHQL_SPECS]
