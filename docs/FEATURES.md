@@ -232,7 +232,12 @@ trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
 ## UX surfaces
 
 - **CLI** — `maverick init` (wizard), `start`, `resume`, `monitor` (Rich plan-tree
-  TUI), `status --cost`, `export`, `replay`, `logs`, `ps`, `whoami`.
+  TUI), `status --cost`, `export`, `replay`, `logs`, `ps`, `whoami`, and
+  `maverick diag` (circuit-breaker states, provider rate-limit counts, per-goal
+  health score, cost-by-tag, and replay of a `MAVERICK_TRACE_DIR` run trace).
+- **GitHub App** — `/webhook/github` (dashboard): a labeled or `/maverick`-mentioned
+  issue drives a swarm that clones the repo, fixes it, and opens a PR
+  (`github_app.py`, HMAC-verified).
 - **Web dashboard** — run list, plan-tree, chat at `/chat`, approval queue, and
   an **oversight console** (`/oversight`): live fleet state, the approval queue,
   a per-guardrail intervention roll-up, and an inline **"why this action"
