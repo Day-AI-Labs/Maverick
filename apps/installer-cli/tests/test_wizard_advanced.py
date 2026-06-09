@@ -400,6 +400,38 @@ def test_encrypt_at_rest_writes_and_is_read(tmp_path, monkeypatch):
     assert at_rest_enabled() is True
 
 
+def test_encrypt_per_tenant_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the per-tenant toggle writes [encryption] per_tenant under
+    at_rest, and the kernel reads it back as per_tenant_at_rest()."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for env in ("MAVERICK_ENCRYPT_AT_REST", "MAVERICK_ENCRYPT_PER_TENANT",
+                "MAVERICK_ENTERPRISE"):
+        monkeypatch.delenv(env, raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch,
+                 {"encrypt_at_rest": True, "encrypt_per_tenant": True})
+    assert "[encryption]" in cfg
+    assert "at_rest = true" in cfg and "per_tenant = true" in cfg
+
+    from maverick.crypto_at_rest import per_tenant_at_rest
+    assert per_tenant_at_rest() is True
+
+
+def test_hedge_requests_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the hedge toggle writes [latency] hedge_ms, and the kernel's
+    LLM path reads it back as a positive hedge delay."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_LLM_HEDGE_MS", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"hedge_requests": True})
+    assert "[latency]" in cfg and "hedge_ms = 1500" in cfg
+
+    from maverick.llm import _hedge_ms
+    assert _hedge_ms() == 1500.0
+
+
 def test_audit_sign_writes_and_is_read(tmp_path, monkeypatch):
     """Rule-6 loop: the wizard's audit-signing toggle writes [audit] sign, and
     the kernel's signing resolver reads it back. This is the tamper-evidence
