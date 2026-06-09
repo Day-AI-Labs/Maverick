@@ -849,6 +849,38 @@ _READ_SPECS: list[dict] = [
          "(Basic org_id:api_key)."),
 ]
 
+
+def _read_specs_for(vendors: list[str]) -> list[dict]:
+    """Derive GET-only read specs from existing write connectors -- same base URL,
+    token env, and auth mode (so creds + auth are correct by construction); only
+    the name (``<vendor>_read``) and a read-only description differ. Unknown
+    vendors are skipped rather than wedging import."""
+    by_name = {s["name"]: s for s in _SPECS}
+    out: list[dict] = []
+    for v in vendors:
+        src = by_name.get(v)
+        if src is None:
+            continue
+        spec = {k: val for k, val in src.items() if k not in ("name", "description")}
+        spec["name"] = f"{v}_read"
+        spec["description"] = (
+            f"{v} REST, READ-ONLY (GET) -- read records/balances; the agent supplies "
+            f"the path. Reuses {src['base_url_env']} + {src['token_env']} (same creds "
+            f"and auth as the '{v}' connector)."
+        )
+        out.append(spec)
+    return out
+
+
+# Finance vendors whose read-only/draft packs need to pull data: each gets a
+# GET-only, LOW-risk variant (wired into the matching pack's allow_tools), so the
+# whole CFO office can read its systems while money tools stay denied.
+_FINANCE_READ_VENDORS: list[str] = [
+    "billdotcom", "coupa", "ariba", "chargebee", "netsuite", "carta",
+    "concur", "ramp", "adp", "gusto", "workiva", "avalara",
+]
+_READ_SPECS += _read_specs_for(_FINANCE_READ_VENDORS)
+
 READ_CONNECTOR_NAMES: list[str] = [s["name"] for s in _READ_SPECS]
 
 ENTERPRISE_CONNECTOR_NAMES: list[str] = (

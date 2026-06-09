@@ -15,6 +15,7 @@ allow_tools = [
     "read_file", "knowledge_search",
     "fa_read_register", "gl_read_subledger",
     "draft_depreciation_schedule", "stage_asset_entry", "reconcile_accounts",
+    "netsuite_read",   # read seat (low) -- pull vendor data
 ]
 deny_tools = ["post_journal_entry", "dispose_asset"]
 max_risk = "medium"

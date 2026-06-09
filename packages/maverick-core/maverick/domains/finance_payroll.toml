@@ -15,6 +15,7 @@ allow_tools = [
     "read_file", "knowledge_search",
     "hcm_read_employee", "payroll_read_register", "payroll_read_timesheet",
     "stage_payroll_run", "reconcile_payroll", "draft_payroll_tax",
+    "adp_read", "gusto_read",   # read seat (low) -- pull vendor data
 ]
 deny_tools = [
     "run_payroll", "release_payroll_payment",

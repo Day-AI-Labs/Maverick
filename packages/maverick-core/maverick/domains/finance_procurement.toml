@@ -12,6 +12,7 @@ SoD vs. AP and the vendor master."""
 allow_tools = [
     "read_file", "knowledge_search", "web_search",
     "ap_read_po", "analyze_spend", "draft_po",
+    "coupa_read", "ariba_read",   # read seat (low) -- pull vendor data
 ]
 deny_tools = ["approve_po", "release_payment"]
 max_risk = "medium"
