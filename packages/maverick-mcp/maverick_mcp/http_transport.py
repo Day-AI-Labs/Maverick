@@ -361,6 +361,13 @@ def build_app(server) -> FastAPI:
             )
         if not _check_bearer(authorization):
             raise HTTPException(status_code=401, detail="invalid bearer")
+        # Opt-in, consent-gated client-language analytics (off by default; no-op
+        # and never raises when disabled). Feeds the language-bindings decision.
+        try:
+            from maverick.mcp_analytics import record_client
+            record_client(request.headers.get("user-agent"))
+        except Exception:  # pragma: no cover -- analytics never blocks a request
+            pass
         # Bounded read (size cap) + parse; rejects oversized / malformed /
         # non-object bodies with a clean error instead of a 500.
         body = await _read_limited_json(request, HTTPException)
