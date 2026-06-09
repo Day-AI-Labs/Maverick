@@ -968,6 +968,103 @@ def mcp(use_http: bool, host: str, port: int) -> None:
         MCPServer().run()
 
 
+@main.group()
+def tenant() -> None:
+    """Provision and manage tenants (hosted control plane)."""
+
+
+@tenant.command("create")
+@click.argument("tenant_id")
+@click.option("--plan", default="free", help="Plan name (free/pro/enterprise/...).")
+@click.option("--name", "display_name", default="", help="Human display name.")
+@click.option("--max-daily-dollars", type=float, default=0.0,
+              help="Per-tenant daily spend cap (USD); 0 = unlimited.")
+def tenant_create(tenant_id: str, plan: str, display_name: str,
+                  max_daily_dollars: float) -> None:
+    """Provision a tenant + its isolated workspace."""
+    from .tenant_registry import create_tenant
+    try:
+        rec = create_tenant(tenant_id, plan=plan, display_name=display_name,
+                             max_daily_dollars=max_daily_dollars)
+    except ValueError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    click.echo(f"created tenant {rec.id!r} (plan {rec.plan}, status {rec.status})")
+
+
+@tenant.command("list")
+def tenant_list() -> None:
+    """List provisioned tenants."""
+    from .tenant_registry import list_tenants
+    rows = list_tenants()
+    if not rows:
+        click.echo("no tenants. create one with `maverick tenant create`")
+        return
+    for t in rows:
+        cap = f"${t.max_daily_dollars:g}/day" if t.max_daily_dollars else "unlimited"
+        click.echo(f"  {t.id}  [{t.status}]  plan={t.plan}  quota={cap}")
+
+
+@tenant.command("suspend")
+@click.argument("tenant_id")
+def tenant_suspend(tenant_id: str) -> None:
+    """Suspend a tenant (its requests are refused until resumed)."""
+    from .tenant_registry import UnknownTenant, suspend_tenant
+    try:
+        suspend_tenant(tenant_id)
+    except UnknownTenant:
+        click.echo(f"ERROR: no such tenant {tenant_id!r}", err=True)
+        sys.exit(2)
+    click.echo(f"suspended {tenant_id!r}")
+
+
+@tenant.command("resume")
+@click.argument("tenant_id")
+def tenant_resume(tenant_id: str) -> None:
+    """Resume a suspended tenant."""
+    from .tenant_registry import UnknownTenant, resume_tenant
+    try:
+        resume_tenant(tenant_id)
+    except UnknownTenant:
+        click.echo(f"ERROR: no such tenant {tenant_id!r}", err=True)
+        sys.exit(2)
+    click.echo(f"resumed {tenant_id!r}")
+
+
+@tenant.command("quota")
+@click.argument("tenant_id")
+@click.argument("max_daily_dollars", type=float)
+def tenant_quota(tenant_id: str, max_daily_dollars: float) -> None:
+    """Set a tenant's daily spend cap (USD; 0 = unlimited)."""
+    from .tenant_registry import UnknownTenant, set_quota
+    try:
+        rec = set_quota(tenant_id, max_daily_dollars)
+    except UnknownTenant:
+        click.echo(f"ERROR: no such tenant {tenant_id!r}", err=True)
+        sys.exit(2)
+    click.echo(f"{rec.id!r} quota -> ${rec.max_daily_dollars:g}/day")
+
+
+@tenant.command("delete")
+@click.argument("tenant_id")
+@click.option("--purge", is_flag=True,
+              help="Also delete the tenant's data directory (irreversible).")
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
+def tenant_delete(tenant_id: str, purge: bool, yes: bool) -> None:
+    """Remove a tenant from the registry (optionally purging its data)."""
+    from .tenant_registry import delete_tenant
+    if purge and not yes and not click.confirm(
+        f"PURGE all data for tenant {tenant_id!r}? This cannot be undone."
+    ):
+        click.echo("aborted")
+        return
+    if delete_tenant(tenant_id, purge=purge):
+        click.echo(f"deleted {tenant_id!r}" + (" (data purged)" if purge else ""))
+    else:
+        click.echo(f"ERROR: no such tenant {tenant_id!r}", err=True)
+        sys.exit(2)
+
+
 @main.group("mcp-registry")
 def mcp_registry_group() -> None:
     """Discover + install external MCP servers from a registry.
