@@ -93,12 +93,14 @@ class GlassesChannel(Channel):
             return "Sorry, you're not authorized to drive this agent."
         msg = IncomingMessage(user_id=user_id, text=text, channel=self.name)
         if classify_utterance(text) == "quick":
+            task = asyncio.create_task(self.handler(msg))
             try:
-                reply = await asyncio.wait_for(self.handler(msg), timeout=self.deadline_s)
+                reply = await asyncio.wait_for(asyncio.shield(task), timeout=self.deadline_s)
                 return hud_trim(reply)
             except asyncio.TimeoutError:
-                # Took too long for the HUD: fall back to ack-then-run.
-                self._spawn(self._run_and_deliver(msg))
+                # Took too long for the HUD: fall back to ack-then-run without
+                # cancelling or re-running the already-started handler.
+                self._spawn(self._deliver_task_result(msg, task))
                 return ack_message(self.secondary_channel)
         # Long task: ack now, run in the background, deliver the full result.
         self._spawn(self._run_and_deliver(msg))
@@ -110,6 +112,20 @@ class GlassesChannel(Channel):
         except Exception:  # pragma: no cover -- delivery never crashes the bridge
             log.exception("glasses: background task failed")
             return
+        await self._deliver_result(msg, result)
+
+    async def _deliver_task_result(self, msg: IncomingMessage, task: asyncio.Task[str]) -> None:
+        try:
+            result = await task
+        except asyncio.CancelledError:  # pragma: no cover -- loop shutdown/channel stop
+            log.warning("glasses: background task was cancelled before delivery")
+            return
+        except Exception:  # pragma: no cover -- delivery never crashes the bridge
+            log.exception("glasses: background task failed")
+            return
+        await self._deliver_result(msg, result)
+
+    async def _deliver_result(self, msg: IncomingMessage, result: str) -> None:
         if self._deliver is not None and result:
             try:
                 await self._deliver(msg.user_id, result)
