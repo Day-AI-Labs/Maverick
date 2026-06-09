@@ -70,6 +70,18 @@ def test_comment_prefixed_write_needs_confirm(monkeypatch):
         assert "DRY RUN" in out
 
 
+def test_mysql_executable_comment_needs_confirm(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "mysql+pymysql://u:p@localhost/db")
+    from maverick.tools.database_tool import database_tool
+
+    for sql in (
+        "/*! INSERT INTO audit_log */ SELECT * FROM users",
+        "/*!80000 INSERT INTO audit_log */ SELECT * FROM users",
+    ):
+        out = database_tool().fn({"op": "query", "sql": sql})
+        assert "DRY RUN" in out
+
+
 def test_comment_prefixed_read_is_allowed(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     from maverick.tools.database_tool import database_tool
