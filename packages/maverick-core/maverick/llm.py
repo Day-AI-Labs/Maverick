@@ -260,6 +260,33 @@ def _feed_circuit(provider: str, error: bool) -> None:
         pass
 
 
+def _hedge_ms() -> float | None:
+    """Tail-latency hedging delay (ms): opt-in, default OFF.
+
+    When set, ``complete_async`` fires a *backup* request this many ms after the
+    primary and takes whichever succeeds first, cancelling the laggard — the
+    "tail at scale" hedge for tightening p99 on a provider with variable latency.
+    It trades extra spend on slow calls for latency, so it is off unless an
+    operator opts in via ``MAVERICK_LLM_HEDGE_MS`` or ``[latency] hedge_ms``.
+    Returns the delay in ms, or ``None`` (disabled / non-positive / unparseable),
+    in which case the single-call path runs unchanged.
+    """
+    raw: object = os.environ.get("MAVERICK_LLM_HEDGE_MS")
+    if raw is None or str(raw).strip() == "":
+        try:
+            from .config import load_config
+            raw = (load_config() or {}).get("latency", {}).get("hedge_ms")
+        except Exception:  # pragma: no cover -- config is best-effort here
+            raw = None
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        v = float(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return v if v > 0 else None
+
+
 def _cheaper_model(model: str) -> str:
     """One tier cheaper for energy-aware downgrade: Opus->Sonnet->Haiku."""
     if model == MODEL_OPUS or model == MODEL_OPUS_FAST:
@@ -622,11 +649,49 @@ class LLM:
                     model_effort = effort_for_model(effort, model_id)
                     if model_effort:
                         _ekw["effort"] = model_effort
-                return await client.complete_async(
-                    system=system, messages=messages, tools=tools, budget=budget,
-                    max_tokens=max_tokens, thinking_budget=thinking_budget, model=model_id,
-                    **_ekw,
-                )
+
+                def _call():
+                    return client.complete_async(
+                        system=system, messages=messages, tools=tools, budget=budget,
+                        max_tokens=max_tokens, thinking_budget=thinking_budget,
+                        model=model_id, **_ekw,
+                    )
+
+                hedge = _hedge_ms()
+                if hedge is None:
+                    return await _call()
+                # Tail-latency hedge (opt-in): race the primary against a backup
+                # fired `hedge` ms later; first success wins, the laggard is
+                # cancelled. The race is bounded by the remaining wall budget via
+                # a SpanBudget so a hedge can never run past the goal's wall cap,
+                # and the remaining budget is stamped on the current trace span.
+                import asyncio as _asyncio
+
+                from .latency_best_of_n import AllAttemptsFailed, race_first_success
+                from .latency_span_budget import SpanBudget, tag_span_budget
+
+                race_budget_ms: float | None = None
+                if budget is not None and budget.max_wall_seconds:
+                    span = SpanBudget(
+                        max(0.0, (budget.max_wall_seconds - budget.elapsed()) * 1000.0)
+                    )
+                    tag_span_budget(span)
+                    race_budget_ms = span.remaining() or None
+
+                async def _backup():
+                    await _asyncio.sleep(hedge / 1000.0)
+                    return await _call()
+
+                try:
+                    return await race_first_success(
+                        [_call, _backup], budget_ms=race_budget_ms
+                    )
+                except AllAttemptsFailed as e:
+                    # Both the primary and the hedge failed: surface the real
+                    # provider error (chained as __cause__) so failover/retry
+                    # classification upstream sees the provider's exception, not
+                    # the race wrapper.
+                    raise (e.__cause__ or e) from None
         except Exception:
             _err = True
             raise

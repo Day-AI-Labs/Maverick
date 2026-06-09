@@ -1170,6 +1170,14 @@ def pick_advanced() -> dict[str, Any]:
             "Implied by enterprise mode; recommended for PHI/PII/financial data.",
             default=False,
         ),
+        "encrypt_per_tenant": _q_confirm(
+            "Per-tenant encryption keys? Each tenant gets its own data key "
+            "(wrapped by a KMS KEK) so one tenant's key never opens another's "
+            "data — the posture a hosted multi-tenant store needs. Requires "
+            "at-rest encryption; reads of existing data stay transparent. "
+            "Off by default (single-tenant boxes don't need it).",
+            default=False,
+        ),
         "audit_sign": _q_confirm(
             "Sign the audit log for tamper-evidence? Ed25519 hash-chains every "
             "audit row (plus a signed cross-file ledger) so `maverick audit verify` "
@@ -1217,6 +1225,13 @@ def pick_advanced() -> dict[str, Any]:
             "Pre-warm the prompt cache at start? A max_tokens=0 prefill writes the "
             "system+tools cache so the first turn doesn't pay the cold-write "
             "latency (best for interactive use). Off by default.",
+            default=False,
+        ),
+        "hedge_requests": _q_confirm(
+            "Hedge slow LLM requests? If a call hasn't returned within ~1.5s, fire "
+            "a backup request and take whichever finishes first (tightens p99 on a "
+            "provider with variable latency). Costs extra on slow calls. Off by "
+            "default.",
             default=False,
         ),
     }
@@ -2335,6 +2350,8 @@ def write_config(  # noqa: C901
             lines.append("")
             lines.append("[encryption]")
             lines.append("at_rest = true")
+            if advanced.get("encrypt_per_tenant"):
+                lines.append("per_tenant = true")
         if advanced.get("audit_sign"):
             lines.append("")
             lines.append("[audit]")
@@ -2359,6 +2376,10 @@ def write_config(  # noqa: C901
             lines.append("")
             lines.append("[cache]")
             lines.append("prewarm = true")
+        if advanced.get("hedge_requests"):
+            lines.append("")
+            lines.append("[latency]")
+            lines.append("hedge_ms = 1500")
         tool_lines: list[str] = []
         if advanced.get("deferred_tools"):
             tool_lines.append("deferred_loading = true")

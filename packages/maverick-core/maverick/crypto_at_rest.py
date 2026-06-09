@@ -45,6 +45,10 @@ import stat
 from pathlib import Path
 
 _MAGIC = b"MVKAR1\n"          # versioned header: Maverick At-Rest v1
+# Per-tenant envelope-sealed blob header. MUST equal tenant_kms._SEAL_MAGIC (a
+# test asserts this); duplicated here so is_sealed() stays cheap and we avoid a
+# crypto_at_rest <-> tenant_kms import cycle (tenant_kms imports from this module).
+_TENANT_MAGIC = b"MVKTEN1\n"
 _NONCE_BYTES = 12
 _KEY_BYTES = 32              # AES-256
 _KEY_PATH = Path.home() / ".maverick" / "keys" / "at_rest.key"
@@ -88,6 +92,31 @@ def at_rest_enabled() -> bool:
         return enterprise_enabled()
     except Exception:
         return False
+
+
+def per_tenant_at_rest() -> bool:
+    """Opt-in per-tenant envelope encryption (default off).
+
+    When on **and** at-rest is enabled, new seals use the *current tenant's* own
+    data key (:mod:`maverick.tenant_kms`) instead of the single process-wide key,
+    so one tenant's key never opens another tenant's data — the posture a hosted
+    multi-tenant store needs. Reads auto-detect by magic header, so data already
+    sealed with the global key stays readable (transparent migration, no flag-day
+    re-encrypt). ``MAVERICK_ENCRYPT_PER_TENANT`` env wins over ``[encryption]
+    per_tenant``.
+
+    Intended for deployments where every read/write is tenant-scoped (the seal
+    is bound to ``paths.current_tenant()``); on a single-tenant box leave it off."""
+    env = os.environ.get("MAVERICK_ENCRYPT_PER_TENANT")
+    if env is not None and env.strip() != "":
+        return _truthy(env)
+    try:
+        from .config import load_config
+        cfg = (load_config() or {}).get("encryption") or {}
+    except Exception:
+        return False
+    v = cfg.get("per_tenant")
+    return _truthy(v) if isinstance(v, str) else bool(v)
 
 
 def strict_at_rest() -> bool:
@@ -205,8 +234,15 @@ def _load_or_create_key() -> bytes:
 
 
 def is_sealed(blob: bytes) -> bool:
-    """True if ``blob`` was produced by :func:`seal` (carries the magic header)."""
-    return blob[: len(_MAGIC)] == _MAGIC
+    """True if ``blob`` was produced by :func:`seal` (carries a magic header).
+
+    Recognises both the process-wide at-rest header and the per-tenant envelope
+    header, so strict-mode + TEXT-column detection treat tenant-sealed values as
+    sealed too."""
+    return (
+        blob[: len(_MAGIC)] == _MAGIC
+        or blob[: len(_TENANT_MAGIC)] == _TENANT_MAGIC
+    )
 
 
 def seal(plaintext: bytes) -> bytes:
@@ -214,6 +250,13 @@ def seal(plaintext: bytes) -> bytes:
 
     Raises :class:`EncryptionUnavailable` if crypto/key are missing (fail closed:
     the caller must not silently fall back to writing plaintext)."""
+    # Per-tenant mode: route through the tenant's own data key. Output carries the
+    # tenant magic header, so unseal()/is_sealed() handle it transparently and
+    # globally-sealed data written before the switch still opens.
+    if per_tenant_at_rest():
+        from .paths import current_tenant
+        from .tenant_kms import seal_for_tenant
+        return seal_for_tenant(current_tenant(), plaintext)
     if not _have_crypto():
         raise EncryptionUnavailable(
             "at-rest encryption enabled but 'cryptography' is not installed "
@@ -232,6 +275,14 @@ def unseal(blob: bytes) -> bytes:
     unchanged — plaintext written before encryption was enabled (transparent
     migration). Raises :class:`EncryptionUnavailable` only when a genuinely
     sealed blob can't be opened."""
+    # A per-tenant envelope is opened with the tenant's data key regardless of
+    # whether per-tenant mode is currently on (so reads keep working after the
+    # mode is toggled). The current tenant must match the one it was sealed under
+    # — GCM authentication fails otherwise, which is the cross-tenant guarantee.
+    if blob[: len(_TENANT_MAGIC)] == _TENANT_MAGIC:
+        from .paths import current_tenant
+        from .tenant_kms import unseal_for_tenant
+        return unseal_for_tenant(current_tenant(), blob)
     if not is_sealed(blob):
         return blob
     if not _have_crypto():
@@ -325,6 +376,7 @@ def unseal_from_str(s: str) -> str:
 
 __all__ = [
     "at_rest_enabled",
+    "per_tenant_at_rest",
     "is_sealed",
     "is_sealed_str",
     "seal",
