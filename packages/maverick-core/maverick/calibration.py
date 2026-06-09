@@ -216,6 +216,8 @@ def load_samples(path: Path = SAMPLES_PATH) -> list[CalibrationSample]:
             for raw in f:
                 try:
                     d = json.loads(raw)
+                    if not isinstance(d, dict):
+                        continue
                     out.append(CalibrationSample(
                         confidence=float(d.get("confidence", 0.0)),
                         correct=bool(d.get("correct", False)),
@@ -251,9 +253,10 @@ def _load_verdict(path: Path = VERDICT_PATH) -> dict | None:
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        verdict = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+    return verdict if isinstance(verdict, dict) else None
 
 
 def learning_frozen(*, verdict_path: Path = VERDICT_PATH) -> bool:
