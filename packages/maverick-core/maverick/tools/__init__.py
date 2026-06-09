@@ -559,6 +559,7 @@ def base_registry(  # noqa: C901
     from .datadog_tool import datadog_tool
     from .dep_graph import dep_graph
     from .diagnose import diagnose
+    from .differential_privacy import differential_privacy
     from .discord_bot import discord_bot
     from .dns_lookup import dns_lookup
     from .dropbox_tool import dropbox_tool
@@ -675,6 +676,7 @@ def base_registry(  # noqa: C901
     reg.register(huggingface())
     reg.register(notify_tool())
     reg.register(diagnose())
+    reg.register(differential_privacy())
     if enable_mobile_tools:
         reg.register(android())
         reg.register(ios_sim())
