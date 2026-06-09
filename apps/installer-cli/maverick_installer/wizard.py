@@ -1207,6 +1207,18 @@ def pick_advanced() -> dict[str, Any]:
             "model when the battery is low. Off by default.",
             default=False,
         ),
+        "effort": _q_confirm(
+            "Per-role reasoning effort? Keep the orchestrator/coder at high effort "
+            "but run bulk roles (researcher/verifier/writer) at lower effort — the "
+            "biggest cost/latency lever on Opus 4.7/4.8. Off by default.",
+            default=False,
+        ),
+        "cache_prewarm": _q_confirm(
+            "Pre-warm the prompt cache at start? A max_tokens=0 prefill writes the "
+            "system+tools cache so the first turn doesn't pay the cold-write "
+            "latency (best for interactive use). Off by default.",
+            default=False,
+        ),
     }
     # OIDC SSO is a string-bearing toggle (issuer/audience/jwks_uri), so it has
     # its own prompt; the result is nested under the "oidc" key and the writer
@@ -2339,6 +2351,14 @@ def write_config(  # noqa: C901
             lines.append("")
             lines.append("[reflexion]")
             lines.append("enable = true")
+        if advanced.get("effort"):
+            lines.append("")
+            lines.append("[effort]")
+            lines.append("enabled = true")
+        if advanced.get("cache_prewarm"):
+            lines.append("")
+            lines.append("[cache]")
+            lines.append("prewarm = true")
         tool_lines: list[str] = []
         if advanced.get("deferred_tools"):
             tool_lines.append("deferred_loading = true")
