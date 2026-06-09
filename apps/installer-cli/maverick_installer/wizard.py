@@ -1123,6 +1123,12 @@ def pick_advanced() -> dict[str, Any]:
             "goals turned out (what worked, what failed).",
             default=False,
         ),
+        "credit_assignment": _q_confirm(
+            "Counterfactual credit assignment? After a swarm answers, work out which "
+            "sub-agent actually helped (ablate + re-verify) to improve learning and "
+            "routing. Costs extra verifier calls per swarm.",
+            default=False,
+        ),
         "enforce_capabilities": _q_confirm(
             "Enforce agent capabilities? Each agent runs under a scoped grant and "
             "spawned sub-agents can only narrow it, never exceed it (least privilege).",
@@ -2281,6 +2287,10 @@ def write_config(  # noqa: C901
         if advanced.get("experience_guidance"):
             lines.append("")
             lines.append("[experience]")
+            lines.append("enable = true")
+        if advanced.get("credit_assignment"):
+            lines.append("")
+            lines.append("[credit]")
             lines.append("enable = true")
         if advanced.get("enforce_quotas"):
             lines.append("")

@@ -136,6 +136,21 @@ def test_sota_loop_toggles_write_and_are_read(tmp_path, monkeypatch):
     assert experience.enabled() is True
 
 
+def test_credit_assignment_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: the wizard's CSCA toggle writes [credit] enable, and the
+    kernel reads it back."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_CREDIT", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"credit_assignment": True})
+    assert "[credit]" in cfg
+    assert "enable = true" in cfg
+
+    from maverick import credit
+    assert credit.enabled() is True
+
+
 def test_enforce_capabilities_writes_and_is_read(tmp_path, monkeypatch):
     """Rule-6 loop: the wizard's capability toggle writes [capabilities]
     enforce, and the kernel reads it back."""

@@ -364,6 +364,53 @@ def spawn_swarm_tool(parent: Agent) -> Tool:  # noqa: C901
                 except Exception:  # pragma: no cover -- audit must never break the loop
                     pass
 
+        # Counterfactual swarm credit assignment (CSCA): attribute the outcome
+        # to each sub-agent by ablating its contribution and re-scoring with the
+        # verifier as the value oracle. Off by default; costs N+1 verifier
+        # passes, so it is budget-gated, capped to small swarms, and skipped
+        # when the verifier's calibration is frozen (credit from a drifted judge
+        # is noise). Fail-open; a BudgetExceeded/Halt still stops the run.
+        try:
+            from .. import credit as _credit
+            if _credit.enabled():
+                contribs = {
+                    child.name: res.final
+                    for child, res in zip(children, results)
+                    if not isinstance(res, Exception) and res.final
+                    and _sealed_notice(parent.ctx, child) is None
+                }
+                _cs = _credit._settings()
+                b = parent.ctx.budget
+                headroom_ok = b.dollars < b.max_dollars * (1.0 - _cs["min_budget_headroom"])
+                try:
+                    from ..calibration import learning_frozen as _frozen
+                    frozen = _frozen()
+                except Exception:
+                    frozen = False
+                if 2 <= len(contribs) <= _cs["max_children"] and headroom_ok and not frozen:
+                    from ..verifier import verify_proposal
+
+                    async def _score(subset: list[str]) -> float:
+                        v = await verify_proposal(
+                            parent.brief, "\n\n".join(subset), parent.ctx.llm,
+                            parent.ctx.budget, proposer_model=getattr(parent, "model", None),
+                        )
+                        return float(v.confidence)
+
+                    cmap = await _credit.counterfactual_credit(contribs, _score)
+                    parent.ctx.last_credit = cmap
+                    parent.ctx.blackboard.post(
+                        parent.name, "verify",
+                        "swarm credit: " + ", ".join(
+                            f"{n}={c:+.2f}" for n, c in
+                            sorted(cmap.items(), key=lambda x: -x[1])
+                        ),
+                    )
+        except (_BE, _ks.Halted):
+            raise
+        except Exception:  # pragma: no cover -- CSCA must never break the loop
+            pass
+
         parts: list[str] = []
         if escalated:
             parts.append(
