@@ -106,6 +106,8 @@ def recv_from_agent(agent_id: str, *, agent: Any = None) -> Tool:
             v = delivery.verdict
             if v.ok:
                 env = delivery.payload
+                if agent is not None:
+                    agent._handoff_capability = v.grant
                 scope = ", ".join(sorted(env.required_tools)) or "the granted scope"
                 return (
                     f"from {delivery.sender!r}: VERIFIED handoff — task={env.task!r}. "
