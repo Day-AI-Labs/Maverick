@@ -227,10 +227,45 @@ def _op_delete(args: dict[str, Any]) -> str:
     return f"deleted_count={result.deleted_count}"
 
 
+# Query operators that execute arbitrary JavaScript on the Mongo server.
+_SERVER_JS_OPERATORS = frozenset({"$where", "$function", "$accumulator"})
+
+
+def _reject_server_side_js(node: Any) -> str | None:
+    """Return an error if the query filter contains a server-side-JS operator.
+
+    ``$where`` / ``$function`` / ``$accumulator`` run attacker-controlled
+    JavaScript on the database server, so a model-supplied filter carrying one
+    is a code-injection / DoS vector. Walk the filter recursively (keys at any
+    depth, inside ``$and`` / ``$or`` arrays) and refuse the whole request.
+    """
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if isinstance(k, str) and k.lower() in _SERVER_JS_OPERATORS:
+                return (
+                    f"ERROR: filter operator {k!r} runs server-side JavaScript "
+                    "and is not allowed"
+                )
+            err = _reject_server_side_js(v)
+            if err:
+                return err
+    elif isinstance(node, list):
+        for item in node:
+            err = _reject_server_side_js(item)
+            if err:
+                return err
+    return None
+
+
 def _run(args: dict[str, Any]) -> str:
     op = args.get("op")
     if not op:
         return "ERROR: op is required"
+    # Refuse server-side-JS query operators before building the client, so a
+    # hostile filter never reaches the database.
+    bad = _reject_server_side_js(args.get("filter"))
+    if bad:
+        return bad
     try:
         import pymongo  # noqa: F401
     except ImportError:

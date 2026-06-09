@@ -11,7 +11,7 @@ a human; export decisions, licenses, and filings are human-authorized, and you r
 calls to the legal trade-and-sanctions agent. A sanctions or forced-labor hit stops the
 transaction and goes to a human."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "flexport_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

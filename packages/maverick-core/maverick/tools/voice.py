@@ -127,11 +127,19 @@ def _whisper_local(audio_path: Path, language: str | None) -> str | None:
         return None
 
 
-def _run_transcribe(args: dict[str, Any]) -> str:
+def _run_transcribe(args: dict[str, Any], sandbox: Any = None) -> str:
     src = (args.get("source") or "").strip()
     if not src:
         return "ERROR: source is required"
-    path = Path(os.path.expanduser(src))
+    # Confine the model-supplied path to the workspace: transcription reads the
+    # file and ships its bytes to a Whisper backend, so an unconfined source is
+    # arbitrary host-file read + exfiltration (~/.ssh/id_rsa, .env). sandbox=None
+    # -- the trusted internal view_video caller's temp path -- passes through.
+    from .ffmpeg_tool import _safe_path
+    try:
+        path = Path(_safe_path(sandbox, src))
+    except ValueError as e:
+        return f"ERROR: {e}"
     if not path.exists() or not path.is_file():
         return f"ERROR: audio file not found: {src!r}"
     language = args.get("language")
@@ -221,23 +229,34 @@ def _tts_elevenlabs(text: str, voice: str | None, output: Path) -> bool:
         return False
 
 
-def _next_output_path() -> Path:
+def _next_output_path(sandbox: Any = None) -> Path:
+    base = Path(sandbox.workdir) if sandbox is not None else Path.cwd()
     i = 1
     while True:
-        cand = Path.cwd() / f"speech-{i}.mp3"
+        cand = base / f"speech-{i}.mp3"
         if not cand.exists():
             return cand
         i += 1
 
 
-def _run_speak(args: dict[str, Any]) -> str:
+def _run_speak(args: dict[str, Any], sandbox: Any = None) -> str:
     text = (args.get("text") or "").strip()
     if not text:
         return "ERROR: text is required"
     if len(text) > 4096:
         return f"ERROR: text too long ({len(text)} > 4096 chars)"
+    # Confine the output path to the workspace (unconfined => arbitrary write:
+    # ~/.ssh/authorized_keys, ~/.maverick/config.toml). The default also lands
+    # in the workspace.
     output = args.get("output")
-    output_path = Path(os.path.expanduser(output)) if output else _next_output_path()
+    if output:
+        from .ffmpeg_tool import _safe_path
+        try:
+            output_path = Path(_safe_path(sandbox, output))
+        except ValueError as e:
+            return f"ERROR: {e}"
+    else:
+        output_path = _next_output_path(sandbox)
     voice = args.get("voice")
     backend = (args.get("backend") or "auto").lower()
 
@@ -257,7 +276,7 @@ def _run_speak(args: dict[str, Any]) -> str:
     )
 
 
-def transcribe_audio() -> Tool:
+def transcribe_audio(sandbox: Any = None) -> Tool:
     return Tool(
         name="transcribe_audio",
         description=(
@@ -267,11 +286,11 @@ def transcribe_audio() -> Tool:
             "Set `language='en'` to skip auto-detect."
         ),
         input_schema=_TRANSCRIBE_SCHEMA,
-        fn=_run_transcribe,
+        fn=lambda args: _run_transcribe(args, sandbox),
     )
 
 
-def speak() -> Tool:
+def speak(sandbox: Any = None) -> Tool:
     return Tool(
         name="speak",
         description=(
@@ -281,5 +300,5 @@ def speak() -> Tool:
             "'alloy'. Output path defaults to ./speech-N.mp3."
         ),
         input_schema=_TTS_SCHEMA,
-        fn=_run_speak,
+        fn=lambda args: _run_speak(args, sandbox),
     )

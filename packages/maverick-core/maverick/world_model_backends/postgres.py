@@ -272,17 +272,37 @@ def _active_tenant() -> str | None:
         return None
 
 
-def _tenant_scope(column: str = "tenant_id") -> tuple[str, list]:
-    """NULL-tolerant read predicate scoping rows to the active tenant.
+def _strict_tenant_isolation() -> bool:
+    """Strict per-tenant reads (default off). When on, a tenant sees **only** its
+    own rows -- legacy ``NULL`` rows are no longer visible. Enable only after the
+    legacy rows have been backfilled with a tenant_id. ``MAVERICK_STRICT_TENANT_
+    ISOLATION`` env wins over ``[world_model] strict_tenant_isolation``."""
+    import os
+    env = os.environ.get("MAVERICK_STRICT_TENANT_ISOLATION")
+    if env is not None and env.strip() != "":
+        return env.strip().lower() in {"1", "true", "yes", "on"}
+    try:
+        from ..config import load_config
+        v = (load_config() or {}).get("world_model", {}).get("strict_tenant_isolation")
+    except Exception:  # pragma: no cover -- config never blocks a query
+        return False
+    return str(v).strip().lower() in {"1", "true", "yes", "on"} if isinstance(v, str) else bool(v)
 
-    Returns ``(sql_fragment, params)``. With **no** active tenant the fragment
-    is empty -- the default single-tenant install is unchanged. With a tenant
-    set, it matches that tenant's rows **plus** legacy ``NULL`` rows (visible
-    until backfilled); strict per-tenant isolation is the follow-up.
+
+def _tenant_scope(column: str = "tenant_id") -> tuple[str, list]:
+    """Read predicate scoping rows to the active tenant.
+
+    Returns ``(sql_fragment, params)``. With **no** active tenant the fragment is
+    empty -- the default single-tenant install is unchanged. With a tenant set,
+    the default (NULL-tolerant) predicate matches that tenant's rows **plus**
+    legacy ``NULL`` rows; strict mode (``[world_model] strict_tenant_isolation``)
+    matches **only** that tenant's rows, the RLS-equivalent hard boundary.
     """
     t = _active_tenant()
     if t is None:
         return "", []
+    if _strict_tenant_isolation():
+        return f"{column} = %s", [t]
     return f"({column} = %s OR {column} IS NULL)", [t]
 
 

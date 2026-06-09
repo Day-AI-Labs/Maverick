@@ -45,28 +45,18 @@ around **finishing the platform spine** and the 2027–2028 horizons below.
 
 ### Still open — near-term engineering
 
-| Item | Notes |
+The cross-language MCP surface, the IRC / glasses-wearable / LangChain
+connectors, the MCP elicitation URL-mode path, and the multi-tenant hosting
+spine (Postgres tenancy, queue dispatch, tenant lifecycle, billing, per-tenant
+KMS + egress, operator console) have **shipped** — see
+[`FEATURES.md`](./FEATURES.md). What genuinely remains is non-code or live-infra:
+
+| Item | Remaining work |
 |---|---|
-| MCP elicitation, URL mode (B1, Phase 3) | The secrets-never-transit-model path; dovetails with remote-server OAuth (`specs/mcp-elicitation.md`). |
-| IRC channel · LangChain / LangGraph adapters | External-dependency connectors that need a live service to test meaningfully. |
-| Glasses / wearable channel | Even Realities G2 BYOA bridge, and wearables generally; expected table-stakes, so a standing commitment (see council note below). |
-| MCP-client language analytics | The one remaining language-bindings gate step (needs the telemetry-consent UI); see council decision below. |
-
-### Platform spine — what's left to be a multi-tenant hosted platform
-
-The single-node, file-per-tenant model is solid (and is the right shape for
-self-hosted, one-tenant-per-deploy). Becoming *both* (self-hosted **and** a
-hosted SaaS) means finishing these, roughly in dependency order. None is a
-code-red; the two seams are cheap-now/costly-later and are partly done.
-
-| Spine item | Remaining work |
-|---|---|
-| **Shared-DB tenancy (Postgres)** _(#1)_ | Migration runner + nullable `tenant_id` + write-stamping + NULL-tolerant read-scoping for goals have shipped (`world_model_backends/postgres.py`). Remaining: extend read-scoping to the rest of the root tables, then Row-Level Security + a connection pool for strict isolation and horizontal scale. |
-| **Control-plane / data-plane split** _(#2)_ | Goals still run as threads in the API process (`runner.py` `BoundedSemaphore`). Dispatch is behind an interface now; swap to a real queue (arq / Celery / Temporal) + isolated per-run workers when one box can't keep up. |
-| **Tenant lifecycle / provisioning API** | Create / suspend / delete / assign quota, plus an operator cross-tenant console. Wake at ~3 hosted tenants. |
-| **Metering → billing / entitlements** | `quotas.py` records & caps usage; rating / invoicing / plan-gating is unbuilt. Wake at first hosted revenue. |
-| **Per-tenant secrets / KMS** | `crypto_at_rest.py` is single-tenant; add a per-tenant DEK wrapped by a KMS KEK. Wake at first sensitive hosted tenant. |
-| **Per-tenant egress policy plane** | `sandbox/network_policy.py` is per-tool; add a per-tenant allow-list/proxy above sandboxes. Wake at first shared host. |
+| Language-bindings decision (Q1 2027 gate) | A *measurement*, not code: the consent-gated MCP-client language analytics that feeds it has shipped; fund a native client only if >15% of active installs drive Maverick from non-Python MCP clients (see council decision below). |
+| Live-service validation | The connectors + queue/KMS backends ship with their protocol/logic unit-tested; end-to-end validation against a live IRC server, a real G2 device, a langchain install, and a Redis broker is the remaining gate, not new code. |
+| Postgres tenancy hardening (live-infra) | App-layer tenant isolation (strict-isolation mode) is shipped; remaining is database-native Row-Level Security + a `psycopg_pool` connection pool for horizontal scale. |
+| Queue dispatch at scale (live-infra) | The `QueueDispatcher` (arq) is wired; remaining is running it against a real Redis broker + an out-of-process worker pool. |
 
 ### Strategic decisions (settled)
 

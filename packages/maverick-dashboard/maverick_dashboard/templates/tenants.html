@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}tenants · Maverick{% endblock %}
+{% block content %}
+  <h2>tenants</h2>
+  <p class="muted">
+    The provisioned-tenant roster (hosted control plane): status, plan, and
+    per-tenant daily spend quota. Manage with <code>maverick tenant …</code>;
+    rate usage into invoices with <code>maverick billing invoice &lt;tenant&gt;</code>.
+  </p>
+
+  {% if not is_admin %}
+    <div class="panel">
+      <p class="muted">Operator (admin) access is required to view the tenant
+      roster. You're seeing this scoped view because your identity maps to a
+      single tenant.</p>
+    </div>
+  {% elif not tenants %}
+    <div class="panel">
+      <p class="muted">No tenants provisioned. Create one with
+      <code>maverick tenant create &lt;id&gt;</code> — single-tenant and
+      unprovisioned deployments run without a registry.</p>
+    </div>
+  {% else %}
+    <div class="panel">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">tenant</th><th scope="col">status</th>
+            <th scope="col">plan</th><th scope="col">quota</th>
+            <th scope="col">name</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in tenants %}
+            <tr>
+              <td><code>{{ t.id }}</code></td>
+              <td>
+                {% if t.status == 'active' %}
+                  <span style="color: var(--accent);">active</span>
+                {% else %}
+                  <span style="color: var(--warn);">{{ t.status }}</span>
+                {% endif %}
+              </td>
+              <td>{{ t.plan }}</td>
+              <td class="muted">
+                {% if t.max_daily_dollars %}${{ '%g' % t.max_daily_dollars }}/day{% else %}unlimited{% endif %}
+              </td>
+              <td class="muted">{{ t.display_name or '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+{% endblock %}

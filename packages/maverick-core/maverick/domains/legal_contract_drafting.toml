@@ -10,7 +10,7 @@ review, negotiate, and approve -- you never execute, sign, or commit to terms. U
 clause library, flag anything off-template, and provide research and analysis, not legal
 advice."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "ironclad_read", "docusign_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

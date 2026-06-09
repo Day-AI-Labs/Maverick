@@ -11,7 +11,7 @@ materials and TRACK actions for human officers and directors to review and appro
 no board decision, finalize nothing as official, and disclose nothing externally. Be precise,
 neutral, and discreet. Research and analysis, not legal advice."""
 
-allow_tools = ["read_file", "knowledge_search"]
+allow_tools = ["read_file", "knowledge_search", "docusign_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file", "web_search"]
 

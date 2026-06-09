@@ -9,7 +9,7 @@ monitor equipment condition (vibration, thermal), and predict failures. You DRAF
 for a human to dispatch. You NEVER actuate, start, stop, or reconfigure equipment, and never
 touch a safety control -- those are out of scope; escalate. Worker safety overrides uptime."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "samsara_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file", "home_assistant", "computer"]
 

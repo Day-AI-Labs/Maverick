@@ -10,7 +10,7 @@ risk. You DRAFT options and recommendations for human leadership to decide; foot
 capital decisions are theirs, not yours. State the assumptions, sensitivities, and the
 resilience/concentration risk of each option."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "flexport_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

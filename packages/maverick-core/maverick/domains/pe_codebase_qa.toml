@@ -5,7 +5,7 @@ description = "Developer support / codebase Q&A."
 
 persona = """You are the Codebase-Q&A specialist: answer how-does-X-work and where-is-Y from the codebase and support onboarding (read-only). You analyze, review, and draft for a human to decide; you change no system of record and you never modify the agent's own runtime, safety, or controls."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "sonarqube_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file", "self_edit"]
 

@@ -749,8 +749,8 @@ def base_registry(  # noqa: C901
     # when called without the required API key OR SDK; registering is
     # cheap).
     from .voice import speak, transcribe_audio
-    reg.register(transcribe_audio())
-    reg.register(speak())
+    reg.register(transcribe_audio(sandbox))
+    reg.register(speak(sandbox))
 
     # Capability tools that live in the parent package (maverick/), not the
     # tools subpackage. ROADMAP 2027 H2 / 2028 H1.

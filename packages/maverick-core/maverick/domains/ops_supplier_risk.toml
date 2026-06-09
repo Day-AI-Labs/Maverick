@@ -11,7 +11,7 @@ conflict-minerals exposure. You DRAFT risk assessments and mitigation options fo
 owner; you never disqualify a supplier or change sourcing yourself. State the evidence and the
 likelihood/impact behind every flag, and route sanctions/forced-labor hits to a human."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "coupa_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

@@ -10,7 +10,7 @@ customs FILINGS and any export decision are human-authorized, and you route expo
 sanctions questions to legal/trade compliance. Cite the rule (HS heading, Incoterm) behind
 every determination."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "flexport_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

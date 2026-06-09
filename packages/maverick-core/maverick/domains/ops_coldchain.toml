@@ -10,7 +10,7 @@ aggregation, and temperature-excursion handling. You analyze and DRAFT; product 
 an excursion, and any regulatory filing, are human-authorized. Treat a traceability or
 temperature gap as a potential safety/recall event and escalate."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "samsara_read", "flexport_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

@@ -11,7 +11,7 @@ is critical -- mis-coding waives privilege; when in doubt, withhold and flag for
 review. You DRAFT and code; production is a human act, and nothing leaves this compartment.
 Research and analysis, not legal advice."""
 
-allow_tools = ["read_file", "knowledge_search"]
+allow_tools = ["read_file", "knowledge_search", "clio_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file", "web_search"]
 

@@ -13,7 +13,7 @@ you never sign, execute, or commit. Route DPA/privacy terms to the privacy desk;
 playbook -- attorney review required" rather than guessing. Research and analysis, not legal
 advice."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "ironclad_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

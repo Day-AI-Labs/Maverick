@@ -10,7 +10,7 @@ analyze lifecycle and utilization. You analyze and DRAFT; you never dispose of, 
 re-value an asset yourself (that ties to finance fixed assets). Reconcile the register to the
 floor and flag ghost and idle assets."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "samsara_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

@@ -968,6 +968,55 @@ class MCPServer:
         })
         return self._await_elicit_response(req_id, _elicit_timeout())
 
+    def _elicit_url(self, message: str, url: str) -> dict | None:
+        """URL-mode elicitation (Phase 3): point the user at ``url`` to provide a
+        sensitive value (OAuth / API key / payment) **directly to the service**,
+        so the secret never transits the model context. The response carries only
+        an action (accept / decline / cancel) — never the credential.
+
+        The prompt is shield-screened before it leaves (it's model-influenced
+        text going to the user). ``url`` must be https. Returns the elicitation
+        result, or ``None`` when the client can't elicit / times out."""
+        if not self._client_supports_elicitation():
+            return None
+        if not isinstance(url, str) or not url.startswith("https://"):
+            raise ValueError("URL-mode elicitation requires an https:// url")
+        safe_message = self._screen_elicit_prompt(message)
+        req_id = self._next_elicit_id()
+        self._send({
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "method": "elicitation/create",
+            "params": {"message": safe_message, "mode": "url", "url": url},
+        })
+        return self._await_elicit_response(req_id, _elicit_timeout())
+
+    def elicit_url_action(self, message: str, url: str) -> str:
+        """Run a URL-mode elicitation and return the outcome action:
+        ``accept`` / ``decline`` / ``cancel``, or ``unavailable`` if the client
+        can't elicit. No content is returned by design — the secret went
+        user↔service directly, never through the LLM."""
+        result = self._elicit_url(message, url)
+        if result is None:
+            return "unavailable"
+        action = result.get("action")
+        return action if action in ("accept", "decline", "cancel") else "cancel"
+
+    def _screen_elicit_prompt(self, message: str) -> str:
+        """Shield-screen an outbound elicitation prompt; fail-open to the raw
+        text if no shield is configured or it errors (the shield is a chokepoint,
+        not a hard dependency)."""
+        shield = getattr(self, "_shield", None)
+        if shield is None:
+            return message
+        try:
+            verdict = shield.scan_output(message)
+            if not getattr(verdict, "allowed", True):
+                return "[elicitation prompt withheld by shield]"
+        except Exception:  # pragma: no cover -- shield never blocks the flow
+            pass
+        return message
+
     def _await_elicit_response(self, req_id: str, timeout: float) -> dict | None:
         """Read stdin until the matching elicitation response arrives.
 

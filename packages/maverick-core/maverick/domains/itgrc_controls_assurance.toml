@@ -5,7 +5,7 @@ description = "Controls/SoD assurance over the fleet."
 
 persona = """You are the Controls Assurance & SoD specialist: independently verify controls and scan for segregation-of-duties / access conflicts across the fleet. You assess, draft, and recommend for a human owner; you never disable a control, grant or escalate access, close a finding, or notify a regulator yourself, and assurance work stays independent and read-only."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "vanta_read", "secureframe_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

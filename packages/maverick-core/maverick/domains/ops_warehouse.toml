@@ -9,7 +9,7 @@ and plan labor and dock schedules. You DRAFT plans for a human to release; relea
 tasks to the floor and any inventory move are human-authorized. Worker safety overrides
 throughput."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "samsara_read", "easypost_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

@@ -84,11 +84,15 @@ here.
 
 ## Channels
 
-12 wired channels (`packages/maverick-channels/`): Telegram, Discord, Slack,
+14 wired channels (`packages/maverick-channels/`): Telegram, Discord, Slack,
 Signal, Email, Matrix, Bluesky, Mastodon, Voice (Twilio), WhatsApp, SMS, iMessage
-(macOS). Rich formatting + dedup + per-channel authz. **Email v2** adds IMAP IDLE
-(push instead of poll) + conversation threading from Message-ID/In-Reply-To/
-References (`email_v2.py`).
+(macOS), **IRC** (channels + DMs, TLS), and a **glasses/wearable** adapter
+(Even Realities G2 "bring your own agent" bridge: the ack-then-run pattern that
+answers quick utterances on the HUD within the device deadline and runs long
+tasks in the background, delivering the result to a secondary channel). Rich
+formatting + dedup + per-channel authz. **Email v2** adds IMAP IDLE (push
+instead of poll) + conversation threading from Message-ID/In-Reply-To/References
+(`email_v2.py`).
 
 ## Sandboxes
 
@@ -123,6 +127,12 @@ prefers a reachable local model before remote (`provider_local_first.py`);
   `GoalService`; the gRPC shim compiles stubs on demand from the bundled
   `maverick.proto`. Behind the `[grpc]` extra; run via `python -m maverick.grpc_api`.
 - **Cross-language quickstarts** — TypeScript, Go, Rust, C#, Java (`docs/clients/`).
+- **LangChain / LangGraph interop** (`langchain_adapter.py`, `[langchain]` extra)
+  — expose the Maverick swarm as a LangChain `StructuredTool`, and wrap any
+  LangChain `BaseTool` as a Maverick tool.
+- **MCP-client language analytics** (`mcp_analytics.py`) — opt-in, consent-gated
+  tally of client language (from the User-Agent) that feeds the language-bindings
+  decision gate (`non_python_share()`); off by default.
 
 ## Safety & security
 
@@ -169,12 +179,35 @@ prefers a reachable local model before remote (`provider_local_first.py`);
   `~/.maverick/tenants/<t>/` (`workspace.py`, `paths.py`), with a per-tenant
   world DB and `data_dir()`-routed audit / quotas / DSAR / fleets. The shared
   **Postgres** backend (`[world_model] backend = "postgres"`) carries a
-  **versioned migration runner** (`schema_migrations` ledger) and a nullable
-  `tenant_id` on the root tables, stamped on writes and scoped on the primary
-  goal reads — the seam for shared-DB multi-tenancy.
+  **versioned migration runner** (`schema_migrations` ledger), a `tenant_id` on
+  every root table (write-stamped, read-scoped), **tenant-aware UNIQUE
+  constraints**, and a **strict-isolation mode** (`[world_model]
+  strict_tenant_isolation`).
 - **Process table** — `maverick ps` (unified view of runs/workers).
 - **Scheduling** — recurring autonomous goals from a prompt; `worker --once`
   cron-friendly drain (`scheduler.py`, `job_queue.py`, `worker.py`).
+
+## Hosted control plane & multi-tenancy
+
+The backend for running Maverick as a governed, multi-tenant platform (each piece
+opt-in; single-tenant/self-hosted deployments are unaffected):
+
+- **Tenant lifecycle / provisioning** — `tenant_registry.py` + `maverick tenant
+  create/list/suspend/resume/quota/delete`: a roster of tenants with status,
+  plan, and per-tenant daily spend quota; `assert_tenant_active` refuses a
+  suspended tenant.
+- **Metering → billing & entitlements** — `billing.py` + `maverick billing
+  invoice/entitlements`: rate the usage ledger (pass-through+markup or
+  token-priced) into per-period invoices; plan → feature/limit entitlements
+  (`tenant_entitled`).
+- **Per-tenant envelope encryption** — `tenant_kms.py`: a DEK per tenant, wrapped
+  by a KMS KEK (LocalKMS default; cloud KMS is a drop-in `wrap`/`unwrap`); one
+  tenant's DEK can't open another's data; instant KEK rotation.
+- **Per-tenant egress plane** — `tenant_egress.py`: a per-tenant allow/deny
+  egress policy composed (AND) with the per-tool policy at the egress chokepoint.
+- **Out-of-process execution** — a swappable goal **Dispatcher** (`runner.py`)
+  with a **QueueDispatcher** (`queue_dispatcher.py`) that enqueues goals for a
+  worker pool (arq adapter behind `[queue]`; `install_from_config` wires it).
 
 ## Evaluation & benchmarks
 

@@ -10,7 +10,7 @@ support and DRAFT; the attorney negotiates and decides, and no commitment is you
 Cite the playbook tier for every fallback and flag terms that exceed the company's risk
 tolerance. Research and analysis, not legal advice."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "ironclad_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 

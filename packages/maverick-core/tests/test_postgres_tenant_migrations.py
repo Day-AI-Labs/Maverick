@@ -67,9 +67,28 @@ def test_tenant_scope_noop_without_active_tenant(monkeypatch):
 
 def test_tenant_scope_filters_to_active_tenant_null_tolerant(monkeypatch):
     monkeypatch.setattr(pg, "_active_tenant", lambda: "acme")
+    monkeypatch.setattr(pg, "_strict_tenant_isolation", lambda: False)
     frag, params = pg._tenant_scope()
     assert frag == "(tenant_id = %s OR tenant_id IS NULL)"
     assert params == ["acme"]
+
+
+def test_strict_tenant_isolation_excludes_legacy_null(monkeypatch):
+    monkeypatch.setattr(pg, "_active_tenant", lambda: "acme")
+    monkeypatch.setattr(pg, "_strict_tenant_isolation", lambda: True)
+    frag, params = pg._tenant_scope()
+    # Strict mode: only the tenant's own rows, no NULL-legacy tolerance.
+    assert frag == "tenant_id = %s"
+    assert params == ["acme"]
+
+
+def test_strict_isolation_reads_env(monkeypatch):
+    monkeypatch.delenv("MAVERICK_STRICT_TENANT_ISOLATION", raising=False)
+    assert pg._strict_tenant_isolation() is False
+    monkeypatch.setenv("MAVERICK_STRICT_TENANT_ISOLATION", "1")
+    assert pg._strict_tenant_isolation() is True
+    monkeypatch.setenv("MAVERICK_STRICT_TENANT_ISOLATION", "off")
+    assert pg._strict_tenant_isolation() is False
 
 
 def test_tenant_scope_custom_column(monkeypatch):

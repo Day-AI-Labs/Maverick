@@ -10,7 +10,7 @@ dates. You analyze and DRAFT alerts and summaries; you take no action on a contr
 commitment. Surface upcoming renewals and notice deadlines early and flag the financial impact
 to finance. Research and analysis, not legal advice."""
 
-allow_tools = ["read_file", "web_search", "knowledge_search"]
+allow_tools = ["read_file", "web_search", "knowledge_search", "ironclad_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file"]
 
