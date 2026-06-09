@@ -11,8 +11,51 @@ import logging
 from collections.abc import Iterator
 
 from ..budget import Budget, BudgetExceeded
+from . import cookie_store
 
 log = logging.getLogger(__name__)
+
+
+def require_httpx() -> None:
+    """Verify the optional ``httpx`` dependency is importable.
+
+    Session adapters need httpx, which ships under the ``[session]`` extra.
+    Called from each adapter's ``__init__`` so the missing-dep error reads
+    the same everywhere instead of drifting per provider.
+    """
+    try:
+        import httpx  # noqa: F401
+    except ImportError as e:
+        raise ImportError(
+            "httpx not installed. Run: pip install 'maverick-agent[session]'"
+        ) from e
+
+
+def resolve_session(session: dict | None, provider_key: str, missing_msg: str) -> dict:
+    """Return the explicit ``session`` or the one stored for ``provider_key``.
+
+    Raises ``RuntimeError(missing_msg)`` when neither is available; the
+    message is provider-specific (it names the capture command).
+    """
+    resolved = session or cookie_store.load_session(provider_key)
+    if not resolved:
+        raise RuntimeError(missing_msg)
+    return resolved
+
+
+def cookie_header(
+    cookies: dict, missing_msg: str, *, require_key: str | None = None
+) -> str:
+    """Render a ``Cookie:`` header value from a cookie dict.
+
+    Raises ``RuntimeError(missing_msg)`` when the jar is empty, or -- when
+    ``require_key`` is given -- when that specific cookie is absent (Gemini
+    needs ``__Secure-1PSID``).
+    """
+    present = cookies.get(require_key) if require_key else cookies
+    if not present:
+        raise RuntimeError(missing_msg)
+    return "; ".join(f"{k}={v}" for k, v in cookies.items())
 
 
 class SessionToolUseUnsupported(NotImplementedError):

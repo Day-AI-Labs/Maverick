@@ -28,10 +28,12 @@ import uuid
 
 from ..budget import Budget
 from ..llm import LLMResponse
-from . import cookie_store
 from .base import (
     approx_record_budget,
+    cookie_header,
     iter_sse_data_payloads,
+    require_httpx,
+    resolve_session,
     stringify_messages,
     tool_use_unsupported,
 )
@@ -100,27 +102,20 @@ class ClaudeSessionClient:
     DEFAULT_MODEL = "claude-sonnet-4-6"
 
     def __init__(self, session: dict | None = None):
-        try:
-            import httpx  # noqa: F401
-        except ImportError as e:
-            raise ImportError(
-                "httpx not installed. Run: pip install 'maverick-agent[session]'"
-            ) from e
-        self._session = session or cookie_store.load_session(self.PROVIDER_KEY)
-        if not self._session:
-            raise RuntimeError(
-                "No Claude session stored. Run `maverick init` and pick "
-                "'browser session' for the Claude provider, or paste your "
-                "session cookie via `maverick session import claude`."
-            )
+        require_httpx()
+        self._session = resolve_session(
+            session,
+            self.PROVIDER_KEY,
+            "No Claude session stored. Run `maverick init` and pick "
+            "'browser session' for the Claude provider, or paste your "
+            "session cookie via `maverick session import claude`.",
+        )
 
     def _cookie_header(self) -> str:
-        cookies = self._session.get("cookies") or {}
-        if not cookies:
-            raise RuntimeError(
-                "Claude session has no cookies. Re-capture from your browser."
-            )
-        return "; ".join(f"{k}={v}" for k, v in cookies.items())
+        return cookie_header(
+            self._session.get("cookies") or {},
+            "Claude session has no cookies. Re-capture from your browser.",
+        )
 
     def _headers(self) -> dict:
         headers = dict(_BASE_HEADERS)
