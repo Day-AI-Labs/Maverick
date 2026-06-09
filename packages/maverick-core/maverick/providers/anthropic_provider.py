@@ -144,29 +144,49 @@ def _strip_message_cache_control(messages: list[dict]) -> list[dict]:
     return out
 
 
+# A single agentic turn can append many tool_use/tool_result blocks. Anthropic
+# walks back at most 20 content blocks from a breakpoint to find a prior cache
+# entry, so on a long turn the next request's breakpoint can fall outside the
+# window and silently miss. When the history is long we add a SECOND, earlier
+# breakpoint within the window so the chain stays warm. System(1)+tools(1)+2
+# message marks = 4, exactly the hard breakpoint limit.
+_LONG_HISTORY_MSGS = 24
+_SECONDARY_MIN_GAP = 4
+_SECONDARY_MAX_GAP = 14
+
+
+def _mark_user_message(msg: dict) -> dict:
+    """Return a copy of ``msg`` with cache_control on its last content block."""
+    cc = {"type": "ephemeral", "ttl": _default_cache_ttl()}
+    content = msg.get("content")
+    if isinstance(content, str):
+        return {**msg, "content": [{"type": "text", "text": content, "cache_control": cc}]}
+    if isinstance(content, list) and content:
+        new_blocks = [dict(b) for b in content]
+        new_blocks[-1] = {**new_blocks[-1], "cache_control": cc}
+        return {**msg, "content": new_blocks}
+    return msg
+
+
 def _add_messages_cache_breakpoint(messages: list[dict]) -> list[dict]:
-    """Mark the last user/tool_result message for caching.
+    """Mark the most recent stable user/tool_result message(s) for caching.
 
-    Wave 10: Anthropic prompt caching caches everything up to AND
-    including the marked breakpoint. The system prompt + tools are
-    already cached; the third breakpoint slot is best spent on the
-    most recent stable turn so multi-turn agent loops (which re-send
-    the entire history every step) get cache reads instead of writes
-    for the message body. Empirically a 40-55% input cost reduction
-    on long tool-use trajectories.
-
-    We mutate the last block of the most recent non-final user message
-    to add `cache_control`. Anthropic accepts cache_control on text /
-    tool_result / image blocks; we target the last block of any kind.
+    Wave 10: Anthropic prompt caching caches everything up to AND including the
+    marked breakpoint. The system prompt + tools are already cached; the
+    remaining breakpoint slots are best spent on the most recent stable turn so
+    multi-turn agent loops (which re-send the entire history every step) get
+    cache reads instead of writes for the message body (40-55% input cost cut on
+    long tool-use trajectories). On a long history we add a second, earlier
+    breakpoint so the 20-block lookback never strands the chain.
     """
     if not messages or len(messages) < 2:
         return messages
     # Drop any cache_control carried in from prior turns so the messages array
-    # contributes exactly one breakpoint (system + tools + 1 = 3 <= 4 limit).
+    # contributes only the breakpoints we add (system + tools + <=2 <= 4 limit).
     messages = _strip_message_cache_control(messages)
-    # Find the most recent user message that's NOT the final one (the
-    # final user message changes every turn -- caching it would write
-    # a fresh cache entry every call, the OPPOSITE of what we want).
+    # Primary: the most recent user message that's NOT the final one (the final
+    # user message changes every turn -- caching it would write a fresh entry
+    # every call, the OPPOSITE of what we want).
     target_idx = None
     for i in range(len(messages) - 2, -1, -1):
         if messages[i].get("role") == "user":
@@ -174,30 +194,19 @@ def _add_messages_cache_breakpoint(messages: list[dict]) -> list[dict]:
             break
     if target_idx is None:
         return messages
-    msg = messages[target_idx]
-    content = msg.get("content")
-    if isinstance(content, str):
-        # String content: convert to a single text block so we can attach
-        # cache_control. Anthropic accepts mixed string + block forms.
-        new_content = [{"type": "text", "text": content,
-                        "cache_control": {"type": "ephemeral",
-                                          "ttl": _default_cache_ttl()}}]
-        new_messages = list(messages)
-        new_messages[target_idx] = {**msg, "content": new_content}
-        return new_messages
-    if isinstance(content, list) and content:
-        # Block list: copy + mark the LAST block with cache_control.
-        new_blocks = [dict(b) for b in content]
-        last = new_blocks[-1]
-        last["cache_control"] = {
-            "type": "ephemeral",
-            "ttl": _default_cache_ttl(),
-        }
-        new_blocks[-1] = last
-        new_messages = list(messages)
-        new_messages[target_idx] = {**msg, "content": new_blocks}
-        return new_messages
-    return messages
+    new_messages = list(messages)
+    new_messages[target_idx] = _mark_user_message(new_messages[target_idx])
+
+    # Secondary breakpoint for long histories: an earlier user message inside
+    # the lookback window, so a single long turn can't push the chain out of it.
+    if len(messages) >= _LONG_HISTORY_MSGS:
+        lo = target_idx - _SECONDARY_MAX_GAP
+        hi = target_idx - _SECONDARY_MIN_GAP
+        for i in range(hi, max(lo, -1), -1):
+            if new_messages[i].get("role") == "user":
+                new_messages[i] = _mark_user_message(new_messages[i])
+                break
+    return new_messages
 
 
 class AnthropicClient:
