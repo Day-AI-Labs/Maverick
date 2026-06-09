@@ -694,7 +694,7 @@ def base_registry(  # noqa: C901
     reg.register(citation_verifier())
     reg.register(cross_repo_deps(sandbox))
     reg.register(test_gen())
-    reg.register(semantic_code_search())
+    reg.register(semantic_code_search(sandbox))
     reg.register(mutation_test())
     reg.register(constrained_output())
     reg.register(model3d_inspect(sandbox))
