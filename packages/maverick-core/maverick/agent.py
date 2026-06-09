@@ -1421,8 +1421,10 @@ class Agent:
             try:
                 from .llm import cache_prewarm_enabled
                 if cache_prewarm_enabled():
+                    self.ctx.budget.check()
                     self.ctx.llm.prewarm(
-                        self.system, self.tools.to_anthropic(), self.model)
+                        self.system, self.tools.to_anthropic(), self.model,
+                        budget=self.ctx.budget)
             except Exception:  # pragma: no cover -- prewarm never blocks a run
                 pass
 

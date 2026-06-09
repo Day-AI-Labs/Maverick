@@ -565,7 +565,12 @@ class AnthropicClient:
         return self._parse_response(resp, budget, model=kwargs.get("model"))
 
     def prewarm(
-        self, system: str, tools: list[dict] | None = None, model: str | None = None,
+        self,
+        system: str,
+        tools: list[dict] | None = None,
+        model: str | None = None,
+        *,
+        budget: Budget | None = None,
     ) -> bool:
         """Pre-warm the prompt cache with a ``max_tokens=0`` prefill.
 
@@ -589,7 +594,9 @@ class AnthropicClient:
             }
             if tools:
                 kwargs["tools"] = _cached_tools(tools)
-            self.client.messages.create(**kwargs)
+            resp = self.client.messages.create(**kwargs)
+            if budget is not None:
+                self._parse_response(resp, budget, model=kwargs.get("model"))
             return True
         except Exception:  # pragma: no cover -- prewarm is best-effort
             log.debug("prompt-cache prewarm skipped", exc_info=True)
