@@ -1056,6 +1056,17 @@ class WorldModel:
         )
         return [_goal_event_from_row(r) for r in rows]
 
+    def recent_goal_events(self, goal_id: int, limit: int = 200) -> list[GoalEvent]:
+        """Return the latest goal events, preserving chronological order."""
+        rows = self._read_all(
+            "SELECT id, goal_id, agent, kind, content, ts FROM ("
+            "SELECT id, goal_id, agent, kind, content, ts FROM goal_events "
+            "WHERE goal_id = ? ORDER BY id DESC LIMIT ?"
+            ") ORDER BY id ASC",
+            (goal_id, limit),
+        )
+        return [_goal_event_from_row(r) for r in rows]
+
     def prune_goal_events(self, older_than_seconds: float = 30 * 24 * 3600) -> int:
         """Delete goal_events rows older than N seconds. Returns rows removed."""
         cutoff = time.time() - older_than_seconds

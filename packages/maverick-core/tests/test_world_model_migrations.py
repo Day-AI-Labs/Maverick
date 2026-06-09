@@ -200,3 +200,16 @@ def test_prune_goal_events(tmp_path):
     assert removed == 1
     assert len(wm.goal_events(gid)) == 1
     assert wm.goal_events(gid)[0].content == "recent"
+
+
+def test_recent_goal_events_returns_tail_in_chronological_order(tmp_path):
+    from maverick.world_model import WorldModel
+
+    wm = WorldModel(tmp_path / "world.db")
+    gid = wm.create_goal("long run")
+    for i in range(5):
+        wm.append_event(gid, "agent", "note", f"event-{i + 1}")
+
+    events = wm.recent_goal_events(gid, limit=3)
+
+    assert [e.content for e in events] == ["event-3", "event-4", "event-5"]
