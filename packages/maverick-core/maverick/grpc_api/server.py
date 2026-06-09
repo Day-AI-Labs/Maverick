@@ -11,7 +11,9 @@ checked in. With the ``[grpc]`` extra installed, ``serve()`` just works.
 """
 from __future__ import annotations
 
+import hmac
 import logging
+import os
 from concurrent import futures
 from pathlib import Path
 
@@ -19,6 +21,9 @@ log = logging.getLogger(__name__)
 
 _PROTO = Path(__file__).with_name("maverick.proto")
 _DEFAULT_ADDR = "127.0.0.1:50051"
+_TOKEN_ENV = "MAVERICK_GRPC_BEARER_TOKEN"
+_AUTH_HEADER = "authorization"
+_BEARER_PREFIX = "bearer "
 
 
 def _require_grpc():
@@ -63,11 +68,47 @@ def _generate_stubs() -> None:
         raise RuntimeError(f"protoc failed to generate gRPC stubs (rc={rc})")
 
 
-def _servicer(service, pb2, pb2_grpc):
+def _resolve_bearer_token(bearer_token: str | None = None) -> str:
+    token = (bearer_token if bearer_token is not None else os.getenv(_TOKEN_ENV, "")).strip()
+    if not token:
+        raise ValueError(
+            "Maverick gRPC requires a bearer token. Set "
+            f"{_TOKEN_ENV} or pass --bearer-token, and send it as "
+            "metadata: authorization: Bearer <token>."
+        )
+    return token
+
+
+def _metadata_bearer_token(context) -> str | None:
+    metadata = context.invocation_metadata() or ()
+    for key, value in metadata:
+        if key.lower() != _AUTH_HEADER:
+            continue
+        value = str(value).strip()
+        if value.lower().startswith(_BEARER_PREFIX):
+            return value[len(_BEARER_PREFIX):].strip()
+    return None
+
+
+def _abort(context, code, details: str):
+    context.abort(code, details)
+    raise PermissionError(details)
+
+
+def _require_authorized(context, bearer_token: str) -> None:
+    supplied = _metadata_bearer_token(context)
+    if supplied and hmac.compare_digest(supplied, bearer_token):
+        return
+    _abort(context, _grpc_code().UNAUTHENTICATED, "missing or invalid bearer token")
+
+
+def _servicer(service, pb2, pb2_grpc, *, bearer_token: str | None = None):
     """Build a MaverickServicer bound to ``service`` (a GoalService)."""
+    bearer_token = _resolve_bearer_token(bearer_token)
 
     class MaverickServicer(pb2_grpc.MaverickServicer):
         def StartGoal(self, request, context):
+            _require_authorized(context, bearer_token)
             try:
                 goal_id = service.start_goal(
                     request.title,
@@ -82,6 +123,7 @@ def _servicer(service, pb2, pb2_grpc):
             return pb2.StartGoalResponse(goal_id=goal_id)
 
         def StreamEpisode(self, request, context):
+            _require_authorized(context, bearer_token)
             for ev in service.stream_episode(
                 request.goal_id,
                 since_id=request.since_id,
@@ -95,9 +137,11 @@ def _servicer(service, pb2, pb2_grpc):
                 )
 
         def Cancel(self, request, context):
+            _require_authorized(context, bearer_token)
             return pb2.CancelResponse(cancelled=service.cancel(request.goal_id))
 
         def GetStatus(self, request, context):
+            _require_authorized(context, bearer_token)
             st = service.status(request.goal_id)
             if st is None:
                 return pb2.GoalStatus(goal_id=request.goal_id, found=False)
@@ -114,20 +158,29 @@ def _grpc_code():
     return grpc.StatusCode
 
 
-def serve(address: str = _DEFAULT_ADDR, *, service=None, max_workers: int = 8):
+def serve(
+    address: str = _DEFAULT_ADDR,
+    *,
+    service=None,
+    max_workers: int = 8,
+    bearer_token: str | None = None,
+):
     """Start a blocking gRPC server on ``address``. Returns the server handle.
 
     With ``block=False`` semantics omitted for simplicity: callers that want
     non-blocking use the returned server's ``stop()``. The default service runs
     real goals; tests pass a service wired to fakes.
     """
+    bearer_token = _resolve_bearer_token(bearer_token)
     grpc = _require_grpc()
     pb2, pb2_grpc = _load_stubs()
     if service is None:
         from .service import GoalService
         service = GoalService()
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers))
-    pb2_grpc.add_MaverickServicer_to_server(_servicer(service, pb2, pb2_grpc), server)
+    pb2_grpc.add_MaverickServicer_to_server(
+        _servicer(service, pb2, pb2_grpc, bearer_token=bearer_token), server
+    )
     server.add_insecure_port(address)
     server.start()
     log.info("Maverick gRPC API listening on %s", address)
@@ -140,8 +193,13 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- entrypoin
     ap = argparse.ArgumentParser("maverick-grpc", description="Maverick gRPC API server")
     ap.add_argument("--address", default=_DEFAULT_ADDR, help="host:port to bind")
     ap.add_argument("--max-workers", type=int, default=8)
+    ap.add_argument(
+        "--bearer-token",
+        default=None,
+        help=f"bearer token required from clients (or set {_TOKEN_ENV})",
+    )
     args = ap.parse_args(argv)
-    server = serve(args.address, max_workers=args.max_workers)
+    server = serve(args.address, max_workers=args.max_workers, bearer_token=args.bearer_token)
     try:
         server.wait_for_termination()
     except KeyboardInterrupt:
