@@ -231,6 +231,7 @@ _DEFAULT_RISK_LEVEL = "medium"
 # explicit ``_DEFAULT_RISK`` entry still wins.
 _ENTERPRISE_CONNECTORS: frozenset[str] | None = None
 _READ_CONNECTORS: frozenset[str] | None = None
+_READ_CONNECTOR_RISKS: dict[str, str] | None = None
 
 
 def _enterprise_connector_names() -> frozenset[str]:
@@ -246,7 +247,7 @@ def _enterprise_connector_names() -> frozenset[str]:
 
 
 def _read_connector_names() -> frozenset[str]:
-    """Read-only (GET-only) connector variants -- low risk, not write-capable."""
+    """Read-only (GET-only) connector variants."""
     global _READ_CONNECTORS
     if _READ_CONNECTORS is not None:
         return _READ_CONNECTORS
@@ -256,6 +257,26 @@ def _read_connector_names() -> frozenset[str]:
         return frozenset()  # tools not importable yet -- retry on the next call
     _READ_CONNECTORS = frozenset(READ_CONNECTOR_NAMES)
     return _READ_CONNECTORS
+
+
+def _read_connector_risks() -> dict[str, str]:
+    """Explicit risk level for read-only connector variants.
+
+    GET-only prevents writes, but it does not make arbitrary SaaS reads safe for
+    low-risk channels: identity, HR, security, CI/CD, legal, and BI APIs often
+    return high-confidentiality records. Connector generation therefore assigns
+    an explicit risk and this helper fails closed to ``high`` for stale/unknown
+    read seats.
+    """
+    global _READ_CONNECTOR_RISKS
+    if _READ_CONNECTOR_RISKS is not None:
+        return _READ_CONNECTOR_RISKS
+    try:
+        from ..tools.enterprise_connectors import READ_CONNECTOR_RISKS
+    except Exception:
+        return {}  # tools not importable yet -- retry on the next call
+    _READ_CONNECTOR_RISKS = dict(READ_CONNECTOR_RISKS)
+    return _READ_CONNECTOR_RISKS
 
 
 def risk_rank(level: str) -> int:
@@ -320,7 +341,7 @@ def tool_risk(name: str, overrides: dict[str, str] | None = None) -> str:
     if name.startswith("mcp_"):
         return "high"
     if name in _read_connector_names():
-        return "low"  # GET-only connector variant -- a read seat, not write-capable
+        return _read_connector_risks().get(name, "high")
     if name in _enterprise_connector_names():
         return "high"
     return _DEFAULT_RISK_LEVEL
