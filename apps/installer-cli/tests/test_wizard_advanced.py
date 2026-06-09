@@ -92,8 +92,13 @@ def test_autonomy_gate_writes_and_is_read(tmp_path, monkeypatch):
     cfg_dir = tmp_path / ".maverick"
     cfg_dir.mkdir(parents=True, exist_ok=True)
     cfg = _write(cfg_dir, monkeypatch, {"autonomy_gate": True})
+    assert "[routing]" in cfg
+    assert 'allowed_providers = ["anthropic"]' in cfg
     assert "[autonomy]" in cfg
     assert "enable = true" in cfg
+
+    parsed = tomllib.loads(cfg)
+    assert parsed["routing"]["allowed_providers"] == ["anthropic"]
 
     from maverick import autonomy
     assert autonomy.autonomy_enabled() is True
