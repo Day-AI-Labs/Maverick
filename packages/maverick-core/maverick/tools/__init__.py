@@ -552,6 +552,7 @@ def base_registry(  # noqa: C901
     from .compute import compute
     from .confluence_tool import confluence_tool
     from .constrained_output import constrained_output
+    from .container_build import container_build
     from .cross_repo_deps import cross_repo_deps
     from .currency import currency
     from .datadog_tool import datadog_tool
@@ -565,6 +566,7 @@ def base_registry(  # noqa: C901
     from .email_tool import email_tool
     from .embeddings import embeddings
     from .erp_tool import erp_tool
+    from .error_patterns import error_patterns
     from .ffmpeg_tool import ffmpeg_tool
     from .file_watcher import file_watcher
     from .ga4_tool import ga4_tool
@@ -666,6 +668,7 @@ def base_registry(  # noqa: C901
     reg.register(jira())
     reg.register(gitlab())
     reg.register(embeddings())
+    reg.register(error_patterns())
     reg.register(huggingface())
     reg.register(notify_tool())
     reg.register(diagnose())
@@ -704,6 +707,7 @@ def base_registry(  # noqa: C901
     reg.register(cache_admin())
     reg.register(openapi_runner(sandbox))
     reg.register(ocr(sandbox))
+    reg.register(container_build(sandbox))
     reg.register(posthog_tool())
     reg.register(shopify_tool())
     reg.register(mongodb_tool())
