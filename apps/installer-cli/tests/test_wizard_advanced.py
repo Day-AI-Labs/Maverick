@@ -69,6 +69,30 @@ def test_kernel_modules_read_what_the_wizard_writes(tmp_path, monkeypatch):
     assert reflexion.enabled() is True
 
 
+def test_effort_and_cache_prewarm_write_and_are_read(tmp_path, monkeypatch):
+    """Rule-6: the new efficiency toggles reach the kernel that reads them."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for env in ("MAVERICK_EFFORT", "MAVERICK_EFFORT_ENABLED",
+                "MAVERICK_EFFORT_ORCHESTRATOR", "MAVERICK_CACHE_PREWARM",
+                "MAVERICK_CONFIG"):
+        monkeypatch.delenv(env, raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"effort": True, "cache_prewarm": True})
+    assert "[effort]" in cfg and "enabled = true" in cfg
+    assert "[cache]" in cfg and "prewarm = true" in cfg
+    # The kernel reads exactly these (config resolves via HOME/~/.maverick).
+    from maverick.effort import effort_for_role
+    from maverick.llm import cache_prewarm_enabled
+    assert effort_for_role("orchestrator", "claude-opus-4-8") == "high"
+    assert cache_prewarm_enabled() is True
+
+
+def test_effort_and_cache_off_write_no_sections(tmp_path, monkeypatch):
+    cfg = _write(tmp_path, monkeypatch, {"effort": False, "cache_prewarm": False})
+    assert "[effort]" not in cfg and "[cache]" not in cfg
+
+
 def test_risk_proportional_verify_writes_and_is_read(tmp_path, monkeypatch):
     """Rule-6 loop: the wizard's risk-proportional toggle writes
     [verification] risk_proportional, and the kernel reads it back."""
