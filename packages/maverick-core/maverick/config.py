@@ -327,6 +327,51 @@ def get_calibration() -> dict:
     }
 
 
+def get_adaptive_compute() -> dict:
+    """Return the ``[adaptive_compute]`` section (SOTA: spend compute on
+    uncertainty). OFF by default. ``low_uncertainty`` is the threshold below
+    which fan-out width is scaled down; ``min_width`` is the floor."""
+    cfg = load_config().get("adaptive_compute", {})
+    try:
+        low = float(cfg.get("low_uncertainty", 0.2))
+    except (TypeError, ValueError):
+        low = 0.2
+    try:
+        minw = max(1, int(cfg.get("min_width", 1)))
+    except (TypeError, ValueError):
+        minw = 1
+    return {
+        "enable": bool(cfg.get("enable", False)),
+        "low_uncertainty": max(0.0, min(1.0, low)),
+        "min_width": minw,
+    }
+
+
+def get_search() -> dict:
+    """Return the ``[search]`` section (verifier-guided best-of-N generation).
+    OFF by default. ``n`` is the number of candidate answers to sample."""
+    cfg = load_config().get("search", {})
+    try:
+        n = max(1, int(cfg.get("n", 3)))
+    except (TypeError, ValueError):
+        n = 3
+    return {"enable": bool(cfg.get("enable", False)), "n": n}
+
+
+def get_skill_synthesis() -> dict:
+    """Return the ``[skill_synthesis]`` section (test-time task-specific skills).
+    OFF by default."""
+    cfg = load_config().get("skill_synthesis", {})
+    return {"enable": bool(cfg.get("enable", False))}
+
+
+def get_experience() -> dict:
+    """Return the ``[experience]`` section (outcome-guided orchestration).
+    OFF by default."""
+    cfg = load_config().get("experience", {})
+    return {"enable": bool(cfg.get("enable", False))}
+
+
 def get_durable() -> dict:
     """Return the ``[durable]`` section with defaults filled in.
 

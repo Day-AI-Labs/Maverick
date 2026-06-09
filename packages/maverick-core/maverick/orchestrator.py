@@ -658,6 +658,33 @@ async def run_goal(  # noqa: C901
         except Exception as e:  # pragma: no cover -- never blocks a run
             log.debug("self-learning preflight skipped: %s", e)
 
+        # Experience-guided orchestration (opt-in, SOTA HERA): condition the
+        # brief on outcomes of similar prior goals (how many succeeded/failed).
+        # No-op unless [experience] is enabled; fail-open.
+        try:
+            from . import experience
+            _exp = experience.recall(world, f"{goal.title}\n{goal.description or ''}")
+            if _exp:
+                brief = brief + "\n\n" + _exp
+        except Exception as e:  # pragma: no cover -- never blocks a run
+            log.debug("experience guidance skipped: %s", e)
+
+        # Test-time skill synthesis (opt-in, SOTA SkillTTA): synthesize a short
+        # task-specific cheat-sheet for THIS goal and inject it. No-op unless
+        # [skill_synthesis] is enabled; spend is metered; fail-open.
+        try:
+            from . import skill_synthesis
+            if skill_synthesis.enabled():
+                _sk = await skill_synthesis.synthesize_task_skill(
+                    f"{goal.title}\n{goal.description or ''}", llm, budget,
+                )
+                if _sk:
+                    brief = brief + (
+                        "\n\nTask-specific notes (synthesized for this goal):\n" + _sk
+                    )
+        except Exception as e:  # pragma: no cover -- never blocks a run
+            log.debug("skill synthesis skipped: %s", e)
+
         # Reflexion (opt-in): prepend lessons learned from prior FAILED
         # runs on similar goals so the orchestrator avoids repeating the
         # same dead ends. Recall is jaccard-ranked over goal text; the
