@@ -88,8 +88,9 @@ self-hosted, one-tenant-per-deploy). The hosted-SaaS spine is now largely built:
   KMS KEK (LocalKMS default; cloud KMS is a drop-in).
 - ✅ **Per-tenant egress policy plane** — `tenant_egress.py`, composed with the
   per-tool policy at the egress chokepoint.
-- _Remaining (operator surface):_ a cross-tenant **operator console** (web UI)
-  over the tenant registry + billing; the CLI + APIs above are the backend.
+- ✅ **Operator console** — a cross-tenant `/tenants` dashboard view (admin-only)
+  over the tenant registry (status / plan / quota), alongside the `maverick
+  tenant` / `maverick billing` CLIs.
 
 **Strategic decisions (settled).** Recorded under [`docs/specs/`](./specs/):
 *park* the learning substrate (revisit on a trajectory-volume tripwire); adopt

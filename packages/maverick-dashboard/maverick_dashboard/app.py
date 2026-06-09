@@ -650,6 +650,28 @@ async def goals_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "goals.html", {"goals": goals})
 
 
+@app.get("/tenants", response_class=HTMLResponse)
+async def tenants_page(request: Request) -> HTMLResponse:
+    """Operator console: the provisioned-tenant roster (status / plan / quota).
+
+    Cross-tenant control-plane data, so it is admin-only: a non-admin
+    authenticated caller (``goal_owner_filter`` returns their principal) sees an
+    access notice, not the roster. Fail-soft to an empty roster so a missing
+    registry never 500s the console.
+    """
+    is_admin = goal_owner_filter(request) is None
+    tenants = []
+    if is_admin:
+        try:
+            from maverick.tenant_registry import list_tenants
+            tenants = list_tenants()
+        except Exception:  # pragma: no cover -- never 500 the console
+            tenants = []
+    return templates.TemplateResponse(
+        request, "tenants.html", {"tenants": tenants, "is_admin": is_admin},
+    )
+
+
 @app.get("/skills", response_class=HTMLResponse)
 async def skills_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "skills.html", {"skills": _load_skills()})
