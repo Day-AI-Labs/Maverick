@@ -1049,6 +1049,12 @@ tested without spawning py-spy.
   read host temperatures/fans/battery via psutil with a `/sys/class/thermal`
   fallback and an injected reader for tests; unavailable categories say
   "unavailable on this host" — readings are never fabricated.
+- **Self-healing UX** (`self_healing.py`): a failed run is diagnosed into
+  its failure class (budget exceeded, provider auth, rate-limited, shield
+  block, sandbox missing, timeout, killswitch) and answered with an ordered
+  list of concrete remedies — each carrying the exact command or config edit,
+  with reversible config suggestions tagged; **nothing is auto-applied** —
+  surfacing the fix is the healing, the human stays in charge.
 - **Power-user keymap** (`keymap.py`, `[tui.keys]` /
   `MAVERICK_TUI_KEYS`, `python -m maverick.keymap [--validate]`): validated
   TUI keybindings — conflicts, unknown actions, and invalid keys are
