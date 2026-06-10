@@ -98,7 +98,9 @@ here.
   (Microsoft Teams webhook), `knowledge_graph` (extract/query/render
   subject-relation-object triples; no external graph DB), `cross_repo_deps`
   (cross-repo Python package import graph + cycle detection via `ast`),
-  `citation_verifier` (check cited quotes against their source text), `test_gen`
+  `citation_verifier` (check cited quotes against their source text), `anki`
+  (flashcards via the local AnkiConnect add-on — decks/models/find/add_note/
+  sync, writes gated by confirm, loopback-only by default), `test_gen`
   (generate a Hypothesis property-test scaffold from a function's signature),
   `semantic_code_search` (rank functions/classes by intent via ast + lexical
   scoring), `lsp_bridge` (cross-language code intelligence over the Language
@@ -326,6 +328,31 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   set before/after a model/prompt change; classify per-probe
   unchanged/minor/major/refusal-flip, PASS verdict gated on flips + major-change
   fraction.
+- **Goal risk-tier auto-classifier** (`safety/goal_risk.py`) — deterministic
+  low/medium/high scoring of a goal before it runs (money/infra/credential/
+  bulk-comms/PII/irreversibility signals, read-only de-escalators, documented
+  weights), config floor + require-human mapping for the approval path.
+- **Containment mode** (`containment.py`, opt-in `[containment]`) — lock a
+  run into no-egress + ephemeral 0700 workspace: composes the registry ACL
+  (denies the exfil tools; config *extends*, never replaces the default deny
+  set), black-holed proxy env for subprocesses (advisory; the load-bearing
+  layer is the ACL + container backends' network deny), cleanup handle.
+- **Cryptographic budget receipts** (`budget_receipts.py`) — HMAC-signed,
+  hash-chained spend receipts per goal (prev-hash inside the signed payload
+  so deletion/reorder is unforgeable; append-only 0600 ledger; refuses to
+  mint unsigned), verify + chain verification with break index.
+- **Quorum approval for config changes** (`quorum.py`) — N-distinct-approver
+  gate over protected config keys (fnmatch patterns; self-approval and
+  duplicate approvers refused; required count snapshotted per proposal so
+  policy edits can't shrink a pending quorum; TTL-pruned proposals).
+- **Capability-leak fuzzer** (`capability_fuzzer.py`) — seeded adversarial
+  probes (case/homoglyph/prefix/separator/NUL/glob/long-name) against
+  Capability.permits; CI `python -m maverick.capability_fuzzer` exits 1 on
+  any leak. Run against the real implementation: **0 leaks in ~2000 probes**.
+- **Provider-level cost caps** (`provider_cost_cap.py`, `[budget.provider_caps]`)
+  — per-provider dollar ceilings across ALL runs per UTC day/month (the
+  Budget caps one run; this caps the provider), atomic ledger, enforce()
+  raising ProviderCapExceeded for the LLM path.
 - **Supply-chain pinning** (`supply_chain.py`) — pin the deployment's Python
   dependency tree (`write_pins` → 0600 JSON), verify drift/missing/unpinned
   (`verify`/`render` PASS-FAIL), opt-in startup warning via
