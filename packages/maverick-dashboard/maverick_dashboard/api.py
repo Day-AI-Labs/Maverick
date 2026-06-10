@@ -1478,6 +1478,16 @@ async def watch_glance() -> dict:
             pass
 
 
+@router.get("/offline/bundle")
+async def offline_bundle(request: Request) -> dict:
+    """Bounded, versioned snapshot (``maverick-offline/1``) for the mobile
+    companion's offline cache. Read-only; owner-scoped like ``/goals``."""
+    from maverick.offline_bundle import build_bundle
+    return await run_in_threadpool(
+        build_bundle, _world(), owner=goal_owner_filter(request),
+    )
+
+
 @router.get("/perf")
 async def perf_dashboard() -> dict:
     """Public perf dashboard data: SLA measurements + benchmark history.

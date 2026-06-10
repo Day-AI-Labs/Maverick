@@ -866,10 +866,19 @@ def pick_capabilities() -> dict[str, bool]:
         "outputs out of context). Runs code in the sandbox, like the shell tool.",
         default=False,
     )
+    # The embedded-device tool (JTAG/I2C) is always registered, but its
+    # DESTRUCTIVE ops (flash write, target reset) stay refused until the
+    # operator opts in here -> [embedded] allow_flash. Default off.
+    embedded_flash = _q_confirm(
+        "Allow embedded-device flashing? The JTAG tool can erase/reflash YOUR "
+        "OWN connected device's firmware (OpenOCD). Off = it refuses flash/reset.",
+        default=False,
+    )
     return {
         "computer_use": use_computer,
         "browser": use_browser,
         "code_exec": use_code_exec,
+        "embedded_flash": embedded_flash,
     }
 
 
@@ -2350,11 +2359,20 @@ def write_config(  # noqa: C901
     if advanced and advanced.get("enforce_capabilities"):
         capability_config["enforce"] = True
 
+    # The embedded-device flash gate lives under [embedded], not
+    # [capabilities] -- pull it out before emitting the capabilities block.
+    embedded_flash = bool(capability_config.pop("embedded_flash", False))
+
     if capability_config:
         lines.append("")
         lines.append("[capabilities]")
         for k, v in capability_config.items():
             lines.append(f"{k} = {str(v).lower()}")
+
+    if embedded_flash:
+        lines.append("")
+        lines.append("[embedded]")
+        lines.append("allow_flash = true")
 
     if suites:
         # Per-suite enable/disable; the kernel's enabled_domains() reads this.

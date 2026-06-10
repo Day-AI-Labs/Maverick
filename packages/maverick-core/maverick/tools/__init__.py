@@ -655,6 +655,7 @@ def base_registry(  # noqa: C901
     from .dynamodb_tool import dynamodb_tool
     from .elasticsearch_tool import elasticsearch_tool
     from .email_tool import email_tool
+    from .embedded_device import embedded_device
     from .embeddings import embeddings
     from .energy_accounting import energy_accounting
     from .erp_tool import erp_tool
@@ -1097,6 +1098,7 @@ def base_registry(  # noqa: C901
     reg.register(imagemagick_tool(sandbox))
     reg.register(audio_understanding(sandbox))
     reg.register(image_edit(sandbox))
+    reg.register(embedded_device(sandbox))
     reg.register(ga4_tool())
     reg.register(plaid_tool())
     reg.register(truelayer_tool())

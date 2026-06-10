@@ -1375,6 +1375,32 @@ tested without spawning py-spy.
   labelled; no clustering/overlap/VAD, stated plainly) — plus zero-shot
   emotion ranking over the same CLAP seams as audio understanding
   (`[clap]` extra shared, real frame embedder included).
+- **Embedded-device tool** (`tools/embedded_device.py`): JTAG + I2C access
+  to the **operator's own** devices. JTAG mediates OpenOCD strictly through
+  `sandbox.exec()` — halt/resume/reset, bounded memory reads (reads never
+  auto-halt, so they can't silently change target state), flash write; the
+  destructive ops (flash, reset) stay refused until `[embedded] allow_flash
+  = true` (default OFF, wizard-exposed). I2C is a pure protocol layer over
+  an injected bus seam (`smbus2` via the `[i2c]` extra). Every op names its
+  explicit target — no autodetect-and-flash; failures are `ERROR:` strings.
+- **WebGPU local vision + perceptual hashing** (`extensions/webgpu-vision/`
+  + `perceptual_hash.py`): a no-CDN WebGPU page running real hand-written
+  WGSL compute shaders (grayscale, Sobel) over a user-chosen local file
+  that never leaves the browser, plus an 8×8 average-hash specified in
+  integer-only arithmetic so the JS and the Python twin
+  (`average_hash_from_pixels`/`average_hash_file`, `[computer-use]` Pillow)
+  produce a **bit-identical** hash — a cross-language "are these two
+  screenshots the same screen?" primitive (Hamming distance). Honest scope:
+  GPU image primitives + perceptual hashing, not a trained vision model.
+- **Mobile companion v1 + offline cache** (`apps/mobile-companion/` +
+  `offline_bundle.py`, `GET /api/v1/offline/bundle`): a read-only Expo
+  scaffold (Runs list, Run detail, Glance, Settings) that consumes only
+  existing GET endpoints with a bearer token in `expo-secure-store`; zero
+  mutating calls. The **offline bundle** is a compact, bounded, versioned
+  snapshot (`maverick-offline/1`: glance + goals + recent events, every
+  list capped, no secrets — enforced by test) the app caches in
+  AsyncStorage and renders behind an "as of N min ago — offline" banner
+  when the dashboard is unreachable.
 - **Speculative drafting across providers** (`speculative_decode.py`): a
   cheap draft model proposes, the target verifies-or-revises in one call;
   per-(draft,target) accept-rate ledger with a floor below which it falls
