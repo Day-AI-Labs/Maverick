@@ -655,7 +655,13 @@ and `trace_commit()` reads it back so replays tie to exact code); **cost split b
 budget-tune`): learn a `max_dollars` recommendation from the historical
 per-goal spend distribution (a high percentile + margin, so the common case
 fits while a runaway still trips it), bucketable by an injected task-class
-classifier; read-only — the operator sets the value. **Continuous profiling daemon** (`profiling_daemon.py`,
+classifier; read-only — the operator sets the value. **Failure-mode telemetry** (`failure_telemetry.py`, `maverick failures`,
+opt-in `[telemetry] failure_modes`): a failed run records a canonical mode
+(budget / auth / timeout / shield / sandbox / network / error) to a local JSONL
+sink — the orchestrator tees from its budget and generic failure seams,
+best-effort and a no-op when the telemetry is off — so an operator sees the
+*distribution* of failures and fixes the dominant cause. Local-first, no
+mandatory egress. **Continuous profiling daemon** (`profiling_daemon.py`,
 `python -m maverick.profiling_daemon`, opt-in `[perf] profiling`): a sampling
 profiler that periodically runs `py-spy record` against the live process and
 drops speedscope/flame-graph profiles under `data_dir("profiles/")` — py-spy

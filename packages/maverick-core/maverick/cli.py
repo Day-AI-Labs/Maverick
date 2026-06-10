@@ -926,6 +926,30 @@ def budget_tune(ctx, percentile: float, min_samples: int, as_json: bool) -> None
                    f"{info['samples']} goal(s))")
 
 
+@main.command("failures")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def failures_cmd(as_json: bool) -> None:
+    """Show the failure-mode distribution (opt-in [telemetry] failure_modes).
+
+    When the telemetry is on, failed runs record a canonical mode (budget /
+    auth / timeout / shield / sandbox / network / error); this reads them back.
+    """
+    import json as _json
+
+    from .failure_telemetry import enabled, summarize
+    s = summarize()
+    if as_json:
+        click.echo(_json.dumps(s))
+        return
+    if not s["total"]:
+        hint = "" if enabled() else " (telemetry is off — set [telemetry] failure_modes)"
+        click.echo(f"no recorded failures{hint}.")
+        return
+    click.echo(click.style(f"Failure modes ({s['total']} recorded)", bold=True))
+    for mode, n in s["by_mode"].items():
+        click.echo(f"  {mode:<10} {n}")
+
+
 @main.command("analytics")
 @click.option("--sql", default=None, help="Ad-hoc read-only SQL over goals/episodes.")
 @click.option("--top", type=int, default=10, help="Top-N costliest goals (default view).")

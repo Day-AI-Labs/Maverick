@@ -853,6 +853,11 @@ async def run_goal(  # noqa: C901
         except BudgetExceeded as e:
             _end_episode_with_spend(world, episode_id, f"budget: {e}", "failure", budget, goal_id)
             _record_quota_usage()
+            try:  # opt-in failure-mode telemetry; no-op when unconfigured
+                from . import failure_telemetry as _ft
+                _ft.record_failure("budget", goal_id=goal_id, detail=str(e))
+            except Exception:  # pragma: no cover -- telemetry never blocks a run
+                pass
             _maybe_record_reflexion(
                 goal, failure_class="budget", failure_msg=str(e),
                 blackboard=blackboard, shield=shield, channel=channel,
@@ -882,6 +887,11 @@ async def run_goal(  # noqa: C901
                 )
                 _record_quota_usage()
             except Exception:  # pragma: no cover
+                pass
+            try:  # opt-in failure-mode telemetry; no-op when unconfigured
+                from . import failure_telemetry as _ft
+                _ft.record_failure(e, goal_id=goal_id)
+            except Exception:  # pragma: no cover -- telemetry never blocks a run
                 pass
             try:
                 world.set_goal_status(goal_id, "blocked", result=f"internal error: {e}")
