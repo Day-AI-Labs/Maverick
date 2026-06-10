@@ -571,7 +571,13 @@ and `trace_commit()` reads it back so replays tie to exact code); **cost split b
 (`provider_health.py`); proactive **provider rate-limit predictor**
 (`rate_limit_predictor.py`); shared tool-reliability layer (`tool_reliability.py`,
 `retry.py`); circuit breaker (`circuit_breaker.py`); adaptive thinking budget
-(`thinking_budget.py`).
+(`thinking_budget.py`). **Continuous profiling daemon** (`profiling_daemon.py`,
+`python -m maverick.profiling_daemon`, opt-in `[perf] profiling`): a sampling
+profiler that periodically runs `py-spy record` against the live process and
+drops speedscope/flame-graph profiles under `data_dir("profiles/")` — py-spy
+samples from outside the interpreter (no GIL cost) so it's safe to leave on in
+production; default-OFF, with an injectable runner/clock so the schedule is
+tested without spawning py-spy.
 
 ## UX surfaces
 
