@@ -130,11 +130,11 @@ single-run inflation) — run multi-seed.
 | Concern | Planned (not yet built) |
 |---|---|
 | **Capabilities** | — (cleared) |
-| **UX** | conversational supervisor · voice-only mode · mobile offline cache · augmented terminal (Rich inline charts) · AR plan-tree (visionOS) · embedded analytics web component · voice macros · RTL language support |
+| **UX** | mobile offline cache · AR plan-tree (visionOS) · embedded analytics web component · RTL language support — (conversational supervisor, voice-only mode, augmented terminal (Rich inline charts), voice macros: **shipped** as library capabilities — see FEATURES; `maverick charts` wires the terminal charts) |
 | **Distribution** | 2.0 stable release · migration playbook · marketplace v3 (donate-direct model) · Maverick Summit v2 (hybrid) · editor expansion (JetBrains/Neovim/Zed) · localized docs phase 5 (top-15 langs — the **MT pipeline shipped** (`maverick.docs_i18n`, quality-gated); the human es/ja/de/fr/pt-BR/ko/ru/it/hi set ships, the long tail rides the pipeline) · comparison benchmark v3 live dashboard · foundation paperwork submitted · ARM/RISC-V builds · iOS/Android skill execution (Pyodide/Kivy) · skill + channel certification programs · embeddable widget · hosted demo cluster (demo.maverick.dev) · press push to major outlets · sponsor tier 2 — ("Built with Maverick" badge program, university curriculum kit, community grants v1, regional meetup playbook: **program kits shipped**, see [programs/](./programs/)) |
 | **Performance** | compaction v6 hybrid (learned classifier picks strategy) · sandbox pool (Firecracker-warm + cross-run pooling — warm Docker container reuse shipped) |
 | **Safety** | — (cleared: the **Safety steering group charter shipped** ([`governance/safety-steering-group.md`](./governance/safety-steering-group.md) — remit, decision process, and the wiring to the shipped controls; staffing the seats is a company act). external SOC2 Type I: the repo-side readiness shipped ([`compliance/soc2-controls.md`](./compliance/soc2-controls.md) + `maverick.soc2` evidence collector); the attestation itself is an external audit. misuse leaderboard removal: verified absent — resolved) |
-| **Ecosystem** | voice channel v2 (streaming ASR + barge-in) |
+| **Ecosystem** | — (cleared: voice channel v2 — the streaming ASR + barge-in **session layer shipped** (`maverick_channels.streaming_voice`): partial/final endpointing on an injected clock, immediate barge-in halt with the interrupted reply preserved; the real streaming-ASR + playback adapters plug into its seams) |
 
 ---
 

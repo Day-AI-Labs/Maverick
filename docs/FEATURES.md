@@ -1313,6 +1313,40 @@ tested without spawning py-spy.
   embedders are injected seams (ranking math tested offline); the default
   adapters lazy-load transformers' ClapModel (`MAVERICK_CLAP_MODEL`,
   workspace-confined paths, stdlib-only WAV decode).
+- **Conversational supervisor** (`conversational_supervisor.py`): natural-
+  language supervision of running work — a deterministic intent grammar
+  (reusing the voice-command compiler, with an optional llm seam that
+  re-parses paraphrases through the *same* grammar, never a guess that
+  mutates) answers reads ("what's running?", "how much today?", "what
+  failed?") from cheap indexed passes over the world model + usage ledger,
+  and routes mutating intents (pause/resume/reprioritize) through a strict
+  `as_bool` confirm gate to world-model methods that actually exist
+  (pause = status `blocked` + a supervision event; prioritize = a
+  `goal:<id>:priority` fact — stated in the docstring).
+- **Voice-only mode** (`voice_only.py`, `[voice] only_mode`, default OFF):
+  an all-speech session loop — injected utterance source → handler →
+  injected `speak` seam (default routes the TTS path, which redacts) — with
+  a tested deterministic speech-shaping pass that turns markdown/code into a
+  spoken summary ("I wrote 40 lines to app.py"). Mic capture + playback
+  hardware are the operator's adapters behind the seams.
+- **Voice macros** (`voice_macros.py`): named multi-step command sequences
+  ("morning routine" → status, failures, summary) triggered by one phrase;
+  persisted 0600, each step **re-validated against the grammar at trigger
+  time** (a smuggled unparseable step is skipped, never dispatched) and
+  risky steps keep their confirm gates **individually** — a macro never
+  pre-authorizes. Bounded step count.
+- **Augmented terminal charts** (`terminal_charts.py`, `maverick charts`):
+  inline sparklines (▁▂▃▄▅▆▇█) and bars for spend/day (usage ledger), goal
+  throughput (world), and tool-latency percentiles (`tool_latency`) — the
+  ASCII renderer is the tested core, `rich` panels a thin lazy wrapper;
+  honest empty-state lines when there's no data.
+- **Streaming voice channel v2** (`maverick_channels/streaming_voice.py`):
+  the protocol layer for streaming ASR + **barge-in** — partial/final
+  hypothesis events drive endpointing on an injected clock, and speech onset
+  while the bot is talking halts playback immediately (`stop_speaking()`),
+  preserving the interrupted reply as partially-delivered. Fully offline-
+  tested with scripted event sequences; the real streaming ASR + playback
+  engine plug into the seams.
 - **Speech-to-action live mic** (`live_mic.py`): a hardware-free loop —
   injected chunk source → injected transcriber → the deterministic
   voice-command grammar → injected action callback, with risky intents

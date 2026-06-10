@@ -1077,6 +1077,32 @@ def cost_retro(ctx, top: int, as_json: bool) -> None:
         click.echo(f"  • {o}")
 
 
+@main.command("charts")
+@click.option("--days", type=int, default=7, help="How many days to chart.")
+@click.option("--plain", is_flag=True, help="Force plain ASCII (no rich panels).")
+@click.pass_context
+def charts(ctx, days: int, plain: bool) -> None:
+    """Inline terminal charts: spend/day, goal throughput, tool latency.
+
+    Sparklines + bars drawn from recorded data — the usage ledger (spend),
+    the world model (done/failed per day), and the tool-latency profile.
+    Uses ``rich`` panels when installed; falls back to plain ASCII. Sections
+    with no data say so. Read-only.
+    """
+    from . import terminal_charts, tool_latency
+    world = open_world(ctx.obj["db"])
+    report = tool_latency.report()
+    if plain:
+        click.echo(terminal_charts.render_dashboard(world, None, report, days=days))
+        return
+    out = terminal_charts.render_dashboard_rich(world, None, report, days=days)
+    if isinstance(out, str):
+        click.echo(out)
+    else:
+        from rich.console import Console
+        Console().print(out)
+
+
 @main.group("canary")
 def canary_group() -> None:
     """Record / compare cost-perf metric snapshots per release."""
