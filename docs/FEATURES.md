@@ -725,7 +725,15 @@ opt-in; single-tenant/self-hosted deployments are unaffected):
 
 ## Evaluation & benchmarks
 
-**Chaos game-day drill** (`chaos_gameday.py`,
+**Long-running plugin reliability drill** (`plugin_reliability.py`, `python -m
+maverick.plugin_reliability`): the plugin counterpart to the chaos game-day —
+a host-agnostic sustained-load drill (give it any `call(payload) -> str`)
+that injects crashes/timeouts/errors at seeded rates over thousands of calls
+and asserts the reliability properties a host must hold: **recovery** (a crash
+is followed by a later success — no permanent wedge), **isolation** (a faulted
+call never poisons the next), bounded **error rate**, and **no monotonic
+memory growth** (a leaking plugin, via an injected sampler). Deterministic;
+exits non-zero in `--ci` on any property failure. **Chaos game-day drill** (`chaos_gameday.py`,
 `python -m maverick.chaos_gameday`): scripted fault scenarios against the
 real retry layer — 20% tool flakes must be absorbed (≤5% surfaced), a total
 outage must exhaust retries in bounded attempts (backoff virtualized so the
