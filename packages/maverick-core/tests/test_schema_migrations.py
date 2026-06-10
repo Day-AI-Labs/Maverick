@@ -83,7 +83,6 @@ def test_schema_plan_command_registered():
 
 def test_schema_plan_command_runs(tmp_path, monkeypatch):
     from click.testing import CliRunner
-
     from maverick import world_model
     monkeypatch.setattr(world_model, "DEFAULT_DB", tmp_path / "world.db")
     from maverick import cli as cli_mod

@@ -1853,7 +1853,7 @@ def schema_plan_cmd() -> None:
     structural lint.
     """
     from .schema_migrations import plan, render, validate
-    from .world_model import SCHEMA_VERSION, DEFAULT_DB, WorldModel
+    from .world_model import DEFAULT_DB, SCHEMA_VERSION, WorldModel
     problems = validate()
     if problems:
         for pb in problems:
