@@ -455,8 +455,12 @@ trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
 - **Scaffold generators** — `template_generator` tool: emit a validator-clean
   `SKILL.md` (op=skill) or a `Channel`-subclass adapter scaffold with the
   start/send/stop seams (op=channel); deterministic codegen.
-- **IDE / CI** — VS Code extension (`apps/vscode-extension/`), GitHub Action
-  wrapper (`maverick-action`).
+- **IDE / CI** — VS Code extension (`apps/vscode-extension/`), **Emacs
+  package** (`apps/emacs/maverick.el`: M-x maverick-start/status/monitor/
+  logs/halt/unhalt over the CLI, deps-free, Emacs 27.1+), **Neovim plugin**
+  (`apps/nvim/`: :MaverickStart/Status/Monitor/Logs/Halt/Unhalt, lazy.nvim-
+  ready, terminal-split UX), GitHub Action wrapper (`maverick-action`) — all
+  contract-tested against the real CLI verb set.
 - **Docs** — MkDocs site, [getting started](./getting-started.md), 30-recipe
   [cookbook](./cookbook/), [architecture](./architecture.md),
   [embedding guide](./embedding.md), [security hardening](./security-hardening.md),
