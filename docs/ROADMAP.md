@@ -90,7 +90,7 @@ single-run inflation) — run multi-seed.
 | **Capabilities** | Audio understanding (non-speech CLAP) · speech-to-action live-mic · image gen + edit tools · ASR meeting listener · auto-skill distillation v2 |
 | **UX** | Mobile push v2 · Apple Watch glance · voice in channels v2 (Discord stages) · visual graph editor · drag-and-drop goal builder |
 | **Distribution** | Localized docs phase 2 (es/ja) · reproducible benchmark v2 (terminal-bench, weblinx, HumanEval-fix) · tutorial video season 2 · university outreach (5 partnerships) · Maverick Summit v1 (virtual) · integration partnerships (business half; self-serve guide shipped) · browser extension v1 · localized docs phase 3 (de/fr/pt-BR) · GitHub Stars campaign · office hours |
-| **Performance** | Streaming tool_result · continuous batching local · compaction v3 learned summarizer · gRPC dispatch · public perf dashboard |
+| **Performance** | Streaming tool_result · continuous batching local · compaction v3 learned summarizer · public perf dashboard |
 | **Safety** | — (cleared) |
 | **Ecosystem** | — (cleared) |
 

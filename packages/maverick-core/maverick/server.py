@@ -486,9 +486,18 @@ def build_from_config() -> Server:
     # worker pool instead of in this channel-server process. No-op by default.
     try:
         from .queue_dispatcher import install_from_config
-        install_from_config()
+        queue_installed = install_from_config()
     except Exception:  # pragma: no cover -- never block server boot
         log.exception("queue dispatcher install failed (running in-process)")
+        queue_installed = False
+    # [grpc_dispatch] target: execute goals on a remote gRPC worker. The
+    # queue backend wins when both are configured (it already owns dispatch).
+    if not queue_installed:
+        try:
+            from .grpc_dispatcher import install_from_config as install_grpc
+            install_grpc()
+        except Exception:  # pragma: no cover -- never block server boot
+            log.exception("gRPC dispatcher install failed (running in-process)")
 
     return server
 

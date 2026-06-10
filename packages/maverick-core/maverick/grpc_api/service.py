@@ -149,6 +149,34 @@ class GoalService:
         finally:
             _close(world)
 
+    def run_goal(
+        self,
+        goal_id: int,
+        *,
+        max_dollars: float | None = None,
+        max_wall_seconds: float | None = None,
+        channel: str | None = None,
+        user_id: str | None = None,
+    ) -> GoalStatusDTO | None:
+        """Run an EXISTING goal row to completion and return its terminal
+        status — the worker half of the cross-host gRPC Dispatcher (caller and
+        worker must share the world DB, e.g. the Postgres backend). Returns
+        None when the goal id doesn't exist here (DBs not shared / bad id)."""
+        world = self._world_factory()
+        try:
+            if world.get_goal(goal_id) is None:
+                return None
+        finally:
+            _close(world)
+        self._dispatch(
+            goal_id,
+            max_dollars=max_dollars,
+            max_wall_seconds=max_wall_seconds,
+            channel=channel,
+            user_id=user_id,
+        )
+        return self.status(goal_id)
+
     def status(self, goal_id: int) -> GoalStatusDTO | None:
         world = self._world_factory()
         try:

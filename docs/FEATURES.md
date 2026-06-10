@@ -212,6 +212,13 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   client-credentials and authorization-code + PKCE** grants (`mcp_oauth.py`).
 - **MCP registry** (`mcp_registry.py`) — `maverick mcp-registry browse/add/...`.
 - **A2A** (`a2a.py`, `a2a_tasks.py`) — Agent Card discovery + delegation.
+- **gRPC dispatch** (`grpc_dispatcher.py`, opt-in `[grpc_dispatch] target`)
+  — execute goals on a remote Maverick worker over gRPC: a `RunGoal` RPC runs
+  an existing goal row to completion (API and worker share the Postgres world
+  DB, same contract as the arq queue), and `GrpcDispatcher` plugs into the
+  runner's Dispatcher seam with no caller changes; queue backend wins when
+  both are configured; unreachable worker degrades to could-not-start, never
+  an exception.
 - **gRPC API** (`grpc_api/`) — typed, streaming surface for driving the runtime
   from any language: `StartGoal` / `StreamEpisode` (server-stream of episode
   events) / `Cancel` / `GetStatus`. Behaviour lives in a transport-agnostic
