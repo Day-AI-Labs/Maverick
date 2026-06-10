@@ -527,8 +527,10 @@ inside (tools) — sample rate via `MAVERICK_SENTRY_TRACES_SAMPLE_RATE`, PII off
 cross-span **budget propagation** (`latency_span_budget.py`); **tiered storage**
 (`tiered_storage.py`, opt-in `[world_model] cold_dir` + `archive_after_days`):
 archive old episodes/goal_events to cold parquet (pyarrow when present, gzip
-JSONL always) with write-before-delete safety, fact-pinned rows kept hot, and
-`read_cold` so archives stay queryable; **speculative tool execution**
+JSONL always, or **zstd** JSONL via `[world_model] cold_codec = "zstd"` + the
+`[zstd]` extra — smaller/faster, with graceful gzip fallback) with
+write-before-delete safety, fact-pinned rows kept hot, and `read_cold`
+(every codec, mixed dirs OK) so archives stay queryable; **speculative tool execution**
 (`speculative_tools.py`, opt-in `[tools] speculative`): pre-execute predicted
 read-only (`parallel_safe`) tool calls concurrently into the tool-output cache
 — `predict_from_history` warms only calls repeated across turns; **async

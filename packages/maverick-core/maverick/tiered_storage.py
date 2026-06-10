@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import gzip
 import importlib
+import io
 import json
 import logging
 import os
@@ -97,6 +98,38 @@ def _have_pyarrow() -> bool:
         return False
 
 
+def _have_zstd() -> bool:
+    try:
+        importlib.import_module("zstandard")
+        return True
+    except Exception:
+        return False
+
+
+def _cold_codec() -> str:
+    """Cold-archive codec: ``auto`` (default) | ``zstd`` | ``gzip`` | ``parquet``.
+
+    ``auto`` reproduces the historical choice (parquet when pyarrow is present,
+    else gzip JSONL) so an un-set deployment is byte-for-byte unchanged. ``zstd``
+    writes ``.jsonl.zst`` (smaller + faster than gzip) when ``zstandard`` is
+    importable, gracefully falling back to gzip otherwise. Read from
+    ``[world_model] cold_codec`` (env ``MAVERICK_WORLD_COLD_CODEC`` wins).
+    """
+    val = os.environ.get("MAVERICK_WORLD_COLD_CODEC", "").strip().lower()
+    if not val:
+        val = str(_world_cfg().get("cold_codec", "auto")).strip().lower()
+    return val if val in ("auto", "zstd", "gzip", "parquet") else "auto"
+
+
+def _choose_format(codec: str):
+    """Return ``(ext, writer)`` for the codec, with graceful fallbacks."""
+    if codec in ("auto", "parquet") and _have_pyarrow():
+        return ".parquet", _write_parquet
+    if codec == "zstd" and _have_zstd():
+        return ".jsonl.zst", _write_jsonl_zst
+    return ".jsonl.gz", _write_jsonl_gz
+
+
 def _yyyymmdd(epoch: float) -> str:
     return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y%m%d")
 
@@ -123,24 +156,30 @@ def _write_jsonl_gz(rows: list[dict], path: Path) -> None:
             fh.write(json.dumps(row, default=str) + "\n")
 
 
+def _write_jsonl_zst(rows: list[dict], path: Path) -> None:
+    zstd = importlib.import_module("zstandard")
+    cctx = zstd.ZstdCompressor(level=10)
+    with open(path, "wb") as raw, cctx.stream_writer(raw) as comp:
+        for row in rows:
+            comp.write((json.dumps(row, default=str) + "\n").encode("utf-8"))
+
+
 def _write_cold_file(cold_dir: Path, table: str, ts_col: str, rows: list[dict]) -> Path:
     """Write ``rows`` to a new cold file; return its path.
 
-    Parquet when pyarrow imports, gzip JSONL otherwise. Written to a temp
-    name then atomically renamed, so a crash mid-write never leaves a
-    half-file that :func:`read_cold` would pick up. Raises on any failure --
-    the caller deletes nothing from SQLite in that case.
+    Format per the configured codec (``auto`` = parquet when pyarrow imports,
+    gzip JSONL otherwise; ``zstd`` = ``.jsonl.zst``). Written to a temp name
+    then atomically renamed, so a crash mid-write never leaves a half-file that
+    :func:`read_cold` would pick up. Raises on any failure -- the caller deletes
+    nothing from SQLite in that case.
     """
     lo = _yyyymmdd(min(r[ts_col] for r in rows))
     hi = _yyyymmdd(max(r[ts_col] for r in rows))
-    ext = ".parquet" if _have_pyarrow() else ".jsonl.gz"
+    ext, writer = _choose_format(_cold_codec())
     path = _unique_path(cold_dir, f"{table}-{lo}-{hi}", ext)
     tmp = path.with_name(path.name + ".tmp")
     try:
-        if ext == ".parquet":
-            _write_parquet(rows, tmp)
-        else:
-            _write_jsonl_gz(rows, tmp)
+        writer(rows, tmp)
         os.replace(tmp, path)
     except BaseException:
         try:
@@ -222,6 +261,22 @@ def _read_jsonl_gz(path: Path) -> Iterator[dict]:
                 yield json.loads(line)
 
 
+def _read_jsonl_zst(path: Path) -> Iterator[dict]:
+    try:
+        zstd = importlib.import_module("zstandard")
+    except Exception as exc:
+        raise RuntimeError(
+            f"{path.name} is zstd but zstandard is not importable; "
+            "install the [zstd] extra to read it"
+        ) from exc
+    dctx = zstd.ZstdDecompressor()
+    with open(path, "rb") as raw, dctx.stream_reader(raw) as reader:
+        for line in io.TextIOWrapper(reader, encoding="utf-8"):
+            line = line.strip()
+            if line:
+                yield json.loads(line)
+
+
 def _read_parquet(path: Path) -> Iterator[dict]:
     try:
         papq = importlib.import_module("pyarrow.parquet")
@@ -236,14 +291,18 @@ def _read_parquet(path: Path) -> Iterator[dict]:
 def read_cold(cold_dir: str | Path, table: str) -> Iterator[dict]:
     """Iterate archived rows of ``table`` as dicts, file-name order.
 
-    Reads both cold formats (``.parquet`` and ``.jsonl.gz``); a missing or
-    empty directory yields nothing. Parquet needs pyarrow to read back -- a
-    clear ``RuntimeError`` says so instead of a bare import failure.
+    Reads every cold format (``.parquet``, ``.jsonl.gz``, ``.jsonl.zst``); a
+    missing or empty directory yields nothing. Parquet/zstd need their
+    optional dep to read back -- a clear ``RuntimeError`` says so instead of a
+    bare import failure. A mixed directory (codec changed between runs) reads
+    fine.
     """
     cold = Path(cold_dir).expanduser()
     for path in sorted(cold.glob(f"{table}-*")):
         if path.name.endswith(".jsonl.gz"):
             yield from _read_jsonl_gz(path)
+        elif path.name.endswith(".jsonl.zst"):
+            yield from _read_jsonl_zst(path)
         elif path.name.endswith(".parquet"):
             yield from _read_parquet(path)
         # anything else (e.g. an orphaned .tmp) is not cold data: skip it
