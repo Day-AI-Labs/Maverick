@@ -198,7 +198,9 @@ here.
   `k_anonymity` (check a released dataset for k-anonymity + optional l-diversity
   — quasi-identifier group sizes and sensitive-value diversity), `retention_check`
   (audit records against a data-retention policy — flag over-retained and
-  no-policy records by category/age; GDPR storage limitation).
+  no-policy records by category/age; GDPR storage limitation), `breach_notification`
+  (GDPR Art. 33/34 72h breach-notification timer — DUE/OVERDUE/ON_TIME/LATE +
+  Art. 34 high-risk reminder).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
