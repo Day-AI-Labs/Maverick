@@ -1,102 +1,71 @@
-"""Multi-agent observation channel: broadcast pub/sub + blackboard tee."""
+"""observation_channel: shared time-ordered multi-agent feed."""
 from __future__ import annotations
 
-from maverick import observation_channel as oc
-from maverick.blackboard import Blackboard
+import json
+
+from maverick.tools.observation_channel import observation_channel
 
 
-def _fresh():
-    oc.reset_shared()
-    return oc.shared()
+def _run(**kw):
+    return observation_channel().fn(kw)
 
 
-def test_subscriber_receives_published_events():
-    ch = oc.ObservationChannel()
-    sub = ch.subscribe()
-    ch.publish("tool_call", "coder", "ran read_file")
-    ch.publish("verdict", "verifier", "accept")
-    events = sub.drain()
-    assert [e.kind for e in events] == ["tool_call", "verdict"]
-    assert events[0].agent == "coder" and events[0].content == "ran read_file"
-    assert sub.drain() == []  # drained
+def _payload(out: str):
+    return json.loads(out.split("\n", 1)[1])
 
 
-def test_broadcast_each_subscriber_gets_all():
-    ch = oc.ObservationChannel()
-    a, b = ch.subscribe(), ch.subscribe()
-    ch.publish("e", "x", "1")
-    assert len(a.drain()) == 1 and len(b.drain()) == 1
+def test_merge_orders_by_ts():
+    obs = [
+        {"agent": "a", "ts": 3, "text": "third"},
+        {"agent": "b", "ts": 1, "text": "first"},
+        {"agent": "a", "ts": 2, "text": "second"},
+    ]
+    out = _run(op="merge", observations=obs)
+    feed = _payload(out)["feed"]
+    assert [e["text"] for e in feed] == ["first", "second", "third"]
 
 
-def test_only_events_after_subscribe():
-    ch = oc.ObservationChannel()
-    ch.publish("before", "x")
-    sub = ch.subscribe()
-    ch.publish("after", "x")
-    assert [e.kind for e in sub.drain()] == ["after"]
+def test_merge_per_agent_counts():
+    obs = [
+        {"agent": "a", "ts": 1, "text": "x"},
+        {"agent": "a", "ts": 2, "text": "y"},
+        {"agent": "b", "ts": 3, "text": "z"},
+    ]
+    counts = _payload(_run(op="merge", observations=obs))["counts"]
+    assert counts == {"a": 2, "b": 1}
 
 
-def test_no_op_when_no_subscribers():
-    ch = oc.ObservationChannel()
-    assert ch.has_subscribers() is False
-    ch.maybe_publish("e", "x")  # must not raise / nothing buffered
-    sub = ch.subscribe()
-    ch.maybe_publish("e2", "x")
-    assert [e.kind for e in sub.drain()] == ["e2"]
+def test_merge_empty():
+    out = _run(op="merge", observations=[])
+    payload = _payload(out)
+    assert payload == {"feed": [], "counts": {}}
 
 
-def test_slow_subscriber_drops_oldest_not_blocks():
-    ch = oc.ObservationChannel()
-    sub = ch.subscribe(capacity=3)
-    for i in range(10):
-        ch.publish("e", "x", str(i))
-    drained = sub.drain()
-    assert len(drained) == 3                       # bounded
-    assert [e.content for e in drained] == ["7", "8", "9"]  # newest kept
+def test_since_filters_strictly_newer():
+    obs = [
+        {"agent": "a", "ts": 1, "text": "old"},
+        {"agent": "a", "ts": 2, "text": "edge"},
+        {"agent": "b", "ts": 3, "text": "new"},
+    ]
+    out = _run(op="since", observations=obs, ts=2)
+    feed = _payload(out)
+    assert [e["text"] for e in feed] == ["new"]  # ts==2 excluded
 
 
-def test_close_unsubscribes():
-    ch = oc.ObservationChannel()
-    sub = ch.subscribe()
-    assert ch.subscriber_count() == 1
-    sub.close()
-    assert ch.subscriber_count() == 0
-    ch.publish("e", "x")  # no longer delivered anywhere
+def test_deterministic_tie_break():
+    obs = [
+        {"agent": "z", "ts": 1, "text": "b"},
+        {"agent": "a", "ts": 1, "text": "a"},
+    ]
+    feed = _payload(_run(op="merge", observations=obs))["feed"]
+    assert [e["agent"] for e in feed] == ["a", "z"]  # same ts -> by agent
 
 
-def test_context_manager_closes():
-    ch = oc.ObservationChannel()
-    with ch.subscribe() as sub:
-        ch.publish("e", "x")
-        assert sub.pending() == 1
-    assert ch.subscriber_count() == 0
-
-
-def test_module_shared_and_reset():
-    ch = _fresh()
-    assert ch is oc.shared()
-    oc.reset_shared()
-    assert oc.shared() is not ch
-
-
-# ---- blackboard tee ----
-
-def test_blackboard_post_tees_to_observers():
-    _fresh()
-    sub = oc.subscribe()
-    bb = Blackboard()
-    bb.post("coder", "status", "working on it")
-    events = sub.drain()
-    assert len(events) == 1
-    assert events[0].kind == "status" and events[0].agent == "coder"
-    assert events[0].content == "working on it"
-    oc.reset_shared()
-
-
-def test_blackboard_post_noop_without_observers():
-    _fresh()
-    bb = Blackboard()
-    # No subscriber -> tee is a no-op; post still works (entry recorded).
-    bb.post("coder", "status", "x")
-    assert oc.shared().has_subscribers() is False
-    assert any(e.content == "x" for e in bb.entries)
+def test_errors():
+    assert _run(op="merge").startswith("ERROR")  # no observations
+    assert _run(op="since", observations=[]).startswith("ERROR")  # no ts
+    bad = _run(op="merge", observations=[{"ts": 1, "text": "x"}])
+    assert bad.startswith("ERROR") and "agent" in bad
+    bad_ts = _run(op="merge", observations=[{"agent": "a", "ts": "soon"}])
+    assert bad_ts.startswith("ERROR")
+    assert _run(op="nope", observations=[]).startswith("ERROR")

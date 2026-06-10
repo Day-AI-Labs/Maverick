@@ -602,6 +602,7 @@ def base_registry(  # noqa: C901
     from .autogen_adapter import autogen_adapter
     from .bias_eval import bias_eval
     from .bitbucket_tool import bitbucket_tool
+    from .breach_notification import breach_notification
     from .budget_status import budget_status
     from .cache_admin import cache_admin
     from .cache_eviction import cache_eviction
@@ -611,15 +612,21 @@ def base_registry(  # noqa: C901
     from .capability_delegation_graph import capability_delegation_graph
     from .capability_leak_fuzzer import capability_leak_fuzzer
     from .capability_negotiation import capability_negotiation
+    from .capability_revocation import capability_revocation
+    from .channel_autoroute import channel_autoroute
     from .chaos_gameday import chaos_gameday
+    from .cidr_check import cidr_check
     from .citation_verifier import citation_verifier
     from .clickup_tool import clickup_tool
     from .clipboard import clipboard
     from .cloudflare_tool import cloudflare_tool
     from .collusion_detector import collusion_detector
+    from .compaction_classifier import compaction_classifier
     from .comparative_replay import comparative_replay
     from .compute import compute
     from .confluence_tool import confluence_tool
+    from .consent_check import consent_check
+    from .consent_ergonomics import consent_ergonomics
     from .constrained_output import constrained_output
     from .container_build import container_build
     from .containment_mode import containment_mode
@@ -632,6 +639,7 @@ def base_registry(  # noqa: C901
     from .cross_repo_deps import cross_repo_deps
     from .crypto_budget_receipt import crypto_budget_receipt
     from .currency import currency
+    from .data_minimization import data_minimization
     from .data_residency import data_residency
     from .datadog_tool import datadog_tool
     from .decision_explainer import decision_explainer
@@ -677,19 +685,24 @@ def base_registry(  # noqa: C901
     from .imagemagick_tool import imagemagick_tool
     from .ios_sim import ios_sim
     from .jira import jira
+    from .jwt_inspect import jwt_inspect
     from .k_anonymity import k_anonymity
     from .key_rotation import key_rotation
     from .knowledge_graph import knowledge_graph
+    from .kv_cache_offload import kv_cache_offload
     from .kv_memory import kv_memory
     from .lambda_tool import lambda_tool
     from .latency_heatmap import latency_heatmap
     from .latency_slo import latency_slo
     from .linear import linear
     from .local_embeddings_cache import local_embeddings_cache
+    from .marketplace_moderation import marketplace_moderation
     from .marketplace_ratings import marketplace_ratings
     from .memleak_quarantine import memleak_quarantine
     from .memory import memory
+    from .memory_safe_parse import memory_safe_parse
     from .migration_cost import migration_cost
+    from .misuse_removal import misuse_removal
     from .mixpanel_tool import mixpanel_tool
     from .model3d_inspect import model3d_inspect
     from .model_card import model_card
@@ -701,15 +714,18 @@ def base_registry(  # noqa: C901
     from .newsapi_tool import newsapi_tool
     from .notify import notify_tool
     from .notion import notion
+    from .observation_channel import observation_channel
     from .obsidian import obsidian
     from .ocr import ocr
     from .office_convert import office_convert
     from .openapi_runner import openapi_runner
     from .openmetrics import openmetrics
+    from .otel_semconv import otel_semconv
     from .outline_writer import outline_writer
     from .pagerduty_tool import pagerduty_tool
     from .pandas_query import pandas_query
     from .pandoc_tool import pandoc_tool
+    from .payload_compress import payload_compress
     from .pdf_reader import read_pdf
     from .pia_generator import pia_generator
     from .plaid_tool import plaid_tool
@@ -725,6 +741,7 @@ def base_registry(  # noqa: C901
     from .provider_failover_policy import provider_failover_policy
     from .query_plan_regression import query_plan_regression
     from .quorum_approval import quorum_approval
+    from .rbac_check import rbac_check
     from .recall import recall
     from .rectification import rectification
     from .redact import redact_tool
@@ -751,6 +768,7 @@ def base_registry(  # noqa: C901
     from .serial_tool import serial_tool
     from .ses_tool import ses_tool
     from .shopify_tool import shopify_tool
+    from .skill_distill_v2 import skill_distill_v2
     from .sla_breach import sla_breach
     from .slack_bot import slack_bot
     from .slack_workflow import slack_workflow
@@ -859,6 +877,18 @@ def base_registry(  # noqa: C901
     reg.register(cross_repo_deps(sandbox))
     reg.register(test_gen())
     reg.register(two_person_rule())
+    reg.register(compaction_classifier())
+    reg.register(kv_cache_offload())
+    reg.register(otel_semconv())
+    reg.register(payload_compress())
+    reg.register(capability_revocation())
+    reg.register(memory_safe_parse())
+    reg.register(misuse_removal())
+    reg.register(consent_ergonomics())
+    reg.register(skill_distill_v2())
+    reg.register(observation_channel())
+    reg.register(marketplace_moderation())
+    reg.register(channel_autoroute())
     reg.register(capability_delegation_graph())
     reg.register(honeytoken())
     reg.register(dp_stats())
@@ -867,6 +897,12 @@ def base_registry(  # noqa: C901
     reg.register(anomaly_scan())
     reg.register(k_anonymity())
     reg.register(retention_check())
+    reg.register(breach_notification())
+    reg.register(data_minimization())
+    reg.register(consent_check())
+    reg.register(jwt_inspect())
+    reg.register(rbac_check())
+    reg.register(cidr_check())
     reg.register(supply_chain_pin())
     reg.register(quorum_approval())
     reg.register(crypto_budget_receipt())

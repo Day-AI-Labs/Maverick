@@ -135,7 +135,7 @@ def translate_document(text: str, lang: str, llm) -> str:
             max_tokens=8192,
             model=model_for_role("translator"),
         )
-        out.append((getattr(resp, "text", "") or ""))
+        out.append(getattr(resp, "text", "") or "")
     translated = "".join(out)
     problems = verify_translation(text, translated)
     if problems:
