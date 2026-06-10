@@ -409,3 +409,99 @@ def test_erase_conversations_deletes_pg_rows(world):
     assert world.get_goal(parent) is None
     assert world.get_goal(child) is None
     assert world.is_processed_message("gdpr-pg", "external-1") is False
+
+
+# ----- connection pooling (opt-in) -----
+
+def test_pooled_backend_crud_and_pool_object(monkeypatch):
+    """With [world_model] pool_size > 0 the backend uses a psycopg_pool pool;
+    CRUD still works and self._pool is wired (self.conn is None)."""
+    pytest.importorskip("psycopg_pool")
+    monkeypatch.setenv("MAVERICK_PG_POOL_SIZE", "3")
+    from maverick.world_model_backends.postgres import PostgresWorldModel
+    w = PostgresWorldModel(dsn=_DSN)
+    try:
+        assert w._pool is not None and w.conn is None
+        gid = w.create_goal("pooled-goal", description="via pool")
+        got = w.get_goal(gid)
+        assert got is not None and got.title == "pooled-goal"
+        w.set_goal_status(gid, "done", result="ok")
+        assert w.get_goal(gid).status == "done"
+    finally:
+        w.close()
+
+
+# ----- Row-Level Security (opt-in) -----
+
+def _disable_rls(dsn):
+    """Tear down RLS so the opt-in test doesn't leak FORCE RLS into other
+    tests sharing the database."""
+    import psycopg
+    from maverick.world_model_backends.postgres import _TENANT_TABLES
+    with psycopg.connect(dsn, autocommit=True) as c, c.cursor() as cur:
+        for t in _TENANT_TABLES:
+            cur.execute(f"DROP POLICY IF EXISTS mvk_tenant_isolation ON {t}")
+            cur.execute(f"ALTER TABLE {t} NO FORCE ROW LEVEL SECURITY")
+            cur.execute(f"ALTER TABLE {t} DISABLE ROW LEVEL SECURITY")
+
+
+def test_rls_enforces_tenant_isolation_at_db_level(monkeypatch):
+    """With RLS on, a tenant-scoped transaction sees ONLY its own rows even on
+    a RAW query that carries no app-layer predicate — i.e. the database, not
+    just _tenant_scope, enforces the boundary. An admin (no tenant) sees all.
+
+    RLS is bypassed for superusers and table owners-without-FORCE, so this must
+    connect as a dedicated NON-superuser role to actually exercise the policy
+    (the CI/test DSN role is a superuser). The owner applies the policy; the
+    app role only enforces it."""
+    import psycopg
+    from maverick.paths import reset_tenant, set_tenant
+    from maverick.world_model_backends.postgres import PostgresWorldModel
+    from psycopg.conninfo import make_conninfo
+
+    monkeypatch.setenv("MAVERICK_PG_RLS", "1")
+    # 1. Create a non-superuser app role with DML rights (as the owner/superuser).
+    with psycopg.connect(_DSN, autocommit=True) as c, c.cursor() as cur:
+        cur.execute("DROP ROLE IF EXISTS mvk_rls_app")
+        cur.execute("CREATE ROLE mvk_rls_app LOGIN PASSWORD 'rlspw' NOSUPERUSER NOBYPASSRLS")  # pragma: allowlist secret
+        cur.execute("GRANT USAGE, CREATE ON SCHEMA public TO mvk_rls_app")
+        cur.execute("GRANT ALL ON ALL TABLES IN SCHEMA public TO mvk_rls_app")
+        cur.execute("GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO mvk_rls_app")
+
+    app_dsn = make_conninfo(_DSN, user="mvk_rls_app", password="rlspw")  # pragma: allowlist secret
+    # 2. Owner applies RLS; 3. app role (non-superuser) enforces it.
+    PostgresWorldModel(dsn=_DSN).close()
+    w = PostgresWorldModel(dsn=app_dsn)
+    try:
+        tok = set_tenant("rls_alpha")
+        try:
+            a = w.create_goal("alpha-secret")
+        finally:
+            reset_tenant(tok)
+        tok = set_tenant("rls_beta")
+        try:
+            b = w.create_goal("beta-secret")
+        finally:
+            reset_tenant(tok)
+
+        # RAW count (no _tenant_scope) under alpha -> RLS must hide beta's row.
+        tok = set_tenant("rls_alpha")
+        try:
+            with w._tx() as cur:
+                cur.execute("SELECT count(*) FROM goals WHERE id IN (%s, %s)", (a, b))
+                visible = int(cur.fetchone()[0])
+        finally:
+            reset_tenant(tok)
+        assert visible == 1, "RLS should expose only the active tenant's row"
+
+        # Admin/no-tenant (GUC unset) sees both via the permissive branch.
+        with w._tx() as cur:
+            cur.execute("SELECT count(*) FROM goals WHERE id IN (%s, %s)", (a, b))
+            assert int(cur.fetchone()[0]) == 2
+    finally:
+        w.close()
+        _disable_rls(_DSN)
+        with psycopg.connect(_DSN, autocommit=True) as c, c.cursor() as cur:
+            cur.execute("REASSIGN OWNED BY mvk_rls_app TO CURRENT_USER")
+            cur.execute("DROP OWNED BY mvk_rls_app")
+            cur.execute("DROP ROLE IF EXISTS mvk_rls_app")
