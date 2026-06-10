@@ -386,7 +386,15 @@ carry their platform `message_id` and adapters expose `send_threaded`
 `reply_to_message_id`; base falls back to a plain send) so long-running
 answers land under the message that asked. **Email v2** adds IMAP IDLE (push
 instead of poll) + conversation threading from Message-ID/In-Reply-To/References
-(`email_v2.py`). **KaTeX/Mermaid rich render** (`rich_render.py`, opt-in
+(`email_v2.py`). **Discord Stages voice v2** (`discord_stages.py`): drive Maverick from a
+Stage channel — per-speaker utterance assembly over an injected transcriber,
+optional wake-word gating, replies spoken when the bot holds a speaker slot
+and degraded to stage-chat text when it doesn't (or TTS fails), and stage
+etiquette built in: the bot only *requests* a speaker slot, never
+self-promotes (a human moderator approves). Every Discord interaction sits
+behind an injected seam so the session logic is fully offline-tested; the
+heavy voice binding (discord.py voice + PyNaCl) plugs into the same seam.
+**KaTeX/Mermaid rich render** (`rich_render.py`, opt-in
 `[channels] rich_render`): replies carrying display math or ```mermaid fences
 are rendered into a standalone HTML artifact (KaTeX/Mermaid in-page, escaped
 `<pre>` source as the no-JS fallback) under `data_dir("rich_render/")`;
