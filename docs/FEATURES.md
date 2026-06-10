@@ -238,6 +238,14 @@ here.
   `[plugins] grpc = [{target, command}]`) carries the same contract over gRPC
   for any language: Describe → Tools, Call with a deadline, scrubbed-env spawn,
   reconnect/respawn-once.
+  **Security backports + LTS machinery**
+  ([`docs/security-backports.md`](../docs/security-backports.md) +
+  `backport_tool.py`, `python -m maverick.backport_tool scan|plan|check`):
+  the policy (what qualifies, the `lts/<v>` 2-year safety-fix branch, 7-day
+  SLA) made executable — `scan` finds security-marked commits, `plan` lists
+  the ones not yet on the LTS branch (patch-id matched, so a cherry-picked
+  twin isn't re-flagged), and `check` exits non-zero when an eligible fix is
+  past the SLA — read-only; cherry-picks/pushes stay maintainer acts.
   **Formal verification of the sandbox interface (TLA+)**
   ([`docs/specs/tla/`](../docs/specs/tla/README.md)): `SandboxInterface.tla`
   models the chokepoint as a state machine and TLC-verifies — for all
