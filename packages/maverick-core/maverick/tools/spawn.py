@@ -87,12 +87,18 @@ def _synthesis_reserve_block(parent: Agent) -> str | None:
     )
 
 
-def _child_capability(parent, role: str, depth: int):
-    """A child's capability grant: the parent's, attenuated (never broadened)
-    and re-bound to the child principal. ``None`` when the parent runs
-    unrestricted (capability enforcement off), so this is a no-op by default.
+def _child_capability(parent, role: str, depth: int, tool_name: str | None = None):
+    """A child's capability grant, attenuated from the parent's active grant.
+
+    Verified handoffs can temporarily narrow a parent's ambient capability. When
+    a spawn tool is allowed by that narrowed grant, descendants must inherit the
+    same effective boundary rather than the broader ambient parent grant.
+    ``None`` still means capability enforcement is off.
     """
-    cap = getattr(parent, "capability", None)
+    if tool_name is not None and hasattr(parent, "_effective_capability"):
+        cap = parent._effective_capability(tool_name)
+    else:
+        cap = getattr(parent, "capability", None)
     if cap is None:
         return None
     return cap.attenuate(principal=f"agent:{role}-{depth}")
@@ -209,7 +215,9 @@ def spawn_subagent_tool(parent: Agent) -> Tool:
             depth=parent.depth + 1,
             parent=parent,
             max_steps=parent.max_steps,
-            capability=_child_capability(parent, role, parent.depth + 1),
+            capability=_child_capability(
+                parent, role, parent.depth + 1, "spawn_subagent"
+            ),
         )
         return await _run_child_and_report(parent, child)
 
@@ -300,7 +308,9 @@ def spawn_swarm_tool(parent: Agent) -> Tool:  # noqa: C901
                 depth=parent.depth + 1,
                 parent=parent,
                 max_steps=parent.max_steps,
-                capability=_child_capability(parent, spec["role"], parent.depth + 1),
+                capability=_child_capability(
+                    parent, spec["role"], parent.depth + 1, "spawn_swarm"
+                ),
             )
             for spec in agents_spec
         ]

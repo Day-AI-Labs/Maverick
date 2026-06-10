@@ -211,7 +211,11 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
     """
     from .agent import Agent
     principal = principal or f"agent:{profile.name}-{depth}"
-    cap = domain_capability(profile, getattr(parent, "capability", None), principal)
+    if parent is not None and hasattr(parent, "_effective_capability"):
+        parent_cap = parent._effective_capability("spawn_specialist")
+    else:
+        parent_cap = getattr(parent, "capability", None)
+    cap = domain_capability(profile, parent_cap, principal)
     return Agent(
         ctx=ctx, role=profile.name, brief=task, depth=depth, parent=parent,
         domain=profile.compartment, persona=profile.persona, capability=cap,
