@@ -189,7 +189,9 @@ here.
   `consent_check` (evaluate consent records for active validity — granted /
   withdrawn / expired per purpose, latest grant governs; GDPR Art. 7),
   `jwt_inspect` (decode + validate a JWT offline — claims, exp/nbf, and
-  HS256/384/512 HMAC signature verification; flags alg=none).
+  HS256/384/512 HMAC signature verification; flags alg=none), `rbac_check`
+  (evaluate an RBAC authorization decision — role inheritance + '*'/'prefix:*'
+  wildcards, ALLOW/DENY with the granting role).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate. **Plugin sandboxing** — opt-in
