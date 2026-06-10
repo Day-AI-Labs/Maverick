@@ -98,7 +98,10 @@ here.
   `citation_verifier` (check cited quotes against their source text), `test_gen`
   (generate a Hypothesis property-test scaffold from a function's signature),
   `semantic_code_search` (rank functions/classes by intent via ast + lexical
-  scoring), `mutation_test` (plan source mutants a strong suite should catch),
+  scoring), `lsp_bridge` (cross-language code intelligence over the Language
+  Server Protocol — symbols/definition/references/hover/diagnostics against
+  host-installed servers: pyright/gopls/rust-analyzer/tsserver/clangd;
+  one-shot session per call, deadline-gated stdio), `mutation_test` (plan source mutants a strong suite should catch),
   `constrained_output` (validate/coerce a value to a typed/enum/range/regex
   shape — the guard half of constrained generation), `model3d_inspect`
   (headless 3D-mesh stats — triangle/vertex counts + bounding box for STL/OBJ),
@@ -252,6 +255,25 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   a require-human-on-high-risk policy into the live governance policy
   (strictest-wins, via the same union the finance regimes use). Inert when
   unset — default behavior is unchanged.
+- **Refusal calibration** (`safety/refusal_calibration.py`) — score
+  {prompt, should_refuse, refused} samples into over/under-refusal rates with
+  configurable ceilings and CALIBRATED/OVER/UNDER verdicts; deterministic
+  `is_refusal` completion detector.
+- **Shield call rate-limit per goal** (`safety/shield_rate_limit.py`) — opt-in
+  `[safety] shield_rate_limit = "100/60"` sliding-window token bucket per goal;
+  throttling SKIPS the scan fail-open (the shield never blocks the agent by
+  being busy), with once-per-window suppressed-call alerts.
+- **Model cards per LLM** (`model_cards.py`) — aggregate the deployment's own
+  usage ledger into per-model cards (roles, calls, tokens, dollars) rendered
+  as markdown with a no-vendor-claims disclaimer; duck-typed world adapter.
+- **Behavioral diff on upgrades** (`behavioral_diff.py`) — replay a fixed probe
+  set before/after a model/prompt change; classify per-probe
+  unchanged/minor/major/refusal-flip, PASS verdict gated on flips + major-change
+  fraction.
+- **Honeytoken planting** (`safety/honeytokens.py`) — mint decoy credentials
+  (AWS-key-shaped, API-key, passphrase), plant a realistic 0600 secrets file,
+  and alert (once per fingerprint) when a decoy value appears in text — alerts
+  carry sha-fingerprints, never the live decoy.
 - **Red-team CI** — a named CI job (`redteam` in `ci.yml`) runs the labelled
   adversarial corpus (`maverick_shield/redteam_corpus.jsonl`, grow-by-PR)
   through the shield's built-in detector via `python -m maverick_shield.redteam`
@@ -322,7 +344,11 @@ opt-in; single-tenant/self-hosted deployments are unaffected):
 ## Evaluation & benchmarks
 
 `benchmarks/`: GAIA, τ²-bench-style stateful harness, terminal-bench-style
-harness, SWE-bench harness, moat suite — CI-runnable on shipped fixtures.
+harness, SWE-bench harness, moat suite, and an **adversarial-cost suite**
+(`eval_adversarial_cost.py`): scripted money-wasting scenarios — tool loops,
+token bombs, runaway iterations — each asserted CLAMPED by the cache /
+output-cap / Budget ceilings; `main()` exits 1 on any unclamped scenario. All
+CI-runnable on shipped fixtures.
 
 ## Observability & reliability
 
@@ -333,7 +359,14 @@ tab** (all opt-in) (`observability.py`): `MAVERICK_SENTRY_DSN` (or
 inside (tools) — sample rate via `MAVERICK_SENTRY_TRACES_SAMPLE_RATE`, PII off,
 `[sentry]` extra; per-tool latency profiles + extended stats
 (`tool_latency.py`); opt-in per-tool **latency budget** (`latency_budget.py`) and
-cross-span **budget propagation** (`latency_span_budget.py`); **async
+cross-span **budget propagation** (`latency_span_budget.py`); **tiered storage**
+(`tiered_storage.py`, opt-in `[world_model] cold_dir` + `archive_after_days`):
+archive old episodes/goal_events to cold parquet (pyarrow when present, gzip
+JSONL always) with write-before-delete safety, fact-pinned rows kept hot, and
+`read_cold` so archives stay queryable; **speculative tool execution**
+(`speculative_tools.py`, opt-in `[tools] speculative`): pre-execute predicted
+read-only (`parallel_safe`) tool calls concurrently into the tool-output cache
+— `predict_from_history` warms only calls repeated across turns; **async
 compaction** (`async_compaction.py`, opt-in `[context] async_compaction`): the
 expensive prefix of a conversation's history is compacted in the background
 between turns and the hot path pays only a cheap tail-merge — single daemon
