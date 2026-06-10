@@ -425,6 +425,19 @@ class Agent:
         self.brief = brief
         self.depth = depth
         self.parent = parent
+        # Long-horizon review checkpoint (root only; opt-in). Built once per
+        # agent from config; None when unconfigured (the common case) so the
+        # turn gate stays a no-op. The reviewer consults the killswitch -- an
+        # operator arming `maverick halt` mid-review is the "stop" vote.
+        self._review_checkpoint = None
+        if role == "orchestrator":
+            try:
+                from .review_checkpoint import from_config
+                _cp = from_config(review=lambda _e: not killswitch.is_active())
+                if _cp.policy.is_active():
+                    self._review_checkpoint = _cp
+            except Exception:  # pragma: no cover -- never block agent construction
+                self._review_checkpoint = None
         # Agent compartments: the domain/sector this agent belongs to. The
         # factory's spawn-from-profile sets it; otherwise a child inherits its
         # parent's domain so a Rung-2 sector seal catches the whole sub-tree.
@@ -1545,6 +1558,20 @@ class Agent:
             except BudgetExceeded as e:
                 bb.post(self.name, "error", f"budget exceeded: {e}")
                 return AgentResult(error=f"budget exceeded: {e}", role=self.role, name=self.name)
+
+            # Long-horizon review checkpoint (opt-in [safety] review_checkpoint):
+            # at the root, fire a human-review heartbeat every N dollars / M tool
+            # calls / T seconds. A reviewer vote to halt stops the run cleanly,
+            # like the killswitch. Inert (no checkpoint object) when unconfigured.
+            if self.role == "orchestrator" and self._review_checkpoint is not None:
+                _cp_event = self._review_checkpoint.check(self.ctx.budget)
+                if _cp_event is not None:
+                    bb.post(self.name, "note",
+                            f"review checkpoint halted the run at "
+                            f"{_cp_event.reason}={_cp_event.value:g}")
+                    return AgentResult(
+                        error=f"halted at review checkpoint ({_cp_event.reason})",
+                        role=self.role, name=self.name)
 
             # #614 live-spend mirror: at the turn boundary, the root agent
             # writes the budget's running totals onto its open episode row

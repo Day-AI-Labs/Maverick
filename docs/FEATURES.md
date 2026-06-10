@@ -21,6 +21,11 @@ here.
 - **Budget caps** — hard dollar + wall-clock + tool-call ceilings the kernel
   refuses to exceed (`budget.py`).
 - **Killswitch** — `~/.maverick/HALT` aborts all running goals (`killswitch.py`).
+- **Long-horizon review checkpoint** — opt-in `[safety] review_checkpoint`
+  (`review_checkpoint.py`): the root agent fires a human-review heartbeat every
+  N dollars / M tool calls / T wall-seconds; a reviewer vote to halt (an armed
+  killswitch by default) stops the run cleanly. Distinct from the hard budget
+  cap; inert and behavior-identical when unconfigured.
 - **Verifier default-on** across goal types (`verifier.py`); **reflexion** retry
   loop with cross-session failure memory (`reflexion.py`); graded **critic** for
   structured accept/revise/reject feedback (`critic.py`).
