@@ -1186,6 +1186,23 @@ def base_registry(  # noqa: C901
     except Exception:  # pragma: no cover -- importlib quirks
         pass
 
+    # TypeScript plugins (the NDJSON stdio SDK): each `[plugins] ts` command
+    # contributes its described tools. Same no-shadowing rule as Python
+    # plugins; a broken plugin logs but never takes the swarm down.
+    try:
+        from ..ts_plugin_host import load_configured_ts_plugins
+        for t in load_configured_ts_plugins():
+            if t.name in reg._tools:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "ts plugin tool %r conflicts with an existing tool; skipping",
+                    t.name,
+                )
+                continue
+            reg.register(t)
+    except Exception:  # pragma: no cover -- plugin failure never blocks boot
+        pass
+
     # Self-learning: tools the agent generated for itself on a prior run
     # live in ~/.maverick/generated_tools/ and load like first-class tools.
     # Only consulted when [self_learning] enable is set — generated tools

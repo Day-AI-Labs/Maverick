@@ -215,7 +215,15 @@ here.
   guarantee when a bound is hit).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
-  boilerplate. **Plugin sandboxing** — opt-in
+  boilerplate. **TypeScript plugin SDK** (`sdks/plugin-ts/`,
+  `@maverick/plugin-sdk`): author a tool in TypeScript with
+  `defineTool`/`servePlugin` over a versioned NDJSON stdio protocol
+  (`maverick-plugin/1`: `--describe` manifest, `{id,tool,args}` →
+  `{id,result|error}`); the host (`ts_plugin_host.py`, `[plugins] ts =
+  [["node", "/path/plugin.js"]]`, wizard step included) loads the manifest
+  into regular Tools with a persistent scrubbed-env child, per-call timeout,
+  one crash-restart, and the no-shadowing rule built-ins enjoy.
+  **Plugin sandboxing** — opt-in
   `[plugins] isolation = "subprocess" | "subinterpreter"`
   (`plugin_isolation.py`): discovered plugin tools keep their schema but their
   *calls* run in a fresh CPython subinterpreter (fault/state isolation — a

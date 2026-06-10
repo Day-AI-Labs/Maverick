@@ -1423,6 +1423,27 @@ def pick_plugins() -> list[str]:
     return _q_checkbox("Enable plugins:", sorted(discovered))
 
 
+def pick_ts_plugins() -> list[list[str]]:
+    """TypeScript (NDJSON stdio) plugin commands — writes ``[plugins].ts``.
+
+    Each entry is the argv that serves the plugin (e.g.
+    ``node /path/to/plugin.js``); Maverick discovers its tools via
+    ``--describe`` at boot. Skipped by default — most setups have none.
+    """
+    if not _q_confirm(
+        "Add any TypeScript plugins? (commands like: node /path/plugin.js)",
+        default=False,
+    ):
+        return []
+    commands: list[list[str]] = []
+    while True:
+        raw = _q_text("  Plugin command (blank to finish)", default="")
+        if not raw.strip():
+            break
+        commands.append(raw.split())
+    return commands
+
+
 def pick_plugin_permissions() -> tuple[list[str], bool]:
     """Grants + enforcement for enabled plugins (writes ``[plugins].grant`` /
     ``enforce_permissions``).
@@ -2100,6 +2121,7 @@ def write_config(  # noqa: C901
     plugins: list[str] | None = None,
     plugin_grant: list[str] | None = None,
     plugin_enforce: bool = False,
+    ts_plugins: list[list[str]] | None = None,
     tool_acl: dict[str, Any] | None = None,
     rate_limits: dict[str, str] | None = None,
     retention: dict[str, int] | None = None,
@@ -2479,14 +2501,17 @@ def write_config(  # noqa: C901
         lines.append("[template_registries]")
         _emit_kv(lines, "indexes", template_registries)
 
-    if plugins:
+    if plugins or ts_plugins:
         lines.append("")
         lines.append("[plugins]")
-        _emit_kv(lines, "enabled", plugins)
+        if plugins:
+            _emit_kv(lines, "enabled", plugins)
         if plugin_grant:
             _emit_kv(lines, "grant", plugin_grant)
         if plugin_enforce:
             _emit_kv(lines, "enforce_permissions", plugin_enforce)
+        if ts_plugins:
+            _emit_kv(lines, "ts", ts_plugins)
 
     autofix = bool((advanced or {}).get("security_autofix"))
     if tool_acl or autofix:
@@ -3123,6 +3148,12 @@ def run(fast: bool = False, resume: bool = False) -> int:  # noqa: C901
         state["plugins"] = plugins
         _save_partial(state)
 
+    ts_plugins = state.get("ts_plugins")
+    if ts_plugins is None:
+        ts_plugins = pick_ts_plugins()
+        state["ts_plugins"] = ts_plugins
+        _save_partial(state)
+
     # Only ask about plugin permissions when at least one plugin is enabled --
     # most setups have none, so the step is skipped entirely.
     plugin_grant = state.get("plugin_grant")
@@ -3221,6 +3252,7 @@ def run(fast: bool = False, resume: bool = False) -> int:  # noqa: C901
         mcp_servers=mcp_servers,
         plugins=plugins,
         plugin_grant=plugin_grant,
+        ts_plugins=ts_plugins,
         plugin_enforce=plugin_enforce,
         tool_acl=tool_acl,
         rate_limits=rate_limits,
