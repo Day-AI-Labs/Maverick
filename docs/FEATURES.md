@@ -1419,6 +1419,48 @@ tested without spawning py-spy.
   replaces only the chosen kinds' spans and *honestly* reports
   `proven_clean: false` with the residual kinds left behind, instead of a
   false guarantee. Preview-only: nothing is stored server-side.
+- **Visual graph editor** (`/graph-editor` + `GET /api/v1/goal-tree` +
+  retitle/reparent/add-child endpoints): the goal forest as an interactive
+  SVG node graph — server-side layered layout (pure, unit-tested), pan/
+  zoom, status colors — with editing that refuses cycles and self-parenting
+  (400), access-checks both ends, and creates children **pending, not
+  auto-run** (stated in the UI). A keyboard path via labeled selects keeps
+  it accessible.
+- **Drag-and-drop goal builder** (`/goal-builder`): compose a goal from
+  blocks — steps (ordered checklist), budget, channel, priority — native
+  HTML5 DnD plus keyboard add/move/remove buttons, live brief preview. The
+  budget block is enforced as the runner's real `max_dollars` (clamped to
+  the server cap); channel/priority ride in the brief and say so.
+- **Embedded analytics web component**
+  (`/static/maverick-analytics.js` + `/embed-demo`): a self-contained
+  `<maverick-analytics>` custom element (Shadow DOM, no framework, no CDN)
+  fetching the real spend + goals endpoints and hand-drawing SVG
+  sparklines/bars; same-origin/token limits documented in the JS header and
+  on the demo page; errors render as HTTP status, never fake data.
+- **Benchmark live dashboard** (`/benchmarks` + `GET /api/v1/benchmarks`):
+  per-suite trend sparklines + regression verdicts over the real
+  `continuous_benchmark` history (`bench_track`), via the real
+  `detect_regression`; honest empty state naming the record command. No
+  fabricated competitor numbers — this page is *this deployment's* recorded
+  runs.
+- **Embedded video walkthroughs** (`/walkthroughs` + `POST
+  /api/v1/goals/{id}/walkthrough`): standardizes `~/.maverick/walkthroughs/`,
+  drives the real `replay_video.render` (sandbox-mediated ffmpeg; reports
+  encoded vs manifest-only honestly with the exact argv), generates a real
+  WebVTT captions track from the storyboard frames, and lists MP4s with
+  native `<video controls>` + `<track>`; strict name-pattern media serving.
+- **3D plan tree** (`/plan-tree-3d`): raw WebGL (no three.js) point-sprite
+  nodes + line edges over the same `goal-tree` endpoint, orbit/zoom,
+  click-to-focus overlay; the text tree is always present in `<details>`
+  as the accessible/no-WebGL representation, and the WebXR "Enter VR"
+  button appears only when `navigator.xr` reports support (untested
+  without headset hardware — stated on the page).
+- **RTL language support** (`i18n.py` `RTL_LANGS` + `dir_for()`):
+  `dir="rtl"` driven by the active language (ar/he/fa/ur) through the
+  existing lang resolution, logical-property CSS in the base layout, and an
+  Arabic community-seed catalog (genuinely translated starter keys, English
+  fallback; he/fa/ur activate the moment a catalog lands — they're not
+  offered in the picker until one does, to avoid implying support).
 - **Live-run IDE extensions** (`apps/vscode-extension/` +
   `apps/jetbrains-plugin/`): the VS Code extension gains "Watch run live" /
   "Stop live watch" — a dependency-free SSE tail of the dashboard's

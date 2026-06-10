@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (
+    FileResponse,
     HTMLResponse,
     JSONResponse,
     PlainTextResponse,
@@ -71,6 +72,7 @@ templates.env.globals.setdefault("lang", "en")
 templates.env.globals.setdefault("density", "comfortable")
 templates.env.globals.setdefault("custom_theme_css", "")
 templates.env.globals.setdefault("custom_theme_names", [])
+templates.env.globals.setdefault("dir", "ltr")
 from .i18n import t as _i18n_t  # noqa: E402
 from .themes import custom_themes, theme_css  # noqa: E402
 
@@ -143,7 +145,7 @@ def _resolve_font(request: Request) -> str:
 # body class + the theme switcher links, the `font` accessibility axis,
 # and the chrome-i18n helpers (`lang`, `t`).
 def _theme_context(request: Request) -> dict:
-    from .i18n import resolve_lang
+    from .i18n import dir_for, resolve_lang
     from .i18n import t as _t
     lang = resolve_lang(request)
     custom = custom_themes()
@@ -154,6 +156,7 @@ def _theme_context(request: Request) -> dict:
         "custom_theme_css": theme_css(custom),
         "custom_theme_names": sorted(custom),
         "lang": lang,
+        "dir": dir_for(lang),
         "t": lambda key: _t(key, lang),
     }
 
@@ -2922,6 +2925,142 @@ async def api_goal_events_stream(request: Request, goal_id: int, since: int = 0)
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",  # nginx/caddy: disable response buffering
         },
+    )
+
+
+# ----- roadmap cluster: graph editor / goal builder / embed / benchmarks /
+#       walkthroughs / 3D plan tree -----
+
+_STATIC_DIR = Path(__file__).parent / "static"
+
+
+@app.get("/static/maverick-analytics.js")
+async def embed_analytics_js() -> FileResponse:
+    """The embeddable ``<maverick-analytics>`` web component (plain JS, no
+    framework). See the file's header comment for the same-origin + token
+    caveats; /embed-demo shows it running."""
+    return FileResponse(
+        _STATIC_DIR / "maverick-analytics.js",
+        media_type="application/javascript; charset=utf-8",
+    )
+
+
+@app.get("/graph-editor", response_class=HTMLResponse)
+async def graph_editor_page(request: Request) -> HTMLResponse:
+    """Visual graph editor: the goal forest as an editable SVG node graph.
+
+    Layout comes from the server (GET /api/v1/goal-tree); the page JS only
+    draws and posts edits (retitle / re-parent / add child)."""
+    from .goal_tree import forest_html, goal_nodes
+    nodes = goal_nodes(_world(), owner=goal_owner_filter(request))
+    return templates.TemplateResponse(
+        request, "graph_editor.html",
+        {"node_count": len(nodes), "fallback_html": forest_html(nodes)},
+    )
+
+
+@app.get("/goal-builder", response_class=HTMLResponse)
+async def goal_builder_page(request: Request) -> HTMLResponse:
+    """Drag-and-drop goal builder: compose a brief from blocks, then run it."""
+    return templates.TemplateResponse(request, "goal_builder.html", {})
+
+
+@app.get("/embed-demo", response_class=HTMLResponse)
+async def embed_demo_page(request: Request) -> HTMLResponse:
+    """Demo + honest usage notes for the <maverick-analytics> web component."""
+    return templates.TemplateResponse(request, "embed_demo.html", {})
+
+
+def _sparkline_points(values: list[float], width: int = 160, height: int = 36,
+                      pad: int = 3) -> str:
+    """SVG polyline ``points`` for a score series (server-side sparkline)."""
+    if not values:
+        return ""
+    lo, hi = min(values), max(values)
+    span = (hi - lo) or 1.0
+    n = len(values)
+    pts = []
+    for i, v in enumerate(values):
+        x = pad + (width - 2 * pad) * (i / (n - 1) if n > 1 else 0.5)
+        y = pad + (height - 2 * pad) * (1 - (v - lo) / span)
+        pts.append(f"{x:.1f},{y:.1f}")
+    return " ".join(pts)
+
+
+@app.get("/benchmarks", response_class=HTMLResponse)
+async def benchmarks_page(request: Request) -> HTMLResponse:
+    """Continuous-benchmark history: this deployment's recorded runs only.
+
+    Per-suite trend sparklines + a comparison table over the real
+    ``~/.maverick/benchmarks/history.json`` store. No competitor numbers are
+    shown or invented here — see docs/comparison.md for the qualitative
+    comparison."""
+    from .api import _benchmark_snapshot
+    snap = _benchmark_snapshot()
+    for s in snap["suites"]:
+        s["spark"] = _sparkline_points([e["score"] for e in s["entries"]])
+    return templates.TemplateResponse(request, "benchmarks.html", snap)
+
+
+@app.get("/walkthroughs", response_class=HTMLResponse)
+async def walkthroughs_page(request: Request) -> HTMLResponse:
+    """Locally exported run walkthrough videos (no external hosting).
+
+    Lists the MP4s under the walkthroughs dir with native <video> embeds and
+    a captions track when the export produced one. The export itself is
+    POST /api/v1/goals/{id}/walkthrough (replay-to-MP4 machinery)."""
+    from .api import _walkthroughs_dir
+    d = _walkthroughs_dir()
+    items = []
+    if d.is_dir():
+        for p in sorted(d.glob("*.mp4"), key=lambda q: q.stat().st_mtime,
+                        reverse=True):
+            m = re.fullmatch(r"goal-(\d+)\.mp4", p.name)
+            items.append({
+                "name": p.name,
+                "size_mb": round(p.stat().st_size / 1_048_576, 2),
+                "mtime": p.stat().st_mtime,
+                "captions": (p.with_suffix(".vtt").name
+                             if p.with_suffix(".vtt").exists() else None),
+                "goal_id": int(m.group(1)) if m else None,
+            })
+    # NB: not named "dir" — the context processor injects the page's text
+    # direction under that key (RTL support) and would shadow it.
+    return templates.TemplateResponse(
+        request, "walkthroughs.html", {"items": items, "artifact_dir": str(d)},
+    )
+
+
+_WALKTHROUGH_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+\.(mp4|vtt)$")
+
+
+@app.get("/walkthroughs/media/{name}")
+async def walkthrough_media(name: str) -> FileResponse:
+    """Serve one exported walkthrough artifact, strictly from the
+    walkthroughs dir (the name pattern admits no path separators)."""
+    from .api import _walkthroughs_dir
+    if not _WALKTHROUGH_NAME_RE.match(name):
+        raise HTTPException(status_code=400, detail="invalid walkthrough name")
+    path = _walkthroughs_dir() / name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="no such walkthrough")
+    media = "video/mp4" if name.endswith(".mp4") else "text/vtt"
+    return FileResponse(path, media_type=media)
+
+
+@app.get("/plan-tree-3d", response_class=HTMLResponse)
+async def plan_tree_3d_page(request: Request) -> HTMLResponse:
+    """The goal forest in 3D (vanilla WebGL; no three.js, no CDN).
+
+    Progressive enhancement: without WebGL (or JS) the server-rendered text
+    tree IS the page — it is also always present in a <details> for screen
+    readers. WebXR shows an "Enter VR" button only when the browser reports
+    support."""
+    from .goal_tree import forest_html, goal_nodes
+    nodes = goal_nodes(_world(), owner=goal_owner_filter(request))
+    return templates.TemplateResponse(
+        request, "plan_tree_3d.html",
+        {"node_count": len(nodes), "fallback_html": forest_html(nodes)},
     )
 
 

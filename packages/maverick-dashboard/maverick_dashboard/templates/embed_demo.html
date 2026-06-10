@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}embed analytics · Maverick{% endblock %}
+{% block content %}
+<h2>embeddable analytics component</h2>
+<div class="panel">
+  <p>
+    <code>&lt;maverick-analytics&gt;</code> is a self-contained web component
+    (no framework, no CDN) served by this dashboard at
+    <a href="/static/maverick-analytics.js"><code>/static/maverick-analytics.js</code></a>.
+    It reads the existing <code>/api/v1/spend</code> and
+    <code>/api/v1/goals</code> endpoints and draws its charts as inline SVG.
+    Below is a live instance running against this deployment:
+  </p>
+  <maverick-analytics></maverick-analytics>
+</div>
+
+<h2>using it on another page</h2>
+<div class="panel">
+  <pre style="overflow-x: auto;">&lt;script src="http://YOUR-DASHBOARD:8765/static/maverick-analytics.js"&gt;&lt;/script&gt;
+&lt;maverick-analytics
+    endpoint="http://YOUR-DASHBOARD:8765"
+    token="YOUR-MAVERICK_DASHBOARD_TOKEN"&gt;&lt;/maverick-analytics&gt;</pre>
+  <h3 style="font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;">Honest limits</h3>
+  <ul class="muted" style="font-size: 0.9rem;">
+    <li><strong>Same-origin requirement.</strong> The dashboard sends no CORS
+      headers, so a page on a different origin cannot fetch its API — the
+      browser blocks it. Embed on a page served by the dashboard itself (like
+      this one) or behind the same reverse proxy / hostname.</li>
+    <li><strong>Token exposure.</strong> A <code>token</code> attribute is
+      visible to anyone who can read the embedding page's HTML, and it grants
+      full dashboard API access. Only embed on pages whose audience you would
+      trust with the dashboard itself. In no-token loopback mode, omit the
+      attribute entirely.</li>
+    <li><strong>Read-only data.</strong> The component only performs GETs
+      against existing endpoints; it renders exactly what they return and
+      shows the HTTP error when a fetch fails.</li>
+  </ul>
+</div>
+<script src="/static/maverick-analytics.js"></script>
+{% endblock %}

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}benchmarks · Maverick{% endblock %}
+{% block content %}
+<h2>benchmark history</h2>
+<div class="panel">
+  {% if suites %}
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">suite</th>
+          <th scope="col">runs</th>
+          <th scope="col">latest</th>
+          <th scope="col">baseline (mean of prior runs)</th>
+          <th scope="col">Δ</th>
+          <th scope="col">trend</th>
+          <th scope="col">verdict</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in suites %}
+        <tr>
+          <td><code>{{ s.name }}</code></td>
+          <td>{{ s.runs }}</td>
+          <td>{{ '%.4f'|format(s.latest) }}</td>
+          <td class="muted">{{ '%.4f'|format(s.baseline_mean) if s.baseline_mean is not none else '—' }}</td>
+          <td class="muted">{{ '%+.4f'|format(s.delta) if s.baseline_mean is not none else '—' }}</td>
+          <td>
+            <svg width="160" height="36" role="img"
+                 aria-label="score trend for {{ s.name }}: {{ s.runs }} runs, latest {{ '%.4f'|format(s.latest) }}">
+              <polyline points="{{ s.spark }}" fill="none"
+                        stroke="{{ 'var(--danger)' if s.regressed else 'var(--accent)' }}"
+                        stroke-width="1.5"/>
+            </svg>
+          </td>
+          <td>
+            {% if s.regressed %}
+              <span class="badge failure">regression −{{ '%.1f'|format(s.drop_pct * 100) }}%</span>
+            {% else %}
+              <span class="badge success">ok</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted" style="font-size: 0.8rem;">
+      A suite regresses when its latest score drops more than 5% below the
+      mean of the preceding runs (up to 5) —
+      <code>maverick.continuous_benchmark.detect_regression</code>.
+    </p>
+  {% else %}
+    <div style="text-align: center; padding: 2.5rem 1rem;">
+      <h3 style="margin: 0 0 0.75rem; text-transform: none; letter-spacing: 0; font-size: 1.1rem; color: var(--text);">No benchmark runs recorded</h3>
+      <p class="muted" style="margin-bottom: 1.5rem;">
+        Scores land here when a run records them with the
+        <code>bench_track</code> tool, e.g.:
+      </p>
+      <pre style="background: var(--bg); padding: 0.85rem 1rem; border-radius: 6px; display: inline-block; text-align: start; margin: 0;">bench_track op=record name=swe_bench score=0.42 commit=abc123</pre>
+      <p class="muted" style="margin-top: 1.5rem; font-size: 0.85rem;">
+        or from Python:
+        <code>maverick.continuous_benchmark.record_result(...)</code> +
+        <code>save_history(...)</code>. History persists at
+        <code>{{ history_path }}</code>.
+      </p>
+    </div>
+  {% endif %}
+</div>
+<p class="muted" style="font-size: 0.8rem;">
+  This page shows <strong>this deployment's recorded runs only</strong> — no
+  competitor numbers are shown or invented here. For the qualitative
+  comparison with other agents, see <code>docs/comparison.md</code> in the
+  Maverick repository.
+</p>
+{% endblock %}
