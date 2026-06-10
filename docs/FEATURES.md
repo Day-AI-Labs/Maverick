@@ -1235,6 +1235,12 @@ tested without spawning py-spy.
   how much went to **failed** work (effort with no delivered result), how
   concentrated spend is (a Pareto signal), and rule-based observations to act
   on. Deterministic over the world model; read-only.
+- **Mobile push v2** (`push_v2.py`): a device registry layered on the v1
+  notify path — each device registers a backend, a minimum priority floor,
+  and optional quiet hours; routing fans out only to eligible devices, with
+  `urgent` always breaking through quiet hours (page-me semantics); every
+  fan-out lands in a bounded delivery ledger so "did my phone get that?" is
+  answerable.
 - **Smart notification batching** — opt-in `[notifications]
   batch_window_seconds` (`notification_batcher.py`): coalesces the
   low/normal-priority push stream (ntfy/Pushover/Discord/Slack) into one
