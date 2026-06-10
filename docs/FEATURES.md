@@ -393,7 +393,12 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   Cursor) drives Maverick through it; the editor-specific packages
   (`apps/vscode-extension`, `apps/emacs`, `apps/nvim`) are thin CLI fronts,
   not parallel protocols.
-- **A2A** (`a2a.py`, `a2a_tasks.py`) — Agent Card discovery + delegation.
+- **A2A** (`a2a.py`, `a2a_tasks.py`) — Agent Card discovery + delegation, with
+  the **interop consuming half** (`validate_agent_card` spec-shape lint,
+  `parse_remote_card` normalization that refuses a non-conformant card before
+  anything delegates against it) proven both ways by interop tests: Maverick's
+  own card passes its own validator, and third-party-shaped fixture cards
+  (rich + minimal) parse correctly.
 - **gRPC dispatch** (`grpc_dispatcher.py`, opt-in `[grpc_dispatch] target`)
   — execute goals on a remote Maverick worker over gRPC: a `RunGoal` RPC runs
   an existing goal row to completion (API and worker share the Postgres world

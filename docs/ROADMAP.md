@@ -67,7 +67,8 @@ KMS + egress, operator console) have **shipped** — see
 
 Recorded under [`docs/specs/`](./specs/): *park* the learning substrate
 (revisit on a trajectory-volume tripwire); adopt A2A's Agent Card and *cut* the
-homegrown ACD; *freeze breadth, invest in depth* — re-home the ~47-connector
+homegrown ACD (this also resolves the former 'ACD spec v1.0/v1.1' roadmap
+entries — never to be authored — and the interop tests shipped against A2A); *freeze breadth, invest in depth* — re-home the ~47-connector
 tail to the plugin/registry tier with a deprecation window.
 
 ### Accuracy caveats
@@ -118,7 +119,7 @@ single-run inflation) — run multi-seed.
 | **Distribution** | Windows MSI · marketplace moderation tooling · sponsorship tiers · conference physical booth · swag store · ambassadors program · long-form handbook · Skill of the Year award · mobile companion app v1 (read-only) · self-hosted relay reference · localized docs phase 4 (ko/ru/it/hi) · video season 3 · skill search engine (HF) · annual community survey · foundation exploration |
 | **Performance** | JIT consideration (mypyc/cython on hot path) · compaction v5 multi-modal · 2-year retrospective |
 | **Safety** | eBPF syscall monitor · memory-safe parsers · sigstore keyless signing · federated shield model updates · annual safety report |
-| **Ecosystem** | ACD spec v1.0 · Redis world-model · DuckDB world-model *transactional backend* (declined — OLAP engine, wrong for the concurrent OLTP write path; the **DuckDB analytics layer** over the world model shipped instead, see FEATURES) · Cloudflare Workers + Modal sandboxes |
+| **Ecosystem** | Redis world-model · DuckDB world-model *transactional backend* (declined — OLAP engine, wrong for the concurrent OLTP write path; the **DuckDB analytics layer** over the world model shipped instead, see FEATURES) · Cloudflare Workers + Modal sandboxes |
 
 ---
 
@@ -131,7 +132,7 @@ single-run inflation) — run multi-seed.
 | **Distribution** | 2.0 stable release · migration playbook · marketplace v3 (donate-direct model) · Maverick Summit v2 (hybrid) · editor expansion (JetBrains/Neovim/Zed) · localized docs phase 5 (top-15 langs + MT pipeline) · "Built with Maverick" badge program · comparison benchmark v3 live dashboard · university curriculum kit · foundation paperwork submitted · ARM/RISC-V builds · iOS/Android skill execution (Pyodide/Kivy) · skill + channel certification programs · community grants v1 · regional meetup playbook · embeddable widget · hosted demo cluster (demo.maverick.dev) · press push to major outlets · sponsor tier 2 |
 | **Performance** | Speculative best-of-N (kill underperformers at first reasoning checkpoint) · compaction v6 hybrid (learned classifier picks strategy) · sub-ms dispatch overhead (msgspec/orjson) · sandbox pool (Firecracker-warm + cross-run pooling — warm Docker container reuse shipped) · cache-aware prompt assembly DSL · compaction v7 streaming |
 | **Safety** | misuse leaderboard removal · safety steering group · formal verification of sandbox interface (TLA+) · backport security fixes · external SOC2 Type I |
-| **Ecosystem** | Multi-language plugin support (gRPC plugin host) · browser-extension chat · marketplace moderation tools · ACD interop tests · voice channel v2 (streaming ASR + barge-in) |
+| **Ecosystem** | Multi-language plugin support (gRPC plugin host) · browser-extension chat · marketplace moderation tools · voice channel v2 (streaming ASR + barge-in) |
 
 ---
 
@@ -144,7 +145,7 @@ single-run inflation) — run multi-seed.
 | **Distribution** | Maverick Conference v3 (in-person flagship) · hackathon series · localized communities (top 5 non-English) · skill marketplace federation · channel federation · public roadmap voting · press kit v2 + case studies · comparison benchmark v4 with reproducibility audits · handbook v2 · "5-year vision" essay · foundation hand-off · governance v2 launch (elected TSC) · documentation rewrite · tutorial season 4 · survey v3 + retrospective · sponsor renewal drive · HF Space spotlight · awards push · 2029 roadmap publication |
 | **Performance** | compaction v8 graph-structured · critical-path-aware parallel *scheduling* (the **critical-path analysis** shipped on `task_graph` — `op: critical`, the longest weighted dependency chain; the scheduler wiring remains) · provider-side caching analytics · 3-year retrospective benchmark · reliability cert · public perf SLA · sunset deprecated paths |
 | **Safety** | Shield v3 (trained small-model members + a policy member — the **ensemble framework + explainable reason codes shipped** with the heuristic injection/exfil/PII members, see FEATURES) · air-gapped mode runtime *enforcement* (the **preflight verification** `maverick airgap check` shipped — audits for remote providers / non-deny-all egress / sandbox network; see FEATURES) · confidential-compute support (SEV-SNP/TDX) — attestation + memory-encryption integration (the **detection/posture check** `maverick confidential-compute` shipped; needs the hardware for the rest) · adversarial-prompt corpus release · AI Act conformance package · vuln reward expansion · third-party pen test · federated audit-log verification · consent ergonomics pass · 36-month safety retrospective · sunset policy · LTS safety branch (2-year support) |
-| **Ecosystem** | Plugin signing CA · capability negotiation at swarm boot · gRPC API v1 stable · federated swarms over gRPC · plugin API v3 RFC (if warranted) · ACD spec v1.1 · multi-tenant `maverick serve` · long-running plugin reliability suite · 3-year retrospective + 2029-2031 plan |
+| **Ecosystem** | Plugin signing CA · capability negotiation at swarm boot · gRPC API v1 stable · federated swarms over gRPC · plugin API v3 RFC (if warranted) · multi-tenant `maverick serve` · long-running plugin reliability suite · 3-year retrospective + 2029-2031 plan |
 
 ---
 
