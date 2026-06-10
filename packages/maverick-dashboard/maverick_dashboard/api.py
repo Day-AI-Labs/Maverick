@@ -455,6 +455,16 @@ class CatalogInstallIn(BaseModel):
     name: str = Field(..., max_length=200)
 
 
+@router.get("/marketplace/stats")
+async def marketplace_stats() -> dict:
+    """Aggregate stats over the local ratings ledger (total / average / 1–5★
+    distribution / per-kind / top-rated). Self-host-first: the operator's own
+    ratings, the JSON face of the marketplace stats view."""
+    from maverick.marketplace_ratings import RatingsLedger
+    from maverick.marketplace_stats import summarize
+    return summarize(RatingsLedger())
+
+
 @router.get("/catalog/{kind}")
 async def catalog_list(kind: str) -> dict:
     """List federated catalog entries for a kind (skills/plugins/mcp/personas).

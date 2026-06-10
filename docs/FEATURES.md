@@ -743,6 +743,10 @@ tested without spawning py-spy.
   renders ★-bars, and a local ledger (`marketplace_ratings.py`,
   `maverick template rate <name> <1-5>` / `ratings-export`) keeps your own
   ratings ready for an index-PR submission — no hosted ratings service.
+- **Marketplace stats** — `GET /api/v1/marketplace/stats` (`marketplace_stats.py`):
+  aggregates the local ratings ledger into total / average / 1–5★ distribution /
+  per-kind breakdown / top-rated — the JSON face of the stats view. Self-host-first
+  (the operator's own ratings; no hosted community service); pure aggregation.
 - **Skill validator service** — `POST /api/v1/skills/validate` on the
   dashboard: lint a SKILL.md body (same linter as `maverick skill validate`)
   from CI or an editor against a self-hosted instance; size-capped, nothing
