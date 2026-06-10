@@ -551,6 +551,7 @@ def base_registry(  # noqa: C901
     from .autogen_adapter import autogen_adapter
     from .bias_eval import bias_eval
     from .bitbucket_tool import bitbucket_tool
+    from .breach_notification import breach_notification
     from .budget_status import budget_status
     from .cache_admin import cache_admin
     from .cache_eviction import cache_eviction
@@ -806,6 +807,7 @@ def base_registry(  # noqa: C901
     reg.register(anomaly_scan())
     reg.register(k_anonymity())
     reg.register(retention_check())
+    reg.register(breach_notification())
     reg.register(supply_chain_pin())
     reg.register(quorum_approval())
     reg.register(crypto_budget_receipt())
