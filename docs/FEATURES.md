@@ -238,6 +238,14 @@ here.
   `[plugins] grpc = [{target, command}]`) carries the same contract over gRPC
   for any language: Describe → Tools, Call with a deadline, scrubbed-env spawn,
   reconnect/respawn-once.
+  **Retrospective generators (time-gated runs)** — the 2-/36-month
+  retrospectives ship as period generators the operator runs at the mark:
+  `safety_report` (safety), `benchmark_retrospective` (perf), and
+  **`ux_retrospective.py`** (`python -m maverick.ux_retrospective`): goal
+  volume/outcomes, top task verbs, channel mix, approval friction over a
+  window, plus a **reset worksheet** whose questions are answered from the
+  data rows (zero-use surfaces to cut, friction concentrations, dominant
+  verbs); empty sections say so.
   **AI Act conformance package** (`ai_act_package.py`, `python -m
   maverick.ai_act_package [-o out.md]`): assembles the Art. 11 / Annex IV
   technical-documentation skeleton from the deployment's *recorded* posture —
