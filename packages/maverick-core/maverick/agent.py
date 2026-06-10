@@ -133,6 +133,7 @@ _NET_TOOL_URL_ARGS: dict[str, str] = {
     "http_fetch": "url",
     "browser": "url",
     "oidc": "token_url",
+    "oauth_helper": "token_url",
 }
 
 

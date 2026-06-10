@@ -84,6 +84,41 @@ def test_errors_shaped(monkeypatch):
     assert out.startswith("ERROR: token refresh failed")
 
 
+def test_no_access_token_error_does_not_echo_response(monkeypatch):
+    import maverick.tools.oauth_helper as mod
+
+    monkeypatch.setattr(mod, "_post_form",
+                        lambda url, data: {"internal_secret": "IMDS-ROLE-CREDS-ABC123"})
+    out = _t().fn({"op": "exchange", "token_url": "https://x/t",
+                   "client_id": "c", "code": "k", "redirect_uri": "https://r"})
+    assert out == "ERROR: no access_token in response"
+    assert "IMDS-ROLE-CREDS-ABC123" not in out
+
+
+def test_token_post_requires_https_before_network():
+    import maverick.tools.oauth_helper as mod
+    import pytest
+
+    with pytest.raises(ValueError, match="token_url must be https"):
+        mod._post_form("http://127.0.0.1/token", {"grant_type": "refresh_token"})
+
+
+def test_token_post_rejects_private_resolved_host(monkeypatch):
+    import socket
+
+    import maverick.tools.oauth_helper as mod
+    import pytest
+    from maverick.tools._ssrf import BlockedHost
+
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 0))],
+    )
+    with pytest.raises(BlockedHost):
+        mod._post_form("https://localhost/token", {"grant_type": "refresh_token"})
+
+
 def test_registered():
     from maverick.tools import base_registry
 
