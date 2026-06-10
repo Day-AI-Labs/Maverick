@@ -787,10 +787,12 @@ def base_registry(  # noqa: C901
     reg.register(tool_call_inspector())
     from .image_content_classifier import image_content_classifier
     from .lsp_bridge import lsp_bridge
+    from .oauth_helper import oauth_helper
     from .template_generator import template_generator
     reg.register(template_generator())
     reg.register(image_content_classifier())
     reg.register(lsp_bridge())
+    reg.register(oauth_helper())
     reg.register(a11y_tree())
     reg.register(ai_act_classifier())
     reg.register(cache_admin())

@@ -90,7 +90,10 @@ here.
   any S3-compatible bucket + `s3_fetch` pulls it down on another worker host;
   local disk stays the source tools read, mirror is fail-open), `license_scan`
   (classify deps + flag copyleft), `self_capability` (report the run's capability
-  grant), `oidc` (OIDC authorization-code client), `cost_curve` (per-provider cost
+  grant), `oidc` (OIDC authorization-code client), `oauth_helper` (generic OAuth2 for
+  any provider — PKCE authorize URL / code exchange / refresh; token responses
+  summarised with a sha fingerprint and never echoed into context, full tokens
+  land in a 0600 MAVERICK_OAUTH_OUT file), `cost_curve` (per-provider cost
   model), `bench_track` (record benchmark scores + flag regressions), `teams`
   (Microsoft Teams webhook), `knowledge_graph` (extract/query/render
   subject-relation-object triples; no external graph DB), `cross_repo_deps`
