@@ -381,4 +381,10 @@ trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
   wrapper (`maverick-action`).
 - **Docs** — MkDocs site, [getting started](./getting-started.md), 30-recipe
   [cookbook](./cookbook/), [architecture](./architecture.md),
-  [embedding guide](./embedding.md), [security hardening](./security-hardening.md).
+  [embedding guide](./embedding.md), [security hardening](./security-hardening.md),
+  [comparison page](./comparison.md) (Maverick vs the field, claims grounded in
+  this catalogue), [press kit](./press-kit.md), [showcase wall](./showcase.md)
+  (built-with-Maverick submissions by PR), and a self-serve
+  [observability integrations guide](./integrations/observability-partners.md)
+  (OpenRouter provider, OTLP-generic tracing incl. LangSmith, Helicone via
+  base_url override).

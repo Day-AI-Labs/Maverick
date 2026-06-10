@@ -103,6 +103,7 @@ nav:
       - Architecture: enterprise/architecture.md
       - Diligence data room: enterprise/diligence.md
   - Strategy:
+      - Maverick vs the field: comparison.md
       - Competitive landscape: strategy/competitive-landscape.md
       - Moat & acquisition: strategy/moat-and-acquisition.md
       - Design-partner scorecard: strategy/design-partner-scorecard.md
@@ -110,6 +111,9 @@ nav:
   - Roadmap:
       - 36-month plan: ROADMAP.md
   - Community:
+      - Showcase: showcase.md
+      - Press kit: press-kit.md
+      - Observability integrations: integrations/observability-partners.md
       - Contributing: CONTRIBUTING.md
       - Code of Conduct: CODE_OF_CONDUCT.md
       - Security policy: SECURITY.md
