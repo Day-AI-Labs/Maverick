@@ -227,7 +227,12 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
 - **Cross-language quickstarts** — TypeScript, Go, Rust, C#, Java (`docs/clients/`).
 - **LangChain / LangGraph interop** (`langchain_adapter.py`, `[langchain]` extra)
   — expose the Maverick swarm as a LangChain `StructuredTool`, and wrap any
-  LangChain `BaseTool` as a Maverick tool.
+  LangChain `BaseTool` as a Maverick tool. **AutoGen + CrewAI adapters**
+  (`agent_framework_adapters.py`): the same two directions for both frameworks
+  — Maverick as an AutoGen `FunctionTool` (or a dependency-free typed
+  callable) and as a CrewAI `BaseTool`; `wrap_autogen_tool` /
+  `wrap_crewai_tool` adapt their tools into Maverick `Tool`s (duck-typed,
+  lazy imports, actionable install hints).
 - **MCP-client language analytics** (`mcp_analytics.py`) — opt-in, consent-gated
   tally of client language (from the User-Agent) that feeds the language-bindings
   decision gate (`non_python_share()`); off by default, consent step in the
