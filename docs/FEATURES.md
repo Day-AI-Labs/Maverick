@@ -1639,15 +1639,38 @@ tested without spawning py-spy.
   gates (fenced code preserved, glossary + structure verified before
   anything is written, human translations never overwritten); `--check` is
   offline, and the model resolves by the `translator` role.
-- **Distribution program kits** ([`docs/programs/`](./programs/)): 17
-  runnable playbooks — Summit v1 (virtual), university outreach,
-  integration partnerships (business half), GitHub Stars campaign, office
-  hours, sponsorship tiers, conference booth, swag, ambassadors, Skill of
-  the Year, community survey, foundation exploration, badge program,
-  curriculum kit, community grants, regional meetups, and press kit v2 +
-  an evidence-gated case-study template. Each kit reuses the shipped
-  machinery (skill validator, moderation gauntlet, ratings, plugin matrix
-  CI, sigstore/CA signing, retrospective generators) instead of inventing
-  parallel process; founder decisions (amounts, dates, license grants) are
-  explicitly marked, never invented; executing the programs is a
-  maintainer act.
+- **Distribution program kits** ([`docs/programs/`](./programs/)): 24
+  runnable playbooks — Summit v1 (virtual) + Summit v2 (hybrid delta) +
+  Conference v3 (flagship delta), university outreach, integration
+  partnerships (business half), GitHub Stars campaign, office hours,
+  sponsorship tiers (incl. the tier-2 gate + renewal terms), conference
+  booth, swag, ambassadors, Skill of the Year, community survey,
+  foundation exploration, badge program, curriculum kit, community grants,
+  regional meetups, hackathon series, localized communities, public
+  roadmap voting, skill + channel certification (mechanical bars over the
+  real gates), tutorial video seasons 2-4 (per-episode scripts, every
+  command verified), and press kit v2 + an evidence-gated case-study
+  template. Each kit reuses the shipped machinery (skill validator,
+  moderation gauntlet, ratings, plugin matrix CI, sigstore/CA signing,
+  retrospective generators) instead of inventing parallel process; founder
+  decisions (amounts, dates, license grants) are explicitly marked, never
+  invented; executing the programs is a maintainer act.
+- **2.0 release machinery** ([`docs/migration-2.0.md`](./migration-2.0.md)
+  + [`docs/release-checklist-2.0.md`](./release-checklist-2.0.md)): the
+  operator migration playbook (rehearsable today — snapshot, `maverick
+  migrate`/`schema-plan`/`config-lint` dry runs, apply, verify, rollback)
+  and the release gate the maintainer cut runs through (CI matrix,
+  contract checks, deprecation sunsets, migration rehearsal, LTS branch
+  cut, signing). **Governance**: the Safety Steering Group charter
+  ([`docs/governance/safety-steering-group.md`](./governance/safety-steering-group.md))
+  and the elected-TSC charter draft with explicit launch gates
+  ([`docs/governance/governance-v2-tsc.md`](./governance/governance-v2-tsc.md)).
+  **Strategy**: the five-year vision essay
+  ([`docs/strategy/vision-2031.md`](./strategy/vision-2031.md)), every
+  backward-looking claim grounded in this catalogue.
+- **AR plan tree (visionOS scaffold)** (`apps/visionos-plan-tree/`):
+  SwiftUI + RealityKit volumetric window rendering the goal forest from
+  `GET /api/v1/goal-tree` — status-colored spheres, parent link bars,
+  pinch-to-inspect card; read-only, bearer-token honored. Building/tuning
+  needs Xcode + the visionOS SDK (and honest on-device verification is
+  flagged in the source), per the watch-glance scaffold posture.
