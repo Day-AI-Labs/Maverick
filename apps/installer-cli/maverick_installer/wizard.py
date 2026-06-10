@@ -1220,6 +1220,18 @@ def pick_advanced() -> dict[str, Any]:
             "on demand. Big context savings when many tools are enabled.",
             default=False,
         ),
+        "shield_updates": _q_confirm(
+            "Pull signed shield-rule updates? Fetches a publisher-signed rules "
+            "bundle ([shield] update_url + update_pubkey; Ed25519-verified, "
+            "downgrades refused) and stages it for the shield. Off by default.",
+            default=False,
+        ),
+        "ebpf_monitor": _q_confirm(
+            "Enable the eBPF syscall monitor? An operator-run bpftrace "
+            "supervisor tracing execve/connect/openat for the agent's PID tree "
+            "(needs root + bpftrace at runtime). Off by default.",
+            default=False,
+        ),
         "local_runtime": _q_confirm(
             "Manage a local model server (vLLM / TGI / llama.cpp)? Writes "
             "[local_runtime] so `maverick local-runtime plan` composes the "
@@ -2469,6 +2481,16 @@ def write_config(  # noqa: C901
             lines.append("")
             lines.append("[tools]")
             lines.extend(tool_lines)
+        if advanced.get("shield_updates"):
+            lines.append("")
+            lines.append("[shield]")
+            lines.append("federated_updates = true")
+            lines.append('# update_url    = "https://..."  # REQUIRED')
+            lines.append('# update_pubkey = "<ed25519 hex>"  # REQUIRED')
+        if advanced.get("ebpf_monitor"):
+            lines.append("")
+            lines.append("[ebpf_monitor]")
+            lines.append("enable = true")
         if advanced.get("local_runtime"):
             lines.append("")
             lines.append("[local_runtime]")

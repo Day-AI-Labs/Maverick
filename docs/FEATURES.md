@@ -238,6 +238,32 @@ here.
   `[plugins] grpc = [{target, command}]`) carries the same contract over gRPC
   for any language: Describe → Tools, Call with a deadline, scrubbed-env spawn,
   reconnect/respawn-once.
+  **Sigstore keyless signing** (`sigstore_signing.py`, `[sigstore]` extra,
+  `python -m maverick.sigstore_signing sign|verify`): sign skill/plugin
+  artifacts with sigstore's keyless flow (OIDC identity) into a
+  `.sigstore.json` bundle; verification pins the identity+issuer pair and
+  fails CLOSED on a missing bundle, wrong identity, or absent install —
+  identity-based signing alongside the key-based skill signing and the
+  self-hosted plugin CA.
+  **Federated shield rule updates** (`shield_updates.py`, opt-in `[shield]
+  federated_updates` + `update_url`/`update_pubkey`, wizard step included):
+  pull-based publisher-signed rules bundles (Ed25519 over canonical JSON);
+  unsigned, mis-signed, tampered, downgraded, or un-anchored bundles are
+  refused, and a verified bundle stages `shield_rules.json` (0600) atomically —
+  the kernel never imports the shield itself (rule 1).
+  **Annual safety report generator** (`safety_report.py`, `python -m
+  maverick.safety_report --since --until`): aggregates what the deployment
+  actually recorded — shield blocks, capability denials, killswitch
+  activations, consent decisions, erasure requests, red-team/calibration
+  results when present — into a markdown report with explicit reporting-period
+  and data-available sections; empty sections say so, nothing fabricated.
+  **eBPF syscall monitor** (`ebpf_monitor.py`, opt-in `[ebpf_monitor] enable`,
+  wizard step included, `python -m maverick.ebpf_monitor program|run`):
+  generates a bpftrace program tracing execve/connect/openat for the agent's
+  PID tree with a validated suspicious-syscall watchlist, supervises it via an
+  injected runner, parses events, and alerts on watchlist hits — generator/
+  parser/supervisor fully offline-tested; the live attach needs root +
+  bpftrace and refuses politely otherwise.
   **Memory-safe parsing of untrusted bytes** (`parser_isolation.py`, opt-in
   `[security] isolate_parsers`): the parsers fed attacker-controllable bytes
   (PDF via pdfplumber/pypdf, images via Pillow) are C-extension-backed — a
