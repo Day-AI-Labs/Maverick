@@ -18,7 +18,6 @@ Pure/offline: a temp ``MAVERICK_HOME`` so nothing touches the real home.
 from __future__ import annotations
 
 import pytest
-from maverick import paths
 from maverick.paths import current_tenant, data_dir, reset_tenant, set_tenant
 
 
