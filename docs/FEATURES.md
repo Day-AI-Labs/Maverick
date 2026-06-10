@@ -513,6 +513,11 @@ and `trace_commit()` reads it back so replays tie to exact code); **cost split b
   (`tutorial_export.py`): the run rendered as step-by-step markdown (goal →
   approach → steps with preserved code fences → dead ends → outcome),
   deterministic templates over the event log, secret-scrubbed, no LLM call.
+  **Cross-run anomaly detection** — `GET /api/v1/goals/{id}/anomalies`
+  (`cross_run_anomaly.py`): a run scored against the deployment's behavioral
+  baseline — novel event kinds (high), event-volume spikes (runaway-loop
+  signal), error-rate spikes — conservative 3σ thresholds, silent on cold
+  deployments (<5 baseline runs); signals for a human, not verdicts.
   **Cost anomaly alerts** — `GET /api/v1/cost/anomalies`: per-goal spend
   outliers above mean + Nσ over the recent window (needs ≥3 priced goals).
   **Accessibility + i18n** — a font axis independent of the theme

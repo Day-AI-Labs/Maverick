@@ -1674,6 +1674,25 @@ async def annotations_add(request: Request, goal_id: int) -> JSONResponse:
     return JSONResponse(entry, status_code=201)
 
 
+@app.get("/api/v1/goals/{goal_id}/anomalies")
+async def goal_anomalies(request: Request, goal_id: int, history: int = 50) -> JSONResponse:
+    """Cross-run anomaly signals for one run vs the deployment baseline."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from maverick.cross_run_anomaly import MIN_BASELINE_RUNS, detect
+    anomalies = detect(w, goal_id, history=max(5, min(int(history), 500)))
+    return JSONResponse({
+        "goal_id": goal_id,
+        "anomalies": [{"kind": a.kind, "severity": a.severity, "detail": a.detail}
+                      for a in anomalies],
+        "note": (f"baseline needs >= {MIN_BASELINE_RUNS} terminal runs before "
+                 "anything can flag"),
+    })
+
+
 @app.get("/api/v1/goals/{goal_id}/tutorial.md")
 async def goal_tutorial(request: Request, goal_id: int) -> PlainTextResponse:
     """Run-as-tutorial export: the run rendered as step-by-step markdown."""
