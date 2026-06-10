@@ -146,8 +146,12 @@ here.
 
 ## Channels
 
-14 wired channels (`packages/maverick-channels/`): Telegram, Discord, Slack,
-Signal, Email, Matrix, Bluesky, Mastodon, Voice (Twilio), WhatsApp, SMS, iMessage
+15 wired channels (`packages/maverick-channels/`): Telegram, Discord, Slack,
+Signal, Email, Matrix, Bluesky, Mastodon, Voice (Twilio), WhatsApp (Twilio),
+**WhatsApp Cloud API** (`whatsapp_cloud.py`: Meta's first-party Graph API —
+GET verification handshake, constant-time `X-Hub-Signature-256` HMAC,
+sender allowlist, atomic message-id dedup claim, chunked outbound; no Twilio
+middleman), SMS, iMessage
 (macOS), **IRC** (channels + DMs, TLS), and a **glasses/wearable** adapter
 (Even Realities G2 "bring your own agent" bridge: the ack-then-run pattern that
 answers quick utterances on the HUD within the device deadline and runs long

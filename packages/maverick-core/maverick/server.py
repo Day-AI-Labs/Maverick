@@ -361,6 +361,21 @@ def _wire_whatsapp(server, cfg):
     ))
 
 
+def _wire_whatsapp_cloud(server, cfg):
+    from maverick_channels.whatsapp_cloud import WhatsAppCloudChannel
+    allowed_user_ids = cfg.get("allowed_user_ids")
+    server.add_channel(WhatsAppCloudChannel(
+        handler=server._handle_message,
+        access_token=cfg.get("access_token") or os.environ.get("WHATSAPP_CLOUD_ACCESS_TOKEN"),
+        phone_number_id=cfg.get("phone_number_id")
+        or os.environ.get("WHATSAPP_CLOUD_PHONE_NUMBER_ID"),
+        verify_token=cfg.get("verify_token") or os.environ.get("WHATSAPP_CLOUD_VERIFY_TOKEN"),
+        app_secret=cfg.get("app_secret") or os.environ.get("WHATSAPP_CLOUD_APP_SECRET"),
+        port=cfg.get("port", 8767),
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+    ))
+
+
 def _wire_sms(server, cfg):
     from maverick_channels.sms import SMSChannel
     allowed_user_ids = cfg.get("allowed_user_ids")
@@ -425,6 +440,7 @@ _WIRES = {
     "bluesky":  _wire_bluesky,
     "mastodon": _wire_mastodon,
     "whatsapp": _wire_whatsapp,
+    "whatsapp_cloud": _wire_whatsapp_cloud,
     "sms":      _wire_sms,
     "imessage": _wire_imessage,
     "voice":    _wire_voice,
