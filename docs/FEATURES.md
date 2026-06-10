@@ -605,7 +605,10 @@ disclaimer always rendered; **Redis tool cache** (`redis_tool_cache.py`,
 reusing the same key canonicalization, namespace-scoped purge, fail-open on
 any Redis error; **WAL contention audit** (`test_wal_contention.py`): pins the
 16-concurrent-writers / zero-lock-errors promise + the WAL/busy_timeout pragmas
-in CI; **query-plan regression CI** (`test_query_plans.py`): hot world-model
+in CI; **cold-start guard** (`test_cli_cold_start.py`): `maverick --help` stays
+fast (~0.1s, well under the 300ms target) because importing the CLI defers
+every heavy/optional dep — a fresh-interpreter test fails CI if a module-level
+`import httpx`/provider-SDK/vector-store/numpy sneaks into the import path; **query-plan regression CI** (`test_query_plans.py`): hot world-model
 queries must SEARCH via an index, never full-scan; **cost-attribution API**
 (`GET /api/v1/cost/by-tag` on the dashboard): spend bucketed by episode/goal
 tag — the JSON face of the tag split for chargeback/BI; **streaming tool_result**
