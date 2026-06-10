@@ -27,12 +27,13 @@ the catalogue of built features and tools. Nothing should appear in both. So
 if something you remember seeing here is gone, it shipped — check
 `FEATURES.md`.
 
-## Current state (June 2026)
+## Current state (June 2026, updated after the 2027-2028 build wave)
 
-The original gap analysis is **done**, along with a large
-governed-agent-runtime surface and a pull-forward build wave that cleared every
-code-buildable item across the 2026 quarters and the 2027 H2 / 2028 waves. All
-of it is catalogued in [`FEATURES.md`](./FEATURES.md).
+The original gap analysis is **done**. Two pull-forward build waves have now
+run: the first cleared the 2026 quarters, and the second (June 10) drove the
+**2027-2028 tables themselves** — 140+ items shipped with tests, including the
+entire 2027-H1 Safety and Ecosystem rows. Everything shipped is catalogued in
+[`FEATURES.md`](./FEATURES.md).
 
 **This is now a governed agent _platform_, not just a local kernel.** The
 three-layer control plane is real — oversight (`governance.py`),
@@ -73,13 +74,21 @@ terminal-bench 2.0) postdate the original author's cutoff — re-verify before
 committing. Vendor benchmark numbers are directional (contamination /
 single-run inflation) — run multi-seed.
 
-> **2026 quarters and the 2027 H2 / 2028 build wave are shipped** — their
-> code-buildable items are in [`FEATURES.md`](./FEATURES.md). What remains
-> below is genuinely unbuilt. Much of it is blocked on a live service, real
-> hardware/GPU, a trained model, a frontend/native surface, or is
-> founder-tracked (community / launch / marketing / localization) — but not
-> all of it: the tables still hold ordinary code-buildable engineering items.
-> Those are future-planned, not blocked.
+> **What remains below is genuinely unbuilt**, and after the June-10 wave the
+> remainder skews heavily toward items NO code change can complete:
+> **live services** (real Redis broker, live IRC, a real G2 device),
+> **hardware/GPU** (Watch/visionOS/AR, embedded JTAG, local-inference KV
+> caches, WebGPU), **trained models** (CLAP audio, learned compaction
+> summarizers, shield model ensembles), **native app surfaces** (macOS/
+> Windows/Linux GUIs, mobile companion apps, MSI/ARM builds), **third-party
+> processes** (external SOC2 Type I, third-party pen tests, sigstore CA
+> onboarding), **founder-tracked business work** (summits, booths, swag,
+> sponsorships, university partnerships, press pushes, surveys, awards,
+> foundation paperwork, localization programs), and **the passage of time**
+> (2-/3-year retrospectives, LTS support windows, annual reports). A thinner
+> tail of ordinary code-buildable engineering also remains (e.g. DuckDB/Redis
+> world-model backends, web-UI-heavy views, voice-runtime features); those
+> are future-planned, not blocked.
 
 ---
 
@@ -87,12 +96,12 @@ single-run inflation) — run multi-seed.
 
 | Concern | Planned (not yet built) |
 |---|---|
-| **Capabilities** | Audio understanding (non-speech CLAP) · cross-language LSP bridge · speculative parallel tool calls · speech-to-action live-mic · GUI element memory · image gen + edit tools · ASR meeting listener · auto-skill distillation v2 |
-| **UX** | Multi-run dashboard · pinned watch list · annotated traces · mobile push v2 · Apple Watch glance · voice command grammar · voice in channels v2 (Discord stages) · high-contrast & dyslexic fonts · i18n expansion (fr/de/ja/zh) · visual graph editor · saved dashboard views · channel reply threading · drag-and-drop goal builder |
-| **Distribution** | Localized docs phase 2 (es/ja) · reproducible benchmark v2 (terminal-bench, weblinx, HumanEval-fix) · marketplaces v2 with ratings · tutorial video season 2 · university outreach (5 partnerships) · skill validator service · press kit · Maverick Summit v1 (virtual) · showcase wall · integration partnerships (LangSmith/Helicone/OpenRouter) · browser extension v1 · localized docs phase 3 (de/fr/pt-BR) · GitHub Stars campaign · office hours |
-| **Performance** | streaming tool_result · Sentry performance tab · adversarial-cost benchmark suite · continuous batching local · compaction v3 learned summarizer · speculative tool execution · gRPC dispatch · cache-warm-on-start · public perf dashboard |
-| **Safety** | HIPAA mode profile · shield calibration dashboard · adversarial eval harness · per-agent identity + signing · image-content classifier · voice safety pass · red-team CI |
-| **Ecosystem** | Emacs integration · WhatsApp Cloud API rewrite · plugin sandboxing (subinterpreter) · hot plugin reload · Vim/Neovim plugin |
+| **Capabilities** | Audio understanding (non-speech CLAP) · speech-to-action live-mic · image gen + edit tools · ASR meeting listener · auto-skill distillation v2 |
+| **UX** | Mobile push v2 · Apple Watch glance · voice in channels v2 (Discord stages) · visual graph editor · drag-and-drop goal builder |
+| **Distribution** | Localized docs phase 2 (es/ja) · reproducible benchmark v2 (terminal-bench, weblinx, HumanEval-fix) · tutorial video season 2 · university outreach (5 partnerships) · Maverick Summit v1 (virtual) · integration partnerships (business half; self-serve guide shipped) · browser extension v1 · localized docs phase 3 (de/fr/pt-BR) · GitHub Stars campaign · office hours |
+| **Performance** | Continuous batching local · compaction v3 learned summarizer · public perf dashboard |
+| **Safety** | — (cleared) |
+| **Ecosystem** | — (cleared) |
 
 ---
 
@@ -101,11 +110,11 @@ single-run inflation) — run multi-seed.
 | Concern | Planned (not yet built) |
 |---|---|
 | **Capabilities** | WASM sandbox · ROS robotics action tool · browser anti-bot evasion kit (opt-in) · multi-agent observation channel |
-| **UX** | Native macOS/Windows/Linux GUI apps · browser extension · voice persona presets · multi-language voice · wizard branching paths · inline cost preview · run gallery · replay export to MP4 · collaborative supervision (multi-user dashboard) · trace pinning to commit · VS Code + JetBrains live-run extensions · TUI mouse mode · cost anomaly alerts · "why this cost" drill-down · run-as-tutorial export · accessibility audit pass · i18n community portal |
-| **Distribution** | Windows MSI · marketplace moderation tooling · sponsorship tiers · conference physical booth · swag store · ambassadors program · long-form handbook · Skill of the Year award · backwards-compat tooling (`maverick migrate`) · mobile companion app v1 (read-only) · self-hosted relay reference · localized docs phase 4 (ko/ru/it/hi) · video season 3 · skill search engine (HF) · annual community survey · foundation exploration |
-| **Performance** | Token-level cost projection at plan time · compaction v4 structural diff · distributed cache (Redis) · cold-start optimization (<300ms `--help`) · JIT consideration (mypyc/cython on hot path) · compaction v5 multi-modal · cross-run learning cache · autoscaling local backends · real-time anomaly detection · failure-mode telemetry shipping (opt-in) · tail-latency hunting · KV-cache offload to disk · 2-year retrospective |
-| **Safety** | Refusal calibration · gVisor tool sandbox · eBPF syscall monitor · memory-safe parsers · sigstore keyless signing · out-of-process model proxy · rate-limit shield calls per goal · public safety bulletin RSS · federated shield model updates · behavioral diff on upgrades · cross-run anomaly detection · tamper-evident screenshots · crash-only logging · annual safety report |
-| **Ecosystem** | ACD spec v1.0 · Threads + RCS channels · Redis world-model · plugin telemetry opt-in · marketplace v2 (federated indexes) · IDE protocol unification (one MCP server, multiple editors) · DuckDB world-model · Cloudflare Workers + Modal sandboxes |
+| **UX** | Native macOS/Windows/Linux GUI apps · browser extension · VS Code + JetBrains live-run extensions · TUI mouse mode · accessibility audit pass · i18n community portal |
+| **Distribution** | Windows MSI · marketplace moderation tooling · sponsorship tiers · conference physical booth · swag store · ambassadors program · long-form handbook · Skill of the Year award · mobile companion app v1 (read-only) · self-hosted relay reference · localized docs phase 4 (ko/ru/it/hi) · video season 3 · skill search engine (HF) · annual community survey · foundation exploration |
+| **Performance** | Cold-start optimization (<300ms `--help`) · JIT consideration (mypyc/cython on hot path) · compaction v5 multi-modal · autoscaling local backends · real-time anomaly detection · failure-mode telemetry shipping (opt-in) · tail-latency hunting · KV-cache offload to disk · 2-year retrospective |
+| **Safety** | eBPF syscall monitor · memory-safe parsers · sigstore keyless signing · out-of-process model proxy · federated shield model updates · annual safety report |
+| **Ecosystem** | ACD spec v1.0 · Redis world-model · DuckDB world-model · Cloudflare Workers + Modal sandboxes |
 
 ---
 
@@ -113,12 +122,12 @@ single-run inflation) — run multi-seed.
 
 | Concern | Planned (not yet built) |
 |---|---|
-| **Capabilities** | Computer-use coordinate calibration · audio diarization + emotion · vision-grounded clicking · office-doc converter (libreoffice) · multi-monitor computer-use · hardware sensor tool |
-| **UX** | Plan-tree minimap · conversational supervisor · voice-only mode · smart notification batching · mobile offline cache · augmented terminal (Rich inline charts) · multi-tenant view · personalized starter templates · replay annotation export · AR plan-tree (visionOS) · live captions voice · visual goal templates marketplace · adaptive UI density · embedded analytics web component · pluggable themes API · voice macros · RTL language support |
+| **Capabilities** | Computer-use coordinate calibration · audio diarization + emotion · vision-grounded clicking · multi-monitor computer-use · hardware sensor tool |
+| **UX** | Plan-tree minimap · conversational supervisor · voice-only mode · mobile offline cache · augmented terminal (Rich inline charts) · multi-tenant view · personalized starter templates · replay annotation export · AR plan-tree (visionOS) · live captions voice · visual goal templates marketplace · adaptive UI density · embedded analytics web component · pluggable themes API · voice macros · RTL language support |
 | **Distribution** | 2.0 stable release · migration playbook · marketplace v3 (donate-direct model) · Maverick Summit v2 (hybrid) · editor expansion (JetBrains/Neovim/Zed) · localized docs phase 5 (top-15 langs + MT pipeline) · "Built with Maverick" badge program · comparison benchmark v3 live dashboard · university curriculum kit · foundation paperwork submitted · ARM/RISC-V builds · iOS/Android skill execution (Pyodide/Kivy) · skill + channel certification programs · community grants v1 · regional meetup playbook · embeddable widget · hosted demo cluster (demo.maverick.dev) · press push to major outlets · sponsor tier 2 |
-| **Performance** | Speculative best-of-N (kill underperformers at first reasoning checkpoint) · compaction v6 hybrid (learned classifier picks strategy) · sub-ms dispatch overhead (msgspec/orjson) · continuous profiling daemon (py-spy) · cost-aware routing v3 (contextual bandits) · sandbox pool (warm Docker/Firecracker, <100ms acquire) · cache-aware prompt assembly DSL · compaction v7 streaming · persistent KV-cache for local · online schema migrations |
-| **Safety** | misuse leaderboard removal · safety steering group · formal verification of sandbox interface (TLA+) · multi-tenant isolation tests · long-horizon goal review checkpoint · provider-level cost cap · backport security fixes · external SOC2 Type I |
-| **Ecosystem** | plugin compatibility matrix CI · multi-language plugin support (gRPC plugin host) · TypeScript plugin SDK · pgvector adapter · browser-extension chat · plugin API v2 release · marketplace moderation tools · ACD interop tests · voice channel v2 (streaming ASR + barge-in) |
+| **Performance** | Speculative best-of-N (kill underperformers at first reasoning checkpoint) · compaction v6 hybrid (learned classifier picks strategy) · sub-ms dispatch overhead (msgspec/orjson) · sandbox pool (warm Docker/Firecracker, <100ms acquire) · cache-aware prompt assembly DSL · compaction v7 streaming · persistent KV-cache for local |
+| **Safety** | misuse leaderboard removal · safety steering group · formal verification of sandbox interface (TLA+) · backport security fixes · external SOC2 Type I |
+| **Ecosystem** | Plugin compatibility matrix CI · multi-language plugin support (gRPC plugin host) · TypeScript plugin SDK · browser-extension chat · plugin API v2 release · marketplace moderation tools · ACD interop tests · voice channel v2 (streaming ASR + barge-in) |
 
 ---
 
@@ -129,9 +138,9 @@ single-run inflation) — run multi-seed.
 | **Capabilities** | WebRTC tool · browser extension bridge · ARIA-first navigation · embedded device tool (serial/JTAG/I2C) · mixed-precision local inference · speculative decoding across providers · WebGPU local vision · federated swarm protocol |
 | **UX** | "Director" mode (outcomes → plans → autonomy) · cross-device handoff · predictive approvals · embedded video walkthroughs · granular redaction UI · voice biometric unlock · power-user keymap editor · localized currency display · 3D plan-tree (WebGL/VR) · self-healing UX · channel auto-routing · onboarding personalization v2 · "achievements" · cost retrospective AI · universal share link · 36-month UX retrospective + reset |
 | **Distribution** | Maverick Conference v3 (in-person flagship) · hackathon series · localized communities (top 5 non-English) · skill marketplace federation · channel federation · public roadmap voting · press kit v2 + case studies · comparison benchmark v4 with reproducibility audits · handbook v2 · "5-year vision" essay · foundation hand-off · governance v2 launch (elected TSC) · documentation rewrite · tutorial season 4 · survey v3 + retrospective · sponsor renewal drive · HF Space spotlight · awards push · 2029 roadmap publication |
-| **Performance** | Self-tuning budgets (per-task-class learned defaults) · compaction v8 graph-structured · zstd compression on world_model · critical-path-aware parallel scheduling · provider-side caching analytics · cost telemetry retention policy · real-time SSE dashboards · cost/perf canary system per release · compaction v9 plug-in API · full OpenTelemetry semconv · 3-year retrospective benchmark · reliability cert · public perf SLA · sunset deprecated paths |
+| **Performance** | Self-tuning budgets (per-task-class learned defaults) · compaction v8 graph-structured · critical-path-aware parallel scheduling · provider-side caching analytics · real-time SSE dashboards · cost/perf canary system per release · compaction v9 plug-in API · full OpenTelemetry semconv · 3-year retrospective benchmark · reliability cert · public perf SLA · sunset deprecated paths |
 | **Safety** | Shield v3 (small-model ensemble: injection + jailbreak + exfil + policy, explainable reason codes) · provable redaction · differential erasure verification · air-gapped mode (full stack, no outbound) · confidential-compute support (SEV-SNP/TDX) · adversarial-prompt corpus release · AI Act conformance package · vuln reward expansion · third-party pen test · federated audit-log verification · capability revocation propagation · consent ergonomics pass · 36-month safety retrospective · sunset policy · LTS safety branch (2-year support) |
-| **Ecosystem** | Plugin signing CA · capability negotiation at swarm boot · gRPC API v1 stable · federated swarms over gRPC · KaTeX/Mermaid rich-render channel · Open Banking tool (TrueLayer) · MCP server publishing · marketplace stats dashboard · plugin API v3 RFC (if warranted) · ACD spec v1.1 · multi-tenant `maverick serve` · channel SDK v2 (async-only) · sandbox SDK v2 · long-running plugin reliability suite · 3-year retrospective + 2029-2031 plan |
+| **Ecosystem** | Plugin signing CA · capability negotiation at swarm boot · gRPC API v1 stable · federated swarms over gRPC · KaTeX/Mermaid rich-render channel · MCP server publishing · marketplace stats dashboard · plugin API v3 RFC (if warranted) · ACD spec v1.1 · multi-tenant `maverick serve` · channel SDK v2 (async-only) · sandbox SDK v2 · long-running plugin reliability suite · 3-year retrospective + 2029-2031 plan |
 
 ---
 

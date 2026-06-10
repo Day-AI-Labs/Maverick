@@ -150,6 +150,22 @@ def _servicer(service, pb2, pb2_grpc, *, bearer_token: str | None = None):
                 result=st.result or "", found=True,
             )
 
+        def RunGoal(self, request, context):
+            _require_authorized(context, bearer_token)
+            st = service.run_goal(
+                request.goal_id,
+                max_dollars=request.max_dollars or None,
+                max_wall_seconds=request.max_wall_seconds or None,
+                channel=request.channel or None,
+                user_id=request.user_id or None,
+            )
+            if st is None:
+                return pb2.GoalStatus(goal_id=request.goal_id, found=False)
+            return pb2.GoalStatus(
+                goal_id=st.goal_id, status=st.status,
+                result=st.result or "", found=True,
+            )
+
     return MaverickServicer()
 
 

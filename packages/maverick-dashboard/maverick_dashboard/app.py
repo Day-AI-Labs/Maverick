@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (
     HTMLResponse,
@@ -40,6 +40,7 @@ from .api import router as api_router
 from .auth import (
     assert_goal_access,
     caller_principal,
+    can_access_goal,
     execution_user_id_from_request,
     goal_owner_filter,
     require_principal,
@@ -65,8 +66,14 @@ templates.env.filters["datetime"] = _format_datetime
 # Make `theme` available unconditionally so templates rendered without
 # a Request object (rare; legacy paths) still resolve `theme or 'dark'`.
 templates.env.globals.setdefault("theme", "dark")
+templates.env.globals.setdefault("font", "default")
+templates.env.globals.setdefault("lang", "en")
+from .i18n import t as _i18n_t  # noqa: E402
+
+templates.env.globals.setdefault("t", lambda key: _i18n_t(key, "en"))
 
 _VALID_THEMES = {"dark", "light", "solarized", "hicontrast"}
+_VALID_FONTS = {"default", "dyslexic"}
 
 
 def _resolve_theme(request: Request) -> str:
@@ -88,10 +95,31 @@ def _resolve_theme(request: Request) -> str:
     return "dark"
 
 
+def _resolve_font(request: Request) -> str:
+    """Font preference: ``?font=`` → cookie → default. Independent axis from
+    the theme so high-contrast + dyslexia-friendly compose."""
+    q = (request.query_params.get("font") or "").strip().lower()
+    if q in _VALID_FONTS:
+        return q
+    c = (request.cookies.get("mvk_font") or "").strip().lower()
+    if c in _VALID_FONTS:
+        return c
+    return "default"
+
+
 # Context processor: every template gets the `theme` variable for the
-# body class + the theme switcher links.
+# body class + the theme switcher links, the `font` accessibility axis,
+# and the chrome-i18n helpers (`lang`, `t`).
 def _theme_context(request: Request) -> dict:
-    return {"theme": _resolve_theme(request)}
+    from .i18n import resolve_lang
+    from .i18n import t as _t
+    lang = resolve_lang(request)
+    return {
+        "theme": _resolve_theme(request),
+        "font": _resolve_font(request),
+        "lang": lang,
+        "t": lambda key: _t(key, lang),
+    }
 
 
 # Register the per-request context processor with Starlette so every
@@ -177,11 +205,20 @@ _PLAN_TREE_PATH_RE = re.compile(r"^/goals/\d+/plan/?$")
 
 @app.middleware("http")
 async def persist_theme(request: Request, call_next):
-    """If ?theme=X is in the URL, set a cookie so it sticks."""
+    """If ?theme= / ?font= / ?lang= is in the URL, set a cookie so it sticks."""
     response = await call_next(request)
     q = request.query_params.get("theme")
     if q and q.lower() in _VALID_THEMES:
         _set_theme_cookie(response, q.lower())
+    f = request.query_params.get("font")
+    if f and f.lower() in _VALID_FONTS:
+        response.set_cookie("mvk_font", f.lower(), max_age=30 * 24 * 3600,
+                            samesite="lax", httponly=False)
+    lang = request.query_params.get("lang")
+    from .i18n import LANGS
+    if lang and lang.lower() in LANGS:
+        response.set_cookie("mvk_lang", lang.lower(), max_age=365 * 24 * 3600,
+                            samesite="lax", httponly=False)
     return response
 
 
@@ -227,6 +264,7 @@ _AUTH_EXEMPT = {
     "/webhook/linear",
     "/webhook/jira",
     "/webhook/github",
+    "/webhook/gitlab",
     # Built-in OIDC browser-login endpoints: they bootstrap a session and carry
     # their own flow-level security (state/PKCE/signed cookies). They must be
     # reachable by a browser that has no dashboard token yet; each self-gates on
@@ -1371,6 +1409,464 @@ async def providers_api() -> JSONResponse:
     return JSONResponse({"providers": _health().snapshot()})
 
 
+@app.websocket("/ws/v1/runs/{goal_id}/events")
+async def run_events_firehose(websocket: WebSocket, goal_id: int) -> None:
+    """Run-events firehose: stream a goal's events over WebSocket as they land.
+
+    Sends each event as one JSON message ``{id, agent, kind, content, ts}``;
+    a final ``{kind: "status", content: <terminal>}`` message closes the
+    stream when the goal finishes. Auth mirrors the HTTP policy (Authorization
+    header in token mode; loopback-only otherwise), checked before accept.
+    Resume with ``?since_id=``."""
+    import asyncio as _asyncio
+
+    from fastapi import WebSocketDisconnect
+
+    from .auth import websocket_authorized
+    if not websocket_authorized(websocket):
+        await websocket.close(code=4401)
+        return
+    await websocket.accept()
+    try:
+        since = int(websocket.query_params.get("since_id", 0))
+    except (TypeError, ValueError):
+        since = 0
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        await websocket.send_json({"error": "no such goal"})
+        await websocket.close(code=4404)
+        return
+    terminal = {"done", "completed", "failed", "error", "cancelled"}
+    try:
+        last = since
+        while True:
+            for e in w.goal_events(goal_id, since_id=last, limit=500):
+                last = e.id
+                await websocket.send_json({
+                    "id": e.id, "agent": e.agent, "kind": e.kind,
+                    "content": e.content, "ts": e.ts,
+                })
+            g = w.get_goal(goal_id)
+            if g is None or g.status in terminal:
+                await websocket.send_json({
+                    "id": last + 1, "agent": "system", "kind": "status",
+                    "content": (g.status if g else "deleted"), "ts": time.time(),
+                })
+                break
+            await _asyncio.sleep(0.5)
+    except WebSocketDisconnect:
+        return
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+@app.get("/api/v1/goals/{goal_id}/cost-preview")
+async def goal_cost_preview(request: Request, goal_id: int, iterations: int = 1) -> JSONResponse:
+    """Inline cost preview: project a pending goal's cost before running it.
+
+    Treats the goal description as one step per non-empty line (or the whole
+    text as one step), projects tokens/dollars via maverick.cost_projection,
+    and reports the OK/TIGHT/OVER verdict against the configured default
+    budget."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from maverick.budget import Budget
+    from maverick.cost_projection import compare_against_budget, project_plan
+    text = (g.description or g.title or "").strip()
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    steps = [{"text": ln} for ln in (lines or [text])]
+    projection = project_plan(steps, iterations=max(1, min(int(iterations), 10)))
+    budget_dollars = Budget().max_dollars
+    verdict = compare_against_budget(projection, budget_dollars)
+    return JSONResponse({
+        "goal_id": goal_id,
+        "steps": len(steps),
+        "total_tokens": projection.total_tokens,
+        "total_dollars": round(projection.total_dollars, 4),
+        "budget_dollars": budget_dollars,
+        "verdict": verdict.verdict,
+        "recommendation": verdict.recommendation,
+    })
+
+
+@app.get("/api/v1/goals/{goal_id}/cost-breakdown")
+async def goal_cost_breakdown(request: Request, goal_id: int) -> JSONResponse:
+    """'Why this cost' drill-down: a run's spend split by agent role/outcome.
+
+    Buckets the goal's episodes (cost, tokens, count) so the dollar figure on
+    the dashboard decomposes into who spent it and on what."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    buckets: dict[str, dict] = {}
+    total = 0.0
+    for ep in w.list_episodes(limit=10_000, goal_id=goal_id):
+        key = str(getattr(ep, "outcome", "") or "episode")
+        b = buckets.setdefault(key, {"episodes": 0, "dollars": 0.0,
+                                     "in_tokens": 0, "out_tokens": 0})
+        cost = float(getattr(ep, "cost_dollars", 0) or 0)
+        b["episodes"] += 1
+        b["dollars"] += cost
+        b["in_tokens"] += int(getattr(ep, "input_tokens", 0) or 0)
+        b["out_tokens"] += int(getattr(ep, "output_tokens", 0) or 0)
+        total += cost
+    rows = [{"bucket": k, **{kk: (round(vv, 4) if kk == "dollars" else vv)
+                             for kk, vv in v.items()}}
+            for k, v in sorted(buckets.items(), key=lambda kv: -kv[1]["dollars"])]
+    return JSONResponse({"goal_id": goal_id, "total_dollars": round(total, 4),
+                         "buckets": rows})
+
+
+@app.get("/api/v1/cost/anomalies")
+async def cost_anomalies(threshold_sigma: float = 3.0, limit: int = 500) -> JSONResponse:
+    """Cost anomaly alerts: goals whose spend is a statistical outlier.
+
+    Computes per-goal spend over the recent episode window and flags goals
+    above mean + threshold_sigma * stdev (min 3 goals before anything can
+    flag). The data behind a dashboard alert badge."""
+    import statistics
+
+    w = _world()
+    limit = max(1, min(int(limit), 10_000))
+    by_goal: dict[int, float] = {}
+    for ep in w.list_episodes(limit=limit):
+        gid = getattr(ep, "goal_id", None)
+        if gid is None:
+            continue
+        by_goal[gid] = by_goal.get(gid, 0.0) + float(getattr(ep, "cost_dollars", 0) or 0)
+    spends = [s for s in by_goal.values() if s > 0]
+    if len(spends) < 3:
+        return JSONResponse({"anomalies": [], "goals_considered": len(by_goal),
+                             "note": "need >=3 priced goals to baseline"})
+    mean = statistics.fmean(spends)
+    stdev = statistics.pstdev(spends)
+    cut = mean + max(0.5, float(threshold_sigma)) * stdev
+    anomalies = [
+        {"goal_id": gid, "dollars": round(s, 4),
+         "x_mean": round(s / mean, 1) if mean else None}
+        for gid, s in sorted(by_goal.items(), key=lambda kv: -kv[1])
+        if s > cut and stdev > 0
+    ]
+    return JSONResponse({
+        "anomalies": anomalies, "goals_considered": len(by_goal),
+        "mean_dollars": round(mean, 4), "cutoff_dollars": round(cut, 4),
+    })
+
+
+@app.post("/api/v1/skills/validate")
+async def skills_validate(request: Request) -> JSONResponse:
+    """Skill validator service: lint a SKILL.md body without installing it.
+
+    POST the raw SKILL.md text (text/plain or markdown); responds
+    ``{ok, errors, warnings}`` from the same linter `maverick skill validate`
+    runs locally — so a marketplace author can validate from CI or an editor
+    against a self-hosted instance. Size-capped; nothing is persisted."""
+    import tempfile as _tempfile
+    from pathlib import Path as _Path
+
+    from maverick.skills import validate_skill_file
+
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="POST the SKILL.md body")
+    if len(body) > 256 * 1024:
+        raise HTTPException(status_code=413, detail="skill too large (max 256 KiB)")
+    with _tempfile.TemporaryDirectory(prefix="mvk-skill-validate-") as td:
+        p = _Path(td) / "SKILL.md"
+        p.write_bytes(body)
+        result = validate_skill_file(p)
+    return JSONResponse({
+        "ok": result.ok, "errors": result.errors, "warnings": result.warnings,
+    })
+
+
+@app.get("/api/v1/pins")
+async def pins_list(request: Request) -> JSONResponse:
+    """Pinned watch list for the calling principal (most-recently-pinned first)."""
+    from maverick.ux_store import shared as _ux
+    return JSONResponse({"pins": _ux().pins(caller_principal(request))})
+
+
+@app.post("/api/v1/pins/{goal_id}")
+async def pins_add(request: Request, goal_id: int) -> JSONResponse:
+    g = _world().get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from maverick.ux_store import shared as _ux
+    return JSONResponse({"pins": _ux().pin(caller_principal(request), goal_id)})
+
+
+@app.delete("/api/v1/pins/{goal_id}")
+async def pins_remove(request: Request, goal_id: int) -> JSONResponse:
+    from maverick.ux_store import shared as _ux
+    return JSONResponse({"pins": _ux().unpin(caller_principal(request), goal_id)})
+
+
+@app.get("/api/v1/views")
+async def views_list(request: Request) -> JSONResponse:
+    """Saved dashboard views (named filter/query-param sets) for the caller."""
+    from maverick.ux_store import shared as _ux
+    return JSONResponse({"views": _ux().views(caller_principal(request))})
+
+
+@app.post("/api/v1/views/{name}")
+async def views_save(request: Request, name: str) -> JSONResponse:
+    from maverick.ux_store import shared as _ux
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="body must be a JSON object of params")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="body must be a JSON object of params")
+    try:
+        _ux().save_view(caller_principal(request), name, body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JSONResponse({"saved": name}, status_code=201)
+
+
+@app.delete("/api/v1/views/{name}")
+async def views_delete(request: Request, name: str) -> JSONResponse:
+    from maverick.ux_store import shared as _ux
+    if not _ux().delete_view(caller_principal(request), name):
+        raise HTTPException(status_code=404, detail="no such view")
+    return JSONResponse({"deleted": name})
+
+
+@app.get("/api/v1/gallery")
+async def gallery_list(request: Request) -> JSONResponse:
+    """Run gallery: the deployment's featured runs, enriched with live goal
+    state and links to the tutorial/explain exports."""
+    from maverick.ux_store import shared as _ux
+    w = _world()
+    runs = []
+    for entry in _ux().gallery():
+        g = w.get_goal(entry["goal_id"])
+        if g is None or not can_access_goal(request, g):
+            continue
+        runs.append({
+            **entry,
+            "title": (g.title or "")[:120],
+            "status": g.status,
+            "tutorial": f"/api/v1/goals/{entry['goal_id']}/tutorial.md",
+            "explain": f"/api/v1/goals/{entry['goal_id']}/explain",
+        })
+    return JSONResponse({"gallery": runs})
+
+
+@app.post("/api/v1/gallery/{goal_id}")
+async def gallery_add(request: Request, goal_id: int) -> JSONResponse:
+    g = _world().get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    blurb = str((body or {}).get("blurb") or "")
+    from maverick.ux_store import shared as _ux
+    try:
+        entry = _ux().gallery_add(goal_id, blurb=blurb,
+                                  curator=caller_principal(request))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JSONResponse(entry, status_code=201)
+
+
+@app.delete("/api/v1/gallery/{goal_id}")
+async def gallery_remove(request: Request, goal_id: int) -> JSONResponse:
+    from maverick.ux_store import shared as _ux
+    if not _ux().gallery_remove(goal_id):
+        raise HTTPException(status_code=404, detail="not in the gallery")
+    return JSONResponse({"removed": goal_id})
+
+
+@app.get("/api/v1/goals/{goal_id}/annotations")
+async def annotations_list(request: Request, goal_id: int) -> JSONResponse:
+    """Trace annotations: human notes pinned to replay-trace steps (seq)."""
+    g = _world().get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from maverick.ux_store import shared as _ux
+    return JSONResponse({"annotations": _ux().annotations(goal_id)})
+
+
+@app.post("/api/v1/goals/{goal_id}/annotations")
+async def annotations_add(request: Request, goal_id: int) -> JSONResponse:
+    g = _world().get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="body must be JSON {seq, note}")
+    if not isinstance(body, dict) or "seq" not in body or not body.get("note"):
+        raise HTTPException(status_code=400, detail="body must be JSON {seq, note}")
+    from maverick.ux_store import shared as _ux
+    try:
+        entry = _ux().annotate(goal_id, int(body["seq"]), str(body["note"]),
+                               author=caller_principal(request))
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JSONResponse(entry, status_code=201)
+
+
+@app.get("/api/v1/goals/{goal_id}/anomalies")
+async def goal_anomalies(request: Request, goal_id: int, history: int = 50) -> JSONResponse:
+    """Cross-run anomaly signals for one run vs the deployment baseline."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from maverick.cross_run_anomaly import MIN_BASELINE_RUNS, detect
+    anomalies = detect(w, goal_id, history=max(5, min(int(history), 500)))
+    return JSONResponse({
+        "goal_id": goal_id,
+        "anomalies": [{"kind": a.kind, "severity": a.severity, "detail": a.detail}
+                      for a in anomalies],
+        "note": (f"baseline needs >= {MIN_BASELINE_RUNS} terminal runs before "
+                 "anything can flag"),
+    })
+
+
+@app.get("/api/v1/goals/{goal_id}/tutorial.md")
+async def goal_tutorial(request: Request, goal_id: int) -> PlainTextResponse:
+    """Run-as-tutorial export: the run rendered as step-by-step markdown."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from maverick.tutorial_export import tutorial_markdown
+    events = w.goal_events(goal_id, limit=5000)
+    md = tutorial_markdown(g, events)
+    return PlainTextResponse(content=md, media_type="text/markdown; charset=utf-8")
+
+
+@app.get("/api/v1/goals/{goal_id}/replay-storyboard")
+async def goal_replay_storyboard(request: Request, goal_id: int) -> JSONResponse:
+    """Replay-to-MP4 storyboard: the ordered captioned frames + durations and
+    the exact ffmpeg command an operator runs to encode the video.
+
+    The deterministic, offline half of replay-to-MP4 (the encode needs ffmpeg
+    and is done out-of-band or via the CLI). Secret/PII-scrubbed."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from pathlib import Path as _Path
+
+    from maverick.replay_video import ffmpeg_command, storyboard
+    # Feed the world's goal events (the live trail) rather than the audit-log
+    # files replay_video reads by default, so the storyboard reflects this run.
+    events = [{"kind": e.kind, "ts": e.ts, "agent": e.agent, "content": e.content}
+              for e in w.goal_events(goal_id, limit=5000)]
+    frames = storyboard(goal_id, events=events)
+    cmd = ffmpeg_command(_Path("frames.ffconcat"), _Path(f"replay-{goal_id}.mp4"))
+    return JSONResponse({
+        "goal_id": goal_id,
+        "frames": [{"index": f.index, "kind": f.kind, "caption": f.caption,
+                    "seconds": f.seconds} for f in frames],
+        "total_seconds": round(sum(f.seconds for f in frames), 2),
+        "ffmpeg_command": cmd,
+    })
+
+
+@app.get("/api/v1/goals/{goal_id}/explain")
+async def goal_explain(request: Request, goal_id: int) -> JSONResponse:
+    """Plain-language narrative of a run (deterministic, no LLM)."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from maverick.plain_language import explain
+    events = w.goal_events(goal_id, limit=2000)
+    return JSONResponse({"goal_id": goal_id, "explanation": explain(g, events)})
+
+
+@app.get("/api/v1/runs/compare")
+async def runs_compare(request: Request, ids: str) -> JSONResponse:
+    """Multi-run dashboard: side-by-side summary of up to 8 runs."""
+    try:
+        goal_ids = [int(x) for x in ids.split(",") if x.strip()][:8]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="ids must be comma-separated integers")
+    if not goal_ids:
+        raise HTTPException(status_code=400, detail="ids is required")
+    w = _world()
+    runs = []
+    for gid in goal_ids:
+        g = w.get_goal(gid)
+        if g is None:
+            raise HTTPException(status_code=404, detail=f"no such goal: {gid}")
+        assert_goal_access(request, g)
+        events = w.goal_events(gid, limit=10_000)
+        errors = sum(1 for e in events if e.kind == "error")
+        runs.append({
+            "goal_id": gid,
+            "title": (g.title or "")[:120],
+            "status": g.status,
+            "events": len(events),
+            "errors": errors,
+            "created_at": getattr(g, "created_at", None),
+        })
+    return JSONResponse({"runs": runs})
+
+
+@app.get("/api/v1/cost/by-tag")
+async def cost_by_tag_api(tag_field: str = "tag", limit: int = 500) -> JSONResponse:
+    """Cost-attribution API: spend split by tag (team / project / cost-center).
+
+    Buckets the priced episodes by their tag (episode field, else the goal's
+    metadata/tags) via ``maverick.cost_by_tag`` and returns
+    ``{buckets: [{tag, cost, in_tok, out_tok, runs}, ...]}`` sorted by spend. The JSON face of ``maverick status --cost``'s tag split,
+    for chargeback exports and BI pulls. Behind the dashboard's normal auth."""
+    from maverick.cost_by_tag import gather, split_by_tag
+
+    limit = max(1, min(int(limit), 10_000))
+    buckets = split_by_tag(gather(_world(), tag_field=tag_field, limit=limit))
+    return JSONResponse({"tag_field": tag_field, "buckets": buckets})
+
+
+@app.get("/api/v1/shield/calibration")
+async def shield_calibration_api() -> JSONResponse:
+    """Shield calibration data for the oversight console.
+
+    Threshold sweep (recall / precision / fp-rate per block threshold) plus
+    per-rule hit counts over the red-team corpus — the shipped one, or an
+    operator's own via ``MAVERICK_REDTEAM_CORPUS``. Behind the dashboard's
+    normal auth (not in the exempt list)."""
+    import os as _os
+    from pathlib import Path as _Path
+
+    try:
+        from maverick_shield.redteam import calibration_report, load_corpus
+    except ImportError:
+        raise HTTPException(status_code=501, detail="maverick-shield is not installed")
+    corpus_env = _os.environ.get("MAVERICK_REDTEAM_CORPUS", "").strip()
+    try:
+        cases = load_corpus(_Path(corpus_env) if corpus_env else None)
+    except (OSError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"corpus error: {e}")
+    return JSONResponse(calibration_report(cases))
+
+
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request) -> HTMLResponse:
     recent = _world().list_goals(owner=goal_owner_filter(request), limit=10, order="desc")
@@ -1561,6 +2057,65 @@ async def webhook_github(request: Request, bg: BackgroundTasks) -> JSONResponse:
 
     bg.add_task(_run)
     return JSONResponse({"status": "accepted", "issue": payload.issue_number})
+
+
+@app.post("/webhook/gitlab")
+async def webhook_gitlab(request: Request, bg: BackgroundTasks) -> JSONResponse:
+    """GitLab issue-assigned webhook -> goal.
+
+    GitLab authenticates with a shared ``X-Gitlab-Token`` (no body HMAC), so
+    this route verifies that token (constant-time, fail-closed) and keys
+    replay-dedup on the required ``X-Gitlab-Event-UUID`` delivery id instead
+    of a body signature.
+    """
+    import os as _os
+
+    from maverick.issue_webhooks import (
+        build_brief,
+        parse_issue_event,
+        replay_window_seconds,
+        verify_gitlab_token,
+    )
+
+    secret = _os.environ.get("MAVERICK_GITLAB_WEBHOOK_TOKEN", "").strip()
+    if not secret:
+        raise HTTPException(
+            status_code=401,
+            detail="GitLab webhook not configured. Set MAVERICK_GITLAB_WEBHOOK_TOKEN.",
+        )
+    if not verify_gitlab_token(request.headers.get("X-Gitlab-Token"), secret):
+        raise HTTPException(status_code=403, detail="bad webhook token")
+    body = await _read_limited_webhook_body(request)
+    try:
+        payload = json.loads(body or b"{}")
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="body must be valid JSON")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="body must be a JSON object")
+
+    event = parse_issue_event("gitlab", payload)
+    if event is None:
+        return JSONResponse({"ignored": True}, status_code=200)
+
+    # GitLab sends no signed timestamp; the per-delivery UUID is the dedup key.
+    delivery = (request.headers.get("X-Gitlab-Event-UUID") or "").strip()
+    if not delivery:
+        raise HTTPException(status_code=403, detail="missing delivery id")
+    if _issue_webhook_replay_seen(f"gitlab:{delivery}", replay_window_seconds()):
+        raise HTTPException(status_code=409, detail="duplicate webhook delivery")
+
+    if not _any_provider_key_set():
+        raise HTTPException(
+            status_code=400,
+            detail="No LLM provider key configured. Run 'maverick init'.",
+        )
+    check_goal_rate_limit(request, source="webhook:gitlab")
+    w = _world()
+    title = f"{event.issue_id}: {event.title}".strip()
+    goal_id = w.create_goal(title[:200], build_brief(event)[:8000], owner="")
+    from maverick.runner import run_goal_in_thread
+    bg.add_task(run_goal_in_thread, goal_id, None)
+    return JSONResponse({"goal_id": goal_id}, status_code=201)
 
 
 # Per-process replay dedup for inbound issue webhooks, keyed on the request's

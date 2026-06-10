@@ -34,8 +34,9 @@ def backend_name() -> str | None:
     """Configured vector-store backend, or None when semantic recall is off.
 
     Resolved from ``MAVERICK_VECTOR_STORE`` (env wins) or ``[memory]
-    backend`` in config. Recognised: ``chroma``, ``qdrant``, ``weaviate``.
-    Anything else (including unset / "none") disables the semantic path.
+    backend`` in config. Recognised: ``chroma``, ``qdrant``, ``weaviate``,
+    ``pgvector``. Anything else (including unset / "none") disables the
+    semantic path.
     """
     env = os.environ.get("MAVERICK_VECTOR_STORE")
     if env is not None:
@@ -46,7 +47,7 @@ def backend_name() -> str | None:
             name = str(load_config().get("memory", {}).get("backend", "")).strip().lower()
         except Exception:  # pragma: no cover -- config never blocks a run
             name = ""
-    return name if name in ("chroma", "qdrant", "weaviate") else None
+    return name if name in ("chroma", "qdrant", "weaviate", "pgvector") else None
 
 
 def build_store(backend: str | None = None) -> Any | None:
@@ -68,6 +69,20 @@ def build_store(backend: str | None = None) -> Any | None:
         if backend == "weaviate":
             from .vector_store import WeaviateStore
             return WeaviateStore(collection="Goals")
+        if backend == "pgvector":
+            # pgvector does not embed; inject the local fastembed embedder
+            # (the same one skills use). No embedder -> fail-open to lexical.
+            from . import skill_embeddings
+            from .vector_store import PgVectorStore
+
+            def _embed(texts):
+                vecs = skill_embeddings.embed(list(texts))
+                if vecs is None:
+                    raise RuntimeError(
+                        "pgvector recall needs a local embedder (install fastembed)")
+                return vecs
+
+            return PgVectorStore(collection="goals", embedder=_embed)
     except Exception as e:  # pragma: no cover -- optional dep / backend down
         log.debug("semantic recall backend %s unavailable: %s", backend, e)
     return None

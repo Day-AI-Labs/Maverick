@@ -40,9 +40,9 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class IssueEvent:
-    """Normalized issue-assigned event from Linear or Jira."""
-    provider: str        # "linear" | "jira"
-    issue_id: str        # "ENG-123" (Linear identifier) / "PROJ-7" (Jira key)
+    """Normalized issue-assigned event from Linear / Jira / GitLab."""
+    provider: str        # "linear" | "jira" | "gitlab"
+    issue_id: str        # "ENG-123" (Linear) / "PROJ-7" (Jira) / "group/repo#42" (GitLab)
     title: str
     body: str
     assignee: str        # id/email the issue was assigned to (for logging)
@@ -84,6 +84,18 @@ def verify_signature(
         secret.encode("utf-8"), body, hashlib.sha256,
     ).hexdigest()
     return hmac.compare_digest(expected, sig)
+
+
+def verify_gitlab_token(token_header: str | None, secret: str | None) -> bool:
+    """Constant-time check of GitLab's ``X-Gitlab-Token`` shared secret.
+
+    GitLab webhooks don't HMAC the body; they replay the configured secret
+    verbatim in a header. Fails CLOSED when no secret is configured, like
+    ``verify_signature`` — these routes hang off the public dashboard app.
+    """
+    if not secret or not token_header:
+        return False
+    return hmac.compare_digest(secret.strip(), token_header.strip())
 
 
 def replay_window_seconds() -> int:
@@ -141,12 +153,15 @@ def is_fresh(
     return abs(now - ts_sec) <= window
 
 
+_BOT_ENVS = {
+    "linear": "MAVERICK_BOT_LINEAR_ID",
+    "jira": "MAVERICK_BOT_JIRA_ACCOUNT_ID",
+    "gitlab": "MAVERICK_BOT_GITLAB_USERNAME",
+}
+
+
 def _bot_id(provider: str) -> str:
-    env = (
-        "MAVERICK_BOT_LINEAR_ID" if provider == "linear"
-        else "MAVERICK_BOT_JIRA_ACCOUNT_ID"
-    )
-    return os.environ.get(env, "").strip().lower()
+    return os.environ.get(_BOT_ENVS.get(provider, ""), "").strip().lower()
 
 
 def _is_bot(assignee_candidates: list[str], provider: str) -> bool:
@@ -160,8 +175,7 @@ def _is_bot(assignee_candidates: list[str], provider: str) -> bool:
             "no bot id configured for %s inbound webhook (set %s); "
             "ignoring assignment",
             provider,
-            "MAVERICK_BOT_LINEAR_ID" if provider == "linear"
-            else "MAVERICK_BOT_JIRA_ACCOUNT_ID",
+            _BOT_ENVS.get(provider, "<unknown provider>"),
         )
         return False
     return bot in candidates
@@ -232,8 +246,34 @@ def _parse_jira(payload: dict) -> IssueEvent | None:
     )
 
 
+def _parse_gitlab(payload: dict) -> IssueEvent | None:
+    # GitLab fires {object_kind: "issue", object_attributes: {...},
+    # assignees: [{username, ...}]}. An assignment is an open/update whose
+    # assignees include the bot.
+    if payload.get("object_kind") != "issue":
+        return None
+    attrs = payload.get("object_attributes") or {}
+    if attrs.get("action") not in ("open", "update", "reopen"):
+        return None
+    assignees = payload.get("assignees") or []
+    candidates = [str(a.get("username") or "") for a in assignees if isinstance(a, dict)]
+    if not _is_bot(candidates, "gitlab"):
+        return None
+    project = payload.get("project") or {}
+    path = str(project.get("path_with_namespace") or "")
+    iid = attrs.get("iid")
+    issue_id = f"{path}#{iid}" if path and iid is not None else str(iid or attrs.get("id") or "")
+    return IssueEvent(
+        provider="gitlab",
+        issue_id=issue_id,
+        title=str(attrs.get("title") or ""),
+        body=str(attrs.get("description") or ""),
+        assignee=next((c for c in candidates if c), ""),
+    )
+
+
 def parse_issue_event(provider: str, payload: dict) -> IssueEvent | None:
-    """Normalize a Linear/Jira webhook to an ``IssueEvent``.
+    """Normalize a Linear/Jira/GitLab webhook to an ``IssueEvent``.
 
     Returns ``None`` for events we don't act on: non-assignment events,
     or an assignment to someone other than the configured bot.
@@ -242,6 +282,8 @@ def parse_issue_event(provider: str, payload: dict) -> IssueEvent | None:
         return _parse_linear(payload)
     if provider == "jira":
         return _parse_jira(payload)
+    if provider == "gitlab":
+        return _parse_gitlab(payload)
     return None
 
 
@@ -259,6 +301,7 @@ def build_brief(event: IssueEvent) -> str:
 __all__ = [
     "IssueEvent",
     "verify_signature",
+    "verify_gitlab_token",
     "parse_issue_event",
     "build_brief",
     "is_fresh",

@@ -105,13 +105,19 @@ nav:
       - Architecture: enterprise/architecture.md
       - Diligence data room: enterprise/diligence.md
   - Strategy:
+      - Maverick vs the field: comparison.md
       - Competitive landscape: strategy/competitive-landscape.md
       - Moat & acquisition: strategy/moat-and-acquisition.md
       - Design-partner scorecard: strategy/design-partner-scorecard.md
       - Oversight experience: ux/oversight-experience.md
   - Roadmap:
       - 36-month plan: ROADMAP.md
+      - "RFC 0001: Maverick 2.0": rfcs/0001-maverick-2.0.md
+      - "RFC 0002: Plugin API v2": rfcs/0002-plugin-api-v2.md
   - Community:
+      - Showcase: showcase.md
+      - Press kit: press-kit.md
+      - Observability integrations: integrations/observability-partners.md
       - Contributing: CONTRIBUTING.md
       - Code of Conduct: CODE_OF_CONDUCT.md
       - Security policy: SECURITY.md

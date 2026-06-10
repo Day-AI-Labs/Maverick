@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import os
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, WebSocket
 from maverick.oidc import (
     OIDCError,
     VerifiedPrincipal,
@@ -217,8 +217,17 @@ def assert_goal_access(request: Request, goal) -> None:
         raise HTTPException(status_code=404, detail="no such goal")
 
 
-def require_principal(request: Request) -> VerifiedPrincipal | None:
+def require_principal(
+    request: Request = None,  # type: ignore[assignment]
+    websocket: WebSocket = None,  # type: ignore[assignment,name-defined]
+) -> VerifiedPrincipal | None:
     """FastAPI dependency enforcing OIDC bearer auth when OIDC is enabled.
+
+    WebSocket routes: the app-level dependency also runs for WS connections,
+    where FastAPI injects ``websocket`` instead of ``request``. WS endpoints
+    do their own auth before ``accept`` (``websocket_authorized``), so this
+    dependency lets the connection through to that gate when OIDC is off, and
+    applies the same bearer check via the WS headers when it is on.
 
     - OIDC disabled (default): returns ``None`` and allows the request. Behaviour
       is unchanged -- no auth header is read or required.
@@ -239,6 +248,23 @@ def require_principal(request: Request) -> VerifiedPrincipal | None:
     identity, sitting between the reverse-proxy header and the OIDC bearer.
     Invalid/absent -> falls through to the bearer path unchanged.
     """
+    if request is None:
+        # WebSocket connection: no Request to stash state on. OIDC off ->
+        # defer to the endpoint's own websocket_authorized gate; OIDC on ->
+        # enforce the same bearer verification against the WS headers.
+        if not oidc_enabled():
+            return None
+        if websocket is None:
+            raise HTTPException(status_code=401, detail="OIDC bearer token required")
+        auth = websocket.headers.get("authorization", "")
+        ws_token = auth[7:] if auth.startswith("Bearer ") else ""
+        if not ws_token:
+            raise HTTPException(status_code=401, detail="OIDC bearer token required")
+        try:
+            return verify_oidc_token(ws_token)
+        except OIDCError:
+            raise HTTPException(status_code=401, detail="invalid OIDC token")
+
     pp = _proxy_principal(request)
     if pp is not None:
         request.state.principal = pp
@@ -284,3 +310,30 @@ def require_principal(request: Request) -> VerifiedPrincipal | None:
         )
     request.state.principal = principal
     return principal
+
+
+def websocket_authorized(websocket) -> bool:
+    """Auth gate for WebSocket endpoints (the HTTP middleware doesn't run
+    for WS connections).
+
+    Mirrors the bearer middleware's policy exactly:
+      - token configured -> require ``Authorization: Bearer <token>``
+        (constant-time compare). Browsers can't set WS headers; browser
+        consumers use the loopback/no-token mode or a reverse proxy that
+        injects the header.
+      - no token -> loopback peers only, and never through a proxy
+        (a forwarding header means the loopback peer is the proxy, not the
+        user — fail closed, same as HTTP).
+    """
+    import hmac as _hmac
+    import os as _os
+
+    expected = _os.environ.get("MAVERICK_DASHBOARD_TOKEN")
+    if expected:
+        auth = websocket.headers.get("authorization", "")
+        supplied = auth[7:] if auth.startswith("Bearer ") else ""
+        return bool(supplied) and _hmac.compare_digest(expected, supplied)
+    from .app import _PROXY_FORWARD_HEADERS, _is_loopback_client
+    host = websocket.client.host if websocket.client else ""
+    proxied = any(websocket.headers.get(h) for h in _PROXY_FORWARD_HEADERS)
+    return _is_loopback_client(host) and not proxied

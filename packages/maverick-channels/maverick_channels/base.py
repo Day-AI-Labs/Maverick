@@ -73,6 +73,10 @@ class IncomingMessage:
     channel: str = ""
     raw: object = None
     sender_id: str | None = None
+    # Platform message id of THIS inbound message, when the platform has one
+    # (Slack ts, Telegram message_id, ...). Lets the reply thread onto it via
+    # Channel.send_threaded; None on platforms without addressable messages.
+    message_id: str | None = None
 
     @property
     def principal_id(self) -> str:
@@ -116,6 +120,20 @@ class Channel(ABC):
 
     @abstractmethod
     async def send(self, user_id: str, text: str) -> None: ...
+
+    async def send_threaded(
+        self, user_id: str, text: str, *, reply_to: str | None = None,
+    ) -> None:
+        """Send a reply threaded onto ``reply_to`` (a platform message id).
+
+        Default: ignore the thread reference and fall back to a plain
+        ``send`` — adapters whose platform supports threading (Slack
+        ``thread_ts``, Telegram ``reply_to_message_id``) override this. The
+        caller passes ``IncomingMessage.message_id`` so long-running results
+        land under the message that asked for them instead of interleaving
+        into a busy room.
+        """
+        await self.send(user_id, text)
 
     @abstractmethod
     async def stop(self) -> None: ...

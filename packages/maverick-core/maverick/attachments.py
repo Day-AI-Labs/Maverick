@@ -11,14 +11,26 @@ so the existing ``read_file`` tool can pick them up. Images are also
 delivered to the orchestrator as Anthropic vision content blocks (see
 ``content_blocks_for_goal``) so the agent can SEE them, not just read
 their bytes.
+
+**S3-backed attachments** (opt-in): with ``[attachments] s3_bucket`` (or
+``MAVERICK_ATTACH_S3_BUCKET``) set, every stored attachment is also mirrored
+to ``s3://<bucket>/<prefix><goal_id>/<name>`` — the durable/shared copy for
+multi-host deployments — and :func:`s3_fetch` pulls a missing attachment back
+down on a worker that doesn't have the local file. Local disk remains the
+source the tools read; the mirror is best-effort fail-open (an S3 outage
+must never reject an upload). Uses boto3 (the ``[s3]`` extra), imported
+lazily; works against any S3-compatible endpoint via ``AWS_ENDPOINT_URL``.
 """
 from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 DEFAULT_ROOT = Path.home() / ".maverick" / "attachments"
 
@@ -67,6 +79,96 @@ class Stored:
 def _root_for_goal(goal_id: int, root: Path | None = None) -> Path:
     base = root or DEFAULT_ROOT
     return base / str(goal_id)
+
+
+# ---- S3 mirror (opt-in) -----------------------------------------------------
+
+def _s3_settings() -> tuple[str, str]:
+    """(bucket, key_prefix); bucket == "" when the mirror is off."""
+    bucket = os.environ.get("MAVERICK_ATTACH_S3_BUCKET", "").strip()
+    prefix = os.environ.get("MAVERICK_ATTACH_S3_PREFIX", "").strip()
+    if not bucket:
+        try:
+            from .config import load_config
+            cfg = (load_config() or {}).get("attachments") or {}
+            bucket = str(cfg.get("s3_bucket") or "").strip()
+            prefix = prefix or str(cfg.get("s3_prefix") or "").strip()
+        except Exception:  # pragma: no cover -- config never blocks an upload
+            pass
+    if prefix and not prefix.endswith("/"):
+        prefix += "/"
+    return bucket, prefix
+
+
+def s3_mirror_enabled() -> bool:
+    return bool(_s3_settings()[0])
+
+
+def _s3_client():
+    import boto3  # the [s3] extra; lazy so the default path never imports it
+    kwargs = {}
+    endpoint = os.environ.get("AWS_ENDPOINT_URL", "").strip()
+    if endpoint:
+        kwargs["endpoint_url"] = endpoint
+    region = os.environ.get("AWS_REGION", "").strip()
+    if region:
+        kwargs["region_name"] = region
+    return boto3.client("s3", **kwargs)
+
+
+def _s3_key(goal_id: int, name: str) -> str:
+    bucket, prefix = _s3_settings()
+    assert bucket
+    return f"{prefix}{goal_id}/{name}"
+
+
+def _s3_mirror(goal_id: int, dest: Path, mime: str) -> None:
+    """Best-effort upload of a stored attachment. Never raises."""
+    try:
+        client = _s3_client()
+        bucket, _ = _s3_settings()
+        client.put_object(
+            Bucket=bucket,
+            Key=_s3_key(goal_id, dest.name),
+            Body=dest.read_bytes(),
+            ContentType=mime or "application/octet-stream",
+        )
+    except Exception as e:  # noqa: BLE001 -- mirror is fail-open by design
+        log.warning("attachment S3 mirror failed (local copy kept): %s", e)
+
+
+def s3_fetch(goal_id: int, name: str, *, root: Path | None = None) -> Path | None:
+    """Pull one mirrored attachment down to the local store.
+
+    For a worker host that doesn't have the local file (the uploader ran
+    elsewhere). ``name`` is the on-disk name (``<sha16>-<filename>``). Returns
+    the local path, or None when the mirror is off / the object is missing.
+    """
+    if not s3_mirror_enabled():
+        return None
+    dest_dir = _root_for_goal(goal_id, root)
+    dest = dest_dir / name
+    if dest.exists():
+        return dest
+    try:
+        client = _s3_client()
+        bucket, _ = _s3_settings()
+        obj = client.get_object(Bucket=bucket, Key=_s3_key(goal_id, name))
+        data = obj["Body"].read()
+    except Exception as e:  # noqa: BLE001 -- absent object / S3 down -> None
+        log.warning("attachment S3 fetch failed: %s", e)
+        return None
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(dest_dir, 0o700)
+    except OSError:
+        pass
+    dest.write_bytes(data)
+    try:
+        os.chmod(dest, 0o600)
+    except OSError:
+        pass
+    return dest
 
 
 def store(
@@ -132,6 +234,8 @@ def store(
             os.chmod(dest, 0o600)
         except OSError:
             pass
+        if s3_mirror_enabled():
+            _s3_mirror(goal_id, dest, mime)
 
     return Stored(
         filename=filename,

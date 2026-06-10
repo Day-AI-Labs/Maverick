@@ -56,8 +56,14 @@ CHANNELS: list[tuple[str, str, list[str]]] = [
     # voice block below; only the webhook token is static here.
     ("voice",    "Voice (Vapi/Retell/Bland)",            ["VAPI_WEBHOOK_TOKEN"]),
     ("whatsapp", "WhatsApp (Twilio, needs webhook)",    ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]),
+    ("whatsapp_cloud", "WhatsApp (Meta Cloud API, needs webhook)",
+     ["WHATSAPP_CLOUD_ACCESS_TOKEN", "WHATSAPP_CLOUD_PHONE_NUMBER_ID",
+      "WHATSAPP_CLOUD_VERIFY_TOKEN", "WHATSAPP_CLOUD_APP_SECRET"]),
     ("sms",      "SMS (Twilio, needs webhook)",         ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]),
     ("imessage", "iMessage (macOS only)",               []),
+    ("threads",  "Threads (Meta, polling)",              ["THREADS_ACCESS_TOKEN", "THREADS_USER_ID"]),
+    ("rcs",      "RCS (Google RBM, approved agents only)",
+     ["RCS_AGENT_ID", "RCS_SERVICE_ACCOUNT_JSON", "RCS_WEBHOOK_TOKEN"]),
 ]
 
 
@@ -67,7 +73,8 @@ CHANNELS: list[tuple[str, str, list[str]]] = [
 # and imessage is macOS-only and needs Full Disk Access. Offering them in
 # the default checkbox is dishonest: users pick them, then hit a dead end.
 # Gate them behind an explicit opt-in (see pick_channels).
-EXPERIMENTAL_CHANNELS: set[str] = {"whatsapp", "sms", "imessage"}
+EXPERIMENTAL_CHANNELS: set[str] = {"whatsapp", "whatsapp_cloud", "sms", "imessage",
+                                   "threads", "rcs"}
 
 
 # Ordered advanced-flow steps, mirroring the pick_* sequence in run().
@@ -578,6 +585,7 @@ def pick_models_per_role(providers: list[str]) -> dict[str, str]:
 _ALLOWLIST_CHANNELS = {
     "telegram", "discord", "slack", "signal", "email",
     "matrix", "bluesky", "mastodon", "irc", "imessage", "sms", "whatsapp",
+    "whatsapp_cloud", "threads", "rcs",
 }
 _ALLOWLIST_HINT = {
     "telegram": "numeric Telegram user IDs",
@@ -592,6 +600,9 @@ _ALLOWLIST_HINT = {
     "imessage": "phone numbers or emails",
     "sms": "phone numbers, e.g. +14155551234",
     "whatsapp": "senders as Twilio sends them, e.g. whatsapp:+14155551234",
+    "whatsapp_cloud": "bare wa_id digits, e.g. 14155551234",
+    "threads": "Threads usernames of allowed authors",
+    "rcs": "E.164 MSISDNs, e.g. +14155551234",
 }
 
 
@@ -1263,7 +1274,7 @@ def _docker_available() -> bool:
 # sandbox._IMAGE_BY_LANGUAGE). local/ssh run model shell on the host toolchain
 # and devcontainer reuses the user's own image, so the language hint only
 # changes anything for these three.
-_LANGUAGE_BACKENDS = {"docker", "podman", "kubernetes"}
+_LANGUAGE_BACKENDS = {"docker", "gvisor", "podman", "kubernetes"}
 
 
 def pick_sandbox() -> dict[str, Any]:
@@ -1276,6 +1287,7 @@ def pick_sandbox() -> dict[str, Any]:
         [
             "local  - Subprocess on this machine (fastest, least isolated)",
             "docker - Throwaway Docker container (recommended)",
+            "gvisor - Docker + gVisor runsc kernel (strongest isolation)",
             "podman - Throwaway Podman container (rootless)",
             "devcontainer - Reuse a .devcontainer config",
             "kubernetes - Pod-per-command in a cluster (kubectl)",

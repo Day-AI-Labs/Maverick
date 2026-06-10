@@ -197,21 +197,21 @@ def dashboard_client(tmp_path, monkeypatch):
 def test_dashboard_default_theme_is_dark(dashboard_client):
     resp = dashboard_client.get("/")
     assert resp.status_code == 200
-    assert 'class="theme-dark"' in resp.text
+    assert 'class="theme-dark' in resp.text
 
 
 @pytest.mark.parametrize("theme", ["dark", "light", "solarized", "hicontrast"])
 def test_dashboard_theme_query_param(dashboard_client, theme):
     resp = dashboard_client.get(f"/?theme={theme}")
     assert resp.status_code == 200
-    assert f'class="theme-{theme}"' in resp.text
+    assert f'class="theme-{theme}' in resp.text
 
 
 def test_dashboard_invalid_theme_falls_back(dashboard_client):
     resp = dashboard_client.get("/?theme=garbage-not-a-theme")
     assert resp.status_code == 200
     # Falls back to dark (the default).
-    assert 'class="theme-dark"' in resp.text
+    assert 'class="theme-dark' in resp.text
 
 
 def test_dashboard_theme_cookie_persists(dashboard_client):
@@ -222,7 +222,7 @@ def test_dashboard_theme_cookie_persists(dashboard_client):
     assert cookies.get("mvk_theme") == "light"
     # Next visit without the query param should pick up the cookie.
     resp2 = dashboard_client.get("/", cookies={"mvk_theme": "light"})
-    assert 'class="theme-light"' in resp2.text
+    assert 'class="theme-light' in resp2.text
 
 
 def test_dashboard_theme_switcher_options_in_header(dashboard_client):

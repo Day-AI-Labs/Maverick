@@ -149,3 +149,35 @@ def test_build_sandbox_parses_string_false_docker_controls(monkeypatch, tmp_path
         assert captured["args"][captured["args"].index("--user") + 1] == (
             f"{os.getuid()}:{os.getgid()}"
         )
+
+
+# ---- gVisor runtime (docker --runtime=runsc) ----
+
+def test_no_runtime_flag_by_default(monkeypatch, tmp_path):
+    args = _capture_run_argv(monkeypatch, DockerBackend, "_verify_docker", tmp_path)
+    assert "--runtime" not in args
+
+
+def test_runtime_field_injects_runsc(monkeypatch, tmp_path):
+    args = _capture_run_argv(monkeypatch, DockerBackend, "_verify_docker", tmp_path,
+                             runtime="runsc")
+    assert "--runtime" in args
+    assert args[args.index("--runtime") + 1] == "runsc"
+    # must precede the image (the positional that ends the docker-run flags)
+    assert args.index("--runtime") < args.index("python:3.12-slim")
+
+
+def test_build_sandbox_gvisor_uses_runsc(monkeypatch, tmp_path):
+    monkeypatch.setattr(DockerBackend, "_verify_docker", lambda self: None)
+    from maverick.sandbox import build_sandbox
+    sb = build_sandbox(workdir=tmp_path, backend="gvisor")
+    assert isinstance(sb, DockerBackend)
+    assert sb.runtime == "runsc"
+
+
+def test_build_sandbox_docker_has_no_runtime(monkeypatch, tmp_path):
+    monkeypatch.setattr(DockerBackend, "_verify_docker", lambda self: None)
+    from maverick.sandbox import build_sandbox
+    sb = build_sandbox(workdir=tmp_path, backend="docker")
+    assert isinstance(sb, DockerBackend)
+    assert sb.runtime is None

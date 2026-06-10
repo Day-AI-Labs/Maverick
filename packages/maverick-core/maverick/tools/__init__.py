@@ -185,6 +185,52 @@ def host_exec(
         return 124, empty, f"TIMEOUT after {timeout}s"
 
 
+def _forward_chunk(listener, name: str, chunk: Any) -> str:
+    """Streaming tool_result: forward one chunk to the registry listener
+    (best-effort) and return it as text for accumulation."""
+    piece = chunk if isinstance(chunk, str) else str(chunk)
+    if listener is not None:
+        try:
+            listener(name, piece)
+        except Exception:  # listener must never break the call
+            pass
+    return piece
+
+
+async def _execute_tool_fn(fn, args: dict[str, Any], stream_chunk) -> str:
+    """Run a tool fn under every supported contract.
+
+    str-returning (sync or async) is the classic contract. **Streaming
+    tool_result**: a fn may be an async generator, or return a sync
+    generator/iterator of chunks — chunks flow through ``stream_chunk`` as
+    they are produced (the dashboard/TUI live-view seam) and the joined text
+    is the tool_result the model sees, so the model protocol is unchanged.
+    Sync fns (and sync generators) drain on a worker thread so a slow tool
+    can't stall the event loop.
+    """
+    if inspect.iscoroutinefunction(fn):
+        out = await fn(args)
+    elif inspect.isasyncgenfunction(fn):
+        parts: list[str] = []
+        async for chunk in fn(args):
+            parts.append(stream_chunk(chunk))
+        return "".join(parts)
+    else:
+        out = await asyncio.to_thread(fn, args)
+    if inspect.isawaitable(out):
+        out = await out
+    if inspect.isgenerator(out) or (hasattr(out, "__next__") and not isinstance(out, str)):
+        parts = []
+
+        def _drain() -> None:
+            for chunk in out:
+                parts.append(stream_chunk(chunk))
+
+        await asyncio.to_thread(_drain)
+        return "".join(parts)
+    return out
+
+
 ToolFn = Callable[[dict[str, Any]], str | Awaitable[str]]
 
 
@@ -230,6 +276,10 @@ class ToolRegistry:
         self._core_names: set[str] = set()
         self._core: set[str] = set()
         self._activated: set[str] = set()
+        # Streaming tool_result: an optional listener that receives
+        # (tool_name, chunk) for tools whose fn yields chunks (generators).
+        # The model still gets the joined result; this is the live-UX seam.
+        self._chunk_listener = None
         # Memoized to_anthropic() payload. The exposed tool set is stable
         # across turns (it only changes on register / set_acl /
         # enable_deferred / activate), but the agent loop re-serialises all
@@ -261,6 +311,16 @@ class ToolRegistry:
             if risk_rank(tool_risk(name)) > risk_rank(self._acl_max_risk):
                 return False
         return True
+
+    def set_chunk_listener(self, listener) -> None:
+        """Register ``listener(tool_name, chunk)`` for streaming tool output.
+
+        Tools that return an iterator/generator of str chunks stream through
+        it as they produce output (dashboard/TUI live view); the joined text
+        remains the tool_result the model sees. Pass None to clear. Listener
+        errors are swallowed — observability must never break a tool call.
+        """
+        self._chunk_listener = listener
 
     def register(self, tool: Tool) -> None:
         if not self._acl_allows(tool.name):
@@ -374,20 +434,10 @@ class ToolRegistry:
                 except ImportError:
                     pass
                 async def _invoke() -> str:
-                    _fn = self._tools[name].fn
-                    if inspect.iscoroutinefunction(_fn):
-                        # Native async tool: await directly on the loop.
-                        return await _fn(args)
-                    # Synchronous fn: offload to a worker thread so one slow or
-                    # blocking call (SaaS httpx, pymongo, dns, pyautogui, ...)
-                    # can't freeze the event loop and stall the whole swarm /
-                    # server / dashboard. Tools already assume threadpool
-                    # execution (see the threading.Lock / threading.local guards
-                    # in browser, mongodb, redis, repo_map).
-                    out = await asyncio.to_thread(_fn, args)
-                    if inspect.isawaitable(out):
-                        out = await out
-                    return out
+                    return await _execute_tool_fn(
+                        self._tools[name].fn, args,
+                        lambda chunk: _forward_chunk(self._chunk_listener, name, chunk),
+                    )
 
                 # One shared reliability policy: transient upstream failures
                 # on retry-safe (non-high-risk) tools are retried with backoff.
@@ -652,6 +702,7 @@ def base_registry(  # noqa: C901
     from .notion import notion
     from .obsidian import obsidian
     from .ocr import ocr
+    from .office_convert import office_convert
     from .openapi_runner import openapi_runner
     from .openmetrics import openmetrics
     from .outline_writer import outline_writer
@@ -717,6 +768,7 @@ def base_registry(  # noqa: C901
     from .tool_call_inspector import tool_call_inspector
     from .translate import translate
     from .trello_tool import trello_tool
+    from .truelayer_tool import truelayer_tool
     from .twilio_tool import twilio_tool
     from .two_person_rule import two_person_rule
     from .unified_inbox import unified_inbox
@@ -887,6 +939,33 @@ def base_registry(  # noqa: C901
     reg.register(synthetic_data())
     reg.register(web_recorder())
     reg.register(watermark_detector())
+    from .agent_identity import agent_identity
+    # capability_delegation_graph / collusion_detector / coordinated_disclosure:
+    # registered once above (parallel-built on both branches; unified at merge).
+    reg.register(agent_identity())
+    from .adversarial_eval import adversarial_eval
+    from .gui_element_memory import gui_element_memory
+    from .voice_command_grammar import voice_command_grammar
+    from .what_changed_digest import what_changed_digest
+    reg.register(voice_command_grammar())
+    reg.register(what_changed_digest())
+    reg.register(gui_element_memory())
+    reg.register(adversarial_eval())
+    from .trace_compare import trace_compare
+    # latency_heatmap / tool_call_inspector: registered once above (merge dup).
+    reg.register(trace_compare())
+    from .github_search import github_search
+    from .governance_explainer import governance_explainer
+    from .image_content_classifier import image_content_classifier
+    from .lsp_bridge import lsp_bridge
+    from .oauth_helper import oauth_helper
+    # template_generator / web_archive / anki: registered once above
+    # (parallel-built on both branches; unified at merge).
+    reg.register(image_content_classifier())
+    reg.register(lsp_bridge())
+    reg.register(oauth_helper())
+    reg.register(github_search())
+    reg.register(governance_explainer())
     reg.register(a11y_tree())
     reg.register(ai_act_classifier())
     reg.register(cache_admin())
@@ -968,9 +1047,11 @@ def base_registry(  # noqa: C901
     reg.register(sns_tool())
     reg.register(ffmpeg_tool(sandbox))
     reg.register(pandoc_tool(sandbox))
+    reg.register(office_convert(sandbox))
     reg.register(imagemagick_tool(sandbox))
     reg.register(ga4_tool())
     reg.register(plaid_tool())
+    reg.register(truelayer_tool())
     reg.register(erp_tool())  # read-only ERP system-of-record access (Ops/Finance)
 
     # Voice tools (opt-in extra; tool factories raise ImportError only

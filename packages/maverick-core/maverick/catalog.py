@@ -76,6 +76,22 @@ class CatalogError(Exception):
     """Raised on hash mismatch or malformed index entry."""
 
 
+def _safe_rating(v) -> float:
+    """Clamp a self-asserted rating to [0, 5]; malformed -> 0 (unrated),
+    never an exception (one bad field must not hide the whole catalog)."""
+    try:
+        return max(0.0, min(5.0, float(v or 0)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _safe_count(v) -> int:
+    try:
+        return max(0, int(v or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 @dataclass(frozen=True)
 class CatalogEntry:
     name: str
@@ -91,6 +107,10 @@ class CatalogEntry:
     # compatibility / display only.
     verified: bool = False
     install_count: int = 0
+    # Community rating carried by the index (display-only, like
+    # install_count): average stars (0 = unrated) + how many ratings.
+    rating: float = 0.0
+    ratings_count: int = 0
     # Inline payload for kinds whose installable artifact IS configuration rather
     # than a separate fetched file. The MCP registry uses this to carry the
     # server spec (command/args/env or url/headers) directly in the index, since
@@ -116,6 +136,8 @@ class CatalogEntry:
             author=str(d.get("author", "")),
             verified=bool(d.get("verified", False)),
             install_count=int(d.get("install_count", 0) or 0),
+            rating=_safe_rating(d.get("rating")),
+            ratings_count=_safe_count(d.get("ratings_count")),
             spec=spec,
         )
 
@@ -126,6 +148,9 @@ class CatalogEntry:
             "author": self.author, "verified": self.verified,
             "install_count": self.install_count,
         }
+        if self.ratings_count:
+            d["rating"] = round(self.rating, 2)
+            d["ratings_count"] = self.ratings_count
         if self.spec:
             d["spec"] = self.spec
         return d

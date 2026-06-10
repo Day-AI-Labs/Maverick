@@ -72,6 +72,13 @@ class DockerBackend:
     # ``[sandbox] allow_root = true`` (or MAVERICK_SANDBOX_ALLOW_ROOT) to keep
     # root for images that require it.
     allow_root: bool = False
+    # Container runtime (``docker run --runtime``). None = Docker's default
+    # (runc). Set to ``runsc`` for the **gVisor** application kernel, which
+    # interposes a userspace kernel between the container and the host —
+    # stronger isolation for a possibly prompt-injected agent than seccomp +
+    # caps alone. The ``gvisor`` backend wires this in; the runtime must be
+    # installed and registered with the Docker daemon.
+    runtime: str | None = None
 
     def __post_init__(self) -> None:
         self.workdir = Path(self.workdir)
@@ -109,6 +116,8 @@ class DockerBackend:
             "--security-opt", "no-new-privileges",
             *container_user_args(self.allow_root),
         ]
+        if self.runtime:
+            args.extend(["--runtime", str(self.runtime)])
         if self.pids_limit:
             args.extend(["--pids-limit", str(self.pids_limit)])
         if self.memory:

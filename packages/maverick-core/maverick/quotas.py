@@ -164,6 +164,43 @@ class UsageLedger:
             "out_tokens": int(cell.get("out_tokens", 0)),
         }
 
+    def prune(self, keep_days: int, *, now: float | None = None,
+              dry_run: bool = False) -> dict:
+        """Drop ``(principal, day)`` buckets older than ``keep_days`` days.
+
+        The ledger accrues a row per ``(principal, UTC day)`` forever; this is
+        the retention valve. A day is expired when it is on or before the cutoff
+        (``now - keep_days*86400``), matching the audit-file window. Principals
+        left with no days are dropped. ``keep_days <= 0`` is a no-op (retention
+        disabled). Returns a report; never raises.
+        """
+        if not keep_days or int(keep_days) <= 0:
+            return {"removed_buckets": 0, "removed_principals": 0, "reason": "disabled"}
+        now_ts = now if now is not None else datetime.now(timezone.utc).timestamp()
+        cutoff_ts = now_ts - max(1, int(keep_days)) * 86400.0
+        # YYYY-MM-DD sorts lexicographically == chronologically, so a string
+        # compare against the cutoff day is the same window the SQL purges use.
+        cutoff_day = datetime.fromtimestamp(cutoff_ts, timezone.utc).strftime("%Y-%m-%d")
+        removed_buckets = 0
+        removed_principals = 0
+        with _RECORD_LOCK, _cross_process_lock(self.path):
+            data = self._load()
+            for principal in list(data.keys()):
+                days = data.get(principal) or {}
+                for day in [d for d in days if isinstance(d, str) and d <= cutoff_day]:
+                    removed_buckets += 1
+                    if not dry_run:
+                        del days[day]
+                if not days:
+                    removed_principals += 1
+                    if not dry_run:
+                        del data[principal]
+            if not dry_run and removed_buckets:
+                self._save(data)
+        return {"removed_buckets": removed_buckets,
+                "removed_principals": removed_principals,
+                "cutoff_day": cutoff_day}
+
 
 def _env_float(name: str) -> float | None:
     raw = os.environ.get(name)

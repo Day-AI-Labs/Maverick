@@ -196,8 +196,12 @@ def build_sandbox(
         log.warning("invalid [sandbox] timeout %r; using 60s", cfg.get("timeout"))
         timeout = 60.0
 
-    if chosen == "docker":
+    if chosen in ("docker", "gvisor"):
         image = _resolve_image(full_cfg)
+        # gVisor is Docker with the runsc runtime; reuse every Docker knob and
+        # just swap the runtime. A configured [sandbox] runtime overrides the
+        # default so an operator can point gvisor at a custom runsc registration.
+        runtime = full_cfg.get("runtime") or ("runsc" if chosen == "gvisor" else None)
         return DockerBackend(
             workdir=wd, image=image, timeout=timeout,
             allow_network=_config_bool(full_cfg.get("allow_network"), False),
@@ -205,6 +209,7 @@ def build_sandbox(
             memory=full_cfg.get("memory", "4g"),
             cpus=full_cfg.get("cpus"),
             allow_root=_config_bool(full_cfg.get("allow_root"), False),
+            runtime=runtime,
         )
     if chosen == "podman":
         image = _resolve_image(full_cfg)

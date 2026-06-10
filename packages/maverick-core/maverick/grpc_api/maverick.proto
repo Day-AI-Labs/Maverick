@@ -23,6 +23,10 @@ service Maverick {
 
   // Point-in-time status of a goal.
   rpc GetStatus(GetStatusRequest) returns (GoalStatus);
+
+  // Run an EXISTING goal row to completion (the cross-host Dispatcher seam:
+  // caller and worker share the world DB). Blocks until terminal.
+  rpc RunGoal(RunGoalRequest) returns (GoalStatus);
 }
 
 message StartGoalRequest {
@@ -63,6 +67,14 @@ message CancelResponse {
 
 message GetStatusRequest {
   int64 goal_id = 1;
+}
+
+message RunGoalRequest {
+  int64 goal_id = 1;
+  double max_dollars = 2;       // 0 = config default
+  double max_wall_seconds = 3;  // 0 = config default
+  string channel = 4;
+  string user_id = 5;
 }
 
 message GoalStatus {

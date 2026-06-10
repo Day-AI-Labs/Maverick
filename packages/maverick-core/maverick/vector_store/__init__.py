@@ -11,11 +11,15 @@ Currently:
     remote Qdrant cluster; uses qdrant-client's built-in fastembed.
   - WeaviateStore (``maverick-agent[weaviate]``) — embedded by default or
     a remote cluster; server-side vectorizer module.
+  - PgVectorStore (``maverick-agent[postgres]``) — Postgres + the pgvector
+    extension; keeps vectors in the same DB as the world model. Takes an
+    injected embedder (it does not embed itself).
 """
 from .chroma_store import DEFAULT_PATH, ChromaStore  # noqa: F401
+from .pgvector_store import PgVectorStore  # noqa: F401
 from .qdrant_store import DEFAULT_PATH as QDRANT_DEFAULT_PATH
 from .qdrant_store import QdrantStore  # noqa: F401
 from .weaviate_store import WeaviateStore  # noqa: F401
 
 __all__ = ["ChromaStore", "DEFAULT_PATH", "QdrantStore", "QDRANT_DEFAULT_PATH",
-           "WeaviateStore"]
+           "WeaviateStore", "PgVectorStore"]

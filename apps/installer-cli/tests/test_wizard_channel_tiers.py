@@ -43,22 +43,22 @@ def test_production_channels_offered_by_default(monkeypatch):
 def test_experimental_channels_hidden_by_default(monkeypatch):
     choices = _capture_choices(monkeypatch, show_experimental=False)
     ids = _ids(choices)
-    for ch in ("whatsapp", "sms", "imessage"):
+    for ch in ("whatsapp", "whatsapp_cloud", "sms", "imessage", "threads", "rcs"):
         assert ch not in ids, f"{ch} must not be offered unless opted in"
 
 
 def test_experimental_channels_shown_and_marked_when_opted_in(monkeypatch):
     choices = _capture_choices(monkeypatch, show_experimental=True)
     ids = _ids(choices)
-    for ch in ("whatsapp", "sms", "imessage"):
+    for ch in ("whatsapp", "whatsapp_cloud", "sms", "imessage", "threads", "rcs"):
         assert ch in ids, f"{ch} should appear after opting in"
     # Production channels are still there too.
     assert "telegram" in ids
     # Experimental entries are clearly labelled.
-    exp = [c for c in choices if c.split()[0] in {"whatsapp", "sms", "imessage"}]
+    exp = [c for c in choices if c.split()[0] in {"whatsapp", "whatsapp_cloud", "sms", "imessage", "threads", "rcs"}]
     assert exp and all("[experimental]" in c for c in exp)
     # Production channels are not falsely marked experimental.
-    prod = [c for c in choices if c.split()[0] not in {"whatsapp", "sms", "imessage"}]
+    prod = [c for c in choices if c.split()[0] not in {"whatsapp", "whatsapp_cloud", "sms", "imessage", "threads", "rcs"}]
     assert all("[experimental]" not in c for c in prod)
 
 
@@ -67,4 +67,4 @@ def test_experimental_set_matches_catalog(monkeypatch):
 
     catalog_ids = {c[0] for c in CHANNELS}
     assert EXPERIMENTAL_CHANNELS <= catalog_ids
-    assert EXPERIMENTAL_CHANNELS == {"whatsapp", "sms", "imessage"}
+    assert EXPERIMENTAL_CHANNELS == {"whatsapp", "whatsapp_cloud", "sms", "imessage", "threads", "rcs"}

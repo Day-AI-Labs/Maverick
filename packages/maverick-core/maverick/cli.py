@@ -1738,13 +1738,46 @@ def template_browse() -> None:
     if not entries:
         click.echo("no registry templates (index empty or unreachable).")
         return
+    from .marketplace_ratings import RatingsLedger, stars_bar
+    ledger = RatingsLedger()
     for e in entries:
         mark = " [verified]" if e.verified else ""
-        click.echo(f"  {e.name}{mark}  v{e.version}")
+        rating = f"  {stars_bar(e.rating, e.ratings_count)}" if e.ratings_count else ""
+        click.echo(f"  {e.name}{mark}  v{e.version}{rating}")
         if e.summary:
             click.echo(f"    {e.summary}")
+        mine = ledger.my_rating("templates", e.name)
+        if mine:
+            click.echo(f"    your rating: {stars_bar(mine['stars'], 0)}")
     click.echo("")
     click.echo("install one with:  maverick template add <name>")
+    click.echo("rate one with:     maverick template rate <name> <stars 1-5>")
+
+
+@template.command("rate")
+@click.argument("name")
+@click.argument("stars", type=int)
+@click.option("--comment", default="", help="Optional short note (kept local).")
+def template_rate(name: str, stars: int, comment: str) -> None:
+    """Rate a marketplace template 1-5 stars (stored locally).
+
+    Your ratings annotate `browse` output and can be exported for an index
+    submission with `maverick template ratings-export`.
+    """
+    from .marketplace_ratings import RatingsLedger, stars_bar
+    try:
+        entry = RatingsLedger().rate("templates", name, stars, comment)
+    except ValueError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    click.echo(f"rated {name}: {stars_bar(entry['stars'], 0)}")
+
+
+@template.command("ratings-export")
+def template_ratings_export() -> None:
+    """Print your local ratings as the JSON fragment an index PR expects."""
+    from .marketplace_ratings import RatingsLedger
+    click.echo(RatingsLedger().export_for_submission())
 
 
 @template.command("add")
@@ -1808,6 +1841,86 @@ def debate(ctx, question: str, rounds: int, max_dollars: float,
     if result.key_argument:
         click.echo(f"Key argument: {result.key_argument}")
     click.echo(f"\n[{result.rounds_completed} round(s), ${result.total_dollars:.4f}]")
+
+
+@main.command("schema-plan")
+def schema_plan_cmd() -> None:
+    """Show pending world-model schema migrations + whether they're hot-safe.
+
+    Classifies each pending statement online (non-blocking) vs offline (table
+    rewrite / data backfill) so you know before upgrading whether a
+    maintenance window is needed. Exits 1 when the migration table fails its
+    structural lint.
+    """
+    from .schema_migrations import plan, render, validate
+    from .world_model import DEFAULT_DB, SCHEMA_VERSION, WorldModel
+    problems = validate()
+    if problems:
+        for pb in problems:
+            click.echo(f"LINT: {pb}", err=True)
+        sys.exit(1)
+    try:
+        w = WorldModel(DEFAULT_DB)
+        current = w.conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()[0]
+    except Exception:
+        current = SCHEMA_VERSION  # no DB yet -> nothing pending
+    click.echo(render(plan(int(current), SCHEMA_VERSION)))
+
+
+@main.command("migrate")
+@click.option("--apply", "do_apply", is_flag=True,
+              help="Apply mechanical rewrites (after a timestamped backup). "
+                   "Default is a dry run.")
+@click.option("--config", "config_path", default=None,
+              help="Path to config.toml (default: the active deployment's).")
+def migrate_cmd(do_apply: bool, config_path: str | None) -> None:
+    """Walk an existing config forward across versions.
+
+    Reports migration advisories (real upgrade paths), lints unknown config
+    sections (silent-no-op typos), and -- with --apply -- performs mechanical
+    key renames behind a timestamped backup. Dry-run by default.
+    """
+    from pathlib import Path as _Path
+
+    from .migrate import migrate, render
+    report = migrate(_Path(config_path) if config_path else None, apply=do_apply)
+    click.echo(render(report))
+
+
+@main.command("plan-reflect")
+@click.argument("goal")
+@click.option("--max-iterations", default=3, show_default=True, type=int,
+              help="Max plan->execute->reflect passes before stopping.")
+@click.option("--max-dollars", default=2.0, show_default=True, type=float,
+              help="Spend cap for the whole loop.")
+@click.pass_context
+def plan_reflect(ctx, goal: str, max_iterations: int, max_dollars: float) -> None:
+    """Run the plan-execute-reflect loop on GOAL and print the trace.
+
+    A planner breaks GOAL into steps, an executor runs each, and a reflector
+    decides DONE / REVISE / CONTINUE -- looping until the goal is met, the
+    iteration cap is reached, or the budget runs out.
+    """
+    from .budget import Budget
+    from .plan_execute_reflect import run_plan_execute_reflect
+    k = _kernel()
+    llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
+    result = run_plan_execute_reflect(
+        goal,
+        planner_complete=llm.complete,
+        executor_complete=llm.complete,
+        reflector_complete=llm.complete,
+        max_iterations=max_iterations,
+        budget=Budget(max_dollars=max_dollars),
+    )
+    click.echo(f"Plan ({len(result.plan)} steps): {', '.join(result.plan) or '(empty)'}")
+    for r in result.results:
+        click.echo(f"\n[{r.step}]\n{r.output}")
+    click.echo("\n" + "=" * 48)
+    for i, refl in enumerate(result.reflections, 1):
+        click.echo(f"reflect {i}: {refl.status} -- {refl.notes}")
+    click.echo(f"\nStatus: {result.status} "
+               f"[{result.iterations} iteration(s), ${result.total_dollars:.4f}]")
 
 
 @main.command()
@@ -2308,6 +2421,84 @@ def plugin_list() -> None:
             f"\nallowlist: {listed} "
             "-- enable more via [plugins] enabled in ~/.maverick/config.toml"
         )
+
+
+@plugin.command("reload")
+@click.argument("dist_name")
+def plugin_reload(dist_name: str) -> None:
+    """Hot-reload a plugin distribution's code (no process restart).
+
+    Drops DIST_NAME's entry-point modules from the import cache so the next
+    discovery pass re-imports the current code on disk. Already-instantiated
+    tools/channels keep running old code until their owner rebuilds them.
+    """
+    from .plugins import reload_plugin
+    dropped = reload_plugin(dist_name)
+    if not dropped:
+        click.echo(f"no maverick entry points found for distribution {dist_name!r} "
+                   "(is it installed and allowlisted?)")
+        sys.exit(1)
+    click.echo(f"reloaded {dist_name}: dropped {len(dropped)} module(s)")
+    for m in dropped:
+        click.echo(f"  - {m}")
+
+
+@plugin.command("lock")
+def plugin_lock_cmd() -> None:
+    """Pin the active plugin distributions' versions to plugins.lock.
+
+    Discovery verifies installed versions against the lock per
+    [plugins] lock_policy = "off" | "warn" | "enforce".
+    """
+    from .plugin_lock import lock_path, write_lock
+    pins = write_lock()
+    if not pins:
+        click.echo("no plugin distributions found to pin.")
+        return
+    click.echo(f"pinned {len(pins)} plugin distribution(s) -> {lock_path()}")
+    for name, version in sorted(pins.items()):
+        click.echo(f"  {name} == {version}")
+
+
+@plugin.command("verify")
+def plugin_verify_cmd() -> None:
+    """Verify installed plugin versions against plugins.lock."""
+    from .plugin_lock import verify_lock
+    report = verify_lock()
+    if report.get("unlocked"):
+        click.echo("no plugins.lock (run `maverick plugin lock` to pin). OK")
+        return
+    for name, pinned, installed in report["drifted"]:
+        click.echo(f"  DRIFT {name}: locked {pinned}, installed {installed}")
+    for name in report["missing"]:
+        click.echo(f"  MISSING {name} (pinned but not installed)")
+    for name in report["unpinned"]:
+        click.echo(f"  unpinned {name} (installed but not in the lock)")
+    if report["ok"]:
+        click.echo("plugins.lock OK")
+    else:
+        click.echo("plugins.lock FAIL")
+        sys.exit(1)
+
+
+@plugin.command("stats")
+def plugin_stats_cmd() -> None:
+    """Show local plugin-tool usage counts (opt-in [plugins] telemetry)."""
+    import time as _time
+
+    from .plugin_telemetry import enabled as _ptel_enabled
+    from .plugin_telemetry import stats as _ptel_stats
+    data = _ptel_stats()
+    if not _ptel_enabled():
+        click.echo("plugin telemetry is OFF ([plugins] telemetry = true to enable).")
+    if not data:
+        click.echo("no plugin tool calls recorded.")
+        return
+    for name, entry in sorted(data.items(), key=lambda kv: -kv[1].get("calls", 0)):
+        last = entry.get("last_used")
+        ago = f"{(_time.time() - last) / 86400:.0f}d ago" if last else "never"
+        dist = f" [{entry['dist']}]" if entry.get("dist") else ""
+        click.echo(f"  {name}{dist}: {entry.get('calls', 0)} call(s), last {ago}")
 
 
 @plugin.command("new")
@@ -3988,11 +4179,14 @@ def retention_group() -> None:
               help="Override [retention].episodes_days.")
 @click.option("--events-days", type=int, default=None,
               help="Override [retention].events_days.")
+@click.option("--usage-days", type=int, default=None,
+              help="Override [retention].usage_days (cost-ledger buckets).")
 def retention_enforce_cmd(
     dry_run: bool,
     audit_days: int | None,
     episodes_days: int | None,
     events_days: int | None,
+    usage_days: int | None,
 ) -> None:
     """Apply retention rules to the audit log and world model."""
     import json as _json
@@ -4000,7 +4194,7 @@ def retention_enforce_cmd(
     from .audit.retention import enforce
     # CLI overrides take precedence if any are set; otherwise read config.
     cfg: dict | None = None
-    if any(v is not None for v in (audit_days, episodes_days, events_days)):
+    if any(v is not None for v in (audit_days, episodes_days, events_days, usage_days)):
         cfg = {}
         if audit_days is not None:
             cfg["audit_days"] = audit_days
@@ -4008,6 +4202,8 @@ def retention_enforce_cmd(
             cfg["episodes_days"] = episodes_days
         if events_days is not None:
             cfg["events_days"] = events_days
+        if usage_days is not None:
+            cfg["usage_days"] = usage_days
     report = enforce(config=cfg, dry_run=dry_run)
     click.echo(_json.dumps(report, default=str, indent=2))
 
