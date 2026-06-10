@@ -509,6 +509,10 @@ and `trace_commit()` reads it back so replays tie to exact code); **cost split b
   token/dollar projection + OK/TIGHT/OVER verdict before a goal runs.
   **"Why this cost" drill-down** — `GET /api/v1/goals/{id}/cost-breakdown`:
   spend decomposed by episode outcome (dollars/tokens/counts).
+  **Run-as-tutorial export** — `GET /api/v1/goals/{id}/tutorial.md`
+  (`tutorial_export.py`): the run rendered as step-by-step markdown (goal →
+  approach → steps with preserved code fences → dead ends → outcome),
+  deterministic templates over the event log, secret-scrubbed, no LLM call.
   **Cost anomaly alerts** — `GET /api/v1/cost/anomalies`: per-goal spend
   outliers above mean + Nσ over the recent window (needs ≥3 priced goals).
   **Accessibility + i18n** — a font axis independent of the theme

@@ -131,3 +131,16 @@ def test_cost_anomalies_needs_baseline(monkeypatch):
     monkeypatch.setattr(app_mod, "_world", lambda: _W())
     data = client.get("/api/v1/cost/anomalies").json()
     assert data["anomalies"] == [] and "baseline" in data["note"]
+
+
+def test_tutorial_endpoint():
+    gid = _goal("Build the widget", "from scratch")
+    w = app_mod._world()
+    w.append_event(gid, "planner", "plan", "1. design 2. build")
+    w.append_event(gid, "coder", "finding", "the API needs auth")
+    r = client.get(f"/api/v1/goals/{gid}/tutorial.md")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/markdown")
+    assert "# Tutorial: Build the widget" in r.text
+    assert "the API needs auth" in r.text
+    assert client.get("/api/v1/goals/99999/tutorial.md").status_code == 404

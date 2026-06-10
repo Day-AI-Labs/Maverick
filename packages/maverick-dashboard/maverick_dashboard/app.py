@@ -1674,6 +1674,20 @@ async def annotations_add(request: Request, goal_id: int) -> JSONResponse:
     return JSONResponse(entry, status_code=201)
 
 
+@app.get("/api/v1/goals/{goal_id}/tutorial.md")
+async def goal_tutorial(request: Request, goal_id: int) -> PlainTextResponse:
+    """Run-as-tutorial export: the run rendered as step-by-step markdown."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from maverick.tutorial_export import tutorial_markdown
+    events = w.goal_events(goal_id, limit=5000)
+    md = tutorial_markdown(g, events)
+    return PlainTextResponse(content=md, media_type="text/markdown; charset=utf-8")
+
+
 @app.get("/api/v1/goals/{goal_id}/explain")
 async def goal_explain(request: Request, goal_id: int) -> JSONResponse:
     """Plain-language narrative of a run (deterministic, no LLM)."""
