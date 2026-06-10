@@ -75,6 +75,8 @@ message RunGoalRequest {
   double max_wall_seconds = 3;  // 0 = config default
   string channel = 4;
   string user_id = 5;
+  int32 max_depth = 6;          // 0 = config/default dispatcher depth
+  string capability_json = 7;   // JSON-encoded explicit Capability grant
 }
 
 message GoalStatus {

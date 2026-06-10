@@ -20,6 +20,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from typing import Any
 
 # A goal in one of these states is finished; streaming stops.
 TERMINAL_STATUSES = frozenset({"done", "blocked", "failed", "cancelled"})
@@ -157,6 +158,8 @@ class GoalService:
         max_wall_seconds: float | None = None,
         channel: str | None = None,
         user_id: str | None = None,
+        max_depth: int | None = None,
+        capability: Any | None = None,
     ) -> GoalStatusDTO | None:
         """Run an EXISTING goal row to completion and return its terminal
         status — the worker half of the cross-host gRPC Dispatcher (caller and
@@ -168,12 +171,17 @@ class GoalService:
                 return None
         finally:
             _close(world)
+        if max_depth is None:
+            from ..runner import DEFAULT_MAX_DEPTH
+            max_depth = DEFAULT_MAX_DEPTH
         self._dispatch(
             goal_id,
             max_dollars=max_dollars,
             max_wall_seconds=max_wall_seconds,
             channel=channel,
             user_id=user_id,
+            max_depth=max_depth,
+            capability=capability,
         )
         return self.status(goal_id)
 

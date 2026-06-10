@@ -25,6 +25,7 @@ caller, and logs why.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Any
@@ -93,6 +94,15 @@ class GrpcDispatcher:
             return [("authorization", f"Bearer {self.token}")]
         return []
 
+    @staticmethod
+    def _capability_json(capability: Any | None) -> str:
+        """Serialize an explicit capability grant for the remote worker."""
+        if capability is None:
+            return ""
+        from .queue_dispatcher import _serialize_capability
+
+        return json.dumps(_serialize_capability(capability), separators=(",", ":"))
+
     def submit(
         self,
         goal_id: int,
@@ -104,9 +114,9 @@ class GrpcDispatcher:
         user_id: str | None = None,
         capability: Any | None = None,
     ) -> str | None:
-        # max_depth/capability are per-process concerns the worker derives
-        # from its own config; the RPC carries the run-shaping knobs only.
-        del max_depth, capability
+        if max_depth is None:
+            from .runner import DEFAULT_MAX_DEPTH
+            max_depth = DEFAULT_MAX_DEPTH
         try:
             stub, pb2 = self._build_stub()
         except Exception as e:  # missing extra / bad target
@@ -118,6 +128,8 @@ class GrpcDispatcher:
             max_wall_seconds=float(max_wall_seconds or 0),
             channel=channel or "",
             user_id=user_id or "",
+            max_depth=int(max_depth),
+            capability_json=self._capability_json(capability),
         )
         try:
             status = stub.RunGoal(
