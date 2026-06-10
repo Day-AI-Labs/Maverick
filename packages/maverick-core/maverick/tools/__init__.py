@@ -540,6 +540,7 @@ def base_registry(  # noqa: C901
     from .airtable_tool import airtable_tool
     from .android import android
     from .anki import anki
+    from .anomaly_scan import anomaly_scan
     from .apple_shortcuts import apple_shortcuts
     from .apply_patch import apply_patch
     from .arxiv import arxiv
@@ -800,6 +801,7 @@ def base_registry(  # noqa: C901
     reg.register(dp_stats())
     reg.register(cost_attribution())
     reg.register(model_card())
+    reg.register(anomaly_scan())
     reg.register(supply_chain_pin())
     reg.register(quorum_approval())
     reg.register(crypto_budget_receipt())
