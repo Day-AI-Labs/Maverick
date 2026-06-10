@@ -288,6 +288,16 @@ dispatch path so a v2 handler works everywhere unchanged.
 
 7 run-to-completion backends (`sandbox/`): local subprocess, Docker, SSH, Podman,
 devcontainer, Firecracker microVM, Kubernetes. Selected via `[sandbox] backend`.
+**Sandbox SDK v2** (`sandbox/sdk.py`, `SDK_VERSION = 2`): the formal backend
+contract — a `runtime_checkable` `SandboxV2` protocol (`workdir` +
+`exec(cmd, timeout=None)`), declared optional capabilities
+(`capabilities()`), a static `conformance()` checker, and **entry-point
+loading** (`[sandbox] backend = "ep:<name>"` resolves the
+`maverick.sandboxes` group, instantiates with `[sandbox] options`, and
+refuses a non-conformant backend rather than falling through to unsandboxed
+local exec) — so third parties ship backends without forking. All in-tree
+backends conform (the check surfaced and fixed a real gap: devcontainer
+lacked `workdir`, crashing path-confined tools).
 **gVisor** is offered as a backend (`backend = "gvisor"`): Docker with the
 `runsc` runtime (`--runtime=runsc`), interposing a userspace application kernel
 between a possibly prompt-injected agent and the host — stronger isolation than

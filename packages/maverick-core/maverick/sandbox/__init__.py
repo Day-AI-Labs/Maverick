@@ -21,6 +21,7 @@ from .firecracker import FirecrackerBackend
 from .kubernetes import KubernetesBackend
 from .local import ExecResult, LocalBackend
 from .podman import PodmanBackend
+from .sdk import SDK_VERSION, SandboxV2
 from .ssh import SSHBackend
 
 __all__ = [
@@ -33,6 +34,8 @@ __all__ = [
     "SSHBackend",
     "ExecResult",
     "build_sandbox",
+    "SDK_VERSION",
+    "SandboxV2",
 ]
 
 log = logging.getLogger(__name__)
@@ -195,6 +198,17 @@ def build_sandbox(
     except (TypeError, ValueError):
         log.warning("invalid [sandbox] timeout %r; using 60s", cfg.get("timeout"))
         timeout = 60.0
+
+    if chosen.startswith("ep:"):
+        # Sandbox SDK v2: a third-party backend from the maverick.sandboxes
+        # entry-point group. Conformance-checked at load; raises (never
+        # silently falls back to unsandboxed local) on a broken backend.
+        from .sdk import load_entry_point_backend
+        options = full_cfg.get("options") or {}
+        return load_entry_point_backend(
+            chosen[3:].strip(), workdir=wd, timeout=timeout,
+            options=options if isinstance(options, dict) else {},
+        )
 
     if chosen in ("docker", "gvisor"):
         image = _resolve_image(full_cfg)
