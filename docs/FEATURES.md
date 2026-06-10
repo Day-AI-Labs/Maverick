@@ -223,6 +223,12 @@ here.
   [["node", "/path/plugin.js"]]`, wizard step included) loads the manifest
   into regular Tools with a persistent scrubbed-env child, per-call timeout,
   one crash-restart, and the no-shadowing rule built-ins enjoy.
+  **Plugin API v2 (released)** — `MAVERICK_API_VERSION = "2"` with
+  `SUPPORTED_API_MAJORS = (1, 2)`: v1 plugins keep loading through a
+  deprecation window (warned in manifest validation), declared v3+ is
+  refused; release notes in [`docs/plugin-api-v2.md`](./plugin-api-v2.md)
+  (structured channel `Reply`, enforced manifest permissions, lockfile,
+  isolation, TS plugins).
   **Plugin sandboxing** — opt-in
   `[plugins] isolation = "subprocess" | "subinterpreter"`
   (`plugin_isolation.py`): discovered plugin tools keep their schema but their

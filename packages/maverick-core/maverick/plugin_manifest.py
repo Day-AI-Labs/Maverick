@@ -48,7 +48,17 @@ log = logging.getLogger(__name__)
 
 # The kernel's current plugin API version. Bumped when we make
 # breaking changes to the Tool/Channel/Skill/Persona contracts.
-MAVERICK_API_VERSION = "1"
+#
+# v2 (released; see docs/plugin-api-v2.md): structured channel replies
+# (``maverick_channels.Reply``), manifest permissions enforced by default,
+# lockfile pinning, isolation modes, and TypeScript (NDJSON stdio) plugins.
+# v1 plugins remain loadable through the deprecation window below.
+MAVERICK_API_VERSION = "2"
+
+# Majors the kernel still loads. v1 stays supported for one minor release
+# (the RFC 0001 deprecation window) — a v1 plugin loads with a warning, a
+# declared v3+ plugin is refused (forward-incompatible).
+SUPPORTED_API_MAJORS = (1, 2)
 
 
 def _major(api_version: str) -> int | None:
@@ -95,11 +105,23 @@ class PluginManifest:
     warnings: list[str] = field(default_factory=list)
 
     def is_compatible(self) -> bool:
+        """True when the kernel loads this plugin's declared API major.
+
+        Membership in ``SUPPORTED_API_MAJORS`` (not strict equality with the
+        current version) so the v1 deprecation window works: v1 loads, the
+        current v2 loads, an unknown v3+ is refused.
+        """
         plugin_major = _major(self.api_version)
-        kernel_major = _major(MAVERICK_API_VERSION)
-        if plugin_major is None or kernel_major is None:
+        if plugin_major is None:
             return False
-        return plugin_major == kernel_major
+        return plugin_major in SUPPORTED_API_MAJORS
+
+    def is_deprecated_api(self) -> bool:
+        """True for a compatible-but-older major (load with a warning)."""
+        plugin_major = _major(self.api_version)
+        current = _major(MAVERICK_API_VERSION)
+        return (plugin_major is not None and current is not None
+                and self.is_compatible() and plugin_major < current)
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
@@ -170,8 +192,14 @@ def parse_dict(data: dict[str, Any], *, source: str = "<inline>") -> PluginManif
     )
     if not manifest.is_compatible():
         manifest.warnings.append(
-            f"api_version {manifest.api_version!r} != kernel "
-            f"MAVERICK_API_VERSION {MAVERICK_API_VERSION!r}"
+            f"api_version {manifest.api_version!r} not in supported majors "
+            f"{SUPPORTED_API_MAJORS} (kernel is v{MAVERICK_API_VERSION})"
+        )
+    elif manifest.is_deprecated_api():
+        manifest.warnings.append(
+            f"api_version {manifest.api_version!r} is deprecated (kernel is "
+            f"v{MAVERICK_API_VERSION}); v1 loads for one more minor release "
+            "-- see docs/plugin-api-v2.md"
         )
     if not manifest.license:
         manifest.warnings.append("no license declared")
@@ -182,6 +210,7 @@ def parse_dict(data: dict[str, Any], *, source: str = "<inline>") -> PluginManif
 
 __all__ = [
     "MAVERICK_API_VERSION",
+    "SUPPORTED_API_MAJORS",
     "PluginCapabilities",
     "PluginPermissions",
     "PluginManifest",
