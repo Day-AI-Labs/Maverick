@@ -92,7 +92,7 @@ single-run inflation) — run multi-seed.
 | **Distribution** | Localized docs phase 2 (es/ja) · reproducible benchmark v2 (terminal-bench, weblinx, HumanEval-fix) · tutorial video season 2 · university outreach (5 partnerships) · Maverick Summit v1 (virtual) · integration partnerships (business half; self-serve guide shipped) · browser extension v1 · localized docs phase 3 (de/fr/pt-BR) · GitHub Stars campaign · office hours |
 | **Performance** | Streaming tool_result · continuous batching local · compaction v3 learned summarizer · gRPC dispatch · public perf dashboard |
 | **Safety** | — (cleared) |
-| **Ecosystem** | Plugin sandboxing (subinterpreter) |
+| **Ecosystem** | — (cleared) |
 
 ---
 

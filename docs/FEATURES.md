@@ -138,7 +138,14 @@ here.
   error rate, avg/max latency, HIGH-ERROR flags from a tool-call log).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
-  boilerplate. **Hot plugin reload** — `maverick plugin reload <dist>`
+  boilerplate. **Plugin sandboxing** — opt-in
+  `[plugins] isolation = "subprocess" | "subinterpreter"`
+  (`plugin_isolation.py`): discovered plugin tools keep their schema but their
+  *calls* run in a fresh CPython subinterpreter (fault/state isolation — a
+  plugin that pollutes globals or leaks can't touch the host) or a
+  secret-scrubbed child process (stronger: separate address space, survives a
+  segfaulting plugin, no host env secrets); values pass by baked literals,
+  never argv. **Hot plugin reload** — `maverick plugin reload <dist>`
   (`plugins.reload_plugin`): drop a plugin distribution's modules from the
   import cache so the next discovery pass re-imports the current code on disk;
   the edit-reload-retry loop for plugin authors, same allowlist/permission

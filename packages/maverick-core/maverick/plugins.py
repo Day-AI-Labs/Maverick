@@ -348,20 +348,70 @@ def _iter_loaded(group: str, what: str):
         yield ep.name, target
 
 
+def _isolated_factory(name: str, ep_value: str, target: Callable[[], Any]):
+    """Wrap a plugin tool factory so its CALLS run under plugin isolation.
+
+    The factory runs in-process once (schema/description introspection is
+    harmless metadata), but the returned Tool's ``fn`` is replaced with a
+    proxy that executes the real call via :mod:`maverick.plugin_isolation`
+    (fresh subinterpreter or scrubbed subprocess, per ``[plugins] isolation``).
+    """
+    def factory():
+        tool = target()
+        from .plugin_isolation import run_isolated
+
+        def _isolated_fn(args: dict) -> str:
+            return run_isolated(ep_value, args or {}, factory=True)
+
+        try:
+            tool.fn = _isolated_fn
+        except Exception:  # frozen/odd Tool object: fall back to direct call
+            log.warning("plugin tool %s: cannot wrap for isolation; running direct", name)
+        return tool
+    return factory
+
+
 def discover_tools() -> list[Any]:
     """Return a list of (name, factory) tuples for installed tool plugins.
 
     The factory is called with no args; it must return a Tool. We delay
     invocation because Tool constructors may need access to the
-    sandbox/world that only exists per-run.
+    sandbox/world that only exists per-run. With ``[plugins] isolation``
+    enabled, each discovered tool's calls are routed through the isolation
+    seam (see :mod:`maverick.plugin_isolation`).
     """
+    from .plugin_isolation import isolation_mode
+    isolate = isolation_mode() != "none"
     out: list[tuple[str, Callable[[], Any]]] = []
-    for name, target in _iter_loaded("maverick.tools", "tools"):
+    for name, target, ep_value in _iter_loaded_with_value("maverick.tools", "tools"):
         if not callable(target):
             log.warning("plugin tool %s is not callable; skipping", name)
             continue
-        out.append((name, target))
+        if isolate and ep_value:
+            out.append((name, _isolated_factory(name, ep_value, target)))
+        else:
+            out.append((name, target))
     return out
+
+
+def _iter_loaded_with_value(group: str, what: str):
+    """Like _iter_loaded, but also yields the entry point's ``value``
+    ("pkg.mod:attr") so callers can re-resolve the target out-of-process."""
+    if no_cli():
+        return
+    eps = list(_entry_points(group))
+    if not eps:
+        return
+    name_dists = _name_dist_map(eps)
+    allow = _allowed_plugin_names()
+    granted, enforce = _permission_policy()
+    for ep in eps:
+        if not _gate(ep, group, allow, name_dists, granted, enforce):
+            continue
+        target = _load(ep, what)
+        if target is None:
+            continue
+        yield ep.name, target, str(getattr(ep, "value", "") or "")
 
 
 def discover_channels() -> list[tuple[str, Any]]:
