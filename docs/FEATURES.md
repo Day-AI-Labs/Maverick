@@ -269,7 +269,12 @@ are rendered into a standalone HTML artifact (KaTeX/Mermaid in-page, escaped
 `<pre>` source as the no-JS fallback) under `data_dir("rich_render/")`;
 `RichRenderChannel` wraps any adapter — an injectable `deliver` hook ships the
 file on platforms that can, otherwise the path is appended — and plain
-messages pass through byte-identical.
+messages pass through byte-identical. **Channel SDK v2** (RFC 0001 C2,
+`base.py`): handlers may return a structured `Reply` (text + attachments +
+thread_ref) instead of bare `str` — `as_reply` is the v1 shim (bare `str`
+accepted through the deprecation window), `Channel.dispatch`/`dispatch_text`
+normalize either contract, and all 18 in-tree adapters route through the
+dispatch path so a v2 handler works everywhere unchanged.
 
 ## Sandboxes
 
