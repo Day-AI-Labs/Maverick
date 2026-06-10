@@ -1094,11 +1094,13 @@ def base_registry(  # noqa: C901
     from .latex_tool import latex_tool
     from .notebook_exec import notebook_exec
     from .teams_tool import teams_tool
+    from .webrtc_tool import webrtc_tool
     from .websocket_tool import websocket_tool
     reg.register(notebook_exec(sandbox))
     reg.register(latex_tool(sandbox))
     reg.register(diagram_tool(sandbox))
     reg.register(websocket_tool())
+    reg.register(webrtc_tool())
     reg.register(teams_tool())
     # self_edit intentionally is not registered in the default tool set.
     # It can edit Maverick source/config and cannot rely on a model-supplied
@@ -1133,8 +1135,10 @@ def base_registry(  # noqa: C901
         reg.register(computer())
 
     if enable_browser:
+        from .aria_navigate import aria_navigate
         from .browser import browser
         reg.register(browser())
+        reg.register(aria_navigate())
 
     # Apply allow/deny lists from ~/.maverick/config.toml [security].
     # Fail-soft: any error here is logged and the registry is left

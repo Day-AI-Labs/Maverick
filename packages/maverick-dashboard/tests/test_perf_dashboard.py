@@ -51,3 +51,11 @@ def test_perf_page_renders(client):
     r = client.get("/perf")
     assert r.status_code == 200
     assert "/api/v1/perf" in r.text
+
+
+def test_glance_endpoint_shape(client):
+    r = client.get("/api/v1/glance")
+    assert r.status_code == 200
+    d = r.json()
+    assert {"active", "done_today", "failed_today", "spend_today",
+            "last_result", "as_of"} == set(d)

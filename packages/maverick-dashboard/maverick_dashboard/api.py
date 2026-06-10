@@ -1418,6 +1418,21 @@ async def compliance_report_csv(framework: str = "all") -> Response:
     )
 
 
+@router.get("/glance")
+async def watch_glance() -> dict:
+    """The Apple Watch glance payload (tiny fixed shape; see maverick.glance)."""
+    from maverick.glance import build_glance
+    from maverick.world_model import open_world
+    world = open_world()
+    try:
+        return build_glance(world)
+    finally:
+        try:
+            world.close()
+        except Exception:
+            pass
+
+
 @router.get("/perf")
 async def perf_dashboard() -> dict:
     """Public perf dashboard data: SLA measurements + benchmark history.

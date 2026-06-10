@@ -1243,6 +1243,45 @@ tested without spawning py-spy.
   how much went to **failed** work (effort with no delivered result), how
   concentrated spend is (a Pareto signal), and rule-based observations to act
   on. Deterministic over the world model; read-only.
+- **UX cluster (2028-H1)** — **plan-tree minimap** (`plan_minimap.py` +
+  `GET /api/v1/goals/{id}/minimap`): a compact glyph-per-node subtree render
+  with a depth budget; **multi-tenant overview** (`/tenants/overview`,
+  admin-only like `/tenants`): per-tenant goal rollups + today's spend +
+  suspended flags; **replay annotation export** (`annotation_export.py`):
+  a run's annotations to markdown or SRT-timed cues; **personalized starter
+  templates** (`starter_templates.py` + `GET /api/v1/templates/suggested`):
+  the catalog ranked from the user's own goal history; **adaptive UI
+  density** (comfortable/compact via `?density=`/cookie/config); **pluggable
+  themes** (`themes.py`: `[dashboard] themes` rendered as CSS variables,
+  strict `#hex` validation so config can't inject CSS); **templates
+  marketplace** (`/templates`: catalog + ratings, "use" prefills the chat
+  form — no auto-start); **live voice captions** (`live_captions.py` + SSE
+  `GET /api/v1/voice/captions`): a rolling caption window over an injected
+  transcript source (finalized vs in-flight, word-boundary trimming).
+- **Browser extension** (`extensions/browser/`, opt-in `[dashboard]
+  allow_extension` — fail-closed CORS scoped to extension origins only): a
+  Manifest-V3 WebExtension (no build step, loopback-only host permissions,
+  `script-src 'self'`) with popup chat against the existing goals API and a
+  "send this page" action shipping title/URL/selection as goal context;
+  static tests pin the manifest security properties (no remote code).
+- **ARIA-first navigation** (`tools/aria_navigate.py`, registered with the
+  browser tool): drive the page via the accessibility tree — `snapshot`
+  (stable node ids), `find` (role+name), `activate` (click/focus by node) —
+  the live counterpart to the static `a11y_tree` extractor.
+- **WebRTC tool** (`tools/webrtc_tool.py`, `[webrtc]` extra): data-channel
+  offer/answer/send/close over lazily-imported aiortc (signalling is the
+  caller's; media tracks out of scope, stated honestly).
+- **Speculative drafting across providers** (`speculative_decode.py`): a
+  cheap draft model proposes, the target verifies-or-revises in one call;
+  per-(draft,target) accept-rate ledger with a floor below which it falls
+  back to plain target calls — application-level drafting, explicitly not
+  logit-level decoding; models resolve by role, never hardcoded.
+- **Out-of-process model proxy** (`model_proxy.py`): the provider key lives
+  in a separate proxy process; the agent's `base_url` points at it with no
+  usable credential — the proxy strips whatever the agent sent and injects
+  the real key, so a prompt-injected agent process has no key to exfiltrate.
+- **Watch glance endpoint** (`GET /api/v1/glance`): the fixed tiny payload
+  the watch scaffold renders.
 - **Live-run IDE extensions** (`apps/vscode-extension/` +
   `apps/jetbrains-plugin/`): the VS Code extension gains "Watch run live" /
   "Stop live watch" — a dependency-free SSE tail of the dashboard's
