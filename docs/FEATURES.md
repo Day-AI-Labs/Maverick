@@ -723,6 +723,11 @@ tested without spawning py-spy.
   dashboard: lint a SKILL.md body (same linter as `maverick skill validate`)
   from CI or an editor against a self-hosted instance; size-capped, nothing
   persisted.
+- **Localized money display** — `format_money` tool (`money_format.py`): format
+  an amount per a (locale, currency) pair — symbol placement, grouping/decimal
+  separators, the currency's decimal places — with an optional operator-supplied
+  FX rate (`$1,234.56` → `1.234,56 €` → `¥1,235`). Offline display layer,
+  distinct from the live-FX `currency` conversion tool; a curated locale subset.
 - **Cost retrospective** — `maverick cost-retro` (`cost_retrospective.py`): a
   spend review over the recorded per-goal/episode costs — the costliest goals,
   how much went to **failed** work (effort with no delivered result), how

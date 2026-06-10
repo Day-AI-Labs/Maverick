@@ -653,6 +653,7 @@ def base_registry(  # noqa: C901
     from .fairness_scheduler import fairness_scheduler
     from .ffmpeg_tool import ffmpeg_tool
     from .file_watcher import file_watcher
+    from .format_money import format_money_tool
     from .ga4_tool import ga4_tool
     from .gdrive_tool import gdrive_tool
     from .generic_oauth import generic_oauth
@@ -816,6 +817,7 @@ def base_registry(  # noqa: C901
     reg.register(rectification())
     reg.register(redact_tool())
     reg.register(file_watcher(sandbox))
+    reg.register(format_money_tool())
     reg.register(linear())
     reg.register(jira())
     reg.register(gitlab())
