@@ -382,8 +382,11 @@ installed and falls back to stdlib `json` otherwise — `dumps` returns `str`,
 honors `sort_keys`, and degrades on any value orjson rejects, so it's a safe
 drop-in for round-trip/transport paths (wired into the tool-output cache
 snapshot). Deliberately NOT used for cache keys/signatures, where exact bytes
-must stay backend-stable. **Self-tuning budgets** (`self_tuning_budget.py`, opt-in `[budget]
-self_tuning`): learns a sensible default spend cap *per coarse task class*
+must stay backend-stable. **Self-tuning budgets — online auto-apply**
+(`self_tuning_budget.py`, opt-in `[budget] self_tuning`; the auto-applying
+companion to the advisory `maverick budget tune` / `budget_tuner.py`, which
+only *recommends* a cap for a human to set): learns a default spend cap *per
+coarse task class*
 (e.g. the goal's leading verb) from how much past runs of that class actually
 cost — a bounded reservoir per class, a high-quantile × margin suggestion
 clamped to [floor, ceiling]. Wired as the **lowest-precedence** layer of
