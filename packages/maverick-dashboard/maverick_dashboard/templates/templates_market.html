@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}templates · Maverick{% endblock %}
+{% block content %}
+  <h2>goal templates</h2>
+
+  <div class="panel">
+    <p class="muted">
+      Reusable goal patterns (user-installed + bundled) with your own star
+      ratings from the marketplace ledger (<code>maverick template rate</code>).
+      "Use template" prefills the chat form — nothing starts until you press
+      Run. Personalized picks: <a href="/api/v1/templates/suggested">suggested for you</a>.
+    </p>
+  </div>
+
+  {% if entries %}
+    <div class="tpl-grid">
+      {% for e in entries %}
+        <div class="tpl-card">
+          <div class="tpl-card-head">
+            <code class="tpl-name">{{ e.name }}</code>
+            <span class="muted tpl-stars" title="Your rating">{{ e.rating_bar }}</span>
+          </div>
+          <p class="tpl-title">{{ e.title }}</p>
+          {% if e.params %}
+            <p class="muted tpl-params">params:
+              {% for p in e.params %}<code>{{ p }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+            </p>
+          {% endif %}
+          <a class="tpl-use" href="/chat?title={{ e.title | urlencode }}&description={{ e.body | urlencode }}">Use template</a>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="panel" style="text-align: center; padding: 2.5rem 1rem;">
+      <h3 style="text-transform: none; letter-spacing: 0; color: var(--text); margin: 0 0 0.5rem;">No templates yet</h3>
+      <p class="muted">
+        Drop a <code>&lt;name&gt;.md</code> into <code>~/.maverick/templates/</code>
+        or install one from a registry with
+        <code>maverick template install &lt;name&gt;</code>.
+      </p>
+    </div>
+  {% endif %}
+
+  <style>
+    .tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+    .tpl-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; display: flex; flex-direction: column; }
+    .tpl-card-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
+    .tpl-name { font-size: 0.95rem; }
+    .tpl-stars { font-size: 0.85rem; white-space: nowrap; }
+    .tpl-title { margin: 0 0 0.75rem; flex: 1; }
+    .tpl-params { font-size: 0.78rem; margin: 0 0 1rem; }
+    .tpl-use { display: inline-block; align-self: flex-start; padding: 0.5rem 1rem; border-radius: 4px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 500; }
+  </style>
+{% endblock %}

@@ -68,31 +68,63 @@ templates.env.filters["datetime"] = _format_datetime
 templates.env.globals.setdefault("theme", "dark")
 templates.env.globals.setdefault("font", "default")
 templates.env.globals.setdefault("lang", "en")
+templates.env.globals.setdefault("density", "comfortable")
+templates.env.globals.setdefault("custom_theme_css", "")
+templates.env.globals.setdefault("custom_theme_names", [])
 from .i18n import t as _i18n_t  # noqa: E402
+from .themes import custom_themes, theme_css  # noqa: E402
 
 templates.env.globals.setdefault("t", lambda key: _i18n_t(key, "en"))
 
 _VALID_THEMES = {"dark", "light", "solarized", "hicontrast"}
 _VALID_FONTS = {"default", "dyslexic"}
+_VALID_DENSITIES = {"comfortable", "compact"}
+
+
+def _valid_theme_names() -> set[str]:
+    """Built-in themes plus the operator's validated ``[dashboard] themes``."""
+    return _VALID_THEMES | set(custom_themes())
 
 
 def _resolve_theme(request: Request) -> str:
     """Pick the theme from ``?theme=`` query param, cookie, config, then dark."""
+    valid = _valid_theme_names()
     q = (request.query_params.get("theme") or "").strip().lower()
-    if q in _VALID_THEMES:
+    if q in valid:
         return q
     c = (request.cookies.get("mvk_theme") or "").strip().lower()
-    if c in _VALID_THEMES:
+    if c in valid:
         return c
     try:
         from maverick.config import load_config
         cfg = (load_config() or {}).get("dashboard") or {}
         cfg_theme = (cfg.get("theme") or "").strip().lower()
-        if cfg_theme in _VALID_THEMES:
+        if cfg_theme in valid:
             return cfg_theme
     except Exception:
         pass
     return "dark"
+
+
+def resolve_density(request: Request) -> str:
+    """UI density: ``?density=`` → ``mvk_density`` cookie → ``[dashboard]
+    density`` config → comfortable. Default-off: ``comfortable`` is the
+    existing layout; ``compact`` opts in to the denser one."""
+    q = (request.query_params.get("density") or "").strip().lower()
+    if q in _VALID_DENSITIES:
+        return q
+    c = (request.cookies.get("mvk_density") or "").strip().lower()
+    if c in _VALID_DENSITIES:
+        return c
+    try:
+        from maverick.config import load_config
+        cfg = (load_config() or {}).get("dashboard") or {}
+        cfg_density = (cfg.get("density") or "").strip().lower()
+        if cfg_density in _VALID_DENSITIES:
+            return cfg_density
+    except Exception:
+        pass
+    return "comfortable"
 
 
 def _resolve_font(request: Request) -> str:
@@ -114,9 +146,13 @@ def _theme_context(request: Request) -> dict:
     from .i18n import resolve_lang
     from .i18n import t as _t
     lang = resolve_lang(request)
+    custom = custom_themes()
     return {
         "theme": _resolve_theme(request),
         "font": _resolve_font(request),
+        "density": resolve_density(request),
+        "custom_theme_css": theme_css(custom),
+        "custom_theme_names": sorted(custom),
         "lang": lang,
         "t": lambda key: _t(key, lang),
     }
@@ -129,7 +165,7 @@ templates.context_processors.append(_theme_context)
 
 def _set_theme_cookie(response, theme: str) -> None:
     """Persist the theme choice as a cookie so it sticks across page loads."""
-    if theme in _VALID_THEMES:
+    if theme in _valid_theme_names():
         response.set_cookie(
             "mvk_theme", theme,
             max_age=30 * 24 * 3600,  # 30 days
@@ -205,14 +241,18 @@ _PLAN_TREE_PATH_RE = re.compile(r"^/goals/\d+/plan/?$")
 
 @app.middleware("http")
 async def persist_theme(request: Request, call_next):
-    """If ?theme= / ?font= / ?lang= is in the URL, set a cookie so it sticks."""
+    """If ?theme= / ?font= / ?density= / ?lang= is in the URL, set a cookie so it sticks."""
     response = await call_next(request)
     q = request.query_params.get("theme")
-    if q and q.lower() in _VALID_THEMES:
+    if q and q.lower() in _valid_theme_names():
         _set_theme_cookie(response, q.lower())
     f = request.query_params.get("font")
     if f and f.lower() in _VALID_FONTS:
         response.set_cookie("mvk_font", f.lower(), max_age=30 * 24 * 3600,
+                            samesite="lax", httponly=False)
+    d = request.query_params.get("density")
+    if d and d.lower() in _VALID_DENSITIES:
+        response.set_cookie("mvk_density", d.lower(), max_age=30 * 24 * 3600,
                             samesite="lax", httponly=False)
     lang = request.query_params.get("lang")
     from .i18n import LANGS
@@ -692,6 +732,84 @@ async def tenants_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request, "tenants.html", {"tenants": tenants, "is_admin": is_admin},
     )
+
+
+def _tenant_overview_rows() -> list[dict]:
+    """Per-tenant rollup for the multi-tenant view: goals by status (from the
+    tenant's own world DB, when one exists), today's spend, suspended flag.
+
+    Fail-soft per tenant: an unreadable world DB or spend ledger yields zero
+    counts/spend, never a 500. A tenant whose world.db doesn't exist yet (no
+    runs) reports empty counts rather than materializing the DB.
+    """
+    from maverick.tenant_registry import list_tenants, tenant_spend_today
+    rows: list[dict] = []
+    for t in list_tenants():
+        counts: dict[str, int] = {}
+        try:
+            from maverick.workspace import Workspace
+            db = Workspace(t.id).db_path
+            if db.exists():
+                from maverick.world_model import WorldModel
+                wm = WorldModel(db)
+                try:
+                    counts = {
+                        str(r[0]): int(r[1]) for r in wm.conn.execute(
+                            "SELECT status, COUNT(*) FROM goals GROUP BY status"
+                        )
+                    }
+                finally:
+                    wm.close()
+        except Exception:  # pragma: no cover -- one bad tenant DB never 500s
+            counts = {}
+        try:
+            spend = float(tenant_spend_today(t.id))
+        except Exception:  # pragma: no cover -- spend read never blocks the view
+            spend = 0.0
+        rows.append({
+            "id": t.id,
+            "display_name": t.display_name,
+            "plan": t.plan,
+            "status": t.status,
+            "suspended": not t.active,
+            "goals": counts,
+            "total_goals": sum(counts.values()),
+            "spend_today": round(spend, 4),
+            "max_daily_dollars": t.max_daily_dollars,
+        })
+    return rows
+
+
+@app.get("/tenants/overview", response_class=HTMLResponse)
+async def tenants_overview_page(request: Request) -> HTMLResponse:
+    """Multi-tenant view: per-tenant goal/spend rollup for the operator.
+
+    Admin-only exactly like ``/tenants`` (cross-tenant control-plane data): a
+    non-admin authenticated caller sees an access notice, not the rollup.
+    Fail-soft to an empty roster so a missing registry never 500s the console.
+    """
+    is_admin = goal_owner_filter(request) is None
+    rows: list[dict] = []
+    if is_admin:
+        try:
+            rows = _tenant_overview_rows()
+        except Exception:  # pragma: no cover -- never 500 the console
+            rows = []
+    return templates.TemplateResponse(
+        request, "tenants_overview.html", {"rows": rows, "is_admin": is_admin},
+    )
+
+
+@app.get("/api/v1/tenants/overview")
+async def tenants_overview_api(request: Request) -> JSONResponse:
+    """JSON face of the multi-tenant view. Admin-only like ``/tenants``."""
+    if goal_owner_filter(request) is not None:
+        raise HTTPException(status_code=403, detail="admin access required")
+    try:
+        rows = _tenant_overview_rows()
+    except Exception:  # pragma: no cover -- never 500 the console
+        rows = []
+    return JSONResponse({"tenants": rows})
 
 
 @app.get("/skills", response_class=HTMLResponse)
@@ -1375,6 +1493,49 @@ async def store_page(request: Request) -> HTMLResponse:
     )
 
 
+def template_market_entries() -> list[dict]:
+    """The goal-template catalog (user-installed + bundled), annotated with the
+    operator's own star ratings from the marketplace ratings ledger.
+
+    Powers the /templates page and GET /api/v1/templates. Offline + fail-soft:
+    a template that no longer parses is skipped; a missing ratings ledger
+    means everything shows unrated.
+    """
+    from maverick.marketplace_ratings import RatingsLedger, stars_bar
+    from maverick.templates import list_templates, load_template
+    try:
+        ratings = RatingsLedger().all_ratings("templates")
+    except Exception:  # pragma: no cover -- ratings never block the catalog
+        ratings = {}
+    entries: list[dict] = []
+    for name in list_templates():
+        try:
+            tpl = load_template(name)
+        except (OSError, ValueError, FileNotFoundError):
+            continue
+        mine = ratings.get(name) or {}
+        stars = mine.get("stars")
+        entries.append({
+            "name": name,
+            "title": tpl.title,
+            "params": list(tpl.params),
+            "body": tpl.body[:2000],
+            "stars": stars,
+            "rating_bar": stars_bar(float(stars), 0) if stars else "unrated",
+        })
+    return entries
+
+
+@app.get("/templates", response_class=HTMLResponse)
+async def templates_market_page(request: Request) -> HTMLResponse:
+    """Visual goal-templates marketplace: browse the catalog with ratings and
+    one-click "use template" (prefills the chat form via query params — the
+    goal never auto-starts)."""
+    return templates.TemplateResponse(
+        request, "templates_market.html", {"entries": template_market_entries()},
+    )
+
+
 @app.get("/channels", response_class=HTMLResponse)
 async def channels_page(request: Request) -> HTMLResponse:
     """Configured + enabled channels."""
@@ -1876,7 +2037,15 @@ async def shield_calibration_api() -> JSONResponse:
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request) -> HTMLResponse:
     recent = _world().list_goals(owner=goal_owner_filter(request), limit=10, order="desc")
-    return templates.TemplateResponse(request, "chat.html", {"recent": recent})
+    # "Use template" on /templates links here with ?title=&description= to
+    # prefill the form (never auto-start; the user reviews, edits, submits).
+    prefill_title = (request.query_params.get("title") or "")[:200]
+    prefill_description = (request.query_params.get("description") or "")[:8000]
+    return templates.TemplateResponse(
+        request, "chat.html",
+        {"recent": recent, "prefill_title": prefill_title,
+         "prefill_description": prefill_description},
+    )
 
 
 @app.post("/chat/send")
@@ -2342,6 +2511,27 @@ async def api_plan_tree(request: Request, goal_id: int) -> dict:
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
     return _build_plan_tree(w, goal_id)
+
+
+@app.get("/api/v1/goals/{goal_id}/minimap", response_class=PlainTextResponse)
+async def goal_minimap(request: Request, goal_id: int, depth: int = 3) -> PlainTextResponse:
+    """Plan-tree minimap: the goal's subtree as compact one-line-per-node text.
+
+    Pure render via ``maverick.plan_minimap`` (status glyphs, depth
+    indentation, collapsed counts beyond the ``?depth=`` budget).
+    """
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from maverick.plan_minimap import render_minimap
+    try:
+        depth = max(0, min(int(depth), 8))
+    except (TypeError, ValueError):
+        depth = 3
+    text = render_minimap(w, goal_id, max_depth=depth)
+    return PlainTextResponse(text + "\n", media_type="text/plain; charset=utf-8")
 
 
 def _render_tree_html(node: dict) -> str:
