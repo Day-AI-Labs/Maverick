@@ -70,7 +70,10 @@ here.
   (ws/wss connect-send-recv), `dom_diff` (structural before/after HTML diff),
   `arxiv`, `semantic_scholar`, `wikipedia`, `hackernews`, `youtube`.
 - **Media** — `view_image`, `view_video`, `pdf_reader`, `ocr`, `voice`
-  (transcribe/speak), `ffmpeg_tool`, `imagemagick_tool`, `pandoc_tool`,
+  (transcribe/speak — with **voice persona presets** (`[voice.personas]`:
+  named backend+voice bundles selected per call) and **multi-language voice**
+  (`[voice.languages]`: per-language voice map, BCP-47 prefix match); explicit
+  args always win, unknown presets degrade to defaults — `voice_personas.py`), `ffmpeg_tool`, `imagemagick_tool`, `pandoc_tool`,
   `replicate_tool` (image/video/audio gen), `latex` (math→MathML + document→PDF),
   `diagram` (Graphviz / Mermaid render).
 - **Knowledge** — `knowledge_search` (per-domain RAG over collected docs),
