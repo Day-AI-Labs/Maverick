@@ -894,6 +894,38 @@ def budget(ctx) -> None:
         )
 
 
+@main.command("budget-tune")
+@click.option("--percentile", type=float, default=90.0,
+              help="Percentile of historical goal cost to size the cap to.")
+@click.option("--min-samples", type=int, default=5,
+              help="Minimum priced goals before a recommendation is made.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def budget_tune(ctx, percentile: float, min_samples: int, as_json: bool) -> None:
+    """Recommend a max_dollars cap learned from historical goal spend.
+
+    Sizes the default to the percentile of what goals actually cost plus a
+    margin, so the common case fits while a runaway still trips it. Read-only —
+    set the value yourself in config.
+    """
+    import json as _json
+
+    from .budget_tuner import recommend_for_world
+    world = open_world(ctx.obj["db"])
+    recs = recommend_for_world(world, pct=percentile, min_samples=min_samples)
+    if as_json:
+        click.echo(_json.dumps(recs))
+        return
+    if not recs:
+        click.echo(f"not enough priced goals yet (need >= {min_samples}).")
+        return
+    click.echo(click.style("Recommended max_dollars (learned):", bold=True))
+    for cls, info in sorted(recs.items()):
+        click.echo(f"  {cls}: ${info['recommended_max_dollars']:.2f}  "
+                   f"(p{int(percentile)}=${info[f'p{int(percentile)}']:.2f}, "
+                   f"{info['samples']} goal(s))")
+
+
 @main.command()
 @click.option("--sample", "sample", nargs=2, type=str, default=None,
               metavar="CONFIDENCE CORRECT",

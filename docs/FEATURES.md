@@ -619,7 +619,11 @@ and `trace_commit()` reads it back so replays tie to exact code); **cost split b
 (`provider_health.py`); proactive **provider rate-limit predictor**
 (`rate_limit_predictor.py`); shared tool-reliability layer (`tool_reliability.py`,
 `retry.py`); circuit breaker (`circuit_breaker.py`); adaptive thinking budget
-(`thinking_budget.py`). **Continuous profiling daemon** (`profiling_daemon.py`,
+(`thinking_budget.py`). **Self-tuning budgets** (`budget_tuner.py`, `maverick
+budget-tune`): learn a `max_dollars` recommendation from the historical
+per-goal spend distribution (a high percentile + margin, so the common case
+fits while a runaway still trips it), bucketable by an injected task-class
+classifier; read-only — the operator sets the value. **Continuous profiling daemon** (`profiling_daemon.py`,
 `python -m maverick.profiling_daemon`, opt-in `[perf] profiling`): a sampling
 profiler that periodically runs `py-spy record` against the live process and
 drops speedscope/flame-graph profiles under `data_dir("profiles/")` — py-spy
