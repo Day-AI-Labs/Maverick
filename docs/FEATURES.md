@@ -675,6 +675,13 @@ tested without spawning py-spy.
   dashboard: lint a SKILL.md body (same linter as `maverick skill validate`)
   from CI or an editor against a self-hosted instance; size-capped, nothing
   persisted.
+- **Smart notification batching** — opt-in `[notifications]
+  batch_window_seconds` (`notification_batcher.py`): coalesces the
+  low/normal-priority push stream (ntfy/Pushover/Discord/Slack) into one
+  windowed digest ("5 updates" with the lines folded in) so a long run doesn't
+  turn a phone into a slot machine; **high/urgent** notifications cut the line
+  and deliver immediately (flushing any pending batch first, so order holds). A
+  daemon flusher drives the window; unconfigured, `notify()` is unchanged.
 
 ## Distribution & install
 
