@@ -187,7 +187,9 @@ here.
   Art. 34 high-risk reminder), `data_minimization` (flag fields collected beyond
   a purpose's allowlist + missing required fields; GDPR Art. 5(1)(c)),
   `consent_check` (evaluate consent records for active validity — granted /
-  withdrawn / expired per purpose, latest grant governs; GDPR Art. 7).
+  withdrawn / expired per purpose, latest grant governs; GDPR Art. 7),
+  `jwt_inspect` (decode + validate a JWT offline — claims, exp/nbf, and
+  HS256/384/512 HMAC signature verification; flags alg=none).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate. **Plugin sandboxing** — opt-in
