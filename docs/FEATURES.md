@@ -372,6 +372,13 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   tone ratio (NSFW pre-filter routes to human review), brightness extremes,
   photo-vs-graphic, dimension sanity — file decode via Pillow or raw pixels
   with no imaging dep.
+- **Shield ensemble** (`shield_ensemble.py`) — a **deny-wins detector ensemble
+  with explainable reason codes** (the Shield-v3 framework): pluggable members
+  screen a blob (injection via the jailbreak heuristics, exfil via the secret
+  detector, PII via the PII detector) and any one firing blocks, with a
+  structured `reason_codes` list saying *which* detector objected and *why*
+  rather than an opaque refusal. A member is a small pluggable unit, so a
+  trained small-model classifier drops in behind the same interface later.
 - **Access control** — tool ACLs, consent prompts + a persistent **consent
   ledger** (`safety/consent.py`; `MAVERICK_CONSENT_MODE` =
   auto-approve / auto-deny / ask / dashboard), capability tokens
