@@ -121,7 +121,7 @@ single-run inflation) — run multi-seed.
 | **Distribution** | Windows MSI · sponsorship tiers · conference physical booth · swag store · ambassadors program · long-form handbook · Skill of the Year award · mobile companion app v1 (read-only) · localized docs phase 4 (ko/ru/it/hi) · video season 3 · annual community survey · foundation exploration |
 | **Performance** | 2-year retrospective |
 | **Safety** | — (cleared) |
-| **Ecosystem** | Redis world-model · DuckDB world-model *transactional backend* (declined — OLAP engine, wrong for the concurrent OLTP write path; the **DuckDB analytics layer** over the world model shipped instead, see FEATURES) · Cloudflare Workers + Modal sandboxes |
+| **Ecosystem** | — (cleared: Redis primary store declined — see [`specs/redis-world-model-decision.md`](./specs/redis-world-model-decision.md); the Redis layers that fit shipped (tool cache, arq queue). DuckDB transactional backend declined — analytics layer shipped. **Modal sandbox backend shipped**; the Cloudflare-Workers half declined for shell semantics — Workers run JS/WASM, not processes; the Worker deployment story is the relay reference + `wasm_run`.) |
 
 ---
 

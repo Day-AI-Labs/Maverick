@@ -199,6 +199,16 @@ def build_sandbox(
         log.warning("invalid [sandbox] timeout %r; using 60s", cfg.get("timeout"))
         timeout = 60.0
 
+    if chosen == "modal":
+        # Ephemeral Modal cloud sandboxes ([modal] extra). The CF-Workers half
+        # of the roadmap item is declined for shell semantics (see
+        # sandbox/modal_backend.py docstring).
+        from .modal_backend import ModalBackend
+        return ModalBackend(
+            workdir=wd, image=_resolve_image(full_cfg), timeout=timeout,
+            cpu=full_cfg.get("cpus"), memory_mb=full_cfg.get("memory_mb"),
+        )
+
     if chosen.startswith("ep:"):
         # Sandbox SDK v2: a third-party backend from the maverick.sandboxes
         # entry-point group. Conformance-checked at load; raises (never

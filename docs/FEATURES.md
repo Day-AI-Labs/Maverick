@@ -361,6 +361,14 @@ dispatch path so a v2 handler works everywhere unchanged.
 
 7 run-to-completion backends (`sandbox/`): local subprocess, Docker, SSH, Podman,
 devcontainer, Firecracker microVM, Kubernetes. Selected via `[sandbox] backend`.
+**Modal sandbox backend** (`sandbox/modal_backend.py`, `[sandbox] backend =
+"modal"`, `[modal]` extra): run agent shell in ephemeral Modal cloud sandboxes
+(per-exec container, image/cpu/memory/timeout plumbed, torn down after the
+command) — burstable remote compute without running a cluster; infra errors
+surface as a failed command, never a kernel crash. The Cloudflare-Workers half
+of the roadmap pair was declined for shell semantics (Workers run JS/WASM
+request handlers, not processes; the honest Workers story is the self-hosted
+relay reference + `wasm_run`).
 **Sandbox SDK v2** (`sandbox/sdk.py`, `SDK_VERSION = 2`): the formal backend
 contract — a `runtime_checkable` `SandboxV2` protocol (`workdir` +
 `exec(cmd, timeout=None)`), declared optional capabilities
