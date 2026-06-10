@@ -55,8 +55,8 @@ def test_authorize_url_basic():
 
 
 def test_authorize_url_pkce_challenge_deterministic():
-    verifier = "test_verifier_1234567890_abcdefghijklmnop"
-    expected = "EdVq-8vtKdkYHS1o-eSpM5J9rBWnHnrxmYnvXHWgS8k"
+    verifier = "test_verifier_1234567890_abcdefghijklmnop"  # pragma: allowlist secret
+    expected = "EdVq-8vtKdkYHS1o-eSpM5J9rBWnHnrxmYnvXHWgS8k"  # pragma: allowlist secret
     a = _run(
         op="authorize_url",
         authorize_endpoint="https://auth.example.com/authorize",

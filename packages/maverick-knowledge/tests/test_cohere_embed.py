@@ -56,7 +56,7 @@ def test_build_embedder_selects_cohere(monkeypatch):
     emb = build_embedder({"embedder": "cohere", "model": "embed-v4.0"})
     assert isinstance(emb, CohereEmbedder)
     assert emb.model == "embed-v4.0"
-    assert emb.api_key == "ck"
+    assert emb.api_key == "ck"  # pragma: allowlist secret
 
 
 def test_build_embedder_cohere_requires_key(monkeypatch):

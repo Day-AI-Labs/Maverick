@@ -23,8 +23,8 @@ metadata:
 type: Opaque
 stringData:
   # Populate from your secret manager; do NOT commit real keys.
-  ANTHROPIC_API_KEY: "replace-me"
-  MAVERICK_DASHBOARD_TOKEN: "replace-me"
+  ANTHROPIC_API_KEY: "replace-me"  # pragma: allowlist secret
+  MAVERICK_DASHBOARD_TOKEN: "replace-me"  # pragma: allowlist secret
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

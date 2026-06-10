@@ -31,7 +31,7 @@ def test_verify_accepts_prefixed_signature():
     payload = '{"event":"x"}'
     out = _run(
         op="verify",
-        secret="topsecret",
+        secret="topsecret",  # pragma: allowlist secret
         payload=payload,
         signature="sha256=" + _sig("topsecret", payload),
     )
