@@ -32,6 +32,8 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
+from . import fastjson as _fastjson
+
 _DEFAULT_SIZE = 256
 _lock = threading.Lock()
 # key -> (value, stored_at_monotonic, stored_at_epoch)
@@ -106,7 +108,9 @@ def save_snapshot() -> int:
         tmp = path.with_suffix(".tmp")
         with open(tmp, "w", encoding="utf-8") as fh:
             for k, v, epoch in rows:
-                fh.write(json.dumps({"k": k, "v": v, "t": epoch}) + "\n")
+                # Round-trip snapshot (written here, parsed back at load): exact
+                # bytes don't matter for identity, so use the fast backend.
+                fh.write(_fastjson.dumps({"k": k, "v": v, "t": epoch}) + "\n")
         os.replace(tmp, path)
         try:
             os.chmod(path, 0o600)
@@ -146,7 +150,7 @@ def warm_on_start() -> int:
                 if not line:
                     continue
                 try:
-                    row = json.loads(line)
+                    row = _fastjson.loads(line)
                     k, v, epoch = str(row["k"]), str(row["v"]), float(row["t"])
                 except (ValueError, TypeError, KeyError):
                     continue  # tolerate a corrupt / partial line

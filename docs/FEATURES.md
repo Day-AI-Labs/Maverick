@@ -356,7 +356,13 @@ never routing somewhere v2 rejected, falling back to v2 on a cold context. The
 learned table persists atomically (`router_bandit.json`, 0600); opt-in via
 `[routing] bandit` and default-OFF.
 
-**Self-tuning budgets** (`self_tuning_budget.py`, opt-in `[budget]
+**Fast JSON seam** (`fastjson.py`, opt-in `[perf-fastjson]` extra): a
+stdlib-compatible `dumps`/`loads` that prefers **orjson** (~5-10x faster) when
+installed and falls back to stdlib `json` otherwise — `dumps` returns `str`,
+honors `sort_keys`, and degrades on any value orjson rejects, so it's a safe
+drop-in for round-trip/transport paths (wired into the tool-output cache
+snapshot). Deliberately NOT used for cache keys/signatures, where exact bytes
+must stay backend-stable. **Self-tuning budgets** (`self_tuning_budget.py`, opt-in `[budget]
 self_tuning`): learns a sensible default spend cap *per coarse task class*
 (e.g. the goal's leading verb) from how much past runs of that class actually
 cost — a bounded reservoir per class, a high-quantile × margin suggestion
