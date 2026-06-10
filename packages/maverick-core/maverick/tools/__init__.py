@@ -737,6 +737,7 @@ def base_registry(  # noqa: C901
     from .provider_failover_policy import provider_failover_policy
     from .query_plan_regression import query_plan_regression
     from .quorum_approval import quorum_approval
+    from .rbac_check import rbac_check
     from .recall import recall
     from .rectification import rectification
     from .reddit_tool import reddit_tool
@@ -890,6 +891,7 @@ def base_registry(  # noqa: C901
     reg.register(data_minimization())
     reg.register(consent_check())
     reg.register(jwt_inspect())
+    reg.register(rbac_check())
     reg.register(supply_chain_pin())
     reg.register(quorum_approval())
     reg.register(crypto_budget_receipt())
