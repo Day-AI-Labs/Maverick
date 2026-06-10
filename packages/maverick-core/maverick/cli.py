@@ -962,6 +962,58 @@ def cost_retro(ctx, top: int, as_json: bool) -> None:
         click.echo(f"  • {o}")
 
 
+@main.group("canary")
+def canary_group() -> None:
+    """Record / compare cost-perf metric snapshots per release."""
+
+
+def _parse_metrics(pairs: tuple[str, ...]) -> dict:
+    out: dict = {}
+    for p in pairs:
+        if "=" not in p:
+            raise click.ClickException(f"--metric must be name=value, got {p!r}")
+        name, _, val = p.partition("=")
+        try:
+            out[name.strip()] = float(val)
+        except ValueError as e:
+            raise click.ClickException(f"metric {name!r} value not numeric: {val!r}") from e
+    return out
+
+
+@canary_group.command("record")
+@click.argument("release")
+@click.option("--metric", "metrics", multiple=True,
+              help="name=value (repeatable), e.g. --metric p95_latency_s=3.4")
+def canary_record(release: str, metrics: tuple[str, ...]) -> None:
+    """Record RELEASE's metric snapshot (cost/latency/success_rate/...)."""
+    from .release_canary import CanaryStore
+    parsed = _parse_metrics(metrics)
+    if not parsed:
+        raise click.ClickException("at least one --metric is required")
+    CanaryStore().record(release, parsed)
+    click.echo(f"recorded {len(parsed)} metric(s) for release {release!r}")
+
+
+@canary_group.command("compare")
+@click.argument("baseline")
+@click.argument("candidate")
+@click.option("--tolerance", type=float, default=0.10,
+              help="Relative move allowed before flagging a regression.")
+def canary_compare(baseline: str, candidate: str, tolerance: float) -> None:
+    """Compare CANDIDATE release metrics against BASELINE; exit 1 on regression."""
+    from .release_canary import CanaryStore, compare, render
+    store = CanaryStore()
+    base, cand = store.get(baseline), store.get(candidate)
+    if base is None:
+        raise click.ClickException(f"no recorded metrics for baseline {baseline!r}")
+    if cand is None:
+        raise click.ClickException(f"no recorded metrics for candidate {candidate!r}")
+    result = compare(base, cand, tolerance=tolerance)
+    click.echo(render(result))
+    if not result.passed:
+        raise SystemExit(1)
+
+
 @main.command()
 @click.option("--sample", "sample", nargs=2, type=str, default=None,
               metavar="CONFIDENCE CORRECT",

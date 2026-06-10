@@ -551,6 +551,14 @@ outage must exhaust retries in bounded attempts (backoff virtualized so the
 drill runs in milliseconds), plus a no-chaos control; exits 1 when a
 resilience property fails. Standalone drill, not for serving processes.
 
+**Cost/perf release canary** (`release_canary.py`, `maverick canary
+record/compare`): snapshot a release's cost/latency/success-rate metrics and,
+before shipping the next, compare against the recorded baseline — a
+**direction-aware** relative check (lower-is-better for cost/latency,
+higher-is-better for success-rate/throughput) that exits non-zero on a
+regression beyond tolerance, gating a release the way tests do. Deterministic;
+the snapshot store is an atomic JSON keyed by release tag.
+
 `benchmarks/`: GAIA, τ²-bench-style stateful harness, terminal-bench-style
 harness, SWE-bench harness, moat suite, and an **adversarial-cost suite**
 (`eval_adversarial_cost.py`): scripted money-wasting scenarios — tool loops,
