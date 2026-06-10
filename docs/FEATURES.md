@@ -529,7 +529,11 @@ and `trace_commit()` reads it back so replays tie to exact code); **cost split b
 
 ## UX surfaces
 
-- **CLI** — `maverick init` (wizard), `start`, `resume`, `monitor` (Rich plan-tree
+- **CLI** — `maverick init` (wizard — with **branching paths**: a mode picker
+  routes consumer users to a tailored short flow (`run_consumer`) while
+  advanced users get the full step sequence, and the deployment answer
+  (desktop/docker/vps/phone) filters the channel/sandbox questions that
+  follow; `--fast` and `--resume` skip/restore branches), `start`, `resume`, `monitor` (Rich plan-tree
   TUI), `status --cost`, `export`, `replay`, `logs`, `ps`, `whoami`, and
   `maverick diag` (circuit-breaker states, provider rate-limit counts, per-goal
   health score, cost-by-tag, and replay of a `MAVERICK_TRACE_DIR` run trace).

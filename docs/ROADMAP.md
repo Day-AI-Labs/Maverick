@@ -110,7 +110,7 @@ single-run inflation) — run multi-seed.
 | Concern | Planned (not yet built) |
 |---|---|
 | **Capabilities** | Multi-modal RAG · WASM sandbox · ROS robotics action tool · browser anti-bot evasion kit (opt-in) · multi-agent observation channel |
-| **UX** | Native macOS/Windows/Linux GUI apps · browser extension · wizard branching paths · run gallery · replay export to MP4 · collaborative supervision (multi-user dashboard) · VS Code + JetBrains live-run extensions · TUI mouse mode · accessibility audit pass · i18n community portal |
+| **UX** | Native macOS/Windows/Linux GUI apps · browser extension · run gallery · replay export to MP4 · collaborative supervision (multi-user dashboard) · VS Code + JetBrains live-run extensions · TUI mouse mode · accessibility audit pass · i18n community portal |
 | **Distribution** | Windows MSI · marketplace moderation tooling · sponsorship tiers · conference physical booth · swag store · ambassadors program · long-form handbook · Skill of the Year award · mobile companion app v1 (read-only) · self-hosted relay reference · localized docs phase 4 (ko/ru/it/hi) · video season 3 · skill search engine (HF) · annual community survey · foundation exploration |
 | **Performance** | Cold-start optimization (<300ms `--help`) · JIT consideration (mypyc/cython on hot path) · reliability SLO publication (99.5%) · compaction v5 multi-modal · autoscaling local backends · real-time anomaly detection · failure-mode telemetry shipping (opt-in) · tail-latency hunting · KV-cache offload to disk · 2-year retrospective |
 | **Safety** | gVisor tool sandbox · eBPF syscall monitor · memory-safe parsers · sigstore keyless signing · out-of-process model proxy · federated shield model updates · annual safety report |
