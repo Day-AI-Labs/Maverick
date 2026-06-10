@@ -112,6 +112,12 @@ jobs:
         run: |
           pip install -e ./packages/maverick-core -q
           python -m maverick.plugin_matrix --ci
+      - name: gRPC API v1 stability contract (no breaking proto changes)
+        # Parses maverick.proto into a structural inventory and diffs it
+        # against the committed golden: additive changes pass, removals /
+        # renumbers / type changes / rpc-shape changes fail. Breaking the v1
+        # contract requires a maverick.v2 package, not an edit.
+        run: python -m maverick.grpc_api.contract --check
       - name: Accessibility audit (static WCAG pass over dashboard templates)
         # Offline structural a11y checks (img alt, form labels, lang, focus
         # order, heading levels) over the shipped HTML — keeps the dashboard

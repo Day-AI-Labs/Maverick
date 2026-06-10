@@ -1,5 +1,11 @@
 // Maverick gRPC API — the external contract for driving the agent runtime.
 //
+// STABILITY: package maverick.v1 is STABLE. Additive changes only (new rpcs,
+// new messages, new fields with unused numbers). Removing/renaming anything,
+// changing a field number/type, or changing an rpc shape is a breaking change
+// and fails the contract gate (maverick/grpc_api/contract.py, golden in
+// maverick_v1_contract.json). Breaking changes require a maverick.v2 package.
+//
 // Generate Python stubs with:
 //   python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. maverick.proto
 // (the server does this on demand when the [grpc] extra is installed.)

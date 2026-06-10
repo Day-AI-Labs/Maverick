@@ -453,6 +453,13 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   anything delegates against it) proven both ways by interop tests: Maverick's
   own card passes its own validator, and third-party-shaped fixture cards
   (rich + minimal) parse correctly.
+- **gRPC API v1 — stable** (`grpc_api/maverick.proto`, package `maverick.v1`;
+  contract gate `grpc_api/contract.py` + committed golden
+  `maverick_v1_contract.json`, wired into CI): additive changes pass; removing/
+  renaming a service/rpc/message/field, renumbering or retyping a field,
+  changing an rpc's streaming shape, or reusing a removed field number fails
+  the gate — a breaking change requires a `maverick.v2` package. The gate is a
+  dependency-free proto parser, so it runs in CI without grpcio.
 - **gRPC dispatch** (`grpc_dispatcher.py`, opt-in `[grpc_dispatch] target`)
   — execute goals on a remote Maverick worker over gRPC: a `RunGoal` RPC runs
   an existing goal row to completion (API and worker share the Postgres world
