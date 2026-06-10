@@ -116,7 +116,7 @@ single-run inflation) — run multi-seed.
 | **Capabilities** | WASM sandbox · browser anti-bot evasion kit (opt-in) |
 | **UX** | Native macOS/Windows/Linux GUI apps · browser extension · VS Code + JetBrains live-run extensions · TUI mouse mode · accessibility audit pass · i18n community portal |
 | **Distribution** | Windows MSI · marketplace moderation tooling · sponsorship tiers · conference physical booth · swag store · ambassadors program · long-form handbook · Skill of the Year award · mobile companion app v1 (read-only) · self-hosted relay reference · localized docs phase 4 (ko/ru/it/hi) · video season 3 · skill search engine (HF) · annual community survey · foundation exploration |
-| **Performance** | JIT consideration (mypyc/cython on hot path) · compaction v5 multi-modal · autoscaling local backends · real-time anomaly detection · KV-cache offload to disk · 2-year retrospective |
+| **Performance** | JIT consideration (mypyc/cython on hot path) · compaction v5 multi-modal · autoscaling local backends · KV-cache offload to disk · 2-year retrospective |
 | **Safety** | eBPF syscall monitor · memory-safe parsers · sigstore keyless signing · federated shield model updates · annual safety report |
 | **Ecosystem** | ACD spec v1.0 · Redis world-model · DuckDB world-model *transactional backend* (declined — OLAP engine, wrong for the concurrent OLTP write path; the **DuckDB analytics layer** over the world model shipped instead, see FEATURES) · Cloudflare Workers + Modal sandboxes |
 

@@ -645,7 +645,12 @@ output_cache_snapshot`: persist entries to a JSONL snapshot, reload the
 still-fresh ones on the next run's first lookup); **memory-leak quarantine**
 (`leak_quarantine.py`): per-component watchdog that flags sustained monotonic
 growth and quarantines the component for recycling (sawtooth never trips it); **network egress accounting**
-(`egress_accounting.py`); **run health score** (`health_score.py`); **replayable
+(`egress_accounting.py`); **run health score** (`health_score.py`); **real-time anomaly detection**
+(`realtime_anomaly.py`): the online companion to the batch cross-run
+analyzer — feed a metric (latency / per-step cost / tokens) as it happens and
+a rolling-window z-score flags a spike *mid-run* (a `StreamMonitor` watches
+each stream independently), so a runaway is caught live, not in a post-mortem;
+**replayable
 trace** format (`replay_trace.py`) with **trace pinning to commit**
 (`trace_pin.py`: every run stamps a `trace_meta` event carrying the
 workspace's commit/branch/dirty state at start — best-effort, never blocks —
