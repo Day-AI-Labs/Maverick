@@ -1049,6 +1049,14 @@ tested without spawning py-spy.
   read host temperatures/fans/battery via psutil with a `/sys/class/thermal`
   fallback and an injected reader for tests; unavailable categories say
   "unavailable on this host" — readings are never fabricated.
+- **Director mode** (`director_mode.py`): state an *outcome* and pick the
+  autonomy level — `supervised` / `semi` / `autonomous` profiles map to the
+  existing controls (consent mode, review-checkpoint intervals, a budget
+  multiplier over the configured cap, plan-execute-reflect topology) so one
+  choice sets the whole envelope. `direct()` is pure assembly (starts
+  nothing; the hard Budget ceiling still applies at run time); profiles are
+  config-overridable and unknown profiles are refused — an autonomy level is
+  never guessed.
 - **Predictive approvals** (`predictive_approvals.py`): learns the operator's
   historical approve/deny rate per (action, risk tier) from approval history and
   *suggests* a default — auto-approve-candidate / auto-deny-candidate /
