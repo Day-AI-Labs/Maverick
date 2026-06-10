@@ -1049,6 +1049,11 @@ tested without spawning py-spy.
   read host temperatures/fans/battery via psutil with a `/sys/class/thermal`
   fallback and an injected reader for tests; unavailable categories say
   "unavailable on this host" — readings are never fabricated.
+- **Achievements** (`achievements.py`): a local-only milestone ledger
+  *derived from recorded history* (never self-reported; nothing leaves the
+  machine) — first/10/100 completed goals, a 5+-sub-goal swarm, 3+ channels,
+  10 approval decisions — unlocking exactly once into an atomic 0600 store;
+  evaluated on view, never per-turn.
 - **Share links + device handoff** (`share_link.py`, `[sharing] secret`
   required — no unsigned mode): a share link is a signed, expiring,
   *read-only* token referencing a goal (carries no content; constant-time
