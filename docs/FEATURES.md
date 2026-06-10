@@ -41,7 +41,7 @@ here.
   reusable, validator-compliant `SKILL.md` under `~/.maverick/learned-skills`
   (`skill_distillation_local.py`), opt-in via `[self_learning] distill_local`.
 - **Vector-store cross-run memory** — opt-in `[memory] backend` routes
-  cross-run recall through a persistent **Chroma / Qdrant** store
+  cross-run recall through a persistent **Chroma / Qdrant / Weaviate** store
   (`vector_store/`, `semantic_recall.py`) so similarity search is indexed and
   incremental instead of a linear re-embed scan; fail-open and
   dependency-injectable — the kernel never *requires* a vector store.
@@ -104,15 +104,89 @@ here.
   risk-tier screening for a described AI use-case — prohibited/high/limited/
   minimal + obligations; heuristic, not legal advice), `geofence` (region
   allow/deny policy check — ISO codes or groups EU/EEA/FIVE_EYES, deny-precedence), `two_person_rule` (validate
-  dual-control sign-off — distinct approvers, separation of duties, optional roles), `differential_privacy` (Laplace
-  mechanism for (epsilon)-DP noisy counts/sums on published stats), `watermark_detector` (find hidden
-  text watermarks/steganography — zero-width, tag chars, variation selectors, homoglyphs), `privacy_budget` (account a
-  user's differential-privacy budget — remaining epsilon + allow/deny a query), `capability_delegation` (validate a
-  delegation graph for privilege escalation — fixpoint from root capabilities),
-  `coordinated_disclosure` (track vulnerability disclosure timelines — embargo
-  window per report, flags EMBARGOED/DUE_SOON/OVERDUE/PATCHED/DISCLOSED),
+  dual-control sign-off — distinct approvers, separation of duties, optional roles),
+  `watermark_detector` (find hidden text watermarks/steganography — zero-width,
+  tag chars, variation selectors, homoglyphs; reports, doesn't strip),
   `collusion_detector` (find voting-collusion blocs among agents that defeat
   independent-quorum guarantees — correlated votes above a threshold),
+  `capability_delegation_graph` (delegation-cycle / over-broad-fan-out /
+  sensitive-holder analysis of a grant graph), `honeytoken` (mint never-valid
+  decoy credentials + exfiltration tripwire scan), `dp_stats` (differentially-
+  private aggregate release via the Laplace mechanism — noisy count/sum with a
+  per-record clamp), `cost_attribution` (rank spend across principal/tenant/tool/
+  tag/model/role dimensions with shares), `coordinated_disclosure` (track
+  vulnerability disclosure timelines — embargo window per report, flags
+  EMBARGOED/DUE_SOON/OVERDUE/PATCHED/DISCLOSED), `model_card` (render/validate a
+  per-LLM model card), `supply_chain_pin` (flag unpinned/unhashed/range
+  dependencies), `quorum_approval` (M-of-N quorum check with distinct-role
+  option), `crypto_budget_receipt` (HMAC-signed budget receipt issue/verify),
+  `provenance_chain` (verify a hash-linked chain of agent actions),
+  `migration_cost` (provider-switch cost/savings calculator), `energy_accounting`
+  (Wh + gram-CO2e estimate with documented assumptions), `cost_guardrail`
+  (ALLOW/WARN/BLOCK against a per-run dollar gate), `cache_eviction` (LRU/LFU
+  cache hit-rate simulator), `latency_slo` (p50–p999 nearest-rank percentiles +
+  SLO pass/fail), `cost_of_quality` (spend on passing vs failing runs +
+  cost-per-success), `outline_writer` (long-form outline→draft→polish
+  structuring), `agent_simulator` (deterministic scripted-agent replay harness),
+  `fairness_scheduler` (weighted largest-remainder slot allocation across
+  agents), `process_introspect` (top-N / orphan analysis of a supplied process
+  snapshot — never reads live /proc), `adversarial_self_test` (policy-pattern
+  probe + injection-style prompt mutations for self-red-teaming), `reflect_loop`
+  (plan-execute-reflect control-flow scaffold: plan steps, then
+  retry/advance/replan), `github_repo_search` (GitHub repo/code search),
+  `github_issues` / `gitlab_issues` (list/get/create issues), `web_archive`
+  (Wayback closest-snapshot lookup + save endpoint), `anki` (AnkiConnect
+  add-note / decks), `s3_attachments` (content-addressed S3 keys + virtual-hosted
+  URLs), `template_generator` (scaffold a valid SKILL.md or a base.Channel
+  adapter stub), `generic_oauth` (OAuth2 client-credentials/authorize-URL
+  builder with PKCE, https-enforced), `plugin_lockfile` (generate/verify a
+  version+hash plugin lockfile), `saas_trigger` (HMAC webhook-signature verify
+  + event→goal routing), `apple_shortcuts` (Shortcuts run / x-callback URL
+  builder), `discord_slash` (slash-command registration JSON), `slack_workflow`
+  (workflow custom-step + trigger JSON), `risk_tier_classifier` (LOW/MED/HIGH
+  goal-risk score from irreversibility/money/PII/egress/blast-radius signals),
+  `containment_mode` (no-network/ephemeral-fs restriction plan + per-action
+  allow/deny), `capability_leak_fuzzer` (find tools that would run without their
+  required capability + over-grants), `right_to_explanation` (ranked decision
+  explanation + rectification record), `audit_mirror` (verify primary vs mirror
+  audit logs agree, gap-free), `tiered_storage` (hot/cold partition + migration
+  plan), `async_compaction` (compact-now/defer/keep scheduling plan),
+  `wal_contention` (superlinear-degradation analysis + writer ceiling),
+  `memleak_quarantine` (least-squares RSS-slope leak detection), `openmetrics`
+  (OpenMetrics/Prometheus exposition renderer), `sla_breach` (SLO breach
+  detector + severity action), `whats_changed` (added/removed/changed digest +
+  unified-diff summary), `comparative_replay` (align two run traces, first
+  divergence + similarity), `tool_call_inspector` (per-tool counts / success
+  rate / latency / cost roll-up), `latency_heatmap` (per-bucket percentile
+  heatmap), `plain_language` (plan/trace → plain-English narration),
+  `multimodal_rag` (lexical text/image/table chunk ranker),
+  `query_plan_regression` (flag cost/index/rows regressions between two query
+  plans), `provider_failover_policy` (rank healthy providers + pick primary),
+  `cost_aware_router` (per-role cheapest-model-meeting-quality routing),
+  `multiregion_failover` (nearest healthy region with capacity + fallbacks),
+  `reliability_harness` (per-test flaky/stable/always-fail + reliability %),
+  `chaos_gameday` (fault-injection plan with blast radius), `pia_generator`
+  (Privacy Impact Assessment doc + risk flags), `capability_negotiation`
+  (granted-intersection negotiation with deny-override), `key_rotation`
+  (due/overdue classification + staggered rotation schedule), `data_residency`
+  (per-jurisdiction storage-region routing, EU/EEA groups),
+  `polyglot_injection` (multi-context injection-payload scan), `safety_regression_budget`
+  (PASS/FAIL safety-score drop vs budget), `autogen_adapter` / `crewai_adapter`
+  (translate tool/task specs to and from AutoGen and CrewAI), `run_events_firehose`
+  (JSON-line event encode + filter for a WS firehose), `marketplace_ratings`
+  (Wilson-scored rating aggregate + install-hash verify), `local_embeddings_cache`
+  (content-addressed embedding cache keys + eviction candidates),
+  `saas_trigger_registry` (validated source/event→goal trigger registry +
+  match), `streaming_reasoning_trace` (redaction-aware reasoning-trace render),
+  `voice_cloning_consent` (scope+expiry consent gate for voice cloning),
+  `diff_to_expected` (exact/json/numeric/tolerance actual-vs-expected diff),
+  `smart_goal_completion` (prefix + token-overlap goal completions),
+  `unified_inbox` (time-sorted, per-thread multi-channel inbox + unread counts),
+  `smart_nl_filter` (parse a natural-language filter into a predicate + apply),
+  `differential_privacy` (Laplace mechanism for ε-DP noisy counts/sums on
+  published stats), `privacy_budget` (account a user's differential-privacy
+  budget — remaining ε + allow/deny a query), `capability_delegation` (validate
+  a delegation graph for privilege escalation — fixpoint from root capabilities),
   `risk_tier` (score an agent goal LOW/MEDIUM/HIGH from operational signals —
   shell/secrets/PII/spend/irreversibility — for gating), `bias_eval` (group-
   fairness metrics — four-fifths rule, demographic-parity and equal-opportunity
@@ -233,8 +307,9 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   and the `maverick finance status` posture report (`maverick/finance/`).
 - **maverick-knowledge** — per-domain vector RAG package backing
   `knowledge_search`; config-selected embedders (`embed.py`): hosted **Voyage**
-  (or any OpenAI-compatible endpoint), local, or deterministic — fails loud
-  rather than silently degrading.
+  (or any OpenAI-compatible endpoint), **Cohere** (`/v2/embed`, asymmetric
+  search_document/search_query input types), local, or deterministic — fails
+  loud rather than silently degrading.
 - **Reverse-proxy SSO** — trusted forwarded-identity header for enterprise auth.
 - **Tenant-aware persistence** — workspaces wall each tenant into
   `~/.maverick/tenants/<t>/` (`workspace.py`, `paths.py`), with a per-tenant
@@ -317,7 +392,14 @@ trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
 - **Packaging** — 6 packages on PyPI, GHCR Docker image, PyInstaller binaries,
   native double-click installers (Tauri; `.exe` / `.dmg` / `.AppImage`).
 - **IDE / CI** — VS Code extension (`apps/vscode-extension/`), GitHub Action
-  wrapper (`maverick-action`).
+  wrapper (`maverick-action`), **devcontainer + Codespaces template**
+  (`.devcontainer/`: editable install of all packages + the test toolchain,
+  dashboard port forwarded).
+- **Reference architectures** — self-hostable deploy blueprints for
+  **Kubernetes / AWS ECS Fargate / Fly.io / Railway**
+  (`deploy/reference-architectures/`, [docs](./reference-architectures.md)):
+  one container image, state on a persistent volume, secrets from the platform
+  store, `/healthz`-probed.
 - **Docs** — MkDocs site, [getting started](./getting-started.md), 30-recipe
   [cookbook](./cookbook/), [architecture](./architecture.md),
   [embedding guide](./embedding.md), [security hardening](./security-hardening.md).

@@ -74,8 +74,12 @@ class TestBackendName:
         assert sr.backend_name() == "chroma"
 
     def test_unknown_backend_is_none(self, monkeypatch):
-        monkeypatch.setenv("MAVERICK_VECTOR_STORE", "weaviate")
+        monkeypatch.setenv("MAVERICK_VECTOR_STORE", "pinecone")
         assert sr.backend_name() is None
+
+    def test_weaviate_backend_recognized(self, monkeypatch):
+        monkeypatch.setenv("MAVERICK_VECTOR_STORE", "weaviate")
+        assert sr.backend_name() == "weaviate"
 
 
 class TestIndexAndSearch:

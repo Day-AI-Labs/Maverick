@@ -534,73 +534,114 @@ def base_registry(  # noqa: C901
 
     from .a11y import a11y
     from .a11y_tree import a11y_tree
+    from .adversarial_self_test import adversarial_self_test
+    from .agent_simulator import agent_simulator
     from .ai_act_classifier import ai_act_classifier
     from .airtable_tool import airtable_tool
     from .android import android
+    from .anki import anki
+    from .apple_shortcuts import apple_shortcuts
     from .apply_patch import apply_patch
     from .arxiv import arxiv
     from .asana_tool import asana_tool
     from .ast_edit import ast_edit
+    from .async_compaction import async_compaction
+    from .audit_mirror import audit_mirror
+    from .autogen_adapter import autogen_adapter
     from .bias_eval import bias_eval
     from .bitbucket_tool import bitbucket_tool
     from .budget_status import budget_status
     from .cache_admin import cache_admin
+    from .cache_eviction import cache_eviction
     from .calendar_tool import calendar_tool
     from .calendly_tool import calendly_tool
     from .capability_delegation import capability_delegation
+    from .capability_delegation_graph import capability_delegation_graph
+    from .capability_leak_fuzzer import capability_leak_fuzzer
+    from .capability_negotiation import capability_negotiation
+    from .chaos_gameday import chaos_gameday
     from .citation_verifier import citation_verifier
     from .clickup_tool import clickup_tool
     from .clipboard import clipboard
     from .cloudflare_tool import cloudflare_tool
     from .collusion_detector import collusion_detector
+    from .comparative_replay import comparative_replay
     from .compute import compute
     from .confluence_tool import confluence_tool
     from .constrained_output import constrained_output
     from .container_build import container_build
+    from .containment_mode import containment_mode
     from .coordinated_disclosure import coordinated_disclosure
+    from .cost_attribution import cost_attribution
+    from .cost_aware_router import cost_aware_router
+    from .cost_guardrail import cost_guardrail
+    from .cost_of_quality import cost_of_quality
+    from .crewai_adapter import crewai_adapter
     from .cross_repo_deps import cross_repo_deps
+    from .crypto_budget_receipt import crypto_budget_receipt
     from .currency import currency
+    from .data_residency import data_residency
     from .datadog_tool import datadog_tool
     from .decision_explainer import decision_explainer
     from .dep_graph import dep_graph
     from .diagnose import diagnose
+    from .diff_to_expected import diff_to_expected
     from .differential_privacy import differential_privacy
     from .discord_bot import discord_bot
+    from .discord_slash import discord_slash
     from .dns_lookup import dns_lookup
+    from .dp_stats import dp_stats
     from .dropbox_tool import dropbox_tool
     from .dynamodb_tool import dynamodb_tool
     from .elasticsearch_tool import elasticsearch_tool
     from .email_tool import email_tool
     from .embeddings import embeddings
+    from .energy_accounting import energy_accounting
     from .erp_tool import erp_tool
     from .error_patterns import error_patterns
+    from .fairness_scheduler import fairness_scheduler
     from .ffmpeg_tool import ffmpeg_tool
     from .file_watcher import file_watcher
     from .ga4_tool import ga4_tool
     from .gdrive_tool import gdrive_tool
+    from .generic_oauth import generic_oauth
     from .geocode import geocode
     from .geofence import geofence
     from .git_advanced import git_advanced
     from .github_actions import github_actions
+    from .github_issues import github_issues
+    from .github_repo_search import github_repo_search
     from .gitlab import gitlab
+    from .gitlab_issues import gitlab_issues
     from .gmail_tool import gmail_tool
     from .hackernews import hackernews
     from .home_assistant_tool import home_assistant_tool
+    from .honeytoken import honeytoken
     from .http_fetch import http_fetch
     from .hubspot_tool import hubspot_tool
     from .huggingface import huggingface
     from .imagemagick_tool import imagemagick_tool
     from .ios_sim import ios_sim
     from .jira import jira
+    from .key_rotation import key_rotation
     from .knowledge_graph import knowledge_graph
     from .kv_memory import kv_memory
     from .lambda_tool import lambda_tool
+    from .latency_heatmap import latency_heatmap
+    from .latency_slo import latency_slo
     from .linear import linear
+    from .local_embeddings_cache import local_embeddings_cache
+    from .marketplace_ratings import marketplace_ratings
+    from .memleak_quarantine import memleak_quarantine
     from .memory import memory
+    from .migration_cost import migration_cost
     from .mixpanel_tool import mixpanel_tool
     from .model3d_inspect import model3d_inspect
+    from .model_card import model_card
     from .mongodb_tool import mongodb_tool
     from .msgraph_tool import msgraph_tool
+    from .multimodal_rag import multimodal_rag
+    from .multiregion_failover import multiregion_failover
     from .mutation_test import mutation_test
     from .newsapi_tool import newsapi_tool
     from .notify import notify_tool
@@ -608,47 +649,81 @@ def base_registry(  # noqa: C901
     from .obsidian import obsidian
     from .ocr import ocr
     from .openapi_runner import openapi_runner
+    from .openmetrics import openmetrics
+    from .outline_writer import outline_writer
     from .pagerduty_tool import pagerduty_tool
     from .pandas_query import pandas_query
     from .pandoc_tool import pandoc_tool
     from .pdf_reader import read_pdf
+    from .pia_generator import pia_generator
     from .plaid_tool import plaid_tool
+    from .plain_language import plain_language
     from .plausible_tool import plausible_tool
+    from .plugin_lockfile import plugin_lockfile
+    from .polyglot_injection import polyglot_injection
     from .posthog_tool import posthog_tool
     from .preview_diff import preview_diff
     from .privacy_budget import privacy_budget
+    from .process_introspect import process_introspect
+    from .provenance_chain import provenance_chain
+    from .provider_failover_policy import provider_failover_policy
+    from .query_plan_regression import query_plan_regression
+    from .quorum_approval import quorum_approval
     from .recall import recall
     from .rectification import rectification
     from .reddit_tool import reddit_tool
     from .redis_tool import redis_tool
+    from .reflect_loop import reflect_loop
+    from .reliability_harness import reliability_harness
     from .replicate_tool import replicate_tool
+    from .right_to_explanation import right_to_explanation
     from .risk_tier import risk_tier
+    from .risk_tier_classifier import risk_tier_classifier
+    from .run_events_firehose import run_events_firehose
+    from .s3_attachments import s3_attachments
     from .s3_tool import s3_tool
+    from .saas_trigger import saas_trigger
+    from .saas_trigger_registry import saas_trigger_registry
+    from .safety_regression_budget import safety_regression_budget
     from .salesforce_tool import salesforce_tool
     from .semantic_code_search import semantic_code_search
     from .semantic_scholar import semantic_scholar
     from .sentry_tool import sentry_tool
     from .ses_tool import ses_tool
     from .shopify_tool import shopify_tool
+    from .sla_breach import sla_breach
     from .slack_bot import slack_bot
+    from .slack_workflow import slack_workflow
+    from .smart_goal_completion import smart_goal_completion
+    from .smart_nl_filter import smart_nl_filter
     from .sns_tool import sns_tool
     from .spend_report import spend_report
     from .spotify_tool import spotify_tool
     from .spreadsheet import spreadsheet
     from .sql_query import sql_query
+    from .streaming_reasoning_trace import streaming_reasoning_trace
     from .stripe_tool import stripe_tool
+    from .supply_chain_pin import supply_chain_pin
     from .synthetic_data import synthetic_data
+    from .template_generator import template_generator
     from .test_gen import test_gen
     from .test_impact import test_impact
+    from .tiered_storage import tiered_storage
+    from .tool_call_inspector import tool_call_inspector
     from .translate import translate
     from .trello_tool import trello_tool
     from .twilio_tool import twilio_tool
     from .two_person_rule import two_person_rule
+    from .unified_inbox import unified_inbox
     from .vercel_tool import vercel_tool
     from .view_image import view_image
     from .view_video import view_video
+    from .voice_cloning_consent import voice_cloning_consent
+    from .wal_contention import wal_contention
     from .watermark_detector import watermark_detector
+    from .web_archive import web_archive
     from .web_recorder import web_recorder
+    from .whats_changed import whats_changed
     from .wikipedia import wikipedia
     from .wolfram_tool import wolfram_tool
     from .youtube import youtube
@@ -720,6 +795,81 @@ def base_registry(  # noqa: C901
     reg.register(cross_repo_deps(sandbox))
     reg.register(test_gen())
     reg.register(two_person_rule())
+    reg.register(capability_delegation_graph())
+    reg.register(honeytoken())
+    reg.register(dp_stats())
+    reg.register(cost_attribution())
+    reg.register(model_card())
+    reg.register(supply_chain_pin())
+    reg.register(quorum_approval())
+    reg.register(crypto_budget_receipt())
+    reg.register(provenance_chain())
+    reg.register(migration_cost())
+    reg.register(energy_accounting())
+    reg.register(cost_guardrail())
+    reg.register(cache_eviction())
+    reg.register(latency_slo())
+    reg.register(cost_of_quality())
+    reg.register(outline_writer())
+    reg.register(agent_simulator())
+    reg.register(fairness_scheduler())
+    reg.register(process_introspect())
+    reg.register(adversarial_self_test())
+    reg.register(reflect_loop())
+    reg.register(github_repo_search())
+    reg.register(github_issues())
+    reg.register(gitlab_issues())
+    reg.register(web_archive())
+    reg.register(anki())
+    reg.register(s3_attachments())
+    reg.register(template_generator())
+    reg.register(generic_oauth())
+    reg.register(plugin_lockfile())
+    reg.register(saas_trigger())
+    reg.register(apple_shortcuts())
+    reg.register(discord_slash())
+    reg.register(slack_workflow())
+    reg.register(risk_tier_classifier())
+    reg.register(containment_mode())
+    reg.register(capability_leak_fuzzer())
+    reg.register(right_to_explanation())
+    reg.register(audit_mirror())
+    reg.register(tiered_storage())
+    reg.register(async_compaction())
+    reg.register(wal_contention())
+    reg.register(memleak_quarantine())
+    reg.register(openmetrics())
+    reg.register(sla_breach())
+    reg.register(whats_changed())
+    reg.register(comparative_replay())
+    reg.register(tool_call_inspector())
+    reg.register(latency_heatmap())
+    reg.register(plain_language())
+    reg.register(multimodal_rag())
+    reg.register(query_plan_regression())
+    reg.register(provider_failover_policy())
+    reg.register(cost_aware_router())
+    reg.register(multiregion_failover())
+    reg.register(reliability_harness())
+    reg.register(chaos_gameday())
+    reg.register(pia_generator())
+    reg.register(capability_negotiation())
+    reg.register(key_rotation())
+    reg.register(data_residency())
+    reg.register(polyglot_injection())
+    reg.register(safety_regression_budget())
+    reg.register(autogen_adapter())
+    reg.register(crewai_adapter())
+    reg.register(run_events_firehose())
+    reg.register(marketplace_ratings())
+    reg.register(local_embeddings_cache())
+    reg.register(saas_trigger_registry())
+    reg.register(streaming_reasoning_trace())
+    reg.register(voice_cloning_consent())
+    reg.register(diff_to_expected())
+    reg.register(smart_goal_completion())
+    reg.register(unified_inbox())
+    reg.register(smart_nl_filter())
     reg.register(semantic_code_search(sandbox))
     reg.register(mutation_test())
     reg.register(constrained_output())

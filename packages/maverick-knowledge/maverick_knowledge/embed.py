@@ -84,6 +84,49 @@ class HostedEmbedder:
         return [d["embedding"] for d in data]
 
 
+class CohereEmbedder:
+    """Cohere embeddings (roadmap: 2027 H1 ecosystem — "Cohere embeddings").
+
+    Cohere's ``/v2/embed`` differs from the OpenAI/Voyage shape: it takes
+    ``texts`` (not ``input``), requires an ``input_type``
+    (search_document / search_query), and returns embeddings nested under
+    ``embeddings.float``. ``httpx`` is imported lazily. ``input_type`` defaults
+    to ``search_document`` for indexing; pass ``search_query`` at query time for
+    Cohere's asymmetric retrieval models.
+    """
+
+    def __init__(self, model: str, api_key: str, dim: int = 1024,
+                 base_url: str = "https://api.cohere.com/v2",
+                 input_type: str = "search_document"):
+        self.model = model
+        self.api_key = api_key
+        self.dim = dim
+        self.base_url = base_url.rstrip("/")
+        self.input_type = input_type
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        import httpx
+
+        r = httpx.post(
+            f"{self.base_url}/embed",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json={
+                "model": self.model,
+                "texts": texts,
+                "input_type": self.input_type,
+                "embedding_types": ["float"],
+            },
+            timeout=60,
+        )
+        r.raise_for_status()
+        body = r.json()
+        # v2 nests vectors under embeddings.float; v1 returned a flat list.
+        embeddings = body.get("embeddings", body)
+        if isinstance(embeddings, dict):
+            return embeddings["float"]
+        return embeddings
+
+
 def build_embedder(cfg: dict | None = None) -> Embedder:
     """Select an embedder from config. **Fails loud.**
 
@@ -117,6 +160,22 @@ def build_embedder(cfg: dict | None = None) -> Embedder:
             base_url=cfg.get("base_url", "https://api.voyageai.com/v1"),
             api_key=key,
             dim=int(cfg.get("dim", 1024)),
+        )
+
+    if provider == "cohere":
+        key = cfg.get("api_key") or os.environ.get("COHERE_API_KEY") \
+            or os.environ.get("MAVERICK_EMBED_API_KEY", "")
+        if not key:
+            raise RuntimeError(
+                "knowledge: cohere embedder selected but no API key (set "
+                "[knowledge] api_key, COHERE_API_KEY, or MAVERICK_EMBED_API_KEY); "
+                "or set embedder = 'deterministic' for offline/dev retrieval."
+            )
+        return CohereEmbedder(
+            model=cfg.get("model", "embed-v4.0"),
+            api_key=key,
+            dim=int(cfg.get("dim", 1024)),
+            input_type=cfg.get("input_type", "search_document"),
         )
 
     if provider == "local":
