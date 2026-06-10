@@ -194,7 +194,9 @@ here.
   contribution breakdown for an additive/scorecard decision — right-to-explanation),
   `rectification` (validate/apply GDPR Art. 16 field corrections under a
   mutability policy — auditable diff + corrected record), `anomaly_scan` (flag
-  cross-run metric outliers via the robust median/MAD modified z-score).
+  cross-run metric outliers via the robust median/MAD modified z-score),
+  `k_anonymity` (check a released dataset for k-anonymity + optional l-diversity
+  — quasi-identifier group sizes and sensitive-value diversity).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
