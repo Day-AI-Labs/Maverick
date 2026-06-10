@@ -368,7 +368,7 @@ class TestCohereEmbedder:
             return _Resp()
 
         monkeypatch.setitem(sys.modules, "httpx", types.SimpleNamespace(post=_post))
-        e = CohereEmbedder(api_key="k", base_url="http://x/v2", dim=2)
+        e = CohereEmbedder(model="embed-english-v3.0", api_key="k", base_url="http://x/v2", dim=2)
         vecs = e.embed(["a", "b"])
         assert vecs == [[1.0, 2.0], [3.0, 4.0]]
         assert captured["url"] == "http://x/v2/embed"
@@ -386,7 +386,7 @@ class TestCohereEmbedder:
                 return {"embeddings": [[5.0], [6.0]]}
 
         monkeypatch.setitem(sys.modules, "httpx", types.SimpleNamespace(post=lambda *a, **k: _Resp()))
-        e = CohereEmbedder(api_key="k", dim=1)
+        e = CohereEmbedder(model="embed-english-v3.0", api_key="k", dim=1)
         assert e.embed(["a", "b"]) == [[5.0], [6.0]]
 
     def test_build_cohere_with_key(self, monkeypatch):

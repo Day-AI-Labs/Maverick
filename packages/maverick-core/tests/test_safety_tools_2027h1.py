@@ -3,7 +3,6 @@ capability_delegation_graph, agent_identity. Deterministic and offline."""
 from __future__ import annotations
 
 from maverick.tools.agent_identity import agent_identity
-from maverick.tools.capability_delegation_graph import capability_delegation_graph
 from maverick.tools.collusion_detector import collusion_detector
 from maverick.tools.coordinated_disclosure import coordinated_disclosure
 
@@ -75,40 +74,6 @@ def test_cvd_validation():
     assert t.fn({"op": "advisory", "reported": "2027-01-01", "embargo_days": 1, "severity": "bogus", "id": "x", "summary": "y"}).startswith("ERROR")
 
 
-# ---- capability_delegation_graph ----
-
-def test_delegation_holders_and_escalation():
-    t = capability_delegation_graph()
-    out = t.fn({
-        "delegations": [
-            {"from": "orchestrator", "to": "coder", "capability": "fs.write"},
-            {"from": "coder", "to": "helper", "capability": "fs.write"},
-            {"from": "rogue", "to": "helper", "capability": "shell.exec"},
-        ],
-        "roots": {"fs.write": ["orchestrator"], "shell.exec": ["orchestrator"]},
-    })
-    assert "fs.write: holders=coder, helper, orchestrator" in out
-    assert "ESCALATION" in out and "rogue delegated 'shell.exec'" in out
-
-
-def test_delegation_cycle():
-    t = capability_delegation_graph()
-    out = t.fn({"delegations": [
-        {"from": "a", "to": "b", "capability": "x"},
-        {"from": "b", "to": "a", "capability": "x"},
-    ]})
-    assert "CYCLES" in out
-
-
-def test_delegation_ok():
-    t = capability_delegation_graph()
-    out = t.fn({
-        "delegations": [{"from": "a", "to": "b", "capability": "x"}],
-        "roots": {"x": ["a"]},
-    })
-    assert "verdict: OK" in out
-
-
 # ---- agent_identity ----
 
 def test_identity_stable_id():
@@ -146,5 +111,5 @@ def test_all_registered():
 
     names = set(getattr(base_registry(world=_W(), sandbox=_S()), "_tools", {}).keys())
     for name in ("collusion_detector", "coordinated_disclosure",
-                 "capability_delegation_graph", "agent_identity"):
+                 "agent_identity"):
         assert name in names

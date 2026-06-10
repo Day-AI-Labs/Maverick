@@ -1,9 +1,7 @@
-"""Tests for 2027-H1 observability/UX tools: trace_compare, latency_heatmap,
-tool_call_inspector. Deterministic and offline."""
+"""Tests for the trace_compare tool (2027-H1 UX comparative replay).
+latency_heatmap + tool_call_inspector have their own suites. Deterministic."""
 from __future__ import annotations
 
-from maverick.tools.latency_heatmap import latency_heatmap
-from maverick.tools.tool_call_inspector import tool_call_inspector
 from maverick.tools.trace_compare import trace_compare
 
 # ---- trace_compare ----
@@ -37,60 +35,6 @@ def test_trace_validation():
     assert t.fn({"a": "x", "b": []}).startswith("ERROR")
 
 
-# ---- latency_heatmap ----
-
-def test_heatmap_bands_and_percentiles():
-    t = latency_heatmap()
-    samples = [{"tool": "fs", "ms": 5}, {"tool": "fs", "ms": 50}, {"tool": "fs", "ms": 5000}]
-    out = t.fn({"samples": samples})
-    assert "fs" in out and "<10ms" in out and "≥10s" in out
-    assert "p50=" in out and "p95=" in out
-
-
-def test_heatmap_multiple_tools_sorted():
-    t = latency_heatmap()
-    out = t.fn({"samples": [{"tool": "zebra", "ms": 1}, {"tool": "alpha", "ms": 1}]})
-    lines = out.splitlines()
-    # header then alpha before zebra (sorted)
-    assert lines[1].startswith("alpha") and lines[2].startswith("zebra")
-
-
-def test_heatmap_validation():
-    t = latency_heatmap()
-    assert t.fn({"samples": []}).startswith("ERROR")
-    assert t.fn({"samples": [{"tool": "x", "ms": -1}]}).startswith("ERROR")
-    assert t.fn({"samples": [{"tool": "x"}]}).startswith("ERROR")
-
-
-# ---- tool_call_inspector ----
-
-def test_inspector_counts_and_error_rate():
-    t = tool_call_inspector()
-    calls = [
-        {"tool": "fs", "ms": 10},
-        {"tool": "fs", "ms": 20, "error": "boom"},
-        {"tool": "web", "ok": True, "ms": 100},
-    ]
-    out = t.fn({"calls": calls})
-    assert "calls: 3  tools: 2  errors: 1 (33%)" in out
-    assert "fs: n=2 err=1 (50%)" in out and "HIGH-ERROR" in out
-    assert "'boom'" in out
-
-
-def test_inspector_threshold_and_ok_default():
-    t = tool_call_inspector()
-    out = t.fn({"calls": [{"tool": "a"}, {"tool": "a", "error": "x"}], "error_threshold": 0.9})
-    # 50% error rate, threshold 0.9 -> not flagged
-    assert "HIGH-ERROR" not in out
-
-
-def test_inspector_validation():
-    t = tool_call_inspector()
-    assert t.fn({"calls": []}).startswith("ERROR")
-    assert t.fn({"calls": [{"ms": 1}]}).startswith("ERROR")
-    assert t.fn({"calls": [{"tool": "a"}], "error_threshold": 2}).startswith("ERROR")
-
-
 def test_batch_registered():
     from maverick.tools import base_registry
 
@@ -101,5 +45,4 @@ def test_batch_registered():
         pass
 
     names = set(getattr(base_registry(world=_W(), sandbox=_S()), "_tools", {}).keys())
-    for name in ("trace_compare", "latency_heatmap", "tool_call_inspector"):
-        assert name in names
+    assert "trace_compare" in names
