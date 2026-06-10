@@ -339,7 +339,10 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   date-windowed **SIEM export**, encryption-at-rest (`crypto_at_rest.py`,
   `maverick encryption migrate`), SOC2 readiness (`soc2.py`), DSAR (`dsar.py`),
   **data-retention enforcement** (`audit/retention.py`, opt-in `[retention]`
-  config, `maverick retention enforce [--dry-run]`),
+  config, `maverick retention enforce [--dry-run]`) — prunes audit files,
+  `episodes`/`goal_events` rows, **and the usage-ledger cost buckets**
+  (`usage_days`: the per-principal `(principal, day)` chargeback tally accrues
+  forever otherwise),
   per-run file-write + tool quotas, `maverick compliance --strict`, CycloneDX
   SBOM in CI.
 - **Compliance mode profiles** — `[compliance] profiles = ["hipaa"]` turns on

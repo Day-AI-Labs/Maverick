@@ -7,6 +7,9 @@ Reads ``[retention]`` from ``~/.maverick/config.toml`` and prunes:
   - ``episodes`` rows in ``~/.maverick/world.db`` with
     ``ended_at`` older than ``episodes_days``.
   - ``goal_events`` rows with ``ts`` older than ``events_days``.
+  - usage-ledger ``(principal, day)`` cost buckets older than
+    ``usage_days`` (the per-principal chargeback tally grows forever
+    otherwise).
 
 Config defaults are "no pruning" — retention is opt-in. The CLI
 exposes ``maverick retention enforce [--dry-run]``.
@@ -162,6 +165,24 @@ def purge_world_events(
     return {"deleted": deleted, "cutoff_ts": cutoff_ts}
 
 
+def purge_usage_ledger(
+    *,
+    days: int,
+    ledger_path: Path | None = None,
+    dry_run: bool = False,
+    now: float | None = None,
+) -> dict:
+    """Prune usage-ledger ``(principal, day)`` buckets older than ``days``."""
+    if days is None or int(days) <= 0:
+        return {"removed_buckets": 0, "reason": "disabled"}
+    from ..quotas import UsageLedger
+    ledger = UsageLedger(ledger_path) if ledger_path is not None else UsageLedger()
+    result = ledger.prune(int(days), now=now, dry_run=dry_run)
+    log.info("retention: usage ledger removed_buckets=%d dry_run=%s",
+             result.get("removed_buckets", 0), dry_run)
+    return result
+
+
 def enforce(
     *,
     config: dict | None = None,
@@ -178,6 +199,7 @@ def enforce(
     audit_days = cfg.get("audit_days")
     episodes_days = cfg.get("episodes_days")
     events_days = cfg.get("events_days")
+    usage_days = cfg.get("usage_days")
 
     report: dict = {"dry_run": dry_run}
     if audit_days:
@@ -192,6 +214,10 @@ def enforce(
         report["goal_events"] = purge_world_events(
             days=events_days, db_path=db_path, dry_run=dry_run, now=now,
         )
+    if usage_days:
+        report["usage_ledger"] = purge_usage_ledger(
+            days=usage_days, dry_run=dry_run, now=now,
+        )
     return report
 
 
@@ -200,4 +226,5 @@ __all__ = [
     "purge_audit_files",
     "purge_world_episodes",
     "purge_world_events",
+    "purge_usage_ledger",
 ]

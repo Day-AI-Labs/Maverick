@@ -185,3 +185,83 @@ def test_purge_missing_db_safe(tmp_path: Path):
     from maverick.audit.retention import purge_world_episodes
     res = purge_world_episodes(days=30, db_path=tmp_path / "absent.db")
     assert res["deleted"] == 0
+
+
+# ---- usage-ledger (cost telemetry) retention ----
+
+from datetime import datetime, timezone  # noqa: E402
+
+_NOW_2025_06_30 = datetime(2025, 6, 30, tzinfo=timezone.utc).timestamp()
+
+
+def _ledger(tmp_path: Path):
+    from maverick.quotas import UsageLedger
+    return UsageLedger(tmp_path / "usage_ledger.json")
+
+
+def test_usage_ledger_prune_disabled(tmp_path: Path):
+    led = _ledger(tmp_path)
+    led.record("alice", 1.0, 10, 5, day="2020-01-01")
+    assert led.prune(0)["reason"] == "disabled"
+    # nothing removed
+    assert led.usage("alice", day="2020-01-01")["dollars"] == 1.0
+
+
+def test_usage_ledger_prune_removes_old_keeps_recent(tmp_path: Path):
+    led = _ledger(tmp_path)
+    led.record("alice", 1.0, 1, 1, day="2025-01-01")  # very old
+    led.record("alice", 2.0, 2, 2, day="2025-06-15")  # before cutoff
+    led.record("alice", 3.0, 3, 3, day="2025-06-25")  # after cutoff -> keep
+    # now=2025-06-30, keep_days=10 -> cutoff day 2025-06-20
+    res = led.prune(10, now=_NOW_2025_06_30)
+    assert res["removed_buckets"] == 2
+    assert res["cutoff_day"] == "2025-06-20"
+    assert led.usage("alice", day="2025-06-25")["dollars"] == 3.0
+    assert led.usage("alice", day="2025-06-15")["dollars"] == 0.0
+    assert led.usage("alice", day="2025-01-01")["dollars"] == 0.0
+
+
+def test_usage_ledger_prune_drops_empty_principal(tmp_path: Path):
+    led = _ledger(tmp_path)
+    led.record("stale", 1.0, 1, 1, day="2025-01-01")   # only old days
+    led.record("active", 1.0, 1, 1, day="2025-06-29")  # has a recent day
+    res = led.prune(10, now=_NOW_2025_06_30)
+    assert res["removed_principals"] == 1
+    import json
+    data = json.loads((tmp_path / "usage_ledger.json").read_text())
+    assert "stale" not in data
+    assert "active" in data
+
+
+def test_usage_ledger_prune_dry_run(tmp_path: Path):
+    led = _ledger(tmp_path)
+    led.record("alice", 1.0, 1, 1, day="2025-01-01")
+    res = led.prune(10, now=_NOW_2025_06_30, dry_run=True)
+    assert res["removed_buckets"] == 1
+    # untouched on disk
+    assert led.usage("alice", day="2025-01-01")["dollars"] == 1.0
+
+
+def test_purge_usage_ledger_wires_to_prune(tmp_path: Path):
+    from maverick.audit.retention import purge_usage_ledger
+    led = _ledger(tmp_path)
+    led.record("alice", 1.0, 1, 1, day="2025-01-01")
+    res = purge_usage_ledger(days=10, ledger_path=tmp_path / "usage_ledger.json",
+                             now=_NOW_2025_06_30)
+    assert res["removed_buckets"] == 1
+    assert led.usage("alice", day="2025-01-01")["dollars"] == 0.0
+
+
+def test_purge_usage_ledger_disabled(tmp_path: Path):
+    from maverick.audit.retention import purge_usage_ledger
+    assert purge_usage_ledger(days=0)["reason"] == "disabled"
+
+
+def test_enforce_includes_usage_ledger(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("MAVERICK_TENANT", raising=False)
+    from maverick.audit.retention import enforce
+    from maverick.quotas import UsageLedger
+    UsageLedger().record("alice", 1.0, 1, 1, day="2020-01-01")
+    res = enforce(config={"usage_days": 30}, now=_NOW_2025_06_30)
+    assert res["usage_ledger"]["removed_buckets"] == 1

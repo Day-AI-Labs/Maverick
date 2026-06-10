@@ -4179,11 +4179,14 @@ def retention_group() -> None:
               help="Override [retention].episodes_days.")
 @click.option("--events-days", type=int, default=None,
               help="Override [retention].events_days.")
+@click.option("--usage-days", type=int, default=None,
+              help="Override [retention].usage_days (cost-ledger buckets).")
 def retention_enforce_cmd(
     dry_run: bool,
     audit_days: int | None,
     episodes_days: int | None,
     events_days: int | None,
+    usage_days: int | None,
 ) -> None:
     """Apply retention rules to the audit log and world model."""
     import json as _json
@@ -4191,7 +4194,7 @@ def retention_enforce_cmd(
     from .audit.retention import enforce
     # CLI overrides take precedence if any are set; otherwise read config.
     cfg: dict | None = None
-    if any(v is not None for v in (audit_days, episodes_days, events_days)):
+    if any(v is not None for v in (audit_days, episodes_days, events_days, usage_days)):
         cfg = {}
         if audit_days is not None:
             cfg["audit_days"] = audit_days
@@ -4199,6 +4202,8 @@ def retention_enforce_cmd(
             cfg["episodes_days"] = episodes_days
         if events_days is not None:
             cfg["events_days"] = events_days
+        if usage_days is not None:
+            cfg["usage_days"] = usage_days
     report = enforce(config=cfg, dry_run=dry_run)
     click.echo(_json.dumps(report, default=str, indent=2))
 
