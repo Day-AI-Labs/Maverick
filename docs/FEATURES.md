@@ -356,6 +356,13 @@ never routing somewhere v2 rejected, falling back to v2 on a cold context. The
 learned table persists atomically (`router_bandit.json`, 0600); opt-in via
 `[routing] bandit` and default-OFF.
 
+**Speculative best-of-N with early pruning** (`speculative_best_of_n.py`):
+run N attempts but prune at the **first reasoning checkpoint** — each attempt
+emits a cheap partial (its plan / first step), an injected scorer ranks the
+partials, and only the top `keep` run to completion; the rest are cancelled
+before they finish, so the budget concentrates on the strongest candidates
+rather than N full runs. Distinct from latency best-of-N (the kill signal is
+early *quality*, not time); the scorer only ever sees the cheap partials.
 **Fast JSON seam** (`fastjson.py`, opt-in `[perf-fastjson]` extra): a
 stdlib-compatible `dumps`/`loads` that prefers **orjson** (~5-10x faster) when
 installed and falls back to stdlib `json` otherwise — `dumps` returns `str`,
