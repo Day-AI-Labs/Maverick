@@ -219,6 +219,13 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   config, `maverick retention enforce [--dry-run]`),
   per-run file-write + tool quotas, `maverick compliance --strict`, CycloneDX
   SBOM in CI.
+- **Compliance mode profiles** — `[compliance] profiles = ["hipaa"]` turns on
+  a cross-domain runtime posture (`compliance_profiles.py`): **HIPAA mode**
+  asserts the 45 CFR Part 164 safeguards, names the protection floors it
+  requires (PII redaction, encryption-at-rest, egress lock, audit), and folds
+  a require-human-on-high-risk policy into the live governance policy
+  (strictest-wins, via the same union the finance regimes use). Inert when
+  unset — default behavior is unchanged.
 - **Sandbox-escape canaries**, per-tool rate limiter, killswitch.
 
 ## Governed agent runtime & onboarding
