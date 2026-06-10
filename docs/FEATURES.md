@@ -334,6 +334,21 @@ never routing somewhere v2 rejected, falling back to v2 on a cold context. The
 learned table persists atomically (`router_bandit.json`, 0600); opt-in via
 `[routing] bandit` and default-OFF.
 
+**Local-runtime launcher + autoscaler** (`local_runtime.py`, opt-in
+`[local_runtime]`, `maverick local-runtime plan`): composes the correct
+engine flags for **vLLM / TGI / llama.cpp** from config — continuous
+batching (`max_concurrent`/`max_batch_tokens` → `--max-num-seqs` /
+`--max-batch-total-tokens` / `--parallel --cont-batching`), **persistent
+KV-cache** (`kv_cache = "persistent"` → `--enable-prefix-caching` /
+`PREFIX_CACHING=1` / `--prompt-cache FILE --prompt-cache-all`), **KV offload
+to disk** (`kv_offload_dir`; llama.cpp persists, vLLM gets `--swap-space`,
+others warned honestly), and **mixed precision** (`precision =
+fp16|bf16|int8|int4` → `--dtype`/`--quantization`/quant-GGUF guidance) — plus
+a queue-depth **autoscaler** (min/max replicas, hysteresis, injectable
+spawn/stop/probe/clock, round-robin `endpoints()` for the router). Default
+OFF; the launcher refuses to start until `[local_runtime] enabled = true`
+(wizard step included); no model is ever defaulted.
+
 **Per-role reasoning effort** (`effort.py`) — the biggest cost/latency lever on
 Opus 4.7/4.8: model-gated `output_config.effort` tiered by role (critical roles
 `high`, bulk roles `medium`/`low`), opt-in via `[effort] enabled`.

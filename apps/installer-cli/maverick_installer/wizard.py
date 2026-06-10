@@ -1211,6 +1211,14 @@ def pick_advanced() -> dict[str, Any]:
             "on demand. Big context savings when many tools are enabled.",
             default=False,
         ),
+        "local_runtime": _q_confirm(
+            "Manage a local model server (vLLM / TGI / llama.cpp)? Writes "
+            "[local_runtime] so `maverick local-runtime plan` composes the "
+            "right batching / KV-cache / precision flags for your engine; "
+            "configure the engine + model in config.toml after the wizard. "
+            "Off by default.",
+            default=False,
+        ),
         "output_cache": _q_confirm(
             "Cache tool outputs? Memoize side-effect-free (read-only) tool calls "
             "within a run so a repeated read isn't re-done. Off by default.",
@@ -2448,6 +2456,12 @@ def write_config(  # noqa: C901
             lines.append("")
             lines.append("[tools]")
             lines.extend(tool_lines)
+        if advanced.get("local_runtime"):
+            lines.append("")
+            lines.append("[local_runtime]")
+            lines.append("enabled = true")
+            lines.append('# engine = "vllm"  # vllm | tgi | llamacpp')
+            lines.append('# model  = "..."   # REQUIRED before `maverick local-runtime plan`')
         if advanced.get("local_first"):
             lines.append("")
             lines.append("[system]")
