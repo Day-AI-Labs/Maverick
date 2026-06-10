@@ -2399,6 +2399,44 @@ def plugin_reload(dist_name: str) -> None:
         click.echo(f"  - {m}")
 
 
+@plugin.command("lock")
+def plugin_lock_cmd() -> None:
+    """Pin the active plugin distributions' versions to plugins.lock.
+
+    Discovery verifies installed versions against the lock per
+    [plugins] lock_policy = "off" | "warn" | "enforce".
+    """
+    from .plugin_lock import lock_path, write_lock
+    pins = write_lock()
+    if not pins:
+        click.echo("no plugin distributions found to pin.")
+        return
+    click.echo(f"pinned {len(pins)} plugin distribution(s) -> {lock_path()}")
+    for name, version in sorted(pins.items()):
+        click.echo(f"  {name} == {version}")
+
+
+@plugin.command("verify")
+def plugin_verify_cmd() -> None:
+    """Verify installed plugin versions against plugins.lock."""
+    from .plugin_lock import verify_lock
+    report = verify_lock()
+    if report.get("unlocked"):
+        click.echo("no plugins.lock (run `maverick plugin lock` to pin). OK")
+        return
+    for name, pinned, installed in report["drifted"]:
+        click.echo(f"  DRIFT {name}: locked {pinned}, installed {installed}")
+    for name in report["missing"]:
+        click.echo(f"  MISSING {name} (pinned but not installed)")
+    for name in report["unpinned"]:
+        click.echo(f"  unpinned {name} (installed but not in the lock)")
+    if report["ok"]:
+        click.echo("plugins.lock OK")
+    else:
+        click.echo("plugins.lock FAIL")
+        sys.exit(1)
+
+
 @plugin.command("new")
 @click.argument("name")
 @click.option(

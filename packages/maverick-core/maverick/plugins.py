@@ -319,6 +319,12 @@ def _gate(ep, group: str, allow, name_dists, granted, enforce) -> bool:
             "loading anyway (enforce_permissions is off).",
             group, name, dist or "unknown-dist", violations,
         )
+    # Version-pinning lockfile ([plugins] lock_policy): a dist whose installed
+    # version drifted from plugins.lock is refused under "enforce" (that
+    # plugin only), warned under "warn", ignored under "off" (default).
+    from .plugin_lock import dist_allowed_by_lock
+    if not dist_allowed_by_lock(dist):
+        return False
     return True
 
 

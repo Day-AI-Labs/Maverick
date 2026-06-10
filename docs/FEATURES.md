@@ -145,7 +145,13 @@ here.
   plugin that pollutes globals or leaks can't touch the host) or a
   secret-scrubbed child process (stronger: separate address space, survives a
   segfaulting plugin, no host env secrets); values pass by baked literals,
-  never argv. **Hot plugin reload** — `maverick plugin reload <dist>`
+  never argv. **Plugin version-pinning lockfile** —
+  `maverick plugin lock` records each plugin distribution's version to
+  `plugins.lock.json`; discovery verifies against it per `[plugins]
+  lock_policy = "off"|"warn"|"enforce"` (`plugin_lock.py`: enforce refuses a
+  drifted or unpinned dist — that plugin only — warn logs once per dist;
+  `maverick plugin verify` reports drift/missing/unpinned and exits 1 on
+  failure). **Hot plugin reload** — `maverick plugin reload <dist>`
   (`plugins.reload_plugin`): drop a plugin distribution's modules from the
   import cache so the next discovery pass re-imports the current code on disk;
   the edit-reload-retry loop for plugin authors, same allowlist/permission
