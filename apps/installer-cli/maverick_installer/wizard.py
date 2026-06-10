@@ -1274,7 +1274,7 @@ def _docker_available() -> bool:
 # sandbox._IMAGE_BY_LANGUAGE). local/ssh run model shell on the host toolchain
 # and devcontainer reuses the user's own image, so the language hint only
 # changes anything for these three.
-_LANGUAGE_BACKENDS = {"docker", "podman", "kubernetes"}
+_LANGUAGE_BACKENDS = {"docker", "gvisor", "podman", "kubernetes"}
 
 
 def pick_sandbox() -> dict[str, Any]:
@@ -1287,6 +1287,7 @@ def pick_sandbox() -> dict[str, Any]:
         [
             "local  - Subprocess on this machine (fastest, least isolated)",
             "docker - Throwaway Docker container (recommended)",
+            "gvisor - Docker + gVisor runsc kernel (strongest isolation)",
             "podman - Throwaway Podman container (rootless)",
             "devcontainer - Reuse a .devcontainer config",
             "kubernetes - Pod-per-command in a cluster (kubectl)",

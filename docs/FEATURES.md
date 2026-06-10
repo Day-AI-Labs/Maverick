@@ -239,6 +239,12 @@ instead of poll) + conversation threading from Message-ID/In-Reply-To/References
 
 7 run-to-completion backends (`sandbox/`): local subprocess, Docker, SSH, Podman,
 devcontainer, Firecracker microVM, Kubernetes. Selected via `[sandbox] backend`.
+**gVisor** is offered as a backend (`backend = "gvisor"`): Docker with the
+`runsc` runtime (`--runtime=runsc`), interposing a userspace application kernel
+between a possibly prompt-injected agent and the host — stronger isolation than
+seccomp + dropped capabilities alone. It reuses every Docker knob (image,
+network, memory/pids/cpu caps, non-root); `[sandbox] runtime` overrides the
+runtime for a custom registration.
 
 ## LLM providers & routing
 
