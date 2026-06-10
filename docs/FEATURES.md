@@ -263,7 +263,13 @@ carry their platform `message_id` and adapters expose `send_threaded`
 `reply_to_message_id`; base falls back to a plain send) so long-running
 answers land under the message that asked. **Email v2** adds IMAP IDLE (push
 instead of poll) + conversation threading from Message-ID/In-Reply-To/References
-(`email_v2.py`).
+(`email_v2.py`). **KaTeX/Mermaid rich render** (`rich_render.py`, opt-in
+`[channels] rich_render`): replies carrying display math or ```mermaid fences
+are rendered into a standalone HTML artifact (KaTeX/Mermaid in-page, escaped
+`<pre>` source as the no-JS fallback) under `data_dir("rich_render/")`;
+`RichRenderChannel` wraps any adapter — an injectable `deliver` hook ships the
+file on platforms that can, otherwise the path is appended — and plain
+messages pass through byte-identical.
 
 ## Sandboxes
 
