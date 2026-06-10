@@ -454,6 +454,15 @@ trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
   (`/api/v1/goals/{id}/explain`: a deterministic, template-rendered narrative
   of the run — `plain_language.py`, no LLM call, never hallucinates beyond the
   log). Pins/views/annotations persist tenant-aware in `ux_store.py`.
+  **Run-events firehose** — `WS /ws/v1/runs/{id}/events`: a goal's events
+  stream over WebSocket as they land (resume via `since_id`, terminal status
+  closes the stream; auth mirrors the HTTP policy and OIDC applies to WS).
+  **Inline cost preview** — `GET /api/v1/goals/{id}/cost-preview`: plan-time
+  token/dollar projection + OK/TIGHT/OVER verdict before a goal runs.
+  **"Why this cost" drill-down** — `GET /api/v1/goals/{id}/cost-breakdown`:
+  spend decomposed by episode outcome (dollars/tokens/counts).
+  **Cost anomaly alerts** — `GET /api/v1/cost/anomalies`: per-goal spend
+  outliers above mean + Nσ over the recent window (needs ≥3 priced goals).
   **Accessibility + i18n** — a font axis independent of the theme
   (`?font=dyslexic` / cookie: OpenDyslexic-preferring stack with wider
   letter/word spacing, composes with the high-contrast theme) and **chrome

@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (
     HTMLResponse,
@@ -1406,6 +1406,159 @@ async def channels_page(request: Request) -> HTMLResponse:
 async def providers_api() -> JSONResponse:
     from maverick.provider_health import get as _health
     return JSONResponse({"providers": _health().snapshot()})
+
+
+@app.websocket("/ws/v1/runs/{goal_id}/events")
+async def run_events_firehose(websocket: WebSocket, goal_id: int) -> None:
+    """Run-events firehose: stream a goal's events over WebSocket as they land.
+
+    Sends each event as one JSON message ``{id, agent, kind, content, ts}``;
+    a final ``{kind: "status", content: <terminal>}`` message closes the
+    stream when the goal finishes. Auth mirrors the HTTP policy (Authorization
+    header in token mode; loopback-only otherwise), checked before accept.
+    Resume with ``?since_id=``."""
+    import asyncio as _asyncio
+
+    from fastapi import WebSocketDisconnect
+
+    from .auth import websocket_authorized
+    if not websocket_authorized(websocket):
+        await websocket.close(code=4401)
+        return
+    await websocket.accept()
+    try:
+        since = int(websocket.query_params.get("since_id", 0))
+    except (TypeError, ValueError):
+        since = 0
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        await websocket.send_json({"error": "no such goal"})
+        await websocket.close(code=4404)
+        return
+    terminal = {"done", "completed", "failed", "error", "cancelled"}
+    try:
+        last = since
+        while True:
+            for e in w.goal_events(goal_id, since_id=last, limit=500):
+                last = e.id
+                await websocket.send_json({
+                    "id": e.id, "agent": e.agent, "kind": e.kind,
+                    "content": e.content, "ts": e.ts,
+                })
+            g = w.get_goal(goal_id)
+            if g is None or g.status in terminal:
+                await websocket.send_json({
+                    "id": last + 1, "agent": "system", "kind": "status",
+                    "content": (g.status if g else "deleted"), "ts": time.time(),
+                })
+                break
+            await _asyncio.sleep(0.5)
+    except WebSocketDisconnect:
+        return
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+@app.get("/api/v1/goals/{goal_id}/cost-preview")
+async def goal_cost_preview(request: Request, goal_id: int, iterations: int = 1) -> JSONResponse:
+    """Inline cost preview: project a pending goal's cost before running it.
+
+    Treats the goal description as one step per non-empty line (or the whole
+    text as one step), projects tokens/dollars via maverick.cost_projection,
+    and reports the OK/TIGHT/OVER verdict against the configured default
+    budget."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from maverick.budget import Budget
+    from maverick.cost_projection import compare_against_budget, project_plan
+    text = (g.description or g.title or "").strip()
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    steps = [{"text": ln} for ln in (lines or [text])]
+    projection = project_plan(steps, iterations=max(1, min(int(iterations), 10)))
+    budget_dollars = Budget().max_dollars
+    verdict = compare_against_budget(projection, budget_dollars)
+    return JSONResponse({
+        "goal_id": goal_id,
+        "steps": len(steps),
+        "total_tokens": projection.total_tokens,
+        "total_dollars": round(projection.total_dollars, 4),
+        "budget_dollars": budget_dollars,
+        "verdict": verdict.verdict,
+        "recommendation": verdict.recommendation,
+    })
+
+
+@app.get("/api/v1/goals/{goal_id}/cost-breakdown")
+async def goal_cost_breakdown(request: Request, goal_id: int) -> JSONResponse:
+    """'Why this cost' drill-down: a run's spend split by agent role/outcome.
+
+    Buckets the goal's episodes (cost, tokens, count) so the dollar figure on
+    the dashboard decomposes into who spent it and on what."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    buckets: dict[str, dict] = {}
+    total = 0.0
+    for ep in w.list_episodes(limit=10_000, goal_id=goal_id):
+        key = str(getattr(ep, "outcome", "") or "episode")
+        b = buckets.setdefault(key, {"episodes": 0, "dollars": 0.0,
+                                     "in_tokens": 0, "out_tokens": 0})
+        cost = float(getattr(ep, "cost_dollars", 0) or 0)
+        b["episodes"] += 1
+        b["dollars"] += cost
+        b["in_tokens"] += int(getattr(ep, "input_tokens", 0) or 0)
+        b["out_tokens"] += int(getattr(ep, "output_tokens", 0) or 0)
+        total += cost
+    rows = [{"bucket": k, **{kk: (round(vv, 4) if kk == "dollars" else vv)
+                             for kk, vv in v.items()}}
+            for k, v in sorted(buckets.items(), key=lambda kv: -kv[1]["dollars"])]
+    return JSONResponse({"goal_id": goal_id, "total_dollars": round(total, 4),
+                         "buckets": rows})
+
+
+@app.get("/api/v1/cost/anomalies")
+async def cost_anomalies(threshold_sigma: float = 3.0, limit: int = 500) -> JSONResponse:
+    """Cost anomaly alerts: goals whose spend is a statistical outlier.
+
+    Computes per-goal spend over the recent episode window and flags goals
+    above mean + threshold_sigma * stdev (min 3 goals before anything can
+    flag). The data behind a dashboard alert badge."""
+    import statistics
+
+    w = _world()
+    limit = max(1, min(int(limit), 10_000))
+    by_goal: dict[int, float] = {}
+    for ep in w.list_episodes(limit=limit):
+        gid = getattr(ep, "goal_id", None)
+        if gid is None:
+            continue
+        by_goal[gid] = by_goal.get(gid, 0.0) + float(getattr(ep, "cost_dollars", 0) or 0)
+    spends = [s for s in by_goal.values() if s > 0]
+    if len(spends) < 3:
+        return JSONResponse({"anomalies": [], "goals_considered": len(by_goal),
+                             "note": "need >=3 priced goals to baseline"})
+    mean = statistics.fmean(spends)
+    stdev = statistics.pstdev(spends)
+    cut = mean + max(0.5, float(threshold_sigma)) * stdev
+    anomalies = [
+        {"goal_id": gid, "dollars": round(s, 4),
+         "x_mean": round(s / mean, 1) if mean else None}
+        for gid, s in sorted(by_goal.items(), key=lambda kv: -kv[1])
+        if s > cut and stdev > 0
+    ]
+    return JSONResponse({
+        "anomalies": anomalies, "goals_considered": len(by_goal),
+        "mean_dollars": round(mean, 4), "cutoff_dollars": round(cut, 4),
+    })
 
 
 @app.post("/api/v1/skills/validate")
