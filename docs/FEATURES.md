@@ -110,7 +110,11 @@ here.
   (headless 3D-mesh stats — triangle/vertex counts + bounding box for STL/OBJ),
   `synthetic_data` (deterministic synthetic rows from a field spec, json/csv),
   `web_recorder` (generate a runnable Playwright script from a list of browser
-  steps — deterministic codegen with escaped literals), `a11y_tree` (distill raw
+  steps — deterministic codegen with escaped literals), `web_archive` (save a
+  URL's content locally so research stays reproducible — SSRF-pinned per-hop
+  redirect revalidation, 5 MiB cap, sha-dated snapshot ids, list/get over the
+  archive), `github_search` (GitHub repos/code/issues search — explicit token
+  only, clamped pages, readable rate-limit errors with Retry-After), `a11y_tree` (distill raw
   HTML into a compact accessibility tree — landmarks/headings/links/controls —
   for a 5-10x token cut), `cache_admin` (inspect/purge the
   tool-output cache — stats or targeted purge), `error_patterns` (cluster noisy
@@ -306,6 +310,19 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   set before/after a model/prompt change; classify per-probe
   unchanged/minor/major/refusal-flip, PASS verdict gated on flips + major-change
   fraction.
+- **Supply-chain pinning** (`supply_chain.py`) — pin the deployment's Python
+  dependency tree (`write_pins` → 0600 JSON), verify drift/missing/unpinned
+  (`verify`/`render` PASS-FAIL), opt-in startup warning via
+  `[safety] supply_chain_pinning` (never raises).
+- **Crash-only logging** (`crash_only_log.py`) — append-only JSONL safe to
+  kill -9 at any byte: one fsync'd `os.write` per record, seq resumes after
+  reopen, replay tolerates (and counts) the torn tail vs mid-file corruption,
+  gap detection; fsync policy knob for test/throughput mode.
+- **Right-to-rectification** (`rectification.py`) — GDPR Art. 16 counterpart
+  to DSAR/erasure: find a subject's occurrences across goals/turns/facts
+  (snippets), rectify with dry-run default inside one write transaction, and
+  a subject-digest audit trail (`rectifications.jsonl`) that never carries
+  the old or new value.
 - **Honeytoken planting** (`safety/honeytokens.py`) — mint decoy credentials
   (AWS-key-shaped, API-key, passphrase), plant a realistic 0600 secrets file,
   and alert (once per fingerprint) when a decoy value appears in text — alerts
