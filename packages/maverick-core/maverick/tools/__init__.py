@@ -798,6 +798,7 @@ def base_registry(  # noqa: C901
     reg.register(tool_call_inspector())
     from .anki import anki
     from .github_search import github_search
+    from .governance_explainer import governance_explainer
     from .image_content_classifier import image_content_classifier
     from .lsp_bridge import lsp_bridge
     from .oauth_helper import oauth_helper
@@ -810,6 +811,7 @@ def base_registry(  # noqa: C901
     reg.register(web_archive())
     reg.register(github_search())
     reg.register(anki())
+    reg.register(governance_explainer())
     reg.register(a11y_tree())
     reg.register(ai_act_classifier())
     reg.register(cache_admin())

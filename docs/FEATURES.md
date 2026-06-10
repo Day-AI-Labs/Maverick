@@ -149,6 +149,9 @@ here.
   fairness metrics — four-fifths rule, demographic-parity and equal-opportunity
   differences from per-group outcome counts), `decision_explainer` (per-factor
   contribution breakdown for an additive/scorecard decision — right-to-explanation),
+  `governance_explainer` (explain a governance ALLOW/DENY/REQUIRE_HUMAN decision —
+  the rule that fired + plain reason + the counterfactual that would change it;
+  GDPR Art. 22 / AI Act Art. 14, re-runs the real policy evaluator),
   `voice_command_grammar` (match a transcribed utterance to an intent + slots
   from a {slot}-template grammar — no model round-trip for high-frequency
   commands), `what_changed_digest` (added/removed/changed digest between two
