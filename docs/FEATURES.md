@@ -51,6 +51,13 @@ here.
   of overflowing the model window — zero-dep lexical ranking by default, an
   injected Chroma/Qdrant store for embedding-quality retrieval; opt-in via
   `[context] retrieval_router`.
+- **Compaction plug-in API** (`compaction_plugins.py`) — register a custom
+  context-compaction strategy (graph-structured, domain summarizer, a learned
+  model) under a name and select it via `[context] compaction_strategy`; the
+  shipping heuristic registers as the default `"heuristic"`, and `compact_with`
+  **fails safe** to it when a configured strategy is unknown (a typo degrades to
+  working compaction, never none) — so the kernel's compaction is extensible
+  without a fork.
 - **Local continuous learning** — distill successful run trajectories into a
   reusable, validator-compliant `SKILL.md` under `~/.maverick/learned-skills`
   (`skill_distillation_local.py`), opt-in via `[self_learning] distill_local`.
