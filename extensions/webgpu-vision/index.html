@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maverick — WebGPU local vision primitives</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 1000px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.4rem; }
+  .privacy { background: #1a7f3722; border: 1px solid #1a7f37; border-radius: 6px; padding: .5rem .8rem; }
+  .row { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; }
+  .panel { flex: 1 1 320px; }
+  canvas { max-width: 100%; border: 1px solid #8884; border-radius: 4px; background: #8881; }
+  button { padding: .4rem .9rem; margin-right: .4rem; cursor: pointer; }
+  code, output { font-family: ui-monospace, monospace; }
+  #status, #hashout { white-space: pre-wrap; }
+  .muted { opacity: .7; font-size: .9em; }
+</style>
+</head>
+<body>
+<h1>WebGPU local vision primitives</h1>
+
+<p class="privacy"><strong>Local only.</strong> Images you pick here are processed
+entirely inside this page — on your GPU/CPU — and are never uploaded anywhere.
+This page makes no network requests.</p>
+
+<p>Honest scope: hand-written image ops (grayscale, Sobel edge map) running as
+real WebGPU compute shaders, plus an 8x8 average-hash for "are these two
+screenshots the same screen?" comparisons. <strong>Not</strong> a trained
+vision model — nothing here recognises objects or reads text.</p>
+
+<p id="status">Checking WebGPU…</p>
+
+<div class="row">
+  <div class="panel">
+    <h2>Image A</h2>
+    <input type="file" id="fileA" accept="image/*">
+    <canvas id="inA" width="320" height="200"></canvas>
+  </div>
+  <div class="panel">
+    <h2>Output (GPU)</h2>
+    <div>
+      <button id="btnGray" disabled>Grayscale</button>
+      <button id="btnSobel" disabled>Sobel edges</button>
+    </div>
+    <canvas id="outA" width="320" height="200"></canvas>
+  </div>
+</div>
+
+<div class="row">
+  <div class="panel">
+    <h2>Image B (for comparison)</h2>
+    <input type="file" id="fileB" accept="image/*">
+    <canvas id="inB" width="320" height="200"></canvas>
+  </div>
+  <div class="panel">
+    <h2>Perceptual hash (CPU, works without WebGPU)</h2>
+    <div>
+      <button id="btnHash">Hash A + B → compare</button>
+      <button id="btnSelfTest">Cross-language self-test</button>
+    </div>
+    <p id="hashout" class="muted">Pick image(s), then hash. Distance ≤ 5 bits
+    heuristically means "same screen"; ≥ 20 means clearly different.</p>
+  </div>
+</div>
+
+<script src="ahash.js"></script>
+<script src="vision.js"></script>
+<script>
+"use strict";
+let gpu = null;
+const $ = (id) => document.getElementById(id);
+
+// Decode capped at 1024px on the long edge: the primitives are layout-level,
+// and bounded buffers keep the page snappy on big screenshots.
+function drawToCanvas(img, canvas) {
+  const scale = Math.min(1, 1024 / Math.max(img.width, img.height));
+  canvas.width = Math.max(8, Math.round(img.width * scale));
+  canvas.height = Math.max(8, Math.round(img.height * scale));
+  canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+}
+
+function wireFile(inputId, canvasId) {
+  $(inputId).addEventListener("change", (ev) => {
+    const f = ev.target.files[0];
+    if (!f) return;
+    const url = URL.createObjectURL(f);   // object URL: stays in-browser
+    const img = new Image();
+    img.onload = () => { drawToCanvas(img, $(canvasId)); URL.revokeObjectURL(url); };
+    img.src = url;
+  });
+}
+wireFile("fileA", "inA");
+wireFile("fileB", "inB");
+
+function pixelsOf(canvasId) {
+  const c = $(canvasId);
+  return { data: c.getContext("2d").getImageData(0, 0, c.width, c.height), w: c.width, h: c.height };
+}
+
+async function gpuOp(entry) {
+  const { data, w, h } = pixelsOf("inA");
+  const out = await Vision.runOp(gpu, entry, data.data, w, h);
+  const oc = $("outA");
+  oc.width = w; oc.height = h;
+  oc.getContext("2d").putImageData(new ImageData(out, w, h), 0, 0);
+}
+$("btnGray").addEventListener("click", () => gpuOp("grayscale").catch(showErr));
+$("btnSobel").addEventListener("click", () => gpuOp("sobel").catch(showErr));
+
+$("btnHash").addEventListener("click", () => {
+  try {
+    const a = pixelsOf("inA");
+    const hA = AHash.averageHashFromRGBA(a.data.data, a.w, a.h);
+    let msg = "hash(A) = " + hA;
+    const b = pixelsOf("inB");
+    try {
+      const hB = AHash.averageHashFromRGBA(b.data.data, b.w, b.h);
+      const d = AHash.hamming(hA, hB);
+      msg += "\nhash(B) = " + hB + "\nhamming  = " + d + " bit(s) → " +
+        (d <= 5 ? "likely the SAME screen" : d >= 20 ? "clearly DIFFERENT" : "ambiguous");
+    } catch (e) { msg += "\n(no image B: " + e.message + ")"; }
+    $("hashout").textContent = msg;
+  } catch (e) { showErr(e); }
+});
+
+$("btnSelfTest").addEventListener("click", () => {
+  try {
+    $("hashout").textContent =
+      "self-test OK: gradient hash " + AHash.selfTest() +
+      " matches maverick.perceptual_hash.GRADIENT_HASH";
+  } catch (e) { showErr(e); }
+});
+
+function showErr(e) { $("hashout").textContent = "ERROR: " + e.message; }
+
+Vision.initWebGPU().then((g) => {
+  gpu = g;
+  if (gpu) {
+    $("status").textContent = "WebGPU: available — compute shaders enabled.";
+    $("btnGray").disabled = $("btnSobel").disabled = false;
+  } else {
+    $("status").textContent =
+      "WebGPU: unavailable in this browser. GPU ops are disabled; the perceptual hash still works (CPU).";
+  }
+}).catch(() => { $("status").textContent = "WebGPU: failed to initialise; hash still works (CPU)."; });
+</script>
+</body>
+</html>
