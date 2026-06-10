@@ -1867,6 +1867,43 @@ def schema_plan_cmd() -> None:
     click.echo(render(plan(int(current), SCHEMA_VERSION)))
 
 
+@main.command("config-lint")
+def config_lint_cmd() -> None:
+    """Validate ~/.maverick/config.toml: unknown sections/keys + obvious type
+    mistakes, with closest-match suggestions. Exits 1 if any error-level finding."""
+    from .config import load_config
+    from .config_lint import format_findings, lint_config
+    try:
+        cfg = load_config() or {}
+    except Exception as e:
+        click.echo(f"could not load config: {e}", err=True)
+        sys.exit(1)
+    findings = lint_config(cfg)
+    click.echo(format_findings(findings))
+    if any(getattr(f, "severity", "") == "error" for f in findings):
+        sys.exit(1)
+
+
+@main.command("costs")
+@click.option("--limit", default=30, show_default=True, help="Rows to show.")
+def costs_cmd(limit: int) -> None:
+    """Cross-run spend, by day, from recorded episodes (the persisted ledger)."""
+    from datetime import datetime, timezone
+
+    from .cost_report import format_report
+    from .world_model import DEFAULT_DB, WorldModel
+    w = WorldModel(DEFAULT_DB)
+    rows: list[dict] = []
+    try:
+        for ep in w.list_episodes(limit=1_000_000):
+            if ep.cost_dollars and ep.ended_at:
+                day = datetime.fromtimestamp(ep.ended_at, tz=timezone.utc).strftime("%Y-%m-%d")
+                rows.append({"dollars": ep.cost_dollars, "day": day})
+    finally:
+        w.close()
+    click.echo(format_report(rows, by="day", top=limit))
+
+
 @main.command("migrate")
 @click.option("--apply", "do_apply", is_flag=True,
               help="Apply mechanical rewrites (after a timestamped backup). "

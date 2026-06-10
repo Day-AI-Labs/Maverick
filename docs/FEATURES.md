@@ -494,8 +494,17 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   **Postgres** backend (`[world_model] backend = "postgres"`) carries a
   **versioned migration runner** (the world-model `MIGRATIONS` ledger), a
   `tenant_id` on every root table (write-stamped, read-scoped), **tenant-aware
-  UNIQUE constraints**, and a **strict-isolation mode** (`[world_model]
-  strict_tenant_isolation`).
+  UNIQUE constraints**, a **strict-isolation mode** (`[world_model]
+  strict_tenant_isolation`), opt-in **database-native Row-Level Security**
+  (`[world_model] rls` / `MAVERICK_PG_RLS`: a FORCE-RLS policy on every
+  tenant-scoped table keyed on a transaction-local `maverick.tenant` GUC, so
+  the database — not just the app-layer predicate — enforces the boundary;
+  applied by the table owner, enforced for non-superuser connections, validated
+  against a live Postgres under a non-superuser role), and an opt-in
+  **`psycopg_pool` connection pool** (`[world_model] pool_size` /
+  `MAVERICK_PG_POOL_SIZE`) that hands each transaction its own pooled
+  connection for horizontal scale (default 0 = the original single-connection
+  model, unchanged).
 - **Online-migration preflight** — `schema_migrations.py` + `maverick
   schema-plan`: the *operations* view over that ledger. It classifies each
   pending statement `online` (cheap/non-blocking: `ADD COLUMN`, `CREATE INDEX IF
@@ -627,9 +636,13 @@ tested without spawning py-spy.
   advanced users get the full step sequence, and the deployment answer
   (desktop/docker/vps/phone) filters the channel/sandbox questions that
   follow; `--fast` and `--resume` skip/restore branches), `start`, `resume`, `monitor` (Rich plan-tree
-  TUI), `status --cost`, `export`, `replay`, `logs`, `ps`, `whoami`, and
+  TUI), `status --cost`, `export`, `replay`, `logs`, `ps`, `whoami`,
   `maverick diag` (circuit-breaker states, provider rate-limit counts, per-goal
-  health score, cost-by-tag, and replay of a `MAVERICK_TRACE_DIR` run trace).
+  health score, cost-by-tag, and replay of a `MAVERICK_TRACE_DIR` run trace),
+  `maverick config-lint` (validate `~/.maverick/config.toml` for unknown
+  sections/keys + obvious type mistakes with closest-match suggestions;
+  `config_lint.py`), and `maverick costs` (cross-run per-day spend from the
+  recorded episode ledger; `cost_report.py`).
 - **GitHub App** — `/webhook/github` (dashboard): a labeled or `/maverick`-mentioned
   issue drives a swarm that clones the repo, fixes it, and opens a PR
   (`github_app.py`, HMAC-verified). **GitLab Issues** — `/webhook/gitlab`:

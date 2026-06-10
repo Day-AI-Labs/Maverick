@@ -294,6 +294,43 @@ def _strict_tenant_isolation() -> bool:
     return str(v).strip().lower() in {"1", "true", "yes", "on"} if isinstance(v, str) else bool(v)
 
 
+def _rls_enabled() -> bool:
+    """DB-native Row-Level Security (default off). When on, the tenant-scoped
+    tables get a Postgres RLS policy keyed on the ``maverick.tenant`` session
+    GUC, so the database enforces the tenant boundary even if an app-layer
+    predicate is ever missed — defense in depth over ``_tenant_scope``. Opt-in
+    because it implies the legacy ``NULL`` rows have been backfilled (RLS scopes
+    strictly to the active tenant). ``MAVERICK_PG_RLS`` env wins over
+    ``[world_model] rls``."""
+    env = os.environ.get("MAVERICK_PG_RLS")
+    if env is not None and env.strip() != "":
+        return env.strip().lower() in {"1", "true", "yes", "on"}
+    try:
+        from ..config import load_config
+        v = (load_config() or {}).get("world_model", {}).get("rls")
+    except Exception:  # pragma: no cover -- config never blocks construction
+        return False
+    return str(v).strip().lower() in {"1", "true", "yes", "on"} if isinstance(v, str) else bool(v)
+
+
+def _pool_size() -> int:
+    """Max connections for the optional ``psycopg_pool`` connection pool
+    (default 0 = no pool, single shared connection as before). A positive value
+    opts into pooled mode for horizontal scale under concurrent load.
+    ``MAVERICK_PG_POOL_SIZE`` env wins over ``[world_model] pool_size``."""
+    raw = os.environ.get("MAVERICK_PG_POOL_SIZE")
+    if raw is None or raw.strip() == "":
+        try:
+            from ..config import load_config
+            raw = (load_config() or {}).get("world_model", {}).get("pool_size")
+        except Exception:  # pragma: no cover -- config never blocks construction
+            raw = None
+    try:
+        return max(0, int(raw)) if raw is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
 def _tenant_scope(column: str = "tenant_id") -> tuple[str, list]:
     """Read predicate scoping rows to the active tenant.
 
@@ -346,16 +383,42 @@ class PostgresWorldModel:
                 "Postgres world model requires MAVERICK_PG_DSN or "
                 "[world_model] dsn in config.toml."
             )
-        self.conn = psycopg.connect(self._dsn, autocommit=False)
-        # One long-lived connection shared across this object. psycopg
-        # connections are NOT safe for concurrent use by multiple threads,
-        # and the kernel drives this from FastAPI's threadpool + the
+        self._rls = _rls_enabled()
+        # Optional connection pool (opt-in via [world_model] pool_size). Pooled
+        # mode hands each transaction its own connection from the pool, so the
+        # backend scales across concurrent callers instead of serialising on one
+        # shared connection. Default (pool_size 0) keeps the original
+        # single-connection + RLock model byte-for-byte.
+        self._pool = None
+        size = _pool_size()
+        if size > 0:
+            try:
+                from psycopg_pool import ConnectionPool
+            except ImportError as e:
+                raise ImportError(
+                    "[world_model] pool_size set but psycopg_pool is not "
+                    "installed. Run: pip install 'maverick-agent[postgres]'"
+                ) from e
+            self._pool = ConnectionPool(
+                self._dsn, min_size=1, max_size=size, open=True,
+                kwargs={"autocommit": False},
+            )
+            self.conn = None
+        else:
+            self.conn = psycopg.connect(self._dsn, autocommit=False)
+        # One long-lived connection shared across this object (non-pooled mode).
+        # psycopg connections are NOT safe for concurrent use by multiple
+        # threads, and the kernel drives this from FastAPI's threadpool + the
         # background runner. Serialize every transaction the way the SQLite
         # WorldModel does with its RLock; without it, interleaved
         # execute/commit/rollback corrupt results or raise
-        # InFailedSqlTransaction. (Reentrant so a method can nest _tx.)
+        # InFailedSqlTransaction. (Reentrant so a method can nest _tx.) The pool
+        # gives each tx its own connection, so the lock is a no-op contention
+        # point there but harmless.
         self._lock = threading.RLock()
         self._migrate()
+        if self._rls:
+            self._apply_rls()
 
     def __enter__(self) -> PostgresWorldModel:
         return self
@@ -373,9 +436,21 @@ class PostgresWorldModel:
         InFailedSqlTransaction until the process restarts. Rolling back
         keeps the connection usable.
         """
+        if self._pool is not None:
+            # Pooled: each tx gets its own connection; the pool's context
+            # commits on success and rolls back on error, so no shared lock.
+            with self._pool.connection() as conn:
+                cur = conn.cursor()
+                try:
+                    self._set_tenant_guc(cur)
+                    yield cur
+                finally:
+                    cur.close()
+            return
         with self._lock:
             cur = self.conn.cursor()
             try:
+                self._set_tenant_guc(cur)
                 yield cur
                 self.conn.commit()
             except Exception:
@@ -386,6 +461,58 @@ class PostgresWorldModel:
                 raise
             finally:
                 cur.close()
+
+    def _set_tenant_guc(self, cur) -> None:
+        """Under RLS, bind the active tenant to a transaction-local GUC so the
+        DB policy filters rows. No-op when RLS is off or no tenant is active
+        (then the policy's 'GUC unset -> all rows' branch applies, preserving
+        the single-tenant install)."""
+        if not self._rls:
+            return
+        tenant = _active_tenant()
+        if tenant is None:
+            return
+        # set_config(name, value, is_local=true) is the parameterizable form of
+        # SET LOCAL — transaction-scoped, cleared at commit/rollback.
+        cur.execute("SELECT set_config('maverick.tenant', %s, true)", (str(tenant),))
+
+    def _apply_rls(self) -> None:
+        """Enable Postgres Row-Level Security on the tenant-scoped tables.
+
+        Policy: a row is visible/writable when its ``tenant_id`` matches the
+        ``maverick.tenant`` session GUC, OR the GUC is unset/empty (single-
+        tenant or admin connection sees everything). ``_tx`` sets the GUC per
+        transaction when a tenant is active. Idempotent (drop-then-create the
+        policy; ENABLE/FORCE are no-ops if already set).
+
+        Only a table's **owner** may ALTER it, but the recommended RLS setup
+        connects the app as a *non-superuser, non-owner* role (a superuser or
+        the owner bypasses RLS unless FORCE is set, and a superuser bypasses it
+        regardless). So each table is attempted in its own transaction and a
+        privilege error is swallowed: a non-owner connection assumes the owner
+        (or a migration step) already applied the policy — enforcement on
+        read/write does not require ownership. Apply RLS as the owner once
+        (e.g. run the backend once with the owning role, or in a migration)."""
+        for table in _TENANT_TABLES:
+            try:
+                with self._tx() as cur:
+                    cur.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+                    cur.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
+                    cur.execute(f"DROP POLICY IF EXISTS mvk_tenant_isolation ON {table}")
+                    cur.execute(
+                        f"CREATE POLICY mvk_tenant_isolation ON {table} "
+                        "USING ("
+                        "  tenant_id IS NOT DISTINCT FROM "
+                        "    nullif(current_setting('maverick.tenant', true), '')"
+                        "  OR nullif(current_setting('maverick.tenant', true), '') IS NULL"
+                        ")"
+                    )
+            except Exception as e:  # non-owner / insufficient privilege
+                log.warning(
+                    "RLS not applied to %s (%s); assuming the owner already "
+                    "applied it — enforcement still active for this connection",
+                    table, e,
+                )
 
     def _migrate(self) -> None:
         """Apply pending migrations atomically, recording each in
@@ -1363,7 +1490,10 @@ class PostgresWorldModel:
 
     def close(self) -> None:
         try:
-            self.conn.close()
+            if self._pool is not None:
+                self._pool.close()
+            elif self.conn is not None:
+                self.conn.close()
         except Exception:  # pragma: no cover
             pass
 

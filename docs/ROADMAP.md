@@ -56,7 +56,7 @@ KMS + egress, operator console) have **shipped** — see
 |---|---|
 | Language-bindings decision (Q1 2027 gate) | A *measurement*, not code: the consent-gated MCP-client language analytics that feeds it has shipped; fund a native client only if >15% of active installs drive Maverick from non-Python MCP clients (see council decision below). |
 | Live-service validation | The connectors + queue/KMS backends ship with their protocol/logic unit-tested; end-to-end validation against a live IRC server, a real G2 device, a langchain install, and a Redis broker is the remaining gate, not new code. |
-| Postgres tenancy hardening (live-infra) | App-layer tenant isolation (strict-isolation mode) is shipped; remaining is database-native Row-Level Security + a `psycopg_pool` connection pool for horizontal scale. |
+| Postgres tenancy hardening | App-layer tenant isolation, **database-native Row-Level Security** (`[world_model] rls`; FORCE-RLS policy keyed on a `maverick.tenant` session GUC, validated under a non-superuser role) and a **`psycopg_pool` connection pool** (`[world_model] pool_size`) for horizontal scale have all shipped — see [`FEATURES.md`](./FEATURES.md). Remaining is operator runbook guidance (connect as a non-superuser role; apply RLS as the table owner). |
 | Queue dispatch at scale (live-infra) | The `QueueDispatcher` (arq) is wired; remaining is running it against a real Redis broker + an out-of-process worker pool. |
 
 ### Strategic decisions (settled)
