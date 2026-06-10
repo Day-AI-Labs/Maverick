@@ -926,6 +926,42 @@ def budget_tune(ctx, percentile: float, min_samples: int, as_json: bool) -> None
                    f"{info['samples']} goal(s))")
 
 
+@main.command("cost-retro")
+@click.option("--top", type=int, default=10, help="How many costliest goals to show.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def cost_retro(ctx, top: int, as_json: bool) -> None:
+    """Cost retrospective: where spend went, and what to do about it.
+
+    Reads recorded per-goal spend and reports the costliest goals, how much
+    went to failed work, how concentrated spend is, and actionable
+    observations. Read-only.
+    """
+    import json as _json
+
+    from .cost_retrospective import retrospective
+    world = open_world(ctx.obj["db"])
+    rep = retrospective(world, top_n=top)
+    if as_json:
+        click.echo(_json.dumps(rep))
+        return
+    click.echo(click.style(
+        f"Cost retrospective — ${rep['total_spend']:.2f} across "
+        f"{rep['priced_goals']} priced goal(s)", bold=True))
+    if rep["failed_spend"]:
+        click.echo(f"  failed work: ${rep['failed_spend']:.2f} "
+                   f"({rep['failed_share']:.0%})")
+    if rep["top_goals"]:
+        click.echo(click.style("\nCostliest goals", bold=True))
+        for r in rep["top_goals"]:
+            flag = " [FAILED]" if r["failed"] else ""
+            click.echo(f"  #{r['goal_id']} ${r['cost']:.2f} "
+                       f"({r['episodes']} ep){flag}  {r['title']}")
+    click.echo(click.style("\nObservations", bold=True))
+    for o in rep["observations"]:
+        click.echo(f"  • {o}")
+
+
 @main.command()
 @click.option("--sample", "sample", nargs=2, type=str, default=None,
               metavar="CONFIDENCE CORRECT",

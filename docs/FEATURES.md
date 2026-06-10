@@ -715,6 +715,11 @@ tested without spawning py-spy.
   dashboard: lint a SKILL.md body (same linter as `maverick skill validate`)
   from CI or an editor against a self-hosted instance; size-capped, nothing
   persisted.
+- **Cost retrospective** — `maverick cost-retro` (`cost_retrospective.py`): a
+  spend review over the recorded per-goal/episode costs — the costliest goals,
+  how much went to **failed** work (effort with no delivered result), how
+  concentrated spend is (a Pareto signal), and rule-based observations to act
+  on. Deterministic over the world model; read-only.
 - **Smart notification batching** — opt-in `[notifications]
   batch_window_seconds` (`notification_batcher.py`): coalesces the
   low/normal-priority push stream (ntfy/Pushover/Discord/Slack) into one
