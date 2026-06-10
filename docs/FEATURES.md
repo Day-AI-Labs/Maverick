@@ -187,7 +187,9 @@ here.
   `differential_privacy` (Laplace mechanism for ε-DP noisy counts/sums on
   published stats), `privacy_budget` (account a user's differential-privacy
   budget — remaining ε + allow/deny a query), `capability_delegation` (validate
-  a delegation graph for privilege escalation — fixpoint from root capabilities).
+  a delegation graph for privilege escalation — fixpoint from root capabilities),
+  `risk_tier` (score an agent goal LOW/MEDIUM/HIGH from operational signals —
+  shell/secrets/PII/spend/irreversibility — for gating).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.

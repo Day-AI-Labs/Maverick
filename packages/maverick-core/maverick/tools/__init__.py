@@ -675,6 +675,7 @@ def base_registry(  # noqa: C901
     from .reliability_harness import reliability_harness
     from .replicate_tool import replicate_tool
     from .right_to_explanation import right_to_explanation
+    from .risk_tier import risk_tier
     from .risk_tier_classifier import risk_tier_classifier
     from .run_events_firehose import run_events_firehose
     from .s3_attachments import s3_attachments
@@ -751,6 +752,7 @@ def base_registry(  # noqa: C901
     reg.register(capability_delegation())
     reg.register(coordinated_disclosure())
     reg.register(collusion_detector())
+    reg.register(risk_tier())
     reg.register(file_watcher(sandbox))
     reg.register(linear())
     reg.register(jira())
