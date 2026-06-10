@@ -582,6 +582,7 @@ def base_registry(  # noqa: C901
     from .currency import currency
     from .data_residency import data_residency
     from .datadog_tool import datadog_tool
+    from .decision_explainer import decision_explainer
     from .dep_graph import dep_graph
     from .diagnose import diagnose
     from .diff_to_expected import diff_to_expected
@@ -753,6 +754,8 @@ def base_registry(  # noqa: C901
     reg.register(coordinated_disclosure())
     reg.register(collusion_detector())
     reg.register(risk_tier())
+    reg.register(bias_eval())
+    reg.register(decision_explainer())
     reg.register(file_watcher(sandbox))
     reg.register(linear())
     reg.register(jira())
@@ -827,7 +830,6 @@ def base_registry(  # noqa: C901
     reg.register(risk_tier_classifier())
     reg.register(containment_mode())
     reg.register(capability_leak_fuzzer())
-    reg.register(bias_eval())
     reg.register(right_to_explanation())
     reg.register(audit_mirror())
     reg.register(tiered_storage())

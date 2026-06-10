@@ -147,8 +147,7 @@ here.
   goal-risk score from irreversibility/money/PII/egress/blast-radius signals),
   `containment_mode` (no-network/ephemeral-fs restriction plan + per-action
   allow/deny), `capability_leak_fuzzer` (find tools that would run without their
-  required capability + over-grants), `bias_eval` (per-group selection rate +
-  disparate-impact 80%-rule), `right_to_explanation` (ranked decision
+  required capability + over-grants), `right_to_explanation` (ranked decision
   explanation + rectification record), `audit_mirror` (verify primary vs mirror
   audit logs agree, gap-free), `tiered_storage` (hot/cold partition + migration
   plan), `async_compaction` (compact-now/defer/keep scheduling plan),
@@ -189,7 +188,10 @@ here.
   budget — remaining ε + allow/deny a query), `capability_delegation` (validate
   a delegation graph for privilege escalation — fixpoint from root capabilities),
   `risk_tier` (score an agent goal LOW/MEDIUM/HIGH from operational signals —
-  shell/secrets/PII/spend/irreversibility — for gating).
+  shell/secrets/PII/spend/irreversibility — for gating), `bias_eval` (group-
+  fairness metrics — four-fifths rule, demographic-parity and equal-opportunity
+  differences from per-group outcome counts), `decision_explainer` (per-factor
+  contribution breakdown for an additive/scorecard decision — right-to-explanation).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
