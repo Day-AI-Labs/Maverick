@@ -4,6 +4,7 @@ v0.1.6: BackgroundTask runner moved to maverick.runner.
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as _dt
 import json
 import logging
@@ -27,6 +28,7 @@ from maverick.runner import (
 )
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
+from starlette.responses import StreamingResponse
 
 from ._shared import _any_provider_key_set, _world
 from ._shared import _world_cache as _world_cache  # re-export: tests clear api._world_cache
@@ -232,6 +234,60 @@ async def goal_events(
             for e in events
         ],
     )
+
+
+def _sse_event(e) -> str:
+    """Format one goal event as a Server-Sent Event frame."""
+    data = json.dumps({"id": e.id, "agent": e.agent, "kind": e.kind,
+                       "content": e.content, "ts": e.ts})
+    kind = str(e.kind or "message").replace("\n", " ").replace("\r", " ")
+    return f"id: {e.id}\nevent: {kind}\ndata: {data}\n\n"
+
+
+_TERMINAL_STATUSES = frozenset({"done", "failed", "cancelled", "blocked", "error"})
+
+
+@router.get("/goals/{goal_id}/events/stream")
+async def goal_events_stream(
+    request: Request, goal_id: int, since: int = 0, limit: int = 0,
+    poll: float = 1.0,
+) -> StreamingResponse:
+    """Real-time **SSE** stream of a goal's events (`text/event-stream`).
+
+    Tails the durable `goal_events` log (so it works across the worker/dashboard
+    process split, unlike an in-process bus): emits each new event as it lands,
+    ends when the goal reaches a terminal status with no more events, or on
+    client disconnect. ``limit`` (>0) closes after N events — used by tests and
+    bounded consumers; ``poll`` is the tail interval.
+    """
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+
+    async def _gen():
+        last = since
+        sent = 0
+        yield ": connected\n\n"   # open the stream immediately
+        while True:
+            if await request.is_disconnected():
+                break
+            events = await run_in_threadpool(
+                w.goal_events, goal_id, last, 200)  # (goal_id, since_id, limit)
+            for e in events:
+                yield _sse_event(e)
+                last = e.id
+                sent += 1
+                if limit and sent >= limit:
+                    return
+            cur = w.get_goal(goal_id)
+            if not events and cur is not None and cur.status in _TERMINAL_STATUSES:
+                yield f"event: end\ndata: {json.dumps({'status': cur.status})}\n\n"
+                return
+            await asyncio.sleep(max(0.0, poll))
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
 
 
 @router.post("/goals/{goal_id}/answer", status_code=204)

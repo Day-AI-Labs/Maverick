@@ -627,7 +627,12 @@ every heavy/optional dep — a fresh-interpreter test fails CI if a module-level
 `import httpx`/provider-SDK/vector-store/numpy sneaks into the import path; **query-plan regression CI** (`test_query_plans.py`): hot world-model
 queries must SEARCH via an index, never full-scan; **cost-attribution API**
 (`GET /api/v1/cost/by-tag` on the dashboard): spend bucketed by episode/goal
-tag — the JSON face of the tag split for chargeback/BI; **streaming tool_result**
+tag — the JSON face of the tag split for chargeback/BI; **real-time SSE event
+stream** (`GET /api/v1/goals/{id}/events/stream`): a `text/event-stream` live
+tail of a goal's events that emits each as it lands and ends on terminal status
+or disconnect — tails the durable `goal_events` log so it works across the
+worker/dashboard process split (the polling `/events` endpoint stays for simple
+clients); **streaming tool_result**
 (`ToolRegistry.set_chunk_listener`): a tool fn may be an async generator or
 return a sync generator of chunks — chunks stream to the registered listener
 (dashboard/TUI live view) as they're produced while the model still receives
