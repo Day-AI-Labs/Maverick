@@ -461,16 +461,20 @@ class LLM:
         # configured for this model, try each in turn. No chain -> this block is
         # skipped and the original single-call path below runs unchanged.
         if not _no_failover:
-            from .provider_failover import failover, fallback_models, should_retry_llm_error
+            from .failover_policy import order_chain, policy_should_retry
+            from .provider_failover import failover, fallback_models
             _chain = fallback_models(model or self.model)
             if _chain:
+                # The policy engine narrows WHICH errors fail over and skips
+                # cooling-down models; with no [provider_failover.policy] both
+                # collapse to the v1 behavior.
                 return failover([
                     (m, (lambda m=m: self.complete(
                         system, messages, tools=tools, budget=budget,
                         max_tokens=max_tokens, thinking_budget=thinking_budget,
                         model=m, on_delta=on_delta, effort=effort, _no_failover=True)))
-                    for m in [model or self.model, *_chain]
-                ], should_retry=should_retry_llm_error)
+                    for m in order_chain([model or self.model, *_chain])
+                ], should_retry=policy_should_retry)
         provider, model_id = _parse_spec(model or self.model)
         # Egress lock (no-op unless enterprise mode is on): refuse to send data to a
         # non-local provider so sensitive data never leaves the boundary. Raises
@@ -580,7 +584,8 @@ class LLM:
         # Provider failover (opt-in, default off) — see complete(). No configured
         # chain -> skipped, and the original single-call path below is unchanged.
         if not _no_failover:
-            from .provider_failover import afailover, fallback_models, should_retry_llm_error
+            from .failover_policy import order_chain, policy_should_retry
+            from .provider_failover import afailover, fallback_models
             _chain = fallback_models(model or self.model)
             if _chain:
                 return await afailover([
@@ -588,8 +593,8 @@ class LLM:
                         system, messages, tools=tools, budget=budget,
                         max_tokens=max_tokens, thinking_budget=thinking_budget,
                         model=m, effort=effort, _no_failover=True)))
-                    for m in [model or self.model, *_chain]
-                ], should_retry=should_retry_llm_error)
+                    for m in order_chain([model or self.model, *_chain])
+                ], should_retry=policy_should_retry)
         provider, model_id = _parse_spec(model or self.model)
         # Egress lock (no-op unless enterprise mode is on): see complete().
         from .enterprise import assert_provider_allowed

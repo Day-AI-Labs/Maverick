@@ -155,8 +155,11 @@ devcontainer, Firecracker microVM, Kubernetes. Selected via `[sandbox] backend`.
 
 12 providers, routable per role (`llm.py`): Anthropic, OpenAI, OpenRouter,
 Ollama, Gemini, DeepSeek, Bedrock, Azure, xAI, Moonshot, TGI, vLLM (generic
-OpenAI-compatible via `base_url`). Cost-aware routing (`cost_router.py`) and
-provider failover (`provider_failover.py`), both opt-in. **Local-first routing**
+OpenAI-compatible via `base_url`). Cost-aware routing (`cost_router.py`) with **per-role
+policies** (`[routing.roles.<role>]`: provider allow/deny, cost ceiling, tier
+floor) and provider failover (`provider_failover.py`) with a **policy engine**
+(`failover_policy.py`: error-class gating — auth fails fast, 429/timeout/5xx
+fail over — plus per-model cooldowns), all opt-in. **Local-first routing**
 prefers a reachable local model before remote (`provider_local_first.py`);
 **energy-aware routing** downgrades to a cheaper model on low battery
 (`energy_aware_router.py`); both opt-in and default-OFF.
@@ -299,7 +302,11 @@ OpenTelemetry traces, Prometheus `/metrics`, Sentry (all opt-in)
 (`observability.py`); per-tool latency profiles + extended stats
 (`tool_latency.py`); opt-in per-tool **latency budget** (`latency_budget.py`) and
 cross-span **budget propagation** (`latency_span_budget.py`); **tool-output cache**
-for read-only tools (`tool_cache.py`); **network egress accounting**
+for read-only tools (`tool_cache.py`) with opt-in **warm-on-start** (`[tools]
+output_cache_snapshot`: persist entries to a JSONL snapshot, reload the
+still-fresh ones on the next run's first lookup); **memory-leak quarantine**
+(`leak_quarantine.py`): per-component watchdog that flags sustained monotonic
+growth and quarantines the component for recycling (sawtooth never trips it); **network egress accounting**
 (`egress_accounting.py`); **run health score** (`health_score.py`); **replayable
 trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
 **provider cost-curve fitter** (`cost_curve_fitter.py`); provider health board
