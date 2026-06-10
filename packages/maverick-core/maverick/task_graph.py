@@ -55,6 +55,56 @@ class TaskGraph:
                 out.append(tid)
         return sorted(out)
 
+    def remaining_critical_weight(self, *, weights=None) -> dict[str, float]:
+        """Per task, the heaviest chain of *not-yet-done* work from it onward
+        (itself + its longest pending-descendant tail).
+
+        This is the critical-path scheduling key: a ready task with a long
+        remaining tail should start before one with a short tail, because the
+        long-tail task bounds the finish time. ``done`` tasks contribute 0.
+        Returns ``{task_id: remaining_weight}`` ({} on a cycle).
+        """
+        try:
+            order = self.topo_order()
+        except ValueError:
+            return {}
+        weights = weights or {}
+
+        def w(tid: str) -> float:
+            t = self.tasks.get(tid, {})
+            if t.get("status") == "done":
+                return 0.0
+            try:
+                return float(weights.get(tid, 1.0))
+            except (TypeError, ValueError):
+                return 1.0
+
+        # children adjacency (a task -> tasks that depend on it)
+        children: dict[str, list[str]] = {tid: [] for tid in self.tasks}
+        for tid, t in self.tasks.items():
+            for d in t.get("deps", []):
+                if d in children:
+                    children[d].append(tid)
+        tail: dict[str, float] = {}
+        for tid in reversed(order):  # dependents before deps
+            best_child = max((tail.get(c, 0.0) for c in children.get(tid, [])),
+                             default=0.0)
+            tail[tid] = w(tid) + best_child
+        return tail
+
+    def ready_prioritized(self, *, weights=None) -> list[str]:
+        """The ready frontier ordered by remaining critical weight (longest
+        tail first) — the order a critical-path-aware scheduler dispatches.
+
+        Ties broken by task id for determinism. Falls back to plain ``ready``
+        order on a cycle (no critical weights available).
+        """
+        frontier = self.ready()
+        tail = self.remaining_critical_weight(weights=weights)
+        if not tail:
+            return frontier
+        return sorted(frontier, key=lambda tid: (-tail.get(tid, 0.0), tid))
+
     def has_cycle(self) -> bool:
         WHITE, GRAY, BLACK = 0, 1, 2
         color = {tid: WHITE for tid in self.tasks}
@@ -173,7 +223,8 @@ _SCHEMA = {
     "type": "object",
     "properties": {
         "op": {"type": "string",
-               "enum": ["add", "status", "ready", "order", "list", "critical"]},
+               "enum": ["add", "status", "ready", "order", "list", "critical",
+                        "schedule"]},
         "graph": {"type": "string", "description": "named graph (default 'default')"},
         "task": {"type": "string", "description": "task id"},
         "title": {"type": "string"},
@@ -212,6 +263,13 @@ def _run(args: dict) -> str:
                 return "(no critical path — empty graph or a cycle)"
             return f"critical path ({len(path)} task(s), weight {length:g}): " + \
                 " -> ".join(path)
+        if op == "schedule":
+            order = g.ready_prioritized()
+            if not order:
+                return "(no ready tasks)"
+            tail = g.remaining_critical_weight()
+            return "dispatch order (critical-path first):\n" + "\n".join(
+                f"  {tid}  (remaining weight {tail.get(tid, 0):g})" for tid in order)
     except (ValueError, KeyError) as e:
         return f"ERROR: {e}"
     return f"ERROR: unknown op {op!r}"
