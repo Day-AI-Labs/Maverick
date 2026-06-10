@@ -118,7 +118,7 @@ single-run inflation) — run multi-seed.
 | **UX** | Native macOS/Windows/Linux GUI apps · browser extension · VS Code + JetBrains live-run extensions |
 | **Distribution** | Windows MSI · sponsorship tiers · conference physical booth · swag store · ambassadors program · long-form handbook · Skill of the Year award · mobile companion app v1 (read-only) · localized docs phase 4 (ko/ru/it/hi) · video season 3 · annual community survey · foundation exploration |
 | **Performance** | JIT consideration (mypyc/cython on hot path) · 2-year retrospective |
-| **Safety** | eBPF syscall monitor · memory-safe parsers · sigstore keyless signing · federated shield model updates · annual safety report |
+| **Safety** | eBPF syscall monitor · sigstore keyless signing · federated shield model updates · annual safety report |
 | **Ecosystem** | Redis world-model · DuckDB world-model *transactional backend* (declined — OLAP engine, wrong for the concurrent OLTP write path; the **DuckDB analytics layer** over the world model shipped instead, see FEATURES) · Cloudflare Workers + Modal sandboxes |
 
 ---

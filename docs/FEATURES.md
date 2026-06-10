@@ -238,6 +238,16 @@ here.
   `[plugins] grpc = [{target, command}]`) carries the same contract over gRPC
   for any language: Describe → Tools, Call with a deadline, scrubbed-env spawn,
   reconnect/respawn-once.
+  **Memory-safe parsing of untrusted bytes** (`parser_isolation.py`, opt-in
+  `[security] isolate_parsers`): the parsers fed attacker-controllable bytes
+  (PDF via pdfplumber/pypdf, images via Pillow) are C-extension-backed — a
+  memory-safety bug there is an in-process foothold. The whitelisted-parser
+  inventory (`PARSERS`, the policy in code) routes them through a
+  secret-scrubbed child process: a segfault on hostile bytes kills the child,
+  never the kernel, and an exploited child holds no provider keys; size caps
+  enforced before the child sees data, hard timeout, and on child death the
+  consumer REFUSES rather than re-parsing the same bytes in-process (wired
+  into `read_pdf`). Off by default — in-process behavior unchanged.
   **Plugin signing CA** (`plugin_ca.py`): a self-hostable Ed25519 certificate
   authority for plugin/skill artifacts — the in-house counterpart to sigstore's
   keyless flow. An org runs its own root (`init_root`, keys 0600 under

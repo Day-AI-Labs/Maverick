@@ -171,6 +171,22 @@ def _table_to_markdown(rows: list[list]) -> str:
     return md
 
 
+def extract_text_from_bytes(data: bytes, *, pages: str = "",
+                            include_tables: bool = False) -> str | None:
+    """Extract text from PDF bytes (pdfplumber, pypdf fallback).
+
+    Also the **parser-isolation child entry** (``parser_isolation.PARSERS
+    ["pdf_text"]``): with ``[security] isolate_parsers`` on, hostile PDF bytes
+    are parsed in a scrubbed child process so a memory-safety bug in the
+    C-backed parsers can't touch the kernel. Returns None when no parser
+    extra is installed.
+    """
+    text = _extract_with_pdfplumber(data, pages, include_tables)
+    if text is None:
+        text = _extract_with_pypdf(data, pages)
+    return text
+
+
 def _run_read_pdf(args: dict[str, Any]) -> str:
     source = (args.get("source") or "").strip()
     if not source:
@@ -183,9 +199,19 @@ def _run_read_pdf(args: dict[str, Any]) -> str:
     if data is None:
         return f"ERROR: could not read PDF from {source!r}"
 
-    text = _extract_with_pdfplumber(data, pages, include_tables)
-    if text is None:
-        text = _extract_with_pypdf(data, pages)
+    from ..parser_isolation import parse_isolated, should_isolate
+    text = None
+    if should_isolate():
+        try:
+            text = parse_isolated("pdf_text", data, pages=pages,
+                                  include_tables=include_tables)
+        except (RuntimeError, ValueError) as e:
+            # the child died on hostile bytes / timed out: refuse rather than
+            # re-parsing the same bytes in-process (that defeats the isolation)
+            return f"ERROR: isolated PDF parse failed: {e}"
+    else:
+        text = extract_text_from_bytes(data, pages=pages,
+                                       include_tables=include_tables)
     if text is None:
         return (
             "ERROR: no PDF parser available. Run: "
