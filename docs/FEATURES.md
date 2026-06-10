@@ -199,7 +199,9 @@ here.
   risk badge), `skill_distill_v2` (extract a reusable skill spec from a
   successful trace), `observation_channel` (merge multi-agent observations into
   a time-ordered feed), `marketplace_moderation` (APPROVE/REVIEW/REJECT listing
-  scan), `channel_autoroute` (pick the best channel for a message by rules).
+  scan), `channel_autoroute` (pick the best channel for a message by rules),
+  `jwt_inspect` (decode + validate a JWT offline — claims, exp/nbf, and
+  HS256/384/512 HMAC signature verification; flags alg=none).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate. **Plugin sandboxing** — opt-in
