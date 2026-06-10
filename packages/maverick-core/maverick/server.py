@@ -376,6 +376,32 @@ def _wire_whatsapp_cloud(server, cfg):
     ))
 
 
+def _wire_threads(server, cfg):
+    from maverick_channels.threads import ThreadsChannel
+    allowed_user_ids = cfg.get("allowed_user_ids")
+    server.add_channel(ThreadsChannel(
+        handler=server._handle_message,
+        access_token=cfg.get("access_token") or os.environ.get("THREADS_ACCESS_TOKEN"),
+        user_id=cfg.get("user_id") or os.environ.get("THREADS_USER_ID"),
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        poll_seconds=cfg.get("poll_seconds", 30),
+    ))
+
+
+def _wire_rcs(server, cfg):
+    from maverick_channels.rcs import RcsChannel
+    allowed_user_ids = cfg.get("allowed_user_ids")
+    server.add_channel(RcsChannel(
+        handler=server._handle_message,
+        agent_id=cfg.get("agent_id") or os.environ.get("RCS_AGENT_ID"),
+        service_account_json=cfg.get("service_account_json")
+        or os.environ.get("RCS_SERVICE_ACCOUNT_JSON"),
+        webhook_token=cfg.get("webhook_token") or os.environ.get("RCS_WEBHOOK_TOKEN"),
+        port=cfg.get("port", 8768),
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+    ))
+
+
 def _wire_sms(server, cfg):
     from maverick_channels.sms import SMSChannel
     allowed_user_ids = cfg.get("allowed_user_ids")
@@ -441,6 +467,8 @@ _WIRES = {
     "mastodon": _wire_mastodon,
     "whatsapp": _wire_whatsapp,
     "whatsapp_cloud": _wire_whatsapp_cloud,
+    "threads": _wire_threads,
+    "rcs": _wire_rcs,
     "sms":      _wire_sms,
     "imessage": _wire_imessage,
     "voice":    _wire_voice,

@@ -1,0 +1,258 @@
+"""Threads (Meta Threads API) polling adapter: poll-and-reply cycle, author
+allowlist, atomic dedup claim with release-on-failure (fail-closed when the
+claim store is down — polling re-sees replies every cycle), and the two-step
+create -> publish outbound flow with 500-char chunking."""
+from __future__ import annotations
+
+import asyncio
+import sys
+import types
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from maverick_channels.threads import ThreadsChannel
+
+SELF_ID = "17841400000000000"
+OWNER = "ownerhandle"
+REPLY_ID = "18010000000000001"
+ACCESS_TOKEN = "THQVJ-token"
+
+
+def _channel(**overrides):
+    kw = dict(
+        handler=AsyncMock(return_value="the reply"),
+        access_token=ACCESS_TOKEN,
+        user_id=SELF_ID,
+        allowed_user_ids=[OWNER],
+    )
+    kw.update(overrides)
+    return ThreadsChannel(**kw)
+
+
+def _reply(username=OWNER, text="hello agent", reply_id=REPLY_ID, from_id="999000111"):
+    return {"id": reply_id, "text": text, "username": username,
+            "from": {"id": from_id, "username": username}}
+
+
+class _Resp:
+    def __init__(self, json_data=None, status_code=200):
+        self.status_code = status_code
+        self._json = json_data if json_data is not None else {}
+        self.text = ""
+
+    def json(self):
+        return self._json
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"http {self.status_code}")
+
+
+def _responder_with(batch):
+    """Route fake responses by URL: replies polls, create, publish."""
+    def _responder(method, url, payload):
+        if url.endswith("/threads_publish"):
+            return _Resp({"id": "MEDIA1"})
+        if url.endswith("/threads"):
+            return _Resp({"id": "CREATION1"})
+        if url.endswith("/replies"):
+            return _Resp({"data": batch})
+        return _Resp({})
+    return _responder
+
+
+def _install_httpx(monkeypatch, calls, responder):
+    """threads.py imports httpx lazily inside methods, so a sys.modules fake
+    keeps every test offline."""
+    class _Client:
+        def __init__(self, timeout=None):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, headers=None, params=None):
+            calls.append({"method": "GET", "url": url, "headers": headers,
+                          "params": params})
+            return responder("GET", url, params)
+
+        async def post(self, url, headers=None, data=None, json=None):
+            calls.append({"method": "POST", "url": url, "headers": headers,
+                          "data": data, "json": json})
+            return responder("POST", url, data)
+
+    monkeypatch.setitem(sys.modules, "httpx", types.SimpleNamespace(AsyncClient=_Client))
+
+
+def _fake_wm(monkeypatch):
+    """Stateful in-memory claim store mirroring WorldModel's dedup contract:
+    True on first claim, False on duplicates, release undoes the claim."""
+    wm = MagicMock()
+    claimed = set()
+
+    def _mark(channel, ext_id, goal_id=None):
+        if (channel, ext_id) in claimed:
+            return False
+        claimed.add((channel, ext_id))
+        return True
+
+    wm.mark_message_processed.side_effect = _mark
+    wm.release_processed_message.side_effect = (
+        lambda channel, ext_id: claimed.discard((channel, ext_id))
+    )
+    monkeypatch.setattr("maverick.world_model.WorldModel", MagicMock(return_value=wm))
+    return wm
+
+
+async def _cycle(ch):
+    """One poll cycle: what start()'s loop does between stop-event waits."""
+    for reply in await ch._poll_once():
+        await ch._dispatch(reply)
+
+
+def test_poll_cycle_processes_allowed_reply_once(monkeypatch):
+    ch = _channel()
+    ch.send = AsyncMock()
+    wm = _fake_wm(monkeypatch)
+    calls = []
+    _install_httpx(monkeypatch, calls, _responder_with([_reply()]))
+
+    asyncio.run(_cycle(ch))
+    asyncio.run(_cycle(ch))  # same reply re-polled -> dedup claim no-ops
+
+    ch.handler.assert_awaited_once()
+    msg = ch.handler.await_args.args[0]
+    assert msg.user_id == REPLY_ID and msg.message_id == REPLY_ID
+    assert msg.sender_id == OWNER and msg.channel == "threads"
+    assert msg.text == "hello agent"
+    assert wm.mark_message_processed.call_count == 2  # claimed, then duplicate
+    wm.mark_message_processed.assert_any_call("threads", REPLY_ID)
+    ch.send.assert_awaited_once_with(REPLY_ID, "the reply")
+
+    poll = calls[0]
+    assert poll["method"] == "GET"
+    assert poll["url"].endswith(f"/v1.0/{SELF_ID}/replies")
+    assert poll["params"] == {"fields": "id,text,username,from"}
+    assert poll["headers"]["Authorization"] == f"Bearer {ACCESS_TOKEN}"
+
+
+def test_unlisted_author_ignored(monkeypatch):
+    ch = _channel()
+    ch.send = AsyncMock()
+    wm = _fake_wm(monkeypatch)
+    _install_httpx(monkeypatch, [], _responder_with([_reply(username="stranger")]))
+
+    asyncio.run(_cycle(ch))
+
+    assert not ch.handler.await_count
+    assert not wm.mark_message_processed.called  # denied before the claim
+    assert not ch.send.await_count
+
+
+def test_self_authored_reply_skipped(monkeypatch):
+    """The bot's own replies come back on the edge; answering them would
+    loop. from.id == configured user_id is dropped before any claim."""
+    ch = _channel()
+    ch.send = AsyncMock()
+    wm = _fake_wm(monkeypatch)
+    _install_httpx(monkeypatch, [], _responder_with([_reply(from_id=SELF_ID)]))
+
+    asyncio.run(_cycle(ch))
+
+    assert not ch.handler.await_count
+    assert not wm.mark_message_processed.called
+    assert not ch.send.await_count
+
+
+def test_claim_released_on_handler_failure(monkeypatch):
+    ch = _channel(handler=AsyncMock(side_effect=RuntimeError("boom")))
+    ch.send = AsyncMock()
+    wm = _fake_wm(monkeypatch)
+    _install_httpx(monkeypatch, [], _responder_with([_reply()]))
+
+    asyncio.run(_cycle(ch))
+
+    wm.mark_message_processed.assert_called_once_with("threads", REPLY_ID)
+    wm.release_processed_message.assert_called_once_with("threads", REPLY_ID)
+    assert not ch.send.await_count
+
+
+def test_claim_infra_failure_skips_fail_closed(monkeypatch):
+    """Unlike the webhook adapters (which process anyway when the dedup store
+    is down), the polling adapter must SKIP: with no cursor, processing
+    anyway would re-run the same goal every poll_seconds."""
+    ch = _channel()
+    ch.send = AsyncMock()
+    monkeypatch.setattr(
+        "maverick.world_model.WorldModel",
+        MagicMock(side_effect=RuntimeError("no db")),
+    )
+    _install_httpx(monkeypatch, [], _responder_with([_reply()]))
+
+    asyncio.run(_cycle(ch))
+
+    assert not ch.handler.await_count
+    assert not ch.send.await_count
+
+
+def test_two_step_publish_payloads(monkeypatch):
+    ch = _channel()
+    calls = []
+    _install_httpx(monkeypatch, calls, _responder_with([]))
+
+    asyncio.run(ch.send(REPLY_ID, "pong"))
+
+    assert [c["url"].rsplit("/", 1)[-1] for c in calls] == ["threads", "threads_publish"]
+    create, publish = calls
+    assert create["url"].endswith(f"/v1.0/{SELF_ID}/threads")
+    assert create["data"] == {"media_type": "TEXT", "text": "pong",
+                              "reply_to_id": REPLY_ID}
+    assert create["headers"]["Authorization"] == f"Bearer {ACCESS_TOKEN}"
+    assert publish["url"].endswith(f"/v1.0/{SELF_ID}/threads_publish")
+    assert publish["data"] == {"creation_id": "CREATION1"}
+
+
+def test_send_non_reply_target_posts_standalone(monkeypatch):
+    """A non-numeric target (a username) is not a media id: no reply_to_id."""
+    ch = _channel()
+    calls = []
+    _install_httpx(monkeypatch, calls, _responder_with([]))
+
+    asyncio.run(ch.send(OWNER, "pong"))
+
+    create = calls[0]
+    assert create["data"] == {"media_type": "TEXT", "text": "pong"}
+
+
+def test_long_replies_chunked_at_500(monkeypatch):
+    ch = _channel()
+    calls = []
+    _install_httpx(monkeypatch, calls, _responder_with([]))
+
+    asyncio.run(ch.send(REPLY_ID, "x" * 1200))
+
+    # create, publish, create, publish, create, publish
+    assert [c["url"].rsplit("/", 1)[-1] for c in calls] == \
+        ["threads", "threads_publish"] * 3
+    chunks = [c["data"]["text"] for c in calls if c["url"].endswith(f"/{SELF_ID}/threads")]
+    assert [len(c) for c in chunks] == [500, 500, 200]
+    assert "".join(chunks) == "x" * 1200
+    # Every chunk threads onto the same reply target.
+    assert all(c["data"]["reply_to_id"] == REPLY_ID
+               for c in calls if c["url"].endswith(f"/{SELF_ID}/threads"))
+
+
+def test_missing_credentials_raise(monkeypatch):
+    monkeypatch.delenv("THREADS_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("THREADS_USER_ID", raising=False)
+    with pytest.raises(ValueError, match="credentials missing"):
+        _channel(access_token=None, user_id=None)
+
+
+def test_missing_allowlist_raises(monkeypatch):
+    monkeypatch.delenv("THREADS_ALLOWED_USER_IDS", raising=False)
+    with pytest.raises(ValueError, match="ALLOWED_USER_IDS"):
+        _channel(allowed_user_ids=None)

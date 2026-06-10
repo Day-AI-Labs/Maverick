@@ -61,6 +61,9 @@ CHANNELS: list[tuple[str, str, list[str]]] = [
       "WHATSAPP_CLOUD_VERIFY_TOKEN", "WHATSAPP_CLOUD_APP_SECRET"]),
     ("sms",      "SMS (Twilio, needs webhook)",         ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]),
     ("imessage", "iMessage (macOS only)",               []),
+    ("threads",  "Threads (Meta, polling)",              ["THREADS_ACCESS_TOKEN", "THREADS_USER_ID"]),
+    ("rcs",      "RCS (Google RBM, approved agents only)",
+     ["RCS_AGENT_ID", "RCS_SERVICE_ACCOUNT_JSON", "RCS_WEBHOOK_TOKEN"]),
 ]
 
 
@@ -70,7 +73,8 @@ CHANNELS: list[tuple[str, str, list[str]]] = [
 # and imessage is macOS-only and needs Full Disk Access. Offering them in
 # the default checkbox is dishonest: users pick them, then hit a dead end.
 # Gate them behind an explicit opt-in (see pick_channels).
-EXPERIMENTAL_CHANNELS: set[str] = {"whatsapp", "whatsapp_cloud", "sms", "imessage"}
+EXPERIMENTAL_CHANNELS: set[str] = {"whatsapp", "whatsapp_cloud", "sms", "imessage",
+                                   "threads", "rcs"}
 
 
 # Ordered advanced-flow steps, mirroring the pick_* sequence in run().
@@ -581,7 +585,7 @@ def pick_models_per_role(providers: list[str]) -> dict[str, str]:
 _ALLOWLIST_CHANNELS = {
     "telegram", "discord", "slack", "signal", "email",
     "matrix", "bluesky", "mastodon", "irc", "imessage", "sms", "whatsapp",
-    "whatsapp_cloud",
+    "whatsapp_cloud", "threads", "rcs",
 }
 _ALLOWLIST_HINT = {
     "telegram": "numeric Telegram user IDs",
@@ -597,6 +601,8 @@ _ALLOWLIST_HINT = {
     "sms": "phone numbers, e.g. +14155551234",
     "whatsapp": "senders as Twilio sends them, e.g. whatsapp:+14155551234",
     "whatsapp_cloud": "bare wa_id digits, e.g. 14155551234",
+    "threads": "Threads usernames of allowed authors",
+    "rcs": "E.164 MSISDNs, e.g. +14155551234",
 }
 
 

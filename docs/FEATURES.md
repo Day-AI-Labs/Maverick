@@ -170,13 +170,20 @@ here.
 
 ## Channels
 
-15 wired channels (`packages/maverick-channels/`): Telegram, Discord, Slack,
+17 wired channels (`packages/maverick-channels/`): Telegram, Discord, Slack,
 Signal, Email, Matrix, Bluesky, Mastodon, Voice (Twilio), WhatsApp (Twilio),
 **WhatsApp Cloud API** (`whatsapp_cloud.py`: Meta's first-party Graph API —
 GET verification handshake, constant-time `X-Hub-Signature-256` HMAC,
 sender allowlist, atomic message-id dedup claim, chunked outbound; no Twilio
 middleman), SMS, iMessage
-(macOS), **IRC** (channels + DMs, TLS), and a **glasses/wearable** adapter
+(macOS), **IRC** (channels + DMs, TLS), **Threads** (`threads.py`: Meta's
+Threads API — polling adapter by design since webhooks are partner-gated;
+author allowlist, claim-first dedup that fails CLOSED because a polling
+adapter re-sees replies, two-step publish with 500-char chunking),
+**RCS** (`rcs.py`: Google RCS Business Messaging for approved RBM agents —
+Pub/Sub or direct envelopes, constant-time clientToken verify, MSISDN
+allowlist, service-account Bearer auth with cached refresh), and a
+**glasses/wearable** adapter
 (Even Realities G2 "bring your own agent" bridge: the ack-then-run pattern that
 answers quick utterances on the HUD within the device deadline and runs long
 tasks in the background, delivering the result to a secondary channel). Rich
