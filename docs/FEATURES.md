@@ -55,7 +55,11 @@ here.
   incremental instead of a linear re-embed scan; fail-open and
   dependency-injectable — the kernel never *requires* a vector store. The
   **Weaviate** adapter (`weaviate_store.py`, `[weaviate]` extra) targets a
-  local or cloud v4 cluster with a server-side vectorizer (`near_text`).
+  local or cloud v4 cluster with a server-side vectorizer (`near_text`). The
+  **pgvector** adapter (`pgvector_store.py`, `[postgres]` extra) keeps vectors
+  in the same Postgres database as the world-model backend (cosine `<=>`
+  search); it takes an injected embedder rather than embedding itself, so
+  recall reuses the local fastembed model.
 
 ## Tools
 
