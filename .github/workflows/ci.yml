@@ -112,6 +112,12 @@ jobs:
         run: |
           pip install -e ./packages/maverick-core -q
           python -m maverick.plugin_matrix --ci
+      - name: Sunset gate (past-due deprecations must be removed)
+        # The deprecation registry (maverick/deprecations.py) records every
+        # deprecated path with its removal version. Once the package version
+        # reaches an entry's remove_in, this fails until the old path AND its
+        # registry entry are deleted together -- deprecations can't rot.
+        run: python -m maverick.deprecations --ci
       - name: gRPC API v1 stability contract (no breaking proto changes)
         # Parses maverick.proto into a structural inventory and diffs it
         # against the committed golden: additive changes pass, removals /

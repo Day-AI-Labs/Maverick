@@ -365,7 +365,15 @@ never routing somewhere v2 rejected, falling back to v2 on a cold context. The
 learned table persists atomically (`router_bandit.json`, 0600); opt-in via
 `[routing] bandit` and default-OFF.
 
-**Cache-aware prompt assembly DSL** (`prompt_dsl.py`): a `PromptBuilder` that
+**Deprecation registry + sunset gate** (`deprecations.py`, `python -m
+maverick.deprecations [--ci]`, wired into CI): every deprecated path is
+declared in one registry (target, replacement, deprecated_in, **remove_in**);
+`warn_once` gives call sites a once-per-process DeprecationWarning,
+`check_config` lints a loaded config for deprecated keys, and the **sunset
+gate** fails CI once the package version reaches an entry's removal version
+until the old path and its registry entry are deleted together — so
+deprecations can't rot. Seeded with the two live windows (plugin API v1
+manifests; bare-`str` channel handlers). **Cache-aware prompt assembly DSL** (`prompt_dsl.py`): a `PromptBuilder` that
 tags each segment STABLE (cacheable — system, tool catalog, exemplars) or
 VOLATILE (per-request); `assemble()` orders them stable-first and marks the
 **cache breakpoint** at the end of the stable prefix so a provider adapter

@@ -196,6 +196,11 @@ def parse_dict(data: dict[str, Any], *, source: str = "<inline>") -> PluginManif
             f"{SUPPORTED_API_MAJORS} (kernel is v{MAVERICK_API_VERSION})"
         )
     elif manifest.is_deprecated_api():
+        try:
+            from .deprecations import warn_once
+            warn_once("plugins.api_v1")
+        except Exception:  # pragma: no cover -- warning must never block parse
+            pass
         manifest.warnings.append(
             f"api_version {manifest.api_version!r} is deprecated (kernel is "
             f"v{MAVERICK_API_VERSION}); v1 loads for one more minor release "

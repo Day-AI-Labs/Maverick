@@ -131,6 +131,11 @@ def as_reply(result: Reply | str) -> Reply:
     """
     if isinstance(result, Reply):
         return result
+    try:
+        from maverick.deprecations import warn_once
+        warn_once("channels.str_handler")
+    except Exception:  # the kernel may be absent in a channels-only install
+        pass
     return Reply(text="" if result is None else str(result))
 
 
