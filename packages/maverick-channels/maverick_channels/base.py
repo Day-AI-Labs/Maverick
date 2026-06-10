@@ -5,6 +5,7 @@ so the agent loop doesn't have to care where a message came from.
 """
 from __future__ import annotations
 
+import logging
 import os
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
@@ -97,7 +98,40 @@ class IncomingMessage:
 
 
 Handler = Callable[[IncomingMessage], Awaitable[str]]
-"""A handler takes a normalized message and returns the agent's reply."""
+"""A handler takes a normalized message and returns the agent's reply.
+
+SDK v2: a handler may instead return a :class:`Reply` (structured text +
+attachments + thread ref). Bare ``str`` returns stay supported through the
+:func:`as_reply` shim for one minor release (RFC 0001 C2); adapters route
+results through :meth:`Channel.dispatch` / :meth:`Channel.dispatch_text`
+so both contracts work everywhere.
+"""
+
+
+@dataclass
+class Reply:
+    """SDK v2 structured handler reply (RFC 0001 C2).
+
+    ``attachments`` are local file paths the adapter may ship when its
+    platform can (adapters without a file API drop them with a debug note —
+    the text always goes through). ``thread_ref`` overrides the inbound
+    ``message_id`` as the threading anchor for ``send_threaded``.
+    """
+
+    text: str
+    attachments: list[str] = field(default_factory=list)
+    thread_ref: str | None = None
+
+
+def as_reply(result: Reply | str) -> Reply:
+    """Normalize a handler result to :class:`Reply` (the v1->v2 shim).
+
+    Bare ``str`` is the v1 contract; it remains accepted (wrapped into a
+    text-only Reply) for the RFC 0001 deprecation window.
+    """
+    if isinstance(result, Reply):
+        return result
+    return Reply(text="" if result is None else str(result))
 
 
 class Channel(ABC):
@@ -120,6 +154,30 @@ class Channel(ABC):
 
     @abstractmethod
     async def send(self, user_id: str, text: str) -> None: ...
+
+    async def dispatch(self, msg: IncomingMessage) -> Reply:
+        """Run the handler and normalize its result to a :class:`Reply`.
+
+        The SDK v2 entry point: handlers may return ``Reply`` or (shimmed)
+        bare ``str``. Adapters that can ship files consume
+        ``reply.attachments``; ones that can't use :meth:`dispatch_text`.
+        """
+        return as_reply(await self.handler(msg))
+
+    async def dispatch_text(self, msg: IncomingMessage) -> str:
+        """Run the handler and return just the reply text.
+
+        For adapters with no platform file API: structured attachments are
+        dropped with a debug note (the text always goes through), so a v2
+        handler works unchanged on every adapter.
+        """
+        reply = await self.dispatch(msg)
+        if reply.attachments:
+            logging.getLogger(__name__).debug(
+                "channel %s has no file API; dropping %d attachment(s)",
+                getattr(self, "name", "?"), len(reply.attachments),
+            )
+        return reply.text
 
     async def send_threaded(
         self, user_id: str, text: str, *, reply_to: str | None = None,

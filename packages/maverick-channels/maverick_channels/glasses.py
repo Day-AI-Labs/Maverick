@@ -108,7 +108,7 @@ class GlassesChannel(Channel):
 
     async def _run_and_deliver(self, msg: IncomingMessage) -> None:
         try:
-            result = await self.handler(msg)
+            result = await self.dispatch_text(msg)
         except Exception:  # pragma: no cover -- delivery never crashes the bridge
             log.exception("glasses: background task failed")
             return

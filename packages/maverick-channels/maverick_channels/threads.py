@@ -145,7 +145,7 @@ class ThreadsChannel(Channel):
             raw=reply,
         )
         try:
-            reply_text = await self.handler(incoming)
+            reply_text = await self.dispatch_text(incoming)
         except Exception:
             log.exception("threads handler error")
             try:
