@@ -240,7 +240,13 @@ floor) and provider failover (`provider_failover.py`) with a **policy engine**
 fail over — plus per-model cooldowns), all opt-in. **Local-first routing**
 prefers a reachable local model before remote (`provider_local_first.py`);
 **energy-aware routing** downgrades to a cheaper model on low battery
-(`energy_aware_router.py`); both opt-in and default-OFF.
+(`energy_aware_router.py`); both opt-in and default-OFF. **Cost-aware routing
+v3** (`cost_router_v3.py`) layers a contextual **epsilon-greedy bandit** on top
+of v2: it learns reward-per-dollar per coarse task class (role + tier) and
+reorders *only within* the healthy/affordable arm set v2 already produced —
+never routing somewhere v2 rejected, falling back to v2 on a cold context. The
+learned table persists atomically (`router_bandit.json`, 0600); opt-in via
+`[routing] bandit` and default-OFF.
 
 **Per-role reasoning effort** (`effort.py`) — the biggest cost/latency lever on
 Opus 4.7/4.8: model-gated `output_config.effort` tiered by role (critical roles
@@ -444,10 +450,17 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   `~/.maverick/tenants/<t>/` (`workspace.py`, `paths.py`), with a per-tenant
   world DB and `data_dir()`-routed audit / quotas / DSAR / fleets. The shared
   **Postgres** backend (`[world_model] backend = "postgres"`) carries a
-  **versioned migration runner** (`schema_migrations` ledger), a `tenant_id` on
-  every root table (write-stamped, read-scoped), **tenant-aware UNIQUE
-  constraints**, and a **strict-isolation mode** (`[world_model]
+  **versioned migration runner** (the world-model `MIGRATIONS` ledger), a
+  `tenant_id` on every root table (write-stamped, read-scoped), **tenant-aware
+  UNIQUE constraints**, and a **strict-isolation mode** (`[world_model]
   strict_tenant_isolation`).
+- **Online-migration preflight** — `schema_migrations.py` + `maverick
+  schema-plan`: the *operations* view over that ledger. It classifies each
+  pending statement `online` (cheap/non-blocking: `ADD COLUMN`, `CREATE INDEX IF
+  NOT EXISTS`, FTS rebuild) or `offline` (table rewrite / long write lock),
+  `plan(current, target)` lists the pending steps, and `online_only()` gates a
+  hot deploy — failing **closed** on any unclassifiable statement so an unknown
+  migration is reviewed before it runs against a live, high-traffic world.
 - **Process table** — `maverick ps` (unified view of runs/workers).
 - **Scheduling** — recurring autonomous goals from a prompt; `worker --once`
   cron-friendly drain (`scheduler.py`, `job_queue.py`, `worker.py`).
@@ -473,6 +486,12 @@ opt-in; single-tenant/self-hosted deployments are unaffected):
 - **Out-of-process execution** — a swappable goal **Dispatcher** (`runner.py`)
   with a **QueueDispatcher** (`queue_dispatcher.py`) that enqueues goals for a
   worker pool (arq adapter behind `[queue]`; `install_from_config` wires it).
+- **Isolation test suite** — `tests/test_multitenant_isolation.py` proves the
+  tenant walls across the primitives that actually carry tenant data: `data_dir`
+  path routing (distinct ids never collide onto one segment), `world_for_tenant`
+  DB separation (A's goal invisible to B), per-tenant KMS (a DEK wrapped for A
+  does not unwrap under B's AEAD context), and clean `set_tenant`/`reset_tenant`
+  scope discipline.
 
 ## Evaluation & benchmarks
 
