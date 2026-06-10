@@ -582,6 +582,7 @@ def base_registry(  # noqa: C901
     from .cross_repo_deps import cross_repo_deps
     from .crypto_budget_receipt import crypto_budget_receipt
     from .currency import currency
+    from .data_minimization import data_minimization
     from .data_residency import data_residency
     from .datadog_tool import datadog_tool
     from .decision_explainer import decision_explainer
@@ -808,6 +809,7 @@ def base_registry(  # noqa: C901
     reg.register(k_anonymity())
     reg.register(retention_check())
     reg.register(breach_notification())
+    reg.register(data_minimization())
     reg.register(supply_chain_pin())
     reg.register(quorum_approval())
     reg.register(crypto_budget_receipt())
