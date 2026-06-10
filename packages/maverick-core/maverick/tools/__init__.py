@@ -766,6 +766,7 @@ def base_registry(  # noqa: C901
     from .tool_call_inspector import tool_call_inspector
     from .translate import translate
     from .trello_tool import trello_tool
+    from .truelayer_tool import truelayer_tool
     from .twilio_tool import twilio_tool
     from .two_person_rule import two_person_rule
     from .unified_inbox import unified_inbox
@@ -1046,6 +1047,7 @@ def base_registry(  # noqa: C901
     reg.register(imagemagick_tool(sandbox))
     reg.register(ga4_tool())
     reg.register(plaid_tool())
+    reg.register(truelayer_tool())
     reg.register(erp_tool())  # read-only ERP system-of-record access (Ops/Finance)
 
     # Voice tools (opt-in extra; tool factories raise ImportError only

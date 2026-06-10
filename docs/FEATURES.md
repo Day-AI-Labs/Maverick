@@ -94,6 +94,7 @@ here.
   Bitbucket (issues / PRs / pipelines), Jira, Linear,
   Asana, Trello, ClickUp, Confluence, Notion, Obsidian, Slack, Discord, Gmail,
   Google Drive, Dropbox, Calendar, Salesforce, HubSpot, Stripe, Shopify, Plaid,
+  TrueLayer (EU/UK open banking),
   Twilio, Zoom, S3, DynamoDB, MongoDB, Redis, Elasticsearch, Datadog, Sentry,
   PagerDuty, Mixpanel, PostHog, Plausible, GA4, Home Assistant, Cloudflare,
   Vercel, AWS Lambda/SES/SNS, Microsoft Graph, and more.
