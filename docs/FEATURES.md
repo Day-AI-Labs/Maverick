@@ -419,7 +419,10 @@ still-fresh ones on the next run's first lookup); **memory-leak quarantine**
 (`leak_quarantine.py`): per-component watchdog that flags sustained monotonic
 growth and quarantines the component for recycling (sawtooth never trips it); **network egress accounting**
 (`egress_accounting.py`); **run health score** (`health_score.py`); **replayable
-trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
+trace** format (`replay_trace.py`) with **trace pinning to commit**
+(`trace_pin.py`: every run stamps a `trace_meta` event carrying the
+workspace's commit/branch/dirty state at start — best-effort, never blocks —
+and `trace_commit()` reads it back so replays tie to exact code); **cost split by tag** (`cost_by_tag.py`) and
 **provider cost-curve fitter** (`cost_curve_fitter.py`); provider health board
 (`provider_health.py`); proactive **provider rate-limit predictor**
 (`rate_limit_predictor.py`); shared tool-reliability layer (`tool_reliability.py`,

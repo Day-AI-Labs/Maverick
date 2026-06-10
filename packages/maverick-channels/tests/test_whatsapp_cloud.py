@@ -11,7 +11,6 @@ import pytest
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
-
 from maverick_channels.whatsapp_cloud import WhatsAppCloudChannel  # noqa: E402
 
 APP_SECRET = "app-secret"

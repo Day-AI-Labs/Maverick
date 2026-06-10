@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import subprocess
 
-import pytest
 from maverick.trace_pin import TRACE_META_KIND, pin_trace, trace_commit, workspace_git_state
 from maverick.world_model import open_world
 
