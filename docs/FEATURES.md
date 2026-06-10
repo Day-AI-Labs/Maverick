@@ -36,7 +36,12 @@ here.
   iteration cap, or the budget runs out — speculative decode/finalize
   (`speculative.py`), latency-aware best-of-N that cancels laggards
   (`latency_best_of_n.py`), shared-scratchpad blackboard (`blackboard.py`),
-  cross-agent bus (`agent_bus.py`).
+  cross-agent bus (`agent_bus.py`), and a read-only **observation channel**
+  (`observation_channel.py`) — a live push/subscribe broadcast of the swarm's
+  event stream for an external observer (monitoring agent, dashboard,
+  supervisor) that doesn't join the control flow; `blackboard.post` tees into
+  it, a slow observer drops its oldest events rather than stalling the swarm,
+  and it's a no-op (lock-free subscriber check) when nobody is watching.
 - **Context lifecycle** — deferred tool loading + `find_tools`, cross-session
   `memory` tool (`tools/memory.py`), programmatic tool calling
   (`tools/code_exec.py`), structural/retrieval-augmented compaction
