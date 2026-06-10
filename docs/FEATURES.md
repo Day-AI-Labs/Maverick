@@ -238,6 +238,16 @@ here.
   `[plugins] grpc = [{target, command}]`) carries the same contract over gRPC
   for any language: Describe → Tools, Call with a deadline, scrubbed-env spawn,
   reconnect/respawn-once.
+  **AI Act conformance package** (`ai_act_package.py`, `python -m
+  maverick.ai_act_package [-o out.md]`): assembles the Art. 11 / Annex IV
+  technical-documentation skeleton from the deployment's *recorded* posture —
+  the Annex III risk self-assessment, Art. 14 oversight measures (consent
+  mode, capability enforcement, delegation, killswitch), Art. 12 logging
+  (audit signing, retention, day-files present), Art. 15 evidence (red-team
+  gate, shield calibration, reliability cert when present), Art. 50
+  transparency wiring — sections without evidence say so, and the items only a
+  provider can complete (intended purpose, conformity route) are an explicit
+  checklist, not fabricated prose.
   **Adversarial-prompt corpus release** (`maverick_shield/corpus_release.py`,
   `python -m maverick_shield.corpus_release`): turns the CI red-team corpus
   into a versioned, validated, integrity-pinned artifact — content-hash
