@@ -24,9 +24,14 @@ TRACE_META_KIND = "trace_meta"
 
 def _git(args: list[str], cwd: str | None) -> str | None:
     from .tools import scrub_child_env
+
+    # Git reads repository-local config even when invoked without a shell.
+    # Disable optional helpers that may execute workspace-controlled programs
+    # (notably core.fsmonitor during `git status`) before inspecting the repo.
+    safe_args = ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false"]
     try:
         r = subprocess.run(
-            ["git", *args], capture_output=True, text=True, timeout=5,
+            ["git", *safe_args, *args], capture_output=True, text=True, timeout=5,
             env=scrub_child_env(), cwd=cwd or None,
         )
     except (OSError, subprocess.TimeoutExpired):
