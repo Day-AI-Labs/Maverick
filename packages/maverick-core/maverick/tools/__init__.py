@@ -618,6 +618,7 @@ def base_registry(  # noqa: C901
     from .preview_diff import preview_diff
     from .privacy_budget import privacy_budget
     from .recall import recall
+    from .rectification import rectification
     from .reddit_tool import reddit_tool
     from .redis_tool import redis_tool
     from .replicate_tool import replicate_tool
@@ -681,6 +682,7 @@ def base_registry(  # noqa: C901
     reg.register(risk_tier())
     reg.register(bias_eval())
     reg.register(decision_explainer())
+    reg.register(rectification())
     reg.register(file_watcher(sandbox))
     reg.register(linear())
     reg.register(jira())
