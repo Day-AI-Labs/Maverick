@@ -88,8 +88,28 @@ def compact_with(messages: list[dict], *, strategy: str | None = None,
     return strat.compact(messages, **kwargs)
 
 
-# Register the built-in as the default at import.
+class _StrategyAdapter:
+    """Adapt one of the v3/v5/v7/v8 strategies (compaction_strategies) to the
+    plug-in ``CompactionStrategy`` protocol, so both selection paths share one
+    registry. The heavy modules import lazily on first compact()."""
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def compact(self, messages: list[dict], **kwargs) -> list[dict]:
+        from .compaction_strategies import compact_with_strategy
+        allowed = {k: kwargs[k] for k in
+                   ("llm", "conversation_id", "keep_recent", "max_tool_bytes")
+                   if k in kwargs}
+        return compact_with_strategy(messages, strategy=self.name, **allowed)
+
+
+# Register the built-in as the default at import, plus the named strategies
+# from compaction_strategies so `[context] compaction_strategy` selects any of
+# them through this one dispatcher (still fail-safe to heuristic on a typo).
 register(_HeuristicStrategy())
+for _name in ("learned", "multimodal", "streaming", "graph"):
+    register(_StrategyAdapter(_name))
 
 
 __all__ = ["CompactionStrategy", "register", "get", "available", "compact_with"]

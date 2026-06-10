@@ -1648,8 +1648,17 @@ class Agent:
             # window. The first message (user brief) is always kept.
             # The compaction cost is O(len(messages)) per turn -- cheap
             # vs. paying full-price input tokens for a 100k history.
-            from .compaction import compact_messages
-            messages = compact_messages(messages)
+            # Default path is the heuristic shrink; an operator can opt into a
+            # richer strategy via [context] compaction_strategy (heuristic /
+            # learned / multimodal / streaming / graph) — all registered in the
+            # one compaction_plugins dispatcher, which fails safe to heuristic
+            # on an unknown name. The agent's llm seam + conversation id reach
+            # the strategies that use them.
+            from .compaction_plugins import compact_with
+            messages = compact_with(
+                messages, llm=self.ctx.llm,
+                conversation_id=str(getattr(self.ctx, "goal_id", "") or ""),
+            )
 
             try:
                 # Stop BEFORE spending another call when the cap is already

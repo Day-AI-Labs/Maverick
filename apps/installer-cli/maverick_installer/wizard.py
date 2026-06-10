@@ -1094,6 +1094,15 @@ def pick_advanced() -> dict[str, Any]:
             "token budget instead of just the last few.",
             default=False,
         ),
+        "compaction_strategy": _q_select(
+            "  Compaction strategy? (default = simple shrink)",
+            ["default     - keep recent + trim big tool outputs",
+             "learned     - LLM summary, self-tuning prompt picker",
+             "multimodal  - stub heavy image/audio blocks to text",
+             "streaming   - incremental running summary (long chats)",
+             "graph       - entity-relation digest"],
+            default="default     - keep recent + trim big tool outputs",
+        ).split()[0],
         "reflexion": _q_confirm(
             "Reflexion learning? Remember lessons from failed runs and recall them "
             "on the next similar goal.",
@@ -2427,10 +2436,14 @@ def write_config(  # noqa: C901
             lines.append("")
             lines.append("[planning]")
             lines.append('mode = "tree_of_thought"')
-        if advanced.get("compact_history"):
+        if advanced.get("compact_history") or advanced.get("compaction_strategy"):
             lines.append("")
             lines.append("[context]")
-            lines.append("compact = true")
+            if advanced.get("compact_history"):
+                lines.append("compact = true")
+            strat = advanced.get("compaction_strategy")
+            if strat and strat != "default":
+                lines.append(f'compaction_strategy = "{strat}"')
         if advanced.get("reflexion"):
             lines.append("")
             lines.append("[reflexion]")

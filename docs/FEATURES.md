@@ -57,7 +57,14 @@ here.
   shipping heuristic registers as the default `"heuristic"`, and `compact_with`
   **fails safe** to it when a configured strategy is unknown (a typo degrades to
   working compaction, never none) — so the kernel's compaction is extensible
-  without a fork.
+  without a fork. Four strategies ship registered in this one dispatcher (and
+  are reachable from `agent.py`'s per-turn compaction): **`learned`** (LLM
+  summary with a self-tuning prompt picker scored by an outcome ledger),
+  **`multimodal`** (replaces heavy image/audio blocks with text stubs that keep
+  the media fact + dimensions), **`streaming`** (an incremental running summary
+  with a persisted per-conversation cursor — folds only new turns), and
+  **`graph`** (an entity-relation digest); each degrades deterministically
+  without an llm and is selected by name via `[context] compaction_strategy`.
 - **Local continuous learning** — distill successful run trajectories into a
   reusable, validator-compliant `SKILL.md` under `~/.maverick/learned-skills`
   (`skill_distillation_local.py`), opt-in via `[self_learning] distill_local`.
