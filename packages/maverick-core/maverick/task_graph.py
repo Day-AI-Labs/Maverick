@@ -96,6 +96,47 @@ class TaskGraph:
                 remaining.discard(t)
         return order
 
+    def critical_path(self, *, weights=None) -> tuple[list[str], float]:
+        """The longest dependency chain — the **critical path** that bounds how
+        fast the graph can finish no matter how much you parallelize.
+
+        ``weights`` is an optional ``{task_id: cost}`` (default 1.0 each), so the
+        path is the heaviest chain when task durations are known. Returns
+        ``(path_ids, total_weight)``; empty on a cycle or empty graph. The tasks
+        on this path are the ones a critical-path-aware scheduler runs first.
+        """
+        try:
+            order = self.topo_order()  # deps before dependents
+        except ValueError:
+            return [], 0.0
+        weights = weights or {}
+
+        def w(tid: str) -> float:
+            try:
+                return float(weights.get(tid, 1.0))
+            except (TypeError, ValueError):
+                return 1.0
+
+        dist: dict[str, float] = {}
+        prev: dict[str, str | None] = {}
+        for tid in order:
+            best, best_dep = 0.0, None
+            for d in self.tasks.get(tid, {}).get("deps", []):
+                if d in self.tasks and dist.get(d, 0.0) > best:
+                    best, best_dep = dist[d], d
+            dist[tid] = best + w(tid)
+            prev[tid] = best_dep
+        if not dist:
+            return [], 0.0
+        end = max(dist, key=lambda k: (dist[k], k))
+        path: list[str] = []
+        cur: str | None = end
+        while cur is not None:
+            path.append(cur)
+            cur = prev.get(cur)
+        path.reverse()
+        return path, round(dist[end], 4)
+
     def to_dict(self) -> dict:
         return {"tasks": self.tasks}
 
@@ -132,7 +173,7 @@ _SCHEMA = {
     "type": "object",
     "properties": {
         "op": {"type": "string",
-               "enum": ["add", "status", "ready", "order", "list"]},
+               "enum": ["add", "status", "ready", "order", "list", "critical"]},
         "graph": {"type": "string", "description": "named graph (default 'default')"},
         "task": {"type": "string", "description": "task id"},
         "title": {"type": "string"},
@@ -165,6 +206,12 @@ def _run(args: dict) -> str:
             return "\n".join(g.topo_order()) or "(empty graph)"
         if op == "list":
             return json.dumps(g.to_dict()["tasks"], indent=2) if g.tasks else "(empty)"
+        if op == "critical":
+            path, length = g.critical_path()
+            if not path:
+                return "(no critical path — empty graph or a cycle)"
+            return f"critical path ({len(path)} task(s), weight {length:g}): " + \
+                " -> ".join(path)
     except (ValueError, KeyError) as e:
         return f"ERROR: {e}"
     return f"ERROR: unknown op {op!r}"
@@ -177,7 +224,9 @@ def task_graph():
         description=(
             "Persistent dependency graph of tasks (a DAG you can resume). ops: "
             "add (task, title, deps[]), status (task, value), ready (frontier of "
-            "runnable tasks), order (topological), list. One named graph per file "
+            "runnable tasks), order (topological), critical (the longest "
+            "dependency chain — the critical path to schedule first), list. One "
+            "named graph per file "
             "under ~/.maverick/task_graphs."
         ),
         input_schema=_SCHEMA,

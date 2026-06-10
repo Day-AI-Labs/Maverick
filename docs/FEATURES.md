@@ -124,7 +124,10 @@ here.
 - **System** — `shell` (sandbox-mediated), `git_advanced`, `compute`,
   `dns_lookup`, `openapi_runner`, `clipboard`, `notify`, `attachments`,
   `android` / `ios_sim`, `a11y`, `task_graph` (persistent dependency-DAG of
-  tasks), `workspace_snapshot` (snapshot/restore a working dir), **S3-backed
+  tasks — add/status/ready/order/list plus **`critical`**: the longest
+  dependency chain, weighted by optional per-task cost, that bounds completion
+  no matter the parallelism — the tasks a critical-path-aware scheduler runs
+  first), `workspace_snapshot` (snapshot/restore a working dir), **S3-backed
   attachments** (`[attachments] s3_bucket`: mirror every stored attachment to
   any S3-compatible bucket + `s3_fetch` pulls it down on another worker host;
   local disk stays the source tools read, mirror is fail-open), `license_scan`
