@@ -949,6 +949,7 @@ def base_registry(  # noqa: C901
     reg.register(agent_identity())
     from .adversarial_eval import adversarial_eval
     from .gui_element_memory import gui_element_memory
+    from .hardware_sensors import hardware_sensors
     from .voice_command_grammar import voice_command_grammar
     from .what_changed_digest import what_changed_digest
     reg.register(voice_command_grammar())
@@ -1054,6 +1055,7 @@ def base_registry(  # noqa: C901
     reg.register(pandoc_tool(sandbox))
     reg.register(office_convert(sandbox))
     reg.register(wasm_run(sandbox))
+    reg.register(hardware_sensors())
     reg.register(imagemagick_tool(sandbox))
     reg.register(ga4_tool())
     reg.register(plaid_tool())

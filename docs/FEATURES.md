@@ -1016,6 +1016,21 @@ tested without spawning py-spy.
   portal_dir` onto the built-ins so an operator drops in a community
   translation and the dashboard speaks it with no rebuild (malformed catalogs
   skipped, never blanking the UI).
+- **Computer-use calibration + multi-monitor + vision clicking**
+  (`computer_calibration.py`, `multi_monitor.py`, `vision_click.py`):
+  per-axis affine calibration fitted by least squares over clicked targets
+  (deterministic target grid, residual/drift report, atomic 0600
+  persistence) corrects model-space clicks to screen space; a
+  `VirtualDesktop` models multi-monitor geometry (negative origins,
+  `monitor_at`, global/local transforms, `[computer_use] monitor` pinning)
+  over lazily-imported mss; `resolve_click("the blue button")` consults the
+  GUI element memory first, falls back to an injected vision seam with a
+  confidence floor (`LowConfidenceError` below it, nothing memorized on
+  refusal), upserts what it learns, and applies the saved calibration.
+- **Hardware sensors tool** (`tools/hardware_sensors.py`, `[sensors]` extra):
+  read host temperatures/fans/battery via psutil with a `/sys/class/thermal`
+  fallback and an injected reader for tests; unavailable categories say
+  "unavailable on this host" — readings are never fabricated.
 - **Predictive approvals** (`predictive_approvals.py`): learns the operator's
   historical approve/deny rate per (action, risk tier) from approval history and
   *suggests* a default — auto-approve-candidate / auto-deny-candidate /
