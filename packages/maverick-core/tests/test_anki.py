@@ -67,3 +67,7 @@ def test_decks_surfaces_error(monkeypatch):
     out = anki.anki().fn({"op": "decks"})
     assert out.startswith("ERROR: AnkiConnect")
     assert "collection not open" in out
+
+
+def test_tool_is_not_parallel_safe():
+    assert anki.anki().parallel_safe is False
