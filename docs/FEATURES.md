@@ -193,7 +193,8 @@ here.
   differences from per-group outcome counts), `decision_explainer` (per-factor
   contribution breakdown for an additive/scorecard decision — right-to-explanation),
   `rectification` (validate/apply GDPR Art. 16 field corrections under a
-  mutability policy — auditable diff + corrected record).
+  mutability policy — auditable diff + corrected record), `anomaly_scan` (flag
+  cross-run metric outliers via the robust median/MAD modified z-score).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
