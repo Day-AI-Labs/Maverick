@@ -574,7 +574,15 @@ async def run_goal(  # noqa: C901
             if _cc.enabled():
                 _turns = world.recent_turns(conversation_id, limit=_cc.window())
                 _msgs = [{"role": t.role, "content": t.content[:300]} for t in _turns]
-                _kept = _cc.compact(_msgs, target_tokens=_cc.target_tokens()).messages
+                from . import async_compaction as _ac
+                if _ac.enabled():
+                    # Off-hot-path compaction: use the background-precomputed
+                    # prefix when it matches; schedule a refresh either way.
+                    _kept = _ac.compact_with_precompute(
+                        f"conv:{conversation_id}", _msgs,
+                        target_tokens=_cc.target_tokens())
+                else:
+                    _kept = _cc.compact(_msgs, target_tokens=_cc.target_tokens()).messages
                 pairs = [
                     (str(m.get("role") or "user"), str(m.get("content") or ""))
                     for m in _kept

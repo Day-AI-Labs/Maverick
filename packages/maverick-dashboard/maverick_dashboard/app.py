@@ -1372,6 +1372,21 @@ async def providers_api() -> JSONResponse:
     return JSONResponse({"providers": _health().snapshot()})
 
 
+@app.get("/api/v1/cost/by-tag")
+async def cost_by_tag_api(tag_field: str = "tag", limit: int = 500) -> JSONResponse:
+    """Cost-attribution API: spend split by tag (team / project / cost-center).
+
+    Buckets the priced episodes by their tag (episode field, else the goal's
+    metadata/tags) via ``maverick.cost_by_tag`` and returns
+    ``{buckets: [{tag, cost, in_tok, out_tok, runs}, ...]}`` sorted by spend. The JSON face of ``maverick status --cost``'s tag split,
+    for chargeback exports and BI pulls. Behind the dashboard's normal auth."""
+    from maverick.cost_by_tag import gather, split_by_tag
+
+    limit = max(1, min(int(limit), 10_000))
+    buckets = split_by_tag(gather(_world(), tag_field=tag_field, limit=limit))
+    return JSONResponse({"tag_field": tag_field, "buckets": buckets})
+
+
 @app.get("/api/v1/shield/calibration")
 async def shield_calibration_api() -> JSONResponse:
     """Shield calibration data for the oversight console.

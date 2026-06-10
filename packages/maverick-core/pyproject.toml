@@ -82,6 +82,7 @@ observability   = [
     "opentelemetry-exporter-otlp-proto-http>=1.25",
     "prometheus-client>=0.20",
 ]
+sentry          = ["sentry-sdk>=2.0"]
 shield          = ["maverick-shield"]
 installer  = ["maverick-installer"]
 channels   = ["maverick-channels"]

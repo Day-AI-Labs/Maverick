@@ -40,11 +40,28 @@ log = logging.getLogger(__name__)
 _initialized = False
 _init_lock = threading.Lock()
 _tracer: Any = None
+_sentry: Any = None
 _metrics: dict[str, Any] = {}
 
 
 def _otel_enabled() -> bool:
     return bool(os.environ.get("MAVERICK_OTEL_EXPORTER"))
+
+
+def _sentry_dsn() -> str:
+    """Sentry DSN from env or [observability] sentry_dsn (empty = off)."""
+    dsn = os.environ.get("MAVERICK_SENTRY_DSN", "").strip()
+    if dsn:
+        return dsn
+    try:
+        from .config import load_config
+        return str((load_config() or {}).get("observability", {}).get("sentry_dsn") or "").strip()
+    except Exception:  # pragma: no cover -- config never blocks init
+        return ""
+
+
+def _sentry_enabled() -> bool:
+    return bool(_sentry_dsn())
 
 
 def _prometheus_enabled() -> bool:
@@ -74,11 +91,36 @@ def _otlp_headers() -> dict[str, str]:
 def _initialize() -> None:
     """Idempotent setup. Imports happen here so the module is cheap to
     import when observability is off."""
-    global _initialized, _tracer
+    global _initialized, _tracer, _sentry
     with _init_lock:
         if _initialized:
             return
         _initialized = True
+
+        if _sentry_enabled():
+            # Sentry performance tab: init with tracing on so trace_span()
+            # also opens Sentry spans (transactions at the root). Sample rate
+            # via MAVERICK_SENTRY_TRACES_SAMPLE_RATE (default 0.1).
+            try:
+                import sentry_sdk
+                try:
+                    rate = float(os.environ.get("MAVERICK_SENTRY_TRACES_SAMPLE_RATE", "0.1"))
+                except ValueError:
+                    rate = 0.1
+                sentry_sdk.init(
+                    dsn=_sentry_dsn(),
+                    traces_sample_rate=max(0.0, min(1.0, rate)),
+                    # The runtime handles prompts/results; never attach local
+                    # variables or request bodies to events.
+                    include_local_variables=False,
+                    send_default_pii=False,
+                )
+                _sentry = sentry_sdk
+                log.info("observability: Sentry performance tracing on")
+            except ImportError:
+                log.warning(
+                    "observability: MAVERICK_SENTRY_DSN set but sentry-sdk is "
+                    "not installed. pip install 'maverick-agent[sentry]'")
 
         if _otel_enabled():
             try:
@@ -181,19 +223,40 @@ def trace_span(
     *,
     attributes: dict[str, Any] | None = None,
 ) -> Iterator[Any]:
-    """Context manager that opens a span (no-op when off)."""
+    """Context manager that opens a span (no-op when off).
+
+    With Sentry configured, the same call also opens a Sentry span — a
+    transaction when there is no active one (episodes), a child span inside
+    one (tools) — so the existing instrumentation points feed Sentry's
+    performance tab with zero new call sites.
+    """
     _initialize()
-    if _tracer is None:
-        yield None
-        return
-    with _tracer.start_as_current_span(name) as span:
-        if attributes:
-            for k, v in attributes.items():
-                try:
-                    span.set_attribute(k, v)
-                except Exception:
-                    pass
-        yield span
+    with contextlib.ExitStack() as stack:
+        if _sentry is not None:
+            try:
+                if _sentry.get_current_scope().transaction is None:
+                    sspan = stack.enter_context(
+                        _sentry.start_transaction(name=name, op="maverick"))
+                else:
+                    sspan = stack.enter_context(_sentry.start_span(op=name))
+                for k, v in (attributes or {}).items():
+                    try:
+                        sspan.set_data(k, v)
+                    except Exception:
+                        pass
+            except Exception:  # pragma: no cover -- sentry must never break a run
+                pass
+        if _tracer is None:
+            yield None
+            return
+        with _tracer.start_as_current_span(name) as span:
+            if attributes:
+                for k, v in attributes.items():
+                    try:
+                        span.set_attribute(k, v)
+                    except Exception:
+                        pass
+            yield span
 
 
 def record_metric(
@@ -228,7 +291,7 @@ def record_metric(
 
 def is_enabled() -> bool:
     """True if either OTEL or Prometheus is configured."""
-    return _otel_enabled() or _prometheus_enabled()
+    return _otel_enabled() or _prometheus_enabled() or _sentry_enabled()
 
 
 # --- OpenTelemetry GenAI semantic conventions (gen_ai.*) -------------------

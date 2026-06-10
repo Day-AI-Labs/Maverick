@@ -322,10 +322,24 @@ harness, SWE-bench harness, moat suite — CI-runnable on shipped fixtures.
 
 ## Observability & reliability
 
-OpenTelemetry traces, Prometheus `/metrics`, Sentry (all opt-in)
-(`observability.py`); per-tool latency profiles + extended stats
+OpenTelemetry traces, Prometheus `/metrics`, and a **Sentry performance
+tab** (all opt-in) (`observability.py`): `MAVERICK_SENTRY_DSN` (or
+`[observability] sentry_dsn`) initializes Sentry tracing and every existing
+`trace_span` call feeds it — a transaction at the root (episodes), child spans
+inside (tools) — sample rate via `MAVERICK_SENTRY_TRACES_SAMPLE_RATE`, PII off,
+`[sentry]` extra; per-tool latency profiles + extended stats
 (`tool_latency.py`); opt-in per-tool **latency budget** (`latency_budget.py`) and
-cross-span **budget propagation** (`latency_span_budget.py`); **tool-output cache**
+cross-span **budget propagation** (`latency_span_budget.py`); **async
+compaction** (`async_compaction.py`, opt-in `[context] async_compaction`): the
+expensive prefix of a conversation's history is compacted in the background
+between turns and the hot path pays only a cheap tail-merge — single daemon
+worker, last-write-wins, fingerprint-validated so a changed prefix never mixes
+stale summaries; **WAL contention audit** (`test_wal_contention.py`): pins the
+16-concurrent-writers / zero-lock-errors promise + the WAL/busy_timeout pragmas
+in CI; **query-plan regression CI** (`test_query_plans.py`): hot world-model
+queries must SEARCH via an index, never full-scan; **cost-attribution API**
+(`GET /api/v1/cost/by-tag` on the dashboard): spend bucketed by episode/goal
+tag — the JSON face of the tag split for chargeback/BI; **tool-output cache**
 for read-only tools (`tool_cache.py`) with opt-in **warm-on-start** (`[tools]
 output_cache_snapshot`: persist entries to a JSONL snapshot, reload the
 still-fresh ones on the next run's first lookup); **memory-leak quarantine**
