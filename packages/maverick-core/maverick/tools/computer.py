@@ -102,6 +102,34 @@ def _screenshot_png_b64() -> str:
         return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+def _maybe_seal_capture(b64: str) -> None:
+    """Persist + seal a screenshot when a sealing key is configured.
+
+    Captures land under ``data_dir("captures")/<utc-stamp>.png`` and each is
+    appended to the directory's tamper-evident ledger
+    (:mod:`maverick.screenshot_seal`). Opt-in purely by key presence
+    ([safety] screenshot_key / MAVERICK_SCREENSHOT_KEY); best-effort -- a
+    sealing problem must never break the screenshot the model is waiting on.
+    """
+    try:
+        from ..screenshot_seal import SealKeyMissing, _key, seal
+        try:
+            _key(None)  # probe FIRST: no key -> no capture dir, no file
+        except SealKeyMissing:
+            return  # sealing is off; capture stays in-memory only
+        from datetime import datetime, timezone
+
+        from ..paths import data_dir
+        captures = data_dir("captures")
+        captures.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+        path = captures / f"{stamp}.png"
+        path.write_bytes(base64.b64decode(b64))
+        seal(path)
+    except Exception:  # pragma: no cover -- evidence capture is best-effort
+        log.debug("screenshot seal failed", exc_info=True)
+
+
 def _ocr_enabled() -> bool:
     return os.environ.get("MAVERICK_COMPUTER_OCR", "").lower() in (
         "1", "true", "yes", "on",
@@ -182,6 +210,10 @@ def _run_computer_action(args: dict[str, Any]) -> str:  # noqa: C901
         except ImportError as e:
             return f"ERROR: {e}"
         log.info("computer.screenshot len=%d", len(b64))
+        # Tamper-evident capture (opt-in by key presence): persist the PNG and
+        # seal it into the hash-chained ledger so it's usable as evidence.
+        # No key configured -> no seal, behavior unchanged.
+        _maybe_seal_capture(b64)
         # Claude expects the screenshot as a tool_result image block.
         # The agent kernel translates this string back into a block.
         out = f"<screenshot mime=image/png base64>{b64}</screenshot>"

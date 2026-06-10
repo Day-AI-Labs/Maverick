@@ -327,6 +327,16 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   (AWS-key-shaped, API-key, passphrase), plant a realistic 0600 secrets file,
   and alert (once per fingerprint) when a decoy value appears in text — alerts
   carry sha-fingerprints, never the live decoy.
+- **Public safety bulletin RSS** (`safety_bulletins.py`) — render
+  frontmattered bulletin markdown into a standards-shaped RSS 2.0 feed
+  (newest-first, malformed bulletins skipped loudly); self-host first: the
+  feed is a file you serve, not a hosted service.
+- **Tamper-evident screenshots** (`screenshot_seal.py`) — every capture is
+  sealed into a per-directory hash-chained, HMAC-signed ledger (replace /
+  edit / delete / reorder all detectable; re-capture legitimately
+  supersedes); wired into the computer tool's screenshot path, opt-in purely
+  by key presence (`[safety] screenshot_key`), best-effort so evidence
+  capture never breaks the screenshot the model is waiting on.
 - **Red-team CI** — a named CI job (`redteam` in `ci.yml`) runs the labelled
   adversarial corpus (`maverick_shield/redteam_corpus.jsonl`, grow-by-PR)
   through the shield's built-in detector via `python -m maverick_shield.redteam`
