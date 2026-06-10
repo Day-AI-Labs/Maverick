@@ -228,6 +228,15 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
 - **MCP client** (`mcp_client.py`) — consume remote HTTP servers; **OAuth 2.1
   client-credentials and authorization-code + PKCE** grants (`mcp_oauth.py`).
 - **MCP registry** (`mcp_registry.py`) — `maverick mcp-registry browse/add/...`.
+- **Federated marketplace indexes** — `[catalogs] indexes` takes any number of
+  index base URLs; catalogs merge across them (earlier indexes win on name
+  collision, malformed entries skipped per-entry) — run your own index next
+  to the community one (`catalog.py`, pinned by test).
+- **IDE protocol unification** — one MCP server (stdio + Streamable HTTP) is
+  the editor protocol: any MCP-speaking editor (VS Code, JetBrains, Zed,
+  Cursor) drives Maverick through it; the editor-specific packages
+  (`apps/vscode-extension`, `apps/emacs`, `apps/nvim`) are thin CLI fronts,
+  not parallel protocols.
 - **A2A** (`a2a.py`, `a2a_tasks.py`) — Agent Card discovery + delegation.
 - **gRPC dispatch** (`grpc_dispatcher.py`, opt-in `[grpc_dispatch] target`)
   — execute goals on a remote Maverick worker over gRPC: a `RunGoal` RPC runs
