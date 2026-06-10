@@ -724,6 +724,7 @@ def base_registry(  # noqa: C901
     from .quorum_approval import quorum_approval
     from .recall import recall
     from .rectification import rectification
+    from .redact import redact_tool
     from .reddit_tool import reddit_tool
     from .redis_tool import redis_tool
     from .reflect_loop import reflect_loop
@@ -813,6 +814,7 @@ def base_registry(  # noqa: C901
     reg.register(bias_eval())
     reg.register(decision_explainer())
     reg.register(rectification())
+    reg.register(redact_tool())
     reg.register(file_watcher(sandbox))
     reg.register(linear())
     reg.register(jira())

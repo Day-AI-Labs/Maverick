@@ -182,7 +182,11 @@ here.
   `k_anonymity` (check a released dataset for k-anonymity + optional l-diversity
   — quasi-identifier group sizes and sensitive-value diversity), `retention_check`
   (audit records against a data-retention policy — flag over-retained and
-  no-policy records by category/age; GDPR storage limitation).
+  no-policy records by category/age; GDPR storage limitation), `redact`
+  (**provable redaction**, `provable_redaction.py`: redact secrets/PII to a
+  fixpoint then re-scan to *prove* the output carries none — composes the
+  secret + PII detectors, and reports the residual gap instead of a false
+  guarantee when a bound is hit).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate. **Plugin sandboxing** — opt-in
