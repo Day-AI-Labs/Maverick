@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ lang or 'en' }}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -34,6 +34,16 @@
       --text: #ffffff; --muted: #cccccc; --accent: #00ff00;
       --warn: #ffff00; --danger: #ff5050;
     }
+    /* Accessibility font axis (independent of theme). The dyslexia-
+       friendly mode prefers OpenDyslexic when the user has it installed and
+       falls back to the commonly recommended system faces, with wider
+       letter/word spacing and taller line height per readability guidance. */
+    body.font-dyslexic, body.font-dyslexic input, body.font-dyslexic select,
+    body.font-dyslexic button, body.font-dyslexic textarea {
+      font-family: "OpenDyslexic", "Comic Sans MS", Verdana, Tahoma, sans-serif;
+      letter-spacing: 0.04em; word-spacing: 0.16em;
+    }
+    body.font-dyslexic { line-height: 1.8; }
     * { box-sizing: border-box; }
     body {
       margin: 0;
@@ -96,7 +106,7 @@
   </style>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232ea043'/%3E%3Ctext x='16' y='22' font-family='Helvetica' font-weight='700' font-size='18' fill='white' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E" />
 </head>
-<body class="theme-{{ theme or 'dark' }}">
+<body class="theme-{{ theme or 'dark' }} font-{{ font or 'default' }}">
   <a class="skip-link" href="#content">Skip to content</a>
   <header>
     <h1>Maverick</h1>
@@ -134,6 +144,21 @@
         <option value="light" {% if theme == 'light' %}selected{% endif %}>Light</option>
         <option value="solarized" {% if theme == 'solarized' %}selected{% endif %}>Solarized</option>
         <option value="hicontrast" {% if theme == 'hicontrast' %}selected{% endif %}>High contrast</option>
+      </select>
+      <select id="font-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('font', this.value); window.location = u; }" aria-label="{{ t('label.font') }}"
+              style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem;">
+        <option value="">{{ t('label.font')|lower }}</option>
+        <option value="default" {% if font == 'default' %}selected{% endif %}>{{ t('font.default') }}</option>
+        <option value="dyslexic" {% if font == 'dyslexic' %}selected{% endif %}>{{ t('font.dyslexic') }}</option>
+      </select>
+      <select id="lang-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('lang', this.value); window.location = u; }" aria-label="{{ t('label.language') }}"
+              style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem;">
+        <option value="">{{ t('label.language')|lower }}</option>
+        <option value="en" {% if lang == 'en' %}selected{% endif %}>English</option>
+        <option value="fr" {% if lang == 'fr' %}selected{% endif %}>Français</option>
+        <option value="de" {% if lang == 'de' %}selected{% endif %}>Deutsch</option>
+        <option value="ja" {% if lang == 'ja' %}selected{% endif %}>日本語</option>
+        <option value="zh" {% if lang == 'zh' %}selected{% endif %}>中文</option>
       </select>
     </span>
   </header>

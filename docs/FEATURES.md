@@ -385,6 +385,12 @@ trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
   (`/api/v1/goals/{id}/explain`: a deterministic, template-rendered narrative
   of the run — `plain_language.py`, no LLM call, never hallucinates beyond the
   log). Pins/views/annotations persist tenant-aware in `ux_store.py`.
+  **Accessibility + i18n** — a font axis independent of the theme
+  (`?font=dyslexic` / cookie: OpenDyslexic-preferring stack with wider
+  letter/word spacing, composes with the high-contrast theme) and **chrome
+  i18n in en/fr/de/ja/zh** (`maverick_dashboard/i18n.py`: dict catalog +
+  `t()` template helper; `?lang=` → cookie → `Accept-Language`; user data is
+  never translated; catalog-completeness pinned by test).
 - **Cost** — per-run reports, live cost meter, `maverick start --dry-cost`
   forecasting (`cost_forecast.py`).
 - **Templates** — starter-goals library + community template registry

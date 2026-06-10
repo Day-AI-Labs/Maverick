@@ -65,8 +65,14 @@ templates.env.filters["datetime"] = _format_datetime
 # Make `theme` available unconditionally so templates rendered without
 # a Request object (rare; legacy paths) still resolve `theme or 'dark'`.
 templates.env.globals.setdefault("theme", "dark")
+templates.env.globals.setdefault("font", "default")
+templates.env.globals.setdefault("lang", "en")
+from .i18n import t as _i18n_t  # noqa: E402
+
+templates.env.globals.setdefault("t", lambda key: _i18n_t(key, "en"))
 
 _VALID_THEMES = {"dark", "light", "solarized", "hicontrast"}
+_VALID_FONTS = {"default", "dyslexic"}
 
 
 def _resolve_theme(request: Request) -> str:
@@ -88,10 +94,31 @@ def _resolve_theme(request: Request) -> str:
     return "dark"
 
 
+def _resolve_font(request: Request) -> str:
+    """Font preference: ``?font=`` → cookie → default. Independent axis from
+    the theme so high-contrast + dyslexia-friendly compose."""
+    q = (request.query_params.get("font") or "").strip().lower()
+    if q in _VALID_FONTS:
+        return q
+    c = (request.cookies.get("mvk_font") or "").strip().lower()
+    if c in _VALID_FONTS:
+        return c
+    return "default"
+
+
 # Context processor: every template gets the `theme` variable for the
-# body class + the theme switcher links.
+# body class + the theme switcher links, the `font` accessibility axis,
+# and the chrome-i18n helpers (`lang`, `t`).
 def _theme_context(request: Request) -> dict:
-    return {"theme": _resolve_theme(request)}
+    from .i18n import resolve_lang
+    from .i18n import t as _t
+    lang = resolve_lang(request)
+    return {
+        "theme": _resolve_theme(request),
+        "font": _resolve_font(request),
+        "lang": lang,
+        "t": lambda key: _t(key, lang),
+    }
 
 
 # Register the per-request context processor with Starlette so every
@@ -177,11 +204,20 @@ _PLAN_TREE_PATH_RE = re.compile(r"^/goals/\d+/plan/?$")
 
 @app.middleware("http")
 async def persist_theme(request: Request, call_next):
-    """If ?theme=X is in the URL, set a cookie so it sticks."""
+    """If ?theme= / ?font= / ?lang= is in the URL, set a cookie so it sticks."""
     response = await call_next(request)
     q = request.query_params.get("theme")
     if q and q.lower() in _VALID_THEMES:
         _set_theme_cookie(response, q.lower())
+    f = request.query_params.get("font")
+    if f and f.lower() in _VALID_FONTS:
+        response.set_cookie("mvk_font", f.lower(), max_age=30 * 24 * 3600,
+                            samesite="lax", httponly=False)
+    lang = request.query_params.get("lang")
+    from .i18n import LANGS
+    if lang and lang.lower() in LANGS:
+        response.set_cookie("mvk_lang", lang.lower(), max_age=365 * 24 * 3600,
+                            samesite="lax", httponly=False)
     return response
 
 
