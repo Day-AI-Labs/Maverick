@@ -1049,6 +1049,13 @@ tested without spawning py-spy.
   read host temperatures/fans/battery via psutil with a `/sys/class/thermal`
   fallback and an injected reader for tests; unavailable categories say
   "unavailable on this host" — readings are never fabricated.
+- **Share links + device handoff** (`share_link.py`, `[sharing] secret`
+  required — no unsigned mode): a share link is a signed, expiring,
+  *read-only* token referencing a goal (carries no content; constant-time
+  verification, expiry/signature fail closed); a device handoff is a
+  *one-time* signed code moving a session between the user's devices —
+  `claim()` consumes the nonce so a replayed/stolen-but-used code is dead
+  (5-minute default TTL, expired nonces pruned).
 - **Director mode** (`director_mode.py`): state an *outcome* and pick the
   autonomy level — `supervised` / `semi` / `autonomous` profiles map to the
   existing controls (consent mode, review-checkpoint intervals, a budget
