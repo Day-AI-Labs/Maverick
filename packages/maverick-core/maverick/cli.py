@@ -1843,6 +1843,30 @@ def debate(ctx, question: str, rounds: int, max_dollars: float,
     click.echo(f"\n[{result.rounds_completed} round(s), ${result.total_dollars:.4f}]")
 
 
+@main.command("schema-plan")
+def schema_plan_cmd() -> None:
+    """Show pending world-model schema migrations + whether they're hot-safe.
+
+    Classifies each pending statement online (non-blocking) vs offline (table
+    rewrite / data backfill) so you know before upgrading whether a
+    maintenance window is needed. Exits 1 when the migration table fails its
+    structural lint.
+    """
+    from .schema_migrations import plan, render, validate
+    from .world_model import SCHEMA_VERSION, DEFAULT_DB, WorldModel
+    problems = validate()
+    if problems:
+        for pb in problems:
+            click.echo(f"LINT: {pb}", err=True)
+        sys.exit(1)
+    try:
+        w = WorldModel(DEFAULT_DB)
+        current = w.conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()[0]
+    except Exception:
+        current = SCHEMA_VERSION  # no DB yet -> nothing pending
+    click.echo(render(plan(int(current), SCHEMA_VERSION)))
+
+
 @main.command("migrate")
 @click.option("--apply", "do_apply", is_flag=True,
               help="Apply mechanical rewrites (after a timestamped backup). "
