@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{ lang or 'en' }}">
+<html lang="{{ lang or 'en' }}" dir="{{ dir or 'ltr' }}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -60,8 +60,8 @@
        tab stop, so it needs no focus ring of its own. */
     main:focus { outline: none; }
     .mono, code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, "Roboto Mono", monospace; }
-    .skip-link { position: absolute; left: -9999px; }
-    .skip-link:focus { left: 1rem; top: 1rem; background: var(--accent); color: #fff; padding: 0.5rem 1rem; border-radius: 4px; z-index: 100; }
+    .skip-link { position: absolute; inset-inline-start: -9999px; }
+    .skip-link:focus { inset-inline-start: 1rem; top: 1rem; background: var(--accent); color: #fff; padding: 0.5rem 1rem; border-radius: 4px; z-index: 100; }
     header { padding: 1rem 2rem; border-bottom: 1px solid var(--border); display: flex; gap: 1rem; align-items: center; max-width: 1400px; margin: 0 auto; flex-wrap: wrap; }
     header h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
     nav { display: flex; gap: 1rem; flex-wrap: wrap; }
@@ -75,7 +75,10 @@
     .stat .num { font-size: 2rem; font-weight: 600; }
     .stat .label { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
     table { width: 100%; border-collapse: collapse; }
-    th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+    /* Logical properties (text-align: start, margin-inline-start, …) keep
+       the layout correct for the RTL languages (dir="rtl": ar/he/fa/ur)
+       without a separate stylesheet. */
+    th, td { text-align: start; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
     th { color: var(--muted); font-weight: 500; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
     tr:last-child td { border-bottom: none; }
     .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -113,6 +116,8 @@
     <nav aria-label="Primary">
       {% set _nav = [
         ('/', 'Overview'), ('/chat', 'Chat'), ('/goals', 'Goals'),
+        ('/graph-editor', 'Graph'), ('/goal-builder', 'Builder'),
+        ('/plan-tree-3d', '3D'),
         ('/oversight', 'Oversight'),
         ('/skills', 'Skills'), ('/store', 'Store'), ('/facts', 'Facts'),
         ('/spend', 'Spend'), ('/providers', 'Providers'), ('/tools', 'Tools'),
@@ -125,6 +130,8 @@
         ('/channels', 'Channels'),
         ('/plugins', 'Plugins'), ('/mcp', 'MCP'), ('/audit', 'Audit'),
         ('/cache', 'Cache'),
+        ('/benchmarks', 'Benchmarks'), ('/walkthroughs', 'Walkthroughs'),
+        ('/embed-demo', 'Embed'),
       ] %}
       {% set _path = request.url.path if request else '' %}
       {% for _href, _label in _nav %}
@@ -132,7 +139,7 @@
         <a href="{{ _href }}"{% if _active %} class="active" aria-current="page"{% endif %}>{{ _label }}</a>
       {% endfor %}
     </nav>
-    <span style="margin-left: auto; display: flex; gap: 0.5rem; align-items: center;">
+    <span style="margin-inline-start: auto; display: flex; gap: 0.5rem; align-items: center;">
       <a href="#" id="halt-pill" class="halt-pill" role="button" aria-label="Halt: arm or clear killswitch">
         <span class="dot" aria-hidden="true"></span>
         <span id="halt-label">checking</span>
@@ -159,6 +166,7 @@
         <option value="de" {% if lang == 'de' %}selected{% endif %}>Deutsch</option>
         <option value="ja" {% if lang == 'ja' %}selected{% endif %}>日本語</option>
         <option value="zh" {% if lang == 'zh' %}selected{% endif %}>中文</option>
+        <option value="ar" {% if lang == 'ar' %}selected{% endif %}>العربية</option>
       </select>
     </span>
   </header>

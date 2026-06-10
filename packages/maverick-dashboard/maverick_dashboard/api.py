@@ -1314,6 +1314,353 @@ async def cache_purge(payload: CachePurgeIn) -> dict:
     return purge(payload.scopes or ["all"])
 
 
+# ---------- goal graph: forest view + structural edits (graph editor) ----------
+
+
+@router.get("/goal-tree")
+async def goal_tree_api(request: Request, limit: int = 300) -> dict:
+    """The caller's goal forest with a server-computed layered layout.
+
+    Powers /graph-editor and /plan-tree-3d: nodes carry (x, y) pixel
+    positions so the client JS is a thin renderer. Owner-scoped like
+    GET /goals (auth-off/admin see all).
+    """
+    from .goal_tree import forest_view, goal_nodes
+    nodes = goal_nodes(_world(), owner=goal_owner_filter(request), limit=limit)
+    return forest_view(nodes)
+
+
+class RetitleIn(BaseModel):
+    title: str = Field(..., max_length=200)
+
+
+@router.post("/goals/{goal_id}/retitle", status_code=204)
+async def retitle_goal(request: Request, goal_id: int, payload: RetitleIn) -> None:
+    """Rename a goal (graph editor).
+
+    The world model has no title-update method (``create_goal`` /
+    ``set_goal_status`` only), so this updates the row through the world's
+    write lock, sealing the column the same way ``create_goal`` does.
+    """
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    title = (payload.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
+    from maverick.world_model import _enc_field
+    with w._writing() as conn:
+        conn.execute(
+            "UPDATE goals SET title = ?, updated_at = ? WHERE id = ?",
+            (_enc_field(title[:200]), time.time(), goal_id),
+        )
+
+
+class ReparentIn(BaseModel):
+    parent_id: int | None = None
+
+
+@router.post("/goals/{goal_id}/reparent", status_code=204)
+async def reparent_goal(request: Request, goal_id: int, payload: ReparentIn) -> None:
+    """Move a goal under a new parent — or to the root (``parent_id: null``).
+
+    Refuses self-parenting and any move that would create a cycle (the new
+    parent being a descendant of the goal). Both ends are access-checked.
+    """
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    new_parent = payload.parent_id
+    if new_parent is not None:
+        if new_parent == goal_id:
+            raise HTTPException(status_code=400, detail="a goal cannot be its own parent")
+        p = w.get_goal(new_parent)
+        if p is None:
+            raise HTTPException(status_code=404, detail="no such parent goal")
+        assert_goal_access(request, p)
+        from .goal_tree import descendant_ids
+        pairs = [
+            (r["id"], r["parent_id"])
+            for r in w._read_all("SELECT id, parent_id FROM goals")
+        ]
+        if new_parent in descendant_ids(pairs, goal_id):
+            raise HTTPException(
+                status_code=400,
+                detail="cannot re-parent a goal under its own descendant",
+            )
+    with w._writing() as conn:
+        conn.execute(
+            "UPDATE goals SET parent_id = ?, updated_at = ? WHERE id = ?",
+            (new_parent, time.time(), goal_id),
+        )
+
+
+class ChildIn(BaseModel):
+    title: str = Field(..., max_length=200)
+    description: str = ""
+
+
+@router.post("/goals/{goal_id}/children", response_model=GoalOut, status_code=201)
+async def create_child_goal(request: Request, goal_id: int, payload: ChildIn) -> GoalOut:
+    """Create a child goal under ``goal_id`` (graph editor "add child").
+
+    Structural only: the child is created ``pending`` and is NOT queued to
+    run — start it later via chat or POST /api/v1/goals. It inherits the
+    parent's owner so the subtree stays visible to the same principal.
+    """
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from maverick_dashboard.app import check_goal_rate_limit
+    check_goal_rate_limit(request)
+    title = (payload.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
+    child_id = w.create_goal(
+        title[:200], (payload.description or "")[:8000],
+        parent_id=goal_id, owner=g.owner or (caller_principal(request) or ""),
+    )
+    c = w.get_goal(child_id)
+    if c is None:
+        raise HTTPException(status_code=500, detail="goal vanished after create")
+    return _to_goal_out(c)
+
+
+# ---------- goal builder: compose a goal from blocks ----------
+
+_COMPOSE_PRIORITIES = ("low", "normal", "high")
+
+
+class ComposeIn(BaseModel):
+    title: str = Field(..., max_length=200)
+    steps: list[str] = Field(default_factory=list)
+    budget_dollars: float | None = Field(None, ge=0.0, le=100.0)
+    channel: str | None = Field(None, max_length=64)
+    priority: str | None = Field(None, max_length=16)
+
+
+@router.post("/goals/compose", response_model=GoalOut, status_code=201)
+async def compose_goal(request: Request, payload: ComposeIn, bg: BackgroundTasks) -> GoalOut:
+    """Goal-builder submit: blocks -> structured brief -> create + run.
+
+    The goals table has no metadata columns (see ``WorldModel.create_goal``),
+    so the budget/channel/priority blocks are folded into the description the
+    agent reads; the budget block additionally becomes the run's real
+    ``max_dollars`` cap. Steps become a markdown checklist.
+    """
+    if not _any_provider_key_set():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No LLM provider key configured. Run 'maverick init', or "
+                "export ANTHROPIC_API_KEY / OPENAI_API_KEY / "
+                "GEMINI_API_KEY before starting the dashboard."
+            ),
+        )
+    from maverick_dashboard.app import check_goal_rate_limit
+    check_goal_rate_limit(request)
+    title = (payload.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
+    steps = [s.strip()[:500] for s in payload.steps if s and s.strip()]
+    if len(steps) > 50:
+        raise HTTPException(status_code=400, detail="too many steps (max 50)")
+    priority = (payload.priority or "").strip().lower() or None
+    if priority is not None and priority not in _COMPOSE_PRIORITIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"priority must be one of: {', '.join(_COMPOSE_PRIORITIES)}",
+        )
+    channel = (payload.channel or "").strip() or None
+
+    parts: list[str] = []
+    if steps:
+        parts.append("## Steps\n" + "\n".join(f"- [ ] {s}" for s in steps))
+    meta: list[str] = []
+    if payload.budget_dollars is not None:
+        meta.append(
+            f"Budget cap: ${payload.budget_dollars:.2f} "
+            "(also enforced as the run's max_dollars)"
+        )
+    if channel:
+        meta.append(f"Announce progress on: {channel}")
+    if priority:
+        meta.append(f"Priority: {priority}")
+    if meta:
+        parts.append("\n".join(meta))
+    description = "\n\n".join(parts) if parts else title
+
+    w = _world()
+    goal_id = w.create_goal(
+        title[:200], description[:8000], owner=caller_principal(request) or "",
+    )
+    from maverick.runner import run_goal_in_thread
+    max_dollars = (
+        min(payload.budget_dollars, DEFAULT_MAX_DOLLARS)
+        if payload.budget_dollars is not None else DEFAULT_MAX_DOLLARS
+    )
+    user_id = execution_user_id_from_request(request)
+    if user_id:
+        bg.add_task(run_goal_in_thread, goal_id, max_dollars,
+                    channel="api", user_id=user_id)
+    else:
+        bg.add_task(run_goal_in_thread, goal_id, max_dollars)
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=500, detail="goal vanished after create")
+    return _to_goal_out(g)
+
+
+# ---------- continuous-benchmark history ----------
+
+
+def _benchmark_snapshot() -> dict:
+    """Recorded benchmark runs, grouped per suite, with regression verdicts.
+
+    Reads the same store ``maverick.continuous_benchmark`` (the bench_track
+    tool) persists to — this deployment's own recorded runs, nothing else.
+    Malformed rows (hand-edited file) are skipped, not invented around.
+    """
+    from maverick import continuous_benchmark as cb
+    path = cb._store_path()
+    history: list[dict] = []
+    for h in cb.load_history(path):
+        if not isinstance(h, dict) or not h.get("name"):
+            continue
+        try:
+            score = float(h.get("score"))
+        except (TypeError, ValueError):
+            continue
+        history.append({"name": str(h["name"]), "score": score,
+                        "commit": str(h.get("commit") or ""), "t": h.get("t")})
+    names: list[str] = []
+    for h in history:
+        if h["name"] not in names:
+            names.append(h["name"])
+    suites = []
+    for name in names:
+        entries = [h for h in history if h["name"] == name]
+        r = cb.detect_regression(history, name)
+        suites.append({
+            "name": name,
+            "runs": len(entries),
+            "entries": entries[-50:],
+            "latest": r["latest"],
+            "baseline_mean": r["baseline_mean"],
+            "delta": r["delta"],
+            "drop_pct": r["drop_pct"],
+            "regressed": r["regressed"],
+        })
+    return {"suites": suites, "history_path": str(path)}
+
+
+@router.get("/benchmarks")
+async def benchmarks_api() -> dict:
+    """Benchmark history for this deployment (see ``_benchmark_snapshot``)."""
+    snap = _benchmark_snapshot()
+    if not snap["suites"]:
+        snap["note"] = (
+            "no benchmark runs recorded — record one with the bench_track "
+            "tool (op=record, name, score) or "
+            "maverick.continuous_benchmark.record_result"
+        )
+    return snap
+
+
+# ---------- walkthrough export (replay video into the walkthroughs dir) ----------
+
+
+def _walkthroughs_dir():
+    """Where the dashboard's exported walkthrough videos live.
+
+    ``maverick.replay_video.render`` writes wherever the caller points it
+    (there is no fixed dir in core), so the dashboard standardises on
+    ``<maverick home>/walkthroughs`` for everything the /walkthroughs page
+    lists and serves.
+    """
+    from maverick.paths import maverick_home
+    return maverick_home() / "walkthroughs"
+
+
+def _vtt_for_frames(frames) -> str:
+    """A WebVTT captions track derived from the storyboard frames.
+
+    One cue per frame, timed by the frames' real durations; cue text is the
+    frame's (already secret-scrubbed) caption, flattened to one line.
+    """
+    def ts(sec: float) -> str:
+        ms = int(round(sec * 1000))
+        h, rem = divmod(ms, 3_600_000)
+        m, rem = divmod(rem, 60_000)
+        s, ms = divmod(rem, 1000)
+        return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
+
+    lines = ["WEBVTT", ""]
+    t = 0.0
+    for f in frames:
+        end = t + f.seconds
+        text = f"[{f.kind}] {f.caption}".replace("\n", " ").replace("-->", "→").strip()
+        lines += [f"{ts(t)} --> {ts(end)}", text or "(no caption)", ""]
+        t = end
+    return "\n".join(lines)
+
+
+@router.post("/goals/{goal_id}/walkthrough", status_code=201)
+async def export_walkthrough(request: Request, goal_id: int) -> dict:
+    """Export a run's replay video into the walkthroughs dir.
+
+    Uses the real machinery (``maverick.replay_video.render``): always writes
+    the frame manifest + a WebVTT captions track derived from the storyboard;
+    the MP4 encode itself needs Pillow + ffmpeg and the response says honestly
+    whether it happened (``encoded``/``detail``) and carries the exact ffmpeg
+    command for out-of-band encoding when it didn't.
+    """
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    events = [
+        {"kind": e.kind, "ts": e.ts, "agent": e.agent, "content": e.content}
+        for e in w.goal_events(goal_id, limit=5000)
+    ]
+    if not events:
+        raise HTTPException(
+            status_code=400,
+            detail="no events recorded for this goal — run it first, then export",
+        )
+    from maverick.replay_video import render, storyboard
+    out_dir = _walkthroughs_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    frames = storyboard(goal_id, events=events)
+    vtt_name = f"goal-{goal_id}.vtt"
+    (out_dir / vtt_name).write_text(_vtt_for_frames(frames), encoding="utf-8")
+    try:
+        from maverick.sandbox import build_sandbox
+        sandbox = build_sandbox()
+    except Exception:  # render falls back to the scrubbed-env runner
+        sandbox = None
+    out_path = out_dir / f"goal-{goal_id}.mp4"
+    result = await run_in_threadpool(
+        render, goal_id, out_path, sandbox=sandbox, events=events,
+    )
+    return {
+        "goal_id": goal_id,
+        "frames": result.frames,
+        "encoded": result.encoded,
+        "detail": result.detail,
+        "video": out_path.name if result.encoded else None,
+        "captions": vtt_name,
+        "ffmpeg_command": result.command,
+    }
+
+
 @router.post("/goals/{goal_id}/resume", status_code=204)
 async def resume_goal(goal_id: int, request: Request, bg: BackgroundTasks) -> None:
     """Resume a blocked / cancelled goal.
