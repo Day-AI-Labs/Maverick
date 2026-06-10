@@ -69,7 +69,9 @@ Recorded under [`docs/specs/`](./specs/): *park* the learning substrate
 (revisit on a trajectory-volume tripwire); adopt A2A's Agent Card and *cut* the
 homegrown ACD (this also resolves the former 'ACD spec v1.0/v1.1' roadmap
 entries — never to be authored — and the interop tests shipped against A2A); *freeze breadth, invest in depth* — re-home the ~47-connector
-tail to the plugin/registry tier with a deprecation window.
+tail to the plugin/registry tier with a deprecation window; *do not* compile
+the hot path with mypyc/Cython (measured decision, revisit on an SLA breach —
+see [`specs/jit-consideration.md`](./specs/jit-consideration.md)).
 
 ### Accuracy caveats
 
@@ -117,7 +119,7 @@ single-run inflation) — run multi-seed.
 | **Capabilities** | Browser anti-bot evasion kit (opt-in) |
 | **UX** | Native macOS/Windows/Linux GUI apps · browser extension · VS Code + JetBrains live-run extensions |
 | **Distribution** | Windows MSI · sponsorship tiers · conference physical booth · swag store · ambassadors program · long-form handbook · Skill of the Year award · mobile companion app v1 (read-only) · localized docs phase 4 (ko/ru/it/hi) · video season 3 · annual community survey · foundation exploration |
-| **Performance** | JIT consideration (mypyc/cython on hot path) · 2-year retrospective |
+| **Performance** | 2-year retrospective |
 | **Safety** | eBPF syscall monitor · sigstore keyless signing · federated shield model updates · annual safety report |
 | **Ecosystem** | Redis world-model · DuckDB world-model *transactional backend* (declined — OLAP engine, wrong for the concurrent OLTP write path; the **DuckDB analytics layer** over the world model shipped instead, see FEATURES) · Cloudflare Workers + Modal sandboxes |
 
