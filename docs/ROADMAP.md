@@ -29,11 +29,15 @@ if something you remember seeing here is gone, it shipped — check
 
 ## Current state (June 2026, updated after the 2027-2028 build wave)
 
-The original gap analysis is **done**. Two pull-forward build waves have now
-run: the first cleared the 2026 quarters, and the second (June 10) drove the
-**2027-2028 tables themselves** — 140+ items shipped with tests, including the
-entire 2027-H1 Safety and Ecosystem rows. Everything shipped is catalogued in
-[`FEATURES.md`](./FEATURES.md).
+The original gap analysis is **done**. Pull-forward build waves have now run:
+the first cleared the 2026 quarters; the second (June 10) drove the **2027-2028
+tables themselves** — 140+ items shipped with tests, including the entire
+2027-H1 Safety and Ecosystem rows; a continuing pass keeps clearing the
+code-buildable tail across every horizon (recent: pgvector adapter,
+LibreOffice office-doc converter, continuous profiling daemon, usage-ledger
+retention, zstd cold-archive codec, smart notification batching, TrueLayer
+open banking, gVisor sandbox, capability revocation propagation, MCP registry
+publishing). Everything shipped is catalogued in [`FEATURES.md`](./FEATURES.md).
 
 **This is now a governed agent _platform_, not just a local kernel.** The
 three-layer control plane is real — oversight (`governance.py`),
