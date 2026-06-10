@@ -356,6 +356,19 @@ never routing somewhere v2 rejected, falling back to v2 on a cold context. The
 learned table persists atomically (`router_bandit.json`, 0600); opt-in via
 `[routing] bandit` and default-OFF.
 
+**Cache-aware prompt assembly DSL** (`prompt_dsl.py`): a `PromptBuilder` that
+tags each segment STABLE (cacheable — system, tool catalog, exemplars) or
+VOLATILE (per-request); `assemble()` orders them stable-first and marks the
+**cache breakpoint** at the end of the stable prefix so a provider adapter
+places `cache_control` correctly by construction (a volatile token early in a
+hand-built prompt silently busts the cache for everything after it).
+`cache_fingerprint()` hashes only the stable prefix, and `lint_segments` flags
+anti-patterns (timestamp/nonce in a "stable" block, volatile-before-stable).
+**Critical-path-aware scheduling** (`task_graph.py`):
+`remaining_critical_weight()` gives each task its heaviest tail of not-yet-done
+work, and `ready_prioritized()` orders the runnable frontier longest-tail-first
+(the standard critical-path heuristic — start the work bounding the finish
+time before short-tail work); exposed as the `task_graph` tool's `schedule` op.
 **Speculative best-of-N with early pruning** (`speculative_best_of_n.py`):
 run N attempts but prune at the **first reasoning checkpoint** — each attempt
 emits a cheap partial (its plan / first step), an injected scorer ranks the
