@@ -279,6 +279,12 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
 
 - **MCP server** (`packages/maverick-mcp/`) — stdio JSON-RPC **and** Streamable
   HTTP transport; tool `outputSchema`, resource subscriptions.
+- **Registry publishing** (`maverick_mcp.publish`, `python -m
+  maverick_mcp.publish [--validate]`) — emit the reverse-DNS-namespaced
+  `server.json` an operator submits to an MCP registry (name / version /
+  source repo / pypi package + stdio transport), built from the server's own
+  `SERVER_NAME`/`SERVER_VERSION` with a `validate` lint; tools stay
+  runtime-discovered (`tools/list`), never frozen into the manifest.
 - **Elicitation** — client inbound (policy + shield); server outbound **form
   mode** and **URL mode** (https-only, shield-screened prompt, action-only
   response so secrets never transit the model).
