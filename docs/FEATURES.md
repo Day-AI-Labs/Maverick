@@ -379,6 +379,11 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   tone ratio (NSFW pre-filter routes to human review), brightness extremes,
   photo-vs-graphic, dimension sanity — file decode via Pillow or raw pixels
   with no imaging dep.
+- **Air-gap preflight** (`air_gap.py`, `maverick airgap check`) — verifies a
+  deployment has no outbound path in *Maverick's own config*: a remote model
+  provider, a non-deny-all egress policy, or a sandbox with network access — and
+  exits non-zero on any finding so it can gate a deployment. (OS-level air-gap
+  is the operator's job; this catches the application-layer leaks.)
 - **Shield ensemble** (`shield_ensemble.py`) — a **deny-wins detector ensemble
   with explainable reason codes** (the Shield-v3 framework): pluggable members
   screen a blob (injection via the jailbreak heuristics, exfil via the secret

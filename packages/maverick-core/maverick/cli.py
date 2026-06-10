@@ -926,6 +926,33 @@ def budget_tune(ctx, percentile: float, min_samples: int, as_json: bool) -> None
                    f"{info['samples']} goal(s))")
 
 
+@main.command("airgap")
+@click.argument("action", type=click.Choice(["check"]), default="check")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def airgap_cmd(action: str, as_json: bool) -> None:
+    """Verify the deployment is configured with no outbound path.
+
+    Audits for a remote model provider, a non-deny-all egress policy, and
+    sandbox network access. Exits non-zero on any finding so it can gate a
+    deployment. (OS-level air-gapping is the operator's job; this checks
+    Maverick's own config.)
+    """
+    import json as _json
+
+    from .air_gap import audit
+    rep = audit()
+    if as_json:
+        click.echo(_json.dumps(rep))
+    elif rep["clean"]:
+        click.echo(click.style("AIR-GAPPED: no outbound path in config", fg="green"))
+    else:
+        click.echo(click.style("NOT air-gapped — findings:", fg="red"))
+        for v in rep["violations"]:
+            click.echo(f"  • {v}")
+    if not rep["clean"]:
+        raise SystemExit(1)
+
+
 @main.command("failures")
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
 def failures_cmd(as_json: bool) -> None:
