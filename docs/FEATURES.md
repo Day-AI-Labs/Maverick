@@ -83,6 +83,9 @@ here.
   named backend+voice bundles selected per call) and **multi-language voice**
   (`[voice.languages]`: per-language voice map, BCP-47 prefix match); explicit
   args always win, unknown presets degrade to defaults — `voice_personas.py`), `ffmpeg_tool`, `imagemagick_tool`, `pandoc_tool`,
+  `office_convert` (LibreOffice headless: the binary office formats pandoc
+  can't take — Word/Excel/PowerPoint/OpenDocument → PDF/text/HTML/CSV, all
+  sandbox-mediated with workdir-confined paths),
   `replicate_tool` (image/video/audio gen), `latex` (math→MathML + document→PDF),
   `diagram` (Graphviz / Mermaid render).
 - **Knowledge** — `knowledge_search` (per-domain RAG over collected docs),

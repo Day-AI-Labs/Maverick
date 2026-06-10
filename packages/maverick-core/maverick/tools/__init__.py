@@ -698,6 +698,7 @@ def base_registry(  # noqa: C901
     from .notion import notion
     from .obsidian import obsidian
     from .ocr import ocr
+    from .office_convert import office_convert
     from .openapi_runner import openapi_runner
     from .openmetrics import openmetrics
     from .outline_writer import outline_writer
@@ -1035,6 +1036,7 @@ def base_registry(  # noqa: C901
     reg.register(sns_tool())
     reg.register(ffmpeg_tool(sandbox))
     reg.register(pandoc_tool(sandbox))
+    reg.register(office_convert(sandbox))
     reg.register(imagemagick_tool(sandbox))
     reg.register(ga4_tool())
     reg.register(plaid_tool())
