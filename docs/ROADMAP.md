@@ -117,7 +117,7 @@ single-run inflation) — run multi-seed.
 | Concern | Planned (not yet built) |
 |---|---|
 | **Capabilities** | Browser anti-bot evasion kit (opt-in) |
-| **UX** | Native macOS/Windows/Linux GUI apps · browser extension · VS Code + JetBrains live-run extensions |
+| **UX** | Native macOS/Windows/Linux GUI apps · browser extension |
 | **Distribution** | Windows MSI · sponsorship tiers · conference physical booth · swag store · ambassadors program · long-form handbook · Skill of the Year award · mobile companion app v1 (read-only) · localized docs phase 4 (ko/ru/it/hi) · video season 3 · annual community survey · foundation exploration |
 | **Performance** | — (cleared: the 2-year retrospective is time-gated — its generators shipped (`benchmark_retrospective` for perf, `safety_report` for safety, `ux_retrospective` for usage); the operator runs them at the mark) |
 | **Safety** | — (cleared) |

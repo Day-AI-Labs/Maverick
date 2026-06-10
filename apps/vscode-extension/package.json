@@ -14,8 +14,18 @@
     "url": "https://github.com/Day-AI-Labs/Maverick.git",
     "directory": "apps/vscode-extension"
   },
-  "categories": ["AI", "Programming Languages", "Other"],
-  "keywords": ["agent", "AI", "maverick", "claude", "swarm"],
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "agent",
+    "AI",
+    "maverick",
+    "claude",
+    "swarm"
+  ],
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -50,6 +60,14 @@
       {
         "command": "maverick.openExport",
         "title": "Maverick: Export run as JSON..."
+      },
+      {
+        "command": "maverick.watchRun",
+        "title": "Maverick: Watch run live"
+      },
+      {
+        "command": "maverick.stopWatch",
+        "title": "Maverick: Stop live watch"
       }
     ],
     "viewsContainers": {
@@ -93,6 +111,16 @@
           "type": "boolean",
           "default": true,
           "description": "Use the current workspace as cwd when invoking maverick."
+        },
+        "maverick.dashboardUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8765",
+          "description": "Local Maverick dashboard URL for live-run streaming."
+        },
+        "maverick.dashboardToken": {
+          "type": "string",
+          "default": "",
+          "description": "MAVERICK_DASHBOARD_TOKEN value, if the dashboard sets one."
         }
       }
     }

@@ -1,0 +1,12 @@
+<idea-plugin>
+  <id>dev.maverick.jetbrains</id>
+  <name>Maverick</name>
+  <vendor>Maverick</vendor>
+  <description>Watch Maverick agent runs live inside the IDE (streams the
+  self-hosted dashboard's SSE event feed).</description>
+  <depends>com.intellij.modules.platform</depends>
+  <extensions defaultExtensionNs="com.intellij">
+    <toolWindow id="Maverick Runs" anchor="bottom"
+                factoryClass="dev.maverick.RunsToolWindowFactory"/>
+  </extensions>
+</idea-plugin>

@@ -1243,6 +1243,15 @@ tested without spawning py-spy.
   how much went to **failed** work (effort with no delivered result), how
   concentrated spend is (a Pareto signal), and rule-based observations to act
   on. Deterministic over the world model; read-only.
+- **Live-run IDE extensions** (`apps/vscode-extension/` +
+  `apps/jetbrains-plugin/`): the VS Code extension gains "Watch run live" /
+  "Stop live watch" — a dependency-free SSE tail of the dashboard's
+  per-goal event stream into an output channel (manual SSE parse,
+  exponential-backoff reconnect, terminal-control stripping, token header
+  honored, settings for URL/token; type-checks clean). The JetBrains
+  scaffold mirrors it as a Runs tool window (Kotlin, same SSE endpoint,
+  same backoff); building it requires the IntelliJ SDK, stated in its
+  README.
 - **Apple Watch glance** (`glance.py` + `apps/watch-glance/` SwiftUI
   scaffold): a tiny fixed payload sized for a watch face — active count,
   today's done/failed, today's spend (summed from the usage ledger), and the
