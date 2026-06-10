@@ -1049,6 +1049,14 @@ tested without spawning py-spy.
   read host temperatures/fans/battery via psutil with a `/sys/class/thermal`
   fallback and an injected reader for tests; unavailable categories say
   "unavailable on this host" — readings are never fabricated.
+- **Onboarding personalization v2** (`onboarding_v2.py`): post-install
+  personalization from *actual early usage* — long conversations suggest
+  compaction, repeated task verbs point at templates, a high approval-denial
+  ratio suggests the supervised director profile, repeated same-class
+  failures surface the self-healing remedy, multi-channel use suggests
+  channel niceties; every suggestion carries the observation that justifies
+  it and the exact action, nothing is applied, and thin usage returns an
+  honest "not enough usage yet" instead of generic tips.
 - **Self-healing UX** (`self_healing.py`): a failed run is diagnosed into
   its failure class (budget exceeded, provider auth, rate-limited, shield
   block, sandbox missing, timeout, killswitch) and answered with an ordered
