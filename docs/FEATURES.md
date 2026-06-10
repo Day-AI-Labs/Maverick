@@ -1472,16 +1472,54 @@ tested without spawning py-spy.
   package** (`apps/emacs/maverick.el`: M-x maverick-start/status/monitor/
   logs/halt/unhalt over the CLI, deps-free, Emacs 27.1+), **Neovim plugin**
   (`apps/nvim/`: :MaverickStart/Status/Monitor/Logs/Halt/Unhalt, lazy.nvim-
-  ready, terminal-split UX), GitHub Action wrapper (`maverick-action`) — all
-  contract-tested against the real CLI verb set.
+  ready, terminal-split UX), **Zed extension** (`apps/zed-extension/`:
+  registers `maverick mcp` as a context server — Zed extensions run in a
+  WASI sandbox and cannot exec, so CLI verbs ship as Zed tasks; compiling
+  needs the Zed SDK, stated in its README), GitHub Action wrapper
+  (`maverick-action`) — all contract-tested against the real CLI verb set.
+- **Native desktop app** (`apps/desktop/`): a Tauri v2 shell for the local
+  dashboard — splash polls `127.0.0.1:8765/healthz` and redirects, spawning
+  `maverick dashboard` as its own child when the port is closed (kills only
+  that child on exit); macOS/Windows/Linux bundle targets, ships unsigned
+  (installer-desktop posture), building needs Rust + Tauri CLI.
+- **Windows MSI** (`apps/installer-msi/`): WiX v4 authoring set — per-user
+  scope, stable UpgradeCode + MajorUpgrade, user-PATH component, a launcher
+  that bootstraps the bundled wheel into the console-script target —
+  plus `build.ps1` and a dispatch-only `build-msi.yml` workflow; building
+  and signing happen on a Windows host (maintainer act), output ships
+  unsigned like the Tauri installer.
+- **Multi-arch builds** (`deploy/multiarch/`): buildx Dockerfile + script
+  for linux/amd64 + arm64 + riscv64 (ARG-gated base with a debian-sid
+  CPython fallback for riscv64) — core+shield are pure Python; the README
+  carries the honest per-extra wheel-availability table (grpcio/torch/
+  pyarrow et al. lack riscv64 wheels) and the QEMU/binfmt CI commands.
+- **Hosted demo cluster blueprint**
+  (`deploy/reference-architectures/demo-cluster/`): compose + k8s manifests
+  for a public read-only demo — the dashboard has no global read-only flag,
+  so an nginx deny-proxy (`limit_except GET HEAD`) fronts it with the
+  bearer injected upstream; a seeder creates finished demo goals through
+  the real world model; DNS/TLS/operating demo.maverick.dev is a
+  maintainer act. Contract-tested like the other reference architectures.
+- **Mobile skill execution scaffolds** (`apps/mobile-skills/`): a Pyodide
+  runner page (vendored-only Pyodide, no CDN; pinned release + fill-on-
+  download checksum) executing a verified pure-stdlib repo module in a
+  mobile browser, and a Kivy shell + buildozer.spec for Android — store
+  builds are maintainer acts; the hard limits (no sandbox/subprocess on
+  mobile, relay for network) are documented, not papered over.
 - **RFCs** — [RFC 0001: Maverick 2.0](./rfcs/0001-maverick-2.0.md) (config
   schema v2 + async-only channel SDK + connector re-homing, migration story
   riding `maverick migrate`) and [RFC 0002: Plugin API v2](./rfcs/0002-plugin-api-v2.md)
   (static manifests discovered without importing plugin code, lifecycle hooks,
   the wire shape for the gRPC plugin host) — both Draft, open for comment.
-- **Embeddable widget** — a dependency-free floating chat widget
-  (`web/widget/maverick-widget.js`) that posts to your own dashboard's
-  `/chat/send`; one `<script>` tag, self-hosted (no hosted service).
+- **Embeddable widgets** — two dependency-free `<script>`-tag surfaces,
+  both self-hosted: the floating **chat widget**
+  (`web/widget/maverick-widget.js`) posting to your own dashboard's
+  `/chat/send`, and the read-only **status widget**
+  (`extensions/widget/maverick-widget.js`): a Shadow-DOM pill → panel
+  polling the real goals API and bucketing counts client-side, with the
+  auth posture documented exactly (Bearer header only; same-origin or a
+  reverse proxy — the dashboard ships no CORS; the token is the full
+  control surface, so embed only where you'd paste the token).
 - **Self-hosted relay** — a stdlib edge service (`deploy/relay/relay.py`) that
   HMAC-signs an inbound POST and forwards it to a dashboard's `/webhook/start`
   exactly as `maverick.webhooks` verifies (replay-defended; signature

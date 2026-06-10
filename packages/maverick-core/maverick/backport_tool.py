@@ -85,7 +85,10 @@ def _patch_id_of(sha: str, git: Runner) -> str:
     lines = [line for line in diff.splitlines()
              if line.startswith(("+", "-", "@@", "diff --git"))
              and not line.startswith(("+++", "---"))]
-    return hashlib.sha1("\n".join(lines).encode()).hexdigest()  # noqa: S324
+    # SHA1 matches `git patch-id` semantics: a content fingerprint for
+    # cherry-pick twin detection, not a security boundary.
+    return hashlib.sha1("\n".join(lines).encode(),
+                        usedforsecurity=False).hexdigest()
 
 
 def _patch_ids(ref_range: str, git: Runner) -> set[str]:

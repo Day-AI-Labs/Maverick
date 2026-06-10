@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<!--
+  Pyodide skill runner — feasibility demo for Maverick skill logic on
+  iOS/Android browsers.
+
+  Pyodide is loaded from a LOCALLY VENDORED path (./vendor/pyodide/), never
+  a CDN: see vendor/README.md for the exact release URL + checksum step.
+  The page stays blank-but-honest ("vendor Pyodide first") until that is
+  done.
+
+  The executed skill module is REAL, fetched from this repo at runtime:
+  packages/maverick-core/maverick/disagreement.py — chosen because it has
+  zero intra-package imports (stdlib only: math, re, collections), verified
+  by reading it. Serve from the REPO ROOT so the relative path resolves:
+
+      python -m http.server 8000      # from the repo root
+      open http://localhost:8000/apps/mobile-skills/pyodide-runner/
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Maverick skill runner (Pyodide)</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 1.5rem; background: #0b0e14; color: #e6e6e6; }
+      h1 { font-size: 1.1rem; }
+      button { font-size: 1rem; padding: 0.6rem 1.2rem; border-radius: 8px; border: 0;
+               background: #f5a623; color: #111; }
+      button:disabled { background: #3a4154; color: #888; }
+      pre { background: #131826; padding: 0.8rem; border-radius: 8px; white-space: pre-wrap; }
+      .muted { color: #9aa4b2; font-size: 0.85rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Maverick skill on mobile: <code>disagreement.answer_entropy</code></h1>
+    <p class="muted">
+      Runs the real pure-Python skill module
+      <code>packages/maverick-core/maverick/disagreement.py</code> in a
+      Pyodide (CPython-in-WASM) runtime, entirely in this browser.
+    </p>
+    <button id="run" disabled>Loading Pyodide&hellip;</button>
+    <pre id="out">If this never becomes ready: vendor Pyodide first (see vendor/README.md).</pre>
+
+    <!-- Locally vendored Pyodide only; committing a CDN hot-link is banned. -->
+    <script src="./vendor/pyodide/pyodide.js"></script>
+    <script>
+      var SKILL_MODULE = "../../../packages/maverick-core/maverick/disagreement.py";
+      var out = document.getElementById("out");
+      var btn = document.getElementById("run");
+
+      async function boot() {
+        if (typeof loadPyodide === "undefined") {
+          out.textContent = "Pyodide is not vendored yet. Follow vendor/README.md, then reload.";
+          return;
+        }
+        // indexURL must match the vendored layout.
+        var pyodide = await loadPyodide({ indexURL: "./vendor/pyodide/" });
+
+        var src = await (await fetch(SKILL_MODULE)).text();
+        pyodide.FS.writeFile("disagreement.py", src);
+
+        btn.textContent = "Run answer_entropy on sample fan-outs";
+        btn.disabled = false;
+        btn.onclick = async function () {
+          var result = await pyodide.runPythonAsync(
+            "import disagreement\n" +
+            "cases = {\n" +
+            "    'all identical': ['paris', 'paris', 'paris'],\n" +
+            "    'one dissenter': ['paris', 'paris', 'lyon'],\n" +
+            "    'all unique':    ['paris', 'lyon', 'nice'],\n" +
+            "}\n" +
+            "'\\n'.join(f'{k:>14}: entropy={disagreement.answer_entropy(v):.3f}'\n" +
+            "          for k, v in cases.items())"
+          );
+          out.textContent =
+            result +
+            "\n\n(0 = proposers agree, 1 = every answer unique — the same " +
+            "signal the swarm's spawn machinery posts to the blackboard.)";
+        };
+        out.textContent = "Ready. Pyodide " + pyodide.version + " booted from ./vendor/.";
+      }
+
+      boot().catch(function (e) { out.textContent = "boot failed: " + e; });
+    </script>
+  </body>
+</html>
