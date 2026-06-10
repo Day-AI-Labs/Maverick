@@ -1049,6 +1049,13 @@ tested without spawning py-spy.
   read host temperatures/fans/battery via psutil with a `/sys/class/thermal`
   fallback and an injected reader for tests; unavailable categories say
   "unavailable on this host" — readings are never fabricated.
+- **Voice biometric unlock — companion factor only** (`voice_unlock.py`,
+  opt-in `[voice] biometric_unlock`): speaker verification over an injected
+  embedder with three hard stances — a voice match **never authenticates on
+  its own** (`decide()` returns `companion_ok`; callers combine it with an
+  existing factor — replay/synthesis is practical), profiles are local
+  embedding centroids (never raw audio, 0600) with first-class
+  `delete_profile`, and the whole feature is off by default.
 - **Onboarding personalization v2** (`onboarding_v2.py`): post-install
   personalization from *actual early usage* — long conversations suggest
   compaction, repeated task verbs point at templates, a high approval-denial
