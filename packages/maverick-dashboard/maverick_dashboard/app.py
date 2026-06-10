@@ -768,6 +768,12 @@ async def index(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/redact", response_class=HTMLResponse)
+async def redact_page(request: Request) -> HTMLResponse:
+    """Granular redaction UI (preview/select/scrub via /api/v1/redact/preview)."""
+    return templates.TemplateResponse(request, "redact.html", {})
+
+
 @app.get("/perf", response_class=HTMLResponse)
 async def perf_page(request: Request) -> HTMLResponse:
     """Public perf dashboard: SLA + benchmark history (data via /api/v1/perf)."""

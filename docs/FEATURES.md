@@ -1282,6 +1282,13 @@ tested without spawning py-spy.
   the real key, so a prompt-injected agent process has no key to exfiltrate.
 - **Watch glance endpoint** (`GET /api/v1/glance`): the fixed tiny payload
   the watch scaffold renders.
+- **Granular redaction UI** (`GET /redact` page + `POST
+  /api/v1/redact/preview`): paste text, see every secret/PII finding as a
+  kind + span (never the raw value), and pick per-kind what to scrub —
+  empty selection runs full provable redaction; a granular selection
+  replaces only the chosen kinds' spans and *honestly* reports
+  `proven_clean: false` with the residual kinds left behind, instead of a
+  false guarantee. Preview-only: nothing is stored server-side.
 - **Live-run IDE extensions** (`apps/vscode-extension/` +
   `apps/jetbrains-plugin/`): the VS Code extension gains "Watch run live" /
   "Stop live watch" — a dependency-free SSE tail of the dashboard's

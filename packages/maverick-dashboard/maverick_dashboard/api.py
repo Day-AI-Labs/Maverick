@@ -1418,6 +1418,51 @@ async def compliance_report_csv(framework: str = "all") -> Response:
     )
 
 
+class RedactIn(BaseModel):
+    text: str = Field(max_length=200_000)
+    kinds: list[str] = Field(default_factory=list)  # empty = all kinds
+
+
+@router.post("/redact/preview")
+async def redact_preview(payload: RedactIn) -> dict:
+    """Granular redaction preview: per-finding spans + kinds, nothing stored.
+
+    ``kinds`` filters which detector classes to act on (e.g. only
+    ``secret:*`` or only ``pii:email``) — the granular half; empty = all.
+    The response carries each finding (kind + a safe preview of WHERE, never
+    the raw value) and the fully-redacted text for the selected kinds.
+    """
+    from maverick.provable_redaction import redact_proven, verify_redacted
+    from maverick.safety import pii_detector, secret_detector
+
+    text = payload.text or ""
+    findings = []
+    for m in secret_detector.scan(text):
+        findings.append({"kind": f"secret:{m.name}", "span": list(m.span)})
+    for m in pii_detector.scan(text):
+        findings.append({"kind": f"pii:{m.kind}", "span": list(m.span)})
+    selected = set(payload.kinds or [])
+
+    if not selected:
+        proof = redact_proven(text)
+        redacted, proven = proof.redacted, proof.proven
+    else:
+        # granular: replace only the selected kinds' spans (end-to-start)
+        spans = [f for f in findings if f["kind"] in selected]
+        redacted = text
+        for f in sorted(spans, key=lambda f: f["span"][0], reverse=True):
+            a, b = f["span"]
+            redacted = redacted[:a] + f"[REDACTED:{f['kind'].split(':', 1)[1]}]" + redacted[b:]
+        proven = not verify_redacted(redacted)
+
+    return {
+        "findings": findings,
+        "redacted": redacted,
+        "proven_clean": proven,
+        "residual": verify_redacted(redacted),
+    }
+
+
 @router.get("/glance")
 async def watch_glance() -> dict:
     """The Apple Watch glance payload (tiny fixed shape; see maverick.glance)."""
