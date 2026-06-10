@@ -1364,6 +1364,71 @@ async def compliance_report_csv(framework: str = "all") -> Response:
     )
 
 
+@router.get("/perf")
+async def perf_dashboard() -> dict:
+    """Public perf dashboard data: SLA measurements + benchmark history.
+
+    One JSON face for the perf story (roadmap 2027-H1 "public perf
+    dashboard"): the live perf-SLA measurements against their published
+    thresholds (docs/perf-sla.md), the recorded benchmark score history with
+    short-window regression verdicts, and the longitudinal era retrospective.
+    Everything is measured/read locally -- nothing fabricated; sections with
+    no recorded data say so.
+    """
+    out: dict = {"sla": [], "benchmarks": {}, "retrospective": None}
+    try:
+        import asyncio
+
+        from maverick.perf_sla import run_all
+        # run_all's dispatch probe drives its own event loop; run it in a
+        # worker thread so it never nests inside the server's running loop.
+        results = await asyncio.to_thread(run_all)
+        out["sla"] = [
+            {"name": r.name, "measured": r.measured, "threshold": r.threshold,
+             "unit": r.unit, "passed": r.passed}
+            for r in results
+        ]
+    except Exception as e:  # measurement must never 500 the dashboard
+        out["sla_error"] = f"{type(e).__name__}: {e}"
+    try:
+        import json as _json
+
+        from maverick.benchmark_retrospective import analyze, coverage
+        from maverick.continuous_benchmark import _store_path, detect_regression
+        store = _store_path()
+        history: list[dict] = []
+        if store.is_dir():
+            for f in sorted(store.glob("*.json")):
+                try:
+                    rows = _json.loads(f.read_text(encoding="utf-8"))
+                    if isinstance(rows, list):
+                        history.extend(r for r in rows if isinstance(r, dict))
+                except (OSError, ValueError):
+                    continue
+        names = sorted({r.get("name") for r in history if r.get("name")})
+        for name in names:
+            scores = [r["score"] for r in history if r.get("name") == name]
+            verdict = detect_regression(history, name)
+            out["benchmarks"][name] = {
+                "runs": len(scores),
+                "latest": scores[-1] if scores else None,
+                "best": max(scores) if scores else None,
+                "regression": verdict,
+            }
+        span = coverage(history)
+        if span:
+            retros = analyze(history)
+            out["retrospective"] = {
+                "coverage": list(span),
+                "trends": {n: {"trend": r.trend,
+                               "net_change": round(r.net_change, 4)}
+                           for n, r in retros.items()},
+            }
+    except Exception as e:
+        out["benchmarks_error"] = f"{type(e).__name__}: {e}"
+    return out
+
+
 @router.get("/cache/stats")
 async def cache_stats() -> dict:
     """In-process cache sizes (file reads, repo-map, skill embeddings).

@@ -409,7 +409,12 @@ never routing somewhere v2 rejected, falling back to v2 on a cold context. The
 learned table persists atomically (`router_bandit.json`, 0600); opt-in via
 `[routing] bandit` and default-OFF.
 
-**Longitudinal benchmark retrospective** (`benchmark_retrospective.py`,
+**Public perf dashboard** (`GET /perf` + `GET /api/v1/perf` on the
+dashboard): one page/JSON face for the perf story — the perf-SLA checks
+measured live on the host (in a worker thread, against the published
+thresholds), recorded benchmark history with short-window regression
+verdicts, and the longitudinal era retrospective; sections with no recorded
+data say so. **Longitudinal benchmark retrospective** (`benchmark_retrospective.py`,
 `python -m maverick.benchmark_retrospective`): the multi-year companion to
 continuous benchmarking — slices the FULL recorded score history into calendar-
 quarter eras and reports per-era medians, era-over-era movement, best/worst

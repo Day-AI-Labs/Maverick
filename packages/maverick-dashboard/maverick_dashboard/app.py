@@ -660,6 +660,12 @@ async def index(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/perf", response_class=HTMLResponse)
+async def perf_page(request: Request) -> HTMLResponse:
+    """Public perf dashboard: SLA + benchmark history (data via /api/v1/perf)."""
+    return templates.TemplateResponse(request, "perf.html", {})
+
+
 @app.get("/goals", response_class=HTMLResponse)
 async def goals_page(request: Request) -> HTMLResponse:
     goals = _world().list_goals(owner=goal_owner_filter(request), limit=200, order="desc")
