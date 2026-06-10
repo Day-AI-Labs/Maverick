@@ -791,6 +791,12 @@ tested without spawning py-spy.
 
 ## UX surfaces
 
+- **TUI mouse mode** (`tui_mouse.py`, opt-in `[tui] mouse`): `maverick
+  monitor`'s plan tree becomes clickable — SGR (xterm 1006) mouse tracking
+  enabled/restored around the Live view, a click hit-tests its row to the
+  plan-tree node and focuses/expands it (`NodeHitMap` + `FocusModel`, pure and
+  terminal-free so it's unit-tested without a tty). Off by default; degrades
+  to keyboard/auto-refresh on terminals that don't report mouse events.
 - **CLI** — `maverick init` (wizard — with **branching paths**: a mode picker
   routes consumer users to a tailored short flow (`run_consumer`) while
   advanced users get the full step sequence, and the deployment answer
