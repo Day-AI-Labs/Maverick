@@ -55,3 +55,30 @@ def test_llm_complete_paths_use_genai_span_helpers():
     assert "gen_ai_attributes(" in src
     # the old generic span name must be gone from both paths
     assert '"llm.complete"' not in src
+
+
+def test_full_request_and_response_attribute_set():
+    a = obs.gen_ai_attributes(
+        "openai", "gpt-5.5",
+        max_tokens=4096, temperature=0.7, top_p=0.95,
+        frequency_penalty=0.1, presence_penalty=0.2,
+        response_model="gpt-5.5-2026", response_id="resp_abc",
+        finish_reasons=["stop"], input_tokens=10, output_tokens=20,
+    )
+    # request params
+    assert a["gen_ai.request.temperature"] == 0.7
+    assert a["gen_ai.request.top_p"] == 0.95
+    assert a["gen_ai.request.frequency_penalty"] == 0.1
+    assert a["gen_ai.request.presence_penalty"] == 0.2
+    # response
+    assert a["gen_ai.response.id"] == "resp_abc"
+    assert a["gen_ai.response.finish_reasons"] == ["stop"]
+    # usage
+    assert a["gen_ai.usage.input_tokens"] == 10
+
+
+def test_optional_attributes_omitted_when_unset():
+    a = obs.gen_ai_attributes("anthropic", "claude-opus-4-8")
+    for k in ("gen_ai.request.temperature", "gen_ai.request.top_p",
+              "gen_ai.response.id", "gen_ai.response.finish_reasons"):
+        assert k not in a

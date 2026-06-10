@@ -312,25 +312,47 @@ def gen_ai_attributes(
     *,
     operation: str = "chat",
     max_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    frequency_penalty: float | None = None,
+    presence_penalty: float | None = None,
     response_model: str | None = None,
+    response_id: str | None = None,
+    finish_reasons: list[str] | None = None,
     input_tokens: int | None = None,
     output_tokens: int | None = None,
 ) -> dict[str, Any]:
     """Build an OTel GenAI-semconv attribute dict for an LLM span.
 
-    ``system`` is the provider slug (anthropic/openai/gemini/...). Only the
-    fields that are known are included, so request-time and response-time
-    attributes can be built in two passes.
+    ``system`` is the provider slug (anthropic/openai/gemini/...). Covers the
+    full GenAI request + response attribute set; only the fields that are known
+    are included, so request-time and response-time attributes can be built in
+    two passes (the response side filled once the call returns).
     """
     attrs: dict[str, Any] = {
         "gen_ai.operation.name": operation,
         "gen_ai.system": system,
         "gen_ai.request.model": request_model,
     }
+    # -- request parameters (gen_ai.request.*) --
     if max_tokens is not None:
         attrs["gen_ai.request.max_tokens"] = max_tokens
+    if temperature is not None:
+        attrs["gen_ai.request.temperature"] = temperature
+    if top_p is not None:
+        attrs["gen_ai.request.top_p"] = top_p
+    if frequency_penalty is not None:
+        attrs["gen_ai.request.frequency_penalty"] = frequency_penalty
+    if presence_penalty is not None:
+        attrs["gen_ai.request.presence_penalty"] = presence_penalty
+    # -- response (gen_ai.response.*) --
     if response_model is not None:
         attrs["gen_ai.response.model"] = response_model
+    if response_id is not None:
+        attrs["gen_ai.response.id"] = response_id
+    if finish_reasons is not None:
+        attrs["gen_ai.response.finish_reasons"] = list(finish_reasons)
+    # -- usage (gen_ai.usage.*) --
     if input_tokens is not None:
         attrs["gen_ai.usage.input_tokens"] = input_tokens
     if output_tokens is not None:
