@@ -274,6 +274,9 @@ def _wire_slack(server, cfg):
         app_token=cfg.get("app_token") or os.environ.get("SLACK_APP_TOKEN"),
         bot_token=cfg.get("bot_token") or os.environ.get("SLACK_BOT_TOKEN"),
         allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        # [channels.slack] thread_replies: answers post under the asking
+        # message's thread instead of interleaving into the channel.
+        thread_replies=cfg.get("thread_replies"),
     ))
 
 

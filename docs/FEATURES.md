@@ -149,7 +149,11 @@ Signal, Email, Matrix, Bluesky, Mastodon, Voice (Twilio), WhatsApp, SMS, iMessag
 (Even Realities G2 "bring your own agent" bridge: the ack-then-run pattern that
 answers quick utterances on the HUD within the device deadline and runs long
 tasks in the background, delivering the result to a secondary channel). Rich
-formatting + dedup + per-channel authz. **Email v2** adds IMAP IDLE (push
+formatting + dedup + per-channel authz. **Reply threading** — inbound messages
+carry their platform `message_id` and adapters expose `send_threaded`
+(Slack `thread_ts` behind opt-in `[channels.slack] thread_replies`; Telegram
+`reply_to_message_id`; base falls back to a plain send) so long-running
+answers land under the message that asked. **Email v2** adds IMAP IDLE (push
 instead of poll) + conversation threading from Message-ID/In-Reply-To/References
 (`email_v2.py`).
 
