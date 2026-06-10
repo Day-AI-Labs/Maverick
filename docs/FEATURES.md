@@ -185,7 +185,9 @@ here.
   no-policy records by category/age; GDPR storage limitation), `breach_notification`
   (GDPR Art. 33/34 72h breach-notification timer — DUE/OVERDUE/ON_TIME/LATE +
   Art. 34 high-risk reminder), `data_minimization` (flag fields collected beyond
-  a purpose's allowlist + missing required fields; GDPR Art. 5(1)(c)).
+  a purpose's allowlist + missing required fields; GDPR Art. 5(1)(c)),
+  `consent_check` (evaluate consent records for active validity — granted /
+  withdrawn / expired per purpose, latest grant governs; GDPR Art. 7).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate. **Plugin sandboxing** — opt-in

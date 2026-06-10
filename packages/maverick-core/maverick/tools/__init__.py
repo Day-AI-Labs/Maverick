@@ -620,6 +620,7 @@ def base_registry(  # noqa: C901
     from .comparative_replay import comparative_replay
     from .compute import compute
     from .confluence_tool import confluence_tool
+    from .consent_check import consent_check
     from .constrained_output import constrained_output
     from .container_build import container_build
     from .containment_mode import containment_mode
@@ -862,6 +863,7 @@ def base_registry(  # noqa: C901
     reg.register(retention_check())
     reg.register(breach_notification())
     reg.register(data_minimization())
+    reg.register(consent_check())
     reg.register(supply_chain_pin())
     reg.register(quorum_approval())
     reg.register(crypto_budget_receipt())
