@@ -524,6 +524,18 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   anything delegates against it) proven both ways by interop tests: Maverick's
   own card passes its own validator, and third-party-shaped fixture cards
   (rich + minimal) parse correctly.
+- **Swarm federation** (`federation.py` + `grpc_api/federation.proto`,
+  protocol `maverick-federation/1`, opt-in `[federation] enabled` + `peers`):
+  delegate goals across *sovereign* swarms (each with its own world DB —
+  distinct from `RunGoal`'s shared-DB offload). `Hello` exchanges A2A agent
+  cards (non-conformant peers refused), `DelegateGoal` carries a correlation
+  id + required tools resolved **narrow-only** via capability boot negotiation
+  (an ungrantable requirement refuses the delegation), auth is a constant-time
+  shared token that *identifies* the caller from local config (wire names
+  never trusted; fail-closed), and **both halves record reciprocal audit rows**
+  in exactly the convention `audit/federation.py` cross-verifies — a dropped
+  half is detectable. The protocol layer runs over any `call(method, payload)`
+  transport; the gRPC binding is a thin `[grpc]` adapter (live-smoked).
 - **gRPC API v1 — stable** (`grpc_api/maverick.proto`, package `maverick.v1`;
   contract gate `grpc_api/contract.py` + committed golden
   `maverick_v1_contract.json`, wired into CI): additive changes pass; removing/
