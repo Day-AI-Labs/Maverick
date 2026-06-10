@@ -1481,7 +1481,21 @@ class Agent:
         except Exception as e:  # pragma: no cover -- observability never blocks
             log.debug("live-spend mirror skipped: %s", e)
 
-    async def run(self) -> AgentResult:  # noqa: C901
+    async def run(self) -> AgentResult:
+        # OTel GenAI semconv: every agent execution is an ``invoke_agent``
+        # span (gen_ai.agent.name/id), the third semconv leg alongside the
+        # LLM (chat) and tool (execute_tool) spans. No-op when tracing is off.
+        try:
+            from .observability import gen_ai_agent_attributes, trace_span
+        except Exception:  # pragma: no cover -- tracing never blocks a run
+            return await self._run_inner()
+        with trace_span(
+            f"invoke_agent {self.role}",
+            attributes=gen_ai_agent_attributes(self.role, agent_id=self.name),
+        ):
+            return await self._run_inner()
+
+    async def _run_inner(self) -> AgentResult:  # noqa: C901
         bb = self.ctx.blackboard
         bb.post(self.name, "plan", f"role={self.role} depth={self.depth} brief={self.brief}")
 

@@ -256,7 +256,17 @@ def trace_span(
                         span.set_attribute(k, v)
                     except Exception:
                         pass
-            yield span
+            try:
+                yield span
+            except BaseException as e:
+                # OTel semconv: failed operations carry ``error.type`` (the
+                # exception class). The SDK records the exception itself; this
+                # adds the standard queryable attribute.
+                try:
+                    span.set_attribute("error.type", type(e).__qualname__)
+                except Exception:
+                    pass
+                raise
 
 
 def record_metric(
@@ -360,6 +370,31 @@ def gen_ai_attributes(
     return attrs
 
 
+def gen_ai_agent_attributes(
+    name: str,
+    *,
+    agent_id: str | None = None,
+    description: str | None = None,
+    operation: str = "invoke_agent",
+) -> dict[str, Any]:
+    """Build an OTel GenAI-semconv attribute dict for an agent span.
+
+    The convention models running an agent as the ``invoke_agent`` operation
+    with ``gen_ai.agent.name`` / ``gen_ai.agent.id`` /
+    ``gen_ai.agent.description`` — the third leg (alongside LLM and tool
+    spans) of the GenAI semconv an agent runtime is expected to emit.
+    """
+    attrs: dict[str, Any] = {
+        "gen_ai.operation.name": operation,
+        "gen_ai.agent.name": name,
+    }
+    if agent_id is not None:
+        attrs["gen_ai.agent.id"] = agent_id
+    if description is not None:
+        attrs["gen_ai.agent.description"] = description
+    return attrs
+
+
 def gen_ai_tool_attributes(
     tool_name: str,
     *,
@@ -390,4 +425,5 @@ def gen_ai_tool_attributes(
 __all__ = [
     "trace_span", "record_metric", "is_enabled",
     "gen_ai_span_name", "gen_ai_attributes", "gen_ai_tool_attributes",
+    "gen_ai_agent_attributes",
 ]

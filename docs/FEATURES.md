@@ -620,7 +620,9 @@ OpenTelemetry traces (spans carry the **full OTel GenAI semantic-convention
 attribute set** — `gen_ai.operation.name` / `system` / `request.model` /
 `request.{max_tokens,temperature,top_p,frequency_penalty,presence_penalty}` /
 `response.{model,id,finish_reasons}` / `usage.{input,output}_tokens`, plus the
-`execute_tool` tool-span attributes — so any OTel-native backend reads them
+`execute_tool` tool-span attributes AND the `invoke_agent` agent-span leg
+(`gen_ai.agent.name/id` around every `Agent.run`) with semconv `error.type`
+stamped on failed spans — so any OTel-native backend reads them
 with no custom mapping), Prometheus `/metrics`, and a **Sentry performance
 tab** (all opt-in) (`observability.py`): `MAVERICK_SENTRY_DSN` (or
 `[observability] sentry_dsn`) initializes Sentry tracing and every existing

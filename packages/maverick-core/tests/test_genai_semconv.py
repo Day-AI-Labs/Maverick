@@ -82,3 +82,81 @@ def test_optional_attributes_omitted_when_unset():
     for k in ("gen_ai.request.temperature", "gen_ai.request.top_p",
               "gen_ai.response.id", "gen_ai.response.finish_reasons"):
         assert k not in a
+
+
+def test_agent_attributes_use_genai_semconv_keys():
+    a = obs.gen_ai_agent_attributes("coder", agent_id="coder-1",
+                                    description="writes code")
+    assert a["gen_ai.operation.name"] == "invoke_agent"
+    assert a["gen_ai.agent.name"] == "coder"
+    assert a["gen_ai.agent.id"] == "coder-1"
+    assert a["gen_ai.agent.description"] == "writes code"
+    # optional fields omitted when unknown
+    b = obs.gen_ai_agent_attributes("coder")
+    assert "gen_ai.agent.id" not in b and "gen_ai.agent.description" not in b
+
+
+def test_agent_run_opens_invoke_agent_span(monkeypatch):
+    """Agent.run wraps the loop in an invoke_agent span (semconv leg 3)."""
+    import maverick.agent as agent_mod
+
+    spans: list = []
+
+    class _Span:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def _fake_trace_span(name, *, attributes=None):
+        spans.append((name, attributes or {}))
+        return _Span()
+
+    monkeypatch.setattr(obs, "trace_span", _fake_trace_span)
+
+    async def _inner(self):
+        return "ok"
+
+    monkeypatch.setattr(agent_mod.Agent, "_run_inner", _inner)
+    agent = agent_mod.Agent.__new__(agent_mod.Agent)
+    agent.role = "coder"
+    agent.name = "coder-1"
+
+    import asyncio
+    assert asyncio.run(agent_mod.Agent.run(agent)) == "ok"
+    assert spans and spans[0][0] == "invoke_agent coder"
+    assert spans[0][1]["gen_ai.agent.name"] == "coder"
+    assert spans[0][1]["gen_ai.agent.id"] == "coder-1"
+
+
+def test_error_type_attribute_set_on_failed_span(monkeypatch):
+    """trace_span stamps semconv error.type when the body raises."""
+    class _Span:
+        def __init__(self):
+            self.attrs = {}
+
+        def set_attribute(self, k, v):
+            self.attrs[k] = v
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    span = _Span()
+
+    class _Tracer:
+        def start_as_current_span(self, name):
+            return span
+
+    monkeypatch.setattr(obs, "_initialized", True)
+    monkeypatch.setattr(obs, "_tracer", _Tracer())
+    monkeypatch.setattr(obs, "_sentry", None)
+
+    import pytest
+    with pytest.raises(ValueError):
+        with obs.trace_span("chat m"):
+            raise ValueError("boom")
+    assert span.attrs.get("error.type") == "ValueError"
