@@ -121,7 +121,11 @@ here.
   snapshots, optional signed numeric deltas), `gui_element_memory` (offline
   store of GUI element locators keyed by app/screen/name for computer-use),
   `adversarial_eval` (score a red-team batch — confusion matrix, recall/
-  precision, and the missed-attack list that gates red-team CI).
+  precision, and the missed-attack list that gates red-team CI),
+  `trace_compare` (diff two replay traces step by step — first divergence,
+  matched prefix, per-step field diffs), `latency_heatmap` (tool × latency-band
+  shaded grid + p50/p95 per tool), `tool_call_inspector` (per-tool call count,
+  error rate, avg/max latency, HIGH-ERROR flags from a tool-call log).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.

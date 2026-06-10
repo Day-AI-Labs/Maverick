@@ -729,6 +729,12 @@ def base_registry(  # noqa: C901
     reg.register(what_changed_digest())
     reg.register(gui_element_memory())
     reg.register(adversarial_eval())
+    from .latency_heatmap import latency_heatmap
+    from .tool_call_inspector import tool_call_inspector
+    from .trace_compare import trace_compare
+    reg.register(trace_compare())
+    reg.register(latency_heatmap())
+    reg.register(tool_call_inspector())
     reg.register(a11y_tree())
     reg.register(ai_act_classifier())
     reg.register(cache_admin())
