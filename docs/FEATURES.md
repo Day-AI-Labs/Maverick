@@ -791,6 +791,14 @@ tested without spawning py-spy.
 
 ## UX surfaces
 
+- **Static accessibility audit** (`a11y_audit.py`, `python -m
+  maverick.a11y_audit --ci`, wired as a CI step): an offline structural WCAG
+  pass over the shipped dashboard templates — img alt, form-control labels
+  (`for`/`id`, wrapping `<label>`, `aria-label`), `<html lang>`, positive
+  `tabindex`, empty interactive controls, heading-level skips — with Jinja
+  placeholders treated as opaque text. Complements the live `a11y` tool
+  (pa11y/axe); the audit pass fixed the two real findings it surfaced (chat
+  textarea + fleet-name input now labelled).
 - **TUI mouse mode** (`tui_mouse.py`, opt-in `[tui] mouse`): `maverick
   monitor`'s plan tree becomes clickable — SGR (xterm 1006) mouse tracking
   enabled/restored around the Live view, a click hit-tests its row to the
