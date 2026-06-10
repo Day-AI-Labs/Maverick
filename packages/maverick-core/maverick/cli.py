@@ -1738,13 +1738,46 @@ def template_browse() -> None:
     if not entries:
         click.echo("no registry templates (index empty or unreachable).")
         return
+    from .marketplace_ratings import RatingsLedger, stars_bar
+    ledger = RatingsLedger()
     for e in entries:
         mark = " [verified]" if e.verified else ""
-        click.echo(f"  {e.name}{mark}  v{e.version}")
+        rating = f"  {stars_bar(e.rating, e.ratings_count)}" if e.ratings_count else ""
+        click.echo(f"  {e.name}{mark}  v{e.version}{rating}")
         if e.summary:
             click.echo(f"    {e.summary}")
+        mine = ledger.my_rating("templates", e.name)
+        if mine:
+            click.echo(f"    your rating: {stars_bar(mine['stars'], 0)}")
     click.echo("")
     click.echo("install one with:  maverick template add <name>")
+    click.echo("rate one with:     maverick template rate <name> <stars 1-5>")
+
+
+@template.command("rate")
+@click.argument("name")
+@click.argument("stars", type=int)
+@click.option("--comment", default="", help="Optional short note (kept local).")
+def template_rate(name: str, stars: int, comment: str) -> None:
+    """Rate a marketplace template 1-5 stars (stored locally).
+
+    Your ratings annotate `browse` output and can be exported for an index
+    submission with `maverick template ratings-export`.
+    """
+    from .marketplace_ratings import RatingsLedger, stars_bar
+    try:
+        entry = RatingsLedger().rate("templates", name, stars, comment)
+    except ValueError as e:
+        click.echo(f"ERROR: {e}", err=True)
+        sys.exit(2)
+    click.echo(f"rated {name}: {stars_bar(entry['stars'], 0)}")
+
+
+@template.command("ratings-export")
+def template_ratings_export() -> None:
+    """Print your local ratings as the JSON fragment an index PR expects."""
+    from .marketplace_ratings import RatingsLedger
+    click.echo(RatingsLedger().export_for_submission())
 
 
 @template.command("add")

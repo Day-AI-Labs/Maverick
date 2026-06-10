@@ -393,8 +393,17 @@ trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
   never translated; catalog-completeness pinned by test).
 - **Cost** — per-run reports, live cost meter, `maverick start --dry-cost`
   forecasting (`cost_forecast.py`).
-- **Templates** — starter-goals library + community template registry
-  (`maverick template browse/add`).
+- **Templates / marketplace v2** — starter-goals library + community template
+  registry (`maverick template browse/add`), **hash-verified installs**
+  (`catalog.py` sha256 pinning), **ratings**: indexes carry display-only
+  `rating`/`ratings_count` aggregates (clamped, malformed-safe), `browse`
+  renders ★-bars, and a local ledger (`marketplace_ratings.py`,
+  `maverick template rate <name> <1-5>` / `ratings-export`) keeps your own
+  ratings ready for an index-PR submission — no hosted ratings service.
+- **Skill validator service** — `POST /api/v1/skills/validate` on the
+  dashboard: lint a SKILL.md body (same linter as `maverick skill validate`)
+  from CI or an editor against a self-hosted instance; size-capped, nothing
+  persisted.
 
 ## Distribution & install
 

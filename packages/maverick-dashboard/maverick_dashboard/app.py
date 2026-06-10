@@ -1408,6 +1408,33 @@ async def providers_api() -> JSONResponse:
     return JSONResponse({"providers": _health().snapshot()})
 
 
+@app.post("/api/v1/skills/validate")
+async def skills_validate(request: Request) -> JSONResponse:
+    """Skill validator service: lint a SKILL.md body without installing it.
+
+    POST the raw SKILL.md text (text/plain or markdown); responds
+    ``{ok, errors, warnings}`` from the same linter `maverick skill validate`
+    runs locally — so a marketplace author can validate from CI or an editor
+    against a self-hosted instance. Size-capped; nothing is persisted."""
+    import tempfile as _tempfile
+    from pathlib import Path as _Path
+
+    from maverick.skills import validate_skill_file
+
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="POST the SKILL.md body")
+    if len(body) > 256 * 1024:
+        raise HTTPException(status_code=413, detail="skill too large (max 256 KiB)")
+    with _tempfile.TemporaryDirectory(prefix="mvk-skill-validate-") as td:
+        p = _Path(td) / "SKILL.md"
+        p.write_bytes(body)
+        result = validate_skill_file(p)
+    return JSONResponse({
+        "ok": result.ok, "errors": result.errors, "warnings": result.warnings,
+    })
+
+
 @app.get("/api/v1/pins")
 async def pins_list(request: Request) -> JSONResponse:
     """Pinned watch list for the calling principal (most-recently-pinned first)."""
