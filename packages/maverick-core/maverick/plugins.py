@@ -387,22 +387,29 @@ def discover_tools() -> list[Any]:
     seam (see :mod:`maverick.plugin_isolation`).
     """
     from .plugin_isolation import isolation_mode
+    from .plugin_telemetry import enabled as telemetry_enabled
+    from .plugin_telemetry import wrap_factory as telemetry_wrap
     isolate = isolation_mode() != "none"
+    count = telemetry_enabled()
     out: list[tuple[str, Callable[[], Any]]] = []
-    for name, target, ep_value in _iter_loaded_with_value("maverick.tools", "tools"):
+    for name, target, ep_value, dist in _iter_loaded_with_value("maverick.tools", "tools"):
         if not callable(target):
             log.warning("plugin tool %s is not callable; skipping", name)
             continue
+        factory = target
         if isolate and ep_value:
-            out.append((name, _isolated_factory(name, ep_value, target)))
-        else:
-            out.append((name, target))
+            factory = _isolated_factory(name, ep_value, factory)
+        if count:
+            # Applied last so the tick covers isolated calls too.
+            factory = telemetry_wrap(name, dist, factory)
+        out.append((name, factory))
     return out
 
 
 def _iter_loaded_with_value(group: str, what: str):
     """Like _iter_loaded, but also yields the entry point's ``value``
-    ("pkg.mod:attr") so callers can re-resolve the target out-of-process."""
+    ("pkg.mod:attr") and dist name so callers can re-resolve the target
+    out-of-process / attribute telemetry."""
     if no_cli():
         return
     eps = list(_entry_points(group))
@@ -417,7 +424,8 @@ def _iter_loaded_with_value(group: str, what: str):
         target = _load(ep, what)
         if target is None:
             continue
-        yield ep.name, target, str(getattr(ep, "value", "") or "")
+        yield (ep.name, target, str(getattr(ep, "value", "") or ""),
+               _ep_dist_name(ep))
 
 
 def discover_channels() -> list[tuple[str, Any]]:

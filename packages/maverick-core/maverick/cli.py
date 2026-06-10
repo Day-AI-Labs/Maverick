@@ -2437,6 +2437,26 @@ def plugin_verify_cmd() -> None:
         sys.exit(1)
 
 
+@plugin.command("stats")
+def plugin_stats_cmd() -> None:
+    """Show local plugin-tool usage counts (opt-in [plugins] telemetry)."""
+    import time as _time
+
+    from .plugin_telemetry import enabled as _ptel_enabled
+    from .plugin_telemetry import stats as _ptel_stats
+    data = _ptel_stats()
+    if not _ptel_enabled():
+        click.echo("plugin telemetry is OFF ([plugins] telemetry = true to enable).")
+    if not data:
+        click.echo("no plugin tool calls recorded.")
+        return
+    for name, entry in sorted(data.items(), key=lambda kv: -kv[1].get("calls", 0)):
+        last = entry.get("last_used")
+        ago = f"{(_time.time() - last) / 86400:.0f}d ago" if last else "never"
+        dist = f" [{entry['dist']}]" if entry.get("dist") else ""
+        click.echo(f"  {name}{dist}: {entry.get('calls', 0)} call(s), last {ago}")
+
+
 @plugin.command("new")
 @click.argument("name")
 @click.option(

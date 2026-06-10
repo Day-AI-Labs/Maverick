@@ -145,7 +145,11 @@ here.
   plugin that pollutes globals or leaks can't touch the host) or a
   secret-scrubbed child process (stronger: separate address space, survives a
   segfaulting plugin, no host env secrets); values pass by baked literals,
-  never argv. **Plugin version-pinning lockfile** —
+  never argv. **Plugin telemetry (opt-in, local-only)** —
+  `[plugins] telemetry = true` counts plugin-tool invocations to a local JSON
+  tally (nothing leaves the machine); `maverick plugin stats` shows
+  calls/last-used per tool for allowlist pruning; composes with isolation so
+  isolated calls count too. **Plugin version-pinning lockfile** —
   `maverick plugin lock` records each plugin distribution's version to
   `plugins.lock.json`; discovery verifies against it per `[plugins]
   lock_policy = "off"|"warn"|"enforce"` (`plugin_lock.py`: enforce refuses a
