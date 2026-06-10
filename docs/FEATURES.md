@@ -85,7 +85,10 @@ here.
 - **System** — `shell` (sandbox-mediated), `git_advanced`, `compute`,
   `dns_lookup`, `openapi_runner`, `clipboard`, `notify`, `attachments`,
   `android` / `ios_sim`, `a11y`, `task_graph` (persistent dependency-DAG of
-  tasks), `workspace_snapshot` (snapshot/restore a working dir), `license_scan`
+  tasks), `workspace_snapshot` (snapshot/restore a working dir), **S3-backed
+  attachments** (`[attachments] s3_bucket`: mirror every stored attachment to
+  any S3-compatible bucket + `s3_fetch` pulls it down on another worker host;
+  local disk stays the source tools read, mirror is fail-open), `license_scan`
   (classify deps + flag copyleft), `self_capability` (report the run's capability
   grant), `oidc` (OIDC authorization-code client), `cost_curve` (per-provider cost
   model), `bench_track` (record benchmark scores + flag regressions), `teams`
@@ -132,7 +135,11 @@ here.
   error rate, avg/max latency, HIGH-ERROR flags from a tool-call log).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
-  boilerplate.
+  boilerplate. **Hot plugin reload** — `maverick plugin reload <dist>`
+  (`plugins.reload_plugin`): drop a plugin distribution's modules from the
+  import cache so the next discovery pass re-imports the current code on disk;
+  the edit-reload-retry loop for plugin authors, same allowlist/permission
+  gates on re-import.
 
 ## Channels
 
@@ -323,7 +330,10 @@ trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
   health score, cost-by-tag, and replay of a `MAVERICK_TRACE_DIR` run trace).
 - **GitHub App** — `/webhook/github` (dashboard): a labeled or `/maverick`-mentioned
   issue drives a swarm that clones the repo, fixes it, and opens a PR
-  (`github_app.py`, HMAC-verified).
+  (`github_app.py`, HMAC-verified). **GitLab Issues** — `/webhook/gitlab`:
+  assign an issue to the bot, get a goal (`X-Gitlab-Token` constant-time
+  verify, `X-Gitlab-Event-UUID` replay dedup), completing the
+  Linear/Jira/GitHub/GitLab issue-trigger family (`issue_webhooks.py`).
 - **Web dashboard** — run list, plan-tree, chat at `/chat`, approval queue, and
   an **oversight console** (`/oversight`): live fleet state, the approval queue,
   a per-guardrail intervention roll-up, and an inline **"why this action"

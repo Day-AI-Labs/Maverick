@@ -227,6 +227,7 @@ _AUTH_EXEMPT = {
     "/webhook/linear",
     "/webhook/jira",
     "/webhook/github",
+    "/webhook/gitlab",
     # Built-in OIDC browser-login endpoints: they bootstrap a session and carry
     # their own flow-level security (state/PKCE/signed cookies). They must be
     # reachable by a browser that has no dashboard token yet; each self-gates on
@@ -1561,6 +1562,65 @@ async def webhook_github(request: Request, bg: BackgroundTasks) -> JSONResponse:
 
     bg.add_task(_run)
     return JSONResponse({"status": "accepted", "issue": payload.issue_number})
+
+
+@app.post("/webhook/gitlab")
+async def webhook_gitlab(request: Request, bg: BackgroundTasks) -> JSONResponse:
+    """GitLab issue-assigned webhook -> goal.
+
+    GitLab authenticates with a shared ``X-Gitlab-Token`` (no body HMAC), so
+    this route verifies that token (constant-time, fail-closed) and keys
+    replay-dedup on the required ``X-Gitlab-Event-UUID`` delivery id instead
+    of a body signature.
+    """
+    import os as _os
+
+    from maverick.issue_webhooks import (
+        build_brief,
+        parse_issue_event,
+        replay_window_seconds,
+        verify_gitlab_token,
+    )
+
+    secret = _os.environ.get("MAVERICK_GITLAB_WEBHOOK_TOKEN", "").strip()
+    if not secret:
+        raise HTTPException(
+            status_code=401,
+            detail="GitLab webhook not configured. Set MAVERICK_GITLAB_WEBHOOK_TOKEN.",
+        )
+    if not verify_gitlab_token(request.headers.get("X-Gitlab-Token"), secret):
+        raise HTTPException(status_code=403, detail="bad webhook token")
+    body = await _read_limited_webhook_body(request)
+    try:
+        payload = json.loads(body or b"{}")
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="body must be valid JSON")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="body must be a JSON object")
+
+    event = parse_issue_event("gitlab", payload)
+    if event is None:
+        return JSONResponse({"ignored": True}, status_code=200)
+
+    # GitLab sends no signed timestamp; the per-delivery UUID is the dedup key.
+    delivery = (request.headers.get("X-Gitlab-Event-UUID") or "").strip()
+    if not delivery:
+        raise HTTPException(status_code=403, detail="missing delivery id")
+    if _issue_webhook_replay_seen(f"gitlab:{delivery}", replay_window_seconds()):
+        raise HTTPException(status_code=409, detail="duplicate webhook delivery")
+
+    if not _any_provider_key_set():
+        raise HTTPException(
+            status_code=400,
+            detail="No LLM provider key configured. Run 'maverick init'.",
+        )
+    check_goal_rate_limit(request, source="webhook:gitlab")
+    w = _world()
+    title = f"{event.issue_id}: {event.title}".strip()
+    goal_id = w.create_goal(title[:200], build_brief(event)[:8000], owner="")
+    from maverick.runner import run_goal_in_thread
+    bg.add_task(run_goal_in_thread, goal_id, None)
+    return JSONResponse({"goal_id": goal_id}, status_code=201)
 
 
 # Per-process replay dedup for inbound issue webhooks, keyed on the request's

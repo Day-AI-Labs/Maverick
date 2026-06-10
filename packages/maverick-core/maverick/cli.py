@@ -2346,6 +2346,26 @@ def plugin_list() -> None:
         )
 
 
+@plugin.command("reload")
+@click.argument("dist_name")
+def plugin_reload(dist_name: str) -> None:
+    """Hot-reload a plugin distribution's code (no process restart).
+
+    Drops DIST_NAME's entry-point modules from the import cache so the next
+    discovery pass re-imports the current code on disk. Already-instantiated
+    tools/channels keep running old code until their owner rebuilds them.
+    """
+    from .plugins import reload_plugin
+    dropped = reload_plugin(dist_name)
+    if not dropped:
+        click.echo(f"no maverick entry points found for distribution {dist_name!r} "
+                   "(is it installed and allowlisted?)")
+        sys.exit(1)
+    click.echo(f"reloaded {dist_name}: dropped {len(dropped)} module(s)")
+    for m in dropped:
+        click.echo(f"  - {m}")
+
+
 @plugin.command("new")
 @click.argument("name")
 @click.option(

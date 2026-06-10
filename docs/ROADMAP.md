@@ -92,7 +92,7 @@ single-run inflation) — run multi-seed.
 | **Distribution** | Localized docs phase 2 (es/ja) · reproducible benchmark v2 (terminal-bench, weblinx, HumanEval-fix) · marketplaces v2 with ratings · tutorial video season 2 · university outreach (5 partnerships) · skill validator service · comparison page · press kit · Maverick Summit v1 (virtual) · showcase wall · integration partnerships (LangSmith/Helicone/OpenRouter) · browser extension v1 · localized docs phase 3 (de/fr/pt-BR) · GitHub Stars campaign · office hours |
 | **Performance** | Tiered storage (hot SQLite + cold parquet) · query plan regression CI · async compaction · streaming tool_result · Sentry performance tab · adversarial-cost benchmark suite · continuous batching local · compaction v3 learned summarizer · speculative tool execution · gRPC dispatch · WAL contention audit (N=16) · cost-attribution API · public perf dashboard |
 | **Safety** | shield calibration dashboard · image-content classifier · voice safety pass · red-team CI |
-| **Ecosystem** | Marketplace ratings + install verification · Emacs integration · WhatsApp Cloud API rewrite · plugin sandboxing (subinterpreter) · hot plugin reload · Vim/Neovim plugin · GitHub + GitLab Issues integrations · S3-backed attachments |
+| **Ecosystem** | Marketplace ratings + install verification · Emacs integration · WhatsApp Cloud API rewrite · plugin sandboxing (subinterpreter) · Vim/Neovim plugin |
 
 ---
 

@@ -401,3 +401,54 @@ def installed_plugins() -> dict[str, list[str]]:
         "skills":    [getattr(s, "name", "<unnamed>") for s in discover_skills()],
         "personas":  list(discover_personas()),
     }
+
+
+# ---- hot plugin reload (roadmap 2027-H1 ecosystem) --------------------------
+
+_PLUGIN_GROUPS = ("maverick.tools", "maverick.channels", "maverick.skills",
+                  "maverick.personas")
+
+
+def _plugin_modules(dist_name: str) -> set[str]:
+    """Top-level module paths declared by ``dist_name``'s maverick entry points."""
+    mods: set[str] = set()
+    for group in _PLUGIN_GROUPS:
+        for ep in _entry_points(group):
+            if _ep_dist_name(ep) != dist_name:
+                continue
+            value = getattr(ep, "value", "") or ""
+            module = value.split(":", 1)[0].strip()
+            if module:
+                mods.add(module)
+    return mods
+
+
+def reload_plugin(dist_name: str) -> list[str]:
+    """Hot-reload one plugin distribution's code without restarting the process.
+
+    Drops the distribution's entry-point modules (and their submodules) from
+    ``sys.modules`` so the next discovery pass re-imports the *current* code on
+    disk — the edit-reload-retry loop for plugin authors. Returns the module
+    names dropped (empty when the dist declares no maverick entry points).
+
+    Scope honesty: already-instantiated objects (a registered Tool from the old
+    module, a running Channel) keep running old code until their owner rebuilds
+    them; discovery (``discover_*``) after this returns fresh objects. The
+    allowlist / name-squat / permission gates apply to the re-import exactly as
+    they did to the first import.
+    """
+    import importlib
+    import sys
+    mods = _plugin_modules(dist_name)
+    if not mods:
+        return []
+    dropped: list[str] = []
+    for name in list(sys.modules):
+        if any(name == m or name.startswith(m + ".") for m in mods):
+            del sys.modules[name]
+            dropped.append(name)
+    # The path finders cache directory listings (and .pyc staleness checks);
+    # without this a just-edited file can re-import as the old code.
+    importlib.invalidate_caches()
+    log.info("hot-reloaded plugin %s: dropped %d module(s)", dist_name, len(dropped))
+    return sorted(dropped)
