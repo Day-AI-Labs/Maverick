@@ -245,6 +245,25 @@ jobs:
       - name: Test
         run: pytest -vvs --tb=long
 
+  redteam:
+    # Red-team CI (ROADMAP 2027-H1 safety): run the labelled adversarial
+    # corpus through the shield's built-in detector and fail the build on any
+    # missed attack or over-blocked benign case. A named job (not buried in
+    # the test matrix) so the gate is visible in the checks list. The corpus
+    # is maverick_shield/redteam_corpus.jsonl — grow it by PR.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install shield
+        run: pip install -e ./packages/maverick-shield
+      - name: Red-team gate (zero missed attacks)
+        run: python -m maverick_shield.redteam
+      - name: Calibration report (informational)
+        run: python -m maverick_shield.redteam --calibrate
+
   eval-smoke:
     # Eval-gated-release foundation (ROADMAP P3). Real evals drive `maverick
     # start` against a live provider -- no models/network in CI -- so this gate

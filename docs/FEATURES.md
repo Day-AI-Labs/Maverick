@@ -218,7 +218,15 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   + deceptive-link heuristics, composed into `Shield.scan_output`),
   **operator-defined constitutional rules** (custom regex policy via `[safety]
   constitution`, `maverick_shield/constitutional.py`),
-  Constitutional-Classifier-v2 cascade (`safety/`, `maverick_shield/`).
+  Constitutional-Classifier-v2 cascade (`safety/`, `maverick_shield/`),
+  **voice safety pass** (`safety/voice_safety.py`): transcript screen for
+  wake-word stuffing + spoken role-switch before an utterance drives the
+  agent, and redact-before-speak (secrets/PII never read aloud) wired into
+  the `speak` tool, **image-content classifier**
+  (`tools/image_content_classifier.py`): model-free pixel heuristics — skin-
+  tone ratio (NSFW pre-filter routes to human review), brightness extremes,
+  photo-vs-graphic, dimension sanity — file decode via Pillow or raw pixels
+  with no imaging dep.
 - **Access control** — tool ACLs, consent prompts + a persistent **consent
   ledger** (`safety/consent.py`; `MAVERICK_CONSENT_MODE` =
   auto-approve / auto-deny / ask / dashboard), capability tokens
@@ -240,6 +248,15 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   a require-human-on-high-risk policy into the live governance policy
   (strictest-wins, via the same union the finance regimes use). Inert when
   unset — default behavior is unchanged.
+- **Red-team CI** — a named CI job (`redteam` in `ci.yml`) runs the labelled
+  adversarial corpus (`maverick_shield/redteam_corpus.jsonl`, grow-by-PR)
+  through the shield's built-in detector via `python -m maverick_shield.redteam`
+  and fails the build on any missed attack or over-blocked benign case.
+- **Shield calibration dashboard** — the same runner swept across every block
+  threshold yields the operating curve (recall/precision/fp-rate per
+  threshold) + per-rule hit counts: `--calibrate` CLI and
+  `GET /api/v1/shield/calibration` on the dashboard (auth-gated; operator
+  corpus via `MAVERICK_REDTEAM_CORPUS`).
 - **Sandbox-escape canaries**, per-tool rate limiter, killswitch.
 
 ## Governed agent runtime & onboarding

@@ -245,6 +245,13 @@ def _run_speak(args: dict[str, Any], sandbox: Any = None) -> str:
         return "ERROR: text is required"
     if len(text) > 4096:
         return f"ERROR: text too long ({len(text)} > 4096 chars)"
+    # Voice safety pass: never speak a secret/PII aloud -- spoken audio can't
+    # be unspoken. Fail-open (a detector bug must not mute the channel).
+    try:
+        from ..safety.voice_safety import redact_for_speech
+        text, _redactions = redact_for_speech(text)
+    except Exception:
+        pass
     # Confine the output path to the workspace (unconfined => arbitrary write:
     # ~/.ssh/authorized_keys, ~/.maverick/config.toml). The default also lands
     # in the workspace.

@@ -735,8 +735,10 @@ def base_registry(  # noqa: C901
     reg.register(trace_compare())
     reg.register(latency_heatmap())
     reg.register(tool_call_inspector())
+    from .image_content_classifier import image_content_classifier
     from .template_generator import template_generator
     reg.register(template_generator())
+    reg.register(image_content_classifier())
     reg.register(a11y_tree())
     reg.register(ai_act_classifier())
     reg.register(cache_admin())

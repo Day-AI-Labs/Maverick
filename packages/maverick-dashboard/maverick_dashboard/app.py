@@ -1372,6 +1372,29 @@ async def providers_api() -> JSONResponse:
     return JSONResponse({"providers": _health().snapshot()})
 
 
+@app.get("/api/v1/shield/calibration")
+async def shield_calibration_api() -> JSONResponse:
+    """Shield calibration data for the oversight console.
+
+    Threshold sweep (recall / precision / fp-rate per block threshold) plus
+    per-rule hit counts over the red-team corpus — the shipped one, or an
+    operator's own via ``MAVERICK_REDTEAM_CORPUS``. Behind the dashboard's
+    normal auth (not in the exempt list)."""
+    import os as _os
+    from pathlib import Path as _Path
+
+    try:
+        from maverick_shield.redteam import calibration_report, load_corpus
+    except ImportError:
+        raise HTTPException(status_code=501, detail="maverick-shield is not installed")
+    corpus_env = _os.environ.get("MAVERICK_REDTEAM_CORPUS", "").strip()
+    try:
+        cases = load_corpus(_Path(corpus_env) if corpus_env else None)
+    except (OSError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"corpus error: {e}")
+    return JSONResponse(calibration_report(cases))
+
+
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request) -> HTMLResponse:
     recent = _world().list_goals(owner=goal_owner_filter(request), limit=10, order="desc")
