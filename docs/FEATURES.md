@@ -365,7 +365,13 @@ never routing somewhere v2 rejected, falling back to v2 on a cold context. The
 learned table persists atomically (`router_bandit.json`, 0600); opt-in via
 `[routing] bandit` and default-OFF.
 
-**Public performance SLA** ([`docs/perf-sla.md`](./perf-sla.md) +
+**Longitudinal benchmark retrospective** (`benchmark_retrospective.py`,
+`python -m maverick.benchmark_retrospective`): the multi-year companion to
+continuous benchmarking — slices the FULL recorded score history into calendar-
+quarter eras and reports per-era medians, era-over-era movement, best/worst
+eras, net first→last change, and a least-squares trend verdict per benchmark;
+the report states its actual coverage span (the intended cadence is the 3-year
+mark, run over whatever the deployment recorded). **Public performance SLA** ([`docs/perf-sla.md`](./perf-sla.md) +
 `perf_sla.py`, `python -m maverick.perf_sla --ci`): the published, measurable
 performance properties each release certifies — tool-dispatch overhead,
 compaction latency, world-model hot-path read/write p95 — measured against the
