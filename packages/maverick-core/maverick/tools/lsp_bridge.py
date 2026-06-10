@@ -1,7 +1,7 @@
 """Cross-language LSP bridge (roadmap: 2027 H1 capabilities).
 
 Code intelligence beyond Python without writing N parsers: speak the Language
-Server Protocol to whatever servers the host has installed (pyright, gopls,
+Server Protocol to operator-configured or built-in language-server binaries (pyright, gopls,
 rust-analyzer, typescript-language-server, ...) and expose the queries an
 agent actually uses — symbols, definition, references, hover, diagnostics.
 
@@ -14,13 +14,13 @@ questions per run.
 Process model: like ``host_exec`` (see ``tools/__init__``), the server binary
 is **host-bound by nature** — language servers live on the host PATH, and the
 conversation is bidirectional stdio, which ``sandbox.exec``'s run-to-completion
-contract can't carry. So this module spawns the argv list directly (never a
-shell), with the secret-scrubbed child env, a hard wall-clock deadline, and a
-guaranteed kill in ``finally`` — the same explicit, auditable carve-out the
-android/clipboard tools use.
+contract can't carry. So this module spawns only built-in or operator-configured
+language-server argv lists directly (never a shell), with the secret-scrubbed
+child env, a hard wall-clock deadline, and a guaranteed kill in ``finally``.
+Model-controlled per-call executable overrides are intentionally not supported.
 
 ops:
-  - symbols(file[, language|server])           — document symbols (name/kind/line)
+  - symbols(file[, language])                  — document symbols (name/kind/line)
   - definition(file, line, character)          — where the symbol is defined
   - references(file, line, character)          — places the symbol is used
   - hover(file, line, character)               — type/doc info at a position
@@ -37,8 +37,9 @@ from typing import Any
 
 from . import Tool, scrub_child_env
 
-# Default servers per language; override via [lsp.servers] {lang = [argv...]}
-# or the per-call 'server' argv.
+# Default servers per language; operators may override via [lsp.servers] {lang = [argv...]}.
+# Per-call executable overrides are intentionally forbidden: tool arguments are
+# model-controlled, while these argv lists execute on the host.
 DEFAULT_SERVERS: dict[str, list[str]] = {
     "python":     ["pyright-langserver", "--stdio"],
     "go":         ["gopls"],
@@ -197,18 +198,17 @@ class _LspSession:
             pass
 
 
-def _server_for(language: str, override: Any) -> list[str] | str:
-    if isinstance(override, list) and override:
-        return [str(a) for a in override]
+def _server_for(language: str) -> list[str] | str:
     try:
         from ..config import load_config
         cfg = ((load_config() or {}).get("lsp") or {}).get("servers") or {}
         argv = cfg.get(language)
         if isinstance(argv, list) and argv:
-            return [str(a) for a in argv]
+            argv = [str(a) for a in argv]
+        else:
+            argv = DEFAULT_SERVERS.get(language)
     except Exception:
-        pass
-    argv = DEFAULT_SERVERS.get(language)
+        argv = DEFAULT_SERVERS.get(language)
     if not argv:
         return (f"ERROR: no LSP server known for language {language!r} "
                 f"(configure [lsp.servers] {language} = [\"<server>\", ...])")
@@ -216,6 +216,23 @@ def _server_for(language: str, override: Any) -> list[str] | str:
         return (f"ERROR: LSP server {argv[0]!r} is not installed on the host "
                 f"(install it, or configure [lsp.servers] {language})")
     return argv
+
+
+def _workspace_root() -> Path:
+    root = os.environ.get("MAVERICK_WORKSPACE_ROOT") or os.getcwd()
+    return Path(root).resolve()
+
+
+def _resolve_workspace_path(raw: Any, workspace: Path, *, label: str) -> Path | str:
+    if raw is None or str(raw) == "":
+        return f"ERROR: {label} is required"
+    path = Path(str(raw))
+    candidate = path.resolve() if path.is_absolute() else (workspace / path).resolve()
+    try:
+        candidate.relative_to(workspace)
+    except ValueError:
+        return f"ERROR: {label} escapes the workspace: {path}"
+    return candidate
 
 
 def _uri(path: Path) -> str:
@@ -239,21 +256,29 @@ def _fmt_location(loc: dict) -> str:
 
 def _run_query(args: dict[str, Any]) -> str:  # noqa: C901 -- one dispatch table
     op = args.get("op")
+    if "server" in args:
+        return "ERROR: per-call LSP server argv overrides are not allowed; configure [lsp.servers] instead"
     file_arg = args.get("file")
-    if not file_arg:
-        return "ERROR: file is required"
-    path = Path(str(file_arg))
+    workspace = _workspace_root()
+    path = _resolve_workspace_path(file_arg, workspace, label="file")
+    if isinstance(path, str):
+        return path
     if not path.exists():
         return f"ERROR: no such file: {path}"
 
     language = str(args.get("language") or _EXT_LANG.get(path.suffix, "")).lower()
     if not language:
         return f"ERROR: cannot infer language from {path.suffix!r}; pass 'language'"
-    argv = _server_for(language, args.get("server"))
+    argv = _server_for(language)
     if isinstance(argv, str):
         return argv
 
-    root = Path(str(args.get("root") or path.parent))
+    root_arg = args.get("root") or path.parent
+    root = _resolve_workspace_path(root_arg, workspace, label="root")
+    if isinstance(root, str):
+        return root
+    if not root.is_dir():
+        return f"ERROR: root is not a directory: {root}"
     timeout = float(args.get("timeout_s") or _TIMEOUT_S)
 
     session = _LspSession(argv, root, deadline_s=timeout)
@@ -340,8 +365,6 @@ _SCHEMA: dict[str, Any] = {
                "enum": ["symbols", "definition", "references", "hover", "diagnostics"]},
         "file": {"type": "string", "description": "path to the source file"},
         "language": {"type": "string", "description": "override language detection"},
-        "server": {"type": "array", "items": {"type": "string"},
-                   "description": "explicit server argv (overrides config/defaults)"},
         "root": {"type": "string", "description": "workspace root (default: file's dir)"},
         "line": {"type": "integer", "description": "0-based line (definition/references/hover)"},
         "character": {"type": "integer", "description": "0-based column"},
@@ -357,9 +380,9 @@ def lsp_bridge() -> Tool:
         description=(
             "Cross-language code intelligence via the Language Server Protocol. "
             "ops: symbols / definition / references / hover (need line+character, "
-            "0-based) / diagnostics, against the host's installed language "
-            "servers (pyright, gopls, rust-analyzer, tsserver, clangd; override "
-            "via 'server' argv or [lsp.servers]). One-shot session per call."
+            "0-based) / diagnostics, against built-in or operator-configured "
+            "language servers (pyright, gopls, rust-analyzer, tsserver, clangd; "
+            "override via [lsp.servers]). One-shot session per call."
         ),
         input_schema=_SCHEMA,
         fn=_run_query,
