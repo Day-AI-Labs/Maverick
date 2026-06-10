@@ -508,7 +508,12 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   doesn't have. The proxy strips the client's auth + hop-by-hop headers,
   injects the real key in the upstream's scheme (bearer / `x-api-key`), and
   forwards only to its single configured upstream host (an SSRF guard).
-- **Audit & compliance** — signed append-only audit log (`maverick audit verify`),
+- **Audit & compliance** — signed append-only audit log (`maverick audit verify`), **federated
+  audit-log verification** (`audit/federation.py`) — over a set of nodes/tenants
+  whose signed logs reference each other (delegation, A2A handoff), confirms
+  every cross-node reference is *reciprocated* (a node can't drop its half to
+  hide an action) on top of each node's own chain/anchor check; an
+  unreciprocated or forged link is reported with the missing counterpart,
   date-windowed **SIEM export**, encryption-at-rest (`crypto_at_rest.py`,
   `maverick encryption migrate`), SOC2 readiness (`soc2.py`), DSAR (`dsar.py`),
   **differential erasure verification** (`erasure_verify.py`, `maverick
