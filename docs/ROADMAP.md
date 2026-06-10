@@ -133,7 +133,7 @@ single-run inflation) — run multi-seed.
 | **UX** | Plan-tree minimap · conversational supervisor · voice-only mode · mobile offline cache · augmented terminal (Rich inline charts) · multi-tenant view · personalized starter templates · replay annotation export · AR plan-tree (visionOS) · live captions voice · visual goal templates marketplace · adaptive UI density · embedded analytics web component · pluggable themes API · voice macros · RTL language support |
 | **Distribution** | 2.0 stable release · migration playbook · marketplace v3 (donate-direct model) · Maverick Summit v2 (hybrid) · editor expansion (JetBrains/Neovim/Zed) · localized docs phase 5 (top-15 langs + MT pipeline) · "Built with Maverick" badge program · comparison benchmark v3 live dashboard · university curriculum kit · foundation paperwork submitted · ARM/RISC-V builds · iOS/Android skill execution (Pyodide/Kivy) · skill + channel certification programs · community grants v1 · regional meetup playbook · embeddable widget · hosted demo cluster (demo.maverick.dev) · press push to major outlets · sponsor tier 2 |
 | **Performance** | compaction v6 hybrid (learned classifier picks strategy) · sandbox pool (Firecracker-warm + cross-run pooling — warm Docker container reuse shipped) |
-| **Safety** | misuse leaderboard removal · safety steering group · formal verification of sandbox interface (TLA+) · backport security fixes · external SOC2 Type I |
+| **Safety** | Safety steering group · backport security fixes · external SOC2 Type I · misuse leaderboard removal (verified absent — the repo contains no misuse leaderboard to remove; resolved) |
 | **Ecosystem** | Browser-extension chat · voice channel v2 (streaming ASR + barge-in) |
 
 ---

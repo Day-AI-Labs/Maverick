@@ -238,6 +238,14 @@ here.
   `[plugins] grpc = [{target, command}]`) carries the same contract over gRPC
   for any language: Describe → Tools, Call with a deadline, scrubbed-env spawn,
   reconnect/respawn-once.
+  **Formal verification of the sandbox interface (TLA+)**
+  ([`docs/specs/tla/`](../docs/specs/tla/README.md)): `SandboxInterface.tla`
+  models the chokepoint as a state machine and TLC-verifies — for all
+  interleavings — no silent downgrade to host exec under a container backend,
+  scrubbed child env always, refused-never-ran, bounded execution budget, and
+  every command eventually terminal (checking the liveness property surfaced a
+  real modelling subtlety: dispatch fairness, now explicit). Verified: 982
+  states, no errors; reproduction steps in the README.
   **Sigstore keyless signing** (`sigstore_signing.py`, `[sigstore]` extra,
   `python -m maverick.sigstore_signing sign|verify`): sign skill/plugin
   artifacts with sigstore's keyless flow (OIDC identity) into a
