@@ -12,6 +12,7 @@
           type="text"
           id="goal-title"
           name="title"
+          value="{{ prefill_title or '' }}"
           placeholder="Plan a 3-day trip to Lisbon under $1500"
           required
           autofocus
@@ -23,15 +24,15 @@
           style="padding: 0.65rem 1.5rem; background: var(--accent); color: #fff; border: 0; border-radius: 6px; cursor: pointer; font-weight: 500;"
         >Run</button>
       </div>
-      <details>
+      <details{% if prefill_description %} open{% endif %}>
         <summary style="cursor: pointer; font-size: 0.85rem; color: var(--muted, #888);">Add details (optional)</summary>
         <textarea
           name="description"
           aria-label="Extra details for the agent (optional)"
-          rows="3"
+          rows="{{ 8 if prefill_description else 3 }}"
           placeholder="Extra context, constraints, links, or acceptance criteria for the agent."
           style="width: 100%; box-sizing: border-box; margin-top: 0.4rem; padding: 0.5rem 0.85rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-family: inherit;"
-        ></textarea>
+        >{{ prefill_description or '' }}</textarea>
       </details>
     </form>
     <p id="goal-error" role="alert" aria-live="assertive"

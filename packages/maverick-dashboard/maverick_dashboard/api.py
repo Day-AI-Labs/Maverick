@@ -475,6 +475,60 @@ async def marketplace_stats() -> dict:
     return summarize(RatingsLedger())
 
 
+@router.get("/templates")
+async def templates_catalog() -> dict:
+    """The goal-template catalog with the operator's own ratings — the JSON
+    face of the /templates marketplace page."""
+    from maverick_dashboard.app import template_market_entries
+    return {"templates": template_market_entries()}
+
+
+@router.get("/templates/suggested")
+async def templates_suggested(request: Request, k: int = 5) -> dict:
+    """Personalized starter templates: the catalog ranked for THIS user from
+    their goal-title history (pure scorer, no LLM — ``maverick.starter_templates``).
+    Owner-scoped history: an authenticated non-admin is ranked on their own
+    goals only."""
+    from maverick.starter_templates import suggest
+    k = max(1, min(int(k or 5), 20))
+    return {
+        "suggested": suggest(_world(), k=k, owner=goal_owner_filter(request)),
+    }
+
+
+@router.get("/voice/captions")
+async def voice_captions(source: str = "default", max_chars: int = 160) -> StreamingResponse:
+    """Live captions (SSE) over the voice transcript seam.
+
+    Streams one ``data: {caption, final, ts}`` frame per transcript segment
+    from the named source in ``maverick.live_captions``'s source registry,
+    then ``event: end`` when the source is exhausted. Default-off: the
+    registry starts empty (no live mic — a deployment registers its ASR
+    pipeline; tests register scripted sources), so an unregistered source
+    404s.
+    """
+    from maverick.live_captions import caption_stream, get_source
+    factory = get_source(source)
+    if factory is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"no caption source registered as {source!r}; "
+                   "register one via maverick.live_captions.register_source",
+        )
+    try:
+        max_chars = max(16, min(int(max_chars), 500))
+    except (TypeError, ValueError):
+        max_chars = 160
+
+    async def _gen():
+        yield ": captions\n\n"
+        async for frame in caption_stream(factory(), max_chars=max_chars):
+            yield f"data: {json.dumps(frame)}\n\n"
+        yield "event: end\ndata: {}\n\n"
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
 @router.get("/catalog/{kind}")
 async def catalog_list(kind: str) -> dict:
     """List federated catalog entries for a kind (skills/plugins/mcp/personas).
