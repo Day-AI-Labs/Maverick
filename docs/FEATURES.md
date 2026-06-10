@@ -174,7 +174,14 @@ here.
   `trace_compare` (diff two replay traces step by step — first divergence,
   matched prefix, per-step field diffs), `latency_heatmap` (tool × latency-band
   shaded grid + p50/p95 per tool), `tool_call_inspector` (per-tool call count,
-  error rate, avg/max latency, HIGH-ERROR flags from a tool-call log).
+  error rate, avg/max latency, HIGH-ERROR flags from a tool-call log),
+  `rectification` (validate/apply GDPR Art. 16 field corrections under a
+  mutability policy — auditable diff + corrected record), `anomaly_scan` (flag
+  cross-run metric outliers via the robust median/MAD modified z-score),
+  `k_anonymity` (check a released dataset for k-anonymity + optional l-diversity
+  — quasi-identifier group sizes and sensitive-value diversity), `retention_check`
+  (audit records against a data-retention policy — flag over-retained and
+  no-policy records by category/age; GDPR storage limitation).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate. **Plugin sandboxing** — opt-in
