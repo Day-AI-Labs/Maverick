@@ -582,6 +582,10 @@ and `trace_commit()` reads it back so replays tie to exact code); **cost split b
   token/dollar projection + OK/TIGHT/OVER verdict before a goal runs.
   **"Why this cost" drill-down** — `GET /api/v1/goals/{id}/cost-breakdown`:
   spend decomposed by episode outcome (dollars/tokens/counts).
+  **Run gallery** — `GET/POST/DELETE /api/v1/gallery[/{id}]`:
+  deployment-wide curation of exemplary runs (blurb + curator attribution,
+  upsert, capped), each entry enriched with live status and links to the
+  tutorial/explain exports; access-checked per viewer.
   **Run-as-tutorial export** — `GET /api/v1/goals/{id}/tutorial.md`
   (`tutorial_export.py`): the run rendered as step-by-step markdown (goal →
   approach → steps with preserved code fences → dead ends → outcome),

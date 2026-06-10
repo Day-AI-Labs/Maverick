@@ -40,6 +40,7 @@ from .api import router as api_router
 from .auth import (
     assert_goal_access,
     caller_principal,
+    can_access_goal,
     execution_user_id_from_request,
     goal_owner_filter,
     require_principal,
@@ -1640,6 +1641,55 @@ async def views_delete(request: Request, name: str) -> JSONResponse:
     if not _ux().delete_view(caller_principal(request), name):
         raise HTTPException(status_code=404, detail="no such view")
     return JSONResponse({"deleted": name})
+
+
+@app.get("/api/v1/gallery")
+async def gallery_list(request: Request) -> JSONResponse:
+    """Run gallery: the deployment's featured runs, enriched with live goal
+    state and links to the tutorial/explain exports."""
+    from maverick.ux_store import shared as _ux
+    w = _world()
+    runs = []
+    for entry in _ux().gallery():
+        g = w.get_goal(entry["goal_id"])
+        if g is None or not can_access_goal(request, g):
+            continue
+        runs.append({
+            **entry,
+            "title": (g.title or "")[:120],
+            "status": g.status,
+            "tutorial": f"/api/v1/goals/{entry['goal_id']}/tutorial.md",
+            "explain": f"/api/v1/goals/{entry['goal_id']}/explain",
+        })
+    return JSONResponse({"gallery": runs})
+
+
+@app.post("/api/v1/gallery/{goal_id}")
+async def gallery_add(request: Request, goal_id: int) -> JSONResponse:
+    g = _world().get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    blurb = str((body or {}).get("blurb") or "")
+    from maverick.ux_store import shared as _ux
+    try:
+        entry = _ux().gallery_add(goal_id, blurb=blurb,
+                                  curator=caller_principal(request))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JSONResponse(entry, status_code=201)
+
+
+@app.delete("/api/v1/gallery/{goal_id}")
+async def gallery_remove(request: Request, goal_id: int) -> JSONResponse:
+    from maverick.ux_store import shared as _ux
+    if not _ux().gallery_remove(goal_id):
+        raise HTTPException(status_code=404, detail="not in the gallery")
+    return JSONResponse({"removed": goal_id})
 
 
 @app.get("/api/v1/goals/{goal_id}/annotations")

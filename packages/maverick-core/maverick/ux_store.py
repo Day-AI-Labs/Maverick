@@ -26,6 +26,7 @@ from typing import Any
 MAX_PINS = 200          # per principal
 MAX_VIEWS = 50          # per principal
 MAX_ANNOTATIONS = 1000  # per goal
+MAX_GALLERY = 100       # deployment-wide
 _ANON = "_anon"          # principal key when auth is off
 
 
@@ -46,9 +47,11 @@ class UxStore:
 
     def _load(self) -> dict[str, Any]:
         try:
-            return json.loads(self.path.read_text(encoding="utf-8"))
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            data.setdefault("gallery", {})
+            return data
         except (OSError, ValueError):
-            return {"pins": {}, "views": {}, "annotations": {}}
+            return {"pins": {}, "views": {}, "annotations": {}, "gallery": {}}
 
     def _save(self, data: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -148,6 +151,42 @@ class UxStore:
             return sorted(notes, key=lambda n: (n.get("seq", 0), n.get("at", 0)))
 
 
+    # -- run gallery (deployment-wide curation) -------------------------------
+
+    def gallery_add(self, goal_id: int, *, blurb: str = "", curator: str | None = None) -> dict:
+        """Feature a run in the deployment's gallery (idempotent upsert)."""
+        blurb = str(blurb or "").strip()
+        if len(blurb) > 500:
+            raise ValueError("blurb must be <= 500 chars")
+        entry = {"blurb": blurb, "curator": _principal_key(curator), "at": time.time()}
+        gid = str(int(goal_id))
+        with self._lock:
+            data = self._load()
+            gallery = data["gallery"]
+            if gid not in gallery and len(gallery) >= MAX_GALLERY:
+                raise ValueError(f"gallery is full (max {MAX_GALLERY})")
+            gallery[gid] = entry
+            self._save(data)
+            return entry
+
+    def gallery_remove(self, goal_id: int) -> bool:
+        gid = str(int(goal_id))
+        with self._lock:
+            data = self._load()
+            existed = data["gallery"].pop(gid, None) is not None
+            if existed:
+                self._save(data)
+            return existed
+
+    def gallery(self) -> list[dict]:
+        """Featured runs, newest-curated first: [{goal_id, blurb, curator, at}]."""
+        with self._lock:
+            data = self._load()
+        out = [{"goal_id": int(gid), **entry} for gid, entry in data["gallery"].items()]
+        out.sort(key=lambda e: -float(e.get("at", 0)))
+        return out
+
+
 _shared: UxStore | None = None
 _shared_lock = threading.Lock()
 
@@ -168,4 +207,4 @@ def reset_shared() -> None:
 
 
 __all__ = ["UxStore", "shared", "reset_shared", "MAX_PINS", "MAX_VIEWS",
-           "MAX_ANNOTATIONS"]
+           "MAX_ANNOTATIONS", "MAX_GALLERY"]

@@ -124,3 +124,31 @@ def test_explain_dict_events_and_result():
     out = explain({"title": "T", "status": "running", "result": "half done"},
                   [{"kind": "observation", "content": "API is rate limited", "agent": "researcher"}])
     assert "still in progress" in out and "rate limited" in out and "half done" in out
+
+
+# ---- run gallery ----
+
+def test_gallery_add_list_remove(tmp_path):
+    s = _store(tmp_path)
+    s.gallery_add(7, blurb="great demo of the refund flow", curator="alice")
+    s.gallery_add(9)
+    items = s.gallery()
+    assert [e["goal_id"] for e in items] == [9, 7]  # newest-curated first
+    assert items[1]["blurb"].startswith("great demo")
+    assert items[1]["curator"] == "alice"
+    # Upsert: re-adding updates, doesn't duplicate.
+    s.gallery_add(7, blurb="updated")
+    assert len(s.gallery()) == 2
+    assert s.gallery_remove(7) is True
+    assert s.gallery_remove(7) is False
+
+
+def test_gallery_validation_and_cap(tmp_path):
+    from maverick.ux_store import MAX_GALLERY
+    s = _store(tmp_path)
+    with pytest.raises(ValueError):
+        s.gallery_add(1, blurb="x" * 600)
+    for i in range(MAX_GALLERY):
+        s.gallery_add(i)
+    with pytest.raises(ValueError, match="full"):
+        s.gallery_add(9999)

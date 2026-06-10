@@ -85,3 +85,17 @@ def test_runs_compare():
     assert runs[0]["errors"] == 1 and runs[1]["errors"] == 0
     assert client.get("/api/v1/runs/compare?ids=abc").status_code == 400
     assert client.get(f"/api/v1/runs/compare?ids={a},99999").status_code == 404
+
+
+def test_gallery_endpoints():
+    gid = _mk_goal("showcase run")
+    r = client.post(f"/api/v1/gallery/{gid}", json={"blurb": "exemplary"})
+    assert r.status_code == 201, r.text
+    listing = client.get("/api/v1/gallery").json()["gallery"]
+    assert listing[0]["goal_id"] == gid
+    assert listing[0]["title"] == "showcase run"
+    assert listing[0]["tutorial"].endswith("/tutorial.md")
+    assert client.delete(f"/api/v1/gallery/{gid}").status_code == 200
+    assert client.get("/api/v1/gallery").json()["gallery"] == []
+    assert client.post("/api/v1/gallery/99999", json={}).status_code == 404
+    assert client.delete(f"/api/v1/gallery/{gid}").status_code == 404
