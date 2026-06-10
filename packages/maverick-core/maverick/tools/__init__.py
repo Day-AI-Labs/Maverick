@@ -614,6 +614,7 @@ def base_registry(  # noqa: C901
     from .capability_revocation import capability_revocation
     from .channel_autoroute import channel_autoroute
     from .chaos_gameday import chaos_gameday
+    from .cidr_check import cidr_check
     from .citation_verifier import citation_verifier
     from .clickup_tool import clickup_tool
     from .clipboard import clipboard
@@ -892,6 +893,7 @@ def base_registry(  # noqa: C901
     reg.register(consent_check())
     reg.register(jwt_inspect())
     reg.register(rbac_check())
+    reg.register(cidr_check())
     reg.register(supply_chain_pin())
     reg.register(quorum_approval())
     reg.register(crypto_budget_receipt())
