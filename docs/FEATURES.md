@@ -574,6 +574,11 @@ and `trace_commit()` reads it back so replays tie to exact code); **cost split b
   (`apps/nvim/`: :MaverickStart/Status/Monitor/Logs/Halt/Unhalt, lazy.nvim-
   ready, terminal-split UX), GitHub Action wrapper (`maverick-action`) — all
   contract-tested against the real CLI verb set.
+- **RFCs** — [RFC 0001: Maverick 2.0](./rfcs/0001-maverick-2.0.md) (config
+  schema v2 + async-only channel SDK + connector re-homing, migration story
+  riding `maverick migrate`) and [RFC 0002: Plugin API v2](./rfcs/0002-plugin-api-v2.md)
+  (static manifests discovered without importing plugin code, lifecycle hooks,
+  the wire shape for the gRPC plugin host) — both Draft, open for comment.
 - **Docs** — MkDocs site, [getting started](./getting-started.md), 30-recipe
   [cookbook](./cookbook/), [architecture](./architecture.md),
   [embedding guide](./embedding.md), [security hardening](./security-hardening.md),
