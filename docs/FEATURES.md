@@ -41,10 +41,12 @@ here.
   reusable, validator-compliant `SKILL.md` under `~/.maverick/learned-skills`
   (`skill_distillation_local.py`), opt-in via `[self_learning] distill_local`.
 - **Vector-store cross-run memory** — opt-in `[memory] backend` routes
-  cross-run recall through a persistent **Chroma / Qdrant** store
+  cross-run recall through a persistent **Chroma / Qdrant / Weaviate** store
   (`vector_store/`, `semantic_recall.py`) so similarity search is indexed and
   incremental instead of a linear re-embed scan; fail-open and
-  dependency-injectable — the kernel never *requires* a vector store.
+  dependency-injectable — the kernel never *requires* a vector store. The
+  **Weaviate** adapter (`weaviate_store.py`, `[weaviate]` extra) targets a
+  local or cloud v4 cluster with a server-side vectorizer (`near_text`).
 
 ## Tools
 
@@ -233,8 +235,9 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   and the `maverick finance status` posture report (`maverick/finance/`).
 - **maverick-knowledge** — per-domain vector RAG package backing
   `knowledge_search`; config-selected embedders (`embed.py`): hosted **Voyage**
-  (or any OpenAI-compatible endpoint), local, or deterministic — fails loud
-  rather than silently degrading.
+  (or any OpenAI-compatible endpoint), **Cohere** (`/v2/embed`, typed
+  `embedding_types`), local, or deterministic — fails loud rather than silently
+  degrading.
 - **Reverse-proxy SSO** — trusted forwarded-identity header for enterprise auth.
 - **Tenant-aware persistence** — workspaces wall each tenant into
   `~/.maverick/tenants/<t>/` (`workspace.py`, `paths.py`), with a per-tenant

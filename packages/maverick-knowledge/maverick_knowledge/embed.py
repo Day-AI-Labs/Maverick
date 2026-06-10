@@ -84,6 +84,52 @@ class HostedEmbedder:
         return [d["embedding"] for d in data]
 
 
+class CohereEmbedder:
+    """Cohere embeddings over HTTP (needs an API key).
+
+    Distinct from :class:`HostedEmbedder`: Cohere's ``/v2/embed`` takes
+    ``texts`` + ``input_type`` and returns ``embeddings.float`` (a typed map),
+    not OpenAI's ``input``/``data[].embedding`` shape. We pin
+    ``embedding_types=["float"]`` and read that key, falling back to the v1
+    list shape so an older endpoint still works. ``httpx`` is imported lazily.
+    """
+
+    def __init__(
+        self,
+        model: str = "embed-english-v3.0",
+        base_url: str = "https://api.cohere.com/v2",
+        api_key: str = "",
+        dim: int = 1024,
+        input_type: str = "search_document",
+    ):
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.dim = dim
+        self.input_type = input_type
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        import httpx
+
+        r = httpx.post(
+            f"{self.base_url}/embed",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json={
+                "model": self.model,
+                "texts": texts,
+                "input_type": self.input_type,
+                "embedding_types": ["float"],
+            },
+            timeout=60,
+        )
+        r.raise_for_status()
+        embeddings = r.json()["embeddings"]
+        # v2: {"embeddings": {"float": [[...]]}}; v1: {"embeddings": [[...]]}.
+        if isinstance(embeddings, dict):
+            return embeddings.get("float") or embeddings.get("float_")
+        return embeddings
+
+
 def build_embedder(cfg: dict | None = None) -> Embedder:
     """Select an embedder from config. **Fails loud.**
 
@@ -119,6 +165,23 @@ def build_embedder(cfg: dict | None = None) -> Embedder:
             dim=int(cfg.get("dim", 1024)),
         )
 
+    if provider == "cohere":
+        key = cfg.get("api_key") or os.environ.get("MAVERICK_EMBED_API_KEY", "") \
+            or os.environ.get("COHERE_API_KEY", "")
+        if not key:
+            raise RuntimeError(
+                "knowledge: cohere embedder selected but no API key (set "
+                "[knowledge] api_key, MAVERICK_EMBED_API_KEY, or COHERE_API_KEY); "
+                "or set embedder = 'deterministic' for offline/dev retrieval."
+            )
+        return CohereEmbedder(
+            model=cfg.get("model", "embed-english-v3.0"),
+            base_url=cfg.get("base_url", "https://api.cohere.com/v2"),
+            api_key=key,
+            dim=int(cfg.get("dim", 1024)),
+            input_type=cfg.get("input_type", "search_document"),
+        )
+
     if provider == "local":
         import importlib.util
         if importlib.util.find_spec("sentence_transformers") is None:
@@ -132,5 +195,5 @@ def build_embedder(cfg: dict | None = None) -> Embedder:
 
     raise ValueError(
         f"knowledge: unknown embedder provider {provider!r} "
-        "(expected 'hosted', 'local', or 'deterministic')."
+        "(expected 'hosted', 'cohere', 'local', or 'deterministic')."
     )

@@ -347,3 +347,69 @@ class TestStorePersistence:
         # A fresh store at the same path still has the data (persisted to disk).
         reopened = SqliteVectorStore(path)
         assert reopened.search("c", e.embed(["refund policy"])[0], k=1)
+
+
+class TestCohereEmbedder:
+    def test_cohere_v2_float_shape(self, monkeypatch):
+        from maverick_knowledge.embed import CohereEmbedder
+
+        captured = {}
+
+        class _Resp:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"embeddings": {"float": [[1.0, 2.0], [3.0, 4.0]]}}
+
+        def _post(url, **kwargs):
+            captured["url"] = url
+            captured["json"] = kwargs.get("json")
+            return _Resp()
+
+        monkeypatch.setitem(sys.modules, "httpx", types.SimpleNamespace(post=_post))
+        e = CohereEmbedder(api_key="k", base_url="http://x/v2", dim=2)
+        vecs = e.embed(["a", "b"])
+        assert vecs == [[1.0, 2.0], [3.0, 4.0]]
+        assert captured["url"] == "http://x/v2/embed"
+        assert captured["json"]["input_type"] == "search_document"
+        assert captured["json"]["embedding_types"] == ["float"]
+
+    def test_cohere_v1_list_shape_fallback(self, monkeypatch):
+        from maverick_knowledge.embed import CohereEmbedder
+
+        class _Resp:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"embeddings": [[5.0], [6.0]]}
+
+        monkeypatch.setitem(sys.modules, "httpx", types.SimpleNamespace(post=lambda *a, **k: _Resp()))
+        e = CohereEmbedder(api_key="k", dim=1)
+        assert e.embed(["a", "b"]) == [[5.0], [6.0]]
+
+    def test_build_cohere_with_key(self, monkeypatch):
+        from maverick_knowledge.embed import CohereEmbedder, build_embedder
+
+        monkeypatch.delenv("MAVERICK_EMBED_PROVIDER", raising=False)
+        e = build_embedder({"embedder": "cohere", "api_key": "k", "dim": 1024})
+        assert isinstance(e, CohereEmbedder) and e.dim == 1024
+
+    def test_build_cohere_without_key_raises(self, monkeypatch):
+        from maverick_knowledge.embed import build_embedder
+
+        monkeypatch.delenv("MAVERICK_EMBED_PROVIDER", raising=False)
+        monkeypatch.delenv("MAVERICK_EMBED_API_KEY", raising=False)
+        monkeypatch.delenv("COHERE_API_KEY", raising=False)
+        with pytest.raises(RuntimeError, match="API key"):
+            build_embedder({"embedder": "cohere"})
+
+    def test_build_cohere_reads_cohere_api_key_env(self, monkeypatch):
+        from maverick_knowledge.embed import CohereEmbedder, build_embedder
+
+        monkeypatch.delenv("MAVERICK_EMBED_PROVIDER", raising=False)
+        monkeypatch.delenv("MAVERICK_EMBED_API_KEY", raising=False)
+        monkeypatch.setenv("COHERE_API_KEY", "from-env")
+        e = build_embedder({"embedder": "cohere"})
+        assert isinstance(e, CohereEmbedder) and e.api_key == "from-env"

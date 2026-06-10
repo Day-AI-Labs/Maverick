@@ -34,8 +34,8 @@ def backend_name() -> str | None:
     """Configured vector-store backend, or None when semantic recall is off.
 
     Resolved from ``MAVERICK_VECTOR_STORE`` (env wins) or ``[memory]
-    backend`` in config. Recognised: ``chroma``, ``qdrant``. Anything else
-    (including unset / "none") disables the semantic path.
+    backend`` in config. Recognised: ``chroma``, ``qdrant``, ``weaviate``.
+    Anything else (including unset / "none") disables the semantic path.
     """
     env = os.environ.get("MAVERICK_VECTOR_STORE")
     if env is not None:
@@ -46,7 +46,7 @@ def backend_name() -> str | None:
             name = str(load_config().get("memory", {}).get("backend", "")).strip().lower()
         except Exception:  # pragma: no cover -- config never blocks a run
             name = ""
-    return name if name in ("chroma", "qdrant") else None
+    return name if name in ("chroma", "qdrant", "weaviate") else None
 
 
 def build_store(backend: str | None = None) -> Any | None:
@@ -65,6 +65,9 @@ def build_store(backend: str | None = None) -> Any | None:
         if backend == "qdrant":
             from .vector_store import QdrantStore
             return QdrantStore(collection="goals")
+        if backend == "weaviate":
+            from .vector_store import WeaviateStore
+            return WeaviateStore(collection="Goals")
     except Exception as e:  # pragma: no cover -- optional dep / backend down
         log.debug("semantic recall backend %s unavailable: %s", backend, e)
     return None
