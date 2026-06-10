@@ -233,7 +233,11 @@ here.
   `{id,result|error}`); the host (`ts_plugin_host.py`, `[plugins] ts =
   [["node", "/path/plugin.js"]]`, wizard step included) loads the manifest
   into regular Tools with a persistent scrubbed-env child, per-call timeout,
-  one crash-restart, and the no-shadowing rule built-ins enjoy.
+  one crash-restart, and the no-shadowing rule built-ins enjoy. A **gRPC
+  plugin host** (`grpc_plugin_host.py`, proto `grpc_api/plugin_host.proto`,
+  `[plugins] grpc = [{target, command}]`) carries the same contract over gRPC
+  for any language: Describe → Tools, Call with a deadline, scrubbed-env spawn,
+  reconnect/respawn-once.
   **Plugin compatibility matrix** (`plugin_matrix.py`, `python -m
   maverick.plugin_matrix [--ci]`, wired as a CI lint step): one table per
   installed entry point — dist, declared API major, loadable/deprecated/
@@ -696,6 +700,26 @@ before shipping the next, compare against the recorded baseline — a
 higher-is-better for success-rate/throughput) that exits non-zero on a
 regression beyond tolerance, gating a release the way tests do. Deterministic;
 the snapshot store is an atomic JSON keyed by release tag.
+
+**Reproducible benchmark v2** (`maverick.benchmarks.reproducible_v2`, `python
+-m maverick.benchmarks.reproducible_v2 run|--verify`): runs a suite under
+pinned conditions (seed, model id, prompt-template hash, tool-set hash) and
+emits an HMAC-signed `{suite, seed, env_fingerprint, results, aggregate}`
+manifest; `--verify baseline current` diffs two runs and names the exact
+diverged task on non-determinism. **Marketplace moderation**
+(`marketplace_moderation.py`, `python -m maverick.marketplace_moderation
+<path>`): static pre-publication checks over a submitted skill/plugin —
+manifest completeness, permission-escalation (declared vs used), secret scan
+(reuses the secret detector), prohibited patterns, license — with a
+strictest-wins approve/flag/reject verdict. **Skill search engine**
+(`skill_search.py`, `python -m maverick.skill_search`): zero-dep BM25-lite
+ranked search over the local skill library with HF-dataset export/import
+(`skills.jsonl`, network via an injected fetcher; pulled skills re-validated
+through the skill validator). **Self-hosted relay reference**
+(`relay_reference.py`, [`docs/self-hosted-relay.md`](./self-hosted-relay.md)):
+the self-hostable inbound-webhook relay (quick-vs-ack-then-run classification,
+deadline enforcement, secondary-channel delivery) as a framework-agnostic,
+fully-injected core that runs as a Worker or a local service.
 
 `benchmarks/`: GAIA, τ²-bench-style stateful harness, terminal-bench-style
 harness, SWE-bench harness, moat suite, and an **adversarial-cost suite**
