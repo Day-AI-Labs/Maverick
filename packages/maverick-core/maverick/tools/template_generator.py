@@ -1,17 +1,13 @@
 """Skill + channel template generators (roadmap: 2027 H1 distribution).
 
-Deterministic codegen for the two things contributors most often start from
-scratch: a **skill** (a `SKILL.md` with the exact frontmatter the validator
-wants) and a **channel adapter** (a `Channel` subclass with the start/send/stop
-seams wired). Emitting a known-good scaffold means a new author edits prose
-instead of fighting the frontmatter schema or the adapter contract.
+Scaffold a valid starting point so contributors don't hand-copy boilerplate:
+  - a ``SKILL.md`` with the right frontmatter (name / triggers / tools_needed),
+  - a channel adapter module that subclasses the channels ``base.Channel`` and
+    stubs the three abstract methods (``start`` / ``send`` / ``stop``).
 
-Offline and deterministic — the skill output passes ``maverick skill validate``
-as-is; the channel output is import-clean Python.
-
-ops:
-  - skill(name, triggers[, tools_needed, summary])  — render a valid SKILL.md.
-  - channel(name[, transport])                      — render a Channel adapter.
+Deterministic string generation — it emits the file *contents* (the caller
+writes them where they belong). Names are validated/slugified so the output is
+always importable / parseable.
 """
 from __future__ import annotations
 
@@ -20,123 +16,89 @@ from typing import Any
 
 from . import Tool
 
-_KEBAB = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_SLUG = re.compile(r"[^a-z0-9_]+")
 
 
-def _to_kebab(name: str) -> str:
-    s = re.sub(r"[^a-z0-9]+", "-", str(name).strip().lower()).strip("-")
-    return re.sub(r"-{2,}", "-", s)
+def _slug(name: str, *, dashes: bool = True) -> str:
+    s = name.strip().lower()
+    s = re.sub(r"[\s-]+", "-" if dashes else "_", s)
+    s = re.sub(r"[^a-z0-9_-]+", "", s)
+    return s.strip("-_")
 
 
-def _to_class(name: str) -> str:
-    parts = re.split(r"[^a-zA-Z0-9]+", str(name).strip())
-    return "".join(p[:1].upper() + p[1:] for p in parts if p) or "My"
+def _skill(name: str, triggers: list[str], tools: list[str]) -> str:
+    slug = _slug(name)
+    if not slug:
+        return "ERROR: name must contain at least one alphanumeric character"
+    trig = triggers or [f"use {slug}"]
+    trig_arr = ", ".join(f'"{t}"' for t in trig)
+    tools_arr = ", ".join(f'"{t}"' for t in tools)
+    title = name.strip().title()
+    return (
+        "---\n"
+        f"name: {slug}\n"
+        f"triggers: [{trig_arr}]\n"
+        f"tools_needed: [{tools_arr}]\n"
+        "---\n"
+        f"# {title}\n\n"
+        f"Describe, step by step, how the agent should accomplish "
+        f"\"{name.strip()}\". Reference each tool in tools_needed and end with "
+        "the concrete deliverable.\n"
+    )
 
 
-def _gen_skill(args: dict[str, Any]) -> str:
-    name = _to_kebab(args.get("name", ""))
-    if not name or not _KEBAB.match(name):
-        return "ERROR: name must produce a kebab-case id (letters/digits/hyphens)"
-    triggers = args.get("triggers")
-    if not isinstance(triggers, list) or not any(str(t).strip() for t in triggers):
-        return "ERROR: at least one trigger phrase is required"
-    tools = [str(t).strip() for t in (args.get("tools_needed") or []) if str(t).strip()]
-    summary = str(args.get("summary") or f"Automate the '{name}' task.").strip()
-
-    lines = ["---", f"name: {name}", "triggers:"]
-    lines += [f"  - {str(t).strip()}" for t in triggers if str(t).strip()]
-    if tools:
-        lines.append("tools_needed:")
-        lines += [f"  - {t}" for t in tools]
-    lines.append("---")
-    lines.append("")
-    lines.append(f"# What this skill does\n\n{summary}\n")
-    lines.append("# Steps\n\n1. Describe the first concrete step.\n"
-                 "2. Describe the next step.\n3. Verify the result.\n")
-    lines.append("# Notes\n\nEdit these sections with the real procedure before publishing.")
-    return "\n".join(lines)
-
-
-def _gen_channel(args: dict[str, Any]) -> str:
-    raw = str(args.get("name", "")).strip()
-    if not raw:
-        return "ERROR: name is required"
-    cls = _to_class(raw) + "Channel"
-    key = _to_kebab(raw).replace("-", "_") or "mychannel"
-    transport = str(args.get("transport") or "polling").strip()
-
-    return f'''"""{cls} — generated channel adapter scaffold.
-
-Transport: {transport}. Fill in the TODOs to connect a real platform.
-
-Config::
-
-    [channels.{key}]
-    enabled = true
-    token = "${{{key.upper()}_TOKEN}}"
-
-Requires::
-
-    pip install 'maverick-channels'
-"""
-from __future__ import annotations
-
-import logging
-
-from .base import Channel, IncomingMessage, is_allowed, normalize_allowlist
-
-log = logging.getLogger(__name__)
-
-
-class {cls}(Channel):
-    """Adapter for the {key} platform."""
-
-    def __init__(self, token: str | None = None, allowed_user_ids=None):
-        self.token = token
-        self.allowlist = normalize_allowlist(allowed_user_ids, "{key.upper()}_ALLOWED_USER_IDS")
-        self._on_message = None
-
-    def on_message(self, handler) -> None:
-        """Register the coroutine the agent loop hands incoming messages to."""
-        self._on_message = handler
-
-    async def start(self) -> None:
-        # TODO: connect to the platform and dispatch each inbound message:
-        #   msg = IncomingMessage(user_id=..., text=..., channel="{key}")
-        #   if is_allowed(msg.user_id, self.allowlist) and self._on_message:
-        #       await self._on_message(msg)
-        raise NotImplementedError("implement {key} start()")
-
-    async def send(self, user_id: str, text: str) -> None:
-        # TODO: deliver `text` to `user_id` on the platform.
-        raise NotImplementedError("implement {key} send()")
-
-    async def stop(self) -> None:
-        # TODO: close any open connections.
-        return None
-'''
+def _channel(name: str) -> str:
+    mod = _slug(name, dashes=False)
+    if not mod:
+        return "ERROR: name must contain at least one alphanumeric character"
+    cls = "".join(p.capitalize() for p in mod.split("_")) + "Channel"
+    return (
+        '"""' f"{mod} channel adapter (scaffold).\n\n"
+        f"Wire this into packages/maverick-channels and add a [channels.{mod}] "
+        'config knob + an installer-wizard step (CLAUDE.md #5/#6).\n"""\n'
+        "from __future__ import annotations\n\n"
+        "from .base import Channel\n\n\n"
+        f"class {cls}(Channel):\n"
+        f'    """Adapter for {mod}. Fill in the transport calls."""\n\n'
+        "    def __init__(self, config: dict) -> None:\n"
+        "        self.config = config\n\n"
+        "    async def start(self) -> None:\n"
+        "        # Connect / begin receiving inbound messages.\n"
+        "        raise NotImplementedError\n\n"
+        "    async def send(self, user_id: str, text: str) -> None:\n"
+        "        # Deliver an outbound message to user_id.\n"
+        "        raise NotImplementedError\n\n"
+        "    async def stop(self) -> None:\n"
+        "        # Disconnect / clean up.\n"
+        "        raise NotImplementedError\n"
+    )
 
 
 def _run(args: dict[str, Any]) -> str:
-    op = args.get("op")
-    if op == "skill":
-        return _gen_skill(args)
-    if op == "channel":
-        return _gen_channel(args)
-    return f"ERROR: unknown op {op!r} (expected 'skill' or 'channel')"
+    kind = args.get("kind")
+    name = args.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return "ERROR: name is required"
+    if kind == "skill":
+        triggers = [str(t) for t in (args.get("triggers") or []) if str(t).strip()]
+        tools = [str(t) for t in (args.get("tools_needed") or []) if str(t).strip()]
+        return _skill(name, triggers, tools)
+    if kind == "channel":
+        return _channel(name)
+    return "ERROR: kind must be 'skill' or 'channel'"
 
 
 _SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "op": {"type": "string", "enum": ["skill", "channel"]},
-        "name": {"type": "string", "description": "skill id / channel name"},
-        "triggers": {"type": "array", "items": {"type": "string"}, "description": "skill: activation phrases"},
-        "tools_needed": {"type": "array", "items": {"type": "string"}, "description": "skill: tools it calls"},
-        "summary": {"type": "string", "description": "skill: one-line description"},
-        "transport": {"type": "string", "description": "channel: transport hint (polling/webhook)"},
+        "kind": {"type": "string", "enum": ["skill", "channel"]},
+        "name": {"type": "string", "description": "Human name of the skill/channel"},
+        "triggers": {"type": "array", "items": {"type": "string"},
+                     "description": "Trigger phrases (skill only)"},
+        "tools_needed": {"type": "array", "items": {"type": "string"},
+                         "description": "Tool names the skill uses (skill only)"},
     },
-    "required": ["op", "name"],
+    "required": ["kind", "name"],
 }
 
 
@@ -144,11 +106,10 @@ def template_generator() -> Tool:
     return Tool(
         name="template_generator",
         description=(
-            "Generate a skill or channel-adapter scaffold. op=skill (needs "
-            "'name' + 'triggers', optional 'tools_needed'/'summary') renders a "
-            "valid SKILL.md. op=channel (needs 'name', optional 'transport') "
-            "renders a Channel subclass with start/send/stop seams. "
-            "Deterministic codegen; no model."
+            "Scaffold a new skill or channel. kind=skill with 'name' "
+            "(+ optional triggers/tools_needed) emits a valid SKILL.md; "
+            "kind=channel emits a channels/base.Channel subclass stubbing "
+            "start/send/stop. Returns the file contents; names are slugified."
         ),
         input_schema=_SCHEMA,
         fn=_run,

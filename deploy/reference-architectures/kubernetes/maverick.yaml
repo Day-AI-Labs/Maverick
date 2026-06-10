@@ -1,19 +1,36 @@
-# Maverick on Kubernetes — minimal reference architecture.
+# Maverick on Kubernetes — reference architecture.
 #
-# One Deployment running the dashboard (web UI + API + webhooks), state on a
-# PVC, secrets from a Secret. Apply with:
+# A single governed-runtime Deployment serving the dashboard + control plane,
+# with persistent state on a PVC and secrets pulled from a Secret. This is a
+# self-hostable reference (CLAUDE.md: self-host first) — point image at your
+# own registry mirror of the GHCR image if you don't pull from ghcr directly.
 #
 #   kubectl apply -f deploy/reference-architectures/kubernetes/maverick.yaml
 #
-# Replace REGISTRY/maverick:latest with your built image (see
-# deploy/docker/Dockerfile) and create the maverick-secrets Secret first:
-#
-#   kubectl create secret generic maverick-secrets \
-#     --from-literal=ANTHROPIC_API_KEY=sk-ant-...
+# Scale-out (queue dispatch + Postgres world model) is opt-in: set
+# [world_model] backend = "postgres" and [queue] in config, then add a worker
+# Deployment that runs `maverick worker`.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: maverick
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: maverick-secrets
+  namespace: maverick
+type: Opaque
+stringData:
+  # Populate from your secret manager; do NOT commit real keys.
+  ANTHROPIC_API_KEY: "replace-me"  # pragma: allowlist secret
+  MAVERICK_DASHBOARD_TOKEN: "replace-me"  # pragma: allowlist secret
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: maverick-state
+  namespace: maverick
 spec:
   accessModes: ["ReadWriteOnce"]
   resources:
@@ -24,48 +41,42 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: maverick
-  labels:
-    app: maverick
+  namespace: maverick
+  labels: { app: maverick }
 spec:
-  # The runtime keeps run state in SQLite under ~/.maverick by default:
-  # exactly one replica per state volume. Scale by sharding tenants, or move
-  # the world model to Postgres ([world_model] backend = "postgres") before
-  # raising replicas.
-  replicas: 1
-  strategy:
-    type: Recreate          # RWO volume: tear down before re-attach
+  replicas: 1            # the dashboard/control plane is single-writer on SQLite;
+                         # use the Postgres backend before raising this.
   selector:
-    matchLabels:
-      app: maverick
+    matchLabels: { app: maverick }
   template:
     metadata:
-      labels:
-        app: maverick
+      labels: { app: maverick }
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
       containers:
         - name: maverick
-          image: REGISTRY/maverick:latest
+          image: ghcr.io/day-ai-labs/maverick:latest
           args: ["dashboard", "--host", "0.0.0.0", "--port", "8765"]
           ports:
             - containerPort: 8765
-              name: http
           envFrom:
-            - secretRef:
-                name: maverick-secrets
+            - secretRef: { name: maverick-secrets }
+          env:
+            - name: MAVERICK_CONFIG
+              value: /state/config.toml
           volumeMounts:
             - name: state
-              mountPath: /root/.maverick
+              mountPath: /state
           readinessProbe:
-            httpGet: {path: "/", port: 8765}
+            httpGet: { path: /healthz, port: 8765 }
             initialDelaySeconds: 5
             periodSeconds: 10
-          livenessProbe:
-            httpGet: {path: "/", port: 8765}
-            initialDelaySeconds: 15
-            periodSeconds: 30
           resources:
-            requests: {cpu: "250m", memory: "512Mi"}
-            limits: {cpu: "2", memory: "2Gi"}
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits: { cpu: "2", memory: "2Gi" }
       volumes:
         - name: state
           persistentVolumeClaim:
@@ -75,13 +86,10 @@ apiVersion: v1
 kind: Service
 metadata:
   name: maverick
+  namespace: maverick
 spec:
-  selector:
-    app: maverick
+  selector: { app: maverick }
   ports:
     - port: 80
       targetPort: 8765
-      name: http
-  # ClusterIP by default; front with your Ingress/Gateway + TLS. The dashboard
-  # has its own auth, but do not expose it without TLS.
   type: ClusterIP

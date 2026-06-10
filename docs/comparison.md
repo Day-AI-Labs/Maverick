@@ -1,80 +1,59 @@
-# Maverick vs the field
+# How Maverick compares
 
-Maverick is a self-hosted, governed, auditable agent runtime: a recursive
-multi-agent swarm that runs in your environment, on the models you choose,
-under hard budget caps. The products it gets compared to — Devin, Hermes,
-OpenClaw, Cline, Aider — are good at what they do, but they sit in different
-categories with different trade-offs. This page maps the dimensions so you can
-decide which category fits your problem.
+Where Maverick sits among agent frameworks and coding agents. This page
+describes **Maverick's** capabilities precisely (each row links to the shipped
+implementation in [`FEATURES.md`](./FEATURES.md)); for other tools it states
+only their well-known positioning. Vendors move fast — **verify any competitor
+specifics against their own current docs** before relying on them.
 
-Two ground rules for reading it:
+## What Maverick is
 
-- **Maverick claims are grounded in [`FEATURES.md`](./FEATURES.md)** — every
-  cell cites the shipped module or count behind it.
-- **Competitor columns describe categories, not scorecards.** Hosted agents,
-  CLI coding agents, and agent frameworks each have a characteristic shape;
-  individual products vary and change fast. Verify specifics against each
-  vendor's own documentation — we don't publish claims about competitor
-  internals here.
+A **proprietary, self-hostable, governed agent platform**: a recursive
+multi-agent kernel wrapped in an oversight/compliance/fleet control plane, on a
+tenant-aware substrate. It targets enterprise/regulated teams that need an
+auditable agent runtime in their own environment, and technical users who want
+the deepest agent framework available.
 
-## The categories
+## Positioning at a glance
 
-- **Hosted autonomous dev agents** (Devin-class): a vendor-operated cloud
-  service. You hand it a task; it runs in the vendor's environment.
-- **CLI coding agents** (Aider, Cline-class): an agent in your terminal or
-  editor, focused on interactive work in one repository.
-- **Agent frameworks & runtimes** (Hermes, OpenClaw-class): self-hostable
-  agent software you run and extend yourself; scope and surface vary widely
-  by project.
-
-## Dimensions
-
-| Dimension | Maverick | Hosted autonomous dev agents | CLI coding agents | Agent frameworks & runtimes |
+| | Maverick | Devin | Hermes / OpenClaw | Cline / Aider |
 |---|---|---|---|---|
-| **Deployment model** | Self-hosted: laptop, Docker, VPS, Kubernetes, or air-gapped with no required egress. Proprietary, commercially licensed. | Vendor-hosted, zero-ops; your tasks and data run in the vendor's cloud. | Local process in your terminal/editor; you supply API keys. | Self-hostable; ops burden is yours; licensing varies by project. |
-| **Governance / compliance surface** | RBAC + OIDC, capability tokens (`capability.py`), per-tool ACLs, consent ledger (`safety/consent.py`), approval delegation, per-principal spend quotas (`quotas.py`), compliance profiles (`compliance_profiles.py`, e.g. HIPAA), finance governance with amount-tiered authorization (`maverick/finance/`). | Vendor-managed controls; evaluate the vendor's attestations and data-handling terms. | Minimal by design — a human is in the loop for each session. | Build-your-own; depth varies by project. |
-| **Multi-agent topology depth** | Recursive orchestrator spawns parallel specialist sub-agents (`orchestrator.py`, `swarm.py`); verifier default-on, reflexion, graded critic; tree-of-thought, debate, plan-execute-reflect; shared blackboard + cross-agent bus. | Topology is vendor-defined and not user-configurable. | Typically a single-agent edit loop scoped to one repo. | Varies — from single-agent gateways to composable graphs; check each project. |
-| **Channel / tool breadth** | 100+ built-in tools incl. ~47 SaaS connectors; 14 chat/voice/wearable channels (`packages/maverick-channels/`); consumes external MCP servers as tools. | Vendor-curated integrations, usually web-UI-first. | Focused toolset around the repo: editor, git, shell; some speak MCP. | Plugin/skill ecosystems of varying size; check each project. |
-| **Sandboxing** | 7 selectable backends — local subprocess, Docker, SSH, Podman, devcontainer, Firecracker microVM, Kubernetes (`sandbox/`) — plus per-tool network egress policy (`sandbox/network_policy.py`). | Vendor-managed isolation in the vendor's cloud. | Commands typically execute in your local environment; isolation is your setup. | Varies; often delegated to your deployment. |
-| **Auditability** | Signed, hash-chained append-only audit log (`maverick audit verify`), SIEM export, encryption-at-rest, DSAR, data-retention enforcement, replayable run traces (`replay_trace.py`). | Session histories and vendor-side logs; export and retention depend on the vendor. | Local chat/session logs. | Varies; usually logging you wire up yourself. |
-| **Extensibility** | `@tool` decorator, hot plugin reload, MCP server *and* client, A2A Agent Cards, gRPC API, LangChain/LangGraph adapter, cross-language quickstarts (TS/Go/Rust/C#/Java). | Limited to what the vendor exposes. | Config and conventions; some support MCP servers. | Extension model *is* the product; shape varies. |
+| Primary form | Self-hosted platform + CLI | Hosted product | Coding agents | IDE / CLI coding agents |
+| Runs in your environment | **Yes** (7 sandbox backends) | Hosted | Varies | Yes (local) |
+| Multi-agent swarm | **Yes** (orchestrator + specialists) | Yes | Single-agent focus | Single-agent |
+| Governance / compliance plane | **Yes** (oversight, regimes, audit, DSAR, SOC2) | Limited | No | No |
+| Multi-tenant hosting | **Yes** (tenancy, KMS, egress, billing) | n/a (vendor-hosted) | No | No |
+| Channels (chat/voice/etc.) | **14** | No | Some | No |
+| Model choice | **User-owned, 12 providers** | Vendor | Varies | User keys |
+| Safety chokepoint (shield) | **Input/tool/output** | Internal | Varies | No |
+| License | Proprietary (lite edition TBD) | Proprietary | Mixed | Open source |
 
-## When NOT to choose Maverick
+The cells under "Maverick" are grounded in shipped code; the other columns are
+deliberately coarse to avoid asserting details that may be stale.
 
-An honest list. Pick something else if:
+## Where Maverick is strongest
 
-- **You want a hosted, zero-ops service.** Maverick is self-hosted by design;
-  you operate it. If "someone else runs the infrastructure" is a requirement,
-  a hosted agent is the right category.
-- **You only need interactive, single-file code edits.** A CLI pair-programming
-  agent is a lighter, faster fit. Swarm orchestration, budgets, and audit
-  plumbing are overhead for that job.
-- **You require an open-source license today.** Maverick is proprietary and
-  commercially licensed. A stripped-down open-source "lite" edition is a
-  possibility on the [roadmap](./ROADMAP.md), not a commitment.
-- **You need an embedded non-Python library.** The kernel is Python (3.10+).
-  Other languages drive Maverick over MCP or gRPC — they don't link it in.
-- **You need a stability guarantee right now.** Maverick is alpha. It is
-  installable and tested (2000+ tests across Python 3.10/3.11/3.12), but APIs
-  can still move.
+- **Governance you can prove.** Signed append-only audit log, compliance-regime
+  packs (SOX/GAAP/PCI/GLBA/…), DSAR, SOC2 readiness, per-principal quotas, and
+  an oversight console with "why this action" drill-down.
+- **Self-host first.** Every capability that would otherwise need a hosted
+  service ships with a self-hostable path (see the
+  [reference architectures](./reference-architectures.md)).
+- **Breadth on a governed core.** 500+ tools, 14 channels, 7 sandbox backends,
+  12 LLM providers — all behind config knobs and the shield.
+- **Long-horizon multi-agent work.** Planning topologies (tree-of-thought,
+  debate, speculative, latency-aware best-of-N), durable resume, reflexion.
 
-## Verify it yourself
+## Where another tool may fit better
 
-Don't take a comparison table's word for it — the repo ships runnable
-evaluation harnesses under [`benchmarks/`](../benchmarks/):
+- You want a **fully managed, zero-ops hosted** experience and don't need to
+  self-host or audit the runtime → a hosted product may be simpler.
+- You only want an **in-editor single-file coding assistant** with no platform
+  → a lightweight IDE agent is less to run.
 
-- **GAIA**, **τ²-bench-style** stateful, **terminal-bench-style**, and
-  **SWE-bench** harnesses, plus a **moat suite** — CI-runnable on shipped
-  fixtures.
-- **Long-horizon tasks** (`benchmarks/longhorizon/`) reproducible from a
-  single `maverick start` command, with expected wall-clock and cost ranges
-  documented in [`benchmarks/README.md`](../benchmarks/README.md).
+## Migrating in
 
-```bash
-maverick start "$(cat benchmarks/longhorizon/research-report.md)" \
-  --max-dollars 5 --max-wall-seconds 1800 --workdir bench-workspace
-```
-
-Record results in `benchmarks/RESULTS.md` with the run metadata (date, model
-assignments, total cost). Run multi-seed before trusting any single number —
-including ours; single-run benchmark figures are directional, not proof.
+Maverick consumes the wider ecosystem rather than replacing your tools: it
+speaks **MCP** (as server and client), **A2A** (Agent Card), and ships
+**LangChain/LangGraph** interop and **AutoGen/CrewAI** adapters, so existing
+tools and agents plug in. Start with [`getting-started.md`](./getting-started.md).

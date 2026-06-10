@@ -1,124 +1,116 @@
-"""Anki integration via AnkiConnect (roadmap: 2027 H2 ecosystem).
+"""Anki flashcard tool via AnkiConnect.
 
-Spaced repetition is the natural sink for what an agent researches: turn
-findings into flashcards. This speaks **AnkiConnect** — the de-facto local
-REST API the Anki add-on exposes on ``127.0.0.1:8765`` — so cards land in
-the user's own collection, no cloud service involved.
-
-Local-only by default: the base URL must stay loopback unless the operator
-explicitly overrides ``MAVERICK_ANKI_URL`` (AnkiConnect has no auth; pointing
-an agent at a remote instance is an operator decision, not a model's).
+Talks to a locally running Anki + AnkiConnect add-on (a JSON-RPC endpoint,
+default http://127.0.0.1:8765). Add a Basic note to a deck, or list decks.
 
 ops:
-  - decks()                              — list deck names.
-  - models()                             — list note types.
-  - add_note(deck, front, back[, model, tags, confirm])
-      — create a Basic note (writes the collection: confirm=true required).
-  - find(query[, limit])                 — search notes (Anki query syntax).
-  - sync(confirm)                        — trigger an AnkiWeb sync.
+  - add_note(deck, front, back)  — add a Basic {Front, Back} note.
+  - decks()                      — list deck names.
+
+Set ``ANKI_CONNECT_URL`` to override the endpoint. Stdlib only
+(urllib.request + json). The network layer is a single small helper; the
+JSON-RPC payload builder is a pure helper tested without any network access.
 """
 from __future__ import annotations
 
+import json
 import os
+import urllib.request
 from typing import Any
 
-from . import Tool, as_bool
+from . import Tool
 
-DEFAULT_URL = "http://127.0.0.1:8765"
-_API_VERSION = 6
-
-
-def _base_url() -> str:
-    return os.environ.get("MAVERICK_ANKI_URL", "").strip() or DEFAULT_URL
+_DEFAULT_URL = "http://127.0.0.1:8765"
+_VERSION = 6
 
 
-def _call(action: str, **params: Any) -> Any:
-    """One AnkiConnect RPC: {action, version, params} -> result | raise."""
-    import httpx
-    r = httpx.post(_base_url(), json={
-        "action": action, "version": _API_VERSION,
-        **({"params": params} if params else {}),
-    }, timeout=15)
-    r.raise_for_status()
-    payload = r.json()
-    if payload.get("error"):
-        raise RuntimeError(payload["error"])
-    return payload.get("result")
+def _endpoint() -> str:
+    return os.environ.get("ANKI_CONNECT_URL", _DEFAULT_URL).strip() or _DEFAULT_URL
 
 
-def _run(args: dict[str, Any]) -> str:  # noqa: C901 -- flat op dispatch
-    op = args.get("op")
-    try:
-        if op == "decks":
-            decks = _call("deckNames") or []
-            return "\n".join(sorted(decks)) or "(no decks)"
+def _build_payload(action: str, params: dict | None = None) -> dict:
+    """Build an AnkiConnect JSON-RPC request payload."""
+    return {"action": action, "version": _VERSION, "params": params or {}}
 
-        if op == "models":
-            models = _call("modelNames") or []
-            return "\n".join(sorted(models)) or "(no note types)"
 
-        if op == "find":
-            query = str(args.get("query") or "").strip()
-            if not query:
-                return "ERROR: query is required (Anki search syntax, e.g. 'deck:Spanish')"
-            limit = max(1, min(int(args.get("limit") or 20), 100))
-            ids = (_call("findNotes", query=query) or [])[:limit]
-            if not ids:
-                return "(no matching notes)"
-            infos = _call("notesInfo", notes=ids) or []
-            lines = []
-            for n in infos:
-                fields = n.get("fields") or {}
-                front = (fields.get("Front") or {}).get("value", "")
-                lines.append(f"[{n.get('noteId')}] {front[:120]}")
-            return "\n".join(lines)
-
-        if op == "add_note":
-            deck = str(args.get("deck") or "").strip()
-            front = str(args.get("front") or "").strip()
-            back = str(args.get("back") or "").strip()
-            if not (deck and front and back):
-                return "ERROR: deck, front, and back are required"
-            if not as_bool(args.get("confirm")):
-                return (f"DRY RUN: would add to deck {deck!r}: "
-                        f"Front={front[:80]!r} Back={back[:80]!r}. "
-                        "Pass confirm=true to write the note.")
-            note = {
+def _build_add_note_payload(deck: str, front: str, back: str) -> dict:
+    """Build the addNote payload for a Basic {Front, Back} note."""
+    return _build_payload(
+        "addNote",
+        {
+            "note": {
                 "deckName": deck,
-                "modelName": str(args.get("model") or "Basic"),
+                "modelName": "Basic",
                 "fields": {"Front": front, "Back": back},
-                "tags": [str(t) for t in (args.get("tags") or [])],
                 "options": {"allowDuplicate": False},
+                "tags": [],
             }
-            note_id = _call("addNote", note=note)
-            return f"added note {note_id} to {deck!r}"
+        },
+    )
 
-        if op == "sync":
-            if not as_bool(args.get("confirm")):
-                return "DRY RUN: pass confirm=true to trigger an AnkiWeb sync."
-            _call("sync")
-            return "sync triggered"
 
-        return f"ERROR: unknown op {op!r}"
+def _invoke(payload: dict) -> tuple[Any, Any]:
+    """POST a payload to AnkiConnect; return (result, error)."""
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        _endpoint(),
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
+        raw = resp.read().decode("utf-8", errors="replace")
+    obj = json.loads(raw)
+    return obj.get("result"), obj.get("error")
+
+
+def _op_add_note(args: dict) -> str:
+    deck = (args.get("deck") or "").strip()
+    front = (args.get("front") or "").strip()
+    back = (args.get("back") or "").strip()
+    if not deck:
+        return "ERROR: add_note requires deck"
+    if not front or not back:
+        return "ERROR: add_note requires front and back"
+    result, error = _invoke(_build_add_note_payload(deck, front, back))
+    if error:
+        return f"ERROR: AnkiConnect: {error}"
+    return f"added note {result} to {deck}"
+
+
+def _op_decks(args: dict) -> str:
+    result, error = _invoke(_build_payload("deckNames"))
+    if error:
+        return f"ERROR: AnkiConnect: {error}"
+    decks = result or []
+    if not decks:
+        return "no decks"
+    return "\n".join(f"  {d}" for d in decks)
+
+
+def _run(args: dict[str, Any]) -> str:
+    op = args.get("op")
+    if not op:
+        return "ERROR: op is required"
+    try:
+        return {
+            "add_note": _op_add_note,
+            "decks":    _op_decks,
+        }.get(op, lambda a: f"ERROR: unknown op {op!r}")(args)
     except Exception as e:
-        if "Connect" in type(e).__name__ or "connect" in str(e).lower():
-            return (f"ERROR: cannot reach AnkiConnect at {_base_url()} — is Anki "
-                    "running with the AnkiConnect add-on (code 2055492159)?")
-        return f"ERROR: {e}"
+        return (
+            f"ERROR: AnkiConnect request failed ({_endpoint()}): "
+            f"{type(e).__name__}: {e}"
+        )
 
 
 _SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "op": {"type": "string", "enum": ["decks", "models", "find", "add_note", "sync"]},
-        "deck": {"type": "string"},
-        "front": {"type": "string"},
-        "back": {"type": "string"},
-        "model": {"type": "string", "description": "note type (default Basic)"},
-        "tags": {"type": "array", "items": {"type": "string"}},
-        "query": {"type": "string", "description": "Anki search syntax (find)"},
-        "limit": {"type": "integer"},
-        "confirm": {"type": "boolean", "description": "required true for add_note/sync"},
+        "op": {"type": "string", "enum": ["add_note", "decks"]},
+        "deck": {"type": "string", "description": "Deck name (add_note)."},
+        "front": {"type": "string", "description": "Front field (add_note)."},
+        "back": {"type": "string", "description": "Back field (add_note)."},
     },
     "required": ["op"],
 }
@@ -128,12 +120,13 @@ def anki() -> Tool:
     return Tool(
         name="anki",
         description=(
-            "Anki flashcards via the local AnkiConnect add-on "
-            "(127.0.0.1:8765). ops: decks, models, find (Anki query syntax), "
-            "add_note (deck/front/back, confirm=true required), sync "
-            "(confirm=true). Turn research findings into spaced-repetition "
-            "cards in the user's own collection."
+            "Anki flashcards via AnkiConnect (local JSON-RPC, default "
+            "http://127.0.0.1:8765, override with ANKI_CONNECT_URL). "
+            "ops: add_note (deck, front, back) adds a Basic note; decks "
+            "lists deck names. Requires Anki running with the AnkiConnect "
+            "add-on."
         ),
         input_schema=_SCHEMA,
         fn=_run,
+        parallel_safe=True,
     )

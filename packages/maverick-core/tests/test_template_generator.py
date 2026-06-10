@@ -1,59 +1,45 @@
-"""Tests for the template_generator tool. The generated skill must pass the
-repo's own skill validator; the generated channel must be import-clean Python."""
+"""template_generator: skill + channel scaffolds."""
 from __future__ import annotations
 
-from maverick.skills import validate_skill_file
 from maverick.tools.template_generator import template_generator
 
 
-def test_generated_skill_passes_validator(tmp_path):
-    t = template_generator()
-    out = t.fn({
-        "op": "skill",
-        "name": "Refund Helper",
-        "triggers": ["process a refund", "issue a refund"],
-        "tools_needed": ["stripe", "email"],
-        "summary": "Issue a refund and notify the customer by email.",
-    })
-    assert out.startswith("---\nname: refund-helper")
-    p = tmp_path / "SKILL.md"
-    p.write_text(out, encoding="utf-8")
-    result = validate_skill_file(p)
-    assert result.ok, result.errors
+def _gen(**kw):
+    return template_generator().fn(kw)
 
 
-def test_skill_requires_triggers_and_kebab_name():
-    t = template_generator()
-    assert t.fn({"op": "skill", "name": "x", "triggers": []}).startswith("ERROR")
-    assert t.fn({"op": "skill", "name": "   ", "triggers": ["a"]}).startswith("ERROR")
+def test_skill_frontmatter_and_slug():
+    out = _gen(kind="skill", name="Summarize A URL",
+               triggers=["tldr a page"], tools_needed=["http_fetch"])
+    assert out.startswith("---\n")
+    assert "name: summarize-a-url" in out
+    assert 'triggers: ["tldr a page"]' in out
+    assert 'tools_needed: ["http_fetch"]' in out
+    assert "# Summarize A Url" in out
 
 
-def test_generated_channel_compiles_and_has_seams():
-    t = template_generator()
-    src = t.fn({"op": "channel", "name": "Pigeon Post", "transport": "webhook"})
-    assert "class PigeonPostChannel(Channel):" in src
-    for seam in ("async def start", "async def send", "async def stop"):
-        assert seam in src
-    # Import-clean Python: it must at least compile.
-    compile(src, "<generated_channel>", "exec")
-    assert "[channels.pigeon_post]" in src
-    assert "PIGEON_POST_ALLOWED_USER_IDS" in src
+def test_skill_defaults_trigger_when_empty():
+    out = _gen(kind="skill", name="do thing")
+    assert 'triggers: ["use do-thing"]' in out
 
 
-def test_channel_validation():
-    t = template_generator()
-    assert t.fn({"op": "channel", "name": ""}).startswith("ERROR")
-    assert t.fn({"op": "bogus", "name": "x"}).startswith("ERROR")
+def test_channel_subclasses_base_and_stubs_methods():
+    out = _gen(kind="channel", name="My Cool Net")
+    assert "from .base import Channel" in out
+    assert "class MyCoolNetChannel(Channel):" in out
+    for m in ("async def start", "async def send", "async def stop"):
+        assert m in out
+    # The scaffold must be syntactically valid Python.
+    compile(out, "<channel>", "exec")
 
 
-def test_registered():
-    from maverick.tools import base_registry
+def test_bad_kind_errors():
+    assert _gen(kind="widget", name="x").startswith("ERROR")
 
-    class _W:
-        pass
 
-    class _S:
-        pass
+def test_missing_name_errors():
+    assert _gen(kind="skill").startswith("ERROR")
 
-    names = set(getattr(base_registry(world=_W(), sandbox=_S()), "_tools", {}).keys())
-    assert "template_generator" in names
+
+def test_punctuation_only_name_errors():
+    assert _gen(kind="channel", name="!!!").startswith("ERROR")

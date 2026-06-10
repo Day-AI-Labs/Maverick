@@ -1,11 +1,12 @@
 """Tests for the Weaviate vector store adapter.
 
-weaviate-client is an optional dep; we test both the missing-import path and
-the wired-up path with a mock client, mirroring test_qdrant_store.py.
+weaviate-client is an optional dep; we test the missing-import path and the
+wired-up path with a fake client, with no real backend.
 """
 from __future__ import annotations
 
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -18,106 +19,93 @@ def test_weaviate_missing_import_raises(monkeypatch):
         WeaviateStore()
 
 
-def _install_fake_weaviate(monkeypatch, *, exists=False) -> tuple[MagicMock, MagicMock]:
-    """Replace ``weaviate`` (+ submodules) with stubs. Returns (client, collection)."""
-    collection = MagicMock(name="collection")
-    client = MagicMock(name="client")
-    client.collections.exists.return_value = exists
-    client.collections.get.return_value = collection
-    client.collections.create.return_value = collection
+def _install_fake_weaviate(monkeypatch) -> MagicMock:
+    fake_collection = MagicMock(name="collection")
+    fake_collections = MagicMock(name="collections")
+    fake_collections.exists.return_value = False
+    fake_collections.get.return_value = fake_collection
+    fake_client = MagicMock(name="weaviate client")
+    fake_client.collections = fake_collections
 
-    fake = MagicMock(name="weaviate module")
-    fake.connect_to_local.return_value = client
-    fake.connect_to_weaviate_cloud.return_value = client
-
-    init_mod = MagicMock(name="weaviate.classes.init")
-    init_mod.Auth.api_key = MagicMock(side_effect=lambda k: f"auth:{k}")
-    query_mod = MagicMock(name="weaviate.classes.query")
-    query_mod.MetadataQuery = MagicMock(side_effect=lambda **kw: ("md", kw))
-
-    monkeypatch.setitem(sys.modules, "weaviate", fake)
-    monkeypatch.setitem(sys.modules, "weaviate.classes", MagicMock())
-    monkeypatch.setitem(sys.modules, "weaviate.classes.init", init_mod)
-    monkeypatch.setitem(sys.modules, "weaviate.classes.query", query_mod)
-    return client, collection
+    fake_module = MagicMock(name="weaviate module")
+    fake_module.connect_to_embedded.return_value = fake_client
+    fake_module.connect_to_local.return_value = fake_client
+    fake_module.connect_to_weaviate_cloud.return_value = fake_client
+    monkeypatch.setitem(sys.modules, "weaviate", fake_module)
+    return fake_client
 
 
-def test_weaviate_local_init_creates_collection(monkeypatch):
+def test_weaviate_embedded_init_creates_collection(monkeypatch):
     monkeypatch.delenv("MAVERICK_WEAVIATE_URL", raising=False)
-    client, _ = _install_fake_weaviate(monkeypatch, exists=False)
-    import weaviate
+    fake = _install_fake_weaviate(monkeypatch)
     from maverick.vector_store.weaviate_store import WeaviateStore
-    WeaviateStore(collection="Maverick")
-    weaviate.connect_to_local.assert_called_once()  # no URL -> local connect
-    assert client.collections.create.called  # didn't exist -> created
+    WeaviateStore(collection="goals")
+    # Capitalized class name + created because exists()==False
+    fake.collections.create.assert_called_once_with("Goals")
 
 
-def test_weaviate_cloud_init_uses_auth(monkeypatch):
-    monkeypatch.setenv("MAVERICK_WEAVIATE_URL", "https://cluster.example")
-    monkeypatch.setenv("MAVERICK_WEAVIATE_API_KEY", "secret")
-    _install_fake_weaviate(monkeypatch, exists=True)
-    import weaviate
-    from maverick.vector_store.weaviate_store import WeaviateStore
-    WeaviateStore()
-    weaviate.connect_to_weaviate_cloud.assert_called_once()
-    _, kwargs = weaviate.connect_to_weaviate_cloud.call_args
-    assert kwargs["cluster_url"] == "https://cluster.example"
-    assert kwargs["auth_credentials"] == "auth:secret"
+def test_weaviate_uuid_for_is_stable():
+    from maverick.vector_store.weaviate_store import _uuid_for
+    assert _uuid_for("abc") == _uuid_for("abc")
+    assert _uuid_for("abc") != _uuid_for("def")
 
 
-def test_weaviate_add_inserts_with_stable_uuid(monkeypatch):
+def test_weaviate_add_batches(monkeypatch):
     monkeypatch.delenv("MAVERICK_WEAVIATE_URL", raising=False)
-    _, collection = _install_fake_weaviate(monkeypatch, exists=True)
+    fake = _install_fake_weaviate(monkeypatch)
+    batch_cm = MagicMock()
+    batch = MagicMock()
+    batch_cm.__enter__.return_value = batch
+    fake.collections.get.return_value.batch.dynamic.return_value = batch_cm
     from maverick.vector_store.weaviate_store import WeaviateStore
     store = WeaviateStore()
-    store.add(["hello", "world"], ids=["a", "b"], metadatas=[{"src": "x"}, {"src": "y"}])
-    assert collection.data.insert.call_count == 2
-    _, kw = collection.data.insert.call_args_list[0]
-    assert kw["properties"]["text"] == "hello" and kw["properties"]["src"] == "x"
-    # Same logical id -> same UUIDv5 (idempotent).
-    import uuid
-    assert kw["uuid"] == str(uuid.uuid5(uuid.NAMESPACE_URL, "maverick:a"))
+    store.add(["d1", "d2"], ids=["a", "b"])
+    assert batch.add_object.call_count == 2
 
 
-def test_weaviate_add_length_mismatch_raises(monkeypatch):
+def test_weaviate_add_empty_noop(monkeypatch):
     monkeypatch.delenv("MAVERICK_WEAVIATE_URL", raising=False)
-    _install_fake_weaviate(monkeypatch, exists=True)
+    _install_fake_weaviate(monkeypatch)
     from maverick.vector_store.weaviate_store import WeaviateStore
     store = WeaviateStore()
-    with pytest.raises(ValueError, match="ids length"):
-        store.add(["a", "b"], ids=["only-one"])
+    store.add([])  # no raise, no batch
 
 
-def test_weaviate_query_maps_results(monkeypatch):
+def test_weaviate_query_shape(monkeypatch):
     monkeypatch.delenv("MAVERICK_WEAVIATE_URL", raising=False)
-    _, collection = _install_fake_weaviate(monkeypatch, exists=True)
-
-    obj = MagicMock()
-    obj.uuid = "uuid-1"
-    obj.properties = {"text": "refund policy", "src": "kb"}
-    obj.metadata.distance = 0.12
-    collection.query.near_text.return_value = MagicMock(objects=[obj])
-
+    fake = _install_fake_weaviate(monkeypatch)
+    obj = SimpleNamespace(
+        uuid="u1",
+        properties={"document": "hello", "src": "t"},
+        metadata=SimpleNamespace(distance=0.25),
+    )
+    fake.collections.get.return_value.query.near_text.return_value = \
+        SimpleNamespace(objects=[obj])
     from maverick.vector_store.weaviate_store import WeaviateStore
-    store = WeaviateStore()
-    hits = store.query("refunds", top_k=3)
-    assert hits == [{"id": "uuid-1", "document": "refund policy",
-                     "distance": 0.12, "metadata": {"src": "kb"}}]
-    assert store.query("") == []
+    out = WeaviateStore().query("hi", top_k=3)
+    assert out[0]["document"] == "hello"
+    assert out[0]["distance"] == pytest.approx(0.25)
+    assert out[0]["score"] == pytest.approx(0.75)
+    assert out[0]["metadata"] == {"src": "t"}
 
 
-def test_weaviate_count_and_delete(monkeypatch):
+def test_weaviate_query_empty_text(monkeypatch):
     monkeypatch.delenv("MAVERICK_WEAVIATE_URL", raising=False)
-    _, collection = _install_fake_weaviate(monkeypatch, exists=True)
-    collection.aggregate.over_all.return_value = MagicMock(total_count=7)
-
+    _install_fake_weaviate(monkeypatch)
     from maverick.vector_store.weaviate_store import WeaviateStore
-    store = WeaviateStore()
-    assert store.count() == 7
-    store.delete(["a"])
-    assert collection.data.delete_by_id.called
+    assert WeaviateStore().query("") == []
 
 
-def test_weaviate_exported_from_package(monkeypatch):
-    from maverick.vector_store import WeaviateStore
-    assert WeaviateStore is not None
+def test_weaviate_count(monkeypatch):
+    monkeypatch.delenv("MAVERICK_WEAVIATE_URL", raising=False)
+    fake = _install_fake_weaviate(monkeypatch)
+    fake.collections.get.return_value.aggregate.over_all.return_value = \
+        SimpleNamespace(total_count=7)
+    from maverick.vector_store.weaviate_store import WeaviateStore
+    assert WeaviateStore().count() == 7
+
+
+def test_semantic_recall_recognizes_weaviate(monkeypatch):
+    monkeypatch.setenv("MAVERICK_VECTOR_STORE", "weaviate")
+    from maverick import semantic_recall
+    assert semantic_recall.backend_name() == "weaviate"

@@ -2,6 +2,7 @@
   "name": "Maverick",
   "image": "mcr.microsoft.com/devcontainers/python:3.12",
   "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
     "ghcr.io/devcontainers/features/git:1": {}
   },
   "postCreateCommand": "bash .devcontainer/post-create.sh",
@@ -12,17 +13,22 @@
         "charliermarsh.ruff"
       ],
       "settings": {
-        "python.defaultInterpreterPath": "/usr/local/bin/python",
         "python.testing.pytestEnabled": true,
-        "python.testing.pytestArgs": ["packages/maverick-core/tests"]
+        "python.defaultInterpreterPath": "/usr/local/bin/python"
       }
+    },
+    "codespaces": {
+      "openFiles": ["docs/getting-started.md", "README.md"]
     }
   },
   "forwardPorts": [8765],
   "portsAttributes": {
-    "8765": {"label": "Maverick dashboard", "onAutoForward": "notify"}
+    "8765": { "label": "Maverick dashboard", "onAutoForward": "notify" }
   },
   "remoteEnv": {
-    "MAVERICK_DEVCONTAINER": "1"
+    "MAVERICK_CONFIG": "${containerWorkspaceFolder}/.maverick/config.toml"
+  },
+  "containerEnv": {
+    "PYTHONUNBUFFERED": "1"
   }
 }

@@ -1,79 +1,65 @@
-"""Marketplace ratings: catalog rating fields, the local ledger, CLI surface."""
+"""marketplace_ratings: rating aggregation + install hash verification."""
 from __future__ import annotations
 
-import pytest
-from click.testing import CliRunner
-from maverick.catalog import CatalogEntry
-from maverick.marketplace_ratings import RatingsLedger, stars_bar
+import json
+
+from maverick.tools.marketplace_ratings import marketplace_ratings
 
 
-def test_catalog_entry_parses_ratings():
-    e = CatalogEntry.from_dict("templates", {
-        "name": "x", "source": "https://h/x.md", "rating": 4.4, "ratings_count": 12,
-    })
-    assert e.rating == 4.4 and e.ratings_count == 12
-    assert e.to_dict()["rating"] == 4.4
+def _run(**kw):
+    return marketplace_ratings().fn(kw)
 
 
-def test_catalog_entry_rating_clamped_and_defensive():
-    e = CatalogEntry.from_dict("templates", {"name": "x", "source": "s", "rating": 99})
-    assert e.rating == 5.0
-    bad = CatalogEntry.from_dict("templates", {"name": "x", "source": "s",
-                                               "rating": "five", "ratings_count": "many"})
-    assert bad.rating == 0.0 and bad.ratings_count == 0
-    # Unrated entries don't emit rating keys.
-    assert "rating" not in CatalogEntry.from_dict(
-        "templates", {"name": "x", "source": "s"}).to_dict()
+def test_aggregate_mean_count_histogram():
+    out = json.loads(_run(op="aggregate", ratings=[5, 4, 5, 3, 5]))
+    assert out["count"] == 5
+    assert out["mean"] == 4.4
+    assert out["histogram"] == {"1": 0, "2": 0, "3": 1, "4": 1, "5": 3}
+    assert 0.0 <= out["wilson_lower_bound"] <= 1.0
 
 
-def test_ledger_rate_and_read(tmp_path):
-    led = RatingsLedger(path=tmp_path / "r.json")
-    led.rate("templates", "deploy-vps", 5, "great")
-    mine = led.my_rating("templates", "deploy-vps")
-    assert mine["stars"] == 5 and mine["comment"] == "great"
-    assert led.my_rating("templates", "other") is None
-    # Re-rating overwrites.
-    led.rate("templates", "deploy-vps", 3)
-    assert led.my_rating("templates", "deploy-vps")["stars"] == 3
+def test_wilson_penalizes_low_count():
+    # A single 5-star vote must rank BELOW many 5-star votes (confidence).
+    one = json.loads(_run(op="aggregate", ratings=[5]))
+    many = json.loads(_run(op="aggregate", ratings=[5] * 100))
+    assert one["wilson_lower_bound"] < many["wilson_lower_bound"]
+    # All-perfect mean is identical; only the confidence-adjusted score differs.
+    assert one["mean"] == many["mean"] == 5.0
 
 
-def test_ledger_validation(tmp_path):
-    led = RatingsLedger(path=tmp_path / "r.json")
-    with pytest.raises(ValueError):
-        led.rate("templates", "x", 0)
-    with pytest.raises(ValueError):
-        led.rate("templates", "x", 6)
-    with pytest.raises(ValueError):
-        led.rate("bogus-kind", "x", 3)
-    with pytest.raises(ValueError):
-        led.rate("templates", "  ", 3)
+def test_wilson_orders_by_quality():
+    # More high ratings -> higher lower bound than more low ratings (same count).
+    good = json.loads(_run(op="aggregate", ratings=[5, 5, 5, 4, 5]))
+    bad = json.loads(_run(op="aggregate", ratings=[1, 2, 1, 2, 1]))
+    assert good["wilson_lower_bound"] > bad["wilson_lower_bound"]
 
 
-def test_ledger_export_for_submission(tmp_path):
-    import json
-    led = RatingsLedger(path=tmp_path / "r.json")
-    led.rate("templates", "a", 4, "comment stays local")
-    led.rate("skills", "b", 2)
-    out = json.loads(led.export_for_submission())
-    assert out == {"templates": {"a": 4}, "skills": {"b": 2}}
+def test_aggregate_errors():
+    t = marketplace_ratings()
+    assert t.fn({"op": "aggregate", "ratings": []}).startswith("ERROR")  # empty
+    assert t.fn({"op": "aggregate", "ratings": [6]}).startswith("ERROR")  # out of range
+    assert t.fn({"op": "aggregate", "ratings": [0]}).startswith("ERROR")  # out of range
+    assert t.fn({"op": "aggregate", "ratings": ["x"]}).startswith("ERROR")  # non-int
 
 
-def test_stars_bar():
-    assert stars_bar(4.4, 12) == "★★★★☆ (12)"
-    assert stars_bar(5, 0) == "★★★★★"
-    assert stars_bar(0, 0) == "unrated"
+def test_verify_install():
+    sha = "a" * 64
+    assert _run(op="verify_install", declared_sha256=sha, computed_sha256=sha).startswith(
+        "VERIFIED"
+    )
+    # Case-insensitive compare.
+    assert _run(
+        op="verify_install", declared_sha256="AB" * 32, computed_sha256="ab" * 32
+    ).startswith("VERIFIED")
+    assert _run(
+        op="verify_install", declared_sha256="a" * 64, computed_sha256="b" * 64
+    ).startswith("MISMATCH")
+    assert _run(op="verify_install", computed_sha256=sha).startswith("ERROR")
 
 
-def test_cli_rate_and_export(tmp_path, monkeypatch):
-    import maverick.marketplace_ratings as mr
-    from maverick import cli as cli_mod
-    real = mr.RatingsLedger
-    monkeypatch.setattr(mr, "RatingsLedger",
-                        lambda path=None: real(path=tmp_path / "r.json"))
-    r = CliRunner().invoke(cli_mod.main, ["template", "rate", "deploy-vps", "4"])
-    assert r.exit_code == 0, r.output
-    assert "★★★★☆" in r.output
-    r2 = CliRunner().invoke(cli_mod.main, ["template", "ratings-export"])
-    assert '"deploy-vps": 4' in r2.output
-    r3 = CliRunner().invoke(cli_mod.main, ["template", "rate", "x", "9"])
-    assert r3.exit_code == 2
+def test_factory_contract():
+    t = marketplace_ratings()
+    assert t.name == "marketplace_ratings"
+    assert t.parallel_safe is True
+    assert set(t.input_schema["properties"]["op"]["enum"]) == {"aggregate", "verify_install"}
+    assert t.fn({"op": "nope"}).startswith("ERROR")

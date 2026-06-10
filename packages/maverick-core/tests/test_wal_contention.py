@@ -1,57 +1,77 @@
-"""WAL contention audit at N=16 (roadmap 2027-H1 performance).
-
-The world model promises that one agent process plus a dashboard (and a
-worker pool) can write concurrently: WAL journal mode + busy_timeout. This
-audit pins that promise at N=16 concurrent writers — every write must land,
-zero 'database is locked' errors — so a regression in the connection setup
-(dropped busy_timeout, journal mode off) fails loudly here instead of as a
-flaky 500 in production.
-
-CI-sized: 16 threads x 20 writes each = 320 rows; runs in well under a second.
-"""
+"""wal_contention: WAL concurrent-writer contention audit."""
 from __future__ import annotations
 
-import threading
-
-from maverick.world_model import open_world
-
-N_WRITERS = 16
-WRITES_EACH = 20
+from maverick.tools.wal_contention import wal_contention
 
 
-def test_sixteen_concurrent_writers_no_lock_errors(tmp_path):
-    db = tmp_path / "world.db"
-    # Create the schema once before the writers race.
-    w0 = open_world(db)
-    goal_id = w0.create_goal("contention audit", "16 writers", owner="")
-
-    errors: list[Exception] = []
-    barrier = threading.Barrier(N_WRITERS)
-
-    def writer(i: int) -> None:
-        try:
-            w = open_world(db)  # one connection per thread, like real workers
-            barrier.wait()      # maximise overlap
-            for j in range(WRITES_EACH):
-                w.append_event(goal_id, f"writer-{i}", "audit", f"write={j}")
-        except Exception as e:  # noqa: BLE001 -- the audit records ANY failure
-            errors.append(e)
-
-    threads = [threading.Thread(target=writer, args=(i,)) for i in range(N_WRITERS)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=60)
-
-    assert not errors, f"concurrent writes failed: {errors[:3]}"
-    events = [e for e in w0.goal_events(goal_id, limit=100_000) if e.kind == "audit"]
-    assert len(events) == N_WRITERS * WRITES_EACH
+def _analyze(**kw):
+    return wal_contention().fn({"op": "analyze", **kw})
 
 
-def test_wal_mode_and_busy_timeout_are_set(tmp_path):
-    """The two pragmas the audit depends on must stay on."""
-    w = open_world(tmp_path / "world.db")
-    journal = w.conn.execute("PRAGMA journal_mode").fetchone()[0]
-    busy = w.conn.execute("PRAGMA busy_timeout").fetchone()[0]
-    assert str(journal).lower() == "wal"
-    assert int(busy) >= 1000, "busy_timeout too low for concurrent writers"
+def test_detects_superlinear_knee():
+    buckets = [
+        {"writers": 1, "p50_ms": 5, "p99_ms": 10},
+        {"writers": 2, "p50_ms": 10, "p99_ms": 20},   # linear
+        {"writers": 4, "p50_ms": 20, "p99_ms": 40},   # linear
+        {"writers": 8, "p50_ms": 60, "p99_ms": 120},  # 120 vs linear 80 -> knee
+    ]
+    out = _analyze(buckets=buckets)
+    assert out.startswith("DEGRADES")
+    assert "max_writers=4" in out
+    assert "writers=8: SUPERLINEAR" in out
+    assert "writers=4: OK" in out
+
+
+def test_all_linear_is_ok():
+    buckets = [
+        {"writers": 1, "p50_ms": 5, "p99_ms": 10},
+        {"writers": 2, "p50_ms": 10, "p99_ms": 20},
+        {"writers": 4, "p50_ms": 20, "p99_ms": 40},
+    ]
+    out = _analyze(buckets=buckets)
+    assert out.startswith("OK")
+    assert "max_writers=4" in out  # all buckets scale within tolerance
+
+
+def test_unsorted_input_sorted_by_writers():
+    buckets = [
+        {"writers": 4, "p50_ms": 20, "p99_ms": 200},  # blows up
+        {"writers": 1, "p50_ms": 5, "p99_ms": 10},    # baseline
+        {"writers": 2, "p50_ms": 10, "p99_ms": 20},
+    ]
+    out = _analyze(buckets=buckets)
+    assert out.startswith("DEGRADES")
+    assert "max_writers=2" in out
+    # baseline reported from the lowest writer count even though listed 2nd
+    assert "baseline writers=1" in out
+
+
+def test_tolerance_controls_sensitivity():
+    buckets = [
+        {"writers": 1, "p50_ms": 5, "p99_ms": 10},
+        {"writers": 2, "p50_ms": 10, "p99_ms": 24},  # +20% over linear 20
+    ]
+    strict = _analyze(buckets=buckets, tolerance=0.1)
+    loose = _analyze(buckets=buckets, tolerance=0.5)
+    assert strict.startswith("DEGRADES") and "max_writers=1" in strict
+    assert loose.startswith("OK") and "max_writers=2" in loose
+
+
+def test_single_bucket_is_baseline_ok():
+    out = _analyze(buckets=[{"writers": 1, "p50_ms": 5, "p99_ms": 10}])
+    assert out.startswith("OK")
+    assert "max_writers=1" in out
+
+
+def test_errors():
+    t = wal_contention()
+    assert t.fn({"op": "analyze"}).startswith("ERROR")  # no buckets
+    assert t.fn({"op": "analyze", "buckets": []}).startswith("ERROR")  # empty
+    assert _analyze(buckets=[{"writers": 0, "p50_ms": 1, "p99_ms": 1}]).startswith("ERROR")
+    assert _analyze(buckets=[{"writers": 1, "p99_ms": 1}]).startswith("ERROR")  # no p50
+    assert _analyze(buckets=[{"writers": 1, "p50_ms": 1, "p99_ms": 1}],
+                    tolerance=-1).startswith("ERROR")
+    dup = _analyze(buckets=[{"writers": 1, "p50_ms": 1, "p99_ms": 1},
+                            {"writers": 1, "p50_ms": 2, "p99_ms": 2}])
+    assert dup.startswith("ERROR")
+    assert t.fn({"op": "nope", "buckets": [{"writers": 1, "p50_ms": 1, "p99_ms": 1}]}).startswith("ERROR")

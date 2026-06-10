@@ -1,31 +1,42 @@
 {
+  "//": "Maverick on AWS ECS Fargate — reference task definition. Register with: aws ecs register-task-definition --cli-input-json file://deploy/reference-architectures/ecs/task-definition.json . State persists on an EFS volume; secrets come from AWS Secrets Manager (replace the ARNs). Run behind an ALB targeting container port 8765.",
   "family": "maverick",
-  "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
   "cpu": "1024",
   "memory": "2048",
-  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/maverickEcsExecutionRole",
-  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/maverickEcsTaskRole",
+  "runtimePlatform": { "operatingSystemFamily": "LINUX", "cpuArchitecture": "X86_64" },
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/maverick-ecs-execution",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/maverick-task",
+  "volumes": [
+    {
+      "name": "maverick-state",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-REPLACE",
+        "transitEncryption": "ENABLED",
+        "rootDirectory": "/maverick"
+      }
+    }
+  ],
   "containerDefinitions": [
     {
       "name": "maverick",
-      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/maverick:latest",
+      "image": "ghcr.io/day-ai-labs/maverick:latest",
       "essential": true,
       "command": ["dashboard", "--host", "0.0.0.0", "--port", "8765"],
-      "portMappings": [
-        {"containerPort": 8765, "protocol": "tcp"}
+      "portMappings": [{ "containerPort": 8765, "protocol": "tcp" }],
+      "environment": [
+        { "name": "MAVERICK_CONFIG", "value": "/state/config.toml" }
       ],
       "secrets": [
-        {
-          "name": "ANTHROPIC_API_KEY",
-          "valueFrom": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/maverick/anthropic-api-key"
-        }
+        { "name": "ANTHROPIC_API_KEY", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:maverick/anthropic_api_key" },
+        { "name": "MAVERICK_DASHBOARD_TOKEN", "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:maverick/dashboard_token" }
       ],
       "mountPoints": [
-        {"sourceVolume": "maverick-state", "containerPath": "/root/.maverick"}
+        { "sourceVolume": "maverick-state", "containerPath": "/state", "readOnly": false }
       ],
       "healthCheck": {
-        "command": ["CMD-SHELL", "python -c \"import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8765/', timeout=3)\" || exit 1"],
+        "command": ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8765/healthz').status==200 else 1)\""],
         "interval": 30,
         "timeout": 5,
         "retries": 3,
@@ -38,16 +49,6 @@
           "awslogs-region": "REGION",
           "awslogs-stream-prefix": "maverick"
         }
-      }
-    }
-  ],
-  "volumes": [
-    {
-      "name": "maverick-state",
-      "efsVolumeConfiguration": {
-        "fileSystemId": "fs-XXXXXXXX",
-        "rootDirectory": "/maverick",
-        "transitEncryption": "ENABLED"
       }
     }
   ]

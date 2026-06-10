@@ -1,46 +1,64 @@
-"""Chaos game-day drill: scenarios hold against the real retry layer."""
+"""chaos_gameday: chaos game-day script generator."""
 from __future__ import annotations
 
-from maverick.chaos_gameday import (
-    SCENARIOS,
-    main,
-    run_gameday,
-    scenario_chaos_off_is_clean,
-    scenario_hard_outage_fails_fast,
-    scenario_tool_flake_absorbed,
-)
+from maverick.tools.chaos_gameday import chaos_gameday
+
+_GRAPH = [
+    {"name": "web", "deps": ["api"]},
+    {"name": "api", "deps": ["db", "cache"]},
+    {"name": "db", "deps": []},
+    {"name": "cache", "deps": []},
+]
 
 
-def test_control_scenario_clean():
-    r = scenario_chaos_off_is_clean()
-    assert r.holds, r.detail
+def _plan(components, fault):
+    return chaos_gameday().fn({"op": "plan", "components": components, "fault": fault})
 
 
-def test_tool_flake_absorbed_by_retries():
-    r = scenario_tool_flake_absorbed()
-    assert r.holds, r.detail
+def test_topological_order_dependencies_first():
+    out = _plan(_GRAPH, "kill")
+    # Leaves (db, cache) before api before web.
+    assert out.index("kill db") < out.index("kill api") < out.index("kill web")
+    assert out.index("kill cache") < out.index("kill api")
+    assert out.startswith("PLAN fault=kill steps=4 components=4")
 
 
-def test_hard_outage_bounded():
-    r = scenario_hard_outage_fails_fast()
-    assert r.holds, r.detail
+def test_blast_radius_is_transitive_downstream():
+    out = _plan(_GRAPH, "latency")
+    # db's blast radius = everything that (transitively) depends on it.
+    assert "latency db (inject artificial latency); blast_radius=[api, web]" in out
+    # web is a sink: nothing downstream.
+    assert "latency web (inject artificial latency); blast_radius=[(none — leaf-facing)]" in out
 
 
-def test_full_gameday_passes_and_main_exit_codes(capsys):
-    report = run_gameday()
-    assert report.ok, [r.detail for r in report.results if not r.holds]
-    assert len(report.results) == len(SCENARIOS)
-    assert main() == 0
-    out = capsys.readouterr().out
-    assert "game day: PASS" in out and out.count("[PASS]") == len(SCENARIOS)
+def test_rollback_note_matches_fault():
+    out = _plan(_GRAPH, "netsplit")
+    assert "rollback: heal the partition" in out
+    assert "reverse step order" in out
 
 
-def test_crashed_scenario_is_failed_drill(monkeypatch):
-    import maverick.chaos_gameday as gd
+def test_cycle_detected_but_not_fatal():
+    out = _plan([
+        {"name": "a", "deps": ["b"]},
+        {"name": "b", "deps": ["a"]},
+    ], "kill")
+    assert out.startswith("PLAN") and "cycle detected among: a, b" in out
+    # Both still appear as steps.
+    assert "kill a" in out and "kill b" in out
 
-    def boom():
-        raise RuntimeError("scenario infra broke")
 
-    monkeypatch.setattr(gd, "SCENARIOS", (boom,))
-    report = gd.run_gameday()
-    assert not report.ok and "crashed" in report.results[0].detail
+def test_deterministic_tie_break_by_name():
+    out1 = _plan(_GRAPH, "kill")
+    out2 = _plan(list(reversed(_GRAPH)), "kill")
+    # Order independent of input ordering (ties broken by name).
+    assert out1 == out2
+
+
+def test_errors():
+    t = chaos_gameday()
+    assert t.fn({"op": "plan", "fault": "kill"}).startswith("ERROR")  # no components
+    assert t.fn({"op": "plan", "components": [{"name": "a"}], "fault": "boom"}).startswith("ERROR")
+    assert t.fn({"op": "nope", "components": [{"name": "a"}], "fault": "kill"}).startswith("ERROR")
+    assert t.fn(
+        {"op": "plan", "components": [{"name": "a"}, {"name": "a"}], "fault": "kill"}
+    ).startswith("ERROR")  # duplicate name
