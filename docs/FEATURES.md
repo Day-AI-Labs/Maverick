@@ -389,12 +389,30 @@ compaction** (`async_compaction.py`, opt-in `[context] async_compaction`): the
 expensive prefix of a conversation's history is compacted in the background
 between turns and the hot path pays only a cheap tail-merge — single daemon
 worker, last-write-wins, fingerprint-validated so a changed prefix never mixes
-stale summaries; **WAL contention audit** (`test_wal_contention.py`): pins the
+stale summaries; **cost projection at plan time** (`cost_projection.py`): token/dollar
+estimates per plan step from the role's model + MODEL_PRICES, iterations
+multiplier, OK/TIGHT/OVER budget verdicts; **provider migration calculator**
+(`migration_calculator.py`): re-price a usage ledger on target models
+(cheapest-first matrix, unpriceable rows excluded from both sides, honest
+tokenizer caveat always rendered); **cross-run learning cache**
+(`learning_cache.py`, opt-in `[memory] learning_cache`): memoize *verified*
+sub-results across runs (required `verified_by` provenance, TTL + LRU cap,
+refuses to store anything the secret detector flags); **energy/CO2
+accounting** (`energy_accounting.py`): clearly-labeled estimates from
+configurable Wh/1k-token + grid-CO2 coefficients (output tokens weighted 3x),
+disclaimer always rendered; **Redis tool cache** (`redis_tool_cache.py`,
+`[tools] output_cache_backend = "redis"`): cross-process/cross-host tier
+reusing the same key canonicalization, namespace-scoped purge, fail-open on
+any Redis error; **WAL contention audit** (`test_wal_contention.py`): pins the
 16-concurrent-writers / zero-lock-errors promise + the WAL/busy_timeout pragmas
 in CI; **query-plan regression CI** (`test_query_plans.py`): hot world-model
 queries must SEARCH via an index, never full-scan; **cost-attribution API**
 (`GET /api/v1/cost/by-tag` on the dashboard): spend bucketed by episode/goal
-tag — the JSON face of the tag split for chargeback/BI; **tool-output cache**
+tag — the JSON face of the tag split for chargeback/BI; **streaming tool_result**
+(`ToolRegistry.set_chunk_listener`): a tool fn may be an async generator or
+return a sync generator of chunks — chunks stream to the registered listener
+(dashboard/TUI live view) as they're produced while the model still receives
+the joined text, so the model protocol is unchanged; **tool-output cache**
 for read-only tools (`tool_cache.py`) with opt-in **warm-on-start** (`[tools]
 output_cache_snapshot`: persist entries to a JSONL snapshot, reload the
 still-fresh ones on the next run's first lookup); **memory-leak quarantine**

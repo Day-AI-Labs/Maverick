@@ -185,6 +185,52 @@ def host_exec(
         return 124, empty, f"TIMEOUT after {timeout}s"
 
 
+def _forward_chunk(listener, name: str, chunk: Any) -> str:
+    """Streaming tool_result: forward one chunk to the registry listener
+    (best-effort) and return it as text for accumulation."""
+    piece = chunk if isinstance(chunk, str) else str(chunk)
+    if listener is not None:
+        try:
+            listener(name, piece)
+        except Exception:  # listener must never break the call
+            pass
+    return piece
+
+
+async def _execute_tool_fn(fn, args: dict[str, Any], stream_chunk) -> str:
+    """Run a tool fn under every supported contract.
+
+    str-returning (sync or async) is the classic contract. **Streaming
+    tool_result**: a fn may be an async generator, or return a sync
+    generator/iterator of chunks — chunks flow through ``stream_chunk`` as
+    they are produced (the dashboard/TUI live-view seam) and the joined text
+    is the tool_result the model sees, so the model protocol is unchanged.
+    Sync fns (and sync generators) drain on a worker thread so a slow tool
+    can't stall the event loop.
+    """
+    if inspect.iscoroutinefunction(fn):
+        out = await fn(args)
+    elif inspect.isasyncgenfunction(fn):
+        parts: list[str] = []
+        async for chunk in fn(args):
+            parts.append(stream_chunk(chunk))
+        return "".join(parts)
+    else:
+        out = await asyncio.to_thread(fn, args)
+    if inspect.isawaitable(out):
+        out = await out
+    if inspect.isgenerator(out) or (hasattr(out, "__next__") and not isinstance(out, str)):
+        parts = []
+
+        def _drain() -> None:
+            for chunk in out:
+                parts.append(stream_chunk(chunk))
+
+        await asyncio.to_thread(_drain)
+        return "".join(parts)
+    return out
+
+
 ToolFn = Callable[[dict[str, Any]], str | Awaitable[str]]
 
 
@@ -230,6 +276,10 @@ class ToolRegistry:
         self._core_names: set[str] = set()
         self._core: set[str] = set()
         self._activated: set[str] = set()
+        # Streaming tool_result: an optional listener that receives
+        # (tool_name, chunk) for tools whose fn yields chunks (generators).
+        # The model still gets the joined result; this is the live-UX seam.
+        self._chunk_listener = None
         # Memoized to_anthropic() payload. The exposed tool set is stable
         # across turns (it only changes on register / set_acl /
         # enable_deferred / activate), but the agent loop re-serialises all
@@ -261,6 +311,16 @@ class ToolRegistry:
             if risk_rank(tool_risk(name)) > risk_rank(self._acl_max_risk):
                 return False
         return True
+
+    def set_chunk_listener(self, listener) -> None:
+        """Register ``listener(tool_name, chunk)`` for streaming tool output.
+
+        Tools that return an iterator/generator of str chunks stream through
+        it as they produce output (dashboard/TUI live view); the joined text
+        remains the tool_result the model sees. Pass None to clear. Listener
+        errors are swallowed — observability must never break a tool call.
+        """
+        self._chunk_listener = listener
 
     def register(self, tool: Tool) -> None:
         if not self._acl_allows(tool.name):
@@ -374,20 +434,10 @@ class ToolRegistry:
                 except ImportError:
                     pass
                 async def _invoke() -> str:
-                    _fn = self._tools[name].fn
-                    if inspect.iscoroutinefunction(_fn):
-                        # Native async tool: await directly on the loop.
-                        return await _fn(args)
-                    # Synchronous fn: offload to a worker thread so one slow or
-                    # blocking call (SaaS httpx, pymongo, dns, pyautogui, ...)
-                    # can't freeze the event loop and stall the whole swarm /
-                    # server / dashboard. Tools already assume threadpool
-                    # execution (see the threading.Lock / threading.local guards
-                    # in browser, mongodb, redis, repo_map).
-                    out = await asyncio.to_thread(_fn, args)
-                    if inspect.isawaitable(out):
-                        out = await out
-                    return out
+                    return await _execute_tool_fn(
+                        self._tools[name].fn, args,
+                        lambda chunk: _forward_chunk(self._chunk_listener, name, chunk),
+                    )
 
                 # One shared reliability policy: transient upstream failures
                 # on retry-safe (non-high-risk) tools are retried with backoff.
