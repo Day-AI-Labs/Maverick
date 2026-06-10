@@ -105,17 +105,18 @@ here.
   minimal + obligations; heuristic, not legal advice), `geofence` (region
   allow/deny policy check — ISO codes or groups EU/EEA/FIVE_EYES, deny-precedence), `two_person_rule` (validate
   dual-control sign-off — distinct approvers, separation of duties, optional roles),
-  `watermark_detector` (scan text for invisible watermarking — zero-width chars,
-  Unicode tag-block steganography with payload decode, bidi/Trojan-Source
-  controls, homoglyphs), `collusion_detector` (heuristic multi-agent collusion
-  scan over a message log — back-channels, scripted payloads, reciprocal-approval
-  loops), `capability_delegation_graph` (delegation-cycle / over-broad-fan-out /
+  `watermark_detector` (find hidden text watermarks/steganography — zero-width,
+  tag chars, variation selectors, homoglyphs; reports, doesn't strip),
+  `collusion_detector` (find voting-collusion blocs among agents that defeat
+  independent-quorum guarantees — correlated votes above a threshold),
+  `capability_delegation_graph` (delegation-cycle / over-broad-fan-out /
   sensitive-holder analysis of a grant graph), `honeytoken` (mint never-valid
   decoy credentials + exfiltration tripwire scan), `dp_stats` (differentially-
   private aggregate release via the Laplace mechanism — noisy count/sum with a
   per-record clamp), `cost_attribution` (rank spend across principal/tenant/tool/
-  tag/model/role dimensions with shares), `coordinated_disclosure` (CVD-ledger
-  lifecycle validation + status roll-up), `model_card` (render/validate a
+  tag/model/role dimensions with shares), `coordinated_disclosure` (track
+  vulnerability disclosure timelines — embargo window per report, flags
+  EMBARGOED/DUE_SOON/OVERDUE/PATCHED/DISCLOSED), `model_card` (render/validate a
   per-LLM model card), `supply_chain_pin` (flag unpinned/unhashed/range
   dependencies), `quorum_approval` (M-of-N quorum check with distinct-role
   option), `crypto_budget_receipt` (HMAC-signed budget receipt issue/verify),
@@ -182,7 +183,11 @@ here.
   `diff_to_expected` (exact/json/numeric/tolerance actual-vs-expected diff),
   `smart_goal_completion` (prefix + token-overlap goal completions),
   `unified_inbox` (time-sorted, per-thread multi-channel inbox + unread counts),
-  `smart_nl_filter` (parse a natural-language filter into a predicate + apply).
+  `smart_nl_filter` (parse a natural-language filter into a predicate + apply),
+  `differential_privacy` (Laplace mechanism for ε-DP noisy counts/sums on
+  published stats), `privacy_budget` (account a user's differential-privacy
+  budget — remaining ε + allow/deny a query), `capability_delegation` (validate
+  a delegation graph for privilege escalation — fixpoint from root capabilities).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.

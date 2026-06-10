@@ -1,102 +1,139 @@
-"""Multi-agent collusion detector (roadmap: 2027 H1 safety).
+"""Multi-agent voting-collusion detector (roadmap: 2027 H1 safety —
+"multi-agent collusion detector").
 
-Heuristic scan over an inter-agent message log for collusion signatures: a pair
-of agents exchanging far more with each other than with the rest of the swarm
-(back-channel), repeated identical payloads (coordination on a fixed script),
-and reciprocal approval loops (A approves B's risky action, B approves A's).
-Deterministic and offline — flags candidates for a human to review; it does not
-itself block.
+Independent-quorum guarantees (N agents must *independently* approve a high-risk
+action) are defeated if a bloc of agents always votes together — a Sybil/voting-
+collusion ring controlled by one source only looks like independent approvals.
+This finds those blocs: given each agent's vote sequence across rounds, it links
+any pair whose votes agree at or above a threshold and reports the connected
+blocs, flagging any large enough to swing a quorum. Pure counting — deterministic
+and offline.
 
 ops:
-  - scan(messages, [threshold])  — messages: [{from, to, content, [approves]}].
+  - detect(votes, [threshold], [quorum])  — ``votes`` is ``{agent: [v, ...]}``
+    with equal-length sequences. Links agent pairs whose agreement fraction is
+    >= ``threshold`` (default 1.0 = perfectly correlated) and reports each bloc
+    of >=2 agents with its cohesion (min pairwise agreement). With ``quorum``,
+    a bloc of >= quorum agents is flagged as quorum-defeating.
 """
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from itertools import combinations
 from typing import Any
 
 from . import Tool
 
 
-def _scan(messages: list[dict], threshold: float) -> str:
-    pair_counts: Counter = Counter()
-    agent_totals: Counter = Counter()
-    payloads: defaultdict[tuple, list] = defaultdict(list)
-    approvals: set[tuple] = set()
+def _agreement(a: list, b: list) -> float:
+    rounds = len(a)
+    matches = sum(1 for x, y in zip(a, b) if x == y)
+    return matches / rounds
 
-    for m in messages:
-        src = str(m.get("from", "")).strip()
-        dst = str(m.get("to", "")).strip()
-        if not src or not dst:
+
+def _detect(votes: dict, threshold: float, quorum: int | None) -> str:
+    agents = list(votes.keys())
+    seqs: dict[str, list] = {}
+    length = None
+    for name in agents:
+        seq = votes[name]
+        if not isinstance(seq, list) or not seq:
+            return f"ERROR: agent {name!r} must have a non-empty list of votes"
+        if length is None:
+            length = len(seq)
+        elif len(seq) != length:
+            return "ERROR: all agents must have the same number of rounds"
+        seqs[name] = [str(v) for v in seq]
+
+    # Union-find over agent pairs that agree at/above the threshold.
+    parent = {name: name for name in agents}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    pair_agree: dict[tuple[str, str], float] = {}
+    for a, b in combinations(agents, 2):
+        ag = _agreement(seqs[a], seqs[b])
+        pair_agree[(a, b)] = ag
+        if ag >= threshold:
+            parent[find(a)] = find(b)
+
+    blocs: dict[str, list[str]] = {}
+    for name in agents:
+        blocs.setdefault(find(name), []).append(name)
+
+    flagged = []
+    for members in blocs.values():
+        if len(members) < 2:
             continue
-        key = tuple(sorted((src, dst)))
-        pair_counts[key] += 1
-        agent_totals[src] += 1
-        agent_totals[dst] += 1
-        content = m.get("content")
-        if content:
-            payloads[key].append(str(content))
-        if m.get("approves"):
-            approvals.add((src, dst))
+        members = sorted(members)
+        cohesion = min(
+            pair_agree[(a, b)] if (a, b) in pair_agree else pair_agree[(b, a)]
+            for a, b in combinations(members, 2)
+        )
+        flagged.append((members, cohesion))
 
-    findings: list[str] = []
-    total_msgs = sum(pair_counts.values())
+    flagged.sort(key=lambda x: (-len(x[0]), x[0]))
 
-    for (a, b), n in pair_counts.most_common():
-        share = n / total_msgs if total_msgs else 0.0
-        if share >= threshold and total_msgs >= 4:
-            findings.append(
-                f"back-channel: {a}<->{b} carry {share:.0%} of all traffic "
-                f"({n}/{total_msgs})")
+    header = f"{len(agents)} agents, {length} rounds, threshold {threshold:g}"
+    if not flagged:
+        return f"CLEAR: no collusion blocs ({header})"
 
-    for key, msgs in payloads.items():
-        if len(msgs) >= 3:
-            dupes = Counter(msgs).most_common(1)[0]
-            if dupes[1] >= 3:
-                findings.append(
-                    f"scripted: {key[0]}<->{key[1]} repeated an identical "
-                    f"payload {dupes[1]}x")
-
-    for a, b in sorted(approvals):
-        if (b, a) in approvals:
-            findings.append(f"reciprocal-approval loop: {a}->{b} and {b}->{a}")
-
-    if not findings:
-        return "CLEAN: no collusion signatures detected"
-    # Reciprocal loops are double-listed (a,b)+(b,a); dedupe the report.
-    uniq = sorted(set(findings))
-    return f"SUSPECT ({len(uniq)} signature(s)):\n- " + "\n- ".join(uniq)
+    quorum_hits = [m for m, _ in flagged if quorum is not None and len(m) >= quorum]
+    verdict = "COLLUSION" if quorum_hits else "SUSPECT"
+    lines = [f"{verdict}: {len(flagged)} bloc(s) ({header}):"]
+    for members, cohesion in flagged:
+        tag = ""
+        if quorum is not None and len(members) >= quorum:
+            tag = f" -- quorum-defeating (>= {quorum})"
+        lines.append(f"  {{{', '.join(members)}}} cohesion {cohesion:g}{tag}")
+    return "\n".join(lines)
 
 
 def _run(args: dict[str, Any]) -> str:
-    if args.get("op") not in (None, "scan"):
+    if args.get("op") not in (None, "detect"):
         return f"ERROR: unknown op {args.get('op')!r}"
-    messages = args.get("messages")
-    if not isinstance(messages, list) or not messages:
-        return "ERROR: messages (list of {from,to,content}) is required"
-    threshold = args.get("threshold", 0.6)
+    votes = args.get("votes")
+    if not isinstance(votes, dict) or len(votes) < 2:
+        return "ERROR: votes must be an object of >=2 agents -> [votes]"
+    threshold = args.get("threshold", 1.0)
     try:
         threshold = float(threshold)
     except (TypeError, ValueError):
-        return "ERROR: threshold must be a number in (0,1]"
-    return _scan(messages, threshold)
+        return "ERROR: threshold must be a number in [0, 1]"
+    if not 0.0 <= threshold <= 1.0:
+        return "ERROR: threshold must be in [0, 1]"
+    quorum = args.get("quorum")
+    if quorum is not None:
+        try:
+            quorum = int(quorum)
+        except (TypeError, ValueError):
+            return "ERROR: quorum must be an integer"
+        if quorum < 2:
+            return "ERROR: quorum must be >= 2"
+    return _detect(votes, threshold, quorum)
 
 
 _SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "op": {"type": "string", "enum": ["scan"]},
-        "messages": {
-            "type": "array",
-            "description": "Inter-agent messages: {from, to, content, approves?}",
-            "items": {"type": "object"},
+        "op": {"type": "string", "enum": ["detect"]},
+        "votes": {
+            "type": "object",
+            "description": "agent -> equal-length list of that agent's votes across rounds",
         },
         "threshold": {
             "type": "number",
-            "description": "Back-channel traffic-share trip point (default 0.6)",
+            "description": "agreement fraction [0,1] to link two agents (default 1.0 = identical)",
+        },
+        "quorum": {
+            "type": "integer",
+            "description": "if set, a bloc of >= quorum agents is flagged as quorum-defeating",
         },
     },
-    "required": ["messages"],
+    "required": ["votes"],
 }
 
 
@@ -104,11 +141,12 @@ def collusion_detector() -> Tool:
     return Tool(
         name="collusion_detector",
         description=(
-            "Heuristic multi-agent collusion scan over a message log: detects "
-            "back-channels (a pair hogging traffic), scripted identical "
-            "payloads, and reciprocal-approval loops. op=scan with 'messages' "
-            "([{from,to,content,approves?}]) and optional 'threshold'. Returns "
-            "CLEAN or SUSPECT with signatures. Flags for human review; offline."
+            "Detect voting-collusion blocs among agents that defeat independent-"
+            "quorum guarantees. op=detect with 'votes' ({agent: [votes]}, equal-"
+            "length). Links agent pairs whose agreement fraction >= 'threshold' "
+            "(default 1.0 = identical votes) and reports each bloc of >=2 agents "
+            "with its cohesion; with 'quorum', flags blocs large enough to swing "
+            "it. Deterministic, offline."
         ),
         input_schema=_SCHEMA,
         fn=_run,

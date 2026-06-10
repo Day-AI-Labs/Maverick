@@ -1,135 +1,148 @@
-"""Coordinated-vulnerability-disclosure ledger tool.
+"""Coordinated-disclosure timeline tracker (roadmap: 2027 H1 safety —
+"coordinated-disclosure log").
 
-Helps run a coordinated disclosure (CVD) process: track vulnerability reports
-through their lifecycle and validate that no report skips a required stage
-(e.g. you can't mark something ``published`` before it's ``fixed``).
-Deterministic and offline — the caller supplies the report(s); this validates
-and formats over the supplied list. No disk, no network.
-
-Lifecycle order:
-  received -> triaged -> fixed -> published
-with ``withdrawn`` permitted as a terminal state from any stage.
+Computes the disclosure status and deadline for a set of vulnerability reports
+under a coordinated-disclosure policy: each report gets an embargo window from
+its report date (90 days by default, optionally per-severity), after which
+public disclosure is permitted. A report that is patched or already disclosed
+short-circuits the clock. Pure date arithmetic — deterministic and offline.
 
 ops:
-  - add(report)        — normalise/validate a single {id, severity, status}.
-  - validate(reports)  — count by status + flag invalid status / transitions.
+  - status(records, [today], [policy], [embargo_days])  — per-report status
+    (EMBARGOED / DUE_SOON / OVERDUE / PATCHED / DISCLOSED), deadline, and days
+    remaining, plus a summary count. ``records`` is a list of
+    ``{id, reported, [severity], [patched], [disclosed]}`` with ISO dates.
+    ``policy`` is ``{severity: days, ...}`` (with optional ``default``);
+    ``embargo_days`` sets a flat window when no policy is given. ``today``
+    defaults to the system date.
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from . import Tool
 
-# Allowed status values and their position in the forward lifecycle.
-_ORDER = ["received", "triaged", "fixed", "published"]
-_STATUSES = set(_ORDER) | {"withdrawn"}
-_SEVERITIES = {"none", "low", "medium", "high", "critical"}
+_DEFAULT_EMBARGO = 90
+_DUE_SOON = 14  # days
 
 
-def _norm_report(rep: Any) -> tuple[dict | None, str | None]:
-    """Return (normalised, None) or (None, error-message)."""
-    if not isinstance(rep, dict):
-        return None, "report must be an object {id, severity, status}"
-    rid = str(rep.get("id") or "").strip()
-    if not rid:
-        return None, "report.id is required"
-    status = str(rep.get("status") or "").strip().lower()
-    if status not in _STATUSES:
-        return None, f"report {rid}: invalid status {status!r} (allowed: {', '.join(sorted(_STATUSES))})"
-    severity = str(rep.get("severity") or "").strip().lower()
-    if severity not in _SEVERITIES:
-        return None, f"report {rid}: invalid severity {severity!r} (allowed: {', '.join(sorted(_SEVERITIES))})"
-    return {"id": rid, "severity": severity, "status": status}, None
+def _parse_date(value: Any, field: str) -> date:
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be an ISO date string (YYYY-MM-DD)")
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise ValueError(f"{field} is not a valid ISO date (YYYY-MM-DD): {value!r}")
 
 
-def _transition_ok(prev: str, cur: str) -> bool:
-    """Is moving from prev -> cur a legal lifecycle step?"""
-    if cur == "withdrawn":
-        return prev != "withdrawn"  # can't leave then re-withdraw a terminal report
-    if prev == "withdrawn":
-        return False  # withdrawn is terminal
-    # Forward-only along the ordered lifecycle, no skipping stages.
-    return _ORDER.index(cur) - _ORDER.index(prev) == 1
+def _embargo_for(severity: str | None, policy: dict, flat: int) -> int:
+    if severity is not None and severity in policy:
+        return int(policy[severity])
+    if "default" in policy:
+        return int(policy["default"])
+    return flat
 
 
-def _add(args: dict[str, Any]) -> str:
-    norm, err = _norm_report(args.get("report"))
-    if err:
-        return f"ERROR: {err}"
-    return f"OK: report {norm['id']} severity={norm['severity']} status={norm['status']}"
+def _status(records: list, today: date, policy: dict, flat: int) -> str:
+    rows = []
+    for i, r in enumerate(records):
+        if not isinstance(r, dict) or "id" not in r or "reported" not in r:
+            return f"ERROR: record {i} needs at least 'id' and 'reported'"
+        rid = str(r["id"])
+        reported = _parse_date(r["reported"], f"record {rid} 'reported'")
+        severity = r.get("severity")
+        severity = None if severity is None else str(severity)
+        window = _embargo_for(severity, policy, flat)
+        if window < 0:
+            return f"ERROR: record {rid} embargo window is negative ({window})"
+        deadline = date.fromordinal(reported.toordinal() + window)
+        remaining = deadline.toordinal() - today.toordinal()
 
+        if r.get("disclosed"):
+            d = _parse_date(r["disclosed"], f"record {rid} 'disclosed'")
+            status, detail = "DISCLOSED", f"public on {d.isoformat()}"
+        elif r.get("patched"):
+            d = _parse_date(r["patched"], f"record {rid} 'patched'")
+            status, detail = "PATCHED", f"fixed {d.isoformat()}; disclosure permitted"
+        elif remaining < 0:
+            status, detail = "OVERDUE", f"deadline {deadline.isoformat()} passed {-remaining}d ago; disclosure permitted"
+        elif remaining <= _DUE_SOON:
+            status, detail = "DUE_SOON", f"{remaining}d to deadline {deadline.isoformat()}"
+        else:
+            status, detail = "EMBARGOED", f"{remaining}d to deadline {deadline.isoformat()}"
+        rows.append((rid, status, detail))
 
-def _validate(args: dict[str, Any]) -> str:
-    reports = args.get("reports")
-    if not isinstance(reports, list):
-        return "ERROR: reports must be an array of {id, severity, status}"
-    counts = {s: 0 for s in sorted(_STATUSES)}
-    flags: list[str] = []
-    # A report can carry a "prev_status" recording where it came from; if so we
-    # check the transition is legal. published always requires a fixed history.
-    for rep in reports:
-        norm, err = _norm_report(rep)
-        if err:
-            flags.append(err)
-            continue
-        counts[norm["status"]] += 1
-        prev = rep.get("prev_status")
-        if prev is not None:
-            prev = str(prev).strip().lower()
-            if prev not in _STATUSES:
-                flags.append(f"report {norm['id']}: invalid prev_status {prev!r}")
-            elif not _transition_ok(prev, norm["status"]):
-                flags.append(
-                    f"report {norm['id']}: invalid transition {prev} -> {norm['status']}"
-                )
+    order = {"OVERDUE": 0, "DUE_SOON": 1, "EMBARGOED": 2, "PATCHED": 3, "DISCLOSED": 4}
+    rows.sort(key=lambda x: (order.get(x[1], 9), x[0]))
 
-    summary = ", ".join(f"{s}={counts[s]}" for s in sorted(_STATUSES) if counts[s])
-    summary = summary or "no reports"
-    if flags:
-        body = "\n".join(f"- {f}" for f in flags)
-        return f"RISK: {len(flags)} issue(s); counts: {summary}\n{body}"
-    return f"CLEAN: counts: {summary}"
+    counts: dict[str, int] = {}
+    for _, status, _ in rows:
+        counts[status] = counts.get(status, 0) + 1
+    summary = ", ".join(f"{counts[s]} {s}" for s in sorted(counts, key=lambda s: order.get(s, 9)))
+
+    lines = [f"as of {today.isoformat()}: {summary}"]
+    for rid, status, detail in rows:
+        lines.append(f"  [{status}] {rid}: {detail}")
+    return "\n".join(lines)
 
 
 def _run(args: dict[str, Any]) -> str:
-    op = args.get("op")
-    if op == "add":
-        return _add(args)
-    if op == "validate":
-        return _validate(args)
-    return f"ERROR: unknown op {op!r} (expected add or validate)"
+    if args.get("op") not in (None, "status"):
+        return f"ERROR: unknown op {args.get('op')!r}"
+    records = args.get("records")
+    if not isinstance(records, list):
+        return "ERROR: records must be an array of {id, reported, ...}"
+    policy = args.get("policy", {})
+    if not isinstance(policy, dict):
+        return "ERROR: policy must be an object {severity: days}"
+    flat = args.get("embargo_days", _DEFAULT_EMBARGO)
+    try:
+        flat = int(flat)
+    except (TypeError, ValueError):
+        return "ERROR: embargo_days must be an integer"
+    if flat < 0:
+        return "ERROR: embargo_days must be non-negative"
+    today_arg = args.get("today")
+    try:
+        today = _parse_date(today_arg, "today") if today_arg is not None else date.today()
+        for k in policy:
+            int(policy[k])
+        return _status(records, today, policy, flat)
+    except ValueError as e:
+        return f"ERROR: {e}"
 
 
 _SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "op": {"type": "string", "enum": ["add", "validate"]},
-        "report": {
-            "type": "object",
-            "description": "single report for op=add",
-            "properties": {
-                "id": {"type": "string"},
-                "severity": {"type": "string", "enum": sorted(_SEVERITIES)},
-                "status": {"type": "string", "enum": sorted(_STATUSES)},
-            },
-            "required": ["id", "severity", "status"],
-        },
-        "reports": {
+        "op": {"type": "string", "enum": ["status"]},
+        "records": {
             "type": "array",
-            "description": "reports for op=validate; each {id, severity, status, prev_status?}",
+            "description": "vulnerability reports; each {id, reported, [severity], [patched], [disclosed]} with ISO dates",
             "items": {
                 "type": "object",
                 "properties": {
                     "id": {"type": "string"},
+                    "reported": {"type": "string"},
                     "severity": {"type": "string"},
-                    "status": {"type": "string"},
-                    "prev_status": {"type": "string"},
+                    "patched": {"type": "string"},
+                    "disclosed": {"type": "string"},
                 },
-                "required": ["id", "severity", "status"],
+                "required": ["id", "reported"],
             },
         },
+        "policy": {
+            "type": "object",
+            "description": "severity -> embargo days (optional 'default' key)",
+        },
+        "embargo_days": {
+            "type": "integer",
+            "description": f"flat embargo window when no policy given (default {_DEFAULT_EMBARGO})",
+        },
+        "today": {"type": "string", "description": "ISO date to evaluate against; defaults to system date"},
     },
-    "required": ["op"],
+    "required": ["records"],
 }
 
 
@@ -137,12 +150,12 @@ def coordinated_disclosure() -> Tool:
     return Tool(
         name="coordinated_disclosure",
         description=(
-            "Coordinated-vulnerability-disclosure (CVD) ledger helper. "
-            "op=add with 'report' {id, severity, status} normalises/validates "
-            "one entry. op=validate with 'reports' (each {id, severity, status, "
-            "prev_status?}) checks the lifecycle (received->triaged->fixed->"
-            "published, withdrawn terminal) and returns a count by status plus "
-            "any invalid statuses/transitions. Pure validation, no disk."
+            "Track coordinated vulnerability disclosure timelines. op=status with "
+            "'records' ([{id, reported, [severity], [patched], [disclosed]}], ISO "
+            "dates). Applies an embargo window (90d default, or per-severity "
+            "'policy' / flat 'embargo_days') from each report date and reports "
+            "EMBARGOED / DUE_SOON / OVERDUE / PATCHED / DISCLOSED with the deadline "
+            "and days remaining, plus a summary. Deterministic, offline."
         ),
         input_schema=_SCHEMA,
         fn=_run,

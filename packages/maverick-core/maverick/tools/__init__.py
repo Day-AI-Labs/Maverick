@@ -555,6 +555,7 @@ def base_registry(  # noqa: C901
     from .cache_eviction import cache_eviction
     from .calendar_tool import calendar_tool
     from .calendly_tool import calendly_tool
+    from .capability_delegation import capability_delegation
     from .capability_delegation_graph import capability_delegation_graph
     from .capability_leak_fuzzer import capability_leak_fuzzer
     from .capability_negotiation import capability_negotiation
@@ -584,6 +585,7 @@ def base_registry(  # noqa: C901
     from .dep_graph import dep_graph
     from .diagnose import diagnose
     from .diff_to_expected import diff_to_expected
+    from .differential_privacy import differential_privacy
     from .discord_bot import discord_bot
     from .discord_slash import discord_slash
     from .dns_lookup import dns_lookup
@@ -660,6 +662,7 @@ def base_registry(  # noqa: C901
     from .polyglot_injection import polyglot_injection
     from .posthog_tool import posthog_tool
     from .preview_diff import preview_diff
+    from .privacy_budget import privacy_budget
     from .process_introspect import process_introspect
     from .provenance_chain import provenance_chain
     from .provider_failover_policy import provider_failover_policy
@@ -745,6 +748,9 @@ def base_registry(  # noqa: C901
     reg.register(pandas_query(sandbox))
     reg.register(git_advanced(sandbox))
     reg.register(calendar_tool())
+    reg.register(capability_delegation())
+    reg.register(coordinated_disclosure())
+    reg.register(collusion_detector())
     reg.register(file_watcher(sandbox))
     reg.register(linear())
     reg.register(jira())
@@ -754,6 +760,7 @@ def base_registry(  # noqa: C901
     reg.register(huggingface())
     reg.register(notify_tool())
     reg.register(diagnose())
+    reg.register(differential_privacy())
     if enable_mobile_tools:
         reg.register(android())
         reg.register(ios_sim())
@@ -781,13 +788,10 @@ def base_registry(  # noqa: C901
     reg.register(cross_repo_deps(sandbox))
     reg.register(test_gen())
     reg.register(two_person_rule())
-    reg.register(watermark_detector())
-    reg.register(collusion_detector())
     reg.register(capability_delegation_graph())
     reg.register(honeytoken())
     reg.register(dp_stats())
     reg.register(cost_attribution())
-    reg.register(coordinated_disclosure())
     reg.register(model_card())
     reg.register(supply_chain_pin())
     reg.register(quorum_approval())
@@ -866,6 +870,7 @@ def base_registry(  # noqa: C901
     reg.register(model3d_inspect(sandbox))
     reg.register(synthetic_data())
     reg.register(web_recorder())
+    reg.register(watermark_detector())
     reg.register(a11y_tree())
     reg.register(ai_act_classifier())
     reg.register(cache_admin())
@@ -873,6 +878,7 @@ def base_registry(  # noqa: C901
     reg.register(ocr(sandbox))
     reg.register(container_build(sandbox))
     reg.register(posthog_tool())
+    reg.register(privacy_budget())
     reg.register(shopify_tool())
     reg.register(mongodb_tool())
     reg.register(redis_tool())
