@@ -624,6 +624,7 @@ def base_registry(  # noqa: C901
     from .imagemagick_tool import imagemagick_tool
     from .ios_sim import ios_sim
     from .jira import jira
+    from .k_anonymity import k_anonymity
     from .key_rotation import key_rotation
     from .knowledge_graph import knowledge_graph
     from .kv_memory import kv_memory
@@ -802,6 +803,7 @@ def base_registry(  # noqa: C901
     reg.register(cost_attribution())
     reg.register(model_card())
     reg.register(anomaly_scan())
+    reg.register(k_anonymity())
     reg.register(supply_chain_pin())
     reg.register(quorum_approval())
     reg.register(crypto_budget_receipt())
