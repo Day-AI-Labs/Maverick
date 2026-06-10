@@ -1401,6 +1401,54 @@ tested without spawning py-spy.
   list capped, no secrets — enforced by test) the app caches in
   AsyncStorage and renders behind an "as of N min ago — offline" banner
   when the dashboard is unreachable.
+- **Marketplace federation** (`marketplace_federation.py` +
+  `federation_envelope.py`): export/import signed listing bundles between
+  instances (`maverick-marketplace-fed/1`) — import verifies the Ed25519
+  envelope **fail-closed** (bad/missing signature, unknown origin, or a
+  missing `cryptography` library all reject the whole envelope), enforces
+  the `[federation] marketplace_peers` trust list, namespaces imports as
+  `origin/name` so they can never shadow local listings, and re-runs the
+  local moderation scan on every import. Ratings do NOT federate — their
+  provenance can't be verified, stated plainly.
+- **Channel federation** (`channel_federation.py`): forward messages
+  between instances' channels over the same envelope discipline — a
+  bounded 0600 outbound queue with user ids pseudonymized via per-pair
+  HMAC, inbound verify fail-closed against the pinned per-origin key,
+  addressed-to-us check, per-peer token-bucket rate limit (injected
+  clock), and delivery into the normal handler as `channel="fed:<origin>"`
+  so federated traffic hits every existing chokepoint. The HTTP binding is
+  deliberately the operator's; the transport is an injected seam.
+- **Marketplace donate-direct** (`marketplace_donations.py`): skill authors
+  declare a donation link; validation enforces https + an allowlist of
+  donation hosts (GitHub Sponsors, Ko-fi, Open Collective, Liberapay, Buy
+  Me a Coffee) and the federation import strips invalid ones. Links only —
+  no payment processing, no checkout proxying, no referral codes.
+- **Benchmark reproducibility audits** (`benchmark_reproducibility.py`):
+  every new benchmark run can carry a manifest
+  (`maverick-bench-repro/1`: host fingerprint, config + input digests, env
+  key presence/absence — never values); `verify_reproduction(a, b)` says
+  exactly which digests differ and calls runs "comparable" only when
+  config+inputs match; `audit_report()` sweeps the stored history. Two
+  runs with differing digests are never claimed comparable.
+- **Compaction v6 hybrid** (`compaction_hybrid.py`): the strategy picker
+  learned from this deployment's own outcomes — deterministic features
+  over the message window, a per-(feature-bucket, strategy) outcome ledger
+  (atomic 0600), epsilon-greedy with an injected PRNG, and an optional
+  pure-Python logistic `fit()` (no torch) whose versioned weights the
+  picker consults when present. Cold start = the existing default
+  strategy; every failure falls open like all compaction paths. An
+  online-learning heuristic, not a pretrained model — stated in the
+  docstring.
+- **Sandbox pool: Firecracker-warm + cross-run pooling**
+  (`sandbox/firecracker.py` + `sandbox/pool.py`, `[sandbox]
+  cross_run_pool` default OFF): Firecracker warm mode keeps one e2b
+  microVM alive between execs (the local firectl path can't, and says so
+  honestly); the cross-run pool parks a still-healthy docker/podman
+  backend at run end (bounded, TTL, injected clock) and hands it to the
+  next run under a strict **scrub contract** — workdir re-pointed, env
+  scrubbed per exec, and only engines whose `run --rm`-per-exec model
+  provably carries no state are eligible (local/firecracker/ssh/k8s/
+  devcontainer are excluded with reasons; they always build fresh).
 - **Speculative drafting across providers** (`speculative_decode.py`): a
   cheap draft model proposes, the target verifies-or-revises in one call;
   per-(draft,target) accept-rate ledger with a floor below which it falls

@@ -31,7 +31,7 @@ import logging
 import os
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .local import ExecResult
@@ -46,6 +46,29 @@ class FirecrackerBackend:
     Two modes:
       provider="local"  : talk to a local firectl + firecracker on PATH
       provider="e2b"    : POST to E2B's sandbox REST API
+
+    Warm reuse (``[sandbox] warm = true``): keep ONE microVM alive between
+    execs instead of boot-per-exec. What each provider's exec mechanism
+    genuinely allows:
+
+      - **e2b**: the REST API holds a sandbox open (create once -> POST
+        repeated ``/processes`` against its id -> DELETE). Warm mode reuses
+        the sandbox id across execs and tears it down in :meth:`close` (E2B's
+        server-side idle TTL is the backstop if close is never reached). A
+        stale/expired id is recreated once, transparently.
+      - **local (firectl)**: firectl boots a one-shot microVM whose init runs
+        the command and exits — there is no exec channel (no in-guest agent /
+        vsock RPC) into a running VM in this scaffold, so a pre-booted VM
+        could never be handed a command. Warm is therefore honestly a no-op
+        here (logged once); boot-per-exec stands until the deploy/ image grows
+        a guest agent.
+
+    Trade-off, stated plainly: a warm VM keeps filesystem and process state
+    between execs *within this backend instance's lifetime* — that is the
+    point (toolchains stay warm) and is the same trust domain as one run.
+    Because that state cannot be guaranteed scrubbed remotely, warm
+    Firecracker sandboxes are excluded from the cross-RUN pool
+    (``sandbox/pool.py``) — they never carry state into another run.
     """
     workdir: Path
     image: str = "ubuntu:24.04-maverick"
@@ -53,6 +76,8 @@ class FirecrackerBackend:
     provider: str = "local"
     api_key: str | None = None
     network: str = "egress-deny"   # egress-deny | egress-allow | bridge=<name>
+    warm: bool = False             # keep the microVM alive between execs (e2b only)
+    _warm_id: str | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
         if self.provider == "local":
@@ -74,6 +99,12 @@ class FirecrackerBackend:
         else:
             raise ValueError(
                 f"Firecracker provider must be 'local' or 'e2b', got {self.provider!r}"
+            )
+        if self.warm and self.provider == "local":
+            log.info(
+                "Firecracker warm mode requested, but the local firectl path "
+                "boots a one-shot microVM per exec (no in-guest exec agent); "
+                "warm reuse applies to provider=\"e2b\" only."
             )
 
     def exec(self, cmd: str, timeout: float | None = None) -> ExecResult:
@@ -225,6 +256,37 @@ class FirecrackerBackend:
             stderr=proc.stderr,
         )
 
+    def _e2b_headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.api_key}"}
+
+    def _e2b_create(self, client) -> tuple[str | None, int]:
+        """Create one e2b sandbox; returns ``(id, status_code)``."""
+        sb = client.post(
+            "https://api.e2b.dev/sandboxes",
+            headers=self._e2b_headers(),
+            json={"template": self.image, "network": self._e2b_network_config()},
+        )
+        if sb.status_code >= 300:
+            return None, sb.status_code
+        return sb.json().get("id"), sb.status_code
+
+    def _e2b_process(self, client, sb_id: str, cmd: str):
+        return client.post(
+            f"https://api.e2b.dev/sandboxes/{sb_id}/processes",
+            headers=self._e2b_headers(),
+            json={"cmd": cmd, "cwd": "/work"},
+        )
+
+    @staticmethod
+    def _e2b_exec_result(run) -> ExecResult:
+        data = run.json() if run.status_code < 300 else {}
+        return ExecResult(
+            exit_code=int(data.get("exitCode", 1)),
+            stdout=data.get("stdout", ""),
+            stderr=data.get("stderr", "")
+                      or (f"http {run.status_code}" if run.status_code >= 300 else ""),
+        )
+
     def _exec_e2b(self, cmd: str) -> ExecResult:
         """Run on E2B's hosted Firecracker. Requires E2B_API_KEY."""
         try:
@@ -243,32 +305,71 @@ class FirecrackerBackend:
         # scaffold uses the raw REST.
         try:
             with httpx.Client(timeout=self.timeout) as client:
-                sb = client.post(
-                    "https://api.e2b.dev/sandboxes",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    json={"template": self.image, "network": self._e2b_network_config()},
-                )
-                if sb.status_code >= 300:
+                if self.warm:
+                    return self._exec_e2b_warm(client, cmd)
+                sb_id, status = self._e2b_create(client)
+                if sb_id is None:
                     return ExecResult(
                         exit_code=126, stdout="",
-                        stderr=f"e2b sandbox create failed: {sb.status_code}",
+                        stderr=f"e2b sandbox create failed: {status}",
                     )
-                sb_id = sb.json().get("id")
-                run = client.post(
-                    f"https://api.e2b.dev/sandboxes/{sb_id}/processes",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    json={"cmd": cmd, "cwd": "/work"},
-                )
+                run = self._e2b_process(client, sb_id, cmd)
                 client.delete(
                     f"https://api.e2b.dev/sandboxes/{sb_id}",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    headers=self._e2b_headers(),
                 )
-                data = run.json() if run.status_code < 300 else {}
-                return ExecResult(
-                    exit_code=int(data.get("exitCode", 1)),
-                    stdout=data.get("stdout", ""),
-                    stderr=data.get("stderr", "")
-                              or (f"http {run.status_code}" if run.status_code >= 300 else ""),
-                )
+                return self._e2b_exec_result(run)
         except Exception as e:
             return ExecResult(exit_code=125, stdout="", stderr=f"e2b error: {e}")
+
+    def _exec_e2b_warm(self, client, cmd: str) -> ExecResult:
+        """Exec against the kept-alive e2b sandbox, creating it on first use.
+
+        A reused id that the API rejects (expired server-side) is recreated
+        ONCE; the retried exec then runs in the fresh microVM. No delete here
+        — :meth:`close` (or E2B's idle TTL) tears the sandbox down.
+        """
+        reused = self._warm_id is not None
+        for attempt in (0, 1):
+            if self._warm_id is None:
+                sb_id, status = self._e2b_create(client)
+                if sb_id is None:
+                    return ExecResult(
+                        exit_code=126, stdout="",
+                        stderr=f"e2b sandbox create failed: {status}",
+                    )
+                self._warm_id = sb_id
+                reused = False
+            run = self._e2b_process(client, self._warm_id, cmd)
+            if run.status_code >= 300 and reused and attempt == 0:
+                log.info(
+                    "e2b warm sandbox %s rejected exec (http %s); recreating once",
+                    self._warm_id, run.status_code,
+                )
+                self._warm_id = None
+                continue
+            return self._e2b_exec_result(run)
+        return ExecResult(  # pragma: no cover - loop always returns above
+            exit_code=125, stdout="", stderr="e2b warm exec failed")
+
+    def close(self) -> None:
+        """Tear down the warm e2b microVM, if any. Idempotent; never raises.
+
+        On failure the id is still dropped — E2B's server-side idle TTL is the
+        reaper of last resort (logged so the operator can see it).
+        """
+        sb_id, self._warm_id = self._warm_id, None
+        if not sb_id:
+            return
+        try:
+            import httpx
+            with httpx.Client(timeout=min(self.timeout, 15.0)) as client:
+                client.delete(
+                    f"https://api.e2b.dev/sandboxes/{sb_id}",
+                    headers=self._e2b_headers(),
+                )
+        except Exception as e:
+            log.warning(
+                "e2b warm sandbox %s teardown failed: %s (E2B's idle TTL will reap it)",
+                sb_id, e,
+            )
