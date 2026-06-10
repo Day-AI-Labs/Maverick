@@ -7,6 +7,7 @@ from maverick_evolve import EvalCase, evolve_live, make_agent_factory
 from maverick_evolve.agent_adapter import (
     env_for,
     overlay_for,
+    subprocess_run_one,
     write_overlay,
 )
 
@@ -43,6 +44,36 @@ def test_render_overlay_is_valid_toml(tmp_path):
 def test_unknown_knobs_ignored():
     assert env_for({"mystery": 1}) == {}
     assert overlay_for({"mystery": 1}) == {}
+
+
+def test_subprocess_run_one_uses_overlay_without_replacing_operator_config(monkeypatch, tmp_path):
+    seen = {}
+
+    def fake_run(args, **kwargs):
+        seen["args"] = args
+        seen["env"] = kwargs["env"]
+        seen["cwd"] = kwargs["cwd"]
+
+        class Proc:
+            stdout = "ok"
+
+        return Proc()
+
+    operator_config = tmp_path / "operator.toml"
+    operator_config.write_text('[sandbox]\nbackend = "docker"\n', encoding="utf-8")
+    monkeypatch.setenv("MAVERICK_CONFIG", str(operator_config))
+    monkeypatch.setattr("maverick_evolve.agent_adapter.subprocess.run", fake_run)
+
+    out = subprocess_run_one(
+        "hello", {"search.n": 5, "max_swarm_fanout": 3}, workdir=str(tmp_path), python="py"
+    )
+
+    assert out == "ok"
+    assert seen["args"] == ["py", "-m", "maverick.cli", "start", "hello"]
+    assert seen["cwd"] == str(tmp_path)
+    assert seen["env"]["MAVERICK_CONFIG"] == str(operator_config)
+    assert seen["env"]["MAVERICK_CONFIG_OVERLAY"] != str(operator_config)
+    assert seen["env"]["MAVERICK_MAX_SWARM_FANOUT"] == "3"
 
 
 @pytest.mark.asyncio
