@@ -642,6 +642,13 @@ opt-in; single-tenant/self-hosted deployments are unaffected):
   tenant's DEK can't open another's data; instant KEK rotation.
 - **Per-tenant egress plane** — `tenant_egress.py`: a per-tenant allow/deny
   egress policy composed (AND) with the per-tool policy at the egress chokepoint.
+- **Multi-tenant `maverick serve`** — the channel server enforces the tenant
+  roster at the door: with per-user tenancy on and tenants provisioned, a
+  suspended/unknown tenant's message is refused before any goal exists, and a
+  tenant over its provisioned `max_daily_dollars` (`maverick tenant quota`;
+  `tenant_over_quota` sums today's tenant-scoped usage ledger across
+  principals) is refused until the UTC day rolls. No roster = no-op; registry
+  read errors fail soft.
 - **Out-of-process execution** — a swappable goal **Dispatcher** (`runner.py`)
   with a **QueueDispatcher** (`queue_dispatcher.py`) that enqueues goals for a
   worker pool (arq adapter behind `[queue]`; `install_from_config` wires it).
