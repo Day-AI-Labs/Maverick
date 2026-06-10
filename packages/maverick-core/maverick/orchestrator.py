@@ -189,6 +189,19 @@ def _fire_webhook(event: str, payload: dict[str, Any]) -> None:
         log.debug("webhook %s skipped: %s", event, e)
 
 
+def _budget_task_class(goal: Any) -> str:
+    """A coarse, stable task-class key for the self-tuning budget learner.
+
+    Derived from the goal's verb-ish first token so runs of a kind ("research
+    ...", "fix ...", "summarize ...") pool together; falls back to "default".
+    Deliberately low-cardinality — the learner needs repeated samples per
+    class, not a unique key per goal.
+    """
+    title = (getattr(goal, "title", "") or "").strip().lower()
+    first = title.split()[0] if title else ""
+    return first if first.isalpha() and len(first) <= 16 else "default"
+
+
 def _end_episode_with_spend(
     world: WorldModel, episode_id: int, summary: str, outcome: str, budget: Budget,
     goal_id: int | None = None,
@@ -415,6 +428,13 @@ async def run_goal(  # noqa: C901
             )
         except Exception:  # pragma: no cover -- ledger is fully fail-soft
             log.debug("usage ledger record skipped for %s", principal)
+        # Feed the self-tuning budget learner (opt-in, no-op when off): this
+        # goal's class is what its next sibling will size its default cap from.
+        try:
+            from .self_tuning_budget import record_run_cost
+            record_run_cost(_budget_task_class(goal), budget.dollars)
+        except Exception:  # pragma: no cover -- learner never blocks a run
+            pass
 
     # Bind trace context so every log line emitted in this task is
     # automatically tagged with goal_id (+ conversation_id when set). Capture

@@ -352,6 +352,16 @@ never routing somewhere v2 rejected, falling back to v2 on a cold context. The
 learned table persists atomically (`router_bandit.json`, 0600); opt-in via
 `[routing] bandit` and default-OFF.
 
+**Self-tuning budgets** (`self_tuning_budget.py`, opt-in `[budget]
+self_tuning`): learns a sensible default spend cap *per coarse task class*
+(e.g. the goal's leading verb) from how much past runs of that class actually
+cost — a bounded reservoir per class, a high-quantile × margin suggestion
+clamped to [floor, ceiling]. Wired as the **lowest-precedence** layer of
+`budget_from_config` (an operator's configured `max_dollars` always wins) and
+fed by the orchestrator's per-run cost recording; returns nothing until a
+class has enough samples, so it never lowers safety on a guess. Off by
+default.
+
 **Local-runtime launcher + autoscaler** (`local_runtime.py`, opt-in
 `[local_runtime]`, `maverick local-runtime plan`): composes the correct
 engine flags for **vLLM / TGI / llama.cpp** from config — continuous

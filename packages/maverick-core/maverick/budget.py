@@ -363,15 +363,21 @@ _BUDGET_KEY_TYPES = {
 }
 
 
-def budget_from_config(*, defaults: dict | None = None, **overrides) -> Budget:
+def budget_from_config(*, defaults: dict | None = None,
+                       task_class: str | None = None, **overrides) -> Budget:
     """Build a Budget that honors the ``[budget]`` section of config.toml.
 
     Precedence, lowest to highest:
-      ``defaults`` (a caller's own fallback, e.g. the background runner's
-      conservative caps) < the ``[budget]`` config section < explicit
-      ``overrides`` (e.g. a CLI ``--max-dollars`` flag). A ``None`` value
-      in either ``defaults`` or ``overrides`` is treated as "unset", so a
-      caller can pass an optional flag straight through.
+      learned **self-tuning** suggestion for ``task_class`` (opt-in; only when
+      that class has enough history) < ``defaults`` (a caller's own fallback,
+      e.g. the background runner's conservative caps) < the ``[budget]`` config
+      section < explicit ``overrides`` (e.g. a CLI ``--max-dollars`` flag). A
+      ``None`` value in either ``defaults`` or ``overrides`` is treated as
+      "unset", so a caller can pass an optional flag straight through.
+
+    The self-tuning layer is the *lowest* precedence: it only fills
+    ``max_dollars`` when nothing more explicit set it, so an operator's
+    configured cap always wins. Off by default (``[budget] self_tuning``).
 
     ``config.get_budget_overrides()`` already existed but was never wired,
     so the ``[budget]`` section had no effect on any run. This is the single
@@ -379,6 +385,16 @@ def budget_from_config(*, defaults: dict | None = None, **overrides) -> Budget:
     rather than crashing the run.
     """
     kwargs: dict = {}
+    # Lowest precedence: a learned per-task-class default cap (opt-in). Seeds
+    # max_dollars so `defaults`/config/overrides below still win if they set it.
+    if task_class:
+        try:
+            from .self_tuning_budget import suggested_max_dollars
+            learned = suggested_max_dollars(task_class)
+            if learned is not None:
+                kwargs["max_dollars"] = float(learned)
+        except Exception:  # pragma: no cover -- self-tuning never blocks a run
+            pass
     if defaults:
         for key, val in defaults.items():
             if key in _BUDGET_KEY_TYPES and val is not None:
