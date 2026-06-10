@@ -561,6 +561,7 @@ def base_registry(  # noqa: C901
     from .cross_repo_deps import cross_repo_deps
     from .currency import currency
     from .datadog_tool import datadog_tool
+    from .decision_explainer import decision_explainer
     from .dep_graph import dep_graph
     from .diagnose import diagnose
     from .differential_privacy import differential_privacy
@@ -679,6 +680,7 @@ def base_registry(  # noqa: C901
     reg.register(collusion_detector())
     reg.register(risk_tier())
     reg.register(bias_eval())
+    reg.register(decision_explainer())
     reg.register(file_watcher(sandbox))
     reg.register(linear())
     reg.register(jira())
