@@ -27,9 +27,12 @@ kubectl -n maverick port-forward svc/maverick 8765:80
 ```
 
 Namespaced, runs as non-root, readiness-gated on `/healthz`, state on a 10Gi
-PVC. Put real values into the `maverick-secrets` Secret from your secret
+PVC. Put real provider keys into the `maverick-secrets` Secret from your secret
 manager (External Secrets Operator / Sealed Secrets) — the checked-in manifest
-ships placeholders. Add an Ingress/Gateway for TLS termination.
+ships only non-authentication placeholders. Before adding an Ingress/Gateway or
+other non-loopback exposure, inject a generated `MAVERICK_DASHBOARD_TOKEN` from
+your secret manager; without it, the dashboard intentionally fails closed for
+remote access.
 
 ## AWS ECS (Fargate)
 

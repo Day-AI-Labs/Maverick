@@ -22,9 +22,11 @@ metadata:
   namespace: maverick
 type: Opaque
 stringData:
-  # Populate from your secret manager; do NOT commit real keys.
+  # Populate from your secret manager; do NOT commit real API keys.
   ANTHROPIC_API_KEY: "replace-me"  # pragma: allowlist secret
-  MAVERICK_DASHBOARD_TOKEN: "replace-me"  # pragma: allowlist secret
+  # Do not check in a dashboard bearer token. The dashboard fails closed for
+  # non-loopback access until you add MAVERICK_DASHBOARD_TOKEN from your secret
+  # manager (or patch this Secret with a generated token before exposing it).
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
