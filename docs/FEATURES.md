@@ -372,7 +372,15 @@ trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
   (`maverick dashboard`). **Search across runs** — a live search box on the
   goals page over `GET /api/v1/goals/search` (text match on title/description/
   result, owner-scoped, decrypt-then-filter since those fields are encrypted at
-  rest).
+  rest). **Pinned watch list** (`/api/v1/pins`, per-principal,
+  most-recent-first), **saved dashboard views** (`/api/v1/views`: named
+  filter/query-param sets), **annotated traces**
+  (`/api/v1/goals/{id}/annotations`: human notes pinned to replay-trace steps),
+  **multi-run dashboard** (`/api/v1/runs/compare?ids=…`: side-by-side
+  status/events/errors for up to 8 runs), and **plain-language explanations**
+  (`/api/v1/goals/{id}/explain`: a deterministic, template-rendered narrative
+  of the run — `plain_language.py`, no LLM call, never hallucinates beyond the
+  log). Pins/views/annotations persist tenant-aware in `ux_store.py`.
 - **Cost** — per-run reports, live cost meter, `maverick start --dry-cost`
   forecasting (`cost_forecast.py`).
 - **Templates** — starter-goals library + community template registry

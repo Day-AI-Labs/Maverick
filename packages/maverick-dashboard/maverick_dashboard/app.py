@@ -1372,6 +1372,134 @@ async def providers_api() -> JSONResponse:
     return JSONResponse({"providers": _health().snapshot()})
 
 
+@app.get("/api/v1/pins")
+async def pins_list(request: Request) -> JSONResponse:
+    """Pinned watch list for the calling principal (most-recently-pinned first)."""
+    from maverick.ux_store import shared as _ux
+    return JSONResponse({"pins": _ux().pins(caller_principal(request))})
+
+
+@app.post("/api/v1/pins/{goal_id}")
+async def pins_add(request: Request, goal_id: int) -> JSONResponse:
+    g = _world().get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from maverick.ux_store import shared as _ux
+    return JSONResponse({"pins": _ux().pin(caller_principal(request), goal_id)})
+
+
+@app.delete("/api/v1/pins/{goal_id}")
+async def pins_remove(request: Request, goal_id: int) -> JSONResponse:
+    from maverick.ux_store import shared as _ux
+    return JSONResponse({"pins": _ux().unpin(caller_principal(request), goal_id)})
+
+
+@app.get("/api/v1/views")
+async def views_list(request: Request) -> JSONResponse:
+    """Saved dashboard views (named filter/query-param sets) for the caller."""
+    from maverick.ux_store import shared as _ux
+    return JSONResponse({"views": _ux().views(caller_principal(request))})
+
+
+@app.post("/api/v1/views/{name}")
+async def views_save(request: Request, name: str) -> JSONResponse:
+    from maverick.ux_store import shared as _ux
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="body must be a JSON object of params")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="body must be a JSON object of params")
+    try:
+        _ux().save_view(caller_principal(request), name, body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JSONResponse({"saved": name}, status_code=201)
+
+
+@app.delete("/api/v1/views/{name}")
+async def views_delete(request: Request, name: str) -> JSONResponse:
+    from maverick.ux_store import shared as _ux
+    if not _ux().delete_view(caller_principal(request), name):
+        raise HTTPException(status_code=404, detail="no such view")
+    return JSONResponse({"deleted": name})
+
+
+@app.get("/api/v1/goals/{goal_id}/annotations")
+async def annotations_list(request: Request, goal_id: int) -> JSONResponse:
+    """Trace annotations: human notes pinned to replay-trace steps (seq)."""
+    g = _world().get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from maverick.ux_store import shared as _ux
+    return JSONResponse({"annotations": _ux().annotations(goal_id)})
+
+
+@app.post("/api/v1/goals/{goal_id}/annotations")
+async def annotations_add(request: Request, goal_id: int) -> JSONResponse:
+    g = _world().get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="body must be JSON {seq, note}")
+    if not isinstance(body, dict) or "seq" not in body or not body.get("note"):
+        raise HTTPException(status_code=400, detail="body must be JSON {seq, note}")
+    from maverick.ux_store import shared as _ux
+    try:
+        entry = _ux().annotate(goal_id, int(body["seq"]), str(body["note"]),
+                               author=caller_principal(request))
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JSONResponse(entry, status_code=201)
+
+
+@app.get("/api/v1/goals/{goal_id}/explain")
+async def goal_explain(request: Request, goal_id: int) -> JSONResponse:
+    """Plain-language narrative of a run (deterministic, no LLM)."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from maverick.plain_language import explain
+    events = w.goal_events(goal_id, limit=2000)
+    return JSONResponse({"goal_id": goal_id, "explanation": explain(g, events)})
+
+
+@app.get("/api/v1/runs/compare")
+async def runs_compare(request: Request, ids: str) -> JSONResponse:
+    """Multi-run dashboard: side-by-side summary of up to 8 runs."""
+    try:
+        goal_ids = [int(x) for x in ids.split(",") if x.strip()][:8]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="ids must be comma-separated integers")
+    if not goal_ids:
+        raise HTTPException(status_code=400, detail="ids is required")
+    w = _world()
+    runs = []
+    for gid in goal_ids:
+        g = w.get_goal(gid)
+        if g is None:
+            raise HTTPException(status_code=404, detail=f"no such goal: {gid}")
+        assert_goal_access(request, g)
+        events = w.goal_events(gid, limit=10_000)
+        errors = sum(1 for e in events if e.kind == "error")
+        runs.append({
+            "goal_id": gid,
+            "title": (g.title or "")[:120],
+            "status": g.status,
+            "events": len(events),
+            "errors": errors,
+            "created_at": getattr(g, "created_at", None),
+        })
+    return JSONResponse({"runs": runs})
+
+
 @app.get("/api/v1/cost/by-tag")
 async def cost_by_tag_api(tag_field: str = "tag", limit: int = 500) -> JSONResponse:
     """Cost-attribution API: spend split by tag (team / project / cost-center).
