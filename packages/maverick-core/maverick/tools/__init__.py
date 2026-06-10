@@ -721,6 +721,14 @@ def base_registry(  # noqa: C901
     reg.register(coordinated_disclosure())
     reg.register(capability_delegation_graph())
     reg.register(agent_identity())
+    from .adversarial_eval import adversarial_eval
+    from .gui_element_memory import gui_element_memory
+    from .voice_command_grammar import voice_command_grammar
+    from .what_changed_digest import what_changed_digest
+    reg.register(voice_command_grammar())
+    reg.register(what_changed_digest())
+    reg.register(gui_element_memory())
+    reg.register(adversarial_eval())
     reg.register(a11y_tree())
     reg.register(ai_act_classifier())
     reg.register(cache_admin())

@@ -112,7 +112,14 @@ here.
   echoed reasoning + rubber-stamping), `coordinated_disclosure` (run a CVD
   timeline offline — embargo OPEN/EXPIRED + advisory render), `capability_delegation_graph`
   (static analysis over capability delegations — cycles, privilege escalation,
-  transitive holders), `agent_identity` (per-agent stable id + HMAC sign/verify).
+  transitive holders), `agent_identity` (per-agent stable id + HMAC sign/verify),
+  `voice_command_grammar` (match a transcribed utterance to an intent + slots
+  from a {slot}-template grammar — no model round-trip for high-frequency
+  commands), `what_changed_digest` (added/removed/changed digest between two
+  snapshots, optional signed numeric deltas), `gui_element_memory` (offline
+  store of GUI element locators keyed by app/screen/name for computer-use),
+  `adversarial_eval` (score a red-team batch — confusion matrix, recall/
+  precision, and the missed-attack list that gates red-team CI).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
