@@ -591,22 +591,27 @@ def base_registry(  # noqa: C901
     from .arxiv import arxiv
     from .asana_tool import asana_tool
     from .ast_edit import ast_edit
+    from .bias_eval import bias_eval
     from .bitbucket_tool import bitbucket_tool
     from .budget_status import budget_status
     from .cache_admin import cache_admin
     from .calendar_tool import calendar_tool
     from .calendly_tool import calendly_tool
+    from .capability_delegation import capability_delegation
     from .citation_verifier import citation_verifier
     from .clickup_tool import clickup_tool
     from .clipboard import clipboard
     from .cloudflare_tool import cloudflare_tool
+    from .collusion_detector import collusion_detector
     from .compute import compute
     from .confluence_tool import confluence_tool
     from .constrained_output import constrained_output
     from .container_build import container_build
+    from .coordinated_disclosure import coordinated_disclosure
     from .cross_repo_deps import cross_repo_deps
     from .currency import currency
     from .datadog_tool import datadog_tool
+    from .decision_explainer import decision_explainer
     from .dep_graph import dep_graph
     from .diagnose import diagnose
     from .differential_privacy import differential_privacy
@@ -666,6 +671,7 @@ def base_registry(  # noqa: C901
     from .reddit_tool import reddit_tool
     from .redis_tool import redis_tool
     from .replicate_tool import replicate_tool
+    from .risk_tier import risk_tier
     from .s3_tool import s3_tool
     from .salesforce_tool import salesforce_tool
     from .semantic_code_search import semantic_code_search
@@ -719,6 +725,12 @@ def base_registry(  # noqa: C901
     reg.register(pandas_query(sandbox))
     reg.register(git_advanced(sandbox))
     reg.register(calendar_tool())
+    reg.register(capability_delegation())
+    reg.register(coordinated_disclosure())
+    reg.register(collusion_detector())
+    reg.register(risk_tier())
+    reg.register(bias_eval())
+    reg.register(decision_explainer())
     reg.register(file_watcher(sandbox))
     reg.register(linear())
     reg.register(jira())
@@ -765,10 +777,9 @@ def base_registry(  # noqa: C901
     reg.register(watermark_detector())
     from .agent_identity import agent_identity
     from .capability_delegation_graph import capability_delegation_graph
-    from .collusion_detector import collusion_detector
-    from .coordinated_disclosure import coordinated_disclosure
-    reg.register(collusion_detector())
-    reg.register(coordinated_disclosure())
+    # collusion_detector / coordinated_disclosure: imported + registered once
+    # above (the two converged implementations were unified into one tool each
+    # at the 2027-2028 merge).
     reg.register(capability_delegation_graph())
     reg.register(agent_identity())
     from .adversarial_eval import adversarial_eval

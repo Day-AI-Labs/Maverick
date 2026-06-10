@@ -133,10 +133,22 @@ here.
   text watermarks/steganography — zero-width, tag chars, variation selectors, homoglyphs), `privacy_budget` (account a
   user's differential-privacy budget — remaining epsilon + allow/deny a query),
   `collusion_detector` (flag collusion between independent swarm agents —
-  echoed reasoning + rubber-stamping), `coordinated_disclosure` (run a CVD
-  timeline offline — embargo OPEN/EXPIRED + advisory render), `capability_delegation_graph`
+  op=scan: echoed reasoning + rubber-stamping in messages; op=detect:
+  voting-collusion blocs whose agreement defeats independent-quorum
+  guarantees), `coordinated_disclosure` (run a CVD process offline —
+  op=status over a record set flags EMBARGOED/DUE_SOON/OVERDUE/PATCHED/
+  DISCLOSED per report with per-severity policy, or checks one report's
+  OPEN/EXPIRED window; op=advisory renders the advisory block),
+  `capability_delegation` (validate a
+  delegation graph for privilege escalation — fixpoint from root capabilities),
+  `capability_delegation_graph`
   (static analysis over capability delegations — cycles, privilege escalation,
   transitive holders), `agent_identity` (per-agent stable id + HMAC sign/verify),
+  `risk_tier` (score an agent goal LOW/MEDIUM/HIGH from operational signals —
+  shell/secrets/PII/spend/irreversibility — for gating), `bias_eval` (group-
+  fairness metrics — four-fifths rule, demographic-parity and equal-opportunity
+  differences from per-group outcome counts), `decision_explainer` (per-factor
+  contribution breakdown for an additive/scorecard decision — right-to-explanation),
   `voice_command_grammar` (match a transcribed utterance to an intent + slots
   from a {slot}-template grammar — no model round-trip for high-frequency
   commands), `what_changed_digest` (added/removed/changed digest between two
