@@ -364,6 +364,11 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
 - **Audit & compliance** — signed append-only audit log (`maverick audit verify`),
   date-windowed **SIEM export**, encryption-at-rest (`crypto_at_rest.py`,
   `maverick encryption migrate`), SOC2 readiness (`soc2.py`), DSAR (`dsar.py`),
+  **differential erasure verification** (`erasure_verify.py`, `maverick
+  erase-verify`) — a right-to-erasure *proof*: reuses the DSAR export (whose
+  subject-matching is guaranteed to agree with the erase path) to assert zero
+  residual records across every store after `maverick erase`, with a
+  before/after `differential` that confirms the erase actually removed data,
   **data-retention enforcement** (`audit/retention.py`, opt-in `[retention]`
   config, `maverick retention enforce [--dry-run]`) — prunes audit files,
   `episodes`/`goal_events` rows, **and the usage-ledger cost buckets**

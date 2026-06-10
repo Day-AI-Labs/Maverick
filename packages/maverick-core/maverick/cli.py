@@ -3056,6 +3056,36 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         )
 
 
+@main.command("erase-verify")
+@click.option("--channel", required=True, help="Channel name (e.g. telegram, sms).")
+@click.option("--user", required=True, help="The channel user_id to verify.")
+@click.option("--tenant", default=None, help="Tenant data plane (default: active).")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def erase_verify(channel: str, user: str, tenant: str | None, as_json: bool) -> None:
+    """Verify a (channel, user_id) was fully erased: zero residual records.
+
+    Right-to-erasure proof (GDPR Art. 17): reuses the DSAR export, whose
+    subject-matching agrees with the erase path, so any residual count is an
+    incomplete erasure. Read-only; run it after `maverick erase`.
+    """
+    import json as _json
+
+    from .erasure_verify import verify_erasure
+    report = verify_erasure(user, channel=channel, tenant=tenant)
+    if as_json:
+        click.echo(_json.dumps(report, default=str))
+        return
+    if report["clean"]:
+        click.echo(click.style(
+            f"CLEAN: no residual data for {channel}:{user}", fg="green"))
+        return
+    click.echo(click.style(
+        f"RESIDUAL DATA for {channel}:{user} — erasure incomplete:", fg="red"))
+    for store, n in sorted(report["residual"].items()):
+        click.echo(f"  {store}: {n}")
+    raise SystemExit(1)
+
+
 @main.command("compliance")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
               help="Output format.")
