@@ -87,15 +87,34 @@ def _synthesis_reserve_block(parent: Agent) -> str | None:
     )
 
 
-def _child_capability(parent, role: str, depth: int):
-    """A child's capability grant: the parent's, attenuated (never broadened)
-    and re-bound to the child principal. ``None`` when the parent runs
-    unrestricted (capability enforcement off), so this is a no-op by default.
+def _child_capability(parent, role: str, depth: int, *,
+                      requested_tools: set[str] | None = None,
+                      required_tools: set[str] | None = None,
+                      max_risk: str | None = None):
+    """A child's capability grant via boot negotiation against the parent.
+
+    With no requested scope this is exactly the prior behavior — the parent's
+    grant attenuated and re-bound to the child principal (``None`` when
+    enforcement is off). When the child declares a narrower ``requested_tools``
+    / ``max_risk`` (or ``required_tools`` it can't run without), the boot
+    handshake resolves it narrow-only and the result is audit-recordable.
+    Returns the negotiated ``Capability`` (or ``None``); raises
+    ``CapabilityBootDenied`` when a required capability isn't grantable.
     """
     cap = getattr(parent, "capability", None)
-    if cap is None:
-        return None
-    return cap.attenuate(principal=f"agent:{role}-{depth}")
+    from ..capability_boot import negotiate_boot
+    neg = negotiate_boot(
+        cap, principal=f"agent:{role}-{depth}",
+        requested_tools=requested_tools, required_tools=required_tools,
+        max_risk=max_risk,
+    )
+    if not neg.ok:
+        raise CapabilityBootDenied(neg.reason)
+    return neg.granted
+
+
+class CapabilityBootDenied(RuntimeError):
+    """A child declared a required capability its parent cannot grant."""
 
 
 def _sealed_notice(ctx, child) -> str | None:
