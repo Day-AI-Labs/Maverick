@@ -1,7 +1,18 @@
 """Performance SLA harness: real measurements against published thresholds."""
 from __future__ import annotations
 
+import pytest
 from maverick import perf_sla
+
+
+@pytest.fixture(autouse=True)
+def _isolate_latency_profile():
+    """The dispatch probe drives the REAL registry, which records into the
+    in-process tool-latency profile; reset it so suite-mates that assert a
+    fresh profile (test_tail_latency) aren't polluted."""
+    yield
+    from maverick import tool_latency
+    tool_latency.reset()
 
 
 def test_thresholds_match_published_doc():
