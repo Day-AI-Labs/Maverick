@@ -1843,6 +1843,26 @@ def debate(ctx, question: str, rounds: int, max_dollars: float,
     click.echo(f"\n[{result.rounds_completed} round(s), ${result.total_dollars:.4f}]")
 
 
+@main.command("migrate")
+@click.option("--apply", "do_apply", is_flag=True,
+              help="Apply mechanical rewrites (after a timestamped backup). "
+                   "Default is a dry run.")
+@click.option("--config", "config_path", default=None,
+              help="Path to config.toml (default: the active deployment's).")
+def migrate_cmd(do_apply: bool, config_path: str | None) -> None:
+    """Walk an existing config forward across versions.
+
+    Reports migration advisories (real upgrade paths), lints unknown config
+    sections (silent-no-op typos), and -- with --apply -- performs mechanical
+    key renames behind a timestamped backup. Dry-run by default.
+    """
+    from pathlib import Path as _Path
+
+    from .migrate import migrate, render
+    report = migrate(_Path(config_path) if config_path else None, apply=do_apply)
+    click.echo(render(report))
+
+
 @main.command("plan-reflect")
 @click.argument("goal")
 @click.option("--max-iterations", default=3, show_default=True, type=int,

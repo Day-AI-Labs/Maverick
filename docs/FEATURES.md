@@ -525,6 +525,12 @@ and `trace_commit()` reads it back so replays tie to exact code); **cost split b
 
 - **Packaging** — 6 packages on PyPI, GHCR Docker image, PyInstaller binaries,
   native double-click installers (Tauri; `.exe` / `.dmg` / `.AppImage`).
+- **Backwards-compat tooling** — `maverick migrate` (`migrate.py`): walks an
+  existing config forward — real migration advisories (Twilio WhatsApp → the
+  first-party Cloud API adapter), unknown-section lint with did-you-mean
+  suggestions (a typo'd section silently no-ops), and a mechanical-rename
+  engine that only writes behind a timestamped backup (rename table empty
+  today; 2.0 renames land on it). Dry-run default.
 - **Deployment blueprints** — reference architectures for **Kubernetes / AWS
   ECS (Fargate) / Fly.io / Railway** (`deploy/reference-architectures/`):
   contract-tested manifests sharing the canonical image, `:8765` dashboard
