@@ -678,6 +678,7 @@ def base_registry(  # noqa: C901
     from .reflect_loop import reflect_loop
     from .reliability_harness import reliability_harness
     from .replicate_tool import replicate_tool
+    from .retention_check import retention_check
     from .right_to_explanation import right_to_explanation
     from .risk_tier import risk_tier
     from .risk_tier_classifier import risk_tier_classifier
@@ -804,6 +805,7 @@ def base_registry(  # noqa: C901
     reg.register(model_card())
     reg.register(anomaly_scan())
     reg.register(k_anonymity())
+    reg.register(retention_check())
     reg.register(supply_chain_pin())
     reg.register(quorum_approval())
     reg.register(crypto_budget_receipt())
