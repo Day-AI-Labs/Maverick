@@ -520,7 +520,12 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   ledger** (`safety/consent.py`; `MAVERICK_CONSENT_MODE` =
   auto-approve / auto-deny / ask / dashboard), capability tokens
   (`capability.py`), role-based access control over capabilities, the
-  `self_capability` self-report tool, **capability revocation**
+  `self_capability` self-report tool, **capability boot negotiation**
+  (`capability_boot.py`): a spawned child may declare a narrower requested
+  scope (tools/max_risk/paths/hosts), and `negotiate_boot` resolves it against
+  the parent grant narrow-only (never gaining authority the parent lacked),
+  records the handshake, and fails the spawn when a *required* capability
+  isn't grantable, **capability revocation**
   (`revocation.py`, `maverick capability revoke/unrevoke/revocations`): kill a
   still-valid grant before its TTL — the tool chokepoint denies a revoked
   principal's next call, and the list is re-read on change so a revoke in
@@ -876,6 +881,27 @@ tested without spawning py-spy.
   portal_dir` onto the built-ins so an operator drops in a community
   translation and the dashboard speaks it with no rebuild (malformed catalogs
   skipped, never blanking the UI).
+- **Predictive approvals** (`predictive_approvals.py`): learns the operator's
+  historical approve/deny rate per (action, risk tier) from approval history and
+  *suggests* a default — auto-approve-candidate / auto-deny-candidate /
+  always-ask — with a confidence from sample size. A suggestion surfaced to the
+  human, never an auto-decision; high/critical actions are never auto-approve
+  candidates.
+- **Channel auto-routing** (`channel_autorouting.py`, `[channels.routing]`): a
+  pure decision function picking the best-fit reply channel/handler from an
+  inbound message's signals (length, detected language, urgency, attachment
+  types, an injected classifier) against a configurable rule table, with
+  `explain()`; passthrough when unconfigured.
+- **Provider-side caching analytics** (`provider_cache_analytics.py`): parses
+  prompt-cache telemetry into a hit-rate / $-saved report (cache-read vs write
+  vs uncached at configured prices), per-role breakdown, and "unstable prefix"
+  recommendations for roles with a low hit rate.
+- **Consent ergonomics** (`consent_ergonomics.py`): improves the consent UX
+  without weakening it — batches related pending prompts into one grouped ask,
+  renders a plain-language summary, and remembers "ask once this session" for an
+  exact (action, scope) in an injected **session-scoped** store (expiring, NOT a
+  persistent grant); composes with `safety.consent`, never bypassing its
+  decision.
 - **Static accessibility audit** (`a11y_audit.py`, `python -m
   maverick.a11y_audit --ci`, wired as a CI step): an offline structural WCAG
   pass over the shipped dashboard templates — img alt, form-control labels
