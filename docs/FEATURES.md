@@ -1393,3 +1393,19 @@ tested without spawning py-spy.
   [observability integrations guide](./integrations/observability-partners.md)
   (OpenRouter provider, OTLP-generic tracing incl. LangSmith, Helicone via
   base_url override).
+- **Long-form handbook** ([`docs/handbook.md`](./handbook.md)): the front
+  door — mental model, guided tour, day-2 operations, safety posture,
+  extension points, and a map of every other doc; every cited command and
+  module verified against the tree.
+- **Distribution program kits** ([`docs/programs/`](./programs/)): 17
+  runnable playbooks — Summit v1 (virtual), university outreach,
+  integration partnerships (business half), GitHub Stars campaign, office
+  hours, sponsorship tiers, conference booth, swag, ambassadors, Skill of
+  the Year, community survey, foundation exploration, badge program,
+  curriculum kit, community grants, regional meetups, and press kit v2 +
+  an evidence-gated case-study template. Each kit reuses the shipped
+  machinery (skill validator, moderation gauntlet, ratings, plugin matrix
+  CI, sigstore/CA signing, retrospective generators) instead of inventing
+  parallel process; founder decisions (amounts, dates, license grants) are
+  explicitly marked, never invented; executing the programs is a
+  maintainer act.

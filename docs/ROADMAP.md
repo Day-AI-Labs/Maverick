@@ -105,7 +105,7 @@ single-run inflation) — run multi-seed.
 |---|---|
 | **Capabilities** | — (cleared) |
 | **UX** | visual graph editor · drag-and-drop goal builder |
-| **Distribution** | Localized docs phase 2 (es/ja) · tutorial video season 2 · university outreach (5 partnerships) · Maverick Summit v1 (virtual) · integration partnerships (business half; self-serve guide shipped) · localized docs phase 3 (de/fr/pt-BR) · GitHub Stars campaign · office hours |
+| **Distribution** | Localized docs phase 2 (es/ja) · tutorial video season 2 · localized docs phase 3 (de/fr/pt-BR) — (university outreach, Maverick Summit v1, integration partnerships business half, GitHub Stars campaign, office hours: **program kits shipped**, see [programs/](./programs/) — running them is a maintainer act) |
 | **Performance** | — (cleared) |
 | **Safety** | — (cleared) |
 | **Ecosystem** | — (cleared) |
@@ -118,7 +118,7 @@ single-run inflation) — run multi-seed.
 |---|---|
 | **Capabilities** | Browser anti-bot evasion kit (opt-in) |
 | **UX** | Native macOS/Windows/Linux GUI apps |
-| **Distribution** | Windows MSI · sponsorship tiers · conference physical booth · swag store · ambassadors program · long-form handbook · Skill of the Year award · mobile companion app v1 (read-only) · localized docs phase 4 (ko/ru/it/hi) · video season 3 · annual community survey · foundation exploration |
+| **Distribution** | Windows MSI · mobile companion app v1 (read-only) · localized docs phase 4 (ko/ru/it/hi) · video season 3 — (sponsorship tiers, conference booth, swag store, ambassadors, Skill of the Year award, annual community survey, foundation exploration: **program kits shipped**, see [programs/](./programs/); the **long-form handbook shipped** at [handbook.md](./handbook.md)) |
 | **Performance** | — (cleared: the 2-year retrospective is time-gated — its generators shipped (`benchmark_retrospective` for perf, `safety_report` for safety, `ux_retrospective` for usage); the operator runs them at the mark) |
 | **Safety** | — (cleared) |
 | **Ecosystem** | — (cleared: Redis primary store declined — see [`specs/redis-world-model-decision.md`](./specs/redis-world-model-decision.md); the Redis layers that fit shipped (tool cache, arq queue). DuckDB transactional backend declined — analytics layer shipped. **Modal sandbox backend shipped**; the Cloudflare-Workers half declined for shell semantics — Workers run JS/WASM, not processes; the Worker deployment story is the relay reference + `wasm_run`.) |
@@ -131,7 +131,7 @@ single-run inflation) — run multi-seed.
 |---|---|
 | **Capabilities** | — (cleared) |
 | **UX** | conversational supervisor · voice-only mode · mobile offline cache · augmented terminal (Rich inline charts) · AR plan-tree (visionOS) · embedded analytics web component · voice macros · RTL language support |
-| **Distribution** | 2.0 stable release · migration playbook · marketplace v3 (donate-direct model) · Maverick Summit v2 (hybrid) · editor expansion (JetBrains/Neovim/Zed) · localized docs phase 5 (top-15 langs + MT pipeline) · "Built with Maverick" badge program · comparison benchmark v3 live dashboard · university curriculum kit · foundation paperwork submitted · ARM/RISC-V builds · iOS/Android skill execution (Pyodide/Kivy) · skill + channel certification programs · community grants v1 · regional meetup playbook · embeddable widget · hosted demo cluster (demo.maverick.dev) · press push to major outlets · sponsor tier 2 |
+| **Distribution** | 2.0 stable release · migration playbook · marketplace v3 (donate-direct model) · Maverick Summit v2 (hybrid) · editor expansion (JetBrains/Neovim/Zed) · localized docs phase 5 (top-15 langs + MT pipeline) · comparison benchmark v3 live dashboard · foundation paperwork submitted · ARM/RISC-V builds · iOS/Android skill execution (Pyodide/Kivy) · skill + channel certification programs · embeddable widget · hosted demo cluster (demo.maverick.dev) · press push to major outlets · sponsor tier 2 — ("Built with Maverick" badge program, university curriculum kit, community grants v1, regional meetup playbook: **program kits shipped**, see [programs/](./programs/)) |
 | **Performance** | compaction v6 hybrid (learned classifier picks strategy) · sandbox pool (Firecracker-warm + cross-run pooling — warm Docker container reuse shipped) |
 | **Safety** | Safety steering group · external SOC2 Type I · misuse leaderboard removal (verified absent — the repo contains no misuse leaderboard to remove; resolved) |
 | **Ecosystem** | voice channel v2 (streaming ASR + barge-in) |
@@ -144,7 +144,7 @@ single-run inflation) — run multi-seed.
 |---|---|
 | **Capabilities** | embedded device tool (JTAG/I2C — serial shipped) · WebGPU local vision |
 | **UX** | embedded video walkthroughs · 3D plan-tree (WebGL/VR) |
-| **Distribution** | Maverick Conference v3 (in-person flagship) · hackathon series · localized communities (top 5 non-English) · skill marketplace federation · channel federation · public roadmap voting · press kit v2 + case studies · comparison benchmark v4 with reproducibility audits · handbook v2 · "5-year vision" essay · foundation hand-off · governance v2 launch (elected TSC) · documentation rewrite · tutorial season 4 · survey v3 + retrospective · sponsor renewal drive · HF Space spotlight · awards push · 2029 roadmap publication |
+| **Distribution** | Maverick Conference v3 (in-person flagship) · hackathon series · localized communities (top 5 non-English) · skill marketplace federation · channel federation · public roadmap voting · comparison benchmark v4 with reproducibility audits · handbook v2 · "5-year vision" essay · foundation hand-off · governance v2 launch (elected TSC) · documentation rewrite · tutorial season 4 · survey v3 + retrospective · sponsor renewal drive · HF Space spotlight · awards push · 2029 roadmap publication — (press kit v2 + case studies: **shipped**, [programs/press-and-case-studies.md](./programs/press-and-case-studies.md) — deltas vs press-kit v1 + an evidence-gated case-study template) |
 | **Performance** | — (cleared) |
 | **Safety** | Shield v3 (trained small-model members + a policy member — the **ensemble framework + explainable reason codes shipped** with the heuristic injection/exfil/PII members, see FEATURES) · air-gapped mode runtime *enforcement* (the **preflight verification** `maverick airgap check` shipped — audits for remote providers / non-deny-all egress / sandbox network; see FEATURES) · confidential-compute support (SEV-SNP/TDX) — attestation + memory-encryption integration (the **detection/posture check** `maverick confidential-compute` shipped; needs the hardware for the rest) · third-party pen test · LTS safety branch — *cutting the branch* (the policy + SLA tooling shipped: docs/security-backports.md + maverick.backport_tool; the branch cut/push is a maintainer act) |
 | **Ecosystem** | 3-year retrospective (time-gated: run `benchmark_retrospective` + the `safety_report` annuals at the 3-year mark — the 2029-2031 plan half shipped: [`ROADMAP-2029-2031.md`](./ROADMAP-2029-2031.md); the v3 RFC closed not-warranted: [`rfcs/0002-plugin-api-v3.md`](./rfcs/0002-plugin-api-v3.md)) |
