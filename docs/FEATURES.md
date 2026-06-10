@@ -590,7 +590,10 @@ tab** (all opt-in) (`observability.py`): `MAVERICK_SENTRY_DSN` (or
 `trace_span` call feeds it — a transaction at the root (episodes), child spans
 inside (tools) — sample rate via `MAVERICK_SENTRY_TRACES_SAMPLE_RATE`, PII off,
 `[sentry]` extra; per-tool latency profiles + extended stats
-(`tool_latency.py`); opt-in per-tool **latency budget** (`latency_budget.py`) and
+(`tool_latency.py`); **tail-latency hunting** (`tail_latency.py`, `GET
+/api/v1/diag/tail-latency`): flags tools with a fat tail (p99/p50 ≥ ratio) —
+usually fast, occasionally terrible — which is where the bug hides, not just
+the slowest by p95; opt-in per-tool **latency budget** (`latency_budget.py`) and
 cross-span **budget propagation** (`latency_span_budget.py`); **tiered storage**
 (`tiered_storage.py`, opt-in `[world_model] cold_dir` + `archive_after_days`):
 archive old episodes/goal_events to cold parquet (pyarrow when present, gzip

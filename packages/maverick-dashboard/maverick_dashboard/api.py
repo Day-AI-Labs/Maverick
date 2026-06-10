@@ -455,6 +455,16 @@ class CatalogInstallIn(BaseModel):
     name: str = Field(..., max_length=200)
 
 
+@router.get("/diag/tail-latency")
+async def diag_tail_latency(ratio: float = 3.0, min_count: int = 20) -> dict:
+    """Tools with a fat latency tail (p99/p50 ≥ ratio) — the ones worth hunting.
+
+    Reads this serving process's in-memory per-tool latency samples, so it's
+    meaningful on a long-lived dashboard/worker, not a fresh CLI invocation."""
+    from maverick.tail_latency import hunt
+    return {"flagged": hunt(ratio_threshold=ratio, min_count=min_count)}
+
+
 @router.get("/marketplace/stats")
 async def marketplace_stats() -> dict:
     """Aggregate stats over the local ratings ledger (total / average / 1–5★
