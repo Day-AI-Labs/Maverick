@@ -96,7 +96,7 @@ single-run inflation) — run multi-seed.
 
 | Concern | Planned (not yet built) |
 |---|---|
-| **Capabilities** | Audio understanding (non-speech CLAP) · speech-to-action live-mic · image gen + edit tools · ASR meeting listener · auto-skill distillation v2 |
+| **Capabilities** | Audio understanding (non-speech CLAP) · speech-to-action live-mic · image gen + edit tools · ASR meeting listener |
 | **UX** | Mobile push v2 · Apple Watch glance · voice in channels v2 (Discord stages) · visual graph editor · drag-and-drop goal builder |
 | **Distribution** | Localized docs phase 2 (es/ja) · reproducible benchmark v2 (terminal-bench, weblinx, HumanEval-fix) · tutorial video season 2 · university outreach (5 partnerships) · Maverick Summit v1 (virtual) · integration partnerships (business half; self-serve guide shipped) · browser extension v1 · localized docs phase 3 (de/fr/pt-BR) · GitHub Stars campaign · office hours |
 | **Performance** | Continuous batching local · compaction v3 learned summarizer · public perf dashboard |
@@ -109,11 +109,11 @@ single-run inflation) — run multi-seed.
 
 | Concern | Planned (not yet built) |
 |---|---|
-| **Capabilities** | WASM sandbox · ROS robotics action tool · browser anti-bot evasion kit (opt-in) · multi-agent observation channel |
+| **Capabilities** | WASM sandbox · ROS robotics action tool · browser anti-bot evasion kit (opt-in) |
 | **UX** | Native macOS/Windows/Linux GUI apps · browser extension · VS Code + JetBrains live-run extensions · TUI mouse mode · accessibility audit pass · i18n community portal |
-| **Distribution** | Windows MSI · marketplace moderation tooling · sponsorship tiers · conference physical booth · swag store · ambassadors program · long-form handbook · Skill of the Year award · mobile companion app v1 (read-only) · self-hosted relay reference · localized docs phase 4 (ko/ru/it/hi) · video season 3 · skill search engine (HF) · annual community survey · foundation exploration |
-| **Performance** | Cold-start optimization (<300ms `--help`) · JIT consideration (mypyc/cython on hot path) · compaction v5 multi-modal · autoscaling local backends · real-time anomaly detection · failure-mode telemetry shipping (opt-in) · tail-latency hunting · KV-cache offload to disk · 2-year retrospective |
-| **Safety** | eBPF syscall monitor · memory-safe parsers · sigstore keyless signing · out-of-process model proxy · federated shield model updates · annual safety report |
+| **Distribution** | Windows MSI · sponsorship tiers · conference physical booth · swag store · ambassadors program · long-form handbook · Skill of the Year award · mobile companion app v1 (read-only) · localized docs phase 4 (ko/ru/it/hi) · video season 3 · skill search engine (HF) · annual community survey · foundation exploration |
+| **Performance** | Cold-start optimization (<300ms `--help`) · JIT consideration (mypyc/cython on hot path) · compaction v5 multi-modal · autoscaling local backends · real-time anomaly detection · failure-mode telemetry shipping (opt-in) · tail-latency hunting · 2-year retrospective |
+| **Safety** | eBPF syscall monitor · sigstore keyless signing · out-of-process model proxy · federated shield model updates · annual safety report |
 | **Ecosystem** | ACD spec v1.0 · Redis world-model · DuckDB world-model · Cloudflare Workers + Modal sandboxes |
 
 ---
@@ -124,10 +124,10 @@ single-run inflation) — run multi-seed.
 |---|---|
 | **Capabilities** | Computer-use coordinate calibration · audio diarization + emotion · vision-grounded clicking · multi-monitor computer-use · hardware sensor tool |
 | **UX** | Plan-tree minimap · conversational supervisor · voice-only mode · mobile offline cache · augmented terminal (Rich inline charts) · multi-tenant view · personalized starter templates · replay annotation export · AR plan-tree (visionOS) · live captions voice · visual goal templates marketplace · adaptive UI density · embedded analytics web component · pluggable themes API · voice macros · RTL language support |
-| **Distribution** | 2.0 stable release · migration playbook · marketplace v3 (donate-direct model) · Maverick Summit v2 (hybrid) · editor expansion (JetBrains/Neovim/Zed) · localized docs phase 5 (top-15 langs + MT pipeline) · "Built with Maverick" badge program · comparison benchmark v3 live dashboard · university curriculum kit · foundation paperwork submitted · ARM/RISC-V builds · iOS/Android skill execution (Pyodide/Kivy) · skill + channel certification programs · community grants v1 · regional meetup playbook · embeddable widget · hosted demo cluster (demo.maverick.dev) · press push to major outlets · sponsor tier 2 |
+| **Distribution** | 2.0 stable release · migration playbook · marketplace v3 (donate-direct model) · Maverick Summit v2 (hybrid) · editor expansion (JetBrains/Neovim/Zed) · localized docs phase 5 (top-15 langs + MT pipeline) · "Built with Maverick" badge program · comparison benchmark v3 live dashboard · university curriculum kit · foundation paperwork submitted · ARM/RISC-V builds · iOS/Android skill execution (Pyodide/Kivy) · skill + channel certification programs · community grants v1 · regional meetup playbook · hosted demo cluster (demo.maverick.dev) · press push to major outlets · sponsor tier 2 |
 | **Performance** | Speculative best-of-N (kill underperformers at first reasoning checkpoint) · compaction v6 hybrid (learned classifier picks strategy) · sub-ms dispatch overhead (msgspec/orjson) · sandbox pool (warm Docker/Firecracker, <100ms acquire) · cache-aware prompt assembly DSL · compaction v7 streaming · persistent KV-cache for local |
-| **Safety** | misuse leaderboard removal · safety steering group · formal verification of sandbox interface (TLA+) · backport security fixes · external SOC2 Type I |
-| **Ecosystem** | Plugin compatibility matrix CI · multi-language plugin support (gRPC plugin host) · TypeScript plugin SDK · browser-extension chat · plugin API v2 release · marketplace moderation tools · ACD interop tests · voice channel v2 (streaming ASR + barge-in) |
+| **Safety** | safety steering group · formal verification of sandbox interface (TLA+) · backport security fixes · external SOC2 Type I |
+| **Ecosystem** | Plugin compatibility matrix CI · multi-language plugin support (gRPC plugin host) · TypeScript plugin SDK · browser-extension chat · plugin API v2 release · ACD interop tests · voice channel v2 (streaming ASR + barge-in) |
 
 ---
 
@@ -136,10 +136,10 @@ single-run inflation) — run multi-seed.
 | Concern | Planned (not yet built) |
 |---|---|
 | **Capabilities** | WebRTC tool · browser extension bridge · ARIA-first navigation · embedded device tool (serial/JTAG/I2C) · mixed-precision local inference · speculative decoding across providers · WebGPU local vision · federated swarm protocol |
-| **UX** | "Director" mode (outcomes → plans → autonomy) · cross-device handoff · predictive approvals · embedded video walkthroughs · granular redaction UI · voice biometric unlock · power-user keymap editor · localized currency display · 3D plan-tree (WebGL/VR) · self-healing UX · channel auto-routing · onboarding personalization v2 · "achievements" · cost retrospective AI · universal share link · 36-month UX retrospective + reset |
+| **UX** | "Director" mode (outcomes → plans → autonomy) · cross-device handoff · predictive approvals · embedded video walkthroughs · granular redaction UI · voice biometric unlock · power-user keymap editor · localized currency display · 3D plan-tree (WebGL/VR) · self-healing UX · onboarding personalization v2 · "achievements" · cost retrospective AI · universal share link · 36-month UX retrospective + reset |
 | **Distribution** | Maverick Conference v3 (in-person flagship) · hackathon series · localized communities (top 5 non-English) · skill marketplace federation · channel federation · public roadmap voting · press kit v2 + case studies · comparison benchmark v4 with reproducibility audits · handbook v2 · "5-year vision" essay · foundation hand-off · governance v2 launch (elected TSC) · documentation rewrite · tutorial season 4 · survey v3 + retrospective · sponsor renewal drive · HF Space spotlight · awards push · 2029 roadmap publication |
-| **Performance** | Self-tuning budgets (per-task-class learned defaults) · compaction v8 graph-structured · critical-path-aware parallel scheduling · provider-side caching analytics · real-time SSE dashboards · cost/perf canary system per release · compaction v9 plug-in API · full OpenTelemetry semconv · 3-year retrospective benchmark · reliability cert · public perf SLA · sunset deprecated paths |
-| **Safety** | Shield v3 (small-model ensemble: injection + jailbreak + exfil + policy, explainable reason codes) · provable redaction · differential erasure verification · air-gapped mode (full stack, no outbound) · confidential-compute support (SEV-SNP/TDX) · adversarial-prompt corpus release · AI Act conformance package · vuln reward expansion · third-party pen test · federated audit-log verification · capability revocation propagation · consent ergonomics pass · 36-month safety retrospective · sunset policy · LTS safety branch (2-year support) |
+| **Performance** | Self-tuning budgets (per-task-class learned defaults) · compaction v8 graph-structured · critical-path-aware parallel scheduling · provider-side caching analytics · real-time SSE dashboards · cost/perf canary system per release · compaction v9 plug-in API · 3-year retrospective benchmark · reliability cert · public perf SLA · sunset deprecated paths |
+| **Safety** | Shield v3 (small-model ensemble: injection + jailbreak + exfil + policy, explainable reason codes) · provable redaction · differential erasure verification · air-gapped mode (full stack, no outbound) · confidential-compute support (SEV-SNP/TDX) · adversarial-prompt corpus release · AI Act conformance package · vuln reward expansion · third-party pen test · federated audit-log verification · 36-month safety retrospective · sunset policy · LTS safety branch (2-year support) |
 | **Ecosystem** | Plugin signing CA · capability negotiation at swarm boot · gRPC API v1 stable · federated swarms over gRPC · KaTeX/Mermaid rich-render channel · MCP server publishing · marketplace stats dashboard · plugin API v3 RFC (if warranted) · ACD spec v1.1 · multi-tenant `maverick serve` · channel SDK v2 (async-only) · sandbox SDK v2 · long-running plugin reliability suite · 3-year retrospective + 2029-2031 plan |
 
 ---

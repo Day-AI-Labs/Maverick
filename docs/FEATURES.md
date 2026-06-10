@@ -188,6 +188,18 @@ here.
   a purpose's allowlist + missing required fields; GDPR Art. 5(1)(c)),
   `consent_check` (evaluate consent records for active validity — granted /
   withdrawn / expired per purpose, latest grant governs; GDPR Art. 7),
+  `kv_cache_offload` (LRU KV-cache keep/offload plan under a memory budget),
+  `otel_semconv` (map span attributes to OpenTelemetry semantic-convention
+  keys), `payload_compress` (zlib compress/round-trip ratio helper),
+  `compaction_classifier` (rule-based compaction-strategy picker),
+  `capability_revocation` (transitive revocation over a delegation graph),
+  `memory_safe_parse` (size/depth/item-bounded JSON/CSV parse that never raises
+  on hostile input), `misuse_removal` (remove flagged leaderboard entries +
+  tombstones), `consent_ergonomics` (minimal plain-language consent prompt +
+  risk badge), `skill_distill_v2` (extract a reusable skill spec from a
+  successful trace), `observation_channel` (merge multi-agent observations into
+  a time-ordered feed), `marketplace_moderation` (APPROVE/REVIEW/REJECT listing
+  scan), `channel_autoroute` (pick the best channel for a message by rules),
   `jwt_inspect` (decode + validate a JWT offline — claims, exp/nbf, and
   HS256/384/512 HMAC signature verification; flags alg=none).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
@@ -727,6 +739,13 @@ tested without spawning py-spy.
   riding `maverick migrate`) and [RFC 0002: Plugin API v2](./rfcs/0002-plugin-api-v2.md)
   (static manifests discovered without importing plugin code, lifecycle hooks,
   the wire shape for the gRPC plugin host) — both Draft, open for comment.
+- **Embeddable widget** — a dependency-free floating chat widget
+  (`web/widget/maverick-widget.js`) that posts to your own dashboard's
+  `/chat/send`; one `<script>` tag, self-hosted (no hosted service).
+- **Self-hosted relay** — a stdlib edge service (`deploy/relay/relay.py`) that
+  HMAC-signs an inbound POST and forwards it to a dashboard's `/webhook/start`
+  exactly as `maverick.webhooks` verifies (replay-defended; signature
+  round-trip tested) — the self-hostable counterpart to a hosted bridge.
 - **Docs** — MkDocs site, [getting started](./getting-started.md), 30-recipe
   [cookbook](./cookbook/), [architecture](./architecture.md),
   [embedding guide](./embedding.md), [security hardening](./security-hardening.md),
