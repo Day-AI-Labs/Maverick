@@ -330,6 +330,27 @@ def _agent(tmp_path):
     return Agent(ctx=ctx, role="coder", brief="b")
 
 
+@pytest.mark.parametrize("spawn_tool", ["spawn_subagent", "spawn_swarm"])
+def test_child_capability_uses_active_handoff_grant(tmp_path, spawn_tool):
+    from maverick.tools.spawn import _child_capability
+
+    parent = _agent(tmp_path)
+    parent.capability = Capability(
+        principal="agent:parent",
+        allow_tools=frozenset({"shell", "spawn_subagent", "spawn_swarm"}),
+    )
+    parent._handoff_capability = Capability(
+        principal="agent:delegate",
+        allow_tools=frozenset({"spawn_subagent", "spawn_swarm"}),
+    )
+
+    child = _child_capability(parent, "coder", 1, spawn_tool)
+
+    assert child.principal == "agent:coder-1"
+    assert child.permits(spawn_tool) is True
+    assert child.permits("shell") is False
+
+
 @pytest.mark.asyncio
 async def test_run_tool_denies_uncapable(tmp_path):
     agent = _agent(tmp_path)
