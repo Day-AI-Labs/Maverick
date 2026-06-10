@@ -619,6 +619,7 @@ def base_registry(  # noqa: C901
     from .reddit_tool import reddit_tool
     from .redis_tool import redis_tool
     from .replicate_tool import replicate_tool
+    from .risk_tier import risk_tier
     from .s3_tool import s3_tool
     from .salesforce_tool import salesforce_tool
     from .semantic_code_search import semantic_code_search
@@ -675,6 +676,7 @@ def base_registry(  # noqa: C901
     reg.register(capability_delegation())
     reg.register(coordinated_disclosure())
     reg.register(collusion_detector())
+    reg.register(risk_tier())
     reg.register(file_watcher(sandbox))
     reg.register(linear())
     reg.register(jira())
