@@ -391,7 +391,10 @@ async def bearer_auth(request: Request, call_next):
             # enforces per-route) so every current and future /api/v1 mutation is
             # covered. Token mode needs no such check — a cross-site page cannot
             # attach the Authorization header.
-            if not _is_same_origin(request):
+            # The bundled WebExtension is the one sanctioned cross-origin
+            # caller: its Origin is chrome-extension://… and it is accepted
+            # only behind the operator's explicit opt-in (see extension_cors).
+            if not _is_same_origin(request) and _allowed_extension_origin(request) is None:
                 return JSONResponse(
                     {"detail": "cross-site request blocked"},
                     status_code=403,
@@ -493,6 +496,71 @@ async def security_headers(request: Request, call_next):
     else:
         csp = _DEFAULT_CSP
     response.headers.setdefault("Content-Security-Policy", csp)
+    return response
+
+
+# ----- browser-extension CORS gate (extensions/browser) -----
+# The bundled WebExtension is a cross-origin caller: its popup/service-worker
+# fetches arrive with an Origin of chrome-extension://<id> (moz-extension://
+# <uuid> on Firefox). Browsers need CORS approval for it to read responses,
+# and the no-token CSRF gate in bearer_auth would otherwise 403 its POSTs.
+# This allowance is OPT-IN and fail-closed: until the operator sets
+# `[dashboard] allow_extension = true` (or MAVERICK_DASHBOARD_ALLOW_EXTENSION=1)
+# no CORS header is ever emitted and extension origins stay blocked. It is
+# scoped to extension origins only — a web origin (https://…) never matches,
+# so the same-origin posture for ordinary sites is unchanged. A configured
+# dashboard token still applies to every extension call (the extension sends
+# the same Authorization: Bearer header as any API client).
+_EXTENSION_ORIGIN_RE = re.compile(r"^(?:chrome|moz)-extension://[a-zA-Z0-9-]+$")
+
+
+def _extension_cors_enabled() -> bool:
+    """Operator opt-in for the bundled WebExtension. Fail-closed default."""
+    if os.environ.get("MAVERICK_DASHBOARD_ALLOW_EXTENSION") == "1":
+        return True
+    try:
+        from maverick.config import load_config
+        return bool(((load_config() or {}).get("dashboard") or {}).get("allow_extension"))
+    except Exception:
+        return False
+
+
+def _allowed_extension_origin(request: Request) -> str | None:
+    """The request's Origin, iff it is an extension origin AND the gate is on."""
+    origin = request.headers.get("origin") or ""
+    if _EXTENSION_ORIGIN_RE.match(origin) and _extension_cors_enabled():
+        return origin
+    return None
+
+
+@app.middleware("http")
+async def extension_cors(request: Request, call_next):
+    """CORS for the bundled WebExtension only (opt-in; see above).
+
+    Registered after the other middlewares, so it is OUTERMOST: preflights
+    are answered before bearer_auth (a preflight carries no Authorization
+    header by design and grants nothing by itself), and the CORS header is
+    added to every response for an allowed origin — including 401s, so the
+    popup can read the error instead of a blocked-by-CORS blank.
+    """
+    origin = _allowed_extension_origin(request)
+    if origin is None:
+        return await call_next(request)
+    if request.method == "OPTIONS" and request.headers.get("access-control-request-method"):
+        return PlainTextResponse("", status_code=204, headers={
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type",
+            "Access-Control-Max-Age": "600",
+            "Vary": "Origin",
+        })
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = origin
+    vary = response.headers.get("Vary")
+    if not vary:
+        response.headers["Vary"] = "Origin"
+    elif "origin" not in vary.lower():
+        response.headers["Vary"] = f"{vary}, Origin"
     return response
 
 
