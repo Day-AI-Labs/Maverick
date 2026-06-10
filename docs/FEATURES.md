@@ -1049,6 +1049,13 @@ tested without spawning py-spy.
   read host temperatures/fans/battery via psutil with a `/sys/class/thermal`
   fallback and an injected reader for tests; unavailable categories say
   "unavailable on this host" — readings are never fabricated.
+- **Power-user keymap** (`keymap.py`, `[tui.keys]` /
+  `MAVERICK_TUI_KEYS`, `python -m maverick.keymap [--validate]`): validated
+  TUI keybindings — conflicts, unknown actions, and invalid keys are
+  rejected, Ctrl-C is reserved as the unrebindable emergency exit, and a bad
+  override set degrades to the stock keymap rather than an unusable one;
+  `handle_key` is the pure key→action adapter the monitor/focus model
+  consume.
 - **Achievements** (`achievements.py`): a local-only milestone ledger
   *derived from recorded history* (never self-reported; nothing leaves the
   machine) — first/10/100 completed goals, a 5+-sub-goal swarm, 3+ channels,
