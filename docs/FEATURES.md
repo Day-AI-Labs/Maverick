@@ -117,7 +117,9 @@ here.
   shell/secrets/PII/spend/irreversibility — for gating), `bias_eval` (group-
   fairness metrics — four-fifths rule, demographic-parity and equal-opportunity
   differences from per-group outcome counts), `decision_explainer` (per-factor
-  contribution breakdown for an additive/scorecard decision — right-to-explanation).
+  contribution breakdown for an additive/scorecard decision — right-to-explanation),
+  `rectification` (validate/apply GDPR Art. 16 field corrections under a
+  mutability policy — auditable diff + corrected record).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
