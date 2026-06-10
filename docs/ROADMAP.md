@@ -116,7 +116,7 @@ single-run inflation) — run multi-seed.
 
 | Concern | Planned (not yet built) |
 |---|---|
-| **Capabilities** | Browser anti-bot evasion kit (opt-in) |
+| **Capabilities** | — (cleared: browser anti-bot evasion kit **declined** — its purpose is to defeat another operator's access control; the supported path is authorized/authenticated automation, see [`specs/anti-bot-evasion-decision.md`](./specs/anti-bot-evasion-decision.md)) |
 | **UX** | Native macOS/Windows/Linux GUI apps |
 | **Distribution** | Windows MSI · mobile companion app v1 (read-only) · localized docs phase 4 (ko/ru/it/hi) · video season 3 — (sponsorship tiers, conference booth, swag store, ambassadors, Skill of the Year award, annual community survey, foundation exploration: **program kits shipped**, see [programs/](./programs/); the **long-form handbook shipped** at [handbook.md](./handbook.md)) |
 | **Performance** | — (cleared: the 2-year retrospective is time-gated — its generators shipped (`benchmark_retrospective` for perf, `safety_report` for safety, `ux_retrospective` for usage); the operator runs them at the mark) |
