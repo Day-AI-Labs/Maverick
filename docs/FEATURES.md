@@ -365,6 +365,14 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   (fail-open, like the opt-in capability layer), **approval delegation rules**
   (risk/scope-based routing, `approval_delegation.py`), per-tool network egress
   policy (`sandbox/network_policy.py`), `maverick whoami`.
+- **Out-of-process model proxy** — `model_proxy.py` (`python -m
+  maverick.model_proxy`, `[model_proxy] upstream/auth_style`): a separate
+  process holds the provider key (from its **own** env, `MAVERICK_PROXY_KEY`)
+  and the agent points a provider's `base_url` at it. The agent process never
+  holds the credential — a prompt-injected agent can't exfiltrate a key it
+  doesn't have. The proxy strips the client's auth + hop-by-hop headers,
+  injects the real key in the upstream's scheme (bearer / `x-api-key`), and
+  forwards only to its single configured upstream host (an SSRF guard).
 - **Audit & compliance** — signed append-only audit log (`maverick audit verify`),
   date-windowed **SIEM export**, encryption-at-rest (`crypto_at_rest.py`,
   `maverick encryption migrate`), SOC2 readiness (`soc2.py`), DSAR (`dsar.py`),
