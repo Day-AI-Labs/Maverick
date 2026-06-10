@@ -926,6 +926,45 @@ def budget_tune(ctx, percentile: float, min_samples: int, as_json: bool) -> None
                    f"{info['samples']} goal(s))")
 
 
+@main.command("analytics")
+@click.option("--sql", default=None, help="Ad-hoc read-only SQL over goals/episodes.")
+@click.option("--top", type=int, default=10, help="Top-N costliest goals (default view).")
+@click.pass_context
+def analytics_cmd(ctx, sql: str | None, top: int) -> None:
+    """OLAP analytics over the world model via DuckDB ([duckdb] extra).
+
+    Default view: per-goal cost percentiles + the costliest goals. `--sql`
+    runs an ad-hoc SELECT over `goals` and `episodes` (read-only).
+    """
+    import json as _json
+
+    try:
+        from .duckdb_analytics import WorldAnalytics
+    except ImportError as e:
+        raise click.ClickException(str(e)) from e
+    wa = WorldAnalytics(open_world(ctx.obj["db"]))
+    try:
+        if sql:
+            click.echo(_json.dumps(wa.query(sql), default=str))
+            return
+        pct = wa.cost_percentiles()
+        click.echo(click.style("Per-goal cost percentiles", bold=True))
+        if pct.get("n"):
+            click.echo(f"  goals={int(pct['n'])}  p50=${pct['p50']:.2f}  "
+                       f"p90=${pct['p90']:.2f}  p99=${pct['p99']:.2f}  "
+                       f"max=${pct['max_cost']:.2f}")
+        else:
+            click.echo("  no priced goals yet.")
+        rows = wa.top_goals(top)
+        if rows:
+            click.echo(click.style("\nCostliest goals", bold=True))
+            for r in rows:
+                click.echo(f"  #{int(r['id'])} ${r['total_cost']:.2f} "
+                           f"({int(r['ep_count'])} ep)  {r['title']}")
+    finally:
+        wa.close()
+
+
 @main.command("cost-retro")
 @click.option("--top", type=int, default=10, help="How many costliest goals to show.")
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON.")

@@ -752,6 +752,13 @@ tested without spawning py-spy.
   separators, the currency's decimal places — with an optional operator-supplied
   FX rate (`$1,234.56` → `1.234,56 €` → `¥1,235`). Offline display layer,
   distinct from the live-FX `currency` conversion tool; a curated locale subset.
+- **DuckDB analytics** — `maverick analytics` (`duckdb_analytics.py`, `[duckdb]`
+  extra): load the world model's goals/episodes into an in-memory DuckDB and run
+  OLAP over the history — per-goal cost percentiles, time-bucketed spend, top
+  goals, and **ad-hoc read-only SQL** (`--sql`, refuses anything but
+  SELECT/WITH). This is the analytical use DuckDB is actually good at; the live
+  transactional world model stays SQLite/Postgres (DuckDB is the wrong engine
+  for the concurrent write path).
 - **Cost retrospective** — `maverick cost-retro` (`cost_retrospective.py`): a
   spend review over the recorded per-goal/episode costs — the costliest goals,
   how much went to **failed** work (effort with no delivered result), how

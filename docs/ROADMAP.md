@@ -118,7 +118,7 @@ single-run inflation) — run multi-seed.
 | **Distribution** | Windows MSI · marketplace moderation tooling · sponsorship tiers · conference physical booth · swag store · ambassadors program · long-form handbook · Skill of the Year award · mobile companion app v1 (read-only) · self-hosted relay reference · localized docs phase 4 (ko/ru/it/hi) · video season 3 · skill search engine (HF) · annual community survey · foundation exploration |
 | **Performance** | JIT consideration (mypyc/cython on hot path) · compaction v5 multi-modal · autoscaling local backends · real-time anomaly detection · failure-mode telemetry shipping (opt-in) · tail-latency hunting · KV-cache offload to disk · 2-year retrospective |
 | **Safety** | eBPF syscall monitor · memory-safe parsers · sigstore keyless signing · federated shield model updates · annual safety report |
-| **Ecosystem** | ACD spec v1.0 · Redis world-model · DuckDB world-model · Cloudflare Workers + Modal sandboxes |
+| **Ecosystem** | ACD spec v1.0 · Redis world-model · DuckDB world-model *transactional backend* (declined — OLAP engine, wrong for the concurrent OLTP write path; the **DuckDB analytics layer** over the world model shipped instead, see FEATURES) · Cloudflare Workers + Modal sandboxes |
 
 ---
 
