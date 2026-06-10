@@ -238,6 +238,15 @@ here.
   `[plugins] grpc = [{target, command}]`) carries the same contract over gRPC
   for any language: Describe → Tools, Call with a deadline, scrubbed-env spawn,
   reconnect/respawn-once.
+  **Plugin signing CA** (`plugin_ca.py`): a self-hostable Ed25519 certificate
+  authority for plugin/skill artifacts — the in-house counterpart to sigstore's
+  keyless flow. An org runs its own root (`init_root`, keys 0600 under
+  `keys/plugin_ca/`), issues publisher certs (`issue`, expiring, serial'd),
+  maintains a CA-signed revocation list, and every install verifies the
+  two-link chain offline (artifact sig → publisher key; publisher cert → root)
+  **fail-closed**: tampered artifact/cert, wrong root, expired or revoked cert,
+  or a missing piece all refuse; an unverifiable CRL never silently
+  un-revokes.
   **Plugin compatibility matrix** (`plugin_matrix.py`, `python -m
   maverick.plugin_matrix [--ci]`, wired as a CI lint step): one table per
   installed entry point — dist, declared API major, loadable/deprecated/
