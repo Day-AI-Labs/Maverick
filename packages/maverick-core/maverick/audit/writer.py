@@ -72,12 +72,20 @@ class _file_append_lock:
 
 
 def _resolve_signing(explicit: bool | None) -> bool:
-    """Whether to sign + hash-chain audit rows. Opt-in.
+    """Whether to sign + hash-chain audit rows.
 
-    Precedence: explicit arg > MAVERICK_AUDIT_SIGN env > [audit] sign in
-    config.toml > off. Resolved once at construction so the hot record()
-    path never re-reads config.
+    Compliance floors are mandatory and strictest-wins: HIPAA-mode audit logging
+    requires signed/tamper-evident audit rows even if the standalone signing knob
+    is absent or false. Otherwise, precedence is explicit arg >
+    MAVERICK_AUDIT_SIGN env > [audit] sign in config.toml > off. Resolved once
+    at construction so the hot record() path never re-reads config.
     """
+    try:
+        from ..compliance_profiles import FLOOR_AUDIT_LOG, requires_floor
+        if requires_floor(FLOOR_AUDIT_LOG):
+            return True
+    except Exception:
+        pass
     if explicit is not None:
         return bool(explicit)
     if "MAVERICK_AUDIT_SIGN" in os.environ:

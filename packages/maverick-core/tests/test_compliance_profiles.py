@@ -82,3 +82,32 @@ def test_no_import_cycle():
     import importlib
     importlib.import_module("maverick.governance")
     importlib.import_module("maverick.compliance_profiles")
+
+
+def test_hipaa_required_floors_are_runtime_enforced(monkeypatch):
+    """HIPAA-only config must fail closed instead of merely documenting floors."""
+    import maverick.compliance_profiles as cpmod
+    from maverick.audit.writer import _resolve_signing
+    from maverick.crypto_at_rest import at_rest_enabled
+    from maverick.enterprise import EgressBlocked, assert_provider_allowed, enterprise_enabled
+    from maverick.privacy import anon_enabled
+
+    monkeypatch.setattr(cpmod, "configured_profiles", lambda: ["hipaa"])
+    for env in (
+        "MAVERICK_ENTERPRISE",
+        "MAVERICK_ENCRYPT_AT_REST",
+        "MAVERICK_AUDIT_SIGN",
+        "MAVERICK_ANON",
+    ):
+        monkeypatch.setenv(env, "0")
+
+    assert enterprise_enabled() is True
+    assert at_rest_enabled() is True
+    assert _resolve_signing(False) is True
+    assert anon_enabled() is True
+    try:
+        assert_provider_allowed("openai")
+    except EgressBlocked:
+        pass
+    else:  # pragma: no cover - assertion path
+        raise AssertionError("HIPAA egress lock allowed a cloud provider")
