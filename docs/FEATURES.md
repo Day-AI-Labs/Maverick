@@ -582,6 +582,13 @@ and `trace_commit()` reads it back so replays tie to exact code); **cost split b
   token/dollar projection + OK/TIGHT/OVER verdict before a goal runs.
   **"Why this cost" drill-down** — `GET /api/v1/goals/{id}/cost-breakdown`:
   spend decomposed by episode outcome (dollars/tokens/counts).
+  **Replay export to MP4** — `replay_video.py` +
+  `GET /api/v1/goals/{id}/replay-storyboard`: a run rendered to a watchable
+  video — the deterministic core builds a captioned frame storyboard with
+  per-step durations from the event gaps (secret/PII-scrubbed), then encodes
+  via Pillow + the sandbox-mediated ffmpeg tool when present; when the video
+  stack is absent it still emits the frame manifest + the exact ffmpeg command
+  for out-of-band encoding (no new hard dependency).
   **Run gallery** — `GET/POST/DELETE /api/v1/gallery[/{id}]`:
   deployment-wide curation of exemplary runs (blurb + curator attribution,
   upsert, capped), each entry enriched with live status and links to the

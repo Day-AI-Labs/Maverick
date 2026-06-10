@@ -144,3 +144,18 @@ def test_tutorial_endpoint():
     assert "# Tutorial: Build the widget" in r.text
     assert "the API needs auth" in r.text
     assert client.get("/api/v1/goals/99999/tutorial.md").status_code == 404
+
+
+def test_replay_storyboard_endpoint():
+    gid = _goal("recorded run")
+    w = app_mod._world()
+    w.append_event(gid, "planner", "plan", "do the thing")
+    w.append_event(gid, "coder", "tool", "ran fs")
+    r = client.get(f"/api/v1/goals/{gid}/replay-storyboard")
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert len(data["frames"]) == 2
+    assert data["frames"][0]["kind"] == "plan"
+    assert data["ffmpeg_command"][0] == "ffmpeg"
+    assert data["total_seconds"] >= 0
+    assert client.get("/api/v1/goals/99999/replay-storyboard").status_code == 404

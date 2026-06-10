@@ -1757,6 +1757,36 @@ async def goal_tutorial(request: Request, goal_id: int) -> PlainTextResponse:
     return PlainTextResponse(content=md, media_type="text/markdown; charset=utf-8")
 
 
+@app.get("/api/v1/goals/{goal_id}/replay-storyboard")
+async def goal_replay_storyboard(request: Request, goal_id: int) -> JSONResponse:
+    """Replay-to-MP4 storyboard: the ordered captioned frames + durations and
+    the exact ffmpeg command an operator runs to encode the video.
+
+    The deterministic, offline half of replay-to-MP4 (the encode needs ffmpeg
+    and is done out-of-band or via the CLI). Secret/PII-scrubbed."""
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from pathlib import Path as _Path
+
+    from maverick.replay_video import ffmpeg_command, storyboard
+    # Feed the world's goal events (the live trail) rather than the audit-log
+    # files replay_video reads by default, so the storyboard reflects this run.
+    events = [{"kind": e.kind, "ts": e.ts, "agent": e.agent, "content": e.content}
+              for e in w.goal_events(goal_id, limit=5000)]
+    frames = storyboard(goal_id, events=events)
+    cmd = ffmpeg_command(_Path("frames.ffconcat"), _Path(f"replay-{goal_id}.mp4"))
+    return JSONResponse({
+        "goal_id": goal_id,
+        "frames": [{"index": f.index, "kind": f.kind, "caption": f.caption,
+                    "seconds": f.seconds} for f in frames],
+        "total_seconds": round(sum(f.seconds for f in frames), 2),
+        "ffmpeg_command": cmd,
+    })
+
+
 @app.get("/api/v1/goals/{goal_id}/explain")
 async def goal_explain(request: Request, goal_id: int) -> JSONResponse:
     """Plain-language narrative of a run (deterministic, no LLM)."""
