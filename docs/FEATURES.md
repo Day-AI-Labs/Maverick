@@ -415,6 +415,13 @@ opt-in; single-tenant/self-hosted deployments are unaffected):
 
 ## Evaluation & benchmarks
 
+**Chaos game-day drill** (`chaos_gameday.py`,
+`python -m maverick.chaos_gameday`): scripted fault scenarios against the
+real retry layer — 20% tool flakes must be absorbed (≤5% surfaced), a total
+outage must exhaust retries in bounded attempts (backoff virtualized so the
+drill runs in milliseconds), plus a no-chaos control; exits 1 when a
+resilience property fails. Standalone drill, not for serving processes.
+
 `benchmarks/`: GAIA, τ²-bench-style stateful harness, terminal-bench-style
 harness, SWE-bench harness, moat suite, and an **adversarial-cost suite**
 (`eval_adversarial_cost.py`): scripted money-wasting scenarios — tool loops,
