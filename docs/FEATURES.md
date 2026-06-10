@@ -121,7 +121,11 @@ here.
   Twilio, Zoom, S3, DynamoDB, MongoDB, Redis, Elasticsearch, Datadog, Sentry,
   PagerDuty, Mixpanel, PostHog, Plausible, GA4, Home Assistant, Cloudflare,
   Vercel, AWS Lambda/SES/SNS, Microsoft Graph, and more.
-- **System** — `shell` (sandbox-mediated), `git_advanced`, `compute`,
+- **System** — `shell` (sandbox-mediated), `wasm_run` (**WASM sandbox**:
+  execute a WebAssembly/WASI module under wasmtime — capability-grant
+  isolation where the module sees ONLY the preopened dirs/env/args given;
+  workdir-confined paths, validated env keys, sandbox-mediated invocation),
+  `git_advanced`, `compute`,
   `dns_lookup`, `openapi_runner`, `clipboard`, `notify`, `attachments`,
   `android` / `ios_sim`, `a11y`, `task_graph` (persistent dependency-DAG of
   tasks — add/status/ready/order/list plus **`critical`**: the longest

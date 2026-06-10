@@ -779,6 +779,7 @@ def base_registry(  # noqa: C901
     from .view_video import view_video
     from .voice_cloning_consent import voice_cloning_consent
     from .wal_contention import wal_contention
+    from .wasm_run import wasm_run
     from .watermark_detector import watermark_detector
     from .web_archive import web_archive
     from .web_recorder import web_recorder
@@ -1052,6 +1053,7 @@ def base_registry(  # noqa: C901
     reg.register(ffmpeg_tool(sandbox))
     reg.register(pandoc_tool(sandbox))
     reg.register(office_convert(sandbox))
+    reg.register(wasm_run(sandbox))
     reg.register(imagemagick_tool(sandbox))
     reg.register(ga4_tool())
     reg.register(plaid_tool())
