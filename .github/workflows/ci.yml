@@ -104,6 +104,14 @@ jobs:
               sys.exit(1)
           print("detect-secrets: no new secrets vs audited baseline")
           PY
+      - name: Plugin compatibility matrix (no enabled plugin may be API-incompatible)
+        # Inspects every installed maverick entry point's manifest against
+        # SUPPORTED_API_MAJORS + the permission grants. In this repo's CI the
+        # install is plugin-free, so this validates the gate machinery; a
+        # deployment pipeline runs the same command against its real install.
+        run: |
+          pip install -e ./packages/maverick-core -q
+          python -m maverick.plugin_matrix --ci
 
   audit:
     runs-on: ubuntu-latest

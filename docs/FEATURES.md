@@ -223,6 +223,13 @@ here.
   [["node", "/path/plugin.js"]]`, wizard step included) loads the manifest
   into regular Tools with a persistent scrubbed-env child, per-call timeout,
   one crash-restart, and the no-shadowing rule built-ins enjoy.
+  **Plugin compatibility matrix** (`plugin_matrix.py`, `python -m
+  maverick.plugin_matrix [--ci]`, wired as a CI lint step): one table per
+  installed entry point — dist, declared API major, loadable/deprecated/
+  refused, allowlisted, permissions granted — with a CI gate that fails when
+  any *enabled* plugin is API-incompatible, so an upgrade dropping an API
+  major can't ship silently against plugins still pinned to it. Pure
+  inspection (nothing imported or executed).
   **Plugin API v2 (released)** — `MAVERICK_API_VERSION = "2"` with
   `SUPPORTED_API_MAJORS = (1, 2)`: v1 plugins keep loading through a
   deprecation window (warned in manifest validation), declared v3+ is
