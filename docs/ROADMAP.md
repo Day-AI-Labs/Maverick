@@ -27,12 +27,13 @@ the catalogue of built features and tools. Nothing should appear in both. So
 if something you remember seeing here is gone, it shipped — check
 `FEATURES.md`.
 
-## Current state (June 2026)
+## Current state (June 2026, updated after the 2027-2028 build wave)
 
-The original gap analysis is **done**, along with a large
-governed-agent-runtime surface and a pull-forward build wave that cleared every
-code-buildable item across the 2026 quarters and the 2027 H2 / 2028 waves. All
-of it is catalogued in [`FEATURES.md`](./FEATURES.md).
+The original gap analysis is **done**. Two pull-forward build waves have now
+run: the first cleared the 2026 quarters, and the second (June 10) drove the
+**2027-2028 tables themselves** — 140+ items shipped with tests, including the
+entire 2027-H1 Safety and Ecosystem rows. Everything shipped is catalogued in
+[`FEATURES.md`](./FEATURES.md).
 
 **This is now a governed agent _platform_, not just a local kernel.** The
 three-layer control plane is real — oversight (`governance.py`),
@@ -73,13 +74,21 @@ terminal-bench 2.0) postdate the original author's cutoff — re-verify before
 committing. Vendor benchmark numbers are directional (contamination /
 single-run inflation) — run multi-seed.
 
-> **2026 quarters and the 2027 H2 / 2028 build wave are shipped** — their
-> code-buildable items are in [`FEATURES.md`](./FEATURES.md). What remains
-> below is genuinely unbuilt. Much of it is blocked on a live service, real
-> hardware/GPU, a trained model, a frontend/native surface, or is
-> founder-tracked (community / launch / marketing / localization) — but not
-> all of it: the tables still hold ordinary code-buildable engineering items.
-> Those are future-planned, not blocked.
+> **What remains below is genuinely unbuilt**, and after the June-10 wave the
+> remainder skews heavily toward items NO code change can complete:
+> **live services** (real Redis broker, live IRC, a real G2 device),
+> **hardware/GPU** (Watch/visionOS/AR, embedded JTAG, local-inference KV
+> caches, WebGPU), **trained models** (CLAP audio, learned compaction
+> summarizers, shield model ensembles), **native app surfaces** (macOS/
+> Windows/Linux GUIs, mobile companion apps, MSI/ARM builds), **third-party
+> processes** (external SOC2 Type I, third-party pen tests, sigstore CA
+> onboarding), **founder-tracked business work** (summits, booths, swag,
+> sponsorships, university partnerships, press pushes, surveys, awards,
+> foundation paperwork, localization programs), and **the passage of time**
+> (2-/3-year retrospectives, LTS support windows, annual reports). A thinner
+> tail of ordinary code-buildable engineering also remains (e.g. DuckDB/Redis
+> world-model backends, web-UI-heavy views, voice-runtime features); those
+> are future-planned, not blocked.
 
 ---
 
@@ -103,7 +112,7 @@ single-run inflation) — run multi-seed.
 | **Capabilities** | Multi-modal RAG · WASM sandbox · ROS robotics action tool · browser anti-bot evasion kit (opt-in) · multi-agent observation channel |
 | **UX** | Native macOS/Windows/Linux GUI apps · browser extension · voice persona presets · multi-language voice · wizard branching paths · run gallery · replay export to MP4 · collaborative supervision (multi-user dashboard) · VS Code + JetBrains live-run extensions · TUI mouse mode · accessibility audit pass · i18n community portal |
 | **Distribution** | Windows MSI · marketplace moderation tooling · sponsorship tiers · conference physical booth · swag store · ambassadors program · long-form handbook · Skill of the Year award · mobile companion app v1 (read-only) · self-hosted relay reference · localized docs phase 4 (ko/ru/it/hi) · video season 3 · skill search engine (HF) · annual community survey · foundation exploration |
-| **Performance** | Compaction v4 structural diff · cold-start optimization (<300ms `--help`) · JIT consideration (mypyc/cython on hot path) · reliability SLO publication (99.5%) · compaction v5 multi-modal · autoscaling local backends · real-time anomaly detection · failure-mode telemetry shipping (opt-in) · tail-latency hunting · KV-cache offload to disk · 2-year retrospective |
+| **Performance** | Cold-start optimization (<300ms `--help`) · JIT consideration (mypyc/cython on hot path) · reliability SLO publication (99.5%) · compaction v5 multi-modal · autoscaling local backends · real-time anomaly detection · failure-mode telemetry shipping (opt-in) · tail-latency hunting · KV-cache offload to disk · 2-year retrospective |
 | **Safety** | gVisor tool sandbox · eBPF syscall monitor · memory-safe parsers · sigstore keyless signing · out-of-process model proxy · federated shield model updates · annual safety report |
 | **Ecosystem** | ACD spec v1.0 · Redis world-model · DuckDB world-model · Cloudflare Workers + Modal sandboxes |
 
@@ -130,7 +139,7 @@ single-run inflation) — run multi-seed.
 | **UX** | "Director" mode (outcomes → plans → autonomy) · cross-device handoff · predictive approvals · embedded video walkthroughs · granular redaction UI · voice biometric unlock · power-user keymap editor · localized currency display · unified inbox · smart NL filters · 3D plan-tree (WebGL/VR) · self-healing UX · channel auto-routing · onboarding personalization v2 · "achievements" · cost retrospective AI · universal share link · 36-month UX retrospective + reset |
 | **Distribution** | Maverick Conference v3 (in-person flagship) · hackathon series · localized communities (top 5 non-English) · skill marketplace federation · channel federation · public roadmap voting · press kit v2 + case studies · comparison benchmark v4 with reproducibility audits · handbook v2 · "5-year vision" essay · foundation hand-off · governance v2 launch (elected TSC) · documentation rewrite · tutorial season 4 · survey v3 + retrospective · sponsor renewal drive · HF Space spotlight · awards push · 2029 roadmap publication |
 | **Performance** | Self-tuning budgets (per-task-class learned defaults) · compaction v8 graph-structured · zstd compression on world_model · critical-path-aware parallel scheduling · provider-side caching analytics · cost telemetry retention policy · real-time SSE dashboards · reliability harness 2.0 · cost/perf canary system per release · compaction v9 plug-in API · full OpenTelemetry semconv · 3-year retrospective benchmark · reliability cert · public perf SLA · sunset deprecated paths |
-| **Safety** | Shield v3 (small-model ensemble: injection + jailbreak + exfil + policy, explainable reason codes) · provable redaction · differential erasure verification · air-gapped mode (full stack, no outbound) · confidential-compute support (SEV-SNP/TDX) · per-jurisdiction data residency · adversarial-prompt corpus release · AI Act conformance package · vuln reward expansion · third-party pen test · federated audit-log verification · capability revocation propagation · key rotation playbook · PIA generator · safety regression budget · polyglot injection defense · consent ergonomics pass · 36-month safety retrospective · sunset policy · LTS safety branch (2-year support) |
+| **Safety** | Shield v3 (small-model ensemble: injection + jailbreak + exfil + policy, explainable reason codes) · provable redaction · differential erasure verification · air-gapped mode (full stack, no outbound) · confidential-compute support (SEV-SNP/TDX) · per-jurisdiction data residency · adversarial-prompt corpus release · AI Act conformance package · vuln reward expansion · third-party pen test · federated audit-log verification · capability revocation propagation · key rotation playbook · safety regression budget · polyglot injection defense · consent ergonomics pass · 36-month safety retrospective · sunset policy · LTS safety branch (2-year support) |
 | **Ecosystem** | Plugin signing CA · capability negotiation at swarm boot · gRPC API v1 stable · federated swarms over gRPC · KaTeX/Mermaid rich-render channel · Open Banking tool (TrueLayer) · MCP server publishing · marketplace stats dashboard · plugin API v3 RFC (if warranted) · ACD spec v1.1 · multi-tenant `maverick serve` · channel SDK v2 (async-only) · sandbox SDK v2 · long-running plugin reliability suite · 3-year retrospective + 2029-2031 plan |
 
 ---
