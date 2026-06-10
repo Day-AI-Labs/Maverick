@@ -6,6 +6,7 @@ import types
 from unittest.mock import MagicMock
 
 import pytest
+from maverick.capability import Capability
 from maverick.grpc_api.service import GoalService
 from maverick.grpc_dispatcher import GrpcDispatcher, configured_target, install_from_config
 
@@ -36,9 +37,15 @@ def test_run_goal_dispatches_existing_and_returns_terminal():
         goals[7] = _goal(status="done", result="finished")
 
     svc = GoalService(world_factory=lambda: _FakeWorld(goals), dispatch=dispatch)
-    st = svc.run_goal(7, max_dollars=2.5, channel="grpc", user_id="w1")
+    cap = Capability(principal="user:w1", deny_tools=frozenset({"shell"}))
+    st = svc.run_goal(
+        7, max_dollars=2.5, channel="grpc", user_id="w1",
+        max_depth=1, capability=cap,
+    )
     assert calls and calls[0][0] == 7
     assert calls[0][1]["max_dollars"] == 2.5
+    assert calls[0][1]["max_depth"] == 1
+    assert calls[0][1]["capability"] is cap
     assert st is not None and st.status == "done" and st.result == "finished"
 
 
@@ -66,11 +73,17 @@ def _fake_stub(status="done", found=True, raise_exc=None):
 def test_dispatcher_submit_returns_terminal_status():
     stub, pb2 = _fake_stub(status="done")
     d = GrpcDispatcher("worker:50051", stub_factory=lambda: (stub, pb2))
-    out = d.submit(7, max_dollars=1.0, channel="api", user_id="u")
+    cap = Capability(principal="user:u", deny_tools=frozenset({"shell"}))
+    out = d.submit(
+        7, max_dollars=1.0, channel="api", user_id="u",
+        max_depth=1, capability=cap,
+    )
     assert out == "done"
     req = stub.RunGoal.call_args.args[0]
     assert req.goal_id == 7 and req.max_dollars == 1.0
     assert req.channel == "api" and req.user_id == "u"
+    assert req.max_depth == 1
+    assert "\"deny_tools\":[\"shell\"]" in req.capability_json
 
 
 def test_dispatcher_token_metadata():
