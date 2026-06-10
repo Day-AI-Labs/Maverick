@@ -759,6 +759,7 @@ def base_registry(  # noqa: C901
     from .salesforce_tool import salesforce_tool
     from .semantic_code_search import semantic_code_search
     from .semantic_scholar import semantic_scholar
+    from .semver_check import semver_check
     from .sentry_tool import sentry_tool
     from .ses_tool import ses_tool
     from .shopify_tool import shopify_tool
@@ -894,6 +895,7 @@ def base_registry(  # noqa: C901
     reg.register(jwt_inspect())
     reg.register(rbac_check())
     reg.register(cidr_check())
+    reg.register(semver_check())
     reg.register(supply_chain_pin())
     reg.register(quorum_approval())
     reg.register(crypto_budget_receipt())

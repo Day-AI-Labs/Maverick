@@ -204,7 +204,9 @@ here.
   HS256/384/512 HMAC signature verification; flags alg=none), `rbac_check`
   (evaluate an RBAC authorization decision — role inheritance + '*'/'prefix:*'
   wildcards, ALLOW/DENY with the granting role), `cidr_check` (firewall-style
-  ordered CIDR access-control for an IPv4/IPv6 address — first match wins).
+  ordered CIDR access-control for an IPv4/IPv6 address — first match wins),
+  `semver_check` (does a semver version satisfy a constraint — comparator sets,
+  caret/tilde ranges, prerelease ordering).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate. **Plugin sandboxing** — opt-in
