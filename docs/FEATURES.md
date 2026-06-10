@@ -791,6 +791,16 @@ tested without spawning py-spy.
 
 ## UX surfaces
 
+- **i18n community portal** (`maverick_dashboard/i18n_portal.py`): the
+  no-Python on-ramp for new dashboard-chrome languages — `scaffold(lang)`
+  emits a fill-in catalog (every key seeded with English), `validate_catalog`
+  lints a submission against the English reference (lang-code shape, missing/
+  unknown keys, blank values, unbalanced `{placeholder}` tokens — a precise
+  diff for a translation PR's CI), and `load_external_catalogs` /
+  `merged_messages` overlay validated `<lang>.json` files from `[i18n]
+  portal_dir` onto the built-ins so an operator drops in a community
+  translation and the dashboard speaks it with no rebuild (malformed catalogs
+  skipped, never blanking the UI).
 - **Static accessibility audit** (`a11y_audit.py`, `python -m
   maverick.a11y_audit --ci`, wired as a CI step): an offline structural WCAG
   pass over the shipped dashboard templates — img alt, form-control labels
