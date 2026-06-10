@@ -104,7 +104,7 @@ single-run inflation) — run multi-seed.
 | Concern | Planned (not yet built) |
 |---|---|
 | **Capabilities** | Audio understanding (non-speech CLAP) · speech-to-action live-mic · image gen + edit tools · ASR meeting listener |
-| **UX** | Apple Watch glance · voice in channels v2 (Discord stages) · visual graph editor · drag-and-drop goal builder |
+| **UX** | voice in channels v2 (Discord stages) · visual graph editor · drag-and-drop goal builder |
 | **Distribution** | Localized docs phase 2 (es/ja) · tutorial video season 2 · university outreach (5 partnerships) · Maverick Summit v1 (virtual) · integration partnerships (business half; self-serve guide shipped) · browser extension v1 · localized docs phase 3 (de/fr/pt-BR) · GitHub Stars campaign · office hours |
 | **Performance** | — (cleared) |
 | **Safety** | — (cleared) |

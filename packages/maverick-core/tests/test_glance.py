@@ -1,0 +1,53 @@
+"""Watch glance: tiny fixed payload from world + spend ledger."""
+from __future__ import annotations
+
+import json
+
+from maverick.glance import build_glance
+from maverick.world_model import WorldModel
+
+
+def test_glance_shape_and_counts(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path / "home"))
+    w = WorldModel(tmp_path / "world.db")
+    a = w.create_goal("active goal", "")
+    w.set_goal_status(a, "active")
+    d = w.create_goal("done goal", "")
+    w.set_goal_status(d, "done", result="all wrapped up")
+    f = w.create_goal("failed goal", "")
+    w.set_goal_status(f, "failed", result="boom")
+    g = build_glance(w)
+    assert set(g) == {"active", "done_today", "failed_today", "spend_today",
+                      "last_result", "as_of"}
+    assert g["active"] == 1
+    assert g["done_today"] == 1 and g["failed_today"] == 1
+    assert g["last_result"] in ("all wrapped up", "boom")
+    json.dumps(g)
+    w.close()
+
+
+def test_glance_bounded_last_result(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path / "home"))
+    w = WorldModel(tmp_path / "world.db")
+    gid = w.create_goal("g", "")
+    w.set_goal_status(gid, "done", result="x" * 500)
+    assert len(build_glance(w)["last_result"]) == 60
+    w.close()
+
+
+def test_glance_includes_spend(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path / "home"))
+    from maverick.quotas import UsageLedger
+    UsageLedger().record("user:a", 1.25, 1, 1)
+    UsageLedger().record("user:b", 0.75, 1, 1)
+    w = WorldModel(tmp_path / "world.db")
+    assert build_glance(w)["spend_today"] == 2.0
+    w.close()
+
+
+def test_glance_empty_world(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path / "home"))
+    w = WorldModel(tmp_path / "world.db")
+    g = build_glance(w)
+    assert g["active"] == 0 and g["last_result"] == ""
+    w.close()

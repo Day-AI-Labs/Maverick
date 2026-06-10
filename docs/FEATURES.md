@@ -1235,6 +1235,13 @@ tested without spawning py-spy.
   how much went to **failed** work (effort with no delivered result), how
   concentrated spend is (a Pareto signal), and rule-based observations to act
   on. Deterministic over the world model; read-only.
+- **Apple Watch glance** (`glance.py` + `apps/watch-glance/` SwiftUI
+  scaffold): a tiny fixed payload sized for a watch face — active count,
+  today's done/failed, today's spend (summed from the usage ledger), and the
+  last terminal result (60-char bound) — computed in one cheap pass; the
+  watchOS scaffold renders exactly that shape against the dashboard (token
+  header honored; building it requires Xcode, documented in its README — the
+  integrator wires `GET /api/v1/glance`).
 - **Mobile push v2** (`push_v2.py`): a device registry layered on the v1
   notify path — each device registers a backend, a minimum priority floor,
   and optional quiet hours; routing fans out only to eligible devices, with
