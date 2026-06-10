@@ -926,6 +926,31 @@ def budget_tune(ctx, percentile: float, min_samples: int, as_json: bool) -> None
                    f"{info['samples']} goal(s))")
 
 
+@main.command("confidential-compute")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def confidential_compute_cmd(as_json: bool) -> None:
+    """Detect whether this runs inside a confidential VM (SEV-SNP / TDX).
+
+    For a regulated deployment to verify its memory is hardware-encrypted.
+    Exits non-zero when NOT confidential, so it can gate a deployment.
+    """
+    import json as _json
+
+    from .confidential_compute import detect
+    rep = detect()
+    if as_json:
+        click.echo(_json.dumps(rep))
+    elif rep["confidential"]:
+        kind = "Intel TDX" if rep["tdx"] else "AMD SEV-SNP"
+        click.echo(click.style(f"CONFIDENTIAL VM ({kind})", fg="green")
+                   + f" — {', '.join(rep['indicators'])}")
+    else:
+        click.echo(click.style(
+            "NOT a confidential VM (no SEV-SNP / TDX indicators)", fg="yellow"))
+    if not rep["confidential"]:
+        raise SystemExit(1)
+
+
 @main.command("airgap")
 @click.argument("action", type=click.Choice(["check"]), default="check")
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
