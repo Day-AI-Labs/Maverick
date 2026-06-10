@@ -346,7 +346,13 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   ledger** (`safety/consent.py`; `MAVERICK_CONSENT_MODE` =
   auto-approve / auto-deny / ask / dashboard), capability tokens
   (`capability.py`), role-based access control over capabilities, the
-  `self_capability` self-report tool, **approval delegation rules**
+  `self_capability` self-report tool, **capability revocation**
+  (`revocation.py`, `maverick capability revoke/unrevoke/revocations`): kill a
+  still-valid grant before its TTL — the tool chokepoint denies a revoked
+  principal's next call, and the list is re-read on change so a revoke in
+  another process reaches agents already mid-run; `revoke_subtree` walks the
+  delegation graph to revoke a principal and every descendant it spawned
+  (fail-open, like the opt-in capability layer), **approval delegation rules**
   (risk/scope-based routing, `approval_delegation.py`), per-tool network egress
   policy (`sandbox/network_policy.py`), `maverick whoami`.
 - **Audit & compliance** — signed append-only audit log (`maverick audit verify`),

@@ -544,6 +544,58 @@ def whoami(principal: str | None, channel: str | None, user_id: str | None,
         click.echo(f"  expires_at:   {info['expires_at']}")
 
 
+@main.group("capability")
+def capability_group() -> None:
+    """Revoke / restore capability grants (kill a grant before its TTL)."""
+
+
+@capability_group.command("revoke")
+@click.argument("principal")
+@click.option("--reason", default="", help="Audit reason for the revocation.")
+def capability_revoke_cmd(principal: str, reason: str) -> None:
+    """Revoke PRINCIPAL now. Its next tool call is denied even mid-run.
+
+    Propagates to running agents (the registry is re-read on change) when
+    capability enforcement is on ([capabilities] enforce = true).
+    """
+    from .revocation import shared
+    rev = shared().revoke(principal, reason=reason)
+    click.echo(click.style(f"revoked {principal!r}", fg="yellow")
+               + (f" — {rev.reason}" if rev.reason else ""))
+
+
+@capability_group.command("unrevoke")
+@click.argument("principal")
+def capability_unrevoke_cmd(principal: str) -> None:
+    """Restore PRINCIPAL (remove it from the revocation list)."""
+    from .revocation import shared
+    if shared().unrevoke(principal):
+        click.echo(click.style(f"restored {principal!r}", fg="green"))
+    else:
+        click.echo(f"{principal!r} was not revoked")
+
+
+@capability_group.command("revocations")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def capability_revocations_cmd(as_json: bool) -> None:
+    """List revoked principals."""
+    import json as _json
+
+    from .revocation import shared
+    revs = shared().revoked()
+    if as_json:
+        click.echo(_json.dumps(
+            {p: {"revoked_at": r.revoked_at, "reason": r.reason}
+             for p, r in revs.items()}, default=str))
+        return
+    if not revs:
+        click.echo("no revoked principals")
+        return
+    for p, r in sorted(revs.items()):
+        click.echo(f"  {p}  (at {r.revoked_at:.0f})"
+                   + (f"  — {r.reason}" if r.reason else ""))
+
+
 @main.group()
 def governance() -> None:
     """Inspect the oversight control-plane policy (enterprise)."""

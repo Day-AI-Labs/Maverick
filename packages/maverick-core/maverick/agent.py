@@ -994,6 +994,35 @@ class Agent:
         # no-op unless capability enforcement was opted in. Deny wins -- the
         # tool never runs and the model gets a clear, non-leaky refusal.
         cap = self._effective_capability(name)
+        # Revocation kill-switch: a still-valid grant can be revoked out of
+        # band (leaked key / rogue agent / offboard); the registry is re-read
+        # on change so a revoke in another process reaches this running agent.
+        # Fail-open (revocation never bricks a run) and only when a grant
+        # exists (== capability enforcement is on).
+        if cap is not None:
+            from .revocation import is_revoked as _is_revoked
+            if _is_revoked(cap.principal):
+                self.ctx.blackboard.post(
+                    self.name, "error",
+                    f"tool={name} DENIED: principal {cap.principal} REVOKED",
+                )
+                try:  # tamper-evident record of the denial; never block on audit
+                    from .audit import EventKind, record
+                    record(
+                        EventKind.CAPABILITY_DENIED,
+                        agent=self.name,
+                        goal_id=self.ctx.goal_id,
+                        tool=name,
+                        principal=cap.principal,
+                        channel=getattr(self.ctx, "channel", None),
+                        user_id=getattr(self.ctx, "user_id", None),
+                    )
+                except Exception:  # pragma: no cover
+                    pass
+                return (
+                    f"⚠ DENIED by capability policy: principal {cap.principal!r} "
+                    f"has been revoked. The tool was not executed."
+                )
         if cap is not None and not cap.permits(name):
             self.ctx.blackboard.post(
                 self.name, "error",
