@@ -49,6 +49,11 @@ here.
 - **Local continuous learning** — distill successful run trajectories into a
   reusable, validator-compliant `SKILL.md` under `~/.maverick/learned-skills`
   (`skill_distillation_local.py`), opt-in via `[self_learning] distill_local`.
+  **v2** (`skill_distillation_v2.py`) adds two quality gates so the loop stays
+  useful: it won't distill from fewer than N successful trajectories (a one-off
+  success is noise), and it dedups a candidate against the learned-skills store
+  by lexical containment so near-duplicate lessons don't accumulate — the
+  orchestrator uses the gated path.
 - **Vector-store cross-run memory** — opt-in `[memory] backend` routes
   cross-run recall through a persistent **Chroma / Qdrant / Weaviate** store
   (`vector_store/`, `semantic_recall.py`) so similarity search is indexed and

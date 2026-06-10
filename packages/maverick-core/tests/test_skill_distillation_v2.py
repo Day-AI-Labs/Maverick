@@ -1,0 +1,96 @@
+"""Auto-skill distillation v2: evidence gate + dedup against the store."""
+from __future__ import annotations
+
+from maverick import skill_distillation_v2 as v2
+
+
+def _traj(goal, t=1.0, success=True, tools=None):
+    return {"goal": goal, "success": success, "t": t, "tools": tools or []}
+
+
+# ---- pure helpers ----
+
+def test_overlap_coefficient():
+    assert v2._overlap(frozenset({"a", "b"}), frozenset({"a", "b"})) == 1.0
+    assert v2._overlap(frozenset({"a"}), frozenset({"b"})) == 0.0
+    assert v2._overlap(frozenset(), frozenset()) == 1.0
+    # containment: the small set fully inside the large one -> 1.0
+    assert v2._overlap(frozenset({"a"}), frozenset({"a", "b", "c"})) == 1.0
+
+
+def test_signature_extracts_content_tokens():
+    sig = v2._signature({"name": "deploy-staging-app", "summary": "deploy the app",
+                         "triggers": ["deploy to staging"], "tools_needed": ["shell"]})
+    assert "deploy" in sig and "staging" in sig and "shell" in sig
+    assert "the" not in sig  # stop-word
+
+
+def test_is_duplicate():
+    a = frozenset({"deploy", "staging", "kubernetes", "app"})
+    existing = [frozenset({"deploy", "staging", "kubernetes", "service"})]
+    assert v2.is_duplicate(a, existing, threshold=0.5)
+    assert not v2.is_duplicate(a, existing, threshold=0.9)
+    assert not v2.is_duplicate(a, [], threshold=0.5)
+
+
+# ---- gating ----
+
+def test_gate_rejects_too_few_examples():
+    skill, reason = v2.distill_gated([_traj("ship the release")], min_examples=2)
+    assert skill is None and "too few examples" in reason
+
+
+def test_gate_rejects_no_success():
+    skill, reason = v2.distill_gated([_traj("x", success=False)], min_examples=1)
+    assert skill is None and "no successful" in reason
+
+
+def test_gate_passes_novel_skill():
+    trajs = [_traj("deploy the billing service", t=2),
+             _traj("deploy the billing api", t=1)]
+    skill, reason = v2.distill_gated(trajs, min_examples=2)
+    assert skill is not None and reason == "ok"
+
+
+def test_gate_rejects_duplicate():
+    trajs = [_traj("deploy the billing service", t=2),
+             _traj("deploy the billing api", t=1)]
+    skill, _ = v2.distill_gated(trajs, min_examples=2)
+    # feed the just-distilled skill's signature back as "existing"
+    existing = [v2._signature(skill)]
+    skill2, reason = v2.distill_gated(trajs, existing_signatures=existing,
+                                      min_examples=2, dedup_threshold=0.6)
+    assert skill2 is None and "duplicate" in reason
+
+
+# ---- store integration ----
+
+def test_signatures_from_store_reads_md(tmp_path):
+    (tmp_path / "a.md").write_text("# deploy staging\ntriggers: deploy to staging",
+                                   encoding="utf-8")
+    (tmp_path / "ignore.txt").write_text("not a skill", encoding="utf-8")
+    sigs = v2.signatures_from_store(tmp_path)
+    assert len(sigs) == 1 and "deploy" in sigs[0]
+
+
+def test_signatures_from_store_missing_dir(tmp_path):
+    assert v2.signatures_from_store(tmp_path / "nope") == []
+
+
+def test_distill_and_save_gated_saves_then_dedups(tmp_path):
+    trajs = [_traj("deploy the billing service", t=2),
+             _traj("deploy the billing api", t=1)]
+    path, reason = v2.distill_and_save_gated(trajs, store=tmp_path, min_examples=2)
+    assert path is not None and reason == "ok" and path.exists()
+
+    # second run with the same lesson -> recognized as duplicate, not saved again
+    path2, reason2 = v2.distill_and_save_gated(trajs, store=tmp_path, min_examples=2)
+    assert path2 is None and "duplicate" in reason2
+    assert len(list(tmp_path.glob("*.md"))) == 1
+
+
+def test_distill_and_save_gated_gate_blocks_one_off(tmp_path):
+    path, reason = v2.distill_and_save_gated([_traj("one off")], store=tmp_path,
+                                             min_examples=2)
+    assert path is None and "too few examples" in reason
+    assert list(tmp_path.glob("*.md")) == []

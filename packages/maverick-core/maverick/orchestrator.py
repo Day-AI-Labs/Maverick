@@ -1183,7 +1183,10 @@ async def run_goal(  # noqa: C901
                      "t": getattr(g, "updated_at", 0.0)}
                     for g in world.list_goals(status="done", limit=10, order="desc")
                 ]
-                path = _sdl.distill_and_save(trajectories)
+                # v2: gate on evidence + dedup against the learned-skills store
+                # so the loop doesn't accumulate near-duplicate skills each run.
+                from . import skill_distillation_v2 as _sdl2
+                path, _why = _sdl2.distill_and_save_gated(trajectories)
                 if path:
                     blackboard.post("orchestrator", "skill",
                                     f"distilled local skill -> {path}")
