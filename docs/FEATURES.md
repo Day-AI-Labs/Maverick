@@ -238,6 +238,14 @@ here.
   `[plugins] grpc = [{target, command}]`) carries the same contract over gRPC
   for any language: Describe → Tools, Call with a deadline, scrubbed-env spawn,
   reconnect/respawn-once.
+  **Adversarial-prompt corpus release** (`maverick_shield/corpus_release.py`,
+  `python -m maverick_shield.corpus_release`): turns the CI red-team corpus
+  into a versioned, validated, integrity-pinned artifact — content-hash
+  version, SHA-256 over canonical rows, license + intended-use ("NOT a
+  training set for attack generation"), and a provenance gate that REFUSES a
+  release containing secret-shaped content or identity PII (fixture IPs in
+  attack samples are allowed and disclosed); writes corpus + MANIFEST +
+  README.
   **Security backports + LTS machinery**
   ([`docs/security-backports.md`](../docs/security-backports.md) +
   `backport_tool.py`, `python -m maverick.backport_tool scan|plan|check`):
