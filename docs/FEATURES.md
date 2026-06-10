@@ -264,7 +264,11 @@ devcontainer, Firecracker microVM, Kubernetes. Selected via `[sandbox] backend`.
 between a possibly prompt-injected agent and the host — stronger isolation than
 seccomp + dropped capabilities alone. It reuses every Docker knob (image,
 network, memory/pids/cpu caps, non-root); `[sandbox] runtime` overrides the
-runtime for a custom registration.
+runtime for a custom registration. **Warm-container reuse** (`[sandbox]
+reuse_container`, default off): instead of a fresh `docker run --rm` per
+command (a cold start each time), keep one container alive and `docker exec`
+into it, so the 2nd..Nth command in a run skip container startup; torn down on
+`close()`.
 
 ## LLM providers & routing
 

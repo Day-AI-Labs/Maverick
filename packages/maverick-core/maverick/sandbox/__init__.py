@@ -210,6 +210,7 @@ def build_sandbox(
             cpus=full_cfg.get("cpus"),
             allow_root=_config_bool(full_cfg.get("allow_root"), False),
             runtime=runtime,
+            reuse_container=_config_bool(full_cfg.get("reuse_container"), False),
         )
     if chosen == "podman":
         image = _resolve_image(full_cfg)
