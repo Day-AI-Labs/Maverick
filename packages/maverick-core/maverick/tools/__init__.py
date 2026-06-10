@@ -746,6 +746,7 @@ def base_registry(  # noqa: C901
     from .semantic_code_search import semantic_code_search
     from .semantic_scholar import semantic_scholar
     from .sentry_tool import sentry_tool
+    from .serial_tool import serial_tool
     from .ses_tool import ses_tool
     from .shopify_tool import shopify_tool
     from .sla_breach import sla_breach
@@ -987,6 +988,7 @@ def base_registry(  # noqa: C901
     reg.register(hubspot_tool())
     reg.register(twilio_tool())
     reg.register(s3_tool())
+    reg.register(serial_tool())
     reg.register(elasticsearch_tool())
     reg.register(github_actions())
     # Strategic-fit connectors (ITSM / data / cloud-ML / GRC). Explicit-token
