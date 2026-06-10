@@ -1,0 +1,87 @@
+# Maverick on Kubernetes — minimal reference architecture.
+#
+# One Deployment running the dashboard (web UI + API + webhooks), state on a
+# PVC, secrets from a Secret. Apply with:
+#
+#   kubectl apply -f deploy/reference-architectures/kubernetes/maverick.yaml
+#
+# Replace REGISTRY/maverick:latest with your built image (see
+# deploy/docker/Dockerfile) and create the maverick-secrets Secret first:
+#
+#   kubectl create secret generic maverick-secrets \
+#     --from-literal=ANTHROPIC_API_KEY=sk-ant-...
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: maverick-state
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maverick
+  labels:
+    app: maverick
+spec:
+  # The runtime keeps run state in SQLite under ~/.maverick by default:
+  # exactly one replica per state volume. Scale by sharding tenants, or move
+  # the world model to Postgres ([world_model] backend = "postgres") before
+  # raising replicas.
+  replicas: 1
+  strategy:
+    type: Recreate          # RWO volume: tear down before re-attach
+  selector:
+    matchLabels:
+      app: maverick
+  template:
+    metadata:
+      labels:
+        app: maverick
+    spec:
+      containers:
+        - name: maverick
+          image: REGISTRY/maverick:latest
+          args: ["dashboard", "--host", "0.0.0.0", "--port", "8765"]
+          ports:
+            - containerPort: 8765
+              name: http
+          envFrom:
+            - secretRef:
+                name: maverick-secrets
+          volumeMounts:
+            - name: state
+              mountPath: /root/.maverick
+          readinessProbe:
+            httpGet: {path: "/", port: 8765}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: "/", port: 8765}
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests: {cpu: "250m", memory: "512Mi"}
+            limits: {cpu: "2", memory: "2Gi"}
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: maverick-state
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: maverick
+spec:
+  selector:
+    app: maverick
+  ports:
+    - port: 80
+      targetPort: 8765
+      name: http
+  # ClusterIP by default; front with your Ingress/Gateway + TLS. The dashboard
+  # has its own auth, but do not expose it without TLS.
+  type: ClusterIP

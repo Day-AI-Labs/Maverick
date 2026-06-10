@@ -1,0 +1,50 @@
+# Maverick on AWS ECS (Fargate)
+
+Single-service deployment: one Fargate task running the dashboard, state on
+EFS (so redeploys keep `~/.maverick`), secrets from SSM Parameter Store.
+
+## Steps
+
+1. **Build + push the image**
+
+   ```bash
+   docker build -f deploy/docker/Dockerfile -t maverick:latest .
+   aws ecr create-repository --repository-name maverick
+   docker tag maverick:latest ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/maverick:latest
+   docker push ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/maverick:latest
+   ```
+
+2. **Store the provider key**
+
+   ```bash
+   aws ssm put-parameter --name /maverick/anthropic-api-key \
+     --type SecureString --value "sk-ant-..."
+   ```
+
+3. **Create an EFS file system** (and an access point if you prefer), note the
+   `fs-XXXXXXXX` id, and allow the task security group on port 2049.
+
+4. **Register the task definition** (edit `task-definition.json` placeholders:
+   `ACCOUNT_ID`, `REGION`, `fs-XXXXXXXX`):
+
+   ```bash
+   aws ecs register-task-definition \
+     --cli-input-json file://deploy/reference-architectures/ecs/task-definition.json
+   ```
+
+5. **Create the service** behind an internal ALB targeting port 8765:
+
+   ```bash
+   aws ecs create-service --cluster maverick --service-name maverick \
+     --task-definition maverick --desired-count 1 --launch-type FARGATE \
+     --network-configuration 'awsvpcConfiguration={subnets=[subnet-...],securityGroups=[sg-...],assignPublicIp=DISABLED}'
+   ```
+
+## Notes
+
+- **desired-count stays 1** while the world model is SQLite-on-EFS. For
+  horizontal scale, switch `[world_model] backend = "postgres"` (RDS) first.
+- One-shot goals: `aws ecs run-task` with command
+  `["start", "your goal text"]` reuses the same task definition.
+- The execution role needs `ssm:GetParameters` on the parameter and ECR pull;
+  the task role needs nothing AWS-side unless your goals use AWS tools.

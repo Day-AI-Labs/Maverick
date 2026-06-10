@@ -1,0 +1,54 @@
+{
+  "family": "maverick",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/maverickEcsExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/maverickEcsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "maverick",
+      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/maverick:latest",
+      "essential": true,
+      "command": ["dashboard", "--host", "0.0.0.0", "--port", "8765"],
+      "portMappings": [
+        {"containerPort": 8765, "protocol": "tcp"}
+      ],
+      "secrets": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "valueFrom": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/maverick/anthropic-api-key"
+        }
+      ],
+      "mountPoints": [
+        {"sourceVolume": "maverick-state", "containerPath": "/root/.maverick"}
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "python -c \"import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8765/', timeout=3)\" || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 15
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/maverick",
+          "awslogs-region": "REGION",
+          "awslogs-stream-prefix": "maverick"
+        }
+      }
+    }
+  ],
+  "volumes": [
+    {
+      "name": "maverick-state",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-XXXXXXXX",
+        "rootDirectory": "/maverick",
+        "transitEncryption": "ENABLED"
+      }
+    }
+  ]
+}

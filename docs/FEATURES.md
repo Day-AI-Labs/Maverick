@@ -334,6 +334,15 @@ trace** format (`replay_trace.py`); **cost split by tag** (`cost_by_tag.py`) and
 
 - **Packaging** — 6 packages on PyPI, GHCR Docker image, PyInstaller binaries,
   native double-click installers (Tauri; `.exe` / `.dmg` / `.AppImage`).
+- **Deployment blueprints** — reference architectures for **Kubernetes / AWS
+  ECS (Fargate) / Fly.io / Railway** (`deploy/reference-architectures/`):
+  contract-tested manifests sharing the canonical image, `:8765` dashboard
+  surface, `/root/.maverick` state volume, and secrets-from-platform-store
+  rule. **Devcontainer + Codespaces template** (`.devcontainer/`) mirrors CI's
+  editable install so `maverick --help` and the test suite work on open.
+- **Scaffold generators** — `template_generator` tool: emit a validator-clean
+  `SKILL.md` (op=skill) or a `Channel`-subclass adapter scaffold with the
+  start/send/stop seams (op=channel); deterministic codegen.
 - **IDE / CI** — VS Code extension (`apps/vscode-extension/`), GitHub Action
   wrapper (`maverick-action`).
 - **Docs** — MkDocs site, [getting started](./getting-started.md), 30-recipe
