@@ -98,6 +98,9 @@ here.
   sandbox-mediated with workdir-confined paths),
   `replicate_tool` (image/video/audio gen), `latex` (math→MathML + document→PDF),
   `diagram` (Graphviz / Mermaid render).
+- **Robotics** — `ros` (drive a ROS stack over **rosbridge** via `roslibpy`,
+  `[ros]` extra): publish a command to a topic (e.g. `/cmd_vel`) or call a
+  service; auth `ROS_BRIDGE_URL`, no native ROS in the agent process.
 - **Knowledge** — `knowledge_search` (per-domain RAG over collected docs),
   `recall`, `kv_memory`.
 - **Productivity & SaaS connectors (~47)** — GitHub Actions, GitLab,

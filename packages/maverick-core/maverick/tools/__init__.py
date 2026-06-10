@@ -735,6 +735,7 @@ def base_registry(  # noqa: C901
     from .right_to_explanation import right_to_explanation
     from .risk_tier import risk_tier
     from .risk_tier_classifier import risk_tier_classifier
+    from .ros_tool import ros_tool
     from .run_events_firehose import run_events_firehose
     from .s3_attachments import s3_attachments
     from .s3_tool import s3_tool
@@ -922,6 +923,7 @@ def base_registry(  # noqa: C901
     reg.register(safety_regression_budget())
     reg.register(autogen_adapter())
     reg.register(crewai_adapter())
+    reg.register(ros_tool())
     reg.register(run_events_firehose())
     reg.register(marketplace_ratings())
     reg.register(local_embeddings_cache())
