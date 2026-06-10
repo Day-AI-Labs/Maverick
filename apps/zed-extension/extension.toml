@@ -1,0 +1,15 @@
+# Zed extension manifest. Zed extensions are Rust compiled to WASM
+# (wasm32-wasip1) against the zed_extension_api crate; see README.md for the
+# build/install steps and for what the WASI sandbox does and does not allow.
+id = "maverick"
+name = "Maverick"
+version = "0.1.6"
+schema_version = 1
+authors = ["cdayAI"]
+description = "Drive the Maverick agent runtime from Zed: the Maverick MCP server as an assistant context server, plus terminal tasks for the CLI."
+repository = "https://github.com/Day-AI-Labs/maverick"
+
+# Registers the Maverick MCP server (`maverick mcp`, stdio transport) as a
+# Zed assistant context server. The command is produced by src/lib.rs;
+# Zed itself spawns the process (extensions run sandboxed and cannot).
+[context_servers.maverick]

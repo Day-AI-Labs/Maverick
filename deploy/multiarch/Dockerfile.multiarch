@@ -1,0 +1,70 @@
+# syntax=docker/dockerfile:1
+# Maverick multi-architecture image: linux/amd64, linux/arm64, and (gated)
+# linux/riscv64. Build with deploy/multiarch/build.sh (docker buildx) from
+# the REPO ROOT.
+#
+# Default base: python:3.12-slim — published for amd64 and arm64. riscv64:
+# whether the official python image's current -slim tag includes riscv64
+# depends on its Debian base (riscv64 became an official Debian arch with
+# trixie); it could NOT be verified from the authoring environment (no
+# Docker daemon). Check before building:
+#
+#   docker manifest inspect python:3.12-slim | grep riscv64
+#
+# If absent, use the gated fallback: a Debian base that DOES ship riscv64
+# (sid/trixie) plus python3 from apt — the conditional bootstrap below
+# activates automatically:
+#
+#   --build-arg BASE_IMAGE=debian:sid-slim
+#
+# Scope: maverick-core (+ shield wrapper) only. The core's dependency tree
+# (anthropic, click, httpx, tomli) is pure Python = architecture-independent.
+# The dashboard is opt-in (INSTALL_DASHBOARD=1) because fastapi -> pydantic-core
+# is a compiled Rust wheel: fine on amd64/arm64, a from-source Rust build on
+# riscv64. Heavier native extras (grpc, torch, ...) are deliberately NOT
+# installed here — see README.md for the per-extra wheel-availability table.
+
+ARG BASE_IMAGE=python:3.12-slim
+FROM ${BASE_IMAGE}
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# riscv64 fallback gate: on a bare Debian base (no python:* image for the
+# arch) install CPython from apt. No-op on python:*-slim bases.
+RUN set -eux; \
+    if ! command -v python3 >/dev/null 2>&1; then \
+        apt-get update; \
+        apt-get install -y --no-install-recommends python3 python3-pip python3-venv; \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# System deps for sqlite + git (skills, world model) — same as deploy/docker.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# A venv keeps the install path identical on both base flavours (Debian's
+# apt python is PEP 668 externally-managed; python:slim's is not).
+RUN python3 -m venv /opt/maverick
+ENV PATH="/opt/maverick/bin:${PATH}"
+
+WORKDIR /app
+COPY packages/maverick-core ./packages/maverick-core
+COPY packages/maverick-shield ./packages/maverick-shield
+COPY packages/maverick-dashboard ./packages/maverick-dashboard
+
+RUN pip install ./packages/maverick-core ./packages/maverick-shield
+
+# Opt-in: pulls fastapi/pydantic-core (compiled). amd64/arm64 have wheels;
+# riscv64 builds pydantic-core from source and needs a Rust toolchain.
+ARG INSTALL_DASHBOARD=0
+RUN if [ "${INSTALL_DASHBOARD}" = "1" ]; then \
+        pip install ./packages/maverick-dashboard; \
+    fi
+
+WORKDIR /workspace
+ENTRYPOINT ["maverick"]
+CMD ["--help"]

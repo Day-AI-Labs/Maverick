@@ -1,0 +1,18 @@
+[package]
+name = "maverick-zed-extension"
+version = "0.1.6"
+edition = "2021"
+description = "Zed editor extension for the Maverick agent runtime"
+authors = ["cdayAI"]
+license = "LicenseRef-Proprietary"
+repository = "https://github.com/Day-AI-Labs/maverick"
+
+[lib]
+# Zed loads extensions as WASM components; cdylib is the required crate type.
+crate-type = ["cdylib"]
+
+[dependencies]
+# Pinned to the API generation this scaffold was written against. Not
+# compiled here (needs the Rust toolchain + wasm32-wasip1 target + Zed);
+# bump if Zed's minimum has moved — see README "Status".
+zed_extension_api = "0.2.0"
