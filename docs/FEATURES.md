@@ -110,7 +110,9 @@ here.
   user's differential-privacy budget — remaining epsilon + allow/deny a query), `capability_delegation` (validate a
   delegation graph for privilege escalation — fixpoint from root capabilities),
   `coordinated_disclosure` (track vulnerability disclosure timelines — embargo
-  window per report, flags EMBARGOED/DUE_SOON/OVERDUE/PATCHED/DISCLOSED).
+  window per report, flags EMBARGOED/DUE_SOON/OVERDUE/PATCHED/DISCLOSED),
+  `collusion_detector` (find voting-collusion blocs among agents that defeat
+  independent-quorum guarantees — correlated votes above a threshold).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.

@@ -551,6 +551,7 @@ def base_registry(  # noqa: C901
     from .clickup_tool import clickup_tool
     from .clipboard import clipboard
     from .cloudflare_tool import cloudflare_tool
+    from .collusion_detector import collusion_detector
     from .compute import compute
     from .confluence_tool import confluence_tool
     from .constrained_output import constrained_output
@@ -673,6 +674,7 @@ def base_registry(  # noqa: C901
     reg.register(calendar_tool())
     reg.register(capability_delegation())
     reg.register(coordinated_disclosure())
+    reg.register(collusion_detector())
     reg.register(file_watcher(sandbox))
     reg.register(linear())
     reg.register(jira())
