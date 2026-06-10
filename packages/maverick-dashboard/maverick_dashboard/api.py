@@ -900,24 +900,64 @@ async def list_approvals() -> dict:
                 "id": a.id, "action": a.action, "risk": a.risk,
                 "scope": a.scope, "detail": a.detail,
                 "requested_at": a.requested_at,
+                # Collaborative supervision: who is handling this review.
+                "claimed_by": getattr(a, "claimed_by", None),
+                "claimed_at": getattr(a, "claimed_at", None),
             }
             for a in w.pending_approvals()
         ],
     }
 
 
+def _supervisor(request: Request) -> str:
+    """The acting supervisor's identity for claims/attribution.
+
+    The authenticated principal when auth is on; the shared "operator"
+    identity in single-user/no-auth deployments (claims still prevent
+    double-handling across that operator's browser tabs)."""
+    from .auth import caller_principal
+    return caller_principal(request) or "operator"
+
+
 @router.post("/approvals/{approval_id}/approve", status_code=204)
-async def approve_approval(approval_id: int) -> None:
+async def approve_approval(request: Request, approval_id: int) -> None:
     """Approve a parked action; the polling consent path then proceeds."""
-    if not _world().decide_approval(approval_id, "approved"):
+    if not _world().decide_approval(approval_id, "approved",
+                                    decided_by=_supervisor(request)):
         raise HTTPException(status_code=404, detail="no such pending approval")
 
 
 @router.post("/approvals/{approval_id}/deny", status_code=204)
-async def deny_approval(approval_id: int) -> None:
+async def deny_approval(request: Request, approval_id: int) -> None:
     """Deny a parked action; the polling consent path then refuses it."""
-    if not _world().decide_approval(approval_id, "denied"):
+    if not _world().decide_approval(approval_id, "denied",
+                                    decided_by=_supervisor(request)):
         raise HTTPException(status_code=404, detail="no such pending approval")
+
+
+@router.post("/approvals/{approval_id}/claim")
+async def claim_approval(request: Request, approval_id: int) -> dict:
+    """Claim a pending approval (collaborative supervision).
+
+    Marks "I'm handling this" so two supervisors don't double-work the same
+    review. 409 when another supervisor already holds the claim."""
+    who = _supervisor(request)
+    if _world().claim_approval(approval_id, who):
+        return {"claimed_by": who}
+    a = _world().get_approval(approval_id)
+    if a is None or a.status != "pending":
+        raise HTTPException(status_code=404, detail="no such pending approval")
+    raise HTTPException(status_code=409,
+                        detail=f"already claimed by {a.claimed_by}")
+
+
+@router.post("/approvals/{approval_id}/release")
+async def release_approval(request: Request, approval_id: int) -> dict:
+    """Release a claim you hold. 409 when you don't hold it."""
+    who = _supervisor(request)
+    if _world().release_approval(approval_id, who):
+        return {"released": True}
+    raise HTTPException(status_code=409, detail="you do not hold this claim")
 
 
 @router.get("/oversight/active")

@@ -120,6 +120,11 @@ SCHEMA: list[str] = [
     );
     """,
     "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS provenance TEXT;",
+    # Collaborative supervision (claiming + decider attribution) — mirrors
+    # the SQLite v13 migration.
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS claimed_by TEXT;",
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS claimed_at DOUBLE PRECISION;",
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS decided_by TEXT;",
     "CREATE INDEX IF NOT EXISTS idx_pg_approvals_status ON approvals(status, id);",
     """
     CREATE TABLE IF NOT EXISTS conversations (
@@ -958,7 +963,8 @@ class PostgresWorldModel:
         frag, params = _tenant_scope()
         sql = (
             "SELECT id, action, risk, scope, detail, provenance, status, "
-            "requested_at, decided_at FROM approvals WHERE id = %s"
+            "requested_at, decided_at, claimed_by, claimed_at, decided_by "
+            "FROM approvals WHERE id = %s"
         )
         p: list = [approval_id]
         if frag:
@@ -974,7 +980,8 @@ class PostgresWorldModel:
         frag, params = _tenant_scope()
         sql = (
             "SELECT id, action, risk, scope, detail, provenance, status, "
-            "requested_at, decided_at FROM approvals WHERE status = 'pending'"
+            "requested_at, decided_at, claimed_by, claimed_at, decided_by "
+            "FROM approvals WHERE status = 'pending'"
         )
         if frag:
             sql += " AND " + frag
@@ -984,10 +991,12 @@ class PostgresWorldModel:
             rows = cur.fetchall()
         return [Approval(*r) for r in rows]
 
-    def decide_approval(self, approval_id: int, status: str) -> bool:
+    def decide_approval(self, approval_id: int, status: str,
+                        decided_by: str | None = None) -> bool:
         """Flip a pending approval to 'approved'/'denied'. Returns True only if a
         pending row transitioned (unknown id or already-decided -> False, so a
-        double-click is a no-op)."""
+        double-click is a no-op). ``decided_by`` records which supervisor
+        decided (collaborative supervision); None = legacy unattributed."""
         if status not in ("approved", "denied"):
             raise ValueError("status must be 'approved' or 'denied'")
         # Tenant-scope the write like get_approval/pending_approvals: the
@@ -996,10 +1005,50 @@ class PostgresWorldModel:
         # high-risk action by enumerating ids it can't even see.
         frag, params = _tenant_scope()
         sql = (
-            "UPDATE approvals SET status = %s, decided_at = %s "
+            "UPDATE approvals SET status = %s, decided_at = %s, decided_by = %s "
             "WHERE id = %s AND status = 'pending'"
         )
-        p: list = [status, time.time(), approval_id]
+        p: list = [status, time.time(), decided_by, approval_id]
+        if frag:
+            sql += " AND " + frag
+            p += params
+        with self._tx() as cur:
+            cur.execute(sql, tuple(p))
+            affected = cur.rowcount
+        return affected > 0
+
+    def claim_approval(self, approval_id: int, principal: str) -> bool:
+        """Atomically claim a pending approval (collaborative supervision).
+        Mirrors SQLite: pending + unclaimed-or-mine; tenant-scoped."""
+        principal = (principal or "").strip()
+        if not principal:
+            raise ValueError("principal is required to claim an approval")
+        frag, params = _tenant_scope()
+        sql = (
+            "UPDATE approvals SET claimed_by = %s, claimed_at = %s "
+            "WHERE id = %s AND status = 'pending' "
+            "AND (claimed_by IS NULL OR claimed_by = %s)"
+        )
+        p: list = [principal, time.time(), approval_id, principal]
+        if frag:
+            sql += " AND " + frag
+            p += params
+        with self._tx() as cur:
+            cur.execute(sql, tuple(p))
+            affected = cur.rowcount
+        return affected > 0
+
+    def release_approval(self, approval_id: int, principal: str) -> bool:
+        """Release a claim you hold (pending rows only); tenant-scoped."""
+        principal = (principal or "").strip()
+        if not principal:
+            raise ValueError("principal is required to release an approval")
+        frag, params = _tenant_scope()
+        sql = (
+            "UPDATE approvals SET claimed_by = NULL, claimed_at = NULL "
+            "WHERE id = %s AND status = 'pending' AND claimed_by = %s"
+        )
+        p: list = [approval_id, principal]
         if frag:
             sql += " AND " + frag
             p += params

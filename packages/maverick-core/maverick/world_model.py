@@ -25,7 +25,7 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
@@ -96,7 +96,10 @@ CREATE TABLE IF NOT EXISTS approvals (
     detail TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     requested_at REAL NOT NULL,
-    decided_at REAL
+    decided_at REAL,
+    claimed_by TEXT,
+    claimed_at REAL,
+    decided_by TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, id);
@@ -273,6 +276,13 @@ MIGRATIONS: dict[int, list[str]] = {
     # labels from the free-form detail text, which can contain model-, user-,
     # or remote-server-controlled content.
     12: ["ALTER TABLE approvals ADD COLUMN provenance TEXT"],
+    # v13 collaborative supervision: approval claiming (so two supervisors
+    # don't double-handle the same pending approval) + decided_by attribution.
+    13: [
+        "ALTER TABLE approvals ADD COLUMN claimed_by TEXT",
+        "ALTER TABLE approvals ADD COLUMN claimed_at REAL",
+        "ALTER TABLE approvals ADD COLUMN decided_by TEXT",
+    ],
 }
 
 
@@ -311,6 +321,9 @@ class Approval:
     status: str
     requested_at: float
     decided_at: float | None
+    claimed_by: str | None = None
+    claimed_at: float | None = None
+    decided_by: str | None = None
 
 
 @dataclass
@@ -1251,19 +1264,57 @@ class WorldModel:
         )
         return [_approval_from_row(r) for r in rows]
 
-    def decide_approval(self, approval_id: int, status: str) -> bool:
+    def decide_approval(self, approval_id: int, status: str,
+                        decided_by: str | None = None) -> bool:
         """Flip a pending approval to 'approved' or 'denied'.
 
         Returns True if a pending row was transitioned, False otherwise
         (unknown id, or already decided — so a double-click is a no-op).
+        ``decided_by`` records WHICH supervisor decided (collaborative
+        supervision attribution); None keeps the legacy unattributed form.
         """
         if status not in ("approved", "denied"):
             raise ValueError("status must be 'approved' or 'denied'")
         with self._writing() as conn:
             cur = conn.execute(
-                "UPDATE approvals SET status = ?, decided_at = ? "
+                "UPDATE approvals SET status = ?, decided_at = ?, decided_by = ? "
                 "WHERE id = ? AND status = 'pending'",
-                (status, time.time(), approval_id),
+                (status, time.time(), decided_by, approval_id),
+            )
+            return cur.rowcount > 0
+
+    def claim_approval(self, approval_id: int, principal: str) -> bool:
+        """Atomically claim a pending approval for one supervisor.
+
+        Collaborative supervision: a claim marks "I'm handling this" so two
+        supervisors don't double-work the same review. Succeeds when the row
+        is pending and unclaimed (or already claimed by the SAME principal —
+        re-claiming your own claim is a no-op refresh). Returns False when
+        someone else holds it, it's decided, or the id is unknown.
+        """
+        principal = (principal or "").strip()
+        if not principal:
+            raise ValueError("principal is required to claim an approval")
+        with self._writing() as conn:
+            cur = conn.execute(
+                "UPDATE approvals SET claimed_by = ?, claimed_at = ? "
+                "WHERE id = ? AND status = 'pending' "
+                "AND (claimed_by IS NULL OR claimed_by = ?)",
+                (principal, time.time(), approval_id, principal),
+            )
+            return cur.rowcount > 0
+
+    def release_approval(self, approval_id: int, principal: str) -> bool:
+        """Release a claim you hold (pending rows only). Only the claim
+        holder can release; returns False otherwise."""
+        principal = (principal or "").strip()
+        if not principal:
+            raise ValueError("principal is required to release an approval")
+        with self._writing() as conn:
+            cur = conn.execute(
+                "UPDATE approvals SET claimed_by = NULL, claimed_at = NULL "
+                "WHERE id = ? AND status = 'pending' AND claimed_by = ?",
+                (approval_id, principal),
             )
             return cur.rowcount > 0
 

@@ -555,7 +555,11 @@ and `trace_commit()` reads it back so replays tie to exact code); **cost split b
   assign an issue to the bot, get a goal (`X-Gitlab-Token` constant-time
   verify, `X-Gitlab-Event-UUID` replay dedup), completing the
   Linear/Jira/GitHub/GitLab issue-trigger family (`issue_webhooks.py`).
-- **Web dashboard** — run list, plan-tree, chat at `/chat`, approval queue, and
+- **Web dashboard** — run list, plan-tree, chat at `/chat`, approval queue with
+  **collaborative supervision** (claim/release endpoints so two supervisors
+  never double-handle a review — atomic claims, 409 on conflicts, claims
+  surfaced in the pending list — plus `decided_by` attribution on every
+  decision; SQLite migration v13 + Postgres parity, tenant-scoped), and
   an **oversight console** (`/oversight`): live fleet state, the approval queue,
   a per-guardrail intervention roll-up, and an inline **"why this action"
   drill-down** (the reasoning/tool chain + cost for a running agent, owner-scoped)
