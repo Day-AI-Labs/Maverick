@@ -541,6 +541,7 @@ def base_registry(  # noqa: C901
     from .arxiv import arxiv
     from .asana_tool import asana_tool
     from .ast_edit import ast_edit
+    from .bias_eval import bias_eval
     from .bitbucket_tool import bitbucket_tool
     from .budget_status import budget_status
     from .cache_admin import cache_admin
@@ -677,6 +678,7 @@ def base_registry(  # noqa: C901
     reg.register(coordinated_disclosure())
     reg.register(collusion_detector())
     reg.register(risk_tier())
+    reg.register(bias_eval())
     reg.register(file_watcher(sandbox))
     reg.register(linear())
     reg.register(jira())

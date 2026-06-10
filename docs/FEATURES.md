@@ -114,7 +114,9 @@ here.
   `collusion_detector` (find voting-collusion blocs among agents that defeat
   independent-quorum guarantees — correlated votes above a threshold),
   `risk_tier` (score an agent goal LOW/MEDIUM/HIGH from operational signals —
-  shell/secrets/PII/spend/irreversibility — for gating).
+  shell/secrets/PII/spend/irreversibility — for gating), `bias_eval` (group-
+  fairness metrics — four-fifths rule, demographic-parity and equal-opportunity
+  differences from per-group outcome counts).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.
