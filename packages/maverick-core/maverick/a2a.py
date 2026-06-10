@@ -124,6 +124,73 @@ def build_agent_card(base_url: str | None = None) -> dict[str, Any]:
     }
 
 
+# -- interop: consuming third-party Agent Cards --------------------------
+#
+# Interop is two-way: serving a conformant card (above) AND being able to
+# read any other agent's. These are the pure consuming half; fetching is the
+# caller's (http_fetch / mcp) concern so this stays offline-testable.
+
+_CARD_REQUIRED = ("protocolVersion", "name", "url", "version",
+                  "capabilities", "skills")
+_SKILL_REQUIRED = ("id", "name", "description")
+
+
+def validate_agent_card(card: Any) -> list[str]:
+    """Spec-shape lint of an A2A Agent Card. Returns problems ([] == OK).
+
+    Checks the required top-level fields, the skills' required fields, and
+    basic types — the contract an orchestrator relies on before delegating.
+    Unknown extra fields are fine (the spec is extensible).
+    """
+    if not isinstance(card, dict):
+        return ["card must be a JSON object"]
+    problems = [f"missing required field: {k}" for k in _CARD_REQUIRED
+                if k not in card]
+    if not isinstance(card.get("capabilities", {}), dict):
+        problems.append("capabilities must be an object")
+    skills = card.get("skills")
+    if skills is not None:
+        if not isinstance(skills, list):
+            problems.append("skills must be a list")
+        else:
+            for i, s in enumerate(skills):
+                if not isinstance(s, dict):
+                    problems.append(f"skills[{i}] must be an object")
+                    continue
+                problems += [f"skills[{i}] missing {k}"
+                             for k in _SKILL_REQUIRED if k not in s]
+    url = card.get("url")
+    if isinstance(url, str) and url and not url.startswith(("http://", "https://")):
+        problems.append("url must be an http(s) URL")
+    return problems
+
+
+def parse_remote_card(card: dict) -> dict[str, Any]:
+    """Normalize a (validated) third-party card into what delegation needs.
+
+    Returns ``{name, url, version, streaming, skills: [{id, name,
+    description, tags}]}`` regardless of which optional spec fields the
+    remote agent ships. Raises ``ValueError`` on a non-conformant card so a
+    caller never delegates against a card it couldn't read.
+    """
+    problems = validate_agent_card(card)
+    if problems:
+        raise ValueError("non-conformant agent card: " + "; ".join(problems))
+    caps = card.get("capabilities") or {}
+    return {
+        "name": card["name"],
+        "url": card["url"],
+        "version": str(card.get("version", "")),
+        "streaming": bool(caps.get("streaming", False)),
+        "skills": [
+            {"id": s["id"], "name": s["name"],
+             "description": s["description"],
+             "tags": list(s.get("tags") or [])}
+            for s in card.get("skills") or []
+        ],
+    }
+
+
 def mount(app: Any) -> None:
     """Register the A2A well-known Agent Card route, if enabled.
 

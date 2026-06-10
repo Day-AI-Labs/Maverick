@@ -148,7 +148,7 @@ class WhatsAppChannel(Channel):
 
         msg = IncomingMessage(user_id=From, text=Body, channel="whatsapp")
         try:
-            reply = await self.handler(msg)
+            reply = await self.dispatch_text(msg)
         except Exception as e:  # pragma: no cover
             log.exception("handler error")
             # The goal didn't complete -- release the claim so Twilio's retry

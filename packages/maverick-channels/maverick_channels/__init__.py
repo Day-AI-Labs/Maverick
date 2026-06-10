@@ -18,7 +18,7 @@ Available channels (status as of v0.1):
   - sms       (scaffold, requires Twilio + public webhook)
   - imessage  (macOS only)
 """
-from .base import Channel, Handler, IncomingMessage
+from .base import Channel, Handler, IncomingMessage, Reply, as_reply
 
 __version__ = "0.1.6"
-__all__ = ["Channel", "IncomingMessage", "Handler"]
+__all__ = ["Channel", "IncomingMessage", "Handler", "Reply", "as_reply"]

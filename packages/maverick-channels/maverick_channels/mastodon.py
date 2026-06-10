@@ -138,7 +138,7 @@ class MastodonChannel(Channel):
             channel=self.name, raw=notif,
         )
         try:
-            reply = await self.handler(msg)
+            reply = await self.dispatch_text(msg)
         except Exception as e:
             log.exception("mastodon handler raised: %s", e)
             return

@@ -1,0 +1,220 @@
+"""Out-of-process model proxy (roadmap: 2027 H2 safety).
+
+The agent process holds the provider API keys it uses to call models. If that
+process is prompt-injected or otherwise compromised, those keys are in reach.
+This is the mitigation: run a tiny proxy **in a separate process** that holds
+the key, and point the provider's ``base_url`` at it. The agent sends requests
+with no usable credential; the proxy strips whatever the agent sent, injects
+the real key, and forwards to the upstream. The key never lives in the agent's
+address space.
+
+It is also the natural central chokepoint for egress control: the proxy only
+forwards to its single configured ``upstream`` host (an SSRF guard — a
+compromised agent can't aim it at an arbitrary URL), and is the one place to
+add per-call rate/audit policy later.
+
+The security-critical part is :func:`build_request` (drop the client's auth +
+hop-by-hop headers, inject the proxy's key in the upstream's scheme, refuse a
+host outside the allow-set) — pure and exhaustively tested. The HTTP listener
+(:func:`serve`, ``python -m maverick.model_proxy``) is a thin stdlib shell.
+
+Config: ``[model_proxy]`` (``upstream`` / ``listen`` / ``auth_style`` =
+``bearer`` | ``x-api-key``) with the key from the proxy's **own** environment
+(``MAVERICK_PROXY_KEY``) so it is never in the agent's config. Responses are
+buffered (an SSE stream is forwarded whole), which keeps the proxy simple and
+correct; token-by-token relay is a later refinement.
+"""
+from __future__ import annotations
+
+import logging
+import os
+from dataclasses import dataclass
+from urllib.parse import urlparse
+
+log = logging.getLogger(__name__)
+
+# Headers that are connection-specific and must NOT be forwarded, plus the
+# client-supplied credential headers the proxy replaces with its own.
+_HOP_BY_HOP = frozenset({
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailers", "transfer-encoding", "upgrade", "host", "content-length",
+})
+_AUTH_HEADERS = frozenset({"authorization", "x-api-key", "api-key"})
+
+DEFAULT_PORT = 8765
+
+
+@dataclass(frozen=True)
+class ProxyConfig:
+    upstream: str
+    api_key: str
+    listen_host: str = "127.0.0.1"
+    listen_port: int = DEFAULT_PORT
+    auth_style: str = "bearer"          # "bearer" | "x-api-key"
+    allow_hosts: frozenset[str] = frozenset()  # empty == {upstream host}
+
+    def allowed(self) -> frozenset[str]:
+        if self.allow_hosts:
+            return self.allow_hosts
+        host = urlparse(self.upstream).hostname
+        return frozenset({host}) if host else frozenset()
+
+
+def config_from_env() -> ProxyConfig | None:
+    """Build the proxy config (``[model_proxy]`` + ``MAVERICK_PROXY_*``).
+
+    Returns None when not configured (no upstream) — the caller reports it.
+    The key is read from the proxy process's env, never from agent config.
+    """
+    upstream = os.environ.get("MAVERICK_PROXY_UPSTREAM", "").strip()
+    key = os.environ.get("MAVERICK_PROXY_KEY", "").strip()
+    listen = os.environ.get("MAVERICK_PROXY_LISTEN", "").strip()
+    auth_style = os.environ.get("MAVERICK_PROXY_AUTH_STYLE", "").strip().lower()
+    if not upstream or not auth_style:
+        try:
+            from .config import load_config
+            cfg = (load_config() or {}).get("model_proxy") or {}
+            upstream = upstream or str(cfg.get("upstream") or "").strip()
+            listen = listen or str(cfg.get("listen") or "").strip()
+            auth_style = auth_style or str(cfg.get("auth_style") or "").strip().lower()
+        except Exception:  # pragma: no cover -- config never blocks startup
+            pass
+    if not upstream:
+        return None
+    host, port = _split_listen(listen)
+    return ProxyConfig(
+        upstream=upstream,
+        api_key=key,
+        listen_host=host,
+        listen_port=port,
+        auth_style=auth_style if auth_style in ("bearer", "x-api-key") else "bearer",
+    )
+
+
+def _split_listen(listen: str) -> tuple[str, int]:
+    if not listen:
+        return "127.0.0.1", DEFAULT_PORT
+    if ":" in listen:
+        host, _, port = listen.rpartition(":")
+        try:
+            return (host or "127.0.0.1"), int(port)
+        except ValueError:
+            return "127.0.0.1", DEFAULT_PORT
+    return listen, DEFAULT_PORT
+
+
+def build_request(config: ProxyConfig, path: str,
+                  headers: dict[str, str]) -> tuple[str, dict[str, str]]:
+    """Transform a client request into the upstream request.
+
+    Drops the client's auth + hop-by-hop headers and injects the proxy's key in
+    the upstream's expected scheme. Raises ``ValueError`` if the resolved host
+    is outside the allow-set (SSRF guard). Returns ``(url, headers)``.
+    """
+    url = config.upstream.rstrip("/") + "/" + path.lstrip("/")
+    host = urlparse(url).hostname
+    allowed = config.allowed()
+    if host not in allowed:
+        raise ValueError(f"upstream host {host!r} not in allow-set {sorted(allowed)}")
+    out = {k: v for k, v in headers.items()
+           if k.lower() not in _HOP_BY_HOP and k.lower() not in _AUTH_HEADERS}
+    if config.auth_style == "x-api-key":
+        out["x-api-key"] = config.api_key
+    else:
+        out["Authorization"] = f"Bearer {config.api_key}"
+    return url, out
+
+
+def forward(config: ProxyConfig, method: str, path: str,
+            headers: dict[str, str], body: bytes, *,
+            client=None, timeout: float = 600.0) -> tuple[int, dict[str, str], bytes]:
+    """Forward a request upstream with the proxy's key. Returns
+    ``(status, headers, body)``. Response is buffered."""
+    url, fwd_headers = build_request(config, path, headers)
+    if client is None:
+        import httpx
+        client = httpx
+    resp = client.request(method, url, headers=fwd_headers, content=body or b"",
+                          timeout=timeout)
+    resp_headers = {k: v for k, v in dict(resp.headers).items()
+                    if k.lower() not in _HOP_BY_HOP}
+    return resp.status_code, resp_headers, resp.content
+
+
+def handle(config: ProxyConfig, method: str, path: str,
+           headers: dict[str, str], body: bytes, *,
+           client=None) -> tuple[int, dict[str, str], bytes]:
+    """Whole request handling: forward, or a clean error response. Never raises
+    into the listener."""
+    try:
+        return forward(config, method, path, headers, body, client=client)
+    except ValueError as e:  # blocked host / bad request
+        return 403, {"Content-Type": "text/plain"}, str(e).encode("utf-8")
+    except Exception as e:  # pragma: no cover -- upstream/network error
+        log.warning("model proxy forward failed: %s", e)
+        return 502, {"Content-Type": "text/plain"}, f"proxy error: {e}".encode()
+
+
+def serve(config: ProxyConfig) -> None:  # pragma: no cover -- socket server
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class _Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def _do(self, method: str) -> None:
+            length = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(length) if length else b""
+            status, headers, out = handle(
+                config, method, self.path, dict(self.headers), body)
+            self.send_response(status)
+            for k, v in headers.items():
+                self.send_header(k, v)
+            self.send_header("Content-Length", str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
+
+        def do_GET(self):
+            self._do("GET")
+
+        def do_POST(self):
+            self._do("POST")
+
+        def log_message(self, *a):  # quiet by default
+            log.debug("proxy: " + a[0], *a[1:])
+
+    srv = ThreadingHTTPServer((config.listen_host, config.listen_port), _Handler)
+    log.info("model proxy on %s:%d -> %s", config.listen_host,
+             config.listen_port, config.upstream)
+    srv.serve_forever()
+
+
+def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- CLI shell
+    import argparse
+    p = argparse.ArgumentParser(
+        prog="maverick.model_proxy",
+        description="Out-of-process model proxy (holds the key the agent doesn't).")
+    p.add_argument("--check", action="store_true",
+                   help="validate config and exit without listening")
+    args = p.parse_args(argv)
+    config = config_from_env()
+    if config is None:
+        print("ERROR: no upstream configured "
+              "(MAVERICK_PROXY_UPSTREAM or [model_proxy] upstream)")
+        return 1
+    if not config.api_key:
+        print("WARNING: MAVERICK_PROXY_KEY is empty; forwarded requests will be "
+              "unauthenticated")
+    if args.check:
+        print(f"OK: {config.listen_host}:{config.listen_port} -> {config.upstream} "
+              f"(auth={config.auth_style})")
+        return 0
+    serve(config)
+    return 0
+
+
+__all__ = ["ProxyConfig", "config_from_env", "build_request", "forward",
+           "handle", "serve"]
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

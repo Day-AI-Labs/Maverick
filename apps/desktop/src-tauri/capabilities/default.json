@@ -1,0 +1,9 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "default",
+  "description": "Capability set for the dashboard shell window. The splash page only fetches the loopback health endpoint and navigates; it invokes no Tauri commands, so only core defaults are granted (no fs, no shell, no arbitrary http plugin).",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}

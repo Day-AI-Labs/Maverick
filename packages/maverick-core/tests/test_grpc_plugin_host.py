@@ -1,0 +1,353 @@
+"""gRPC plugin host tests (grpc_plugin_host).
+
+CI needs no grpcio: the host imports grpc and its generated stubs lazily, so a
+fake ``grpc`` module and fake ``plugin_host_pb2`` / ``plugin_host_pb2_grpc``
+modules are injected via ``sys.modules`` — the same no-real-grpc approach as
+the other grpc tests (test_grpc_dispatch fakes the stub seam,
+test_grpc_server_auth fakes the pb2 modules). The fake stub routes
+Describe/Call to a per-test rig the tests script and inspect.
+"""
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+import types
+from dataclasses import dataclass, field
+from types import SimpleNamespace
+
+import pytest
+from maverick import grpc_plugin_host as gph
+from maverick.grpc_plugin_host import (
+    GrpcPluginError,
+    load_configured_grpc_plugins,
+    load_grpc_plugin,
+)
+from maverick.tools import Tool
+
+# ---- fake generated messages (what plugin_host_pb2 would define) ----
+
+
+@dataclass
+class DescribeRequest:
+    pass
+
+
+@dataclass
+class ToolSpec:
+    name: str = ""
+    description: str = ""
+    input_schema_json: str = ""
+
+
+@dataclass
+class Manifest:
+    tools: list = field(default_factory=list)
+
+
+@dataclass
+class ToolCall:
+    tool: str = ""
+    args_json: str = ""
+    deadline_ms: int = 0
+
+
+@dataclass
+class ToolResult:
+    result: str = ""
+    error: str = ""
+
+
+class FakeRpcError(Exception):
+    def __init__(self, code="UNAVAILABLE", details="connection dropped"):
+        super().__init__(details)
+        self._code = code
+
+    def code(self):
+        return self._code
+
+
+class FakeChannel:
+    def __init__(self, target):
+        self.target = target
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.fixture
+def rig(monkeypatch):
+    """Fake grpc world, injected via sys.modules; the host's lazy imports hit it.
+
+    - ``rig.manifest``: ToolSpec list Describe returns; a dict keys it by
+      target; an Exception value raises instead.
+    - ``rig.call_excs``: exceptions consecutive Calls raise before answering.
+    - ``rig.answer``: fn(ToolCall) -> ToolResult once excs are exhausted.
+    - ``rig.channels`` / ``rig.describes`` / ``rig.calls``: what happened.
+    """
+    rig = SimpleNamespace(
+        manifest=[], call_excs=[], channels=[], describes=[], calls=[],
+        answer=lambda req: ToolResult(result="ok:" + req.args_json),
+    )
+
+    fake_grpc = types.ModuleType("grpc")
+    fake_grpc.RpcError = FakeRpcError
+    fake_grpc.StatusCode = SimpleNamespace(
+        DEADLINE_EXCEEDED="DEADLINE_EXCEEDED", UNAVAILABLE="UNAVAILABLE",
+    )
+
+    def insecure_channel(target):
+        ch = FakeChannel(target)
+        rig.channels.append(ch)
+        return ch
+
+    fake_grpc.insecure_channel = insecure_channel
+
+    pb2 = types.ModuleType("maverick.grpc_api.plugin_host_pb2")
+    pb2.DescribeRequest = DescribeRequest
+    pb2.ToolSpec = ToolSpec
+    pb2.Manifest = Manifest
+    pb2.ToolCall = ToolCall
+    pb2.ToolResult = ToolResult
+
+    class MaverickPluginStub:
+        def __init__(self, channel):
+            self.channel = channel
+
+        def Describe(self, request, timeout=None, wait_for_ready=False):
+            rig.describes.append(SimpleNamespace(
+                target=self.channel.target, timeout=timeout,
+                wait_for_ready=wait_for_ready))
+            specs = rig.manifest
+            if isinstance(specs, dict):
+                specs = specs.get(self.channel.target, [])
+            if isinstance(specs, Exception):
+                raise specs
+            return Manifest(tools=list(specs))
+
+        def Call(self, request, timeout=None, wait_for_ready=False):
+            rig.calls.append(SimpleNamespace(
+                target=self.channel.target, request=request,
+                timeout=timeout, wait_for_ready=wait_for_ready))
+            if rig.call_excs:
+                raise rig.call_excs.pop(0)
+            return rig.answer(request)
+
+    pb2_grpc = types.ModuleType("maverick.grpc_api.plugin_host_pb2_grpc")
+    pb2_grpc.MaverickPluginStub = MaverickPluginStub
+
+    monkeypatch.setitem(sys.modules, "grpc", fake_grpc)
+    monkeypatch.setitem(sys.modules, "maverick.grpc_api.plugin_host_pb2", pb2)
+    monkeypatch.setitem(sys.modules, "maverick.grpc_api.plugin_host_pb2_grpc", pb2_grpc)
+    monkeypatch.setattr(gph, "_CHANNELS", [])  # per-test exit-cleanup registry
+    return rig
+
+
+class FakePopen:
+    def __init__(self, argv, **kwargs):
+        self.argv = list(argv)
+        self.kwargs = kwargs
+        self.killed = False
+        self.returncode = None
+
+    def poll(self):
+        return self.returncode
+
+    def kill(self):
+        self.killed = True
+
+    def wait(self, timeout=None):
+        return 0
+
+
+@pytest.fixture
+def fake_proc(monkeypatch):
+    """Replace the module's subprocess with a recording fake; returns spawns."""
+    spawned = []
+
+    def popen(argv, **kwargs):
+        p = FakePopen(argv, **kwargs)
+        spawned.append(p)
+        return p
+
+    monkeypatch.setattr(gph, "subprocess", SimpleNamespace(
+        Popen=popen, DEVNULL=subprocess.DEVNULL,
+        TimeoutExpired=subprocess.TimeoutExpired))
+    return spawned
+
+
+SPECS = [
+    ToolSpec("echo", "echo text",
+             '{"type": "object", "properties": {"text": {"type": "string"}}}'),
+    ToolSpec("noschema", "empty schema", ""),
+    ToolSpec("badschema", "unparseable schema", "{not json"),
+    ToolSpec("stringschema", "schema not an object", '"just a string"'),
+    ToolSpec("bad name!", "skipped", ""),
+]
+
+
+def _by_name(tools):
+    return {t.name: t for t in tools}
+
+
+# ---- manifest -> Tool construction ----
+
+def test_manifest_builds_tools(rig):
+    rig.manifest = SPECS
+    tools = load_grpc_plugin("localhost:50061")
+    assert all(isinstance(t, Tool) for t in tools)
+    by_name = _by_name(tools)
+    # "bad name!" fails the tool-name check and is skipped.
+    assert set(by_name) == {"echo", "noschema", "badschema", "stringschema"}
+    echo = by_name["echo"]
+    assert echo.description == "echo text"
+    assert echo.input_schema["properties"]["text"] == {"type": "string"}
+    # Empty / unparseable / non-object schemas fall back to a bare object.
+    for name in ("noschema", "badschema", "stringschema"):
+        assert by_name[name].input_schema == {"type": "object"}
+    # Describe used the bundled deadline and waits for a just-spawned server.
+    assert rig.describes[0].timeout == gph.DESCRIBE_TIMEOUT
+    assert rig.describes[0].wait_for_ready is True
+
+
+def test_describe_failure_raises_plugin_error(rig):
+    rig.manifest = FakeRpcError(details="nobody home")
+    with pytest.raises(GrpcPluginError, match="Describe failed"):
+        load_grpc_plugin("localhost:50061")
+    assert rig.channels[-1].closed  # no leaked channel on a failed load
+
+
+# ---- call round-trip ----
+
+def test_call_round_trip_serializes_args_and_deadline(rig):
+    rig.manifest = SPECS
+    by_name = _by_name(load_grpc_plugin("localhost:50061", call_timeout=2.5))
+    assert by_name["echo"].fn({"text": "hi"}) == 'ok:{"text": "hi"}'
+    call = rig.calls[0]
+    assert call.request.tool == "echo"
+    assert json.loads(call.request.args_json) == {"text": "hi"}
+    assert call.request.deadline_ms == 2500  # mirrored for the plugin side
+    assert call.timeout == 2.5               # enforced as the gRPC deadline
+    assert by_name["echo"].fn({"text": "again"}) == 'ok:{"text": "again"}'
+    assert len(rig.channels) == 1            # calls share one channel
+
+
+# ---- error mapping ----
+
+def test_plugin_error_maps_to_error_string(rig):
+    rig.manifest = SPECS
+    rig.answer = lambda req: ToolResult(error="boom exploded")
+    out = _by_name(load_grpc_plugin("localhost:50061"))["echo"].fn({})
+    assert out.startswith("ERROR:")
+    assert "boom exploded" in out
+
+
+def test_deadline_exceeded_maps_to_timeout_error(rig):
+    rig.manifest = SPECS
+    by_name = _by_name(load_grpc_plugin("localhost:50061", call_timeout=0.5))
+    rig.call_excs = [FakeRpcError(code="DEADLINE_EXCEEDED")]
+    out = by_name["echo"].fn({})
+    assert out.startswith("ERROR:")
+    assert "timed out" in out
+    # A slow tool is not a dropped channel: no reconnect, no retry.
+    assert len(rig.calls) == 1
+    assert not rig.channels[0].closed
+
+
+# ---- reconnect-once on a dropped channel ----
+
+def test_dropped_channel_reconnects_once(rig):
+    rig.manifest = SPECS
+    by_name = _by_name(load_grpc_plugin("localhost:50061"))
+    rig.call_excs = [FakeRpcError(code="UNAVAILABLE")]
+    assert by_name["echo"].fn({"text": "hi"}) == 'ok:{"text": "hi"}'
+    # The dead channel was closed and a fresh one dialed for the retry,
+    # which queues until the connection is up.
+    assert len(rig.channels) == 2 and rig.channels[0].closed
+    assert [c.wait_for_ready for c in rig.calls] == [False, True]
+
+
+def test_persistently_dropped_channel_is_error(rig):
+    rig.manifest = SPECS
+    by_name = _by_name(load_grpc_plugin("localhost:50061"))
+    rig.call_excs = [FakeRpcError(), FakeRpcError()]
+    out = by_name["echo"].fn({})
+    assert out.startswith("ERROR:")
+    assert "echo" in out
+    # The plugin still works afterwards on a fresh channel.
+    assert by_name["echo"].fn({"text": "alive"}) == 'ok:{"text": "alive"}'
+
+
+# ---- missing grpcio ----
+
+def test_missing_grpcio_import_error(monkeypatch):
+    monkeypatch.setitem(sys.modules, "grpc", None)  # import grpc -> ImportError
+    with pytest.raises(ImportError, match=r"maverick-agent\[grpc\]"):
+        load_grpc_plugin("localhost:50061")
+
+
+# ---- spawned server: scrubbed env + exit cleanup ----
+
+def test_spawn_command_scrubbed_env_and_cleanup(rig, fake_proc, monkeypatch):
+    rig.manifest = SPECS
+    monkeypatch.setattr(gph, "scrub_child_env", lambda: {"SCRUBBED": "1"})
+    tools = load_grpc_plugin("localhost:50061", command=["my-plugin", "--port", "50061"])
+    assert tools
+    [proc] = fake_proc
+    assert proc.argv == ["my-plugin", "--port", "50061"]
+    assert proc.kwargs["env"] == {"SCRUBBED": "1"}
+    # Registered for interpreter-exit cleanup: closing kills the server.
+    gph._close_all_channels()
+    assert proc.killed
+    assert rig.channels[-1].closed
+
+
+def test_spawn_failure_raises_plugin_error(rig, monkeypatch):
+    def popen(argv, **kwargs):
+        raise OSError("no such binary")
+
+    monkeypatch.setattr(gph, "subprocess", SimpleNamespace(
+        Popen=popen, DEVNULL=subprocess.DEVNULL,
+        TimeoutExpired=subprocess.TimeoutExpired))
+    with pytest.raises(GrpcPluginError, match="failed to run"):
+        load_grpc_plugin("localhost:50061", command=["missing-plugin"])
+
+
+# ---- configured loader ----
+
+def test_load_configured_grpc_plugins(rig, monkeypatch):
+    rig.manifest = {
+        "good:50061": SPECS,
+        "down:50061": FakeRpcError(details="nobody home"),
+    }
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda *a, **k: {"plugins": {"grpc": [
+            {"target": "good:50061"},
+            {"target": "down:50061"},          # unreachable: logged + skipped
+            {"target": ""},                    # malformed: no target
+            {"command": ["serve"]},            # malformed: no target
+            {"target": "x:1", "command": "not-an-argv-list"},  # malformed command
+            "not-a-table",                     # malformed entry shape
+        ]}},
+    )
+    by_name = _by_name(load_configured_grpc_plugins())
+    assert "echo" in by_name
+    assert by_name["echo"].fn({"text": "cfg"}) == 'ok:{"text": "cfg"}'
+    # Malformed entries are skipped before ever dialing.
+    assert {c.target for c in rig.channels} == {"good:50061", "down:50061"}
+
+
+def test_load_configured_grpc_plugins_default_empty(monkeypatch):
+    monkeypatch.setattr("maverick.config.load_config", lambda *a, **k: {})
+    assert load_configured_grpc_plugins() == []
+
+
+def test_load_configured_grpc_plugins_without_grpcio(monkeypatch):
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda *a, **k: {"plugins": {"grpc": [{"target": "good:50061"}]}},
+    )
+    monkeypatch.setitem(sys.modules, "grpc", None)
+    assert load_configured_grpc_plugins() == []  # fail-open: logged, not raised

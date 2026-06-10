@@ -597,6 +597,7 @@ def base_registry(  # noqa: C901
     from .asana_tool import asana_tool
     from .ast_edit import ast_edit
     from .async_compaction import async_compaction
+    from .audio_understanding import audio_understanding
     from .audit_mirror import audit_mirror
     from .autogen_adapter import autogen_adapter
     from .bias_eval import bias_eval
@@ -654,6 +655,7 @@ def base_registry(  # noqa: C901
     from .dynamodb_tool import dynamodb_tool
     from .elasticsearch_tool import elasticsearch_tool
     from .email_tool import email_tool
+    from .embedded_device import embedded_device
     from .embeddings import embeddings
     from .energy_accounting import energy_accounting
     from .erp_tool import erp_tool
@@ -661,6 +663,7 @@ def base_registry(  # noqa: C901
     from .fairness_scheduler import fairness_scheduler
     from .ffmpeg_tool import ffmpeg_tool
     from .file_watcher import file_watcher
+    from .format_money import format_money_tool
     from .ga4_tool import ga4_tool
     from .gdrive_tool import gdrive_tool
     from .generic_oauth import generic_oauth
@@ -679,6 +682,7 @@ def base_registry(  # noqa: C901
     from .http_fetch import http_fetch
     from .hubspot_tool import hubspot_tool
     from .huggingface import huggingface
+    from .image_edit import image_edit
     from .imagemagick_tool import imagemagick_tool
     from .ios_sim import ios_sim
     from .jira import jira
@@ -741,6 +745,7 @@ def base_registry(  # noqa: C901
     from .rbac_check import rbac_check
     from .recall import recall
     from .rectification import rectification
+    from .redact import redact_tool
     from .reddit_tool import reddit_tool
     from .redis_tool import redis_tool
     from .reflect_loop import reflect_loop
@@ -750,6 +755,7 @@ def base_registry(  # noqa: C901
     from .right_to_explanation import right_to_explanation
     from .risk_tier import risk_tier
     from .risk_tier_classifier import risk_tier_classifier
+    from .ros_tool import ros_tool
     from .run_events_firehose import run_events_firehose
     from .s3_attachments import s3_attachments
     from .s3_tool import s3_tool
@@ -761,6 +767,7 @@ def base_registry(  # noqa: C901
     from .semantic_scholar import semantic_scholar
     from .semver_check import semver_check
     from .sentry_tool import sentry_tool
+    from .serial_tool import serial_tool
     from .ses_tool import ses_tool
     from .shopify_tool import shopify_tool
     from .skill_distill_v2 import skill_distill_v2
@@ -794,6 +801,7 @@ def base_registry(  # noqa: C901
     from .view_video import view_video
     from .voice_cloning_consent import voice_cloning_consent
     from .wal_contention import wal_contention
+    from .wasm_run import wasm_run
     from .watermark_detector import watermark_detector
     from .web_archive import web_archive
     from .web_recorder import web_recorder
@@ -832,7 +840,9 @@ def base_registry(  # noqa: C901
     reg.register(bias_eval())
     reg.register(decision_explainer())
     reg.register(rectification())
+    reg.register(redact_tool())
     reg.register(file_watcher(sandbox))
+    reg.register(format_money_tool())
     reg.register(linear())
     reg.register(jira())
     reg.register(gitlab())
@@ -956,6 +966,7 @@ def base_registry(  # noqa: C901
     reg.register(safety_regression_budget())
     reg.register(autogen_adapter())
     reg.register(crewai_adapter())
+    reg.register(ros_tool())
     reg.register(run_events_firehose())
     reg.register(marketplace_ratings())
     reg.register(local_embeddings_cache())
@@ -979,6 +990,7 @@ def base_registry(  # noqa: C901
     reg.register(agent_identity())
     from .adversarial_eval import adversarial_eval
     from .gui_element_memory import gui_element_memory
+    from .hardware_sensors import hardware_sensors
     from .voice_command_grammar import voice_command_grammar
     from .what_changed_digest import what_changed_digest
     reg.register(voice_command_grammar())
@@ -1019,6 +1031,7 @@ def base_registry(  # noqa: C901
     reg.register(hubspot_tool())
     reg.register(twilio_tool())
     reg.register(s3_tool())
+    reg.register(serial_tool())
     reg.register(elasticsearch_tool())
     reg.register(github_actions())
     # Strategic-fit connectors (ITSM / data / cloud-ML / GRC). Explicit-token
@@ -1082,7 +1095,12 @@ def base_registry(  # noqa: C901
     reg.register(ffmpeg_tool(sandbox))
     reg.register(pandoc_tool(sandbox))
     reg.register(office_convert(sandbox))
+    reg.register(wasm_run(sandbox))
+    reg.register(hardware_sensors())
     reg.register(imagemagick_tool(sandbox))
+    reg.register(audio_understanding(sandbox))
+    reg.register(image_edit(sandbox))
+    reg.register(embedded_device(sandbox))
     reg.register(ga4_tool())
     reg.register(plaid_tool())
     reg.register(truelayer_tool())
@@ -1120,11 +1138,13 @@ def base_registry(  # noqa: C901
     from .latex_tool import latex_tool
     from .notebook_exec import notebook_exec
     from .teams_tool import teams_tool
+    from .webrtc_tool import webrtc_tool
     from .websocket_tool import websocket_tool
     reg.register(notebook_exec(sandbox))
     reg.register(latex_tool(sandbox))
     reg.register(diagram_tool(sandbox))
     reg.register(websocket_tool())
+    reg.register(webrtc_tool())
     reg.register(teams_tool())
     # self_edit intentionally is not registered in the default tool set.
     # It can edit Maverick source/config and cannot rely on a model-supplied
@@ -1159,8 +1179,10 @@ def base_registry(  # noqa: C901
         reg.register(computer())
 
     if enable_browser:
+        from .aria_navigate import aria_navigate
         from .browser import browser
         reg.register(browser())
+        reg.register(aria_navigate())
 
     # Apply allow/deny lists from ~/.maverick/config.toml [security].
     # Fail-soft: any error here is logged and the registry is left
@@ -1214,6 +1236,39 @@ def base_registry(  # noqa: C901
                     "plugin tool %s factory raised: %s", name, e
                 )
     except Exception:  # pragma: no cover -- importlib quirks
+        pass
+
+    # TypeScript plugins (the NDJSON stdio SDK): each `[plugins] ts` command
+    # contributes its described tools. Same no-shadowing rule as Python
+    # plugins; a broken plugin logs but never takes the swarm down.
+    try:
+        from ..ts_plugin_host import load_configured_ts_plugins
+        for t in load_configured_ts_plugins():
+            if t.name in reg._tools:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "ts plugin tool %r conflicts with an existing tool; skipping",
+                    t.name,
+                )
+                continue
+            reg.register(t)
+    except Exception:  # pragma: no cover -- plugin failure never blocks boot
+        pass
+
+    # gRPC plugins (the multi-language plugin host): each [plugins] grpc entry
+    # contributes its described tools, same no-shadowing rule.
+    try:
+        from ..grpc_plugin_host import load_configured_grpc_plugins
+        for t in load_configured_grpc_plugins():
+            if t.name in reg._tools:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "grpc plugin tool %r conflicts with an existing tool; skipping",
+                    t.name,
+                )
+                continue
+            reg.register(t)
+    except Exception:  # pragma: no cover -- plugin failure never blocks boot
         pass
 
     # Self-learning: tools the agent generated for itself on a prior run

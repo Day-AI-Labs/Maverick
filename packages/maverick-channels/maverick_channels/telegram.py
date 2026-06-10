@@ -107,7 +107,7 @@ class TelegramChannel(Channel):
             message_id=str(update.message.message_id),
         )
         try:
-            reply = await self.handler(msg)
+            reply = await self.dispatch_text(msg)
         except Exception as e:  # pragma: no cover
             log.exception("handler error")
             reply = f"⚠ error: {e}"

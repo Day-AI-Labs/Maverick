@@ -866,10 +866,19 @@ def pick_capabilities() -> dict[str, bool]:
         "outputs out of context). Runs code in the sandbox, like the shell tool.",
         default=False,
     )
+    # The embedded-device tool (JTAG/I2C) is always registered, but its
+    # DESTRUCTIVE ops (flash write, target reset) stay refused until the
+    # operator opts in here -> [embedded] allow_flash. Default off.
+    embedded_flash = _q_confirm(
+        "Allow embedded-device flashing? The JTAG tool can erase/reflash YOUR "
+        "OWN connected device's firmware (OpenOCD). Off = it refuses flash/reset.",
+        default=False,
+    )
     return {
         "computer_use": use_computer,
         "browser": use_browser,
         "code_exec": use_code_exec,
+        "embedded_flash": embedded_flash,
     }
 
 
@@ -1094,6 +1103,15 @@ def pick_advanced() -> dict[str, Any]:
             "token budget instead of just the last few.",
             default=False,
         ),
+        "compaction_strategy": _q_select(
+            "  Compaction strategy? (default = simple shrink)",
+            ["default     - keep recent + trim big tool outputs",
+             "learned     - LLM summary, self-tuning prompt picker",
+             "multimodal  - stub heavy image/audio blocks to text",
+             "streaming   - incremental running summary (long chats)",
+             "graph       - entity-relation digest"],
+            default="default     - keep recent + trim big tool outputs",
+        ).split()[0],
         "reflexion": _q_confirm(
             "Reflexion learning? Remember lessons from failed runs and recall them "
             "on the next similar goal.",
@@ -1209,6 +1227,26 @@ def pick_advanced() -> dict[str, Any]:
             "Deferred tool loading? Show the model a small core toolset plus a "
             "find_tools search tool, loading the long tail (80+ integrations, MCP) "
             "on demand. Big context savings when many tools are enabled.",
+            default=False,
+        ),
+        "shield_updates": _q_confirm(
+            "Pull signed shield-rule updates? Fetches a publisher-signed rules "
+            "bundle ([shield] update_url + update_pubkey; Ed25519-verified, "
+            "downgrades refused) and stages it for the shield. Off by default.",
+            default=False,
+        ),
+        "ebpf_monitor": _q_confirm(
+            "Enable the eBPF syscall monitor? An operator-run bpftrace "
+            "supervisor tracing execve/connect/openat for the agent's PID tree "
+            "(needs root + bpftrace at runtime). Off by default.",
+            default=False,
+        ),
+        "local_runtime": _q_confirm(
+            "Manage a local model server (vLLM / TGI / llama.cpp)? Writes "
+            "[local_runtime] so `maverick local-runtime plan` composes the "
+            "right batching / KV-cache / precision flags for your engine; "
+            "configure the engine + model in config.toml after the wizard. "
+            "Off by default.",
             default=False,
         ),
         "output_cache": _q_confirm(
@@ -1421,6 +1459,27 @@ def pick_plugins() -> list[str]:
     ):
         return []
     return _q_checkbox("Enable plugins:", sorted(discovered))
+
+
+def pick_ts_plugins() -> list[list[str]]:
+    """TypeScript (NDJSON stdio) plugin commands — writes ``[plugins].ts``.
+
+    Each entry is the argv that serves the plugin (e.g.
+    ``node /path/to/plugin.js``); Maverick discovers its tools via
+    ``--describe`` at boot. Skipped by default — most setups have none.
+    """
+    if not _q_confirm(
+        "Add any TypeScript plugins? (commands like: node /path/plugin.js)",
+        default=False,
+    ):
+        return []
+    commands: list[list[str]] = []
+    while True:
+        raw = _q_text("  Plugin command (blank to finish)", default="")
+        if not raw.strip():
+            break
+        commands.append(raw.split())
+    return commands
 
 
 def pick_plugin_permissions() -> tuple[list[str], bool]:
@@ -2100,6 +2159,7 @@ def write_config(  # noqa: C901
     plugins: list[str] | None = None,
     plugin_grant: list[str] | None = None,
     plugin_enforce: bool = False,
+    ts_plugins: list[list[str]] | None = None,
     tool_acl: dict[str, Any] | None = None,
     rate_limits: dict[str, str] | None = None,
     retention: dict[str, int] | None = None,
@@ -2299,11 +2359,20 @@ def write_config(  # noqa: C901
     if advanced and advanced.get("enforce_capabilities"):
         capability_config["enforce"] = True
 
+    # The embedded-device flash gate lives under [embedded], not
+    # [capabilities] -- pull it out before emitting the capabilities block.
+    embedded_flash = bool(capability_config.pop("embedded_flash", False))
+
     if capability_config:
         lines.append("")
         lines.append("[capabilities]")
         for k, v in capability_config.items():
             lines.append(f"{k} = {str(v).lower()}")
+
+    if embedded_flash:
+        lines.append("")
+        lines.append("[embedded]")
+        lines.append("allow_flash = true")
 
     if suites:
         # Per-suite enable/disable; the kernel's enabled_domains() reads this.
@@ -2397,10 +2466,14 @@ def write_config(  # noqa: C901
             lines.append("")
             lines.append("[planning]")
             lines.append('mode = "tree_of_thought"')
-        if advanced.get("compact_history"):
+        if advanced.get("compact_history") or advanced.get("compaction_strategy"):
             lines.append("")
             lines.append("[context]")
-            lines.append("compact = true")
+            if advanced.get("compact_history"):
+                lines.append("compact = true")
+            strat = advanced.get("compaction_strategy")
+            if strat and strat != "default":
+                lines.append(f'compaction_strategy = "{strat}"')
         if advanced.get("reflexion"):
             lines.append("")
             lines.append("[reflexion]")
@@ -2426,6 +2499,22 @@ def write_config(  # noqa: C901
             lines.append("")
             lines.append("[tools]")
             lines.extend(tool_lines)
+        if advanced.get("shield_updates"):
+            lines.append("")
+            lines.append("[shield]")
+            lines.append("federated_updates = true")
+            lines.append('# update_url    = "https://..."  # REQUIRED')
+            lines.append('# update_pubkey = "<ed25519 hex>"  # REQUIRED')
+        if advanced.get("ebpf_monitor"):
+            lines.append("")
+            lines.append("[ebpf_monitor]")
+            lines.append("enable = true")
+        if advanced.get("local_runtime"):
+            lines.append("")
+            lines.append("[local_runtime]")
+            lines.append("enabled = true")
+            lines.append('# engine = "vllm"  # vllm | tgi | llamacpp')
+            lines.append('# model  = "..."   # REQUIRED before `maverick local-runtime plan`')
         if advanced.get("local_first"):
             lines.append("")
             lines.append("[system]")
@@ -2479,14 +2568,17 @@ def write_config(  # noqa: C901
         lines.append("[template_registries]")
         _emit_kv(lines, "indexes", template_registries)
 
-    if plugins:
+    if plugins or ts_plugins:
         lines.append("")
         lines.append("[plugins]")
-        _emit_kv(lines, "enabled", plugins)
+        if plugins:
+            _emit_kv(lines, "enabled", plugins)
         if plugin_grant:
             _emit_kv(lines, "grant", plugin_grant)
         if plugin_enforce:
             _emit_kv(lines, "enforce_permissions", plugin_enforce)
+        if ts_plugins:
+            _emit_kv(lines, "ts", ts_plugins)
 
     autofix = bool((advanced or {}).get("security_autofix"))
     if tool_acl or autofix:
@@ -3123,6 +3215,12 @@ def run(fast: bool = False, resume: bool = False) -> int:  # noqa: C901
         state["plugins"] = plugins
         _save_partial(state)
 
+    ts_plugins = state.get("ts_plugins")
+    if ts_plugins is None:
+        ts_plugins = pick_ts_plugins()
+        state["ts_plugins"] = ts_plugins
+        _save_partial(state)
+
     # Only ask about plugin permissions when at least one plugin is enabled --
     # most setups have none, so the step is skipped entirely.
     plugin_grant = state.get("plugin_grant")
@@ -3221,6 +3319,7 @@ def run(fast: bool = False, resume: bool = False) -> int:  # noqa: C901
         mcp_servers=mcp_servers,
         plugins=plugins,
         plugin_grant=plugin_grant,
+        ts_plugins=ts_plugins,
         plugin_enforce=plugin_enforce,
         tool_acl=tool_acl,
         rate_limits=rate_limits,

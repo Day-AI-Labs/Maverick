@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+{% block title %}goal builder · Maverick{% endblock %}
+{% block content %}
+<style>
+  .gb-wrap { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 1rem; }
+  @media (max-width: 900px) { .gb-wrap { grid-template-columns: 1fr; } }
+  .gb-palette button { display: block; width: 100%; margin-bottom: 0.5rem; padding: 0.6rem 0.8rem; background: var(--panel); color: var(--text); border: 1px dashed var(--border); border-radius: 6px; cursor: grab; text-align: start; }
+  .gb-palette button:hover { border-color: var(--accent); }
+  #gb-canvas { list-style: none; margin: 0; padding: 0.5rem; min-height: 220px; border: 2px dashed var(--border); border-radius: 8px; }
+  #gb-canvas.dragover { border-color: var(--accent); }
+  #gb-canvas li { display: flex; gap: 0.5rem; align-items: center; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.65rem; margin-bottom: 0.5rem; }
+  #gb-canvas li.placeholder { border-style: dashed; color: var(--muted); justify-content: center; cursor: default; }
+  #gb-canvas .kind { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); min-width: 4.2rem; }
+  #gb-canvas input, #gb-canvas select { flex: 1; min-width: 0; padding: 0.35rem 0.5rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
+  #gb-canvas .ctl { display: flex; gap: 0.25rem; }
+  #gb-canvas .ctl button { padding: 0.2rem 0.45rem; background: var(--bg); color: var(--muted); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  #gb-canvas .ctl button:hover { color: var(--text); }
+  .gb-field label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0 0 0.25rem; }
+  .gb-field input { width: 100%; padding: 0.55rem 0.7rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; }
+</style>
+<h2>drag-and-drop goal builder</h2>
+<div class="panel">
+  <div class="gb-field" style="margin-bottom: 1rem;">
+    <label for="gb-title">Goal title</label>
+    <input id="gb-title" type="text" maxlength="200" required autocomplete="off"
+           placeholder="Ship the Q3 report">
+  </div>
+  <div class="gb-wrap">
+    <div class="gb-palette" aria-label="Block palette">
+      <h3 style="margin: 0 0 0.5rem; font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;">Blocks</h3>
+      {# Each palette entry is BOTH a drag source (HTML5 DnD) and a plain
+         button (keyboard / touch path) that appends the block. #}
+      <button type="button" class="gb-add" data-kind="step" draggable="true">+ Step (checklist line)</button>
+      <button type="button" class="gb-add" data-kind="budget" draggable="true">+ Budget (dollar cap)</button>
+      <button type="button" class="gb-add" data-kind="channel" draggable="true">+ Channel (announce on)</button>
+      <button type="button" class="gb-add" data-kind="priority" draggable="true">+ Priority</button>
+      <p class="muted" style="font-size: 0.78rem;">
+        Drag a block onto the canvas, or press it to add. Reorder with the
+        ↑ / ↓ buttons (or drag); remove with ✕.
+      </p>
+    </div>
+    <div>
+      <h3 style="margin: 0 0 0.5rem; font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;">Canvas</h3>
+      <ol id="gb-canvas" aria-label="Goal blocks (ordered)">
+        <li class="placeholder">Drop blocks here</li>
+      </ol>
+      <h3 style="margin: 1rem 0 0.5rem; font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;">Assembled brief</h3>
+      <pre id="gb-preview" aria-label="Assembled goal description preview"
+           style="background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; min-height: 4rem; white-space: pre-wrap;">(add blocks to preview the brief)</pre>
+      <button type="button" id="gb-submit"
+              style="padding: 0.6rem 1.5rem; background: var(--accent); color: #fff; border: 0; border-radius: 6px; cursor: pointer; font-weight: 500;">
+        Create &amp; run goal
+      </button>
+      <p id="gb-error" role="alert" aria-live="assertive"
+         style="display: none; margin: 0.75rem 0 0; color: var(--danger); font-size: 0.85rem;"></p>
+      <p class="muted" style="font-size: 0.78rem;">
+        Steps become a markdown checklist in the goal description. The goals
+        table has no metadata columns, so channel and priority ride in the
+        brief for the agent to act on; the budget block additionally becomes
+        the run's real <code>max_dollars</code> cap.
+      </p>
+    </div>
+  </div>
+</div>
+<noscript><p class="muted">The goal builder needs JavaScript. Use <a href="/chat">chat</a> instead.</p></noscript>
+
+<script>
+// Drag-and-drop goal builder. Blocks live in #gb-canvas as <li> rows; the
+// submit assembles {title, steps[], budget_dollars, channel, priority} and
+// POSTs /api/v1/goals/compose (which creates AND starts the run).
+(function () {
+  const canvas = document.getElementById("gb-canvas");
+  const preview = document.getElementById("gb-preview");
+  const errEl = document.getElementById("gb-error");
+  const titleEl = document.getElementById("gb-title");
+  if (!canvas) return;
+  let seq = 0;
+
+  function showError(msg) {
+    errEl.textContent = msg; errEl.style.display = msg ? "block" : "none";
+  }
+  function placeholder() {
+    const ph = canvas.querySelector(".placeholder");
+    const hasBlocks = canvas.querySelectorAll("li:not(.placeholder)").length > 0;
+    if (ph) ph.style.display = hasBlocks ? "none" : "";
+  }
+
+  function mkButton(label, aria, fn) {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = label; b.setAttribute("aria-label", aria);
+    b.addEventListener("click", fn);
+    return b;
+  }
+
+  function addBlock(kind, before) {
+    // budget / channel / priority are single-instance blocks.
+    if (kind !== "step" && canvas.querySelector('li[data-kind="' + kind + '"]')) {
+      showError("only one " + kind + " block per goal"); return;
+    }
+    showError("");
+    seq += 1;
+    const li = document.createElement("li");
+    li.dataset.kind = kind;
+    li.draggable = true;
+    const tag = document.createElement("span");
+    tag.className = "kind"; tag.textContent = kind;
+    li.appendChild(tag);
+    let field;
+    if (kind === "step") {
+      field = document.createElement("input");
+      field.type = "text"; field.maxLength = 500;
+      field.placeholder = "Describe this step";
+      field.setAttribute("aria-label", "Step " + seq + " text");
+    } else if (kind === "budget") {
+      field = document.createElement("input");
+      field.type = "number"; field.min = "0"; field.max = "100"; field.step = "0.5";
+      field.value = "5";
+      field.setAttribute("aria-label", "Budget cap in dollars");
+    } else if (kind === "channel") {
+      field = document.createElement("input");
+      field.type = "text"; field.maxLength = 64;
+      field.placeholder = "e.g. slack #general";
+      field.setAttribute("aria-label", "Channel to announce progress on");
+    } else {
+      field = document.createElement("select");
+      field.setAttribute("aria-label", "Priority");
+      ["low", "normal", "high"].forEach(function (p) {
+        const o = document.createElement("option");
+        o.value = p; o.textContent = p; if (p === "normal") o.selected = true;
+        field.appendChild(o);
+      });
+    }
+    field.addEventListener("input", render);
+    field.addEventListener("change", render);
+    li.appendChild(field);
+    const ctl = document.createElement("span");
+    ctl.className = "ctl";
+    ctl.appendChild(mkButton("↑", "Move " + kind + " block up", function () {
+      const prev = li.previousElementSibling;
+      if (prev && !prev.classList.contains("placeholder")) canvas.insertBefore(li, prev);
+      render();
+    }));
+    ctl.appendChild(mkButton("↓", "Move " + kind + " block down", function () {
+      const next = li.nextElementSibling;
+      if (next) canvas.insertBefore(next, li);
+      render();
+    }));
+    ctl.appendChild(mkButton("✕", "Remove " + kind + " block", function () {
+      li.remove(); placeholder(); render();
+    }));
+    li.appendChild(ctl);
+    // Reorder by dragging a block over another block.
+    li.addEventListener("dragstart", function (ev) {
+      ev.dataTransfer.setData("text/gb-move", "1");
+      dragging = li;
+    });
+    li.addEventListener("dragover", function (ev) { ev.preventDefault(); });
+    li.addEventListener("drop", function (ev) {
+      ev.preventDefault(); ev.stopPropagation();
+      if (dragging && dragging !== li) canvas.insertBefore(dragging, li);
+      dragging = null; render();
+    });
+    canvas.insertBefore(li, before || null);
+    placeholder(); render();
+    if (field.focus) field.focus();
+  }
+
+  function gather() {
+    const out = { title: titleEl.value.trim(), steps: [] };
+    canvas.querySelectorAll("li:not(.placeholder)").forEach(function (li) {
+      const kind = li.dataset.kind;
+      const field = li.querySelector("input, select");
+      const val = (field.value || "").trim();
+      if (kind === "step" && val) out.steps.push(val);
+      if (kind === "budget" && val !== "") out.budget_dollars = parseFloat(val);
+      if (kind === "channel" && val) out.channel = val;
+      if (kind === "priority" && val) out.priority = val;
+    });
+    return out;
+  }
+
+  // Mirror of the server's brief assembly, for the live preview.
+  function render() {
+    const d = gather();
+    const parts = [];
+    if (d.steps.length) parts.push("## Steps\n" + d.steps.map(function (s) { return "- [ ] " + s; }).join("\n"));
+    const meta = [];
+    if (d.budget_dollars !== undefined && !isNaN(d.budget_dollars)) meta.push("Budget cap: $" + d.budget_dollars.toFixed(2) + " (also enforced as the run's max_dollars)");
+    if (d.channel) meta.push("Announce progress on: " + d.channel);
+    if (d.priority) meta.push("Priority: " + d.priority);
+    if (meta.length) parts.push(meta.join("\n"));
+    preview.textContent = parts.length ? parts.join("\n\n") : "(add blocks to preview the brief)";
+  }
+
+  let dragging = null;
+  document.querySelectorAll(".gb-add").forEach(function (btn) {
+    btn.addEventListener("click", function () { addBlock(btn.dataset.kind); });
+    btn.addEventListener("dragstart", function (ev) {
+      ev.dataTransfer.setData("text/gb-kind", btn.dataset.kind);
+    });
+  });
+  canvas.addEventListener("dragover", function (ev) {
+    ev.preventDefault(); canvas.classList.add("dragover");
+  });
+  canvas.addEventListener("dragleave", function () { canvas.classList.remove("dragover"); });
+  canvas.addEventListener("drop", function (ev) {
+    ev.preventDefault(); canvas.classList.remove("dragover");
+    const kind = ev.dataTransfer.getData("text/gb-kind");
+    if (kind) addBlock(kind);
+    dragging = null;
+  });
+
+  document.getElementById("gb-submit").addEventListener("click", async function () {
+    const d = gather();
+    if (!d.title) { showError("goal title is required"); titleEl.focus(); return; }
+    showError("");
+    const btn = this;
+    btn.disabled = true;
+    try {
+      const r = await fetch("/api/v1/goals/compose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(d),
+      });
+      if (r.ok) {
+        const j = await r.json();
+        window.location.href = "/chat/goal/" + j.id;
+        return;
+      }
+      let detail = "could not create the goal (" + r.status + ")";
+      try {
+        const j = await r.json();
+        if (j && j.detail) detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
+      } catch (e) {}
+      showError(detail);
+    } catch (e) {
+      showError("network error — is the dashboard still running?");
+    } finally { btn.disabled = false; }
+  });
+})();
+</script>
+{% endblock %}

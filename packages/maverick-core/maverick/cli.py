@@ -544,6 +544,58 @@ def whoami(principal: str | None, channel: str | None, user_id: str | None,
         click.echo(f"  expires_at:   {info['expires_at']}")
 
 
+@main.group("capability")
+def capability_group() -> None:
+    """Revoke / restore capability grants (kill a grant before its TTL)."""
+
+
+@capability_group.command("revoke")
+@click.argument("principal")
+@click.option("--reason", default="", help="Audit reason for the revocation.")
+def capability_revoke_cmd(principal: str, reason: str) -> None:
+    """Revoke PRINCIPAL now. Its next tool call is denied even mid-run.
+
+    Propagates to running agents (the registry is re-read on change) when
+    capability enforcement is on ([capabilities] enforce = true).
+    """
+    from .revocation import shared
+    rev = shared().revoke(principal, reason=reason)
+    click.echo(click.style(f"revoked {principal!r}", fg="yellow")
+               + (f" — {rev.reason}" if rev.reason else ""))
+
+
+@capability_group.command("unrevoke")
+@click.argument("principal")
+def capability_unrevoke_cmd(principal: str) -> None:
+    """Restore PRINCIPAL (remove it from the revocation list)."""
+    from .revocation import shared
+    if shared().unrevoke(principal):
+        click.echo(click.style(f"restored {principal!r}", fg="green"))
+    else:
+        click.echo(f"{principal!r} was not revoked")
+
+
+@capability_group.command("revocations")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def capability_revocations_cmd(as_json: bool) -> None:
+    """List revoked principals."""
+    import json as _json
+
+    from .revocation import shared
+    revs = shared().revoked()
+    if as_json:
+        click.echo(_json.dumps(
+            {p: {"revoked_at": r.revoked_at, "reason": r.reason}
+             for p, r in revs.items()}, default=str))
+        return
+    if not revs:
+        click.echo("no revoked principals")
+        return
+    for p, r in sorted(revs.items()):
+        click.echo(f"  {p}  (at {r.revoked_at:.0f})"
+                   + (f"  — {r.reason}" if r.reason else ""))
+
+
 @main.group()
 def governance() -> None:
     """Inspect the oversight control-plane policy (enterprise)."""
@@ -840,6 +892,267 @@ def budget(ctx) -> None:
             f"${e.cost_dollars:.4f}  "
             f"in={e.input_tokens:,} out={e.output_tokens:,} tools={e.tool_calls}"
         )
+
+
+@main.command("budget-tune")
+@click.option("--percentile", type=float, default=90.0,
+              help="Percentile of historical goal cost to size the cap to.")
+@click.option("--min-samples", type=int, default=5,
+              help="Minimum priced goals before a recommendation is made.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def budget_tune(ctx, percentile: float, min_samples: int, as_json: bool) -> None:
+    """Recommend a max_dollars cap learned from historical goal spend.
+
+    Sizes the default to the percentile of what goals actually cost plus a
+    margin, so the common case fits while a runaway still trips it. Read-only —
+    set the value yourself in config.
+    """
+    import json as _json
+
+    from .budget_tuner import recommend_for_world
+    world = open_world(ctx.obj["db"])
+    recs = recommend_for_world(world, pct=percentile, min_samples=min_samples)
+    if as_json:
+        click.echo(_json.dumps(recs))
+        return
+    if not recs:
+        click.echo(f"not enough priced goals yet (need >= {min_samples}).")
+        return
+    click.echo(click.style("Recommended max_dollars (learned):", bold=True))
+    for cls, info in sorted(recs.items()):
+        click.echo(f"  {cls}: ${info['recommended_max_dollars']:.2f}  "
+                   f"(p{int(percentile)}=${info[f'p{int(percentile)}']:.2f}, "
+                   f"{info['samples']} goal(s))")
+
+
+@main.command("confidential-compute")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def confidential_compute_cmd(as_json: bool) -> None:
+    """Detect whether this runs inside a confidential VM (SEV-SNP / TDX).
+
+    For a regulated deployment to verify its memory is hardware-encrypted.
+    Exits non-zero when NOT confidential, so it can gate a deployment.
+    """
+    import json as _json
+
+    from .confidential_compute import detect
+    rep = detect()
+    if as_json:
+        click.echo(_json.dumps(rep))
+    elif rep["confidential"]:
+        kind = "Intel TDX" if rep["tdx"] else "AMD SEV-SNP"
+        click.echo(click.style(f"CONFIDENTIAL VM ({kind})", fg="green")
+                   + f" — {', '.join(rep['indicators'])}")
+    else:
+        click.echo(click.style(
+            "NOT a confidential VM (no SEV-SNP / TDX indicators)", fg="yellow"))
+    if not rep["confidential"]:
+        raise SystemExit(1)
+
+
+@main.command("airgap")
+@click.argument("action", type=click.Choice(["check"]), default="check")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def airgap_cmd(action: str, as_json: bool) -> None:
+    """Verify the deployment is configured with no outbound path.
+
+    Audits for a remote model provider, a non-deny-all egress policy, and
+    sandbox network access. Exits non-zero on any finding so it can gate a
+    deployment. (OS-level air-gapping is the operator's job; this checks
+    Maverick's own config.)
+    """
+    import json as _json
+
+    from .air_gap import audit
+    rep = audit()
+    if as_json:
+        click.echo(_json.dumps(rep))
+    elif rep["clean"]:
+        click.echo(click.style("AIR-GAPPED: no outbound path in config", fg="green"))
+    else:
+        click.echo(click.style("NOT air-gapped — findings:", fg="red"))
+        for v in rep["violations"]:
+            click.echo(f"  • {v}")
+    if not rep["clean"]:
+        raise SystemExit(1)
+
+
+@main.command("failures")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def failures_cmd(as_json: bool) -> None:
+    """Show the failure-mode distribution (opt-in [telemetry] failure_modes).
+
+    When the telemetry is on, failed runs record a canonical mode (budget /
+    auth / timeout / shield / sandbox / network / error); this reads them back.
+    """
+    import json as _json
+
+    from .failure_telemetry import enabled, summarize
+    s = summarize()
+    if as_json:
+        click.echo(_json.dumps(s))
+        return
+    if not s["total"]:
+        hint = "" if enabled() else " (telemetry is off — set [telemetry] failure_modes)"
+        click.echo(f"no recorded failures{hint}.")
+        return
+    click.echo(click.style(f"Failure modes ({s['total']} recorded)", bold=True))
+    for mode, n in s["by_mode"].items():
+        click.echo(f"  {mode:<10} {n}")
+
+
+@main.command("analytics")
+@click.option("--sql", default=None, help="Ad-hoc read-only SQL over goals/episodes.")
+@click.option("--top", type=int, default=10, help="Top-N costliest goals (default view).")
+@click.pass_context
+def analytics_cmd(ctx, sql: str | None, top: int) -> None:
+    """OLAP analytics over the world model via DuckDB ([duckdb] extra).
+
+    Default view: per-goal cost percentiles + the costliest goals. `--sql`
+    runs an ad-hoc SELECT over `goals` and `episodes` (read-only).
+    """
+    import json as _json
+
+    try:
+        from .duckdb_analytics import WorldAnalytics
+    except ImportError as e:
+        raise click.ClickException(str(e)) from e
+    wa = WorldAnalytics(open_world(ctx.obj["db"]))
+    try:
+        if sql:
+            click.echo(_json.dumps(wa.query(sql), default=str))
+            return
+        pct = wa.cost_percentiles()
+        click.echo(click.style("Per-goal cost percentiles", bold=True))
+        if pct.get("n"):
+            click.echo(f"  goals={int(pct['n'])}  p50=${pct['p50']:.2f}  "
+                       f"p90=${pct['p90']:.2f}  p99=${pct['p99']:.2f}  "
+                       f"max=${pct['max_cost']:.2f}")
+        else:
+            click.echo("  no priced goals yet.")
+        rows = wa.top_goals(top)
+        if rows:
+            click.echo(click.style("\nCostliest goals", bold=True))
+            for r in rows:
+                click.echo(f"  #{int(r['id'])} ${r['total_cost']:.2f} "
+                           f"({int(r['ep_count'])} ep)  {r['title']}")
+    finally:
+        wa.close()
+
+
+@main.command("cost-retro")
+@click.option("--top", type=int, default=10, help="How many costliest goals to show.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def cost_retro(ctx, top: int, as_json: bool) -> None:
+    """Cost retrospective: where spend went, and what to do about it.
+
+    Reads recorded per-goal spend and reports the costliest goals, how much
+    went to failed work, how concentrated spend is, and actionable
+    observations. Read-only.
+    """
+    import json as _json
+
+    from .cost_retrospective import retrospective
+    world = open_world(ctx.obj["db"])
+    rep = retrospective(world, top_n=top)
+    if as_json:
+        click.echo(_json.dumps(rep))
+        return
+    click.echo(click.style(
+        f"Cost retrospective — ${rep['total_spend']:.2f} across "
+        f"{rep['priced_goals']} priced goal(s)", bold=True))
+    if rep["failed_spend"]:
+        click.echo(f"  failed work: ${rep['failed_spend']:.2f} "
+                   f"({rep['failed_share']:.0%})")
+    if rep["top_goals"]:
+        click.echo(click.style("\nCostliest goals", bold=True))
+        for r in rep["top_goals"]:
+            flag = " [FAILED]" if r["failed"] else ""
+            click.echo(f"  #{r['goal_id']} ${r['cost']:.2f} "
+                       f"({r['episodes']} ep){flag}  {r['title']}")
+    click.echo(click.style("\nObservations", bold=True))
+    for o in rep["observations"]:
+        click.echo(f"  • {o}")
+
+
+@main.command("charts")
+@click.option("--days", type=int, default=7, help="How many days to chart.")
+@click.option("--plain", is_flag=True, help="Force plain ASCII (no rich panels).")
+@click.pass_context
+def charts(ctx, days: int, plain: bool) -> None:
+    """Inline terminal charts: spend/day, goal throughput, tool latency.
+
+    Sparklines + bars drawn from recorded data — the usage ledger (spend),
+    the world model (done/failed per day), and the tool-latency profile.
+    Uses ``rich`` panels when installed; falls back to plain ASCII. Sections
+    with no data say so. Read-only.
+    """
+    from . import terminal_charts, tool_latency
+    world = open_world(ctx.obj["db"])
+    report = tool_latency.report()
+    if plain:
+        click.echo(terminal_charts.render_dashboard(world, None, report, days=days))
+        return
+    out = terminal_charts.render_dashboard_rich(world, None, report, days=days)
+    if isinstance(out, str):
+        click.echo(out)
+    else:
+        from rich.console import Console
+        Console().print(out)
+
+
+@main.group("canary")
+def canary_group() -> None:
+    """Record / compare cost-perf metric snapshots per release."""
+
+
+def _parse_metrics(pairs: tuple[str, ...]) -> dict:
+    out: dict = {}
+    for p in pairs:
+        if "=" not in p:
+            raise click.ClickException(f"--metric must be name=value, got {p!r}")
+        name, _, val = p.partition("=")
+        try:
+            out[name.strip()] = float(val)
+        except ValueError as e:
+            raise click.ClickException(f"metric {name!r} value not numeric: {val!r}") from e
+    return out
+
+
+@canary_group.command("record")
+@click.argument("release")
+@click.option("--metric", "metrics", multiple=True,
+              help="name=value (repeatable), e.g. --metric p95_latency_s=3.4")
+def canary_record(release: str, metrics: tuple[str, ...]) -> None:
+    """Record RELEASE's metric snapshot (cost/latency/success_rate/...)."""
+    from .release_canary import CanaryStore
+    parsed = _parse_metrics(metrics)
+    if not parsed:
+        raise click.ClickException("at least one --metric is required")
+    CanaryStore().record(release, parsed)
+    click.echo(f"recorded {len(parsed)} metric(s) for release {release!r}")
+
+
+@canary_group.command("compare")
+@click.argument("baseline")
+@click.argument("candidate")
+@click.option("--tolerance", type=float, default=0.10,
+              help="Relative move allowed before flagging a regression.")
+def canary_compare(baseline: str, candidate: str, tolerance: float) -> None:
+    """Compare CANDIDATE release metrics against BASELINE; exit 1 on regression."""
+    from .release_canary import CanaryStore, compare, render
+    store = CanaryStore()
+    base, cand = store.get(baseline), store.get(candidate)
+    if base is None:
+        raise click.ClickException(f"no recorded metrics for baseline {baseline!r}")
+    if cand is None:
+        raise click.ClickException(f"no recorded metrics for candidate {candidate!r}")
+    result = compare(base, cand, tolerance=tolerance)
+    click.echo(render(result))
+    if not result.passed:
+        raise SystemExit(1)
 
 
 @main.command()
@@ -3041,6 +3354,36 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         )
 
 
+@main.command("erase-verify")
+@click.option("--channel", required=True, help="Channel name (e.g. telegram, sms).")
+@click.option("--user", required=True, help="The channel user_id to verify.")
+@click.option("--tenant", default=None, help="Tenant data plane (default: active).")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def erase_verify(channel: str, user: str, tenant: str | None, as_json: bool) -> None:
+    """Verify a (channel, user_id) was fully erased: zero residual records.
+
+    Right-to-erasure proof (GDPR Art. 17): reuses the DSAR export, whose
+    subject-matching agrees with the erase path, so any residual count is an
+    incomplete erasure. Read-only; run it after `maverick erase`.
+    """
+    import json as _json
+
+    from .erasure_verify import verify_erasure
+    report = verify_erasure(user, channel=channel, tenant=tenant)
+    if as_json:
+        click.echo(_json.dumps(report, default=str))
+        return
+    if report["clean"]:
+        click.echo(click.style(
+            f"CLEAN: no residual data for {channel}:{user}", fg="green"))
+        return
+    click.echo(click.style(
+        f"RESIDUAL DATA for {channel}:{user} — erasure incomplete:", fg="red"))
+    for store, n in sorted(report["residual"].items()):
+        click.echo(f"  {store}: {n}")
+    raise SystemExit(1)
+
+
 @main.command("compliance")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
               help="Output format.")
@@ -4275,6 +4618,33 @@ def encryption_migrate_cmd(ctx, dry_run: bool) -> None:
         f"{verb} {sum(report.values())} value(s) total"
         + (" (dry run)" if dry_run else "")
     )
+
+
+@main.group("local-runtime")
+def local_runtime_group() -> None:
+    """Plan the local model-server runtime (vLLM / TGI / llama.cpp)."""
+
+
+@local_runtime_group.command("plan")
+def local_runtime_plan() -> None:
+    """Print the server command Maverick WOULD run -- nothing is started.
+
+    Composes the argv (and any env toggles) from [local_runtime] in
+    ~/.maverick/config.toml plus MAVERICK_LOCAL_RUNTIME_* overrides.
+    """
+    import shlex
+
+    from .local_runtime import Launcher, LocalRuntimeError
+    try:
+        launcher = Launcher()
+        argv, env = launcher.plan()
+    except LocalRuntimeError as e:
+        raise click.ClickException(str(e)) from e
+    if not launcher.cfg["enabled"]:
+        click.echo("# local runtime is DISABLED ([local_runtime] enabled = false); dry plan only")
+    for key in sorted(env):
+        click.echo(f"{key}={env[key]} \\")
+    click.echo(shlex.join(argv))
 
 
 if __name__ == "__main__":

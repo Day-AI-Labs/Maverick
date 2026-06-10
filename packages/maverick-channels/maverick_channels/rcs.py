@@ -210,7 +210,7 @@ class RcsChannel(Channel):
             user_id=sender, text=text, channel="rcs", message_id=msg_id or None,
         )
         try:
-            reply = await self.handler(incoming)
+            reply = await self.dispatch_text(incoming)
         except Exception as e:
             log.exception("handler error")
             if wm is not None and msg_id:

@@ -23,6 +23,11 @@ Payload shapes (kind -> required fields, all events also carry
   secret_redacted:   tool_name:str, pattern:str, count:int
   erase:             channel:str, erasure_id:str (random token, never subject-derived)
   halt:              source:str (file|signal|manual), detail:str|None
+  federation_delegate: peer_node:str (absent when the caller was unauthenticated),
+                     correlation_id:str, direction:str (sent|received),
+                     accepted:bool, reason:str ("" when accepted) — one half of a
+                     cross-swarm delegation; reciprocity of the two halves is
+                     verified by ``audit/federation.cross_verify``
 """
 from __future__ import annotations
 
@@ -68,6 +73,7 @@ class EventKind:
     ERASE           = "erase"
     HALT            = "halt"
     CONFIG_REMEDIATED = "config_remediated"
+    FEDERATION_DELEGATE = "federation_delegate"
 
 
 @dataclass

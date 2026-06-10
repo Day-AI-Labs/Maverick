@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}walkthroughs · Maverick{% endblock %}
+{% block content %}
+<h2>video walkthroughs</h2>
+<div class="panel">
+  <p class="muted" style="margin-top: 0;">
+    Run replays exported to MP4 by <code>maverick.replay_video</code> — one
+    captioned frame per recorded step. Everything here is generated and
+    served locally from <code>{{ artifact_dir }}</code>; nothing is hosted externally.
+  </p>
+  <form id="wt-export" style="display: flex; gap: 0.5rem; align-items: end; flex-wrap: wrap;">
+    <span style="flex: 0 1 14rem;">
+      <label for="wt-goal-id" style="display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.25rem;">Goal id to export</label>
+      <input id="wt-goal-id" type="number" min="1" required
+             style="width: 100%; padding: 0.45rem 0.6rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px;">
+    </span>
+    <button type="submit"
+            style="padding: 0.5rem 1.2rem; background: var(--accent); color: #fff; border: 0; border-radius: 6px; cursor: pointer;">
+      Export walkthrough
+    </button>
+  </form>
+  <p id="wt-result" role="status" aria-live="polite" class="muted"
+     style="font-size: 0.85rem; margin-bottom: 0;"></p>
+  <p class="muted" style="font-size: 0.8rem; margin-bottom: 0;">
+    The MP4 encode runs locally and needs Pillow + ffmpeg. Without them the
+    export still writes the frame manifest, a captions track, and reports the
+    exact <code>ffmpeg</code> command to finish the encode out-of-band —
+    it never fakes a video.
+  </p>
+</div>
+
+{% if items %}
+  <h2>{{ items|length }} exported walkthrough{{ 's' if items|length != 1 }}</h2>
+  {% for it in items %}
+  <div class="panel">
+    <h3 style="margin: 0 0 0.75rem; font-size: 1rem; text-transform: none; letter-spacing: 0; color: var(--text);">
+      <code>{{ it.name }}</code>
+      {% if it.goal_id is not none %}<span class="muted" style="font-weight: normal;">· goal #{{ it.goal_id }}</span>{% endif %}
+    </h3>
+    {# Native playback, local file, captions track when the export wrote one. #}
+    <video controls preload="metadata" style="width: 100%; max-width: 720px; background: #000; border-radius: 6px;">
+      <source src="/walkthroughs/media/{{ it.name }}" type="video/mp4">
+      {% if it.captions %}
+      <track kind="captions" src="/walkthroughs/media/{{ it.captions }}" srclang="en" label="Step captions" default>
+      {% endif %}
+      Your browser does not support embedded video —
+      download <a href="/walkthroughs/media/{{ it.name }}">{{ it.name }}</a> instead.
+    </video>
+    <p class="muted" style="font-size: 0.8rem; margin-bottom: 0;">
+      {{ it.size_mb }} MB · exported {{ it.mtime | datetime }}
+      {% if not it.captions %} · no captions track{% endif %}
+      {% if it.goal_id is not none %}
+        · <a href="/api/v1/goals/{{ it.goal_id }}/tutorial.md">tutorial (markdown)</a>
+        · <a href="/goals/{{ it.goal_id }}/trajectory">trajectory</a>
+      {% endif %}
+    </p>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="panel">
+    <div style="text-align: center; padding: 2rem 1rem;">
+      <h3 style="margin: 0 0 0.75rem; text-transform: none; letter-spacing: 0; font-size: 1.1rem; color: var(--text);">No walkthroughs exported yet</h3>
+      <p class="muted" style="margin-bottom: 1.5rem;">
+        Pick a finished run from <a href="/goals">goals</a> and export it with
+        the form above, or directly:
+      </p>
+      <pre style="background: var(--bg); padding: 0.85rem 1rem; border-radius: 6px; display: inline-block; text-align: start; margin: 0;">curl -X POST http://127.0.0.1:8765/api/v1/goals/&lt;id&gt;/walkthrough \
+     -H 'Origin: http://127.0.0.1:8765'</pre>
+      <p class="muted" style="margin-top: 1.5rem; font-size: 0.85rem;">
+        Artifacts land in <code>{{ artifact_dir }}</code> and appear here.
+      </p>
+    </div>
+  </div>
+{% endif %}
+
+<script>
+(function () {
+  const form = document.getElementById("wt-export");
+  const out = document.getElementById("wt-result");
+  if (!form || !out) return;
+  form.addEventListener("submit", async function (ev) {
+    ev.preventDefault();
+    const id = document.getElementById("wt-goal-id").value;
+    if (!id) return;
+    out.textContent = "exporting…";
+    try {
+      const r = await fetch("/api/v1/goals/" + encodeURIComponent(id) + "/walkthrough", { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        out.textContent = j.detail || ("export failed (" + r.status + ")");
+        return;
+      }
+      if (j.encoded) {
+        out.textContent = "encoded " + j.frames + " frames — reloading…";
+        window.location.reload();
+      } else {
+        // Honest partial result: manifest + captions written, encode pending.
+        out.textContent = j.detail + " — ffmpeg command: " + (j.ffmpeg_command || []).join(" ");
+      }
+    } catch (e) {
+      out.textContent = "network error — is the dashboard still running?";
+    }
+  });
+})();
+</script>
+{% endblock %}

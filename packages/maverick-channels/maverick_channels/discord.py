@@ -98,7 +98,7 @@ if _HAVE_DISCORD:
                 sender_id=author_id,
             )
             try:
-                reply = await self.handler(msg)
+                reply = await self.dispatch_text(msg)
             except Exception as e:  # pragma: no cover
                 log.exception("handler error")
                 reply = f"⚠ error: {e}"

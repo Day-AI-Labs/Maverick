@@ -195,17 +195,30 @@ def monitor_loop(
                 "Start one with: maverick start \"your task here\""
             )
             return 2
-        with Live(render(state), console=console, refresh_per_second=2) as live:
-            try:
-                while True:
-                    time.sleep(interval_seconds)
-                    state = snapshot(world, goal_id)
-                    if state is None:
-                        live.update("[red]Goal not found.[/red]")
-                        continue
-                    live.update(render(state))
-            except KeyboardInterrupt:
-                pass
+        # Opt-in mouse mode ([tui] mouse): enable SGR mouse tracking so the
+        # plan tree is clickable. Best-effort + restored on exit; a terminal
+        # that ignores the sequence just keeps the keyboard/auto-refresh view.
+        import sys as _sys
+
+        from . import tui_mouse
+        _mouse = tui_mouse.enabled()
+        if _mouse:
+            tui_mouse.write_enable(_sys.stdout)
+        try:
+            with Live(render(state), console=console, refresh_per_second=2) as live:
+                try:
+                    while True:
+                        time.sleep(interval_seconds)
+                        state = snapshot(world, goal_id)
+                        if state is None:
+                            live.update("[red]Goal not found.[/red]")
+                            continue
+                        live.update(render(state))
+                except KeyboardInterrupt:
+                    pass
+        finally:
+            if _mouse:
+                tui_mouse.write_disable(_sys.stdout)
         return 0
     finally:
         world.close()

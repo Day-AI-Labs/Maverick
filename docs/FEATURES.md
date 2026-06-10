@@ -36,7 +36,12 @@ here.
   iteration cap, or the budget runs out — speculative decode/finalize
   (`speculative.py`), latency-aware best-of-N that cancels laggards
   (`latency_best_of_n.py`), shared-scratchpad blackboard (`blackboard.py`),
-  cross-agent bus (`agent_bus.py`).
+  cross-agent bus (`agent_bus.py`), and a read-only **observation channel**
+  (`observation_channel.py`) — a live push/subscribe broadcast of the swarm's
+  event stream for an external observer (monitoring agent, dashboard,
+  supervisor) that doesn't join the control flow; `blackboard.post` tees into
+  it, a slow observer drops its oldest events rather than stalling the swarm,
+  and it's a no-op (lock-free subscriber check) when nobody is watching.
 - **Context lifecycle** — deferred tool loading + `find_tools`, cross-session
   `memory` tool (`tools/memory.py`), programmatic tool calling
   (`tools/code_exec.py`), structural/retrieval-augmented compaction
@@ -46,9 +51,28 @@ here.
   of overflowing the model window — zero-dep lexical ranking by default, an
   injected Chroma/Qdrant store for embedding-quality retrieval; opt-in via
   `[context] retrieval_router`.
+- **Compaction plug-in API** (`compaction_plugins.py`) — register a custom
+  context-compaction strategy (graph-structured, domain summarizer, a learned
+  model) under a name and select it via `[context] compaction_strategy`; the
+  shipping heuristic registers as the default `"heuristic"`, and `compact_with`
+  **fails safe** to it when a configured strategy is unknown (a typo degrades to
+  working compaction, never none) — so the kernel's compaction is extensible
+  without a fork. Four strategies ship registered in this one dispatcher (and
+  are reachable from `agent.py`'s per-turn compaction): **`learned`** (LLM
+  summary with a self-tuning prompt picker scored by an outcome ledger),
+  **`multimodal`** (replaces heavy image/audio blocks with text stubs that keep
+  the media fact + dimensions), **`streaming`** (an incremental running summary
+  with a persisted per-conversation cursor — folds only new turns), and
+  **`graph`** (an entity-relation digest); each degrades deterministically
+  without an llm and is selected by name via `[context] compaction_strategy`.
 - **Local continuous learning** — distill successful run trajectories into a
   reusable, validator-compliant `SKILL.md` under `~/.maverick/learned-skills`
   (`skill_distillation_local.py`), opt-in via `[self_learning] distill_local`.
+  **v2** (`skill_distillation_v2.py`) adds two quality gates so the loop stays
+  useful: it won't distill from fewer than N successful trajectories (a one-off
+  success is noise), and it dedups a candidate against the learned-skills store
+  by lexical containment so near-duplicate lessons don't accumulate — the
+  orchestrator uses the gated path.
 - **Vector-store cross-run memory** — opt-in `[memory] backend` routes
   cross-run recall through a persistent **Chroma / Qdrant / Weaviate** store
   (`vector_store/`, `semantic_recall.py`) so similarity search is indexed and
@@ -88,6 +112,12 @@ here.
   sandbox-mediated with workdir-confined paths),
   `replicate_tool` (image/video/audio gen), `latex` (math→MathML + document→PDF),
   `diagram` (Graphviz / Mermaid render).
+- **Robotics & hardware** — `ros` (drive a ROS stack over **rosbridge** via
+  `roslibpy`, `[ros]` extra): publish a command to a topic (e.g. `/cmd_vel`) or
+  call a service; auth `ROS_BRIDGE_URL`, no native ROS in the agent process.
+  `serial` (embedded device over **UART**/serial via `pyserial`, `[serial]`
+  extra): list_ports / write / read / query a microcontroller or board, with a
+  device-path guard so it can't be turned into an arbitrary-file opener.
 - **Knowledge** — `knowledge_search` (per-domain RAG over collected docs),
   `recall`, `kv_memory`.
 - **Productivity & SaaS connectors (~47)** — GitHub Actions, GitLab,
@@ -98,10 +128,17 @@ here.
   Twilio, Zoom, S3, DynamoDB, MongoDB, Redis, Elasticsearch, Datadog, Sentry,
   PagerDuty, Mixpanel, PostHog, Plausible, GA4, Home Assistant, Cloudflare,
   Vercel, AWS Lambda/SES/SNS, Microsoft Graph, and more.
-- **System** — `shell` (sandbox-mediated), `git_advanced`, `compute`,
+- **System** — `shell` (sandbox-mediated), `wasm_run` (**WASM sandbox**:
+  execute a WebAssembly/WASI module under wasmtime — capability-grant
+  isolation where the module sees ONLY the preopened dirs/env/args given;
+  workdir-confined paths, validated env keys, sandbox-mediated invocation),
+  `git_advanced`, `compute`,
   `dns_lookup`, `openapi_runner`, `clipboard`, `notify`, `attachments`,
   `android` / `ios_sim`, `a11y`, `task_graph` (persistent dependency-DAG of
-  tasks), `workspace_snapshot` (snapshot/restore a working dir), **S3-backed
+  tasks — add/status/ready/order/list plus **`critical`**: the longest
+  dependency chain, weighted by optional per-task cost, that bounds completion
+  no matter the parallelism — the tasks a critical-path-aware scheduler runs
+  first), `workspace_snapshot` (snapshot/restore a working dir), **S3-backed
   attachments** (`[attachments] s3_bucket`: mirror every stored attachment to
   any S3-compatible bucket + `s3_fetch` pulls it down on another worker host;
   local disk stays the source tools read, mirror is fail-open), `license_scan`
@@ -182,7 +219,11 @@ here.
   `k_anonymity` (check a released dataset for k-anonymity + optional l-diversity
   — quasi-identifier group sizes and sensitive-value diversity), `retention_check`
   (audit records against a data-retention policy — flag over-retained and
-  no-policy records by category/age; GDPR storage limitation), `breach_notification`
+  no-policy records by category/age; GDPR storage limitation), `redact`
+  (**provable redaction**, `provable_redaction.py`: redact secrets/PII to a
+  fixpoint then re-scan to *prove* the output carries none — composes the
+  secret + PII detectors, and reports the residual gap instead of a false
+  guarantee when a bound is hit), `breach_notification`
   (GDPR Art. 33/34 72h breach-notification timer — DUE/OVERDUE/ON_TIME/LATE +
   Art. 34 high-risk reminder), `data_minimization` (flag fields collected beyond
   a purpose's allowlist + missing required fields; GDPR Art. 5(1)(c)),
@@ -209,7 +250,119 @@ here.
   caret/tilde ranges, prerelease ordering).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
-  boilerplate. **Plugin sandboxing** — opt-in
+  boilerplate. **TypeScript plugin SDK** (`sdks/plugin-ts/`,
+  `@maverick/plugin-sdk`): author a tool in TypeScript with
+  `defineTool`/`servePlugin` over a versioned NDJSON stdio protocol
+  (`maverick-plugin/1`: `--describe` manifest, `{id,tool,args}` →
+  `{id,result|error}`); the host (`ts_plugin_host.py`, `[plugins] ts =
+  [["node", "/path/plugin.js"]]`, wizard step included) loads the manifest
+  into regular Tools with a persistent scrubbed-env child, per-call timeout,
+  one crash-restart, and the no-shadowing rule built-ins enjoy. A **gRPC
+  plugin host** (`grpc_plugin_host.py`, proto `grpc_api/plugin_host.proto`,
+  `[plugins] grpc = [{target, command}]`) carries the same contract over gRPC
+  for any language: Describe → Tools, Call with a deadline, scrubbed-env spawn,
+  reconnect/respawn-once.
+  **Retrospective generators (time-gated runs)** — the 2-/36-month
+  retrospectives ship as period generators the operator runs at the mark:
+  `safety_report` (safety), `benchmark_retrospective` (perf), and
+  **`ux_retrospective.py`** (`python -m maverick.ux_retrospective`): goal
+  volume/outcomes, top task verbs, channel mix, approval friction over a
+  window, plus a **reset worksheet** whose questions are answered from the
+  data rows (zero-use surfaces to cut, friction concentrations, dominant
+  verbs); empty sections say so.
+  **AI Act conformance package** (`ai_act_package.py`, `python -m
+  maverick.ai_act_package [-o out.md]`): assembles the Art. 11 / Annex IV
+  technical-documentation skeleton from the deployment's *recorded* posture —
+  the Annex III risk self-assessment, Art. 14 oversight measures (consent
+  mode, capability enforcement, delegation, killswitch), Art. 12 logging
+  (audit signing, retention, day-files present), Art. 15 evidence (red-team
+  gate, shield calibration, reliability cert when present), Art. 50
+  transparency wiring — sections without evidence say so, and the items only a
+  provider can complete (intended purpose, conformity route) are an explicit
+  checklist, not fabricated prose.
+  **Adversarial-prompt corpus release** (`maverick_shield/corpus_release.py`,
+  `python -m maverick_shield.corpus_release`): turns the CI red-team corpus
+  into a versioned, validated, integrity-pinned artifact — content-hash
+  version, SHA-256 over canonical rows, license + intended-use ("NOT a
+  training set for attack generation"), and a provenance gate that REFUSES a
+  release containing secret-shaped content or identity PII (fixture IPs in
+  attack samples are allowed and disclosed); writes corpus + MANIFEST +
+  README.
+  **Security backports + LTS machinery**
+  ([`docs/security-backports.md`](../docs/security-backports.md) +
+  `backport_tool.py`, `python -m maverick.backport_tool scan|plan|check`):
+  the policy (what qualifies, the `lts/<v>` 2-year safety-fix branch, 7-day
+  SLA) made executable — `scan` finds security-marked commits, `plan` lists
+  the ones not yet on the LTS branch (patch-id matched, so a cherry-picked
+  twin isn't re-flagged), and `check` exits non-zero when an eligible fix is
+  past the SLA — read-only; cherry-picks/pushes stay maintainer acts.
+  **Formal verification of the sandbox interface (TLA+)**
+  ([`docs/specs/tla/`](../docs/specs/tla/README.md)): `SandboxInterface.tla`
+  models the chokepoint as a state machine and TLC-verifies — for all
+  interleavings — no silent downgrade to host exec under a container backend,
+  scrubbed child env always, refused-never-ran, bounded execution budget, and
+  every command eventually terminal (checking the liveness property surfaced a
+  real modelling subtlety: dispatch fairness, now explicit). Verified: 982
+  states, no errors; reproduction steps in the README.
+  **Sigstore keyless signing** (`sigstore_signing.py`, `[sigstore]` extra,
+  `python -m maverick.sigstore_signing sign|verify`): sign skill/plugin
+  artifacts with sigstore's keyless flow (OIDC identity) into a
+  `.sigstore.json` bundle; verification pins the identity+issuer pair and
+  fails CLOSED on a missing bundle, wrong identity, or absent install —
+  identity-based signing alongside the key-based skill signing and the
+  self-hosted plugin CA.
+  **Federated shield rule updates** (`shield_updates.py`, opt-in `[shield]
+  federated_updates` + `update_url`/`update_pubkey`, wizard step included):
+  pull-based publisher-signed rules bundles (Ed25519 over canonical JSON);
+  unsigned, mis-signed, tampered, downgraded, or un-anchored bundles are
+  refused, and a verified bundle stages `shield_rules.json` (0600) atomically —
+  the kernel never imports the shield itself (rule 1).
+  **Annual safety report generator** (`safety_report.py`, `python -m
+  maverick.safety_report --since --until`): aggregates what the deployment
+  actually recorded — shield blocks, capability denials, killswitch
+  activations, consent decisions, erasure requests, red-team/calibration
+  results when present — into a markdown report with explicit reporting-period
+  and data-available sections; empty sections say so, nothing fabricated.
+  **eBPF syscall monitor** (`ebpf_monitor.py`, opt-in `[ebpf_monitor] enable`,
+  wizard step included, `python -m maverick.ebpf_monitor program|run`):
+  generates a bpftrace program tracing execve/connect/openat for the agent's
+  PID tree with a validated suspicious-syscall watchlist, supervises it via an
+  injected runner, parses events, and alerts on watchlist hits — generator/
+  parser/supervisor fully offline-tested; the live attach needs root +
+  bpftrace and refuses politely otherwise.
+  **Memory-safe parsing of untrusted bytes** (`parser_isolation.py`, opt-in
+  `[security] isolate_parsers`): the parsers fed attacker-controllable bytes
+  (PDF via pdfplumber/pypdf, images via Pillow) are C-extension-backed — a
+  memory-safety bug there is an in-process foothold. The whitelisted-parser
+  inventory (`PARSERS`, the policy in code) routes them through a
+  secret-scrubbed child process: a segfault on hostile bytes kills the child,
+  never the kernel, and an exploited child holds no provider keys; size caps
+  enforced before the child sees data, hard timeout, and on child death the
+  consumer REFUSES rather than re-parsing the same bytes in-process (wired
+  into `read_pdf`). Off by default — in-process behavior unchanged.
+  **Plugin signing CA** (`plugin_ca.py`): a self-hostable Ed25519 certificate
+  authority for plugin/skill artifacts — the in-house counterpart to sigstore's
+  keyless flow. An org runs its own root (`init_root`, keys 0600 under
+  `keys/plugin_ca/`), issues publisher certs (`issue`, expiring, serial'd),
+  maintains a CA-signed revocation list, and every install verifies the
+  two-link chain offline (artifact sig → publisher key; publisher cert → root)
+  **fail-closed**: tampered artifact/cert, wrong root, expired or revoked cert,
+  or a missing piece all refuse; an unverifiable CRL never silently
+  un-revokes.
+  **Plugin compatibility matrix** (`plugin_matrix.py`, `python -m
+  maverick.plugin_matrix [--ci]`, wired as a CI lint step): one table per
+  installed entry point — dist, declared API major, loadable/deprecated/
+  refused, allowlisted, permissions granted — with a CI gate that fails when
+  any *enabled* plugin is API-incompatible, so an upgrade dropping an API
+  major can't ship silently against plugins still pinned to it. Pure
+  inspection (nothing imported or executed).
+  **Plugin API v2 (released)** — `MAVERICK_API_VERSION = "2"` with
+  `SUPPORTED_API_MAJORS = (1, 2)`: v1 plugins keep loading through a
+  deprecation window (warned in manifest validation), declared v3+ is
+  refused; release notes in [`docs/plugin-api-v2.md`](./plugin-api-v2.md)
+  (structured channel `Reply`, enforced manifest permissions, lockfile,
+  isolation, TS plugins).
+  **Plugin sandboxing** — opt-in
   `[plugins] isolation = "subprocess" | "subinterpreter"`
   (`plugin_isolation.py`): discovered plugin tools keep their schema but their
   *calls* run in a fresh CPython subinterpreter (fault/state isolation — a
@@ -257,18 +410,59 @@ carry their platform `message_id` and adapters expose `send_threaded`
 `reply_to_message_id`; base falls back to a plain send) so long-running
 answers land under the message that asked. **Email v2** adds IMAP IDLE (push
 instead of poll) + conversation threading from Message-ID/In-Reply-To/References
-(`email_v2.py`).
+(`email_v2.py`). **Discord Stages voice v2** (`discord_stages.py`): drive Maverick from a
+Stage channel — per-speaker utterance assembly over an injected transcriber,
+optional wake-word gating, replies spoken when the bot holds a speaker slot
+and degraded to stage-chat text when it doesn't (or TTS fails), and stage
+etiquette built in: the bot only *requests* a speaker slot, never
+self-promotes (a human moderator approves). Every Discord interaction sits
+behind an injected seam so the session logic is fully offline-tested; the
+heavy voice binding (discord.py voice + PyNaCl) plugs into the same seam.
+**KaTeX/Mermaid rich render** (`rich_render.py`, opt-in
+`[channels] rich_render`): replies carrying display math or ```mermaid fences
+are rendered into a standalone HTML artifact (KaTeX/Mermaid in-page, escaped
+`<pre>` source as the no-JS fallback) under `data_dir("rich_render/")`;
+`RichRenderChannel` wraps any adapter — an injectable `deliver` hook ships the
+file on platforms that can, otherwise the path is appended — and plain
+messages pass through byte-identical. **Channel SDK v2** (RFC 0001 C2,
+`base.py`): handlers may return a structured `Reply` (text + attachments +
+thread_ref) instead of bare `str` — `as_reply` is the v1 shim (bare `str`
+accepted through the deprecation window), `Channel.dispatch`/`dispatch_text`
+normalize either contract, and all 18 in-tree adapters route through the
+dispatch path so a v2 handler works everywhere unchanged.
 
 ## Sandboxes
 
 7 run-to-completion backends (`sandbox/`): local subprocess, Docker, SSH, Podman,
 devcontainer, Firecracker microVM, Kubernetes. Selected via `[sandbox] backend`.
+**Modal sandbox backend** (`sandbox/modal_backend.py`, `[sandbox] backend =
+"modal"`, `[modal]` extra): run agent shell in ephemeral Modal cloud sandboxes
+(per-exec container, image/cpu/memory/timeout plumbed, torn down after the
+command) — burstable remote compute without running a cluster; infra errors
+surface as a failed command, never a kernel crash. The Cloudflare-Workers half
+of the roadmap pair was declined for shell semantics (Workers run JS/WASM
+request handlers, not processes; the honest Workers story is the self-hosted
+relay reference + `wasm_run`).
+**Sandbox SDK v2** (`sandbox/sdk.py`, `SDK_VERSION = 2`): the formal backend
+contract — a `runtime_checkable` `SandboxV2` protocol (`workdir` +
+`exec(cmd, timeout=None)`), declared optional capabilities
+(`capabilities()`), a static `conformance()` checker, and **entry-point
+loading** (`[sandbox] backend = "ep:<name>"` resolves the
+`maverick.sandboxes` group, instantiates with `[sandbox] options`, and
+refuses a non-conformant backend rather than falling through to unsandboxed
+local exec) — so third parties ship backends without forking. All in-tree
+backends conform (the check surfaced and fixed a real gap: devcontainer
+lacked `workdir`, crashing path-confined tools).
 **gVisor** is offered as a backend (`backend = "gvisor"`): Docker with the
 `runsc` runtime (`--runtime=runsc`), interposing a userspace application kernel
 between a possibly prompt-injected agent and the host — stronger isolation than
 seccomp + dropped capabilities alone. It reuses every Docker knob (image,
 network, memory/pids/cpu caps, non-root); `[sandbox] runtime` overrides the
-runtime for a custom registration.
+runtime for a custom registration. **Warm-container reuse** (`[sandbox]
+reuse_container`, default off): instead of a fresh `docker run --rm` per
+command (a cold start each time), keep one container alive and `docker exec`
+into it, so the 2nd..Nth command in a run skip container startup; torn down on
+`close()`.
 
 ## LLM providers & routing
 
@@ -289,6 +483,91 @@ never routing somewhere v2 rejected, falling back to v2 on a cold context. The
 learned table persists atomically (`router_bandit.json`, 0600); opt-in via
 `[routing] bandit` and default-OFF.
 
+**Public perf dashboard** (`GET /perf` + `GET /api/v1/perf` on the
+dashboard): one page/JSON face for the perf story — the perf-SLA checks
+measured live on the host (in a worker thread, against the published
+thresholds), recorded benchmark history with short-window regression
+verdicts, and the longitudinal era retrospective; sections with no recorded
+data say so. **Longitudinal benchmark retrospective** (`benchmark_retrospective.py`,
+`python -m maverick.benchmark_retrospective`): the multi-year companion to
+continuous benchmarking — slices the FULL recorded score history into calendar-
+quarter eras and reports per-era medians, era-over-era movement, best/worst
+eras, net first→last change, and a least-squares trend verdict per benchmark;
+the report states its actual coverage span (the intended cadence is the 3-year
+mark, run over whatever the deployment recorded). **Public performance SLA** ([`docs/perf-sla.md`](./perf-sla.md) +
+`perf_sla.py`, `python -m maverick.perf_sla --ci`): the published, measurable
+performance properties each release certifies — tool-dispatch overhead,
+compaction latency, world-model hot-path read/write p95 — measured against the
+REAL code paths and compared to the published thresholds (changing a threshold
+is changing the SLA); rows that need concurrency/fault drills delegate to the
+reliability cert. **Reliability certification** (`reliability_cert.py`,
+`python -m maverick.reliability_cert`): a reproducible, evidence-backed
+self-certification composing the shipped drills — chaos game-day, the plugin
+reliability drill, a 16-writer WAL contention probe — into a certificate JSON
+(environment fingerprint + per-check verdicts), Ed25519-signed with the audit
+key when available and only issued for a passing run.
+**Deprecation registry + sunset gate** (`deprecations.py`, `python -m
+maverick.deprecations [--ci]`, wired into CI): every deprecated path is
+declared in one registry (target, replacement, deprecated_in, **remove_in**);
+`warn_once` gives call sites a once-per-process DeprecationWarning,
+`check_config` lints a loaded config for deprecated keys, and the **sunset
+gate** fails CI once the package version reaches an entry's removal version
+until the old path and its registry entry are deleted together — so
+deprecations can't rot. Seeded with the two live windows (plugin API v1
+manifests; bare-`str` channel handlers). **Cache-aware prompt assembly DSL** (`prompt_dsl.py`): a `PromptBuilder` that
+tags each segment STABLE (cacheable — system, tool catalog, exemplars) or
+VOLATILE (per-request); `assemble()` orders them stable-first and marks the
+**cache breakpoint** at the end of the stable prefix so a provider adapter
+places `cache_control` correctly by construction (a volatile token early in a
+hand-built prompt silently busts the cache for everything after it).
+`cache_fingerprint()` hashes only the stable prefix, and `lint_segments` flags
+anti-patterns (timestamp/nonce in a "stable" block, volatile-before-stable).
+**Critical-path-aware scheduling** (`task_graph.py`):
+`remaining_critical_weight()` gives each task its heaviest tail of not-yet-done
+work, and `ready_prioritized()` orders the runnable frontier longest-tail-first
+(the standard critical-path heuristic — start the work bounding the finish
+time before short-tail work); exposed as the `task_graph` tool's `schedule` op.
+**Speculative best-of-N with early pruning** (`speculative_best_of_n.py`):
+run N attempts but prune at the **first reasoning checkpoint** — each attempt
+emits a cheap partial (its plan / first step), an injected scorer ranks the
+partials, and only the top `keep` run to completion; the rest are cancelled
+before they finish, so the budget concentrates on the strongest candidates
+rather than N full runs. Distinct from latency best-of-N (the kill signal is
+early *quality*, not time); the scorer only ever sees the cheap partials.
+**Fast JSON seam** (`fastjson.py`, opt-in `[perf-fastjson]` extra): a
+stdlib-compatible `dumps`/`loads` that prefers **orjson** (~5-10x faster) when
+installed and falls back to stdlib `json` otherwise — `dumps` returns `str`,
+honors `sort_keys`, and degrades on any value orjson rejects, so it's a safe
+drop-in for round-trip/transport paths (wired into the tool-output cache
+snapshot). Deliberately NOT used for cache keys/signatures, where exact bytes
+must stay backend-stable. **Self-tuning budgets — online auto-apply**
+(`self_tuning_budget.py`, opt-in `[budget] self_tuning`; the auto-applying
+companion to the advisory `maverick budget tune` / `budget_tuner.py`, which
+only *recommends* a cap for a human to set): learns a default spend cap *per
+coarse task class*
+(e.g. the goal's leading verb) from how much past runs of that class actually
+cost — a bounded reservoir per class, a high-quantile × margin suggestion
+clamped to [floor, ceiling]. Wired as the **lowest-precedence** layer of
+`budget_from_config` (an operator's configured `max_dollars` always wins) and
+fed by the orchestrator's per-run cost recording; returns nothing until a
+class has enough samples, so it never lowers safety on a guess. Off by
+default.
+
+**Local-runtime launcher + autoscaler** (`local_runtime.py`, opt-in
+`[local_runtime]`, `maverick local-runtime plan`): composes the correct
+engine flags for **vLLM / TGI / llama.cpp** from config — continuous
+batching (`max_concurrent`/`max_batch_tokens` → `--max-num-seqs` /
+`--max-batch-total-tokens` / `--parallel --cont-batching`), **persistent
+KV-cache** (`kv_cache = "persistent"` → `--enable-prefix-caching` /
+`PREFIX_CACHING=1` / `--prompt-cache FILE --prompt-cache-all`), **KV offload
+to disk** (`kv_offload_dir`; llama.cpp persists, vLLM gets `--swap-space`,
+others warned honestly), and **mixed precision** (`precision =
+fp16|bf16|int8|int4` → `--dtype`/`--quantization`/quant-GGUF guidance) — plus
+a queue-depth **autoscaler** (min/max replicas, hysteresis, injectable
+spawn/stop/probe/clock, round-robin `endpoints()` for the router). Default
+OFF; the launcher refuses to start until `[local_runtime] enabled = true`
+(wizard step included); no model is ever defaulted.
+
 **Per-role reasoning effort** (`effort.py`) — the biggest cost/latency lever on
 Opus 4.7/4.8: model-gated `output_config.effort` tiered by role (critical roles
 `high`, bulk roles `medium`/`low`), opt-in via `[effort] enabled`.
@@ -303,6 +582,12 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
 
 - **MCP server** (`packages/maverick-mcp/`) — stdio JSON-RPC **and** Streamable
   HTTP transport; tool `outputSchema`, resource subscriptions.
+- **Registry publishing** (`maverick_mcp.publish`, `python -m
+  maverick_mcp.publish [--validate]`) — emit the reverse-DNS-namespaced
+  `server.json` an operator submits to an MCP registry (name / version /
+  source repo / pypi package + stdio transport), built from the server's own
+  `SERVER_NAME`/`SERVER_VERSION` with a `validate` lint; tools stay
+  runtime-discovered (`tools/list`), never frozen into the manifest.
 - **Elicitation** — client inbound (policy + shield); server outbound **form
   mode** and **URL mode** (https-only, shield-screened prompt, action-only
   response so secrets never transit the model).
@@ -320,7 +605,31 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   Cursor) drives Maverick through it; the editor-specific packages
   (`apps/vscode-extension`, `apps/emacs`, `apps/nvim`) are thin CLI fronts,
   not parallel protocols.
-- **A2A** (`a2a.py`, `a2a_tasks.py`) — Agent Card discovery + delegation.
+- **A2A** (`a2a.py`, `a2a_tasks.py`) — Agent Card discovery + delegation, with
+  the **interop consuming half** (`validate_agent_card` spec-shape lint,
+  `parse_remote_card` normalization that refuses a non-conformant card before
+  anything delegates against it) proven both ways by interop tests: Maverick's
+  own card passes its own validator, and third-party-shaped fixture cards
+  (rich + minimal) parse correctly.
+- **Swarm federation** (`federation.py` + `grpc_api/federation.proto`,
+  protocol `maverick-federation/1`, opt-in `[federation] enabled` + `peers`):
+  delegate goals across *sovereign* swarms (each with its own world DB —
+  distinct from `RunGoal`'s shared-DB offload). `Hello` exchanges A2A agent
+  cards (non-conformant peers refused), `DelegateGoal` carries a correlation
+  id + required tools resolved **narrow-only** via capability boot negotiation
+  (an ungrantable requirement refuses the delegation), auth is a constant-time
+  shared token that *identifies* the caller from local config (wire names
+  never trusted; fail-closed), and **both halves record reciprocal audit rows**
+  in exactly the convention `audit/federation.py` cross-verifies — a dropped
+  half is detectable. The protocol layer runs over any `call(method, payload)`
+  transport; the gRPC binding is a thin `[grpc]` adapter (live-smoked).
+- **gRPC API v1 — stable** (`grpc_api/maverick.proto`, package `maverick.v1`;
+  contract gate `grpc_api/contract.py` + committed golden
+  `maverick_v1_contract.json`, wired into CI): additive changes pass; removing/
+  renaming a service/rpc/message/field, renumbering or retyping a field,
+  changing an rpc's streaming shape, or reusing a removed field number fails
+  the gate — a breaking change requires a `maverick.v2` package. The gate is a
+  dependency-free proto parser, so it runs in CI without grpcio.
 - **gRPC dispatch** (`grpc_dispatcher.py`, opt-in `[grpc_dispatch] target`)
   — execute goals on a remote Maverick worker over gRPC: a `RunGoal` RPC runs
   an existing goal row to completion (API and worker share the Postgres world
@@ -366,16 +675,63 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   tone ratio (NSFW pre-filter routes to human review), brightness extremes,
   photo-vs-graphic, dimension sanity — file decode via Pillow or raw pixels
   with no imaging dep.
+- **Confidential-compute detection** (`confidential_compute.py`, `maverick
+  confidential-compute`) — detects whether the process runs inside a hardware
+  confidential VM (AMD **SEV-SNP** / Intel **TDX**) from the standard guest
+  indicators (`/dev/{tdx,sev}-guest`, firmware sysfs, CPU flags), so a regulated
+  deployment can verify (and gate on) hardware memory encryption; exits non-zero
+  when not confidential.
+- **Air-gap preflight** (`air_gap.py`, `maverick airgap check`) — verifies a
+  deployment has no outbound path in *Maverick's own config*: a remote model
+  provider, a non-deny-all egress policy, or a sandbox with network access — and
+  exits non-zero on any finding so it can gate a deployment. (OS-level air-gap
+  is the operator's job; this catches the application-layer leaks.)
+- **Shield ensemble** (`shield_ensemble.py`) — a **deny-wins detector ensemble
+  with explainable reason codes** (the Shield-v3 framework): pluggable members
+  screen a blob (injection via the jailbreak heuristics, exfil via the secret
+  detector, PII via the PII detector) and any one firing blocks, with a
+  structured `reason_codes` list saying *which* detector objected and *why*
+  rather than an opaque refusal. A member is a small pluggable unit, so a
+  trained small-model classifier drops in behind the same interface later.
 - **Access control** — tool ACLs, consent prompts + a persistent **consent
   ledger** (`safety/consent.py`; `MAVERICK_CONSENT_MODE` =
   auto-approve / auto-deny / ask / dashboard), capability tokens
   (`capability.py`), role-based access control over capabilities, the
-  `self_capability` self-report tool, **approval delegation rules**
+  `self_capability` self-report tool, **capability boot negotiation**
+  (`capability_boot.py`): a spawned child may declare a narrower requested
+  scope (tools/max_risk/paths/hosts), and `negotiate_boot` resolves it against
+  the parent grant narrow-only (never gaining authority the parent lacked),
+  records the handshake, and fails the spawn when a *required* capability
+  isn't grantable, **capability revocation**
+  (`revocation.py`, `maverick capability revoke/unrevoke/revocations`): kill a
+  still-valid grant before its TTL — the tool chokepoint denies a revoked
+  principal's next call, and the list is re-read on change so a revoke in
+  another process reaches agents already mid-run; `revoke_subtree` walks the
+  delegation graph to revoke a principal and every descendant it spawned
+  (fail-open, like the opt-in capability layer), **approval delegation rules**
   (risk/scope-based routing, `approval_delegation.py`), per-tool network egress
   policy (`sandbox/network_policy.py`), `maverick whoami`.
-- **Audit & compliance** — signed append-only audit log (`maverick audit verify`),
+- **Out-of-process model proxy** — `model_proxy.py` (`python -m
+  maverick.model_proxy`, `[model_proxy] upstream/auth_style`): a separate
+  process holds the provider key (from its **own** env, `MAVERICK_PROXY_KEY`)
+  and the agent points a provider's `base_url` at it. The agent process never
+  holds the credential — a prompt-injected agent can't exfiltrate a key it
+  doesn't have. The proxy strips the client's auth + hop-by-hop headers,
+  injects the real key in the upstream's scheme (bearer / `x-api-key`), and
+  forwards only to its single configured upstream host (an SSRF guard).
+- **Audit & compliance** — signed append-only audit log (`maverick audit verify`), **federated
+  audit-log verification** (`audit/federation.py`) — over a set of nodes/tenants
+  whose signed logs reference each other (delegation, A2A handoff), confirms
+  every cross-node reference is *reciprocated* (a node can't drop its half to
+  hide an action) on top of each node's own chain/anchor check; an
+  unreciprocated or forged link is reported with the missing counterpart,
   date-windowed **SIEM export**, encryption-at-rest (`crypto_at_rest.py`,
   `maverick encryption migrate`), SOC2 readiness (`soc2.py`), DSAR (`dsar.py`),
+  **differential erasure verification** (`erasure_verify.py`, `maverick
+  erase-verify`) — a right-to-erasure *proof*: reuses the DSAR export (whose
+  subject-matching is guaranteed to agree with the erase path) to assert zero
+  residual records across every store after `maverick erase`, with a
+  before/after `differential` that confirms the erase actually removed data,
   **data-retention enforcement** (`audit/retention.py`, opt-in `[retention]`
   config, `maverick retention enforce [--dry-run]`) — prunes audit files,
   `episodes`/`goal_events` rows, **and the usage-ledger cost buckets**
@@ -536,6 +892,13 @@ opt-in; single-tenant/self-hosted deployments are unaffected):
   tenant's DEK can't open another's data; instant KEK rotation.
 - **Per-tenant egress plane** — `tenant_egress.py`: a per-tenant allow/deny
   egress policy composed (AND) with the per-tool policy at the egress chokepoint.
+- **Multi-tenant `maverick serve`** — the channel server enforces the tenant
+  roster at the door: with per-user tenancy on and tenants provisioned, a
+  suspended/unknown tenant's message is refused before any goal exists, and a
+  tenant over its provisioned `max_daily_dollars` (`maverick tenant quota`;
+  `tenant_over_quota` sums today's tenant-scoped usage ledger across
+  principals) is refused until the UTC day rolls. No roster = no-op; registry
+  read errors fail soft.
 - **Out-of-process execution** — a swappable goal **Dispatcher** (`runner.py`)
   with a **QueueDispatcher** (`queue_dispatcher.py`) that enqueues goals for a
   worker pool (arq adapter behind `[queue]`; `install_from_config` wires it).
@@ -548,12 +911,48 @@ opt-in; single-tenant/self-hosted deployments are unaffected):
 
 ## Evaluation & benchmarks
 
-**Chaos game-day drill** (`chaos_gameday.py`,
+**Long-running plugin reliability drill** (`plugin_reliability.py`, `python -m
+maverick.plugin_reliability`): the plugin counterpart to the chaos game-day —
+a host-agnostic sustained-load drill (give it any `call(payload) -> str`)
+that injects crashes/timeouts/errors at seeded rates over thousands of calls
+and asserts the reliability properties a host must hold: **recovery** (a crash
+is followed by a later success — no permanent wedge), **isolation** (a faulted
+call never poisons the next), bounded **error rate**, and **no monotonic
+memory growth** (a leaking plugin, via an injected sampler). Deterministic;
+exits non-zero in `--ci` on any property failure. **Chaos game-day drill** (`chaos_gameday.py`,
 `python -m maverick.chaos_gameday`): scripted fault scenarios against the
 real retry layer — 20% tool flakes must be absorbed (≤5% surfaced), a total
 outage must exhaust retries in bounded attempts (backoff virtualized so the
 drill runs in milliseconds), plus a no-chaos control; exits 1 when a
 resilience property fails. Standalone drill, not for serving processes.
+
+**Cost/perf release canary** (`release_canary.py`, `maverick canary
+record/compare`): snapshot a release's cost/latency/success-rate metrics and,
+before shipping the next, compare against the recorded baseline — a
+**direction-aware** relative check (lower-is-better for cost/latency,
+higher-is-better for success-rate/throughput) that exits non-zero on a
+regression beyond tolerance, gating a release the way tests do. Deterministic;
+the snapshot store is an atomic JSON keyed by release tag.
+
+**Reproducible benchmark v2** (`maverick.benchmarks.reproducible_v2`, `python
+-m maverick.benchmarks.reproducible_v2 run|--verify`): runs a suite under
+pinned conditions (seed, model id, prompt-template hash, tool-set hash) and
+emits an HMAC-signed `{suite, seed, env_fingerprint, results, aggregate}`
+manifest; `--verify baseline current` diffs two runs and names the exact
+diverged task on non-determinism. **Marketplace moderation**
+(`marketplace_moderation.py`, `python -m maverick.marketplace_moderation
+<path>`): static pre-publication checks over a submitted skill/plugin —
+manifest completeness, permission-escalation (declared vs used), secret scan
+(reuses the secret detector), prohibited patterns, license — with a
+strictest-wins approve/flag/reject verdict. **Skill search engine**
+(`skill_search.py`, `python -m maverick.skill_search`): zero-dep BM25-lite
+ranked search over the local skill library with HF-dataset export/import
+(`skills.jsonl`, network via an injected fetcher; pulled skills re-validated
+through the skill validator). **Self-hosted relay reference**
+(`relay_reference.py`, [`docs/self-hosted-relay.md`](./self-hosted-relay.md)):
+the self-hostable inbound-webhook relay (quick-vs-ack-then-run classification,
+deadline enforcement, secondary-channel delivery) as a framework-agnostic,
+fully-injected core that runs as a Worker or a local service.
 
 `benchmarks/`: GAIA, τ²-bench-style stateful harness, terminal-bench-style
 harness, SWE-bench harness, moat suite, and an **adversarial-cost suite**
@@ -564,13 +963,23 @@ CI-runnable on shipped fixtures.
 
 ## Observability & reliability
 
-OpenTelemetry traces, Prometheus `/metrics`, and a **Sentry performance
+OpenTelemetry traces (spans carry the **full OTel GenAI semantic-convention
+attribute set** — `gen_ai.operation.name` / `system` / `request.model` /
+`request.{max_tokens,temperature,top_p,frequency_penalty,presence_penalty}` /
+`response.{model,id,finish_reasons}` / `usage.{input,output}_tokens`, plus the
+`execute_tool` tool-span attributes AND the `invoke_agent` agent-span leg
+(`gen_ai.agent.name/id` around every `Agent.run`) with semconv `error.type`
+stamped on failed spans — so any OTel-native backend reads them
+with no custom mapping), Prometheus `/metrics`, and a **Sentry performance
 tab** (all opt-in) (`observability.py`): `MAVERICK_SENTRY_DSN` (or
 `[observability] sentry_dsn`) initializes Sentry tracing and every existing
 `trace_span` call feeds it — a transaction at the root (episodes), child spans
 inside (tools) — sample rate via `MAVERICK_SENTRY_TRACES_SAMPLE_RATE`, PII off,
 `[sentry]` extra; per-tool latency profiles + extended stats
-(`tool_latency.py`); opt-in per-tool **latency budget** (`latency_budget.py`) and
+(`tool_latency.py`); **tail-latency hunting** (`tail_latency.py`, `GET
+/api/v1/diag/tail-latency`): flags tools with a fat tail (p99/p50 ≥ ratio) —
+usually fast, occasionally terrible — which is where the bug hides, not just
+the slowest by p95; opt-in per-tool **latency budget** (`latency_budget.py`) and
 cross-span **budget propagation** (`latency_span_budget.py`); **tiered storage**
 (`tiered_storage.py`, opt-in `[world_model] cold_dir` + `archive_after_days`):
 archive old episodes/goal_events to cold parquet (pyarrow when present, gzip
@@ -601,10 +1010,18 @@ disclaimer always rendered; **Redis tool cache** (`redis_tool_cache.py`,
 reusing the same key canonicalization, namespace-scoped purge, fail-open on
 any Redis error; **WAL contention audit** (`test_wal_contention.py`): pins the
 16-concurrent-writers / zero-lock-errors promise + the WAL/busy_timeout pragmas
-in CI; **query-plan regression CI** (`test_query_plans.py`): hot world-model
+in CI; **cold-start guard** (`test_cli_cold_start.py`): `maverick --help` stays
+fast (~0.1s, well under the 300ms target) because importing the CLI defers
+every heavy/optional dep — a fresh-interpreter test fails CI if a module-level
+`import httpx`/provider-SDK/vector-store/numpy sneaks into the import path; **query-plan regression CI** (`test_query_plans.py`): hot world-model
 queries must SEARCH via an index, never full-scan; **cost-attribution API**
 (`GET /api/v1/cost/by-tag` on the dashboard): spend bucketed by episode/goal
-tag — the JSON face of the tag split for chargeback/BI; **streaming tool_result**
+tag — the JSON face of the tag split for chargeback/BI; **real-time SSE event
+stream** (`GET /api/v1/goals/{id}/events/stream`): a `text/event-stream` live
+tail of a goal's events that emits each as it lands and ends on terminal status
+or disconnect — tails the durable `goal_events` log so it works across the
+worker/dashboard process split (the polling `/events` endpoint stays for simple
+clients); **streaming tool_result**
 (`ToolRegistry.set_chunk_listener`): a tool fn may be an async generator or
 return a sync generator of chunks — chunks stream to the registered listener
 (dashboard/TUI live view) as they're produced while the model still receives
@@ -614,7 +1031,12 @@ output_cache_snapshot`: persist entries to a JSONL snapshot, reload the
 still-fresh ones on the next run's first lookup); **memory-leak quarantine**
 (`leak_quarantine.py`): per-component watchdog that flags sustained monotonic
 growth and quarantines the component for recycling (sawtooth never trips it); **network egress accounting**
-(`egress_accounting.py`); **run health score** (`health_score.py`); **replayable
+(`egress_accounting.py`); **run health score** (`health_score.py`); **real-time anomaly detection**
+(`realtime_anomaly.py`): the online companion to the batch cross-run
+analyzer — feed a metric (latency / per-step cost / tokens) as it happens and
+a rolling-window z-score flags a spike *mid-run* (a `StreamMonitor` watches
+each stream independently), so a runaway is caught live, not in a post-mortem;
+**replayable
 trace** format (`replay_trace.py`) with **trace pinning to commit**
 (`trace_pin.py`: every run stamps a `trace_meta` event carrying the
 workspace's commit/branch/dirty state at start — best-effort, never blocks —
@@ -623,7 +1045,17 @@ and `trace_commit()` reads it back so replays tie to exact code); **cost split b
 (`provider_health.py`); proactive **provider rate-limit predictor**
 (`rate_limit_predictor.py`); shared tool-reliability layer (`tool_reliability.py`,
 `retry.py`); circuit breaker (`circuit_breaker.py`); adaptive thinking budget
-(`thinking_budget.py`). **Continuous profiling daemon** (`profiling_daemon.py`,
+(`thinking_budget.py`). **Self-tuning budgets** (`budget_tuner.py`, `maverick
+budget-tune`): learn a `max_dollars` recommendation from the historical
+per-goal spend distribution (a high percentile + margin, so the common case
+fits while a runaway still trips it), bucketable by an injected task-class
+classifier; read-only — the operator sets the value. **Failure-mode telemetry** (`failure_telemetry.py`, `maverick failures`,
+opt-in `[telemetry] failure_modes`): a failed run records a canonical mode
+(budget / auth / timeout / shield / sandbox / network / error) to a local JSONL
+sink — the orchestrator tees from its budget and generic failure seams,
+best-effort and a no-op when the telemetry is off — so an operator sees the
+*distribution* of failures and fixes the dominant cause. Local-first, no
+mandatory egress. **Continuous profiling daemon** (`profiling_daemon.py`,
 `python -m maverick.profiling_daemon`, opt-in `[perf] profiling`): a sampling
 profiler that periodically runs `py-spy record` against the live process and
 drops speedscope/flame-graph profiles under `data_dir("profiles/")` — py-spy
@@ -633,6 +1065,114 @@ tested without spawning py-spy.
 
 ## UX surfaces
 
+- **i18n community portal** (`maverick_dashboard/i18n_portal.py`): the
+  no-Python on-ramp for new dashboard-chrome languages — `scaffold(lang)`
+  emits a fill-in catalog (every key seeded with English), `validate_catalog`
+  lints a submission against the English reference (lang-code shape, missing/
+  unknown keys, blank values, unbalanced `{placeholder}` tokens — a precise
+  diff for a translation PR's CI), and `load_external_catalogs` /
+  `merged_messages` overlay validated `<lang>.json` files from `[i18n]
+  portal_dir` onto the built-ins so an operator drops in a community
+  translation and the dashboard speaks it with no rebuild (malformed catalogs
+  skipped, never blanking the UI).
+- **Computer-use calibration + multi-monitor + vision clicking**
+  (`computer_calibration.py`, `multi_monitor.py`, `vision_click.py`):
+  per-axis affine calibration fitted by least squares over clicked targets
+  (deterministic target grid, residual/drift report, atomic 0600
+  persistence) corrects model-space clicks to screen space; a
+  `VirtualDesktop` models multi-monitor geometry (negative origins,
+  `monitor_at`, global/local transforms, `[computer_use] monitor` pinning)
+  over lazily-imported mss; `resolve_click("the blue button")` consults the
+  GUI element memory first, falls back to an injected vision seam with a
+  confidence floor (`LowConfidenceError` below it, nothing memorized on
+  refusal), upserts what it learns, and applies the saved calibration.
+- **Hardware sensors tool** (`tools/hardware_sensors.py`, `[sensors]` extra):
+  read host temperatures/fans/battery via psutil with a `/sys/class/thermal`
+  fallback and an injected reader for tests; unavailable categories say
+  "unavailable on this host" — readings are never fabricated.
+- **Voice biometric unlock — companion factor only** (`voice_unlock.py`,
+  opt-in `[voice] biometric_unlock`): speaker verification over an injected
+  embedder with three hard stances — a voice match **never authenticates on
+  its own** (`decide()` returns `companion_ok`; callers combine it with an
+  existing factor — replay/synthesis is practical), profiles are local
+  embedding centroids (never raw audio, 0600) with first-class
+  `delete_profile`, and the whole feature is off by default.
+- **Onboarding personalization v2** (`onboarding_v2.py`): post-install
+  personalization from *actual early usage* — long conversations suggest
+  compaction, repeated task verbs point at templates, a high approval-denial
+  ratio suggests the supervised director profile, repeated same-class
+  failures surface the self-healing remedy, multi-channel use suggests
+  channel niceties; every suggestion carries the observation that justifies
+  it and the exact action, nothing is applied, and thin usage returns an
+  honest "not enough usage yet" instead of generic tips.
+- **Self-healing UX** (`self_healing.py`): a failed run is diagnosed into
+  its failure class (budget exceeded, provider auth, rate-limited, shield
+  block, sandbox missing, timeout, killswitch) and answered with an ordered
+  list of concrete remedies — each carrying the exact command or config edit,
+  with reversible config suggestions tagged; **nothing is auto-applied** —
+  surfacing the fix is the healing, the human stays in charge.
+- **Power-user keymap** (`keymap.py`, `[tui.keys]` /
+  `MAVERICK_TUI_KEYS`, `python -m maverick.keymap [--validate]`): validated
+  TUI keybindings — conflicts, unknown actions, and invalid keys are
+  rejected, Ctrl-C is reserved as the unrebindable emergency exit, and a bad
+  override set degrades to the stock keymap rather than an unusable one;
+  `handle_key` is the pure key→action adapter the monitor/focus model
+  consume.
+- **Achievements** (`achievements.py`): a local-only milestone ledger
+  *derived from recorded history* (never self-reported; nothing leaves the
+  machine) — first/10/100 completed goals, a 5+-sub-goal swarm, 3+ channels,
+  10 approval decisions — unlocking exactly once into an atomic 0600 store;
+  evaluated on view, never per-turn.
+- **Share links + device handoff** (`share_link.py`, `[sharing] secret`
+  required — no unsigned mode): a share link is a signed, expiring,
+  *read-only* token referencing a goal (carries no content; constant-time
+  verification, expiry/signature fail closed); a device handoff is a
+  *one-time* signed code moving a session between the user's devices —
+  `claim()` consumes the nonce so a replayed/stolen-but-used code is dead
+  (5-minute default TTL, expired nonces pruned).
+- **Director mode** (`director_mode.py`): state an *outcome* and pick the
+  autonomy level — `supervised` / `semi` / `autonomous` profiles map to the
+  existing controls (consent mode, review-checkpoint intervals, a budget
+  multiplier over the configured cap, plan-execute-reflect topology) so one
+  choice sets the whole envelope. `direct()` is pure assembly (starts
+  nothing; the hard Budget ceiling still applies at run time); profiles are
+  config-overridable and unknown profiles are refused — an autonomy level is
+  never guessed.
+- **Predictive approvals** (`predictive_approvals.py`): learns the operator's
+  historical approve/deny rate per (action, risk tier) from approval history and
+  *suggests* a default — auto-approve-candidate / auto-deny-candidate /
+  always-ask — with a confidence from sample size. A suggestion surfaced to the
+  human, never an auto-decision; high/critical actions are never auto-approve
+  candidates.
+- **Channel auto-routing** (`channel_autorouting.py`, `[channels.routing]`): a
+  pure decision function picking the best-fit reply channel/handler from an
+  inbound message's signals (length, detected language, urgency, attachment
+  types, an injected classifier) against a configurable rule table, with
+  `explain()`; passthrough when unconfigured.
+- **Provider-side caching analytics** (`provider_cache_analytics.py`): parses
+  prompt-cache telemetry into a hit-rate / $-saved report (cache-read vs write
+  vs uncached at configured prices), per-role breakdown, and "unstable prefix"
+  recommendations for roles with a low hit rate.
+- **Consent ergonomics** (`consent_ergonomics.py`): improves the consent UX
+  without weakening it — batches related pending prompts into one grouped ask,
+  renders a plain-language summary, and remembers "ask once this session" for an
+  exact (action, scope) in an injected **session-scoped** store (expiring, NOT a
+  persistent grant); composes with `safety.consent`, never bypassing its
+  decision.
+- **Static accessibility audit** (`a11y_audit.py`, `python -m
+  maverick.a11y_audit --ci`, wired as a CI step): an offline structural WCAG
+  pass over the shipped dashboard templates — img alt, form-control labels
+  (`for`/`id`, wrapping `<label>`, `aria-label`), `<html lang>`, positive
+  `tabindex`, empty interactive controls, heading-level skips — with Jinja
+  placeholders treated as opaque text. Complements the live `a11y` tool
+  (pa11y/axe); the audit pass fixed the two real findings it surfaced (chat
+  textarea + fleet-name input now labelled).
+- **TUI mouse mode** (`tui_mouse.py`, opt-in `[tui] mouse`): `maverick
+  monitor`'s plan tree becomes clickable — SGR (xterm 1006) mouse tracking
+  enabled/restored around the Live view, a click hit-tests its row to the
+  plan-tree node and focuses/expands it (`NodeHitMap` + `FocusModel`, pure and
+  terminal-free so it's unit-tested without a tty). Off by default; degrades
+  to keyboard/auto-refresh on terminals that don't report mouse events.
 - **CLI** — `maverick init` (wizard — with **branching paths**: a mode picker
   routes consumer users to a tailored short flow (`run_consumer`) while
   advanced users get the full step sequence, and the deployment answer
@@ -715,10 +1255,284 @@ tested without spawning py-spy.
   renders ★-bars, and a local ledger (`marketplace_ratings.py`,
   `maverick template rate <name> <1-5>` / `ratings-export`) keeps your own
   ratings ready for an index-PR submission — no hosted ratings service.
+- **Marketplace stats** — `GET /api/v1/marketplace/stats` (`marketplace_stats.py`):
+  aggregates the local ratings ledger into total / average / 1–5★ distribution /
+  per-kind breakdown / top-rated — the JSON face of the stats view. Self-host-first
+  (the operator's own ratings; no hosted community service); pure aggregation.
 - **Skill validator service** — `POST /api/v1/skills/validate` on the
   dashboard: lint a SKILL.md body (same linter as `maverick skill validate`)
   from CI or an editor against a self-hosted instance; size-capped, nothing
   persisted.
+- **Localized money display** — `format_money` tool (`money_format.py`): format
+  an amount per a (locale, currency) pair — symbol placement, grouping/decimal
+  separators, the currency's decimal places — with an optional operator-supplied
+  FX rate (`$1,234.56` → `1.234,56 €` → `¥1,235`). Offline display layer,
+  distinct from the live-FX `currency` conversion tool; a curated locale subset.
+- **DuckDB analytics** — `maverick analytics` (`duckdb_analytics.py`, `[duckdb]`
+  extra): load the world model's goals/episodes into an in-memory DuckDB and run
+  OLAP over the history — per-goal cost percentiles, time-bucketed spend, top
+  goals, and **ad-hoc read-only SQL** (`--sql`, refuses anything but
+  SELECT/WITH). This is the analytical use DuckDB is actually good at; the live
+  transactional world model stays SQLite/Postgres (DuckDB is the wrong engine
+  for the concurrent write path).
+- **Cost retrospective** — `maverick cost-retro` (`cost_retrospective.py`): a
+  spend review over the recorded per-goal/episode costs — the costliest goals,
+  how much went to **failed** work (effort with no delivered result), how
+  concentrated spend is (a Pareto signal), and rule-based observations to act
+  on. Deterministic over the world model; read-only.
+- **UX cluster (2028-H1)** — **plan-tree minimap** (`plan_minimap.py` +
+  `GET /api/v1/goals/{id}/minimap`): a compact glyph-per-node subtree render
+  with a depth budget; **multi-tenant overview** (`/tenants/overview`,
+  admin-only like `/tenants`): per-tenant goal rollups + today's spend +
+  suspended flags; **replay annotation export** (`annotation_export.py`):
+  a run's annotations to markdown or SRT-timed cues; **personalized starter
+  templates** (`starter_templates.py` + `GET /api/v1/templates/suggested`):
+  the catalog ranked from the user's own goal history; **adaptive UI
+  density** (comfortable/compact via `?density=`/cookie/config); **pluggable
+  themes** (`themes.py`: `[dashboard] themes` rendered as CSS variables,
+  strict `#hex` validation so config can't inject CSS); **templates
+  marketplace** (`/templates`: catalog + ratings, "use" prefills the chat
+  form — no auto-start); **live voice captions** (`live_captions.py` + SSE
+  `GET /api/v1/voice/captions`): a rolling caption window over an injected
+  transcript source (finalized vs in-flight, word-boundary trimming).
+- **Browser extension** (`extensions/browser/`, opt-in `[dashboard]
+  allow_extension` — fail-closed CORS scoped to extension origins only): a
+  Manifest-V3 WebExtension (no build step, loopback-only host permissions,
+  `script-src 'self'`) with popup chat against the existing goals API and a
+  "send this page" action shipping title/URL/selection as goal context;
+  static tests pin the manifest security properties (no remote code).
+- **ARIA-first navigation** (`tools/aria_navigate.py`, registered with the
+  browser tool): drive the page via the accessibility tree — `snapshot`
+  (stable node ids), `find` (role+name), `activate` (click/focus by node) —
+  the live counterpart to the static `a11y_tree` extractor.
+- **WebRTC tool** (`tools/webrtc_tool.py`, `[webrtc]` extra): data-channel
+  offer/answer/send/close over lazily-imported aiortc (signalling is the
+  caller's; media tracks out of scope, stated honestly).
+- **Audio understanding** (`tools/audio_understanding.py`, `[clap]` extra):
+  zero-shot NON-SPEECH classification — a CLAP model embeds the clip and
+  free-text labels ("glass breaking", "dog barking", "fire alarm") into one
+  space and ranks them; `op=embed` returns the raw audio embedding. The
+  embedders are injected seams (ranking math tested offline); the default
+  adapters lazy-load transformers' ClapModel (`MAVERICK_CLAP_MODEL`,
+  workspace-confined paths, stdlib-only WAV decode).
+- **Conversational supervisor** (`conversational_supervisor.py`): natural-
+  language supervision of running work — a deterministic intent grammar
+  (reusing the voice-command compiler, with an optional llm seam that
+  re-parses paraphrases through the *same* grammar, never a guess that
+  mutates) answers reads ("what's running?", "how much today?", "what
+  failed?") from cheap indexed passes over the world model + usage ledger,
+  and routes mutating intents (pause/resume/reprioritize) through a strict
+  `as_bool` confirm gate to world-model methods that actually exist
+  (pause = status `blocked` + a supervision event; prioritize = a
+  `goal:<id>:priority` fact — stated in the docstring).
+- **Voice-only mode** (`voice_only.py`, `[voice] only_mode`, default OFF):
+  an all-speech session loop — injected utterance source → handler →
+  injected `speak` seam (default routes the TTS path, which redacts) — with
+  a tested deterministic speech-shaping pass that turns markdown/code into a
+  spoken summary ("I wrote 40 lines to app.py"). Mic capture + playback
+  hardware are the operator's adapters behind the seams.
+- **Voice macros** (`voice_macros.py`): named multi-step command sequences
+  ("morning routine" → status, failures, summary) triggered by one phrase;
+  persisted 0600, each step **re-validated against the grammar at trigger
+  time** (a smuggled unparseable step is skipped, never dispatched) and
+  risky steps keep their confirm gates **individually** — a macro never
+  pre-authorizes. Bounded step count.
+- **Augmented terminal charts** (`terminal_charts.py`, `maverick charts`):
+  inline sparklines (▁▂▃▄▅▆▇█) and bars for spend/day (usage ledger), goal
+  throughput (world), and tool-latency percentiles (`tool_latency`) — the
+  ASCII renderer is the tested core, `rich` panels a thin lazy wrapper;
+  honest empty-state lines when there's no data.
+- **Streaming voice channel v2** (`maverick_channels/streaming_voice.py`):
+  the protocol layer for streaming ASR + **barge-in** — partial/final
+  hypothesis events drive endpointing on an injected clock, and speech onset
+  while the bot is talking halts playback immediately (`stop_speaking()`),
+  preserving the interrupted reply as partially-delivered. Fully offline-
+  tested with scripted event sequences; the real streaming ASR + playback
+  engine plug into the seams.
+- **Speech-to-action live mic** (`live_mic.py`): a hardware-free loop —
+  injected chunk source → injected transcriber → the deterministic
+  voice-command grammar → injected action callback, with risky intents
+  behind a strict confirm gate (only a real `True` authorises; no confirm
+  hook = fail-closed denied; a raising action is logged, not fatal).
+  `whisper_transcriber()` builds the real adapter on faster-whisper
+  (`[voice]` extra, `MAVERICK_WHISPER_MODEL`); any mic adapter that yields
+  bytes plugs in.
+- **Image edit tool** (`tools/image_edit.py`): the edit verbs to pair with
+  replicate's generation — hosted inpaint/variation/upscale over the same
+  Replicate API surface (default models are operator knobs:
+  `MAVERICK_{INPAINT,VARIATION,UPSCALE}_MODEL` or per-call `model=`; local
+  images inlined as data URIs) and local crop/resize/rotate via Pillow
+  (`[computer-use]` extra, no key). Every model-supplied path is
+  workspace-confined.
+- **ASR meeting listener** (`meeting_listener.py`): consume any
+  transcript-segment stream into minutes — rolling timestamped transcript,
+  merged speaker turns, action items via a deterministic heuristic
+  (assignment patterns, imperative openers, `action item:`/`TODO:` markers)
+  with an optional llm seam that falls back to the heuristic on failure;
+  `finalize()` writes the session artifact to `data_dir("meetings")` 0600.
+  Injected clock, fully reproducible offline.
+- **Audio diarization + emotion** (`audio_analysis.py`): honest-scope
+  heuristic diarization — cosine-distance thresholding over injected frame
+  embeddings with centroid label reuse (S1-S2-S1 exchanges come back
+  labelled; no clustering/overlap/VAD, stated plainly) — plus zero-shot
+  emotion ranking over the same CLAP seams as audio understanding
+  (`[clap]` extra shared, real frame embedder included).
+- **Embedded-device tool** (`tools/embedded_device.py`): JTAG + I2C access
+  to the **operator's own** devices. JTAG mediates OpenOCD strictly through
+  `sandbox.exec()` — halt/resume/reset, bounded memory reads (reads never
+  auto-halt, so they can't silently change target state), flash write; the
+  destructive ops (flash, reset) stay refused until `[embedded] allow_flash
+  = true` (default OFF, wizard-exposed). I2C is a pure protocol layer over
+  an injected bus seam (`smbus2` via the `[i2c]` extra). Every op names its
+  explicit target — no autodetect-and-flash; failures are `ERROR:` strings.
+- **WebGPU local vision + perceptual hashing** (`extensions/webgpu-vision/`
+  + `perceptual_hash.py`): a no-CDN WebGPU page running real hand-written
+  WGSL compute shaders (grayscale, Sobel) over a user-chosen local file
+  that never leaves the browser, plus an 8×8 average-hash specified in
+  integer-only arithmetic so the JS and the Python twin
+  (`average_hash_from_pixels`/`average_hash_file`, `[computer-use]` Pillow)
+  produce a **bit-identical** hash — a cross-language "are these two
+  screenshots the same screen?" primitive (Hamming distance). Honest scope:
+  GPU image primitives + perceptual hashing, not a trained vision model.
+- **Mobile companion v1 + offline cache** (`apps/mobile-companion/` +
+  `offline_bundle.py`, `GET /api/v1/offline/bundle`): a read-only Expo
+  scaffold (Runs list, Run detail, Glance, Settings) that consumes only
+  existing GET endpoints with a bearer token in `expo-secure-store`; zero
+  mutating calls. The **offline bundle** is a compact, bounded, versioned
+  snapshot (`maverick-offline/1`: glance + goals + recent events, every
+  list capped, no secrets — enforced by test) the app caches in
+  AsyncStorage and renders behind an "as of N min ago — offline" banner
+  when the dashboard is unreachable.
+- **Marketplace federation** (`marketplace_federation.py` +
+  `federation_envelope.py`): export/import signed listing bundles between
+  instances (`maverick-marketplace-fed/1`) — import verifies the Ed25519
+  envelope **fail-closed** (bad/missing signature, unknown origin, or a
+  missing `cryptography` library all reject the whole envelope), enforces
+  the `[federation] marketplace_peers` trust list, namespaces imports as
+  `origin/name` so they can never shadow local listings, and re-runs the
+  local moderation scan on every import. Ratings do NOT federate — their
+  provenance can't be verified, stated plainly.
+- **Channel federation** (`channel_federation.py`): forward messages
+  between instances' channels over the same envelope discipline — a
+  bounded 0600 outbound queue with user ids pseudonymized via per-pair
+  HMAC, inbound verify fail-closed against the pinned per-origin key,
+  addressed-to-us check, per-peer token-bucket rate limit (injected
+  clock), and delivery into the normal handler as `channel="fed:<origin>"`
+  so federated traffic hits every existing chokepoint. The HTTP binding is
+  deliberately the operator's; the transport is an injected seam.
+- **Marketplace donate-direct** (`marketplace_donations.py`): skill authors
+  declare a donation link; validation enforces https + an allowlist of
+  donation hosts (GitHub Sponsors, Ko-fi, Open Collective, Liberapay, Buy
+  Me a Coffee) and the federation import strips invalid ones. Links only —
+  no payment processing, no checkout proxying, no referral codes.
+- **Benchmark reproducibility audits** (`benchmark_reproducibility.py`):
+  every new benchmark run can carry a manifest
+  (`maverick-bench-repro/1`: host fingerprint, config + input digests, env
+  key presence/absence — never values); `verify_reproduction(a, b)` says
+  exactly which digests differ and calls runs "comparable" only when
+  config+inputs match; `audit_report()` sweeps the stored history. Two
+  runs with differing digests are never claimed comparable.
+- **Compaction v6 hybrid** (`compaction_hybrid.py`): the strategy picker
+  learned from this deployment's own outcomes — deterministic features
+  over the message window, a per-(feature-bucket, strategy) outcome ledger
+  (atomic 0600), epsilon-greedy with an injected PRNG, and an optional
+  pure-Python logistic `fit()` (no torch) whose versioned weights the
+  picker consults when present. Cold start = the existing default
+  strategy; every failure falls open like all compaction paths. An
+  online-learning heuristic, not a pretrained model — stated in the
+  docstring.
+- **Sandbox pool: Firecracker-warm + cross-run pooling**
+  (`sandbox/firecracker.py` + `sandbox/pool.py`, `[sandbox]
+  cross_run_pool` default OFF): Firecracker warm mode keeps one e2b
+  microVM alive between execs (the local firectl path can't, and says so
+  honestly); the cross-run pool parks a still-healthy docker/podman
+  backend at run end (bounded, TTL, injected clock) and hands it to the
+  next run under a strict **scrub contract** — workdir re-pointed, env
+  scrubbed per exec, and only engines whose `run --rm`-per-exec model
+  provably carries no state are eligible (local/firecracker/ssh/k8s/
+  devcontainer are excluded with reasons; they always build fresh).
+- **Speculative drafting across providers** (`speculative_decode.py`): a
+  cheap draft model proposes, the target verifies-or-revises in one call;
+  per-(draft,target) accept-rate ledger with a floor below which it falls
+  back to plain target calls — application-level drafting, explicitly not
+  logit-level decoding; models resolve by role, never hardcoded.
+- **Out-of-process model proxy** (`model_proxy.py`): the provider key lives
+  in a separate proxy process; the agent's `base_url` points at it with no
+  usable credential — the proxy strips whatever the agent sent and injects
+  the real key, so a prompt-injected agent process has no key to exfiltrate.
+- **Watch glance endpoint** (`GET /api/v1/glance`): the fixed tiny payload
+  the watch scaffold renders.
+- **Granular redaction UI** (`GET /redact` page + `POST
+  /api/v1/redact/preview`): paste text, see every secret/PII finding as a
+  kind + span (never the raw value), and pick per-kind what to scrub —
+  empty selection runs full provable redaction; a granular selection
+  replaces only the chosen kinds' spans and *honestly* reports
+  `proven_clean: false` with the residual kinds left behind, instead of a
+  false guarantee. Preview-only: nothing is stored server-side.
+- **Visual graph editor** (`/graph-editor` + `GET /api/v1/goal-tree` +
+  retitle/reparent/add-child endpoints): the goal forest as an interactive
+  SVG node graph — server-side layered layout (pure, unit-tested), pan/
+  zoom, status colors — with editing that refuses cycles and self-parenting
+  (400), access-checks both ends, and creates children **pending, not
+  auto-run** (stated in the UI). A keyboard path via labeled selects keeps
+  it accessible.
+- **Drag-and-drop goal builder** (`/goal-builder`): compose a goal from
+  blocks — steps (ordered checklist), budget, channel, priority — native
+  HTML5 DnD plus keyboard add/move/remove buttons, live brief preview. The
+  budget block is enforced as the runner's real `max_dollars` (clamped to
+  the server cap); channel/priority ride in the brief and say so.
+- **Embedded analytics web component**
+  (`/static/maverick-analytics.js` + `/embed-demo`): a self-contained
+  `<maverick-analytics>` custom element (Shadow DOM, no framework, no CDN)
+  fetching the real spend + goals endpoints and hand-drawing SVG
+  sparklines/bars; same-origin/token limits documented in the JS header and
+  on the demo page; errors render as HTTP status, never fake data.
+- **Benchmark live dashboard** (`/benchmarks` + `GET /api/v1/benchmarks`):
+  per-suite trend sparklines + regression verdicts over the real
+  `continuous_benchmark` history (`bench_track`), via the real
+  `detect_regression`; honest empty state naming the record command. No
+  fabricated competitor numbers — this page is *this deployment's* recorded
+  runs.
+- **Embedded video walkthroughs** (`/walkthroughs` + `POST
+  /api/v1/goals/{id}/walkthrough`): standardizes `~/.maverick/walkthroughs/`,
+  drives the real `replay_video.render` (sandbox-mediated ffmpeg; reports
+  encoded vs manifest-only honestly with the exact argv), generates a real
+  WebVTT captions track from the storyboard frames, and lists MP4s with
+  native `<video controls>` + `<track>`; strict name-pattern media serving.
+- **3D plan tree** (`/plan-tree-3d`): raw WebGL (no three.js) point-sprite
+  nodes + line edges over the same `goal-tree` endpoint, orbit/zoom,
+  click-to-focus overlay; the text tree is always present in `<details>`
+  as the accessible/no-WebGL representation, and the WebXR "Enter VR"
+  button appears only when `navigator.xr` reports support (untested
+  without headset hardware — stated on the page).
+- **RTL language support** (`i18n.py` `RTL_LANGS` + `dir_for()`):
+  `dir="rtl"` driven by the active language (ar/he/fa/ur) through the
+  existing lang resolution, logical-property CSS in the base layout, and an
+  Arabic community-seed catalog (genuinely translated starter keys, English
+  fallback; he/fa/ur activate the moment a catalog lands — they're not
+  offered in the picker until one does, to avoid implying support).
+- **Live-run IDE extensions** (`apps/vscode-extension/` +
+  `apps/jetbrains-plugin/`): the VS Code extension gains "Watch run live" /
+  "Stop live watch" — a dependency-free SSE tail of the dashboard's
+  per-goal event stream into an output channel (manual SSE parse,
+  exponential-backoff reconnect, terminal-control stripping, token header
+  honored, settings for URL/token; type-checks clean). The JetBrains
+  scaffold mirrors it as a Runs tool window (Kotlin, same SSE endpoint,
+  same backoff); building it requires the IntelliJ SDK, stated in its
+  README.
+- **Apple Watch glance** (`glance.py` + `apps/watch-glance/` SwiftUI
+  scaffold): a tiny fixed payload sized for a watch face — active count,
+  today's done/failed, today's spend (summed from the usage ledger), and the
+  last terminal result (60-char bound) — computed in one cheap pass; the
+  watchOS scaffold renders exactly that shape against the dashboard (token
+  header honored; building it requires Xcode, documented in its README — the
+  integrator wires `GET /api/v1/glance`).
+- **Mobile push v2** (`push_v2.py`): a device registry layered on the v1
+  notify path — each device registers a backend, a minimum priority floor,
+  and optional quiet hours; routing fans out only to eligible devices, with
+  `urgent` always breaking through quiet hours (page-me semantics); every
+  fan-out lands in a bounded delivery ledger so "did my phone get that?" is
+  answerable.
 - **Smart notification batching** — opt-in `[notifications]
   batch_window_seconds` (`notification_batcher.py`): coalesces the
   low/normal-priority push stream (ntfy/Pushover/Discord/Slack) into one
@@ -750,16 +1564,54 @@ tested without spawning py-spy.
   package** (`apps/emacs/maverick.el`: M-x maverick-start/status/monitor/
   logs/halt/unhalt over the CLI, deps-free, Emacs 27.1+), **Neovim plugin**
   (`apps/nvim/`: :MaverickStart/Status/Monitor/Logs/Halt/Unhalt, lazy.nvim-
-  ready, terminal-split UX), GitHub Action wrapper (`maverick-action`) — all
-  contract-tested against the real CLI verb set.
+  ready, terminal-split UX), **Zed extension** (`apps/zed-extension/`:
+  registers `maverick mcp` as a context server — Zed extensions run in a
+  WASI sandbox and cannot exec, so CLI verbs ship as Zed tasks; compiling
+  needs the Zed SDK, stated in its README), GitHub Action wrapper
+  (`maverick-action`) — all contract-tested against the real CLI verb set.
+- **Native desktop app** (`apps/desktop/`): a Tauri v2 shell for the local
+  dashboard — splash polls `127.0.0.1:8765/healthz` and redirects, spawning
+  `maverick dashboard` as its own child when the port is closed (kills only
+  that child on exit); macOS/Windows/Linux bundle targets, ships unsigned
+  (installer-desktop posture), building needs Rust + Tauri CLI.
+- **Windows MSI** (`apps/installer-msi/`): WiX v4 authoring set — per-user
+  scope, stable UpgradeCode + MajorUpgrade, user-PATH component, a launcher
+  that bootstraps the bundled wheel into the console-script target —
+  plus `build.ps1` and a dispatch-only `build-msi.yml` workflow; building
+  and signing happen on a Windows host (maintainer act), output ships
+  unsigned like the Tauri installer.
+- **Multi-arch builds** (`deploy/multiarch/`): buildx Dockerfile + script
+  for linux/amd64 + arm64 + riscv64 (ARG-gated base with a debian-sid
+  CPython fallback for riscv64) — core+shield are pure Python; the README
+  carries the honest per-extra wheel-availability table (grpcio/torch/
+  pyarrow et al. lack riscv64 wheels) and the QEMU/binfmt CI commands.
+- **Hosted demo cluster blueprint**
+  (`deploy/reference-architectures/demo-cluster/`): compose + k8s manifests
+  for a public read-only demo — the dashboard has no global read-only flag,
+  so an nginx deny-proxy (`limit_except GET HEAD`) fronts it with the
+  bearer injected upstream; a seeder creates finished demo goals through
+  the real world model; DNS/TLS/operating demo.maverick.dev is a
+  maintainer act. Contract-tested like the other reference architectures.
+- **Mobile skill execution scaffolds** (`apps/mobile-skills/`): a Pyodide
+  runner page (vendored-only Pyodide, no CDN; pinned release + fill-on-
+  download checksum) executing a verified pure-stdlib repo module in a
+  mobile browser, and a Kivy shell + buildozer.spec for Android — store
+  builds are maintainer acts; the hard limits (no sandbox/subprocess on
+  mobile, relay for network) are documented, not papered over.
 - **RFCs** — [RFC 0001: Maverick 2.0](./rfcs/0001-maverick-2.0.md) (config
   schema v2 + async-only channel SDK + connector re-homing, migration story
   riding `maverick migrate`) and [RFC 0002: Plugin API v2](./rfcs/0002-plugin-api-v2.md)
   (static manifests discovered without importing plugin code, lifecycle hooks,
   the wire shape for the gRPC plugin host) — both Draft, open for comment.
-- **Embeddable widget** — a dependency-free floating chat widget
-  (`web/widget/maverick-widget.js`) that posts to your own dashboard's
-  `/chat/send`; one `<script>` tag, self-hosted (no hosted service).
+- **Embeddable widgets** — two dependency-free `<script>`-tag surfaces,
+  both self-hosted: the floating **chat widget**
+  (`web/widget/maverick-widget.js`) posting to your own dashboard's
+  `/chat/send`, and the read-only **status widget**
+  (`extensions/widget/maverick-widget.js`): a Shadow-DOM pill → panel
+  polling the real goals API and bucketing counts client-side, with the
+  auth posture documented exactly (Bearer header only; same-origin or a
+  reverse proxy — the dashboard ships no CORS; the token is the full
+  control surface, so embed only where you'd paste the token).
 - **Self-hosted relay** — a stdlib edge service (`deploy/relay/relay.py`) that
   HMAC-signs an inbound POST and forwards it to a dashboard's `/webhook/start`
   exactly as `maverick.webhooks` verifies (replay-defended; signature
@@ -773,3 +1625,29 @@ tested without spawning py-spy.
   [observability integrations guide](./integrations/observability-partners.md)
   (OpenRouter provider, OTLP-generic tracing incl. LangSmith, Helicone via
   base_url override).
+- **Long-form handbook** ([`docs/handbook.md`](./handbook.md)): the front
+  door — mental model, guided tour, day-2 operations, safety posture,
+  extension points, and a map of every other doc; every cited command and
+  module verified against the tree.
+- **Localized docs** ([`docs/i18n/`](./i18n/)): real, native-quality human
+  translations of the getting-started guide into **9 languages** — Spanish,
+  Japanese, German, French, Brazilian Portuguese, Korean, Russian, Italian,
+  Hindi — each following its language's software-docs register, with code
+  blocks/commands/paths kept byte-identical and a source-commit header so
+  staleness is trackable. The **docs MT pipeline** (`docs_i18n.py`, `python
+  -m maverick.docs_i18n`) machine-translates the tail under hard quality
+  gates (fenced code preserved, glossary + structure verified before
+  anything is written, human translations never overwritten); `--check` is
+  offline, and the model resolves by the `translator` role.
+- **Distribution program kits** ([`docs/programs/`](./programs/)): 17
+  runnable playbooks — Summit v1 (virtual), university outreach,
+  integration partnerships (business half), GitHub Stars campaign, office
+  hours, sponsorship tiers, conference booth, swag, ambassadors, Skill of
+  the Year, community survey, foundation exploration, badge program,
+  curriculum kit, community grants, regional meetups, and press kit v2 +
+  an evidence-gated case-study template. Each kit reuses the shipped
+  machinery (skill validator, moderation gauntlet, ratings, plugin matrix
+  CI, sigstore/CA signing, retrospective generators) instead of inventing
+  parallel process; founder decisions (amounts, dates, license grants) are
+  explicitly marked, never invented; executing the programs is a
+  maintainer act.

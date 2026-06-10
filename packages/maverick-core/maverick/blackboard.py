@@ -96,6 +96,14 @@ class Blackboard:
                 tw.record(kind, agent=agent, content=content)
             except Exception:  # pragma: no cover -- tracing never blocks the loop
                 pass
+        # Live observation channel (push): tee to any external observer watching
+        # the swarm. No-op (a lock-free subscriber check) when nobody is
+        # subscribed, so an unobserved run pays nothing. Best-effort.
+        try:
+            from .observation_channel import maybe_publish as _obs_publish
+            _obs_publish(kind, agent, content)
+        except Exception:  # pragma: no cover -- observation never blocks the loop
+            pass
 
     def by_kind(self, kind: str) -> list[Entry]:
         with self._lock:

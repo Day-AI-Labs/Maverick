@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<!-- Maverick popup: a small chat box over the LOCAL dashboard's REST API.
+     No inline scripts (MV3 CSP forbids them); all logic is in popup.js. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Maverick</title>
+  <style>
+    body { font: 13px/1.45 system-ui, sans-serif; width: 360px; margin: 0;
+           background: #14161a; color: #e6e6e6; }
+    main { padding: 10px; }
+    h1 { font-size: 14px; margin: 0 0 8px; }
+    textarea { width: 100%; box-sizing: border-box; min-height: 64px;
+               background: #1d2026; color: #e6e6e6; border: 1px solid #3a3f47;
+               border-radius: 4px; padding: 6px; }
+    input { width: 100%; box-sizing: border-box; background: #1d2026;
+            color: #e6e6e6; border: 1px solid #3a3f47; border-radius: 4px;
+            padding: 4px 6px; }
+    button { background: #2b6cb0; color: #fff; border: 0; border-radius: 4px;
+             padding: 6px 10px; margin-top: 6px; cursor: pointer; }
+    button.secondary { background: #3a3f47; }
+    #log { margin-top: 10px; max-height: 220px; overflow-y: auto;
+           border-top: 1px solid #3a3f47; padding-top: 6px;
+           white-space: pre-wrap; word-break: break-word; }
+    .evt { margin: 0 0 6px; }
+    .who { color: #8ab4f8; }
+    .err { color: #f28b82; }
+    details { margin-top: 10px; }
+    label { display: block; margin-top: 6px; }
+    .hint { color: #9aa0a6; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Maverick</h1>
+    <label for="prompt">Goal</label>
+    <textarea id="prompt" placeholder="What should Maverick do?"></textarea>
+    <div>
+      <button id="send" type="button">Send</button>
+      <button id="send-page" type="button" class="secondary"
+              title="Ship this page's title, URL, and selection as goal context">
+        Send this page
+      </button>
+    </div>
+    <div id="status" class="hint" role="status" aria-live="polite"></div>
+    <div id="log" aria-label="Goal events" aria-live="polite"></div>
+    <details>
+      <summary>Settings</summary>
+      <label for="base">Dashboard URL (local only)</label>
+      <input id="base" placeholder="http://127.0.0.1:8765">
+      <label for="token">Dashboard token (recommended)</label>
+      <input id="token" type="password" autocomplete="off"
+             placeholder="MAVERICK_DASHBOARD_TOKEN">
+      <button id="save" type="button" class="secondary">Save</button>
+      <p class="hint">The server must opt in: set
+        <code>[dashboard] allow_extension = true</code> in
+        ~/.maverick/config.toml.</p>
+    </details>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

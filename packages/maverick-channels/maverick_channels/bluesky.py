@@ -141,7 +141,7 @@ class BlueskyChannel(Channel):
             channel=self.name, raw=notif,
         )
         try:
-            reply = await self.handler(msg)
+            reply = await self.dispatch_text(msg)
         except Exception as e:
             log.exception("bluesky handler raised: %s", e)
             return

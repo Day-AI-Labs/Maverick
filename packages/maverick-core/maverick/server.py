@@ -144,6 +144,39 @@ class Server:
             log.exception("tenant world resolution failed; rejecting message")
             return "⚠ Tenant isolation is unavailable for this message. Try again later."
 
+        # Multi-tenant serve: enforce the tenant roster at the channel door.
+        # No-op until an operator provisions tenants (`maverick tenant
+        # create`); with a roster, a suspended/unknown tenant is refused
+        # BEFORE any goal is created, and a tenant over its provisioned
+        # daily-spend cap is refused until the UTC day rolls. Registry read
+        # errors fail soft (never down the channel server); the suspension
+        # itself is a deliberate refusal, not an error.
+        if tenant is not None:
+            try:
+                from .tenant_registry import (
+                    TenantSuspended,
+                    assert_tenant_active,
+                    tenant_over_quota,
+                )
+            except Exception:  # pragma: no cover -- registry module optional
+                TenantSuspended = None  # type: ignore[assignment]
+            if TenantSuspended is not None:
+                try:
+                    assert_tenant_active(tenant)
+                except TenantSuspended:
+                    log.warning("message refused: tenant %s suspended", tenant)
+                    return ("⚠ This workspace is suspended. "
+                            "Contact your administrator.")
+                except Exception:  # pragma: no cover -- fail-soft on reads
+                    log.exception("tenant roster check failed; allowing")
+                try:
+                    quota_reason = tenant_over_quota(tenant)
+                except Exception:  # pragma: no cover -- fail-soft on reads
+                    quota_reason = None
+                if quota_reason:
+                    log.warning("message refused: %s", quota_reason)
+                    return f"⚠ {quota_reason}"
+
         # Multi-turn: a single (channel, user_id) gets one conversation
         # row. Every inbound message becomes a 'user' turn; the
         # orchestrator's final answer is appended as 'assistant' turn

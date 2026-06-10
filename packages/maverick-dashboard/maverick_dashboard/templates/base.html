@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{ lang or 'en' }}">
+<html lang="{{ lang or 'en' }}" dir="{{ dir or 'ltr' }}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -60,8 +60,8 @@
        tab stop, so it needs no focus ring of its own. */
     main:focus { outline: none; }
     .mono, code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, "Roboto Mono", monospace; }
-    .skip-link { position: absolute; left: -9999px; }
-    .skip-link:focus { left: 1rem; top: 1rem; background: var(--accent); color: #fff; padding: 0.5rem 1rem; border-radius: 4px; z-index: 100; }
+    .skip-link { position: absolute; inset-inline-start: -9999px; }
+    .skip-link:focus { inset-inline-start: 1rem; top: 1rem; background: var(--accent); color: #fff; padding: 0.5rem 1rem; border-radius: 4px; z-index: 100; }
     header { padding: 1rem 2rem; border-bottom: 1px solid var(--border); display: flex; gap: 1rem; align-items: center; max-width: 1400px; margin: 0 auto; flex-wrap: wrap; }
     header h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
     nav { display: flex; gap: 1rem; flex-wrap: wrap; }
@@ -75,7 +75,10 @@
     .stat .num { font-size: 2rem; font-weight: 600; }
     .stat .label { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
     table { width: 100%; border-collapse: collapse; }
-    th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+    /* Logical properties (text-align: start, margin-inline-start, …) keep
+       the layout correct for the RTL languages (dir="rtl": ar/he/fa/ur)
+       without a separate stylesheet. */
+    th, td { text-align: start; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
     th { color: var(--muted); font-weight: 500; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
     tr:last-child td { border-bottom: none; }
     .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -103,18 +106,40 @@
       main { padding: 1rem; }
       nav a { font-size: 0.85rem; }
     }
+    /* Adaptive UI density. Default (comfortable) keeps the layout above;
+       body.density-compact tightens spacing for operators watching many
+       runs at once. Selected via ?density= / mvk_density cookie. */
+    body.density-compact { font-size: 13px; }
+    body.density-compact header { padding: 0.5rem 1.25rem; }
+    body.density-compact main { padding: 1rem; }
+    body.density-compact .panel { padding: 0.65rem 0.85rem; margin-bottom: 0.75rem; }
+    body.density-compact th, body.density-compact td { padding: 0.25rem 0.5rem; }
+    body.density-compact .stat { padding: 0.65rem 0.85rem; }
+    body.density-compact .stat .num { font-size: 1.4rem; }
+    body.density-compact h2 { margin-bottom: 0.5rem; }
+    body.density-compact footer { padding: 1rem; }
   </style>
+  {% if custom_theme_css %}
+  <style>
+    /* Operator-defined themes ([dashboard] themes in config.toml). Values
+       are strictly validated as #hex colors before they reach this block. */
+{{ custom_theme_css }}
+  </style>
+  {% endif %}
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232ea043'/%3E%3Ctext x='16' y='22' font-family='Helvetica' font-weight='700' font-size='18' fill='white' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E" />
 </head>
-<body class="theme-{{ theme or 'dark' }} font-{{ font or 'default' }}">
+<body class="theme-{{ theme or 'dark' }} font-{{ font or 'default' }} density-{{ density or 'comfortable' }}">
   <a class="skip-link" href="#content">Skip to content</a>
   <header>
     <h1>Maverick</h1>
     <nav aria-label="Primary">
       {% set _nav = [
         ('/', 'Overview'), ('/chat', 'Chat'), ('/goals', 'Goals'),
+        ('/graph-editor', 'Graph'), ('/goal-builder', 'Builder'),
+        ('/plan-tree-3d', '3D'),
         ('/oversight', 'Oversight'),
-        ('/skills', 'Skills'), ('/store', 'Store'), ('/facts', 'Facts'),
+        ('/skills', 'Skills'), ('/store', 'Store'), ('/templates', 'Templates'),
+        ('/facts', 'Facts'),
         ('/spend', 'Spend'), ('/providers', 'Providers'), ('/tools', 'Tools'),
         ('/permissions', 'Permissions'), ('/approvals', 'Approvals'),
         ('/fleets', 'Fleets'),
@@ -125,6 +150,8 @@
         ('/channels', 'Channels'),
         ('/plugins', 'Plugins'), ('/mcp', 'MCP'), ('/audit', 'Audit'),
         ('/cache', 'Cache'),
+        ('/benchmarks', 'Benchmarks'), ('/walkthroughs', 'Walkthroughs'),
+        ('/embed-demo', 'Embed'),
       ] %}
       {% set _path = request.url.path if request else '' %}
       {% for _href, _label in _nav %}
@@ -132,7 +159,7 @@
         <a href="{{ _href }}"{% if _active %} class="active" aria-current="page"{% endif %}>{{ _label }}</a>
       {% endfor %}
     </nav>
-    <span style="margin-left: auto; display: flex; gap: 0.5rem; align-items: center;">
+    <span style="margin-inline-start: auto; display: flex; gap: 0.5rem; align-items: center;">
       <a href="#" id="halt-pill" class="halt-pill" role="button" aria-label="Halt: arm or clear killswitch">
         <span class="dot" aria-hidden="true"></span>
         <span id="halt-label">checking</span>
@@ -144,6 +171,15 @@
         <option value="light" {% if theme == 'light' %}selected{% endif %}>Light</option>
         <option value="solarized" {% if theme == 'solarized' %}selected{% endif %}>Solarized</option>
         <option value="hicontrast" {% if theme == 'hicontrast' %}selected{% endif %}>High contrast</option>
+        {% for name in custom_theme_names %}
+        <option value="{{ name }}" {% if theme == name %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+      <select id="density-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('density', this.value); window.location = u; }" aria-label="Density"
+              style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem;">
+        <option value="">density</option>
+        <option value="comfortable" {% if density == 'comfortable' %}selected{% endif %}>Comfortable</option>
+        <option value="compact" {% if density == 'compact' %}selected{% endif %}>Compact</option>
       </select>
       <select id="font-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('font', this.value); window.location = u; }" aria-label="{{ t('label.font') }}"
               style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem;">
@@ -159,6 +195,7 @@
         <option value="de" {% if lang == 'de' %}selected{% endif %}>Deutsch</option>
         <option value="ja" {% if lang == 'ja' %}selected{% endif %}>日本語</option>
         <option value="zh" {% if lang == 'zh' %}selected{% endif %}>中文</option>
+        <option value="ar" {% if lang == 'ar' %}selected{% endif %}>العربية</option>
       </select>
     </span>
   </header>
