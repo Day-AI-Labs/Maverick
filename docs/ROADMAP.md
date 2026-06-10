@@ -103,7 +103,7 @@ single-run inflation) — run multi-seed.
 
 | Concern | Planned (not yet built) |
 |---|---|
-| **Capabilities** | Audio understanding (non-speech CLAP) · speech-to-action live-mic · image gen + edit tools · ASR meeting listener |
+| **Capabilities** | — (cleared) |
 | **UX** | visual graph editor · drag-and-drop goal builder |
 | **Distribution** | Localized docs phase 2 (es/ja) · tutorial video season 2 · university outreach (5 partnerships) · Maverick Summit v1 (virtual) · integration partnerships (business half; self-serve guide shipped) · localized docs phase 3 (de/fr/pt-BR) · GitHub Stars campaign · office hours |
 | **Performance** | — (cleared) |
@@ -129,7 +129,7 @@ single-run inflation) — run multi-seed.
 
 | Concern | Planned (not yet built) |
 |---|---|
-| **Capabilities** | Audio diarization + emotion |
+| **Capabilities** | — (cleared) |
 | **UX** | conversational supervisor · voice-only mode · mobile offline cache · augmented terminal (Rich inline charts) · AR plan-tree (visionOS) · embedded analytics web component · voice macros · RTL language support |
 | **Distribution** | 2.0 stable release · migration playbook · marketplace v3 (donate-direct model) · Maverick Summit v2 (hybrid) · editor expansion (JetBrains/Neovim/Zed) · localized docs phase 5 (top-15 langs + MT pipeline) · "Built with Maverick" badge program · comparison benchmark v3 live dashboard · university curriculum kit · foundation paperwork submitted · ARM/RISC-V builds · iOS/Android skill execution (Pyodide/Kivy) · skill + channel certification programs · community grants v1 · regional meetup playbook · embeddable widget · hosted demo cluster (demo.maverick.dev) · press push to major outlets · sponsor tier 2 |
 | **Performance** | compaction v6 hybrid (learned classifier picks strategy) · sandbox pool (Firecracker-warm + cross-run pooling — warm Docker container reuse shipped) |

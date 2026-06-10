@@ -1271,6 +1271,41 @@ tested without spawning py-spy.
 - **WebRTC tool** (`tools/webrtc_tool.py`, `[webrtc]` extra): data-channel
   offer/answer/send/close over lazily-imported aiortc (signalling is the
   caller's; media tracks out of scope, stated honestly).
+- **Audio understanding** (`tools/audio_understanding.py`, `[clap]` extra):
+  zero-shot NON-SPEECH classification — a CLAP model embeds the clip and
+  free-text labels ("glass breaking", "dog barking", "fire alarm") into one
+  space and ranks them; `op=embed` returns the raw audio embedding. The
+  embedders are injected seams (ranking math tested offline); the default
+  adapters lazy-load transformers' ClapModel (`MAVERICK_CLAP_MODEL`,
+  workspace-confined paths, stdlib-only WAV decode).
+- **Speech-to-action live mic** (`live_mic.py`): a hardware-free loop —
+  injected chunk source → injected transcriber → the deterministic
+  voice-command grammar → injected action callback, with risky intents
+  behind a strict confirm gate (only a real `True` authorises; no confirm
+  hook = fail-closed denied; a raising action is logged, not fatal).
+  `whisper_transcriber()` builds the real adapter on faster-whisper
+  (`[voice]` extra, `MAVERICK_WHISPER_MODEL`); any mic adapter that yields
+  bytes plugs in.
+- **Image edit tool** (`tools/image_edit.py`): the edit verbs to pair with
+  replicate's generation — hosted inpaint/variation/upscale over the same
+  Replicate API surface (default models are operator knobs:
+  `MAVERICK_{INPAINT,VARIATION,UPSCALE}_MODEL` or per-call `model=`; local
+  images inlined as data URIs) and local crop/resize/rotate via Pillow
+  (`[computer-use]` extra, no key). Every model-supplied path is
+  workspace-confined.
+- **ASR meeting listener** (`meeting_listener.py`): consume any
+  transcript-segment stream into minutes — rolling timestamped transcript,
+  merged speaker turns, action items via a deterministic heuristic
+  (assignment patterns, imperative openers, `action item:`/`TODO:` markers)
+  with an optional llm seam that falls back to the heuristic on failure;
+  `finalize()` writes the session artifact to `data_dir("meetings")` 0600.
+  Injected clock, fully reproducible offline.
+- **Audio diarization + emotion** (`audio_analysis.py`): honest-scope
+  heuristic diarization — cosine-distance thresholding over injected frame
+  embeddings with centroid label reuse (S1-S2-S1 exchanges come back
+  labelled; no clustering/overlap/VAD, stated plainly) — plus zero-shot
+  emotion ranking over the same CLAP seams as audio understanding
+  (`[clap]` extra shared, real frame embedder included).
 - **Speculative drafting across providers** (`speculative_decode.py`): a
   cheap draft model proposes, the target verifies-or-revises in one call;
   per-(draft,target) accept-rate ledger with a floor below which it falls

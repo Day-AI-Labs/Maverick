@@ -597,6 +597,7 @@ def base_registry(  # noqa: C901
     from .asana_tool import asana_tool
     from .ast_edit import ast_edit
     from .async_compaction import async_compaction
+    from .audio_understanding import audio_understanding
     from .audit_mirror import audit_mirror
     from .autogen_adapter import autogen_adapter
     from .bias_eval import bias_eval
@@ -672,6 +673,7 @@ def base_registry(  # noqa: C901
     from .http_fetch import http_fetch
     from .hubspot_tool import hubspot_tool
     from .huggingface import huggingface
+    from .image_edit import image_edit
     from .imagemagick_tool import imagemagick_tool
     from .ios_sim import ios_sim
     from .jira import jira
@@ -1057,6 +1059,8 @@ def base_registry(  # noqa: C901
     reg.register(wasm_run(sandbox))
     reg.register(hardware_sensors())
     reg.register(imagemagick_tool(sandbox))
+    reg.register(audio_understanding(sandbox))
+    reg.register(image_edit(sandbox))
     reg.register(ga4_tool())
     reg.register(plaid_tool())
     reg.register(truelayer_tool())
