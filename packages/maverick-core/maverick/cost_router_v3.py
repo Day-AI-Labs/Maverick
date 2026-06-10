@@ -23,10 +23,10 @@ import json
 import logging
 import os
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from random import Random
-from typing import Callable
 
 log = logging.getLogger(__name__)
 
