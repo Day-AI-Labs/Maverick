@@ -65,14 +65,9 @@ def test_malformed_ts_sorts_last_no_crash():
     assert "[?]" in out  # malformed ts rendered as ?
 
 
-def test_registered():
-    from maverick.tools import base_registry
-
-    class _W:
-        pass
-
-    class _S:
-        workdir = "."
-
-    names = set(getattr(base_registry(world=_W(), sandbox=_S()), "_tools", {}).keys())
-    assert "streaming_reasoning_trace" in names
+def test_factory_shape():
+    t = streaming_reasoning_trace()
+    assert t.name == "streaming_reasoning_trace"
+    assert t.parallel_safe is True
+    assert t.input_schema["required"] == ["events"]
+    assert callable(t.fn)

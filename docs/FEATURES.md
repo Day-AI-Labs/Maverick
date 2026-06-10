@@ -159,7 +159,30 @@ here.
   divergence + similarity), `tool_call_inspector` (per-tool counts / success
   rate / latency / cost roll-up), `latency_heatmap` (per-bucket percentile
   heatmap), `plain_language` (plan/trace → plain-English narration),
-  `multimodal_rag` (lexical text/image/table chunk ranker).
+  `multimodal_rag` (lexical text/image/table chunk ranker),
+  `query_plan_regression` (flag cost/index/rows regressions between two query
+  plans), `provider_failover_policy` (rank healthy providers + pick primary),
+  `cost_aware_router` (per-role cheapest-model-meeting-quality routing),
+  `multiregion_failover` (nearest healthy region with capacity + fallbacks),
+  `reliability_harness` (per-test flaky/stable/always-fail + reliability %),
+  `chaos_gameday` (fault-injection plan with blast radius), `pia_generator`
+  (Privacy Impact Assessment doc + risk flags), `capability_negotiation`
+  (granted-intersection negotiation with deny-override), `key_rotation`
+  (due/overdue classification + staggered rotation schedule), `data_residency`
+  (per-jurisdiction storage-region routing, EU/EEA groups),
+  `polyglot_injection` (multi-context injection-payload scan), `safety_regression_budget`
+  (PASS/FAIL safety-score drop vs budget), `autogen_adapter` / `crewai_adapter`
+  (translate tool/task specs to and from AutoGen and CrewAI), `run_events_firehose`
+  (JSON-line event encode + filter for a WS firehose), `marketplace_ratings`
+  (Wilson-scored rating aggregate + install-hash verify), `local_embeddings_cache`
+  (content-addressed embedding cache keys + eviction candidates),
+  `saas_trigger_registry` (validated source/event→goal trigger registry +
+  match), `streaming_reasoning_trace` (redaction-aware reasoning-trace render),
+  `voice_cloning_consent` (scope+expiry consent gate for voice cloning),
+  `diff_to_expected` (exact/json/numeric/tolerance actual-vs-expected diff),
+  `smart_goal_completion` (prefix + token-overlap goal completions),
+  `unified_inbox` (time-sorted, per-thread multi-channel inbox + unread counts),
+  `smart_nl_filter` (parse a natural-language filter into a predicate + apply).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate.

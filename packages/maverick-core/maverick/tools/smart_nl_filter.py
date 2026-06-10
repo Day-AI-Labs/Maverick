@@ -29,10 +29,7 @@ from typing import Any
 from . import Tool
 
 # Order matters: match two-char operators before one-char ones.
-_OPS = ["contains", ">=", "<=", "!=", ">", "<", "="]
-_OP_RE = re.compile(
-    r"\s*(contains|>=|<=|!=|>|<|=)\s*", re.IGNORECASE
-)
+_OP_RE = re.compile(r"\s*(contains|>=|<=|!=|>|<|=)\s*", re.IGNORECASE)
 
 
 def _coerce(value: str) -> Any:

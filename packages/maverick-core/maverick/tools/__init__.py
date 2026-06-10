@@ -547,6 +547,7 @@ def base_registry(  # noqa: C901
     from .ast_edit import ast_edit
     from .async_compaction import async_compaction
     from .audit_mirror import audit_mirror
+    from .autogen_adapter import autogen_adapter
     from .bias_eval import bias_eval
     from .bitbucket_tool import bitbucket_tool
     from .budget_status import budget_status
@@ -556,6 +557,8 @@ def base_registry(  # noqa: C901
     from .calendly_tool import calendly_tool
     from .capability_delegation_graph import capability_delegation_graph
     from .capability_leak_fuzzer import capability_leak_fuzzer
+    from .capability_negotiation import capability_negotiation
+    from .chaos_gameday import chaos_gameday
     from .citation_verifier import citation_verifier
     from .clickup_tool import clickup_tool
     from .clipboard import clipboard
@@ -569,14 +572,18 @@ def base_registry(  # noqa: C901
     from .containment_mode import containment_mode
     from .coordinated_disclosure import coordinated_disclosure
     from .cost_attribution import cost_attribution
+    from .cost_aware_router import cost_aware_router
     from .cost_guardrail import cost_guardrail
     from .cost_of_quality import cost_of_quality
+    from .crewai_adapter import crewai_adapter
     from .cross_repo_deps import cross_repo_deps
     from .crypto_budget_receipt import crypto_budget_receipt
     from .currency import currency
+    from .data_residency import data_residency
     from .datadog_tool import datadog_tool
     from .dep_graph import dep_graph
     from .diagnose import diagnose
+    from .diff_to_expected import diff_to_expected
     from .discord_bot import discord_bot
     from .discord_slash import discord_slash
     from .dns_lookup import dns_lookup
@@ -613,12 +620,15 @@ def base_registry(  # noqa: C901
     from .imagemagick_tool import imagemagick_tool
     from .ios_sim import ios_sim
     from .jira import jira
+    from .key_rotation import key_rotation
     from .knowledge_graph import knowledge_graph
     from .kv_memory import kv_memory
     from .lambda_tool import lambda_tool
     from .latency_heatmap import latency_heatmap
     from .latency_slo import latency_slo
     from .linear import linear
+    from .local_embeddings_cache import local_embeddings_cache
+    from .marketplace_ratings import marketplace_ratings
     from .memleak_quarantine import memleak_quarantine
     from .memory import memory
     from .migration_cost import migration_cost
@@ -628,6 +638,7 @@ def base_registry(  # noqa: C901
     from .mongodb_tool import mongodb_tool
     from .msgraph_tool import msgraph_tool
     from .multimodal_rag import multimodal_rag
+    from .multiregion_failover import multiregion_failover
     from .mutation_test import mutation_test
     from .newsapi_tool import newsapi_tool
     from .notify import notify_tool
@@ -641,25 +652,33 @@ def base_registry(  # noqa: C901
     from .pandas_query import pandas_query
     from .pandoc_tool import pandoc_tool
     from .pdf_reader import read_pdf
+    from .pia_generator import pia_generator
     from .plaid_tool import plaid_tool
     from .plain_language import plain_language
     from .plausible_tool import plausible_tool
     from .plugin_lockfile import plugin_lockfile
+    from .polyglot_injection import polyglot_injection
     from .posthog_tool import posthog_tool
     from .preview_diff import preview_diff
     from .process_introspect import process_introspect
     from .provenance_chain import provenance_chain
+    from .provider_failover_policy import provider_failover_policy
+    from .query_plan_regression import query_plan_regression
     from .quorum_approval import quorum_approval
     from .recall import recall
     from .reddit_tool import reddit_tool
     from .redis_tool import redis_tool
     from .reflect_loop import reflect_loop
+    from .reliability_harness import reliability_harness
     from .replicate_tool import replicate_tool
     from .right_to_explanation import right_to_explanation
     from .risk_tier_classifier import risk_tier_classifier
+    from .run_events_firehose import run_events_firehose
     from .s3_attachments import s3_attachments
     from .s3_tool import s3_tool
     from .saas_trigger import saas_trigger
+    from .saas_trigger_registry import saas_trigger_registry
+    from .safety_regression_budget import safety_regression_budget
     from .salesforce_tool import salesforce_tool
     from .semantic_code_search import semantic_code_search
     from .semantic_scholar import semantic_scholar
@@ -669,11 +688,14 @@ def base_registry(  # noqa: C901
     from .sla_breach import sla_breach
     from .slack_bot import slack_bot
     from .slack_workflow import slack_workflow
+    from .smart_goal_completion import smart_goal_completion
+    from .smart_nl_filter import smart_nl_filter
     from .sns_tool import sns_tool
     from .spend_report import spend_report
     from .spotify_tool import spotify_tool
     from .spreadsheet import spreadsheet
     from .sql_query import sql_query
+    from .streaming_reasoning_trace import streaming_reasoning_trace
     from .stripe_tool import stripe_tool
     from .supply_chain_pin import supply_chain_pin
     from .synthetic_data import synthetic_data
@@ -686,9 +708,11 @@ def base_registry(  # noqa: C901
     from .trello_tool import trello_tool
     from .twilio_tool import twilio_tool
     from .two_person_rule import two_person_rule
+    from .unified_inbox import unified_inbox
     from .vercel_tool import vercel_tool
     from .view_image import view_image
     from .view_video import view_video
+    from .voice_cloning_consent import voice_cloning_consent
     from .wal_contention import wal_contention
     from .watermark_detector import watermark_detector
     from .web_archive import web_archive
@@ -812,6 +836,30 @@ def base_registry(  # noqa: C901
     reg.register(latency_heatmap())
     reg.register(plain_language())
     reg.register(multimodal_rag())
+    reg.register(query_plan_regression())
+    reg.register(provider_failover_policy())
+    reg.register(cost_aware_router())
+    reg.register(multiregion_failover())
+    reg.register(reliability_harness())
+    reg.register(chaos_gameday())
+    reg.register(pia_generator())
+    reg.register(capability_negotiation())
+    reg.register(key_rotation())
+    reg.register(data_residency())
+    reg.register(polyglot_injection())
+    reg.register(safety_regression_budget())
+    reg.register(autogen_adapter())
+    reg.register(crewai_adapter())
+    reg.register(run_events_firehose())
+    reg.register(marketplace_ratings())
+    reg.register(local_embeddings_cache())
+    reg.register(saas_trigger_registry())
+    reg.register(streaming_reasoning_trace())
+    reg.register(voice_cloning_consent())
+    reg.register(diff_to_expected())
+    reg.register(smart_goal_completion())
+    reg.register(unified_inbox())
+    reg.register(smart_nl_filter())
     reg.register(semantic_code_search(sandbox))
     reg.register(mutation_test())
     reg.register(constrained_output())

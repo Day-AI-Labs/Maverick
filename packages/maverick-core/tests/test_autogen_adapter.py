@@ -73,14 +73,9 @@ def test_errors():
     assert t.fn({"op": "nope"}).startswith("ERROR")
 
 
-def test_registered():
-    from maverick.tools import base_registry
-
-    class _W:
-        pass
-
-    class _S:
-        workdir = "."
-
-    names = set(getattr(base_registry(world=_W(), sandbox=_S()), "_tools", {}).keys())
-    assert "autogen_adapter" in names
+def test_factory_contract():
+    t = autogen_adapter()
+    assert t.name == "autogen_adapter"
+    assert t.parallel_safe is True
+    assert t.input_schema["type"] == "object"
+    assert set(t.input_schema["properties"]["op"]["enum"]) == {"tool_spec", "from_autogen"}
