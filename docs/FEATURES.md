@@ -365,6 +365,18 @@ never routing somewhere v2 rejected, falling back to v2 on a cold context. The
 learned table persists atomically (`router_bandit.json`, 0600); opt-in via
 `[routing] bandit` and default-OFF.
 
+**Public performance SLA** ([`docs/perf-sla.md`](./perf-sla.md) +
+`perf_sla.py`, `python -m maverick.perf_sla --ci`): the published, measurable
+performance properties each release certifies — tool-dispatch overhead,
+compaction latency, world-model hot-path read/write p95 — measured against the
+REAL code paths and compared to the published thresholds (changing a threshold
+is changing the SLA); rows that need concurrency/fault drills delegate to the
+reliability cert. **Reliability certification** (`reliability_cert.py`,
+`python -m maverick.reliability_cert`): a reproducible, evidence-backed
+self-certification composing the shipped drills — chaos game-day, the plugin
+reliability drill, a 16-writer WAL contention probe — into a certificate JSON
+(environment fingerprint + per-check verdicts), Ed25519-signed with the audit
+key when available and only issued for a passing run.
 **Deprecation registry + sunset gate** (`deprecations.py`, `python -m
 maverick.deprecations [--ci]`, wired into CI): every deprecated path is
 declared in one registry (target, replacement, deprecated_in, **remove_in**);
