@@ -25,9 +25,13 @@ here.
   loop with cross-session failure memory (`reflexion.py`); graded **critic** for
   structured accept/revise/reject feedback (`critic.py`).
 - **Planning topologies** — tree-of-thought (`tree_of_thought.py`), debate
-  (`debate.py`), speculative decode/finalize (`speculative.py`), latency-aware
-  best-of-N that cancels laggards (`latency_best_of_n.py`), shared-scratchpad
-  blackboard (`blackboard.py`), cross-agent bus (`agent_bus.py`).
+  (`debate.py`), **plan-execute-reflect** loop (`plan_execute_reflect.py`,
+  `maverick plan-reflect GOAL`): a planner decomposes the goal, an executor runs
+  each step, a reflector decides done/revise/continue and loops until done, the
+  iteration cap, or the budget runs out — speculative decode/finalize
+  (`speculative.py`), latency-aware best-of-N that cancels laggards
+  (`latency_best_of_n.py`), shared-scratchpad blackboard (`blackboard.py`),
+  cross-agent bus (`agent_bus.py`).
 - **Context lifecycle** — deferred tool loading + `find_tools`, cross-session
   `memory` tool (`tools/memory.py`), programmatic tool calling
   (`tools/code_exec.py`), structural/retrieval-augmented compaction

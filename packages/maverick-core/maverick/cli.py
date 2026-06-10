@@ -1810,6 +1810,42 @@ def debate(ctx, question: str, rounds: int, max_dollars: float,
     click.echo(f"\n[{result.rounds_completed} round(s), ${result.total_dollars:.4f}]")
 
 
+@main.command("plan-reflect")
+@click.argument("goal")
+@click.option("--max-iterations", default=3, show_default=True, type=int,
+              help="Max plan->execute->reflect passes before stopping.")
+@click.option("--max-dollars", default=2.0, show_default=True, type=float,
+              help="Spend cap for the whole loop.")
+@click.pass_context
+def plan_reflect(ctx, goal: str, max_iterations: int, max_dollars: float) -> None:
+    """Run the plan-execute-reflect loop on GOAL and print the trace.
+
+    A planner breaks GOAL into steps, an executor runs each, and a reflector
+    decides DONE / REVISE / CONTINUE -- looping until the goal is met, the
+    iteration cap is reached, or the budget runs out.
+    """
+    from .budget import Budget
+    from .plan_execute_reflect import run_plan_execute_reflect
+    k = _kernel()
+    llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
+    result = run_plan_execute_reflect(
+        goal,
+        planner_complete=llm.complete,
+        executor_complete=llm.complete,
+        reflector_complete=llm.complete,
+        max_iterations=max_iterations,
+        budget=Budget(max_dollars=max_dollars),
+    )
+    click.echo(f"Plan ({len(result.plan)} steps): {', '.join(result.plan) or '(empty)'}")
+    for r in result.results:
+        click.echo(f"\n[{r.step}]\n{r.output}")
+    click.echo("\n" + "=" * 48)
+    for i, refl in enumerate(result.reflections, 1):
+        click.echo(f"reflect {i}: {refl.status} -- {refl.notes}")
+    click.echo(f"\nStatus: {result.status} "
+               f"[{result.iterations} iteration(s), ${result.total_dollars:.4f}]")
+
+
 @main.command()
 @click.option("--idle-sleep", default=2.0, show_default=True,
               help="Seconds to wait when the queue is empty.")
