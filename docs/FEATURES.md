@@ -1439,6 +1439,16 @@ tested without spawning py-spy.
   door — mental model, guided tour, day-2 operations, safety posture,
   extension points, and a map of every other doc; every cited command and
   module verified against the tree.
+- **Localized docs** ([`docs/i18n/`](./i18n/)): real, native-quality human
+  translations of the getting-started guide into **9 languages** — Spanish,
+  Japanese, German, French, Brazilian Portuguese, Korean, Russian, Italian,
+  Hindi — each following its language's software-docs register, with code
+  blocks/commands/paths kept byte-identical and a source-commit header so
+  staleness is trackable. The **docs MT pipeline** (`docs_i18n.py`, `python
+  -m maverick.docs_i18n`) machine-translates the tail under hard quality
+  gates (fenced code preserved, glossary + structure verified before
+  anything is written, human translations never overwritten); `--check` is
+  offline, and the model resolves by the `translator` role.
 - **Distribution program kits** ([`docs/programs/`](./programs/)): 17
   runnable playbooks — Summit v1 (virtual), university outreach,
   integration partnerships (business half), GitHub Stars campaign, office
