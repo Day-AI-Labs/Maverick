@@ -4044,5 +4044,32 @@ def encryption_migrate_cmd(ctx, dry_run: bool) -> None:
     )
 
 
+@main.group("local-runtime")
+def local_runtime_group() -> None:
+    """Plan the local model-server runtime (vLLM / TGI / llama.cpp)."""
+
+
+@local_runtime_group.command("plan")
+def local_runtime_plan() -> None:
+    """Print the server command Maverick WOULD run -- nothing is started.
+
+    Composes the argv (and any env toggles) from [local_runtime] in
+    ~/.maverick/config.toml plus MAVERICK_LOCAL_RUNTIME_* overrides.
+    """
+    import shlex
+
+    from .local_runtime import Launcher, LocalRuntimeError
+    try:
+        launcher = Launcher()
+        argv, env = launcher.plan()
+    except LocalRuntimeError as e:
+        raise click.ClickException(str(e)) from e
+    if not launcher.cfg["enabled"]:
+        click.echo("# local runtime is DISABLED ([local_runtime] enabled = false); dry plan only")
+    for key in sorted(env):
+        click.echo(f"{key}={env[key]} \\")
+    click.echo(shlex.join(argv))
+
+
 if __name__ == "__main__":
     main()
