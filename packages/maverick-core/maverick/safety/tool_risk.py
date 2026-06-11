@@ -56,6 +56,7 @@ _DEFAULT_RISK: dict[str, str] = {
     "github_issues": "high",
     "gitlab_issues": "high",
     "anki": "high",
+    "lsp_bridge": "high",
     # high: mutate external state / money / send messages / drive infra or a
     # device / recursively spawn. These used to fall through to the "medium"
     # default, so a max_risk="medium" channel ceiling failed to drop them.
