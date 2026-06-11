@@ -59,8 +59,30 @@ async def _run(args: dict[str, Any]) -> str:
     message = args.get("message")
     timeout = float(args.get("timeout") or 30)
     want_recv = args.get("recv", True)
+    # SSRF: _check_url resolved the host once to validate it, but
+    # websockets.connect(url) would re-resolve the SAME name independently --
+    # a DNS-rebinding window (validate -> public IP, connect -> 169.254.169.254
+    # / 127.0.0.1). Pin the connection to a single validated public IP (the
+    # same defense _ssrf gives http_fetch/pdf_reader/...), keeping the original
+    # hostname for the Host header and TLS SNI/cert validation on wss.
+    from ._ssrf import BlockedHost, resolve_pinned_ip
+    parsed = urlparse(url)
     try:
-        async with websockets.connect(url, open_timeout=timeout) as ws:
+        pinned_ip = resolve_pinned_ip(parsed.hostname or "")
+    except BlockedHost as e:
+        return (f"ERROR: refusing to connect to {parsed.hostname!r}: {e} "
+                "(SSRF guard). Set MAVERICK_FETCH_ALLOW_PRIVATE=1 to override.")
+    scheme = (parsed.scheme or "").lower()
+    connect_kwargs: dict[str, Any] = {
+        "open_timeout": timeout,
+        "host": pinned_ip,
+        "port": parsed.port or (443 if scheme == "wss" else 80),
+    }
+    if scheme == "wss" and parsed.hostname:
+        # Connect to the pinned IP but validate the cert against the real name.
+        connect_kwargs["server_hostname"] = parsed.hostname
+    try:
+        async with websockets.connect(url, **connect_kwargs) as ws:
             if message is not None:
                 await ws.send(str(message))
             if not want_recv:
