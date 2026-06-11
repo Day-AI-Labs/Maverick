@@ -68,6 +68,13 @@ _B64_BLOB = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
 # untrusted text; keep it linear and bounded).
 _MAX_B64_BLOBS = 20
 
+# Only decode the leading slice of any one base64 blob before re-scanning it.
+# A concealed prompt-injection INSTRUCTION is short; a giant blob is a data
+# payload, not a hidden prompt, and decoding + re-scanning the whole thing was
+# the worst hot-path cost (168ms on a 200KB blob). 8 KiB of base64 -> ~6 KiB of
+# decoded text, which still catches an instruction at the start of the blob.
+_MAX_B64_DECODE_CHARS = 8192
+
 
 def _strip_invisible(text: str) -> str:
     return _INVISIBLE.sub("", text)
@@ -89,10 +96,14 @@ def _decode_b64_blobs(text: str) -> list[str]:
     for m in _B64_BLOB.finditer(text):
         if len(out) >= _MAX_B64_BLOBS:
             break
-        blob = m.group(0)
+        # Decode only the leading slice: a hidden instruction is short, so this
+        # still catches it, but a multi-KB payload blob no longer drives a
+        # multi-KB decode + full re-scan (the worst-case latency). Trim to a
+        # multiple of 4 so the base64 chunk stays self-contained.
+        blob = m.group(0)[: _MAX_B64_DECODE_CHARS & ~3]
         try:
             raw = base64.b64decode(blob + "=" * (-len(blob) % 4), validate=False)
-            decoded = raw.decode("utf-8")
+            decoded = raw.decode("utf-8", errors="ignore")
         except (ValueError, UnicodeDecodeError):
             continue
         # Only keep decodes that look like text (the attack is in the words).
