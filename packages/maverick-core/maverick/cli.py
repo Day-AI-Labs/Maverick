@@ -3820,7 +3820,19 @@ def audit_verify(
     any_break = False
     for path in paths:
         breaks = verify_chain(path, pubkey_hex=pubkey)
-        if breaks:
+        if breaks and all(b.reason == "unsigned" for b in breaks):
+            # Default deployment: signing was never on. One actionable line
+            # instead of per-row tamper vocabulary -- but still exit 1, so
+            # automation cannot pass unverifiable evidence as clean.
+            any_break = True
+            click.echo(
+                f"UNVERIFIABLE: {path} — {len(breaks)} unsigned row(s); audit "
+                "signing is off. Set [audit] sign = true in "
+                "~/.maverick/config.toml (or MAVERICK_AUDIT_SIGN=1) so future "
+                "rows are hash-chained and tamper-evident.",
+                err=True,
+            )
+        elif breaks:
             any_break = True
             click.echo(f"FAIL: {len(breaks)} issue(s) in {path}", err=True)
             for b in breaks:
