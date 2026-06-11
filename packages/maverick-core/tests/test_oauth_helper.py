@@ -26,8 +26,8 @@ def test_exchange_summarises_never_echoes(monkeypatch, tmp_path):
     def fake_post(url, data):
         captured["url"] = url
         captured["data"] = data
-        return {"access_token": "supersecrettoken123", "token_type": "bearer",
-                "expires_in": 3600, "refresh_token": "refreshsecret",
+        return {"access_token": "supersecrettoken123", "token_type": "bearer",  # pragma: allowlist secret
+                "expires_in": 3600, "refresh_token": "refreshsecret",  # pragma: allowlist secret
                 "scope": "repo"}
 
     monkeypatch.setattr(mod, "_post_form", fake_post)
