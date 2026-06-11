@@ -231,7 +231,16 @@ class OpenAIClient:
                 if isinstance(content, str):
                     out.append({"role": "user", "content": content})
                 elif isinstance(content, list):
-                    # Two passes preserves block order in the resulting messages.
+                    # A `tool` message MUST immediately follow the assistant
+                    # `tool_calls` it answers -- OpenAI 400s ("messages with role
+                    # 'tool' must be a response to a preceding message with
+                    # 'tool_calls'") if a `user` message is inserted between them.
+                    # Anthropic allows text blocks interleaved with / before
+                    # tool_result blocks in one user turn, so we must NOT preserve
+                    # that raw order: emit ALL tool messages first (keeping their
+                    # relative order so each matches its tool_call), then any
+                    # supplementary text as a single trailing user message.
+                    tool_msgs: list[dict] = []
                     text_buf: list[str] = []
                     for block in content:
                         if not isinstance(block, dict):
@@ -239,11 +248,7 @@ class OpenAIClient:
                             continue
                         bt = block.get("type")
                         if bt == "tool_result":
-                            # Flush any buffered text first.
-                            if text_buf:
-                                out.append({"role": "user", "content": "\n".join(text_buf)})
-                                text_buf = []
-                            out.append({
+                            tool_msgs.append({
                                 "role": "tool",
                                 "tool_call_id": block.get("tool_use_id", ""),
                                 "content": _extract_tool_result_text(block.get("content")),
@@ -252,6 +257,7 @@ class OpenAIClient:
                             text_buf.append(block.get("text", ""))
                         else:
                             text_buf.append(str(block))
+                    out.extend(tool_msgs)
                     if text_buf:
                         out.append({"role": "user", "content": "\n".join(text_buf)})
 

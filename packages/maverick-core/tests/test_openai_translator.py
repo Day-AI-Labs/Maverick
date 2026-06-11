@@ -235,3 +235,31 @@ class TestProviderApiKeyIsolation:
 
         assert captures[0][0] == "sk-openrouter"
         assert captures[1][0] == "sk-openrouter"
+
+
+def test_tool_result_never_follows_a_user_message():
+    # Regression: a `tool` message must immediately follow the assistant
+    # tool_calls -- a `user` message between them is an OpenAI 400. Anthropic
+    # allows text before/between tool_result blocks; the translator must
+    # reorder so all tool messages come first, then trailing text.
+    from maverick.providers.openai_provider import OpenAIClient
+    msgs = [
+        {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "c1", "name": "x", "input": {}},
+            {"type": "tool_use", "id": "c2", "name": "y", "input": {}},
+        ]},
+        {"role": "user", "content": [
+            {"type": "text", "text": "before"},
+            {"type": "tool_result", "tool_use_id": "c1", "content": "r1"},
+            {"type": "text", "text": "between"},
+            {"type": "tool_result", "tool_use_id": "c2", "content": "r2"},
+        ]},
+    ]
+    out = OpenAIClient._to_openai_messages("sys", msgs)
+    roles = [m["role"] for m in out]
+    assert not any(roles[i] == "tool" and roles[i - 1] == "user"
+                   for i in range(1, len(roles))), roles
+    tool_ids = [m["tool_call_id"] for m in out if m["role"] == "tool"]
+    assert tool_ids == ["c1", "c2"]  # order preserved -> each matches its call
+    # supplementary text survives as a trailing user message
+    assert [m["content"] for m in out if m["role"] == "user"] == ["before\nbetween"]

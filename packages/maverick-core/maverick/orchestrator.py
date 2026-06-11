@@ -1128,8 +1128,12 @@ async def run_goal(  # noqa: C901
                     task_brief_hash=hash_brief(goal.title + (goal.description or "")),
                     task_brief_text=(goal.title + "\n" + (goal.description or "")),
                     model_id=getattr(llm, "model", ""),
-                    tools_used=sorted({e.kind for e in blackboard.entries
-                                       if e.kind == "observation"}),
+                    # by_kind() snapshots under the blackboard lock. _donate runs
+                    # on a worker thread (asyncio.to_thread); reading the raw
+                    # .entries list here races the event loop's post() append/trim
+                    # -> "list changed size during iteration", which the blanket
+                    # except below swallowed as a silently-lost donation.
+                    tools_used=sorted({e.kind for e in blackboard.by_kind("observation")}),
                     outcome="success",
                     reward=1.0 if result.verifier_confidence >= 0.75 else result.verifier_confidence,
                     verifier_confidence=result.verifier_confidence,
