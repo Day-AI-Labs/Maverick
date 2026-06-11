@@ -116,6 +116,19 @@ KNOWN_SCHEMA: dict[str, set[str] | None] = {
     "tools": None,
 }
 
+# Keep this registry in lockstep with migrate.py's KNOWN_SECTIONS (curated
+# from the real load_config() call sites) so config-lint never false-flags a
+# section the runtime actually reads as a typo. The two had drifted by ~59
+# sections -- a client configuring documented features like [provider_failover],
+# [enterprise], [egress], [governance], [encryption] got told they were
+# typos (client-journey finding). Sections with an explicit key schema above
+# keep it (setdefault won't overwrite); the rest accept any subkey (None),
+# exactly as migrate treats them.
+from .migrate import KNOWN_SECTIONS as _RUNTIME_SECTIONS  # noqa: E402
+
+for _section in _RUNTIME_SECTIONS:
+    KNOWN_SCHEMA.setdefault(_section, None)
+
 
 @dataclass
 class Finding:
