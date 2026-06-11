@@ -456,7 +456,19 @@ def onboard(ctx: click.Context, name, docs, no_llm, yes) -> None:
             except Exception:
                 pass  # no vision extra -> images are skipped, not read as bytes
         elif doc_paths:
-            click.echo("(knowledge disabled; skipping doc ingestion)", err=True)
+            # The client explicitly attached docs AND the generated persona
+            # tells the agent to answer from them -- so a quiet "skipping"
+            # aside under-sells that the domain agent ends up with NO document
+            # memory. Make it a clear, actionable warning (client-journey
+            # finding): name the count and the exact remediation.
+            click.echo(
+                f"WARNING: knowledge is disabled, so the {len(doc_paths)} "
+                "document(s) you attached were NOT loaded; this domain agent "
+                "will have no document memory. Enable it with `maverick init` "
+                "(turn on knowledge) or set [knowledge] enable = true in "
+                "~/.maverick/config.toml, then re-run onboard.",
+                err=True,
+            )
     except Exception as e:  # knowledge layer is optional
         if doc_paths:
             click.echo(f"(knowledge unavailable; skipping doc ingestion: {e})", err=True)
@@ -3863,8 +3875,24 @@ def audit_verify(
             click.echo(f"no audit day-files in {audit_dir}")
     else:
         d = day or _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
-        paths = [audit_dir / f"{d}.ndjson"]
         anchor_dir = audit_dir
+        day_file = audit_dir / f"{d}.ndjson"
+        from .audit.signing import _have_crypto
+        if not day_file.exists() and _have_crypto():
+            # No day-file means no audit events were recorded that day -- the
+            # clean/empty state, NOT tampering (the audit log records security
+            # events; a benign run legitimately writes none). A routine
+            # `audit verify` on a quiet day must not show a scary
+            # "FAIL: missing_file" (client-journey finding). verify_anchors
+            # below stays the authority on a SUSPICIOUS absence: it FAILs when
+            # an anchor claims this day-file existed. Gated on _have_crypto():
+            # with crypto unavailable we cannot make ANY tamper-evidence claim,
+            # so we fall through to the fail-closed no_crypto path instead of
+            # reporting clean.
+            click.echo(f"no audit entries for {d} (nothing recorded that day).")
+            paths = []
+        else:
+            paths = [day_file]
 
     if not pubkey:
         click.echo(
