@@ -53,6 +53,7 @@ def _default_config_path() -> Path:
 
 # Back-compat: many call sites still reference the constant.
 DEFAULT_CONFIG_PATH = _default_config_path()
+CONFIG_OVERLAY_ENV = "MAVERICK_CONFIG_OVERLAY"
 
 # Accept lower/mixed-case names too: a hand-edited config referencing a
 # lowercase env var (`${my_token}`) previously left the literal `${my_token}`
@@ -82,12 +83,11 @@ def config_path() -> Path:
     return _default_config_path()
 
 
-def load_config(path: Path | None = None) -> dict:
-    p = path or config_path()
-    if not p.exists():
+def _load_config_file(path: Path) -> dict:
+    if not path.exists():
         return {}
     try:
-        with open(p, "rb") as f:
+        with open(path, "rb") as f:
             return _interp(tomllib.load(f))
     except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as e:
         # The kernel must tolerate a missing config (returns {} above); a
@@ -96,9 +96,30 @@ def load_config(path: Path | None = None) -> dict:
         # get_role_model / get_safety caller on a hand-edited TOML typo.
         logging.getLogger(__name__).warning(
             "ignoring unreadable %s (%s: %s); using defaults",
-            p, type(e).__name__, e,
+            path, type(e).__name__, e,
         )
         return {}
+
+
+def _deep_merge_config(base: dict, overlay: dict) -> dict:
+    merged = dict(base)
+    for key, value in overlay.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge_config(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def load_config(path: Path | None = None) -> dict:
+    if path is not None:
+        return _load_config_file(path)
+
+    cfg = _load_config_file(config_path())
+    overlay = os.environ.get(CONFIG_OVERLAY_ENV)
+    if not overlay:
+        return cfg
+    return _deep_merge_config(cfg, _load_config_file(Path(overlay).expanduser()))
 
 
 def get_role_model(role: str) -> str | None:
