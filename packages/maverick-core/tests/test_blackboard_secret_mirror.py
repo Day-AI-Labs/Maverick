@@ -17,7 +17,7 @@ from __future__ import annotations
 from maverick.blackboard import Blackboard
 from maverick.world_model import WorldModel
 
-_SECRET = "sk-ant-api03-LEAKED1234567890abcdefABCDEFGHIJKLMNOP"
+_SECRET = "sk-ant-api03-LEAKED1234567890abcdefABCDEFGHIJKLMNOP"  # pragma: allowlist secret
 
 
 def test_secret_not_persisted_to_goal_events(tmp_path):

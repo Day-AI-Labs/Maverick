@@ -10,15 +10,17 @@ from __future__ import annotations
 
 from maverick.safety.secret_detector import redact
 
+# Synthetic non-secret fixture body (the PEM regex matches the BEGIN..END
+# structure, not the body content) -- detect-secrets entropy plugin flags it.
 _KEY_BODY = (
-    "MIIEpAIBAAKCAQEA7Xy2hZ9qF8s1J3kLmN0pQrStUvWxYz0123456789abcdef\n"
-    "GHIJKLMNOPqrstuvwxyzABCDEFabcdef0123456789+/aaaaaaaaaaaaaaaaaa\n"
-    "bbbbbbbbbbbbbbbbbbccccccccccccccccccddddddddddddddddddeeeeeeee=="
+    "MIIEpAIBAAKCAQEA7Xy2hZ9qF8s1J3kLmN0pQrStUvWxYz0123456789abcdef\n"  # pragma: allowlist secret
+    "GHIJKLMNOPqrstuvwxyzABCDEFabcdef0123456789+/aaaaaaaaaaaaaaaaaa\n"  # pragma: allowlist secret
+    "bbbbbbbbbbbbbbbbbbccccccccccccccccccddddddddddddddddddeeeeeeee=="  # pragma: allowlist secret
 )
 
 
 def _pem(kind: str = "RSA ") -> str:
-    return (f"-----BEGIN {kind}PRIVATE KEY-----\n{_KEY_BODY}\n"
+    return (f"-----BEGIN {kind}PRIVATE KEY-----\n{_KEY_BODY}\n"  # pragma: allowlist secret
             f"-----END {kind}PRIVATE KEY-----")
 
 
@@ -29,8 +31,8 @@ def test_full_pem_block_is_fully_redacted():
     # None of the key material may survive.
     assert "MIIEpAIBAAKCAQEA" not in red
     assert "eeeeeeee==" not in red
-    assert "-----END RSA PRIVATE KEY-----" not in red
-    assert "-----BEGIN RSA PRIVATE KEY-----" not in red
+    assert "-----END RSA PRIVATE KEY-----" not in red  # pragma: allowlist secret
+    assert "-----BEGIN RSA PRIVATE KEY-----" not in red  # pragma: allowlist secret
     # Surrounding text is preserved.
     assert "my key is:" in red and "thanks" in red
 
@@ -44,6 +46,6 @@ def test_openssh_and_ec_keys_fully_redacted():
 
 def test_bare_begin_marker_without_end_still_flagged():
     # A truncated/malformed marker (no END) must still be caught, not ignored.
-    red, matches = redact("-----BEGIN RSA PRIVATE KEY-----")
+    red, matches = redact("-----BEGIN RSA PRIVATE KEY-----")  # pragma: allowlist secret
     assert matches
     assert "[REDACTED:" in red
