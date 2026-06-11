@@ -6,7 +6,12 @@ RESULTS.md and will drift as the shield improves).
 """
 from __future__ import annotations
 
-from benchmarks.security import corpus, detector_score, latency_bench
+from benchmarks.security import (
+    corpus,
+    detector_score,
+    end_to_end_asr,
+    latency_bench,
+)
 
 
 def test_corpus_has_both_labels_and_all_splits():
@@ -47,3 +52,26 @@ def test_latency_measure_runs_and_is_finite():
     for m in res.values():
         assert m["n"] >= 1
         assert 0.0 <= m["p50"] <= m["max"]
+
+
+def test_e2e_asr_measure_is_well_formed():
+    r = end_to_end_asr.measure()
+    assert r["asr_off"] == 1.0
+    # train_corpus excluded from the headline attack set.
+    assert r["n_attacks"] > 0
+    for key in ("targeted_block", "did_block", "fp"):
+        k, n, (lo, hi) = r[key]
+        assert 0 <= k <= n
+        assert 0.0 <= lo <= hi <= 1.0
+    # Defense-in-depth blocks at least as many as the single targeted surface.
+    assert r["did_block"][0] >= r["targeted_block"][0]
+    assert set(r["by_surface"]) == {"input", "tool_call", "output"}
+
+
+def test_e2e_surface_map_covers_authored_attack_categories():
+    authored = {
+        c.category for c in corpus.load_all()
+        if c.label == "attack" and c.category != "train_corpus"
+    }
+    missing = authored - set(end_to_end_asr.SURFACE)
+    assert not missing, f"attack categories with no chokepoint routing: {missing}"
