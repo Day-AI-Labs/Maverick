@@ -1,7 +1,7 @@
 """P0 capability layer: host resource-scope enforcement at the tool chokepoint.
 
 A capability whose ``allow_hosts`` is non-empty restricts which network hosts
-the known network tools (http_fetch/browser/oidc) may reach: the host is parsed from
+the known network tools (http_fetch/browser/oidc/oauth_helper) may reach: the host is parsed from
 the tool's URL argument and denied if it matches no ``allow_hosts`` glob.
 Default-open: an empty ``allow_hosts`` (the common case, and the only state
 reachable without opting into capability enforcement) is a no-op, so normal
@@ -73,6 +73,20 @@ async def test_oidc_token_url_outside_scope_denied_and_tool_not_run(tmp_path):
     agent.tools.register(_spy_tool("oidc", calls, url_key="token_url"))
 
     out = await agent._run_tool("oidc", {"token_url": "https://evil.com/token"})
+    assert "DENIED by capability" in out
+    assert "evil.com" in out
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_oauth_helper_token_url_outside_scope_denied_and_tool_not_run(tmp_path):
+    agent = _agent(tmp_path)
+    agent.capability = Capability(principal="agent:coder-1",
+                                  allow_hosts=frozenset({"*.example.com"}))
+    calls: list = []
+    agent.tools.register(_spy_tool("oauth_helper", calls, url_key="token_url"))
+
+    out = await agent._run_tool("oauth_helper", {"token_url": "https://evil.com/token"})
     assert "DENIED by capability" in out
     assert "evil.com" in out
     assert calls == []
