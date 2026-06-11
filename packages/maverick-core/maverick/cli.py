@@ -2213,8 +2213,30 @@ def schema_plan_cmd() -> None:
 def config_lint_cmd() -> None:
     """Validate ~/.maverick/config.toml: unknown sections/keys + obvious type
     mistakes, with closest-match suggestions. Exits 1 if any error-level finding."""
-    from .config import load_config
+    from .config import config_path, load_config
     from .config_lint import format_findings, lint_config
+    # load_config() is deliberately fail-soft: a corrupt config.toml yields {}
+    # with only a warning, so linting it would find nothing and print
+    # "config OK" -- the one tool meant to catch a broken config blessing a
+    # file in which every setting is being dropped (round-4 finding; mirrors
+    # health._check_config). Parse the raw file FIRST so a syntax error is a
+    # hard lint failure, not invisible.
+    p = config_path()
+    if p.exists():
+        try:
+            import tomllib
+        except ModuleNotFoundError:  # 3.10
+            import tomli as tomllib
+        try:
+            with open(p, "rb") as f:
+                tomllib.load(f)
+        except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as e:
+            click.echo(
+                f"error: {p} is not valid TOML -- every setting in it is being "
+                f"IGNORED ({type(e).__name__}: {e})", err=True,
+            )
+            click.echo("fix the syntax above, or back it up and re-run `maverick init`.")
+            sys.exit(1)
     try:
         cfg = load_config() or {}
     except Exception as e:
