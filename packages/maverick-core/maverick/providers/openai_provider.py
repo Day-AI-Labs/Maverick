@@ -122,6 +122,13 @@ def _openai_import_error_message(e: ImportError) -> str:
 
 class OpenAIClient:
     DEFAULT_MODEL = "gpt-4o"
+    # Pricing qualifier prepended to the model id when recording budget spend.
+    # Self-hosted subclasses (ollama/vllm/tgi/openai_compatible) set theirs
+    # ("vllm:" etc.) so an UNKNOWN local model id prices at $0 instead of the
+    # Sonnet fallback (phantom spend for free local models). Empty for hosted
+    # providers; known table ids keep their real rate either way because the
+    # price lookup strips the prefix before matching.
+    PRICE_MODEL_PREFIX = ""
 
     def __init__(
         self,
@@ -303,6 +310,7 @@ class OpenAIClient:
         resp: Any,
         budget: Budget | None,
         model: str | None = None,
+        price_model_prefix: str = "",
     ) -> LLMResponse:
         choice = resp.choices[0]
         text = choice.message.content or ""
@@ -359,7 +367,7 @@ class OpenAIClient:
             budget.record_tokens(
                 billable_in,
                 _strict_usage_count(getattr(usage, "completion_tokens", 0), "completion_tokens"),
-                model=model,
+                model=(price_model_prefix + model) if model else model,
                 cache_read_tok=cache_read_tok,
                 cache_read_mult=CACHE_READ_MULT_OPENAI,
             )
@@ -440,7 +448,10 @@ class OpenAIClient:
             system, messages, tools, max_tokens, model, thinking_budget,
         )
         resp = sync_retry(lambda: self._sync.chat.completions.create(**kwargs))
-        return self._from_response(resp, budget, model=kwargs.get("model"))
+        return self._from_response(
+            resp, budget, model=kwargs.get("model"),
+            price_model_prefix=self.PRICE_MODEL_PREFIX,
+        )
 
     async def complete_async(
         self,
@@ -456,4 +467,7 @@ class OpenAIClient:
             system, messages, tools, max_tokens, model, thinking_budget,
         )
         resp = await async_retry(lambda: self._async.chat.completions.create(**kwargs))
-        return self._from_response(resp, budget, model=kwargs.get("model"))
+        return self._from_response(
+            resp, budget, model=kwargs.get("model"),
+            price_model_prefix=self.PRICE_MODEL_PREFIX,
+        )

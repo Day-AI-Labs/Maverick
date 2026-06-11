@@ -280,6 +280,11 @@ class ToolRegistry:
         # (tool_name, chunk) for tools whose fn yields chunks (generators).
         # The model still gets the joined result; this is the live-UX seam.
         self._chunk_listener = None
+        # Names base_registry marks as deferred-eligible (the SaaS connector
+        # long tail). Consumed by Agent._build_tools when the
+        # [capabilities] deferred_tools knob (default on) hides them behind
+        # the find_tools meta-tool. Empty == nothing marked.
+        self.deferrable_names: set[str] = set()
         # Memoized to_anthropic() payload. The exposed tool set is stable
         # across turns (it only changes on register / set_acl /
         # enable_deferred / activate), but the agent loop re-serialises all
@@ -1018,21 +1023,29 @@ def base_registry(  # noqa: C901
     reg.register(openapi_runner(sandbox))
     reg.register(ocr(sandbox))
     reg.register(container_build(sandbox))
-    reg.register(posthog_tool())
+    def _defer(tool):
+        # Register a third-party SaaS connector as deferred-eligible: with
+        # [capabilities] deferred_tools on (default), its schema stays out of
+        # the model's per-turn catalog until find_tools activates it. run()
+        # executes it regardless of exposure.
+        reg.register(tool)
+        reg.deferrable_names.add(tool.name)
+
+    _defer(posthog_tool())
     reg.register(privacy_budget())
-    reg.register(shopify_tool())
-    reg.register(mongodb_tool())
-    reg.register(redis_tool())
-    reg.register(sentry_tool())
-    reg.register(pagerduty_tool())
-    reg.register(salesforce_tool())
-    reg.register(cloudflare_tool())
-    reg.register(datadog_tool())
-    reg.register(hubspot_tool())
-    reg.register(twilio_tool())
-    reg.register(s3_tool())
+    _defer(shopify_tool())
+    _defer(mongodb_tool())
+    _defer(redis_tool())
+    _defer(sentry_tool())
+    _defer(pagerduty_tool())
+    _defer(salesforce_tool())
+    _defer(cloudflare_tool())
+    _defer(datadog_tool())
+    _defer(hubspot_tool())
+    _defer(twilio_tool())
+    _defer(s3_tool())
     reg.register(serial_tool())
-    reg.register(elasticsearch_tool())
+    _defer(elasticsearch_tool())
     reg.register(github_actions())
     # Strategic-fit connectors (ITSM / data / cloud-ML / GRC). Explicit-token
     # auth (no ambient creds), so registered unconditionally like salesforce.
@@ -1046,21 +1059,28 @@ def base_registry(  # noqa: C901
     from .snowflake_tool import snowflake_tool
     from .vertex_tool import vertex_tool
     from .workday_tool import workday_tool
-    reg.register(servicenow_tool())
-    reg.register(snowflake_tool())
-    reg.register(databricks_tool())
-    reg.register(onetrust_tool())
-    reg.register(vertex_tool())
-    reg.register(oracle_tool())
-    reg.register(sap_tool())
-    reg.register(workday_tool())
-    reg.register(bigquery_tool())
-    reg.register(dynamics_tool())
+    _defer(servicenow_tool())
+    _defer(snowflake_tool())
+    _defer(databricks_tool())
+    _defer(onetrust_tool())
+    _defer(vertex_tool())
+    _defer(oracle_tool())
+    _defer(sap_tool())
+    _defer(workday_tool())
+    _defer(bigquery_tool())
+    _defer(dynamics_tool())
     # The long tail of token-authed REST connectors (one spec each, built on
     # make_rest_tool). Same house rules: explicit env auth, confirm-gated writes.
     from .enterprise_connectors import enterprise_connectors
     for _conn in enterprise_connectors():
         reg.register(_conn)
+        # The long tail is deferred-eligible: with [capabilities]
+        # deferred_tools on (the default), these schemas stay out of the
+        # model's catalog until find_tools activates them -- 470+ connector
+        # schemas on every turn dominated the context window (observed: 601
+        # tools offered per call at consumer defaults). run() can still
+        # execute them regardless of exposure.
+        reg.deferrable_names.add(_conn.name)
     from .database_tool import database_tool
     reg.register(database_tool())
     # Credentialed SaaS/cloud tools are opt-in (PR #124): they can use
@@ -1074,24 +1094,24 @@ def base_registry(  # noqa: C901
         reg.register(dynamodb_tool())
         reg.register(vercel_tool())
         reg.register(gdrive_tool())
-    reg.register(trello_tool())
-    reg.register(confluence_tool())
-    reg.register(replicate_tool())
-    reg.register(newsapi_tool())
-    reg.register(wolfram_tool())
-    reg.register(dropbox_tool())
-    reg.register(msgraph_tool())
-    reg.register(gmail_tool())
-    reg.register(plausible_tool())
-    reg.register(mixpanel_tool())
-    reg.register(calendly_tool())
-    reg.register(zoom_tool())
-    reg.register(spotify_tool())
-    reg.register(home_assistant_tool())
-    reg.register(reddit_tool())
-    reg.register(bitbucket_tool())
-    reg.register(ses_tool())
-    reg.register(sns_tool())
+    _defer(trello_tool())
+    _defer(confluence_tool())
+    _defer(replicate_tool())
+    _defer(newsapi_tool())
+    _defer(wolfram_tool())
+    _defer(dropbox_tool())
+    _defer(msgraph_tool())
+    _defer(gmail_tool())
+    _defer(plausible_tool())
+    _defer(mixpanel_tool())
+    _defer(calendly_tool())
+    _defer(zoom_tool())
+    _defer(spotify_tool())
+    _defer(home_assistant_tool())
+    _defer(reddit_tool())
+    _defer(bitbucket_tool())
+    _defer(ses_tool())
+    _defer(sns_tool())
     reg.register(ffmpeg_tool(sandbox))
     reg.register(pandoc_tool(sandbox))
     reg.register(office_convert(sandbox))
@@ -1101,10 +1121,10 @@ def base_registry(  # noqa: C901
     reg.register(audio_understanding(sandbox))
     reg.register(image_edit(sandbox))
     reg.register(embedded_device(sandbox))
-    reg.register(ga4_tool())
-    reg.register(plaid_tool())
-    reg.register(truelayer_tool())
-    reg.register(erp_tool())  # read-only ERP system-of-record access (Ops/Finance)
+    _defer(ga4_tool())
+    _defer(plaid_tool())
+    _defer(truelayer_tool())
+    _defer(erp_tool())  # read-only ERP system-of-record access (Ops/Finance)
 
     # Voice tools (opt-in extra; tool factories raise ImportError only
     # when called without the required API key OR SDK; registering is

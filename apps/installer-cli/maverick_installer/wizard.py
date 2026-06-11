@@ -874,11 +874,19 @@ def pick_capabilities() -> dict[str, bool]:
         "OWN connected device's firmware (OpenOCD). Off = it refuses flash/reset.",
         default=False,
     )
+    deferred_tools = _q_confirm(
+        "Use deferred tool loading? The model sees the core toolset and "
+        "discovers the 400+ SaaS connectors on demand via find_tools -- "
+        "cuts per-call token cost ~60%. Disable only if you want every "
+        "connector schema offered on every turn.",
+        default=True,
+    )
     return {
         "computer_use": use_computer,
         "browser": use_browser,
         "code_exec": use_code_exec,
         "embedded_flash": embedded_flash,
+        "deferred_tools": deferred_tools,
     }
 
 

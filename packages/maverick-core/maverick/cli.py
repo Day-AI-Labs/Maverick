@@ -1741,6 +1741,32 @@ def start(
         click.echo(render(fc))
         return
 
+    # Refuse BEFORE creating the goal row -- both of these used to surface
+    # after `goal #N created`, leaving an orphan blocked/failed row per
+    # attempt (platform-test finding).
+    from . import killswitch as _ks
+    try:
+        _ks.check()
+    except _ks.Halted:
+        click.echo(
+            "Stopped: Maverick is halted (a HALT file is present).\n"
+            "Run `maverick unhalt` to clear it, then try again.",
+            err=True,
+        )
+        sys.exit(3)  # distinct from misuse (2) so scripts can tell "refused"
+    from . import providers as _providers
+    from .config import load_config as _load_config
+    _specs = {
+        s for s in (_load_config().get("models") or {}).values()
+        if isinstance(s, str) and s
+    }
+    _specs.add(ctx.obj["model"] or _kernel().DEFAULT_MODEL)
+    _sdk_msgs = _providers.missing_sdks(sorted(_specs))
+    if _sdk_msgs:
+        for m in _sdk_msgs:
+            click.echo(f"ERROR: {m}", err=True)
+        sys.exit(2)
+
     k = _kernel()
     world = open_world(ctx.obj["db"])
     goal_id = world.create_goal(title, description)

@@ -14,6 +14,7 @@ from .openai_provider import OpenAIClient
 
 class OllamaClient(OpenAIClient):
     DEFAULT_MODEL = "llama3.3:70b"
+    PRICE_MODEL_PREFIX = "ollama:"  # self-hosted: unknown ids price $0
 
     def __init__(self, api_key: str | None = None, base_url: str | None = None):
         super().__init__(

@@ -117,6 +117,15 @@ def _lookup_price(model: str | None) -> tuple[float, float]:
             return priced
     except ImportError:
         pass
+    # Self-hosted providers have no per-token API bill: an UNKNOWN model id
+    # behind a local prefix is the operator's own server, so price it $0
+    # instead of the Sonnet fallback (which accrued phantom spend for free
+    # local models -- platform-test finding). A known table id behind the
+    # same prefix was matched above and keeps its real rate.
+    if ":" in model and model.split(":", 1)[0] in (
+        "ollama", "vllm", "tgi", "openai_compatible",
+    ):
+        return 0.0, 0.0
     return _FALLBACK_PRICE_IN, _FALLBACK_PRICE_OUT
 
 
