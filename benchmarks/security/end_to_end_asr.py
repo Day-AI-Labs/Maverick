@@ -47,7 +47,7 @@ SURFACE: dict[str, str] = {
     "privilege_escalation": "tool_call",
     "sandbox_escape": "tool_call",
     # Exfil / indirect injection arriving as content -> scan_output.
-    "secret_exfil": "output",
+    "secret_exfil": "output",  # pragma: allowlist secret  (attack-category name)
     "credential_phish": "output",
     "tool_output_injection": "output",
     "indirect_injection": "output",
