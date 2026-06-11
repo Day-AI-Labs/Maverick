@@ -511,9 +511,16 @@ _WIRES = {
 
 def build_from_config() -> Server:
     cfg = load_config()
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    # Shared predicate (maverick.config): env keys, base-url envs, or a
+    # [providers.<name>] table all count. This was the last hard-coded
+    # ANTHROPIC_API_KEY-only gate -- `start` and the dashboard already
+    # accepted config-only self-hosted setups that `serve` refused.
+    from .config import any_provider_configured
+    if not any_provider_configured():
         raise RuntimeError(
-            "ANTHROPIC_API_KEY not set. Add it to ~/.maverick/.env or export it."
+            "No LLM provider configured. Run 'maverick init', export "
+            "ANTHROPIC_API_KEY (or another provider key), or add a "
+            "[providers.<name>] api_key/base_url to ~/.maverick/config.toml."
         )
 
     world = open_world()

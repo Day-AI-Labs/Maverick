@@ -113,3 +113,19 @@ def test_known_model_via_local_prefix_still_priced():
     b = Budget(max_dollars=10.0)
     b.record_tokens(1_000_000, 0, model="ollama:deepseek-chat")
     assert b.dollars > 0
+
+
+def test_debate_and_plan_reflect_refuse_cleanly_when_unconfigured(tmp_path, monkeypatch):
+    """Round-3 finding: both commands skipped the provider preflight and an
+    unconfigured install got a raw anthropic-SDK TypeError traceback. They
+    must refuse like `start` does: friendly message, exit 2, no traceback."""
+    _isolate(monkeypatch, tmp_path)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("MAVERICK_CONFIG", str(tmp_path / "none.toml"))
+
+    from maverick.cli import main
+    for argv in (["debate", "tabs or spaces?"], ["plan-reflect", "make tea"]):
+        res = CliRunner().invoke(main, argv)
+        assert res.exit_code == 2, (argv, res.output)
+        assert "can't reach an LLM" in res.output
+        assert "TypeError" not in res.output

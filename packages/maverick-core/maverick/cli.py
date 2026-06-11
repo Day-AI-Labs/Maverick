@@ -1009,9 +1009,13 @@ def analytics_cmd(ctx, sql: str | None, top: int) -> None:
 
     try:
         from .duckdb_analytics import WorldAnalytics
+        # duckdb imports lazily inside the constructor, so the actionable
+        # "pip install 'maverick-agent[duckdb]'" ImportError fires HERE --
+        # construction must sit inside the catch or the user gets a raw
+        # traceback (round-3 platform-test finding).
+        wa = WorldAnalytics(open_world(ctx.obj["db"]))
     except ImportError as e:
         raise click.ClickException(str(e)) from e
-    wa = WorldAnalytics(open_world(ctx.obj["db"]))
     try:
         if sql:
             click.echo(_json.dumps(wa.query(sql), default=str))
@@ -2147,8 +2151,14 @@ def debate(ctx, question: str, rounds: int, max_dollars: float,
     """
     from .budget import Budget
     from .debate import DebateParticipant, run_debate
+    # Friendly preflight (round-3 platform-test finding: an unconfigured
+    # install got a raw anthropic-SDK TypeError traceback here), and route
+    # through the configured role models instead of hard DEFAULT_MODEL
+    # (kernel rule 2) -- debaters argue at the analyst tier.
+    _require_llm_key()
+    from .llm import model_for_role
     k = _kernel()
-    llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
+    llm = k.LLM(model=ctx.obj["model"] or model_for_role("analyst"))
     participants = [
         DebateParticipant(
             name="Proponent",
@@ -2272,8 +2282,13 @@ def plan_reflect(ctx, goal: str, max_iterations: int, max_dollars: float) -> Non
     """
     from .budget import Budget
     from .plan_execute_reflect import run_plan_execute_reflect
+    # Same preflight + role routing as `debate` (round-3 finding): planning
+    # belongs to the orchestrator tier, and a missing provider must refuse
+    # cleanly, not traceback inside the anthropic client constructor.
+    _require_llm_key()
+    from .llm import model_for_role
     k = _kernel()
-    llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
+    llm = k.LLM(model=ctx.obj["model"] or model_for_role("orchestrator"))
     result = run_plan_execute_reflect(
         goal,
         planner_complete=llm.complete,
