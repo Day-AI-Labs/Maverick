@@ -49,7 +49,13 @@ def _home_pattern() -> re.Pattern[str]:
 
 
 def anon_enabled() -> bool:
-    """True if anonymous mode is on (env or config)."""
+    """True if anonymous mode is on or required by an active compliance profile."""
+    try:
+        from .compliance_profiles import FLOOR_PII_REDACTION, requires_floor
+        if requires_floor(FLOOR_PII_REDACTION):
+            return True
+    except Exception:
+        pass
     val = os.environ.get("MAVERICK_ANON", "").strip().lower()
     if val in {"1", "true", "yes", "on"}:
         return True

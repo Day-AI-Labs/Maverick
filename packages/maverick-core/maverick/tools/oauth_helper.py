@@ -28,18 +28,34 @@ import json
 import logging
 import os
 from typing import Any
+from urllib.parse import urlparse
 
 from . import Tool
+from ._ssrf import safe_client
 
 log = logging.getLogger(__name__)
 
 
+_MAX_TOKEN_RESPONSE_BYTES = 100_000
+
+
 def _post_form(url: str, data: dict[str, str]) -> dict:
-    import httpx
-    r = httpx.post(url, data=data,
-                   headers={"Accept": "application/json"}, timeout=30)
-    r.raise_for_status()
-    return r.json()
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError(f"oauth token_url must be https://, got {url!r}")
+
+    headers = {"Accept": "application/json"}
+    chunks: list[bytes] = []
+    total = 0
+    with safe_client(url, timeout=30.0) as client:
+        with client.stream("POST", url, data=data, headers=headers) as r:
+            r.raise_for_status()
+            for chunk in r.iter_bytes():
+                total += len(chunk)
+                if total > _MAX_TOKEN_RESPONSE_BYTES:
+                    raise ValueError("oauth token response too large")
+                chunks.append(chunk)
+    return json.loads(b"".join(chunks).decode("utf-8"))
 
 
 def _fingerprint(token: str) -> str:
@@ -127,7 +143,7 @@ def _exchange(args: dict[str, Any]) -> str:
     except Exception as e:
         return f"ERROR: token exchange failed: {e}"
     if not resp.get("access_token"):
-        return f"ERROR: no access_token in response: {json.dumps(resp)[:200]}"
+        return "ERROR: no access_token in response"
     lines = _summarise(resp)
     saved = _persist_tokens(resp)
     lines.append(f"full tokens written to: {saved}" if saved else
@@ -151,7 +167,7 @@ def _refresh(args: dict[str, Any]) -> str:
     except Exception as e:
         return f"ERROR: token refresh failed: {e}"
     if not resp.get("access_token"):
-        return f"ERROR: no access_token in response: {json.dumps(resp)[:200]}"
+        return "ERROR: no access_token in response"
     lines = _summarise(resp)
     saved = _persist_tokens(resp)
     if saved:

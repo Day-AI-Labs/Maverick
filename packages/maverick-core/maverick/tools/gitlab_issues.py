@@ -201,5 +201,5 @@ def gitlab_issues() -> Tool:
         ),
         input_schema=_SCHEMA,
         fn=_run,
-        parallel_safe=True,
+        parallel_safe=False,
     )

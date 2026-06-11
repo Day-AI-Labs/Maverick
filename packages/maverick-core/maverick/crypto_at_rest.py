@@ -72,9 +72,20 @@ def _truthy(value: object) -> bool:
 
 
 def at_rest_enabled() -> bool:
-    """Opt-in. ``MAVERICK_ENCRYPT_AT_REST`` env (a falsey value force-disables)
-    wins over ``[encryption] at_rest`` in config, which wins over enterprise mode.
-    Off by default."""
+    """Opt-in unless required by an active compliance profile.
+
+    Compliance floors are mandatory and strictest-wins: HIPAA-mode at-rest
+    encryption cannot be disabled by leaving or setting the standalone
+    encryption knob false. With no such floor, ``MAVERICK_ENCRYPT_AT_REST`` env
+    wins over ``[encryption] at_rest`` in config, which wins over enterprise
+    mode. Off by default.
+    """
+    try:
+        from .compliance_profiles import FLOOR_ENCRYPTION_AT_REST, requires_floor
+        if requires_floor(FLOOR_ENCRYPTION_AT_REST):
+            return True
+    except Exception:
+        pass
     env = os.environ.get("MAVERICK_ENCRYPT_AT_REST")
     if env is not None and env.strip() != "":
         return _truthy(env)

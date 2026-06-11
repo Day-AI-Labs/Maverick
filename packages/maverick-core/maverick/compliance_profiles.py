@@ -19,9 +19,10 @@ from dataclasses import dataclass, field
 from .finance.regimes import union_policies  # generic strictest-wins policy union
 from .governance import Policy
 
-# Protection floors a profile can require. These are advisory keys the posture
-# report and the preflight check read; turning them on is the operator's job
-# (egress lock, encryption-at-rest, audit retention are existing knobs).
+# Protection floors a profile can require. Active compliance profiles make
+# these floors mandatory: runtime readers treat a required floor as enabled so
+# selecting a regulated-data profile cannot silently run below its asserted
+# safeguards.
 FLOOR_PII_REDACTION = "pii_redaction"
 FLOOR_ENCRYPTION_AT_REST = "encryption_at_rest"
 FLOOR_EGRESS_LOCK = "egress_lock"
@@ -75,7 +76,7 @@ def required_floors(keys) -> frozenset[str]:
     """Union of the protection floors the selected profiles require."""
     out: set[str] = set()
     for k in keys or []:
-        prof = PROFILES.get(k)
+        prof = get_profile(k)
         if prof:
             out |= set(prof.required_floors)
     return frozenset(out)
@@ -92,6 +93,22 @@ def configured_profiles() -> list[str]:
     except Exception:  # pragma: no cover -- config never blocks compilation
         pass
     return []
+
+
+def configured_required_floors() -> frozenset[str]:
+    """Protection floors required by the active compliance profiles.
+
+    This helper is intentionally fail-closed for callers: an unreadable or
+    missing config simply means no compliance profile is active, while any known
+    configured profile makes its floors mandatory for the runtime readers that
+    enforce egress, redaction, encryption, and audit controls.
+    """
+    return required_floors(configured_profiles())
+
+
+def requires_floor(floor: str) -> bool:
+    """True when an active compliance profile requires ``floor``."""
+    return str(floor).strip().lower() in configured_required_floors()
 
 
 def profile_posture(keys) -> str:
@@ -113,7 +130,8 @@ def profile_posture(keys) -> str:
 
 __all__ = [
     "ComplianceProfile", "PROFILES", "list_profiles", "get_profile",
-    "compile_policy", "required_floors", "configured_profiles", "profile_posture",
+    "compile_policy", "required_floors", "configured_profiles",
+    "configured_required_floors", "requires_floor", "profile_posture",
     "FLOOR_PII_REDACTION", "FLOOR_ENCRYPTION_AT_REST", "FLOOR_EGRESS_LOCK",
     "FLOOR_AUDIT_LOG",
 ]

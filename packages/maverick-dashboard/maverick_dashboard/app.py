@@ -33,6 +33,7 @@ from fastapi.responses import (
 )
 from fastapi.templating import Jinja2Templates
 from maverick import a2a
+from maverick.oidc import VerifiedPrincipal
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ._shared import _any_provider_key_set, _world
@@ -42,9 +43,11 @@ from .auth import (
     assert_goal_access,
     caller_principal,
     can_access_goal,
+    can_access_goal_principal,
     execution_user_id_from_request,
     goal_owner_filter,
     require_principal,
+    websocket_caller_principal,
 )
 from .oidc_login import router as oidc_login_router
 
@@ -1654,7 +1657,11 @@ async def providers_api() -> JSONResponse:
 
 
 @app.websocket("/ws/v1/runs/{goal_id}/events")
-async def run_events_firehose(websocket: WebSocket, goal_id: int) -> None:
+async def run_events_firehose(
+    websocket: WebSocket,
+    goal_id: int,
+    principal: VerifiedPrincipal | None = Depends(require_principal),
+) -> None:
     """Run-events firehose: stream a goal's events over WebSocket as they land.
 
     Sends each event as one JSON message ``{id, agent, kind, content, ts}``;
@@ -1678,6 +1685,10 @@ async def run_events_firehose(websocket: WebSocket, goal_id: int) -> None:
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
+        await websocket.send_json({"error": "no such goal"})
+        await websocket.close(code=4404)
+        return
+    if not can_access_goal_principal(websocket_caller_principal(principal), g):
         await websocket.send_json({"error": "no such goal"})
         await websocket.close(code=4404)
         return
