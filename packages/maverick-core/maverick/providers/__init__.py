@@ -108,5 +108,49 @@ KNOWN_PROVIDERS = (
     "azure", "bedrock", "openai_compatible",
 )
 
+# The pip package each provider's client imports at construction/call time.
+# Everything OpenAI-translated (incl. bedrock, which subclasses OpenAIClient)
+# needs ``openai``; anthropic needs ``anthropic``.
+_SDK_MODULE: dict[str, str] = {
+    "anthropic": "anthropic",
+    **{p: "openai" for p in KNOWN_PROVIDERS if p != "anthropic"},
+}
 
-__all__ = ["get_provider_client", "KNOWN_PROVIDERS"]
+_SDK_HINT: dict[str, str] = {
+    "openai": "openai SDK not installed. Run: pip install 'maverick-agent[openai]'",
+    "anthropic": "anthropic SDK not installed. Run: pip install maverick-agent",
+}
+
+
+def missing_sdks(model_specs) -> list[str]:
+    """Actionable messages for provider SDKs the given model specs need but
+    that aren't importable. Empty list == everything resolvable.
+
+    Lets `maverick start` refuse BEFORE creating a goal row: a missing SDK
+    used to surface mid-run, orphaning a failed $0 goal per attempt.
+    find_spec locates a package without executing it, so this is cheap and
+    side-effect free. Unknown providers are skipped (get_provider_client
+    raises its own clearer error later).
+    """
+    import importlib.util
+
+    msgs: list[str] = []
+    seen: set[str] = set()
+    for spec in model_specs or ():
+        if not isinstance(spec, str) or not spec.strip():
+            continue
+        provider = _canonical(spec.split(":", 1)[0]) if ":" in spec else "anthropic"
+        mod = _SDK_MODULE.get(provider)
+        if mod is None or mod in seen:
+            continue
+        seen.add(mod)
+        try:
+            present = importlib.util.find_spec(mod) is not None
+        except Exception:
+            present = True  # fail open: never block start on a probe error
+        if not present:
+            msgs.append(_SDK_HINT.get(mod, f"{mod} is not installed"))
+    return msgs
+
+
+__all__ = ["get_provider_client", "missing_sdks", "KNOWN_PROVIDERS"]
