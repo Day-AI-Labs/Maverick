@@ -56,8 +56,22 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     ("stripe_test_key",    re.compile(r"\bsk_test_[0-9a-zA-Z]{24,}\b")),
     # JWTs: header.payload.signature, all base64url-without-padding.
     ("jwt",                re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")),
-    # Generic private key blocks.
-    ("private_key_pem",    re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----")),
+    # Generic private key blocks. One pattern, one span: match the WHOLE block
+    # (BEGIN..END, DOTALL, non-greedy) when an END marker is present so the
+    # base64 key MATERIAL is redacted -- the prior marker-only pattern left the
+    # actual private key body and END line in cleartext (round-7 adversarial
+    # finding). The END group is optional so a truncated key (BEGIN with no
+    # END) still matches the bare marker and is flagged rather than ignored.
+    # Kept as a single pattern (not two) because scan() only dedupes EXACT
+    # spans, so a separate marker pattern would overlap and corrupt redact().
+    ("private_key_pem",    re.compile(
+        r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----"
+        # Bounded body (a real key body is a few KB; even RSA-4096 < 4KB) so a
+        # crafted input with many BEGIN markers and no END can't make this
+        # scan to EOF per marker (ReDoS guard); a real key's END is always
+        # within this window.
+        r"(?:.{0,8192}?-----END (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----)?",
+        re.DOTALL)),
     # Council finding #14: coverage gaps that fed the tool-output exfil class.
     ("gitlab_pat",         re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}\b")),
     ("twilio_api_key",     re.compile(r"\bSK[0-9a-fA-F]{32}\b")),

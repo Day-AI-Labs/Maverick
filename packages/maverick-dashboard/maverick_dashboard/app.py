@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (
+    FileResponse,
     HTMLResponse,
     JSONResponse,
     PlainTextResponse,
@@ -32,6 +33,7 @@ from fastapi.responses import (
 )
 from fastapi.templating import Jinja2Templates
 from maverick import a2a
+from maverick.oidc import VerifiedPrincipal
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ._shared import _any_provider_key_set, _world
@@ -41,9 +43,11 @@ from .auth import (
     assert_goal_access,
     caller_principal,
     can_access_goal,
+    can_access_goal_principal,
     execution_user_id_from_request,
     goal_owner_filter,
     require_principal,
+    websocket_caller_principal,
 )
 from .oidc_login import router as oidc_login_router
 
@@ -68,31 +72,64 @@ templates.env.filters["datetime"] = _format_datetime
 templates.env.globals.setdefault("theme", "dark")
 templates.env.globals.setdefault("font", "default")
 templates.env.globals.setdefault("lang", "en")
+templates.env.globals.setdefault("density", "comfortable")
+templates.env.globals.setdefault("custom_theme_css", "")
+templates.env.globals.setdefault("custom_theme_names", [])
+templates.env.globals.setdefault("dir", "ltr")
 from .i18n import t as _i18n_t  # noqa: E402
+from .themes import custom_themes, theme_css  # noqa: E402
 
 templates.env.globals.setdefault("t", lambda key: _i18n_t(key, "en"))
 
 _VALID_THEMES = {"dark", "light", "solarized", "hicontrast"}
 _VALID_FONTS = {"default", "dyslexic"}
+_VALID_DENSITIES = {"comfortable", "compact"}
+
+
+def _valid_theme_names() -> set[str]:
+    """Built-in themes plus the operator's validated ``[dashboard] themes``."""
+    return _VALID_THEMES | set(custom_themes())
 
 
 def _resolve_theme(request: Request) -> str:
     """Pick the theme from ``?theme=`` query param, cookie, config, then dark."""
+    valid = _valid_theme_names()
     q = (request.query_params.get("theme") or "").strip().lower()
-    if q in _VALID_THEMES:
+    if q in valid:
         return q
     c = (request.cookies.get("mvk_theme") or "").strip().lower()
-    if c in _VALID_THEMES:
+    if c in valid:
         return c
     try:
         from maverick.config import load_config
         cfg = (load_config() or {}).get("dashboard") or {}
         cfg_theme = (cfg.get("theme") or "").strip().lower()
-        if cfg_theme in _VALID_THEMES:
+        if cfg_theme in valid:
             return cfg_theme
     except Exception:
         pass
     return "dark"
+
+
+def resolve_density(request: Request) -> str:
+    """UI density: ``?density=`` → ``mvk_density`` cookie → ``[dashboard]
+    density`` config → comfortable. Default-off: ``comfortable`` is the
+    existing layout; ``compact`` opts in to the denser one."""
+    q = (request.query_params.get("density") or "").strip().lower()
+    if q in _VALID_DENSITIES:
+        return q
+    c = (request.cookies.get("mvk_density") or "").strip().lower()
+    if c in _VALID_DENSITIES:
+        return c
+    try:
+        from maverick.config import load_config
+        cfg = (load_config() or {}).get("dashboard") or {}
+        cfg_density = (cfg.get("density") or "").strip().lower()
+        if cfg_density in _VALID_DENSITIES:
+            return cfg_density
+    except Exception:
+        pass
+    return "comfortable"
 
 
 def _resolve_font(request: Request) -> str:
@@ -111,13 +148,18 @@ def _resolve_font(request: Request) -> str:
 # body class + the theme switcher links, the `font` accessibility axis,
 # and the chrome-i18n helpers (`lang`, `t`).
 def _theme_context(request: Request) -> dict:
-    from .i18n import resolve_lang
+    from .i18n import dir_for, resolve_lang
     from .i18n import t as _t
     lang = resolve_lang(request)
+    custom = custom_themes()
     return {
         "theme": _resolve_theme(request),
         "font": _resolve_font(request),
+        "density": resolve_density(request),
+        "custom_theme_css": theme_css(custom),
+        "custom_theme_names": sorted(custom),
         "lang": lang,
+        "dir": dir_for(lang),
         "t": lambda key: _t(key, lang),
     }
 
@@ -129,7 +171,7 @@ templates.context_processors.append(_theme_context)
 
 def _set_theme_cookie(response, theme: str) -> None:
     """Persist the theme choice as a cookie so it sticks across page loads."""
-    if theme in _VALID_THEMES:
+    if theme in _valid_theme_names():
         response.set_cookie(
             "mvk_theme", theme,
             max_age=30 * 24 * 3600,  # 30 days
@@ -205,14 +247,18 @@ _PLAN_TREE_PATH_RE = re.compile(r"^/goals/\d+/plan/?$")
 
 @app.middleware("http")
 async def persist_theme(request: Request, call_next):
-    """If ?theme= / ?font= / ?lang= is in the URL, set a cookie so it sticks."""
+    """If ?theme= / ?font= / ?density= / ?lang= is in the URL, set a cookie so it sticks."""
     response = await call_next(request)
     q = request.query_params.get("theme")
-    if q and q.lower() in _VALID_THEMES:
+    if q and q.lower() in _valid_theme_names():
         _set_theme_cookie(response, q.lower())
     f = request.query_params.get("font")
     if f and f.lower() in _VALID_FONTS:
         response.set_cookie("mvk_font", f.lower(), max_age=30 * 24 * 3600,
+                            samesite="lax", httponly=False)
+    d = request.query_params.get("density")
+    if d and d.lower() in _VALID_DENSITIES:
+        response.set_cookie("mvk_density", d.lower(), max_age=30 * 24 * 3600,
                             samesite="lax", httponly=False)
     lang = request.query_params.get("lang")
     from .i18n import LANGS
@@ -391,7 +437,10 @@ async def bearer_auth(request: Request, call_next):
             # enforces per-route) so every current and future /api/v1 mutation is
             # covered. Token mode needs no such check — a cross-site page cannot
             # attach the Authorization header.
-            if not _is_same_origin(request):
+            # The bundled WebExtension is the one sanctioned cross-origin
+            # caller: its Origin is chrome-extension://… and it is accepted
+            # only behind the operator's explicit opt-in (see extension_cors).
+            if not _is_same_origin(request) and _allowed_extension_origin(request) is None:
                 return JSONResponse(
                     {"detail": "cross-site request blocked"},
                     status_code=403,
@@ -493,6 +542,71 @@ async def security_headers(request: Request, call_next):
     else:
         csp = _DEFAULT_CSP
     response.headers.setdefault("Content-Security-Policy", csp)
+    return response
+
+
+# ----- browser-extension CORS gate (extensions/browser) -----
+# The bundled WebExtension is a cross-origin caller: its popup/service-worker
+# fetches arrive with an Origin of chrome-extension://<id> (moz-extension://
+# <uuid> on Firefox). Browsers need CORS approval for it to read responses,
+# and the no-token CSRF gate in bearer_auth would otherwise 403 its POSTs.
+# This allowance is OPT-IN and fail-closed: until the operator sets
+# `[dashboard] allow_extension = true` (or MAVERICK_DASHBOARD_ALLOW_EXTENSION=1)
+# no CORS header is ever emitted and extension origins stay blocked. It is
+# scoped to extension origins only — a web origin (https://…) never matches,
+# so the same-origin posture for ordinary sites is unchanged. A configured
+# dashboard token still applies to every extension call (the extension sends
+# the same Authorization: Bearer header as any API client).
+_EXTENSION_ORIGIN_RE = re.compile(r"^(?:chrome|moz)-extension://[a-zA-Z0-9-]+$")
+
+
+def _extension_cors_enabled() -> bool:
+    """Operator opt-in for the bundled WebExtension. Fail-closed default."""
+    if os.environ.get("MAVERICK_DASHBOARD_ALLOW_EXTENSION") == "1":
+        return True
+    try:
+        from maverick.config import load_config
+        return bool(((load_config() or {}).get("dashboard") or {}).get("allow_extension"))
+    except Exception:
+        return False
+
+
+def _allowed_extension_origin(request: Request) -> str | None:
+    """The request's Origin, iff it is an extension origin AND the gate is on."""
+    origin = request.headers.get("origin") or ""
+    if _EXTENSION_ORIGIN_RE.match(origin) and _extension_cors_enabled():
+        return origin
+    return None
+
+
+@app.middleware("http")
+async def extension_cors(request: Request, call_next):
+    """CORS for the bundled WebExtension only (opt-in; see above).
+
+    Registered after the other middlewares, so it is OUTERMOST: preflights
+    are answered before bearer_auth (a preflight carries no Authorization
+    header by design and grants nothing by itself), and the CORS header is
+    added to every response for an allowed origin — including 401s, so the
+    popup can read the error instead of a blocked-by-CORS blank.
+    """
+    origin = _allowed_extension_origin(request)
+    if origin is None:
+        return await call_next(request)
+    if request.method == "OPTIONS" and request.headers.get("access-control-request-method"):
+        return PlainTextResponse("", status_code=204, headers={
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type",
+            "Access-Control-Max-Age": "600",
+            "Vary": "Origin",
+        })
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = origin
+    vary = response.headers.get("Vary")
+    if not vary:
+        response.headers["Vary"] = "Origin"
+    elif "origin" not in vary.lower():
+        response.headers["Vary"] = f"{vary}, Origin"
     return response
 
 
@@ -660,6 +774,18 @@ async def index(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/redact", response_class=HTMLResponse)
+async def redact_page(request: Request) -> HTMLResponse:
+    """Granular redaction UI (preview/select/scrub via /api/v1/redact/preview)."""
+    return templates.TemplateResponse(request, "redact.html", {})
+
+
+@app.get("/perf", response_class=HTMLResponse)
+async def perf_page(request: Request) -> HTMLResponse:
+    """Public perf dashboard: SLA + benchmark history (data via /api/v1/perf)."""
+    return templates.TemplateResponse(request, "perf.html", {})
+
+
 @app.get("/goals", response_class=HTMLResponse)
 async def goals_page(request: Request) -> HTMLResponse:
     goals = _world().list_goals(owner=goal_owner_filter(request), limit=200, order="desc")
@@ -686,6 +812,84 @@ async def tenants_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request, "tenants.html", {"tenants": tenants, "is_admin": is_admin},
     )
+
+
+def _tenant_overview_rows() -> list[dict]:
+    """Per-tenant rollup for the multi-tenant view: goals by status (from the
+    tenant's own world DB, when one exists), today's spend, suspended flag.
+
+    Fail-soft per tenant: an unreadable world DB or spend ledger yields zero
+    counts/spend, never a 500. A tenant whose world.db doesn't exist yet (no
+    runs) reports empty counts rather than materializing the DB.
+    """
+    from maverick.tenant_registry import list_tenants, tenant_spend_today
+    rows: list[dict] = []
+    for t in list_tenants():
+        counts: dict[str, int] = {}
+        try:
+            from maverick.workspace import Workspace
+            db = Workspace(t.id).db_path
+            if db.exists():
+                from maverick.world_model import WorldModel
+                wm = WorldModel(db)
+                try:
+                    counts = {
+                        str(r[0]): int(r[1]) for r in wm.conn.execute(
+                            "SELECT status, COUNT(*) FROM goals GROUP BY status"
+                        )
+                    }
+                finally:
+                    wm.close()
+        except Exception:  # pragma: no cover -- one bad tenant DB never 500s
+            counts = {}
+        try:
+            spend = float(tenant_spend_today(t.id))
+        except Exception:  # pragma: no cover -- spend read never blocks the view
+            spend = 0.0
+        rows.append({
+            "id": t.id,
+            "display_name": t.display_name,
+            "plan": t.plan,
+            "status": t.status,
+            "suspended": not t.active,
+            "goals": counts,
+            "total_goals": sum(counts.values()),
+            "spend_today": round(spend, 4),
+            "max_daily_dollars": t.max_daily_dollars,
+        })
+    return rows
+
+
+@app.get("/tenants/overview", response_class=HTMLResponse)
+async def tenants_overview_page(request: Request) -> HTMLResponse:
+    """Multi-tenant view: per-tenant goal/spend rollup for the operator.
+
+    Admin-only exactly like ``/tenants`` (cross-tenant control-plane data): a
+    non-admin authenticated caller sees an access notice, not the rollup.
+    Fail-soft to an empty roster so a missing registry never 500s the console.
+    """
+    is_admin = goal_owner_filter(request) is None
+    rows: list[dict] = []
+    if is_admin:
+        try:
+            rows = _tenant_overview_rows()
+        except Exception:  # pragma: no cover -- never 500 the console
+            rows = []
+    return templates.TemplateResponse(
+        request, "tenants_overview.html", {"rows": rows, "is_admin": is_admin},
+    )
+
+
+@app.get("/api/v1/tenants/overview")
+async def tenants_overview_api(request: Request) -> JSONResponse:
+    """JSON face of the multi-tenant view. Admin-only like ``/tenants``."""
+    if goal_owner_filter(request) is not None:
+        raise HTTPException(status_code=403, detail="admin access required")
+    try:
+        rows = _tenant_overview_rows()
+    except Exception:  # pragma: no cover -- never 500 the console
+        rows = []
+    return JSONResponse({"tenants": rows})
 
 
 @app.get("/skills", response_class=HTMLResponse)
@@ -1369,6 +1573,49 @@ async def store_page(request: Request) -> HTMLResponse:
     )
 
 
+def template_market_entries() -> list[dict]:
+    """The goal-template catalog (user-installed + bundled), annotated with the
+    operator's own star ratings from the marketplace ratings ledger.
+
+    Powers the /templates page and GET /api/v1/templates. Offline + fail-soft:
+    a template that no longer parses is skipped; a missing ratings ledger
+    means everything shows unrated.
+    """
+    from maverick.marketplace_ratings import RatingsLedger, stars_bar
+    from maverick.templates import list_templates, load_template
+    try:
+        ratings = RatingsLedger().all_ratings("templates")
+    except Exception:  # pragma: no cover -- ratings never block the catalog
+        ratings = {}
+    entries: list[dict] = []
+    for name in list_templates():
+        try:
+            tpl = load_template(name)
+        except (OSError, ValueError, FileNotFoundError):
+            continue
+        mine = ratings.get(name) or {}
+        stars = mine.get("stars")
+        entries.append({
+            "name": name,
+            "title": tpl.title,
+            "params": list(tpl.params),
+            "body": tpl.body[:2000],
+            "stars": stars,
+            "rating_bar": stars_bar(float(stars), 0) if stars else "unrated",
+        })
+    return entries
+
+
+@app.get("/templates", response_class=HTMLResponse)
+async def templates_market_page(request: Request) -> HTMLResponse:
+    """Visual goal-templates marketplace: browse the catalog with ratings and
+    one-click "use template" (prefills the chat form via query params — the
+    goal never auto-starts)."""
+    return templates.TemplateResponse(
+        request, "templates_market.html", {"entries": template_market_entries()},
+    )
+
+
 @app.get("/channels", response_class=HTMLResponse)
 async def channels_page(request: Request) -> HTMLResponse:
     """Configured + enabled channels."""
@@ -1410,7 +1657,11 @@ async def providers_api() -> JSONResponse:
 
 
 @app.websocket("/ws/v1/runs/{goal_id}/events")
-async def run_events_firehose(websocket: WebSocket, goal_id: int) -> None:
+async def run_events_firehose(
+    websocket: WebSocket,
+    goal_id: int,
+    principal: VerifiedPrincipal | None = Depends(require_principal),
+) -> None:
     """Run-events firehose: stream a goal's events over WebSocket as they land.
 
     Sends each event as one JSON message ``{id, agent, kind, content, ts}``;
@@ -1434,6 +1685,10 @@ async def run_events_firehose(websocket: WebSocket, goal_id: int) -> None:
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
+        await websocket.send_json({"error": "no such goal"})
+        await websocket.close(code=4404)
+        return
+    if not can_access_goal_principal(websocket_caller_principal(principal), g):
         await websocket.send_json({"error": "no such goal"})
         await websocket.close(code=4404)
         return
@@ -1870,7 +2125,15 @@ async def shield_calibration_api() -> JSONResponse:
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request) -> HTMLResponse:
     recent = _world().list_goals(owner=goal_owner_filter(request), limit=10, order="desc")
-    return templates.TemplateResponse(request, "chat.html", {"recent": recent})
+    # "Use template" on /templates links here with ?title=&description= to
+    # prefill the form (never auto-start; the user reviews, edits, submits).
+    prefill_title = (request.query_params.get("title") or "")[:200]
+    prefill_description = (request.query_params.get("description") or "")[:8000]
+    return templates.TemplateResponse(
+        request, "chat.html",
+        {"recent": recent, "prefill_title": prefill_title,
+         "prefill_description": prefill_description},
+    )
 
 
 @app.post("/chat/send")
@@ -1886,9 +2149,10 @@ async def chat_send(
         raise HTTPException(
             status_code=400,
             detail=(
-                "No LLM provider key configured. Run 'maverick init', or "
-                "export ANTHROPIC_API_KEY / OPENAI_API_KEY before starting "
-                "the dashboard."
+                "No LLM provider key or endpoint configured. Run 'maverick "
+                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY, or add a "
+                "[providers.<name>] api_key/base_url to "
+                "~/.maverick/config.toml before starting the dashboard."
             ),
         )
     check_goal_rate_limit(request)
@@ -1956,9 +2220,10 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
         raise HTTPException(
             status_code=400,
             detail=(
-                "No LLM provider key configured. Run 'maverick init', or "
-                "export ANTHROPIC_API_KEY / OPENAI_API_KEY before starting "
-                "the dashboard."
+                "No LLM provider key or endpoint configured. Run 'maverick "
+                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY, or add a "
+                "[providers.<name>] api_key/base_url to "
+                "~/.maverick/config.toml before starting the dashboard."
             ),
         )
     try:
@@ -2338,6 +2603,27 @@ async def api_plan_tree(request: Request, goal_id: int) -> dict:
     return _build_plan_tree(w, goal_id)
 
 
+@app.get("/api/v1/goals/{goal_id}/minimap", response_class=PlainTextResponse)
+async def goal_minimap(request: Request, goal_id: int, depth: int = 3) -> PlainTextResponse:
+    """Plan-tree minimap: the goal's subtree as compact one-line-per-node text.
+
+    Pure render via ``maverick.plan_minimap`` (status glyphs, depth
+    indentation, collapsed counts beyond the ``?depth=`` budget).
+    """
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from maverick.plan_minimap import render_minimap
+    try:
+        depth = max(0, min(int(depth), 8))
+    except (TypeError, ValueError):
+        depth = 3
+    text = render_minimap(w, goal_id, max_depth=depth)
+    return PlainTextResponse(text + "\n", media_type="text/plain; charset=utf-8")
+
+
 def _render_tree_html(node: dict) -> str:
     """Pre-render the plan-tree as nested <ul><li> HTML.
 
@@ -2652,6 +2938,142 @@ async def api_goal_events_stream(request: Request, goal_id: int, since: int = 0)
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",  # nginx/caddy: disable response buffering
         },
+    )
+
+
+# ----- roadmap cluster: graph editor / goal builder / embed / benchmarks /
+#       walkthroughs / 3D plan tree -----
+
+_STATIC_DIR = Path(__file__).parent / "static"
+
+
+@app.get("/static/maverick-analytics.js")
+async def embed_analytics_js() -> FileResponse:
+    """The embeddable ``<maverick-analytics>`` web component (plain JS, no
+    framework). See the file's header comment for the same-origin + token
+    caveats; /embed-demo shows it running."""
+    return FileResponse(
+        _STATIC_DIR / "maverick-analytics.js",
+        media_type="application/javascript; charset=utf-8",
+    )
+
+
+@app.get("/graph-editor", response_class=HTMLResponse)
+async def graph_editor_page(request: Request) -> HTMLResponse:
+    """Visual graph editor: the goal forest as an editable SVG node graph.
+
+    Layout comes from the server (GET /api/v1/goal-tree); the page JS only
+    draws and posts edits (retitle / re-parent / add child)."""
+    from .goal_tree import forest_html, goal_nodes
+    nodes = goal_nodes(_world(), owner=goal_owner_filter(request))
+    return templates.TemplateResponse(
+        request, "graph_editor.html",
+        {"node_count": len(nodes), "fallback_html": forest_html(nodes)},
+    )
+
+
+@app.get("/goal-builder", response_class=HTMLResponse)
+async def goal_builder_page(request: Request) -> HTMLResponse:
+    """Drag-and-drop goal builder: compose a brief from blocks, then run it."""
+    return templates.TemplateResponse(request, "goal_builder.html", {})
+
+
+@app.get("/embed-demo", response_class=HTMLResponse)
+async def embed_demo_page(request: Request) -> HTMLResponse:
+    """Demo + honest usage notes for the <maverick-analytics> web component."""
+    return templates.TemplateResponse(request, "embed_demo.html", {})
+
+
+def _sparkline_points(values: list[float], width: int = 160, height: int = 36,
+                      pad: int = 3) -> str:
+    """SVG polyline ``points`` for a score series (server-side sparkline)."""
+    if not values:
+        return ""
+    lo, hi = min(values), max(values)
+    span = (hi - lo) or 1.0
+    n = len(values)
+    pts = []
+    for i, v in enumerate(values):
+        x = pad + (width - 2 * pad) * (i / (n - 1) if n > 1 else 0.5)
+        y = pad + (height - 2 * pad) * (1 - (v - lo) / span)
+        pts.append(f"{x:.1f},{y:.1f}")
+    return " ".join(pts)
+
+
+@app.get("/benchmarks", response_class=HTMLResponse)
+async def benchmarks_page(request: Request) -> HTMLResponse:
+    """Continuous-benchmark history: this deployment's recorded runs only.
+
+    Per-suite trend sparklines + a comparison table over the real
+    ``~/.maverick/benchmarks/history.json`` store. No competitor numbers are
+    shown or invented here — see docs/comparison.md for the qualitative
+    comparison."""
+    from .api import _benchmark_snapshot
+    snap = _benchmark_snapshot()
+    for s in snap["suites"]:
+        s["spark"] = _sparkline_points([e["score"] for e in s["entries"]])
+    return templates.TemplateResponse(request, "benchmarks.html", snap)
+
+
+@app.get("/walkthroughs", response_class=HTMLResponse)
+async def walkthroughs_page(request: Request) -> HTMLResponse:
+    """Locally exported run walkthrough videos (no external hosting).
+
+    Lists the MP4s under the walkthroughs dir with native <video> embeds and
+    a captions track when the export produced one. The export itself is
+    POST /api/v1/goals/{id}/walkthrough (replay-to-MP4 machinery)."""
+    from .api import _walkthroughs_dir
+    d = _walkthroughs_dir()
+    items = []
+    if d.is_dir():
+        for p in sorted(d.glob("*.mp4"), key=lambda q: q.stat().st_mtime,
+                        reverse=True):
+            m = re.fullmatch(r"goal-(\d+)\.mp4", p.name)
+            items.append({
+                "name": p.name,
+                "size_mb": round(p.stat().st_size / 1_048_576, 2),
+                "mtime": p.stat().st_mtime,
+                "captions": (p.with_suffix(".vtt").name
+                             if p.with_suffix(".vtt").exists() else None),
+                "goal_id": int(m.group(1)) if m else None,
+            })
+    # NB: not named "dir" — the context processor injects the page's text
+    # direction under that key (RTL support) and would shadow it.
+    return templates.TemplateResponse(
+        request, "walkthroughs.html", {"items": items, "artifact_dir": str(d)},
+    )
+
+
+_WALKTHROUGH_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+\.(mp4|vtt)$")
+
+
+@app.get("/walkthroughs/media/{name}")
+async def walkthrough_media(name: str) -> FileResponse:
+    """Serve one exported walkthrough artifact, strictly from the
+    walkthroughs dir (the name pattern admits no path separators)."""
+    from .api import _walkthroughs_dir
+    if not _WALKTHROUGH_NAME_RE.match(name):
+        raise HTTPException(status_code=400, detail="invalid walkthrough name")
+    path = _walkthroughs_dir() / name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="no such walkthrough")
+    media = "video/mp4" if name.endswith(".mp4") else "text/vtt"
+    return FileResponse(path, media_type=media)
+
+
+@app.get("/plan-tree-3d", response_class=HTMLResponse)
+async def plan_tree_3d_page(request: Request) -> HTMLResponse:
+    """The goal forest in 3D (vanilla WebGL; no three.js, no CDN).
+
+    Progressive enhancement: without WebGL (or JS) the server-rendered text
+    tree IS the page — it is also always present in a <details> for screen
+    readers. WebXR shows an "Enter VR" button only when the browser reports
+    support."""
+    from .goal_tree import forest_html, goal_nodes
+    nodes = goal_nodes(_world(), owner=goal_owner_filter(request))
+    return templates.TemplateResponse(
+        request, "plan_tree_3d.html",
+        {"node_count": len(nodes), "fallback_html": forest_html(nodes)},
     )
 
 

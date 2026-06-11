@@ -117,6 +117,15 @@ def _lookup_price(model: str | None) -> tuple[float, float]:
             return priced
     except ImportError:
         pass
+    # Self-hosted providers have no per-token API bill: an UNKNOWN model id
+    # behind a local prefix is the operator's own server, so price it $0
+    # instead of the Sonnet fallback (which accrued phantom spend for free
+    # local models -- platform-test finding). A known table id behind the
+    # same prefix was matched above and keeps its real rate.
+    if ":" in model and model.split(":", 1)[0] in (
+        "ollama", "vllm", "tgi", "openai_compatible",
+    ):
+        return 0.0, 0.0
     return _FALLBACK_PRICE_IN, _FALLBACK_PRICE_OUT
 
 
@@ -363,15 +372,21 @@ _BUDGET_KEY_TYPES = {
 }
 
 
-def budget_from_config(*, defaults: dict | None = None, **overrides) -> Budget:
+def budget_from_config(*, defaults: dict | None = None,
+                       task_class: str | None = None, **overrides) -> Budget:
     """Build a Budget that honors the ``[budget]`` section of config.toml.
 
     Precedence, lowest to highest:
-      ``defaults`` (a caller's own fallback, e.g. the background runner's
-      conservative caps) < the ``[budget]`` config section < explicit
-      ``overrides`` (e.g. a CLI ``--max-dollars`` flag). A ``None`` value
-      in either ``defaults`` or ``overrides`` is treated as "unset", so a
-      caller can pass an optional flag straight through.
+      learned **self-tuning** suggestion for ``task_class`` (opt-in; only when
+      that class has enough history) < ``defaults`` (a caller's own fallback,
+      e.g. the background runner's conservative caps) < the ``[budget]`` config
+      section < explicit ``overrides`` (e.g. a CLI ``--max-dollars`` flag). A
+      ``None`` value in either ``defaults`` or ``overrides`` is treated as
+      "unset", so a caller can pass an optional flag straight through.
+
+    The self-tuning layer is the *lowest* precedence: it only fills
+    ``max_dollars`` when nothing more explicit set it, so an operator's
+    configured cap always wins. Off by default (``[budget] self_tuning``).
 
     ``config.get_budget_overrides()`` already existed but was never wired,
     so the ``[budget]`` section had no effect on any run. This is the single
@@ -379,6 +394,16 @@ def budget_from_config(*, defaults: dict | None = None, **overrides) -> Budget:
     rather than crashing the run.
     """
     kwargs: dict = {}
+    # Lowest precedence: a learned per-task-class default cap (opt-in). Seeds
+    # max_dollars so `defaults`/config/overrides below still win if they set it.
+    if task_class:
+        try:
+            from .self_tuning_budget import suggested_max_dollars
+            learned = suggested_max_dollars(task_class)
+            if learned is not None:
+                kwargs["max_dollars"] = float(learned)
+        except Exception:  # pragma: no cover -- self-tuning never blocks a run
+            pass
     if defaults:
         for key, val in defaults.items():
             if key in _BUDGET_KEY_TYPES and val is not None:

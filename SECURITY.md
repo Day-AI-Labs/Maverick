@@ -62,6 +62,34 @@ In scope:
 - Path traversal in attachments, skills, or world.db paths.
 - DoS on the local FastAPI dashboard.
 
+## Vulnerability reward program
+
+Reports in scope (above) qualify for recognition and rewards.
+
+**Severity rubric** (drives triage SLA + reward tier):
+
+| Tier | Examples (from the threat model) | First response | Fix target |
+|---|---|---|---|
+| Critical | sandbox escape to host; secret exfiltration without user action; auth bypass on the dashboard/API | 24 h | 7 days |
+| High | shield bypass chains achieving unauthorized tool effects; webhook signature bypass; cross-tenant data access | 48 h | 14 days |
+| Medium | path traversal contained by a second control; DoS on local services; capability-check gaps | 5 days | 30 days |
+| Low | hardening gaps, missing defense-in-depth, doc-level issues | 10 days | next minor |
+
+**Rewards.** Monetary reward amounts per tier are published on the
+[security advisories page](https://github.com/Day-AI-Labs/Maverick/security/advisories)
+and may change between program cycles; every valid report receives credit in
+the advisory (unless anonymity is requested) and a hall-of-fame entry below.
+Duplicates go to the first reporter; severity is judged by maintainers
+against the rubric, with reasoning shared in the advisory thread.
+
+**Safe harbor.** Good-faith research within this scope — using your own
+instance, no access to others' data, no service degradation of systems you
+don't own, no social engineering — will not be met with legal action. Testing
+against someone else's deployment is out of scope and out of safe harbor.
+
+**Hall of fame.** Researchers credited in published advisories are listed
+here (none yet — be the first).
+
 ## Hardening tips
 
 - Set `MAVERICK_DASHBOARD_TOKEN` on any VPS deployment exposed beyond

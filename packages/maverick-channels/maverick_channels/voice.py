@@ -179,7 +179,7 @@ class VoiceChannel(Channel):
                 raw=payload,
             )
             try:
-                reply = await self.handler(msg)
+                reply = await self.dispatch_text(msg)
             except Exception as e:  # pragma: no cover
                 log.exception("voice handler error")
                 reply = f"Sorry, I ran into an error: {e}"

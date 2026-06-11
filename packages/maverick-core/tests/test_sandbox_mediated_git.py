@@ -174,7 +174,8 @@ def test_coding_branch_wraps_critical_section_in_lock():
     """The apply/test/reset section in the coding-mode verifier must run
     under ``async with self.ctx.workdir_lock`` -- otherwise two coder
     children sharing one workdir race on the git tree."""
-    src = inspect.getsource(Agent.run)
+    # The loop body lives in _run_inner (run wraps it in the semconv span).
+    src = inspect.getsource(Agent._run_inner)
     assert "async with self.ctx.workdir_lock:" in src
     # The lock must enclose the apply/reset calls, not sit beside them.
     # (Those calls are now off-loaded via asyncio.to_thread, so they read

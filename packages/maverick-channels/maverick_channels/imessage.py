@@ -90,7 +90,7 @@ class iMessageChannel(Channel):  # noqa: N801 - product spelling
                     user_id=handle, text=text, channel="imessage",
                 )
                 try:
-                    reply = await self.handler(msg)
+                    reply = await self.dispatch_text(msg)
                 except Exception:  # pragma: no cover
                     log.exception("handler error")
                     reply = "⚠ An internal error occurred."

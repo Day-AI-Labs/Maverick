@@ -181,3 +181,79 @@ def test_build_sandbox_docker_has_no_runtime(monkeypatch, tmp_path):
     sb = build_sandbox(workdir=tmp_path, backend="docker")
     assert isinstance(sb, DockerBackend)
     assert sb.runtime is None
+
+
+# ---- warm-container reuse ("sandbox pool") ----
+
+def _record_all_runs(monkeypatch):
+    """Capture every subprocess.run argv; return the list."""
+    monkeypatch.setattr(DockerBackend, "_verify_docker", lambda self: None)
+    runs: list = []
+
+    class _R:
+        stdout = ""
+        stderr = ""
+        returncode = 0
+
+    monkeypatch.setattr(subprocess, "run",
+                        lambda args, **k: runs.append(args) or _R())
+    return runs
+
+
+def test_warm_first_exec_starts_then_execs(monkeypatch, tmp_path):
+    runs = _record_all_runs(monkeypatch)
+    be = DockerBackend(workdir=tmp_path, reuse_container=True)
+    be.exec("echo hi")
+    # first call: docker run -d (sleep infinity) to start the warm container
+    assert runs[0][:3] == ["docker", "run", "-d"]
+    assert runs[0][-2:] == ["sleep", "infinity"]
+    # second call: docker exec into it (NOT another run)
+    assert runs[1][:2] == ["docker", "exec"]
+    assert runs[1][-3:] == ["sh", "-c", "echo hi"]
+
+
+def test_warm_reuses_container_across_execs(monkeypatch, tmp_path):
+    runs = _record_all_runs(monkeypatch)
+    be = DockerBackend(workdir=tmp_path, reuse_container=True)
+    be.exec("one")
+    be.exec("two")
+    be.exec("three")
+    # exactly one `docker run -d` (the warm start); the rest are `docker exec`
+    starts = [r for r in runs if r[:3] == ["docker", "run", "-d"]]
+    execs = [r for r in runs if r[:2] == ["docker", "exec"]]
+    assert len(starts) == 1
+    assert len(execs) == 3
+    # all execs target the same container name
+    assert len({r[2] for r in execs}) == 1
+
+
+def test_warm_close_removes_container(monkeypatch, tmp_path):
+    runs = _record_all_runs(monkeypatch)
+    be = DockerBackend(workdir=tmp_path, reuse_container=True)
+    be.exec("x")
+    name = [r for r in runs if r[:3] == ["docker", "run", "-d"]][0]
+    cname = name[name.index("--name") + 1]
+    be.close()
+    assert ["docker", "rm", "-f", cname] in runs
+
+
+def test_close_noop_when_unused(monkeypatch, tmp_path):
+    runs = _record_all_runs(monkeypatch)
+    be = DockerBackend(workdir=tmp_path, reuse_container=True)
+    be.close()  # never exec'd -> nothing to remove
+    assert not any(r[:3] == ["docker", "rm", "-f"] for r in runs)
+
+
+def test_warm_container_has_security_flags(monkeypatch, tmp_path):
+    runs = _record_all_runs(monkeypatch)
+    DockerBackend(workdir=tmp_path, reuse_container=True).exec("x")
+    start = [r for r in runs if r[:3] == ["docker", "run", "-d"]][0]
+    assert "--cap-drop" in start and "--security-opt" in start
+    assert start[start.index("--network") + 1] == "none"
+
+
+def test_build_sandbox_reuse_container(monkeypatch, tmp_path):
+    monkeypatch.setattr(DockerBackend, "_verify_docker", lambda self: None)
+    from maverick.sandbox import build_sandbox
+    sb = build_sandbox(workdir=tmp_path, backend="docker")
+    assert sb.reuse_container is False  # default off

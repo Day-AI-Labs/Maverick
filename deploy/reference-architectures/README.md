@@ -10,6 +10,7 @@ placeholders (image registry, secrets), and grow it to your environment.
 | [AWS ECS (Fargate)](./ecs/) | `task-definition.json` | Single-task service; state on EFS; secrets from SSM |
 | [Fly.io](./fly/) | `fly.toml` | One machine + volume; dashboard service with health checks |
 | [Railway](./railway/) | `railway.json` | Dockerfile build; volume mount; env-driven config |
+| [Demo cluster](./demo-cluster/) | `docker-compose.yml`, `k8s.yaml` | Public read-only demo: seeded data + nginx deny-proxy (GET/HEAD only) in front of a token-protected dashboard |
 
 Shared assumptions:
 

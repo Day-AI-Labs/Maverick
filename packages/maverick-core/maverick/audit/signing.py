@@ -96,7 +96,11 @@ def _key_paths_for_id(key_id: str) -> tuple[Path, Path] | tuple[None, None]:
 @dataclass
 class ChainBreak:
     line_no: int  # 1-indexed
-    reason: str  # 'bad_hash' | 'bad_signature' | 'chain_mismatch' | 'malformed'
+    # 'bad_hash' | 'bad_signature' | 'chain_mismatch' | 'malformed' | 'unsigned'
+    # 'unsigned' = the row carries NONE of hash/sig/key_id, i.e. it was written
+    # with audit signing disabled (the default) — distinct from 'malformed'
+    # (some-but-not-all fields: the vocabulary of real tampering).
+    reason: str
     detail: str
 
 
@@ -361,6 +365,15 @@ def verify_chain(path: Path, pubkey_hex: str | None = None) -> list[ChainBreak]:
             sig = data.get("sig")
             row_prev = data.get("prev_hash", "")
             key_id = data.get("key_id", "")
+            if not row_hash and not sig and not key_id:
+                # Written with signing disabled (the opt-in default). Not the
+                # same vocabulary as tampering: a verifier in a default
+                # deployment must be able to say "signing was never on".
+                breaks.append(ChainBreak(
+                    n, "unsigned",
+                    "row has no hash/sig/key_id (audit signing disabled)",
+                ))
+                continue
             if not row_hash or not sig or not key_id:
                 breaks.append(ChainBreak(n, "malformed", "missing hash/sig/key_id"))
                 continue

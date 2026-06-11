@@ -16,6 +16,7 @@ only when disabled.
 from __future__ import annotations
 
 import os
+from urllib.parse import urlparse
 
 from fastapi import HTTPException, Request, WebSocket
 from maverick.oidc import (
@@ -190,6 +191,20 @@ def goal_owner_filter(request: Request) -> str | None:
     return principal
 
 
+def can_access_goal_principal(principal: str | None, goal) -> bool:
+    """Whether ``principal`` may read/mutate ``goal``.
+
+    ``None`` means auth is off and preserves the dashboard's historical
+    single-user behavior. Authenticated non-admin callers may access only goals
+    stamped with their exact owner principal.
+    """
+    if principal is None:
+        return True
+    if is_dashboard_admin(principal):
+        return True
+    return getattr(goal, "owner", "") == principal
+
+
 def can_access_goal(request: Request, goal) -> bool:
     """Whether the caller may read/mutate ``goal``.
 
@@ -198,12 +213,7 @@ def can_access_goal(request: Request, goal) -> bool:
     layer, or by an external/webhook path) are therefore reachable only by the
     no-auth/admin paths, never by a different authenticated user.
     """
-    principal = caller_principal(request)
-    if principal is None:
-        return True
-    if is_dashboard_admin(principal):
-        return True
-    return getattr(goal, "owner", "") == principal
+    return can_access_goal_principal(caller_principal(request), goal)
 
 
 def assert_goal_access(request: Request, goal) -> None:
@@ -231,9 +241,10 @@ def require_principal(
 
     - OIDC disabled (default): returns ``None`` and allows the request. Behaviour
       is unchanged -- no auth header is read or required.
-    - OIDC enabled: reads the ``Authorization: Bearer`` header, verifies it via
-      :func:`maverick.oidc.verify_oidc_token`, stashes the principal on
-      ``request.state.principal``, and returns it. A missing or invalid token
+    - OIDC enabled: reads the ``Authorization: Bearer`` header and verifies it
+      via :func:`maverick.oidc.verify_oidc_token`. HTTP requests stash the
+      principal on ``request.state.principal``; WebSocket routes receive the
+      returned principal from dependency injection. A missing or invalid token
       raises ``HTTPException(401)`` (fail-closed).
 
     Health/liveness/discovery paths (see ``_OIDC_EXEMPT_PATHS``) stay open so
@@ -312,6 +323,29 @@ def require_principal(
     return principal
 
 
+def websocket_caller_principal(principal: VerifiedPrincipal | None) -> str | None:
+    """Return the owner principal established for a WebSocket connection.
+
+    The app-level dependency returns a ``VerifiedPrincipal`` for OIDC-authenticated
+    WebSockets but has no ``Request.state`` to persist it on. WebSocket handlers
+    pass that dependency result here so owner checks use the same
+    ``user:<sub>`` string as HTTP routes. ``None`` preserves auth-off behavior.
+    """
+    if principal is None:
+        return None
+    name = str(getattr(principal, "principal", "") or "").strip()
+    return name or None
+
+
+def _websocket_same_origin(websocket) -> bool:
+    """Require a browser WebSocket Origin matching the requested Host."""
+    origin = websocket.headers.get("origin")
+    host = websocket.headers.get("host")
+    if not origin or not host:
+        return False
+    return urlparse(origin).netloc == host
+
+
 def websocket_authorized(websocket) -> bool:
     """Auth gate for WebSocket endpoints (the HTTP middleware doesn't run
     for WS connections).
@@ -321,7 +355,7 @@ def websocket_authorized(websocket) -> bool:
         (constant-time compare). Browsers can't set WS headers; browser
         consumers use the loopback/no-token mode or a reverse proxy that
         injects the header.
-      - no token -> loopback peers only, and never through a proxy
+      - no token -> same-origin loopback peers only, and never through a proxy
         (a forwarding header means the loopback peer is the proxy, not the
         user — fail closed, same as HTTP).
     """
@@ -336,4 +370,4 @@ def websocket_authorized(websocket) -> bool:
     from .app import _PROXY_FORWARD_HEADERS, _is_loopback_client
     host = websocket.client.host if websocket.client else ""
     proxied = any(websocket.headers.get(h) for h in _PROXY_FORWARD_HEADERS)
-    return _is_loopback_client(host) and not proxied
+    return _is_loopback_client(host) and not proxied and _websocket_same_origin(websocket)

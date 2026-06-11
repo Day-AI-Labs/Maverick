@@ -79,3 +79,7 @@ def test_create_posts_when_token_present(monkeypatch):
     assert "created #99" in out
     assert seen["url"].endswith("/repos/a/b/issues")
     assert seen["body"] == {"title": "T", "body": "B"}
+
+
+def test_tool_is_not_parallel_safe():
+    assert ghi.github_issues().parallel_safe is False

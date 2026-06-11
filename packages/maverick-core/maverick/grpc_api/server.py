@@ -12,6 +12,7 @@ checked in. With the ``[grpc]`` extra installed, ``serve()`` just works.
 from __future__ import annotations
 
 import hmac
+import json
 import logging
 import os
 from concurrent import futures
@@ -102,6 +103,14 @@ def _require_authorized(context, bearer_token: str) -> None:
     _abort(context, _grpc_code().UNAUTHENTICATED, "missing or invalid bearer token")
 
 
+def _capability_from_json(raw: str):
+    if not raw:
+        return None
+    from ..queue_dispatcher import _deserialize_capability
+
+    return _deserialize_capability(json.loads(raw))
+
+
 def _servicer(service, pb2, pb2_grpc, *, bearer_token: str | None = None):
     """Build a MaverickServicer bound to ``service`` (a GoalService)."""
     bearer_token = _resolve_bearer_token(bearer_token)
@@ -152,12 +161,19 @@ def _servicer(service, pb2, pb2_grpc, *, bearer_token: str | None = None):
 
         def RunGoal(self, request, context):
             _require_authorized(context, bearer_token)
+            try:
+                capability = _capability_from_json(request.capability_json)
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+                context.abort(_grpc_code().INVALID_ARGUMENT, str(e))
+                raise
             st = service.run_goal(
                 request.goal_id,
                 max_dollars=request.max_dollars or None,
                 max_wall_seconds=request.max_wall_seconds or None,
                 channel=request.channel or None,
                 user_id=request.user_id or None,
+                max_depth=request.max_depth or None,
+                capability=capability,
             )
             if st is None:
                 return pb2.GoalStatus(goal_id=request.goal_id, found=False)
@@ -203,8 +219,9 @@ def serve(
     return server
 
 
-def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- entrypoint
+def main(argv: list[str] | None = None) -> int:
     import argparse
+    import sys
 
     ap = argparse.ArgumentParser("maverick-grpc", description="Maverick gRPC API server")
     ap.add_argument("--address", default=_DEFAULT_ADDR, help="host:port to bind")
@@ -215,7 +232,18 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- entrypoin
         help=f"bearer token required from clients (or set {_TOKEN_ENV})",
     )
     args = ap.parse_args(argv)
-    server = serve(args.address, max_workers=args.max_workers, bearer_token=args.bearer_token)
+    # The two expected startup errors are operator-config, not crashes: a
+    # missing bearer token (fail-closed auth default) and a missing grpcio
+    # extra. Both already carry a one-line, actionable message -- print it and
+    # exit non-zero instead of dumping a traceback (round-4 finding).
+    try:
+        server = serve(
+            args.address, max_workers=args.max_workers,
+            bearer_token=args.bearer_token,
+        )
+    except (ValueError, ImportError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
     try:
         server.wait_for_termination()
     except KeyboardInterrupt:

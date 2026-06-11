@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}redact · Maverick{% endblock %}
+{% block content %}
+  <h2>granular redaction</h2>
+  <div class="panel">
+    <p class="muted">
+      Paste text, see every secret/PII finding, choose which kinds to scrub,
+      and copy the provably-redacted result. Nothing is stored server-side.
+    </p>
+    <label for="redact-input">Text to redact</label>
+    <textarea id="redact-input" rows="8" style="width:100%"></textarea>
+    <div id="kind-toggles" style="margin:0.5rem 0"></div>
+    <button id="redact-preview">Preview</button>
+    <h3>result <span id="proof-badge" class="muted"></span></h3>
+    <pre id="redact-output" style="white-space:pre-wrap"></pre>
+  </div>
+  <script>
+    const input = document.getElementById("redact-input");
+    const toggles = document.getElementById("kind-toggles");
+    const output = document.getElementById("redact-output");
+    const badge = document.getElementById("proof-badge");
+    let kinds = [];
+    async function preview(selected) {
+      const res = await fetch("/api/v1/redact/preview", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({text: input.value, kinds: selected || []}),
+      });
+      const d = await res.json();
+      kinds = [...new Set(d.findings.map(f => f.kind))];
+      toggles.replaceChildren(...kinds.map(k => {
+        const id = "kind-" + k.replace(/[^a-z0-9]/gi, "-");
+        const label = document.createElement("label");
+        label.style.marginRight = "0.75rem";
+        const box = document.createElement("input");
+        box.type = "checkbox"; box.id = id; box.value = k;
+        box.checked = !selected || selected.includes(k);
+        box.addEventListener("change", () => {
+          const chosen = [...toggles.querySelectorAll("input:checked")].map(b => b.value);
+          preview(chosen);
+        });
+        label.append(box, " " + k);
+        return label;
+      }));
+      output.textContent = d.redacted;
+      badge.textContent = d.proven_clean ? "(proven clean)" :
+        "(residual: " + d.residual.join(", ") + ")";
+    }
+    document.getElementById("redact-preview")
+      .addEventListener("click", () => preview(null));
+  </script>
+{% endblock %}

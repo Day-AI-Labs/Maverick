@@ -104,6 +104,32 @@ jobs:
               sys.exit(1)
           print("detect-secrets: no new secrets vs audited baseline")
           PY
+      - name: Plugin compatibility matrix (no enabled plugin may be API-incompatible)
+        # Inspects every installed maverick entry point's manifest against
+        # SUPPORTED_API_MAJORS + the permission grants. In this repo's CI the
+        # install is plugin-free, so this validates the gate machinery; a
+        # deployment pipeline runs the same command against its real install.
+        run: |
+          pip install -e ./packages/maverick-core -q
+          python -m maverick.plugin_matrix --ci
+      - name: Sunset gate (past-due deprecations must be removed)
+        # The deprecation registry (maverick/deprecations.py) records every
+        # deprecated path with its removal version. Once the package version
+        # reaches an entry's remove_in, this fails until the old path AND its
+        # registry entry are deleted together -- deprecations can't rot.
+        run: python -m maverick.deprecations --ci
+      - name: gRPC API v1 stability contract (no breaking proto changes)
+        # Parses maverick.proto into a structural inventory and diffs it
+        # against the committed golden: additive changes pass, removals /
+        # renumbers / type changes / rpc-shape changes fail. Breaking the v1
+        # contract requires a maverick.v2 package, not an edit.
+        run: python -m maverick.grpc_api.contract --check
+      - name: Accessibility audit (static WCAG pass over dashboard templates)
+        # Offline structural a11y checks (img alt, form labels, lang, focus
+        # order, heading levels) over the shipped HTML — keeps the dashboard
+        # from regressing on the basics without a browser/Node. Complements
+        # the live `a11y` tool (pa11y/axe).
+        run: python -m maverick.a11y_audit --ci
 
   audit:
     runs-on: ubuntu-latest

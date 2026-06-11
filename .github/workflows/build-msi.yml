@@ -1,0 +1,45 @@
+# Build the unsigned Windows MSI (apps/installer-msi) on demand.
+#
+# Manual dispatch only: the MSI is a distribution artifact, not a CI gate.
+# The produced MSI is UNSIGNED (same posture as the Tauri desktop installer's
+# desktop.yml); signing plugs in here once a Windows code-signing cert exists.
+name: build-msi
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Product version baked into the MSI"
+        required: false
+        default: "0.1.6"
+
+jobs:
+  msi:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the maverick-agent wheel
+        run: |
+          python -m pip install build
+          python -m build --wheel packages/maverick-core
+
+      - name: Install WiX v4
+        run: dotnet tool install --global wix
+
+      - name: Build the MSI
+        shell: pwsh
+        working-directory: apps/installer-msi
+        run: |
+          $wheel = Get-ChildItem ..\..\packages\maverick-core\dist\maverick_agent-*.whl | Select-Object -First 1
+          .\build.ps1 -Wheel $wheel.FullName -Version "${{ inputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maverick-cli-msi-unsigned
+          path: apps/installer-msi/dist/*.msi
+          if-no-files-found: error

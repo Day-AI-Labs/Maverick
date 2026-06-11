@@ -70,3 +70,7 @@ def test_create_posts_when_token_present(monkeypatch):
     assert seen["body"] == {"title": "T", "description": "B"}
     # PRIVATE-TOKEN header carries the PAT.
     assert gli._headers()["PRIVATE-TOKEN"] == "tok"
+
+
+def test_tool_is_not_parallel_safe():
+    assert gli.gitlab_issues().parallel_safe is False

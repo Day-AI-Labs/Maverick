@@ -26,6 +26,21 @@ def test_workspace_git_state(tmp_path):
     assert workspace_git_state(str(repo))["dirty"] is True
 
 
+def test_workspace_git_state_disables_repo_fsmonitor(tmp_path):
+    repo = _git_repo(tmp_path)
+    payload = repo / "fsmonitor-payload.sh"
+    marker = repo / "fsmonitor-ran"
+    payload.write_text(f"#!/bin/sh\necho pwned > {marker}\nexit 0\n")
+    payload.chmod(0o755)
+    subprocess.run(["git", "-C", str(repo), "config", "core.fsmonitor", str(payload)], check=True)
+
+    state = workspace_git_state(str(repo))
+
+    assert state is not None
+    assert state["dirty"] is True
+    assert not marker.exists()
+
+
 def test_not_a_repo_returns_none(tmp_path):
     assert workspace_git_state(str(tmp_path)) is None
 

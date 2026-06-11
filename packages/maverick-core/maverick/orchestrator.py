@@ -189,6 +189,19 @@ def _fire_webhook(event: str, payload: dict[str, Any]) -> None:
         log.debug("webhook %s skipped: %s", event, e)
 
 
+def _budget_task_class(goal: Any) -> str:
+    """A coarse, stable task-class key for the self-tuning budget learner.
+
+    Derived from the goal's verb-ish first token so runs of a kind ("research
+    ...", "fix ...", "summarize ...") pool together; falls back to "default".
+    Deliberately low-cardinality — the learner needs repeated samples per
+    class, not a unique key per goal.
+    """
+    title = (getattr(goal, "title", "") or "").strip().lower()
+    first = title.split()[0] if title else ""
+    return first if first.isalpha() and len(first) <= 16 else "default"
+
+
 def _end_episode_with_spend(
     world: WorldModel, episode_id: int, summary: str, outcome: str, budget: Budget,
     goal_id: int | None = None,
@@ -415,6 +428,13 @@ async def run_goal(  # noqa: C901
             )
         except Exception:  # pragma: no cover -- ledger is fully fail-soft
             log.debug("usage ledger record skipped for %s", principal)
+        # Feed the self-tuning budget learner (opt-in, no-op when off): this
+        # goal's class is what its next sibling will size its default cap from.
+        try:
+            from .self_tuning_budget import record_run_cost
+            record_run_cost(_budget_task_class(goal), budget.dollars)
+        except Exception:  # pragma: no cover -- learner never blocks a run
+            pass
 
     # Bind trace context so every log line emitted in this task is
     # automatically tagged with goal_id (+ conversation_id when set). Capture
@@ -853,6 +873,11 @@ async def run_goal(  # noqa: C901
         except BudgetExceeded as e:
             _end_episode_with_spend(world, episode_id, f"budget: {e}", "failure", budget, goal_id)
             _record_quota_usage()
+            try:  # opt-in failure-mode telemetry; no-op when unconfigured
+                from . import failure_telemetry as _ft
+                _ft.record_failure("budget", goal_id=goal_id, detail=str(e))
+            except Exception:  # pragma: no cover -- telemetry never blocks a run
+                pass
             _maybe_record_reflexion(
                 goal, failure_class="budget", failure_msg=str(e),
                 blackboard=blackboard, shield=shield, channel=channel,
@@ -882,6 +907,11 @@ async def run_goal(  # noqa: C901
                 )
                 _record_quota_usage()
             except Exception:  # pragma: no cover
+                pass
+            try:  # opt-in failure-mode telemetry; no-op when unconfigured
+                from . import failure_telemetry as _ft
+                _ft.record_failure(e, goal_id=goal_id)
+            except Exception:  # pragma: no cover -- telemetry never blocks a run
                 pass
             try:
                 world.set_goal_status(goal_id, "blocked", result=f"internal error: {e}")
@@ -1155,7 +1185,14 @@ async def run_goal(  # noqa: C901
         if auto_distill:
             try:
                 skill = distill(goal.title, summary, blackboard, llm, budget=budget)
-                skill_note = f"\n\n[distilled skill: {skill.name}]" if skill else ""
+                # A None return means the distiller's output failed the skill
+                # validation/shield gate (#396) and was NOT written. Say so:
+                # auto-distill used to go silent here, indistinguishable from
+                # "never ran" (platform-test finding).
+                skill_note = (
+                    f"\n\n[distilled skill: {skill.name}]" if skill
+                    else "\n\n[skill distill: output failed validation; no skill written]"
+                )
             except BudgetExceeded:
                 skill_note = "\n\n[skill distill skipped: budget]"
             except Exception as e:
@@ -1183,7 +1220,10 @@ async def run_goal(  # noqa: C901
                      "t": getattr(g, "updated_at", 0.0)}
                     for g in world.list_goals(status="done", limit=10, order="desc")
                 ]
-                path = _sdl.distill_and_save(trajectories)
+                # v2: gate on evidence + dedup against the learned-skills store
+                # so the loop doesn't accumulate near-duplicate skills each run.
+                from . import skill_distillation_v2 as _sdl2
+                path, _why = _sdl2.distill_and_save_gated(trajectories)
                 if path:
                     blackboard.post("orchestrator", "skill",
                                     f"distilled local skill -> {path}")

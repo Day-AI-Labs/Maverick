@@ -55,28 +55,21 @@ def _fact_subject_token(channel: str, user: str) -> str:
 
 
 def _has_configured_provider() -> bool:
-    """True if config.toml configures a usable provider.
+    """True if any provider surface is configured (shared predicate).
 
-    A consumer who set up a local / OpenAI-compatible model (LM Studio,
-    llama.cpp, Ollama, vLLM, a private proxy) keeps the key -- or no key at
-    all -- in ``[providers.<name>]`` rather than a well-known env var. Such a
-    provider is reachable when it has a non-empty ``api_key`` (config
-    interpolates ``${VAR}`` to "" when unset, so an empty one doesn't count)
-    or a ``base_url`` (self-hosted endpoints need no key).
+    Delegates to ``maverick.config.any_provider_configured`` so the CLI
+    preflight, the LLM clients, and the dashboard agree on what "configured"
+    means: well-known key env vars, self-hosted base-URL env vars
+    (``VLLM_BASE_URL`` / ``TGI_BASE_URL`` / ``OPENAI_COMPATIBLE_BASE_URL``),
+    or a ``[providers.<name>]`` table with a non-empty ``api_key`` /
+    ``base_url``. Before this, each component implemented a different subset
+    and a keyless self-hosted setup passed one gate and failed the next.
     """
     try:
-        from .config import load_config
-        providers = (load_config() or {}).get("providers") or {}
+        from .config import any_provider_configured
+        return any_provider_configured()
     except Exception:  # pragma: no cover -- never block on a config read
         return False
-    for pcfg in providers.values():
-        if not isinstance(pcfg, dict):
-            continue
-        if str(pcfg.get("api_key", "")).strip():
-            return True
-        if str(pcfg.get("base_url", "")).strip():
-            return True
-    return False
 
 
 def _require_llm_key() -> str:
@@ -463,7 +456,19 @@ def onboard(ctx: click.Context, name, docs, no_llm, yes) -> None:
             except Exception:
                 pass  # no vision extra -> images are skipped, not read as bytes
         elif doc_paths:
-            click.echo("(knowledge disabled; skipping doc ingestion)", err=True)
+            # The client explicitly attached docs AND the generated persona
+            # tells the agent to answer from them -- so a quiet "skipping"
+            # aside under-sells that the domain agent ends up with NO document
+            # memory. Make it a clear, actionable warning (client-journey
+            # finding): name the count and the exact remediation.
+            click.echo(
+                f"WARNING: knowledge is disabled, so the {len(doc_paths)} "
+                "document(s) you attached were NOT loaded; this domain agent "
+                "will have no document memory. Enable it with `maverick init` "
+                "(turn on knowledge) or set [knowledge] enable = true in "
+                "~/.maverick/config.toml, then re-run onboard.",
+                err=True,
+            )
     except Exception as e:  # knowledge layer is optional
         if doc_paths:
             click.echo(f"(knowledge unavailable; skipping doc ingestion: {e})", err=True)
@@ -542,6 +547,58 @@ def whoami(principal: str | None, channel: str | None, user_id: str | None,
     click.echo(f"  allow_hosts:  {info['allow_hosts']}")
     if info["expires_at"]:
         click.echo(f"  expires_at:   {info['expires_at']}")
+
+
+@main.group("capability")
+def capability_group() -> None:
+    """Revoke / restore capability grants (kill a grant before its TTL)."""
+
+
+@capability_group.command("revoke")
+@click.argument("principal")
+@click.option("--reason", default="", help="Audit reason for the revocation.")
+def capability_revoke_cmd(principal: str, reason: str) -> None:
+    """Revoke PRINCIPAL now. Its next tool call is denied even mid-run.
+
+    Propagates to running agents (the registry is re-read on change) when
+    capability enforcement is on ([capabilities] enforce = true).
+    """
+    from .revocation import shared
+    rev = shared().revoke(principal, reason=reason)
+    click.echo(click.style(f"revoked {principal!r}", fg="yellow")
+               + (f" — {rev.reason}" if rev.reason else ""))
+
+
+@capability_group.command("unrevoke")
+@click.argument("principal")
+def capability_unrevoke_cmd(principal: str) -> None:
+    """Restore PRINCIPAL (remove it from the revocation list)."""
+    from .revocation import shared
+    if shared().unrevoke(principal):
+        click.echo(click.style(f"restored {principal!r}", fg="green"))
+    else:
+        click.echo(f"{principal!r} was not revoked")
+
+
+@capability_group.command("revocations")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def capability_revocations_cmd(as_json: bool) -> None:
+    """List revoked principals."""
+    import json as _json
+
+    from .revocation import shared
+    revs = shared().revoked()
+    if as_json:
+        click.echo(_json.dumps(
+            {p: {"revoked_at": r.revoked_at, "reason": r.reason}
+             for p, r in revs.items()}, default=str))
+        return
+    if not revs:
+        click.echo("no revoked principals")
+        return
+    for p, r in sorted(revs.items()):
+        click.echo(f"  {p}  (at {r.revoked_at:.0f})"
+                   + (f"  — {r.reason}" if r.reason else ""))
 
 
 @main.group()
@@ -840,6 +897,271 @@ def budget(ctx) -> None:
             f"${e.cost_dollars:.4f}  "
             f"in={e.input_tokens:,} out={e.output_tokens:,} tools={e.tool_calls}"
         )
+
+
+@main.command("budget-tune")
+@click.option("--percentile", type=float, default=90.0,
+              help="Percentile of historical goal cost to size the cap to.")
+@click.option("--min-samples", type=int, default=5,
+              help="Minimum priced goals before a recommendation is made.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def budget_tune(ctx, percentile: float, min_samples: int, as_json: bool) -> None:
+    """Recommend a max_dollars cap learned from historical goal spend.
+
+    Sizes the default to the percentile of what goals actually cost plus a
+    margin, so the common case fits while a runaway still trips it. Read-only —
+    set the value yourself in config.
+    """
+    import json as _json
+
+    from .budget_tuner import recommend_for_world
+    world = open_world(ctx.obj["db"])
+    recs = recommend_for_world(world, pct=percentile, min_samples=min_samples)
+    if as_json:
+        click.echo(_json.dumps(recs))
+        return
+    if not recs:
+        click.echo(f"not enough priced goals yet (need >= {min_samples}).")
+        return
+    click.echo(click.style("Recommended max_dollars (learned):", bold=True))
+    for cls, info in sorted(recs.items()):
+        click.echo(f"  {cls}: ${info['recommended_max_dollars']:.2f}  "
+                   f"(p{int(percentile)}=${info[f'p{int(percentile)}']:.2f}, "
+                   f"{info['samples']} goal(s))")
+
+
+@main.command("confidential-compute")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def confidential_compute_cmd(as_json: bool) -> None:
+    """Detect whether this runs inside a confidential VM (SEV-SNP / TDX).
+
+    For a regulated deployment to verify its memory is hardware-encrypted.
+    Exits non-zero when NOT confidential, so it can gate a deployment.
+    """
+    import json as _json
+
+    from .confidential_compute import detect
+    rep = detect()
+    if as_json:
+        click.echo(_json.dumps(rep))
+    elif rep["confidential"]:
+        kind = "Intel TDX" if rep["tdx"] else "AMD SEV-SNP"
+        click.echo(click.style(f"CONFIDENTIAL VM ({kind})", fg="green")
+                   + f" — {', '.join(rep['indicators'])}")
+    else:
+        click.echo(click.style(
+            "NOT a confidential VM (no SEV-SNP / TDX indicators)", fg="yellow"))
+    if not rep["confidential"]:
+        raise SystemExit(1)
+
+
+@main.command("airgap")
+@click.argument("action", type=click.Choice(["check"]), default="check")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def airgap_cmd(action: str, as_json: bool) -> None:
+    """Verify the deployment is configured with no outbound path.
+
+    Audits for a remote model provider, a non-deny-all egress policy, and
+    sandbox network access. Exits non-zero on any finding so it can gate a
+    deployment. (OS-level air-gapping is the operator's job; this checks
+    Maverick's own config.)
+    """
+    import json as _json
+
+    from .air_gap import audit
+    rep = audit()
+    if as_json:
+        click.echo(_json.dumps(rep))
+    elif rep["clean"]:
+        click.echo(click.style("AIR-GAPPED: no outbound path in config", fg="green"))
+    else:
+        click.echo(click.style("NOT air-gapped — findings:", fg="red"))
+        for v in rep["violations"]:
+            click.echo(f"  • {v}")
+    if not rep["clean"]:
+        raise SystemExit(1)
+
+
+@main.command("failures")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def failures_cmd(as_json: bool) -> None:
+    """Show the failure-mode distribution (opt-in [telemetry] failure_modes).
+
+    When the telemetry is on, failed runs record a canonical mode (budget /
+    auth / timeout / shield / sandbox / network / error); this reads them back.
+    """
+    import json as _json
+
+    from .failure_telemetry import enabled, summarize
+    s = summarize()
+    if as_json:
+        click.echo(_json.dumps(s))
+        return
+    if not s["total"]:
+        hint = "" if enabled() else " (telemetry is off — set [telemetry] failure_modes)"
+        click.echo(f"no recorded failures{hint}.")
+        return
+    click.echo(click.style(f"Failure modes ({s['total']} recorded)", bold=True))
+    for mode, n in s["by_mode"].items():
+        click.echo(f"  {mode:<10} {n}")
+
+
+@main.command("analytics")
+@click.option("--sql", default=None, help="Ad-hoc read-only SQL over goals/episodes.")
+@click.option("--top", type=int, default=10, help="Top-N costliest goals (default view).")
+@click.pass_context
+def analytics_cmd(ctx, sql: str | None, top: int) -> None:
+    """OLAP analytics over the world model via DuckDB ([duckdb] extra).
+
+    Default view: per-goal cost percentiles + the costliest goals. `--sql`
+    runs an ad-hoc SELECT over `goals` and `episodes` (read-only).
+    """
+    import json as _json
+
+    try:
+        from .duckdb_analytics import WorldAnalytics
+        # duckdb imports lazily inside the constructor, so the actionable
+        # "pip install 'maverick-agent[duckdb]'" ImportError fires HERE --
+        # construction must sit inside the catch or the user gets a raw
+        # traceback (round-3 platform-test finding).
+        wa = WorldAnalytics(open_world(ctx.obj["db"]))
+    except ImportError as e:
+        raise click.ClickException(str(e)) from e
+    try:
+        if sql:
+            click.echo(_json.dumps(wa.query(sql), default=str))
+            return
+        pct = wa.cost_percentiles()
+        click.echo(click.style("Per-goal cost percentiles", bold=True))
+        if pct.get("n"):
+            click.echo(f"  goals={int(pct['n'])}  p50=${pct['p50']:.2f}  "
+                       f"p90=${pct['p90']:.2f}  p99=${pct['p99']:.2f}  "
+                       f"max=${pct['max_cost']:.2f}")
+        else:
+            click.echo("  no priced goals yet.")
+        rows = wa.top_goals(top)
+        if rows:
+            click.echo(click.style("\nCostliest goals", bold=True))
+            for r in rows:
+                click.echo(f"  #{int(r['id'])} ${r['total_cost']:.2f} "
+                           f"({int(r['ep_count'])} ep)  {r['title']}")
+    finally:
+        wa.close()
+
+
+@main.command("cost-retro")
+@click.option("--top", type=int, default=10, help="How many costliest goals to show.")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def cost_retro(ctx, top: int, as_json: bool) -> None:
+    """Cost retrospective: where spend went, and what to do about it.
+
+    Reads recorded per-goal spend and reports the costliest goals, how much
+    went to failed work, how concentrated spend is, and actionable
+    observations. Read-only.
+    """
+    import json as _json
+
+    from .cost_retrospective import retrospective
+    world = open_world(ctx.obj["db"])
+    rep = retrospective(world, top_n=top)
+    if as_json:
+        click.echo(_json.dumps(rep))
+        return
+    click.echo(click.style(
+        f"Cost retrospective — ${rep['total_spend']:.2f} across "
+        f"{rep['priced_goals']} priced goal(s)", bold=True))
+    if rep["failed_spend"]:
+        click.echo(f"  failed work: ${rep['failed_spend']:.2f} "
+                   f"({rep['failed_share']:.0%})")
+    if rep["top_goals"]:
+        click.echo(click.style("\nCostliest goals", bold=True))
+        for r in rep["top_goals"]:
+            flag = " [FAILED]" if r["failed"] else ""
+            click.echo(f"  #{r['goal_id']} ${r['cost']:.2f} "
+                       f"({r['episodes']} ep){flag}  {r['title']}")
+    click.echo(click.style("\nObservations", bold=True))
+    for o in rep["observations"]:
+        click.echo(f"  • {o}")
+
+
+@main.command("charts")
+@click.option("--days", type=int, default=7, help="How many days to chart.")
+@click.option("--plain", is_flag=True, help="Force plain ASCII (no rich panels).")
+@click.pass_context
+def charts(ctx, days: int, plain: bool) -> None:
+    """Inline terminal charts: spend/day, goal throughput, tool latency.
+
+    Sparklines + bars drawn from recorded data — the usage ledger (spend),
+    the world model (done/failed per day), and the tool-latency profile.
+    Uses ``rich`` panels when installed; falls back to plain ASCII. Sections
+    with no data say so. Read-only.
+    """
+    from . import terminal_charts, tool_latency
+    world = open_world(ctx.obj["db"])
+    report = tool_latency.report()
+    if plain:
+        click.echo(terminal_charts.render_dashboard(world, None, report, days=days))
+        return
+    out = terminal_charts.render_dashboard_rich(world, None, report, days=days)
+    if isinstance(out, str):
+        click.echo(out)
+    else:
+        from rich.console import Console
+        Console().print(out)
+
+
+@main.group("canary")
+def canary_group() -> None:
+    """Record / compare cost-perf metric snapshots per release."""
+
+
+def _parse_metrics(pairs: tuple[str, ...]) -> dict:
+    out: dict = {}
+    for p in pairs:
+        if "=" not in p:
+            raise click.ClickException(f"--metric must be name=value, got {p!r}")
+        name, _, val = p.partition("=")
+        try:
+            out[name.strip()] = float(val)
+        except ValueError as e:
+            raise click.ClickException(f"metric {name!r} value not numeric: {val!r}") from e
+    return out
+
+
+@canary_group.command("record")
+@click.argument("release")
+@click.option("--metric", "metrics", multiple=True,
+              help="name=value (repeatable), e.g. --metric p95_latency_s=3.4")
+def canary_record(release: str, metrics: tuple[str, ...]) -> None:
+    """Record RELEASE's metric snapshot (cost/latency/success_rate/...)."""
+    from .release_canary import CanaryStore
+    parsed = _parse_metrics(metrics)
+    if not parsed:
+        raise click.ClickException("at least one --metric is required")
+    CanaryStore().record(release, parsed)
+    click.echo(f"recorded {len(parsed)} metric(s) for release {release!r}")
+
+
+@canary_group.command("compare")
+@click.argument("baseline")
+@click.argument("candidate")
+@click.option("--tolerance", type=float, default=0.10,
+              help="Relative move allowed before flagging a regression.")
+def canary_compare(baseline: str, candidate: str, tolerance: float) -> None:
+    """Compare CANDIDATE release metrics against BASELINE; exit 1 on regression."""
+    from .release_canary import CanaryStore, compare, render
+    store = CanaryStore()
+    base, cand = store.get(baseline), store.get(candidate)
+    if base is None:
+        raise click.ClickException(f"no recorded metrics for baseline {baseline!r}")
+    if cand is None:
+        raise click.ClickException(f"no recorded metrics for candidate {candidate!r}")
+    result = compare(base, cand, tolerance=tolerance)
+    click.echo(render(result))
+    if not result.passed:
+        raise SystemExit(1)
 
 
 @main.command()
@@ -1435,6 +1757,32 @@ def start(
         click.echo(render(fc))
         return
 
+    # Refuse BEFORE creating the goal row -- both of these used to surface
+    # after `goal #N created`, leaving an orphan blocked/failed row per
+    # attempt (platform-test finding).
+    from . import killswitch as _ks
+    try:
+        _ks.check()
+    except _ks.Halted:
+        click.echo(
+            "Stopped: Maverick is halted (a HALT file is present).\n"
+            "Run `maverick unhalt` to clear it, then try again.",
+            err=True,
+        )
+        sys.exit(3)  # distinct from misuse (2) so scripts can tell "refused"
+    from . import providers as _providers
+    from .config import load_config as _load_config
+    _specs = {
+        s for s in (_load_config().get("models") or {}).values()
+        if isinstance(s, str) and s
+    }
+    _specs.add(ctx.obj["model"] or _kernel().DEFAULT_MODEL)
+    _sdk_msgs = _providers.missing_sdks(sorted(_specs))
+    if _sdk_msgs:
+        for m in _sdk_msgs:
+            click.echo(f"ERROR: {m}", err=True)
+        sys.exit(2)
+
     k = _kernel()
     world = open_world(ctx.obj["db"])
     goal_id = world.create_goal(title, description)
@@ -1815,8 +2163,14 @@ def debate(ctx, question: str, rounds: int, max_dollars: float,
     """
     from .budget import Budget
     from .debate import DebateParticipant, run_debate
+    # Friendly preflight (round-3 platform-test finding: an unconfigured
+    # install got a raw anthropic-SDK TypeError traceback here), and route
+    # through the configured role models instead of hard DEFAULT_MODEL
+    # (kernel rule 2) -- debaters argue at the analyst tier.
+    _require_llm_key()
+    from .llm import model_for_role
     k = _kernel()
-    llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
+    llm = k.LLM(model=ctx.obj["model"] or model_for_role("analyst"))
     participants = [
         DebateParticipant(
             name="Proponent",
@@ -1867,6 +2221,65 @@ def schema_plan_cmd() -> None:
     click.echo(render(plan(int(current), SCHEMA_VERSION)))
 
 
+@main.command("config-lint")
+def config_lint_cmd() -> None:
+    """Validate ~/.maverick/config.toml: unknown sections/keys + obvious type
+    mistakes, with closest-match suggestions. Exits 1 if any error-level finding."""
+    from .config import config_path, load_config
+    from .config_lint import format_findings, lint_config
+    # load_config() is deliberately fail-soft: a corrupt config.toml yields {}
+    # with only a warning, so linting it would find nothing and print
+    # "config OK" -- the one tool meant to catch a broken config blessing a
+    # file in which every setting is being dropped (round-4 finding; mirrors
+    # health._check_config). Parse the raw file FIRST so a syntax error is a
+    # hard lint failure, not invisible.
+    p = config_path()
+    if p.exists():
+        try:
+            import tomllib
+        except ModuleNotFoundError:  # 3.10
+            import tomli as tomllib
+        try:
+            with open(p, "rb") as f:
+                tomllib.load(f)
+        except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as e:
+            click.echo(
+                f"error: {p} is not valid TOML -- every setting in it is being "
+                f"IGNORED ({type(e).__name__}: {e})", err=True,
+            )
+            click.echo("fix the syntax above, or back it up and re-run `maverick init`.")
+            sys.exit(1)
+    try:
+        cfg = load_config() or {}
+    except Exception as e:
+        click.echo(f"could not load config: {e}", err=True)
+        sys.exit(1)
+    findings = lint_config(cfg)
+    click.echo(format_findings(findings))
+    if any(getattr(f, "severity", "") == "error" for f in findings):
+        sys.exit(1)
+
+
+@main.command("costs")
+@click.option("--limit", default=30, show_default=True, help="Rows to show.")
+def costs_cmd(limit: int) -> None:
+    """Cross-run spend, by day, from recorded episodes (the persisted ledger)."""
+    from datetime import datetime, timezone
+
+    from .cost_report import format_report
+    from .world_model import DEFAULT_DB, WorldModel
+    w = WorldModel(DEFAULT_DB)
+    rows: list[dict] = []
+    try:
+        for ep in w.list_episodes(limit=1_000_000):
+            if ep.cost_dollars and ep.ended_at:
+                day = datetime.fromtimestamp(ep.ended_at, tz=timezone.utc).strftime("%Y-%m-%d")
+                rows.append({"dollars": ep.cost_dollars, "day": day})
+    finally:
+        w.close()
+    click.echo(format_report(rows, by="day", top=limit))
+
+
 @main.command("migrate")
 @click.option("--apply", "do_apply", is_flag=True,
               help="Apply mechanical rewrites (after a timestamped backup). "
@@ -1903,8 +2316,13 @@ def plan_reflect(ctx, goal: str, max_iterations: int, max_dollars: float) -> Non
     """
     from .budget import Budget
     from .plan_execute_reflect import run_plan_execute_reflect
+    # Same preflight + role routing as `debate` (round-3 finding): planning
+    # belongs to the orchestrator tier, and a missing provider must refuse
+    # cleanly, not traceback inside the anthropic client constructor.
+    _require_llm_key()
+    from .llm import model_for_role
     k = _kernel()
-    llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
+    llm = k.LLM(model=ctx.obj["model"] or model_for_role("orchestrator"))
     result = run_plan_execute_reflect(
         goal,
         planner_complete=llm.complete,
@@ -3004,6 +3422,36 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         )
 
 
+@main.command("erase-verify")
+@click.option("--channel", required=True, help="Channel name (e.g. telegram, sms).")
+@click.option("--user", required=True, help="The channel user_id to verify.")
+@click.option("--tenant", default=None, help="Tenant data plane (default: active).")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def erase_verify(channel: str, user: str, tenant: str | None, as_json: bool) -> None:
+    """Verify a (channel, user_id) was fully erased: zero residual records.
+
+    Right-to-erasure proof (GDPR Art. 17): reuses the DSAR export, whose
+    subject-matching agrees with the erase path, so any residual count is an
+    incomplete erasure. Read-only; run it after `maverick erase`.
+    """
+    import json as _json
+
+    from .erasure_verify import verify_erasure
+    report = verify_erasure(user, channel=channel, tenant=tenant)
+    if as_json:
+        click.echo(_json.dumps(report, default=str))
+        return
+    if report["clean"]:
+        click.echo(click.style(
+            f"CLEAN: no residual data for {channel}:{user}", fg="green"))
+        return
+    click.echo(click.style(
+        f"RESIDUAL DATA for {channel}:{user} — erasure incomplete:", fg="red"))
+    for store, n in sorted(report["residual"].items()):
+        click.echo(f"  {store}: {n}")
+    raise SystemExit(1)
+
+
 @main.command("compliance")
 @click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
               help="Output format.")
@@ -3427,8 +3875,24 @@ def audit_verify(
             click.echo(f"no audit day-files in {audit_dir}")
     else:
         d = day or _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
-        paths = [audit_dir / f"{d}.ndjson"]
         anchor_dir = audit_dir
+        day_file = audit_dir / f"{d}.ndjson"
+        from .audit.signing import _have_crypto
+        if not day_file.exists() and _have_crypto():
+            # No day-file means no audit events were recorded that day -- the
+            # clean/empty state, NOT tampering (the audit log records security
+            # events; a benign run legitimately writes none). A routine
+            # `audit verify` on a quiet day must not show a scary
+            # "FAIL: missing_file" (client-journey finding). verify_anchors
+            # below stays the authority on a SUSPICIOUS absence: it FAILs when
+            # an anchor claims this day-file existed. Gated on _have_crypto():
+            # with crypto unavailable we cannot make ANY tamper-evidence claim,
+            # so we fall through to the fail-closed no_crypto path instead of
+            # reporting clean.
+            click.echo(f"no audit entries for {d} (nothing recorded that day).")
+            paths = []
+        else:
+            paths = [day_file]
 
     if not pubkey:
         click.echo(
@@ -3440,7 +3904,19 @@ def audit_verify(
     any_break = False
     for path in paths:
         breaks = verify_chain(path, pubkey_hex=pubkey)
-        if breaks:
+        if breaks and all(b.reason == "unsigned" for b in breaks):
+            # Default deployment: signing was never on. One actionable line
+            # instead of per-row tamper vocabulary -- but still exit 1, so
+            # automation cannot pass unverifiable evidence as clean.
+            any_break = True
+            click.echo(
+                f"UNVERIFIABLE: {path} — {len(breaks)} unsigned row(s); audit "
+                "signing is off. Set [audit] sign = true in "
+                "~/.maverick/config.toml (or MAVERICK_AUDIT_SIGN=1) so future "
+                "rows are hash-chained and tamper-evident.",
+                err=True,
+            )
+        elif breaks:
             any_break = True
             click.echo(f"FAIL: {len(breaks)} issue(s) in {path}", err=True)
             for b in breaks:
@@ -4238,6 +4714,33 @@ def encryption_migrate_cmd(ctx, dry_run: bool) -> None:
         f"{verb} {sum(report.values())} value(s) total"
         + (" (dry run)" if dry_run else "")
     )
+
+
+@main.group("local-runtime")
+def local_runtime_group() -> None:
+    """Plan the local model-server runtime (vLLM / TGI / llama.cpp)."""
+
+
+@local_runtime_group.command("plan")
+def local_runtime_plan() -> None:
+    """Print the server command Maverick WOULD run -- nothing is started.
+
+    Composes the argv (and any env toggles) from [local_runtime] in
+    ~/.maverick/config.toml plus MAVERICK_LOCAL_RUNTIME_* overrides.
+    """
+    import shlex
+
+    from .local_runtime import Launcher, LocalRuntimeError
+    try:
+        launcher = Launcher()
+        argv, env = launcher.plan()
+    except LocalRuntimeError as e:
+        raise click.ClickException(str(e)) from e
+    if not launcher.cfg["enabled"]:
+        click.echo("# local runtime is DISABLED ([local_runtime] enabled = false); dry plan only")
+    for key in sorted(env):
+        click.echo(f"{key}={env[key]} \\")
+    click.echo(shlex.join(argv))
 
 
 if __name__ == "__main__":

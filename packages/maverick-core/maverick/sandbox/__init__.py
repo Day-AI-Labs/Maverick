@@ -21,6 +21,7 @@ from .firecracker import FirecrackerBackend
 from .kubernetes import KubernetesBackend
 from .local import ExecResult, LocalBackend
 from .podman import PodmanBackend
+from .sdk import SDK_VERSION, SandboxV2
 from .ssh import SSHBackend
 
 __all__ = [
@@ -33,6 +34,8 @@ __all__ = [
     "SSHBackend",
     "ExecResult",
     "build_sandbox",
+    "SDK_VERSION",
+    "SandboxV2",
 ]
 
 log = logging.getLogger(__name__)
@@ -196,30 +199,74 @@ def build_sandbox(
         log.warning("invalid [sandbox] timeout %r; using 60s", cfg.get("timeout"))
         timeout = 60.0
 
+    if chosen == "modal":
+        # Ephemeral Modal cloud sandboxes ([modal] extra). The CF-Workers half
+        # of the roadmap item is declined for shell semantics (see
+        # sandbox/modal_backend.py docstring).
+        from .modal_backend import ModalBackend
+        return ModalBackend(
+            workdir=wd, image=_resolve_image(full_cfg), timeout=timeout,
+            cpu=full_cfg.get("cpus"), memory_mb=full_cfg.get("memory_mb"),
+        )
+
+    if chosen.startswith("ep:"):
+        # Sandbox SDK v2: a third-party backend from the maverick.sandboxes
+        # entry-point group. Conformance-checked at load; raises (never
+        # silently falls back to unsandboxed local) on a broken backend.
+        from .sdk import load_entry_point_backend
+        options = full_cfg.get("options") or {}
+        return load_entry_point_backend(
+            chosen[3:].strip(), workdir=wd, timeout=timeout,
+            options=options if isinstance(options, dict) else {},
+        )
+
     if chosen in ("docker", "gvisor"):
         image = _resolve_image(full_cfg)
         # gVisor is Docker with the runsc runtime; reuse every Docker knob and
         # just swap the runtime. A configured [sandbox] runtime overrides the
         # default so an operator can point gvisor at a custom runsc registration.
         runtime = full_cfg.get("runtime") or ("runsc" if chosen == "gvisor" else None)
-        return DockerBackend(
-            workdir=wd, image=image, timeout=timeout,
+        kwargs = dict(
             allow_network=_config_bool(full_cfg.get("allow_network"), False),
             pids_limit=full_cfg.get("pids_limit", 512),
             memory=full_cfg.get("memory", "4g"),
             cpus=full_cfg.get("cpus"),
             allow_root=_config_bool(full_cfg.get("allow_root"), False),
-            runtime=runtime,
+        )
+        # Opt-in cross-run pooling (default OFF -> this block is dead and
+        # behavior is byte-identical): reuse a parked, still-healthy backend
+        # for the same engine + image digest + security flags. See pool.py
+        # for the scrub contract. (reuse_container is the WITHIN-run warm
+        # knob and doesn't shape the pool key; it goes to the backend only.)
+        if _config_bool(full_cfg.get("cross_run_pool"), False):
+            from . import pool as _pool
+            pooled = _pool.shared_pool().acquire(
+                "docker", image, workdir=wd, timeout=timeout,
+                runtime=runtime, **kwargs)
+            if pooled is not None:
+                return pooled
+        return DockerBackend(
+            workdir=wd, image=image, timeout=timeout, runtime=runtime,
+            reuse_container=_config_bool(full_cfg.get("reuse_container"), False),
+            **kwargs,
         )
     if chosen == "podman":
         image = _resolve_image(full_cfg)
-        return PodmanBackend(
-            workdir=wd, image=image, timeout=timeout,
+        kwargs = dict(
             allow_network=_config_bool(full_cfg.get("allow_network"), False),
             pids_limit=full_cfg.get("pids_limit", 512),
             memory=full_cfg.get("memory", "4g"),
             cpus=full_cfg.get("cpus"),
             allow_root=_config_bool(full_cfg.get("allow_root"), False),
+        )
+        if _config_bool(full_cfg.get("cross_run_pool"), False):
+            from . import pool as _pool
+            pooled = _pool.shared_pool().acquire(
+                "podman", image, workdir=wd, timeout=timeout, **kwargs)
+            if pooled is not None:
+                return pooled
+        return PodmanBackend(
+            workdir=wd, image=image, timeout=timeout, **kwargs,
         )
     if chosen == "devcontainer":
         project_dir = Path(
@@ -251,6 +298,9 @@ def build_sandbox(
             provider=full_cfg.get("provider", "local"),
             api_key=full_cfg.get("api_key"),
             network=full_cfg.get("network", "egress-deny"),
+            # Warm microVM reuse between execs (e2b provider only; see
+            # FirecrackerBackend docstring). Default OFF.
+            warm=_config_bool(full_cfg.get("warm"), False),
         )
     if chosen == "ssh":
         host = full_cfg.get("host")

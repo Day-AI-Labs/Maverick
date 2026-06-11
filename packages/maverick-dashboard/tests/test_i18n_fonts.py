@@ -9,8 +9,12 @@ client = TestClient(app)
 
 
 def test_catalog_complete_for_all_languages():
+    # Seed languages (community-contributed, intentionally partial) are
+    # exempt from full coverage; t() falls back to English for their gaps.
     for key, entry in i18n.MESSAGES.items():
         for lang in i18n.LANGS:
+            if lang in i18n.SEED_LANGS:
+                continue
             assert entry.get(lang), f"{key} missing {lang}"
 
 

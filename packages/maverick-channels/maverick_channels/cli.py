@@ -26,7 +26,7 @@ class CLIChannel(Channel):
                 continue
             msg = IncomingMessage(user_id="local", text=text, channel="cli")
             try:
-                reply = await self.handler(msg)
+                reply = await self.dispatch_text(msg)
             except Exception as e:  # one bad run must not kill the session
                 reply = f"Sorry, I ran into an error: {e}"
             await self.send("local", reply)

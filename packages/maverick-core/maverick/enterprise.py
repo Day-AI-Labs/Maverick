@@ -117,9 +117,21 @@ def _env_tristate(value: str) -> bool | None:
 
 
 def enterprise_enabled() -> bool:
-    """True if enterprise mode is on. A recognized ``MAVERICK_ENTERPRISE`` env value
-    wins over ``[enterprise] mode`` in config; an *unrecognized* env value is ignored
-    (with a warning) rather than silently disabling the control. Off by default."""
+    """True if enterprise mode is on or required by an active compliance profile.
+
+    Compliance floors are mandatory and strictest-wins: a HIPAA profile that
+    requires the egress lock keeps the enterprise boundary closed even if the
+    standalone enterprise knob is absent or false. Otherwise, a recognized
+    ``MAVERICK_ENTERPRISE`` env value wins over ``[enterprise] mode`` in config;
+    an *unrecognized* env value is ignored (with a warning) rather than silently
+    disabling the control. Off by default.
+    """
+    try:
+        from .compliance_profiles import FLOOR_EGRESS_LOCK, requires_floor
+        if requires_floor(FLOOR_EGRESS_LOCK):
+            return True
+    except Exception:
+        pass
     env = os.environ.get("MAVERICK_ENTERPRISE")
     if env is not None and env.strip() != "":
         decided = _env_tristate(env)

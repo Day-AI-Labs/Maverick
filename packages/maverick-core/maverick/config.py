@@ -53,6 +53,7 @@ def _default_config_path() -> Path:
 
 # Back-compat: many call sites still reference the constant.
 DEFAULT_CONFIG_PATH = _default_config_path()
+CONFIG_OVERLAY_ENV = "MAVERICK_CONFIG_OVERLAY"
 
 # Accept lower/mixed-case names too: a hand-edited config referencing a
 # lowercase env var (`${my_token}`) previously left the literal `${my_token}`
@@ -82,12 +83,11 @@ def config_path() -> Path:
     return _default_config_path()
 
 
-def load_config(path: Path | None = None) -> dict:
-    p = path or config_path()
-    if not p.exists():
+def _load_config_file(path: Path) -> dict:
+    if not path.exists():
         return {}
     try:
-        with open(p, "rb") as f:
+        with open(path, "rb") as f:
             return _interp(tomllib.load(f))
     except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as e:
         # The kernel must tolerate a missing config (returns {} above); a
@@ -96,9 +96,30 @@ def load_config(path: Path | None = None) -> dict:
         # get_role_model / get_safety caller on a hand-edited TOML typo.
         logging.getLogger(__name__).warning(
             "ignoring unreadable %s (%s: %s); using defaults",
-            p, type(e).__name__, e,
+            path, type(e).__name__, e,
         )
         return {}
+
+
+def _deep_merge_config(base: dict, overlay: dict) -> dict:
+    merged = dict(base)
+    for key, value in overlay.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge_config(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def load_config(path: Path | None = None) -> dict:
+    if path is not None:
+        return _load_config_file(path)
+
+    cfg = _load_config_file(config_path())
+    overlay = os.environ.get(CONFIG_OVERLAY_ENV)
+    if not overlay:
+        return cfg
+    return _deep_merge_config(cfg, _load_config_file(Path(overlay).expanduser()))
 
 
 def get_role_model(role: str) -> str | None:
@@ -111,6 +132,49 @@ def get_role_model(role: str) -> str | None:
 def get_provider_config(provider: str) -> dict:
     cfg = load_config()
     return cfg.get("providers", {}).get(provider, {})
+
+
+# Well-known credential env vars, one per hosted provider.
+PROVIDER_KEY_ENV_VARS = (
+    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY",
+    "OPENROUTER_API_KEY", "MOONSHOT_API_KEY", "DEEPSEEK_API_KEY",
+    "XAI_API_KEY",
+)
+
+# Self-hosted endpoints configured by env var (the mechanism each provider's
+# docstring documents). Ollama has no env var: its only custom-URL surface is
+# ``[providers.ollama] base_url`` in config, covered below.
+PROVIDER_BASE_URL_ENV_VARS = (
+    "VLLM_BASE_URL", "TGI_BASE_URL", "OPENAI_COMPATIBLE_BASE_URL",
+)
+
+
+def any_provider_configured() -> bool:
+    """The ONE predicate for "can this install reach some LLM provider?".
+
+    Three legitimate configuration surfaces, all honored:
+      1. a well-known credential env var (hosted providers);
+      2. a self-hosted base-URL env var (vLLM / TGI / OpenAI-compatible);
+      3. a ``[providers.<name>]`` config table carrying a non-empty
+         ``api_key`` or ``base_url`` (``${VAR}`` interpolates to "" when
+         unset, so an empty interpolation does not count).
+
+    Found by running the platform as a user: the CLI preflight, the LLM
+    clients, and the dashboard each implemented a different subset, so a
+    keyless self-hosted setup was accepted by one component and rejected by
+    the next. Use this helper instead of growing a fourth variant.
+    """
+    if any(os.environ.get(v) for v in PROVIDER_KEY_ENV_VARS):
+        return True
+    if any(os.environ.get(v) for v in PROVIDER_BASE_URL_ENV_VARS):
+        return True
+    providers = load_config().get("providers") or {}
+    for pcfg in providers.values():
+        if not isinstance(pcfg, dict):
+            continue
+        if str(pcfg.get("api_key", "")).strip() or str(pcfg.get("base_url", "")).strip():
+            return True
+    return False
 
 
 def get_budget_overrides() -> dict:
