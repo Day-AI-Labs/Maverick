@@ -55,28 +55,21 @@ def _fact_subject_token(channel: str, user: str) -> str:
 
 
 def _has_configured_provider() -> bool:
-    """True if config.toml configures a usable provider.
+    """True if any provider surface is configured (shared predicate).
 
-    A consumer who set up a local / OpenAI-compatible model (LM Studio,
-    llama.cpp, Ollama, vLLM, a private proxy) keeps the key -- or no key at
-    all -- in ``[providers.<name>]`` rather than a well-known env var. Such a
-    provider is reachable when it has a non-empty ``api_key`` (config
-    interpolates ``${VAR}`` to "" when unset, so an empty one doesn't count)
-    or a ``base_url`` (self-hosted endpoints need no key).
+    Delegates to ``maverick.config.any_provider_configured`` so the CLI
+    preflight, the LLM clients, and the dashboard agree on what "configured"
+    means: well-known key env vars, self-hosted base-URL env vars
+    (``VLLM_BASE_URL`` / ``TGI_BASE_URL`` / ``OPENAI_COMPATIBLE_BASE_URL``),
+    or a ``[providers.<name>]`` table with a non-empty ``api_key`` /
+    ``base_url``. Before this, each component implemented a different subset
+    and a keyless self-hosted setup passed one gate and failed the next.
     """
     try:
-        from .config import load_config
-        providers = (load_config() or {}).get("providers") or {}
+        from .config import any_provider_configured
+        return any_provider_configured()
     except Exception:  # pragma: no cover -- never block on a config read
         return False
-    for pcfg in providers.values():
-        if not isinstance(pcfg, dict):
-            continue
-        if str(pcfg.get("api_key", "")).strip():
-            return True
-        if str(pcfg.get("base_url", "")).strip():
-            return True
-    return False
 
 
 def _require_llm_key() -> str:

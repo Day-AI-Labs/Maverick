@@ -113,6 +113,49 @@ def get_provider_config(provider: str) -> dict:
     return cfg.get("providers", {}).get(provider, {})
 
 
+# Well-known credential env vars, one per hosted provider.
+PROVIDER_KEY_ENV_VARS = (
+    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY",
+    "OPENROUTER_API_KEY", "MOONSHOT_API_KEY", "DEEPSEEK_API_KEY",
+    "XAI_API_KEY",
+)
+
+# Self-hosted endpoints configured by env var (the mechanism each provider's
+# docstring documents). Ollama has no env var: its only custom-URL surface is
+# ``[providers.ollama] base_url`` in config, covered below.
+PROVIDER_BASE_URL_ENV_VARS = (
+    "VLLM_BASE_URL", "TGI_BASE_URL", "OPENAI_COMPATIBLE_BASE_URL",
+)
+
+
+def any_provider_configured() -> bool:
+    """The ONE predicate for "can this install reach some LLM provider?".
+
+    Three legitimate configuration surfaces, all honored:
+      1. a well-known credential env var (hosted providers);
+      2. a self-hosted base-URL env var (vLLM / TGI / OpenAI-compatible);
+      3. a ``[providers.<name>]`` config table carrying a non-empty
+         ``api_key`` or ``base_url`` (``${VAR}`` interpolates to "" when
+         unset, so an empty interpolation does not count).
+
+    Found by running the platform as a user: the CLI preflight, the LLM
+    clients, and the dashboard each implemented a different subset, so a
+    keyless self-hosted setup was accepted by one component and rejected by
+    the next. Use this helper instead of growing a fourth variant.
+    """
+    if any(os.environ.get(v) for v in PROVIDER_KEY_ENV_VARS):
+        return True
+    if any(os.environ.get(v) for v in PROVIDER_BASE_URL_ENV_VARS):
+        return True
+    providers = load_config().get("providers") or {}
+    for pcfg in providers.values():
+        if not isinstance(pcfg, dict):
+            continue
+        if str(pcfg.get("api_key", "")).strip() or str(pcfg.get("base_url", "")).strip():
+            return True
+    return False
+
+
 def get_budget_overrides() -> dict:
     return load_config().get("budget", {})
 

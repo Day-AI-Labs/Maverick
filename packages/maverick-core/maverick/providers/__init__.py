@@ -44,21 +44,31 @@ def _canonical(name: str) -> str:
     return lower
 
 
-def get_provider_client(name: str, api_key: str | None = None) -> Any:
-    """Lazy-import and instantiate the named provider client."""
+def get_provider_client(
+    name: str, api_key: str | None = None, base_url: str | None = None
+) -> Any:
+    """Lazy-import and instantiate the named provider client.
+
+    ``base_url`` reaches the self-hosted / OpenAI-compatible clients (vllm,
+    tgi, ollama, openai, openai_compatible) so a ``[providers.<name>]
+    base_url`` in config actually configures the endpoint — previously only
+    the CLI preflight read that key and the client silently fell back to its
+    env var / localhost default. Providers with fixed or scheme-specific
+    endpoints (anthropic, azure, bedrock, ...) ignore it.
+    """
     canon = _canonical(name)
     if canon == "anthropic":
         from .anthropic_provider import AnthropicClient
         return AnthropicClient(api_key=api_key)
     if canon == "openai":
         from .openai_provider import OpenAIClient
-        return OpenAIClient(api_key=api_key)
+        return OpenAIClient(api_key=api_key, base_url=base_url)
     if canon == "openrouter":
         from .openrouter_provider import OpenRouterClient
         return OpenRouterClient(api_key=api_key)
     if canon == "ollama":
         from .ollama_provider import OllamaClient
-        return OllamaClient()
+        return OllamaClient(api_key=api_key, base_url=base_url)
     if canon == "gemini":
         from .gemini_provider import GeminiClient
         return GeminiClient(api_key=api_key)
@@ -73,10 +83,10 @@ def get_provider_client(name: str, api_key: str | None = None) -> Any:
         return XaiClient(api_key=api_key)
     if canon == "tgi":
         from .tgi_provider import TGIClient
-        return TGIClient(api_key=api_key)
+        return TGIClient(api_key=api_key, base_url=base_url)
     if canon == "vllm":
         from .vllm_provider import VLLMClient
-        return VLLMClient(api_key=api_key)
+        return VLLMClient(api_key=api_key, base_url=base_url)
     if canon == "azure":
         from .azure_openai_provider import AzureOpenAIClient
         return AzureOpenAIClient(api_key=api_key)
@@ -85,7 +95,7 @@ def get_provider_client(name: str, api_key: str | None = None) -> Any:
         return BedrockClient(api_key=api_key)
     if canon == "openai_compatible":
         from .openai_compatible_provider import OpenAICompatibleClient
-        return OpenAICompatibleClient(api_key=api_key)
+        return OpenAICompatibleClient(api_key=api_key, base_url=base_url)
     raise ValueError(
         f"unknown provider {name!r}. Available: "
         + ", ".join(KNOWN_PROVIDERS)

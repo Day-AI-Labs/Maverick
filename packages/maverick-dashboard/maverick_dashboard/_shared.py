@@ -8,27 +8,28 @@ reintroducing the cycle; both modules ``from ._shared import`` these.
 """
 from __future__ import annotations
 
-import os
 from typing import Any
 
 # One process-wide WorldModel cache keyed by absolute DB path (was a
 # separate dict per module). Tests clear it via ``<module>._world_cache``.
 _world_cache: dict[str, Any] = {}
 
-_PROVIDER_ENV_VARS = (
-    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY",
-    "OPENROUTER_API_KEY", "MOONSHOT_API_KEY", "DEEPSEEK_API_KEY",
-    "XAI_API_KEY",
-)
-
-
 def _any_provider_key_set() -> bool:
-    """True iff at least one supported provider's env var is populated.
+    """True iff some LLM provider is configured (env key, base-url env, or
+    a ``[providers.<name>]`` config table with api_key/base_url).
 
-    Council UX fix: the dashboard used to hard-fail on a missing
+    Council UX fix round 1: the dashboard used to hard-fail on a missing
     ANTHROPIC_API_KEY even when the user had OpenAI or Gemini set up.
+    Round 2 (platform test): it still rejected keyless self-hosted setups
+    (Ollama/vLLM/TGI via config or *_BASE_URL) that the CLI accepted and ran
+    fine — three components, three different predicates. Delegate to the one
+    shared predicate in maverick.config; the name is kept for call sites.
     """
-    return any(os.environ.get(v) for v in _PROVIDER_ENV_VARS)
+    try:
+        from maverick.config import any_provider_configured
+        return any_provider_configured()
+    except Exception:  # pragma: no cover -- never block the dashboard on config
+        return False
 
 
 def _world():

@@ -2138,9 +2138,10 @@ async def chat_send(
         raise HTTPException(
             status_code=400,
             detail=(
-                "No LLM provider key configured. Run 'maverick init', or "
-                "export ANTHROPIC_API_KEY / OPENAI_API_KEY before starting "
-                "the dashboard."
+                "No LLM provider key or endpoint configured. Run 'maverick "
+                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY, or add a "
+                "[providers.<name>] api_key/base_url to "
+                "~/.maverick/config.toml before starting the dashboard."
             ),
         )
     check_goal_rate_limit(request)
@@ -2208,9 +2209,10 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
         raise HTTPException(
             status_code=400,
             detail=(
-                "No LLM provider key configured. Run 'maverick init', or "
-                "export ANTHROPIC_API_KEY / OPENAI_API_KEY before starting "
-                "the dashboard."
+                "No LLM provider key or endpoint configured. Run 'maverick "
+                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY, or add a "
+                "[providers.<name>] api_key/base_url to "
+                "~/.maverick/config.toml before starting the dashboard."
             ),
         )
     try:
