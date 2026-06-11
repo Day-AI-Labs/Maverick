@@ -63,7 +63,18 @@ KNOWN_SCHEMA: dict[str, set[str] | None] = {
         "web_search",
         "mobile_tools",
         "code_exec",
+        # Governance knobs the runtime reads (capability.py / agent.py) that
+        # were missing here -- so a client configuring the flagship
+        # capability-enforcement feature, or the deferred-tools knob, got a
+        # false "unknown key" warning (client-journey finding).
+        "enforce",
+        "deferred_tools",
     },
+    # Tamper-evident audit log. The runtime reads [audit] sign (audit/writer.py)
+    # and migrate.py already lists it; config-lint flagged the whole section as
+    # unknown ("did you mean auth?"), telling a regulated client their flagship
+    # signed-audit config looked like a typo (client-journey finding).
+    "audit": {"sign"},
     "durable": {"enabled", "keep_last"},
     "persona": {"name", "style", "addendum"},
     "dashboard": {"token"},
@@ -140,7 +151,10 @@ _BOOL_KEYS: dict[str, set[str]] = {
         "web_search",
         "mobile_tools",
         "code_exec",
+        "enforce",
+        "deferred_tools",
     },
+    "audit": {"sign"},
     "analytics": {"mcp_client_language"},
 }
 
