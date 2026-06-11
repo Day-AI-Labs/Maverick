@@ -78,3 +78,37 @@ def test_api_goals_blocks_when_no_provider_key(monkeypatch, tmp_path):
     )
     assert resp.status_code == 400
     assert "maverick init" in resp.json()["detail"]
+
+
+def test_goal_create_accepts_config_only_selfhosted_provider(monkeypatch, tmp_path):
+    """Platform-test regression: a keyless self-hosted provider configured
+    ONLY in config.toml (the Ollama/vLLM path) must pass the dashboard's
+    provider gate -- the CLI preflight accepted it while the dashboard 400'd,
+    because each component had its own 'provider configured?' predicate."""
+    from maverick import world_model
+    monkeypatch.setattr(world_model, "DEFAULT_DB", tmp_path / "world.db")
+    monkeypatch.delenv("MAVERICK_DASHBOARD_TOKEN", raising=False)
+    _strip_provider_env(monkeypatch)
+    for v in ("VLLM_BASE_URL", "TGI_BASE_URL", "OPENAI_COMPATIBLE_BASE_URL"):
+        monkeypatch.delenv(v, raising=False)
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[providers.vllm]\nbase_url = "http://127.0.0.1:9911/v1"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MAVERICK_CONFIG", str(cfg))
+
+    # Patch the runner so nothing actually executes.
+    import maverick.runner as runner_mod
+    monkeypatch.setattr(
+        runner_mod, "run_goal_in_thread",
+        lambda *a, **k: None,
+    )
+
+    client = _client()
+    resp = client.post(
+        "/api/v1/goals",
+        json={"title": "self-hosted goal"},
+        headers={"Origin": "http://testserver"},
+    )
+    assert resp.status_code == 201, resp.text

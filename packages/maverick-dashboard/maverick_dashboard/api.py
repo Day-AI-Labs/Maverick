@@ -111,9 +111,10 @@ async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) ->
         raise HTTPException(
             status_code=400,
             detail=(
-                "No LLM provider key configured. Run 'maverick init', or "
-                "export ANTHROPIC_API_KEY / OPENAI_API_KEY / "
-                "GEMINI_API_KEY before starting the dashboard."
+                "No LLM provider key or endpoint configured. Run 'maverick "
+                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY / "
+                "GEMINI_API_KEY, or add a [providers.<name>] api_key/base_url "
+                "to ~/.maverick/config.toml before starting the dashboard."
             ),
         )
     # Shared sliding-window cap across /chat/send + this route, so a
@@ -1723,9 +1724,10 @@ async def compose_goal(request: Request, payload: ComposeIn, bg: BackgroundTasks
         raise HTTPException(
             status_code=400,
             detail=(
-                "No LLM provider key configured. Run 'maverick init', or "
-                "export ANTHROPIC_API_KEY / OPENAI_API_KEY / "
-                "GEMINI_API_KEY before starting the dashboard."
+                "No LLM provider key or endpoint configured. Run 'maverick "
+                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY / "
+                "GEMINI_API_KEY, or add a [providers.<name>] api_key/base_url "
+                "to ~/.maverick/config.toml before starting the dashboard."
             ),
         )
     from maverick_dashboard.app import check_goal_rate_limit
