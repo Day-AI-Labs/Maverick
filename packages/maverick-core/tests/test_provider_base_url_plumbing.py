@@ -106,3 +106,33 @@ def test_predicate_ignores_empty_interpolated_key(clean_provider_env, monkeypatc
         '[providers.anthropic]\napi_key = "${NOT_SET_ANYWHERE}"\n', encoding="utf-8"
     )
     assert any_provider_configured() is False
+
+
+def test_channel_server_accepts_config_only_provider(clean_provider_env, monkeypatch):
+    """`maverick serve` had its own hard-coded ANTHROPIC_API_KEY-only gate
+    (server.py build_from_config), refusing config-only self-hosted setups
+    that `start` and the dashboard accept (round-3 platform-test finding)."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    clean_provider_env.write_text(
+        '[providers.vllm]\nbase_url = "http://127.0.0.1:9911/v1"\n'
+        "[channels.cli]\nenabled = true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(clean_provider_env.parent))
+    monkeypatch.setenv("USERPROFILE", str(clean_provider_env.parent))
+
+    import pytest as _pytest
+    from maverick.server import build_from_config
+    # Passing the provider gate is proven by reaching the NEXT error in the
+    # build (no channels wired in this bare config) -- the gate itself must
+    # not fire for a config-only self-hosted provider.
+    with _pytest.raises(RuntimeError, match="[Nn]o channels enabled"):
+        build_from_config()
+
+
+def test_channel_server_still_refuses_unconfigured(clean_provider_env, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    import pytest as _pytest
+    from maverick.server import build_from_config
+    with _pytest.raises(RuntimeError, match="[Nn]o LLM provider"):
+        build_from_config()

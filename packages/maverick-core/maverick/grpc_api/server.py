@@ -219,8 +219,9 @@ def serve(
     return server
 
 
-def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- entrypoint
+def main(argv: list[str] | None = None) -> int:
     import argparse
+    import sys
 
     ap = argparse.ArgumentParser("maverick-grpc", description="Maverick gRPC API server")
     ap.add_argument("--address", default=_DEFAULT_ADDR, help="host:port to bind")
@@ -231,7 +232,18 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- entrypoin
         help=f"bearer token required from clients (or set {_TOKEN_ENV})",
     )
     args = ap.parse_args(argv)
-    server = serve(args.address, max_workers=args.max_workers, bearer_token=args.bearer_token)
+    # The two expected startup errors are operator-config, not crashes: a
+    # missing bearer token (fail-closed auth default) and a missing grpcio
+    # extra. Both already carry a one-line, actionable message -- print it and
+    # exit non-zero instead of dumping a traceback (round-4 finding).
+    try:
+        server = serve(
+            args.address, max_workers=args.max_workers,
+            bearer_token=args.bearer_token,
+        )
+    except (ValueError, ImportError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
     try:
         server.wait_for_termination()
     except KeyboardInterrupt:

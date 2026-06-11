@@ -1009,9 +1009,13 @@ def analytics_cmd(ctx, sql: str | None, top: int) -> None:
 
     try:
         from .duckdb_analytics import WorldAnalytics
+        # duckdb imports lazily inside the constructor, so the actionable
+        # "pip install 'maverick-agent[duckdb]'" ImportError fires HERE --
+        # construction must sit inside the catch or the user gets a raw
+        # traceback (round-3 platform-test finding).
+        wa = WorldAnalytics(open_world(ctx.obj["db"]))
     except ImportError as e:
         raise click.ClickException(str(e)) from e
-    wa = WorldAnalytics(open_world(ctx.obj["db"]))
     try:
         if sql:
             click.echo(_json.dumps(wa.query(sql), default=str))
@@ -2147,8 +2151,14 @@ def debate(ctx, question: str, rounds: int, max_dollars: float,
     """
     from .budget import Budget
     from .debate import DebateParticipant, run_debate
+    # Friendly preflight (round-3 platform-test finding: an unconfigured
+    # install got a raw anthropic-SDK TypeError traceback here), and route
+    # through the configured role models instead of hard DEFAULT_MODEL
+    # (kernel rule 2) -- debaters argue at the analyst tier.
+    _require_llm_key()
+    from .llm import model_for_role
     k = _kernel()
-    llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
+    llm = k.LLM(model=ctx.obj["model"] or model_for_role("analyst"))
     participants = [
         DebateParticipant(
             name="Proponent",
@@ -2203,8 +2213,30 @@ def schema_plan_cmd() -> None:
 def config_lint_cmd() -> None:
     """Validate ~/.maverick/config.toml: unknown sections/keys + obvious type
     mistakes, with closest-match suggestions. Exits 1 if any error-level finding."""
-    from .config import load_config
+    from .config import config_path, load_config
     from .config_lint import format_findings, lint_config
+    # load_config() is deliberately fail-soft: a corrupt config.toml yields {}
+    # with only a warning, so linting it would find nothing and print
+    # "config OK" -- the one tool meant to catch a broken config blessing a
+    # file in which every setting is being dropped (round-4 finding; mirrors
+    # health._check_config). Parse the raw file FIRST so a syntax error is a
+    # hard lint failure, not invisible.
+    p = config_path()
+    if p.exists():
+        try:
+            import tomllib
+        except ModuleNotFoundError:  # 3.10
+            import tomli as tomllib
+        try:
+            with open(p, "rb") as f:
+                tomllib.load(f)
+        except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as e:
+            click.echo(
+                f"error: {p} is not valid TOML -- every setting in it is being "
+                f"IGNORED ({type(e).__name__}: {e})", err=True,
+            )
+            click.echo("fix the syntax above, or back it up and re-run `maverick init`.")
+            sys.exit(1)
     try:
         cfg = load_config() or {}
     except Exception as e:
@@ -2272,8 +2304,13 @@ def plan_reflect(ctx, goal: str, max_iterations: int, max_dollars: float) -> Non
     """
     from .budget import Budget
     from .plan_execute_reflect import run_plan_execute_reflect
+    # Same preflight + role routing as `debate` (round-3 finding): planning
+    # belongs to the orchestrator tier, and a missing provider must refuse
+    # cleanly, not traceback inside the anthropic client constructor.
+    _require_llm_key()
+    from .llm import model_for_role
     k = _kernel()
-    llm = k.LLM(model=ctx.obj["model"] or k.DEFAULT_MODEL)
+    llm = k.LLM(model=ctx.obj["model"] or model_for_role("orchestrator"))
     result = run_plan_execute_reflect(
         goal,
         planner_complete=llm.complete,

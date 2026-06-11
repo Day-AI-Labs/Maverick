@@ -29,15 +29,33 @@ log = logging.getLogger(__name__)
 
 # Top-level config sections the runtime actually reads. A section outside
 # this table is almost always a typo that silently no-ops.
+# Every top-level section some runtime reader consumes. Enumerated from the
+# load_config().get("<section>") call sites across the packages (platform-test
+# finding: this list held 44 names while the runtime reads ~90, so `migrate`
+# told users that wizard-written sections like [models] / [capabilities] /
+# [security] "silently do nothing" -- advice that would delete live config).
+# When adding a new config section, add it here or migrate will lint it.
 KNOWN_SECTIONS = frozenset({
-    "agent", "analytics", "attachments", "audit", "auth", "budget",
-    "catalogs", "channels", "coding", "compliance", "containment", "context",
-    "dashboard", "durable", "effort", "energy", "enterprise", "finance",
-    "github", "governance", "grpc", "grpc_dispatch", "intake", "knowledge",
-    "langchain", "logging", "lsp", "memory", "observability", "plugins",
-    "provider_failover", "providers", "queue", "retention", "roles",
-    "routing", "safety", "sandbox", "self_learning", "skills", "telemetry",
-    "tools", "webhooks", "world_model",
+    "adaptive_compute", "agent", "analytics", "approval",
+    "approval_delegation", "attachments", "audit", "auth", "autonomy",
+    "benchmark", "billing", "budget", "cache", "calendar", "calibration",
+    "capabilities", "catalogs", "channels", "coding", "compaction",
+    "compliance", "computer_use", "containment", "context", "credit",
+    "dashboard", "director", "durable", "ebpf_monitor", "effort", "egress",
+    "email", "embedded", "encryption", "energy", "enterprise", "erp",
+    "experience", "features", "federation", "finance", "github",
+    "governance", "grpc", "grpc_dispatch", "intake", "kms", "knowledge",
+    "langchain", "latency", "limits", "local_first", "local_runtime",
+    "logging", "lsp", "mcp_registries", "mcp_servers", "memory",
+    "model_proxy", "models", "notifications", "observability", "obsidian",
+    "perf", "persona", "planning", "plugins", "privacy",
+    "provider_failover", "providers", "queue", "quotas", "reflexion",
+    "retention", "role_assignments", "roles", "routing", "safety",
+    "sandbox", "screening", "search", "security", "self_learning",
+    "session_providers", "sharing", "shield", "skill_synthesis", "skills",
+    "system", "telemetry", "template_registries", "tenancy", "thinking",
+    "tools", "tui", "verification", "voice", "webhooks", "workspace",
+    "world_model",
 })
 
 
