@@ -26,8 +26,8 @@ def test_exchange_summarises_never_echoes(monkeypatch, tmp_path):
     def fake_post(url, data):
         captured["url"] = url
         captured["data"] = data
-        return {"access_token": "supersecrettoken123", "token_type": "bearer",  # pragma: allowlist secret
-                "expires_in": 3600, "refresh_token": "refreshsecret",  # pragma: allowlist secret
+        return {"access_token": "supersecrettoken123", "token_type": "bearer",
+                "expires_in": 3600, "refresh_token": "refreshsecret",
                 "scope": "repo"}
 
     monkeypatch.setattr(mod, "_post_form", fake_post)
@@ -88,7 +88,7 @@ def test_no_access_token_error_does_not_echo_response(monkeypatch):
     import maverick.tools.oauth_helper as mod
 
     monkeypatch.setattr(mod, "_post_form",
-                        lambda url, data: {"internal_secret": "IMDS-ROLE-CREDS-ABC123"})
+                        lambda url, data: {"internal_secret": "IMDS-ROLE-CREDS-ABC123"})  # pragma: allowlist secret
     out = _t().fn({"op": "exchange", "token_url": "https://x/t",
                    "client_id": "c", "code": "k", "redirect_uri": "https://r"})
     assert out == "ERROR: no access_token in response"
