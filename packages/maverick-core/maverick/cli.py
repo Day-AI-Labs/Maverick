@@ -1467,10 +1467,24 @@ def billing_invoice(tenant_id: str, since: str | None, until: str | None,
     import json as _json
 
     from .billing import RateCard, generate_invoice
+    from .tenant_registry import get_tenant, list_tenants
     inv = generate_invoice(
         tenant_id, RateCard(markup_pct=markup_pct, minimum_charge=min_charge),
         since=since, until=until,
     )
+    # A typo'd tenant id reads an absent ledger and rates to an empty $0 invoice
+    # that reads like a real "owes nothing" statement. Flag only the genuinely
+    # suspect case -- an EMPTY invoice for a tenant a provisioned roster has
+    # never heard of -- as an error. We still invoice (a) any tenant that has
+    # usage, so a deleted-but-unpurged tenant's surviving ledger can be billed a
+    # final time, and (b) every tenant when no roster exists at all (the opt-in
+    # registry is absent in single-tenant deployments), leaving those unchanged.
+    if not inv.line_items and list_tenants() and get_tenant(tenant_id) is None:
+        click.echo(
+            f"ERROR: no such tenant {tenant_id!r}, and no metered usage to bill. "
+            "Check the tenant id (or widen --since/--until).", err=True,
+        )
+        sys.exit(2)
     if as_json:
         click.echo(_json.dumps(inv.to_dict(), indent=2))
         return
@@ -1478,6 +1492,8 @@ def billing_invoice(tenant_id: str, since: str | None, until: str | None,
     for li in inv.line_items:
         click.echo(f"  {li.day}  {li.principal:<24} ${li.charge:.4f} "
                    f"({li.in_tokens}+{li.out_tokens} tok)")
+    if not inv.line_items:
+        click.echo("  (no metered usage in this period)")
     click.echo(f"  {'-' * 40}")
     click.echo(f"  TOTAL: ${inv.total:.2f} {inv.currency}")
 

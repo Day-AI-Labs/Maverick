@@ -128,3 +128,26 @@ def test_cli_audit_tail_accepts_valid_day(_home):
     from maverick.cli import main
     res = CliRunner().invoke(main, ["audit", "tail", "--day", "2020-01-01"])
     assert res.exit_code == 0, res.output
+
+
+def test_is_valid_day_rejects_impossible_calendar_dates():
+    # Shape-valid but not a real date: a typo'd --day used to pass and report a
+    # misleading "OK / no entries" instead of a friendly error (UX finding).
+    from maverick.audit.events import is_valid_day
+    assert not is_valid_day("2026-13-99")  # month 13, day 99
+    assert not is_valid_day("2026-00-00")
+    assert not is_valid_day("2026-02-30")  # Feb 30
+    assert not is_valid_day("9999-99-99")
+    assert not is_valid_day("2026-02-29")  # 2026 is not a leap year
+    # Real dates still pass, including a genuine leap day.
+    assert is_valid_day("2024-02-29")
+    assert is_valid_day("2026-12-31")
+
+
+def test_audit_verify_rejects_typo_date(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+    from maverick.cli import main
+    monkeypatch.setenv("HOME", str(tmp_path))
+    res = CliRunner().invoke(main, ["audit", "verify", "--day", "2026-13-99"])
+    assert res.exit_code == 2, res.output
+    assert "YYYY-MM-DD" in res.output
