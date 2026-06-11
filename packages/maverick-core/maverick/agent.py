@@ -614,6 +614,29 @@ class Agent:
         if code_exec_on:
             from .tools.code_exec import code_exec_tool
             reg.register(code_exec_tool(self))
+        # Deferred tool loading (default ON): hide the SaaS-connector long
+        # tail behind the find_tools meta-tool so the model's catalog stays
+        # lean -- 470+ connector schemas rode EVERY model turn at consumer
+        # defaults (observed: 601 tools offered per call), dominating context
+        # cost. The mechanism (ToolRegistry.enable_deferred / find_tools)
+        # already existed and was tested; nothing wired it. Everything
+        # registered above (file/shell/spawn/bus/memory/MCP/...) stays
+        # visible; only base_registry's marked long tail defers, and run()
+        # still executes ANY registered tool, so execution semantics are
+        # unchanged. Disable via [capabilities] deferred_tools = false or
+        # MAVERICK_DEFERRED_TOOLS=0.
+        env_dt = os.environ.get("MAVERICK_DEFERRED_TOOLS", "").strip().lower()
+        if env_dt in {"0", "false", "no", "off"}:
+            deferred_on = False
+        elif env_dt in {"1", "true", "yes", "on"}:
+            deferred_on = True
+        else:
+            deferred_on = bool(caps.get("deferred_tools", True))
+        deferrable = getattr(reg, "deferrable_names", None) or set()
+        if deferred_on and deferrable:
+            from .tools.find_tools import find_tools
+            reg.register(find_tools(reg))
+            reg.enable_deferred(core={t.name for t in reg.all()} - set(deferrable))
         return reg
 
     def _build_system(self) -> str:
