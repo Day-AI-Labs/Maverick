@@ -67,3 +67,17 @@ def test_mcp_dropped_under_medium_ceiling_by_default(tmp_path, monkeypatch):
     from maverick.safety.tool_risk import tools_exceeding
     over = tools_exceeding(["mcp_evil__shell", "read_file"], "medium")
     assert over == {"mcp_evil__shell"}
+
+
+def test_network_and_credentialed_search_tools_are_high_risk(tmp_path, monkeypatch):
+    """Egress and credentialed SaaS search must not pass medium ceilings."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _write_config(tmp_path)
+    from maverick.safety.tool_risk import tool_risk, tools_exceeding
+
+    assert tool_risk("web_archive") == "high"
+    assert tool_risk("github_search") == "high"
+    assert tools_exceeding(["web_archive", "github_search", "read_file"], "medium") == {
+        "web_archive",
+        "github_search",
+    }

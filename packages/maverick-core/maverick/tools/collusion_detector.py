@@ -1,28 +1,105 @@
-"""Multi-agent voting-collusion detector (roadmap: 2027 H1 safety —
-"multi-agent collusion detector").
+"""Multi-agent collusion detector (roadmap: 2027 H1 safety).
 
-Independent-quorum guarantees (N agents must *independently* approve a high-risk
-action) are defeated if a bloc of agents always votes together — a Sybil/voting-
-collusion ring controlled by one source only looks like independent approvals.
-This finds those blocs: given each agent's vote sequence across rounds, it links
-any pair whose votes agree at or above a threshold and reports the connected
-blocs, flagging any large enough to swing a quorum. Pure counting — deterministic
-and offline.
+The swarm's safety story leans on *independent* checks — and independence
+fails two different ways, so this tool detects both:
+
+* **op=scan** — *content collusion* in a batch of agent messages: echoed
+  reasoning (high lexical overlap between distinct agents) and
+  rubber-stamping (an agent that approves every review). The tell-tales
+  that independent voices have collapsed into one.
+* **op=detect** — *voting collusion* across rounds: an independent-quorum
+  guarantee (N agents must independently approve) is defeated if a bloc
+  always votes together. Given each agent's vote sequence, link any pair
+  whose agreement is at/above a threshold and report the connected blocs,
+  flagging any large enough to swing a quorum.
+
+Two converged implementations of the same roadmap item, merged: both are
+pure counting/lexical overlap — deterministic and offline, no model.
 
 ops:
-  - detect(votes, [threshold], [quorum])  — ``votes`` is ``{agent: [v, ...]}``
-    with equal-length sequences. Links agent pairs whose agreement fraction is
-    >= ``threshold`` (default 1.0 = perfectly correlated) and reports each bloc
-    of >=2 agents with its cohesion (min pairwise agreement). With ``quorum``,
-    a bloc of >= quorum agents is flagged as quorum-defeating.
+  - scan(messages[, threshold])  — messages: [{agent, text, verdict?}].
+  - detect(votes[, threshold, quorum])  — votes: {agent: [v, ...]} with
+    equal-length sequences; threshold default 1.0 (perfect correlation);
+    a bloc of >= quorum agents is flagged quorum-defeating.
+
+With ``op`` omitted, the payload disambiguates: ``messages`` -> scan,
+``votes`` -> detect.
 """
 from __future__ import annotations
 
+import re
 from itertools import combinations
 from typing import Any
 
 from . import Tool
 
+# ---- op=scan: content collusion ---------------------------------------------
+
+_APPROVE = {"approve", "approved", "accept", "accepted", "pass", "lgtm", "yes", "ok"}
+_WORD = re.compile(r"[a-z0-9]+")
+
+
+def _tokens(text: str) -> set[str]:
+    return set(_WORD.findall(str(text).lower()))
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def _scan(args: dict[str, Any]) -> str:
+    msgs = args.get("messages")
+    if not isinstance(msgs, list) or not msgs:
+        return "ERROR: messages must be a non-empty array of {agent, text}"
+    threshold = args.get("threshold", 0.85)
+    if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not 0 < threshold <= 1:
+        return "ERROR: threshold must be a number in (0, 1]"
+
+    rows: list[tuple[str, str, str | None]] = []
+    for m in msgs:
+        if not isinstance(m, dict) or "agent" not in m or "text" not in m:
+            return "ERROR: each message needs 'agent' and 'text'"
+        verdict = m.get("verdict")
+        rows.append((str(m["agent"]), str(m["text"]), str(verdict).lower() if verdict is not None else None))
+
+    signals: list[str] = []
+
+    # Echoed reasoning: high lexical overlap between DISTINCT agents.
+    toks = [(a, _tokens(t)) for a, t, _ in rows]
+    seen: set[tuple[int, int]] = set()
+    for i in range(len(toks)):
+        for j in range(i + 1, len(toks)):
+            if toks[i][0] == toks[j][0] or (i, j) in seen:
+                continue
+            sim = _jaccard(toks[i][1], toks[j][1])
+            if sim >= threshold:
+                seen.add((i, j))
+                signals.append(
+                    f"echoed reasoning: {toks[i][0]} ~ {toks[j][0]} (similarity {sim:.2f})"
+                )
+
+    # Rubber-stamp: an agent whose verdicts are present and all approvals.
+    by_agent: dict[str, list[str]] = {}
+    for a, _, v in rows:
+        if v is not None:
+            by_agent.setdefault(a, []).append(v)
+    for a, verdicts in sorted(by_agent.items()):
+        approvals = sum(1 for v in verdicts if v in _APPROVE)
+        if len(verdicts) >= 3 and approvals == len(verdicts):
+            signals.append(f"rubber-stamp: {a} approved all {len(verdicts)} reviews")
+
+    lines = [f"agents: {len({a for a, _, _ in rows})}  messages: {len(rows)}"]
+    if signals:
+        lines.append(f"verdict: COLLUSION SIGNALS ({len(signals)})")
+        lines.extend(f"  - {s}" for s in signals)
+    else:
+        lines.append("verdict: CLEAN")
+    return "\n".join(lines)
+
+
+# ---- op=detect: voting collusion --------------------------------------------
 
 def _agreement(a: list, b: list) -> float:
     rounds = len(a)
@@ -92,9 +169,7 @@ def _detect(votes: dict, threshold: float, quorum: int | None) -> str:
     return "\n".join(lines)
 
 
-def _run(args: dict[str, Any]) -> str:
-    if args.get("op") not in (None, "detect"):
-        return f"ERROR: unknown op {args.get('op')!r}"
+def _run_detect(args: dict[str, Any]) -> str:
     votes = args.get("votes")
     if not isinstance(votes, dict) or len(votes) < 2:
         return "ERROR: votes must be an object of >=2 agents -> [votes]"
@@ -104,36 +179,53 @@ def _run(args: dict[str, Any]) -> str:
     except (TypeError, ValueError):
         return "ERROR: threshold must be a number in [0, 1]"
     if not 0.0 <= threshold <= 1.0:
-        return "ERROR: threshold must be in [0, 1]"
+        return "ERROR: threshold must be a number in [0, 1]"
     quorum = args.get("quorum")
     if quorum is not None:
-        try:
-            quorum = int(quorum)
-        except (TypeError, ValueError):
-            return "ERROR: quorum must be an integer"
-        if quorum < 2:
-            return "ERROR: quorum must be >= 2"
+        if isinstance(quorum, bool) or not isinstance(quorum, int) or quorum < 2:
+            return "ERROR: quorum must be an integer >= 2"
     return _detect(votes, threshold, quorum)
+
+
+def _run(args: dict[str, Any]) -> str:
+    op = args.get("op")
+    if op is None:
+        # Payload disambiguates the two converged surfaces.
+        op = "detect" if "votes" in args else "scan"
+    if op == "scan":
+        return _scan(args)
+    if op == "detect":
+        return _run_detect(args)
+    return f"ERROR: unknown op {op!r}"
 
 
 _SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "op": {"type": "string", "enum": ["detect"]},
+        "op": {"type": "string", "enum": ["scan", "detect"]},
+        "messages": {
+            "type": "array",
+            "description": "scan: agent messages [{agent, text, verdict?}]",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "agent": {"type": "string"},
+                    "text": {"type": "string"},
+                    "verdict": {"type": "string"},
+                },
+                "required": ["agent", "text"],
+            },
+        },
         "votes": {
             "type": "object",
-            "description": "agent -> equal-length list of that agent's votes across rounds",
+            "description": "detect: {agent: [vote, ...]} equal-length sequences",
         },
         "threshold": {
             "type": "number",
-            "description": "agreement fraction [0,1] to link two agents (default 1.0 = identical)",
+            "description": "scan: similarity cutoff (default 0.85); detect: agreement cutoff (default 1.0)",
         },
-        "quorum": {
-            "type": "integer",
-            "description": "if set, a bloc of >= quorum agents is flagged as quorum-defeating",
-        },
+        "quorum": {"type": "integer", "description": "detect: flag blocs >= this size"},
     },
-    "required": ["votes"],
 }
 
 
@@ -141,12 +233,12 @@ def collusion_detector() -> Tool:
     return Tool(
         name="collusion_detector",
         description=(
-            "Detect voting-collusion blocs among agents that defeat independent-"
-            "quorum guarantees. op=detect with 'votes' ({agent: [votes]}, equal-"
-            "length). Links agent pairs whose agreement fraction >= 'threshold' "
-            "(default 1.0 = identical votes) and reports each bloc of >=2 agents "
-            "with its cohesion; with 'quorum', flags blocs large enough to swing "
-            "it. Deterministic, offline."
+            "Detect collusion between supposedly independent swarm agents. "
+            "op=scan ('messages': [{agent, text, verdict?}]) flags echoed "
+            "reasoning and rubber-stamping. op=detect ('votes': {agent: "
+            "[v, ...]}, optional 'quorum') finds voting blocs whose agreement "
+            "is >= 'threshold' and flags quorum-defeating ones. "
+            "Deterministic; no model call."
         ),
         input_schema=_SCHEMA,
         fn=_run,

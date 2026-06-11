@@ -5,6 +5,7 @@ not in the lightweight local subset).
 """
 from __future__ import annotations
 
+from maverick.capability import Capability
 from maverick.domain import DomainProfile, agent_from_profile
 
 
@@ -39,6 +40,33 @@ def test_agent_from_profile_sets_domain_persona_and_capability(tmp_path):
     assert agent.capability is not None
     assert agent.capability.permits("read_file") is True
     assert agent.capability.permits("shell") is False  # envelope enforced
+
+
+def test_agent_from_profile_uses_active_handoff_grant_for_parent(tmp_path):
+    ctx = _ctx(tmp_path)
+    parent = agent_from_profile(
+        DomainProfile(
+            name="parent",
+            allow_tools=["shell", "spawn_specialist"],
+        ),
+        ctx,
+        "parent task",
+    )
+    parent._handoff_capability = Capability(
+        principal="agent:delegate",
+        allow_tools=frozenset({"spawn_specialist"}),
+    )
+    profile = DomainProfile(
+        name="finance",
+        compartment="finance",
+        allow_tools=["shell", "spawn_specialist"],
+    )
+
+    child = agent_from_profile(profile, ctx, "Analyze Q3 revenue", parent=parent, depth=1)
+
+    assert child.capability is not None
+    assert child.capability.permits("spawn_specialist") is True
+    assert child.capability.permits("shell") is False
 
 
 def test_children_inherit_parent_domain(tmp_path):

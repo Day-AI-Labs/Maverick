@@ -8,8 +8,8 @@ eval harness can score it.
 **Why a subprocess.** Some knobs (notably ``MAVERICK_MAX_SWARM_FANOUT``) are read
 at module-import time, so they cannot be changed per-candidate inside one live
 process. Each candidate therefore runs in a fresh ``maverick start`` subprocess
-with the config applied via a temp ``MAVERICK_CONFIG`` overlay + env vars -- clean
-import, full isolation, no in-process config-mutation hazards.
+with the config applied via a temp ``MAVERICK_CONFIG_OVERLAY`` file + env
+vars -- clean import, full isolation, no in-process config-mutation hazards.
 
 Dependency-injected: ``make_agent_factory(run_one=...)`` takes the function that
 actually runs one goal, so the whole evolve→eval→config wiring is testable with a
@@ -104,15 +104,15 @@ def subprocess_run_one(
 ) -> str:
     """Run one goal in a fresh ``maverick start`` subprocess under ``config``.
 
-    Writes a temp config overlay, sets ``MAVERICK_CONFIG`` + env knobs, and
-    returns the run's stdout (the ``DONE.\\n\\n<summary>`` answer). Process
+    Writes a temp config overlay, sets ``MAVERICK_CONFIG_OVERLAY`` + env
+    knobs, and returns the run's stdout (the ``DONE.\\n\\n<summary>`` answer). Process
     isolation guarantees import-time knobs (fan-out) take effect. Requires a
     configured provider/API key in the environment to actually produce answers.
     """
     python = python or sys.executable
     with tempfile.TemporaryDirectory() as td:
         overlay = write_overlay(config, Path(td) / "config.toml")
-        env = {**os.environ, **env_for(config), "MAVERICK_CONFIG": str(overlay)}
+        env = {**os.environ, **env_for(config), "MAVERICK_CONFIG_OVERLAY": str(overlay)}
         try:
             proc = subprocess.run(  # noqa: S603 -- launching our own CLI, not a tool shell
                 [python, "-m", "maverick.cli", "start", prompt],

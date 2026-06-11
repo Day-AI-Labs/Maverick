@@ -144,6 +144,39 @@ class Server:
             log.exception("tenant world resolution failed; rejecting message")
             return "⚠ Tenant isolation is unavailable for this message. Try again later."
 
+        # Multi-tenant serve: enforce the tenant roster at the channel door.
+        # No-op until an operator provisions tenants (`maverick tenant
+        # create`); with a roster, a suspended/unknown tenant is refused
+        # BEFORE any goal is created, and a tenant over its provisioned
+        # daily-spend cap is refused until the UTC day rolls. Registry read
+        # errors fail soft (never down the channel server); the suspension
+        # itself is a deliberate refusal, not an error.
+        if tenant is not None:
+            try:
+                from .tenant_registry import (
+                    TenantSuspended,
+                    assert_tenant_active,
+                    tenant_over_quota,
+                )
+            except Exception:  # pragma: no cover -- registry module optional
+                TenantSuspended = None  # type: ignore[assignment]
+            if TenantSuspended is not None:
+                try:
+                    assert_tenant_active(tenant)
+                except TenantSuspended:
+                    log.warning("message refused: tenant %s suspended", tenant)
+                    return ("⚠ This workspace is suspended. "
+                            "Contact your administrator.")
+                except Exception:  # pragma: no cover -- fail-soft on reads
+                    log.exception("tenant roster check failed; allowing")
+                try:
+                    quota_reason = tenant_over_quota(tenant)
+                except Exception:  # pragma: no cover -- fail-soft on reads
+                    quota_reason = None
+                if quota_reason:
+                    log.warning("message refused: %s", quota_reason)
+                    return f"⚠ {quota_reason}"
+
         # Multi-turn: a single (channel, user_id) gets one conversation
         # row. Every inbound message becomes a 'user' turn; the
         # orchestrator's final answer is appended as 'assistant' turn
@@ -274,6 +307,9 @@ def _wire_slack(server, cfg):
         app_token=cfg.get("app_token") or os.environ.get("SLACK_APP_TOKEN"),
         bot_token=cfg.get("bot_token") or os.environ.get("SLACK_BOT_TOKEN"),
         allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        # [channels.slack] thread_replies: answers post under the asking
+        # message's thread instead of interleaving into the channel.
+        thread_replies=cfg.get("thread_replies"),
     ))
 
 
@@ -358,6 +394,47 @@ def _wire_whatsapp(server, cfg):
     ))
 
 
+def _wire_whatsapp_cloud(server, cfg):
+    from maverick_channels.whatsapp_cloud import WhatsAppCloudChannel
+    allowed_user_ids = cfg.get("allowed_user_ids")
+    server.add_channel(WhatsAppCloudChannel(
+        handler=server._handle_message,
+        access_token=cfg.get("access_token") or os.environ.get("WHATSAPP_CLOUD_ACCESS_TOKEN"),
+        phone_number_id=cfg.get("phone_number_id")
+        or os.environ.get("WHATSAPP_CLOUD_PHONE_NUMBER_ID"),
+        verify_token=cfg.get("verify_token") or os.environ.get("WHATSAPP_CLOUD_VERIFY_TOKEN"),
+        app_secret=cfg.get("app_secret") or os.environ.get("WHATSAPP_CLOUD_APP_SECRET"),
+        port=cfg.get("port", 8767),
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+    ))
+
+
+def _wire_threads(server, cfg):
+    from maverick_channels.threads import ThreadsChannel
+    allowed_user_ids = cfg.get("allowed_user_ids")
+    server.add_channel(ThreadsChannel(
+        handler=server._handle_message,
+        access_token=cfg.get("access_token") or os.environ.get("THREADS_ACCESS_TOKEN"),
+        user_id=cfg.get("user_id") or os.environ.get("THREADS_USER_ID"),
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+        poll_seconds=cfg.get("poll_seconds", 30),
+    ))
+
+
+def _wire_rcs(server, cfg):
+    from maverick_channels.rcs import RcsChannel
+    allowed_user_ids = cfg.get("allowed_user_ids")
+    server.add_channel(RcsChannel(
+        handler=server._handle_message,
+        agent_id=cfg.get("agent_id") or os.environ.get("RCS_AGENT_ID"),
+        service_account_json=cfg.get("service_account_json")
+        or os.environ.get("RCS_SERVICE_ACCOUNT_JSON"),
+        webhook_token=cfg.get("webhook_token") or os.environ.get("RCS_WEBHOOK_TOKEN"),
+        port=cfg.get("port", 8768),
+        allowed_user_ids={str(v) for v in allowed_user_ids} if allowed_user_ids else None,
+    ))
+
+
 def _wire_sms(server, cfg):
     from maverick_channels.sms import SMSChannel
     allowed_user_ids = cfg.get("allowed_user_ids")
@@ -422,6 +499,9 @@ _WIRES = {
     "bluesky":  _wire_bluesky,
     "mastodon": _wire_mastodon,
     "whatsapp": _wire_whatsapp,
+    "whatsapp_cloud": _wire_whatsapp_cloud,
+    "threads": _wire_threads,
+    "rcs": _wire_rcs,
     "sms":      _wire_sms,
     "imessage": _wire_imessage,
     "voice":    _wire_voice,
@@ -431,9 +511,16 @@ _WIRES = {
 
 def build_from_config() -> Server:
     cfg = load_config()
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    # Shared predicate (maverick.config): env keys, base-url envs, or a
+    # [providers.<name>] table all count. This was the last hard-coded
+    # ANTHROPIC_API_KEY-only gate -- `start` and the dashboard already
+    # accepted config-only self-hosted setups that `serve` refused.
+    from .config import any_provider_configured
+    if not any_provider_configured():
         raise RuntimeError(
-            "ANTHROPIC_API_KEY not set. Add it to ~/.maverick/.env or export it."
+            "No LLM provider configured. Run 'maverick init', export "
+            "ANTHROPIC_API_KEY (or another provider key), or add a "
+            "[providers.<name>] api_key/base_url to ~/.maverick/config.toml."
         )
 
     world = open_world()
@@ -467,9 +554,18 @@ def build_from_config() -> Server:
     # worker pool instead of in this channel-server process. No-op by default.
     try:
         from .queue_dispatcher import install_from_config
-        install_from_config()
+        queue_installed = install_from_config()
     except Exception:  # pragma: no cover -- never block server boot
         log.exception("queue dispatcher install failed (running in-process)")
+        queue_installed = False
+    # [grpc_dispatch] target: execute goals on a remote gRPC worker. The
+    # queue backend wins when both are configured (it already owns dispatch).
+    if not queue_installed:
+        try:
+            from .grpc_dispatcher import install_from_config as install_grpc
+            install_grpc()
+        except Exception:  # pragma: no cover -- never block server boot
+            log.exception("gRPC dispatcher install failed (running in-process)")
 
     return server
 

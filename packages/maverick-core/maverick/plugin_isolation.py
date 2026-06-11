@@ -1,0 +1,180 @@
+"""Plugin sandboxing via subinterpreters (roadmap: 2027 H1 ecosystem).
+
+Third-party plugin code currently runs in the host interpreter: a leaky or
+crashing plugin tool corrupts module state, and a hostile one reads whatever
+the process can. This module adds an **execution isolation seam** for plugin
+tool calls with two backends:
+
+* ``subinterpreter`` — run the call in a fresh CPython subinterpreter
+  (``_xxsubinterpreters``, the PEP 554/684 substrate). Fresh module state per
+  call: a plugin that mutates globals, monkey-patches stdlib, or leaks can't
+  touch the host interpreter's state. Same process, though — this is *fault
+  and state* isolation, not a security boundary.
+* ``subprocess`` — run the call in a child Python with the secret-scrubbed
+  env (``tools.scrub_child_env``). Stronger: separate address space, no host
+  env secrets, survives hard crashes (a segfaulting plugin kills the child,
+  not the agent). The default recommendation, and the fallback wherever the
+  subinterpreter substrate is missing.
+
+Opt-in via ``[plugins] isolation = "subprocess" | "subinterpreter"`` (env
+``MAVERICK_PLUGIN_ISOLATION``); default ``"none"`` keeps today's in-process
+behavior. The call contract is deliberately narrow — ``entry("pkg.mod:fn")``
+called with one JSON-able dict, returning ``str`` — exactly the plugin-tool
+shape, so the proxy in :mod:`maverick.plugins` can wrap discovered tools
+without the plugin changing anything.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import subprocess
+import sys
+import tempfile
+import textwrap
+from pathlib import Path
+
+log = logging.getLogger(__name__)
+
+_MODES = ("none", "subprocess", "subinterpreter")
+_TIMEOUT_S = 60.0
+
+
+def isolation_mode() -> str:
+    """Configured isolation mode (default "none" = today's behavior)."""
+    env = os.environ.get("MAVERICK_PLUGIN_ISOLATION", "").strip().lower()
+    if env in _MODES:
+        return env
+    try:
+        from .config import load_config
+        mode = str(((load_config() or {}).get("plugins") or {})
+                   .get("isolation", "none")).strip().lower()
+        return mode if mode in _MODES else "none"
+    except Exception:  # pragma: no cover -- config never blocks plugin exec
+        return "none"
+
+
+def _subinterpreters_available() -> bool:
+    try:
+        import _xxsubinterpreters  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _bootstrap_code(entry: str, args_json: str, out_path: str, *,
+                    factory: bool = False) -> str:
+    """Code that imports pkg.mod:fn, calls it with the args dict, and writes
+    the result (or an ERROR string) to ``out_path``. Used verbatim by both
+    backends; values are injected as JSON string literals (no f-string
+    interpolation of user data into code)."""
+    return textwrap.dedent("""
+        import importlib, json, sys
+        # The child resolves imports the way the parent could: a plugin that
+        # was importable in-process stays importable under isolation.
+        for _p in reversed(json.loads(%(path)s)):
+            if _p and _p not in sys.path:
+                sys.path.insert(0, _p)
+        # Values come ONLY from baked literals: a subinterpreter inherits the
+        # HOST's sys.argv (pytest's, uvicorn's, ...), so argv must not be a
+        # channel here.
+        entry = %(entry)s
+        args = json.loads(%(args)s)
+        out_path = %(out)s
+        try:
+            mod_name, _, fn_name = entry.partition(":")
+            fn = getattr(importlib.import_module(mod_name), fn_name)
+            if %(factory)s:
+                # Plugin-tool shape: entry is a factory() -> Tool; run tool.fn.
+                result = fn().fn(args)
+            else:
+                result = fn(args)
+            payload = result if isinstance(result, str) else json.dumps(result)
+        except BaseException as e:
+            payload = "ERROR: plugin call failed: %%s: %%s" %% (type(e).__name__, e)
+        with open(out_path, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+    """) % {
+        "entry": json.dumps(entry),
+        "args": json.dumps(args_json),
+        "out": json.dumps(out_path),
+        "path": json.dumps(json.dumps([p for p in sys.path if p])),
+        "factory": "True" if factory else "False",
+    }
+
+
+def run_isolated(entry: str, args: dict, *, mode: str | None = None,
+                 timeout_s: float = _TIMEOUT_S, factory: bool = False) -> str:
+    """Call ``entry`` ("pkg.mod:fn") with ``args`` under the configured isolation.
+
+    Returns the call's string result, or an ``ERROR: ...`` string — isolation
+    failures degrade to an error result, never an exception into the agent
+    loop. ``mode="none"`` (or unset config) imports and calls in-process.
+    """
+    mode = mode if mode in _MODES else isolation_mode()
+    try:
+        args_json = json.dumps(args or {})
+    except (TypeError, ValueError):
+        return "ERROR: plugin args are not JSON-serializable"
+
+    if ":" not in entry:
+        return f"ERROR: bad plugin entry {entry!r} (expected 'pkg.mod:fn')"
+
+    if mode == "none":
+        try:
+            import importlib
+            mod_name, _, fn_name = entry.partition(":")
+            fn = getattr(importlib.import_module(mod_name), fn_name)
+            target = fn().fn if factory else fn
+            result = target(json.loads(args_json))
+            return result if isinstance(result, str) else json.dumps(result)
+        except Exception as e:
+            return f"ERROR: plugin call failed: {type(e).__name__}: {e}"
+
+    with tempfile.TemporaryDirectory(prefix="mvk-plugin-iso-") as td:
+        out_path = str(Path(td) / "result.txt")
+
+        if mode == "subinterpreter":
+            if not _subinterpreters_available():
+                log.warning("plugin isolation: subinterpreters unavailable on "
+                            "this Python; falling back to subprocess")
+                mode = "subprocess"
+            else:
+                import _xxsubinterpreters as si
+                code = _bootstrap_code(entry, args_json, out_path, factory=factory)
+                interp = si.create()
+                try:
+                    si.run_string(interp, code)
+                except Exception as e:
+                    return f"ERROR: plugin subinterpreter failed: {e}"
+                finally:
+                    try:
+                        si.destroy(interp)
+                    except Exception:  # pragma: no cover
+                        pass
+                try:
+                    return Path(out_path).read_text(encoding="utf-8")
+                except OSError:
+                    return "ERROR: plugin produced no result"
+
+        # subprocess backend (also the subinterpreter fallback path)
+        from .tools import scrub_child_env
+        code = _bootstrap_code(entry, args_json, out_path, factory=factory)
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-c", code],
+                capture_output=True, text=True, timeout=timeout_s,
+                env=scrub_child_env(),
+            )
+        except subprocess.TimeoutExpired:
+            return f"ERROR: plugin call timed out after {timeout_s:g}s"
+        if proc.returncode != 0:
+            tail = (proc.stderr or "").strip()[-200:]
+            return f"ERROR: plugin process exited {proc.returncode}: {tail}"
+        try:
+            return Path(out_path).read_text(encoding="utf-8")
+        except OSError:
+            return "ERROR: plugin produced no result"
+
+
+__all__ = ["isolation_mode", "run_isolated"]

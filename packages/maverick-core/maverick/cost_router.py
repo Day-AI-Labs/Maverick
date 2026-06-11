@@ -145,6 +145,62 @@ def signal_for_role(role: str) -> CostSignal:
     )
 
 
+# ---- per-role routing policies (cost-aware router v2) ----------------------
+#
+# [routing.roles.<role>] in config narrows the router for that role only:
+#
+#   [routing.roles.summarizer]
+#   providers = ["deepseek", "openrouter"]   # only these may serve the role
+#   deny_providers = ["openai"]              # never these
+#   max_price_per_mtok = 1.5                 # cost ceiling (weighted avg rate)
+#   tier = "cheap"                           # tier floor override
+#
+# All keys optional; an absent table leaves v1 behavior untouched.
+
+_TIER_NAMES = {"cheap": TIER_CHEAP, "base": TIER_BASE, "premium": TIER_PREMIUM}
+
+
+@dataclass(frozen=True)
+class RolePolicy:
+    providers: frozenset[str] = frozenset()       # empty = unrestricted
+    deny_providers: frozenset[str] = frozenset()
+    max_price_per_mtok: float | None = None
+    tier: int | None = None
+
+    def is_empty(self) -> bool:
+        return (not self.providers and not self.deny_providers
+                and self.max_price_per_mtok is None and self.tier is None)
+
+
+def role_policy(role: str) -> RolePolicy:
+    """The configured per-role policy (empty policy when unset)."""
+    try:
+        from .config import load_config
+        roles = (((load_config() or {}).get("routing") or {}).get("roles") or {})
+        raw = roles.get(role)
+    except Exception:
+        raw = None
+    if not isinstance(raw, dict):
+        return RolePolicy()
+
+    def _names(key: str) -> frozenset[str]:
+        v = raw.get(key)
+        if isinstance(v, (list, tuple, set)):
+            return frozenset(str(x).strip().lower() for x in v if str(x).strip())
+        return frozenset()
+
+    ceiling = raw.get("max_price_per_mtok")
+    if isinstance(ceiling, bool) or not isinstance(ceiling, (int, float)) or ceiling <= 0:
+        ceiling = None
+    tier = _TIER_NAMES.get(str(raw.get("tier", "")).strip().lower())
+    return RolePolicy(
+        providers=_names("providers"),
+        deny_providers=_names("deny_providers"),
+        max_price_per_mtok=float(ceiling) if ceiling is not None else None,
+        tier=tier,
+    )
+
+
 def _enabled() -> bool:
     if os.environ.get("MAVERICK_COST_ROUTING", "").strip().lower() in {
         "1", "true", "yes", "on",
@@ -268,8 +324,23 @@ def pick(signal: CostSignal) -> str | None:
     if not _enabled():
         return None
 
+    # Per-role policy (v2): tier floor override + provider allow/deny + cost
+    # ceiling. An unset table is an empty policy and changes nothing.
+    policy = role_policy(signal.role) if signal.role else RolePolicy()
+    tier = policy.tier if policy.tier is not None else signal.tier
+
     # Tier-filter then cost-sort.
-    candidates = [c for c in _PRICING if c[2] >= signal.tier]
+    candidates = [c for c in _PRICING if c[2] >= tier]
+    if policy.providers:
+        candidates = [c for c in candidates if c[0] in policy.providers]
+    if policy.deny_providers:
+        candidates = [c for c in candidates if c[0] not in policy.deny_providers]
+    if policy.max_price_per_mtok is not None:
+        candidates = [
+            c for c in candidates
+            if _avg_price(c[3], c[4], output_heavy=signal.output_heavy)
+            <= policy.max_price_per_mtok
+        ]
     if not candidates:
         return None
 
@@ -308,6 +379,6 @@ def pick(signal: CostSignal) -> str | None:
 
 
 __all__ = [
-    "CostSignal", "pick", "signal_for_role", "price_for_model",
-    "TIER_CHEAP", "TIER_BASE", "TIER_PREMIUM",
+    "CostSignal", "RolePolicy", "pick", "role_policy", "signal_for_role",
+    "price_for_model", "TIER_CHEAP", "TIER_BASE", "TIER_PREMIUM",
 ]

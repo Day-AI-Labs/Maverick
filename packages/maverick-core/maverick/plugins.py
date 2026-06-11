@@ -319,6 +319,12 @@ def _gate(ep, group: str, allow, name_dists, granted, enforce) -> bool:
             "loading anyway (enforce_permissions is off).",
             group, name, dist or "unknown-dist", violations,
         )
+    # Version-pinning lockfile ([plugins] lock_policy): a dist whose installed
+    # version drifted from plugins.lock is refused under "enforce" (that
+    # plugin only), warned under "warn", ignored under "off" (default).
+    from .plugin_lock import dist_allowed_by_lock
+    if not dist_allowed_by_lock(dist):
+        return False
     return True
 
 
@@ -348,20 +354,78 @@ def _iter_loaded(group: str, what: str):
         yield ep.name, target
 
 
+def _isolated_factory(name: str, ep_value: str, target: Callable[[], Any]):
+    """Wrap a plugin tool factory so its CALLS run under plugin isolation.
+
+    The factory runs in-process once (schema/description introspection is
+    harmless metadata), but the returned Tool's ``fn`` is replaced with a
+    proxy that executes the real call via :mod:`maverick.plugin_isolation`
+    (fresh subinterpreter or scrubbed subprocess, per ``[plugins] isolation``).
+    """
+    def factory():
+        tool = target()
+        from .plugin_isolation import run_isolated
+
+        def _isolated_fn(args: dict) -> str:
+            return run_isolated(ep_value, args or {}, factory=True)
+
+        try:
+            tool.fn = _isolated_fn
+        except Exception:  # frozen/odd Tool object: fall back to direct call
+            log.warning("plugin tool %s: cannot wrap for isolation; running direct", name)
+        return tool
+    return factory
+
+
 def discover_tools() -> list[Any]:
     """Return a list of (name, factory) tuples for installed tool plugins.
 
     The factory is called with no args; it must return a Tool. We delay
     invocation because Tool constructors may need access to the
-    sandbox/world that only exists per-run.
+    sandbox/world that only exists per-run. With ``[plugins] isolation``
+    enabled, each discovered tool's calls are routed through the isolation
+    seam (see :mod:`maverick.plugin_isolation`).
     """
+    from .plugin_isolation import isolation_mode
+    from .plugin_telemetry import enabled as telemetry_enabled
+    from .plugin_telemetry import wrap_factory as telemetry_wrap
+    isolate = isolation_mode() != "none"
+    count = telemetry_enabled()
     out: list[tuple[str, Callable[[], Any]]] = []
-    for name, target in _iter_loaded("maverick.tools", "tools"):
+    for name, target, ep_value, dist in _iter_loaded_with_value("maverick.tools", "tools"):
         if not callable(target):
             log.warning("plugin tool %s is not callable; skipping", name)
             continue
-        out.append((name, target))
+        factory = target
+        if isolate and ep_value:
+            factory = _isolated_factory(name, ep_value, factory)
+        if count:
+            # Applied last so the tick covers isolated calls too.
+            factory = telemetry_wrap(name, dist, factory)
+        out.append((name, factory))
     return out
+
+
+def _iter_loaded_with_value(group: str, what: str):
+    """Like _iter_loaded, but also yields the entry point's ``value``
+    ("pkg.mod:attr") and dist name so callers can re-resolve the target
+    out-of-process / attribute telemetry."""
+    if no_cli():
+        return
+    eps = list(_entry_points(group))
+    if not eps:
+        return
+    name_dists = _name_dist_map(eps)
+    allow = _allowed_plugin_names()
+    granted, enforce = _permission_policy()
+    for ep in eps:
+        if not _gate(ep, group, allow, name_dists, granted, enforce):
+            continue
+        target = _load(ep, what)
+        if target is None:
+            continue
+        yield (ep.name, target, str(getattr(ep, "value", "") or ""),
+               _ep_dist_name(ep))
 
 
 def discover_channels() -> list[tuple[str, Any]]:
@@ -401,3 +465,54 @@ def installed_plugins() -> dict[str, list[str]]:
         "skills":    [getattr(s, "name", "<unnamed>") for s in discover_skills()],
         "personas":  list(discover_personas()),
     }
+
+
+# ---- hot plugin reload (roadmap 2027-H1 ecosystem) --------------------------
+
+_PLUGIN_GROUPS = ("maverick.tools", "maverick.channels", "maverick.skills",
+                  "maverick.personas")
+
+
+def _plugin_modules(dist_name: str) -> set[str]:
+    """Top-level module paths declared by ``dist_name``'s maverick entry points."""
+    mods: set[str] = set()
+    for group in _PLUGIN_GROUPS:
+        for ep in _entry_points(group):
+            if _ep_dist_name(ep) != dist_name:
+                continue
+            value = getattr(ep, "value", "") or ""
+            module = value.split(":", 1)[0].strip()
+            if module:
+                mods.add(module)
+    return mods
+
+
+def reload_plugin(dist_name: str) -> list[str]:
+    """Hot-reload one plugin distribution's code without restarting the process.
+
+    Drops the distribution's entry-point modules (and their submodules) from
+    ``sys.modules`` so the next discovery pass re-imports the *current* code on
+    disk — the edit-reload-retry loop for plugin authors. Returns the module
+    names dropped (empty when the dist declares no maverick entry points).
+
+    Scope honesty: already-instantiated objects (a registered Tool from the old
+    module, a running Channel) keep running old code until their owner rebuilds
+    them; discovery (``discover_*``) after this returns fresh objects. The
+    allowlist / name-squat / permission gates apply to the re-import exactly as
+    they did to the first import.
+    """
+    import importlib
+    import sys
+    mods = _plugin_modules(dist_name)
+    if not mods:
+        return []
+    dropped: list[str] = []
+    for name in list(sys.modules):
+        if any(name == m or name.startswith(m + ".") for m in mods):
+            del sys.modules[name]
+            dropped.append(name)
+    # The path finders cache directory listings (and .pyc staleness checks);
+    # without this a just-edited file can re-import as the old code.
+    importlib.invalidate_caches()
+    log.info("hot-reloaded plugin %s: dropped %d module(s)", dist_name, len(dropped))
+    return sorted(dropped)

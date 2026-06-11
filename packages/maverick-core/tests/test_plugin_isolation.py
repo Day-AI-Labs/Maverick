@@ -1,0 +1,195 @@
+"""Plugin sandboxing: subinterpreter + subprocess isolation backends.
+
+A real demo plugin module is written to a tmp dir and imported through the
+isolation seam, proving: results round-trip, exceptions become ERROR strings,
+host module state is untouched (subinterpreter), and a hard-crashing plugin
+kills the child, not the agent (subprocess)."""
+from __future__ import annotations
+
+import sys
+import textwrap
+
+import pytest
+from maverick.plugin_isolation import isolation_mode, run_isolated
+
+_PLUGIN = textwrap.dedent("""
+    import sys
+
+    CALLS = 0
+
+    def tool(args):
+        global CALLS
+        CALLS += 1
+        # Pollute interpreter state on purpose -- isolation should contain it.
+        sys._mvk_polluted = True
+        return f"hello {args.get('name', 'world')} (calls={CALLS})"
+
+    def boom(args):
+        raise RuntimeError("plugin exploded")
+
+    def segfault(args):
+        import ctypes
+        ctypes.string_at(0)  # hard crash, not an exception
+
+    def not_a_string(args):
+        return {"structured": True}
+""").strip()
+
+
+@pytest.fixture
+def plugin_on_path(tmp_path, monkeypatch):
+    (tmp_path / "demo_iso_plugin.py").write_text(_PLUGIN)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    sys.modules.pop("demo_iso_plugin", None)
+    yield "demo_iso_plugin"
+    sys.modules.pop("demo_iso_plugin", None)
+
+
+def test_mode_default_none(monkeypatch):
+    monkeypatch.delenv("MAVERICK_PLUGIN_ISOLATION", raising=False)
+    import maverick.config as config_mod
+    monkeypatch.setattr(config_mod, "load_config", lambda: {})
+    assert isolation_mode() == "none"
+    monkeypatch.setenv("MAVERICK_PLUGIN_ISOLATION", "subprocess")
+    assert isolation_mode() == "subprocess"
+    monkeypatch.setenv("MAVERICK_PLUGIN_ISOLATION", "bogus")
+    assert isolation_mode() == "none"
+
+
+def test_none_mode_runs_in_process(plugin_on_path):
+    out = run_isolated(f"{plugin_on_path}:tool", {"name": "ada"}, mode="none")
+    assert out == "hello ada (calls=1)"
+
+
+def test_subprocess_roundtrip_and_host_state_untouched(plugin_on_path):
+    had = hasattr(sys, "_mvk_polluted")
+    out = run_isolated(f"{plugin_on_path}:tool", {"name": "ada"}, mode="subprocess")
+    assert out == "hello ada (calls=1)"
+    assert hasattr(sys, "_mvk_polluted") == had  # pollution stayed in the child
+
+
+def test_subprocess_exception_becomes_error(plugin_on_path):
+    out = run_isolated(f"{plugin_on_path}:boom", {}, mode="subprocess")
+    assert out.startswith("ERROR: plugin call failed: RuntimeError: plugin exploded")
+
+
+def test_subprocess_survives_hard_crash(plugin_on_path):
+    out = run_isolated(f"{plugin_on_path}:segfault", {}, mode="subprocess")
+    assert out.startswith("ERROR: plugin process exited")  # child died, agent lives
+
+
+def test_subprocess_structured_result_jsonified(plugin_on_path):
+    out = run_isolated(f"{plugin_on_path}:not_a_string", {}, mode="subprocess")
+    assert out == '{"structured": true}'
+
+
+def test_subprocess_timeout(plugin_on_path, tmp_path, monkeypatch):
+    (tmp_path / "sleepy_plugin.py").write_text(
+        "import time\ndef tool(args):\n    time.sleep(30)\n    return 'late'\n")
+    out = run_isolated("sleepy_plugin:tool", {}, mode="subprocess", timeout_s=1.5)
+    assert "timed out" in out
+
+
+@pytest.mark.skipif(
+    not pytest.importorskip("maverick.plugin_isolation")._subinterpreters_available(),
+    reason="subinterpreters unavailable on this Python",
+)
+def test_subinterpreter_isolates_module_state(plugin_on_path):
+    # Import in the HOST first and bump its counter.
+    import importlib
+    host_mod = importlib.import_module(plugin_on_path)
+    host_mod.tool({})
+    assert host_mod.CALLS == 1
+    # The subinterpreter gets FRESH module state: calls=1 again, and the host
+    # module's counter is unchanged.
+    out = run_isolated(f"{plugin_on_path}:tool", {"name": "iso"}, mode="subinterpreter")
+    assert out == "hello iso (calls=1)"
+    assert host_mod.CALLS == 1
+
+
+def test_validation():
+    assert run_isolated("no-colon", {}, mode="none").startswith("ERROR: bad plugin entry")
+    out = run_isolated("m:f", {"bad": object()}, mode="none")
+    assert out.startswith("ERROR: plugin args are not JSON-serializable")
+
+
+def test_discover_tools_wraps_with_isolation(tmp_path, monkeypatch):
+    """With [plugins] isolation on, a discovered tool's fn runs isolated."""
+    import types
+
+    from maverick import plugins as plugins_mod
+
+    (tmp_path / "iso_tool_plugin.py").write_text(
+        "import sys\n"
+        "def factory():\n"
+        "    import types\n"
+        "    def fn(args):\n"
+        "        sys._iso_tool_polluted = True\n"
+        "        return 'ran for ' + str(args.get('who'))\n"
+        "    return types.SimpleNamespace(name='iso_tool', description='d',\n"
+        "                                 input_schema={}, fn=fn, parallel_safe=True)\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    sys.modules.pop("iso_tool_plugin", None)
+
+    class _EP:
+        name = "iso_tool"
+        value = "iso_tool_plugin:factory"
+        dist = types.SimpleNamespace(name="iso-tool-dist")
+
+        @staticmethod
+        def load():
+            import iso_tool_plugin
+            return iso_tool_plugin.factory
+
+    monkeypatch.setattr(plugins_mod, "_entry_points",
+                        lambda group: [_EP()] if group == "maverick.tools" else [])
+    monkeypatch.setattr(plugins_mod, "_allowed_plugin_names", lambda: None)
+    monkeypatch.setattr(plugins_mod, "_permission_policy", lambda: (set(), False))
+    monkeypatch.setenv("MAVERICK_PLUGIN_ISOLATION", "subprocess")
+
+    tools = plugins_mod.discover_tools()
+    assert len(tools) == 1
+    name, factory = tools[0]
+    tool = factory()
+    had = hasattr(sys, "_iso_tool_polluted")
+    out = tool.fn({"who": "ada"})
+    assert out == "ran for ada"
+    assert hasattr(sys, "_iso_tool_polluted") == had  # ran in the child
+    sys.modules.pop("iso_tool_plugin", None)
+
+
+def test_discover_tools_direct_when_isolation_off(tmp_path, monkeypatch):
+    import types
+
+    from maverick import plugins as plugins_mod
+
+    (tmp_path / "direct_tool_plugin.py").write_text(
+        "import types\n"
+        "def factory():\n"
+        "    return types.SimpleNamespace(name='t', description='d',\n"
+        "                                 input_schema={}, fn=lambda a: 'direct',\n"
+        "                                 parallel_safe=True)\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    sys.modules.pop("direct_tool_plugin", None)
+
+    class _EP:
+        name = "t"
+        value = "direct_tool_plugin:factory"
+        dist = types.SimpleNamespace(name="direct-dist")
+
+        @staticmethod
+        def load():
+            import direct_tool_plugin
+            return direct_tool_plugin.factory
+
+    monkeypatch.setattr(plugins_mod, "_entry_points",
+                        lambda group: [_EP()] if group == "maverick.tools" else [])
+    monkeypatch.setattr(plugins_mod, "_allowed_plugin_names", lambda: None)
+    monkeypatch.setattr(plugins_mod, "_permission_policy", lambda: (set(), False))
+    monkeypatch.delenv("MAVERICK_PLUGIN_ISOLATION", raising=False)
+    import maverick.config as config_mod
+    monkeypatch.setattr(config_mod, "load_config", lambda: {})
+
+    tools = plugins_mod.discover_tools()
+    assert tools[0][1]().fn({}) == "direct"
+    sys.modules.pop("direct_tool_plugin", None)

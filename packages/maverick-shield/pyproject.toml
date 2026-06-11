@@ -22,3 +22,7 @@ Homepage = "https://github.com/Day-AI-Labs/maverick"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["maverick_shield*"]
+
+[tool.setuptools.package-data]
+# Ship the red-team corpus inside wheels (editable installs read it from disk).
+maverick_shield = ["redteam_corpus.jsonl"]

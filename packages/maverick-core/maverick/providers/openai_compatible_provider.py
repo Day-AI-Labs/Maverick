@@ -29,6 +29,7 @@ from .openai_provider import OpenAIClient
 
 class OpenAICompatibleClient(OpenAIClient):
     DEFAULT_MODEL = "openai-compatible"
+    PRICE_MODEL_PREFIX = "openai_compatible:"  # self-hosted: unknown ids price $0
 
     def __init__(self, api_key: str | None = None, base_url: str | None = None):
         from ..config import get_provider_config

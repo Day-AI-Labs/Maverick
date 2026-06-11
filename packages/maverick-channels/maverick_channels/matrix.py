@@ -77,7 +77,7 @@ class MatrixChannel(Channel):
             sender_id=event.sender,
         )
         try:
-            reply = await self.handler(msg)
+            reply = await self.dispatch_text(msg)
         except Exception:  # pragma: no cover
             log.exception("handler error")
             reply = "⚠ An internal error occurred."

@@ -104,9 +104,10 @@ class TelegramChannel(Channel):
             text=update.message.text,
             channel="telegram",
             raw=update,
+            message_id=str(update.message.message_id),
         )
         try:
-            reply = await self.handler(msg)
+            reply = await self.dispatch_text(msg)
         except Exception as e:  # pragma: no cover
             log.exception("handler error")
             reply = f"⚠ error: {e}"
@@ -124,6 +125,19 @@ class TelegramChannel(Channel):
         if self._app is None:
             raise RuntimeError("channel not started")
         await self._app.bot.send_message(chat_id=int(user_id), text=text)
+
+    async def send_threaded(
+        self, user_id: str, text: str, *, reply_to: str | None = None,
+    ) -> None:
+        if self._app is None:
+            raise RuntimeError("channel not started")
+        kwargs = {"chat_id": int(user_id), "text": text}
+        if reply_to:
+            try:
+                kwargs["reply_to_message_id"] = int(reply_to)
+            except (TypeError, ValueError):
+                pass  # un-threadable id -> plain send
+        await self._app.bot.send_message(**kwargs)
 
     async def stop(self) -> None:
         if self._app is None:

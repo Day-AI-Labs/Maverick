@@ -236,9 +236,14 @@ def _probe_audit_chain() -> dict[str, Any]:
             if reason == "no_crypto":
                 no_crypto = True
                 continue
-            # An unsigned row (signing off) reports as a "malformed" break with
-            # this exact detail; treat that as the benign "unsigned" state, not
-            # tampering. Anything else is a real cryptographic break.
+            # An unsigned row (signing off) now reports as its own "unsigned"
+            # reason -- the benign configuration state, not tampering. The
+            # legacy form ("malformed" + this exact detail) is kept for
+            # results produced by older verifiers. Anything else is a real
+            # cryptographic break.
+            if reason == "unsigned":
+                unsigned_rows += 1
+                continue
             if reason == "malformed" and "missing hash/sig/key_id" in (
                 getattr(b, "detail", "") or ""
             ):

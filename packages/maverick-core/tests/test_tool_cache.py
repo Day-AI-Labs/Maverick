@@ -123,3 +123,74 @@ def test_ttl_expiry(monkeypatch, tmp_path):
     clock["t"] = 1020.0
     _run(reg, "read_file", {"path": "a"})  # past TTL -> recompute
     assert calls["n"] == 2
+
+
+class TestWarmOnStart:
+    """Cache-warm-on-start: snapshot persistence + reload (roadmap 2027-H1 perf)."""
+
+    def _tool(self):
+        import types
+        return types.SimpleNamespace(name="repo_map", parallel_safe=True)
+
+    def test_snapshot_roundtrip(self, monkeypatch, tmp_path):
+        from maverick import tool_cache as tc
+        snap = tmp_path / "snap.jsonl"
+        monkeypatch.setenv("MAVERICK_TOOL_CACHE", "1")
+        monkeypatch.setenv("MAVERICK_TOOL_CACHE_SNAPSHOT", "1")
+        monkeypatch.setenv("MAVERICK_TOOL_CACHE_SNAPSHOT_PATH", str(snap))
+        tc.reset()
+        tool = self._tool()
+        tc.store_cached(tool, {"path": "."}, "the map")
+        assert tc.save_snapshot() == 1
+        # New "process": clear memory, then a lookup warms from disk.
+        tc.reset()
+        hit, value = tc.get_cached(tool, {"path": "."})
+        assert hit and value == "the map"
+        tc.reset()
+
+    def test_snapshot_off_means_no_warm(self, monkeypatch, tmp_path):
+        from maverick import tool_cache as tc
+        snap = tmp_path / "snap.jsonl"
+        snap.write_text('{"k": "repo_map:abc", "v": "x", "t": 0}\n')
+        monkeypatch.setenv("MAVERICK_TOOL_CACHE", "1")
+        monkeypatch.delenv("MAVERICK_TOOL_CACHE_SNAPSHOT", raising=False)
+        monkeypatch.setenv("MAVERICK_TOOL_CACHE_SNAPSHOT_PATH", str(snap))
+        tc.reset()
+        assert tc.warm_on_start() == 0
+        tc.reset()
+
+    def test_warm_respects_ttl_and_corrupt_lines(self, monkeypatch, tmp_path):
+        import json as _json
+        import time as _time
+
+        from maverick import tool_cache as tc
+        snap = tmp_path / "snap.jsonl"
+        fresh = {"k": "repo_map:fresh", "v": "ok", "t": _time.time()}
+        stale = {"k": "repo_map:stale", "v": "old", "t": _time.time() - 9999}
+        snap.write_text(
+            _json.dumps(fresh) + "\n" + _json.dumps(stale) + "\nnot-json\n"
+        )
+        monkeypatch.setenv("MAVERICK_TOOL_CACHE", "1")
+        monkeypatch.setenv("MAVERICK_TOOL_CACHE_SNAPSHOT", "1")
+        monkeypatch.setenv("MAVERICK_TOOL_CACHE_SNAPSHOT_PATH", str(snap))
+        # TTL 60s: 'stale' is expired at load; corrupt line skipped.
+        monkeypatch.setattr(tc, "_cfg", lambda: {"output_cache_ttl_s": 60})
+        tc.reset()
+        assert tc.warm_on_start() == 1
+        assert tc.stats()["size"] == 1
+        tc.reset()
+
+    def test_warm_is_idempotent_per_process(self, monkeypatch, tmp_path):
+        import json as _json
+        import time as _time
+
+        from maverick import tool_cache as tc
+        snap = tmp_path / "snap.jsonl"
+        snap.write_text(_json.dumps({"k": "a:1", "v": "x", "t": _time.time()}) + "\n")
+        monkeypatch.setenv("MAVERICK_TOOL_CACHE", "1")
+        monkeypatch.setenv("MAVERICK_TOOL_CACHE_SNAPSHOT", "1")
+        monkeypatch.setenv("MAVERICK_TOOL_CACHE_SNAPSHOT_PATH", str(snap))
+        tc.reset()
+        assert tc.warm_on_start() == 1
+        assert tc.warm_on_start() == 0  # second call no-ops
+        tc.reset()

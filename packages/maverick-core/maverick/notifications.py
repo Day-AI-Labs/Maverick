@@ -164,12 +164,17 @@ def notify(
     category: str | None = None,
     backends: list[str] | None = None,
     async_dispatch: bool = True,
+    batch: bool = True,
 ) -> int:
     """Send a notification. Returns the number of backends fired.
 
     ``priority`` is one of: low / default / high / max.
     ``backends`` overrides config (e.g. ['ntfy']). None = use config.
     ``async_dispatch=False`` runs synchronously (mainly for tests).
+    ``batch`` lets opt-in **notification batching** coalesce low/normal-priority
+    pushes (``[notifications] batch_window_seconds``); high/urgent always go
+    straight through, and with batching unconfigured this is a no-op. When an
+    item is queued for a later batch, the call returns 0 (fired *now*).
     """
     cfg = _load_config()
     # Normalize: backend names are user-typed (config/TOML or the `backends`
@@ -184,6 +189,16 @@ def notify(
     ]
     if not requested:
         return 0
+
+    # Opt-in batching: coalesce low/normal-priority pushes into a windowed
+    # digest. High/urgent bypass; sync sends (tests, and the batcher's own
+    # delivery) bypass so there's no recursion. No-op unless configured.
+    if batch and async_dispatch and priority not in ("high", "max", "urgent"):
+        from .notification_batcher import shared as _shared_batcher
+        batcher = _shared_batcher()
+        if batcher is not None:
+            return batcher.submit(body, title=title, priority=priority,
+                                  category=category)
 
     def _dispatch(backend: str) -> bool:
         if backend == "ntfy":

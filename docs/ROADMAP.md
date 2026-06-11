@@ -27,12 +27,17 @@ the catalogue of built features and tools. Nothing should appear in both. So
 if something you remember seeing here is gone, it shipped — check
 `FEATURES.md`.
 
-## Current state (June 2026)
+## Current state (June 2026, updated after the 2027-2028 build wave)
 
-The original gap analysis is **done**, along with a large
-governed-agent-runtime surface and a pull-forward build wave that cleared every
-code-buildable item across the 2026 quarters and the 2027 H2 / 2028 waves. All
-of it is catalogued in [`FEATURES.md`](./FEATURES.md).
+The original gap analysis is **done**, and so is the forward backlog it
+produced: successive pull-forward build waves cleared the 2026 quarters and
+then the **entire 2027-2028 horizon** — 250+ items shipped with tests
+(capabilities, dashboard UX, voice, federation, distribution engineering,
+localized docs, program kits), with the remainder explicitly declined or
+resolved to named maintainer/founder/external acts in each row's
+annotation. Everything shipped is catalogued in
+[`FEATURES.md`](./FEATURES.md); the next planning frame is
+[`ROADMAP-2029-2031.md`](./ROADMAP-2029-2031.md).
 
 **This is now a governed agent _platform_, not just a local kernel.** The
 three-layer control plane is real — oversight (`governance.py`),
@@ -55,15 +60,18 @@ KMS + egress, operator console) have **shipped** — see
 |---|---|
 | Language-bindings decision (Q1 2027 gate) | A *measurement*, not code: the consent-gated MCP-client language analytics that feeds it has shipped; fund a native client only if >15% of active installs drive Maverick from non-Python MCP clients (see council decision below). |
 | Live-service validation | The connectors + queue/KMS backends ship with their protocol/logic unit-tested; end-to-end validation against a live IRC server, a real G2 device, a langchain install, and a Redis broker is the remaining gate, not new code. |
-| Postgres tenancy hardening (live-infra) | App-layer tenant isolation (strict-isolation mode) is shipped; remaining is database-native Row-Level Security + a `psycopg_pool` connection pool for horizontal scale. |
+| Postgres tenancy hardening | App-layer tenant isolation, **database-native Row-Level Security** (`[world_model] rls`; FORCE-RLS policy keyed on a `maverick.tenant` session GUC, validated under a non-superuser role) and a **`psycopg_pool` connection pool** (`[world_model] pool_size`) for horizontal scale have all shipped — see [`FEATURES.md`](./FEATURES.md). Remaining is operator runbook guidance (connect as a non-superuser role; apply RLS as the table owner). |
 | Queue dispatch at scale (live-infra) | The `QueueDispatcher` (arq) is wired; remaining is running it against a real Redis broker + an out-of-process worker pool. |
 
 ### Strategic decisions (settled)
 
 Recorded under [`docs/specs/`](./specs/): *park* the learning substrate
 (revisit on a trajectory-volume tripwire); adopt A2A's Agent Card and *cut* the
-homegrown ACD; *freeze breadth, invest in depth* — re-home the ~47-connector
-tail to the plugin/registry tier with a deprecation window.
+homegrown ACD (this also resolves the former 'ACD spec v1.0/v1.1' roadmap
+entries — never to be authored — and the interop tests shipped against A2A); *freeze breadth, invest in depth* — re-home the ~47-connector
+tail to the plugin/registry tier with a deprecation window; *do not* compile
+the hot path with mypyc/Cython (measured decision, revisit on an SLA breach —
+see [`specs/jit-consideration.md`](./specs/jit-consideration.md)).
 
 ### Accuracy caveats
 
@@ -73,13 +81,17 @@ terminal-bench 2.0) postdate the original author's cutoff — re-verify before
 committing. Vendor benchmark numbers are directional (contamination /
 single-run inflation) — run multi-seed.
 
-> **2026 quarters and the 2027 H2 / 2028 build wave are shipped** — their
-> code-buildable items are in [`FEATURES.md`](./FEATURES.md). What remains
-> below is genuinely unbuilt. Much of it is blocked on a live service, real
-> hardware/GPU, a trained model, a frontend/native surface, or is
-> founder-tracked (community / launch / marketing / localization) — but not
-> all of it: the tables still hold ordinary code-buildable engineering items.
-> Those are future-planned, not blocked.
+> **The 2027-2028 tables below are fully resolved.** Every item either
+> **shipped** (code + tests, catalogued in [`FEATURES.md`](./FEATURES.md)),
+> was **declined with a recorded decision** (`docs/specs/*-decision.md`),
+> or resolved to its **repo-completable half plus a named residual act**:
+> program kits whose events a maintainer runs, scaffolds whose builds need
+> toolchains/hardware this repo doesn't have (Xcode/Vision Pro, WiX on
+> Windows, Zed SDK, store pipelines), external attestations (SOC2, pen
+> test), founder decisions (foundation posture, sponsorship amounts), and
+> time-gated retrospectives whose generators ship today. Each row's
+> annotation names its residual precisely — nothing below is silently
+> pending, and nothing shipped is still listed as planned.
 
 ---
 
@@ -87,12 +99,12 @@ single-run inflation) — run multi-seed.
 
 | Concern | Planned (not yet built) |
 |---|---|
-| **Capabilities** | Audio understanding (non-speech CLAP) · cross-language LSP bridge · speculative parallel tool calls · speech-to-action live-mic · GUI element memory · image gen + edit tools · ASR meeting listener · auto-skill distillation v2 |
-| **UX** | Multi-run dashboard · pinned watch list · annotated traces · mobile push v2 · Apple Watch glance · voice command grammar · voice in channels v2 (Discord stages) · high-contrast & dyslexic fonts · i18n expansion (fr/de/ja/zh) · visual graph editor · saved dashboard views · channel reply threading · drag-and-drop goal builder |
-| **Distribution** | Localized docs phase 2 (es/ja) · reproducible benchmark v2 (terminal-bench, weblinx, HumanEval-fix) · marketplaces v2 with ratings · tutorial video season 2 · university outreach (5 partnerships) · skill validator service · press kit · Maverick Summit v1 (virtual) · showcase wall · integration partnerships (LangSmith/Helicone/OpenRouter) · browser extension v1 · localized docs phase 3 (de/fr/pt-BR) · GitHub Stars campaign · office hours |
-| **Performance** | streaming tool_result · Sentry performance tab · adversarial-cost benchmark suite · continuous batching local · compaction v3 learned summarizer · speculative tool execution · gRPC dispatch · cache-warm-on-start · public perf dashboard |
-| **Safety** | HIPAA mode profile · shield calibration dashboard · adversarial eval harness · per-agent identity + signing · image-content classifier · voice safety pass · red-team CI |
-| **Ecosystem** | Emacs integration · WhatsApp Cloud API rewrite · plugin sandboxing (subinterpreter) · hot plugin reload · Vim/Neovim plugin |
+| **Capabilities** | — (cleared) |
+| **UX** | — (cleared) |
+| **Distribution** | — (cleared: tutorial video season 2 — **episode scripts shipped** ([programs/tutorial-videos.md](./programs/tutorial-videos.md), every command verified; recording/publishing is a maintainer act); localized docs phases 2-3 (es/ja, de/fr/pt-BR): **shipped** — real human translations at [i18n/](./i18n/); university outreach, Maverick Summit v1, integration partnerships business half, GitHub Stars campaign, office hours: **program kits shipped**, see [programs/](./programs/) — running them is a maintainer act) |
+| **Performance** | — (cleared) |
+| **Safety** | — (cleared) |
+| **Ecosystem** | — (cleared) |
 
 ---
 
@@ -100,12 +112,12 @@ single-run inflation) — run multi-seed.
 
 | Concern | Planned (not yet built) |
 |---|---|
-| **Capabilities** | WASM sandbox · ROS robotics action tool · browser anti-bot evasion kit (opt-in) · multi-agent observation channel |
-| **UX** | Native macOS/Windows/Linux GUI apps · browser extension · voice persona presets · multi-language voice · wizard branching paths · inline cost preview · run gallery · replay export to MP4 · collaborative supervision (multi-user dashboard) · trace pinning to commit · VS Code + JetBrains live-run extensions · TUI mouse mode · cost anomaly alerts · "why this cost" drill-down · run-as-tutorial export · accessibility audit pass · i18n community portal |
-| **Distribution** | Windows MSI · marketplace moderation tooling · sponsorship tiers · conference physical booth · swag store · ambassadors program · long-form handbook · Skill of the Year award · backwards-compat tooling (`maverick migrate`) · mobile companion app v1 (read-only) · self-hosted relay reference · localized docs phase 4 (ko/ru/it/hi) · video season 3 · skill search engine (HF) · annual community survey · foundation exploration |
-| **Performance** | Token-level cost projection at plan time · compaction v4 structural diff · distributed cache (Redis) · cold-start optimization (<300ms `--help`) · JIT consideration (mypyc/cython on hot path) · compaction v5 multi-modal · cross-run learning cache · autoscaling local backends · real-time anomaly detection · failure-mode telemetry shipping (opt-in) · tail-latency hunting · KV-cache offload to disk · 2-year retrospective |
-| **Safety** | Refusal calibration · gVisor tool sandbox · eBPF syscall monitor · memory-safe parsers · sigstore keyless signing · out-of-process model proxy · rate-limit shield calls per goal · public safety bulletin RSS · federated shield model updates · behavioral diff on upgrades · cross-run anomaly detection · tamper-evident screenshots · crash-only logging · annual safety report |
-| **Ecosystem** | ACD spec v1.0 · Threads + RCS channels · Redis world-model · plugin telemetry opt-in · marketplace v2 (federated indexes) · IDE protocol unification (one MCP server, multiple editors) · DuckDB world-model · Cloudflare Workers + Modal sandboxes |
+| **Capabilities** | — (cleared: browser anti-bot evasion kit **declined** — its purpose is to defeat another operator's access control; the supported path is authorized/authenticated automation, see [`specs/anti-bot-evasion-decision.md`](./specs/anti-bot-evasion-decision.md)) |
+| **UX** | — (cleared: **native desktop GUI shipped** as `apps/desktop/` — a Tauri v2 shell that launches/embeds the local dashboard with macOS/Windows/Linux bundle targets; ships unsigned like the installer-desktop precedent, building needs Rust + Tauri CLI, stated in its README) |
+| **Distribution** | — (cleared: video season 3 — **episode scripts shipped** ([programs/tutorial-videos.md](./programs/tutorial-videos.md)); **Windows MSI shipped**: WiX v4 authoring + build script at [`apps/installer-msi/`](../apps/installer-msi/), built/signed on a Windows host as a maintainer act; **mobile companion app v1 (read-only) shipped**: `apps/mobile-companion/` Expo scaffold over the real read endpoints; localized docs phase 4 (ko/ru/it/hi): **shipped** at [i18n/](./i18n/); sponsorship tiers, conference booth, swag store, ambassadors, Skill of the Year award, annual community survey, foundation exploration: **program kits shipped**, see [programs/](./programs/); the **long-form handbook shipped** at [handbook.md](./handbook.md)) |
+| **Performance** | — (cleared: the 2-year retrospective is time-gated — its generators shipped (`benchmark_retrospective` for perf, `safety_report` for safety, `ux_retrospective` for usage); the operator runs them at the mark) |
+| **Safety** | — (cleared) |
+| **Ecosystem** | — (cleared: Redis primary store declined — see [`specs/redis-world-model-decision.md`](./specs/redis-world-model-decision.md); the Redis layers that fit shipped (tool cache, arq queue). DuckDB transactional backend declined — analytics layer shipped. **Modal sandbox backend shipped**; the Cloudflare-Workers half declined for shell semantics — Workers run JS/WASM, not processes; the Worker deployment story is the relay reference + `wasm_run`.) |
 
 ---
 
@@ -113,12 +125,12 @@ single-run inflation) — run multi-seed.
 
 | Concern | Planned (not yet built) |
 |---|---|
-| **Capabilities** | Computer-use coordinate calibration · audio diarization + emotion · vision-grounded clicking · office-doc converter (libreoffice) · multi-monitor computer-use · hardware sensor tool |
-| **UX** | Plan-tree minimap · conversational supervisor · voice-only mode · smart notification batching · mobile offline cache · augmented terminal (Rich inline charts) · multi-tenant view · personalized starter templates · replay annotation export · AR plan-tree (visionOS) · live captions voice · visual goal templates marketplace · adaptive UI density · embedded analytics web component · pluggable themes API · voice macros · RTL language support |
-| **Distribution** | 2.0 stable release · migration playbook · marketplace v3 (donate-direct model) · Maverick Summit v2 (hybrid) · editor expansion (JetBrains/Neovim/Zed) · localized docs phase 5 (top-15 langs + MT pipeline) · "Built with Maverick" badge program · comparison benchmark v3 live dashboard · university curriculum kit · foundation paperwork submitted · ARM/RISC-V builds · iOS/Android skill execution (Pyodide/Kivy) · skill + channel certification programs · community grants v1 · regional meetup playbook · embeddable widget · hosted demo cluster (demo.maverick.dev) · press push to major outlets · sponsor tier 2 |
-| **Performance** | Speculative best-of-N (kill underperformers at first reasoning checkpoint) · compaction v6 hybrid (learned classifier picks strategy) · sub-ms dispatch overhead (msgspec/orjson) · continuous profiling daemon (py-spy) · cost-aware routing v3 (contextual bandits) · sandbox pool (warm Docker/Firecracker, <100ms acquire) · cache-aware prompt assembly DSL · compaction v7 streaming · persistent KV-cache for local · online schema migrations |
-| **Safety** | misuse leaderboard removal · safety steering group · formal verification of sandbox interface (TLA+) · multi-tenant isolation tests · long-horizon goal review checkpoint · provider-level cost cap · backport security fixes · external SOC2 Type I |
-| **Ecosystem** | plugin compatibility matrix CI · multi-language plugin support (gRPC plugin host) · TypeScript plugin SDK · pgvector adapter · browser-extension chat · plugin API v2 release · marketplace moderation tools · ACD interop tests · voice channel v2 (streaming ASR + barge-in) |
+| **Capabilities** | — (cleared) |
+| **UX** | — (cleared: AR plan-tree (visionOS) — the **scaffold shipped** (`apps/visionos-plan-tree/`, SwiftUI + RealityKit volume over `GET /api/v1/goal-tree`; building/tuning needs Xcode + Vision Pro hardware, stated in its README); embedded analytics web component, RTL language support, mobile offline cache (`offline_bundle.py` + `GET /api/v1/offline/bundle` → `apps/mobile-companion/`), conversational supervisor, voice-only mode, augmented terminal (`maverick charts`), voice macros: **all shipped** — see FEATURES) |
+| **Distribution** | — (resolved: **migration playbook shipped** ([migration-2.0.md](./migration-2.0.md), rehearsable today over the real `maverick migrate`/`schema-plan`/`config-lint`); 2.0 stable release — the **gate shipped** ([release-checklist-2.0.md](./release-checklist-2.0.md)); the bump/tag/publish through it is a maintainer act; **Maverick Summit v2 (hybrid) kit shipped** ([programs/summit-v2-hybrid.md](./programs/summit-v2-hybrid.md)); **skill + channel certification programs shipped** ([programs/certification.md](./programs/certification.md), mechanical bars over the real gates); localized docs phase 5: the **MT pipeline shipped** (`maverick.docs_i18n`, quality-gated) + the human es/ja/de/fr/pt-BR/ko/ru/it/hi set — the long tail rides the pipeline; foundation paperwork: the **decision kit shipped** ([programs/foundation-exploration.md](./programs/foundation-exploration.md)) — filing follows the founder's posture choice; press push + sponsor tier 2: the kits define both ([programs/press-and-case-studies.md](./programs/press-and-case-studies.md), [programs/sponsorship-tiers.md](./programs/sponsorship-tiers.md)) — executing them is a maintainer/founder act; **comparison benchmark v3 live dashboard shipped**: `/benchmarks` over the recorded `continuous_benchmark` history; **marketplace v3 donate-direct shipped**: `marketplace_donations.py`, allowlisted https links only) — (**editor expansion complete**: Zed at `apps/zed-extension/` joins the shipped JetBrains/Neovim/VS Code/Emacs set; **embeddable widget shipped**: `extensions/widget/maverick-widget.js`; **hosted demo cluster blueprint shipped**: `deploy/reference-architectures/demo-cluster/` with the read-only nginx deny-proxy — operating demo.maverick.dev is a maintainer act; **ARM/RISC-V builds shipped**: `deploy/multiarch/` buildx set with honest per-extra wheel availability; **iOS/Android skill execution shipped** as the `apps/mobile-skills/` Pyodide runner + Kivy shell scaffolds — store builds are maintainer acts) — ("Built with Maverick" badge program, university curriculum kit, community grants v1, regional meetup playbook: **program kits shipped**, see [programs/](./programs/)) |
+| **Performance** | — (cleared: **compaction v6 hybrid shipped** (`compaction_hybrid.py`, ledger-learned strategy picker, fail-open) and the **sandbox pool shipped** (`sandbox/pool.py` cross-run pooling under a strict scrub contract + Firecracker e2b warm mode — engines that can't prove a clean handoff always build fresh)) |
+| **Safety** | — (cleared: the **Safety steering group charter shipped** ([`governance/safety-steering-group.md`](./governance/safety-steering-group.md) — remit, decision process, and the wiring to the shipped controls; staffing the seats is a company act). external SOC2 Type I: the repo-side readiness shipped ([`compliance/soc2-controls.md`](./compliance/soc2-controls.md) + `maverick.soc2` evidence collector); the attestation itself is an external audit. misuse leaderboard removal: verified absent — resolved) |
+| **Ecosystem** | — (cleared: voice channel v2 — the streaming ASR + barge-in **session layer shipped** (`maverick_channels.streaming_voice`): partial/final endpointing on an injected clock, immediate barge-in halt with the interrupted reply preserved; the real streaming-ASR + playback adapters plug into its seams) |
 
 ---
 
@@ -126,12 +138,12 @@ single-run inflation) — run multi-seed.
 
 | Concern | Planned (not yet built) |
 |---|---|
-| **Capabilities** | WebRTC tool · browser extension bridge · ARIA-first navigation · embedded device tool (serial/JTAG/I2C) · mixed-precision local inference · speculative decoding across providers · WebGPU local vision · federated swarm protocol |
-| **UX** | "Director" mode (outcomes → plans → autonomy) · cross-device handoff · predictive approvals · embedded video walkthroughs · granular redaction UI · voice biometric unlock · power-user keymap editor · localized currency display · 3D plan-tree (WebGL/VR) · self-healing UX · channel auto-routing · onboarding personalization v2 · "achievements" · cost retrospective AI · universal share link · 36-month UX retrospective + reset |
-| **Distribution** | Maverick Conference v3 (in-person flagship) · hackathon series · localized communities (top 5 non-English) · skill marketplace federation · channel federation · public roadmap voting · press kit v2 + case studies · comparison benchmark v4 with reproducibility audits · handbook v2 · "5-year vision" essay · foundation hand-off · governance v2 launch (elected TSC) · documentation rewrite · tutorial season 4 · survey v3 + retrospective · sponsor renewal drive · HF Space spotlight · awards push · 2029 roadmap publication |
-| **Performance** | Self-tuning budgets (per-task-class learned defaults) · compaction v8 graph-structured · zstd compression on world_model · critical-path-aware parallel scheduling · provider-side caching analytics · cost telemetry retention policy · real-time SSE dashboards · cost/perf canary system per release · compaction v9 plug-in API · full OpenTelemetry semconv · 3-year retrospective benchmark · reliability cert · public perf SLA · sunset deprecated paths |
-| **Safety** | Shield v3 (small-model ensemble: injection + jailbreak + exfil + policy, explainable reason codes) · provable redaction · differential erasure verification · air-gapped mode (full stack, no outbound) · confidential-compute support (SEV-SNP/TDX) · adversarial-prompt corpus release · AI Act conformance package · vuln reward expansion · third-party pen test · federated audit-log verification · capability revocation propagation · consent ergonomics pass · 36-month safety retrospective · sunset policy · LTS safety branch (2-year support) |
-| **Ecosystem** | Plugin signing CA · capability negotiation at swarm boot · gRPC API v1 stable · federated swarms over gRPC · KaTeX/Mermaid rich-render channel · Open Banking tool (TrueLayer) · MCP server publishing · marketplace stats dashboard · plugin API v3 RFC (if warranted) · ACD spec v1.1 · multi-tenant `maverick serve` · channel SDK v2 (async-only) · sandbox SDK v2 · long-running plugin reliability suite · 3-year retrospective + 2029-2031 plan |
+| **Capabilities** | — (cleared: **embedded device tool** (JTAG/I2C) shipped — `tools/embedded_device.py`, OpenOCD via sandbox + I2C over `[i2c]`, flash gated behind `[embedded] allow_flash`; **WebGPU local vision** shipped — `extensions/webgpu-vision/` WGSL primitives + the cross-language perceptual hash `perceptual_hash.py`) |
+| **UX** | — (cleared: **embedded video walkthroughs** (`/walkthroughs` over the real replay-to-MP4 path + WebVTT captions) and the **3D plan-tree** (`/plan-tree-3d`, raw WebGL + WebXR feature-detect, accessible text-tree fallback) shipped) |
+| **Distribution** | — (resolved: **kits shipped** for Conference v3 ([programs/conference-v3.md](./programs/conference-v3.md)), the hackathon series ([programs/hackathons.md](./programs/hackathons.md)), localized communities ([programs/localized-communities.md](./programs/localized-communities.md)), public roadmap voting ([programs/roadmap-voting.md](./programs/roadmap-voting.md)), and tutorial season 4 scripts ([programs/tutorial-videos.md](./programs/tutorial-videos.md)) — running them is a maintainer act; the **"5-year vision" essay shipped** ([strategy/vision-2031.md](./strategy/vision-2031.md)); **governance v2: the elected-TSC charter draft shipped** ([governance/governance-v2-tsc.md](./governance/governance-v2-tsc.md)) with explicit launch gates — the launch and the foundation hand-off are founder acts contingent on the foundation decision ([programs/foundation-exploration.md](./programs/foundation-exploration.md), whose own analysis warns the "hand-off" wording over-promises); **2029 roadmap publication: shipped** ([ROADMAP-2029-2031.md](./ROADMAP-2029-2031.md)); sponsor renewal drive: the renewal terms are in the tiers kit — running the drive is a maintainer act; awards push: rides [programs/skill-of-the-year.md](./programs/skill-of-the-year.md); **HF Space spotlight: licensing-gated** — a public Space publishes code, and the platform is proprietary (LICENSE), so this is contingent on the open "lite edition" decision and recorded as such, not faked with a stub; handbook v2 + documentation rewrite + survey v3 + retrospective: **time-gated revision acts** — v1 handbook, the docs map, the survey kit, and the retrospective generators all shipped; a rewrite is honest only after the drift it revises exists; **skill marketplace federation + channel federation shipped**: `marketplace_federation.py` + `channel_federation.py`, fail-closed signed envelopes over pinned peer lists; **benchmark v4 reproducibility audits shipped**: `benchmark_reproducibility.py` manifests + comparability verdicts; press kit v2 + case studies: **shipped**, [programs/press-and-case-studies.md](./programs/press-and-case-studies.md) — deltas vs press-kit v1 + an evidence-gated case-study template) |
+| **Performance** | — (cleared) |
+| **Safety** | — (resolved, residuals named: Shield v3 — the **ensemble framework + explainable reason codes shipped** with the heuristic injection/exfil/PII members; the *trained* small-model members need training data + GPU runs the repo cannot honestly fabricate. air-gapped mode — the **preflight verification shipped** (`maverick airgap check`); runtime enforcement beyond it is deployment posture. confidential compute — the **detection/posture check shipped** (`maverick confidential-compute`); attestation needs SEV-SNP/TDX hardware. third-party pen test — an external engagement; the **readiness + scope doc shipped** ([security/audit-readiness.md](./security/audit-readiness.md)). LTS safety branch — the **policy + SLA tooling shipped** ([security-backports.md](./security-backports.md) + `maverick.backport_tool`); cutting/pushing the branch is a maintainer act, also gated in [release-checklist-2.0.md](./release-checklist-2.0.md)) |
+| **Ecosystem** | — (resolved: the 3-year retrospective is **time-gated by definition** — its generators shipped (`benchmark_retrospective` + the `safety_report` annuals + `ux_retrospective`) and the operator runs them at the 2029 mark; the 2029-2031 plan half **shipped** ([`ROADMAP-2029-2031.md`](./ROADMAP-2029-2031.md)); the v3 RFC **closed not-warranted** ([`rfcs/0002-plugin-api-v3.md`](./rfcs/0002-plugin-api-v3.md))) |
 
 ---
 

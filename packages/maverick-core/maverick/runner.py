@@ -102,6 +102,10 @@ def run_goal_in_thread(
             max_dollars=max_dollars,
             max_wall_seconds=max_wall_seconds,
         )
+        # Trace pinning: stamp the run with the workspace's git state so the
+        # trace/replay ties to an exact commit. Best-effort, never blocks.
+        from .trace_pin import pin_trace
+        pin_trace(world, goal_id)
         try:
             run_goal_sync(
                 llm, world, budget,

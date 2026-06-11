@@ -72,10 +72,24 @@ class DockerBackend:
     # ``[sandbox] allow_root = true`` (or MAVERICK_SANDBOX_ALLOW_ROOT) to keep
     # root for images that require it.
     allow_root: bool = False
+    # Container runtime (``docker run --runtime``). None = Docker's default
+    # (runc). Set to ``runsc`` for the **gVisor** application kernel, which
+    # interposes a userspace kernel between the container and the host —
+    # stronger isolation for a possibly prompt-injected agent than seccomp +
+    # caps alone. The ``gvisor`` backend wires this in; the runtime must be
+    # installed and registered with the Docker daemon.
+    runtime: str | None = None
+    # Warm-container reuse (the "sandbox pool" perf win): instead of a fresh
+    # ``docker run --rm`` per command (a cold start every time), keep ONE
+    # container alive and ``docker exec`` into it, so the 2nd..Nth command in a
+    # run skip container startup. Opt-in (``[sandbox] reuse_container``); the
+    # container is torn down on ``close()``. Default off -> run-per-command.
+    reuse_container: bool = False
 
     def __post_init__(self) -> None:
         self.workdir = Path(self.workdir)
         self.workdir.mkdir(parents=True, exist_ok=True)
+        self._warm_name: str | None = None
         self._verify_docker()
 
     def _verify_docker(self) -> None:
@@ -90,15 +104,9 @@ class DockerBackend:
                 "change [sandbox] backend to 'local' in ~/.maverick/config.toml."
             ) from e
 
-    def exec(self, cmd: str, timeout: float | None = None) -> ExecResult:
-        # Wave 11: per-call `timeout` matches LocalBackend so the shell
-        # tool can plumb a longer cap for pytest/npm test/etc. Falls
-        # back to self.timeout (default 60 s).
-        effective = self.timeout if timeout is None else timeout
-        container_name = f"maverick-sandbox-{uuid.uuid4().hex}"
-        args = [
-            "docker", "run", "--rm",
-            "--name", container_name,
+    def _container_flags(self) -> list[str]:
+        """The run/create flags shared by the cold and warm paths."""
+        flags = [
             "-v", f"{self.workdir.resolve()}:/workspace",
             "-w", "/workspace",
             # Containment for a possibly prompt-injected agent: drop every
@@ -109,17 +117,34 @@ class DockerBackend:
             "--security-opt", "no-new-privileges",
             *container_user_args(self.allow_root),
         ]
+        if self.runtime:
+            flags.extend(["--runtime", str(self.runtime)])
         if self.pids_limit:
-            args.extend(["--pids-limit", str(self.pids_limit)])
+            flags.extend(["--pids-limit", str(self.pids_limit)])
         if self.memory:
             # Pin --memory-swap to --memory so the cap can't be sidestepped via
             # swap (default: swap == 2x memory), keeping the RAM bound real.
-            args.extend(["--memory", str(self.memory),
-                         "--memory-swap", str(self.memory)])
+            flags.extend(["--memory", str(self.memory),
+                          "--memory-swap", str(self.memory)])
         if self.cpus:
-            args.extend(["--cpus", str(self.cpus)])
+            flags.extend(["--cpus", str(self.cpus)])
         if not self.allow_network:
-            args.extend(["--network", "none"])
+            flags.extend(["--network", "none"])
+        return flags
+
+    def exec(self, cmd: str, timeout: float | None = None) -> ExecResult:
+        # Wave 11: per-call `timeout` matches LocalBackend so the shell
+        # tool can plumb a longer cap for pytest/npm test/etc. Falls
+        # back to self.timeout (default 60 s).
+        effective = self.timeout if timeout is None else timeout
+        if self.reuse_container:
+            return self._exec_warm(cmd, effective)
+        container_name = f"maverick-sandbox-{uuid.uuid4().hex}"
+        args = [
+            "docker", "run", "--rm",
+            "--name", container_name,
+            *self._container_flags(),
+        ]
         args.extend([self.image, "sh", "-c", cmd])
 
         try:
@@ -150,3 +175,49 @@ class DockerBackend:
                 stderr=f"TIMEOUT after {effective}s{cleanup_note}",
                 exit_code=124,
             )
+
+    # -- warm-container reuse ("sandbox pool") ----------------------------
+
+    def _ensure_warm(self) -> None:
+        """Start the persistent container once; subsequent calls reuse it."""
+        if self._warm_name is not None:
+            return
+        name = f"maverick-warm-{uuid.uuid4().hex}"
+        args = ["docker", "run", "-d", "--name", name,
+                *self._container_flags(),
+                self.image, "sleep", "infinity"]
+        subprocess.run(args, capture_output=True, text=True,
+                       timeout=self.timeout, env=scrub_env())
+        self._warm_name = name
+
+    def _exec_warm(self, cmd: str, effective: float) -> ExecResult:
+        self._ensure_warm()
+        args = ["docker", "exec", self._warm_name, "sh", "-c", cmd]
+        try:
+            result = subprocess.run(args, capture_output=True, text=True,
+                                    timeout=effective, env=scrub_env())
+            return ExecResult(
+                stdout=result.stdout[-8000:],
+                stderr=result.stderr[-2000:],
+                exit_code=result.returncode,
+            )
+        except subprocess.TimeoutExpired as e:
+            # The exec timed out, but the WARM container stays up for the next
+            # command -- don't reap it (that's the point of reuse). Just report.
+            stdout = e.stdout or ""
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode("utf-8", errors="replace")
+            return ExecResult(stdout=stdout[-8000:],
+                              stderr=f"TIMEOUT after {effective}s", exit_code=124)
+
+    def close(self) -> None:
+        """Tear down the warm container (no-op when reuse is off / unused)."""
+        if self._warm_name is None:
+            return
+        try:
+            subprocess.run(["docker", "rm", "-f", self._warm_name],
+                           capture_output=True, text=True, timeout=15,
+                           env=scrub_env())
+        except Exception:  # pragma: no cover -- best-effort teardown
+            pass
+        self._warm_name = None

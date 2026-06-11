@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}perf · Maverick{% endblock %}
+{% block content %}
+  <h2>performance</h2>
+
+  <div class="panel">
+    <p class="muted">
+      The published perf SLA (<code>docs/perf-sla.md</code>) measured live on
+      this host, plus recorded benchmark history. Loaded from
+      <code>/api/v1/perf</code>.
+    </p>
+    <h3>SLA</h3>
+    <table id="sla-table">
+      <thead><tr><th>check</th><th>measured</th><th>threshold</th><th>verdict</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <h3>benchmarks</h3>
+    <table id="bench-table">
+      <thead><tr><th>benchmark</th><th>runs</th><th>latest</th><th>best</th><th>trend</th><th>regression</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p id="perf-empty" class="muted" hidden>No benchmark history recorded yet.</p>
+  </div>
+
+  <script>
+    fetch("/api/v1/perf").then(function (r) { return r.json(); }).then(function (d) {
+      var slaBody = document.querySelector("#sla-table tbody");
+      (d.sla || []).forEach(function (row) {
+        var tr = document.createElement("tr");
+        tr.innerHTML = "<td>" + row.name + "</td><td>" + row.measured + row.unit +
+          "</td><td>" + row.threshold + row.unit + "</td><td>" +
+          (row.passed ? "PASS" : "BREACH") + "</td>";
+        slaBody.appendChild(tr);
+      });
+      var names = Object.keys(d.benchmarks || {});
+      if (!names.length) { document.getElementById("perf-empty").hidden = false; }
+      var bBody = document.querySelector("#bench-table tbody");
+      names.forEach(function (n) {
+        var b = d.benchmarks[n];
+        var trend = (d.retrospective && d.retrospective.trends[n])
+          ? d.retrospective.trends[n].trend : "—";
+        var tr = document.createElement("tr");
+        tr.innerHTML = "<td>" + n + "</td><td>" + b.runs + "</td><td>" + b.latest +
+          "</td><td>" + b.best + "</td><td>" + trend + "</td><td>" +
+          (b.regression.regressed ? "REGRESSED" : "ok") + "</td>";
+        bBody.appendChild(tr);
+      });
+    });
+  </script>
+{% endblock %}

@@ -133,6 +133,7 @@ _NET_TOOL_URL_ARGS: dict[str, str] = {
     "http_fetch": "url",
     "browser": "url",
     "oidc": "token_url",
+    "oauth_helper": "token_url",
 }
 
 
@@ -425,6 +426,19 @@ class Agent:
         self.brief = brief
         self.depth = depth
         self.parent = parent
+        # Long-horizon review checkpoint (root only; opt-in). Built once per
+        # agent from config; None when unconfigured (the common case) so the
+        # turn gate stays a no-op. The reviewer consults the killswitch -- an
+        # operator arming `maverick halt` mid-review is the "stop" vote.
+        self._review_checkpoint = None
+        if role == "orchestrator":
+            try:
+                from .review_checkpoint import from_config
+                _cp = from_config(review=lambda _e: not killswitch.is_active())
+                if _cp.policy.is_active():
+                    self._review_checkpoint = _cp
+            except Exception:  # pragma: no cover -- never block agent construction
+                self._review_checkpoint = None
         # Agent compartments: the domain/sector this agent belongs to. The
         # factory's spawn-from-profile sets it; otherwise a child inherits its
         # parent's domain so a Rung-2 sector seal catches the whole sub-tree.
@@ -601,6 +615,29 @@ class Agent:
         if code_exec_on:
             from .tools.code_exec import code_exec_tool
             reg.register(code_exec_tool(self))
+        # Deferred tool loading (default ON): hide the SaaS-connector long
+        # tail behind the find_tools meta-tool so the model's catalog stays
+        # lean -- 470+ connector schemas rode EVERY model turn at consumer
+        # defaults (observed: 601 tools offered per call), dominating context
+        # cost. The mechanism (ToolRegistry.enable_deferred / find_tools)
+        # already existed and was tested; nothing wired it. Everything
+        # registered above (file/shell/spawn/bus/memory/MCP/...) stays
+        # visible; only base_registry's marked long tail defers, and run()
+        # still executes ANY registered tool, so execution semantics are
+        # unchanged. Disable via [capabilities] deferred_tools = false or
+        # MAVERICK_DEFERRED_TOOLS=0.
+        env_dt = os.environ.get("MAVERICK_DEFERRED_TOOLS", "").strip().lower()
+        if env_dt in {"0", "false", "no", "off"}:
+            deferred_on = False
+        elif env_dt in {"1", "true", "yes", "on"}:
+            deferred_on = True
+        else:
+            deferred_on = bool(caps.get("deferred_tools", True))
+        deferrable = getattr(reg, "deferrable_names", None) or set()
+        if deferred_on and deferrable:
+            from .tools.find_tools import find_tools
+            reg.register(find_tools(reg))
+            reg.enable_deferred(core={t.name for t in reg.all()} - set(deferrable))
         return reg
 
     def _build_system(self) -> str:
@@ -981,6 +1018,35 @@ class Agent:
         # no-op unless capability enforcement was opted in. Deny wins -- the
         # tool never runs and the model gets a clear, non-leaky refusal.
         cap = self._effective_capability(name)
+        # Revocation kill-switch: a still-valid grant can be revoked out of
+        # band (leaked key / rogue agent / offboard); the registry is re-read
+        # on change so a revoke in another process reaches this running agent.
+        # Fail-open (revocation never bricks a run) and only when a grant
+        # exists (== capability enforcement is on).
+        if cap is not None:
+            from .revocation import is_revoked as _is_revoked
+            if _is_revoked(cap.principal):
+                self.ctx.blackboard.post(
+                    self.name, "error",
+                    f"tool={name} DENIED: principal {cap.principal} REVOKED",
+                )
+                try:  # tamper-evident record of the denial; never block on audit
+                    from .audit import EventKind, record
+                    record(
+                        EventKind.CAPABILITY_DENIED,
+                        agent=self.name,
+                        goal_id=self.ctx.goal_id,
+                        tool=name,
+                        principal=cap.principal,
+                        channel=getattr(self.ctx, "channel", None),
+                        user_id=getattr(self.ctx, "user_id", None),
+                    )
+                except Exception:  # pragma: no cover
+                    pass
+                return (
+                    f"⚠ DENIED by capability policy: principal {cap.principal!r} "
+                    f"has been revoked. The tool was not executed."
+                )
         if cap is not None and not cap.permits(name):
             self.ctx.blackboard.post(
                 self.name, "error",
@@ -1439,7 +1505,21 @@ class Agent:
         except Exception as e:  # pragma: no cover -- observability never blocks
             log.debug("live-spend mirror skipped: %s", e)
 
-    async def run(self) -> AgentResult:  # noqa: C901
+    async def run(self) -> AgentResult:
+        # OTel GenAI semconv: every agent execution is an ``invoke_agent``
+        # span (gen_ai.agent.name/id), the third semconv leg alongside the
+        # LLM (chat) and tool (execute_tool) spans. No-op when tracing is off.
+        try:
+            from .observability import gen_ai_agent_attributes, trace_span
+        except Exception:  # pragma: no cover -- tracing never blocks a run
+            return await self._run_inner()
+        with trace_span(
+            f"invoke_agent {self.role}",
+            attributes=gen_ai_agent_attributes(self.role, agent_id=self.name),
+        ):
+            return await self._run_inner()
+
+    async def _run_inner(self) -> AgentResult:  # noqa: C901
         bb = self.ctx.blackboard
         bb.post(self.name, "plan", f"role={self.role} depth={self.depth} brief={self.brief}")
 
@@ -1546,6 +1626,20 @@ class Agent:
                 bb.post(self.name, "error", f"budget exceeded: {e}")
                 return AgentResult(error=f"budget exceeded: {e}", role=self.role, name=self.name)
 
+            # Long-horizon review checkpoint (opt-in [safety] review_checkpoint):
+            # at the root, fire a human-review heartbeat every N dollars / M tool
+            # calls / T seconds. A reviewer vote to halt stops the run cleanly,
+            # like the killswitch. Inert (no checkpoint object) when unconfigured.
+            if self.role == "orchestrator" and self._review_checkpoint is not None:
+                _cp_event = self._review_checkpoint.check(self.ctx.budget)
+                if _cp_event is not None:
+                    bb.post(self.name, "note",
+                            f"review checkpoint halted the run at "
+                            f"{_cp_event.reason}={_cp_event.value:g}")
+                    return AgentResult(
+                        error=f"halted at review checkpoint ({_cp_event.reason})",
+                        role=self.role, name=self.name)
+
             # #614 live-spend mirror: at the turn boundary, the root agent
             # writes the budget's running totals onto its open episode row
             # (throttled) so `maverick runs` / `maverick budget` reflect
@@ -1578,8 +1672,17 @@ class Agent:
             # window. The first message (user brief) is always kept.
             # The compaction cost is O(len(messages)) per turn -- cheap
             # vs. paying full-price input tokens for a 100k history.
-            from .compaction import compact_messages
-            messages = compact_messages(messages)
+            # Default path is the heuristic shrink; an operator can opt into a
+            # richer strategy via [context] compaction_strategy (heuristic /
+            # learned / multimodal / streaming / graph) — all registered in the
+            # one compaction_plugins dispatcher, which fails safe to heuristic
+            # on an unknown name. The agent's llm seam + conversation id reach
+            # the strategies that use them.
+            from .compaction_plugins import compact_with
+            messages = compact_with(
+                messages, llm=self.ctx.llm,
+                conversation_id=str(getattr(self.ctx, "goal_id", "") or ""),
+            )
 
             try:
                 # Stop BEFORE spending another call when the cap is already

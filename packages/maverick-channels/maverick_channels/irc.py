@@ -233,7 +233,7 @@ class IRCChannel(Channel):
             user_id=reply_target, text=text, channel=self.name,
             raw=msg, sender_id=sender,
         )
-        reply = await self.handler(incoming)
+        reply = await self.dispatch_text(incoming)
         if reply:
             await self.send(reply_target, reply)
 

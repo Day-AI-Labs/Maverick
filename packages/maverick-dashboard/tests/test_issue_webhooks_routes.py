@@ -349,3 +349,80 @@ def test_jira_duplicate_delivery_rejected_with_bare_variant(_configured, _no_rea
     )
     assert second.status_code == 409
     assert len(_no_real_run) == 1
+
+
+# ---- GitLab (X-Gitlab-Token + X-Gitlab-Event-UUID) --------------------------
+
+GITLAB_TOKEN = "gitlab-shared-token"
+GITLAB_BOT = "maverick-bot"
+
+
+def _gitlab_payload(assignee=GITLAB_BOT, action="update"):
+    return {
+        "object_kind": "issue",
+        "event_type": "issue",
+        "object_attributes": {
+            "iid": 42,
+            "title": "Fix the flaky login test",
+            "description": "It fails on retry.",
+            "action": action,
+        },
+        "assignees": [{"username": assignee}],
+        "project": {"path_with_namespace": "group/repo"},
+    }
+
+
+@pytest.fixture
+def _gitlab_configured(monkeypatch):
+    monkeypatch.setenv("MAVERICK_GITLAB_WEBHOOK_TOKEN", GITLAB_TOKEN)
+    monkeypatch.setenv("MAVERICK_BOT_GITLAB_USERNAME", GITLAB_BOT)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
+
+
+def _post_gitlab(payload, token=GITLAB_TOKEN, uuid="uuid-1"):
+    headers = {"Content-Type": "application/json"}
+    if token is not None:
+        headers["X-Gitlab-Token"] = token
+    if uuid is not None:
+        headers["X-Gitlab-Event-UUID"] = uuid
+    return client.post("/webhook/gitlab", content=json.dumps(payload).encode(),
+                       headers=headers)
+
+
+def test_gitlab_assigned_creates_goal(_gitlab_configured, _no_real_run):
+    r = _post_gitlab(_gitlab_payload())
+    assert r.status_code == 201, r.text
+    goal_id = r.json()["goal_id"]
+    from maverick_dashboard.app import _world
+    g = _world().get_goal(goal_id)
+    assert g is not None and "group/repo#42" in g.title
+    assert _no_real_run and _no_real_run[0][0] == goal_id
+
+
+def test_gitlab_bad_token_403(_gitlab_configured, _no_real_run):
+    assert _post_gitlab(_gitlab_payload(), token="wrong").status_code == 403
+
+
+def test_gitlab_unconfigured_401(monkeypatch, _no_real_run):
+    monkeypatch.delenv("MAVERICK_GITLAB_WEBHOOK_TOKEN", raising=False)
+    assert _post_gitlab(_gitlab_payload()).status_code == 401
+
+
+def test_gitlab_assigned_to_someone_else_ignored(_gitlab_configured, _no_real_run):
+    r = _post_gitlab(_gitlab_payload(assignee="someone-else"))
+    assert r.status_code == 200 and r.json() == {"ignored": True}
+    assert not _no_real_run
+
+
+def test_gitlab_missing_uuid_403(_gitlab_configured, _no_real_run):
+    assert _post_gitlab(_gitlab_payload(), uuid=None).status_code == 403
+
+
+def test_gitlab_duplicate_uuid_409(_gitlab_configured, _no_real_run):
+    assert _post_gitlab(_gitlab_payload(), uuid="dup-1").status_code == 201
+    assert _post_gitlab(_gitlab_payload(), uuid="dup-1").status_code == 409
+
+
+def test_gitlab_close_event_ignored(_gitlab_configured, _no_real_run):
+    r = _post_gitlab(_gitlab_payload(action="close"))
+    assert r.status_code == 200 and r.json() == {"ignored": True}

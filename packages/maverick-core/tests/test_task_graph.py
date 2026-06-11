@@ -67,3 +67,48 @@ def test_persist_roundtrip(tmp_path):
 
 def test_load_missing_is_empty(tmp_path):
     assert TaskGraph.load(tmp_path / "nope.json").tasks == {}
+
+
+# ---- critical path ----
+
+def test_critical_path_linear_chain():
+    g = TaskGraph()
+    g.add_task("a")
+    g.add_task("b", deps=["a"])
+    g.add_task("c", deps=["b"])
+    path, length = g.critical_path()
+    assert path == ["a", "b", "c"] and length == 3.0
+
+
+def test_critical_path_diamond():
+    # a -> {b, c} -> d ; longest chain is length 3 (a, b|c, d)
+    path, length = _g().critical_path()
+    assert length == 3.0
+    assert path[0] == "a" and path[-1] == "d" and len(path) == 3
+
+
+def test_critical_path_weighted():
+    g = TaskGraph()
+    g.add_task("a")
+    g.add_task("b", deps=["a"])   # heavy
+    g.add_task("c", deps=["a"])   # light
+    path, length = g.critical_path(weights={"a": 1, "b": 5, "c": 2})
+    assert path == ["a", "b"] and length == 6.0
+
+
+def test_critical_path_empty_and_cycle():
+    assert TaskGraph().critical_path() == ([], 0.0)
+    g = TaskGraph()
+    g.add_task("a", deps=["b"])
+    g.tasks["b"] = {"title": "", "deps": ["a"], "status": "todo"}  # cycle
+    assert g.critical_path() == ([], 0.0)
+
+
+def test_tool_critical_op(tmp_path, monkeypatch):
+    import maverick.task_graph as tg
+    monkeypatch.setattr(tg, "_STORE", tmp_path)
+    t = tg.task_graph()
+    t.fn({"op": "add", "task": "a"})
+    t.fn({"op": "add", "task": "b", "deps": ["a"]})
+    out = t.fn({"op": "critical"})
+    assert "critical path" in out and "a -> b" in out

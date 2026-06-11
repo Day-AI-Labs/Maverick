@@ -39,6 +39,7 @@ class SlackChannel(Channel):
         app_token: str | None = None,
         bot_token: str | None = None,
         allowed_user_ids=None,
+        thread_replies: bool | None = None,
     ):
         super().__init__(handler)
         if not _HAVE_SLACK:
@@ -57,6 +58,13 @@ class SlackChannel(Channel):
         )
         if not self.allowed_user_ids:
             raise ValueError("Set SLACK_ALLOWED_USER_IDS to restrict access")
+        # Opt-in reply threading: answers post under the asking message's
+        # thread (thread_ts) instead of interleaving into the channel.
+        # [channels.slack] thread_replies / SLACK_THREAD_REPLIES.
+        if thread_replies is None:
+            thread_replies = os.environ.get(
+                "SLACK_THREAD_REPLIES", "").strip().lower() in {"1", "true", "yes", "on"}
+        self.thread_replies = bool(thread_replies)
         self._web = AsyncWebClient(token=self.bot_token)
         self._sm = SocketModeClient(app_token=self.app_token, web_client=self._web)
         self._sm.socket_mode_request_listeners.append(self._on_request)
@@ -89,13 +97,19 @@ class SlackChannel(Channel):
                         channel="slack",
                         raw=event,
                         sender_id=sender,
+                        message_id=event.get("ts"),
                     )
                     try:
-                        reply = await self.handler(msg)
+                        reply = await self.dispatch_text(msg)
                     except Exception:  # pragma: no cover
                         log.exception("handler error")
                         reply = "⚠ An internal error occurred."
-                    await self._web.chat_postMessage(channel=event["channel"], text=reply)
+                    if self.thread_replies and event.get("ts"):
+                        await self.send_threaded(
+                            event["channel"], reply, reply_to=event["ts"])
+                    else:
+                        await self._web.chat_postMessage(
+                            channel=event["channel"], text=reply)
 
     async def start(self) -> None:
         await self._sm.connect()
@@ -107,6 +121,15 @@ class SlackChannel(Channel):
         await self._web.chat_postMessage(
             channel=user_id, text=to_slack_mrkdwn(text), mrkdwn=True,
         )
+
+    async def send_threaded(
+        self, user_id: str, text: str, *, reply_to: str | None = None,
+    ) -> None:
+        from .formatting import to_slack_mrkdwn
+        kwargs = {"channel": user_id, "text": to_slack_mrkdwn(text), "mrkdwn": True}
+        if reply_to:
+            kwargs["thread_ts"] = reply_to
+        await self._web.chat_postMessage(**kwargs)
 
     async def stop(self) -> None:
         self._stop_event.set()

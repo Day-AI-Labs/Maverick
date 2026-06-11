@@ -1,0 +1,33 @@
+# Read-only deny-proxy for the public Maverick demo.
+#
+# The dashboard has NO global read-only flag (grepped maverick_dashboard:
+# nothing), so read-only is enforced HERE: every non-GET/HEAD method is
+# denied (403) before it can reach the dashboard's mutating endpoints
+# (POST /api/v1/goals, POST/DELETE /api/v1/halt, approvals, fleets,
+# permissions toggles, /webhook/*, /chat/send, ... — full list in README).
+#
+# The bearer is injected upstream from the environment: the official nginx
+# image envsubsts ${MAVERICK_DASHBOARD_TOKEN} when rendering this template,
+# and proxy_set_header REPLACES any client-sent Authorization header, so a
+# visitor can neither see nor override the token.
+server {
+    listen 8080;
+    server_name demo.maverick.dev;
+
+    location / {
+        # READ-ONLY: anything but GET/HEAD is rejected at the edge.
+        limit_except GET HEAD {
+            deny all;
+        }
+
+        proxy_pass http://dashboard:8765;
+        proxy_set_header Authorization "Bearer ${MAVERICK_DASHBOARD_TOKEN}";
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+
+        # The dashboard streams SSE (e.g. /api/goal/{id}/events/stream);
+        # buffering would stall it.
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+    }
+}

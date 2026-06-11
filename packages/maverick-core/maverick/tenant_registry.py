@@ -224,9 +224,54 @@ def assert_tenant_active(tenant_id: str | None) -> None:
         raise TenantSuspended(f"tenant is suspended or unknown: {tenant_id!r}")
 
 
+def tenant_spend_today(tenant_id: str) -> float:
+    """Today's recorded spend (dollars) across the tenant's usage ledger.
+
+    Reads the tenant-scoped ledger (``tenants/<t>/usage/ledger.json`` — the
+    same file the orchestrator's per-principal recording lands in when the
+    run is tenant-pinned) and sums every principal's bucket for the current
+    UTC day. Fail-soft: an unreadable ledger counts as zero spend.
+    """
+    from .paths import data_dir
+    from .quotas import UsageLedger, _today
+    try:
+        ledger = UsageLedger(data_dir("usage", "ledger.json", tenant=tenant_id))
+        data = ledger._load()
+        day = _today()
+        return sum(
+            float((days.get(day) or {}).get("dollars", 0.0))
+            for days in data.values() if isinstance(days, dict)
+        )
+    except Exception:  # pragma: no cover -- spend read never blocks serving
+        return 0.0
+
+
+def tenant_over_quota(tenant_id: str | None) -> str | None:
+    """Human-readable reason when ``tenant_id`` is over its provisioned
+    daily-spend cap, else None.
+
+    The cap is ``max_daily_dollars`` on the tenant's roster record (set via
+    ``maverick tenant quota``); 0/unset, an unprovisioned tenant, or no
+    roster all mean "no cap" — enforcement is opt-in per tenant.
+    """
+    tid = (tenant_id or "").strip()
+    if not tid:
+        return None
+    rec = _load().get(tid)
+    if rec is None or rec.max_daily_dollars <= 0:
+        return None
+    spent = tenant_spend_today(tid)
+    if spent >= rec.max_daily_dollars:
+        return (f"workspace {tid!r} is over its daily spend cap "
+                f"(${spent:.2f} >= ${rec.max_daily_dollars:.2f}); "
+                "resets at midnight UTC")
+    return None
+
+
 __all__ = [
     "ACTIVE", "SUSPENDED", "TenantRecord", "TenantSuspended", "UnknownTenant",
     "list_tenants", "get_tenant", "create_tenant", "suspend_tenant",
     "resume_tenant", "delete_tenant", "set_quota", "set_plan",
-    "is_active", "assert_tenant_active",
+    "is_active", "assert_tenant_active", "tenant_spend_today",
+    "tenant_over_quota",
 ]

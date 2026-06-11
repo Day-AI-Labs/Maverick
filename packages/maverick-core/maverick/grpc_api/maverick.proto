@@ -1,5 +1,11 @@
 // Maverick gRPC API — the external contract for driving the agent runtime.
 //
+// STABILITY: package maverick.v1 is STABLE. Additive changes only (new rpcs,
+// new messages, new fields with unused numbers). Removing/renaming anything,
+// changing a field number/type, or changing an rpc shape is a breaking change
+// and fails the contract gate (maverick/grpc_api/contract.py, golden in
+// maverick_v1_contract.json). Breaking changes require a maverick.v2 package.
+//
 // Generate Python stubs with:
 //   python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. maverick.proto
 // (the server does this on demand when the [grpc] extra is installed.)
@@ -23,6 +29,10 @@ service Maverick {
 
   // Point-in-time status of a goal.
   rpc GetStatus(GetStatusRequest) returns (GoalStatus);
+
+  // Run an EXISTING goal row to completion (the cross-host Dispatcher seam:
+  // caller and worker share the world DB). Blocks until terminal.
+  rpc RunGoal(RunGoalRequest) returns (GoalStatus);
 }
 
 message StartGoalRequest {
@@ -63,6 +73,16 @@ message CancelResponse {
 
 message GetStatusRequest {
   int64 goal_id = 1;
+}
+
+message RunGoalRequest {
+  int64 goal_id = 1;
+  double max_dollars = 2;       // 0 = config default
+  double max_wall_seconds = 3;  // 0 = config default
+  string channel = 4;
+  string user_id = 5;
+  int32 max_depth = 6;          // 0 = config/default dispatcher depth
+  string capability_json = 7;   // JSON-encoded explicit Capability grant
 }
 
 message GoalStatus {

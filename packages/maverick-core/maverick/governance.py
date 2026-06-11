@@ -131,7 +131,7 @@ class Policy:
                 return frozenset(str(x) for x in v if str(x))
             return frozenset()
 
-        return cls(
+        base = cls(
             deny_actions=_names("deny_actions"),
             require_human_actions=_names("require_human_actions"),
             deny_min_risk=_risk_level(cfg.get("deny_min_risk")),
@@ -140,6 +140,23 @@ class Policy:
             require_human_above=_amount_table(cfg.get("require_human_above")),
             require_fresh_human_approval=bool(cfg.get("require_fresh_human_approval")),
         )
+        # Compliance mode profiles (e.g. [compliance] profiles = ["hipaa"]) tighten
+        # the live policy strictest-wins. No profiles configured -> base unchanged,
+        # so default behavior is byte-for-byte identical. Lazy import avoids a
+        # governance <-> compliance_profiles import cycle.
+        try:
+            from . import compliance_profiles
+            profiles = compliance_profiles.configured_profiles()
+        except Exception:  # pragma: no cover -- config never blocks policy build
+            profiles = []
+        if not profiles:
+            return base
+        from dataclasses import replace
+
+        from .finance.regimes import union_policies
+        merged = union_policies([base, compliance_profiles.compile_policy(profiles)])
+        # union_policies doesn't carry the fresh-approval flag; preserve it.
+        return replace(merged, require_fresh_human_approval=base.require_fresh_human_approval)
 
 
 def _threshold_for(table: dict[str, float], action: str) -> float | None:

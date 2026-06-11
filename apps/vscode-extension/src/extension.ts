@@ -221,6 +221,90 @@ async function exportCommand() {
   }
 }
 
+// --- live-run streaming (SSE from the local dashboard) -------------------
+//
+// `maverick.watchRun` tails a run's events live into an output channel via
+// the dashboard's SSE endpoint (GET /api/v1/goals/{id}/events/stream). Plain
+// Node http (no deps), manual SSE parse, exponential backoff reconnect, and
+// a stop command. The dashboard URL/token come from settings.
+
+let liveAbort: (() => void) | null = null;
+
+function dashboardBase(): string {
+  return vscode.workspace
+    .getConfiguration("maverick")
+    .get<string>("dashboardUrl", "http://127.0.0.1:8765")
+    .replace(/\/$/, "");
+}
+
+async function watchRunCommand(): Promise<void> {
+  const goalId = await vscode.window.showInputBox({
+    prompt: "Goal id to watch live",
+    validateInput: (v) => (/^\d+$/.test(v.trim()) ? null : "numeric goal id"),
+  });
+  if (!goalId) return;
+  if (liveAbort) {
+    liveAbort();
+    liveAbort = null;
+  }
+  const channel = vscode.window.createOutputChannel(`Maverick run #${goalId}`);
+  channel.show(true);
+  const url = new URL(`${dashboardBase()}/api/v1/goals/${goalId.trim()}/events/stream`);
+  const token = vscode.workspace.getConfiguration("maverick").get<string>("dashboardToken", "");
+  const http = url.protocol === "https:" ? await import("https") : await import("http");
+  let stopped = false;
+  let backoffMs = 1000;
+
+  const connect = () => {
+    if (stopped) return;
+    const req = http.get(
+      url,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+      (res) => {
+        if ((res.statusCode ?? 0) >= 400) {
+          channel.appendLine(`[stream error: HTTP ${res.statusCode}]`);
+          return;
+        }
+        backoffMs = 1000; // healthy connection resets the backoff
+        let buf = "";
+        res.on("data", (chunk: Buffer) => {
+          buf += chunk.toString();
+          let idx: number;
+          while ((idx = buf.indexOf("\n\n")) >= 0) {
+            const frame = buf.slice(0, idx);
+            buf = buf.slice(idx + 2);
+            for (const line of frame.split("\n")) {
+              if (line.startsWith("data:")) {
+                channel.appendLine(stripTerminalControl(line.slice(5).trim()));
+              }
+            }
+          }
+        });
+        res.on("end", () => {
+          if (!stopped) {
+            channel.appendLine(`[stream ended; reconnecting in ${backoffMs / 1000}s]`);
+            setTimeout(connect, backoffMs);
+            backoffMs = Math.min(backoffMs * 2, 30000);
+          }
+        });
+      },
+    );
+    req.on("error", (e) => {
+      if (!stopped) {
+        channel.appendLine(`[stream error: ${e.message}; retrying in ${backoffMs / 1000}s]`);
+        setTimeout(connect, backoffMs);
+        backoffMs = Math.min(backoffMs * 2, 30000);
+      }
+    });
+    liveAbort = () => {
+      stopped = true;
+      req.destroy();
+      channel.appendLine("[live watch stopped]");
+    };
+  };
+  connect();
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   const runs = new RunsProvider();
 
@@ -251,9 +335,19 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("maverick.openExport", exportCommand),
     vscode.commands.registerCommand("maverick.refreshRuns", () => runs.refresh()),
+    vscode.commands.registerCommand("maverick.watchRun", watchRunCommand),
+    vscode.commands.registerCommand("maverick.stopWatch", () => {
+      if (liveAbort) {
+        liveAbort();
+        liveAbort = null;
+      } else {
+        vscode.window.showInformationMessage("No live watch running.");
+      }
+    }),
   );
 }
 
 export function deactivate(): void {
+  if (liveAbort) liveAbort();
   if (outputChannel) outputChannel.dispose();
 }

@@ -4,6 +4,7 @@ v0.1.6: BackgroundTask runner moved to maverick.runner.
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as _dt
 import json
 import logging
@@ -27,6 +28,7 @@ from maverick.runner import (
 )
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
+from starlette.responses import StreamingResponse
 
 from ._shared import _any_provider_key_set, _world
 from ._shared import _world_cache as _world_cache  # re-export: tests clear api._world_cache
@@ -109,9 +111,10 @@ async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) ->
         raise HTTPException(
             status_code=400,
             detail=(
-                "No LLM provider key configured. Run 'maverick init', or "
-                "export ANTHROPIC_API_KEY / OPENAI_API_KEY / "
-                "GEMINI_API_KEY before starting the dashboard."
+                "No LLM provider key or endpoint configured. Run 'maverick "
+                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY / "
+                "GEMINI_API_KEY, or add a [providers.<name>] api_key/base_url "
+                "to ~/.maverick/config.toml before starting the dashboard."
             ),
         )
     # Shared sliding-window cap across /chat/send + this route, so a
@@ -232,6 +235,60 @@ async def goal_events(
             for e in events
         ],
     )
+
+
+def _sse_event(e) -> str:
+    """Format one goal event as a Server-Sent Event frame."""
+    data = json.dumps({"id": e.id, "agent": e.agent, "kind": e.kind,
+                       "content": e.content, "ts": e.ts})
+    kind = str(e.kind or "message").replace("\n", " ").replace("\r", " ")
+    return f"id: {e.id}\nevent: {kind}\ndata: {data}\n\n"
+
+
+_TERMINAL_STATUSES = frozenset({"done", "failed", "cancelled", "blocked", "error"})
+
+
+@router.get("/goals/{goal_id}/events/stream")
+async def goal_events_stream(
+    request: Request, goal_id: int, since: int = 0, limit: int = 0,
+    poll: float = 1.0,
+) -> StreamingResponse:
+    """Real-time **SSE** stream of a goal's events (`text/event-stream`).
+
+    Tails the durable `goal_events` log (so it works across the worker/dashboard
+    process split, unlike an in-process bus): emits each new event as it lands,
+    ends when the goal reaches a terminal status with no more events, or on
+    client disconnect. ``limit`` (>0) closes after N events — used by tests and
+    bounded consumers; ``poll`` is the tail interval.
+    """
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+
+    async def _gen():
+        last = since
+        sent = 0
+        yield ": connected\n\n"   # open the stream immediately
+        while True:
+            if await request.is_disconnected():
+                break
+            events = await run_in_threadpool(
+                w.goal_events, goal_id, last, 200)  # (goal_id, since_id, limit)
+            for e in events:
+                yield _sse_event(e)
+                last = e.id
+                sent += 1
+                if limit and sent >= limit:
+                    return
+            cur = w.get_goal(goal_id)
+            if not events and cur is not None and cur.status in _TERMINAL_STATUSES:
+                yield f"event: end\ndata: {json.dumps({'status': cur.status})}\n\n"
+                return
+            await asyncio.sleep(max(0.0, poll))
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
 
 
 @router.post("/goals/{goal_id}/answer", status_code=204)
@@ -397,6 +454,80 @@ async def install_skill_endpoint(payload: SkillInstallIn) -> SkillOut:
 
 class CatalogInstallIn(BaseModel):
     name: str = Field(..., max_length=200)
+
+
+@router.get("/diag/tail-latency")
+async def diag_tail_latency(ratio: float = 3.0, min_count: int = 20) -> dict:
+    """Tools with a fat latency tail (p99/p50 ≥ ratio) — the ones worth hunting.
+
+    Reads this serving process's in-memory per-tool latency samples, so it's
+    meaningful on a long-lived dashboard/worker, not a fresh CLI invocation."""
+    from maverick.tail_latency import hunt
+    return {"flagged": hunt(ratio_threshold=ratio, min_count=min_count)}
+
+
+@router.get("/marketplace/stats")
+async def marketplace_stats() -> dict:
+    """Aggregate stats over the local ratings ledger (total / average / 1–5★
+    distribution / per-kind / top-rated). Self-host-first: the operator's own
+    ratings, the JSON face of the marketplace stats view."""
+    from maverick.marketplace_ratings import RatingsLedger
+    from maverick.marketplace_stats import summarize
+    return summarize(RatingsLedger())
+
+
+@router.get("/templates")
+async def templates_catalog() -> dict:
+    """The goal-template catalog with the operator's own ratings — the JSON
+    face of the /templates marketplace page."""
+    from maverick_dashboard.app import template_market_entries
+    return {"templates": template_market_entries()}
+
+
+@router.get("/templates/suggested")
+async def templates_suggested(request: Request, k: int = 5) -> dict:
+    """Personalized starter templates: the catalog ranked for THIS user from
+    their goal-title history (pure scorer, no LLM — ``maverick.starter_templates``).
+    Owner-scoped history: an authenticated non-admin is ranked on their own
+    goals only."""
+    from maverick.starter_templates import suggest
+    k = max(1, min(int(k or 5), 20))
+    return {
+        "suggested": suggest(_world(), k=k, owner=goal_owner_filter(request)),
+    }
+
+
+@router.get("/voice/captions")
+async def voice_captions(source: str = "default", max_chars: int = 160) -> StreamingResponse:
+    """Live captions (SSE) over the voice transcript seam.
+
+    Streams one ``data: {caption, final, ts}`` frame per transcript segment
+    from the named source in ``maverick.live_captions``'s source registry,
+    then ``event: end`` when the source is exhausted. Default-off: the
+    registry starts empty (no live mic — a deployment registers its ASR
+    pipeline; tests register scripted sources), so an unregistered source
+    404s.
+    """
+    from maverick.live_captions import caption_stream, get_source
+    factory = get_source(source)
+    if factory is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"no caption source registered as {source!r}; "
+                   "register one via maverick.live_captions.register_source",
+        )
+    try:
+        max_chars = max(16, min(int(max_chars), 500))
+    except (TypeError, ValueError):
+        max_chars = 160
+
+    async def _gen():
+        yield ": captions\n\n"
+        async for frame in caption_stream(factory(), max_chars=max_chars):
+            yield f"data: {json.dumps(frame)}\n\n"
+        yield "event: end\ndata: {}\n\n"
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
 
 
 @router.get("/catalog/{kind}")
@@ -900,24 +1031,64 @@ async def list_approvals() -> dict:
                 "id": a.id, "action": a.action, "risk": a.risk,
                 "scope": a.scope, "detail": a.detail,
                 "requested_at": a.requested_at,
+                # Collaborative supervision: who is handling this review.
+                "claimed_by": getattr(a, "claimed_by", None),
+                "claimed_at": getattr(a, "claimed_at", None),
             }
             for a in w.pending_approvals()
         ],
     }
 
 
+def _supervisor(request: Request) -> str:
+    """The acting supervisor's identity for claims/attribution.
+
+    The authenticated principal when auth is on; the shared "operator"
+    identity in single-user/no-auth deployments (claims still prevent
+    double-handling across that operator's browser tabs)."""
+    from .auth import caller_principal
+    return caller_principal(request) or "operator"
+
+
 @router.post("/approvals/{approval_id}/approve", status_code=204)
-async def approve_approval(approval_id: int) -> None:
+async def approve_approval(request: Request, approval_id: int) -> None:
     """Approve a parked action; the polling consent path then proceeds."""
-    if not _world().decide_approval(approval_id, "approved"):
+    if not _world().decide_approval(approval_id, "approved",
+                                    decided_by=_supervisor(request)):
         raise HTTPException(status_code=404, detail="no such pending approval")
 
 
 @router.post("/approvals/{approval_id}/deny", status_code=204)
-async def deny_approval(approval_id: int) -> None:
+async def deny_approval(request: Request, approval_id: int) -> None:
     """Deny a parked action; the polling consent path then refuses it."""
-    if not _world().decide_approval(approval_id, "denied"):
+    if not _world().decide_approval(approval_id, "denied",
+                                    decided_by=_supervisor(request)):
         raise HTTPException(status_code=404, detail="no such pending approval")
+
+
+@router.post("/approvals/{approval_id}/claim")
+async def claim_approval(request: Request, approval_id: int) -> dict:
+    """Claim a pending approval (collaborative supervision).
+
+    Marks "I'm handling this" so two supervisors don't double-work the same
+    review. 409 when another supervisor already holds the claim."""
+    who = _supervisor(request)
+    if _world().claim_approval(approval_id, who):
+        return {"claimed_by": who}
+    a = _world().get_approval(approval_id)
+    if a is None or a.status != "pending":
+        raise HTTPException(status_code=404, detail="no such pending approval")
+    raise HTTPException(status_code=409,
+                        detail=f"already claimed by {a.claimed_by}")
+
+
+@router.post("/approvals/{approval_id}/release")
+async def release_approval(request: Request, approval_id: int) -> dict:
+    """Release a claim you hold. 409 when you don't hold it."""
+    who = _supervisor(request)
+    if _world().release_approval(approval_id, who):
+        return {"released": True}
+    raise HTTPException(status_code=409, detail="you do not hold this claim")
 
 
 @router.get("/oversight/active")
@@ -1248,6 +1419,141 @@ async def compliance_report_csv(framework: str = "all") -> Response:
     )
 
 
+class RedactIn(BaseModel):
+    text: str = Field(max_length=200_000)
+    kinds: list[str] = Field(default_factory=list)  # empty = all kinds
+
+
+@router.post("/redact/preview")
+async def redact_preview(payload: RedactIn) -> dict:
+    """Granular redaction preview: per-finding spans + kinds, nothing stored.
+
+    ``kinds`` filters which detector classes to act on (e.g. only
+    ``secret:*`` or only ``pii:email``) — the granular half; empty = all.
+    The response carries each finding (kind + a safe preview of WHERE, never
+    the raw value) and the fully-redacted text for the selected kinds.
+    """
+    from maverick.provable_redaction import redact_proven, verify_redacted
+    from maverick.safety import pii_detector, secret_detector
+
+    text = payload.text or ""
+    findings = []
+    for m in secret_detector.scan(text):
+        findings.append({"kind": f"secret:{m.name}", "span": list(m.span)})
+    for m in pii_detector.scan(text):
+        findings.append({"kind": f"pii:{m.kind}", "span": list(m.span)})
+    selected = set(payload.kinds or [])
+
+    if not selected:
+        proof = redact_proven(text)
+        redacted, proven = proof.redacted, proof.proven
+    else:
+        # granular: replace only the selected kinds' spans (end-to-start)
+        spans = [f for f in findings if f["kind"] in selected]
+        redacted = text
+        for f in sorted(spans, key=lambda f: f["span"][0], reverse=True):
+            a, b = f["span"]
+            redacted = redacted[:a] + f"[REDACTED:{f['kind'].split(':', 1)[1]}]" + redacted[b:]
+        proven = not verify_redacted(redacted)
+
+    return {
+        "findings": findings,
+        "redacted": redacted,
+        "proven_clean": proven,
+        "residual": verify_redacted(redacted),
+    }
+
+
+@router.get("/glance")
+async def watch_glance() -> dict:
+    """The Apple Watch glance payload (tiny fixed shape; see maverick.glance)."""
+    from maverick.glance import build_glance
+    from maverick.world_model import open_world
+    world = open_world()
+    try:
+        return build_glance(world)
+    finally:
+        try:
+            world.close()
+        except Exception:
+            pass
+
+
+@router.get("/offline/bundle")
+async def offline_bundle(request: Request) -> dict:
+    """Bounded, versioned snapshot (``maverick-offline/1``) for the mobile
+    companion's offline cache. Read-only; owner-scoped like ``/goals``."""
+    from maverick.offline_bundle import build_bundle
+    return await run_in_threadpool(
+        build_bundle, _world(), owner=goal_owner_filter(request),
+    )
+
+
+@router.get("/perf")
+async def perf_dashboard() -> dict:
+    """Public perf dashboard data: SLA measurements + benchmark history.
+
+    One JSON face for the perf story (roadmap 2027-H1 "public perf
+    dashboard"): the live perf-SLA measurements against their published
+    thresholds (docs/perf-sla.md), the recorded benchmark score history with
+    short-window regression verdicts, and the longitudinal era retrospective.
+    Everything is measured/read locally -- nothing fabricated; sections with
+    no recorded data say so.
+    """
+    out: dict = {"sla": [], "benchmarks": {}, "retrospective": None}
+    try:
+        import asyncio
+
+        from maverick.perf_sla import run_all
+        # run_all's dispatch probe drives its own event loop; run it in a
+        # worker thread so it never nests inside the server's running loop.
+        results = await asyncio.to_thread(run_all)
+        out["sla"] = [
+            {"name": r.name, "measured": r.measured, "threshold": r.threshold,
+             "unit": r.unit, "passed": r.passed}
+            for r in results
+        ]
+    except Exception as e:  # measurement must never 500 the dashboard
+        out["sla_error"] = f"{type(e).__name__}: {e}"
+    try:
+        import json as _json
+
+        from maverick.benchmark_retrospective import analyze, coverage
+        from maverick.continuous_benchmark import _store_path, detect_regression
+        store = _store_path()
+        history: list[dict] = []
+        if store.is_dir():
+            for f in sorted(store.glob("*.json")):
+                try:
+                    rows = _json.loads(f.read_text(encoding="utf-8"))
+                    if isinstance(rows, list):
+                        history.extend(r for r in rows if isinstance(r, dict))
+                except (OSError, ValueError):
+                    continue
+        names = sorted({r.get("name") for r in history if r.get("name")})
+        for name in names:
+            scores = [r["score"] for r in history if r.get("name") == name]
+            verdict = detect_regression(history, name)
+            out["benchmarks"][name] = {
+                "runs": len(scores),
+                "latest": scores[-1] if scores else None,
+                "best": max(scores) if scores else None,
+                "regression": verdict,
+            }
+        span = coverage(history)
+        if span:
+            retros = analyze(history)
+            out["retrospective"] = {
+                "coverage": list(span),
+                "trends": {n: {"trend": r.trend,
+                               "net_change": round(r.net_change, 4)}
+                           for n, r in retros.items()},
+            }
+    except Exception as e:
+        out["benchmarks_error"] = f"{type(e).__name__}: {e}"
+    return out
+
+
 @router.get("/cache/stats")
 async def cache_stats() -> dict:
     """In-process cache sizes (file reads, repo-map, skill embeddings).
@@ -1272,6 +1578,354 @@ async def cache_purge(payload: CachePurgeIn) -> dict:
     """
     from maverick.cache import purge
     return purge(payload.scopes or ["all"])
+
+
+# ---------- goal graph: forest view + structural edits (graph editor) ----------
+
+
+@router.get("/goal-tree")
+async def goal_tree_api(request: Request, limit: int = 300) -> dict:
+    """The caller's goal forest with a server-computed layered layout.
+
+    Powers /graph-editor and /plan-tree-3d: nodes carry (x, y) pixel
+    positions so the client JS is a thin renderer. Owner-scoped like
+    GET /goals (auth-off/admin see all).
+    """
+    from .goal_tree import forest_view, goal_nodes
+    nodes = goal_nodes(_world(), owner=goal_owner_filter(request), limit=limit)
+    return forest_view(nodes)
+
+
+class RetitleIn(BaseModel):
+    title: str = Field(..., max_length=200)
+
+
+@router.post("/goals/{goal_id}/retitle", status_code=204)
+async def retitle_goal(request: Request, goal_id: int, payload: RetitleIn) -> None:
+    """Rename a goal (graph editor).
+
+    The world model has no title-update method (``create_goal`` /
+    ``set_goal_status`` only), so this updates the row through the world's
+    write lock, sealing the column the same way ``create_goal`` does.
+    """
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    title = (payload.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
+    from maverick.world_model import _enc_field
+    with w._writing() as conn:
+        conn.execute(
+            "UPDATE goals SET title = ?, updated_at = ? WHERE id = ?",
+            (_enc_field(title[:200]), time.time(), goal_id),
+        )
+
+
+class ReparentIn(BaseModel):
+    parent_id: int | None = None
+
+
+@router.post("/goals/{goal_id}/reparent", status_code=204)
+async def reparent_goal(request: Request, goal_id: int, payload: ReparentIn) -> None:
+    """Move a goal under a new parent — or to the root (``parent_id: null``).
+
+    Refuses self-parenting and any move that would create a cycle (the new
+    parent being a descendant of the goal). Both ends are access-checked.
+    """
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    new_parent = payload.parent_id
+    if new_parent is not None:
+        if new_parent == goal_id:
+            raise HTTPException(status_code=400, detail="a goal cannot be its own parent")
+        p = w.get_goal(new_parent)
+        if p is None:
+            raise HTTPException(status_code=404, detail="no such parent goal")
+        assert_goal_access(request, p)
+        from .goal_tree import descendant_ids
+        pairs = [
+            (r["id"], r["parent_id"])
+            for r in w._read_all("SELECT id, parent_id FROM goals")
+        ]
+        if new_parent in descendant_ids(pairs, goal_id):
+            raise HTTPException(
+                status_code=400,
+                detail="cannot re-parent a goal under its own descendant",
+            )
+    with w._writing() as conn:
+        conn.execute(
+            "UPDATE goals SET parent_id = ?, updated_at = ? WHERE id = ?",
+            (new_parent, time.time(), goal_id),
+        )
+
+
+class ChildIn(BaseModel):
+    title: str = Field(..., max_length=200)
+    description: str = ""
+
+
+@router.post("/goals/{goal_id}/children", response_model=GoalOut, status_code=201)
+async def create_child_goal(request: Request, goal_id: int, payload: ChildIn) -> GoalOut:
+    """Create a child goal under ``goal_id`` (graph editor "add child").
+
+    Structural only: the child is created ``pending`` and is NOT queued to
+    run — start it later via chat or POST /api/v1/goals. It inherits the
+    parent's owner so the subtree stays visible to the same principal.
+    """
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    from maverick_dashboard.app import check_goal_rate_limit
+    check_goal_rate_limit(request)
+    title = (payload.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
+    child_id = w.create_goal(
+        title[:200], (payload.description or "")[:8000],
+        parent_id=goal_id, owner=g.owner or (caller_principal(request) or ""),
+    )
+    c = w.get_goal(child_id)
+    if c is None:
+        raise HTTPException(status_code=500, detail="goal vanished after create")
+    return _to_goal_out(c)
+
+
+# ---------- goal builder: compose a goal from blocks ----------
+
+_COMPOSE_PRIORITIES = ("low", "normal", "high")
+
+
+class ComposeIn(BaseModel):
+    title: str = Field(..., max_length=200)
+    steps: list[str] = Field(default_factory=list)
+    budget_dollars: float | None = Field(None, ge=0.0, le=100.0)
+    channel: str | None = Field(None, max_length=64)
+    priority: str | None = Field(None, max_length=16)
+
+
+@router.post("/goals/compose", response_model=GoalOut, status_code=201)
+async def compose_goal(request: Request, payload: ComposeIn, bg: BackgroundTasks) -> GoalOut:
+    """Goal-builder submit: blocks -> structured brief -> create + run.
+
+    The goals table has no metadata columns (see ``WorldModel.create_goal``),
+    so the budget/channel/priority blocks are folded into the description the
+    agent reads; the budget block additionally becomes the run's real
+    ``max_dollars`` cap. Steps become a markdown checklist.
+    """
+    if not _any_provider_key_set():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No LLM provider key or endpoint configured. Run 'maverick "
+                "init', export ANTHROPIC_API_KEY / OPENAI_API_KEY / "
+                "GEMINI_API_KEY, or add a [providers.<name>] api_key/base_url "
+                "to ~/.maverick/config.toml before starting the dashboard."
+            ),
+        )
+    from maverick_dashboard.app import check_goal_rate_limit
+    check_goal_rate_limit(request)
+    title = (payload.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
+    steps = [s.strip()[:500] for s in payload.steps if s and s.strip()]
+    if len(steps) > 50:
+        raise HTTPException(status_code=400, detail="too many steps (max 50)")
+    priority = (payload.priority or "").strip().lower() or None
+    if priority is not None and priority not in _COMPOSE_PRIORITIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"priority must be one of: {', '.join(_COMPOSE_PRIORITIES)}",
+        )
+    channel = (payload.channel or "").strip() or None
+
+    parts: list[str] = []
+    if steps:
+        parts.append("## Steps\n" + "\n".join(f"- [ ] {s}" for s in steps))
+    meta: list[str] = []
+    if payload.budget_dollars is not None:
+        meta.append(
+            f"Budget cap: ${payload.budget_dollars:.2f} "
+            "(also enforced as the run's max_dollars)"
+        )
+    if channel:
+        meta.append(f"Announce progress on: {channel}")
+    if priority:
+        meta.append(f"Priority: {priority}")
+    if meta:
+        parts.append("\n".join(meta))
+    description = "\n\n".join(parts) if parts else title
+
+    w = _world()
+    goal_id = w.create_goal(
+        title[:200], description[:8000], owner=caller_principal(request) or "",
+    )
+    from maverick.runner import run_goal_in_thread
+    max_dollars = (
+        min(payload.budget_dollars, DEFAULT_MAX_DOLLARS)
+        if payload.budget_dollars is not None else DEFAULT_MAX_DOLLARS
+    )
+    user_id = execution_user_id_from_request(request)
+    if user_id:
+        bg.add_task(run_goal_in_thread, goal_id, max_dollars,
+                    channel="api", user_id=user_id)
+    else:
+        bg.add_task(run_goal_in_thread, goal_id, max_dollars)
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=500, detail="goal vanished after create")
+    return _to_goal_out(g)
+
+
+# ---------- continuous-benchmark history ----------
+
+
+def _benchmark_snapshot() -> dict:
+    """Recorded benchmark runs, grouped per suite, with regression verdicts.
+
+    Reads the same store ``maverick.continuous_benchmark`` (the bench_track
+    tool) persists to — this deployment's own recorded runs, nothing else.
+    Malformed rows (hand-edited file) are skipped, not invented around.
+    """
+    from maverick import continuous_benchmark as cb
+    path = cb._store_path()
+    history: list[dict] = []
+    for h in cb.load_history(path):
+        if not isinstance(h, dict) or not h.get("name"):
+            continue
+        try:
+            score = float(h.get("score"))
+        except (TypeError, ValueError):
+            continue
+        history.append({"name": str(h["name"]), "score": score,
+                        "commit": str(h.get("commit") or ""), "t": h.get("t")})
+    names: list[str] = []
+    for h in history:
+        if h["name"] not in names:
+            names.append(h["name"])
+    suites = []
+    for name in names:
+        entries = [h for h in history if h["name"] == name]
+        r = cb.detect_regression(history, name)
+        suites.append({
+            "name": name,
+            "runs": len(entries),
+            "entries": entries[-50:],
+            "latest": r["latest"],
+            "baseline_mean": r["baseline_mean"],
+            "delta": r["delta"],
+            "drop_pct": r["drop_pct"],
+            "regressed": r["regressed"],
+        })
+    return {"suites": suites, "history_path": str(path)}
+
+
+@router.get("/benchmarks")
+async def benchmarks_api() -> dict:
+    """Benchmark history for this deployment (see ``_benchmark_snapshot``)."""
+    snap = _benchmark_snapshot()
+    if not snap["suites"]:
+        snap["note"] = (
+            "no benchmark runs recorded — record one with the bench_track "
+            "tool (op=record, name, score) or "
+            "maverick.continuous_benchmark.record_result"
+        )
+    return snap
+
+
+# ---------- walkthrough export (replay video into the walkthroughs dir) ----------
+
+
+def _walkthroughs_dir():
+    """Where the dashboard's exported walkthrough videos live.
+
+    ``maverick.replay_video.render`` writes wherever the caller points it
+    (there is no fixed dir in core), so the dashboard standardises on
+    ``<maverick home>/walkthroughs`` for everything the /walkthroughs page
+    lists and serves.
+    """
+    from maverick.paths import maverick_home
+    return maverick_home() / "walkthroughs"
+
+
+def _vtt_for_frames(frames) -> str:
+    """A WebVTT captions track derived from the storyboard frames.
+
+    One cue per frame, timed by the frames' real durations; cue text is the
+    frame's (already secret-scrubbed) caption, flattened to one line.
+    """
+    def ts(sec: float) -> str:
+        ms = int(round(sec * 1000))
+        h, rem = divmod(ms, 3_600_000)
+        m, rem = divmod(rem, 60_000)
+        s, ms = divmod(rem, 1000)
+        return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
+
+    lines = ["WEBVTT", ""]
+    t = 0.0
+    for f in frames:
+        end = t + f.seconds
+        text = f"[{f.kind}] {f.caption}".replace("\n", " ").replace("-->", "→").strip()
+        lines += [f"{ts(t)} --> {ts(end)}", text or "(no caption)", ""]
+        t = end
+    return "\n".join(lines)
+
+
+@router.post("/goals/{goal_id}/walkthrough", status_code=201)
+async def export_walkthrough(request: Request, goal_id: int) -> dict:
+    """Export a run's replay video into the walkthroughs dir.
+
+    Uses the real machinery (``maverick.replay_video.render``): always writes
+    the frame manifest + a WebVTT captions track derived from the storyboard;
+    the MP4 encode itself needs Pillow + ffmpeg and the response says honestly
+    whether it happened (``encoded``/``detail``) and carries the exact ffmpeg
+    command for out-of-band encoding when it didn't.
+    """
+    w = _world()
+    g = w.get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
+    events = [
+        {"kind": e.kind, "ts": e.ts, "agent": e.agent, "content": e.content}
+        for e in w.goal_events(goal_id, limit=5000)
+    ]
+    if not events:
+        raise HTTPException(
+            status_code=400,
+            detail="no events recorded for this goal — run it first, then export",
+        )
+    from maverick.replay_video import render, storyboard
+    out_dir = _walkthroughs_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    frames = storyboard(goal_id, events=events)
+    vtt_name = f"goal-{goal_id}.vtt"
+    (out_dir / vtt_name).write_text(_vtt_for_frames(frames), encoding="utf-8")
+    try:
+        from maverick.sandbox import build_sandbox
+        sandbox = build_sandbox()
+    except Exception:  # render falls back to the scrubbed-env runner
+        sandbox = None
+    out_path = out_dir / f"goal-{goal_id}.mp4"
+    result = await run_in_threadpool(
+        render, goal_id, out_path, sandbox=sandbox, events=events,
+    )
+    return {
+        "goal_id": goal_id,
+        "frames": result.frames,
+        "encoded": result.encoded,
+        "detail": result.detail,
+        "video": out_path.name if result.encoded else None,
+        "captions": vtt_name,
+        "ffmpeg_command": result.command,
+    }
 
 
 @router.post("/goals/{goal_id}/resume", status_code=204)

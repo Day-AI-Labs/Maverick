@@ -185,6 +185,52 @@ def host_exec(
         return 124, empty, f"TIMEOUT after {timeout}s"
 
 
+def _forward_chunk(listener, name: str, chunk: Any) -> str:
+    """Streaming tool_result: forward one chunk to the registry listener
+    (best-effort) and return it as text for accumulation."""
+    piece = chunk if isinstance(chunk, str) else str(chunk)
+    if listener is not None:
+        try:
+            listener(name, piece)
+        except Exception:  # listener must never break the call
+            pass
+    return piece
+
+
+async def _execute_tool_fn(fn, args: dict[str, Any], stream_chunk) -> str:
+    """Run a tool fn under every supported contract.
+
+    str-returning (sync or async) is the classic contract. **Streaming
+    tool_result**: a fn may be an async generator, or return a sync
+    generator/iterator of chunks — chunks flow through ``stream_chunk`` as
+    they are produced (the dashboard/TUI live-view seam) and the joined text
+    is the tool_result the model sees, so the model protocol is unchanged.
+    Sync fns (and sync generators) drain on a worker thread so a slow tool
+    can't stall the event loop.
+    """
+    if inspect.iscoroutinefunction(fn):
+        out = await fn(args)
+    elif inspect.isasyncgenfunction(fn):
+        parts: list[str] = []
+        async for chunk in fn(args):
+            parts.append(stream_chunk(chunk))
+        return "".join(parts)
+    else:
+        out = await asyncio.to_thread(fn, args)
+    if inspect.isawaitable(out):
+        out = await out
+    if inspect.isgenerator(out) or (hasattr(out, "__next__") and not isinstance(out, str)):
+        parts = []
+
+        def _drain() -> None:
+            for chunk in out:
+                parts.append(stream_chunk(chunk))
+
+        await asyncio.to_thread(_drain)
+        return "".join(parts)
+    return out
+
+
 ToolFn = Callable[[dict[str, Any]], str | Awaitable[str]]
 
 
@@ -230,6 +276,15 @@ class ToolRegistry:
         self._core_names: set[str] = set()
         self._core: set[str] = set()
         self._activated: set[str] = set()
+        # Streaming tool_result: an optional listener that receives
+        # (tool_name, chunk) for tools whose fn yields chunks (generators).
+        # The model still gets the joined result; this is the live-UX seam.
+        self._chunk_listener = None
+        # Names base_registry marks as deferred-eligible (the SaaS connector
+        # long tail). Consumed by Agent._build_tools when the
+        # [capabilities] deferred_tools knob (default on) hides them behind
+        # the find_tools meta-tool. Empty == nothing marked.
+        self.deferrable_names: set[str] = set()
         # Memoized to_anthropic() payload. The exposed tool set is stable
         # across turns (it only changes on register / set_acl /
         # enable_deferred / activate), but the agent loop re-serialises all
@@ -261,6 +316,16 @@ class ToolRegistry:
             if risk_rank(tool_risk(name)) > risk_rank(self._acl_max_risk):
                 return False
         return True
+
+    def set_chunk_listener(self, listener) -> None:
+        """Register ``listener(tool_name, chunk)`` for streaming tool output.
+
+        Tools that return an iterator/generator of str chunks stream through
+        it as they produce output (dashboard/TUI live view); the joined text
+        remains the tool_result the model sees. Pass None to clear. Listener
+        errors are swallowed — observability must never break a tool call.
+        """
+        self._chunk_listener = listener
 
     def register(self, tool: Tool) -> None:
         if not self._acl_allows(tool.name):
@@ -374,20 +439,10 @@ class ToolRegistry:
                 except ImportError:
                     pass
                 async def _invoke() -> str:
-                    _fn = self._tools[name].fn
-                    if inspect.iscoroutinefunction(_fn):
-                        # Native async tool: await directly on the loop.
-                        return await _fn(args)
-                    # Synchronous fn: offload to a worker thread so one slow or
-                    # blocking call (SaaS httpx, pymongo, dns, pyautogui, ...)
-                    # can't freeze the event loop and stall the whole swarm /
-                    # server / dashboard. Tools already assume threadpool
-                    # execution (see the threading.Lock / threading.local guards
-                    # in browser, mongodb, redis, repo_map).
-                    out = await asyncio.to_thread(_fn, args)
-                    if inspect.isawaitable(out):
-                        out = await out
-                    return out
+                    return await _execute_tool_fn(
+                        self._tools[name].fn, args,
+                        lambda chunk: _forward_chunk(self._chunk_listener, name, chunk),
+                    )
 
                 # One shared reliability policy: transient upstream failures
                 # on retry-safe (non-high-risk) tools are retried with backoff.
@@ -547,6 +602,7 @@ def base_registry(  # noqa: C901
     from .asana_tool import asana_tool
     from .ast_edit import ast_edit
     from .async_compaction import async_compaction
+    from .audio_understanding import audio_understanding
     from .audit_mirror import audit_mirror
     from .autogen_adapter import autogen_adapter
     from .bias_eval import bias_eval
@@ -561,15 +617,21 @@ def base_registry(  # noqa: C901
     from .capability_delegation_graph import capability_delegation_graph
     from .capability_leak_fuzzer import capability_leak_fuzzer
     from .capability_negotiation import capability_negotiation
+    from .capability_revocation import capability_revocation
+    from .channel_autoroute import channel_autoroute
     from .chaos_gameday import chaos_gameday
+    from .cidr_check import cidr_check
     from .citation_verifier import citation_verifier
     from .clickup_tool import clickup_tool
     from .clipboard import clipboard
     from .cloudflare_tool import cloudflare_tool
     from .collusion_detector import collusion_detector
+    from .compaction_classifier import compaction_classifier
     from .comparative_replay import comparative_replay
     from .compute import compute
     from .confluence_tool import confluence_tool
+    from .consent_check import consent_check
+    from .consent_ergonomics import consent_ergonomics
     from .constrained_output import constrained_output
     from .container_build import container_build
     from .containment_mode import containment_mode
@@ -598,6 +660,7 @@ def base_registry(  # noqa: C901
     from .dynamodb_tool import dynamodb_tool
     from .elasticsearch_tool import elasticsearch_tool
     from .email_tool import email_tool
+    from .embedded_device import embedded_device
     from .embeddings import embeddings
     from .energy_accounting import energy_accounting
     from .erp_tool import erp_tool
@@ -605,6 +668,7 @@ def base_registry(  # noqa: C901
     from .fairness_scheduler import fairness_scheduler
     from .ffmpeg_tool import ffmpeg_tool
     from .file_watcher import file_watcher
+    from .format_money import format_money_tool
     from .ga4_tool import ga4_tool
     from .gdrive_tool import gdrive_tool
     from .generic_oauth import generic_oauth
@@ -623,22 +687,28 @@ def base_registry(  # noqa: C901
     from .http_fetch import http_fetch
     from .hubspot_tool import hubspot_tool
     from .huggingface import huggingface
+    from .image_edit import image_edit
     from .imagemagick_tool import imagemagick_tool
     from .ios_sim import ios_sim
     from .jira import jira
+    from .jwt_inspect import jwt_inspect
     from .k_anonymity import k_anonymity
     from .key_rotation import key_rotation
     from .knowledge_graph import knowledge_graph
+    from .kv_cache_offload import kv_cache_offload
     from .kv_memory import kv_memory
     from .lambda_tool import lambda_tool
     from .latency_heatmap import latency_heatmap
     from .latency_slo import latency_slo
     from .linear import linear
     from .local_embeddings_cache import local_embeddings_cache
+    from .marketplace_moderation import marketplace_moderation
     from .marketplace_ratings import marketplace_ratings
     from .memleak_quarantine import memleak_quarantine
     from .memory import memory
+    from .memory_safe_parse import memory_safe_parse
     from .migration_cost import migration_cost
+    from .misuse_removal import misuse_removal
     from .mixpanel_tool import mixpanel_tool
     from .model3d_inspect import model3d_inspect
     from .model_card import model_card
@@ -650,14 +720,18 @@ def base_registry(  # noqa: C901
     from .newsapi_tool import newsapi_tool
     from .notify import notify_tool
     from .notion import notion
+    from .observation_channel import observation_channel
     from .obsidian import obsidian
     from .ocr import ocr
+    from .office_convert import office_convert
     from .openapi_runner import openapi_runner
     from .openmetrics import openmetrics
+    from .otel_semconv import otel_semconv
     from .outline_writer import outline_writer
     from .pagerduty_tool import pagerduty_tool
     from .pandas_query import pandas_query
     from .pandoc_tool import pandoc_tool
+    from .payload_compress import payload_compress
     from .pdf_reader import read_pdf
     from .pia_generator import pia_generator
     from .plaid_tool import plaid_tool
@@ -673,8 +747,10 @@ def base_registry(  # noqa: C901
     from .provider_failover_policy import provider_failover_policy
     from .query_plan_regression import query_plan_regression
     from .quorum_approval import quorum_approval
+    from .rbac_check import rbac_check
     from .recall import recall
     from .rectification import rectification
+    from .redact import redact_tool
     from .reddit_tool import reddit_tool
     from .redis_tool import redis_tool
     from .reflect_loop import reflect_loop
@@ -684,6 +760,7 @@ def base_registry(  # noqa: C901
     from .right_to_explanation import right_to_explanation
     from .risk_tier import risk_tier
     from .risk_tier_classifier import risk_tier_classifier
+    from .ros_tool import ros_tool
     from .run_events_firehose import run_events_firehose
     from .s3_attachments import s3_attachments
     from .s3_tool import s3_tool
@@ -693,9 +770,12 @@ def base_registry(  # noqa: C901
     from .salesforce_tool import salesforce_tool
     from .semantic_code_search import semantic_code_search
     from .semantic_scholar import semantic_scholar
+    from .semver_check import semver_check
     from .sentry_tool import sentry_tool
+    from .serial_tool import serial_tool
     from .ses_tool import ses_tool
     from .shopify_tool import shopify_tool
+    from .skill_distill_v2 import skill_distill_v2
     from .sla_breach import sla_breach
     from .slack_bot import slack_bot
     from .slack_workflow import slack_workflow
@@ -717,6 +797,7 @@ def base_registry(  # noqa: C901
     from .tool_call_inspector import tool_call_inspector
     from .translate import translate
     from .trello_tool import trello_tool
+    from .truelayer_tool import truelayer_tool
     from .twilio_tool import twilio_tool
     from .two_person_rule import two_person_rule
     from .unified_inbox import unified_inbox
@@ -725,6 +806,7 @@ def base_registry(  # noqa: C901
     from .view_video import view_video
     from .voice_cloning_consent import voice_cloning_consent
     from .wal_contention import wal_contention
+    from .wasm_run import wasm_run
     from .watermark_detector import watermark_detector
     from .web_archive import web_archive
     from .web_recorder import web_recorder
@@ -763,7 +845,9 @@ def base_registry(  # noqa: C901
     reg.register(bias_eval())
     reg.register(decision_explainer())
     reg.register(rectification())
+    reg.register(redact_tool())
     reg.register(file_watcher(sandbox))
+    reg.register(format_money_tool())
     reg.register(linear())
     reg.register(jira())
     reg.register(gitlab())
@@ -800,6 +884,18 @@ def base_registry(  # noqa: C901
     reg.register(cross_repo_deps(sandbox))
     reg.register(test_gen())
     reg.register(two_person_rule())
+    reg.register(compaction_classifier())
+    reg.register(kv_cache_offload())
+    reg.register(otel_semconv())
+    reg.register(payload_compress())
+    reg.register(capability_revocation())
+    reg.register(memory_safe_parse())
+    reg.register(misuse_removal())
+    reg.register(consent_ergonomics())
+    reg.register(skill_distill_v2())
+    reg.register(observation_channel())
+    reg.register(marketplace_moderation())
+    reg.register(channel_autoroute())
     reg.register(capability_delegation_graph())
     reg.register(honeytoken())
     reg.register(dp_stats())
@@ -810,6 +906,11 @@ def base_registry(  # noqa: C901
     reg.register(retention_check())
     reg.register(breach_notification())
     reg.register(data_minimization())
+    reg.register(consent_check())
+    reg.register(jwt_inspect())
+    reg.register(rbac_check())
+    reg.register(cidr_check())
+    reg.register(semver_check())
     reg.register(supply_chain_pin())
     reg.register(quorum_approval())
     reg.register(crypto_budget_receipt())
@@ -870,6 +971,7 @@ def base_registry(  # noqa: C901
     reg.register(safety_regression_budget())
     reg.register(autogen_adapter())
     reg.register(crewai_adapter())
+    reg.register(ros_tool())
     reg.register(run_events_firehose())
     reg.register(marketplace_ratings())
     reg.register(local_embeddings_cache())
@@ -887,26 +989,63 @@ def base_registry(  # noqa: C901
     reg.register(synthetic_data())
     reg.register(web_recorder())
     reg.register(watermark_detector())
+    from .agent_identity import agent_identity
+    # capability_delegation_graph / collusion_detector / coordinated_disclosure:
+    # registered once above (parallel-built on both branches; unified at merge).
+    reg.register(agent_identity())
+    from .adversarial_eval import adversarial_eval
+    from .gui_element_memory import gui_element_memory
+    from .hardware_sensors import hardware_sensors
+    from .voice_command_grammar import voice_command_grammar
+    from .what_changed_digest import what_changed_digest
+    reg.register(voice_command_grammar())
+    reg.register(what_changed_digest())
+    reg.register(gui_element_memory())
+    reg.register(adversarial_eval())
+    from .trace_compare import trace_compare
+    # latency_heatmap / tool_call_inspector: registered once above (merge dup).
+    reg.register(trace_compare())
+    from .github_search import github_search
+    from .governance_explainer import governance_explainer
+    from .image_content_classifier import image_content_classifier
+    from .lsp_bridge import lsp_bridge
+    from .oauth_helper import oauth_helper
+    # template_generator / web_archive / anki: registered once above
+    # (parallel-built on both branches; unified at merge).
+    reg.register(image_content_classifier())
+    reg.register(lsp_bridge())
+    reg.register(oauth_helper())
+    reg.register(github_search())
+    reg.register(governance_explainer())
     reg.register(a11y_tree())
     reg.register(ai_act_classifier())
     reg.register(cache_admin())
     reg.register(openapi_runner(sandbox))
     reg.register(ocr(sandbox))
     reg.register(container_build(sandbox))
-    reg.register(posthog_tool())
+    def _defer(tool):
+        # Register a third-party SaaS connector as deferred-eligible: with
+        # [capabilities] deferred_tools on (default), its schema stays out of
+        # the model's per-turn catalog until find_tools activates it. run()
+        # executes it regardless of exposure.
+        reg.register(tool)
+        reg.deferrable_names.add(tool.name)
+
+    _defer(posthog_tool())
     reg.register(privacy_budget())
-    reg.register(shopify_tool())
-    reg.register(mongodb_tool())
-    reg.register(redis_tool())
-    reg.register(sentry_tool())
-    reg.register(pagerduty_tool())
-    reg.register(salesforce_tool())
-    reg.register(cloudflare_tool())
-    reg.register(datadog_tool())
-    reg.register(hubspot_tool())
-    reg.register(twilio_tool())
-    reg.register(s3_tool())
-    reg.register(elasticsearch_tool())
+    _defer(shopify_tool())
+    _defer(mongodb_tool())
+    _defer(redis_tool())
+    _defer(sentry_tool())
+    _defer(pagerduty_tool())
+    _defer(salesforce_tool())
+    _defer(cloudflare_tool())
+    _defer(datadog_tool())
+    _defer(hubspot_tool())
+    _defer(twilio_tool())
+    _defer(s3_tool())
+    reg.register(serial_tool())
+    _defer(elasticsearch_tool())
     reg.register(github_actions())
     # Strategic-fit connectors (ITSM / data / cloud-ML / GRC). Explicit-token
     # auth (no ambient creds), so registered unconditionally like salesforce.
@@ -920,21 +1059,28 @@ def base_registry(  # noqa: C901
     from .snowflake_tool import snowflake_tool
     from .vertex_tool import vertex_tool
     from .workday_tool import workday_tool
-    reg.register(servicenow_tool())
-    reg.register(snowflake_tool())
-    reg.register(databricks_tool())
-    reg.register(onetrust_tool())
-    reg.register(vertex_tool())
-    reg.register(oracle_tool())
-    reg.register(sap_tool())
-    reg.register(workday_tool())
-    reg.register(bigquery_tool())
-    reg.register(dynamics_tool())
+    _defer(servicenow_tool())
+    _defer(snowflake_tool())
+    _defer(databricks_tool())
+    _defer(onetrust_tool())
+    _defer(vertex_tool())
+    _defer(oracle_tool())
+    _defer(sap_tool())
+    _defer(workday_tool())
+    _defer(bigquery_tool())
+    _defer(dynamics_tool())
     # The long tail of token-authed REST connectors (one spec each, built on
     # make_rest_tool). Same house rules: explicit env auth, confirm-gated writes.
     from .enterprise_connectors import enterprise_connectors
     for _conn in enterprise_connectors():
         reg.register(_conn)
+        # The long tail is deferred-eligible: with [capabilities]
+        # deferred_tools on (the default), these schemas stay out of the
+        # model's catalog until find_tools activates them -- 470+ connector
+        # schemas on every turn dominated the context window (observed: 601
+        # tools offered per call at consumer defaults). run() can still
+        # execute them regardless of exposure.
+        reg.deferrable_names.add(_conn.name)
     from .database_tool import database_tool
     reg.register(database_tool())
     # Credentialed SaaS/cloud tools are opt-in (PR #124): they can use
@@ -948,30 +1094,37 @@ def base_registry(  # noqa: C901
         reg.register(dynamodb_tool())
         reg.register(vercel_tool())
         reg.register(gdrive_tool())
-    reg.register(trello_tool())
-    reg.register(confluence_tool())
-    reg.register(replicate_tool())
-    reg.register(newsapi_tool())
-    reg.register(wolfram_tool())
-    reg.register(dropbox_tool())
-    reg.register(msgraph_tool())
-    reg.register(gmail_tool())
-    reg.register(plausible_tool())
-    reg.register(mixpanel_tool())
-    reg.register(calendly_tool())
-    reg.register(zoom_tool())
-    reg.register(spotify_tool())
-    reg.register(home_assistant_tool())
-    reg.register(reddit_tool())
-    reg.register(bitbucket_tool())
-    reg.register(ses_tool())
-    reg.register(sns_tool())
+    _defer(trello_tool())
+    _defer(confluence_tool())
+    _defer(replicate_tool())
+    _defer(newsapi_tool())
+    _defer(wolfram_tool())
+    _defer(dropbox_tool())
+    _defer(msgraph_tool())
+    _defer(gmail_tool())
+    _defer(plausible_tool())
+    _defer(mixpanel_tool())
+    _defer(calendly_tool())
+    _defer(zoom_tool())
+    _defer(spotify_tool())
+    _defer(home_assistant_tool())
+    _defer(reddit_tool())
+    _defer(bitbucket_tool())
+    _defer(ses_tool())
+    _defer(sns_tool())
     reg.register(ffmpeg_tool(sandbox))
     reg.register(pandoc_tool(sandbox))
+    reg.register(office_convert(sandbox))
+    reg.register(wasm_run(sandbox))
+    reg.register(hardware_sensors())
     reg.register(imagemagick_tool(sandbox))
-    reg.register(ga4_tool())
-    reg.register(plaid_tool())
-    reg.register(erp_tool())  # read-only ERP system-of-record access (Ops/Finance)
+    reg.register(audio_understanding(sandbox))
+    reg.register(image_edit(sandbox))
+    reg.register(embedded_device(sandbox))
+    _defer(ga4_tool())
+    _defer(plaid_tool())
+    _defer(truelayer_tool())
+    _defer(erp_tool())  # read-only ERP system-of-record access (Ops/Finance)
 
     # Voice tools (opt-in extra; tool factories raise ImportError only
     # when called without the required API key OR SDK; registering is
@@ -1005,11 +1158,13 @@ def base_registry(  # noqa: C901
     from .latex_tool import latex_tool
     from .notebook_exec import notebook_exec
     from .teams_tool import teams_tool
+    from .webrtc_tool import webrtc_tool
     from .websocket_tool import websocket_tool
     reg.register(notebook_exec(sandbox))
     reg.register(latex_tool(sandbox))
     reg.register(diagram_tool(sandbox))
     reg.register(websocket_tool())
+    reg.register(webrtc_tool())
     reg.register(teams_tool())
     # self_edit intentionally is not registered in the default tool set.
     # It can edit Maverick source/config and cannot rely on a model-supplied
@@ -1044,8 +1199,10 @@ def base_registry(  # noqa: C901
         reg.register(computer())
 
     if enable_browser:
+        from .aria_navigate import aria_navigate
         from .browser import browser
         reg.register(browser())
+        reg.register(aria_navigate())
 
     # Apply allow/deny lists from ~/.maverick/config.toml [security].
     # Fail-soft: any error here is logged and the registry is left
@@ -1099,6 +1256,39 @@ def base_registry(  # noqa: C901
                     "plugin tool %s factory raised: %s", name, e
                 )
     except Exception:  # pragma: no cover -- importlib quirks
+        pass
+
+    # TypeScript plugins (the NDJSON stdio SDK): each `[plugins] ts` command
+    # contributes its described tools. Same no-shadowing rule as Python
+    # plugins; a broken plugin logs but never takes the swarm down.
+    try:
+        from ..ts_plugin_host import load_configured_ts_plugins
+        for t in load_configured_ts_plugins():
+            if t.name in reg._tools:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "ts plugin tool %r conflicts with an existing tool; skipping",
+                    t.name,
+                )
+                continue
+            reg.register(t)
+    except Exception:  # pragma: no cover -- plugin failure never blocks boot
+        pass
+
+    # gRPC plugins (the multi-language plugin host): each [plugins] grpc entry
+    # contributes its described tools, same no-shadowing rule.
+    try:
+        from ..grpc_plugin_host import load_configured_grpc_plugins
+        for t in load_configured_grpc_plugins():
+            if t.name in reg._tools:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "grpc plugin tool %r conflicts with an existing tool; skipping",
+                    t.name,
+                )
+                continue
+            reg.register(t)
+    except Exception:  # pragma: no cover -- plugin failure never blocks boot
         pass
 
     # Self-learning: tools the agent generated for itself on a prior run

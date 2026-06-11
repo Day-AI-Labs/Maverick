@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}tenant overview · Maverick{% endblock %}
+{% block content %}
+  <h2>multi-tenant overview</h2>
+  <p class="muted">
+    Per-tenant rollup: goals by status, today's spend, and quota posture.
+    The roster itself lives on <a href="/tenants">/tenants</a>; manage with
+    <code>maverick tenant …</code>.
+  </p>
+
+  {% if not is_admin %}
+    <div class="panel">
+      <p class="muted">Operator (admin) access is required to view the
+      cross-tenant rollup. You're seeing this scoped view because your
+      identity maps to a single tenant.</p>
+    </div>
+  {% elif not rows %}
+    <div class="panel">
+      <p class="muted">No tenants provisioned. Create one with
+      <code>maverick tenant create &lt;id&gt;</code> — single-tenant and
+      unprovisioned deployments run without a registry.</p>
+    </div>
+  {% else %}
+    <div class="panel">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">tenant</th><th scope="col">status</th>
+            <th scope="col">plan</th><th scope="col">goals</th>
+            <th scope="col">by status</th>
+            <th scope="col">spend today</th><th scope="col">quota</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+            <tr>
+              <td><code>{{ r.id }}</code>{% if r.display_name %} <span class="muted">{{ r.display_name }}</span>{% endif %}</td>
+              <td>
+                {% if r.suspended %}
+                  <span class="badge blocked">suspended</span>
+                {% else %}
+                  <span class="badge active">active</span>
+                {% endif %}
+              </td>
+              <td>{{ r.plan }}</td>
+              <td>{{ r.total_goals }}</td>
+              <td>
+                {% if r.goals %}
+                  {% for status, n in r.goals | dictsort %}
+                    <span class="badge {{ status }}">{{ status }} {{ n }}</span>
+                  {% endfor %}
+                {% else %}
+                  <span class="muted">no runs yet</span>
+                {% endif %}
+              </td>
+              <td>${{ '%.2f' % r.spend_today }}</td>
+              <td class="muted">
+                {% if r.max_daily_dollars %}${{ '%g' % r.max_daily_dollars }}/day{% else %}unlimited{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+{% endblock %}

@@ -152,6 +152,16 @@ class DevcontainerBackend:
             self.spec = _parse_devcontainer(p)
             log.info("devcontainer: %s -> image=%s", p, self.spec.image)
 
+    @property
+    def workdir(self) -> Path:
+        """Sandbox SDK contract: the host directory commands run against.
+
+        For a devcontainer that IS the project dir (mounted as the
+        workspace); tools that confine model-supplied paths to
+        ``sandbox.workdir`` previously crashed on this backend.
+        """
+        return self.project_dir
+
     def _verify_docker(self) -> None:
         try:
             subprocess.run(
