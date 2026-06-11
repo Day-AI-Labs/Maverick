@@ -11,7 +11,6 @@ which must NOT block (the FP-anchoring is the safety-critical half).
 from __future__ import annotations
 
 import pytest
-
 from maverick_shield import builtin_rules as br
 
 # Fresh attack paraphrases, distinct wordings from benchmarks/security/corpus.py
