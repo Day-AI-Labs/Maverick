@@ -5,8 +5,8 @@ Maverick: proprietary Python 3.10-3.12 uv-workspace monorepo. 8 pip packages
 
 ## Setup (verified)
 
-    bash .devcontainer/post-create.sh   # editable-installs all 8 packages
-    pip install 'pyjwt[crypto]' cffi    # CI parity; distro cryptography needs cffi
+    bash .devcontainer/post-create.sh   # editable-installs all 8 packages +
+                                        # dev tools (pyjwt[crypto], cffi, build)
 
 `pip install -e .` at the root FAILS (workspace pyproject has no [project]).
 

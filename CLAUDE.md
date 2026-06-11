@@ -16,12 +16,12 @@
 
 - **Setup:** `bash .devcontainer/post-create.sh` — editable-installs all 8
   packages (core first WITH deps; the rest `--no-deps` so pip doesn't try to
-  resolve `maverick>=0.1` from PyPI), then runtime deps + dev tools.
-  CI also installs `'pyjwt[crypto]'` — post-create.sh does not; add it or
-  test_oidc self-skips.
+  resolve `maverick>=0.1` from PyPI), then runtime deps + dev tools, including
+  `pyjwt[crypto]` (CI parity; test_oidc self-skips without it), `cffi`, and
+  `build` — all three added after this harness run caught their absence.
 - **Test:** `python3 -m pytest -q` from repo root. NOT bare `pytest`.
 - **Lint:** `python -m ruff check .` and `python -m vulture` (no args).
-- **Build:** `python3 -m build --wheel` per package dir (`pip install build` first).
+- **Build:** `python3 -m build --wheel` per package dir (setup installs build).
 - **CLI smoke:** `maverick version`, `maverick doctor`.
 - **TS SDK:** `cd sdks/plugin-ts && npm install && npm test` (tsc + node --test).
 
@@ -33,8 +33,8 @@
   a uv-tool/pipx shim whose isolated venv cannot see the installed packages
   (observed: 173 collection errors from the shim, 0 from `python3 -m`).
 - A `pyo3_runtime.PanicException` at collection hides the real error on the
-  captured-stderr line (here `No module named '_cffi_backend'`: distro-owned
-  cryptography; fix was `pip install cffi` — pip can't replace the package).
+  captured-stderr line (here `No module named '_cffi_backend'`: distro
+  cryptography needs cffi — post-create.sh now installs it).
 - pytest aborts the WHOLE run on any collection error — 5 broken imports kept
   9000 green tests from running. Fix imports before judging the suite.
 - `pip install -e .` at repo root fails: the root pyproject.toml is uv-workspace
