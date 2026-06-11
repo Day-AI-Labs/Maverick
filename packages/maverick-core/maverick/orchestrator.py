@@ -1185,7 +1185,14 @@ async def run_goal(  # noqa: C901
         if auto_distill:
             try:
                 skill = distill(goal.title, summary, blackboard, llm, budget=budget)
-                skill_note = f"\n\n[distilled skill: {skill.name}]" if skill else ""
+                # A None return means the distiller's output failed the skill
+                # validation/shield gate (#396) and was NOT written. Say so:
+                # auto-distill used to go silent here, indistinguishable from
+                # "never ran" (platform-test finding).
+                skill_note = (
+                    f"\n\n[distilled skill: {skill.name}]" if skill
+                    else "\n\n[skill distill: output failed validation; no skill written]"
+                )
             except BudgetExceeded:
                 skill_note = "\n\n[skill distill skipped: budget]"
             except Exception as e:

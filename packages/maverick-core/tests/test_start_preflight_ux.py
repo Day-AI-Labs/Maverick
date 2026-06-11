@@ -15,7 +15,6 @@ Platform-test findings, round 2 fixes:
 from __future__ import annotations
 
 from click.testing import CliRunner
-
 from maverick.budget import Budget
 
 
