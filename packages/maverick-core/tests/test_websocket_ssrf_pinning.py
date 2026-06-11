@@ -14,8 +14,6 @@ import asyncio
 import sys
 import types
 
-import pytest
-
 import maverick.tools.websocket_tool as wst
 
 
