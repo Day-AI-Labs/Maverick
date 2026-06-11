@@ -1,8 +1,10 @@
 """Run-events firehose (WS), inline cost preview, cost breakdown, anomalies."""
 from __future__ import annotations
 
+import maverick_dashboard.auth as auth
 import pytest
 from fastapi.testclient import TestClient
+from maverick.oidc import VerifiedPrincipal
 from maverick_dashboard import app as app_mod
 from maverick_dashboard.app import app
 
@@ -18,8 +20,22 @@ def _isolated(tmp_path, monkeypatch):
     yield
 
 
-def _goal(title="t", description="d"):
-    return app_mod._world().create_goal(title, description, owner="")
+def _enable_oidc_principal_map(monkeypatch):
+    monkeypatch.setattr(auth, "oidc_enabled", lambda: True)
+
+    def _verify(token, **_kw):
+        return VerifiedPrincipal(
+            sub=token,
+            issuer="https://issuer.example",
+            audience="maverick",
+            claims={"sub": token},
+        )
+
+    monkeypatch.setattr(auth, "verify_oidc_token", _verify)
+
+
+def _goal(title="t", description="d", owner=""):
+    return app_mod._world().create_goal(title, description, owner=owner)
 
 
 def test_firehose_streams_until_terminal():
@@ -62,6 +78,38 @@ def test_firehose_token_mode_requires_bearer(monkeypatch):
     w.set_goal_status(gid, "done", result="ok")
     with auth_client.websocket_connect(f"/ws/v1/runs/{gid}/events") as ws:
         assert ws.receive_json()["kind"] == "status"
+
+
+def test_firehose_oidc_enforces_goal_owner(monkeypatch):
+    _enable_oidc_principal_map(monkeypatch)
+    gid = _goal(owner="user:alice")
+    w = app_mod._world()
+    w.append_event(gid, "coder", "finding", "SECRET_EVENT_FOR_ALICE")
+    w.set_goal_status(gid, "done", result="ok")
+
+    alice = TestClient(
+        app,
+        headers={"Origin": "http://testserver", "Authorization": "Bearer alice"},
+    )
+    with alice.websocket_connect(f"/ws/v1/runs/{gid}/events") as ws:
+        assert ws.receive_json()["content"] == "SECRET_EVENT_FOR_ALICE"
+
+    mallory = TestClient(
+        app,
+        headers={"Origin": "http://testserver", "Authorization": "Bearer mallory"},
+    )
+    with mallory.websocket_connect(f"/ws/v1/runs/{gid}/events") as ws:
+        assert ws.receive_json() == {"error": "no such goal"}
+
+
+def test_firehose_loopback_rejects_cross_site_origin():
+    gid = _goal()
+    evil = TestClient(app, headers={"Origin": "https://evil.example"})
+    from starlette.testclient import WebSocketDisconnect
+
+    with pytest.raises(WebSocketDisconnect):
+        with evil.websocket_connect(f"/ws/v1/runs/{gid}/events"):
+            pass
 
 
 def test_cost_preview_projects_and_verdicts():
