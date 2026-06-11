@@ -9,30 +9,30 @@ ASR_on = fraction the shield lets through. Reduction = block rate.
 
 | routing | block rate (95% CI) | ASR off → on | benign FP |
 |---|---|---|---|
-| targeted chokepoint | 48.4% [32–65] | 1.000 → 0.516 | 6.2% |
-| any chokepoint (defense-in-depth) | 48.4% [32–65] | 1.000 → 0.516 | 6.2% [2–20] |
+| targeted chokepoint | 74.2% [57–86] | 1.000 → 0.258 | 6.2% |
+| any chokepoint (defense-in-depth) | 74.2% [57–86] | 1.000 → 0.258 | 6.2% [2–20] |
 
 ## Block rate by targeted surface
 
 | chokepoint | blocked / total |
 |---|---|
-| `scan_input` | 10/17 (58.8%) |
-| `scan_tool_call` | 0/3 (0.0%) |
-| `scan_output` | 5/11 (45.5%) |
+| `scan_input` | 12/17 (70.6%) |
+| `scan_tool_call` | 3/3 (100.0%) |
+| `scan_output` | 8/11 (72.7%) |
 
 ## Defense-in-depth block rate by attack category
 
 | category | blocked / total |
 |---|---|
-| credential_phish | 0/1 (0.0%) |
-| destructive_action | 0/1 (0.0%) |
+| credential_phish | 1/1 (100.0%) |
+| destructive_action | 1/1 (100.0%) |
 | encoding_evasion | 2/2 (100.0%) |
-| indirect_injection | 1/3 (33.3%) |
-| instruction_override | 2/4 (50.0%) |
+| indirect_injection | 3/3 (100.0%) |
+| instruction_override | 4/4 (100.0%) |
 | jailbreak_framing | 2/3 (66.7%) |
 | persona_takeover | 4/4 (100.0%) |
-| privilege_escalation | 0/1 (0.0%) |
-| sandbox_escape | 0/1 (0.0%) |
+| privilege_escalation | 1/1 (100.0%) |
+| sandbox_escape | 1/1 (100.0%) |
 | secret_exfil | 3/4 (75.0%) |
 | system_prompt_leak | 0/4 (0.0%) |
 | tool_output_injection | 1/3 (33.3%) |
