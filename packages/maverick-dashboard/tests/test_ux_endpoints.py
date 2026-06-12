@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from maverick.ux_store import MAX_VIEW_PARAMS
 from maverick_dashboard import app as app_mod
 from maverick_dashboard.app import app
 
@@ -51,6 +52,19 @@ def test_views_lifecycle():
     assert client.delete("/api/v1/views/failures").status_code == 404
     assert client.post("/api/v1/views/x", content=b"[1,2]",
                        headers={"Content-Type": "application/json"}).status_code == 400
+
+
+def test_views_reject_oversized_payloads():
+    too_many_params = {f"k{i}": "v" for i in range(MAX_VIEW_PARAMS + 1)}
+    r = client.post("/api/v1/views/too-many", json=too_many_params)
+    assert r.status_code == 400
+    assert "too many saved view params" in r.text
+    assert client.get("/api/v1/views").json()["views"] == {}
+
+    r = client.post("/api/v1/views/too-large", json={"q": "x" * (33 * 1024)})
+    assert r.status_code == 413
+    assert "saved view body too large" in r.text
+    assert client.get("/api/v1/views").json()["views"] == {}
 
 
 def test_annotations_lifecycle():

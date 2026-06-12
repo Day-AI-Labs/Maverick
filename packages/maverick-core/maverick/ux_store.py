@@ -25,6 +25,7 @@ from typing import Any
 
 MAX_PINS = 200          # per principal
 MAX_VIEWS = 50          # per principal
+MAX_VIEW_PARAMS = 64     # per saved view
 MAX_ANNOTATIONS = 1000  # per goal
 MAX_GALLERY = 100       # deployment-wide
 _ANON = "_anon"          # principal key when auth is off
@@ -99,6 +100,8 @@ class UxStore:
             raise ValueError("view name must be 1-80 chars")
         if not isinstance(params, dict):
             raise ValueError("params must be an object")
+        if len(params) > MAX_VIEW_PARAMS:
+            raise ValueError(f"too many saved view params (max {MAX_VIEW_PARAMS})")
         clean = {str(k)[:64]: str(v)[:256] for k, v in params.items()}
         key = _principal_key(principal)
         with self._lock:
@@ -207,4 +210,4 @@ def reset_shared() -> None:
 
 
 __all__ = ["UxStore", "shared", "reset_shared", "MAX_PINS", "MAX_VIEWS",
-           "MAX_ANNOTATIONS", "MAX_GALLERY"]
+           "MAX_VIEW_PARAMS", "MAX_ANNOTATIONS", "MAX_GALLERY"]

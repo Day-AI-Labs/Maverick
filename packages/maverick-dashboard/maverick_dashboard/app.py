@@ -327,6 +327,7 @@ _AUTH_EXEMPT = {
 # dashboard to buffer or hash arbitrarily large request bodies.
 _MAX_WEBHOOK_BODY_BYTES = 256 * 1024
 _MAX_SKILL_VALIDATE_BODY_BYTES = 256 * 1024
+_MAX_SAVED_VIEW_BODY_BYTES = 32 * 1024
 
 
 async def _read_limited_request_body(
@@ -1973,7 +1974,12 @@ async def views_list(request: Request) -> JSONResponse:
 async def views_save(request: Request, name: str) -> JSONResponse:
     from maverick.ux_store import shared as _ux
     try:
-        body = await request.json()
+        raw_body = await _read_limited_request_body(
+            request,
+            max_bytes=_MAX_SAVED_VIEW_BODY_BYTES,
+            too_large_detail="saved view body too large",
+        )
+        body = json.loads(raw_body or b"{}")
     except ValueError:
         raise HTTPException(status_code=400, detail="body must be a JSON object of params")
     if not isinstance(body, dict):

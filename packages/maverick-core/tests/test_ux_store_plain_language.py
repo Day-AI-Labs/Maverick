@@ -6,7 +6,7 @@ import types
 
 import pytest
 from maverick.plain_language import explain
-from maverick.ux_store import MAX_VIEWS, UxStore
+from maverick.ux_store import MAX_VIEW_PARAMS, MAX_VIEWS, UxStore
 
 
 def _store(tmp_path):
@@ -59,6 +59,14 @@ def test_view_validation_and_cap(tmp_path):
     with pytest.raises(ValueError, match="too many"):
         s.save_view("a", "overflow", {})
     s.save_view("a", "v0", {"changed": "yes"})  # overwrite under cap is fine
+
+
+def test_saved_view_params_are_bounded(tmp_path):
+    s = _store(tmp_path)
+    s.save_view("alice", "ok", {f"k{i}": "v" for i in range(MAX_VIEW_PARAMS)})
+    with pytest.raises(ValueError, match="too many saved view params"):
+        s.save_view("alice", "oversized", {f"k{i}": "v" for i in range(MAX_VIEW_PARAMS + 1)})
+    assert "oversized" not in s.views("alice")
 
 
 # ---- annotations ----
