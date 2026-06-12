@@ -716,6 +716,17 @@ _SPECS: list[dict] = [
          description="Vertex O Series tax REST (calculation/returns; distinct from the "
          "Vertex AI tool). ops get/post (writes need confirm). Auth: VERTEX_TAX_BASE_URL "
          "(your Vertex endpoint) + VERTEX_TAX_TOKEN (OAuth bearer)."),
+    dict(name="cch_axcess",
+         extra_headers_env={"Ocp-Apim-Subscription-Key": "CCH_AXCESS_SUBSCRIPTION_KEY"},
+         description="Wolters Kluwer CCH Axcess Open Integration Platform REST "
+         "(Tax / Document / Workstream). ops get/post/put/delete (writes need "
+         "confirm). e.g. /api/TaxService/v1.0/..., /api/DocumentService/v1.0/.... "
+         "Auth: CCH_AXCESS_BASE_URL (https://api.cchaxcess.com) + CCH_AXCESS_TOKEN "
+         "(OAuth bearer) + CCH_AXCESS_SUBSCRIPTION_KEY (Ocp-Apim-Subscription-Key)."),
+    dict(name="gosystem_tax",
+         description="Thomson Reuters GoSystem Tax RS REST (returns, e-file status, "
+         "locators). ops get/post (writes need confirm). Auth: GOSYSTEM_TAX_BASE_URL "
+         "(your GoSystem Tax API endpoint) + GOSYSTEM_TAX_TOKEN (OAuth bearer)."),
 
     # --- Finance long-pole: close / EPM-FP&A / equity ---
     dict(name="floqast",
@@ -884,6 +895,16 @@ _FINANCE_READ_SPECS = _read_specs_for(_FINANCE_READ_VENDORS)
 _READ_SPECS += _FINANCE_READ_SPECS
 _READ_CONNECTOR_RISKS.update({s["name"]: "low" for s in _FINANCE_READ_SPECS})
 
+# Tax-engine read seats: the tax_ suite's read-only packs pull return and
+# e-file status from the firm's professional tax engine (CCH Axcess /
+# GoSystem). GET-only and LOW like the finance read seats -- submitting or
+# modifying a return stays on the write connector (high risk, confirm-gated,
+# unreachable from the low-risk packs by construction).
+_TAX_READ_VENDORS: list[str] = ["cch_axcess", "gosystem_tax"]
+_TAX_READ_SPECS = _read_specs_for(_TAX_READ_VENDORS)
+_READ_SPECS += _TAX_READ_SPECS
+_READ_CONNECTOR_RISKS.update({s["name"]: "low" for s in _TAX_READ_SPECS})
+
 # Read seats for the OTHER suites' systems, derived the same way (GET-only,
 # reuse the write connector's creds). These systems often contain high-confidentiality
 # identity, HR, security, CI/CD, legal, and customer data, so the read seats are
@@ -1041,10 +1062,13 @@ def connector_catalog() -> list[dict]:
     """
     out: list[dict] = []
     for spec in _SPECS + _GRAPHQL_SPECS:
+        env = [(spec["base_url_env"], False), (spec["token_env"], True)]
+        # Second credentials (APIM subscription keys etc.) are secrets too.
+        env += [(e, True) for e in (spec.get("extra_headers_env") or {}).values()]
         out.append({
             "name": spec["name"],
             "label": _label_from_desc(spec["description"]),
-            "env": [(spec["base_url_env"], False), (spec["token_env"], True)],
+            "env": env,
         })
     out.extend(_BESPOKE_CATALOG)
     out.sort(key=lambda e: e["name"])

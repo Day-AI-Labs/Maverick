@@ -35,10 +35,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Goal rows persist their department (world-model schema v14).
 - Tax preparation pipeline (`maverick tax prepare`, `tax_prep.py`): uploaded
   documents → deterministic classification/extraction → workpaper →
-  first-pass TY2025 draft 1040 → preparer review package, every line cited
-  to its source document and out-of-scope items flagged as open items; plus
-  the 18-pack `tax_` specialist suite (portfolio now 1,018 packs across 26
-  suites).
+  first-pass TY2025 draft 1040 **and resident-state return** (auto-detected
+  from W-2 box 15; no-tax/flat states computed, graduated states handed to
+  the preparer) → preparer review package, every line cited to its source
+  document and out-of-scope items flagged as open items; plus the 18-pack
+  `tax_` specialist suite (portfolio now 1,018 packs across 26 suites) and
+  CCH Axcess / Thomson Reuters GoSystem connectors (confirm-gated write
+  seats + GET-only low-risk read seats for the status packs).
 
 
 ### Fixed

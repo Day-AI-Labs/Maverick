@@ -3896,19 +3896,24 @@ def tax_group() -> None:
               help="Filing status for the first-pass computation.")
 @click.option("--dependents", default=0, show_default=True,
               help="Qualifying children under 17 (child tax credit).")
+@click.option("--state", "state_code", default=None, metavar="XX",
+              help="Resident state for the state return (default: inferred "
+                   "from W-2 box 15).")
 @click.option("--out", "out_path", type=click.Path(), default=None,
               help="Also write the review package to this file.")
 def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
-                out_path: str | None) -> None:
-    """Turn a folder of uploaded documents into a first-pass draft 1040.
+                state_code: str | None, out_path: str | None) -> None:
+    """Turn a folder of uploaded documents into a first-pass draft return.
 
     Reads every ``*.txt`` document in DOCS_DIR (text exports of the client's
     W-2s, 1099s, etc. -- extraction agents handle PDFs upstream), classifies
     and extracts each one deterministically, assembles the workpaper, runs
-    the TY2025 first-pass computation, and prints the preparer review
-    package: every line cited to its source document, every out-of-scope
-    item flagged as an OPEN ITEM. A credentialed preparer reviews, completes,
-    and signs -- this never files anything.
+    the TY2025 federal first pass AND the resident-state first pass (no-tax
+    and flat-rate states computed; graduated states handed to the preparer /
+    tax engine), and prints the preparer review package: every line cited to
+    its source document, every out-of-scope item flagged as an OPEN ITEM.
+    A credentialed preparer reviews, completes, and signs -- this never
+    files anything.
     """
     from . import tax_prep
     docs = []
@@ -3916,9 +3921,13 @@ def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
         text = p.read_text(encoding="utf-8", errors="replace")
         docs.append(tax_prep.extract(text, label=p.name))
     wp = tax_prep.Workpaper(filing_status=filing_status,
-                            dependents_under_17=dependents, docs=docs)
+                            dependents_under_17=dependents, docs=docs,
+                            state=(state_code or ""))
     draft = tax_prep.compute_first_pass(wp)
-    package = tax_prep.render_review_package(draft)
+    state = (tax_prep.compute_state_first_pass(
+                 wp, tax_prep.infer_state(wp), federal=draft)
+             if docs else None)
+    package = tax_prep.render_review_package(draft, state)
     click.echo(package)
     if out_path:
         Path(out_path).write_text(package + "\n", encoding="utf-8")

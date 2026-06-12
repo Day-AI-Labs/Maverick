@@ -200,13 +200,20 @@ here.
 - **Tax preparation pipeline** (`tax_prep.py`, `maverick tax prepare
   <docs-dir>`; the 18-pack `tax_` suite) — a CPA firm's docs-to-draft
   workflow: uploaded client documents are classified and extracted
-  deterministically (W-2 / 1099 family / K-1 / 1098 / prior returns),
-  assembled into a standardized workpaper, and computed into a first-pass
-  TY2025 draft 1040 where **every line cites its source document** and
-  everything out of computed scope (Schedule C/E, itemizing) is an explicit
-  OPEN ITEM. Agents do the unstructured labor (chasing, extraction, client
-  comms — all drafts); the module does the provable math; the credentialed
-  preparer reviews, completes, and signs. Never files anything.
+  deterministically (W-2 / the 1099 family incl. R/B/G/SSA / K-1 /
+  1098/-T/-E / prior returns), assembled into a standardized workpaper, and
+  computed into a first-pass TY2025 draft 1040 **plus the resident-state
+  return** (auto-detected from W-2 box 15; no-tax and flat-rate states
+  computed, graduated states explicitly handed to the preparer/tax engine)
+  where **every line cites its source document** and everything out of
+  computed scope (Schedule C/D/E, itemizing, benefit taxability) is an
+  explicit OPEN ITEM. Agents do the unstructured labor (chasing,
+  extraction, client comms — all drafts); the module does the provable
+  math; the credentialed preparer reviews, completes, and signs in the
+  firm's professional tax engine — reachable via the **CCH Axcess and
+  Thomson Reuters GoSystem connectors** (write seats confirm-gated and
+  high-risk; GET-only low-risk read seats wired into the status packs).
+  Never files anything.
 - **Fleet memory — the Learning System of Record** (`fleet_memory.py`,
   opt-in `[fleet_memory] enable`; MCP tools `maverick_fleet_ingest` /
   `maverick_fleet_recall`; CLI `maverick fleet-memory`) — ANY external agent
