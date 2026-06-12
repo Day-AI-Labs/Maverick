@@ -931,8 +931,6 @@ async def providers_page(request: Request) -> HTMLResponse:
 
 # ----- Control surface pages (council pass) -----
 
-_AUDIT_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-
 
 def safe_audit_day(day: str | None) -> str | None:
     """Validate a ``?day=`` value as YYYY-MM-DD before it reaches the
@@ -943,7 +941,12 @@ def safe_audit_day(day: str | None) -> str | None:
     directory. Anything that isn't a bare date is rejected to ``None``
     (today), neutralizing path traversal at the HTTP boundary.
     """
-    if day and _AUDIT_DAY_RE.match(day):
+    # Delegate to the core's canonical validator so the HTTP boundary and the
+    # CLI stay in lockstep: it enforces the anchored shape (path-safety) AND a
+    # real calendar date, so a typo like 2026-13-99 falls back to today rather
+    # than resolving to a nonexistent day-file.
+    from maverick.audit.events import is_valid_day
+    if is_valid_day(day):
         return day
     return None
 

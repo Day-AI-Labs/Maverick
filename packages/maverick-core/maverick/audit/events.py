@@ -41,16 +41,26 @@ _DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def is_valid_day(day: Any) -> bool:
-    """True iff ``day`` is a literal ``YYYY-MM-DD`` string.
+    """True iff ``day`` is a real ``YYYY-MM-DD`` calendar date.
 
     An audit ``day`` becomes a filesystem path component
     (``<audit_dir>/<day>.ndjson``), so anything that isn't this exact shape
     -- ``..``, a path separator, an absolute path, a NUL -- could escape the
-    audit dir. Every code path that builds a day-file path from an untrusted
-    ``day`` must gate on this first. (Mirrors the dashboard's own
-    ``safe_audit_day`` HTTP-boundary guard.)
+    audit dir. The anchored shape check is the path-safety gate; on top of it
+    we require a genuine calendar date, so a typo'd ``--day`` (``2026-13-99``,
+    ``2026-02-30``) is a friendly error instead of a misleading "no entries /
+    OK" on a day-file that could never exist (UX finding). Every code path that
+    builds a day-file path from an untrusted ``day`` must gate on this first.
+    (Mirrors the dashboard's own ``safe_audit_day`` HTTP-boundary guard.)
     """
-    return isinstance(day, str) and bool(_DAY_RE.match(day))
+    if not (isinstance(day, str) and _DAY_RE.match(day)):
+        return False
+    import datetime
+    try:
+        datetime.date.fromisoformat(day)
+    except ValueError:
+        return False
+    return True
 
 
 class EventKind:
