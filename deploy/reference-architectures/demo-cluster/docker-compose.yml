@@ -6,9 +6,10 @@
 #   seed       one-shot: writes a handful of finished demo goals into the
 #              shared state volume via the real world-model API (seed_demo.py)
 #   dashboard  the real dashboard, token-protected, NEVER published on the host
-#   proxy      nginx deny-proxy: the only public surface. Serves GET/HEAD only
-#              (the dashboard has no global read-only flag — see README) and
-#              injects the bearer upstream so visitors never see the token.
+#   proxy      nginx path-allowlist proxy: the only public surface. Serves
+#              /demo + /healthz only (the dashboard has no global read-only
+#              flag — see README) and injects the bearer upstream only for the
+#              redacted demo page.
 #
 # Public entry: http://<host>:8080 — front it with TLS at the edge (README).
 

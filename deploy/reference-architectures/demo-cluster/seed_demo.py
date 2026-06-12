@@ -12,7 +12,9 @@ successes and ``blocked``/``cancelled`` for failures (there is no literal
 ``active`` with no agent attached would be reclaimed as orphaned by the
 dashboard on startup.
 
-Idempotent: if any goals already exist, it exits without writing.
+Idempotent for the public demo owner: if demo-owned goals already exist, it
+exits without writing. Non-demo state in a reused volume is ignored by the
+public /demo page and must not suppress seeding the public sample data.
 """
 from __future__ import annotations
 
@@ -70,8 +72,8 @@ DEMO_GOALS = [
 
 def main() -> None:
     world = WorldModel(DEFAULT_DB)
-    if world.list_goals(limit=1):
-        print("seed_demo: goals already present; nothing to do")
+    if world.list_goals(owner="demo", limit=1):
+        print("seed_demo: demo goals already present; nothing to do")
         return
     for title, description, status, result in DEMO_GOALS:
         goal_id = world.create_goal(title, description, owner="demo")
