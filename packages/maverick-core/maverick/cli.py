@@ -3779,6 +3779,34 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
                "now complete (verifier-scored).")
 
 
+@main.command("proof")
+@click.option("--days", default=90, show_default=True,
+              help="Window to report over.")
+@click.option("--human-cost", default=None, type=float,
+              help="Your fully-loaded cost of one comparable human "
+                   "deliverable (defaults conservative).")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.pass_context
+def proof(ctx, days: int, human_cost, as_json: bool) -> None:
+    """The workforce value report: did the AI workforce pay for itself AND
+    get better?
+
+    Assembles throughput (deliverables), economics (agent cost vs your
+    human-baseline -> cost avoided + ROI), the capability improvement curve
+    (from `maverick hindsight --ledger` runs), and governance (signed audit
+    chain) into one read-only report -- per department. The artifact a POC
+    ends on and a diligence team runs. Measures only; changes nothing.
+    """
+    from . import workforce_value
+    world = open_world(ctx.obj["db"])
+    v = workforce_value.compute(world, window_days=days, human_cost=human_cost)
+    if as_json:
+        import json as _json
+        click.echo(_json.dumps(workforce_value.to_dict(v), indent=2))
+    else:
+        click.echo(workforce_value.format_report(v))
+
+
 @main.command("hindsight")
 @click.option("--before", default="latest",
               help="Older learned-state snapshot to compare against "
