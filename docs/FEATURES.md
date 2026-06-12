@@ -164,7 +164,7 @@ here.
   maker-checker + SoD, legal privilege, HR PII-minimization, IT/GRC
   chain-of-custody, ops safety interlocks, engineering tests-first, GTM
   no-overpromising, strategy source-grounding). One implementation point
-  upgrades all 1,018 built-in packs AND operator/intake-generated packs;
+  upgrades all 1,019 built-in packs AND operator/intake-generated packs;
   prompts only — hard limits stay with capabilities/governance.
 - **Department memory at every spawn depth** — `agent_from_profile` appends
   the department's recalled lessons (same-department reflexions + dream
@@ -187,7 +187,7 @@ here.
   cost avoided + ROI, the capability improvement curve from the hindsight
   ledger, and governance evidence, per department (and per external vendor
   with `--fleet`). Read-only; the POC-closing artifact.
-- **1,018-agent specialist portfolio across 26 suites** — the original 8
+- **1,019-agent specialist portfolio across 26 suites** — the original 8
   business suites plus customer experience, marketing, procurement,
   data & analytics, security ops, executive office, facilities/EHS, tax
   preparation, and 10 industry verticals (healthcare, insurance, banking,
@@ -196,9 +196,9 @@ here.
   (country employment law, GDPR/CCPA/PIPL/EU-AI-Act regimes, indirect-tax
   regimes). Quality gate: `maverick domains-lint [--ci]` — every pack has
   a bounded persona, least-privilege allow list, explicit deny list, and
-  risk ceiling; 0 errors, 0 warnings across all 1,018.
+  risk ceiling; 0 errors, 0 warnings across all 1,019.
 - **Tax preparation pipeline** (`tax_prep.py`, `maverick tax prepare
-  <docs-dir>`; the 18-pack `tax_` suite) — a CPA firm's docs-to-draft
+  <docs-dir>`; the 19-pack `tax_` suite) — a CPA firm's docs-to-draft
   workflow: uploaded client documents are classified and extracted
   deterministically (W-2 / the 1099 family incl. R/B/G/SSA / K-1 /
   1098/-T/-E / prior returns), assembled into a standardized workpaper, and
@@ -214,6 +214,21 @@ here.
   Thomson Reuters GoSystem connectors** (write seats confirm-gated and
   high-risk; GET-only low-risk read seats wired into the status packs).
   Never files anything.
+- **Signed tax-constants channel** (`tax_constants.py`, `maverick tax
+  update [--file|--status|--rollback]`; `[tax]` config) — new tax law
+  ships as a **content release, not a code release**: Ed25519-signed
+  constants bundles verified fail-closed against `[tax]
+  trusted_constants_pubkeys` (no TOFU), sanity-validated before they can
+  replace the tables (rates in range, ascending brackets, real state
+  codes), downgrade-protected, applied atomically with the previous
+  bundle kept for `--rollback`, and audited. With `auto_update` +
+  `update_url` configured, `maverick tax prepare` picks up a published
+  law change automatically (throttled); air-gapped firms apply the same
+  bundle from a file. Every review package states the constants revision
+  that computed it, and the `tax_law_watch` pack (web access, NO
+  client-data access — the inverse seal of the rest of the suite)
+  monitors IRS/state guidance and alerts the firm; agents never edit
+  constants directly.
 - **Fleet memory — the Learning System of Record** (`fleet_memory.py`,
   opt-in `[fleet_memory] enable`; MCP tools `maverick_fleet_ingest` /
   `maverick_fleet_recall`; CLI `maverick fleet-memory`) — ANY external agent

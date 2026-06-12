@@ -2,7 +2,7 @@
 
 At-a-glance index of the business-function agent suites designed for the platform.
 Full detail lives in the per-suite docs below; this is the summary to skim later.
-**Twenty-six suites, 1,018 shipped agents** — the original eight functional
+**Twenty-six suites, 1,019 shipped agents** — the original eight functional
 suites below plus customer experience, marketing, procurement, data &
 analytics, security ops, executive office, facilities/EHS, tax preparation
 (CPA firms), and ten industry verticals (healthcare, insurance, banking,

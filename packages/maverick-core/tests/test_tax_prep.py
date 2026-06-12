@@ -255,19 +255,32 @@ class TestTaxSuitePacks:
     def test_roster_present_and_sealed(self):
         packs = {k: v for k, v in load_domains(builtin_dir()).items()
                  if k.startswith("tax_")}
-        assert len(packs) >= 18, f"expected >=18 tax packs, found {len(packs)}"
+        assert len(packs) >= 19, f"expected >=19 tax packs, found {len(packs)}"
         for name, p in packs.items():
             assert p.max_risk == "low", f"{name}: risk={p.max_risk!r}"
             assert len(p.persona.strip()) >= 200, f"{name}: thin persona"
-            assert p.knowledge_sources == ["tax"], name
             assert p.compartment.startswith("tax_"), name
             cap = p.capability(f"agent:{name}")
             assert cap.permits("read_file") is True, name
-            # Taxpayer data never leaves: no shell/write, no web egress.
-            for dangerous in ("shell", "write_file", "code_exec",
-                              "web_search", "browser"):
-                assert "shell" in p.deny_tools and "write_file" in p.deny_tools
+            assert "shell" in p.deny_tools and "write_file" in p.deny_tools
+            for dangerous in ("shell", "write_file", "code_exec"):
                 assert cap.permits(dangerous) is False, f"{name}: {dangerous}"
+            if name == "tax_law_watch":   # inverse seal, asserted below
+                continue
+            # Client-data packs: taxpayer data never leaves -- no web egress.
+            assert p.knowledge_sources == ["tax"], name
+            for egress in ("web_search", "browser"):
+                assert cap.permits(egress) is False, f"{name}: {egress}"
+
+    def test_law_watch_has_the_inverse_seal(self):
+        # The one pack with web access is the one pack with NO client data:
+        # it monitors IRS/state guidance against the firm's tax-law library,
+        # and never touches the client-document corpus.
+        p = load_domains(builtin_dir())["tax_law_watch"]
+        cap = p.capability("agent:tax_law_watch")
+        assert cap.permits("web_search") is True
+        assert p.knowledge_sources == ["tax_law"]   # not the client corpus
+        assert "constants" in p.persona and "signed" in p.persona
 
     def test_suite_registered_with_discipline(self):
         from maverick.domain import suite_for

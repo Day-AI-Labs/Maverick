@@ -3915,7 +3915,16 @@ def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
     A credentialed preparer reviews, completes, and signs -- this never
     files anything.
     """
-    from . import tax_prep
+    from . import tax_constants, tax_prep
+    try:
+        from .config import get_tax
+        if get_tax()["auto_update"]:
+            status, detail = tax_constants.check_for_update()
+            if status == "applied":
+                click.echo(f"[tax] {detail}")
+    except Exception:  # the update channel must never block a prep run
+        pass
+    federal, state_tables, provenance = tax_constants.active_constants()
     docs = []
     for p in sorted(Path(docs_dir).glob("*.txt")):
         text = p.read_text(encoding="utf-8", errors="replace")
@@ -3923,15 +3932,63 @@ def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
     wp = tax_prep.Workpaper(filing_status=filing_status,
                             dependents_under_17=dependents, docs=docs,
                             state=(state_code or ""))
-    draft = tax_prep.compute_first_pass(wp)
+    draft = tax_prep.compute_first_pass(wp, constants=federal)
     state = (tax_prep.compute_state_first_pass(
-                 wp, tax_prep.infer_state(wp), federal=draft)
+                 wp, tax_prep.infer_state(wp), federal=draft,
+                 constants=state_tables)
              if docs else None)
     package = tax_prep.render_review_package(draft, state)
+    package += f"\n\nConstants: TY{federal['year']} {provenance}"
     click.echo(package)
     if out_path:
         Path(out_path).write_text(package + "\n", encoding="utf-8")
         click.echo(f"\nWrote review package -> {out_path}")
+
+
+@tax_group.command("update")
+@click.option("--file", "bundle_file", type=click.Path(exists=True),
+              default=None, help="Apply a signed constants bundle from a "
+              "file (air-gapped transport).")
+@click.option("--url", default=None,
+              help="Check this URL instead of [tax] update_url.")
+@click.option("--status", "show_status", is_flag=True,
+              help="Show the applied constants version and exit.")
+@click.option("--rollback", "do_rollback", is_flag=True,
+              help="Restore the previously applied constants bundle.")
+def tax_update(bundle_file: str | None, url: str | None,
+               show_status: bool, do_rollback: bool) -> None:
+    """Update the tax computation constants from a SIGNED publisher bundle.
+
+    New tax law ships as a content release, not a code release: the bundle
+    is Ed25519-verified against [tax] trusted_constants_pubkeys
+    (fail-closed), sanity-validated (rates, brackets, state codes), and
+    downgrade-protected before it can replace the tables. With [tax]
+    auto_update + update_url configured, `maverick tax prepare` runs this
+    check automatically (throttled), so a published law change reaches
+    every prep run without an upgrade. The previous bundle is kept for
+    --rollback; every apply writes an audit row.
+    """
+    from . import tax_constants
+    if show_status:
+        federal, _, provenance = tax_constants.active_constants()
+        click.echo(f"TY{federal['year']} constants: {provenance}")
+        return
+    if do_rollback:
+        ok, reason = tax_constants.rollback()
+        if not ok:
+            raise click.ClickException(reason)
+        click.echo(reason)
+        return
+    if bundle_file:
+        ok, reason = tax_constants.apply_bundle_file(bundle_file)
+        if not ok:
+            raise click.ClickException(reason)
+        click.echo(reason)
+        return
+    status, detail = tax_constants.check_for_update(url=url, force=True)
+    if status == "error":
+        raise click.ClickException(detail)
+    click.echo(f"{status}: {detail}")
 
 
 @main.command("proof")

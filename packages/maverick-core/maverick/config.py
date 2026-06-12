@@ -483,6 +483,31 @@ def get_experience() -> dict:
     return {"enable": bool(cfg.get("enable", False))}
 
 
+def get_tax() -> dict:
+    """Return the ``[tax]`` section (signed tax-constants content channel).
+
+    ``auto_update`` is ON by default but a no-op until the operator
+    configures both ``update_url`` and ``trusted_constants_pubkeys`` —
+    updates are fail-closed against those anchors (see
+    :mod:`maverick.tax_constants`). ``check_hours`` throttles the network
+    check."""
+    cfg = load_config().get("tax", {})
+    try:
+        check_hours = max(1.0, float(cfg.get("check_hours", 20.0)))
+    except (TypeError, ValueError):
+        check_hours = 20.0
+    keys = cfg.get("trusted_constants_pubkeys", [])
+    if not isinstance(keys, list):
+        keys = []
+    return {
+        "auto_update": bool(cfg.get("auto_update", True)),
+        "update_url": str(cfg.get("update_url", "") or "").strip(),
+        "check_hours": check_hours,
+        "trusted_constants_pubkeys": [str(k).strip() for k in keys
+                                      if str(k).strip()],
+    }
+
+
 def get_dreaming() -> dict:
     """Return the ``[dreaming]`` section (offline experience consolidation).
 
