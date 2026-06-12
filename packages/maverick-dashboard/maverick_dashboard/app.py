@@ -326,10 +326,16 @@ _AUTH_EXEMPT = {
 # this before HMAC verification so unauthenticated callers cannot force the
 # dashboard to buffer or hash arbitrarily large request bodies.
 _MAX_WEBHOOK_BODY_BYTES = 256 * 1024
+_MAX_SKILL_VALIDATE_BODY_BYTES = 256 * 1024
 
 
-async def _read_limited_webhook_body(request: Request) -> bytes:
-    """Read a webhook request body with a hard size cap.
+async def _read_limited_request_body(
+    request: Request,
+    *,
+    max_bytes: int,
+    too_large_detail: str,
+) -> bytes:
+    """Read a request body with a hard size cap.
 
     ``Content-Length`` lets us reject obviously oversized requests before
     reading any body bytes.  For chunked or otherwise lengthless requests,
@@ -342,15 +348,33 @@ async def _read_limited_webhook_body(request: Request) -> bytes:
             declared = int(content_length)
         except ValueError:
             raise HTTPException(status_code=400, detail="invalid Content-Length")
-        if declared > _MAX_WEBHOOK_BODY_BYTES:
-            raise HTTPException(status_code=413, detail="webhook body too large")
+        if declared > max_bytes:
+            raise HTTPException(status_code=413, detail=too_large_detail)
 
     body = bytearray()
     async for chunk in request.stream():
         body.extend(chunk)
-        if len(body) > _MAX_WEBHOOK_BODY_BYTES:
-            raise HTTPException(status_code=413, detail="webhook body too large")
+        if len(body) > max_bytes:
+            raise HTTPException(status_code=413, detail=too_large_detail)
     return bytes(body)
+
+
+async def _read_limited_webhook_body(request: Request) -> bytes:
+    """Read a webhook request body with a hard size cap."""
+    return await _read_limited_request_body(
+        request,
+        max_bytes=_MAX_WEBHOOK_BODY_BYTES,
+        too_large_detail="webhook body too large",
+    )
+
+
+async def _read_limited_skill_validator_body(request: Request) -> bytes:
+    """Read a skill-validator request body with a hard size cap."""
+    return await _read_limited_request_body(
+        request,
+        max_bytes=_MAX_SKILL_VALIDATE_BODY_BYTES,
+        too_large_detail="skill too large (max 256 KiB)",
+    )
 
 # Safe methods skip the CSRF check (browsers send Origin/Referer
 # inconsistently on GETs from address bars and bookmarks).
@@ -1903,11 +1927,9 @@ async def skills_validate(request: Request) -> JSONResponse:
 
     from maverick.skills import validate_skill_file
 
-    body = await request.body()
+    body = await _read_limited_skill_validator_body(request)
     if not body:
         raise HTTPException(status_code=400, detail="POST the SKILL.md body")
-    if len(body) > 256 * 1024:
-        raise HTTPException(status_code=413, detail="skill too large (max 256 KiB)")
     with _tempfile.TemporaryDirectory(prefix="mvk-skill-validate-") as td:
         p = _Path(td) / "SKILL.md"
         p.write_bytes(body)
