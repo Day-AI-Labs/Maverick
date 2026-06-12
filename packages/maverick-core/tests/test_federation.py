@@ -272,12 +272,18 @@ def test_delegate_refused_when_local_grant_lacks_tool():
     assert rec_b.rows[0]["accepted"] is False and rec_b.rows[0]["direction"] == "received"
 
 
-def test_delegate_accepted_within_local_grant():
+def test_delegate_accepted_within_local_grant_passes_narrowed_capability():
+    goals = _Goals()
     grant = Capability(principal="root",
                        allow_tools=frozenset({"read_file", "http_fetch"}))
-    svc_b = _service(local_grant=grant)
+    svc_b = _service(local_grant=grant, goal_service=goals)
     out = _node(svc_b).delegate("B", "task", requested_tools={"read_file"})
     assert out.accepted is True and out.goal_id == 1
+    capability = goals.started[0]["capability"]
+    assert capability.principal == "federation:A"
+    assert capability.allow_tools == frozenset({"read_file"})
+    assert capability.permits("read_file") is True
+    assert capability.permits("http_fetch") is False
 
 
 def test_delegate_empty_title_refused_in_band():
