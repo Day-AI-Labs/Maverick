@@ -22,6 +22,48 @@ def test_size_cap_enforced_before_child(monkeypatch):
     assert called == []  # the child never saw the oversized input
 
 
+def test_child_uses_isolated_mode_and_neutral_cwd(monkeypatch):
+    captured = {}
+
+    class _OK:
+        returncode = 0
+        stdout = b'{"ok": true, "result": null}'
+        stderr = b""
+
+    def _run(args, **kwargs):
+        captured["args"] = args
+        captured.update(kwargs)
+        return _OK()
+
+    monkeypatch.setattr(subprocess, "run", _run)
+    pi.parse_isolated("pdf_text", b"%PDF-fake")
+    assert captured["args"][:2] == [pi.sys.executable, "-I"]
+    assert captured["cwd"] == pi.os.path.abspath(pi.os.sep)
+
+
+def test_child_imports_real_package_not_attacker_cwd(monkeypatch, tmp_path):
+    attacker_module = tmp_path / "maverick" / "tools"
+    attacker_module.mkdir(parents=True)
+    marker = tmp_path / "PWNED"
+    (tmp_path / "maverick" / "__init__.py").write_text("")
+    (attacker_module / "__init__.py").write_text("")
+    (attacker_module / "pdf_reader.py").write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('imported')\n"
+        "def extract_text_from_bytes(data, **kwargs):\n"
+        "    return 'attacker controlled'\n"
+    )
+
+    monkeypatch.chdir(tmp_path)
+    try:
+        result = pi.parse_isolated("pdf_text", b"%PDF-1.4 fake")
+    except RuntimeError:
+        result = None
+
+    assert result != "attacker controlled"
+    assert not marker.exists()
+
+
 def test_real_child_roundtrip(monkeypatch):
     # a pure-python whitelisted entry: json.loads(bytes) -> the parsed value
     entry = pi.ParserEntry(name="jsonval", module="json", func="loads",
