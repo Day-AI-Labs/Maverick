@@ -37,6 +37,14 @@ def test_parse_without_frontmatter():
     assert t.budget_dollars == 5.0
 
 
+def test_parse_non_numeric_budget_raises_clear_error():
+    # A user-authored template with a non-numeric budget must raise a clear,
+    # catchable message -- not a raw float() ValueError traceback.
+    import pytest
+    with pytest.raises(ValueError, match=r"budget_dollars.*must be a number.*not-a-number"):
+        Template.parse("---\nbudget_dollars: not-a-number\n---\nbody", "bad")
+
+
 def test_render_substitutes_variables():
     t = Template.parse(TEMPLATE_BODY, "research")
     title, body = t.render(topic="AI agents", depth="4")
