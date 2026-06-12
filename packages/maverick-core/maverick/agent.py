@@ -1279,6 +1279,17 @@ class Agent:
                            reason="human approval not granted")
                 except Exception:  # pragma: no cover
                     pass
+                # Human-override ingestion: the operator's "no" is itself a
+                # learning signal — recallable on the next similar goal and
+                # consolidated by dreaming. No-op unless [reflexion] is on.
+                try:
+                    from .reflexion import record_human_override
+                    record_human_override(
+                        self.brief, name, _gov.reason or _gov.rule,
+                        domain=self.domain,
+                    )
+                except Exception:  # pragma: no cover -- never block the denial
+                    pass
                 return (
                     f"⚠ {name!r} requires human approval (EU AI Act Art 14): "
                     f"{_gov.reason}. Not granted, so the tool was not executed."

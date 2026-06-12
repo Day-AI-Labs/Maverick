@@ -393,6 +393,44 @@ def tools_from_blackboard(blackboard) -> list[str]:
     return seen
 
 
+def record_human_override(
+    brief: str, tool_name: str, reason: str, *,
+    domain: str | None = None, channel: str | None = None,
+    user_id: str | None = None, path: Path = DEFAULT_PATH,
+) -> bool:
+    """Persist a human's refusal of a gated action as a learning signal.
+
+    Governance already audits the denial; this additionally turns the
+    operator's "no" into a recallable lesson (failure_class
+    ``human_override``) so the next similar goal proposes an alternative or
+    seeks approval earlier — and the dreaming loop can consolidate repeated
+    refusals into a department insight. No-op unless reflexion is enabled;
+    never raises into the denial path.
+    """
+    try:
+        if not enabled():
+            return False
+        goal_text = _sanitize_text(brief)[:500]
+        return record(
+            goal_text=goal_text,
+            failure_class="human_override",
+            failure_msg=f"tool {tool_name} not approved: {reason}"[:300],
+            reflection=(
+                f"A human declined to approve {tool_name} on a similar goal. "
+                "Propose a less-privileged alternative, or surface the "
+                "justification and ask for approval earlier in the run."
+            ),
+            tools_used=[tool_name],
+            channel=channel,
+            user_id=user_id,
+            domain=domain,
+            path=path,
+        )
+    except Exception as e:  # pragma: no cover -- learning never blocks a denial
+        log.debug("human-override reflexion skipped: %s", e)
+        return False
+
+
 def synthesize_reflection(
     failure_class: str, failure_msg: str, tools_used: list[str]
 ) -> str:
@@ -418,6 +456,7 @@ __all__ = [
     "Reflexion",
     "DEFAULT_PATH",
     "record",
+    "record_human_override",
     "recall",
     "list_recent",
     "clear",

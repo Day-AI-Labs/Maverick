@@ -85,6 +85,35 @@ here.
   Reflexions also carry the recording run's department (`reflexion.py`
   `domain` field), and same-department lessons outrank equally-similar
   generic ones at recall time.
+- **Cross-department insight promotion** — a failure pattern recurring in
+  ≥2 distinct departments becomes a *shared* insight every department
+  recalls (`promote_shared_insights`; `[dreaming] promote_shared`).
+  Compartment seals stay intact: only the consolidated lesson crosses the
+  boundary, never raw department trajectories.
+- **Skill retirement (the forgetting loop)** — a dream phase moves learned
+  skills with a decayed track record (`skill_stats.evictable`: enough uses,
+  win rate under the floor) to `learned-skills/retired/` with a logged
+  reason — out of the recall glob, reversible by moving the file back
+  (`[dreaming] retire_skills / retire_min_uses / retire_below`).
+- **Dream-time rehearsal** — dream cycles queue the biggest recurring
+  failure patterns as practice cases (`[dreaming] rehearse`,
+  `~/.maverick/dreams/rehearsals.ndjson`); `maverick dream --rehearse` runs
+  them as budgeted `[rehearsal]`-titled goals and reports how many
+  previously-failing patterns now complete. Refused while verifier
+  calibration is frozen (the same interlock that gates maverick-evolve), so
+  the system never practices against a distrusted grader.
+- **Department-scoped routing memory** — a domain swarm's counterfactual
+  credit is recorded both globally and per department
+  (`role_stats.py` `<domain>::<role>` keys); a domain run's routing guidance
+  prefers its own department's track record and falls back to the global
+  signal when history is thin.
+- **Human-override ingestion** — when a human declines an Art-14 approval
+  gate, the refusal is persisted as a recallable lesson
+  (`reflexion.record_human_override`, failure class `human_override`,
+  department-tagged) so the next similar goal proposes an alternative or
+  seeks approval earlier — and dreaming consolidates repeated refusals into
+  department insights. Opt-in via `[reflexion]`; the audit record is
+  unchanged.
 - **Vector-store cross-run memory** — opt-in `[memory] backend` routes
   cross-run recall through a persistent **Chroma / Qdrant / Weaviate** store
   (`vector_store/`, `semantic_recall.py`) so similarity search is indexed and

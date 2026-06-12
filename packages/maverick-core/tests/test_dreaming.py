@@ -6,6 +6,7 @@ tmp_path stores — no LLM, no real ~/.maverick state.
 """
 from __future__ import annotations
 
+import pytest
 from maverick import dreaming, reflexion
 
 
@@ -229,6 +230,7 @@ class TestSharedPromotion:
             None, profiles=PROFILES, reflexion_path=rpath,
             insights_path=tmp_path / "insights.ndjson",
             skill_store=tmp_path / "skills",
+            skill_stats_path=tmp_path / "skill_stats.json",
         )
         assert report.insights_written == 1
         insights = dreaming.load_insights(tmp_path / "insights.ndjson")
@@ -268,6 +270,135 @@ class TestReflexionPruning:
         assert dreaming.prune_reflexions(tmp_path / "nope.ndjson") == 0
 
 
+class TestSkillRetirement:
+    def _seed(self, tmp_path, *, wins: int, losses: int):
+        import json
+        store = tmp_path / "learned-skills"
+        store.mkdir()
+        (store / "flaky-skill.md").write_text("# flaky", encoding="utf-8")
+        (store / "good-skill.md").write_text("# good", encoding="utf-8")
+        stats = tmp_path / "skill_stats.json"
+        stats.write_text(json.dumps({
+            "flaky-skill": {"uses": wins + losses, "wins": wins,
+                            "losses": losses, "last_used": 1.0},
+            "good-skill": {"uses": 10, "wins": 9, "losses": 1, "last_used": 1.0},
+        }), encoding="utf-8")
+        return store, stats
+
+    def test_decayed_skill_is_retired_reversibly(self, tmp_path):
+        store, stats = self._seed(tmp_path, wins=1, losses=9)
+        retired = dreaming.retire_stale_skills(
+            store, min_uses=5, below=0.25, stats_path=stats,
+        )
+        assert retired == ["flaky-skill"]
+        # Moved out of the recall glob, not deleted; reason is logged.
+        assert not (store / "flaky-skill.md").exists()
+        assert (store / "retired" / "flaky-skill.md").exists()
+        assert (store / "retired" / "retired.ndjson").exists()
+        assert (store / "good-skill.md").exists()
+
+    def test_healthy_store_is_untouched(self, tmp_path):
+        store, stats = self._seed(tmp_path, wins=8, losses=2)
+        assert dreaming.retire_stale_skills(
+            store, min_uses=5, below=0.25, stats_path=stats,
+        ) == []
+
+    def test_missing_store_is_safe(self, tmp_path):
+        assert dreaming.retire_stale_skills(tmp_path / "nope") == []
+
+
+class TestRehearsal:
+    def _failures(self):
+        return [
+            {"goal_text": "reconcile the quarterly ledger totals",
+             "failure_class": "budget", "reflection": "r",
+             "domain": "finance_sox", "ts": 2.0},
+            {"goal_text": "reconcile the monthly ledger totals",
+             "failure_class": "budget", "reflection": "r",
+             "domain": "finance_sox", "ts": 1.0},
+        ]
+
+    def test_cases_built_from_biggest_clusters(self):
+        cases = dreaming.build_rehearsal_cases(self._failures(), min_cluster=2)
+        assert len(cases) == 1
+        # The newest phrasing of the recurring problem is the practice prompt.
+        assert cases[0]["prompt"] == "reconcile the quarterly ledger totals"
+        assert cases[0]["domain"] == "finance_sox"
+        assert cases[0]["evidence"] == 2
+
+    def test_queue_roundtrip(self, tmp_path):
+        path = tmp_path / "rehearsals.ndjson"
+        cases = dreaming.build_rehearsal_cases(self._failures(), min_cluster=2)
+        assert dreaming.save_rehearsals(cases, path=path) == 1
+        assert dreaming.load_rehearsals(path)[0]["prompt"] == cases[0]["prompt"]
+
+    @pytest.mark.asyncio
+    async def test_rehearse_scores_completion(self, tmp_path):
+        path = tmp_path / "rehearsals.ndjson"
+        dreaming.save_rehearsals(
+            dreaming.build_rehearsal_cases(self._failures(), min_cluster=2),
+            path=path,
+        )
+
+        async def agent(prompt: str) -> str:
+            return f"DONE: handled {prompt}"
+
+        assert await dreaming.rehearse(agent, path=path) == (1, 1)
+
+        async def failing_agent(prompt: str) -> str:
+            return "Stopped: this goal hit your spending limit"
+
+        assert await dreaming.rehearse(failing_agent, path=path) == (0, 1)
+
+    @pytest.mark.asyncio
+    async def test_rehearse_refuses_when_calibration_frozen(
+        self, tmp_path, monkeypatch,
+    ):
+        # The interlock: a drifted judge must not grade practice runs.
+        monkeypatch.setattr("maverick.calibration.learning_frozen",
+                            lambda **kw: True)
+        path = tmp_path / "rehearsals.ndjson"
+        dreaming.save_rehearsals(
+            dreaming.build_rehearsal_cases(self._failures(), min_cluster=2),
+            path=path,
+        )
+
+        async def agent(prompt: str) -> str:  # pragma: no cover -- must not run
+            raise AssertionError("rehearsal ran despite frozen calibration")
+
+        with pytest.raises(dreaming.RehearsalFrozen):
+            await dreaming.rehearse(agent, path=path)
+
+    @pytest.mark.asyncio
+    async def test_rehearse_empty_queue_is_noop(self, tmp_path):
+        async def agent(prompt: str) -> str:  # pragma: no cover
+            raise AssertionError("no cases should run")
+
+        assert await dreaming.rehearse(
+            agent, path=tmp_path / "missing.ndjson",
+        ) == (0, 0)
+
+    def test_cycle_queues_rehearsals_when_enabled(self, tmp_path, monkeypatch):
+        cfg = dict(_SETTINGS)
+        cfg["rehearse"] = True
+        monkeypatch.setattr(dreaming, "settings", lambda: cfg)
+        rpath = tmp_path / "reflexions.ndjson"
+        for goal in ("reconcile the quarterly ledger totals",
+                     "reconcile the monthly ledger totals"):
+            reflexion.record(goal_text=goal, failure_class="budget",
+                             failure_msg="cap", reflection="r",
+                             domain="finance_sox", path=rpath)
+        report = dreaming.dream_cycle(
+            None, profiles=PROFILES, reflexion_path=rpath,
+            insights_path=tmp_path / "insights.ndjson",
+            skill_store=tmp_path / "skills",
+            rehearsals_path=tmp_path / "rehearsals.ndjson",
+            skill_stats_path=tmp_path / "skill_stats.json",
+        )
+        assert report.rehearsals_queued == 1
+        assert dreaming.load_rehearsals(tmp_path / "rehearsals.ndjson")
+
+
 class _FakeGoal:
     def __init__(self, title: str, t: float):
         self.title = title
@@ -305,6 +436,7 @@ class TestDreamCycle:
         report = dreaming.dream_cycle(
             world, profiles=PROFILES, reflexion_path=rpath,
             insights_path=ipath, skill_store=store,
+            skill_stats_path=tmp_path / "skill_stats.json",
         )
 
         assert report.goals_replayed == 2
@@ -328,10 +460,12 @@ class TestDreamCycle:
         first = dreaming.dream_cycle(
             None, profiles=PROFILES, reflexion_path=rpath, insights_path=ipath,
             skill_store=tmp_path / "skills",
+            skill_stats_path=tmp_path / "skill_stats.json",
         )
         second = dreaming.dream_cycle(
             None, profiles=PROFILES, reflexion_path=rpath, insights_path=ipath,
             skill_store=tmp_path / "skills",
+            skill_stats_path=tmp_path / "skill_stats.json",
         )
         assert first.insights_written == 1
         assert second.insights_written == 0  # dedup: same dream isn't re-dreamt
@@ -347,6 +481,7 @@ class TestDreamCycle:
             profiles=PROFILES, reflexion_path=rpath,
             insights_path=tmp_path / "insights.ndjson",
             skill_store=tmp_path / "skills",
+            skill_stats_path=tmp_path / "skill_stats.json",
         )
         assert report.insights_written == 0
         assert report.skills_distilled == 0

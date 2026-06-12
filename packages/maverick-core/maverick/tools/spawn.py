@@ -464,10 +464,13 @@ def spawn_swarm_tool(parent: Agent) -> Tool:  # noqa: C901
                     )
                     # Routing memory: accumulate per-role credit so future runs
                     # can prefer roles that historically contribute (role_stats).
+                    # The parent's department (domain pack) scopes the record so
+                    # a finance swarm's lesson steers future finance swarms.
                     try:
                         from .. import role_stats
                         role_stats.record_credit(
                             cmap, {c.name: c.role for c in children},
+                            domain=getattr(parent, "domain", None),
                         )
                     except Exception:  # pragma: no cover -- stats never block
                         pass

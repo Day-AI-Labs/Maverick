@@ -39,6 +39,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_DIR = Path.home() / ".maverick" / "dreams"
 DEFAULT_INSIGHTS = DEFAULT_DIR / "insights.ndjson"
+DEFAULT_REHEARSALS = DEFAULT_DIR / "rehearsals.ndjson"
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _STOP = frozenset({
@@ -100,6 +101,8 @@ class DreamReport:
     insights_written: int = 0
     skills_distilled: int = 0
     reflexions_pruned: int = 0
+    skills_retired: int = 0
+    rehearsals_queued: int = 0
     departments: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -107,8 +110,10 @@ class DreamReport:
         return (
             f"Dream cycle: replayed {self.goals_replayed} success(es) + "
             f"{self.failures_replayed} failure(s); wrote {self.insights_written} "
-            f"insight(s), distilled {self.skills_distilled} skill(s), pruned "
-            f"{self.reflexions_pruned} stale reflexion(s). Departments touched: {depts}."
+            f"insight(s), distilled {self.skills_distilled} skill(s), retired "
+            f"{self.skills_retired} stale skill(s), queued {self.rehearsals_queued} "
+            f"rehearsal(s), pruned {self.reflexions_pruned} stale reflexion(s). "
+            f"Departments touched: {depts}."
         )
 
 
@@ -454,6 +459,180 @@ def prune_reflexions(
     return dropped
 
 
+# ---------- skill retirement (the forgetting loop) ----------
+
+def retire_stale_skills(
+    store: Path | str | None = None, *, min_uses: int = 5, below: float = 0.25,
+    stats_path: Path | None = None,
+) -> list[str]:
+    """Retire learned skills whose recall track record decayed.
+
+    Learning loops without forgetting loops degrade: a skill that keeps being
+    recalled but rarely helps (``skill_stats.evictable``: >= ``min_uses``
+    decided uses, win rate <= ``below``) is MOVED to ``<store>/retired/`` —
+    out of ``load_skills``' glob, so it stops being recalled — with a
+    ``retired.ndjson`` line recording when and why. Reversible by moving the
+    file back. Returns the retired skill names.
+    """
+    from . import skill_stats
+    from .skill_distillation_local import _STORE
+    store_dir = Path(store) if store is not None else _STORE
+    if not store_dir.is_dir():
+        return []
+    try:
+        names = skill_stats.evictable(
+            path=stats_path, min_uses=min_uses, max_win_rate=below,
+        )
+    except Exception as e:  # pragma: no cover -- stats never block a dream
+        log.debug("dreaming: evictable lookup failed: %s", e)
+        return []
+    retired: list[str] = []
+    dest = store_dir / "retired"
+    for name in names:
+        src = store_dir / f"{name}.md"
+        if not src.is_file():
+            continue
+        try:
+            dest.mkdir(parents=True, exist_ok=True)
+            os.replace(src, dest / src.name)
+            st = skill_stats.get(name, path=stats_path)
+            with open(dest / "retired.ndjson", "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "ts": time.time(), "name": name,
+                    "uses": getattr(st, "uses", 0),
+                    "wins": getattr(st, "wins", 0),
+                    "losses": getattr(st, "losses", 0),
+                    "reason": f"win rate <= {below} after >= {min_uses} uses",
+                }) + "\n")
+            retired.append(name)
+        except OSError as e:
+            log.warning("dreaming: could not retire skill %s: %s", name, e)
+    return retired
+
+
+# ---------- rehearsal (practice while you sleep) ----------
+
+def build_rehearsal_cases(
+    failures: list[dict], *, min_cluster: int = 2, max_cases: int = 3,
+    now: float | None = None,
+) -> list[dict]:
+    """Turn the biggest recurring failure clusters into rehearsal cases.
+
+    A case is the NEWEST goal text of a qualifying cluster (the most current
+    phrasing of the recurring problem) tagged with its department and failure
+    class. Deterministic — the case text is historical goal text, never
+    generated. Largest evidence first, capped at ``max_cases``.
+    """
+    cases: list[dict] = []
+    for cluster in cluster_failures(failures, min_cluster=min_cluster):
+        newest = max(cluster, key=lambda f: float(f.get("ts", 0) or 0))
+        cases.append({
+            "ts": now if now is not None else time.time(),
+            "prompt": str(newest.get("goal_text", "")).strip(),
+            "domain": newest.get("domain"),
+            "failure_class": str(newest.get("failure_class", "unknown")),
+            "evidence": len(cluster),
+        })
+    cases.sort(key=lambda c: -int(c.get("evidence", 0)))
+    return [c for c in cases if c["prompt"]][:max(1, max_cases)]
+
+
+def save_rehearsals(cases: list[dict], path: Path | str = DEFAULT_REHEARSALS) -> int:
+    """Replace the rehearsal queue with this cycle's cases (atomic)."""
+    p = Path(path)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            for c in cases:
+                f.write(json.dumps(c, default=str) + "\n")
+        os.replace(tmp, p)
+        try:
+            os.chmod(p, 0o600)
+        except OSError:
+            pass
+    except OSError as e:
+        log.warning("dreaming: rehearsal write failed: %s", e)
+        return 0
+    return len(cases)
+
+
+def load_rehearsals(path: Path | str = DEFAULT_REHEARSALS) -> list[dict]:
+    p = Path(path)
+    if not p.exists():
+        return []
+    out: list[dict] = []
+    try:
+        with open(p, encoding="utf-8") as f:
+            for raw in f:
+                try:
+                    d = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(d, dict) and str(d.get("prompt", "")).strip():
+                    out.append(d)
+    except OSError:
+        return []
+    return out
+
+
+class RehearsalFrozen(RuntimeError):
+    """Raised when rehearsal is refused because verifier calibration froze.
+
+    Mirrors maverick-evolve's interlock: a drifted judge must not grade
+    practice runs, or the system rehearses toward the drift.
+    """
+
+
+async def rehearse(
+    agent: Any, *, path: Path | str = DEFAULT_REHEARSALS, max_cases: int = 3,
+) -> tuple[int, int]:
+    """Run queued rehearsal cases through ``agent`` (an async ``str -> str``).
+
+    Returns ``(passed, total)``. Gated by the calibration interlock — frozen
+    calibration raises :class:`RehearsalFrozen` instead of practicing against
+    a distrusted grader. Uses the maverick-evolve eval harness when installed;
+    otherwise a built-in completion check (the kernel never *requires* the
+    evolve package). v1 success signal: the previously-failing class of goal
+    now completes (non-empty answer, no failure prefix).
+    """
+    try:
+        from .calibration import learning_frozen
+        frozen = bool(learning_frozen())
+    except Exception:  # pragma: no cover -- interlock absent = not frozen
+        frozen = False
+    if frozen:
+        raise RehearsalFrozen(
+            "verifier calibration is frozen; refusing to rehearse against a "
+            "distrusted grader (see maverick.calibration)."
+        )
+    cases = load_rehearsals(path)[:max(1, max_cases)]
+    if not cases:
+        return (0, 0)
+
+    def _completed(output: str) -> bool:
+        out = (output or "").strip()
+        return bool(out) and not out.startswith(
+            ("Stopped", "ERROR", "BLOCKED", "⚠"),
+        )
+
+    try:
+        from maverick_evolve.eval_harness import EvalCase, evaluate
+        report = await evaluate(
+            agent, [EvalCase(prompt=c["prompt"], check=_completed) for c in cases],
+        )
+        return (int(report.passed), len(cases))
+    except ImportError:
+        passed = 0
+        for c in cases:
+            try:
+                if _completed(await agent(c["prompt"])):
+                    passed += 1
+            except Exception as e:
+                log.debug("dreaming: rehearsal case errored: %s", e)
+        return (passed, len(cases))
+
+
 # ---------- the dream cycle ----------
 
 def _replay_failures(reflexion_path: Path | str | None) -> list[dict]:
@@ -498,6 +677,8 @@ def dream_cycle(
     max_goals: int = 50, reflexion_path: Path | str | None = None,
     insights_path: Path | str = DEFAULT_INSIGHTS,
     skill_store: Path | str | None = None, now: float | None = None,
+    rehearsals_path: Path | str = DEFAULT_REHEARSALS,
+    skill_stats_path: Path | None = None,
 ) -> DreamReport:
     """Run one full dream cycle. Deterministic, LLM-free, fail-open.
 
@@ -566,6 +747,28 @@ def dream_cycle(
         max_insights=int(cfg.get("max_insights", 100)),
     )
 
+    # REHEARSE (queueing): persist the biggest recurring failure clusters as
+    # practice cases for `maverick dream --rehearse`. Queue-building is free
+    # and deterministic; *running* them spends real agent calls, so that step
+    # stays behind its own knob + the calibration interlock (see rehearse()).
+    if bool(cfg.get("rehearse", False)):
+        report.rehearsals_queued = save_rehearsals(
+            build_rehearsal_cases(
+                failures, min_cluster=int(cfg.get("min_cluster", 2)),
+                max_cases=int(cfg.get("max_rehearsals", 3)), now=now,
+            ),
+            path=rehearsals_path,
+        )
+
+    # FORGET: retire learned skills whose recall track record decayed —
+    # learning loops without forgetting loops accumulate noise.
+    if bool(cfg.get("retire_skills", True)):
+        report.skills_retired = len(retire_stale_skills(
+            skill_store, min_uses=int(cfg.get("retire_min_uses", 5)),
+            below=float(cfg.get("retire_below", 0.25)),
+            stats_path=skill_stats_path,
+        ))
+
     # PRUNE the reflexion log so recall quality doesn't decay with volume.
     if bool(cfg.get("prune", True)):
         report.reflexions_pruned = prune_reflexions(
@@ -596,5 +799,12 @@ __all__ = [
     "recall_insights",
     "format_context",
     "prune_reflexions",
+    "retire_stale_skills",
+    "build_rehearsal_cases",
+    "save_rehearsals",
+    "load_rehearsals",
+    "RehearsalFrozen",
+    "rehearse",
     "dream_cycle",
+    "DEFAULT_REHEARSALS",
 ]

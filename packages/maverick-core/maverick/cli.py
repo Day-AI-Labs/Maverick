@@ -3642,16 +3642,28 @@ def finance_lint_sod_cmd() -> None:
 @main.command()
 @click.option("--max-goals", default=50, show_default=True,
               help="How many recent finished goals to replay.")
+@click.option("--rehearse", is_flag=True,
+              help="After consolidating, RUN the queued rehearsal cases as "
+                   "real (budgeted) practice goals. Spends tokens; gated by "
+                   "the calibration interlock.")
+@click.option("--rehearse-budget", default=1.0, show_default=True,
+              help="Max $ per rehearsal case.")
 @click.pass_context
-def dream(ctx, max_goals: int) -> None:
+def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float) -> None:
     """Run one offline dreaming cycle (experience consolidation).
 
     Replays recent successes and failure reflexions, groups them by
     department (domain packs), distills recurring wins into learned skills,
     consolidates recurring failures into dream insights (recalled on future
-    similar goals), and prunes stale near-duplicate reflexions. Deterministic
-    and LLM-free -- costs no tokens. Requires [dreaming] enable = true or
-    MAVERICK_DREAMING=1; run it from cron/systemd for nightly consolidation.
+    similar goals), retires learned skills with a decayed track record, and
+    prunes stale near-duplicate reflexions. The consolidation pass is
+    deterministic and LLM-free -- costs no tokens. Requires [dreaming]
+    enable = true or MAVERICK_DREAMING=1; run from cron/systemd nightly.
+
+    With --rehearse (and [dreaming] rehearse = true to queue cases), the
+    biggest recurring failure patterns are re-run as budgeted practice goals
+    (titled "[rehearsal] ...") so the next real attempt starts from a system
+    that has already practiced. Refused while verifier calibration is frozen.
     """
     from . import dreaming
     if not dreaming.enabled():
@@ -3662,6 +3674,35 @@ def dream(ctx, max_goals: int) -> None:
     world = open_world(ctx.obj["db"])
     report = dreaming.dream_cycle(world, max_goals=max_goals)
     click.echo(report.summary())
+    if not rehearse:
+        return
+    cases = dreaming.load_rehearsals()
+    if not cases:
+        click.echo("Rehearsal: no queued cases (enable [dreaming] rehearse "
+                   "so dream cycles queue recurring failures).")
+        return
+    from .budget import Budget
+    from .llm import LLM, model_for_role
+    from .orchestrator import run_goal
+
+    llm = LLM(model=ctx.obj["model"] or model_for_role("orchestrator"))
+
+    async def _practice(prompt: str) -> str:
+        gid = world.create_goal(
+            f"[rehearsal] {prompt[:200]}",
+            "Dream-time rehearsal of a previously-failing goal pattern.",
+        )
+        return await run_goal(
+            llm=llm, world=world, budget=Budget(max_dollars=rehearse_budget),
+            goal_id=gid,
+        )
+
+    try:
+        passed, total = asyncio.run(dreaming.rehearse(_practice))
+    except dreaming.RehearsalFrozen as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(f"Rehearsal: {passed}/{total} previously-failing pattern(s) "
+               "now complete.")
 
 
 @main.command("export-user")

@@ -1128,8 +1128,10 @@ def pick_advanced() -> dict[str, Any]:
         "dreaming": _q_confirm(
             "Dreaming (offline consolidation)? `maverick dream` replays recent "
             "runs while idle, distills recurring wins into skills per department, "
-            "turns repeated failures into recalled insights, and prunes stale "
-            "lessons. Deterministic, no LLM calls.",
+            "turns repeated failures into recalled insights (promoting patterns "
+            "shared across departments), retires skills whose track record "
+            "decayed, and prunes stale lessons. Deterministic, no LLM calls "
+            "(opt-in rehearsal runs are separate and budgeted).",
             default=False,
         ),
         "verify_ensemble": _q_confirm(

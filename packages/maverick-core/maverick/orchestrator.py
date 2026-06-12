@@ -731,7 +731,7 @@ async def run_goal(  # noqa: C901
         # credit assignment is enabled and there's enough history.
         try:
             from . import role_stats
-            _rg = role_stats.guidance()
+            _rg = role_stats.guidance(domain=domain)
             if _rg:
                 brief = brief + "\n\n" + _rg
         except Exception as e:  # pragma: no cover -- never blocks a run
