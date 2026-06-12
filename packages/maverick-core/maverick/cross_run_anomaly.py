@@ -128,14 +128,29 @@ def score_run(run: RunProfile, base: BaselineProfile) -> list[Anomaly]:
     return out
 
 
-def gather_runs(world, *, limit: int = 50) -> list[RunProfile]:
-    """Profiles for the most recent terminal goals (duck-typed world)."""
+def gather_runs(
+    world, *, limit: int = 50, owner: str | None = None
+) -> list[RunProfile]:
+    """Profiles for the most recent terminal goals (duck-typed world).
+
+    ``owner`` scopes the baseline for authenticated non-admin dashboard callers
+    so anomaly details are derived only from goals the caller is allowed to see.
+    """
     terminal = {"done", "completed", "failed", "error", "cancelled"}
     profiles: list[RunProfile] = []
     try:
-        goals = world.list_goals(limit=limit, order="desc")
+        goals = world.list_goals(limit=limit, order="desc", owner=owner)
     except TypeError:
-        goals = world.list_goals(limit=limit)
+        if owner is not None:
+            try:
+                goals = world.list_goals(limit=limit, owner=owner)
+            except TypeError:
+                goals = [
+                    g for g in (world.list_goals(limit=limit) or [])
+                    if getattr(g, "owner", None) == owner
+                ]
+        else:
+            goals = world.list_goals(limit=limit)
     for g in goals or []:
         if str(getattr(g, "status", "")) not in terminal:
             continue
@@ -145,9 +160,14 @@ def gather_runs(world, *, limit: int = 50) -> list[RunProfile]:
     return profiles
 
 
-def detect(world, goal_id: int, *, history: int = 50) -> list[Anomaly]:
+def detect(
+    world, goal_id: int, *, history: int = 50, owner: str | None = None
+) -> list[Anomaly]:
     """Score ``goal_id`` against a baseline of its recent siblings."""
-    runs = [r for r in gather_runs(world, limit=history) if r.goal_id != goal_id]
+    runs = [
+        r for r in gather_runs(world, limit=history, owner=owner)
+        if r.goal_id != goal_id
+    ]
     target = profile_run(goal_id, world.goal_events(goal_id, limit=10_000))
     return score_run(target, baseline(runs))
 

@@ -1733,7 +1733,8 @@ async def goal_anomalies(request: Request, goal_id: int, history: int = 50) -> J
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
     from maverick.cross_run_anomaly import MIN_BASELINE_RUNS, detect
-    anomalies = detect(w, goal_id, history=max(5, min(int(history), 500)))
+    anomalies = detect(w, goal_id, history=max(5, min(int(history), 500)),
+                       owner=goal_owner_filter(request))
     return JSONResponse({
         "goal_id": goal_id,
         "anomalies": [{"kind": a.kind, "severity": a.severity, "detail": a.detail}
