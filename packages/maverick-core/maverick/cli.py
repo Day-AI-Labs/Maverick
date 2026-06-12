@@ -1434,14 +1434,24 @@ def tenant_create(tenant_id: str, plan: str, display_name: str,
 @tenant.command("list")
 def tenant_list() -> None:
     """List provisioned tenants."""
-    from .tenant_registry import list_tenants
+    from .tenant_registry import list_tenants, tenant_spend_today
     rows = list_tenants()
     if not rows:
         click.echo("no tenants. create one with `maverick tenant create`")
         return
     for t in rows:
         cap = f"${t.max_daily_dollars:g}/day" if t.max_daily_dollars else "unlimited"
-        click.echo(f"  {t.id}  [{t.status}]  plan={t.plan}  quota={cap}")
+        # Surface tenants that are at/over today's spend cap -- enforcement
+        # happens at serve time, but an operator had no way to SEE which tenants
+        # are currently over quota from the CLI (user-testing finding). Only
+        # capped tenants are checked (a ledger read each), so unlimited tenants
+        # (the common case) cost nothing extra.
+        flag = ""
+        if t.max_daily_dollars > 0:
+            spent = tenant_spend_today(t.id)
+            if spent >= t.max_daily_dollars:
+                flag = f"  [OVER QUOTA ${spent:.2f}/${t.max_daily_dollars:g}]"
+        click.echo(f"  {t.id}  [{t.status}]  plan={t.plan}  quota={cap}{flag}")
 
 
 @tenant.command("suspend")
@@ -1813,7 +1823,7 @@ def start(
         from .templates import load_template
         try:
             tpl = load_template(template_name)
-        except FileNotFoundError as e:
+        except (FileNotFoundError, ValueError) as e:
             click.echo(f"ERROR: {e}", err=True)
             sys.exit(2)
         param_dict = {}
@@ -2148,7 +2158,7 @@ def template_show(name: str) -> None:
     from .templates import load_template
     try:
         t = load_template(name)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, ValueError) as e:
         click.echo(f"ERROR: {e}", err=True)
         sys.exit(2)
     click.echo(f"template: {t.name}\npath: {t.path}\ntitle: {t.title}")
@@ -3069,7 +3079,7 @@ def skill_install(source: str) -> None:
     except ValueError as e:
         click.echo(f"ERROR: {e}", err=True)
         sys.exit(2)
-    click.echo(f"installed: {s.name} -> {s.path}")
+    click.echo(f"installed: {s.path.stem} -> {s.path}")
 
 
 @skill.command("browse")
@@ -3099,7 +3109,7 @@ def skill_add(name: str) -> None:
     except ValueError as e:
         click.echo(f"ERROR: {e}", err=True)
         sys.exit(2)
-    click.echo(f"installed: {s.name} -> {s.path}")
+    click.echo(f"installed: {s.path.stem} -> {s.path}")
 
 
 @skill.command("remove")

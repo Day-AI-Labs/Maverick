@@ -70,12 +70,25 @@ class Template:
             meta = _parse_frontmatter(front)
         else:
             meta, body = {}, text
+
+        def _num(key: str, default: float) -> float:
+            # A user-authored template with a non-numeric budget used to raise a
+            # raw ValueError traceback out of float() (user-testing finding);
+            # give a clear, catchable message the CLI can surface instead.
+            raw = meta.get(key, default)
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"template {name!r}: [{key}] must be a number, got {raw!r}"
+                ) from None
+
         return cls(
             name=name,
             title=str(meta.get("title", name)),
             body=body.strip(),
-            budget_dollars=float(meta.get("budget_dollars", 5.0)),
-            budget_wall_seconds=float(meta.get("budget_wall_seconds", 3600)),
+            budget_dollars=_num("budget_dollars", 5.0),
+            budget_wall_seconds=_num("budget_wall_seconds", 3600),
             params=meta.get("params", []) if isinstance(meta.get("params"), list) else [],
             path=path,
             sig=meta.get("sig") if isinstance(meta.get("sig"), str) else None,

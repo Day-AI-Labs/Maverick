@@ -1007,6 +1007,14 @@ class Agent:
                     self.name, "error",
                     f"tool={name} BLOCKED by Shield: {'; '.join(verdict.reasons)}",
                 )
+                try:  # tamper-evident record of the shield block; never block on audit
+                    from .audit import EventKind, record
+                    record(EventKind.SHIELD_BLOCK, agent=self.name,
+                           goal_id=self.ctx.goal_id, stage="tool",
+                           reason="; ".join(verdict.reasons),
+                           score=getattr(verdict, "score", None))
+                except Exception:  # pragma: no cover
+                    pass
                 self._maybe_seal(q, verdict)
                 return (
                     f"⚠ BLOCKED by Shield ({verdict.severity}): "

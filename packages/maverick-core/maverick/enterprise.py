@@ -161,12 +161,24 @@ def _configured_openai_compatible_base_url() -> str | None:
     return str(url).strip() if url else None
 
 
+# Cloud instance-metadata endpoints are link-local but are NOT operator-controlled
+# local services -- they expose instance role credentials. In the enterprise egress
+# boundary they must be treated as off-limits, not "local" (user-testing finding;
+# defense-in-depth -- http_fetch's SSRF guard already blocks these, but the REST
+# connector relies on the egress check alone). Compared as parsed IPs so IPv6
+# normalization can't sneak an equivalent form past a string match.
+_IMDS_IPS = frozenset(
+    ipaddress.ip_address(a) for a in ("169.254.169.254", "fd00:ec2::254")
+)
+
+
 def _is_local_endpoint(url: str | None) -> bool:
     """True only for endpoints that are syntactically local/private.
 
     Enterprise egress is fail-closed: public hostnames such as Groq/Together and
     ambiguous DNS names are not considered local here because this check runs before
-    prompt dispatch and must not rely on network lookups.
+    prompt dispatch and must not rely on network lookups. Cloud IMDS addresses are
+    explicitly NOT local (they leak instance credentials).
     """
     if not url:
         return False
@@ -185,6 +197,8 @@ def _is_local_endpoint(url: str | None) -> bool:
         ip = ipaddress.ip_address(host)
     except ValueError:
         return False
+    if ip in _IMDS_IPS:
+        return False  # IMDS is cloud infra, not a local service -> deny via egress
     return ip.is_loopback or ip.is_private or ip.is_link_local
 
 

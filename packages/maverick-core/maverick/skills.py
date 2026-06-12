@@ -500,6 +500,21 @@ def _validate_and_write(
 
     name = _safe_name(parsed.name) if parsed.name else "imported-skill"
     target = skills_dir / f"{name}.md"
+    if target.exists():
+        # Two DIFFERENT source names can sanitize to the same filename (e.g.
+        # "..." and "...."  both -> "skill"); silently overwriting would lose the
+        # earlier skill (user-testing finding). Refuse a colliding install while
+        # still allowing a same-name re-install (an update).
+        try:
+            existing_name = Skill.parse(target.read_text(encoding="utf-8"), target).name
+        except Exception:
+            existing_name = None
+        if existing_name is not None and existing_name != parsed.name:
+            raise ValueError(
+                f"a different skill already occupies {target.name!r} (installed as "
+                f"{existing_name!r}); remove it with `maverick skill remove {name}` "
+                "or rename your skill before installing."
+            )
     target.write_text(content, encoding="utf-8")
     result = Skill.parse(content, target)
     result.verified = verified
