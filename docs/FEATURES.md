@@ -712,13 +712,17 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   (risk/scope-based routing, `approval_delegation.py`), per-tool network egress
   policy (`sandbox/network_policy.py`), `maverick whoami`.
 - **Out-of-process model proxy** — `model_proxy.py` (`python -m
-  maverick.model_proxy`, `[model_proxy] upstream/auth_style`): a separate
-  process holds the provider key (from its **own** env, `MAVERICK_PROXY_KEY`)
-  and the agent points a provider's `base_url` at it. The agent process never
-  holds the credential — a prompt-injected agent can't exfiltrate a key it
-  doesn't have. The proxy strips the client's auth + hop-by-hop headers,
+  maverick.model_proxy`, `[model_proxy] upstream/auth_style/client_token`): a
+  separate process holds the provider key (from its **own** env,
+  `MAVERICK_PROXY_KEY`) and the agent points a provider's `base_url` at it. The
+  agent process never holds the provider credential — a prompt-injected agent
+  can't exfiltrate a key it doesn't have. The listener requires the agent to
+  present a separate proxy client token (`MAVERICK_PROXY_CLIENT_TOKEN` or
+  `[model_proxy] client_token`), strips that client auth + hop-by-hop headers,
   injects the real key in the upstream's scheme (bearer / `x-api-key`), and
-  forwards only to its single configured upstream host (an SSRF guard).
+  forwards only to its single configured upstream host plus model-inference
+  routes by default (override with `[model_proxy] allowed_routes` or
+  `MAVERICK_PROXY_ALLOWED_ROUTES`).
 - **Audit & compliance** — signed append-only audit log (`maverick audit verify`), **federated
   audit-log verification** (`audit/federation.py`) — over a set of nodes/tenants
   whose signed logs reference each other (delegation, A2A handoff), confirms
@@ -1457,9 +1461,10 @@ tested without spawning py-spy.
   back to plain target calls — application-level drafting, explicitly not
   logit-level decoding; models resolve by role, never hardcoded.
 - **Out-of-process model proxy** (`model_proxy.py`): the provider key lives
-  in a separate proxy process; the agent's `base_url` points at it with no
-  usable credential — the proxy strips whatever the agent sent and injects
-  the real key, so a prompt-injected agent process has no key to exfiltrate.
+  in a separate proxy process; the agent's `base_url` points at it with only a
+  proxy client token, not the provider credential — the proxy authenticates the
+  caller, strips the client token, injects the real key, and allows only
+  model-inference routes by default.
 - **Watch glance endpoint** (`GET /api/v1/glance`): the fixed tiny payload
   the watch scaffold renders.
 - **Granular redaction UI** (`GET /redact` page + `POST
