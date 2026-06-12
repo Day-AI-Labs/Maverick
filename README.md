@@ -13,7 +13,7 @@ Hand Maverick a goal. Its orchestrator decomposes it, spawns specialist sub-agen
 - 🔒 **Self-host & air-gap.** Runs entirely in your environment — laptop, VPC, Kubernetes, or a disconnected network with no required data egress. No hyperscaler dependency, no telemetry.
 - 📈 **A workforce that provably improves.** Closed-loop learning — offline experience consolidation ("dreaming"), per-department memory, skill distillation with safe forgetting — every learned artifact audited, snapshotted, and rollback-able. `maverick hindsight` detects if learning ever regressed; `maverick proof` reports deliverables, cost avoided, ROI, and the improvement curve.
 - 🏢 **1,000 prebuilt specialists across 25 business suites.** Customer support, finance, legal, HR, ops, GTM, marketing, procurement, data, security ops, and 10 industry verticals (healthcare, insurance, banking, gov contracting, …) — every pack a real agent with a least-privilege tool envelope and risk ceiling. Run `maverick domains-lint` and check for yourself: 0 errors, 0 warnings.
-- 🧠 **Long-horizon multi-agent depth.** A recursive orchestrator spawns specialist sub-agents that work for hours under hard dollar / wall-clock / tool-call caps — the depth of Devin, Hermes, and OpenClaw, on the models *you* choose.
+- 🧠 **Long-horizon multi-agent depth.** A recursive orchestrator spawns specialist sub-agents that work for hours under hard dollar / wall-clock / tool-call caps — frontier-agent depth, on the models *you* choose, with the governance and learning layers no coding-agent runtime ships.
 
 > **Proprietary software — not open source.** Maverick is enterprise software; use, redistribution, and derivative works require a license. [Contact us](https://github.com/Day-AI-Labs/Maverick) for evaluation or commercial access. See [`LICENSE`](./LICENSE) and [`TRADEMARK.md`](./TRADEMARK.md).
 
@@ -27,7 +27,7 @@ Prefer no terminal? Grab the [**double-click desktop installer**](#install). New
 
 ## Status
 
-Alpha, but **installable today**: all six packages are on [PyPI](https://pypi.org/project/maverick-agent/), the one-line installers work on Windows/macOS/Linux, and a native double-click installer builds for all three. See [`docs/getting-started.md`](./docs/getting-started.md) for the full flow.
+Alpha, but **installable today**: all eight packages are on [PyPI](https://pypi.org/project/maverick-agent/), the one-line installers work on Windows/macOS/Linux, and a native double-click installer builds for all three. See [`docs/getting-started.md`](./docs/getting-started.md) for the full flow.
 
 ## What works today vs. planned
 
@@ -39,7 +39,7 @@ Alpha, but **installable today**: all six packages are on [PyPI](https://pypi.or
 | AI providers | Anthropic (full), OpenAI, OpenRouter, Ollama, Gemini, DeepSeek, Bedrock, Azure, xAI, Moonshot, TGI, vLLM (per-role routable) | Cohere |
 | Channels | All 12 wired — Telegram, Discord, Slack, Signal, Email, Matrix, Bluesky, Mastodon, Voice; WhatsApp/SMS (need Twilio), iMessage (macOS-only) | Push notifications |
 | Safety | Shield wired at 3 chokepoints; agent-shield SDK if installed, else a built-in rule set | Agent-shield full ~115 patterns |
-| Distribution | PyPI (6 packages), GHCR image, PyInstaller binaries, **native installers on Releases** | Code signing; Homebrew tap |
+| Distribution | PyPI (8 packages), GHCR image, PyInstaller binaries, **native installers on Releases** | Code signing; Homebrew tap |
 | Tests | 2000+ tests, ruff + pytest on Py 3.10/3.11/3.12 | Integration suite + benchmark RESULTS.md |
 
 **Full list of shipped features → [`docs/FEATURES.md`](./docs/FEATURES.md).** The forward backlog (what isn't built yet) lives in [`docs/ROADMAP.md`](./docs/ROADMAP.md).

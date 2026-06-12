@@ -16,9 +16,17 @@ the deepest agent framework available.
 
 ## Positioning at a glance
 
+> Category note: coding-agent runtimes (Hermes / OpenClaw / Cline / Aider)
+> are a different layer — free or commodity agent loops. They appear here
+> for orientation, not because they compete with an agentic enterprise
+> platform; Maverick's competitive set is Agentforce, Copilot agents,
+> Gemini Enterprise, and ServiceNow AI Agents.
+
 | | Maverick | Devin | Hermes / OpenClaw | Cline / Aider |
 |---|---|---|---|---|
 | Primary form | Self-hosted platform + CLI | Hosted product | Coding agents | IDE / CLI coding agents |
+| Prebuilt business specialists | **1,000 across 25 suites** (lint-audited envelopes) | No | No | No |
+| Learns from use (governed) | **Yes** — consolidation, regression detection, rollback, signed learning audit | No | No | No |
 | Runs in your environment | **Yes** (7 sandbox backends) | Hosted | Varies | Yes (local) |
 | Multi-agent swarm | **Yes** (orchestrator + specialists) | Yes | Single-agent focus | Single-agent |
 | Governance / compliance plane | **Yes** (oversight, regimes, audit, DSAR, SOC2) | Limited | No | No |

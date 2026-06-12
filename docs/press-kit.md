@@ -24,8 +24,11 @@ from other languages over MCP and gRPC. Maverick is developed by Day AI Labs.
 Maverick is a proprietary, commercially licensed, self-hosted AI agent runtime
 for enterprises. A recursive orchestrator decomposes goals and spawns
 specialist sub-agents that work in parallel under hard budget caps, behind a
-safety shield, with a signed audit log. It ships 100+ tools, 14 channels, 7
-sandbox backends, 12 LLM providers.
+safety shield, with a signed audit log. It ships 1,000 prebuilt specialist
+agents across 25 business suites (every pack lint-audited for least-privilege
+envelopes), a closed learning lifecycle — agents consolidate experience,
+provably improve, and every learned change is audited and reversible — plus
+100+ tools, 14 channels, 7 sandbox backends, and 12 LLM providers.
 
 ### 25-word version
 
@@ -53,7 +56,7 @@ append-only audit log.
   providers, routable per role.
 - **Auditability**: signed, append-only audit log (`maverick audit verify`),
   SIEM export, encryption-at-rest, DSAR, data-retention enforcement.
-- **Distribution**: 6 packages on PyPI, a GHCR Docker image, PyInstaller
+- **Distribution**: 8 packages on PyPI, a GHCR Docker image, PyInstaller
   binaries, and native double-click installers for Windows/macOS/Linux.
 - **Status**: alpha, installable today.
 - **Maker**: Day AI Labs (Christopher Day).
