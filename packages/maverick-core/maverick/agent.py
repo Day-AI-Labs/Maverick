@@ -118,6 +118,7 @@ _FILE_TOOL_PATH_ARGS: dict[str, str] = {
     "list_dir": "path",
     "str_replace_editor": "path",
     "ast_edit": "path",
+    "image_content_classifier": "file",
 }
 
 # P0 capability layer (host resource-scopes): the network tools whose URL

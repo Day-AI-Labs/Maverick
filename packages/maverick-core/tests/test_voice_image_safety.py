@@ -117,6 +117,17 @@ def test_tool_wrapper_pixels_path_and_validation():
     assert t.fn({"file": "/nonexistent/x.png"}).startswith("ERROR")
 
 
+def test_file_path_is_confined_to_sandbox(tmp_path):
+    class _Sandbox:
+        workdir = tmp_path
+
+    t = image_content_classifier(_Sandbox())
+
+    outside = tmp_path.parent / "outside.png"
+    assert "escapes the workspace" in t.fn({"file": str(outside)})
+    assert "escapes the workspace" in t.fn({"file": "../outside.png"})
+
+
 def test_registered():
     from maverick.tools import base_registry
 

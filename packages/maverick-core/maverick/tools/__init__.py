@@ -995,7 +995,7 @@ def base_registry(  # noqa: C901
     from .oauth_helper import oauth_helper
     # template_generator / web_archive / anki: registered once above
     # (parallel-built on both branches; unified at merge).
-    reg.register(image_content_classifier())
+    reg.register(image_content_classifier(sandbox))
     reg.register(lsp_bridge())
     reg.register(oauth_helper())
     reg.register(github_search())
