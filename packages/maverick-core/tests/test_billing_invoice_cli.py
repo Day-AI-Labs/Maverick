@@ -78,6 +78,18 @@ def test_no_roster_never_errors():
     assert "TOTAL: $0.00" in res.output
 
 
+def test_invoice_rejects_malformed_since_until():
+    # A typo'd period bound used to compare lexically out of range and mint a
+    # misleading empty invoice at exit 0; it must error instead.
+    _provision("acme", plan="pro")
+    for args in (["acme", "--since", "not-a-date"],
+                 ["acme", "--until", "2026-13-99"],   # impossible calendar date
+                 ["acme", "--since", "2026-6-1"]):     # not zero-padded YYYY-MM-DD
+        res = _invoice(*args)
+        assert res.exit_code == 2, (args, res.output)
+        assert "YYYY-MM-DD" in res.output
+
+
 def test_deleted_but_unpurged_tenant_still_invoices_final():
     # Deleting a tenant without --purge drops the roster row but keeps its
     # ledger; that surviving usage must still bill a final time (line items

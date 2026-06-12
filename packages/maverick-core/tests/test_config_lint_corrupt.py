@@ -42,3 +42,8 @@ def test_absent_config_is_not_an_error(tmp_path, monkeypatch):
     from maverick.cli import main
     res = CliRunner().invoke(main, ["config-lint"])
     assert res.exit_code == 0, res.output
+    # An absent config is a legitimate (built-in defaults) state -- but it must
+    # SAY so, not bless a non-existent file with a misleading "config OK" as if
+    # a real file had been validated (user-testing finding).
+    assert "config OK" not in res.output
+    assert "built-in defaults" in res.output

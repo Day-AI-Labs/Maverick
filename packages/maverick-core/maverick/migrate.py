@@ -73,6 +73,7 @@ class MigrationReport:
     findings: list[Finding] = field(default_factory=list)
     backup_path: Path | None = None
     wrote: bool = False
+    apply_requested: bool = False
 
     @property
     def clean(self) -> bool:
@@ -154,7 +155,7 @@ def migrate(config_path: Path | None = None, *, apply: bool = False) -> Migratio
         from .paths import data_dir
         config_path = data_dir(tenant=None) / "config.toml"
     config_path = Path(config_path)
-    report = MigrationReport()
+    report = MigrationReport(apply_requested=apply)
     if not config_path.exists():
         report.findings.append(Finding(
             "lint", "no-config",
@@ -224,7 +225,14 @@ def render(report: MigrationReport) -> str:
     if report.backup_path:
         lines.append(f"backup: {report.backup_path}")
     if not report.wrote:
-        lines.append("(dry run — nothing was written)")
+        # Distinguish "ran --apply but there was nothing to mechanically
+        # rewrite" from a plain dry run -- both used to print the identical
+        # "(dry run …)" line, so an operator could not tell their --apply was
+        # accepted (user-testing finding).
+        if report.apply_requested:
+            lines.append("(--apply: no mechanical rewrites were needed)")
+        else:
+            lines.append("(dry run — nothing was written; re-run with --apply to migrate)")
     return "\n".join(lines)
 
 

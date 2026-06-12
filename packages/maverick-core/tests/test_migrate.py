@@ -11,6 +11,17 @@ def _cfg(tmp_path, text):
     return p
 
 
+def test_apply_with_no_rewrites_reads_differently_from_dry_run(tmp_path):
+    # A lint finding but no mechanical rewrites: --apply and a plain dry run
+    # used to print the identical "(dry run …)" line, so an operator couldn't
+    # tell their --apply was accepted (user-testing finding).
+    p = _cfg(tmp_path, "[budgets]\nmax = 5\n")  # unknown section -> lint, no rewrite
+    dry = render(migrate(p, apply=False))
+    applied = render(migrate(p, apply=True))
+    assert "dry run" in dry and "dry run" not in applied
+    assert "--apply" in applied
+
+
 def test_clean_config(tmp_path):
     p = _cfg(tmp_path, "[budget]\nmax_dollars = 5.0\n")
     report = migrate(p)

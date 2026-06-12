@@ -17,6 +17,12 @@ GREEN = click.style("✓", fg="green")
 YELLOW = click.style("!", fg="yellow")
 RED = click.style("✗", fg="red")
 
+# diagnose() accumulates the labels of failed (✗) checks here so the CLI can
+# exit nonzero when the install is actually broken. doctor used to print red
+# rows but always exit 0, so `maverick doctor && deploy` and CI health gates
+# couldn't tell a broken deployment from a healthy one (user-testing finding).
+_FAILURES: list[str] = []
+
 
 def _is_outage(exc: BaseException) -> bool:
     """True if ``exc`` signals the provider is actually unreachable/down --
@@ -42,6 +48,8 @@ def _is_outage(exc: BaseException) -> bool:
 
 
 def _row(marker: str, label: str, detail: str = "", fix: str = "") -> None:
+    if marker == RED:
+        _FAILURES.append(label)
     line = f"  {marker} {label}"
     if detail:
         line += click.style(f"  ({detail})", fg="bright_black")
@@ -296,13 +304,20 @@ def _check_channels(cfg: dict) -> None:
 
 
 def _check_world_db() -> None:
-    from .world_model import DEFAULT_DB, WorldModel
+    # Resolve the SAME db the runtime opens (Workspace.current().db_path, which
+    # the main CLI group uses as the default --db): home- and tenant-aware.
+    # The frozen world_model.DEFAULT_DB always pointed at ~/.maverick/world.db,
+    # so under MAVERICK_HOME or an active tenant doctor reported a path the
+    # runtime never touches (user-testing finding).
+    from .workspace import Workspace
+    from .world_model import WorldModel
+    db_path = Workspace.current().db_path
     try:
-        w = WorldModel(DEFAULT_DB)
-        _row(GREEN, "world-db", f"{DEFAULT_DB} (schema v{w.schema_version})")
+        w = WorldModel(db_path)
+        _row(GREEN, "world-db", f"{db_path} (schema v{w.schema_version})")
     except Exception as e:
         _row(RED, "world-db", f"open failed: {e}",
-             fix=f"check permissions on {DEFAULT_DB.parent}, or delete world.db to start fresh")
+             fix=f"check permissions on {db_path.parent}, or delete world.db to start fresh")
 
 
 def _check_shield() -> None:
@@ -331,7 +346,11 @@ def _check_shield() -> None:
              fix="set [safety] profile = \"balanced\" in ~/.maverick/config.toml to re-enable")
 
 
-def diagnose() -> None:
+def diagnose() -> int:
+    """Run every health check, print the report, and return the number of
+    failed (✗) checks. 0 == healthy. The CLI exits nonzero when this is
+    nonzero so a deploy gate or CI can detect a broken install."""
+    _FAILURES.clear()
     click.echo(click.style("Maverick health check\n", bold=True))
     cfg = _check_config()
     _check_anthropic()
@@ -341,4 +360,10 @@ def diagnose() -> None:
     _check_world_db()
     _check_shield()
     click.echo("")
+    if _FAILURES:
+        click.echo(click.style(
+            f"{len(_FAILURES)} check(s) need attention: " + ", ".join(_FAILURES),
+            fg="red") + "   Re-run after fixing:  maverick doctor")
+        return len(_FAILURES)
     click.echo(click.style("Done.", fg="bright_black") + "  Re-run any time:  maverick doctor")
+    return 0
