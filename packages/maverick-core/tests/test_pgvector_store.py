@@ -89,6 +89,8 @@ def test_pgvector_init_creates_schema(monkeypatch):
     sql = " | ".join(s for s, _ in conn.executed)
     assert "CREATE EXTENSION IF NOT EXISTS vector" in sql
     assert "CREATE TABLE IF NOT EXISTS mvk_vectors" in sql
+    assert "tenant_id text" in sql
+    assert "idx_mvk_vectors_collection_tenant" in sql
 
 
 def test_pgvector_add_upserts_with_vectors(monkeypatch):
@@ -132,7 +134,7 @@ def test_pgvector_dim_mismatch_raises(monkeypatch):
         store.add(["a", "b"])
 
 
-def test_pgvector_query_uses_cosine_and_collection(monkeypatch):
+def test_pgvector_query_uses_cosine_and_collection_tenant(monkeypatch):
     conn = _install_fake_psycopg(monkeypatch)
     conn.query_rows = [("i1", "doc one", {"k": 1}, 0.25)]
     from maverick.vector_store.pgvector_store import PgVectorStore
@@ -145,9 +147,48 @@ def test_pgvector_query_uses_cosine_and_collection(monkeypatch):
     sql, params = select[0]
     assert "<=>" in sql
     assert "collection = %s" in sql
+    assert "tenant_id IS NULL" in sql
     assert "goals" in params
     assert out == [{"id": "i1", "document": "doc one",
                     "distance": 0.25, "metadata": {"k": 1}}]
+
+
+def test_pgvector_scopes_operations_to_active_tenant(monkeypatch):
+    conn = _install_fake_psycopg(monkeypatch)
+    from maverick.paths import reset_tenant, set_tenant
+    from maverick.vector_store.pgvector_store import PgVectorStore
+
+    token = set_tenant("tenant-a")
+    try:
+        store = PgVectorStore(
+            dsn="postgresql://x", collection="goals", embedder=_embedder())
+        store.add(["a"], ids=["goal:1"], metadatas=[{"k": 1}])
+        store.query("hi", top_k=3)
+        store.count()
+        store.delete(["goal:1"])
+        store.reset()
+    finally:
+        reset_tenant(token)
+
+    inserts = [(s, p) for s, p in conn.executed if s.lstrip().startswith("INSERT")]
+    assert inserts
+    assert inserts[0][1][0] == "tenant:tenant-a:goal:1"
+    assert inserts[0][1][2] == "tenant-a"
+
+    scoped_statements = [
+        (s, p) for s, p in conn.executed
+        if (s.lstrip().startswith(("SELECT", "DELETE")) and "mvk_vectors" in s)
+    ]
+    assert scoped_statements
+    for sql, params in scoped_statements:
+        assert "tenant_id = %s" in sql
+        assert "tenant-a" in params
+
+    delete_params = [
+        p for s, p in conn.executed
+        if s.lstrip().startswith("DELETE") and "= ANY(" in s
+    ][0]
+    assert delete_params[-1] == ["tenant:tenant-a:goal:1"]
 
 
 def test_pgvector_query_empty_text(monkeypatch):
