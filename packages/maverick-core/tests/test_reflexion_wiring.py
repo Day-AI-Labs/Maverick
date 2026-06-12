@@ -154,6 +154,56 @@ class TestReflexionDomainAttribution:
         assert hits and hits[0][1].domain is None
 
 
+class TestFlakyToolTaxonomy:
+    def test_flaky_tools_counts_repeat_offenders(self, tmp_path):
+        path = tmp_path / "reflexions.ndjson"
+        for _ in range(2):
+            reflexion.record(
+                goal_text="export the ledger", failure_class="tool_flaky",
+                failure_msg="timeout", reflection="r",
+                tools_used=["erp_export"], path=path,
+            )
+        reflexion.record(
+            goal_text="one-off", failure_class="tool_flaky", failure_msg="x",
+            reflection="r", tools_used=["one_off_tool"], path=path,
+        )
+        reflexion.record(  # non-flaky classes never count
+            goal_text="budget", failure_class="budget", failure_msg="x",
+            reflection="r", tools_used=["erp_export", "erp_export"], path=path,
+        )
+        assert reflexion.flaky_tools(path=path) == {"erp_export"}
+
+    def test_empty_log_is_empty(self, tmp_path):
+        assert reflexion.flaky_tools(path=tmp_path / "nope.ndjson") == set()
+
+
+class TestHumanOverrideIngestion:
+    """The operator's "no" on a gated action becomes a recallable lesson."""
+
+    def test_denial_recorded_and_recalled(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MAVERICK_REFLEXION", "1")
+        path = tmp_path / "reflexions.ndjson"
+        assert reflexion.record_human_override(
+            "Wire the Q3 vendor payment batch", "bank_transfer",
+            "amount above DoA tier", domain="finance_sox", path=path,
+        ) is True
+        hits = reflexion.recall("Wire the Q3 vendor payment batch", path=path)
+        assert hits
+        _, entry = hits[0]
+        assert entry.failure_class == "human_override"
+        assert entry.domain == "finance_sox"
+        assert "bank_transfer" in entry.tools_used
+        assert "bank_transfer" in entry.reflection
+
+    def test_noop_when_reflexion_disabled(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("MAVERICK_REFLEXION", raising=False)
+        path = tmp_path / "reflexions.ndjson"
+        assert reflexion.record_human_override(
+            "Wire the payment", "bank_transfer", "denied", path=path,
+        ) is False
+        assert not path.exists() or path.read_text() == ""
+
+
 class TestReflexionWiring:
     def test_record_called_when_enabled(self, monkeypatch):
         monkeypatch.setenv("MAVERICK_REFLEXION", "1")

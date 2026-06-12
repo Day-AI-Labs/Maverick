@@ -1128,8 +1128,10 @@ def pick_advanced() -> dict[str, Any]:
         "dreaming": _q_confirm(
             "Dreaming (offline consolidation)? `maverick dream` replays recent "
             "runs while idle, distills recurring wins into skills per department, "
-            "turns repeated failures into recalled insights, and prunes stale "
-            "lessons. Deterministic, no LLM calls.",
+            "turns repeated failures into recalled insights (promoting patterns "
+            "shared across departments), retires skills whose track record "
+            "decayed, and prunes stale lessons. Deterministic, no LLM calls "
+            "(opt-in rehearsal runs are separate and budgeted).",
             default=False,
         ),
         "verify_ensemble": _q_confirm(
@@ -1300,6 +1302,20 @@ def pick_advanced() -> dict[str, Any]:
             default=False,
         ),
     }
+    # Federated insight exchange rides on dreaming: trusted peer keys are
+    # only worth asking for when the loop that produces/consumes insights is
+    # on. Imports are fail-closed without them.
+    if advanced.get("dreaming") and _q_confirm(
+        "  Exchange consolidated insights with trusted peer instances? "
+        "(signed bundles via `maverick insights-export/-import`)",
+        default=False,
+    ):
+        raw = _q_text(
+            "  Trusted peer insight pubkeys (comma-separated hex Ed25519)",
+            default="",
+        )
+        advanced["insight_pubkeys"] = [k.strip() for k in raw.split(",")
+                                       if k.strip()]
     # OIDC SSO is a string-bearing toggle (issuer/audience/jwks_uri), so it has
     # its own prompt; the result is nested under the "oidc" key and the writer
     # emits a single [auth.oidc] table for it.
@@ -2497,6 +2513,10 @@ def write_config(  # noqa: C901
             lines.append("")
             lines.append("[dreaming]")
             lines.append("enable = true")
+            keys = advanced.get("insight_pubkeys") or []
+            if keys:
+                quoted = ", ".join(f'"{k}"' for k in keys)
+                lines.append(f"trusted_insight_pubkeys = [{quoted}]")
         if advanced.get("effort"):
             lines.append("")
             lines.append("[effort]")

@@ -85,6 +85,87 @@ here.
   Reflexions also carry the recording run's department (`reflexion.py`
   `domain` field), and same-department lessons outrank equally-similar
   generic ones at recall time.
+- **Cross-department insight promotion** — a failure pattern recurring in
+  ≥2 distinct departments becomes a *shared* insight every department
+  recalls (`promote_shared_insights`; `[dreaming] promote_shared`).
+  Compartment seals stay intact: only the consolidated lesson crosses the
+  boundary, never raw department trajectories.
+- **Skill retirement (the forgetting loop)** — a dream phase moves learned
+  skills with a decayed track record (`skill_stats.evictable`: enough uses,
+  win rate under the floor) to `learned-skills/retired/` with a logged
+  reason — out of the recall glob, reversible by moving the file back
+  (`[dreaming] retire_skills / retire_min_uses / retire_below`).
+- **Dream-time rehearsal** — dream cycles queue the biggest recurring
+  failure patterns as practice cases (`[dreaming] rehearse`,
+  `~/.maverick/dreams/rehearsals.ndjson`); `maverick dream --rehearse` runs
+  them as budgeted `[rehearsal]`-titled goals and reports how many
+  previously-failing patterns now complete. Refused while verifier
+  calibration is frozen (the same interlock that gates maverick-evolve), so
+  the system never practices against a distrusted grader.
+- **Department-scoped routing memory** — a domain swarm's counterfactual
+  credit is recorded both globally and per department
+  (`role_stats.py` `<domain>::<role>` keys); a domain run's routing guidance
+  prefers its own department's track record and falls back to the global
+  signal when history is thin.
+- **Human-override ingestion** — when a human declines an Art-14 approval
+  gate, the refusal is persisted as a recallable lesson
+  (`reflexion.record_human_override`, failure class `human_override`,
+  department-tagged) so the next similar goal proposes an alternative or
+  seeks approval earlier — and dreaming consolidates repeated refusals into
+  department insights. Opt-in via `[reflexion]`; the audit record is
+  unchanged.
+- **Signal capture across the run lifecycle** — goal rows persist their
+  department (schema v14 `domain` column; resumes inherit it); a stall on a
+  user question records WHAT was missing (`blocked_on_user`); a loop-guard
+  tool-failure streak persists as `tool_flaky` (and `find_tools` demotes
+  repeat offenders at discovery time); an explicit user correction of the
+  prior answer becomes a `user_correction` lesson (`corrections.py`,
+  deterministic phrase match over the triggering turn only); verifier
+  critiques are mined out of donated trajectories into dream fodder.
+- **Insight lifecycle management** — a recurring pattern *refreshes* its
+  standing insight (ts + evidence) instead of duplicating; insights
+  unconfirmed for `[dreaming] insight_ttl_days` age out; a failure insight
+  contradicted by newer similar successes retires; opt-in fact pruning
+  (`[dreaming] prune_facts`, default off — the only phase touching operator
+  data) expires stale facts and caps the table.
+- **Per-user preference notes** (`user_notes.py`) — explicit, deterministic
+  preference statements ("I prefer tables", "call me Sam") distilled from
+  recent conversations into briefing notes injected ONLY for their exact
+  (channel, user) scope; the store rewrites every cycle, so deleted
+  conversations stop feeding notes.
+- **Learned behavior selection** — `[planning] mode = "auto"` picks
+  tree-of-thought per task class from a learned outcome record
+  (`planning_stats.py`, bandit-lite + deterministic); budget task classes
+  scope by department (`finance_sox::reconcile` learns finance-shaped
+  caps); the learned compaction ledger scopes by department
+  (`scope|kind` rows).
+- **Verifier-scored rehearsal + evolve bridge** — `maverick dream
+  --rehearse` grades each practiced case with the calibrated verifier, and
+  `maverick-evolve --live --rehearsals` consumes the rehearsal queue as
+  weighted eval cases so config evolution optimizes against the operator's
+  own recurring failures. `maverick-evolve --adopt` overlays the archive's
+  best config onto a domain pack (persona/description/models only —
+  capability scopes are refused), diff-shown, `--yes`-gated, `.bak`-backed.
+- **Learning-side canary** — probation retirement (a new skill that loses
+  its first 3 decided uses outright is retired early) and a benchmark gate:
+  while `continuous_benchmark` history shows a regression, a dream cycle's
+  NEW skills are quarantined (reversibly) instead of going live.
+- **Learning governance** — every dream cycle writes one tamper-evident
+  `learning_update` audit row; `maverick dream --dry-run` runs the full
+  cycle against temp copies and reports exact would-be changes; each CLI
+  cycle snapshots all learned stores first (`--list-snapshots`,
+  `--rollback latest|<name>` restore wholesale); with an active tenant,
+  every learned store resolves under the tenant's data dir so one tenant's
+  memory never feeds another's runs.
+- **Federated insight exchange** (`insight_exchange.py`,
+  `maverick insights-export` / `insights-import`) — consolidated lessons
+  (never raw trajectories) cross instance boundaries as Ed25519-signed
+  bundles; imports are fail-closed against `[dreaming]
+  trusted_insight_pubkeys`, Shield-scanned, provenance-tagged, and merged
+  through the normal dedup gate. Transport is deliberately operator-managed
+  (a file), never a network call. **Fleet aggregation:** a central
+  `maverick dream --donations-dir` replays the whole fleet's donated
+  trajectory records through the same consolidation.
 - **Vector-store cross-run memory** — opt-in `[memory] backend` routes
   cross-run recall through a persistent **Chroma / Qdrant / Weaviate** store
   (`vector_store/`, `semantic_recall.py`) so similarity search is indexed and

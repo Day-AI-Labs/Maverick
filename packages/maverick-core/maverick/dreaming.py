@@ -39,6 +39,29 @@ log = logging.getLogger(__name__)
 
 DEFAULT_DIR = Path.home() / ".maverick" / "dreams"
 DEFAULT_INSIGHTS = DEFAULT_DIR / "insights.ndjson"
+DEFAULT_REHEARSALS = DEFAULT_DIR / "rehearsals.ndjson"
+
+
+def insights_path() -> Path:
+    return _tenant_path("dreams/insights.ndjson", DEFAULT_INSIGHTS)
+
+
+def rehearsals_path() -> Path:
+    return _tenant_path("dreams/rehearsals.ndjson", DEFAULT_REHEARSALS)
+
+
+def _tenant_path(name: str, legacy):
+    """Item-30 isolation: with an ACTIVE tenant, this store lives under the
+    tenant's data dir (one tenant's learned memory can never feed another's
+    runs); single-tenant resolution keeps the legacy location unchanged."""
+    try:
+        from .paths import current_tenant, data_dir
+        if current_tenant():
+            return data_dir(*name.split("/"))
+    except Exception:  # pragma: no cover -- isolation never blocks resolution
+        pass
+    return legacy
+
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _STOP = frozenset({
@@ -100,15 +123,35 @@ class DreamReport:
     insights_written: int = 0
     skills_distilled: int = 0
     reflexions_pruned: int = 0
+    skills_retired: int = 0
+    rehearsals_queued: int = 0
+    insights_expired: int = 0
+    insights_retired: int = 0
+    facts_pruned: int = 0
+    user_notes_written: int = 0
+    skills_quarantined: int = 0
     departments: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
         depts = ", ".join(self.departments) if self.departments else "(generic only)"
+        extra = ""
+        if self.insights_expired or self.insights_retired:
+            extra += (f" Aged out {self.insights_expired} and retired "
+                      f"{self.insights_retired} contradicted insight(s).")
+        if self.facts_pruned:
+            extra += f" Pruned {self.facts_pruned} stale fact(s)."
+        if self.user_notes_written:
+            extra += f" Updated {self.user_notes_written} user preference note(s)."
+        if self.skills_quarantined:
+            extra += (f" Quarantined {self.skills_quarantined} new skill(s): "
+                      "benchmark canary is red.")
         return (
             f"Dream cycle: replayed {self.goals_replayed} success(es) + "
             f"{self.failures_replayed} failure(s); wrote {self.insights_written} "
-            f"insight(s), distilled {self.skills_distilled} skill(s), pruned "
-            f"{self.reflexions_pruned} stale reflexion(s). Departments touched: {depts}."
+            f"insight(s), distilled {self.skills_distilled} skill(s), retired "
+            f"{self.skills_retired} stale skill(s), queued {self.rehearsals_queued} "
+            f"rehearsal(s), pruned {self.reflexions_pruned} stale reflexion(s)."
+            f"{extra} Departments touched: {depts}."
         )
 
 
@@ -224,6 +267,7 @@ def _keywords(texts: list[str], k: int = 4) -> list[str]:
 
 def synthesize_insight(
     cluster: list[dict], *, domain: str | None, now: float | None = None,
+    kind: str = "failure_pattern",
 ) -> DreamInsight:
     """Deterministic consolidation of one failure cluster — no LLM call, so
     persisted insights can't be steered by injected trajectory text."""
@@ -236,6 +280,9 @@ def synthesize_insight(
         f"Recurring failure ({cls}, seen {len(cluster)}x) on goals about "
         f"{about}."
     )
+    if kind == "shared_pattern":
+        depts = sorted({str(f.get("domain")) for f in cluster if f.get("domain")})
+        text += f" Seen across departments: {', '.join(depts)}."
     if lesson:
         text += f" Latest lesson: {lesson}"
     text += (
@@ -244,14 +291,34 @@ def synthesize_insight(
     )
     return DreamInsight(
         ts=now if now is not None else time.time(),
-        kind="failure_pattern", domain=domain, text=text, evidence=len(cluster),
+        kind=kind, domain=domain, text=text, evidence=len(cluster),
     )
+
+
+def promote_shared_insights(
+    failures: list[dict], *, min_cluster: int = 2, now: float | None = None,
+) -> list[DreamInsight]:
+    """Cross-department promotion: a failure pattern that recurs in TWO OR
+    MORE distinct departments becomes a *shared* insight (``domain=None``,
+    ``kind="shared_pattern"``), recallable by every department via lexical
+    similarity. Compartment seals stay intact — only the consolidated lesson
+    crosses the boundary, never raw department trajectories.
+    """
+    promoted: list[DreamInsight] = []
+    for cluster in cluster_failures(failures, min_cluster=min_cluster):
+        depts = {f.get("domain") for f in cluster if f.get("domain")}
+        if len(depts) < 2:
+            continue
+        promoted.append(synthesize_insight(
+            cluster, domain=None, now=now, kind="shared_pattern",
+        ))
+    return promoted
 
 
 # ---------- insight store ----------
 
-def load_insights(path: Path | str = DEFAULT_INSIGHTS) -> list[DreamInsight]:
-    p = Path(path)
+def load_insights(path: Path | str | None = None) -> list[DreamInsight]:
+    p = Path(path) if path is not None else insights_path()
     if not p.exists():
         return []
     out: list[DreamInsight] = []
@@ -275,7 +342,7 @@ def load_insights(path: Path | str = DEFAULT_INSIGHTS) -> list[DreamInsight]:
 
 
 def append_insights(
-    new: list[DreamInsight], *, path: Path | str = DEFAULT_INSIGHTS,
+    new: list[DreamInsight], *, path: Path | str | None = None,
     max_insights: int = 100,
 ) -> int:
     """Append novel insights, dedup against the store, cap to most recent.
@@ -284,20 +351,29 @@ def append_insights(
     is lexically contained at/above the threshold. The whole store is
     rewritten atomically so a crash can't leave a torn NDJSON line.
     """
+    path = Path(path) if path is not None else insights_path()
     existing = load_insights(path)
     written = 0
+    refreshed = 0
     for ins in new or []:
         it = _tokens(ins.text)
-        dup = any(
-            e.domain == ins.domain
-            and _containment(it, _tokens(e.text)) >= _DEDUP_THRESHOLD
-            for e in existing
+        dup = next(
+            (e for e in existing
+             if e.domain == ins.domain
+             and _containment(it, _tokens(e.text)) >= _DEDUP_THRESHOLD),
+            None,
         )
-        if dup:
+        if dup is not None:
+            # Confirmation, not a no-op: the pattern recurred, so the standing
+            # insight is refreshed (newer ts, more evidence) instead of aging
+            # toward expiry while the problem is still live.
+            dup.ts = max(dup.ts, ins.ts)
+            dup.evidence += max(1, ins.evidence)
+            refreshed += 1
             continue
         existing.append(ins)
         written += 1
-    if not written:
+    if not (written or refreshed):
         return 0
     existing.sort(key=lambda i: i.ts)
     keep = existing[-max(1, max_insights):]
@@ -321,7 +397,7 @@ def append_insights(
 
 def recall_insights(
     goal_text: str, *, domain: str | None = None, k: int = 2,
-    path: Path | str = DEFAULT_INSIGHTS, min_score: float = 0.05,
+    path: Path | str | None = None, min_score: float = 0.05,
 ) -> list[tuple[float, DreamInsight]]:
     """Top-k consolidated insights for this goal, same-department boosted.
 
@@ -430,7 +506,464 @@ def prune_reflexions(
     return dropped
 
 
+def _rewrite_insights(keep: list[DreamInsight], path: Path | str) -> bool:
+    """Atomically replace the insight store with ``keep`` (chronological)."""
+    p = Path(path)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            for ins in sorted(keep, key=lambda i: i.ts):
+                f.write(json.dumps(ins.to_dict(), default=str) + "\n")
+        os.replace(tmp, p)
+        try:
+            os.chmod(p, 0o600)
+        except OSError:
+            pass
+        return True
+    except OSError as e:
+        log.warning("dreaming: insight rewrite failed: %s", e)
+        return False
+
+
+def expire_insights(
+    path: Path | str | None = None, *, ttl_days: int = 90,
+    now: float | None = None,
+) -> int:
+    """Insight aging: drop insights unconfirmed for ``ttl_days``.
+
+    Confirmation refreshes ``ts`` (see :func:`append_insights`), so only
+    lessons whose pattern stopped recurring age out. ``ttl_days=0`` disables
+    expiry. Returns how many were dropped.
+    """
+    if ttl_days <= 0:
+        return 0
+    path = Path(path) if path is not None else insights_path()
+    entries = load_insights(path)
+    if not entries:
+        return 0
+    cutoff = (now if now is not None else time.time()) - ttl_days * 86400.0
+    keep = [e for e in entries if e.ts >= cutoff]
+    dropped = len(entries) - len(keep)
+    if dropped <= 0:
+        return 0
+    return dropped if _rewrite_insights(keep, path) else 0
+
+
+def resolve_contradictions(
+    successes: list[dict], path: Path | str | None = None, *,
+    min_successes: int = 2, similarity: float = 0.5,
+) -> int:
+    """Retire failure insights the system has since outgrown.
+
+    When ``min_successes`` or more successes NEWER than a failure-pattern
+    insight lexically match it ("we now reliably do X"), the insight is
+    contradicted and dropped instead of coexisting with the new reality.
+    Matching is coverage of the success's tokens by the insight text --
+    jaccard would be diluted by the insight's boilerplate. Returns how many
+    insights were retired.
+    """
+    path = Path(path) if path is not None else insights_path()
+    entries = load_insights(path)
+    if not entries or not successes:
+        return 0
+
+    def _covered(goal: str, ins_tokens: set[str]) -> bool:
+        st = _tokens(goal)
+        if not st:
+            return False
+        return len(st & ins_tokens) / len(st) >= similarity
+
+    keep: list[DreamInsight] = []
+    retired = 0
+    for ins in entries:
+        it = _tokens(ins.text)
+        newer_wins = sum(
+            1 for s in successes
+            if float(s.get("t", 0) or 0) > ins.ts
+            and _covered(str(s.get("goal", "")), it)
+        )
+        if ins.kind in {"failure_pattern", "shared_pattern"} \
+                and newer_wins >= max(1, min_successes):
+            retired += 1
+            continue
+        keep.append(ins)
+    if retired <= 0:
+        return 0
+    return retired if _rewrite_insights(keep, path) else 0
+
+
+# ---------- fact consolidation ----------
+
+def prune_facts(
+    world: Any, *, max_age_days: int = 180, cap: int = 2000,
+    now: float | None = None,
+) -> int:
+    """Expire stale facts and cap the table (opt-in: deletes user data).
+
+    The facts table grows monotonically; this drops facts not updated in
+    ``max_age_days`` and, if still over ``cap``, the oldest beyond the cap.
+    Returns how many facts were deleted. Gated by ``[dreaming] prune_facts``
+    (default OFF) — the only dream phase that touches operator data.
+    """
+    if world is None:
+        return 0
+    deleted = 0
+    ts_now = now if now is not None else time.time()
+    try:
+        if max_age_days > 0:
+            cutoff = ts_now - max_age_days * 86400.0
+            for key in world.stale_fact_keys(cutoff, limit=1000):
+                deleted += int(world.delete_fact(key) or 0)
+        if cap > 0:
+            over = world.count_facts() - cap
+            if over > 0:
+                for key in world.stale_fact_keys(ts_now + 1, limit=over):
+                    deleted += int(world.delete_fact(key) or 0)
+    except Exception as e:  # pragma: no cover -- pruning never blocks a dream
+        log.debug("dreaming: fact prune skipped: %s", e)
+    return deleted
+
+
+# ---------- skill retirement (the forgetting loop) ----------
+
+def retire_stale_skills(
+    store: Path | str | None = None, *, min_uses: int = 5, below: float = 0.25,
+    stats_path: Path | None = None,
+) -> list[str]:
+    """Retire learned skills whose recall track record decayed.
+
+    Learning loops without forgetting loops degrade: a skill that keeps being
+    recalled but rarely helps (``skill_stats.evictable``: >= ``min_uses``
+    decided uses, win rate <= ``below``) is MOVED to ``<store>/retired/`` —
+    out of ``load_skills``' glob, so it stops being recalled — with a
+    ``retired.ndjson`` line recording when and why. Reversible by moving the
+    file back. Returns the retired skill names.
+    """
+    from . import skill_stats
+    from .skill_distillation_local import _STORE
+    store_dir = Path(store) if store is not None else _STORE
+    if not store_dir.is_dir():
+        return []
+    try:
+        names = skill_stats.evictable(
+            path=stats_path, min_uses=min_uses, max_win_rate=below,
+        )
+    except Exception as e:  # pragma: no cover -- stats never block a dream
+        log.debug("dreaming: evictable lookup failed: %s", e)
+        return []
+    # Probation (the learning-side canary, half 1): a freshly-distilled skill
+    # that loses its FIRST few decided uses outright never earned its place —
+    # retire it before min_uses lets it linger. wins==0 keeps this strict.
+    try:
+        for md in sorted(store_dir.glob("*.md")):
+            name = md.stem
+            if name in names:
+                continue
+            st = skill_stats.get(name, path=stats_path)
+            if st and st.uses >= 3 and st.wins == 0 and st.losses >= 3:
+                names.append(name)
+    except Exception as e:  # pragma: no cover
+        log.debug("dreaming: probation scan failed: %s", e)
+    retired: list[str] = []
+    dest = store_dir / "retired"
+    for name in names:
+        src = store_dir / f"{name}.md"
+        if not src.is_file():
+            continue
+        try:
+            dest.mkdir(parents=True, exist_ok=True)
+            os.replace(src, dest / src.name)
+            st = skill_stats.get(name, path=stats_path)
+            with open(dest / "retired.ndjson", "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "ts": time.time(), "name": name,
+                    "uses": getattr(st, "uses", 0),
+                    "wins": getattr(st, "wins", 0),
+                    "losses": getattr(st, "losses", 0),
+                    "reason": f"win rate <= {below} after >= {min_uses} uses",
+                }) + "\n")
+            retired.append(name)
+        except OSError as e:
+            log.warning("dreaming: could not retire skill %s: %s", name, e)
+    return retired
+
+
+# ---------- rehearsal (practice while you sleep) ----------
+
+def build_rehearsal_cases(
+    failures: list[dict], *, min_cluster: int = 2, max_cases: int = 3,
+    now: float | None = None,
+) -> list[dict]:
+    """Turn the biggest recurring failure clusters into rehearsal cases.
+
+    A case is the NEWEST goal text of a qualifying cluster (the most current
+    phrasing of the recurring problem) tagged with its department and failure
+    class. Deterministic — the case text is historical goal text, never
+    generated. Largest evidence first, capped at ``max_cases``.
+    """
+    cases: list[dict] = []
+    for cluster in cluster_failures(failures, min_cluster=min_cluster):
+        newest = max(cluster, key=lambda f: float(f.get("ts", 0) or 0))
+        cases.append({
+            "ts": now if now is not None else time.time(),
+            "prompt": str(newest.get("goal_text", "")).strip(),
+            "domain": newest.get("domain"),
+            "failure_class": str(newest.get("failure_class", "unknown")),
+            "evidence": len(cluster),
+        })
+    cases.sort(key=lambda c: -int(c.get("evidence", 0)))
+    return [c for c in cases if c["prompt"]][:max(1, max_cases)]
+
+
+def save_rehearsals(cases: list[dict], path: Path | str | None = None) -> int:
+    """Replace the rehearsal queue with this cycle's cases (atomic)."""
+    p = Path(path) if path is not None else rehearsals_path()
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            for c in cases:
+                f.write(json.dumps(c, default=str) + "\n")
+        os.replace(tmp, p)
+        try:
+            os.chmod(p, 0o600)
+        except OSError:
+            pass
+    except OSError as e:
+        log.warning("dreaming: rehearsal write failed: %s", e)
+        return 0
+    return len(cases)
+
+
+def load_rehearsals(path: Path | str | None = None) -> list[dict]:
+    p = Path(path) if path is not None else rehearsals_path()
+    if not p.exists():
+        return []
+    out: list[dict] = []
+    try:
+        with open(p, encoding="utf-8") as f:
+            for raw in f:
+                try:
+                    d = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(d, dict) and str(d.get("prompt", "")).strip():
+                    out.append(d)
+    except OSError:
+        return []
+    return out
+
+
+class RehearsalFrozen(RuntimeError):
+    """Raised when rehearsal is refused because verifier calibration froze.
+
+    Mirrors maverick-evolve's interlock: a drifted judge must not grade
+    practice runs, or the system rehearses toward the drift.
+    """
+
+
+def rehearsal_completed(output: str) -> bool:
+    """The v1 rehearsal success signal: the previously-failing class of goal
+    now completes (non-empty answer, no failure prefix). Shared with the
+    maverick-evolve rehearsal bridge so both grade identically."""
+    out = (output or "").strip()
+    return bool(out) and not out.startswith(
+        ("Stopped", "ERROR", "BLOCKED", "⚠"),
+    )
+
+
+async def rehearse(
+    agent: Any, *, path: Path | str | None = None, max_cases: int = 3,
+    scorer: Any | None = None, min_confidence: float = 0.6,
+) -> tuple[int, int]:
+    """Run queued rehearsal cases through ``agent`` (an async ``str -> str``).
+
+    Returns ``(passed, total)``. Gated by the calibration interlock — frozen
+    calibration raises :class:`RehearsalFrozen` instead of practicing against
+    a distrusted grader. With a ``scorer`` (async ``(prompt, output) ->
+    confidence``), a case passes only when it completes AND the verifier
+    scores it at/above ``min_confidence``; without one, the completion check
+    alone grades (and the maverick-evolve eval harness is used when
+    installed — the kernel never *requires* the evolve package).
+    """
+    try:
+        from .calibration import learning_frozen
+        frozen = bool(learning_frozen())
+    except Exception:  # pragma: no cover -- interlock absent = not frozen
+        frozen = False
+    if frozen:
+        raise RehearsalFrozen(
+            "verifier calibration is frozen; refusing to rehearse against a "
+            "distrusted grader (see maverick.calibration)."
+        )
+    cases = load_rehearsals(path)[:max(1, max_cases)]
+    if not cases:
+        return (0, 0)
+
+    if scorer is None:
+        try:
+            from maverick_evolve.eval_harness import EvalCase, evaluate
+            report = await evaluate(
+                agent,
+                [EvalCase(prompt=c["prompt"], check=rehearsal_completed)
+                 for c in cases],
+            )
+            return (int(report.passed), len(cases))
+        except ImportError:
+            pass
+    passed = 0
+    for c in cases:
+        try:
+            output = await agent(c["prompt"])
+            if not rehearsal_completed(output):
+                continue
+            if scorer is not None:
+                conf = float(await scorer(c["prompt"], output))
+                if conf < min_confidence:
+                    continue
+            passed += 1
+        except Exception as e:
+            log.debug("dreaming: rehearsal case errored: %s", e)
+    return (passed, len(cases))
+
+
+def _maintenance_phases(
+    report: DreamReport, cfg: dict, successes: list[dict], world: Any | None, *,
+    insights_path: Path | str, reflexion_path: Path | str | None,
+    user_notes_path: Path | str | None, now: float | None,
+) -> None:
+    """RECONCILE / PRUNE / fact-consolidation / user-note phases of a cycle.
+
+    Split out of :func:`dream_cycle` purely to keep each function readable;
+    mutates ``report`` in place like the inline phases it replaced.
+    """
+    # RECONCILE the insight store with reality: retire insights contradicted
+    # by newer successes, then age out insights whose pattern stopped
+    # recurring (confirmation refreshes ts, so live lessons never expire).
+    report.insights_retired = resolve_contradictions(
+        successes, insights_path,
+        min_successes=int(cfg.get("contradiction_successes", 2)),
+    )
+    report.insights_expired = expire_insights(
+        insights_path, ttl_days=int(cfg.get("insight_ttl_days", 90)), now=now,
+    )
+
+    # PRUNE the reflexion log so recall quality doesn't decay with volume.
+    if bool(cfg.get("prune", True)):
+        report.reflexions_pruned = prune_reflexions(
+            reflexion_path, keep=int(cfg.get("keep_reflexions", 500)),
+        )
+
+    # Fact consolidation (opt-in -- deletes operator data): expire stale
+    # facts and cap the table so cross-run memory stays sharp.
+    if world is not None and bool(cfg.get("prune_facts", False)):
+        report.facts_pruned = prune_facts(
+            world, max_age_days=int(cfg.get("facts_max_age_days", 180)),
+            cap=int(cfg.get("facts_cap", 2000)), now=now,
+        )
+
+    # Per-user preference notes: distill explicit, deterministic preference
+    # statements from recent conversations into briefing notes injected on
+    # that user's future runs.
+    if world is not None and bool(cfg.get("user_notes", True)):
+        try:
+            from . import user_notes as _un
+            report.user_notes_written = _un.consolidate(world, path=user_notes_path)
+        except Exception as e:  # pragma: no cover -- notes never block a dream
+            log.debug("dreaming: user-note consolidation skipped: %s", e)
+
+
 # ---------- the dream cycle ----------
+
+def _replay_critiques(
+    outbox: Path | str | None = None, *, max_confidence: float = 0.75,
+    limit: int = 100,
+) -> list[dict]:
+    """Mine donated trajectory records for verifier critiques worth dreaming on.
+
+    ``result.verifier_critique`` is written into donation records and never
+    read again; runs the verifier passed but criticized (confidence under
+    ``max_confidence``) are weak spots worth consolidating. Returns
+    failure-shaped dicts so they flow through the same clustering as
+    reflexions. Empty unless trajectory donation is enabled and has records.
+    """
+    try:
+        import json as _json
+
+        from .donation import list_pending
+        paths = list_pending(Path(outbox) if outbox is not None else None)
+    except Exception:  # pragma: no cover -- donations never block a dream
+        return []
+    out: list[dict] = []
+    for p in paths[-limit:]:
+        try:
+            d = _json.loads(Path(p).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        critique = str(d.get("verifier_critique", "") or "").strip()
+        brief = str(d.get("task_brief_text", "") or "").strip()
+        try:
+            conf = float(d.get("verifier_confidence", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            conf = 0.0
+        if not critique or not brief or conf >= max_confidence:
+            continue
+        out.append({
+            "ts": float(d.get("ts", 0.0) or 0.0),
+            "goal_text": brief,
+            "failure_class": "verifier_critique",
+            "reflection": critique[:240],
+            "domain": None,
+        })
+    return out
+
+
+def _replay_donations(
+    donations_dir: Path | str, *, limit: int = 200,
+) -> tuple[list[dict], list[dict]]:
+    """Fleet-level aggregation: replay donated trajectory records.
+
+    An org running many Maverick instances points each at the same outbox
+    drop (or syncs them to one central dir); a central ``maverick dream
+    --donations-dir`` then consolidates the whole fleet's experience. Returns
+    ``(successes, failures)`` shaped for the normal cycle phases; selection
+    gating happened at donation time, so only records the donor's gate
+    already passed exist here.
+    """
+    d = Path(donations_dir)
+    if not d.is_dir():
+        return [], []
+    successes: list[dict] = []
+    failures: list[dict] = []
+    for p in sorted(d.glob("*.json"))[-limit:]:
+        try:
+            rec = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        brief = str(rec.get("task_brief_text", "") or "").strip()
+        if not brief:
+            continue  # hash-only donations carry no consolidatable text
+        outcome = str(rec.get("outcome", "") or "").strip().lower()
+        try:
+            ts = float(rec.get("ts", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            ts = 0.0
+        if outcome == "success":
+            successes.append({
+                "goal": brief, "success": True,
+                "tools": list(rec.get("tools_used", []) or []),
+                "t": ts, "domain": None,
+            })
+        elif outcome:
+            failures.append({
+                "ts": ts, "goal_text": brief,
+                "failure_class": f"fleet_{outcome}",
+                "reflection": str(rec.get("verifier_critique", "") or "")[:240],
+                "domain": None,
+            })
+    return successes, failures
+
 
 def _replay_failures(reflexion_path: Path | str | None) -> list[dict]:
     from . import reflexion as _r
@@ -450,10 +983,13 @@ def _replay_failures(reflexion_path: Path | str | None) -> list[dict]:
 def _distill_department_skills(
     by_domain: dict[str | None, list[dict]], *, skill_store: Path | str | None,
     min_cluster: int,
-) -> int:
-    """CONSOLIDATE: per-department gated distillation into learned skills."""
+) -> list[Path]:
+    """CONSOLIDATE: per-department gated distillation into learned skills.
+
+    Returns the paths of the skills written THIS cycle (the benchmark canary
+    gate quarantines exactly these when the tracked suite is regressing)."""
     from . import skill_distillation_v2 as _v2
-    distilled = 0
+    saved_paths: list[Path] = []
     for trajectories in by_domain.values():
         if len(trajectories) < max(1, min_cluster):
             continue
@@ -463,25 +999,64 @@ def _distill_department_skills(
         try:
             saved, _why = _v2.distill_and_save_gated(trajectories, **kwargs)
             if saved:
-                distilled += 1
+                saved_paths.append(Path(saved))
         except Exception as e:  # pragma: no cover -- one bad pack can't stop the cycle
             log.debug("dreaming: distill skipped: %s", e)
-    return distilled
+    return saved_paths
+
+
+def benchmark_regressed() -> bool:
+    """Whether the continuously-tracked benchmark suite is currently
+    regressing (the learning-side canary, half 2). Fail-open: no history or
+    any error reads as "not regressing"."""
+    try:
+        from . import continuous_benchmark as _cb
+        history = _cb.load_history(_cb._store_path())
+        names = {str(h.get("name")) for h in history if h.get("name")}
+        return any(_cb.detect_regression(history, n) for n in names)
+    except Exception:  # pragma: no cover -- canary never blocks a dream
+        return False
+
+
+def _quarantine_new_skills(paths: list[Path]) -> int:
+    """Move this cycle's freshly-distilled skills aside while the benchmark
+    canary is red: don't add new learned behavior on top of a regression.
+    Reversible (plain file moves into ``<store>/quarantine/``)."""
+    moved = 0
+    for p in paths:
+        try:
+            dest = p.parent / "quarantine"
+            dest.mkdir(parents=True, exist_ok=True)
+            os.replace(p, dest / p.name)
+            moved += 1
+        except OSError as e:  # pragma: no cover
+            log.warning("dreaming: quarantine failed for %s: %s", p, e)
+    return moved
 
 
 def dream_cycle(
     world: Any | None = None, *, profiles: dict[str, Any] | None = None,
     max_goals: int = 50, reflexion_path: Path | str | None = None,
-    insights_path: Path | str = DEFAULT_INSIGHTS,
+    insights_path: Path | str | None = None,
     skill_store: Path | str | None = None, now: float | None = None,
+    rehearsals_path: Path | str | None = None,
+    skill_stats_path: Path | None = None,
+    critiques_outbox: Path | str | None = None,
+    user_notes_path: Path | str | None = None,
+    settings_override: dict | None = None,
+    donations_dir: Path | str | None = None,
 ) -> DreamReport:
     """Run one full dream cycle. Deterministic, LLM-free, fail-open.
 
     Callers gate on :func:`enabled` (the CLI and any scheduler do); the cycle
     itself stays callable so tests and operators can dream on demand.
     """
-    cfg = settings()
+    cfg = {**settings(), **(settings_override or {})}
     report = DreamReport()
+    if insights_path is None:
+        insights_path = globals()["insights_path"]()
+    if rehearsals_path is None:
+        rehearsals_path = globals()["rehearsals_path"]()
 
     if profiles is None:
         try:
@@ -500,28 +1075,48 @@ def dream_cycle(
                     "goal": getattr(g, "title", "") or "",
                     "success": True, "tools": [],
                     "t": getattr(g, "updated_at", 0.0) or 0.0,
+                    # Exact attribution when the goal row carries its
+                    # department (schema v14); lexical fallback otherwise.
+                    "domain": getattr(g, "domain", "") or None,
                 })
         except Exception as e:  # pragma: no cover -- world read never blocks
             log.debug("dreaming: goal replay skipped: %s", e)
     failures = _replay_failures(reflexion_path)
+    # Fleet aggregation: a central instance consolidates donated trajectory
+    # records from the whole fleet alongside its own experience.
+    if donations_dir is not None:
+        _fleet_s, _fleet_f = _replay_donations(donations_dir)
+        successes = successes + _fleet_s
+        failures = failures + _fleet_f
+    # Critique mining: verifier critiques from donated trajectories are
+    # weak-spot signals; cluster them like failures. Off-able knob; naturally
+    # empty unless [telemetry] donate_trajectories has produced records.
+    if bool(cfg.get("mine_critiques", True)):
+        failures = failures + _replay_critiques(critiques_outbox)
     report.goals_replayed = len(successes)
     report.failures_replayed = len(failures)
 
-    # Attribute experience to departments. A failure recorded by a domain run
-    # carries its department; everything else is attributed lexically.
+    # Attribute experience to departments. Experience recorded by a domain
+    # run carries its department; everything else is attributed lexically.
     by_domain_success: dict[str | None, list[dict]] = {}
     for s in successes:
-        dom = assign_domain(s["goal"], signatures)
+        dom = s.get("domain") or assign_domain(s["goal"], signatures)
         by_domain_success.setdefault(dom, []).append(s)
     for f in failures:
         if not f.get("domain"):
             f["domain"] = assign_domain(str(f.get("goal_text", "")), signatures)
 
     # CONSOLIDATE successes -> learned skills (evidence-gated + deduped).
-    report.skills_distilled = _distill_department_skills(
+    _new_skills = _distill_department_skills(
         by_domain_success, skill_store=skill_store,
         min_cluster=int(cfg.get("min_cluster", 2)),
     )
+    # Benchmark canary: while the tracked suite is regressing, this cycle's
+    # NEW skills are quarantined — never add learned behavior on red.
+    if _new_skills and bool(cfg.get("benchmark_gate", True)) and benchmark_regressed():
+        report.skills_quarantined = _quarantine_new_skills(_new_skills)
+        _new_skills = []
+    report.skills_distilled = len(_new_skills)
 
     # REHEARSE failures -> dream insights, clustered within each department.
     new_insights: list[DreamInsight] = []
@@ -531,27 +1126,233 @@ def dream_cycle(
     for dom, fs in by_domain_failure.items():
         for cluster in cluster_failures(fs, min_cluster=int(cfg.get("min_cluster", 2))):
             new_insights.append(synthesize_insight(cluster, domain=dom, now=now))
+    # Cross-department promotion: a pattern recurring in >=2 departments
+    # becomes a shared lesson every department can recall.
+    if bool(cfg.get("promote_shared", True)):
+        new_insights.extend(promote_shared_insights(
+            failures, min_cluster=int(cfg.get("min_cluster", 2)), now=now,
+        ))
     report.insights_written = append_insights(
         new_insights, path=insights_path,
         max_insights=int(cfg.get("max_insights", 100)),
     )
 
-    # PRUNE the reflexion log so recall quality doesn't decay with volume.
-    if bool(cfg.get("prune", True)):
-        report.reflexions_pruned = prune_reflexions(
-            reflexion_path, keep=int(cfg.get("keep_reflexions", 500)),
+    # REHEARSE (queueing): persist the biggest recurring failure clusters as
+    # practice cases for `maverick dream --rehearse`. Queue-building is free
+    # and deterministic; *running* them spends real agent calls, so that step
+    # stays behind its own knob + the calibration interlock (see rehearse()).
+    if bool(cfg.get("rehearse", False)):
+        report.rehearsals_queued = save_rehearsals(
+            build_rehearsal_cases(
+                failures, min_cluster=int(cfg.get("min_cluster", 2)),
+                max_cases=int(cfg.get("max_rehearsals", 3)), now=now,
+            ),
+            path=rehearsals_path,
         )
+
+    # FORGET: retire learned skills whose recall track record decayed —
+    # learning loops without forgetting loops accumulate noise.
+    if bool(cfg.get("retire_skills", True)):
+        report.skills_retired = len(retire_stale_skills(
+            skill_store, min_uses=int(cfg.get("retire_min_uses", 5)),
+            below=float(cfg.get("retire_below", 0.25)),
+            stats_path=skill_stats_path,
+        ))
+
+    _maintenance_phases(
+        report, cfg, successes, world,
+        insights_path=insights_path, reflexion_path=reflexion_path,
+        user_notes_path=user_notes_path, now=now,
+    )
 
     touched = {d for d in by_domain_success if d} | {
         i.domain for i in new_insights if i.domain
     }
     report.departments = sorted(touched)
+    _audit_cycle(report)
     return report
+
+
+
+def _audit_cycle(report: DreamReport) -> None:
+    """Learning audit trail: one tamper-evident row per dream cycle.
+
+    `maverick audit verify` then covers the learning system the same way it
+    covers tool calls -- provably governed learning. Never raises."""
+    try:
+        from .audit import EventKind, record
+        record(
+            EventKind.LEARNING_UPDATE, agent="dreaming",
+            insights_written=report.insights_written,
+            insights_expired=report.insights_expired,
+            insights_retired=report.insights_retired,
+            skills_distilled=report.skills_distilled,
+            skills_retired=report.skills_retired,
+            skills_quarantined=report.skills_quarantined,
+            rehearsals_queued=report.rehearsals_queued,
+            reflexions_pruned=report.reflexions_pruned,
+            facts_pruned=report.facts_pruned,
+            user_notes_written=report.user_notes_written,
+            departments=",".join(report.departments),
+        )
+    except Exception as e:  # pragma: no cover -- audit never blocks a dream
+        log.debug("dreaming: audit row skipped: %s", e)
+
+
+# ---------- snapshots, rollback, dry-run (learning governance) ----------
+
+def _live_stores() -> dict[str, Path]:
+    """The learned-state files/dirs a snapshot covers, resolved per tenant."""
+    from . import reflexion as _r
+    from . import skill_stats as _ss
+    from . import user_notes as _un
+    from .skill_distillation_local import _STORE
+    return {
+        "reflexions.ndjson": _r.default_path(),
+        "insights.ndjson": Path(insights_path()),
+        "rehearsals.ndjson": Path(rehearsals_path()),
+        "user_notes.ndjson": _un.default_path(),
+        "skill_stats.json": _ss._resolve(None),
+        "learned-skills": _tenant_path("learned-skills", _STORE),
+    }
+
+
+def snapshots_dir() -> Path:
+    return _tenant_path("dreams/snapshots", DEFAULT_DIR / "snapshots")
+
+
+def snapshot_learning_state(
+    *, keep_last: int = 5, directory: Path | str | None = None,
+    stores: dict[str, Path] | None = None, now: float | None = None,
+) -> Path | None:
+    """Copy every learned store into ``<snapshots>/<utc-ts>/``.
+
+    Learning rollback, half 1: taken before each ``maverick dream`` mutation
+    pass so any cycle can be reverted wholesale. Keeps the most recent
+    ``keep_last`` snapshots. Returns the snapshot dir (None when nothing
+    exists to snapshot or the copy failed)."""
+    import shutil
+    base = Path(directory) if directory is not None else snapshots_dir()
+    stores = stores if stores is not None else _live_stores()
+    stamp = time.strftime(
+        "%Y%m%dT%H%M%SZ", time.gmtime(now if now is not None else time.time()),
+    )
+    dest = base / stamp
+    copied = 0
+    try:
+        for name, src in stores.items():
+            src = Path(src)
+            if not src.exists():
+                continue
+            dest.mkdir(parents=True, exist_ok=True)
+            if src.is_dir():
+                shutil.copytree(src, dest / name, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src, dest / name)
+            copied += 1
+        if not copied:
+            return None
+        # Retention: oldest snapshots beyond keep_last are dropped.
+        snaps = sorted(p for p in base.iterdir() if p.is_dir())
+        for old_snap in snaps[:-max(1, keep_last)]:
+            shutil.rmtree(old_snap, ignore_errors=True)
+        return dest
+    except OSError as e:
+        log.warning("dreaming: snapshot failed: %s", e)
+        return None
+
+
+def list_snapshots(directory: Path | str | None = None) -> list[str]:
+    base = Path(directory) if directory is not None else snapshots_dir()
+    if not base.is_dir():
+        return []
+    return sorted(p.name for p in base.iterdir() if p.is_dir())
+
+
+def rollback_learning_state(
+    snapshot: str = "latest", *, directory: Path | str | None = None,
+    stores: dict[str, Path] | None = None,
+) -> list[str]:
+    """Restore every learned store from a snapshot (learning rollback, half 2).
+
+    ``snapshot`` is a name from :func:`list_snapshots` or ``"latest"``.
+    Stores present in the snapshot replace the live ones (a directory store
+    is replaced wholesale, so skills learned after the snapshot disappear --
+    that is the point). Returns the restored store names."""
+    import shutil
+    base = Path(directory) if directory is not None else snapshots_dir()
+    names = list_snapshots(base)
+    if not names:
+        return []
+    chosen = names[-1] if snapshot == "latest" else snapshot
+    src_dir = base / chosen
+    if not src_dir.is_dir():
+        raise ValueError(f"no such snapshot: {chosen!r} (have: {', '.join(names)})")
+    stores = stores if stores is not None else _live_stores()
+    restored: list[str] = []
+    for name, live in stores.items():
+        src = src_dir / name
+        if not src.exists():
+            continue
+        live = Path(live)
+        try:
+            live.parent.mkdir(parents=True, exist_ok=True)
+            if src.is_dir():
+                if live.exists():
+                    shutil.rmtree(live)
+                shutil.copytree(src, live)
+            else:
+                shutil.copy2(src, live)
+            restored.append(name)
+        except OSError as e:
+            log.warning("dreaming: rollback of %s failed: %s", name, e)
+    return restored
+
+
+def dream_cycle_dry(world: Any | None = None, **kwargs) -> DreamReport:
+    """Run a full dream cycle against TEMP COPIES of every learned store.
+
+    Exact would-be numbers (same code path as the real cycle), zero writes to
+    live state: pair with the audit trail for change-review of learning.
+    Fact pruning is forced off (it would touch the live world DB)."""
+    import shutil
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="maverick-dream-dry-"))
+    try:
+        copies: dict[str, Path] = {}
+        for name, src in _live_stores().items():
+            dst = tmp / name
+            src = Path(src)
+            if src.is_dir():
+                if src.exists():
+                    shutil.copytree(src, dst)
+                else:
+                    dst.mkdir(parents=True)
+            elif src.exists():
+                shutil.copy2(src, dst)
+            copies[name] = dst
+        override = dict(kwargs.pop("settings_override", None) or {})
+        override["prune_facts"] = False
+        return dream_cycle(
+            world,
+            reflexion_path=kwargs.pop("reflexion_path", copies["reflexions.ndjson"]),
+            insights_path=kwargs.pop("insights_path", copies["insights.ndjson"]),
+            rehearsals_path=kwargs.pop("rehearsals_path", copies["rehearsals.ndjson"]),
+            user_notes_path=kwargs.pop("user_notes_path", copies["user_notes.ndjson"]),
+            skill_store=kwargs.pop("skill_store", copies["learned-skills"]),
+            skill_stats_path=kwargs.pop("skill_stats_path", copies["skill_stats.json"]),
+            settings_override=override,
+            **kwargs,
+        )
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 __all__ = [
     "DEFAULT_DIR",
     "DEFAULT_INSIGHTS",
+    "insights_path",
+    "rehearsals_path",
     "DreamInsight",
     "DreamReport",
     "enabled",
@@ -560,10 +1361,25 @@ __all__ = [
     "assign_domain",
     "cluster_failures",
     "synthesize_insight",
+    "promote_shared_insights",
     "load_insights",
     "append_insights",
     "recall_insights",
     "format_context",
     "prune_reflexions",
+    "retire_stale_skills",
+    "build_rehearsal_cases",
+    "save_rehearsals",
+    "load_rehearsals",
+    "RehearsalFrozen",
+    "rehearse",
+    "rehearsal_completed",
+    "benchmark_regressed",
+    "snapshot_learning_state",
+    "list_snapshots",
+    "rollback_learning_state",
+    "snapshots_dir",
+    "dream_cycle_dry",
     "dream_cycle",
+    "DEFAULT_REHEARSALS",
 ]

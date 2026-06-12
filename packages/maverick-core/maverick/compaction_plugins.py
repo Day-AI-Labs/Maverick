@@ -99,7 +99,8 @@ class _StrategyAdapter:
     def compact(self, messages: list[dict], **kwargs) -> list[dict]:
         from .compaction_strategies import compact_with_strategy
         allowed = {k: kwargs[k] for k in
-                   ("llm", "conversation_id", "keep_recent", "max_tool_bytes")
+                   ("llm", "conversation_id", "keep_recent", "max_tool_bytes",
+                    "scope")
                    if k in kwargs}
         return compact_with_strategy(messages, strategy=self.name, **allowed)
 

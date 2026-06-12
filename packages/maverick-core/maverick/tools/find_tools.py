@@ -63,6 +63,21 @@ def find_tools(registry) -> Tool:
             return "Provide a 'query' describing the capability you need."
         scored = [(_score(qt, t), t) for t in registry.deferred_tools()]
         scored = [(s, t) for s, t in scored if s > 0]
+        # Tool-failure taxonomy, recall side: demote tools the loop guard has
+        # repeatedly caught failing the same way (persisted ``tool_flaky``
+        # reflexions) so a known-flaky connector loses ties to a healthy one.
+        # Demotion, never exclusion -- it may still be the only match.
+        try:
+            from .. import reflexion as _reflexion
+            if _reflexion.enabled():
+                _flaky = _reflexion.flaky_tools()
+                if _flaky:
+                    scored = [
+                        ((s * 0.5 if t.name in _flaky else s), t)
+                        for s, t in scored
+                    ]
+        except Exception:  # pragma: no cover -- never blocks tool discovery
+            pass
         if not scored:
             return (
                 f"No additional tools matched {query!r}. The tools already "

@@ -41,6 +41,24 @@ log = logging.getLogger(__name__)
 
 DEFAULT_PATH = Path.home() / ".maverick" / "reflexions.ndjson"
 
+def default_path() -> Path:
+    """The active scope's reflexion log (tenant-isolated when one is active)."""
+    return _tenant_path("reflexions.ndjson", DEFAULT_PATH)
+
+
+def _tenant_path(name: str, legacy):
+    """Item-30 isolation: with an ACTIVE tenant, this store lives under the
+    tenant's data dir (one tenant's learned memory can never feed another's
+    runs); single-tenant resolution keeps the legacy location unchanged."""
+    try:
+        from .paths import current_tenant, data_dir
+        if current_tenant():
+            return data_dir(*name.split("/"))
+    except Exception:  # pragma: no cover -- isolation never blocks resolution
+        pass
+    return legacy
+
+
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
 _lock = threading.Lock()
 
@@ -85,13 +103,14 @@ def record(
     channel: str | None = None,
     user_id: str | None = None,
     domain: str | None = None,
-    path: Path = DEFAULT_PATH,
+    path: Path | None = None,
 ) -> bool:
     """Append a Reflexion. Returns True on success.
 
     Fail-safe: write errors are logged and swallowed — a failed
     reflection write should never block a subsequent agent run.
     """
+    path = path if path is not None else default_path()
     entry = Reflexion(
         ts=time.time(),
         goal_text=goal_text or "",
@@ -198,7 +217,7 @@ def recall(
     goal_text: str,
     *,
     k: int = 3,
-    path: Path = DEFAULT_PATH,
+    path: Path | None = None,
     min_score: float = 0.05,
     min_embed_score: float = 0.35,
     channel: str | None = None,
@@ -219,6 +238,7 @@ def recall(
     ``scan_cap`` lines are considered, and near-identical lessons are
     de-duplicated within the top-k.
     """
+    path = path if path is not None else default_path()
     if not goal_text or not path.exists():
         return []
     qt = _tokens(goal_text)
@@ -292,9 +312,10 @@ def recall(
 def list_recent(
     *,
     limit: int = 50,
-    path: Path = DEFAULT_PATH,
+    path: Path | None = None,
 ) -> list[Reflexion]:
     """Return the N most recent reflexions, ordered newest-first."""
+    path = path if path is not None else default_path()
     if not path.exists():
         return []
     entries: list[Reflexion] = []
@@ -321,8 +342,9 @@ def list_recent(
     return entries[:max(1, limit)]
 
 
-def clear(path: Path = DEFAULT_PATH) -> bool:
+def clear(path: Path | None = None) -> bool:
     """Delete the reflexion log."""
+    path = path if path is not None else default_path()
     if not path.exists():
         return False
     try:
@@ -393,6 +415,64 @@ def tools_from_blackboard(blackboard) -> list[str]:
     return seen
 
 
+def flaky_tools(
+    *, min_count: int = 2, path: Path | None = None, scan: int = 300,
+) -> set[str]:
+    """Tool names with >= ``min_count`` persisted ``tool_flaky`` lessons.
+
+    Consumed by find_tools to demote tools the loop guard has repeatedly
+    caught failing the same way — the recall side of the tool-failure
+    taxonomy. Empty set on any error (fail-open)."""
+    counts: dict[str, int] = {}
+    try:
+        for r in list_recent(limit=scan, path=path):
+            if r.failure_class != "tool_flaky":
+                continue
+            for t in r.tools_used or []:
+                counts[t] = counts.get(t, 0) + 1
+    except Exception:  # pragma: no cover -- never blocks tool discovery
+        return set()
+    return {t for t, c in counts.items() if c >= max(1, min_count)}
+
+
+def record_human_override(
+    brief: str, tool_name: str, reason: str, *,
+    domain: str | None = None, channel: str | None = None,
+    user_id: str | None = None, path: Path | None = None,
+) -> bool:
+    """Persist a human's refusal of a gated action as a learning signal.
+
+    Governance already audits the denial; this additionally turns the
+    operator's "no" into a recallable lesson (failure_class
+    ``human_override``) so the next similar goal proposes an alternative or
+    seeks approval earlier — and the dreaming loop can consolidate repeated
+    refusals into a department insight. No-op unless reflexion is enabled;
+    never raises into the denial path.
+    """
+    try:
+        if not enabled():
+            return False
+        goal_text = _sanitize_text(brief)[:500]
+        return record(
+            goal_text=goal_text,
+            failure_class="human_override",
+            failure_msg=f"tool {tool_name} not approved: {reason}"[:300],
+            reflection=(
+                f"A human declined to approve {tool_name} on a similar goal. "
+                "Propose a less-privileged alternative, or surface the "
+                "justification and ask for approval earlier in the run."
+            ),
+            tools_used=[tool_name],
+            channel=channel,
+            user_id=user_id,
+            domain=domain,
+            path=path,
+        )
+    except Exception as e:  # pragma: no cover -- learning never blocks a denial
+        log.debug("human-override reflexion skipped: %s", e)
+        return False
+
+
 def synthesize_reflection(
     failure_class: str, failure_msg: str, tools_used: list[str]
 ) -> str:
@@ -417,7 +497,10 @@ def synthesize_reflection(
 __all__ = [
     "Reflexion",
     "DEFAULT_PATH",
+    "default_path",
     "record",
+    "record_human_override",
+    "flaky_tools",
     "recall",
     "list_recent",
     "clear",

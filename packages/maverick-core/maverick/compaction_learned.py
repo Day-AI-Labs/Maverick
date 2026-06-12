@@ -231,11 +231,17 @@ class LearnedSummarizer:
         ledger: OutcomeLedger | None = None,
         rng: random.Random | None = None,
         clock=None,
+        scope: str | None = None,
     ):
         self.llm = llm
         self.ledger = ledger if ledger is not None else OutcomeLedger(clock=clock)
         self._rng = rng if rng is not None else random.Random(0)
         self.last_pick: tuple[str, str] | None = None  # (kind, template_id)
+        # Department scope: a domain agent's outcomes train that department's
+        # own (scope|kind) ledger rows -- a finance digest prompt that wins on
+        # finance transcripts stops competing with the global pool. None keeps
+        # the original kind keys, so existing ledgers read unchanged.
+        self.scope = (scope or "").strip() or None
 
     def compact(
         self, messages: list[dict], *, keep_recent: int = KEEP_RECENT_TURNS,
@@ -253,6 +259,8 @@ class LearnedSummarizer:
         cutoff = len(messages) - keep_recent
         middle = messages[1:cutoff]
         kind = classify_kind(middle)
+        if self.scope:
+            kind = f"{self.scope}|{kind}"
         template_id = self.ledger.pick_template(kind, self._rng)
         try:
             resp = self.llm.complete(

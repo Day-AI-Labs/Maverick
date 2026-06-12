@@ -84,6 +84,10 @@ class EventKind:
     HALT            = "halt"
     CONFIG_REMEDIATED = "config_remediated"
     FEDERATION_DELEGATE = "federation_delegate"
+    # Learning governance: one row per dream cycle (what the learning system
+    # wrote/retired/quarantined) so `maverick audit verify` covers learned
+    # state the same way it covers tool calls.
+    LEARNING_UPDATE = "learning_update"
 
 
 @dataclass

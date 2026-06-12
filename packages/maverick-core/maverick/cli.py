@@ -1890,9 +1890,18 @@ def start(
     # Honor [budget] in config.toml (start used to build Budget() directly,
     # so config caps were silently ignored). Precedence: built-in defaults
     # < config < explicit CLI flags. A None flag passes through as "unset".
+    import types as _types
+
     from .budget import budget_from_config
+    from .orchestrator import _budget_task_class
     bud = budget_from_config(
         defaults={"max_dollars": 5.0, "max_wall_seconds": 3600.0},
+        # Learned per-class default cap (lowest precedence; opt-in via
+        # [budget] self_tuning). Department runs use their own class so
+        # finance runs are sized by finance history.
+        task_class=_budget_task_class(
+            _types.SimpleNamespace(title=title), domain,
+        ),
         max_dollars=max_dollars,
         max_wall_seconds=max_wall_seconds,
     )
@@ -3652,26 +3661,165 @@ def finance_lint_sod_cmd() -> None:
 @main.command()
 @click.option("--max-goals", default=50, show_default=True,
               help="How many recent finished goals to replay.")
+@click.option("--rehearse", is_flag=True,
+              help="After consolidating, RUN the queued rehearsal cases as "
+                   "real (budgeted) practice goals. Spends tokens; gated by "
+                   "the calibration interlock.")
+@click.option("--rehearse-budget", default=1.0, show_default=True,
+              help="Max $ per rehearsal case.")
+@click.option("--dry-run", is_flag=True,
+              help="Run the full cycle against TEMP COPIES of every learned "
+                   "store and report what WOULD change, writing nothing.")
+@click.option("--list-snapshots", "list_snaps", is_flag=True,
+              help="List learning-state snapshots available for --rollback.")
+@click.option("--rollback", default=None, metavar="SNAPSHOT",
+              help="Restore every learned store from a snapshot "
+                   "('latest' or a name from --list-snapshots), then exit.")
+@click.option("--donations-dir", default=None, type=click.Path(),
+              help="Also replay donated trajectory records from this "
+                   "directory (fleet-level aggregation on a central "
+                   "instance).")
 @click.pass_context
-def dream(ctx, max_goals: int) -> None:
+def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
+          dry_run: bool, list_snaps: bool, rollback: str | None,
+          donations_dir: str | None) -> None:
     """Run one offline dreaming cycle (experience consolidation).
 
     Replays recent successes and failure reflexions, groups them by
     department (domain packs), distills recurring wins into learned skills,
     consolidates recurring failures into dream insights (recalled on future
-    similar goals), and prunes stale near-duplicate reflexions. Deterministic
-    and LLM-free -- costs no tokens. Requires [dreaming] enable = true or
-    MAVERICK_DREAMING=1; run it from cron/systemd for nightly consolidation.
+    similar goals), retires learned skills with a decayed track record, and
+    prunes stale near-duplicate reflexions. The consolidation pass is
+    deterministic and LLM-free -- costs no tokens. Requires [dreaming]
+    enable = true or MAVERICK_DREAMING=1; run from cron/systemd nightly.
+
+    With --rehearse (and [dreaming] rehearse = true to queue cases), the
+    biggest recurring failure patterns are re-run as budgeted practice goals
+    (titled "[rehearsal] ...") so the next real attempt starts from a system
+    that has already practiced. Refused while verifier calibration is frozen.
     """
     from . import dreaming
+    if list_snaps:
+        snaps = dreaming.list_snapshots()
+        click.echo("\n".join(snaps) if snaps else "(no snapshots yet)")
+        return
+    if rollback:
+        try:
+            restored = dreaming.rollback_learning_state(rollback)
+        except ValueError as e:
+            raise click.ClickException(str(e)) from e
+        if not restored:
+            raise click.ClickException("no snapshots to roll back to.")
+        click.echo("Restored learned state from snapshot: "
+                   + ", ".join(restored))
+        return
     if not dreaming.enabled():
         raise click.ClickException(
             "dreaming is disabled. Set MAVERICK_DREAMING=1 or add\n"
             "  [dreaming]\n  enable = true\nto ~/.maverick/config.toml."
         )
     world = open_world(ctx.obj["db"])
-    report = dreaming.dream_cycle(world, max_goals=max_goals)
+    if dry_run:
+        report = dreaming.dream_cycle_dry(
+            world, max_goals=max_goals, donations_dir=donations_dir,
+        )
+        click.echo("(dry run -- nothing written) " + report.summary())
+        return
+    # Learning rollback, half 1: snapshot every learned store before this
+    # cycle mutates anything, so `--rollback latest` can undo it wholesale.
+    cfg = dreaming.settings()
+    if cfg.get("snapshots", True):
+        snap = dreaming.snapshot_learning_state(
+            keep_last=int(cfg.get("snapshot_keep_last", 5)),
+        )
+        if snap is not None:
+            click.echo(f"[snapshot: {snap.name}]")
+    report = dreaming.dream_cycle(
+        world, max_goals=max_goals, donations_dir=donations_dir,
+    )
     click.echo(report.summary())
+    if not rehearse:
+        return
+    cases = dreaming.load_rehearsals()
+    if not cases:
+        click.echo("Rehearsal: no queued cases (enable [dreaming] rehearse "
+                   "so dream cycles queue recurring failures).")
+        return
+    from .budget import Budget
+    from .llm import LLM, model_for_role
+    from .orchestrator import run_goal
+
+    llm = LLM(model=ctx.obj["model"] or model_for_role("orchestrator"))
+
+    async def _practice(prompt: str) -> str:
+        gid = world.create_goal(
+            f"[rehearsal] {prompt[:200]}",
+            "Dream-time rehearsal of a previously-failing goal pattern.",
+        )
+        return await run_goal(
+            llm=llm, world=world, budget=Budget(max_dollars=rehearse_budget),
+            goal_id=gid,
+        )
+
+    async def _score(prompt: str, output: str) -> float:
+        # Verifier-scored rehearsal: completion alone is a weak signal, so a
+        # case only counts as practiced when the calibrated verifier rates
+        # the answer too. Scoring spends from its own small budget.
+        from .verifier import verify_proposal
+        v = await verify_proposal(
+            prompt, output, llm, Budget(max_dollars=max(0.25, rehearse_budget / 4)),
+        )
+        return float(getattr(v, "confidence", 0.0) or 0.0)
+
+    try:
+        passed, total = asyncio.run(dreaming.rehearse(_practice, scorer=_score))
+    except dreaming.RehearsalFrozen as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(f"Rehearsal: {passed}/{total} previously-failing pattern(s) "
+               "now complete (verifier-scored).")
+
+
+@main.command("insights-export")
+@click.argument("out", type=click.Path())
+@click.option("--max", "max_insights", default=50, show_default=True,
+              help="How many of the most recent insights to bundle.")
+def insights_export(out: str, max_insights: int) -> None:
+    """Export local dream insights as a SIGNED bundle for a trusted peer.
+
+    Federated insight exchange: only consolidated lessons cross the boundary
+    (never raw trajectories or user content). The bundle is signed with this
+    instance's Ed25519 audit key; give the peer your public key (printed
+    here) to add to their [dreaming] trusted_insight_pubkeys. Transport is
+    yours: move the file however your security policy allows.
+    """
+    from .insight_exchange import export_insights
+    try:
+        path = export_insights(out, max_insights=max_insights)
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
+    import json as _json
+    bundle = _json.loads(Path(path).read_text(encoding="utf-8"))
+    click.echo(f"Wrote {len(bundle['insights'])} insight(s) -> {path}")
+    click.echo(f"Your public key (for the peer's trusted_insight_pubkeys):\n"
+               f"  {bundle['peer_key']}")
+
+
+@main.command("insights-import")
+@click.argument("bundle", type=click.Path(exists=True))
+def insights_import(bundle: str) -> None:
+    """Import a peer's signed insight bundle (fail-closed verification).
+
+    Requires the peer's public key in [dreaming] trusted_insight_pubkeys;
+    unsigned, untrusted, or tampered bundles are rejected outright. Each
+    imported lesson is redacted, Shield-scanned, provenance-tagged, and
+    merged through the same dedup gate local dreaming uses.
+    """
+    from .insight_exchange import import_insights
+    from .orchestrator import _build_shield
+    imported, reason = import_insights(bundle, shield=_build_shield())
+    if reason != "ok":
+        raise click.ClickException(reason)
+    click.echo(f"Imported {imported} peer insight(s).")
 
 
 @main.command("export-user")

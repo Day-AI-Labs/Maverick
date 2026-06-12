@@ -475,12 +475,58 @@ def get_dreaming() -> dict:
         except (TypeError, ValueError):
             return default
 
+    def _ratio(key: str, default: float) -> float:
+        try:
+            return max(0.0, min(1.0, float(cfg.get(key, default))))
+        except (TypeError, ValueError):
+            return default
+
+    def _nonneg_int(key: str, default: int) -> int:
+        try:
+            return max(0, int(cfg.get(key, default)))
+        except (TypeError, ValueError):
+            return default
+
     return {
         "enable": bool(cfg.get("enable", False)),
         "min_cluster": _int("min_cluster", 2),
         "max_insights": _int("max_insights", 100),
         "prune": bool(cfg.get("prune", True)),
         "keep_reflexions": _int("keep_reflexions", 500),
+        # Cross-department promotion: a failure pattern recurring in >=2
+        # departments becomes a shared insight recallable by all of them.
+        "promote_shared": bool(cfg.get("promote_shared", True)),
+        # Mine verifier critiques out of donated trajectory records (empty
+        # unless [telemetry] donate_trajectories has produced any).
+        "mine_critiques": bool(cfg.get("mine_critiques", True)),
+        # Insights unconfirmed for this many days retire; 0 = never expire.
+        "insight_ttl_days": _nonneg_int("insight_ttl_days", 90),
+        # Retire a failure insight once this many NEWER similar successes
+        # contradict it ("we now reliably do X").
+        "contradiction_successes": _int("contradiction_successes", 2),
+        # Fact consolidation deletes operator data, so it is opt-in even
+        # inside the already-opt-in dreaming feature.
+        "prune_facts": bool(cfg.get("prune_facts", False)),
+        "facts_max_age_days": _nonneg_int("facts_max_age_days", 180),
+        "facts_cap": _nonneg_int("facts_cap", 2000),
+        # Distill explicit user-preference statements into per-user notes.
+        "user_notes": bool(cfg.get("user_notes", True)),
+        # Quarantine this cycle's NEW skills while the continuously-tracked
+        # benchmark suite is regressing (learning-side canary).
+        "benchmark_gate": bool(cfg.get("benchmark_gate", True)),
+        # Learning rollback: snapshot every learned store before a CLI dream
+        # cycle mutates it, keeping the last N snapshots.
+        "snapshots": bool(cfg.get("snapshots", True)),
+        "snapshot_keep_last": _int("snapshot_keep_last", 5),
+        # Dream-time rehearsal (maverick-evolve harness) is a separate trust
+        # decision from consolidation: it spends real agent runs. Default off.
+        "rehearse": bool(cfg.get("rehearse", False)),
+        "max_rehearsals": _int("max_rehearsals", 3),
+        # Forgetting loop: retire learned skills whose recall track record
+        # decayed below the floor (after enough attempts to judge).
+        "retire_skills": bool(cfg.get("retire_skills", True)),
+        "retire_min_uses": _int("retire_min_uses", 5),
+        "retire_below": _ratio("retire_below", 0.25),
     }
 
 
