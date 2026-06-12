@@ -23,17 +23,30 @@ absent (mirrors the ``[langchain]`` extra discipline).
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
+import logging
+import re
+import sys
 from typing import Any
 
 from .langchain_adapter import run_maverick_goal
 from .tools import Tool
+
+log = logging.getLogger(__name__)
 
 _GOAL_DESCRIPTION = (
     "Delegate a goal to the Maverick agent swarm (planning, tools, "
     "verification) and return its result text. Use for multi-step work "
     "that needs real tools rather than a single completion."
 )
+_VALID_EXTERNAL_TOOL_NAME = re.compile(r"[A-Za-z0-9_.-]{1,128}")
+_MAX_SCHEMA_SCAN_DEPTH = 64
+_DEFAULT_SCHEMA = {
+    "type": "object",
+    "properties": {"input": {"type": "string"}},
+    "required": ["input"],
+}
 
 
 # ---- Maverick as an AutoGen tool -------------------------------------------
@@ -105,18 +118,120 @@ def _schema_or_default(obj: Any) -> dict:
             model = None
     if model is None:
         model = getattr(obj, "args_schema", None)
-    schema = None
-    if model is not None:
-        dump = getattr(model, "model_json_schema", None)
-        if callable(dump):
-            try:
-                schema = dump()
-            except Exception:
-                schema = None
-    if isinstance(schema, dict) and schema.get("type") == "object":
-        return schema
-    return {"type": "object", "properties": {"input": {"type": "string"}},
-            "required": ["input"]}
+    if model is None:
+        return dict(_DEFAULT_SCHEMA)
+
+    dump = getattr(model, "model_json_schema", None)
+    if not callable(dump):
+        return dict(_DEFAULT_SCHEMA)
+    try:
+        schema = dump()
+    except Exception as e:
+        raise ValueError("external tool args schema could not be extracted") from e
+    _validate_schema(schema)
+    return schema
+
+
+def _try_shield():
+    if (
+        "maverick_shield" not in sys.modules
+        and importlib.util.find_spec("maverick_shield") is None
+    ):
+        return None
+    from maverick_shield import Shield  # type: ignore
+
+    return Shield.from_config()
+
+
+def _validate_schema(schema: Any) -> None:
+    if not isinstance(schema, dict) or schema.get("type") != "object":
+        raise ValueError("external tool schema must be a JSON object schema")
+    leaves: list[str] = []
+    if not _collect_schema_strings(schema, leaves):
+        raise ValueError(
+            "external tool schema exceeds maximum metadata scan depth "
+            f"{_MAX_SCHEMA_SCAN_DEPTH}"
+        )
+
+
+def _collect_schema_strings(node: Any, out: list[str], _depth: int = 0) -> bool:
+    """Collect every string leaf from JSON-schema metadata, failing on bad data."""
+    if _depth > _MAX_SCHEMA_SCAN_DEPTH:
+        return False
+    if isinstance(node, dict):
+        for value in node.values():
+            if isinstance(value, str):
+                out.append(value)
+            elif isinstance(value, (dict, list)):
+                if not _collect_schema_strings(value, out, _depth + 1):
+                    return False
+            elif value is not None and not isinstance(value, (bool, int, float)):
+                raise ValueError("external tool schema contains non-JSON metadata")
+    elif isinstance(node, list):
+        for item in node:
+            if isinstance(item, str):
+                out.append(item)
+            elif isinstance(item, (dict, list)):
+                if not _collect_schema_strings(item, out, _depth + 1):
+                    return False
+            elif item is not None and not isinstance(item, (bool, int, float)):
+                raise ValueError("external tool schema contains non-JSON metadata")
+    else:
+        raise ValueError("external tool schema contains non-JSON metadata")
+    return True
+
+
+def _secure_tool_metadata(
+    *,
+    framework: str,
+    namespace: str,
+    raw_name: Any,
+    raw_description: Any,
+    schema: dict,
+) -> tuple[str, str, dict]:
+    original_name = str(raw_name or f"{framework}_tool")
+    if (
+        not _VALID_EXTERNAL_TOOL_NAME.fullmatch(original_name)
+        or "__" in original_name
+    ):
+        raise ValueError(
+            f"{framework} tool has invalid name {original_name!r} "
+            "(must match [A-Za-z0-9_.-], <=128 chars, no '__')"
+        )
+
+    description = str(raw_description or original_name)
+    leaves: list[str] = []
+    if not _collect_schema_strings(schema, leaves):
+        raise ValueError(
+            f"{framework} tool {original_name!r} schema exceeds maximum "
+            f"metadata scan depth {_MAX_SCHEMA_SCAN_DEPTH}"
+        )
+
+    shield = _try_shield()
+    if shield is not None:
+        payload = "\n".join(
+            [f"tool: {original_name}", f"description: {description}"]
+            + [f"schema_text: {leaf}" for leaf in leaves]
+        )
+        try:
+            verdict = shield.scan_input(payload)
+            allowed = bool(verdict.allowed)
+        except Exception as e:  # pragma: no cover
+            log.warning(
+                "%s tool %r shield scan errored (fail-open): %s",
+                framework,
+                original_name,
+                e,
+            )
+            allowed = True
+        if not allowed:
+            raise ValueError(f"{framework} tool {original_name!r} rejected by Shield")
+
+    return (
+        f"{namespace}__{original_name}",
+        f"[{framework}:{original_name}] {description}",
+        schema,
+    )
 
 
 def _result_text(out: Any) -> str:
@@ -136,8 +251,14 @@ def wrap_autogen_tool(autogen_tool: Any) -> Tool:
     ``func``/``fn``. The 0.4 ``run`` path builds the args object from the
     tool's ``args_type`` when available, else passes the dict through.
     """
-    name = str(getattr(autogen_tool, "name", "") or "autogen_tool")
-    description = str(getattr(autogen_tool, "description", "") or name)
+    schema = _schema_or_default(autogen_tool)
+    name, description, schema = _secure_tool_metadata(
+        framework="autogen",
+        namespace="autogen",
+        raw_name=getattr(autogen_tool, "name", "") or "autogen_tool",
+        raw_description=getattr(autogen_tool, "description", ""),
+        schema=schema,
+    )
 
     def fn(args: dict[str, Any]) -> str:
         runner = getattr(autogen_tool, "run", None)
@@ -159,8 +280,7 @@ def wrap_autogen_tool(autogen_tool: Any) -> Tool:
             return _result_text(call(**args))
         return "ERROR: AutoGen tool exposes neither run() nor func"
 
-    return Tool(name=name, description=description,
-                input_schema=_schema_or_default(autogen_tool), fn=fn)
+    return Tool(name=name, description=description, input_schema=schema, fn=fn)
 
 
 def wrap_crewai_tool(crewai_tool: Any) -> Tool:
@@ -169,8 +289,14 @@ def wrap_crewai_tool(crewai_tool: Any) -> Tool:
     Duck-typed: needs ``name``, ``description``, and ``_run`` (CrewAI's
     execution method) or ``run``.
     """
-    name = str(getattr(crewai_tool, "name", "") or "crewai_tool")
-    description = str(getattr(crewai_tool, "description", "") or name)
+    schema = _schema_or_default(crewai_tool)
+    name, description, schema = _secure_tool_metadata(
+        framework="crewai",
+        namespace="crewai",
+        raw_name=getattr(crewai_tool, "name", "") or "crewai_tool",
+        raw_description=getattr(crewai_tool, "description", ""),
+        schema=schema,
+    )
 
     def fn(args: dict[str, Any]) -> str:
         call = getattr(crewai_tool, "_run", None) or getattr(crewai_tool, "run", None)
@@ -178,8 +304,7 @@ def wrap_crewai_tool(crewai_tool: Any) -> Tool:
             return "ERROR: CrewAI tool exposes neither _run() nor run()"
         return _result_text(call(**args))
 
-    return Tool(name=name, description=description,
-                input_schema=_schema_or_default(crewai_tool), fn=fn)
+    return Tool(name=name, description=description, input_schema=schema, fn=fn)
 
 
 __all__ = [
