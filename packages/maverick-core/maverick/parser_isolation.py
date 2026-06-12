@@ -31,6 +31,7 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -81,6 +82,7 @@ def should_isolate() -> bool:
 
 _CHILD_TEMPLATE = """\
 import json, sys
+sys.path.insert(0, {import_root!r})
 data = sys.stdin.buffer.read()
 from importlib import import_module
 fn = getattr(import_module({module!r}), {func!r})
@@ -109,16 +111,21 @@ def parse_isolated(name: str, data: bytes, *, timeout: float = DEFAULT_TIMEOUT,
         raise ValueError(
             f"input of {len(data)} bytes exceeds the {MAX_INPUT_BYTES}-byte cap")
     # kwargs are baked as a JSON literal — nothing user-controlled becomes code.
+    # The child runs in isolated mode with a neutral cwd, then imports Maverick
+    # from the same trusted package root as this parent module.  That keeps
+    # python -c from resolving whitelisted dotted names through an attacker
+    # controlled workspace package.
+    import_root = str(Path(__file__).resolve().parents[1])
     code = _CHILD_TEMPLATE.format(
-        module=entry.module, func=entry.func,
+        import_root=import_root, module=entry.module, func=entry.func,
         kwargs_json=json.dumps(kwargs, default=str),
     )
     from .tools import scrub_child_env
     try:
         proc = subprocess.run(
-            [sys.executable, "-c", code],
+            [sys.executable, "-I", "-c", code],
             input=data, capture_output=True, timeout=timeout,
-            env=scrub_child_env(),
+            env=scrub_child_env(), cwd=os.path.abspath(os.sep),
         )
     except subprocess.TimeoutExpired as e:
         raise RuntimeError(f"parser {name!r} timed out after {timeout}s") from e
