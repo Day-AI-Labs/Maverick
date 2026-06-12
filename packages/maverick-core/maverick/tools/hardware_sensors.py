@@ -15,10 +15,12 @@ readable sensor reports "unavailable on this host" (with an install hint when
 psutil is the missing piece) instead of a guess.
 
 ops: read (all categories), thermal (temperatures only), battery.
-Not registered in ``base_registry`` — the integrator wires the factory.
+Registered in ``base_registry`` only after an explicit operator opt-in.
 """
 from __future__ import annotations
 
+import importlib
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -31,10 +33,42 @@ _SYS_THERMAL = Path("/sys/class/thermal")
 _PSUTIL_HINT = " (psutil not installed; pip install 'maverick-agent[sensors]')"
 
 
-def _psutil() -> Any | None:
+def _path_in_cwd(path: str | None) -> bool:
+    if not path:
+        return False
     try:
-        import psutil
+        return Path(path).resolve().is_relative_to(Path.cwd().resolve())
+    except OSError:
+        return False
+
+
+def _safe_import_path(entry: str) -> bool:
+    # Python treats an empty sys.path entry as the current working directory.
+    if entry == "":
+        return False
+    try:
+        return not Path(entry).resolve().is_relative_to(Path.cwd().resolve())
+    except OSError:
+        return True
+
+
+def _psutil() -> Any | None:
+    cached = sys.modules.get("psutil")
+    if cached is not None:
+        if _path_in_cwd(getattr(cached, "__file__", None)):
+            return None
+        return cached
+
+    original_path = list(sys.path)
+    try:
+        sys.path = [entry for entry in original_path if _safe_import_path(entry)]
+        psutil = importlib.import_module("psutil")
     except ImportError:
+        return None
+    finally:
+        sys.path = original_path
+
+    if _path_in_cwd(getattr(psutil, "__file__", None)):
         return None
     return psutil
 

@@ -1265,10 +1265,14 @@ tested without spawning py-spy.
   GUI element memory first, falls back to an injected vision seam with a
   confidence floor (`LowConfidenceError` below it, nothing memorized on
   refusal), upserts what it learns, and applies the saved calibration.
-- **Hardware sensors tool** (`tools/hardware_sensors.py`, `[sensors]` extra):
-  read host temperatures/fans/battery via psutil with a `/sys/class/thermal`
-  fallback and an injected reader for tests; unavailable categories say
-  "unavailable on this host" — readings are never fabricated.
+- **Hardware sensors tool** (`tools/hardware_sensors.py`, `[sensors]` extra,
+  opt-in `[tools] hardware_sensors = true` or
+  `MAVERICK_ENABLE_HARDWARE_SENSORS=1`, wizard step included): read host
+  temperatures/fans/battery via psutil with a `/sys/class/thermal` fallback
+  and an injected reader for tests; unavailable categories say "unavailable on
+  this host" — readings are never fabricated. The psutil import ignores the
+  process current directory so workspace files cannot hijack the optional
+  dependency.
 - **Voice biometric unlock — companion factor only** (`voice_unlock.py`,
   opt-in `[voice] biometric_unlock`): speaker verification over an injected
   embedder with three hard stances — a voice match **never authenticates on
