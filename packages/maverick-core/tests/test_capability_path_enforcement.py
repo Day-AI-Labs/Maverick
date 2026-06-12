@@ -202,3 +202,55 @@ async def test_apply_patch_checks_every_patch_path(tmp_path):
     assert "DENIED by capability" in out
     assert "secret.txt" in out
     assert (tmp_path / "secret.txt").read_text(encoding="utf-8") == "old\n"
+
+
+@pytest.mark.asyncio
+async def test_wasm_run_preopen_dirs_outside_scope_denied(tmp_path):
+    agent = _agent(tmp_path)
+    agent.capability = Capability(
+        principal="agent:coder-1",
+        allow_tools=frozenset({"wasm_run"}),
+        allow_paths=frozenset({"allowed/*"}),
+    )
+    calls: list = []
+    agent.tools.register(Tool(
+        name="wasm_run",
+        description="spy",
+        fn=lambda args: calls.append(args) or "ran",
+        input_schema={"type": "object", "properties": {}},
+    ))
+
+    out = await agent._run_tool(
+        "wasm_run",
+        {"op": "run", "module": "allowed/module.wasm", "dirs": ["secret"]},
+    )
+
+    assert "DENIED by capability" in out
+    assert "secret" in out
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_wasm_run_module_outside_scope_denied(tmp_path):
+    agent = _agent(tmp_path)
+    agent.capability = Capability(
+        principal="agent:coder-1",
+        allow_tools=frozenset({"wasm_run"}),
+        allow_paths=frozenset({"allowed/*"}),
+    )
+    calls: list = []
+    agent.tools.register(Tool(
+        name="wasm_run",
+        description="spy",
+        fn=lambda args: calls.append(args) or "ran",
+        input_schema={"type": "object", "properties": {}},
+    ))
+
+    out = await agent._run_tool(
+        "wasm_run",
+        {"op": "run", "module": "secret/module.wasm", "dirs": ["allowed/data"]},
+    )
+
+    assert "DENIED by capability" in out
+    assert "secret/module.wasm" in out
+    assert calls == []
