@@ -738,6 +738,60 @@ def _load_skills():
     return load_skills()
 
 
+@app.get("/demo", response_class=HTMLResponse)
+async def public_demo(request: Request) -> HTMLResponse:
+    """Redacted public-demo page for the reference demo-cluster proxy.
+
+    The demo proxy exposes this route to the internet. Keep it intentionally
+    narrow: render only goals owned by the seeded ``demo`` principal and never
+    include facts, spend, audit logs, tool configuration, or other operator
+    state that authenticated dashboard GET endpoints may expose.
+    """
+    from html import escape
+
+    goals = _world().list_goals(owner="demo", limit=50, order="desc")
+    cards = []
+    for goal in goals:
+        status = escape(str(getattr(goal, "status", "")))
+        title = escape(str(getattr(goal, "title", "")))
+        description = escape(str(getattr(goal, "description", "") or ""))
+        result = escape(str(getattr(goal, "result", "") or ""))
+        cards.append(
+            "<article class='card'>"
+            f"<p class='status'>{status}</p>"
+            f"<h2>{title}</h2>"
+            f"<p>{description}</p>"
+            f"<p><strong>Result:</strong> {result}</p>"
+            "</article>"
+        )
+    body = "".join(cards) or "<p class='empty'>No seeded demo goals are available yet.</p>"
+    return HTMLResponse(
+        "<!doctype html>"
+        "<html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>Maverick public demo</title>"
+        "<style>"
+        ":root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;"
+        "background:#0d1117;color:#e6edf3}"
+        "body{margin:0;padding:2rem;max-width:1100px;margin-inline:auto}"
+        "header{margin-bottom:2rem}.eyebrow,.status{color:#2ea043;"
+        "text-transform:uppercase;letter-spacing:.08em;font-size:.8rem}"
+        ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem}"
+        ".card{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:1rem}"
+        ".empty{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:1rem}"
+        "a{color:#58a6ff}"
+        "</style></head><body>"
+        "<header><p class='eyebrow'>read-only public snapshot</p>"
+        "<h1>Maverick demo</h1>"
+        "<p>This page intentionally shows only seeded demo-owned finished runs. "
+        "Operator state, audit logs, spend, facts, plugins, permissions, and "
+        "the rest of the authenticated dashboard are not proxied publicly.</p>"
+        "</header><main class='grid'>"
+        f"{body}"
+        "</main></body></html>"
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
     w = _world()
