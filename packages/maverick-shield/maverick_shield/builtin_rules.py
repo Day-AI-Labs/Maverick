@@ -68,12 +68,12 @@ _B64_BLOB = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
 # untrusted text; keep it linear and bounded).
 _MAX_B64_BLOBS = 20
 
-# Only decode the leading slice of any one base64 blob before re-scanning it.
-# A concealed prompt-injection INSTRUCTION is short; a giant blob is a data
-# payload, not a hidden prompt, and decoding + re-scanning the whole thing was
-# the worst hot-path cost (168ms on a 200KB blob). 8 KiB of base64 -> ~6 KiB of
-# decoded text, which still catches an instruction at the start of the blob.
+# Decode base64 in bounded, overlapping windows. A window is capped so a
+# hostile blob cannot create one giant re-scan candidate, but windows continue
+# across the full blob so padding cannot hide an instruction after the prefix.
+# 8 KiB of base64 -> ~6 KiB of decoded text.
 _MAX_B64_DECODE_CHARS = 8192
+_B64_DECODE_STEP_CHARS = _MAX_B64_DECODE_CHARS // 2
 
 
 def _strip_invisible(text: str) -> str:
@@ -93,22 +93,29 @@ def _shell_deobfuscate(text: str) -> str:
 
 def _decode_b64_blobs(text: str) -> list[str]:
     out: list[str] = []
-    for m in _B64_BLOB.finditer(text):
-        if len(out) >= _MAX_B64_BLOBS:
+    for blob_index, m in enumerate(_B64_BLOB.finditer(text)):
+        if blob_index >= _MAX_B64_BLOBS:
             break
-        # Decode only the leading slice: a hidden instruction is short, so this
-        # still catches it, but a multi-KB payload blob no longer drives a
-        # multi-KB decode + full re-scan (the worst-case latency). Trim to a
-        # multiple of 4 so the base64 chunk stays self-contained.
-        blob = m.group(0)[: _MAX_B64_DECODE_CHARS & ~3]
-        try:
-            raw = base64.b64decode(blob + "=" * (-len(blob) % 4), validate=False)
-            decoded = raw.decode("utf-8", errors="ignore")
-        except (ValueError, UnicodeDecodeError):
-            continue
-        # Only keep decodes that look like text (the attack is in the words).
-        if decoded and any(c.isalpha() for c in decoded):
-            out.append(decoded)
+        # Decode bounded, overlapping windows across the whole blob. Decoding
+        # only the leading slice let attackers prepend benign bytes and hide a
+        # malicious instruction later in the same regex match. Keep the window
+        # and step 4-byte aligned so each base64 chunk is self-contained.
+        blob = m.group(0)
+        window = _MAX_B64_DECODE_CHARS & ~3
+        step = _B64_DECODE_STEP_CHARS & ~3
+        starts = range(0, len(blob), step) if step else (0,)
+        for start in starts:
+            chunk = blob[start:start + window]
+            if not chunk:
+                continue
+            try:
+                raw = base64.b64decode(chunk + "=" * (-len(chunk) % 4), validate=False)
+                decoded = raw.decode("utf-8", errors="ignore")
+            except (ValueError, UnicodeDecodeError):
+                continue
+            # Only keep decodes that look like text (the attack is in the words).
+            if decoded and any(c.isalpha() for c in decoded):
+                out.append(decoded)
     return out
 
 
