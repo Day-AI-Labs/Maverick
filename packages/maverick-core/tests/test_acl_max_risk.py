@@ -36,6 +36,7 @@ def test_tool_risk_defaults():
     for mutating_tool in ("github_issues", "gitlab_issues", "anki"):
         assert tool_risk(mutating_tool) == "high"
     assert tool_risk("ros") == "high"
+    assert tool_risk("serial") == "high"
     for connector in (
         "servicenow",
         "snowflake",
@@ -120,6 +121,7 @@ max_risk = "medium"
     names = {t.name for t in reg.all()}
     assert "memory" not in names
     assert "obsidian" not in names
+    assert "serial" not in names
     assert "write_file" not in names
     for mutating_tool in ("github_issues", "gitlab_issues", "anki"):
         assert mutating_tool not in names

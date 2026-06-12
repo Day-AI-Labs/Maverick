@@ -39,9 +39,12 @@ _SERIAL_SCHEMA: dict[str, Any] = {
 }
 
 # A real serial device path; rejects anything else so this can't open /etc/passwd
-# or a leading-dash option-injection path.
-_PORT_RE = re.compile(
-    r"^(/dev/tty\w+|/dev/cu\.[\w.\-]+|/dev/serial/[\w./\-]+|COM\d+)$")
+# or a leading-dash option-injection path. The /dev/serial/by-id form is
+# intentionally limited to a single device-id filename: accepting extra path
+# segments would allow traversal (for example, "../../pts/0") before pyserial
+# opens the caller-controlled path.
+_PORT_RE = re.compile(r"^(/dev/tty\w+|/dev/cu\.[\w.\-]+|COM\d+)$")
+_SERIAL_BY_ID_RE = re.compile(r"^/dev/serial/by-id/[\w.\-]+$")
 
 
 def _need_serial():
@@ -54,7 +57,12 @@ def _need_serial():
 
 
 def _valid_port(port: str) -> bool:
-    return bool(_PORT_RE.match(port or ""))
+    if _PORT_RE.match(port or ""):
+        return True
+    if not _SERIAL_BY_ID_RE.match(port or ""):
+        return False
+    name = port.rsplit("/", 1)[-1]
+    return name not in {".", ".."}
 
 
 def _baud(args: dict) -> int:
