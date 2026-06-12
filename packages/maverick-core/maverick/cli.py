@@ -3779,6 +3779,111 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
                "now complete (verifier-scored).")
 
 
+@main.command("demo")
+def demo_cmd() -> None:
+    """The two-minute tour: watch the workforce learn, prove it, no API key.
+
+    Seeds a throwaway world (finance goals, repeated failures), runs a real
+    dream cycle (consolidation), a real hindsight replay (before vs after
+    learning), and the value report -- entirely deterministic and LLM-free,
+    in a temp directory that is deleted afterwards. Nothing touches your
+    real ~/.maverick state.
+    """
+    import tempfile
+    from pathlib import Path as _P
+
+    from . import dreaming, hindsight, reflexion, workforce_value
+    from .world_model import WorldModel
+
+    tmp = _P(tempfile.mkdtemp(prefix="maverick-demo-"))
+    try:
+        world = WorldModel(tmp / "world.db")
+        # A quarter's worth of finance work: wins land, one pattern keeps
+        # failing -- the raw material every real deployment produces.
+        for title in ("Reconcile the March ledger totals",
+                      "Reconcile the April ledger totals",
+                      "Reconcile the May ledger totals"):
+            gid = world.create_goal(title, domain="finance_sox")
+            eid = world.start_episode(gid)
+            world.end_episode(eid, "tied out", "success")
+            world.set_goal_status(gid, "done", result="tied out")
+        for title in ("Reconcile the partner ledger feed",
+                      "Reconcile the quarterly partner ledger"):
+            gid = world.create_goal(title, domain="finance_sox")
+            world.set_goal_status(gid, "blocked", result="partner feed lagged")
+        state = tmp / "state"
+        rpath = state / "reflexions.ndjson"
+        for goal in ("Reconcile the partner ledger feed",
+                     "Reconcile the quarterly partner ledger"):
+            reflexion.record(goal_text=goal, failure_class="agent_error",
+                             failure_msg="partner feed lagged a day",
+                             reflection="wait for the partner close before "
+                                        "reconciling the feed",
+                             domain="finance_sox", path=rpath)
+        click.echo("1) DREAM -- consolidate the quarter's experience:")
+        report = dreaming.dream_cycle(
+            world, reflexion_path=rpath,
+            insights_path=state / "insights.ndjson",
+            skill_store=state / "learned-skills",
+            skill_stats_path=tmp / "skill_stats.json",
+            rehearsals_path=tmp / "rehearsals.ndjson",
+            user_notes_path=tmp / "user_notes.ndjson",
+            settings_override={"enable": True, "min_cluster": 2,
+                               "prune": False, "user_notes": False},
+        )
+        click.echo("   " + report.summary())
+        click.echo("\n2) HINDSIGHT -- did learning help on the failures?")
+        empty = tmp / "before"
+        empty.mkdir()
+        h = hindsight.replay(world, before=empty, after=state)
+        click.echo("   " + h.summary().replace("\n", "\n   "))
+        click.echo("\n3) PROOF -- the value report:")
+        v = workforce_value.compute(world, window_days=365, human_cost=120.0)
+        click.echo("   " + workforce_value.format_report(v)
+                   .replace("\n", "\n   "))
+        click.echo("\nDeterministic, token-free, and every step above is "
+                   "audited/reversible in a real deployment.")
+    finally:
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+@main.command("forward")
+@click.option("--days", default=30, show_default=True,
+              help="Horizon: obligations due within N days.")
+@click.pass_context
+def forward_cmd(ctx, days: int) -> None:
+    """The forward ledger (v1): every known upcoming obligation, pre-staged.
+
+    Lists pending/active goals with deadlines inside the horizon -- overdue
+    first -- with the blockers a human will be asked for (open questions),
+    so decisions arrive prepared instead of discovered late.
+    """
+    import time as _time
+    world = open_world(ctx.obj["db"])
+    now = _time.time()
+    horizon = now + days * 86400.0
+    rows = []
+    for g in world.list_goals(limit=2000):
+        if g.status not in ("pending", "active"):
+            continue
+        if not g.deadline or g.deadline > horizon:
+            continue
+        qs = world.open_questions(g.id)
+        rows.append((g.deadline, g, len(qs)))
+    if not rows:
+        click.echo(f"No goal deadlines within {days} day(s). "
+                   "(Set deadlines on goals to populate the forward ledger.)")
+        return
+    rows.sort(key=lambda r: r[0])
+    for deadline, g, nq in rows:
+        delta = (deadline - now) / 86400.0
+        when = f"OVERDUE {-delta:.1f}d" if delta < 0 else f"due in {delta:.1f}d"
+        dept = f" [{g.domain}]" if g.domain else ""
+        blocked = f"  ({nq} question(s) awaiting you)" if nq else ""
+        click.echo(f"#{g.id:<5} {when:<16} {g.title[:70]}{dept}{blocked}")
+
+
 @main.command("proof")
 @click.option("--days", default=90, show_default=True,
               help="Window to report over.")
