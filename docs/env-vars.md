@@ -73,6 +73,9 @@ for false unless noted otherwise.
 | `MAVERICK_TREE_OF_THOUGHT` | unset (off) | Enable tree-of-thought planning: fork candidate plans, critic selects. |
 | `MAVERICK_TOT_CANDIDATES` | built-in | Number of candidate plans tree-of-thought forks. |
 | `MAVERICK_REFLEXION` | config `[reflexion] enable` (off) | Enable the reflexion self-critique loop. |
+| `MAVERICK_DREAMING` | config `[dreaming] enable` (off) | Enable offline experience consolidation (`maverick dream`). |
+| `MAVERICK_DOMAIN_DISCIPLINE` | config `[domains] discipline` (on) | Append suite operating discipline to specialist personas at spawn. |
+| `MAVERICK_FLEET_MEMORY` | config `[fleet_memory] enable` (off) | Allow registered external agents to use the governed memory plane. |
 | `MAVERICK_PRM` | `null` | Process reward model: `null`, `heuristic`, or `remote`. |
 | `MAVERICK_PRM_ENDPOINT` | unset | Endpoint URL when `MAVERICK_PRM=remote`. |
 | `MAVERICK_PRM_API_KEY` | unset | API key for the remote PRM endpoint. |

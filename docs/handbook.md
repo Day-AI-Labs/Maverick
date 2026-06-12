@@ -156,6 +156,9 @@ And keep yourself honest:
 
 ```bash
 maverick doctor                # green/yellow/red health check
+maverick dream                 # nightly: consolidate experience (cron-friendly)
+maverick hindsight --ledger    # weekly: record the improvement curve
+maverick proof --days 30       # monthly: the value report for the business
 maverick budget                # what it has cost you
 maverick audit verify          # prove the log hasn't been tampered with
 ```

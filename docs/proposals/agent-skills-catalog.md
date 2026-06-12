@@ -1,5 +1,8 @@
 # Agent skills catalog
 
+> **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 1,000 lint-clean agents across 25 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../FEATURES.md).
+
+
 **Status:** in progress — the per-agent skill profiles for the eight agent suites
 ([overview](agent-suites-overview.md)). For **each agent**: a one-line job description and
 the **skills it should have** — from baseline (Word/Excel/email) to deep, named competencies

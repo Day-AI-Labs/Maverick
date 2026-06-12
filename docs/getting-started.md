@@ -104,5 +104,12 @@ Or edit `~/.maverick/config.toml` directly. The `[models]` section maps each age
 | `~/.maverick/world.db` | Persistent world model: goals, facts, episodes |
 | `~/.maverick/skills/` | Auto-distilled SKILL.md files from successful runs |
 | `~/maverick-workspace/` | Default sandbox working directory |
+| `~/.maverick/learned-skills/` | Skills distilled by the learning loops |
+| `~/.maverick/dreams/` | Consolidated insights, rehearsal queue, learning snapshots |
 
 All local. Nothing is uploaded except your prompts to the cloud LLM you chose.
+
+Once you have a few runs behind you, the learning surface is four commands:
+`maverick dream` (consolidate experience), `maverick hindsight` (did learning
+help or regress?), `maverick proof` (deliverables, cost avoided, ROI), and
+`maverick domains-lint` (audit the 1,000-agent specialist catalog).

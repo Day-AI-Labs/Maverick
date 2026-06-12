@@ -1,5 +1,8 @@
 # 09 — SaaS Architecture Readiness: Adversarial Teardown
 
+> **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 1,000 lint-clean agents across 25 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../../FEATURES.md).
+
+
 > Teardown for the pivot from a **local, single-user kernel** to a **multi-tenant
 > hosted control plane for agent governance** (vs. OneTrust). Method: full read
 > of the data, isolation, consent, capability, secrets, and auth layers on
