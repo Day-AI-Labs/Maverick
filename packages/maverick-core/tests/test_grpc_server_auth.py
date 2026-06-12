@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
+from maverick.capability import Capability
 from maverick.grpc_api import server as grpc_server
 from maverick.grpc_api.service import EventDTO, GoalStatusDTO
 
@@ -81,6 +82,10 @@ class _Service:
         self.calls.append(("status", args, kwargs))
         return GoalStatusDTO(2, "done", "ok")
 
+    def run_goal(self, *args, **kwargs):
+        self.calls.append(("run_goal", args, kwargs))
+        return GoalStatusDTO(args[0], "done", "ok")
+
 
 def test_serve_requires_configured_bearer_token(monkeypatch):
     monkeypatch.delenv("MAVERICK_GRPC_BEARER_TOKEN", raising=False)
@@ -129,3 +134,55 @@ def test_authorized_calls_reach_all_rpc_methods(monkeypatch):
     assert [call[0] for call in svc.calls] == [
         "start_goal", "stream_episode", "cancel", "status",
     ]
+
+
+def test_run_goal_intersects_rpc_capability_with_local_policy(monkeypatch):
+    monkeypatch.setattr(grpc_server, "_grpc_code", lambda: _Codes)
+    import maverick.capability as capability_mod
+
+    local = Capability(
+        principal="user:victim",
+        deny_tools=frozenset({"shell"}),
+        max_risk="medium",
+        allow_paths=frozenset({"/safe/*"}),
+        allow_hosts=frozenset({"good.example"}),
+    )
+    monkeypatch.setattr(capability_mod, "capability_enforced", lambda: True)
+    monkeypatch.setattr(capability_mod, "capability_from_config", lambda **kw: local)
+
+    svc = _Service()
+    servicer = grpc_server._servicer(svc, _Pb2, _Pb2Grpc, bearer_token="secret")
+    context = _Context((("authorization", "Bearer secret"),))
+    request = SimpleNamespace(
+        goal_id=2, max_dollars=0, max_wall_seconds=0, channel="prod",
+        user_id="victim", max_depth=0,
+        capability_json='{"principal":"user:attacker"}',
+    )
+
+    assert servicer.RunGoal(request, context).status == "done"
+
+    call = svc.calls[-1]
+    assert call[0] == "run_goal"
+    cap = call[2]["capability"]
+    assert cap.principal == "user:victim"
+    assert cap.deny_tools == frozenset({"shell"})
+    assert cap.max_risk == "medium"
+    assert cap.allow_paths == frozenset({"/safe/*"})
+    assert cap.allow_hosts == frozenset({"good.example"})
+
+
+def test_run_goal_rejects_malformed_capability_json(monkeypatch):
+    monkeypatch.setattr(grpc_server, "_grpc_code", lambda: _Codes)
+    svc = _Service()
+    servicer = grpc_server._servicer(svc, _Pb2, _Pb2Grpc, bearer_token="secret")
+    context = _Context((("authorization", "Bearer secret"),))
+    request = SimpleNamespace(
+        goal_id=2, max_dollars=0, max_wall_seconds=0, channel="prod",
+        user_id="victim", max_depth=0, capability_json='{"principal":',
+    )
+
+    with pytest.raises(PermissionError):
+        servicer.RunGoal(request, context)
+
+    assert context.aborted[0] == _Codes.INVALID_ARGUMENT
+    assert svc.calls == []

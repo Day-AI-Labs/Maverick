@@ -111,6 +111,32 @@ def _capability_from_json(raw: str):
     return _deserialize_capability(json.loads(raw))
 
 
+def _rpc_capability(capability, *, channel: str | None = None, user_id: str | None = None):
+    """Attenuate an RPC-supplied grant by the worker's local policy.
+
+    The bearer token authenticates access to the gRPC API; it is not proof that
+    ``capability_json`` is a trusted, least-privilege grant.  When capability
+    enforcement is enabled, intersect the received grant with the same local
+    policy a root worker agent would derive if no explicit grant were supplied.
+    This preserves legitimate delegated restrictions while ensuring external
+    callers can only narrow, never broaden, the worker's configured policy.
+    """
+    if capability is None:
+        return None
+
+    from ..capability import capability_enforced, capability_from_config
+
+    if not capability_enforced():
+        return capability
+
+    local = capability_from_config(
+        principal=f"user:{user_id or 'local'}",
+        channel=channel,
+        user_id=user_id,
+    )
+    return local.intersect(capability, principal=local.principal)
+
+
 def _servicer(service, pb2, pb2_grpc, *, bearer_token: str | None = None):
     """Build a MaverickServicer bound to ``service`` (a GoalService)."""
     bearer_token = _resolve_bearer_token(bearer_token)
@@ -161,8 +187,14 @@ def _servicer(service, pb2, pb2_grpc, *, bearer_token: str | None = None):
 
         def RunGoal(self, request, context):
             _require_authorized(context, bearer_token)
+            channel = request.channel or None
+            user_id = request.user_id or None
             try:
-                capability = _capability_from_json(request.capability_json)
+                capability = _rpc_capability(
+                    _capability_from_json(request.capability_json),
+                    channel=channel,
+                    user_id=user_id,
+                )
             except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
                 context.abort(_grpc_code().INVALID_ARGUMENT, str(e))
                 raise
@@ -170,8 +202,8 @@ def _servicer(service, pb2, pb2_grpc, *, bearer_token: str | None = None):
                 request.goal_id,
                 max_dollars=request.max_dollars or None,
                 max_wall_seconds=request.max_wall_seconds or None,
-                channel=request.channel or None,
-                user_id=request.user_id or None,
+                channel=channel,
+                user_id=user_id,
                 max_depth=request.max_depth or None,
                 capability=capability,
             )
