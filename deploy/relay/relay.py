@@ -16,7 +16,8 @@ Config via env:
     MAVERICK_RELAY_SECRET    shared [webhooks] secret (required)
     MAVERICK_RELAY_TARGET    dashboard base URL (default http://127.0.0.1:8765)
     MAVERICK_RELAY_PORT      listen port (default 8799)
-    MAVERICK_RELAY_TOKEN     optional bearer the *caller* must present
+    MAVERICK_RELAY_HOST      listen host (default 127.0.0.1)
+    MAVERICK_RELAY_TOKEN     required bearer the *caller* must present
 
     POST /relay  {"title": "...", "description": "...", "budget": 5.0}
     -> {"goal_id": <int>}
@@ -36,6 +37,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 TARGET = os.environ.get("MAVERICK_RELAY_TARGET", "http://127.0.0.1:8765").rstrip("/")
 SECRET = os.environ.get("MAVERICK_RELAY_SECRET", "")
 PORT = int(os.environ.get("MAVERICK_RELAY_PORT", "8799"))
+HOST = os.environ.get("MAVERICK_RELAY_HOST", "127.0.0.1")
 CALLER_TOKEN = os.environ.get("MAVERICK_RELAY_TOKEN", "")
 _MAX_BODY = 64 * 1024
 
@@ -78,10 +80,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802 (stdlib API)
         if self.path.rstrip("/") != "/relay":
             return self._send(404, b'{"error":"not found"}')
-        if CALLER_TOKEN:
-            auth = self.headers.get("Authorization", "")
-            if not hmac.compare_digest(auth, f"Bearer {CALLER_TOKEN}"):
-                return self._send(401, b'{"error":"unauthorized"}')
+        if not CALLER_TOKEN:
+            return self._send(503, b'{"error":"relay token is not configured"}')
+        auth = self.headers.get("Authorization", "")
+        if not hmac.compare_digest(auth, f"Bearer {CALLER_TOKEN}"):
+            return self._send(401, b'{"error":"unauthorized"}')
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0 or length > _MAX_BODY:
             return self._send(413, b'{"error":"bad body size"}')
@@ -107,8 +110,10 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> int:
     if not SECRET:
         raise SystemExit("Set MAVERICK_RELAY_SECRET (matches the dashboard's [webhooks] secret).")
-    srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Maverick relay on :{PORT} -> {TARGET}/webhook/start")
+    if not CALLER_TOKEN:
+        raise SystemExit("Set MAVERICK_RELAY_TOKEN (required bearer token for relay callers).")
+    srv = ThreadingHTTPServer((HOST, PORT), Handler)
+    print(f"Maverick relay on {HOST}:{PORT} -> {TARGET}/webhook/start")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

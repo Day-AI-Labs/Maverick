@@ -43,3 +43,21 @@ def test_relay_signature_rejects_tamper():
     sig = relay.sign(b'{"title": "a"}', secret, ts)
     # A different body under the same signature must fail.
     assert verify_signature(b'{"title": "b"}', sig, secret, timestamp=ts) is False
+
+
+@pytest.mark.skipif(not _RELAY.exists(), reason="relay reference not present")
+def test_relay_requires_caller_token_to_start(monkeypatch):
+    monkeypatch.setenv("MAVERICK_RELAY_SECRET", "shared-secret")
+    monkeypatch.delenv("MAVERICK_RELAY_TOKEN", raising=False)
+    relay = _load_relay()
+
+    with pytest.raises(SystemExit, match="MAVERICK_RELAY_TOKEN"):
+        relay.main()
+
+
+@pytest.mark.skipif(not _RELAY.exists(), reason="relay reference not present")
+def test_relay_defaults_to_loopback(monkeypatch):
+    monkeypatch.delenv("MAVERICK_RELAY_HOST", raising=False)
+    relay = _load_relay()
+
+    assert relay.HOST == "127.0.0.1"
