@@ -2,7 +2,14 @@
 
 At-a-glance index of the business-function agent suites designed for the platform.
 Full detail lives in the per-suite docs below; this is the summary to skim later.
-**Eight suites, ~346 agents** — the core functional map of a company (301 base + 45 added in
+**Twenty-five suites, 1,000 shipped agents** — the original eight functional
+suites below plus customer experience, marketing, procurement, data &
+analytics, security ops, executive office, facilities/EHS, and ten industry
+verticals (healthcare, insurance, banking, retail, manufacturing,
+construction, logistics, professional services, government contracting,
+education/nonprofit), with jurisdiction packs in HR/legal/finance. Run
+`maverick domains-lint` for the live count and quality gate. Historical
+note — the original plan was eight suites, ~346 agents (301 base + 45 added in
 the adversarial-council review; counts below are base **+ council-added**).
 
 - **Finance** → [`finance-agent-suite.md`](finance-agent-suite.md) — 38 + 5 = **43** agents, 7 towers (+ vertical packs)

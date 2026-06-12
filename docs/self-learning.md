@@ -1,5 +1,12 @@
 # Self-learning
 
+> **Scope note:** this page covers *capability acquisition* (installing
+> skills/tools on demand). The broader learning system — experience
+> consolidation (`maverick dream`), department memory, hindsight
+> regression detection, learning snapshots/rollback, and the fleet memory
+> plane — is catalogued in [`FEATURES.md`](./FEATURES.md) under
+> *Dreaming*, *Hindsight engine*, and *Fleet memory*.
+
 When you ask Maverick to do something it doesn't yet have the capability
 for, it can **acquire the capability itself** — install a skill, drive a
 REST API, or generate a brand-new tool — instead of giving up. It can also
