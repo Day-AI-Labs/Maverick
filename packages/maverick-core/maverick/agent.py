@@ -566,6 +566,7 @@ class Agent:
             enable_browser=bool(caps.get("browser", False)),
             enable_web_search=bool(caps.get("web_search", False)),
             enable_mobile_tools=bool(caps.get("mobile_tools", False)),
+            enable_ros=bool(caps.get("ros", False)),
         )
         # Cross-agent bus tools, bound to this agent's id so send records
         # the right sender and recv drains the right inbox.

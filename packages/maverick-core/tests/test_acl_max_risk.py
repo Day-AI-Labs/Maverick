@@ -33,6 +33,7 @@ def test_tool_risk_defaults():
     assert tool_risk("code_exec") == "high"
     assert tool_risk("memory") == "high"
     assert tool_risk("obsidian") == "high"
+    assert tool_risk("ros") == "high"
     for connector in (
         "servicenow",
         "snowflake",

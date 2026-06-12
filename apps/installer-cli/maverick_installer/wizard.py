@@ -847,9 +847,10 @@ def pick_budget() -> dict[str, float]:
 def pick_capabilities() -> dict[str, bool]:
     """Opt-in to high-impact tools that ship disabled.
 
-    Computer-use and browser tools have real safety side effects
-    (mouse/keyboard control or arbitrary navigation), so they default
-    to off until you explicitly enable them.
+    Computer-use, browser, ROS robotics, and code-exec tools have real safety
+    side effects (mouse/keyboard control, arbitrary navigation, robot/simulator
+    commands, or sandboxed tool orchestration), so they default to off until you
+    explicitly enable them.
     """
     console.print()
     use_computer = _q_confirm(
@@ -858,6 +859,12 @@ def pick_capabilities() -> dict[str, bool]:
     )
     use_browser = _q_confirm(
         "Enable browser? Lets the agent navigate the web via Playwright.",
+        default=False,
+    )
+    use_ros = _q_confirm(
+        "Enable ROS robotics? Lets the agent publish topics or call services "
+        "against ROS_BRIDGE_URL over rosbridge. Only enable for trusted robot/sim "
+        "operators.",
         default=False,
     )
     use_code_exec = _q_confirm(
@@ -877,6 +884,7 @@ def pick_capabilities() -> dict[str, bool]:
     return {
         "computer_use": use_computer,
         "browser": use_browser,
+        "ros": use_ros,
         "code_exec": use_code_exec,
         "embedded_flash": embedded_flash,
     }
@@ -2775,7 +2783,7 @@ def run_fast() -> int:
             "[bold]local[/bold] sandbox with host-mutating tools disabled. "
             "Run [bold]maverick init[/bold] to switch to docker once it's up."
         )
-    capabilities = {"computer_use": False, "browser": False}
+    capabilities = {"computer_use": False, "browser": False, "ros": False}
     # Pick up the API key from the env if it's already there;
     # otherwise the wizard's later run can populate ~/.maverick/.env.
     keys: dict[str, str] = {}
@@ -2925,7 +2933,7 @@ def write_consumer_config(
             "timeout": 60,
         },
         keys,
-        {"computer_use": False, "browser": False},  # capabilities
+        {"computer_use": False, "browser": False, "ros": False},  # capabilities
         tool_acl={"denied_tools": denied_tools},
         rate_limits={
             "web_search": "5/60",
