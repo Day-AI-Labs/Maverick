@@ -73,3 +73,38 @@ def test_s3_fetch_when_off_or_missing(monkeypatch, tmp_path):
     client = _fake_boto3(monkeypatch)
     client.get_object.side_effect = RuntimeError("NoSuchKey")
     assert att.s3_fetch(1, "x.txt", root=tmp_path) is None
+
+
+def test_s3_fetch_rejects_unsafe_names_before_s3(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ATTACH_S3_BUCKET", "b")
+    client = _fake_boto3(monkeypatch)
+
+    for name in ("../config.toml", "/tmp/config.toml", "subdir/file.txt", "bad\x00.txt"):
+        try:
+            att.s3_fetch(9, name, root=tmp_path)
+        except att.AttachmentRejected:
+            pass
+        else:  # pragma: no cover - keeps the assertion message useful
+            raise AssertionError(f"accepted unsafe S3 attachment name {name!r}")
+
+    assert not client.get_object.called
+    assert not (tmp_path / "config.toml").exists()
+
+
+def test_s3_fetch_enforces_file_size_limit(monkeypatch, tmp_path):
+    monkeypatch.setenv("MAVERICK_ATTACH_S3_BUCKET", "b")
+    monkeypatch.setattr(att, "MAX_FILE_BYTES", 4)
+    client = _fake_boto3(monkeypatch)
+    body = MagicMock()
+    body.read.return_value = b"abcde"
+    client.get_object.return_value = {"Body": body}
+
+    try:
+        att.s3_fetch(9, "abcd1234-zz.txt", root=tmp_path)
+    except att.AttachmentRejected:
+        pass
+    else:  # pragma: no cover - keeps the assertion message useful
+        raise AssertionError("accepted oversized S3 attachment")
+
+    body.read.assert_called_once_with(5)
+    assert not (tmp_path / "9" / "abcd1234-zz.txt").exists()
