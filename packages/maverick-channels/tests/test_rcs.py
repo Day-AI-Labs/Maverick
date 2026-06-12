@@ -117,6 +117,36 @@ def test_bad_client_token_403():
     assert not ch.handler.await_count
 
 
+def test_bad_client_token_rejected_before_json_parse(monkeypatch):
+    ch = _channel()
+    client = TestClient(ch._app)
+
+    def fail_json(*args, **kwargs):
+        raise AssertionError("request.json() must not run before token validation")
+
+    monkeypatch.setattr(fastapi.Request, "json", fail_json)
+
+    wrong = client.post("/webhook/rcs", params={"clientToken": "wrong"},
+                        json=_envelope(_event()))
+
+    assert wrong.status_code == 403
+    assert not ch.handler.await_count
+
+
+def test_body_token_handshake_rejects_oversized_body():
+    ch = _channel()
+    client = TestClient(ch._app)
+
+    r = client.post(
+        "/webhook/rcs",
+        content=b"{" + (b" " * 4096) + b"}",
+        headers={"content-type": "application/json"},
+    )
+
+    assert r.status_code == 413
+    assert not ch.handler.await_count
+
+
 def test_unlisted_msisdn_ignored(monkeypatch):
     ch = _channel()
     ch.send = AsyncMock()
