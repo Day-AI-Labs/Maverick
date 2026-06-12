@@ -3764,17 +3764,21 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
     from .budget import Budget
     from .llm import LLM, model_for_role
     from .orchestrator import run_goal
+    from .sandbox import build_sandbox
 
     llm = LLM(model=ctx.obj["model"] or model_for_role("orchestrator"))
+    sandbox = build_sandbox()
+    cases_by_prompt = {str(c.get("prompt", "")): c for c in cases}
 
     async def _practice(prompt: str) -> str:
+        case = cases_by_prompt.get(prompt, {})
         gid = world.create_goal(
             f"[rehearsal] {prompt[:200]}",
             "Dream-time rehearsal of a previously-failing goal pattern.",
         )
         return await run_goal(
             llm=llm, world=world, budget=Budget(max_dollars=rehearse_budget),
-            goal_id=gid,
+            goal_id=gid, sandbox=sandbox, domain=case.get("domain"),
         )
 
     async def _score(prompt: str, output: str) -> float:
