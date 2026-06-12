@@ -4,8 +4,9 @@ A screenshot used as evidence ("the agent saw this page before clicking") is
 only evidence if it can't be quietly swapped. This seals captures the moment
 they land: each file gets a ledger entry carrying its sha256, capture
 metadata, an HMAC signature over the entry, and the previous entry's hash —
-an append-only hash chain, so replacing a file, editing an entry, deleting
-one, or reordering them is detectable.
+an append-only hash chain with an externally anchored signed tip, so replacing
+a file, editing an entry, deleting one, truncating the tail, or reordering them
+is detectable.
 
 Key from ``[safety] screenshot_key`` / ``MAVERICK_SCREENSHOT_KEY``; sealing
 without a key refuses (an unsigned seal proves nothing). The ledger is one
@@ -14,7 +15,7 @@ JSONL per directory (``.seals.jsonl`` next to the captures), crash-friendly
 
   seal(path, key=...)      -> SealEntry (writes the ledger line)
   verify_file(path, key)   -> "VALID" | "TAMPERED" | "UNSEALED"
-  verify_ledger(dir, key)  -> chain report (count, broken_at, missing files)
+  verify_ledger(dir, key)  -> chain report (count, broken_at, missing files, anchor)
 """
 from __future__ import annotations
 
@@ -27,6 +28,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 LEDGER_NAME = ".seals.jsonl"
+ANCHOR_VERSION = 1
 
 
 class SealKeyMissing(RuntimeError):
@@ -77,12 +79,76 @@ def _ledger_path(file_path: Path) -> Path:
     return file_path.parent / LEDGER_NAME
 
 
-def _last_line_hash(ledger: Path) -> str:
+def _ledger_state(ledger: Path) -> tuple[int, str]:
     try:
         lines = [ln for ln in ledger.read_bytes().splitlines() if ln.strip()]
     except OSError:
-        return ""
-    return hashlib.sha256(lines[-1]).hexdigest() if lines else ""
+        return 0, ""
+    return len(lines), hashlib.sha256(lines[-1]).hexdigest() if lines else ""
+
+
+def _anchor_path(directory: Path) -> Path:
+    resolved = str(directory.resolve())
+    name = hashlib.sha256(resolved.encode()).hexdigest()
+    return directory.parent / f".seals.{name}.tip.json"
+
+
+def _anchor_payload(directory: Path, count: int, tip: str) -> dict:
+    return {
+        "version": ANCHOR_VERSION,
+        "directory": str(directory.resolve()),
+        "entries": count,
+        "tip": tip,
+    }
+
+
+def _anchor_canonical(payload: dict) -> bytes:
+    d = dict(payload)
+    d.pop("sig", None)
+    return json.dumps(d, sort_keys=True, separators=(",", ":")).encode()
+
+
+def _write_anchor(directory: Path, count: int, tip: str, key: str) -> None:
+    anchor = _anchor_path(directory)
+    payload = _anchor_payload(directory, count, tip)
+    payload["sig"] = hmac.new(key.encode(), _anchor_canonical(payload), hashlib.sha256).hexdigest()
+    tmp = anchor.with_name(f".{anchor.name}.{os.getpid()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, (json.dumps(payload, sort_keys=True) + "\n").encode())
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.replace(tmp, anchor)
+    try:
+        dir_fd = os.open(anchor.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except OSError:
+        pass
+
+
+def _read_anchor(directory: Path, key: str) -> tuple[dict | None, str | None]:
+    anchor = _anchor_path(directory)
+    try:
+        payload = json.loads(anchor.read_text())
+    except FileNotFoundError:
+        return None, "missing"
+    except (OSError, ValueError, TypeError):
+        return None, "invalid"
+    sig = str(payload.get("sig", ""))
+    expected = hmac.new(key.encode(), _anchor_canonical(payload), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, sig):
+        return payload, "bad_signature"
+    if payload.get("version") != ANCHOR_VERSION:
+        return payload, "invalid"
+    if not isinstance(payload.get("entries"), int) or not isinstance(payload.get("tip"), str):
+        return payload, "invalid"
+    if payload.get("directory") != str(directory.resolve()):
+        return payload, "wrong_directory"
+    return payload, None
 
 
 def seal(path: str | Path, *, key: str | None = None, now: float | None = None) -> SealEntry:
@@ -92,7 +158,7 @@ def seal(path: str | Path, *, key: str | None = None, now: float | None = None) 
     if not p.is_file():
         raise FileNotFoundError(p)
     ledger = _ledger_path(p)
-    prev = _last_line_hash(ledger)
+    previous_count, prev = _ledger_state(ledger)
     entry = SealEntry(
         file=p.name,
         sha256=_sha256_file(p),
@@ -109,6 +175,7 @@ def seal(path: str | Path, *, key: str | None = None, now: float | None = None) 
         os.fsync(fd)
     finally:
         os.close(fd)
+    _write_anchor(p.parent, previous_count + 1, hashlib.sha256(line.encode()).hexdigest(), k)
     return entry
 
 
@@ -134,6 +201,9 @@ def verify_file(path: str | Path, *, key: str | None = None) -> str:
     """VALID (latest seal matches the bytes + signature), TAMPERED, or UNSEALED."""
     k = _key(key)
     p = Path(path)
+    ledger_report = verify_ledger(p.parent, key=k)
+    if not ledger_report["ok"]:
+        return "TAMPERED"
     entries = [e for e, _ in _entries(_ledger_path(p)) if e is not None and e.file == p.name]
     if not entries:
         return "UNSEALED"
@@ -157,7 +227,12 @@ def verify_ledger(directory: str | Path, *, key: str | None = None) -> dict:
     d = Path(directory)
     rows = _entries(d / LEDGER_NAME)
     report = {"entries": len(rows), "ok": True, "broken_at": None,
-              "bad_signatures": [], "missing_files": [], "modified_files": []}
+              "bad_signatures": [], "missing_files": [], "modified_files": [],
+              "anchor": None}
+    anchor, anchor_error = _read_anchor(d, k)
+    if rows and anchor_error is not None:
+        report["ok"] = False
+        report["anchor"] = anchor_error
     # Only the LATEST seal for a file pins its current bytes (a re-capture
     # legitimately supersedes earlier seals of the same name).
     latest_index: dict[str, int] = {}
@@ -183,6 +258,10 @@ def verify_ledger(directory: str | Path, *, key: str | None = None) -> dict:
                 report["ok"] = False
                 report["modified_files"].append(entry.file)
         prev = line_hash
+    if anchor_error is None and anchor is not None:
+        if anchor.get("entries") != len(rows) or anchor.get("tip") != prev:
+            report["ok"] = False
+            report["anchor"] = "mismatch"
     return report
 
 
