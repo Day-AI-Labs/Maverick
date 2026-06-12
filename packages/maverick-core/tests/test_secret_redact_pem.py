@@ -49,3 +49,37 @@ def test_bare_begin_marker_without_end_still_flagged():
     red, matches = redact("-----BEGIN RSA PRIVATE KEY-----")  # pragma: allowlist secret
     assert matches
     assert "[REDACTED:" in red
+
+
+def test_pem_body_without_end_marker_is_fully_redacted():
+    # The leak: a header WITH a base64 body but NO END marker (a key truncated
+    # by a buffer/summary boundary). The prior pattern made the END group
+    # optional, so this matched only the header and left the body in cleartext.
+    red, matches = redact(f"here is a key:\n-----BEGIN PRIVATE KEY-----\n{_KEY_BODY}")  # pragma: allowlist secret
+    assert matches
+    assert "MIIEpAIBAAKCAQEA" not in red  # no key material survives
+    assert "eeeeeeee==" not in red
+    assert "[REDACTED:private_key_pem]" in red
+    assert "here is a key:" in red  # surrounding text preserved
+
+
+def test_redact_proven_does_not_falsely_certify_truncated_pem():
+    # provable_redaction composes this detector; the leak made it issue a
+    # PROVEN-clean certificate over text that still held key material.
+    from maverick.provable_redaction import redact_proven
+    proof = redact_proven(f"-----BEGIN PRIVATE KEY-----\n{_KEY_BODY}")  # pragma: allowlist secret
+    assert "MIIEpAIBAAKCAQEA" not in proof.redacted
+    assert proof.proven  # genuinely clean, not a false certificate
+    assert proof.residual == []
+
+
+def test_audit_event_redacts_truncated_pem_in_tool_payload():
+    # The audit writer truncates summaries, which can strip a key's END marker;
+    # _redact_event composes the same detector, so the body must not reach disk.
+    from maverick.audit.writer import _redact_event
+    out = _redact_event({
+        "kind": "tool_result",
+        "output_summary": f"-----BEGIN PRIVATE KEY-----\n{_KEY_BODY}",  # pragma: allowlist secret
+    })
+    assert "MIIEpAIBAAKCAQEA" not in out["output_summary"]
+    assert "[REDACTED:private_key_pem]" in out["output_summary"]

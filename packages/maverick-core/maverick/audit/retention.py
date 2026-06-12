@@ -22,8 +22,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from .writer import DEFAULT_AUDIT_DIR
-
 log = logging.getLogger(__name__)
 
 
@@ -44,7 +42,7 @@ def _cutoff_for_days(days: int, *, now: float | None = None) -> float:
 def purge_audit_files(
     *,
     days: int,
-    audit_dir: Path = DEFAULT_AUDIT_DIR,
+    audit_dir: Path | None = None,
     dry_run: bool = False,
     now: float | None = None,
 ) -> dict:
@@ -55,6 +53,12 @@ def purge_audit_files(
     """
     if days is None or int(days) <= 0:
         return {"removed": [], "kept": 0, "reason": "disabled"}
+    if audit_dir is None:
+        # Match the writer's (home + active-tenant) audit dir; the old frozen
+        # ~/.maverick/audit default made enforce() report "no audit dir" and
+        # purge nothing whenever MAVERICK_HOME / a tenant moved the real files.
+        from ..paths import data_dir
+        audit_dir = data_dir("audit")
     if not audit_dir.exists():
         return {"removed": [], "kept": 0, "reason": "no audit dir"}
 
@@ -187,11 +191,15 @@ def enforce(
     *,
     config: dict | None = None,
     dry_run: bool = False,
-    audit_dir: Path = DEFAULT_AUDIT_DIR,
+    audit_dir: Path | None = None,
     db_path: Path | None = None,
     now: float | None = None,
 ) -> dict:
-    """Apply every configured retention rule. Returns a per-rule report."""
+    """Apply every configured retention rule. Returns a per-rule report.
+
+    ``audit_dir`` defaults to the writer's home/tenant-aware audit dir
+    (resolved by :func:`purge_audit_files`), not a frozen path.
+    """
     cfg = config if config is not None else _config()
     if not cfg:
         return {"status": "disabled", "reason": "no [retention] in config"}
