@@ -1125,6 +1125,14 @@ def pick_advanced() -> dict[str, Any]:
             "on the next similar goal.",
             default=False,
         ),
+        "specialist_discipline": _q_confirm(
+            "Specialist operating discipline? Append each business suite's "
+            "professional guardrails (finance maker-checker, legal privilege, "
+            "HR PII-minimization, ...) to every domain pack's persona at "
+            "spawn. Recommended; prompts only, hard limits stay enforced by "
+            "capabilities/governance.",
+            default=True,
+        ),
         "dreaming": _q_confirm(
             "Dreaming (offline consolidation)? `maverick dream` replays recent "
             "runs while idle, distills recurring wins into skills per department, "
@@ -2509,6 +2517,11 @@ def write_config(  # noqa: C901
             lines.append("")
             lines.append("[reflexion]")
             lines.append("enable = true")
+        # Discipline defaults ON; only an explicit decline is written.
+        if advanced.get("specialist_discipline") is False:
+            lines.append("")
+            lines.append("[domains]")
+            lines.append("discipline = false")
         if advanced.get("dreaming"):
             lines.append("")
             lines.append("[dreaming]")

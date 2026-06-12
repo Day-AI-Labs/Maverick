@@ -9,4 +9,8 @@ allow_tools = ["read_file", "knowledge_search", "crunchbase_read"]
 max_risk = "low"
 deny_tools = ["shell", "write_file", "web_search"]
 
+# Suite-level grounding fallback: docs uploaded to the "strat" collection
+# ground every strat specialist; replace with curated collections as they exist.
+knowledge_sources = ["strat"]
+
 authoring = "manual"

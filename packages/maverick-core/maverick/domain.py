@@ -199,6 +199,85 @@ def domain_capability(profile: DomainProfile, parent_cap, principal: str):
     return profile.capability(principal)
 
 
+_VALID_RISKS = frozenset({"low", "medium", "high"})
+# Below this, a persona is a label, not a working instruction set.
+_MIN_PERSONA_CHARS = 200
+
+
+def lint_profile(profile: DomainProfile) -> tuple[list[str], list[str]]:
+    """Quality-gate one pack. Returns ``(errors, warnings)``.
+
+    Errors are problems that weaken the safety envelope or make the
+    specialist unreliable (no tool allowlist = ALL tools; an unknown
+    ``max_risk`` silently fails open to "no ceiling"). Warnings are quality
+    gaps a pack author should look at. Pure, for tests and the CLI."""
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not profile.allow_tools:
+        errors.append("allow_tools is empty: an empty allowlist grants ALL "
+                      "tools -- name the tools this specialist needs")
+    if profile.max_risk is None:
+        errors.append("max_risk is unset: the pack has no risk ceiling")
+    elif profile.max_risk not in _VALID_RISKS:
+        errors.append(f"max_risk {profile.max_risk!r} is not one of "
+                      f"{sorted(_VALID_RISKS)}")
+    overlap = set(profile.allow_tools) & set(profile.deny_tools)
+    if overlap:
+        warnings.append("tools both allowed and denied (deny wins): "
+                        + ", ".join(sorted(overlap)))
+    if len((profile.persona or "").strip()) < _MIN_PERSONA_CHARS:
+        warnings.append(f"persona under {_MIN_PERSONA_CHARS} chars: a label, "
+                        "not a working instruction set")
+    if not (profile.description or "").strip():
+        warnings.append("description is empty (the roster shows it to "
+                        "operators and the orchestrator)")
+    if not profile.knowledge_sources:
+        warnings.append("no knowledge_sources: the specialist can't ground "
+                        "answers in company documents")
+    if not profile.deny_tools:
+        warnings.append("no deny_tools: consider explicitly denying the "
+                        "tools this role must never touch")
+    return errors, warnings
+
+
+def _department_memory(profile: DomainProfile, task: str) -> str:
+    """The department's recalled lessons, formatted for a specialist's brief.
+
+    Pre-run context layers only run at the orchestrator root; a specialist
+    spawned mid-run via ``spawn_specialist`` used to start blank. This gives
+    every pack its department memory at ANY spawn depth: same-department
+    reflexion lessons and consolidated dream insights, both already
+    sanitized/bounded by their formatters. Empty (and free) unless the
+    operator enabled those loops; never raises into a spawn.
+    """
+    try:
+        from .config import get_domains
+        if not get_domains()["memory"]:
+            return ""
+    except Exception:  # pragma: no cover -- config never blocks a spawn
+        pass
+    blocks: list[str] = []
+    try:
+        from . import reflexion
+        if reflexion.enabled():
+            recalled = reflexion.recall(task, k=2, domain=profile.name)
+            block = reflexion.format_context(recalled)
+            if block:
+                blocks.append(block)
+    except Exception:  # pragma: no cover -- recall never blocks a spawn
+        pass
+    try:
+        from . import dreaming
+        if dreaming.enabled():
+            insights = dreaming.recall_insights(task, domain=profile.name)
+            block = dreaming.format_context(insights)
+            if block:
+                blocks.append(block)
+    except Exception:  # pragma: no cover -- recall never blocks a spawn
+        pass
+    return "\n".join(blocks)
+
+
 def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
                        parent=None, depth: int = 0, principal: str | None = None):
     """Spawn a live agent from a domain pack -- the factory's "spit out an agent".
@@ -208,16 +287,25 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
     profile (attenuated against the parent's grant when one exists). A domain
     agent therefore always runs inside its pack's tool/risk/host envelope, even
     when global capability enforcement is off -- the pack is a hard boundary.
+
+    The pack persona is augmented with the suite's operating discipline
+    (:mod:`maverick.domain_discipline`), and the department's recalled
+    lessons are appended to the task brief -- so every specialist, at every
+    spawn depth, works like a professional with its department's memory.
     """
     from .agent import Agent
+    from .domain_discipline import augment_persona
     principal = principal or f"agent:{profile.name}-{depth}"
     if parent is not None and hasattr(parent, "_effective_capability"):
         parent_cap = parent._effective_capability("spawn_specialist")
     else:
         parent_cap = getattr(parent, "capability", None)
     cap = domain_capability(profile, parent_cap, principal)
+    memory = _department_memory(profile, task)
     return Agent(
-        ctx=ctx, role=profile.name, brief=task, depth=depth, parent=parent,
-        domain=profile.compartment, persona=profile.persona, capability=cap,
+        ctx=ctx, role=profile.name, brief=task + ("\n" + memory if memory else ""),
+        depth=depth, parent=parent,
+        domain=profile.compartment,
+        persona=augment_persona(profile.name, profile.persona), capability=cap,
         knowledge_sources=profile.knowledge_sources,
     )
