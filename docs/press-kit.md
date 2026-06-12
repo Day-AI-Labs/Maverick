@@ -56,7 +56,7 @@ append-only audit log.
   providers, routable per role.
 - **Auditability**: signed, append-only audit log (`maverick audit verify`),
   SIEM export, encryption-at-rest, DSAR, data-retention enforcement.
-- **Distribution**: 7 packages on PyPI, a GHCR Docker image, PyInstaller
+- **Distribution**: 8 packages on PyPI, a GHCR Docker image, PyInstaller
   binaries, and native double-click installers for Windows/macOS/Linux.
 - **Status**: alpha, installable today.
 - **Maker**: Day AI Labs (Christopher Day).
