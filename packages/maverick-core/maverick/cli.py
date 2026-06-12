@@ -3786,8 +3786,10 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
               help="Your fully-loaded cost of one comparable human "
                    "deliverable (defaults conservative).")
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+@click.option("--fleet", is_flag=True,
+              help="Also break down ingested fleet experience per vendor.")
 @click.pass_context
-def proof(ctx, days: int, human_cost, as_json: bool) -> None:
+def proof(ctx, days: int, human_cost, as_json: bool, fleet: bool) -> None:
     """The workforce value report: did the AI workforce pay for itself AND
     get better?
 
@@ -3805,6 +3807,115 @@ def proof(ctx, days: int, human_cost, as_json: bool) -> None:
         click.echo(_json.dumps(workforce_value.to_dict(v), indent=2))
     else:
         click.echo(workforce_value.format_report(v))
+    if fleet:
+        by_vendor = workforce_value.fleet_breakdown()
+        if not by_vendor:
+            click.echo("\n(fleet: no ingested external experience yet)")
+        else:
+            click.echo("\nBy vendor (fleet-ingested):")
+            for vendor, c in sorted(by_vendor.items()):
+                click.echo(f"  {vendor:<20} {c['deliverables']} deliverable(s), "
+                           f"{c['failures']} failure(s)")
+
+
+@main.command("fleet-memory")
+@click.option("--register", default=None, metavar="VENDOR:AGENT_ID",
+              help="Register an external agent on the fleet roster.")
+@click.option("--description", default="", help="Roster description.")
+def fleet_memory_cmd(register: str | None, description: str) -> None:
+    """The agent-agnostic learning plane (Learning System of Record).
+
+    External agents (Agentforce, Copilot, custom, OSS runtimes) deposit
+    experience into and recall from Maverick's governed memory via the MCP /
+    REST surface; this command manages the roster and shows the console
+    view. Requires [fleet_memory] enable = true.
+    """
+    from . import fleet_memory
+    if register:
+        vendor, _, agent_id = register.partition(":")
+        if not agent_id:
+            raise click.ClickException("--register takes VENDOR:AGENT_ID")
+        if not fleet_memory.register_agent(agent_id, vendor,
+                                           description=description):
+            raise click.ClickException(
+                "registration failed (ids must be alphanumeric/._- , <=64 chars)")
+        click.echo(f"registered {vendor}:{agent_id}")
+        return
+    st = fleet_memory.status()
+    if not st["agents"]:
+        click.echo("fleet roster is empty -- add agents with "
+                   "`maverick fleet-memory --register vendor:agent-id`")
+        return
+    for a in st["agents"]:
+        src = a["source"]
+        counts = st["ingested"].get(src, {})
+        click.echo(f"{src:<40} ingested: {counts.get('success', 0)} success / "
+                   f"{counts.get('failure', 0)} failure")
+
+
+@main.group("record")
+def record_grp() -> None:
+    """The Operating Record: the firm's decisions as a system of record."""
+
+
+@record_grp.command("stats")
+@click.option("--limit", default=500, show_default=True)
+@click.pass_context
+def record_stats(ctx, limit: int) -> None:
+    """Summarize the Operating Record (decisions, approvals, departments)."""
+    from . import operating_record as orec
+    world = open_world(ctx.obj["db"])
+    s = orec.stats(orec.assemble(world, limit=limit))
+    click.echo(f"records: {s.n_records}  goals: {s.n_goals}  approvals: "
+               f"{s.n_approvals}  human decisions: {s.n_human_decisions}")
+    for dept, n in sorted(s.departments.items(), key=lambda kv: -kv[1])[:12]:
+        click.echo(f"  {dept:<24} {n}")
+
+
+@record_grp.command("search")
+@click.argument("text")
+@click.option("--department", default="")
+@click.option("--actor", default="")
+@click.pass_context
+def record_search(ctx, text: str, department: str, actor: str) -> None:
+    """Every decision that touched X (subject substring match)."""
+    from . import operating_record as orec
+    world = open_world(ctx.obj["db"])
+    hits = orec.query(orec.assemble(world), text=text,
+                      department=department, actor=actor)
+    for r in hits[:50]:
+        click.echo(f"[{r.kind}] {r.subject}  -> {r.outcome}  "
+                   f"(actor={r.actor}, ${r.cost_dollars:.2f})")
+    click.echo(f"{len(hits)} matching record(s)")
+
+
+@record_grp.command("export")
+@click.argument("out", type=click.Path())
+@click.option("--limit", default=500, show_default=True)
+@click.pass_context
+def record_export(ctx, out: str, limit: int) -> None:
+    """Export the operating mind as a SIGNED, portable capsule."""
+    from . import operating_record as orec
+    world = open_world(ctx.obj["db"])
+    try:
+        path = orec.export_capsule(world, out, limit=limit)
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
+    ok, reason = orec.verify_capsule(path)
+    click.echo(f"capsule -> {path} (self-check: {reason})")
+    if not ok:
+        raise click.ClickException("capsule failed its own verification")
+
+
+@record_grp.command("verify")
+@click.argument("capsule", type=click.Path(exists=True))
+def record_verify(capsule: str) -> None:
+    """Verify a capsule's signature + integrity offline."""
+    from . import operating_record as orec
+    ok, reason = orec.verify_capsule(capsule)
+    click.echo(reason)
+    if not ok:
+        raise click.ClickException("verification failed")
 
 
 @main.command("hindsight")

@@ -245,11 +245,38 @@ def to_dict(v: WorkforceValue) -> dict:
     }
 
 
+def fleet_breakdown(inbox: Path | str | None = None) -> dict[str, dict]:
+    """Cross-vendor proof: per-vendor deliverables/failures from fleet-ingested
+    records — "your Agentforce agents improved; your Copilot agents are flat"
+    becomes a measured sentence. Empty unless fleet memory has ingested."""
+    try:
+        from . import fleet_memory
+        d = Path(inbox) if inbox is not None else fleet_memory.inbox_dir()
+    except Exception:  # pragma: no cover
+        return {}
+    if not d.is_dir():
+        return {}
+    out: dict[str, dict] = {}
+    for p in d.glob("*.json"):
+        try:
+            row = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        vendor = str(row.get("vendor", "") or "(unknown)")
+        v = out.setdefault(vendor, {"deliverables": 0, "failures": 0})
+        if row.get("outcome") == "success":
+            v["deliverables"] += 1
+        else:
+            v["failures"] += 1
+    return out
+
+
 __all__ = [
     "DEFAULT_HUMAN_COST_PER_DELIVERABLE",
     "DepartmentValue",
     "WorkforceValue",
     "compute",
+    "fleet_breakdown",
     "format_report",
     "to_dict",
 ]

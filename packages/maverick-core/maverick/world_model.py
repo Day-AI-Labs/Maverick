@@ -1293,6 +1293,15 @@ class WorldModel:
         )
         return _approval_from_row(row) if row else None
 
+    def list_approvals(self, limit: int = 500) -> list[Approval]:
+        """All approvals, newest first (the Operating Record's human-decision
+        feed); ``pending_approvals`` remains the queue view."""
+        rows = self._read_all(
+            "SELECT * FROM approvals ORDER BY requested_at DESC LIMIT ?",
+            (max(1, int(limit)),),
+        )
+        return [_approval_from_row(r) for r in rows]
+
     def pending_approvals(self) -> list[Approval]:
         rows = self._read_all(
             "SELECT * FROM approvals WHERE status = 'pending' ORDER BY id"

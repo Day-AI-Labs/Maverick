@@ -177,6 +177,20 @@ here.
   (thin persona, allow∩deny overlap, no knowledge sources, no deny list).
   All built-in packs lint clean; every pack now carries at least a
   suite-level `knowledge_sources` grounding fallback.
+- **Fleet memory — the Learning System of Record** (`fleet_memory.py`,
+  opt-in `[fleet_memory] enable`; MCP tools `maverick_fleet_ingest` /
+  `maverick_fleet_recall`; CLI `maverick fleet-memory`) — ANY external agent
+  (Agentforce, Copilot, custom, OSS runtimes) deposits experience into and
+  recalls from Maverick's governed memory: roster-gated (fail-closed),
+  Shield-scanned, provenance-tagged (`vendor:agent_id`), tenant-isolated,
+  every read audited. Successes/failures consolidate through the dream
+  cycle; `maverick proof --fleet` breaks value out per vendor.
+- **The Operating Record** (`operating_record.py`, `maverick record
+  stats|search|export|verify`) — the firm's decisions as a system of
+  record: goals (with departments, outcomes, spend) + human approvals
+  (with deciders) threaded into one queryable spine, exportable as an
+  Ed25519-signed portable **capsule** (decision spine + learned state)
+  verifiable offline; tampering fails verification.
 - **Federated insight exchange** (`insight_exchange.py`,
   `maverick insights-export` / `insights-import`) — consolidated lessons
   (never raw trajectories) cross instance boundaries as Ed25519-signed

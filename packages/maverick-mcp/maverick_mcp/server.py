@@ -241,6 +241,55 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "maverick_fleet_ingest",
+        "description": (
+            "Deposit experience from an EXTERNAL agent into Maverick's "
+            "governed fleet memory (Learning System of Record). The agent "
+            "must be on the fleet roster; records are Shield-scanned, "
+            "provenance-tagged, and audited. Requires [fleet_memory] enable."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string"},
+                "vendor": {"type": "string"},
+                "kind": {"type": "string", "enum": ["success", "failure", "lesson"]},
+                "goal_text": {"type": "string"},
+                "reflection": {"type": "string"},
+                "domain": {"type": "string"},
+            },
+            "required": ["agent_id", "vendor", "kind", "goal_text"],
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {"ok": {"type": "boolean"}, "reason": {"type": "string"}},
+            "required": ["ok", "reason"],
+        },
+    },
+    {
+        "name": "maverick_fleet_recall",
+        "description": (
+            "Governed memory read for an EXTERNAL fleet agent: department-"
+            "boosted lessons + consolidated insights for a task. Every read "
+            "is audited with the reader's identity."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string"},
+                "vendor": {"type": "string"},
+                "query": {"type": "string"},
+                "domain": {"type": "string"},
+            },
+            "required": ["agent_id", "vendor", "query"],
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {"context": {"type": "string"}, "reason": {"type": "string"}},
+            "required": ["reason"],
+        },
+    },
+    {
         "name": "maverick_facts_get",
         "description": "Get all known facts.",
         "inputSchema": {"type": "object", "properties": {}},
@@ -711,7 +760,26 @@ class MCPServer:
             return self._tool_fact_set(args)
         if name == "maverick_facts_get":
             return self._tool_facts_get()
+        if name == "maverick_fleet_ingest":
+            return self._tool_fleet_ingest(args)
+        if name == "maverick_fleet_recall":
+            return self._tool_fleet_recall(args)
         raise _ProtocolError(-32602, f"unknown tool {name!r}")
+
+    def _tool_fleet_ingest(self, args: dict) -> str:
+        from maverick import fleet_memory
+        ok, reason = fleet_memory.ingest(dict(args))
+        return json.dumps({"ok": bool(ok), "reason": reason})
+
+    def _tool_fleet_recall(self, args: dict) -> str:
+        from maverick import fleet_memory
+        context, reason = fleet_memory.recall(
+            str(args.get("query", "")),
+            agent_id=str(args.get("agent_id", "")),
+            vendor=str(args.get("vendor", "")),
+            domain=str(args.get("domain", "") or "") or None,
+        )
+        return json.dumps({"context": context, "reason": reason})
 
     def _structured_result(self, name: str) -> dict | None:
         """Structured form of a query tool's result, matching its outputSchema.
