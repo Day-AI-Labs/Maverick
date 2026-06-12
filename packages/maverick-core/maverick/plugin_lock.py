@@ -105,7 +105,7 @@ def verify_lock(path: Path | None = None) -> dict:
     """Compare installed plugin dists against the lock.
 
     Returns ``{ok, drifted: [(name, pinned, installed)], unpinned: [...],
-    missing: [...]}`` — ``ok`` iff no drift and nothing pinned is missing.
+    missing: [...]}`` — ``ok`` iff no drift, missing pins, or unpinned dists.
     No lockfile -> ``{ok: True, unlocked: True}`` (nothing to enforce).
     """
     pins = read_lock(path)
@@ -116,7 +116,7 @@ def verify_lock(path: Path | None = None) -> dict:
                for n in sorted(set(pins) & set(installed)) if pins[n] != installed[n]]
     missing = sorted(set(pins) - set(installed))
     unpinned = sorted(set(installed) - set(pins))
-    return {"ok": not drifted and not missing, "unlocked": False,
+    return {"ok": not drifted and not missing and not unpinned, "unlocked": False,
             "drifted": drifted, "unpinned": unpinned, "missing": missing}
 
 

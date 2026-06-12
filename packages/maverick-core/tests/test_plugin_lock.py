@@ -48,6 +48,19 @@ def test_verify_detects_drift_missing_unpinned(tmp_path, monkeypatch):
     assert not report["ok"]
 
 
+def test_verify_fails_for_unpinned_only(tmp_path, monkeypatch):
+    _fake_eps(monkeypatch, [("t1", "acme-tools", "1.0.0")])
+    lock = tmp_path / "plugins.lock.json"
+    pl.write_lock(lock)
+    _fake_eps(monkeypatch, [("t1", "acme-tools", "1.0.0"),
+                            ("t2", "new-dist", "0.1")])
+    report = pl.verify_lock(lock)
+    assert report["drifted"] == []
+    assert report["missing"] == []
+    assert report["unpinned"] == ["new-dist"]
+    assert not report["ok"]
+
+
 def test_no_lockfile_is_ok(tmp_path):
     report = pl.verify_lock(tmp_path / "nope.json")
     assert report["ok"] and report["unlocked"]
