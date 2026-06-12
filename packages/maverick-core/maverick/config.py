@@ -452,6 +452,14 @@ def get_skill_synthesis() -> dict:
     return {"enable": bool(cfg.get("enable", False))}
 
 
+def get_fleet_memory() -> dict:
+    """Return the ``[fleet_memory]`` section (agent-agnostic learning plane).
+    OFF by default: exposing governed memory to third-party agents is an
+    explicit trust decision."""
+    cfg = load_config().get("fleet_memory", {})
+    return {"enable": bool(cfg.get("enable", False))}
+
+
 def get_domains() -> dict:
     """Return the ``[domains]`` section with defaults filled in.
 

@@ -75,7 +75,7 @@ public class Client {
 mvn -q compile exec:java
 ```
 
-You should see the tool list (8 tools), then the swarm's final answer.
+You should see the tool list (10 tools), then the swarm's final answer.
 
 ## What works
 
@@ -90,6 +90,10 @@ the kernel runs the tools internally.
 - `maverick_answer` `{question_id, answer}` — answer a queued question.
 - `maverick_skill_install` `{source}` / `maverick_skills_list`.
 - `maverick_fact_set` `{key, value}` / `maverick_facts_get`.
+- `maverick_fleet_ingest` `{agent_id, vendor, kind, goal_text}` — deposit an
+  external agent's experience into governed fleet memory (roster-gated).
+- `maverick_fleet_recall` `{agent_id, vendor, query}` — governed, audited
+  memory read for an external fleet agent.
 
 The ~70 in-kernel tools (web search, repo map, editor, Slack, S3, …)
 are **not** individually exposed over MCP — the swarm decides which to

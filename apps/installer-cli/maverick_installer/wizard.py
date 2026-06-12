@@ -1125,6 +1125,13 @@ def pick_advanced() -> dict[str, Any]:
             "on the next similar goal.",
             default=False,
         ),
+        "fleet_memory": _q_confirm(
+            "Fleet memory? Let EXTERNAL agents (Agentforce, Copilot, custom) "
+            "deposit experience into and recall from Maverick's governed "
+            "memory -- Shield-scanned, provenance-tagged, audited reads. "
+            "An explicit trust decision; OFF by default.",
+            default=False,
+        ),
         "specialist_discipline": _q_confirm(
             "Specialist operating discipline? Append each business suite's "
             "professional guardrails (finance maker-checker, legal privilege, "
@@ -2516,6 +2523,10 @@ def write_config(  # noqa: C901
         if advanced.get("reflexion"):
             lines.append("")
             lines.append("[reflexion]")
+            lines.append("enable = true")
+        if advanced.get("fleet_memory"):
+            lines.append("")
+            lines.append("[fleet_memory]")
             lines.append("enable = true")
         # Discipline defaults ON; only an explicit decline is written.
         if advanced.get("specialist_discipline") is False:
