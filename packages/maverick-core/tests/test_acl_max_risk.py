@@ -33,6 +33,7 @@ def test_tool_risk_defaults():
     assert tool_risk("code_exec") == "high"
     assert tool_risk("memory") == "high"
     assert tool_risk("obsidian") == "high"
+    assert tool_risk("serial") == "high"
     for connector in (
         "servicenow",
         "snowflake",
@@ -117,6 +118,7 @@ max_risk = "medium"
     names = {t.name for t in reg.all()}
     assert "memory" not in names
     assert "obsidian" not in names
+    assert "serial" not in names
     assert "write_file" not in names
     assert "read_file" in names
 
