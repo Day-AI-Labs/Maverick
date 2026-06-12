@@ -3639,6 +3639,31 @@ def finance_lint_sod_cmd() -> None:
     raise click.ClickException(f"{len(conflicts)} SoD conflict(s)")
 
 
+@main.command()
+@click.option("--max-goals", default=50, show_default=True,
+              help="How many recent finished goals to replay.")
+@click.pass_context
+def dream(ctx, max_goals: int) -> None:
+    """Run one offline dreaming cycle (experience consolidation).
+
+    Replays recent successes and failure reflexions, groups them by
+    department (domain packs), distills recurring wins into learned skills,
+    consolidates recurring failures into dream insights (recalled on future
+    similar goals), and prunes stale near-duplicate reflexions. Deterministic
+    and LLM-free -- costs no tokens. Requires [dreaming] enable = true or
+    MAVERICK_DREAMING=1; run it from cron/systemd for nightly consolidation.
+    """
+    from . import dreaming
+    if not dreaming.enabled():
+        raise click.ClickException(
+            "dreaming is disabled. Set MAVERICK_DREAMING=1 or add\n"
+            "  [dreaming]\n  enable = true\nto ~/.maverick/config.toml."
+        )
+    world = open_world(ctx.obj["db"])
+    report = dreaming.dream_cycle(world, max_goals=max_goals)
+    click.echo(report.summary())
+
+
 @main.command("export-user")
 @click.option("--channel", required=True, help="Channel name.")
 @click.option("--user", required=True, help="The channel user_id to export.")
