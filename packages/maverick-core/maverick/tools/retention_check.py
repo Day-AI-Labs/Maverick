@@ -16,7 +16,7 @@ ops:
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 from . import Tool
@@ -96,7 +96,7 @@ def _run(args: dict[str, Any]) -> str:
         return "ERROR: policy values must be integer day counts"
     today_arg = args.get("today")
     try:
-        today = date.fromisoformat(str(today_arg)) if today_arg is not None else date.today()
+        today = date.fromisoformat(str(today_arg)) if today_arg is not None else datetime.now(timezone.utc).date()
     except ValueError:
         return "ERROR: today is not a valid ISO date (YYYY-MM-DD)"
     try:

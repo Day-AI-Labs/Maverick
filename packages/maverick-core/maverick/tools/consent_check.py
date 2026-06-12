@@ -16,7 +16,7 @@ ops:
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 from . import Tool
@@ -88,7 +88,7 @@ def _run(args: dict[str, Any]) -> str:
     only = str(only) if only is not None else None
     now_arg = args.get("now")
     try:
-        now = _parse(now_arg, "now") if now_arg is not None else date.today()
+        now = _parse(now_arg, "now") if now_arg is not None else datetime.now(timezone.utc).date()
         return _check(consents, now, only)
     except ValueError as e:
         return f"ERROR: {e}"

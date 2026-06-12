@@ -21,6 +21,7 @@ lint`` command surface problems up front.
 from __future__ import annotations
 
 import difflib
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -258,6 +259,22 @@ def lint_config(cfg: dict) -> list[Finding]:
                         message=(
                             f"{section}.{key} must be a number, got "
                             f"{type(kval).__name__}"
+                        ),
+                    )
+                )
+            elif key in numeric_keys and (not math.isfinite(kval) or kval < 0):
+                # A negative cap bricks every run (immediate BudgetExceeded); a
+                # non-finite cap (TOML nan/inf) silently DISABLES enforcement.
+                # Both pass an isinstance check but are never valid caps
+                # (user-testing finding).
+                findings.append(
+                    Finding(
+                        section=section,
+                        key=key,
+                        severity="error",
+                        message=(
+                            f"{section}.{key} must be a finite, non-negative "
+                            f"number, got {kval!r}"
                         ),
                     )
                 )
