@@ -87,6 +87,20 @@ def test_bad_signature_403():
     assert not ch.handler.await_count
 
 
+def test_malformed_auth_values_fail_closed():
+    ch = _channel()
+    client = TestClient(ch._app)
+
+    verify = client.get("/webhook/whatsapp-cloud", params={
+        "hub.mode": "subscribe", "hub.verify_token": "wroñg", "hub.challenge": "x",
+    })
+    assert verify.status_code == 403
+
+    body = json.dumps(_event()).encode()
+    assert not ch._signature_ok(body, "sha256=" + "é" * 64)
+    assert not ch.handler.await_count
+
+
 def test_unlisted_sender_ignored(monkeypatch):
     ch = _channel()
     ch.send = AsyncMock()
