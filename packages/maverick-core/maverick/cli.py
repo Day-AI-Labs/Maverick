@@ -3665,9 +3665,14 @@ def finance_lint_sod_cmd() -> None:
 @click.option("--rollback", default=None, metavar="SNAPSHOT",
               help="Restore every learned store from a snapshot "
                    "('latest' or a name from --list-snapshots), then exit.")
+@click.option("--donations-dir", default=None, type=click.Path(),
+              help="Also replay donated trajectory records from this "
+                   "directory (fleet-level aggregation on a central "
+                   "instance).")
 @click.pass_context
 def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
-          dry_run: bool, list_snaps: bool, rollback: str | None) -> None:
+          dry_run: bool, list_snaps: bool, rollback: str | None,
+          donations_dir: str | None) -> None:
     """Run one offline dreaming cycle (experience consolidation).
 
     Replays recent successes and failure reflexions, groups them by
@@ -3705,7 +3710,9 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
         )
     world = open_world(ctx.obj["db"])
     if dry_run:
-        report = dreaming.dream_cycle_dry(world, max_goals=max_goals)
+        report = dreaming.dream_cycle_dry(
+            world, max_goals=max_goals, donations_dir=donations_dir,
+        )
         click.echo("(dry run -- nothing written) " + report.summary())
         return
     # Learning rollback, half 1: snapshot every learned store before this
@@ -3717,7 +3724,9 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
         )
         if snap is not None:
             click.echo(f"[snapshot: {snap.name}]")
-    report = dreaming.dream_cycle(world, max_goals=max_goals)
+    report = dreaming.dream_cycle(
+        world, max_goals=max_goals, donations_dir=donations_dir,
+    )
     click.echo(report.summary())
     if not rehearse:
         return
@@ -3758,6 +3767,49 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
         raise click.ClickException(str(e)) from e
     click.echo(f"Rehearsal: {passed}/{total} previously-failing pattern(s) "
                "now complete (verifier-scored).")
+
+
+@main.command("insights-export")
+@click.argument("out", type=click.Path())
+@click.option("--max", "max_insights", default=50, show_default=True,
+              help="How many of the most recent insights to bundle.")
+def insights_export(out: str, max_insights: int) -> None:
+    """Export local dream insights as a SIGNED bundle for a trusted peer.
+
+    Federated insight exchange: only consolidated lessons cross the boundary
+    (never raw trajectories or user content). The bundle is signed with this
+    instance's Ed25519 audit key; give the peer your public key (printed
+    here) to add to their [dreaming] trusted_insight_pubkeys. Transport is
+    yours: move the file however your security policy allows.
+    """
+    from .insight_exchange import export_insights
+    try:
+        path = export_insights(out, max_insights=max_insights)
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
+    import json as _json
+    bundle = _json.loads(Path(path).read_text(encoding="utf-8"))
+    click.echo(f"Wrote {len(bundle['insights'])} insight(s) -> {path}")
+    click.echo(f"Your public key (for the peer's trusted_insight_pubkeys):\n"
+               f"  {bundle['peer_key']}")
+
+
+@main.command("insights-import")
+@click.argument("bundle", type=click.Path(exists=True))
+def insights_import(bundle: str) -> None:
+    """Import a peer's signed insight bundle (fail-closed verification).
+
+    Requires the peer's public key in [dreaming] trusted_insight_pubkeys;
+    unsigned, untrusted, or tampered bundles are rejected outright. Each
+    imported lesson is redacted, Shield-scanned, provenance-tagged, and
+    merged through the same dedup gate local dreaming uses.
+    """
+    from .insight_exchange import import_insights
+    from .orchestrator import _build_shield
+    imported, reason = import_insights(bundle, shield=_build_shield())
+    if reason != "ok":
+        raise click.ClickException(reason)
+    click.echo(f"Imported {imported} peer insight(s).")
 
 
 @main.command("export-user")

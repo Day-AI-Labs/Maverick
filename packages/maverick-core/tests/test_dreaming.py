@@ -466,6 +466,97 @@ class TestRehearsal:
         assert dreaming.load_rehearsals(tmp_path / "rehearsals.ndjson")
 
 
+class TestInsightLifecycle:
+    def _insight(self, text, ts=1.0, domain=None, kind="failure_pattern"):
+        return dreaming.DreamInsight(ts=ts, kind=kind, domain=domain,
+                                     text=text, evidence=2)
+
+    def test_confirmation_refreshes_instead_of_aging(self, tmp_path):
+        path = tmp_path / "insights.ndjson"
+        dreaming.append_insights([self._insight("ledger totals failure", ts=1.0)],
+                                 path=path)
+        # Same lesson recurs much later: dedup refreshes ts + evidence.
+        assert dreaming.append_insights(
+            [self._insight("ledger totals failure", ts=100.0)], path=path,
+        ) == 0
+        ins = dreaming.load_insights(path)[0]
+        assert ins.ts == 100.0 and ins.evidence == 4
+        # Refreshed insight survives a TTL that would have expired ts=1.0.
+        assert dreaming.expire_insights(path, ttl_days=1, now=100.5) == 0
+
+    def test_unconfirmed_insight_expires(self, tmp_path):
+        path = tmp_path / "insights.ndjson"
+        dreaming.append_insights([self._insight("stale lesson", ts=1.0)],
+                                 path=path)
+        dropped = dreaming.expire_insights(
+            path, ttl_days=1, now=1.0 + 2 * 86400,
+        )
+        assert dropped == 1 and dreaming.load_insights(path) == []
+
+    def test_contradicted_failure_insight_retires(self, tmp_path):
+        path = tmp_path / "insights.ndjson"
+        dreaming.append_insights([self._insight(
+            "Recurring failure (budget, seen 2x) on goals about ledger "
+            "reconciliation totals.", ts=10.0,
+        )], path=path)
+        successes = [
+            {"goal": "reconcile the ledger totals", "t": 20.0},
+            {"goal": "reconcile quarterly ledger totals", "t": 30.0},
+        ]
+        assert dreaming.resolve_contradictions(successes, path) == 1
+        assert dreaming.load_insights(path) == []
+        # Older successes (before the lesson) prove nothing: no retirement.
+        dreaming.append_insights([self._insight(
+            "Recurring failure (budget, seen 2x) on goals about ledger "
+            "reconciliation totals.", ts=50.0,
+        )], path=path)
+        assert dreaming.resolve_contradictions(successes, path) == 0
+
+
+class TestCritiqueMining:
+    def test_low_confidence_critiques_become_failures(self, tmp_path):
+        import json
+        rec = {"ts": 1.0, "task_brief_text": "summarize the 10-K filing",
+               "verifier_critique": "missed the segment data",
+               "verifier_confidence": 0.4}
+        (tmp_path / "d1.json").write_text(json.dumps(rec), encoding="utf-8")
+        confident = dict(rec, verifier_confidence=0.95)
+        (tmp_path / "d2.json").write_text(json.dumps(confident),
+                                          encoding="utf-8")
+        out = dreaming._replay_critiques(tmp_path)
+        assert len(out) == 1
+        assert out[0]["failure_class"] == "verifier_critique"
+        assert "segment" in out[0]["reflection"]
+
+
+class TestFactConsolidation:
+    class _World:
+        def __init__(self):
+            self.facts = {f"k{i}": 100.0 * i for i in range(5)}  # key -> ts
+
+        def stale_fact_keys(self, older_than, limit=500):
+            keys = sorted(
+                (k for k, ts in self.facts.items() if ts < older_than),
+                key=lambda k: self.facts[k],
+            )
+            return keys[:limit]
+
+        def delete_fact(self, key):
+            return 1 if self.facts.pop(key, None) is not None else 0
+
+        def count_facts(self):
+            return len(self.facts)
+
+    def test_age_and_cap_pruning(self):
+        world = self._World()
+        # Age: drop facts older than ts=250 (k0, k1, k2)...
+        deleted = dreaming.prune_facts(world, max_age_days=1, cap=1,
+                                       now=250.0 + 86400)
+        # ...then the cap of 1 drops the older of the two survivors.
+        assert deleted == 4
+        assert world.count_facts() == 1
+
+
 class TestLearningGovernance:
     def _stores(self, tmp_path):
         live = tmp_path / "live"

@@ -154,6 +154,29 @@ class TestReflexionDomainAttribution:
         assert hits and hits[0][1].domain is None
 
 
+class TestFlakyToolTaxonomy:
+    def test_flaky_tools_counts_repeat_offenders(self, tmp_path):
+        path = tmp_path / "reflexions.ndjson"
+        for _ in range(2):
+            reflexion.record(
+                goal_text="export the ledger", failure_class="tool_flaky",
+                failure_msg="timeout", reflection="r",
+                tools_used=["erp_export"], path=path,
+            )
+        reflexion.record(
+            goal_text="one-off", failure_class="tool_flaky", failure_msg="x",
+            reflection="r", tools_used=["one_off_tool"], path=path,
+        )
+        reflexion.record(  # non-flaky classes never count
+            goal_text="budget", failure_class="budget", failure_msg="x",
+            reflection="r", tools_used=["erp_export", "erp_export"], path=path,
+        )
+        assert reflexion.flaky_tools(path=path) == {"erp_export"}
+
+    def test_empty_log_is_empty(self, tmp_path):
+        assert reflexion.flaky_tools(path=tmp_path / "nope.ndjson") == set()
+
+
 class TestHumanOverrideIngestion:
     """The operator's "no" on a gated action becomes a recallable lesson."""
 

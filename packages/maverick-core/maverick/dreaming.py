@@ -552,19 +552,28 @@ def expire_insights(
 
 def resolve_contradictions(
     successes: list[dict], path: Path | str | None = None, *,
-    min_successes: int = 2, similarity: float = 0.3,
+    min_successes: int = 2, similarity: float = 0.5,
 ) -> int:
     """Retire failure insights the system has since outgrown.
 
     When ``min_successes`` or more successes NEWER than a failure-pattern
     insight lexically match it ("we now reliably do X"), the insight is
     contradicted and dropped instead of coexisting with the new reality.
-    Returns how many insights were retired.
+    Matching is coverage of the success's tokens by the insight text --
+    jaccard would be diluted by the insight's boilerplate. Returns how many
+    insights were retired.
     """
     path = Path(path) if path is not None else insights_path()
     entries = load_insights(path)
     if not entries or not successes:
         return 0
+
+    def _covered(goal: str, ins_tokens: set[str]) -> bool:
+        st = _tokens(goal)
+        if not st:
+            return False
+        return len(st & ins_tokens) / len(st) >= similarity
+
     keep: list[DreamInsight] = []
     retired = 0
     for ins in entries:
@@ -572,7 +581,7 @@ def resolve_contradictions(
         newer_wins = sum(
             1 for s in successes
             if float(s.get("t", 0) or 0) > ins.ts
-            and _jaccard(_tokens(str(s.get("goal", ""))), it) >= similarity
+            and _covered(str(s.get("goal", "")), it)
         )
         if ins.kind in {"failure_pattern", "shared_pattern"} \
                 and newer_wins >= max(1, min_successes):
@@ -910,6 +919,52 @@ def _replay_critiques(
     return out
 
 
+def _replay_donations(
+    donations_dir: Path | str, *, limit: int = 200,
+) -> tuple[list[dict], list[dict]]:
+    """Fleet-level aggregation: replay donated trajectory records.
+
+    An org running many Maverick instances points each at the same outbox
+    drop (or syncs them to one central dir); a central ``maverick dream
+    --donations-dir`` then consolidates the whole fleet's experience. Returns
+    ``(successes, failures)`` shaped for the normal cycle phases; selection
+    gating happened at donation time, so only records the donor's gate
+    already passed exist here.
+    """
+    d = Path(donations_dir)
+    if not d.is_dir():
+        return [], []
+    successes: list[dict] = []
+    failures: list[dict] = []
+    for p in sorted(d.glob("*.json"))[-limit:]:
+        try:
+            rec = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        brief = str(rec.get("task_brief_text", "") or "").strip()
+        if not brief:
+            continue  # hash-only donations carry no consolidatable text
+        outcome = str(rec.get("outcome", "") or "").strip().lower()
+        try:
+            ts = float(rec.get("ts", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            ts = 0.0
+        if outcome == "success":
+            successes.append({
+                "goal": brief, "success": True,
+                "tools": list(rec.get("tools_used", []) or []),
+                "t": ts, "domain": None,
+            })
+        elif outcome:
+            failures.append({
+                "ts": ts, "goal_text": brief,
+                "failure_class": f"fleet_{outcome}",
+                "reflection": str(rec.get("verifier_critique", "") or "")[:240],
+                "domain": None,
+            })
+    return successes, failures
+
+
 def _replay_failures(reflexion_path: Path | str | None) -> list[dict]:
     from . import reflexion as _r
     kwargs: dict = {"limit": 200}
@@ -989,6 +1044,7 @@ def dream_cycle(
     critiques_outbox: Path | str | None = None,
     user_notes_path: Path | str | None = None,
     settings_override: dict | None = None,
+    donations_dir: Path | str | None = None,
 ) -> DreamReport:
     """Run one full dream cycle. Deterministic, LLM-free, fail-open.
 
@@ -1026,6 +1082,12 @@ def dream_cycle(
         except Exception as e:  # pragma: no cover -- world read never blocks
             log.debug("dreaming: goal replay skipped: %s", e)
     failures = _replay_failures(reflexion_path)
+    # Fleet aggregation: a central instance consolidates donated trajectory
+    # records from the whole fleet alongside its own experience.
+    if donations_dir is not None:
+        _fleet_s, _fleet_f = _replay_donations(donations_dir)
+        successes = successes + _fleet_s
+        failures = failures + _fleet_f
     # Critique mining: verifier critiques from donated trajectories are
     # weak-spot signals; cluster them like failures. Off-able knob; naturally
     # empty unless [telemetry] donate_trajectories has produced records.
