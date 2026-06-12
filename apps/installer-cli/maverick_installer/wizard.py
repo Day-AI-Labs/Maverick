@@ -1254,6 +1254,12 @@ def pick_advanced() -> dict[str, Any]:
             "within a run so a repeated read isn't re-done. Off by default.",
             default=False,
         ),
+        "hardware_sensors": _q_confirm(
+            "Enable host hardware sensors? Lets agents read this machine's "
+            "temperatures, fans, and battery via the [sensors] extra. Off by "
+            "default because it exposes host telemetry to tool calls.",
+            default=False,
+        ),
         "local_first": _q_confirm(
             "Local-first models? When a configured local model's server is "
             "reachable, prefer it over a remote provider (privacy + cost). Only "
@@ -2495,6 +2501,8 @@ def write_config(  # noqa: C901
             tool_lines.append("deferred_loading = true")
         if advanced.get("output_cache"):
             tool_lines.append("output_cache = true")
+        if advanced.get("hardware_sensors"):
+            tool_lines.append("hardware_sensors = true")
         if tool_lines:
             lines.append("")
             lines.append("[tools]")

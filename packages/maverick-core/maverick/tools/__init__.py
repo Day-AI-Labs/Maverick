@@ -17,9 +17,26 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from ..config import load_config
+
 
 def _env_true(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _hardware_sensors_enabled() -> bool:
+    """Opt-in gate for host hardware telemetry.
+
+    The tool reads host state and imports the optional psutil dependency in the
+    Maverick process, so keep it out of the default model-visible registry
+    unless an operator enables it explicitly.
+    """
+    if _env_true("MAVERICK_ENABLE_HARDWARE_SENSORS"):
+        return True
+    try:
+        return bool(load_config().get("tools", {}).get("hardware_sensors", False))
+    except Exception:  # pragma: no cover -- config never blocks the registry
+        return False
 
 
 def as_bool(value: Any) -> bool:
@@ -1096,7 +1113,8 @@ def base_registry(  # noqa: C901
     reg.register(pandoc_tool(sandbox))
     reg.register(office_convert(sandbox))
     reg.register(wasm_run(sandbox))
-    reg.register(hardware_sensors())
+    if _hardware_sensors_enabled():
+        reg.register(hardware_sensors())
     reg.register(imagemagick_tool(sandbox))
     reg.register(audio_understanding(sandbox))
     reg.register(image_edit(sandbox))
