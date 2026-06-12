@@ -13,6 +13,7 @@ does no wrapping and behavior is byte-identical.
 """
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import threading
@@ -85,9 +86,19 @@ def wrap_factory(name: str, dist: str | None, factory):
         tool = factory()
         inner = tool.fn
 
-        def counted(args):
-            record(name, dist)
-            return inner(args)
+        if inspect.isasyncgenfunction(inner):
+            async def counted(args):
+                record(name, dist)
+                async for chunk in inner(args):
+                    yield chunk
+        elif inspect.iscoroutinefunction(inner):
+            async def counted(args):
+                record(name, dist)
+                return await inner(args)
+        else:
+            def counted(args):
+                record(name, dist)
+                return inner(args)
 
         try:
             tool.fn = counted

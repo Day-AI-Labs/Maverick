@@ -1,11 +1,14 @@
 """Plugin telemetry (opt-in): local counts, discovery wrapping, CLI stats."""
 from __future__ import annotations
 
+import asyncio
+import inspect
 import types
 
 from click.testing import CliRunner
 from maverick import plugin_telemetry as pt
 from maverick import plugins as plugins_mod
+from maverick.tools import _execute_tool_fn
 
 
 def test_off_by_default(monkeypatch):
@@ -40,6 +43,26 @@ def test_wrap_factory_counts(tmp_path, monkeypatch):
     factory = pt.wrap_factory("t", "dist-x", lambda: tool)
     wrapped = factory()
     assert wrapped.fn({}) == "ran"
+    assert pt.stats()["t"]["calls"] == 1
+
+
+def test_wrap_factory_preserves_async_generator_semantics(tmp_path, monkeypatch):
+    monkeypatch.setattr(pt, "telemetry_path", lambda: tmp_path / "t.json")
+
+    async def stream(args):
+        yield "hello"
+        yield " world"
+
+    tool = types.SimpleNamespace(name="t", fn=stream, parallel_safe=True)
+    factory = pt.wrap_factory("t", "dist-x", lambda: tool)
+    wrapped = factory()
+
+    assert inspect.isasyncgenfunction(wrapped.fn)
+
+    async def run():
+        return await _execute_tool_fn(wrapped.fn, {}, str)
+
+    assert asyncio.run(run()) == "hello world"
     assert pt.stats()["t"]["calls"] == 1
 
 
