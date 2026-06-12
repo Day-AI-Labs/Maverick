@@ -128,10 +128,14 @@ class Blackboard:
         return [e for e in snapshot if e.kind == kind and not self._is_sealed(e.agent)]
 
     def by_agent(self, agent: str) -> list[Entry]:
-        # A sealed agent's posts are withheld wholesale (compartment Rung 1).
-        if self._is_sealed(agent):
-            return []
+        # Check sealed-ness AND read the entries atomically under the lock. With
+        # the check outside the lock, a concurrent seal() could slip between it
+        # and the read and leak a just-sealed agent's posts wholesale
+        # (compartment Rung 1); a FastAPI threadpool caller makes the window real
+        # (user-testing race). _is_sealed does not take this lock, so no deadlock.
         with self._lock:
+            if self._is_sealed(agent):
+                return []
             return [e for e in self.entries if e.agent == agent]
 
     def render(self, max_entries: int = 50) -> str:

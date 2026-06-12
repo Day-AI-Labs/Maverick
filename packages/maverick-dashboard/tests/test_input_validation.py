@@ -69,3 +69,28 @@ def test_goal_events_endpoint_caps_limit(monkeypatch, tmp_path):
     gid = world_model.WorldModel(tmp_path / "world.db").create_goal("g", "d")
     r = _client().get(f"/api/v1/goals/{gid}/events?limit=999999999")
     assert r.status_code == 200
+
+
+def test_wrong_content_type_returns_422_not_500(monkeypatch, tmp_path):
+    # A client POSTing a non-JSON body with a wrong Content-Type triggered a
+    # RequestValidationError whose 'input' was raw bytes; json.dumps couldn't
+    # serialize it, turning the 422 into an opaque 500 (user-testing finding).
+    _env(monkeypatch, tmp_path)
+    from maverick_dashboard.app import app
+    c = TestClient(app, headers={"Origin": "http://testserver"},
+                   raise_server_exceptions=False)
+    r = c.post("/api/v1/goals", content=b"hello world",
+               headers={"Content-Type": "text/garbage"})
+    assert r.status_code == 422, r.status_code
+
+
+def test_overflow_goal_id_returns_404_not_500(monkeypatch, tmp_path):
+    # A goal_id beyond SQLite's signed-64-bit range raised OverflowError ->
+    # uncaught -> 500. It can't be a real row, so it must be 404.
+    _env(monkeypatch, tmp_path)
+    from maverick_dashboard.app import app
+    c = TestClient(app, raise_server_exceptions=False)
+    big = 2 ** 63 + 1
+    for path in (f"/api/v1/goals/{big}", f"/api/v1/goals/{big}/events"):
+        r = c.get(path)
+        assert r.status_code == 404, (path, r.status_code)
