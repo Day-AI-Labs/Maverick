@@ -154,8 +154,8 @@ RULES: list[Rule] = [
          # short window (either order). Bounds keep it ReDoS-safe.
          _compile(
              r"\b(?:DAN|do anything now|jailbreak|unfiltered\s+ai)\b"
-             r"|\bdeveloper\s+mode\b[\s\S]{0,60}(?:unrestricted|unfiltered|anything\s+goes|free\s+from|no\s+(?:restrictions?|rules?|filters?|limits?)|without\s+(?:restrictions?|rules?|filters?)|bypass|ignore\s+(?:all|your|the)?[\w\s]{0,12}(?:rules?|restrictions?|instructions?|guidelines?|policy|policies))"
-             r"|(?:unrestricted|unfiltered|anything\s+goes|no\s+(?:restrictions?|rules?|filters?)|bypass|ignore\s+(?:all|your|the)?[\w\s]{0,12}(?:rules?|restrictions?|instructions?))[\s\S]{0,60}\bdeveloper\s+mode\b"
+             r"|\bdeveloper\s+mode\b[\s\S]{0,80}(?:unrestricted|unfiltered|anything\s+goes|free\s+from|no\s+(?:restrictions?|rules?|filters?|limits?)|without\s+(?:restrictions?|rules?|filters?)|bypass|never\s+(?:refuse|decline|deny)|(?:can|may)\s+say\s+anything|ignore\s+(?:all|your|the)?[\w\s]{0,12}(?:rules?|restrictions?|instructions?|guidelines?|policy|policies))"
+             r"|(?:unrestricted|unfiltered|anything\s+goes|no\s+(?:restrictions?|rules?|filters?)|bypass|never\s+(?:refuse|decline|deny)|(?:can|may)\s+say\s+anything|ignore\s+(?:all|your|the)?[\w\s]{0,12}(?:rules?|restrictions?|instructions?))[\s\S]{0,80}\bdeveloper\s+mode\b"
          ),
          "DAN / developer-mode jailbreak"),
     Rule("persona_takeover", "high",
@@ -249,11 +249,15 @@ RULES: list[Rule] = [
          _compile(r"\bif\s+you\s+(are|'?re|happen\s+to\s+be|find\s+yourself)\s+(an?\s+)?(automated\s+|virtual\s+|digital\s+|ai\s+|language\s+)?(ai|agent|assistant|llm|model|language\s+model|bot|system)\b[\s\S]{0,40}?\b(reading|seeing|processing|parsing|viewing|summari[sz]ing|handling)\b"),
          "Indirect injection: content addressed to an AI that reads it"),
     Rule("real_task_hijack", "high",
-         # "new"/"primary" dropped from the adjective list: "your new task is" and
-         # "your primary task is" are ordinary delegation language and over-blocked
-         # benign work (user-testing finding). The hijack signal is the claim of a
-         # hidden/true task: real|actual|true|secret|hidden.
-         _compile(r"\byour\s+(real|actual|true|secret|hidden)\s+(task|job|goal|mission|instruction|objective|purpose)\s+is\b"),
+         # "new"/"primary" remain too broad by themselves: ordinary delegation
+         # uses phrases such as "your new task is to review the PR". Treat those
+         # adjectives as hijacks only when the continuation carries injection or
+         # exfiltration intent (e.g. "follow only this document", "email/report
+         # success to ..."). Bounds keep the regex linear and local.
+         _compile(
+             r"\byour\s+(?:real|actual|true|secret|hidden)\s+(?:task|job|goal|mission|instruction|objective|purpose)\s+is\b"
+             r"|\byour\s+(?:new|primary)\s+(?:task|job|goal|mission|instruction|objective|purpose)\s+is\b[\s\S]{0,80}?(?:follow\s+only\s+(?:this|the)\s+(?:document|file|page|message|instructions?)|ignore\s+(?:all|every|the)?\s*(?:previous|prior|above|earlier|preceding)\s+(?:instructions?|prompts?|rules?|context)|(?:email|send|forward|upload|post|exfil\w*|leak)\b|report\s+success\b)"
+         ),
          "Task hijack: your 'real task' is ..."),
     Rule("injected_command_to_agent", "high",
          _compile(r"\b(system\s+note|important|attention|urgent|note\s+from\s+file)\b[\s\S]{0,60}?\b(assistant|ai|agent|model)\b[\s\S]{0,24}?\b(must|should|needs?\s+to|has\s+to|now)\b[\s\S]{0,24}?\b(email|send|upload|exfil\w*|delete|run|execute|forward|leak|transfer)"),
