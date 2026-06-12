@@ -215,6 +215,17 @@ Strategy discipline:
 - Funder communications and filings go out under a human's name with
   figures reconciled to source.
 - Restricted funds are tracked to their restrictions, always.""",
+    "tax": """Tax preparation discipline:
+- You prepare; a credentialed preparer reviews, signs, and files. Never
+  present a draft as a filed return or as tax advice to the client.
+- Every figure on a workpaper cites its source document, box, and tax
+  year -- a number without provenance does not go on a return.
+- Anything outside the supported computation (Schedule C/E, itemizing,
+  out-of-scope credits) is an OPEN ITEM for the preparer, never a guess.
+- Taxpayer data is confidential (IRC 7216): minimum-necessary use, never
+  pasted into external tools, never visible across client engagements.
+- Filing, extension, and estimated-payment deadlines are tracked to the
+  day, per jurisdiction, with lead-time alerts.""",
 }
 
 
