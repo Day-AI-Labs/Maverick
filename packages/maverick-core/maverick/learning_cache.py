@@ -40,6 +40,7 @@ import json
 import logging
 import os
 import string
+import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -120,19 +121,28 @@ class LearningCache:
 
     def _save_locked(self) -> None:
         """Atomic write (temp + rename), 0600 — entries may be sensitive."""
+        tmp: Path | None = None
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.path.with_name(self.path.name + ".tmp")
-            tmp.write_text(
-                json.dumps({"version": 1, "entries": self._entries}, indent=0, sort_keys=True),
-                encoding="utf-8",
+            fd, tmp_name = tempfile.mkstemp(
+                prefix=f"{self.path.name}.", suffix=".tmp", dir=self.path.parent
             )
+            tmp = Path(tmp_name)
+            data = json.dumps({"version": 1, "entries": self._entries}, indent=0, sort_keys=True)
             try:
-                os.chmod(tmp, 0o600)
+                os.fchmod(fd, 0o600)
             except OSError:  # pragma: no cover -- non-posix
                 pass
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(data)
             os.replace(tmp, self.path)
+            tmp = None
         except OSError as exc:  # pragma: no cover -- disk trouble never raises out
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
             log.warning("learning cache: could not persist %s (%s)", self.path, exc)
 
     def _evict_locked(self) -> None:
