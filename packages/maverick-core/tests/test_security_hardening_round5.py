@@ -39,7 +39,7 @@ def test_tenant_quota_rejects_non_finite(bad):
 
 def test_redaction_does_not_leak_secret_past_depth_64():
     from maverick.audit.writer import _redact_event
-    v: object = {"k": "sk-ant-api03-SECRETKEYBODY1234567890abcdef"}
+    v: object = {"k": "sk-ant-api03-SECRETKEYBODY1234567890abcdef"}  # pragma: allowlist secret
     for _ in range(70):
         v = {"n": v}
     out = json.dumps(_redact_event({"kind": "tool_result", "payload": v}))
