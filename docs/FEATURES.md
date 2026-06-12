@@ -293,7 +293,8 @@ here.
   `diagram` (Graphviz / Mermaid render).
 - **Robotics & hardware** — `ros` (drive a ROS stack over **rosbridge** via
   `roslibpy`, `[ros]` extra): publish a command to a topic (e.g. `/cmd_vel`) or
-  call a service; auth `ROS_BRIDGE_URL`, no native ROS in the agent process.
+  call a service; auth `ROS_BRIDGE_URL`, no native ROS in the agent process;
+  disabled by default and only registered when `[capabilities].ros = true`.
   `serial` (embedded device over **UART**/serial via `pyserial`, `[serial]`
   extra): list_ports / write / read / query a microcontroller or board, with a
   device-path guard so it can't be turned into an arbitrary-file opener.

@@ -35,6 +35,7 @@ def test_tool_risk_defaults():
     assert tool_risk("obsidian") == "high"
     for mutating_tool in ("github_issues", "gitlab_issues", "anki"):
         assert tool_risk(mutating_tool) == "high"
+    assert tool_risk("ros") == "high"
     for connector in (
         "servicenow",
         "snowflake",

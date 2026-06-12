@@ -183,7 +183,7 @@ def get_budget_overrides() -> dict:
 
 def get_capabilities() -> dict:
     """Return the [capabilities] section (computer_use / browser / web_search /
-    mobile_tools). These gate the optional high-impact tools in
+    mobile_tools / ros). These gate the optional high-impact tools in
     ``tools.base_registry``; all default off."""
     cfg = load_config().get("capabilities", {}) or {}
     return {
@@ -191,6 +191,7 @@ def get_capabilities() -> dict:
         "browser": bool(cfg.get("browser", False)),
         "web_search": bool(cfg.get("web_search", False)),
         "mobile_tools": bool(cfg.get("mobile_tools", False)),
+        "ros": bool(cfg.get("ros", False)),
         # Programmatic tool calling: a sandboxed Python script that orchestrates
         # declared tool calls (also enableable via MAVERICK_CODE_EXEC).
         "code_exec": bool(cfg.get("code_exec", False)),

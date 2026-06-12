@@ -6,8 +6,8 @@ to a topic (e.g. ``/cmd_vel`` to move a base) or call a service. Talks to a
 native ROS install in the agent process; the robot side runs rosbridge.
 
 Auth: ``ROS_BRIDGE_URL`` (default ``ws://localhost:9090``). This commands
-physical or simulated hardware, so it is gated on that endpoint being
-reachable and is **not** registered by default risk tiers as low-risk.
+physical or simulated hardware, so it is high risk and is only registered when
+the operator explicitly enables ``[capabilities].ros = true``.
 
 ops:
   - publish(topic, type, message)        — publish one Message to a topic
@@ -110,8 +110,8 @@ def ros_tool() -> Tool:
         description=(
             "ROS robotics over rosbridge. ops: publish (topic + type + "
             "message), call_service (service + type + request). Commands a "
-            "robot/sim. Auth: ROS_BRIDGE_URL (default ws://localhost:9090); "
-            "requires the [ros] extra (roslibpy)."
+            "robot/sim. High-risk; register only after explicit operator opt-in. "
+            "Auth: ROS_BRIDGE_URL (default ws://localhost:9090); requires the [ros] extra (roslibpy)."
         ),
         input_schema=_ROS_SCHEMA,
         fn=_run,

@@ -113,7 +113,7 @@ def test_unknown_op(monkeypatch):
     assert ros_tool().fn({"op": "nope", "type": "x"}).startswith("ERROR: unknown op")
 
 
-def test_registered():
+def test_not_registered_by_default():
     from maverick.tools import base_registry
 
     class _W:
@@ -123,4 +123,17 @@ def test_registered():
         workdir = "."
 
     names = set(getattr(base_registry(world=_W(), sandbox=_S()), "_tools", {}).keys())
+    assert "ros" not in names
+
+
+def test_registered_when_enabled():
+    from maverick.tools import base_registry
+
+    class _W:
+        pass
+
+    class _S:
+        workdir = "."
+
+    names = set(getattr(base_registry(world=_W(), sandbox=_S(), enable_ros=True), "_tools", {}).keys())
     assert "ros" in names

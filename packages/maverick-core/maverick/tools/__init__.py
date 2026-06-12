@@ -558,6 +558,7 @@ def base_registry(  # noqa: C901
     enable_browser: bool = False,
     enable_web_search: bool = False,
     enable_mobile_tools: bool = False,
+    enable_ros: bool = False,
     channel: str | None = None,
     user_id: str | None = None,
     budget: Any = None,
@@ -572,8 +573,8 @@ def base_registry(  # noqa: C901
     filter returns nothing and "PAUSED: 0 open question(s)" is shown
     even though the agent asked.
 
-    ``enable_computer_use`` / ``enable_browser`` / ``enable_mobile_tools``
-    register optional high-impact tools. Computer/browser require
+    ``enable_computer_use`` / ``enable_browser`` / ``enable_mobile_tools`` /
+    ``enable_ros`` register optional high-impact tools. Computer/browser require
     optional extras
     (``maverick-agent[computer-use]`` / ``[browser]``); when missing
     the tool factories raise an actionable ImportError at registration
@@ -993,7 +994,8 @@ def base_registry(  # noqa: C901
     reg.register(safety_regression_budget())
     reg.register(autogen_adapter())
     reg.register(crewai_adapter())
-    reg.register(ros_tool())
+    if enable_ros:
+        reg.register(ros_tool())
     reg.register(run_events_firehose())
     reg.register(marketplace_ratings())
     reg.register(local_embeddings_cache())
