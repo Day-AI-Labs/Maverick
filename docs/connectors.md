@@ -11,7 +11,7 @@ connector follows the same house rules:
 - **Fail closed, fail loud.** Missing config or an API error returns an
   `ERROR:`-prefixed message; it never silently half-succeeds.
 
-There are **215 enterprise connectors** below, part of **311+ total
+There are **217 enterprise connectors** below, part of **311+ total
 tools** in the kernel. They span ITSM/ESM, CRM & sales, ERP & finance, HCM &
 payroll, observability & APM, security/IAM/GRC, cloud & infra, DevOps/CI/CD,
 data/BI/ETL, collaboration & content, marketing/commerce/CX, contact center,
@@ -69,6 +69,7 @@ operations.
 | Braze | `braze` | `BRAZE_BASE_URL` *(url)*, `BRAZE_TOKEN` |
 | Brex REST (spend) | `brex` | `BREX_BASE_URL` *(url)*, `BREX_TOKEN` |
 | Calendly | `calendly` | `CALENDLY_TOKEN` |
+| Wolters Kluwer CCH Axcess (Tax/Document/Workstream) | `cch_axcess` | `CCH_AXCESS_BASE_URL` *(url)*, `CCH_AXCESS_TOKEN`, `CCH_AXCESS_SUBSCRIPTION_KEY` |
 | CircleCI | `circleci` | `CIRCLECI_BASE_URL` *(url)*, `CIRCLECI_TOKEN` |
 | Cisco Umbrella | `cisco_umbrella` | `UMBRELLA_BASE_URL` *(url)*, `UMBRELLA_TOKEN` |
 | Clari | `clari` | `CLARI_BASE_URL` *(url)*, `CLARI_TOKEN` |
@@ -118,6 +119,7 @@ operations.
 | Genesys Cloud | `genesys` | `GENESYS_BASE_URL` *(url)*, `GENESYS_TOKEN` |
 | Gladly | `gladly` | `GLADLY_BASE_URL` *(url)*, `GLADLY_TOKEN` |
 | Gong revenue-intelligence | `gong` | `GONG_BASE_URL` *(url)*, `GONG_TOKEN` |
+| Thomson Reuters GoSystem Tax RS | `gosystem_tax` | `GOSYSTEM_TAX_BASE_URL` *(url)*, `GOSYSTEM_TAX_TOKEN` |
 | Grafana | `grafana` | `GRAFANA_BASE_URL` *(url)*, `GRAFANA_TOKEN` |
 | Greenhouse Harvest | `greenhouse` | `GREENHOUSE_BASE_URL` *(url)*, `GREENHOUSE_TOKEN` |
 | Gusto | `gusto` | `GUSTO_BASE_URL` *(url)*, `GUSTO_TOKEN` |

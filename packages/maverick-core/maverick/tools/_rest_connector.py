@@ -58,6 +58,7 @@ def make_rest_tool(  # noqa: C901  (ruff 0.15 bumped its measured complexity to 
     basic: bool = False,
     read_only: bool = False,
     allowed_read_paths: tuple[str, ...] | None = None,
+    extra_headers_env: dict[str, str] | None = None,
 ) -> Tool:
     """Build a thin authenticated-REST ``Tool``.
 
@@ -67,6 +68,12 @@ def make_rest_tool(  # noqa: C901  (ruff 0.15 bumped its measured complexity to 
         convention used by Freshdesk / Greenhouse / Lever / BambooHR).
       - else ``{token_header}: {scheme} {token}`` (``scheme=""`` sends the raw
         token, e.g. Tableau's ``X-Tableau-Auth``).
+
+    ``extra_headers_env`` maps additional header names to env-var names for
+    APIs that need a second credential alongside the token (Azure-APIM-style
+    gateways, e.g. CCH Axcess's ``Ocp-Apim-Subscription-Key``). A header is
+    sent only when its env var is set; required ones are listed in the
+    connector's description so a missing key fails loudly at the API.
 
     ``read_only=True`` exposes GET only -- a low-risk read seat (write ops are
     refused), so a read-only agent/pack can pull data without a write-capable
@@ -91,6 +98,10 @@ def make_rest_tool(  # noqa: C901  (ruff 0.15 bumped its measured complexity to 
             h["Authorization"] = "Basic " + base64.b64encode(raw.encode()).decode("ascii")
         else:
             h[token_header] = f"{scheme} {tok}".strip()
+        for hdr, env_name in (extra_headers_env or {}).items():
+            val = os.environ.get(env_name, "").strip()
+            if val:
+                h[hdr] = val
         return h
 
     def _norm(path: str) -> str:

@@ -1331,6 +1331,22 @@ def pick_advanced() -> dict[str, Any]:
         )
         advanced["insight_pubkeys"] = [k.strip() for k in raw.split(",")
                                        if k.strip()]
+    # Tax-constants content channel: law changes ship as SIGNED bundles
+    # (fail-closed against the publisher keys), auto-applied by
+    # `maverick tax prepare` / `maverick tax update`.
+    if _q_confirm(
+        "  Auto-update tax computation constants from a signed publisher "
+        "channel? (new tax law as a content release, not a code release)",
+        default=False,
+    ):
+        advanced["tax_update_url"] = _q_text(
+            "  Constants update URL", default="").strip()
+        raw = _q_text(
+            "  Trusted publisher pubkeys (comma-separated hex Ed25519)",
+            default="",
+        )
+        advanced["tax_pubkeys"] = [k.strip() for k in raw.split(",")
+                                   if k.strip()]
     # OIDC SSO is a string-bearing toggle (issuer/audience/jwks_uri), so it has
     # its own prompt; the result is nested under the "oidc" key and the writer
     # emits a single [auth.oidc] table for it.
@@ -2559,6 +2575,16 @@ def write_config(  # noqa: C901
             if keys:
                 quoted = ", ".join(f'"{k}"' for k in keys)
                 lines.append(f"trusted_insight_pubkeys = [{quoted}]")
+        if advanced.get("tax_update_url") or advanced.get("tax_pubkeys"):
+            lines.append("")
+            lines.append("[tax]")
+            lines.append("auto_update = true")
+            if advanced.get("tax_update_url"):
+                lines.append(f'update_url = "{advanced["tax_update_url"]}"')
+            tax_keys = advanced.get("tax_pubkeys") or []
+            if tax_keys:
+                quoted = ", ".join(f'"{k}"' for k in tax_keys)
+                lines.append(f"trusted_constants_pubkeys = [{quoted}]")
         if advanced.get("effort"):
             lines.append("")
             lines.append("[effort]")
