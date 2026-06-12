@@ -113,9 +113,16 @@ All verified locally green; each is a build-failer:
 
 ## Kernel rules (pre-existing, still enforced)
 
-Maverick = proprietary enterprise agent runtime (kernel `maverick-core` +
-shield + channels + dashboard + mcp). Competitors to beat, not integrate:
-OpenClaw, Hermes.
+Maverick = proprietary AGENTIC ENTERPRISE PLATFORM (kernel `maverick-core` +
+shield + channels + dashboard + mcp + evolve + knowledge): a governed,
+self-improving AI workforce — 1,000 lint-clean specialist packs across 25
+suites, a closed learning lifecycle (dreaming/hindsight/proof, snapshot +
+rollback, signed learning audit), fleet memory for external agents, and the
+Operating Record. Category note: free OS agent runtimes (OpenClaw etc.) are
+NOT the competitive category — they are a commodity layer / potential
+loss-leader funnel. Compete with enterprise platforms (Agentforce, Copilot,
+Gemini Enterprise, ServiceNow) on governance + provable learning, never on
+the runtime.
 
 1. Kernel runs WITHOUT the shield — never require `agent-shield`; fail open
    with a warning.

@@ -2,8 +2,9 @@
 
 > Enterprise recursive multi-agent swarm. One kernel, every model.
 
-Maverick is an **enterprise agent platform** with the depth of Devin,
-Hermes, and OpenClaw — deployed in your own environment. It drives any
+Maverick is an **agentic enterprise platform**: a governed AI workforce of
+1,000 prebuilt specialists across 25 business suites that provably improves
+with use — deployed in your own environment. It drives any
 LLM (Claude, GPT, Kimi, Grok, Gemini, DeepSeek, Ollama, OpenRouter), and
 ships a governed, auditable safety surface built for regulated teams.
 Maverick is proprietary, commercially licensed software (see

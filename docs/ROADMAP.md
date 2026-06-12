@@ -13,9 +13,11 @@ self-hosted in the customer's environment. A deliberately stripped-down
 **open-source "lite" edition** may follow later as a community on-ramp (once
 the platform is built out), but the full runtime + governance/compliance
 platform stay proprietary. Target audience: enterprise / regulated teams that
-need a self-hostable, governed, auditable agent runtime, plus technical users
-who want the deepest agent framework on the shelf (vs Devin, Hermes, OpenClaw,
-Cline, Aider).
+need a self-hostable, governed, auditable agentic platform — a prebuilt AI
+workforce with a closed learning lifecycle — plus technical users who want
+frontier agent depth on their own models. (Coding-agent runtimes like
+OpenClaw/Cline/Aider are a different, commoditized layer, not the
+competitive set.)
 
 ---
 
