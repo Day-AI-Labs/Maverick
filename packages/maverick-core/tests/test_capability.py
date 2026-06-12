@@ -65,6 +65,35 @@ def test_attenuate_rebinds_principal():
     assert child.principal == "agent:coder-1"
 
 
+def test_attenuate_records_revocation_lineage():
+    root = Capability(principal="user:alice")
+    child = root.attenuate(principal="agent:coder-1")
+    grandchild = child.attenuate(principal="agent:reviewer-2")
+    assert child.ancestors == ("user:alice",)
+    assert grandchild.ancestors == ("user:alice", "agent:coder-1")
+    assert grandchild.revocation_principals() == (
+        "agent:reviewer-2", "agent:coder-1", "user:alice",
+    )
+
+
+def test_intersect_preserves_both_revocation_lineages():
+    ambient = Capability(principal="agent:bob", ancestors=("user:bob",))
+    handoff = Capability(principal="agent:bob", ancestors=("user:alice",))
+    effective = ambient.intersect(handoff, principal="agent:bob")
+    assert effective.ancestors == ("user:bob", "user:alice")
+    assert effective.revocation_principals() == (
+        "agent:bob", "user:alice", "user:bob",
+    )
+
+
+def test_child_signing_bytes_include_lineage():
+    parent = Capability(principal="user:alice")
+    child = parent.attenuate(principal="agent:coder-1")
+    stripped = Capability(principal="agent:coder-1")
+    assert b"ancestors" in child.signing_bytes()
+    assert child.signing_bytes() != stripped.signing_bytes()
+
+
 def test_attenuate_deny_grows():
     parent = Capability(principal="p", deny_tools=frozenset({"shell"}))
     child = parent.attenuate(deny={"computer"})

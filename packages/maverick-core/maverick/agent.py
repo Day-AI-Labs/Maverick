@@ -1000,11 +1000,16 @@ class Agent:
         # Fail-open (revocation never bricks a run) and only when a grant
         # exists (== capability enforcement is on).
         if cap is not None:
-            from .revocation import is_revoked as _is_revoked
-            if _is_revoked(cap.principal):
+            from .revocation import revoked_principal as _revoked_principal
+            principals = (
+                cap.revocation_principals()
+                if hasattr(cap, "revocation_principals") else (cap.principal,)
+            )
+            revoked = _revoked_principal(principals)
+            if revoked is not None:
                 self.ctx.blackboard.post(
                     self.name, "error",
-                    f"tool={name} DENIED: principal {cap.principal} REVOKED",
+                    f"tool={name} DENIED: principal {revoked} REVOKED",
                 )
                 try:  # tamper-evident record of the denial; never block on audit
                     from .audit import EventKind, record
@@ -1014,13 +1019,14 @@ class Agent:
                         goal_id=self.ctx.goal_id,
                         tool=name,
                         principal=cap.principal,
+                        revoked_principal=revoked,
                         channel=getattr(self.ctx, "channel", None),
                         user_id=getattr(self.ctx, "user_id", None),
                     )
                 except Exception:  # pragma: no cover
                     pass
                 return (
-                    f"⚠ DENIED by capability policy: principal {cap.principal!r} "
+                    f"⚠ DENIED by capability policy: principal {revoked!r} "
                     f"has been revoked. The tool was not executed."
                 )
         if cap is not None and not cap.permits(name):
