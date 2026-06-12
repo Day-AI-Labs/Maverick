@@ -365,14 +365,47 @@ class TestRehearsal:
         assert len(cases) == 1
         # The newest phrasing of the recurring problem is the practice prompt.
         assert cases[0]["prompt"] == "reconcile the quarterly ledger totals"
+        assert cases[0]["scope"] == "local"
         assert cases[0]["domain"] == "finance_sox"
         assert cases[0]["evidence"] == 2
+
+    def test_cases_skip_channel_scoped_failures(self):
+        failures = [
+            {**f, "channel": "api", "user_id": "attacker"}
+            for f in self._failures()
+        ]
+        assert dreaming.build_rehearsal_cases(failures, min_cluster=2) == []
+
+    def test_replay_failures_preserves_scope_for_rehearsal_filter(self, tmp_path):
+        rpath = tmp_path / "reflexions.ndjson"
+        reflexion.record(
+            goal_text="reconcile the quarterly ledger totals",
+            failure_class="budget",
+            failure_msg="cap",
+            reflection="r",
+            channel="api",
+            user_id="attacker",
+            domain="finance_sox",
+            path=rpath,
+        )
+        replayed = dreaming._replay_failures(rpath)
+        assert replayed[0]["channel"] == "api"
+        assert replayed[0]["user_id"] == "attacker"
+        assert dreaming.build_rehearsal_cases(replayed, min_cluster=1) == []
 
     def test_queue_roundtrip(self, tmp_path):
         path = tmp_path / "rehearsals.ndjson"
         cases = dreaming.build_rehearsal_cases(self._failures(), min_cluster=2)
         assert dreaming.save_rehearsals(cases, path=path) == 1
         assert dreaming.load_rehearsals(path)[0]["prompt"] == cases[0]["prompt"]
+
+    def test_legacy_queue_without_scope_is_refused(self, tmp_path):
+        path = tmp_path / "rehearsals.ndjson"
+        path.write_text(
+            '{"prompt":"replay old ambiguous prompt","evidence":2}\n',
+            encoding="utf-8",
+        )
+        assert dreaming.load_rehearsals(path) == []
 
     @pytest.mark.asyncio
     async def test_rehearse_scores_completion(self, tmp_path):
