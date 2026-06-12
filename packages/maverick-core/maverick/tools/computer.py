@@ -226,7 +226,14 @@ def _run_computer_action(args: dict[str, Any]) -> str:  # noqa: C901
                 out += f"\n<ocr>{text}</ocr>"
         return out
 
-    pyautogui = _ensure_pyautogui()
+    # Return an error STRING (like the screenshot path above), not a raised
+    # ImportError: the tool fn contract is ``-> str``, and a raised exception
+    # crashed direct callers and was inconsistent with the browser tool
+    # (user-testing finding).
+    try:
+        pyautogui = _ensure_pyautogui()
+    except ImportError as e:
+        return f"ERROR: {e}"
     pyautogui.FAILSAFE = False  # Don't crash on corner-of-screen mouse moves.
 
     if action == "cursor_position":

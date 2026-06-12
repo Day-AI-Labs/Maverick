@@ -228,7 +228,12 @@ async def _execute_tool_fn(fn, args: dict[str, Any], stream_chunk) -> str:
 
         await asyncio.to_thread(_drain)
         return "".join(parts)
-    return out
+    # The fn contract is ``-> str``; a tool that returns None (a latent bug in
+    # tool code) used to propagate None into _cap_tool_output and crash the agent
+    # turn with "NoneType has no len()". Coerce to a stable string instead.
+    if out is None:
+        return ""
+    return out if isinstance(out, str) else str(out)
 
 
 ToolFn = Callable[[dict[str, Any]], str | Awaitable[str]]
