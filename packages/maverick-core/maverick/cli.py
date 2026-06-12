@@ -3779,6 +3779,61 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
                "now complete (verifier-scored).")
 
 
+@main.command("hindsight")
+@click.option("--before", default="latest",
+              help="Older learned-state snapshot to compare against "
+                   "('latest' = most recent dream snapshot, or a snapshot "
+                   "name from `maverick dream --list-snapshots`).")
+@click.option("--limit", default=100, show_default=True,
+              help="How many recent goals to replay.")
+@click.option("--all-goals", is_flag=True,
+              help="Replay all recent goals, not just failed ones.")
+@click.option("--ledger", is_flag=True,
+              help="Append the result to the signed hindsight ledger.")
+@click.option("--strict", is_flag=True,
+              help="Exit non-zero if any coverage regression is found "
+                   "(a learning-regression CI gate).")
+@click.pass_context
+def hindsight(ctx, before: str, limit: int, all_goals: bool, ledger: bool,
+              strict: bool) -> None:
+    """Did today's learned state get better or WORSE on past work?
+
+    Replays recent goals against a prior learned-state snapshot and today's
+    state, comparing whether each goal is still covered by a recalled lesson
+    (reflexion / dream insight / learned skill). Surfaces *regressions* --
+    goals a retired skill, expired insight, or pruned reflexion no longer
+    covers. Deterministic and read-only (no agent re-runs, no tokens);
+    snapshots come from `maverick dream`.
+    """
+    from . import dreaming
+    from . import hindsight as _h
+    snaps = dreaming.list_snapshots()
+    if not snaps:
+        raise click.ClickException(
+            "no learned-state snapshots yet -- run `maverick dream` "
+            "(it snapshots before each cycle) at least twice first."
+        )
+    chosen = snaps[-1] if before == "latest" else before
+    if chosen not in snaps:
+        raise click.ClickException(
+            f"no such snapshot {chosen!r}. Available: {', '.join(snaps)}"
+        )
+    snap_dir = dreaming.snapshots_dir() / chosen
+    world = open_world(ctx.obj["db"])
+    report = _h.replay(
+        world, before=snap_dir, after=None, limit=limit,
+        status=None if all_goals else "blocked",
+    )
+    click.echo(report.summary())
+    if ledger:
+        _h.write_ledger(report, before_label=chosen)
+        click.echo("[recorded to the signed hindsight ledger]")
+    if strict and report.regressed:
+        raise click.ClickException(
+            f"{len(report.regressed)} learning regression(s) detected"
+        )
+
+
 @main.command("domains-lint")
 @click.option("--ci", is_flag=True,
               help="Exit non-zero when any pack has an ERROR-level finding.")
