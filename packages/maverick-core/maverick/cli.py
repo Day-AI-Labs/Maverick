@@ -1485,12 +1485,16 @@ def tenant_resume(tenant_id: str) -> None:
 @click.argument("max_daily_dollars", type=float)
 def tenant_quota(tenant_id: str, max_daily_dollars: float) -> None:
     """Set a tenant's daily spend cap (USD; 0 = unlimited)."""
+    import math
+
     from .tenant_registry import UnknownTenant, set_quota
-    # A negative cap was silently clamped to 0 -- i.e. UNLIMITED -- so a typo'd
-    # `-5` quietly removed the cap instead of erroring (user-testing finding).
-    if max_daily_dollars < 0:
-        click.echo(f"ERROR: quota cannot be negative (got {max_daily_dollars:g}); "
-                   "use 0 for unlimited.", err=True)
+    # A negative cap was silently clamped to 0 (= UNLIMITED), so a typo'd `-5`
+    # quietly removed the cap; nan/inf likewise slipped past as "unlimited" /
+    # "$inf/day" -- both disable the cap (user-testing finding). Require a
+    # finite, non-negative amount; use 0 for unlimited.
+    if not math.isfinite(max_daily_dollars) or max_daily_dollars < 0:
+        click.echo(f"ERROR: quota must be a finite, non-negative amount "
+                   f"(got {max_daily_dollars:g}); use 0 for unlimited.", err=True)
         sys.exit(2)
     try:
         rec = set_quota(tenant_id, max_daily_dollars)
@@ -1869,6 +1873,18 @@ def start(
             err=True,
         )
         sys.exit(3)  # distinct from misuse (2) so scripts can tell "refused"
+    # Refuse a SUSPENDED tenant here too. The channel/HTTP server path enforces
+    # assert_tenant_active (server.py), but the CLI `start` path never did, so
+    # `maverick start` ran goals freely for a suspended tenant (user-testing
+    # finding). No-op for None tenant / no registry, so single-tenant flows are
+    # unchanged. Same pre-goal-creation chokepoint as the killswitch above.
+    from .paths import current_tenant_id as _ctid
+    from .tenant_registry import TenantSuspended, assert_tenant_active
+    try:
+        assert_tenant_active(_ctid())
+    except TenantSuspended as e:
+        click.echo(f"Stopped: {e}", err=True)
+        sys.exit(3)
     from . import providers as _providers
     from .config import load_config as _load_config
     _specs = {

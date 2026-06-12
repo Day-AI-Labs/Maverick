@@ -325,7 +325,10 @@ class AuditLog:
         for line in lines[-n:]:
             try:
                 out.append(json.loads(line))
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, RecursionError):
+                # RecursionError: a line nested past the json recursion limit
+                # (>=1000) must skip that line, not crash tail() for the whole
+                # day-file (user-testing finding).
                 continue
         return out
 
@@ -350,7 +353,7 @@ class AuditLog:
             if rx.search(line):
                 try:
                     out.append(json.loads(line))
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, RecursionError):
                     continue
         return out
 
@@ -372,7 +375,16 @@ def _redact_event(payload: dict[str, Any]) -> dict[str, Any]:
         # that can be model/tool-controlled and deeply nested; without a guard a
         # deep value raises RecursionError inside the audit-write path.
         if depth > 64:
-            return v if isinstance(v, (int, float, bool, type(None))) else str(v)
+            # Past the recursion guard, do NOT str() the value: str(dict)/str(list)
+            # dumps nested secrets in cleartext, and returning a bare string would
+            # skip redaction (user-testing finding -- secrets leaked at depth > 64).
+            # Scalars are safe as-is; a leaf string is still redacted; any deeper
+            # container collapses to an opaque marker.
+            if isinstance(v, (int, float, bool, type(None))):
+                return v
+            if isinstance(v, str):
+                return v if redact is None else redact(v)[0]
+            return "[truncated: nesting depth > 64]"
         if isinstance(v, str):
             if redact is None:
                 return v
