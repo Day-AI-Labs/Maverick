@@ -330,7 +330,7 @@ def _record_skill_outcome(ctx: Any, *, success: bool) -> None:
 def _maybe_record_reflexion(
     goal: Any, *, failure_class: str, failure_msg: str, blackboard,
     shield: Any | None = None, channel: str | None = None,
-    user_id: str | None = None,
+    user_id: str | None = None, domain: str | None = None,
 ) -> None:
     """Persist a postmortem when a run fails, so the NEXT similar goal
     recalls the lesson. No-op unless reflexion is enabled. Never raises —
@@ -353,6 +353,7 @@ def _maybe_record_reflexion(
             tools_used=tools_used,
             channel=channel,
             user_id=user_id,
+            domain=domain,
         )
     except Exception as e:  # pragma: no cover -- reflexion never blocks a run
         log.debug("reflexion record skipped: %s", e)
@@ -762,12 +763,30 @@ async def run_goal(  # noqa: C901
                     f"{goal.title}\n{goal.description or ''}",
                     channel=channel,
                     user_id=user_id,
+                    domain=domain,
                 )
                 ctx_block = reflexion.format_context(recalled, shield=shield)
                 if ctx_block:
                     brief = brief + "\n" + ctx_block
         except Exception as e:  # pragma: no cover -- recall never blocks a run
             log.debug("reflexion recall skipped: %s", e)
+
+        # Dream insights (opt-in, [dreaming]): prepend lessons consolidated
+        # OFFLINE by `maverick dream` -- recurring failure patterns clustered
+        # per department. Complements reflexion (raw per-failure lessons) with
+        # the distilled cross-run pattern; a domain run is boosted toward its
+        # own department's insights. No-op by default; never blocks the run.
+        try:
+            from . import dreaming
+            if dreaming.enabled():
+                _dreamed = dreaming.recall_insights(
+                    f"{goal.title}\n{goal.description or ''}", domain=domain,
+                )
+                _dream_block = dreaming.format_context(_dreamed, shield=shield)
+                if _dream_block:
+                    brief = brief + "\n" + _dream_block
+        except Exception as e:  # pragma: no cover -- recall never blocks a run
+            log.debug("dream insight recall skipped: %s", e)
 
         # Auto-recall (opt-in via MAVERICK_AUTO_RECALL=1): prepend the most
         # similar PRIOR *successful* goals + their results so the swarm reuses
@@ -881,7 +900,7 @@ async def run_goal(  # noqa: C901
             _maybe_record_reflexion(
                 goal, failure_class="budget", failure_msg=str(e),
                 blackboard=blackboard, shield=shield, channel=channel,
-                user_id=user_id,
+                user_id=user_id, domain=domain,
             )
             world.set_goal_status(goal_id, "blocked", result=f"budget exceeded: {e}")
             _fire_webhook("goal_finished", {
@@ -982,7 +1001,7 @@ async def run_goal(  # noqa: C901
                 _maybe_record_reflexion(
                     goal, failure_class="budget", failure_msg=str(be),
                     blackboard=blackboard, shield=shield, channel=channel,
-                    user_id=user_id,
+                    user_id=user_id, domain=domain,
                 )
                 world.set_goal_status(goal_id, "blocked", result=f"budget exceeded: {be}")
                 _fire_webhook("goal_finished", {
@@ -1019,7 +1038,7 @@ async def run_goal(  # noqa: C901
                 ),
                 failure_msg=result.error or "",
                 blackboard=blackboard, shield=shield, channel=channel,
-                user_id=user_id,
+                user_id=user_id, domain=domain,
             )
             world.set_goal_status(goal_id, "blocked", result=result.error)
             # Attribute the failure to the recalled skills, but NOT when the

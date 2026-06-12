@@ -459,6 +459,31 @@ def get_experience() -> dict:
     return {"enable": bool(cfg.get("enable", False))}
 
 
+def get_dreaming() -> dict:
+    """Return the ``[dreaming]`` section (offline experience consolidation).
+
+    OFF by default. ``min_cluster`` is the evidence floor before a recurring
+    pattern is consolidated (a one-off is noise); ``max_insights`` caps the
+    persisted insight store; ``prune`` lets a dream cycle compact the
+    reflexion log down to ``keep_reflexions`` deduplicated entries.
+    """
+    cfg = load_config().get("dreaming", {})
+
+    def _int(key: str, default: int) -> int:
+        try:
+            return max(1, int(cfg.get(key, default)))
+        except (TypeError, ValueError):
+            return default
+
+    return {
+        "enable": bool(cfg.get("enable", False)),
+        "min_cluster": _int("min_cluster", 2),
+        "max_insights": _int("max_insights", 100),
+        "prune": bool(cfg.get("prune", True)),
+        "keep_reflexions": _int("keep_reflexions", 500),
+    }
+
+
 def get_durable() -> dict:
     """Return the ``[durable]`` section with defaults filled in.
 

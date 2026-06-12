@@ -1125,6 +1125,13 @@ def pick_advanced() -> dict[str, Any]:
             "on the next similar goal.",
             default=False,
         ),
+        "dreaming": _q_confirm(
+            "Dreaming (offline consolidation)? `maverick dream` replays recent "
+            "runs while idle, distills recurring wins into skills per department, "
+            "turns repeated failures into recalled insights, and prunes stale "
+            "lessons. Deterministic, no LLM calls.",
+            default=False,
+        ),
         "verify_ensemble": _q_confirm(
             "Ensemble verification? Cross-check final answers with a panel of models "
             "(slower, stronger).",
@@ -2485,6 +2492,10 @@ def write_config(  # noqa: C901
         if advanced.get("reflexion"):
             lines.append("")
             lines.append("[reflexion]")
+            lines.append("enable = true")
+        if advanced.get("dreaming"):
+            lines.append("")
+            lines.append("[dreaming]")
             lines.append("enable = true")
         if advanced.get("effort"):
             lines.append("")

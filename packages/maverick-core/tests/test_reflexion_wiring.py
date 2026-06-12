@@ -107,6 +107,53 @@ class TestReflexionPromptSafety:
         )
 
 
+class TestReflexionDomainAttribution:
+    """Department (domain pack) tagging: record carries it, recall boosts it."""
+
+    def test_domain_roundtrip(self, tmp_path):
+        path = tmp_path / "reflexions.ndjson"
+        reflexion.record(
+            goal_text="Reconcile the quarterly ledger",
+            failure_class="budget", failure_msg="cap", reflection="lesson",
+            domain="finance_sox", path=path,
+        )
+        hits = reflexion.recall("Reconcile the quarterly ledger", path=path)
+        assert hits and hits[0][1].domain == "finance_sox"
+
+    def test_same_domain_lesson_outranks_equal_generic(self, tmp_path):
+        import json
+
+        path = tmp_path / "reflexions.ndjson"
+        # Identical goal text AND identical ts (written directly so recency
+        # can't tiebreak): only the same-department boost can decide the rank.
+        base = {
+            "ts": 1.0, "goal_text": "Reconcile the quarterly ledger",
+            "failure_class": "budget", "failure_msg": "cap",
+            "tools_used": [], "channel": None, "user_id": None,
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(json.dumps({**base, "reflection": "generic lesson",
+                                "domain": None}) + "\n")
+            f.write(json.dumps({**base, "reflection": "dept lesson",
+                                "domain": "finance_sox"}) + "\n")
+        hits = reflexion.recall(
+            "Reconcile the quarterly ledger", domain="finance_sox", path=path,
+            k=2,
+        )
+        assert hits[0][1].domain == "finance_sox"
+
+    def test_legacy_lines_without_domain_still_load(self, tmp_path):
+        path = tmp_path / "reflexions.ndjson"
+        path.write_text(
+            '{"ts": 1.0, "goal_text": "fix the parser", "failure_class": '
+            '"agent_error", "failure_msg": "m", "reflection": "r", '
+            '"tools_used": [], "channel": null, "user_id": null}\n',
+            encoding="utf-8",
+        )
+        hits = reflexion.recall("fix the parser", path=path)
+        assert hits and hits[0][1].domain is None
+
+
 class TestReflexionWiring:
     def test_record_called_when_enabled(self, monkeypatch):
         monkeypatch.setenv("MAVERICK_REFLEXION", "1")
@@ -125,7 +172,7 @@ class TestReflexionWiring:
         _maybe_record_reflexion(
             _Goal(), failure_class="agent_error",
             failure_msg="hit max_steps=25", blackboard=bb,
-            channel="slack", user_id="u1",
+            channel="slack", user_id="u1", domain="finance_sox",
         )
         assert len(captured) == 1
         assert captured[0]["failure_class"] == "agent_error"
@@ -133,6 +180,7 @@ class TestReflexionWiring:
         assert captured[0]["tools_used"] == ["read_file"]
         assert captured[0]["channel"] == "slack"
         assert captured[0]["user_id"] == "u1"
+        assert captured[0]["domain"] == "finance_sox"
 
     def test_record_redacts_shield_blocked_goal_text(self, monkeypatch):
         monkeypatch.setenv("MAVERICK_REFLEXION", "1")

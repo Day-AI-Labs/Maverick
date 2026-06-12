@@ -73,6 +73,18 @@ here.
   success is noise), and it dedups a candidate against the learned-skills store
   by lexical containment so near-duplicate lessons don't accumulate — the
   orchestrator uses the gated path.
+- **Dreaming (offline consolidation)** — `maverick dream` (`dreaming.py`,
+  opt-in `[dreaming] enable`) replays recent successes + failure reflexions
+  while the swarm is idle, attributes them to departments (domain packs),
+  distills recurring wins into learned skills per department (via the gated
+  v2 distiller), clusters recurring failures into *dream insights*
+  (`~/.maverick/dreams/insights.ndjson`) that the orchestrator recalls on the
+  next similar goal — a domain run is boosted toward its own department's
+  insights — and prunes stale near-duplicate reflexions. Deterministic and
+  LLM-free, so consolidation can't be steered by injected trajectory text.
+  Reflexions also carry the recording run's department (`reflexion.py`
+  `domain` field), and same-department lessons outrank equally-similar
+  generic ones at recall time.
 - **Vector-store cross-run memory** — opt-in `[memory] backend` routes
   cross-run recall through a persistent **Chroma / Qdrant / Weaviate** store
   (`vector_store/`, `semantic_recall.py`) so similarity search is indexed and

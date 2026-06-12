@@ -55,6 +55,11 @@ class Reflexion:
     tools_used: list[str] = field(default_factory=list)
     channel: str | None = None
     user_id: str | None = None
+    # Department attribution: the domain pack a run executed as (None for a
+    # generic orchestrator run). Lets recall boost same-department lessons and
+    # the dreaming loop consolidate per department. Older log lines without
+    # the key load as None — fully backward compatible.
+    domain: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -79,6 +84,7 @@ def record(
     tools_used: list[str] | None = None,
     channel: str | None = None,
     user_id: str | None = None,
+    domain: str | None = None,
     path: Path = DEFAULT_PATH,
 ) -> bool:
     """Append a Reflexion. Returns True on success.
@@ -95,6 +101,7 @@ def record(
         tools_used=list(tools_used or []),
         channel=channel,
         user_id=user_id,
+        domain=domain,
     )
     with _lock:
         try:
@@ -180,6 +187,11 @@ _RECENCY_WEIGHT = 0.3
 # Two lessons whose goal-text token sets overlap at/above this are treated as
 # near-duplicates; only the higher-scored one survives in the top-k.
 _DEDUP_THRESHOLD = 0.9
+# Additive boost for a lesson recorded by the SAME department (domain pack)
+# as the recalling run: a finance_sox failure is a stronger prior for the
+# next finance_sox run than an equally-similar generic one. Cross-department
+# lessons are still recallable — boosted, not filtered.
+_DOMAIN_BOOST = 0.1
 
 
 def recall(
@@ -191,6 +203,7 @@ def recall(
     min_embed_score: float = 0.35,
     channel: str | None = None,
     user_id: str | None = None,
+    domain: str | None = None,
     scan_cap: int = _SCAN_CAP,
 ) -> list[tuple[float, Reflexion]]:
     """Return the top-k most similar prior reflections.
@@ -226,7 +239,7 @@ def recall(
                 key: data.get(key) for key in (
                     "ts", "goal_text", "failure_class",
                     "failure_msg", "reflection", "tools_used",
-                    "channel", "user_id",
+                    "channel", "user_id", "domain",
                 )
             })
         except TypeError:
@@ -258,6 +271,8 @@ def recall(
             continue
         recency = 1.0 if span <= 0 else (entry.ts - oldest) / span
         blended = (1.0 - _RECENCY_WEIGHT) * sim + _RECENCY_WEIGHT * recency
+        if domain and entry.domain == domain:
+            blended += _DOMAIN_BOOST
         scored.append((blended, entry))
 
     scored.sort(key=lambda p: (p[0], p[1].ts), reverse=True)
@@ -295,7 +310,7 @@ def list_recent(
                         k: data.get(k) for k in (
                             "ts", "goal_text", "failure_class",
                             "failure_msg", "reflection", "tools_used",
-                            "channel", "user_id",
+                            "channel", "user_id", "domain",
                         )
                     }))
                 except TypeError:
