@@ -72,6 +72,7 @@ except ImportError:
 RBM_BASE = "https://rcsbusinessmessaging.googleapis.com"
 RBM_SCOPE = "https://www.googleapis.com/auth/rcsbusinessmessaging"
 TEXT_LIMIT = 2000  # RBM text content cap
+HANDSHAKE_BODY_LIMIT = 4096  # body-token registration payload cap
 
 
 class RcsChannel(Channel):
@@ -119,17 +120,20 @@ class RcsChannel(Channel):
 
     # -- client-token verification ---------------------------------------------
 
+    @staticmethod
+    def _request_token(request: Request) -> str:
+        return (
+            request.query_params.get("clientToken")
+            or request.headers.get("clientToken")
+            or ""
+        )
+
     def _token_ok(self, request: Request) -> bool:
         """Constant-time check of the client token Google echoes back.
         Accepted from the ``clientToken`` query param or header (RBM does not
         document a delivery-time signature, so deployments register the
         webhook URL with ``?clientToken=...`` appended). Fail-closed."""
-        supplied = (
-            request.query_params.get("clientToken")
-            or request.headers.get("clientToken")
-            or ""
-        )
-        return hmac.compare_digest(supplied, self.webhook_token or "")
+        return hmac.compare_digest(self._request_token(request), self.webhook_token or "")
 
     async def _handle_verify(self, request: Request):
         """Webhook URL verification (GET).
@@ -158,27 +162,59 @@ class RcsChannel(Channel):
             return event if isinstance(event, dict) else {}
         return payload
 
-    async def _handle_webhook(self, request: Request):
+    @staticmethod
+    def _json_object(raw: bytes) -> dict:
         try:
-            payload = await request.json()
-        except ValueError:
-            raise HTTPException(status_code=400, detail="bad JSON")
+            payload = json.loads(raw)
+        except (RecursionError, ValueError) as e:
+            raise HTTPException(status_code=400, detail="bad JSON") from e
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="bad JSON")
+        return payload
 
-        # Webhook validation handshake: at registration Google POSTs
-        # {clientToken, secret} (token in the BODY, not the query) and
-        # expects {"secret": <same>} echoed back iff the token is ours.
-        if "secret" in payload and "clientToken" in payload:
-            if not hmac.compare_digest(
-                str(payload.get("clientToken") or ""), self.webhook_token or "",
-            ):
-                raise HTTPException(status_code=403, detail="client token invalid")
-            return {"secret": payload["secret"]}
+    async def _small_handshake_payload(self, request: Request) -> dict:
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                if int(content_length) > HANDSHAKE_BODY_LIMIT:
+                    raise HTTPException(status_code=413, detail="body too large")
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail="bad Content-Length") from e
 
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > HANDSHAKE_BODY_LIMIT:
+                raise HTTPException(status_code=413, detail="body too large")
+        return self._json_object(bytes(body))
+
+    async def _handle_webhook(self, request: Request):
+        # Normal event delivery must authenticate from request metadata before
+        # reading the body, so unauthenticated callers cannot force large JSON
+        # buffering/parsing. The only body-token exception is RBM's registration
+        # handshake, which is read through a small capped path below.
         if not self._token_ok(request):
+            if self._request_token(request):
+                log.warning("RCS webhook client token invalid; ignoring")
+                raise HTTPException(status_code=403, detail="client token invalid")
+
+            payload = await self._small_handshake_payload(request)
+            if "secret" in payload and "clientToken" in payload:
+                if not hmac.compare_digest(
+                    str(payload.get("clientToken") or ""), self.webhook_token or "",
+                ):
+                    raise HTTPException(status_code=403, detail="client token invalid")
+                return {"secret": payload["secret"]}
+
             log.warning("RCS webhook client token invalid; ignoring")
             raise HTTPException(status_code=403, detail="client token invalid")
+
+        try:
+            payload = await request.json()
+        except (RecursionError, ValueError) as e:
+            raise HTTPException(status_code=400, detail="bad JSON") from e
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="bad JSON")
 
         event = self._decode_event(payload)
         sender = str(event.get("senderPhoneNumber") or "")
