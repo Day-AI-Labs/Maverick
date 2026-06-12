@@ -105,11 +105,22 @@ class WhatsAppCloudChannel(Channel):
 
     # -- Meta webhook verification handshake (GET) ---------------------------
 
+    @staticmethod
+    def _constant_time_text_equal(left: str, right: str) -> bool:
+        try:
+            left_bytes = left.encode("utf-8")
+            right_bytes = right.encode("utf-8")
+        except UnicodeEncodeError:
+            return False
+        return hmac.compare_digest(left_bytes, right_bytes)
+
     async def _handle_verify(self, request: Request):
         params = request.query_params
         if (params.get("hub.mode") == "subscribe"
-                and hmac.compare_digest(params.get("hub.verify_token", ""),
-                                        self.verify_token or "")):
+                and self._constant_time_text_equal(
+                    params.get("hub.verify_token", ""),
+                    self.verify_token or "",
+                )):
             return Response(content=params.get("hub.challenge", ""), media_type="text/plain")
         raise HTTPException(status_code=403, detail="verification failed")
 
@@ -118,10 +129,17 @@ class WhatsAppCloudChannel(Channel):
     def _signature_ok(self, body: bytes, header: str | None) -> bool:
         if not header or not header.startswith("sha256="):
             return False
+        signature = header[len("sha256="):]
+        if len(signature) != hashlib.sha256().digest_size * 2:
+            return False
+        try:
+            signature_bytes = bytes.fromhex(signature)
+        except ValueError:
+            return False
         expected = hmac.new(
             (self.app_secret or "").encode("utf-8"), body, hashlib.sha256,
-        ).hexdigest()
-        return hmac.compare_digest(expected, header[len("sha256="):])
+        ).digest()
+        return hmac.compare_digest(expected, signature_bytes)
 
     @staticmethod
     def _extract_messages(payload: dict) -> list[dict]:
