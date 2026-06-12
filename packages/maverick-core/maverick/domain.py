@@ -138,6 +138,23 @@ SUITE_PREFIXES: dict[str, str] = {
     "hr_": "hr",
     "pe_": "product_engineering",
     "strat_": "strategy",
+    "cx_": "customer_experience",
+    "mkt_": "marketing",
+    "proc_": "procurement",
+    "data_": "data_analytics",
+    "sec_": "security_ops",
+    "exec_": "executive_office",
+    "ehs_": "facilities_ehs",
+    "hc_": "healthcare",
+    "ins_": "insurance",
+    "bank_": "banking",
+    "ret_": "retail",
+    "mfg_": "manufacturing_vertical",
+    "con_": "construction",
+    "log_": "logistics",
+    "ps_": "professional_services",
+    "gov_": "government_contracting",
+    "edu_": "education_nonprofit",
 }
 
 
