@@ -189,17 +189,20 @@ def _fire_webhook(event: str, payload: dict[str, Any]) -> None:
         log.debug("webhook %s skipped: %s", event, e)
 
 
-def _budget_task_class(goal: Any) -> str:
+def _budget_task_class(goal: Any, domain: str | None = None) -> str:
     """A coarse, stable task-class key for the self-tuning budget learner.
 
     Derived from the goal's verb-ish first token so runs of a kind ("research
     ...", "fix ...", "summarize ...") pool together; falls back to "default".
     Deliberately low-cardinality — the learner needs repeated samples per
-    class, not a unique key per goal.
+    class, not a unique key per goal. A department run keys its own class
+    (``<domain>::<verb>``) so finance runs learn finance-shaped caps; the
+    domain count is bounded by the installed packs, so cardinality stays low.
     """
     title = (getattr(goal, "title", "") or "").strip().lower()
     first = title.split()[0] if title else ""
-    return first if first.isalpha() and len(first) <= 16 else "default"
+    cls = first if first.isalpha() and len(first) <= 16 else "default"
+    return f"{domain}::{cls}" if domain else cls
 
 
 def _end_episode_with_spend(
@@ -327,6 +330,24 @@ def _record_skill_outcome(ctx: Any, *, success: bool) -> None:
         pass
 
 
+def _record_planning_outcome(
+    goal: Any, domain: str | None, mode: str, *, success: bool,
+) -> None:
+    """Feed the run's outcome to the planning-topology learner.
+
+    Only meaningful in auto mode (a fixed operator choice needs no stats).
+    Fail-safe: a stats write never perturbs the result path.
+    """
+    try:
+        from . import planning_stats, tree_of_thought
+        if tree_of_thought.auto_mode():
+            planning_stats.record(
+                mode, _budget_task_class(goal, domain), success,
+            )
+    except Exception:  # pragma: no cover -- stats never block a run
+        pass
+
+
 def _maybe_record_reflexion(
     goal: Any, *, failure_class: str, failure_msg: str, blackboard,
     shield: Any | None = None, channel: str | None = None,
@@ -378,6 +399,18 @@ async def run_goal(  # noqa: C901
     goal = world.get_goal(goal_id)
     if not goal:
         return f"no such goal: {goal_id}"
+
+    # Department attribution: persist the domain this run executes as so
+    # success-side learning (dreaming, budget priors) attributes exactly
+    # instead of lexically; a resume without an explicit domain inherits the
+    # recorded one so the rerun keeps its capability envelope's department.
+    if domain:
+        try:
+            world.set_goal_domain(goal_id, domain)
+        except Exception:  # pragma: no cover -- attribution never blocks a run
+            pass
+    elif getattr(goal, "domain", ""):
+        domain = goal.domain
 
     # Emergency stop: if a HALT file is present, refuse to start the goal with a
     # clear message + the right next step. Otherwise the agent loop trips the
@@ -433,7 +466,7 @@ async def run_goal(  # noqa: C901
         # goal's class is what its next sibling will size its default cap from.
         try:
             from .self_tuning_budget import record_run_cost
-            record_run_cost(_budget_task_class(goal), budget.dollars)
+            record_run_cost(_budget_task_class(goal, domain), budget.dollars)
         except Exception:  # pragma: no cover -- learner never blocks a run
             pass
 
@@ -751,6 +784,19 @@ async def run_goal(  # noqa: C901
         except Exception as e:  # pragma: no cover -- never blocks a run
             log.debug("skill synthesis skipped: %s", e)
 
+        # Human-correction ingestion (opt-in via [reflexion]): when the turn
+        # that spawned this goal reads as "no, that's wrong" about the prior
+        # answer, persist the correction as a lesson before the run starts —
+        # deterministic phrase match, recorded once per correction message.
+        try:
+            from . import corrections as _corrections
+            _corrections.maybe_record_correction(
+                world, conversation_id, goal, shield=shield,
+                channel=channel, user_id=user_id, domain=domain,
+            )
+        except Exception as e:  # pragma: no cover -- never blocks a run
+            log.debug("correction ingestion skipped: %s", e)
+
         # Reflexion (opt-in): prepend lessons learned from prior FAILED
         # runs on similar goals so the orchestrator avoids repeating the
         # same dead ends. Recall is jaccard-ranked over goal text; the
@@ -785,6 +831,15 @@ async def run_goal(  # noqa: C901
                 _dream_block = dreaming.format_context(_dreamed, shield=shield)
                 if _dream_block:
                     brief = brief + "\n" + _dream_block
+                # Per-user preference notes (produced by the dream cycle):
+                # inject only for the exact (channel, user) scope they were
+                # learned from; framed as untrusted self-reported data.
+                from . import user_notes as _un
+                _notes_block = _un.format_context(
+                    _un.notes_for(channel, user_id), shield=shield,
+                )
+                if _notes_block:
+                    brief = brief + "\n" + _notes_block
         except Exception as e:  # pragma: no cover -- recall never blocks a run
             log.debug("dream insight recall skipped: %s", e)
 
@@ -804,9 +859,20 @@ async def run_goal(  # noqa: C901
         # shared budget is passed through, so planning counts against the
         # goal's cap; if it exhausts the budget, root.run() below surfaces the
         # graceful "hit your limit" message.
+        _planning_mode = "default"
         try:
             from . import tree_of_thought as _tot
-            if _tot.enabled():
+            _use_tot = _tot.enabled()
+            # Learned topology selection: [planning] mode = "auto" lets the
+            # per-task-class outcome record decide whether the extra planning
+            # tokens have historically paid off (maverick.planning_stats).
+            if not _use_tot and _tot.auto_mode():
+                from . import planning_stats as _ps
+                _use_tot = _ps.prefer_tree_of_thought(
+                    _budget_task_class(goal, domain),
+                )
+            if _use_tot:
+                _planning_mode = "tree_of_thought"
                 _plan = _tot.plan_tree_of_thought(
                     llm, f"{goal.title}\n{goal.description or ''}",
                     n=_tot.candidate_count(), budget=budget,
@@ -949,6 +1015,31 @@ async def run_goal(  # noqa: C901
                 "result": "blocked awaiting user",
             })
             qs = world.open_questions(goal_id)
+            # Question-asked signal: a stall on missing input is a learnable
+            # pattern — record WHAT was missing so the next similar goal
+            # gathers it up front (recalled via reflexion; dreaming
+            # consolidates repeats). No-op unless [reflexion] is enabled.
+            if qs:
+                try:
+                    from . import reflexion as _r
+                    if _r.enabled():
+                        _q = _r._sanitize_text(qs[0].question, shield=shield)[:200]
+                        _r.record(
+                            goal_text=_r._sanitize_text(
+                                f"{goal.title}\n{goal.description or ''}",
+                                shield=shield,
+                            )[:500],
+                            failure_class="blocked_on_user",
+                            failure_msg=f"stalled waiting for: {_q}",
+                            reflection=(
+                                "This kind of goal stalled waiting for the user "
+                                f"to answer: {_q!r}. Gather that input up "
+                                "front, or ask in the first turn, not mid-run."
+                            ),
+                            channel=channel, user_id=user_id, domain=domain,
+                        )
+                except Exception as e:  # pragma: no cover -- never block pause
+                    log.debug("blocked-question reflexion skipped: %s", e)
             if not qs:
                 return (
                     "Paused: the assistant said it needs more information, "
@@ -1045,6 +1136,7 @@ async def run_goal(  # noqa: C901
             # run was aborted for budget — that's a cap, not the skill's fault.
             if not (result.error or "").startswith("budget exceeded:"):
                 _record_skill_outcome(ctx, success=False)
+                _record_planning_outcome(goal, domain, _planning_mode, success=False)
             _fire_webhook("goal_finished", {
                 "goal_id": goal_id, "status": "blocked", "result": result.error,
             })
@@ -1120,6 +1212,7 @@ async def run_goal(  # noqa: C901
         except Exception as e:  # pragma: no cover -- indexing never blocks a run
             log.debug("semantic index skipped: %s", e)
         _record_skill_outcome(ctx, success=True)
+        _record_planning_outcome(goal, domain, _planning_mode, success=True)
         _fire_webhook("final_emitted", {
             "goal_id": goal_id,
             "patch_size_bytes": len(summary.encode("utf-8")),

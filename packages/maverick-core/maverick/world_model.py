@@ -25,7 +25,7 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 DEFAULT_DB = Path.home() / ".maverick" / "world.db"
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 DEFAULT_BUSY_TIMEOUT_MS = 5000
 WAL_SWITCH_BUSY_TIMEOUT_MS = 50
 WAL_SWITCH_RETRY_SECONDS = 5.0
@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS goals (
     updated_at REAL NOT NULL,
     deadline REAL,
     result TEXT,
-    owner TEXT NOT NULL DEFAULT ''
+    owner TEXT NOT NULL DEFAULT '',
+    domain TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_goals_status     ON goals(status);
@@ -283,6 +284,10 @@ MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE approvals ADD COLUMN claimed_at REAL",
         "ALTER TABLE approvals ADD COLUMN decided_by TEXT",
     ],
+    # v14 department attribution: the domain pack a goal ran as ('' = generic
+    # orchestrator). Exact success-side attribution for the learning loops
+    # (dreaming, role stats, budget priors) instead of lexical matching.
+    14: ["ALTER TABLE goals ADD COLUMN domain TEXT NOT NULL DEFAULT ''"],
 }
 
 
@@ -298,6 +303,7 @@ class Goal:
     deadline: float | None
     result: str | None
     owner: str = ""
+    domain: str = ""
 
 
 @dataclass
@@ -800,15 +806,28 @@ class WorldModel:
 
     # ----- goals -----
     def create_goal(self, title: str, description: str = "", parent_id: int | None = None,
-                    *, owner: str = "") -> int:
+                    *, owner: str = "", domain: str = "") -> int:
         now = time.time()
         with self._writing() as conn:
             cur = conn.execute(
                 "INSERT INTO goals(parent_id, title, description, status, "
-                "created_at, updated_at, owner) VALUES(?, ?, ?, 'pending', ?, ?, ?)",
-                (parent_id, _enc_field(title), _enc_field(description), now, now, owner),
+                "created_at, updated_at, owner, domain) "
+                "VALUES(?, ?, ?, 'pending', ?, ?, ?, ?)",
+                (parent_id, _enc_field(title), _enc_field(description), now, now,
+                 owner, domain or ""),
             )
             return cur.lastrowid
+
+    def set_goal_domain(self, goal_id: int, domain: str) -> None:
+        """Record the department (domain pack) a goal is running as.
+
+        Plain-text column (pack names are operator-defined identifiers, not
+        user content) so learning loops can filter without decrypting."""
+        with self._writing() as conn:
+            conn.execute(
+                "UPDATE goals SET domain = ? WHERE id = ?",
+                (domain or "", goal_id),
+            )
 
     def set_goal_status(self, goal_id: int, status: str, result: str | None = None) -> None:
         with self._writing() as conn:
@@ -1142,6 +1161,22 @@ class WorldModel:
         """Delete one fact by exact key; return rows removed (0 or 1)."""
         with self._writing() as conn:
             return conn.execute("DELETE FROM facts WHERE key = ?", (key,)).rowcount
+
+    def stale_fact_keys(self, older_than: float, limit: int = 500) -> list[str]:
+        """Keys of facts not updated since ``older_than``, oldest first.
+
+        Read-only; the dreaming fact-consolidation phase decides what to
+        delete (and is itself opt-in)."""
+        rows = self._read_all(
+            "SELECT key FROM facts WHERE updated_at < ? "
+            "ORDER BY updated_at ASC LIMIT ?",
+            (older_than, max(1, int(limit))),
+        )
+        return [r["key"] for r in rows]
+
+    def count_facts(self) -> int:
+        row = self._read_one("SELECT COUNT(*) AS n FROM facts", ())
+        return int(row["n"]) if row else 0
 
     def list_facts(self, key_prefix: str, limit: int = 50) -> list[tuple[str, int]]:
         """``(key, value_size)`` for facts whose key starts with ``key_prefix``,

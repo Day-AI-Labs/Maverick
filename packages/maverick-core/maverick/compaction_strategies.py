@@ -56,6 +56,7 @@ def compact_with_strategy(
     keep_recent: int = KEEP_RECENT_TURNS,
     max_tool_bytes: int = MAX_TOOL_OUTPUT_BYTES,
     strategy: str | None = None,
+    scope: str | None = None,
 ) -> list[dict]:
     """Compact ``messages`` with the configured (or given) strategy.
 
@@ -73,7 +74,8 @@ def compact_with_strategy(
     try:
         if name == "learned":
             from .compaction_learned import LearnedSummarizer
-            return LearnedSummarizer(llm=llm).compact(messages, keep_recent=keep_recent)
+            return LearnedSummarizer(llm=llm, scope=scope).compact(
+                messages, keep_recent=keep_recent)
         if name == "multimodal":
             from .compaction_multimodal import compact_media
             # Stub heavy media blocks, then apply the standard shrink pass.

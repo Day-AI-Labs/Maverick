@@ -393,6 +393,26 @@ def tools_from_blackboard(blackboard) -> list[str]:
     return seen
 
 
+def flaky_tools(
+    *, min_count: int = 2, path: Path = DEFAULT_PATH, scan: int = 300,
+) -> set[str]:
+    """Tool names with >= ``min_count`` persisted ``tool_flaky`` lessons.
+
+    Consumed by find_tools to demote tools the loop guard has repeatedly
+    caught failing the same way — the recall side of the tool-failure
+    taxonomy. Empty set on any error (fail-open)."""
+    counts: dict[str, int] = {}
+    try:
+        for r in list_recent(limit=scan, path=path):
+            if r.failure_class != "tool_flaky":
+                continue
+            for t in r.tools_used or []:
+                counts[t] = counts.get(t, 0) + 1
+    except Exception:  # pragma: no cover -- never blocks tool discovery
+        return set()
+    return {t for t, c in counts.items() if c >= max(1, min_count)}
+
+
 def record_human_override(
     brief: str, tool_name: str, reason: str, *,
     domain: str | None = None, channel: str | None = None,
@@ -457,6 +477,7 @@ __all__ = [
     "DEFAULT_PATH",
     "record",
     "record_human_override",
+    "flaky_tools",
     "recall",
     "list_recent",
     "clear",

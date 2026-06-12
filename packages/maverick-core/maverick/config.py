@@ -481,6 +481,12 @@ def get_dreaming() -> dict:
         except (TypeError, ValueError):
             return default
 
+    def _nonneg_int(key: str, default: int) -> int:
+        try:
+            return max(0, int(cfg.get(key, default)))
+        except (TypeError, ValueError):
+            return default
+
     return {
         "enable": bool(cfg.get("enable", False)),
         "min_cluster": _int("min_cluster", 2),
@@ -490,6 +496,21 @@ def get_dreaming() -> dict:
         # Cross-department promotion: a failure pattern recurring in >=2
         # departments becomes a shared insight recallable by all of them.
         "promote_shared": bool(cfg.get("promote_shared", True)),
+        # Mine verifier critiques out of donated trajectory records (empty
+        # unless [telemetry] donate_trajectories has produced any).
+        "mine_critiques": bool(cfg.get("mine_critiques", True)),
+        # Insights unconfirmed for this many days retire; 0 = never expire.
+        "insight_ttl_days": _nonneg_int("insight_ttl_days", 90),
+        # Retire a failure insight once this many NEWER similar successes
+        # contradict it ("we now reliably do X").
+        "contradiction_successes": _int("contradiction_successes", 2),
+        # Fact consolidation deletes operator data, so it is opt-in even
+        # inside the already-opt-in dreaming feature.
+        "prune_facts": bool(cfg.get("prune_facts", False)),
+        "facts_max_age_days": _nonneg_int("facts_max_age_days", 180),
+        "facts_cap": _nonneg_int("facts_cap", 2000),
+        # Distill explicit user-preference statements into per-user notes.
+        "user_notes": bool(cfg.get("user_notes", True)),
         # Dream-time rehearsal (maverick-evolve harness) is a separate trust
         # decision from consolidation: it spends real agent runs. Default off.
         "rehearse": bool(cfg.get("rehearse", False)),

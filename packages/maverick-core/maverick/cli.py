@@ -1880,9 +1880,18 @@ def start(
     # Honor [budget] in config.toml (start used to build Budget() directly,
     # so config caps were silently ignored). Precedence: built-in defaults
     # < config < explicit CLI flags. A None flag passes through as "unset".
+    import types as _types
+
     from .budget import budget_from_config
+    from .orchestrator import _budget_task_class
     bud = budget_from_config(
         defaults={"max_dollars": 5.0, "max_wall_seconds": 3600.0},
+        # Learned per-class default cap (lowest precedence; opt-in via
+        # [budget] self_tuning). Department runs use their own class so
+        # finance runs are sized by finance history.
+        task_class=_budget_task_class(
+            _types.SimpleNamespace(title=title), domain,
+        ),
         max_dollars=max_dollars,
         max_wall_seconds=max_wall_seconds,
     )

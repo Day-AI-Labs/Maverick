@@ -44,6 +44,18 @@ def enabled() -> bool:
         return False
 
 
+def auto_mode() -> bool:
+    """Whether ``[planning] mode = "auto"`` is set: the orchestrator picks the
+    topology per task class from the learned outcome record
+    (:mod:`maverick.planning_stats`) instead of a fixed operator choice."""
+    try:
+        from .config import load_config
+        mode = str(load_config().get("planning", {}).get("mode", "")).strip().lower()
+        return mode == "auto"
+    except Exception:  # pragma: no cover -- config never blocks a run
+        return False
+
+
 def candidate_count(default: int = 3) -> int:
     """How many candidate plans to fork (``[planning] candidates``, default 3).
 

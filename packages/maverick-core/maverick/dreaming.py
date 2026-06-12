@@ -103,17 +103,29 @@ class DreamReport:
     reflexions_pruned: int = 0
     skills_retired: int = 0
     rehearsals_queued: int = 0
+    insights_expired: int = 0
+    insights_retired: int = 0
+    facts_pruned: int = 0
+    user_notes_written: int = 0
     departments: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
         depts = ", ".join(self.departments) if self.departments else "(generic only)"
+        extra = ""
+        if self.insights_expired or self.insights_retired:
+            extra += (f" Aged out {self.insights_expired} and retired "
+                      f"{self.insights_retired} contradicted insight(s).")
+        if self.facts_pruned:
+            extra += f" Pruned {self.facts_pruned} stale fact(s)."
+        if self.user_notes_written:
+            extra += f" Updated {self.user_notes_written} user preference note(s)."
         return (
             f"Dream cycle: replayed {self.goals_replayed} success(es) + "
             f"{self.failures_replayed} failure(s); wrote {self.insights_written} "
             f"insight(s), distilled {self.skills_distilled} skill(s), retired "
             f"{self.skills_retired} stale skill(s), queued {self.rehearsals_queued} "
-            f"rehearsal(s), pruned {self.reflexions_pruned} stale reflexion(s). "
-            f"Departments touched: {depts}."
+            f"rehearsal(s), pruned {self.reflexions_pruned} stale reflexion(s)."
+            f"{extra} Departments touched: {depts}."
         )
 
 
@@ -315,18 +327,26 @@ def append_insights(
     """
     existing = load_insights(path)
     written = 0
+    refreshed = 0
     for ins in new or []:
         it = _tokens(ins.text)
-        dup = any(
-            e.domain == ins.domain
-            and _containment(it, _tokens(e.text)) >= _DEDUP_THRESHOLD
-            for e in existing
+        dup = next(
+            (e for e in existing
+             if e.domain == ins.domain
+             and _containment(it, _tokens(e.text)) >= _DEDUP_THRESHOLD),
+            None,
         )
-        if dup:
+        if dup is not None:
+            # Confirmation, not a no-op: the pattern recurred, so the standing
+            # insight is refreshed (newer ts, more evidence) instead of aging
+            # toward expiry while the problem is still live.
+            dup.ts = max(dup.ts, ins.ts)
+            dup.evidence += max(1, ins.evidence)
+            refreshed += 1
             continue
         existing.append(ins)
         written += 1
-    if not written:
+    if not (written or refreshed):
         return 0
     existing.sort(key=lambda i: i.ts)
     keep = existing[-max(1, max_insights):]
@@ -457,6 +477,114 @@ def prune_reflexions(
         log.warning("dreaming: reflexion prune failed: %s", e)
         return 0
     return dropped
+
+
+def _rewrite_insights(keep: list[DreamInsight], path: Path | str) -> bool:
+    """Atomically replace the insight store with ``keep`` (chronological)."""
+    p = Path(path)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            for ins in sorted(keep, key=lambda i: i.ts):
+                f.write(json.dumps(ins.to_dict(), default=str) + "\n")
+        os.replace(tmp, p)
+        try:
+            os.chmod(p, 0o600)
+        except OSError:
+            pass
+        return True
+    except OSError as e:
+        log.warning("dreaming: insight rewrite failed: %s", e)
+        return False
+
+
+def expire_insights(
+    path: Path | str = DEFAULT_INSIGHTS, *, ttl_days: int = 90,
+    now: float | None = None,
+) -> int:
+    """Insight aging: drop insights unconfirmed for ``ttl_days``.
+
+    Confirmation refreshes ``ts`` (see :func:`append_insights`), so only
+    lessons whose pattern stopped recurring age out. ``ttl_days=0`` disables
+    expiry. Returns how many were dropped.
+    """
+    if ttl_days <= 0:
+        return 0
+    entries = load_insights(path)
+    if not entries:
+        return 0
+    cutoff = (now if now is not None else time.time()) - ttl_days * 86400.0
+    keep = [e for e in entries if e.ts >= cutoff]
+    dropped = len(entries) - len(keep)
+    if dropped <= 0:
+        return 0
+    return dropped if _rewrite_insights(keep, path) else 0
+
+
+def resolve_contradictions(
+    successes: list[dict], path: Path | str = DEFAULT_INSIGHTS, *,
+    min_successes: int = 2, similarity: float = 0.3,
+) -> int:
+    """Retire failure insights the system has since outgrown.
+
+    When ``min_successes`` or more successes NEWER than a failure-pattern
+    insight lexically match it ("we now reliably do X"), the insight is
+    contradicted and dropped instead of coexisting with the new reality.
+    Returns how many insights were retired.
+    """
+    entries = load_insights(path)
+    if not entries or not successes:
+        return 0
+    keep: list[DreamInsight] = []
+    retired = 0
+    for ins in entries:
+        it = _tokens(ins.text)
+        newer_wins = sum(
+            1 for s in successes
+            if float(s.get("t", 0) or 0) > ins.ts
+            and _jaccard(_tokens(str(s.get("goal", ""))), it) >= similarity
+        )
+        if ins.kind in {"failure_pattern", "shared_pattern"} \
+                and newer_wins >= max(1, min_successes):
+            retired += 1
+            continue
+        keep.append(ins)
+    if retired <= 0:
+        return 0
+    return retired if _rewrite_insights(keep, path) else 0
+
+
+# ---------- fact consolidation ----------
+
+def prune_facts(
+    world: Any, *, max_age_days: int = 180, cap: int = 2000,
+    now: float | None = None,
+) -> int:
+    """Expire stale facts and cap the table (opt-in: deletes user data).
+
+    The facts table grows monotonically; this drops facts not updated in
+    ``max_age_days`` and, if still over ``cap``, the oldest beyond the cap.
+    Returns how many facts were deleted. Gated by ``[dreaming] prune_facts``
+    (default OFF) — the only dream phase that touches operator data.
+    """
+    if world is None:
+        return 0
+    deleted = 0
+    ts_now = now if now is not None else time.time()
+    try:
+        if max_age_days > 0:
+            cutoff = ts_now - max_age_days * 86400.0
+            for key in world.stale_fact_keys(cutoff, limit=1000):
+                deleted += int(world.delete_fact(key) or 0)
+        if cap > 0:
+            over = world.count_facts() - cap
+            if over > 0:
+                for key in world.stale_fact_keys(ts_now + 1, limit=over):
+                    deleted += int(world.delete_fact(key) or 0)
+    except Exception as e:  # pragma: no cover -- pruning never blocks a dream
+        log.debug("dreaming: fact prune skipped: %s", e)
+    return deleted
 
 
 # ---------- skill retirement (the forgetting loop) ----------
@@ -635,6 +763,49 @@ async def rehearse(
 
 # ---------- the dream cycle ----------
 
+def _replay_critiques(
+    outbox: Path | str | None = None, *, max_confidence: float = 0.75,
+    limit: int = 100,
+) -> list[dict]:
+    """Mine donated trajectory records for verifier critiques worth dreaming on.
+
+    ``result.verifier_critique`` is written into donation records and never
+    read again; runs the verifier passed but criticized (confidence under
+    ``max_confidence``) are weak spots worth consolidating. Returns
+    failure-shaped dicts so they flow through the same clustering as
+    reflexions. Empty unless trajectory donation is enabled and has records.
+    """
+    try:
+        import json as _json
+
+        from .donation import list_pending
+        paths = list_pending(Path(outbox) if outbox is not None else None)
+    except Exception:  # pragma: no cover -- donations never block a dream
+        return []
+    out: list[dict] = []
+    for p in paths[-limit:]:
+        try:
+            d = _json.loads(Path(p).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        critique = str(d.get("verifier_critique", "") or "").strip()
+        brief = str(d.get("task_brief_text", "") or "").strip()
+        try:
+            conf = float(d.get("verifier_confidence", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            conf = 0.0
+        if not critique or not brief or conf >= max_confidence:
+            continue
+        out.append({
+            "ts": float(d.get("ts", 0.0) or 0.0),
+            "goal_text": brief,
+            "failure_class": "verifier_critique",
+            "reflection": critique[:240],
+            "domain": None,
+        })
+    return out
+
+
 def _replay_failures(reflexion_path: Path | str | None) -> list[dict]:
     from . import reflexion as _r
     kwargs: dict = {"limit": 200}
@@ -679,6 +850,8 @@ def dream_cycle(
     skill_store: Path | str | None = None, now: float | None = None,
     rehearsals_path: Path | str = DEFAULT_REHEARSALS,
     skill_stats_path: Path | None = None,
+    critiques_outbox: Path | str | None = None,
+    user_notes_path: Path | str | None = None,
 ) -> DreamReport:
     """Run one full dream cycle. Deterministic, LLM-free, fail-open.
 
@@ -705,18 +878,26 @@ def dream_cycle(
                     "goal": getattr(g, "title", "") or "",
                     "success": True, "tools": [],
                     "t": getattr(g, "updated_at", 0.0) or 0.0,
+                    # Exact attribution when the goal row carries its
+                    # department (schema v14); lexical fallback otherwise.
+                    "domain": getattr(g, "domain", "") or None,
                 })
         except Exception as e:  # pragma: no cover -- world read never blocks
             log.debug("dreaming: goal replay skipped: %s", e)
     failures = _replay_failures(reflexion_path)
+    # Critique mining: verifier critiques from donated trajectories are
+    # weak-spot signals; cluster them like failures. Off-able knob; naturally
+    # empty unless [telemetry] donate_trajectories has produced records.
+    if bool(cfg.get("mine_critiques", True)):
+        failures = failures + _replay_critiques(critiques_outbox)
     report.goals_replayed = len(successes)
     report.failures_replayed = len(failures)
 
-    # Attribute experience to departments. A failure recorded by a domain run
-    # carries its department; everything else is attributed lexically.
+    # Attribute experience to departments. Experience recorded by a domain
+    # run carries its department; everything else is attributed lexically.
     by_domain_success: dict[str | None, list[dict]] = {}
     for s in successes:
-        dom = assign_domain(s["goal"], signatures)
+        dom = s.get("domain") or assign_domain(s["goal"], signatures)
         by_domain_success.setdefault(dom, []).append(s)
     for f in failures:
         if not f.get("domain"):
@@ -769,11 +950,40 @@ def dream_cycle(
             stats_path=skill_stats_path,
         ))
 
+    # RECONCILE the insight store with reality: retire insights contradicted
+    # by newer successes, then age out insights whose pattern stopped
+    # recurring (confirmation refreshes ts, so live lessons never expire).
+    report.insights_retired = resolve_contradictions(
+        successes, insights_path,
+        min_successes=int(cfg.get("contradiction_successes", 2)),
+    )
+    report.insights_expired = expire_insights(
+        insights_path, ttl_days=int(cfg.get("insight_ttl_days", 90)), now=now,
+    )
+
     # PRUNE the reflexion log so recall quality doesn't decay with volume.
     if bool(cfg.get("prune", True)):
         report.reflexions_pruned = prune_reflexions(
             reflexion_path, keep=int(cfg.get("keep_reflexions", 500)),
         )
+
+    # Fact consolidation (opt-in -- deletes operator data): expire stale
+    # facts and cap the table so cross-run memory stays sharp.
+    if world is not None and bool(cfg.get("prune_facts", False)):
+        report.facts_pruned = prune_facts(
+            world, max_age_days=int(cfg.get("facts_max_age_days", 180)),
+            cap=int(cfg.get("facts_cap", 2000)), now=now,
+        )
+
+    # Per-user preference notes: distill explicit, deterministic preference
+    # statements from recent conversations into briefing notes injected on
+    # that user's future runs.
+    if world is not None and bool(cfg.get("user_notes", True)):
+        try:
+            from . import user_notes as _un
+            report.user_notes_written = _un.consolidate(world, path=user_notes_path)
+        except Exception as e:  # pragma: no cover -- notes never block a dream
+            log.debug("dreaming: user-note consolidation skipped: %s", e)
 
     touched = {d for d in by_domain_success if d} | {
         i.domain for i in new_insights if i.domain

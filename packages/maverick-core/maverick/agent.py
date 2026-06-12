@@ -1411,6 +1411,28 @@ class Agent:
         self._tool_fail_streak[key] = streak
         if streak < _LOOP_GUARD_THRESHOLD:
             return ""
+        # Tool-failure taxonomy: the streak the loop guard detected is a
+        # learnable pattern, not just an in-run nudge. Persist it (class
+        # ``tool_flaky``) so recall warns the next similar goal away from the
+        # tool and find_tools can demote it. No-op unless [reflexion] is on.
+        try:
+            from . import reflexion as _r
+            if _r.enabled():
+                head = (raw_output or "").strip().splitlines()
+                _r.record(
+                    goal_text=_r._sanitize_text(self.brief)[:500],
+                    failure_class="tool_flaky",
+                    failure_msg=(head[0][:200] if head else ""),
+                    reflection=(
+                        f"The `{name}` tool failed the same way {streak}x in a "
+                        "row on this kind of goal. Reach for an alternative "
+                        "tool or different arguments early instead of retrying."
+                    ),
+                    tools_used=[name],
+                    domain=self.domain,
+                )
+        except Exception:  # pragma: no cover -- learning never blocks the loop
+            pass
         return (
             f"\n\n[loop-guard] You have issued this exact `{name}` call "
             f"{streak} times in a row and it failed the same way each time. "
@@ -1693,6 +1715,7 @@ class Agent:
             messages = compact_with(
                 messages, llm=self.ctx.llm,
                 conversation_id=str(getattr(self.ctx, "goal_id", "") or ""),
+                scope=self.domain,
             )
 
             try:
