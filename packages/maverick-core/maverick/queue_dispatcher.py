@@ -39,7 +39,7 @@ def _serialize_capability(capability: Any | None) -> dict[str, Any] | None:
         raise TypeError(
             "queue dispatch requires capability to be a maverick.capability.Capability"
         )
-    return {
+    payload = {
         "principal": capability.principal,
         "allow_tools": sorted(capability.allow_tools),
         "deny_tools": sorted(capability.deny_tools),
@@ -48,6 +48,9 @@ def _serialize_capability(capability: Any | None) -> dict[str, Any] | None:
         "allow_paths": sorted(capability.allow_paths),
         "allow_hosts": sorted(capability.allow_hosts),
     }
+    if capability.ancestors:
+        payload["ancestors"] = list(capability.ancestors)
+    return payload
 
 
 def _deserialize_capability(raw: Any) -> Any | None:
@@ -67,6 +70,7 @@ def _deserialize_capability(raw: Any) -> Any | None:
         expires_at=raw.get("expires_at"),
         allow_paths=frozenset(raw.get("allow_paths") or ()),
         allow_hosts=frozenset(raw.get("allow_hosts") or ()),
+        ancestors=tuple(str(p) for p in (raw.get("ancestors") or ()) if str(p)),
     )
 
 
