@@ -33,11 +33,12 @@ KNOWN_SECTIONS = frozenset({
     "agent", "analytics", "attachments", "audit", "auth", "budget",
     "catalogs", "channels", "coding", "compliance", "containment", "context",
     "dashboard", "durable", "effort", "energy", "enterprise", "finance",
-    "github", "governance", "grpc", "grpc_dispatch", "intake", "knowledge",
-    "langchain", "logging", "lsp", "memory", "observability", "plugins",
-    "provider_failover", "providers", "queue", "retention", "roles",
-    "routing", "safety", "sandbox", "self_learning", "skills", "telemetry",
-    "tools", "webhooks", "world_model",
+    "capabilities", "features", "github", "governance", "grpc", "grpc_dispatch",
+    "intake", "knowledge", "langchain", "logging", "lsp", "mcp_servers",
+    "memory", "models", "observability", "plugins", "provider_failover",
+    "providers", "queue", "retention", "roles", "routing", "safety", "sandbox",
+    "security", "self_learning", "skills", "telemetry", "tenancy", "tools",
+    "webhooks", "world_model",
 })
 
 
@@ -132,8 +133,8 @@ def migrate(config_path: Path | None = None, *, apply: bool = False) -> Migratio
         import tomli as tomllib  # type: ignore[no-redef]
 
     if config_path is None:
-        from .paths import data_dir
-        config_path = data_dir(tenant=None) / "config.toml"
+        from .config import config_path as active_config_path
+        config_path = active_config_path()
     config_path = Path(config_path)
     report = MigrationReport()
     if not config_path.exists():

@@ -38,9 +38,47 @@ def test_unknown_section_lint_with_suggestion(tmp_path):
 
 
 def test_known_sections_cover_real_config_surface():
-    for section in ("budget", "channels", "safety", "tools", "world_model",
-                    "plugins", "compliance", "routing", "grpc_dispatch"):
+    for section in (
+        "budget", "channels", "safety", "tools", "world_model",
+        "plugins", "compliance", "routing", "grpc_dispatch",
+        "models", "capabilities", "features", "security", "mcp_servers",
+        "tenancy",
+    ):
         assert section in KNOWN_SECTIONS
+
+
+def test_runtime_sections_do_not_lint_as_unknown(tmp_path):
+    p = _cfg(tmp_path, """
+[models]
+planner = "openai:gpt-5"
+[capabilities]
+web_search = true
+[features]
+skills = true
+[security]
+allowed_tools = ["read"]
+[mcp_servers]
+[tenancy]
+by_user = true
+""")
+    assert migrate(p).clean
+
+
+def test_default_config_uses_active_runtime_path(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    default_dir = home / ".maverick"
+    default_dir.mkdir(parents=True)
+    (default_dir / "config.toml").write_text("[budget]\nmax_dollars = 5.0\n", encoding="utf-8")
+
+    active = tmp_path / "etc" / "maverick" / "config.toml"
+    active.parent.mkdir(parents=True)
+    active.write_text("[channels.whatsapp]\nenabled = true\n", encoding="utf-8")
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("MAVERICK_CONFIG", str(active))
+
+    report = migrate()
+    assert [f.id for f in report.findings] == ["whatsapp-twilio-to-cloud"]
 
 
 def test_dry_run_never_writes(tmp_path):
