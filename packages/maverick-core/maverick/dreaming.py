@@ -224,6 +224,7 @@ def _keywords(texts: list[str], k: int = 4) -> list[str]:
 
 def synthesize_insight(
     cluster: list[dict], *, domain: str | None, now: float | None = None,
+    kind: str = "failure_pattern",
 ) -> DreamInsight:
     """Deterministic consolidation of one failure cluster — no LLM call, so
     persisted insights can't be steered by injected trajectory text."""
@@ -236,6 +237,9 @@ def synthesize_insight(
         f"Recurring failure ({cls}, seen {len(cluster)}x) on goals about "
         f"{about}."
     )
+    if kind == "shared_pattern":
+        depts = sorted({str(f.get("domain")) for f in cluster if f.get("domain")})
+        text += f" Seen across departments: {', '.join(depts)}."
     if lesson:
         text += f" Latest lesson: {lesson}"
     text += (
@@ -244,8 +248,28 @@ def synthesize_insight(
     )
     return DreamInsight(
         ts=now if now is not None else time.time(),
-        kind="failure_pattern", domain=domain, text=text, evidence=len(cluster),
+        kind=kind, domain=domain, text=text, evidence=len(cluster),
     )
+
+
+def promote_shared_insights(
+    failures: list[dict], *, min_cluster: int = 2, now: float | None = None,
+) -> list[DreamInsight]:
+    """Cross-department promotion: a failure pattern that recurs in TWO OR
+    MORE distinct departments becomes a *shared* insight (``domain=None``,
+    ``kind="shared_pattern"``), recallable by every department via lexical
+    similarity. Compartment seals stay intact — only the consolidated lesson
+    crosses the boundary, never raw department trajectories.
+    """
+    promoted: list[DreamInsight] = []
+    for cluster in cluster_failures(failures, min_cluster=min_cluster):
+        depts = {f.get("domain") for f in cluster if f.get("domain")}
+        if len(depts) < 2:
+            continue
+        promoted.append(synthesize_insight(
+            cluster, domain=None, now=now, kind="shared_pattern",
+        ))
+    return promoted
 
 
 # ---------- insight store ----------
@@ -531,6 +555,12 @@ def dream_cycle(
     for dom, fs in by_domain_failure.items():
         for cluster in cluster_failures(fs, min_cluster=int(cfg.get("min_cluster", 2))):
             new_insights.append(synthesize_insight(cluster, domain=dom, now=now))
+    # Cross-department promotion: a pattern recurring in >=2 departments
+    # becomes a shared lesson every department can recall.
+    if bool(cfg.get("promote_shared", True)):
+        new_insights.extend(promote_shared_insights(
+            failures, min_cluster=int(cfg.get("min_cluster", 2)), now=now,
+        ))
     report.insights_written = append_insights(
         new_insights, path=insights_path,
         max_insights=int(cfg.get("max_insights", 100)),
@@ -560,6 +590,7 @@ __all__ = [
     "assign_domain",
     "cluster_failures",
     "synthesize_insight",
+    "promote_shared_insights",
     "load_insights",
     "append_insights",
     "recall_insights",

@@ -475,12 +475,30 @@ def get_dreaming() -> dict:
         except (TypeError, ValueError):
             return default
 
+    def _ratio(key: str, default: float) -> float:
+        try:
+            return max(0.0, min(1.0, float(cfg.get(key, default))))
+        except (TypeError, ValueError):
+            return default
+
     return {
         "enable": bool(cfg.get("enable", False)),
         "min_cluster": _int("min_cluster", 2),
         "max_insights": _int("max_insights", 100),
         "prune": bool(cfg.get("prune", True)),
         "keep_reflexions": _int("keep_reflexions", 500),
+        # Cross-department promotion: a failure pattern recurring in >=2
+        # departments becomes a shared insight recallable by all of them.
+        "promote_shared": bool(cfg.get("promote_shared", True)),
+        # Dream-time rehearsal (maverick-evolve harness) is a separate trust
+        # decision from consolidation: it spends real agent runs. Default off.
+        "rehearse": bool(cfg.get("rehearse", False)),
+        "max_rehearsals": _int("max_rehearsals", 3),
+        # Forgetting loop: retire learned skills whose recall track record
+        # decayed below the floor (after enough attempts to judge).
+        "retire_skills": bool(cfg.get("retire_skills", True)),
+        "retire_min_uses": _int("retire_min_uses", 5),
+        "retire_below": _ratio("retire_below", 0.25),
     }
 
 

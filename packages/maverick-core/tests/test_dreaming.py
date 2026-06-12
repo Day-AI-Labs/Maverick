@@ -187,6 +187,55 @@ class TestInsightRecall:
         assert dreaming.format_context([]) == ""
 
 
+class TestSharedPromotion:
+    def _failure(self, goal: str, domain: str | None, ts: float = 1.0) -> dict:
+        return {"goal_text": goal, "failure_class": "agent_error",
+                "reflection": "connector timed out", "domain": domain, "ts": ts}
+
+    def test_pattern_across_two_departments_is_promoted(self):
+        promoted = dreaming.promote_shared_insights([
+            self._failure("erp connector export timed out on large batches",
+                          "finance_sox"),
+            self._failure("erp connector export timed out during demo prep",
+                          "gtm_sales_eng"),
+        ], min_cluster=2)
+        assert len(promoted) == 1
+        ins = promoted[0]
+        assert ins.kind == "shared_pattern"
+        assert ins.domain is None  # shared pool: every department recalls it
+        assert "finance_sox" in ins.text and "gtm_sales_eng" in ins.text
+
+    def test_single_department_pattern_is_not_promoted(self):
+        promoted = dreaming.promote_shared_insights([
+            self._failure("erp connector export timed out", "finance_sox"),
+            self._failure("erp connector export timed out again", "finance_sox"),
+        ], min_cluster=2)
+        assert promoted == []
+
+    def test_cycle_promotes_when_departments_each_saw_it_once(
+        self, tmp_path, monkeypatch,
+    ):
+        # One failure per department: below min_cluster within each, but the
+        # cross-department cluster clears it -- only the shared insight lands.
+        monkeypatch.setattr(dreaming, "settings", lambda: dict(_SETTINGS))
+        rpath = tmp_path / "reflexions.ndjson"
+        reflexion.record(goal_text="erp connector export timed out on batches",
+                         failure_class="agent_error", failure_msg="timeout",
+                         reflection="r", domain="finance_sox", path=rpath)
+        reflexion.record(goal_text="erp connector export timed out in demo",
+                         failure_class="agent_error", failure_msg="timeout",
+                         reflection="r", domain="gtm_sales_eng", path=rpath)
+        report = dreaming.dream_cycle(
+            None, profiles=PROFILES, reflexion_path=rpath,
+            insights_path=tmp_path / "insights.ndjson",
+            skill_store=tmp_path / "skills",
+        )
+        assert report.insights_written == 1
+        insights = dreaming.load_insights(tmp_path / "insights.ndjson")
+        assert insights[0].kind == "shared_pattern"
+        assert insights[0].domain is None
+
+
 class TestReflexionPruning:
     def test_dedups_and_caps_keeping_newest(self, tmp_path):
         path = tmp_path / "reflexions.ndjson"
