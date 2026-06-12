@@ -8,6 +8,7 @@ from maverick.cross_run_anomaly import (
     Anomaly,
     baseline,
     detect,
+    gather_runs,
     profile_run,
     score_run,
 )
@@ -82,3 +83,50 @@ def test_detect_excludes_target_from_baseline():
     anomalies = detect(_W(), 5)
     assert any(a.kind == "novel_event_kind" for a in anomalies)
     assert all(isinstance(a, Anomaly) for a in anomalies)
+
+
+def test_gather_runs_scopes_by_owner_before_reading_events():
+    class _W:
+        def __init__(self):
+            self.events_read = []
+
+        def list_goals(self, limit=50, order="desc", owner=None):
+            goals = [
+                types.SimpleNamespace(id=1, status="done", owner="user:alice"),
+                types.SimpleNamespace(id=2, status="done", owner="user:bob"),
+                types.SimpleNamespace(id=3, status="running", owner="user:alice"),
+                types.SimpleNamespace(id=4, status="done", owner="user:alice"),
+            ]
+            if owner is not None:
+                goals = [g for g in goals if g.owner == owner]
+            return goals[:limit]
+
+        def goal_events(self, gid, limit=10_000):
+            self.events_read.append(gid)
+            return [_ev("finding")] * 10
+
+    world = _W()
+    profiles = gather_runs(world, owner="user:alice")
+
+    assert [p.goal_id for p in profiles] == [1, 4]
+    assert world.events_read == [1, 4]
+
+
+def test_detect_owner_scope_excludes_other_tenants_from_baseline():
+    class _W:
+        def list_goals(self, limit=50, order="desc", owner=None):
+            goals = [
+                types.SimpleNamespace(id=i, status="done", owner="user:bob")
+                for i in range(1, 6)
+            ] + [types.SimpleNamespace(id=6, status="done", owner="user:alice")]
+            if owner is not None:
+                goals = [g for g in goals if g.owner == owner]
+            return goals[:limit]
+
+        def goal_events(self, gid, limit=10_000):
+            if gid == 6:
+                return [_ev("alice_only_kind")] * 10
+            return [_ev("finding")] * 10
+
+    assert detect(_W(), 6, owner="user:alice") == []
+    assert any(a.kind == "novel_event_kind" for a in detect(_W(), 6))
