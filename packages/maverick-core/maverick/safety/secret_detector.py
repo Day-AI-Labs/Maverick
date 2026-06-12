@@ -60,17 +60,27 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     # (BEGIN..END, DOTALL, non-greedy) when an END marker is present so the
     # base64 key MATERIAL is redacted -- the prior marker-only pattern left the
     # actual private key body and END line in cleartext (round-7 adversarial
-    # finding). The END group is optional so a truncated key (BEGIN with no
-    # END) still matches the bare marker and is flagged rather than ignored.
-    # Kept as a single pattern (not two) because scan() only dedupes EXACT
-    # spans, so a separate marker pattern would overlap and corrupt redact().
+    # finding). Kept as a single pattern (not two) because scan() only dedupes
+    # EXACT spans, so a separate marker pattern would overlap and corrupt
+    # redact().
     ("private_key_pem",    re.compile(
         r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----"
-        # Bounded body (a real key body is a few KB; even RSA-4096 < 4KB) so a
-        # crafted input with many BEGIN markers and no END can't make this
-        # scan to EOF per marker (ReDoS guard); a real key's END is always
-        # within this window.
-        r"(?:.{0,8192}?-----END (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----)?",
+        r"(?:"
+        # Preferred: the WHOLE block when an END marker is present. Bounded
+        # body (even RSA-4096 < 4KB) so many BEGIN markers with no END can't
+        # scan to EOF per marker (ReDoS guard); a real key's END is in-window.
+        r".{0,8192}?-----END (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----"
+        r"|"
+        # Fallback: a header WITH a body but NO END marker (a key truncated by
+        # a buffer/summary boundary -- e.g. the audit writer's own truncation).
+        # Making the whole END-group optional (the prior form) matched only the
+        # 26-char header and left the base64 body in cleartext -- a real leak
+        # through redact()/redact_proven()/the audit log. When END is absent,
+        # consume the trailing base64+whitespace run wholesale (fail-safe: a
+        # PRIVATE KEY header means err toward over-redaction; the restricted
+        # charset and {0,8192} bound keep it linear / ReDoS-safe).
+        r"[A-Za-z0-9+/=\s]{0,8192}"
+        r")",
         re.DOTALL)),
     # Council finding #14: coverage gaps that fed the tool-output exfil class.
     ("gitlab_pat",         re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}\b")),

@@ -35,8 +35,6 @@ import logging
 import os
 from pathlib import Path
 
-from .writer import DEFAULT_AUDIT_DIR
-
 log = logging.getLogger(__name__)
 
 
@@ -204,9 +202,17 @@ def scrub_user(
     channel: str,
     user_id: str,
     *,
-    audit_dir: Path = DEFAULT_AUDIT_DIR,
+    audit_dir: Path | None = None,
 ) -> tuple[int, int]:
     """Replace matching events with tombstones. Returns (matched, scanned)."""
+    if audit_dir is None:
+        # Resolve the SAME (home + active-tenant) audit dir the writer lands
+        # events in. The old frozen ~/.maverick/audit default silently skipped
+        # scrubbing whenever MAVERICK_HOME or a tenant scoped the real dir
+        # elsewhere -- an Art. 17 erasure that reported success but scrubbed
+        # nothing (user-testing finding).
+        from ..paths import data_dir
+        audit_dir = data_dir("audit")
     total_matched = 0
     total_scanned = 0
     if not audit_dir.exists():
@@ -230,9 +236,12 @@ def delete_user(
     channel: str,
     user_id: str,
     *,
-    audit_dir: Path = DEFAULT_AUDIT_DIR,
+    audit_dir: Path | None = None,
 ) -> tuple[int, int]:
     """Delete matching events entirely. Returns (deleted, scanned)."""
+    if audit_dir is None:
+        from ..paths import data_dir
+        audit_dir = data_dir("audit")
     total_matched = 0
     total_scanned = 0
     if not audit_dir.exists():

@@ -77,7 +77,11 @@ KNOWN_SCHEMA: dict[str, set[str] | None] = {
     "audit": {"sign"},
     "durable": {"enabled", "keep_last"},
     "persona": {"name", "style", "addendum"},
-    "dashboard": {"token"},
+    # The dashboard reads more than the auth token: theme/density/allow_extension
+    # (app.py) and a [dashboard.themes] subtable (themes.py). Listing only
+    # "token" made config-lint warn "unknown key" on documented operator
+    # settings like `[dashboard] theme = "dark"` (user-testing finding).
+    "dashboard": {"token", "theme", "density", "allow_extension", "themes"},
     "analytics": {"mcp_client_language"},
     # --- dynamic / open-ended sections (any subkey accepted) ---
     "providers": None,

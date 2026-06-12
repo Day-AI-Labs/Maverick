@@ -198,6 +198,41 @@ def _kernel():
     )
 
 
+def _run_outcome_blocked(world, goal_id: int) -> bool:
+    """True if the goal ended in the kernel's ``blocked`` state -- paused
+    awaiting a user answer, stopped by a budget/time cap, or refused by an
+    input guard. ``start`` reads this before closing the world DB so it can
+    exit nonzero for a halted/paused run (it used to always exit 0); a genuine
+    ``done`` completion stays 0."""
+    try:
+        g = world.get_goal(goal_id)
+    except Exception:  # pragma: no cover -- a status read must not mask the result
+        return False
+    return bool(g and g.status == "blocked")
+
+
+def _maybe_start_progress_poller(world_path, goal_id, stop_poll):
+    """Start the background goal-events poller, or return None when it should
+    stay quiet: output isn't a TTY (don't litter piped logs), MAVERICK_NO_PROGRESS
+    is set (runtime override), or [features] streaming is off (persistent opt-out)."""
+    import threading
+
+    from .config import get_features
+    try:
+        streaming_on = get_features()["streaming"]
+    except Exception:
+        streaming_on = True
+    if (not click.get_text_stream("stderr").isatty()
+            or os.environ.get("MAVERICK_NO_PROGRESS")
+            or not streaming_on):
+        return None
+    poller = threading.Thread(
+        target=_stream_progress, args=(world_path, goal_id, stop_poll), daemon=True,
+    )
+    poller.start()
+    return poller
+
+
 _CLI_SECURITY_WARNING_LOGGERS = ("maverick.sandbox", "maverick.orchestrator")
 
 
@@ -322,7 +357,10 @@ def init(fast: bool, resume: bool) -> None:
 def doctor() -> None:
     """Diagnose your Maverick installation."""
     from .health import diagnose
-    diagnose()
+    if diagnose():
+        # At least one ✗ check: exit nonzero so `maverick doctor && ...` and CI
+        # health gates can detect a broken install (it always exited 0 before).
+        sys.exit(1)
 
 
 @main.command()
@@ -395,9 +433,13 @@ def version() -> None:
               help="Path to a document to ingest (repeatable).")
 @click.option("--no-llm", is_flag=True,
               help="Use deterministic generation instead of the configured LLM.")
+@click.option("--description", default=None,
+              help="What the business does (skips the prompt; for non-interactive use).")
+@click.option("--industry", default=None,
+              help="Industry (skips the prompt; for non-interactive use).")
 @click.option("--yes", is_flag=True, help="Skip the approval prompt.")
 @click.pass_context
-def onboard(ctx: click.Context, name, docs, no_llm, yes) -> None:
+def onboard(ctx: click.Context, name, docs, no_llm, description, industry, yes) -> None:
     """Onboard a business: describe it + attach docs -> a sealed domain agent.
 
     Generates a domain pack (clamped to a safe envelope), shows it for your
@@ -406,11 +448,24 @@ def onboard(ctx: click.Context, name, docs, no_llm, yes) -> None:
     """
     from .intake import IntakeSpec, attach_docs_to_profile, run_intake, save_profile
 
-    name = name or click.prompt("Business name")
-    description = click.prompt("What does the business do?", default="", show_default=False)
-    industry = click.prompt("Industry (optional)", default="", show_default=False)
+    # Only prompt when a human is attached (a TTY). In non-interactive use (CI,
+    # piped stdin) the intake prompts used to fire and then abort even with
+    # --name/--no-llm/--yes supplied, so onboarding could not be automated
+    # (user-testing finding). Pass --name/--description/--industry/--doc instead.
+    interactive = sys.stdin.isatty()
+    if not name:
+        if not interactive:
+            click.echo("ERROR: --name is required for non-interactive onboarding.", err=True)
+            sys.exit(2)
+        name = click.prompt("Business name")
+    if description is None:
+        description = (click.prompt("What does the business do?", default="", show_default=False)
+                      if interactive else "")
+    if industry is None:
+        industry = (click.prompt("Industry (optional)", default="", show_default=False)
+                    if interactive else "")
     doc_paths = list(docs)
-    if not doc_paths:
+    if not doc_paths and interactive:
         click.echo("Attach documents (blank line to finish):")
         while True:
             p = click.prompt("  document path", default="", show_default=False)
@@ -1421,12 +1476,21 @@ def tenant_resume(tenant_id: str) -> None:
 def tenant_quota(tenant_id: str, max_daily_dollars: float) -> None:
     """Set a tenant's daily spend cap (USD; 0 = unlimited)."""
     from .tenant_registry import UnknownTenant, set_quota
+    # A negative cap was silently clamped to 0 -- i.e. UNLIMITED -- so a typo'd
+    # `-5` quietly removed the cap instead of erroring (user-testing finding).
+    if max_daily_dollars < 0:
+        click.echo(f"ERROR: quota cannot be negative (got {max_daily_dollars:g}); "
+                   "use 0 for unlimited.", err=True)
+        sys.exit(2)
     try:
         rec = set_quota(tenant_id, max_daily_dollars)
     except UnknownTenant:
         click.echo(f"ERROR: no such tenant {tenant_id!r}", err=True)
         sys.exit(2)
-    click.echo(f"{rec.id!r} quota -> ${rec.max_daily_dollars:g}/day")
+    # Render 0 as "unlimited" to match `tenant list`; printing "$0/day" while the
+    # listing said "unlimited" was a contradiction in the same value.
+    cap = f"${rec.max_daily_dollars:g}/day" if rec.max_daily_dollars else "unlimited"
+    click.echo(f"{rec.id!r} quota -> {cap}")
 
 
 @tenant.command("delete")
@@ -1466,8 +1530,17 @@ def billing_invoice(tenant_id: str, since: str | None, until: str | None,
     """Generate an invoice for a tenant from its metered usage."""
     import json as _json
 
+    from .audit.events import is_valid_day
     from .billing import RateCard, generate_invoice
     from .tenant_registry import get_tenant, list_tenants
+    # Period bounds compare lexically against YYYY-MM-DD ledger keys, so a typo'd
+    # --since/--until ("2026-6-1", "june") silently fell out of range and minted
+    # a misleading empty invoice. Reject anything that isn't a real calendar day.
+    for _label, _val in (("--since", since), ("--until", until)):
+        if _val is not None and not is_valid_day(_val):
+            click.echo(f"ERROR: {_label} must be a valid YYYY-MM-DD date (got {_val!r}).",
+                       err=True)
+            sys.exit(2)
     inv = generate_invoice(
         tenant_id, RateCard(markup_pct=markup_pct, minimum_charge=min_charge),
         since=since, until=until,
@@ -1821,26 +1894,8 @@ def start(
     # in real time. Non-tty output (e.g. piped to a file) skips the
     # poller so logs aren't littered with progress lines.
     import threading
-
-    from .config import get_features
     stop_poll = threading.Event()
-    # Suppress the live poller when: output isn't a TTY (don't litter piped
-    # logs), MAVERICK_NO_PROGRESS is set (runtime override), or [features]
-    # streaming is disabled in config (persistent opt-out).
-    try:
-        _streaming_on = get_features()["streaming"]
-    except Exception:
-        _streaming_on = True
-    if (not click.get_text_stream("stderr").isatty()
-            or os.environ.get("MAVERICK_NO_PROGRESS")
-            or not _streaming_on):
-        poller = None
-    else:
-        poller = threading.Thread(
-            target=_stream_progress, args=(world.path, goal_id, stop_poll),
-            daemon=True,
-        )
-        poller.start()
+    poller = _maybe_start_progress_poller(world.path, goal_id, stop_poll)
 
     try:
         if coding_mode and best_of_n > 1:
@@ -1856,6 +1911,9 @@ def start(
                 llm, world, bud, goal_id,
                 sandbox=sandbox, max_depth=max_depth, domain=domain,
             )
+        # Capture the kernel's final verdict before the DB is closed so the
+        # exit code can reflect it (see _run_outcome_blocked).
+        _blocked = _run_outcome_blocked(world, goal_id)
     finally:
         stop_poll.set()
         if poller is not None:
@@ -1865,6 +1923,11 @@ def start(
         world.close()
     click.echo("")
     click.echo(result)
+    if _blocked:
+        # Exit nonzero so a script / CI can tell a halted or paused run from a
+        # clean success; the human-readable reason is already printed above.
+        # (start used to exit 0 for every outcome -- user-testing finding.)
+        sys.exit(2)
 
 
 @main.command("report-issue")
@@ -2250,21 +2313,31 @@ def config_lint_cmd() -> None:
     # health._check_config). Parse the raw file FIRST so a syntax error is a
     # hard lint failure, not invisible.
     p = config_path()
-    if p.exists():
-        try:
-            import tomllib
-        except ModuleNotFoundError:  # 3.10
-            import tomli as tomllib
-        try:
-            with open(p, "rb") as f:
-                tomllib.load(f)
-        except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as e:
-            click.echo(
-                f"error: {p} is not valid TOML -- every setting in it is being "
-                f"IGNORED ({type(e).__name__}: {e})", err=True,
-            )
-            click.echo("fix the syntax above, or back it up and re-run `maverick init`.")
-            sys.exit(1)
+    if not p.exists():
+        # No config at all is a legitimate state (Maverick runs on built-in
+        # defaults), but the file-less path used to fall through to
+        # load_config() == {} and print "config OK" -- as if a real config had
+        # been validated. Say plainly there's nothing to lint instead of
+        # blessing a non-existent file (user-testing finding).
+        click.echo(
+            f"no config file at {p}; Maverick is using built-in defaults. "
+            "Create one with `maverick init` (nothing to lint yet)."
+        )
+        return
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # 3.10
+        import tomli as tomllib
+    try:
+        with open(p, "rb") as f:
+            tomllib.load(f)
+    except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as e:
+        click.echo(
+            f"error: {p} is not valid TOML -- every setting in it is being "
+            f"IGNORED ({type(e).__name__}: {e})", err=True,
+        )
+        click.echo("fix the syntax above, or back it up and re-run `maverick init`.")
+        sys.exit(1)
     try:
         cfg = load_config() or {}
     except Exception as e:
@@ -2654,9 +2727,14 @@ def answer(ctx, question_id: int, answer: tuple[str, ...]) -> None:
               help="Raise the dollar cap for this resume (e.g. after a budget halt).")
 @click.option("--max-wall-seconds", type=float, default=None,
               help="Raise the wall-clock cap for this resume.")
+@click.option("--sandbox", "sandbox_backend", default=None,
+              type=click.Choice(["local", "docker", "podman", "devcontainer",
+                                 "kubernetes", "ssh", "firecracker"]),
+              help="Sandbox backend for this resume (default: the [sandbox] config).")
 @click.pass_context
 @_humane_errors
-def resume(ctx, goal_id_arg, goal_id, max_depth: int, max_dollars, max_wall_seconds) -> None:
+def resume(ctx, goal_id_arg, goal_id, max_depth: int, max_dollars, max_wall_seconds,
+           sandbox_backend) -> None:
     """Resume a blocked goal.
 
     Pass the goal id positionally (``maverick resume 7``) or via ``--goal-id``;
@@ -2698,7 +2776,9 @@ def resume(ctx, goal_id_arg, goal_id, max_depth: int, max_dollars, max_wall_seco
     # Honor the configured [sandbox] backend on resume too -- without this,
     # resume always fell back to run_goal's default local backend, ignoring a
     # user who configured docker/podman (a quiet safety + consistency gap).
-    sandbox = k.build_sandbox()
+    # --sandbox overrides it, so an operator who ran `start --sandbox docker`
+    # keeps the same isolation on resume (user-testing finding); None = config.
+    sandbox = k.build_sandbox(backend=sandbox_backend)
     result = k.run_goal_sync(llm, world, bud, goal_id,
                              sandbox=sandbox, max_depth=max_depth,
                              resume=True)

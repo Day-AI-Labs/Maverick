@@ -24,6 +24,17 @@ def test_clean_config_no_findings():
     assert format_findings(lint_config(cfg)) == "config OK"
 
 
+def test_dashboard_keys_the_app_reads_are_known():
+    # The dashboard reads theme/density/allow_extension and a [dashboard.themes]
+    # subtable; the schema listing only "token" warned "unknown key" on those
+    # documented operator settings (user-testing finding).
+    findings = lint_config({"dashboard": {
+        "token": "x", "theme": "dark", "density": "compact",
+        "allow_extension": True, "themes": {"mine": {"bg": "#000"}},
+    }})
+    assert findings == [], [f.message for f in findings]
+
+
 def test_unknown_section_warns_with_suggestion():
     # "budgets" is a typo for the known "budget" section.
     findings = lint_config({"budgets": {"max_dollars": 5.0}})
