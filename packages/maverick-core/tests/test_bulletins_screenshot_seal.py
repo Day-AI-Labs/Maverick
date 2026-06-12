@@ -141,6 +141,24 @@ def test_recapture_supersedes(tmp_path):
     assert verify_file(p, key=KEY) == "VALID"
 
 
+def test_ledger_tail_truncation_is_tampered(tmp_path):
+    p = _capture(tmp_path, "a.png", b"V1")
+    seal(p, key=KEY)
+    ledger = tmp_path / ".seals.jsonl"
+    first_line = ledger.read_text().splitlines()[0]
+    p.write_bytes(b"V2")
+    seal(p, key=KEY)
+
+    # Simulate rollback: remove the newest signed seal and restore old bytes.
+    ledger.write_text(first_line + "\n")
+    p.write_bytes(b"V1")
+
+    report = verify_ledger(tmp_path, key=KEY)
+    assert not report["ok"]
+    assert report["anchor"] == "mismatch"
+    assert verify_file(p, key=KEY) == "TAMPERED"
+
+
 def test_missing_key_refuses(tmp_path, monkeypatch):
     monkeypatch.delenv("MAVERICK_SCREENSHOT_KEY", raising=False)
     import maverick.config as config_mod
