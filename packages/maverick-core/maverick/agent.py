@@ -119,6 +119,7 @@ _FILE_TOOL_PATH_ARGS: dict[str, str] = {
     "str_replace_editor": "path",
     "ast_edit": "path",
     "image_content_classifier": "file",
+    "wasm_run": "module",
 }
 
 # P0 capability layer (host resource-scopes): the network tools whose URL
@@ -175,6 +176,22 @@ def _capability_paths_for_tool(name: str, args: Any, sandbox: Any) -> list[str] 
     path_arg = _FILE_TOOL_PATH_ARGS.get(name)
     if path_arg is None:
         return None
+
+    if name == "wasm_run":
+        if args.get("op", "run") != "run":
+            return None
+        raw_module = args.get("module")
+        if not isinstance(raw_module, str) or raw_module == "":
+            return None
+        paths = [_workspace_relative_path(sandbox, raw_module)]
+        raw_dirs = args.get("dirs") or []
+        if isinstance(raw_dirs, list):
+            paths.extend(
+                _workspace_relative_path(sandbox, raw_dir)
+                for raw_dir in raw_dirs
+                if isinstance(raw_dir, str) and raw_dir != ""
+            )
+        return paths
 
     raw = args.get(path_arg, ".") if name == "list_dir" else args.get(path_arg)
     if not isinstance(raw, str):

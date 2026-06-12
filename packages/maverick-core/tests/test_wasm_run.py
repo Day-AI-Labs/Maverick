@@ -97,3 +97,12 @@ def test_registered():
 
     names = set(getattr(base_registry(world=_W(), sandbox=_S()), "_tools", {}).keys())
     assert "wasm_run" in names
+
+
+def test_wasm_run_is_high_risk():
+    from maverick.capability import Capability
+    from maverick.safety.tool_risk import tool_risk, tools_exceeding
+
+    assert tool_risk("wasm_run") == "high"
+    assert "wasm_run" in tools_exceeding(["wasm_run"], "medium")
+    assert not Capability(principal="p", max_risk="medium").permits("wasm_run")
