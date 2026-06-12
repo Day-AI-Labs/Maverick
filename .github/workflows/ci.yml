@@ -112,6 +112,11 @@ jobs:
         run: |
           pip install -e ./packages/maverick-core -q
           python -m maverick.plugin_matrix --ci
+      - name: Specialist catalog gate (1,000 packs, zero envelope errors)
+        # Every domain pack must keep a non-empty tool allowlist, a valid
+        # risk ceiling, a working persona, and its deny list -- the honest-
+        # counting receipt behind the catalog claim. Errors fail the build.
+        run: maverick domains-lint --ci
       - name: Sunset gate (past-due deprecations must be removed)
         # The deprecation registry (maverick/deprecations.py) records every
         # deprecated path with its removal version. Once the package version
