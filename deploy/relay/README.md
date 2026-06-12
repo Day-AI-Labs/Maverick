@@ -8,20 +8,25 @@ the glasses/wearable adapter).
 
 ```bash
 export MAVERICK_RELAY_SECRET=...        # matches the dashboard's [webhooks] secret
+export MAVERICK_RELAY_TOKEN=...         # required bearer token for callers
 export MAVERICK_RELAY_TARGET=http://127.0.0.1:8765
-python deploy/relay/relay.py            # listens on :8799
+python deploy/relay/relay.py            # listens on 127.0.0.1:8799 by default
 
 curl -s localhost:8799/relay \
+  -H 'authorization: Bearer ...' \
   -H 'content-type: application/json' \
   -d '{"title":"summarize today's incidents","budget":5.0}'
 # -> {"goal_id": 123}
 ```
 
-Env: `MAVERICK_RELAY_SECRET` (required), `MAVERICK_RELAY_TARGET`
+Env: `MAVERICK_RELAY_SECRET` (required), `MAVERICK_RELAY_TOKEN` (required
+bearer the caller must present), `MAVERICK_RELAY_TARGET`
 (default `http://127.0.0.1:8765`), `MAVERICK_RELAY_PORT` (default `8799`),
-`MAVERICK_RELAY_TOKEN` (optional bearer the caller must present).
+and `MAVERICK_RELAY_HOST` (default `127.0.0.1`; set explicitly if a reverse
+proxy or firewall should expose it on another interface).
 
 It signs exactly the way `maverick.webhooks` verifies (timestamp-bound
 HMAC-SHA256), so forwarded requests pass the dashboard's replay-defended check —
-verified by `tests/test_relay_signature.py`. Stdlib only; put TLS in front
-(reverse proxy) for public exposure.
+verified by `tests/test_relay_signature.py`. Stdlib only; keep the relay
+behind a trusted reverse proxy/firewall and terminate TLS before any public
+exposure.
