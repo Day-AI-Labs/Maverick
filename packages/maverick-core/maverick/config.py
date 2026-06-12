@@ -452,6 +452,22 @@ def get_skill_synthesis() -> dict:
     return {"enable": bool(cfg.get("enable", False))}
 
 
+def get_domains() -> dict:
+    """Return the ``[domains]`` section with defaults filled in.
+
+    ``discipline`` appends the per-suite operating-discipline block to every
+    domain pack's persona at spawn (ON by default — it is pack content, not a
+    new capability; see :mod:`maverick.domain_discipline`). ``memory`` injects
+    the department's recalled lessons into a specialist's brief at spawn —
+    only meaningful when reflexion/dreaming are themselves enabled.
+    """
+    cfg = load_config().get("domains", {})
+    return {
+        "discipline": bool(cfg.get("discipline", True)),
+        "memory": bool(cfg.get("memory", True)),
+    }
+
+
 def get_experience() -> dict:
     """Return the ``[experience]`` section (outcome-guided orchestration).
     OFF by default."""

@@ -157,6 +157,26 @@ here.
   `--rollback latest|<name>` restore wholesale); with an active tenant,
   every learned store resolves under the tenant's data dir so one tenant's
   memory never feeds another's runs.
+- **Specialist operating discipline** (`domain_discipline.py`, on by
+  default; `[domains] discipline = false` opts out) — every domain pack's
+  persona is augmented at spawn with a universal verification/escalation
+  discipline plus its suite's professional guardrails (finance
+  maker-checker + SoD, legal privilege, HR PII-minimization, IT/GRC
+  chain-of-custody, ops safety interlocks, engineering tests-first, GTM
+  no-overpromising, strategy source-grounding). One implementation point
+  upgrades all 338 built-in packs AND operator/intake-generated packs;
+  prompts only — hard limits stay with capabilities/governance.
+- **Department memory at every spawn depth** — `agent_from_profile` appends
+  the department's recalled lessons (same-department reflexions + dream
+  insights) to a specialist's brief, so a `spawn_specialist` child starts
+  with its department's memory instead of blank (`[domains] memory`;
+  no-op unless those loops are enabled).
+- **Pack quality gate** — `maverick domains-lint [--ci --warnings]`
+  (`domain.lint_profile`): errors for envelope holes (empty tool allowlist
+  = ALL tools, missing/unknown `max_risk`), warnings for quality gaps
+  (thin persona, allow∩deny overlap, no knowledge sources, no deny list).
+  All built-in packs lint clean; every pack now carries at least a
+  suite-level `knowledge_sources` grounding fallback.
 - **Federated insight exchange** (`insight_exchange.py`,
   `maverick insights-export` / `insights-import`) — consolidated lessons
   (never raw trajectories) cross instance boundaries as Ed25519-signed
