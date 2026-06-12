@@ -38,6 +38,28 @@ def test_persists_across_instances_with_0600(tmp_path, now):
     assert second.get("Repo build command")["result"] == "make build"
 
 
+def test_temp_file_is_restrictive_before_replace(tmp_path, now, monkeypatch):
+    path = tmp_path / "lc.json"
+    cache = lc.LearningCache(path, clock=lambda: now["t"])
+    original_replace = lc.os.replace
+    observed = {}
+    old_umask = lc.os.umask(0o022)
+
+    def assert_tmp_mode_before_replace(src, dst):
+        observed["mode"] = src.stat().st_mode & 0o777
+        observed["contains_result"] = "private ops data" in src.read_text(encoding="utf-8")
+        return original_replace(src, dst)
+
+    try:
+        monkeypatch.setattr(lc.os, "replace", assert_tmp_mode_before_replace)
+        cache.put("private task", "private ops data", verified_by="verifier:g2")
+    finally:
+        lc.os.umask(old_umask)
+
+    assert observed == {"mode": 0o600, "contains_result": True}
+    assert (path.stat().st_mode & 0o777) == 0o600
+
+
 def test_ttl_expiry_with_injected_clock(cache, now):
     cache.put("schema for svc Y", "{...}", verified_by="verifier:g3", ttl_days=1)
     assert cache.get("schema for svc Y") is not None
