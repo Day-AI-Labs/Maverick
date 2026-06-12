@@ -2,9 +2,10 @@
 
 A capability whose ``allow_paths`` is non-empty restricts which filesystem
 paths the known file tools (read_file/write_file/list_dir/str_replace_editor/
-ast_edit/apply_patch) may touch. Default-open: an empty ``allow_paths`` (the common case,
-and the only state reachable without opting into capability enforcement) is a
-no-op, so normal behaviour is unchanged.
+ast_edit/image_content_classifier/apply_patch) may touch. Default-open: an
+empty ``allow_paths`` (the common case, and the only state reachable without
+opting into capability enforcement) is a no-op, so normal behaviour is
+unchanged.
 
 Mirrors ``tests/test_capability.py``'s ``_agent(tmp_path)`` + ``_run_tool``
 setup; hermetic (no real LLM, no network).
@@ -74,6 +75,23 @@ async def test_path_inside_scope_permitted(tmp_path):
     out = await agent._run_tool("read_file", {"path": "repo/ok.py"})
     assert "DENIED" not in out
     assert calls == ["repo/ok.py"]  # passed the gate and ran
+
+
+@pytest.mark.asyncio
+async def test_image_classifier_file_path_scope_denied(tmp_path):
+    agent = _agent(tmp_path)
+    agent.capability = Capability(principal="agent:coder-1",
+                                  allow_paths=frozenset({"repo/*"}))
+    calls: list = []
+    agent.tools.register(
+        _spy_tool("image_content_classifier", calls, path_key="file")
+    )
+
+    out = await agent._run_tool("image_content_classifier", {"file": "secret.png"})
+
+    assert "DENIED by capability" in out
+    assert "secret.png" in out
+    assert calls == []
 
 
 @pytest.mark.asyncio
