@@ -164,7 +164,7 @@ here.
   maker-checker + SoD, legal privilege, HR PII-minimization, IT/GRC
   chain-of-custody, ops safety interlocks, engineering tests-first, GTM
   no-overpromising, strategy source-grounding). One implementation point
-  upgrades all 338 built-in packs AND operator/intake-generated packs;
+  upgrades all 1,000 built-in packs AND operator/intake-generated packs;
   prompts only — hard limits stay with capabilities/governance.
 - **Department memory at every spawn depth** — `agent_from_profile` appends
   the department's recalled lessons (same-department reflexions + dream
@@ -177,6 +177,26 @@ here.
   (thin persona, allow∩deny overlap, no knowledge sources, no deny list).
   All built-in packs lint clean; every pack now carries at least a
   suite-level `knowledge_sources` grounding fallback.
+- **Hindsight engine** (`hindsight.py`, `maverick hindsight [--strict
+  --ledger]`) — replays past goals against learned-state snapshots to detect
+  when the forgetting loops silently cost coverage: gained / regressed /
+  unchanged, deterministically, with no agent re-runs. `--strict` is a
+  learning-regression CI gate; `--ledger` appends a tamper-evident row.
+- **Workforce value report** (`workforce_value.py`, `maverick proof
+  [--fleet]`) — deliverables completed, agent cost vs human baseline →
+  cost avoided + ROI, the capability improvement curve from the hindsight
+  ledger, and governance evidence, per department (and per external vendor
+  with `--fleet`). Read-only; the POC-closing artifact.
+- **1,000-agent specialist portfolio across 25 suites** — the original 8
+  business suites plus customer experience, marketing, procurement,
+  data & analytics, security ops, executive office, facilities/EHS, and 10
+  industry verticals (healthcare, insurance, banking, retail,
+  manufacturing, construction, logistics, professional services,
+  government contracting, education/nonprofit), with jurisdiction packs
+  (country employment law, GDPR/CCPA/PIPL/EU-AI-Act regimes, indirect-tax
+  regimes). Quality gate: `maverick domains-lint [--ci]` — every pack has
+  a bounded persona, least-privilege allow list, explicit deny list, and
+  risk ceiling; 0 errors, 0 warnings across all 1,000.
 - **Fleet memory — the Learning System of Record** (`fleet_memory.py`,
   opt-in `[fleet_memory] enable`; MCP tools `maverick_fleet_ingest` /
   `maverick_fleet_recall`; CLI `maverick fleet-memory`) — ANY external agent

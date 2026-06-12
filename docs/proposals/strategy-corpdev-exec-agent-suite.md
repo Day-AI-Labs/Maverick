@@ -1,5 +1,8 @@
 # Strategy / Corporate Development / Executive agent suite
 
+> **Status (June 2026):** counts and plans in this document are historical. The shipped catalog is 1,000 lint-clean agents across 25 suites with a full learning lifecycle — see [`docs/FEATURES.md`](../FEATURES.md).
+
+
 **Status:** design / roadmap. Companion to the finance, IT-GRC, sales-GTM, HR, and
 product-engineering suites; indexed in [`agent-suites-overview.md`](agent-suites-overview.md).
 Builds on [`../enterprise/architecture.md`](../enterprise/architecture.md). ~31 agents (26 base + 5 council-added)

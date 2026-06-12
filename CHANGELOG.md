@@ -6,6 +6,35 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Closed-loop self-improvement: offline experience consolidation
+  (`maverick dream` — replay, consolidate, rehearse, forget, prune),
+  department-scoped reflexion/memory, skill distillation with probation and
+  retirement, cross-department insight promotion, human-override and
+  user-correction ingestion, and verifier-scored rehearsal gated by the
+  calibration interlock.
+- Learning governance: per-cycle `learning_update` audit rows, `--dry-run`,
+  pre-cycle snapshots with `--rollback`, tenant-isolated learned stores, and
+  the hindsight engine (`maverick hindsight`) for learning-regression
+  detection.
+- `maverick proof` — workforce value report (deliverables, cost avoided,
+  ROI, improvement curve), with per-vendor `--fleet` breakdown.
+- Fleet memory (`maverick fleet-memory`, MCP tools `maverick_fleet_ingest`
+  / `maverick_fleet_recall`) — governed, audited memory plane for external
+  agents.
+- The Operating Record (`maverick record`) — decisions + approvals as a
+  queryable system of record with Ed25519-signed, offline-verifiable
+  capsule export.
+- Federated insight exchange (`maverick insights-export` / `-import`,
+  fail-closed signing) and fleet donation aggregation
+  (`maverick dream --donations-dir`).
+- Specialist portfolio expanded from 338 to 1,000 lint-clean agents across
+  25 suites, including customer support, 10 industry verticals, and
+  jurisdiction packs; suite operating discipline and department memory
+  applied to every pack at spawn; `maverick domains-lint` quality gate.
+- Goal rows persist their department (world-model schema v14).
+
+
 ### Fixed
 - World model search now backfills the `messages_fts` full-text index on
   upgrade (schema v10). The FTS triggers only index future writes, so a

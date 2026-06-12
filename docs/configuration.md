@@ -113,6 +113,29 @@ Maverick. For untrusted skills, avoid mounting secret-bearing paths into
 that runtime and prefer sandbox isolation that does not expose host
 state.
 
+## Learning & workforce sections
+
+```toml
+[dreaming]                 # offline experience consolidation (default off)
+enable = true
+# min_cluster / insight_ttl_days / retire_skills / rehearse / prune_facts /
+# snapshots / promote_shared / user_notes -- see FEATURES.md "Dreaming".
+trusted_insight_pubkeys = []   # peers for `maverick insights-import`
+
+[reflexion]                # cross-run failure lessons (default off)
+enable = true
+
+[domains]                  # specialist-pack behavior (defaults shown)
+discipline = true          # suite operating-discipline appended at spawn
+memory = true              # department lessons injected at spawn
+
+[fleet_memory]             # external agents read/write governed memory
+enable = false             # explicit trust decision; roster-gated
+
+[suites]                   # disable whole suites (all on by default)
+# healthcare = false
+```
+
 ## Per-role model choice
 
 This is the *fully control every aspect* knob. Heavy roles benefit from a smart model; cheap roles can use a small one. Mix providers freely — the orchestrator can be a cloud Opus while the summarizer is a local Llama.

@@ -113,7 +113,7 @@ What makes Maverick different from OpenClaw / Hermes on the long-horizon axis:
 
 1. **Persistent typed world model.** Goals, facts, episodes, and questions survive restarts. The agent can pause overnight and resume.
 2. **Recursive spawning with depth + budget caps.** Sub-agents can spawn sub-sub-agents until depth or budget runs out, never longer. Both `spawn_subagent` (blocking) and `spawn_swarm` (parallel) tools.
-3. **Closed learning loop.** Every successful run distills into `~/.maverick/skills/<name>.md`. Future runs auto-load relevant skills into the orchestrator's brief via lexical match (embeddings later).
+3. **Closed learning loop.** Beyond per-run skill distillation, the platform runs a full learning lifecycle: `maverick dream` consolidates experience offline (replay → consolidate → rehearse → forget → prune), reflexions and insights are department-scoped, learned state is snapshotted with rollback and a per-cycle audit row, and `maverick hindsight` detects learning regressions by replaying past goals against prior snapshots. External agents can join the same memory plane via fleet memory (MCP). See `docs/FEATURES.md` → *Dreaming*, *Hindsight engine*, *Fleet memory*.
 4. **Per-role model routing.** Heavy roles (orchestrator, revisor) get the strongest model; cheap roles (summarizer) get the smallest. Configurable per user.
 5. **Async + streaming.** Workers run in parallel via `asyncio.gather`; orchestrator streams output back to user.
 

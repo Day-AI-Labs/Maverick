@@ -113,6 +113,25 @@ systemctl start maverick
 
 To restore: stop the writers, replace `world.db`, restart.
 
+## Learning-state operations
+
+The learning loops persist state under `~/.maverick/` (reflexions, dreams/,
+learned-skills/, *_stats.json). Operational handles:
+
+- **Schedule**: `maverick dream` from cron/systemd (nightly is typical). Each
+  CLI run snapshots every learned store first.
+- **Inspect before it acts**: `maverick dream --dry-run` reports exact
+  would-be changes without writing.
+- **Roll back**: `maverick dream --list-snapshots` then
+  `maverick dream --rollback latest|<name>` restores all learned stores
+  wholesale (including removing skills learned after the snapshot).
+- **Detect regressions**: `maverick hindsight --strict` exits non-zero if the
+  forgetting loops cost coverage on past goals — suitable as a CI/cron gate.
+- **Audit**: every dream cycle writes a `learning_update` row to the signed
+  audit log; `maverick audit verify` covers learned state like tool calls.
+- **Tenant note**: with an active tenant, all learned stores live under that
+  tenant's data dir — back up per tenant.
+
 ## Retention / garbage collection
 
 Conversations + goal_events accumulate forever by default. Manual:
