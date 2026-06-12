@@ -63,11 +63,16 @@ def _subinterpreters_available() -> bool:
 
 
 def _bootstrap_code(entry: str, args_json: str, out_path: str, *,
-                    factory: bool = False) -> str:
+                    factory: bool = False, args_from_stdin: bool = False) -> str:
     """Code that imports pkg.mod:fn, calls it with the args dict, and writes
-    the result (or an ERROR string) to ``out_path``. Used verbatim by both
-    backends; values are injected as JSON string literals (no f-string
-    interpolation of user data into code)."""
+    the result (or an ERROR string) to ``out_path``.
+
+    Subinterpreters cannot receive call data through ``sys.argv`` (they inherit
+    the host's argv), so that backend still bakes JSON-able control values into
+    the code string. The subprocess backend must not place plugin arguments in
+    ``python -c`` argv, so it sets ``args_from_stdin`` and streams args over
+    stdin instead.
+    """
     return textwrap.dedent("""
         import importlib, json, sys
         # The child resolves imports the way the parent could: a plugin that
@@ -75,11 +80,15 @@ def _bootstrap_code(entry: str, args_json: str, out_path: str, *,
         for _p in reversed(json.loads(%(path)s)):
             if _p and _p not in sys.path:
                 sys.path.insert(0, _p)
-        # Values come ONLY from baked literals: a subinterpreter inherits the
-        # HOST's sys.argv (pytest's, uvicorn's, ...), so argv must not be a
-        # channel here.
+        # Values come ONLY from baked literals or stdin: a subinterpreter
+        # inherits the HOST's sys.argv (pytest's, uvicorn's, ...), and the
+        # subprocess command line is visible to same-host observers, so argv
+        # must not be a channel here.
         entry = %(entry)s
-        args = json.loads(%(args)s)
+        if %(args_from_stdin)s:
+            args = json.loads(sys.stdin.read() or "{}")
+        else:
+            args = json.loads(%(args)s)
         out_path = %(out)s
         try:
             mod_name, _, fn_name = entry.partition(":")
@@ -100,6 +109,7 @@ def _bootstrap_code(entry: str, args_json: str, out_path: str, *,
         "out": json.dumps(out_path),
         "path": json.dumps(json.dumps([p for p in sys.path if p])),
         "factory": "True" if factory else "False",
+        "args_from_stdin": "True" if args_from_stdin else "False",
     }
 
 
@@ -159,10 +169,12 @@ def run_isolated(entry: str, args: dict, *, mode: str | None = None,
 
         # subprocess backend (also the subinterpreter fallback path)
         from .tools import scrub_child_env
-        code = _bootstrap_code(entry, args_json, out_path, factory=factory)
+        code = _bootstrap_code(entry, "{}", out_path, factory=factory,
+                               args_from_stdin=True)
         try:
             proc = subprocess.run(
                 [sys.executable, "-c", code],
+                input=args_json,
                 capture_output=True, text=True, timeout=timeout_s,
                 env=scrub_child_env(),
             )
