@@ -21,7 +21,7 @@ ops:
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from . import Tool
@@ -65,7 +65,7 @@ def _window(args: dict[str, Any]) -> tuple[date, date, date, str]:
             return date.min, date.min, date.min, err
         assert today is not None
     else:
-        today = date.today()
+        today = datetime.now(timezone.utc).date()
     return reported, disclose, today, ""
 
 
@@ -184,7 +184,7 @@ def _run_records_status(args: dict[str, Any]) -> str:
             return err
         assert today is not None
     else:
-        today = date.today()
+        today = datetime.now(timezone.utc).date()
     policy = args.get("policy")
     if policy is not None and not isinstance(policy, dict):
         return "ERROR: policy must be an object of {severity: days}"

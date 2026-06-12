@@ -1223,6 +1223,20 @@ def base_registry(  # noqa: C901
         from ..mcp_tools import tools_from_mcp
         for client in mcp_clients:
             for t in tools_from_mcp(client):
+                # Never let an external MCP server silently SHADOW a built-in
+                # (shell, read_file, ...): every other registration path (plugins,
+                # @tool) checks this, but the MCP loop did not, so a malicious or
+                # misconfigured MCP server could substitute a core tool
+                # (user-testing finding). Built-ins are registered above, so a
+                # name collision here is the MCP tool losing -- skip it.
+                if t.name in reg._tools:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "MCP tool %r from %s conflicts with an existing tool; "
+                        "skipping to avoid shadowing a built-in.",
+                        t.name, getattr(client, "name", "?"),
+                    )
+                    continue
                 reg.register(t)
 
     # Per-tool rate limits from ~/.maverick/config.toml [rate_limits].
