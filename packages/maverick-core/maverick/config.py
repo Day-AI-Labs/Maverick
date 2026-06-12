@@ -511,6 +511,9 @@ def get_dreaming() -> dict:
         "facts_cap": _nonneg_int("facts_cap", 2000),
         # Distill explicit user-preference statements into per-user notes.
         "user_notes": bool(cfg.get("user_notes", True)),
+        # Quarantine this cycle's NEW skills while the continuously-tracked
+        # benchmark suite is regressing (learning-side canary).
+        "benchmark_gate": bool(cfg.get("benchmark_gate", True)),
         # Dream-time rehearsal (maverick-evolve harness) is a separate trust
         # decision from consolidation: it spends real agent runs. Default off.
         "rehearse": bool(cfg.get("rehearse", False)),

@@ -3706,12 +3706,22 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float) -> None:
             goal_id=gid,
         )
 
+    async def _score(prompt: str, output: str) -> float:
+        # Verifier-scored rehearsal: completion alone is a weak signal, so a
+        # case only counts as practiced when the calibrated verifier rates
+        # the answer too. Scoring spends from its own small budget.
+        from .verifier import verify_proposal
+        v = await verify_proposal(
+            prompt, output, llm, Budget(max_dollars=max(0.25, rehearse_budget / 4)),
+        )
+        return float(getattr(v, "confidence", 0.0) or 0.0)
+
     try:
-        passed, total = asyncio.run(dreaming.rehearse(_practice))
+        passed, total = asyncio.run(dreaming.rehearse(_practice, scorer=_score))
     except dreaming.RehearsalFrozen as e:
         raise click.ClickException(str(e)) from e
     click.echo(f"Rehearsal: {passed}/{total} previously-failing pattern(s) "
-               "now complete.")
+               "now complete (verifier-scored).")
 
 
 @main.command("export-user")

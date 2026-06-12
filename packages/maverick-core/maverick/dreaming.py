@@ -107,6 +107,7 @@ class DreamReport:
     insights_retired: int = 0
     facts_pruned: int = 0
     user_notes_written: int = 0
+    skills_quarantined: int = 0
     departments: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -119,6 +120,9 @@ class DreamReport:
             extra += f" Pruned {self.facts_pruned} stale fact(s)."
         if self.user_notes_written:
             extra += f" Updated {self.user_notes_written} user preference note(s)."
+        if self.skills_quarantined:
+            extra += (f" Quarantined {self.skills_quarantined} new skill(s): "
+                      "benchmark canary is red.")
         return (
             f"Dream cycle: replayed {self.goals_replayed} success(es) + "
             f"{self.failures_replayed} failure(s); wrote {self.insights_written} "
@@ -614,6 +618,19 @@ def retire_stale_skills(
     except Exception as e:  # pragma: no cover -- stats never block a dream
         log.debug("dreaming: evictable lookup failed: %s", e)
         return []
+    # Probation (the learning-side canary, half 1): a freshly-distilled skill
+    # that loses its FIRST few decided uses outright never earned its place —
+    # retire it before min_uses lets it linger. wins==0 keeps this strict.
+    try:
+        for md in sorted(store_dir.glob("*.md")):
+            name = md.stem
+            if name in names:
+                continue
+            st = skill_stats.get(name, path=stats_path)
+            if st and st.uses >= 3 and st.wins == 0 and st.losses >= 3:
+                names.append(name)
+    except Exception as e:  # pragma: no cover
+        log.debug("dreaming: probation scan failed: %s", e)
     retired: list[str] = []
     dest = store_dir / "retired"
     for name in names:
@@ -712,17 +729,29 @@ class RehearsalFrozen(RuntimeError):
     """
 
 
+def rehearsal_completed(output: str) -> bool:
+    """The v1 rehearsal success signal: the previously-failing class of goal
+    now completes (non-empty answer, no failure prefix). Shared with the
+    maverick-evolve rehearsal bridge so both grade identically."""
+    out = (output or "").strip()
+    return bool(out) and not out.startswith(
+        ("Stopped", "ERROR", "BLOCKED", "⚠"),
+    )
+
+
 async def rehearse(
     agent: Any, *, path: Path | str = DEFAULT_REHEARSALS, max_cases: int = 3,
+    scorer: Any | None = None, min_confidence: float = 0.6,
 ) -> tuple[int, int]:
     """Run queued rehearsal cases through ``agent`` (an async ``str -> str``).
 
     Returns ``(passed, total)``. Gated by the calibration interlock — frozen
     calibration raises :class:`RehearsalFrozen` instead of practicing against
-    a distrusted grader. Uses the maverick-evolve eval harness when installed;
-    otherwise a built-in completion check (the kernel never *requires* the
-    evolve package). v1 success signal: the previously-failing class of goal
-    now completes (non-empty answer, no failure prefix).
+    a distrusted grader. With a ``scorer`` (async ``(prompt, output) ->
+    confidence``), a case passes only when it completes AND the verifier
+    scores it at/above ``min_confidence``; without one, the completion check
+    alone grades (and the maverick-evolve eval harness is used when
+    installed — the kernel never *requires* the evolve package).
     """
     try:
         from .calibration import learning_frozen
@@ -738,27 +767,77 @@ async def rehearse(
     if not cases:
         return (0, 0)
 
-    def _completed(output: str) -> bool:
-        out = (output or "").strip()
-        return bool(out) and not out.startswith(
-            ("Stopped", "ERROR", "BLOCKED", "⚠"),
+    if scorer is None:
+        try:
+            from maverick_evolve.eval_harness import EvalCase, evaluate
+            report = await evaluate(
+                agent,
+                [EvalCase(prompt=c["prompt"], check=rehearsal_completed)
+                 for c in cases],
+            )
+            return (int(report.passed), len(cases))
+        except ImportError:
+            pass
+    passed = 0
+    for c in cases:
+        try:
+            output = await agent(c["prompt"])
+            if not rehearsal_completed(output):
+                continue
+            if scorer is not None:
+                conf = float(await scorer(c["prompt"], output))
+                if conf < min_confidence:
+                    continue
+            passed += 1
+        except Exception as e:
+            log.debug("dreaming: rehearsal case errored: %s", e)
+    return (passed, len(cases))
+
+
+def _maintenance_phases(
+    report: DreamReport, cfg: dict, successes: list[dict], world: Any | None, *,
+    insights_path: Path | str, reflexion_path: Path | str | None,
+    user_notes_path: Path | str | None, now: float | None,
+) -> None:
+    """RECONCILE / PRUNE / fact-consolidation / user-note phases of a cycle.
+
+    Split out of :func:`dream_cycle` purely to keep each function readable;
+    mutates ``report`` in place like the inline phases it replaced.
+    """
+    # RECONCILE the insight store with reality: retire insights contradicted
+    # by newer successes, then age out insights whose pattern stopped
+    # recurring (confirmation refreshes ts, so live lessons never expire).
+    report.insights_retired = resolve_contradictions(
+        successes, insights_path,
+        min_successes=int(cfg.get("contradiction_successes", 2)),
+    )
+    report.insights_expired = expire_insights(
+        insights_path, ttl_days=int(cfg.get("insight_ttl_days", 90)), now=now,
+    )
+
+    # PRUNE the reflexion log so recall quality doesn't decay with volume.
+    if bool(cfg.get("prune", True)):
+        report.reflexions_pruned = prune_reflexions(
+            reflexion_path, keep=int(cfg.get("keep_reflexions", 500)),
         )
 
-    try:
-        from maverick_evolve.eval_harness import EvalCase, evaluate
-        report = await evaluate(
-            agent, [EvalCase(prompt=c["prompt"], check=_completed) for c in cases],
+    # Fact consolidation (opt-in -- deletes operator data): expire stale
+    # facts and cap the table so cross-run memory stays sharp.
+    if world is not None and bool(cfg.get("prune_facts", False)):
+        report.facts_pruned = prune_facts(
+            world, max_age_days=int(cfg.get("facts_max_age_days", 180)),
+            cap=int(cfg.get("facts_cap", 2000)), now=now,
         )
-        return (int(report.passed), len(cases))
-    except ImportError:
-        passed = 0
-        for c in cases:
-            try:
-                if _completed(await agent(c["prompt"])):
-                    passed += 1
-            except Exception as e:
-                log.debug("dreaming: rehearsal case errored: %s", e)
-        return (passed, len(cases))
+
+    # Per-user preference notes: distill explicit, deterministic preference
+    # statements from recent conversations into briefing notes injected on
+    # that user's future runs.
+    if world is not None and bool(cfg.get("user_notes", True)):
+        try:
+            from . import user_notes as _un
+            report.user_notes_written = _un.consolidate(world, path=user_notes_path)
+        except Exception as e:  # pragma: no cover -- notes never block a dream
+            log.debug("dreaming: user-note consolidation skipped: %s", e)
 
 
 # ---------- the dream cycle ----------
@@ -824,10 +903,13 @@ def _replay_failures(reflexion_path: Path | str | None) -> list[dict]:
 def _distill_department_skills(
     by_domain: dict[str | None, list[dict]], *, skill_store: Path | str | None,
     min_cluster: int,
-) -> int:
-    """CONSOLIDATE: per-department gated distillation into learned skills."""
+) -> list[Path]:
+    """CONSOLIDATE: per-department gated distillation into learned skills.
+
+    Returns the paths of the skills written THIS cycle (the benchmark canary
+    gate quarantines exactly these when the tracked suite is regressing)."""
     from . import skill_distillation_v2 as _v2
-    distilled = 0
+    saved_paths: list[Path] = []
     for trajectories in by_domain.values():
         if len(trajectories) < max(1, min_cluster):
             continue
@@ -837,10 +919,39 @@ def _distill_department_skills(
         try:
             saved, _why = _v2.distill_and_save_gated(trajectories, **kwargs)
             if saved:
-                distilled += 1
+                saved_paths.append(Path(saved))
         except Exception as e:  # pragma: no cover -- one bad pack can't stop the cycle
             log.debug("dreaming: distill skipped: %s", e)
-    return distilled
+    return saved_paths
+
+
+def benchmark_regressed() -> bool:
+    """Whether the continuously-tracked benchmark suite is currently
+    regressing (the learning-side canary, half 2). Fail-open: no history or
+    any error reads as "not regressing"."""
+    try:
+        from . import continuous_benchmark as _cb
+        history = _cb.load_history(_cb._store_path())
+        names = {str(h.get("name")) for h in history if h.get("name")}
+        return any(_cb.detect_regression(history, n) for n in names)
+    except Exception:  # pragma: no cover -- canary never blocks a dream
+        return False
+
+
+def _quarantine_new_skills(paths: list[Path]) -> int:
+    """Move this cycle's freshly-distilled skills aside while the benchmark
+    canary is red: don't add new learned behavior on top of a regression.
+    Reversible (plain file moves into ``<store>/quarantine/``)."""
+    moved = 0
+    for p in paths:
+        try:
+            dest = p.parent / "quarantine"
+            dest.mkdir(parents=True, exist_ok=True)
+            os.replace(p, dest / p.name)
+            moved += 1
+        except OSError as e:  # pragma: no cover
+            log.warning("dreaming: quarantine failed for %s: %s", p, e)
+    return moved
 
 
 def dream_cycle(
@@ -904,10 +1015,16 @@ def dream_cycle(
             f["domain"] = assign_domain(str(f.get("goal_text", "")), signatures)
 
     # CONSOLIDATE successes -> learned skills (evidence-gated + deduped).
-    report.skills_distilled = _distill_department_skills(
+    _new_skills = _distill_department_skills(
         by_domain_success, skill_store=skill_store,
         min_cluster=int(cfg.get("min_cluster", 2)),
     )
+    # Benchmark canary: while the tracked suite is regressing, this cycle's
+    # NEW skills are quarantined — never add learned behavior on red.
+    if _new_skills and bool(cfg.get("benchmark_gate", True)) and benchmark_regressed():
+        report.skills_quarantined = _quarantine_new_skills(_new_skills)
+        _new_skills = []
+    report.skills_distilled = len(_new_skills)
 
     # REHEARSE failures -> dream insights, clustered within each department.
     new_insights: list[DreamInsight] = []
@@ -950,40 +1067,11 @@ def dream_cycle(
             stats_path=skill_stats_path,
         ))
 
-    # RECONCILE the insight store with reality: retire insights contradicted
-    # by newer successes, then age out insights whose pattern stopped
-    # recurring (confirmation refreshes ts, so live lessons never expire).
-    report.insights_retired = resolve_contradictions(
-        successes, insights_path,
-        min_successes=int(cfg.get("contradiction_successes", 2)),
+    _maintenance_phases(
+        report, cfg, successes, world,
+        insights_path=insights_path, reflexion_path=reflexion_path,
+        user_notes_path=user_notes_path, now=now,
     )
-    report.insights_expired = expire_insights(
-        insights_path, ttl_days=int(cfg.get("insight_ttl_days", 90)), now=now,
-    )
-
-    # PRUNE the reflexion log so recall quality doesn't decay with volume.
-    if bool(cfg.get("prune", True)):
-        report.reflexions_pruned = prune_reflexions(
-            reflexion_path, keep=int(cfg.get("keep_reflexions", 500)),
-        )
-
-    # Fact consolidation (opt-in -- deletes operator data): expire stale
-    # facts and cap the table so cross-run memory stays sharp.
-    if world is not None and bool(cfg.get("prune_facts", False)):
-        report.facts_pruned = prune_facts(
-            world, max_age_days=int(cfg.get("facts_max_age_days", 180)),
-            cap=int(cfg.get("facts_cap", 2000)), now=now,
-        )
-
-    # Per-user preference notes: distill explicit, deterministic preference
-    # statements from recent conversations into briefing notes injected on
-    # that user's future runs.
-    if world is not None and bool(cfg.get("user_notes", True)):
-        try:
-            from . import user_notes as _un
-            report.user_notes_written = _un.consolidate(world, path=user_notes_path)
-        except Exception as e:  # pragma: no cover -- notes never block a dream
-            log.debug("dreaming: user-note consolidation skipped: %s", e)
 
     touched = {d for d in by_domain_success if d} | {
         i.domain for i in new_insights if i.domain
@@ -1015,6 +1103,8 @@ __all__ = [
     "load_rehearsals",
     "RehearsalFrozen",
     "rehearse",
+    "rehearsal_completed",
+    "benchmark_regressed",
     "dream_cycle",
     "DEFAULT_REHEARSALS",
 ]

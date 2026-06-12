@@ -306,6 +306,48 @@ class TestSkillRetirement:
     def test_missing_store_is_safe(self, tmp_path):
         assert dreaming.retire_stale_skills(tmp_path / "nope") == []
 
+    def test_probation_retires_skill_that_never_won(self, tmp_path):
+        import json
+        store = tmp_path / "learned-skills"
+        store.mkdir()
+        (store / "never-won.md").write_text("# nw", encoding="utf-8")
+        stats = tmp_path / "skill_stats.json"
+        # Only 3 uses -- under the normal min_uses=5 -- but all losses.
+        stats.write_text(json.dumps({
+            "never-won": {"uses": 3, "wins": 0, "losses": 3, "last_used": 1.0},
+        }), encoding="utf-8")
+        retired = dreaming.retire_stale_skills(
+            store, min_uses=5, below=0.25, stats_path=stats,
+        )
+        assert retired == ["never-won"]
+        assert (store / "retired" / "never-won.md").exists()
+
+
+class TestBenchmarkCanary:
+    def test_new_skills_quarantined_while_regressing(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dreaming, "settings", lambda: dict(_SETTINGS))
+        monkeypatch.setattr(dreaming, "benchmark_regressed", lambda: True)
+        rpath = tmp_path / "reflexions.ndjson"
+        store = tmp_path / "skills"
+        world = _FakeWorld([
+            _FakeGoal("Test the SOX ICFR control reconciliation evidence", 2.0),
+            _FakeGoal("Audit the SOX control testing reconciliation", 1.0),
+        ])
+        report = dreaming.dream_cycle(
+            world, profiles=PROFILES, reflexion_path=rpath,
+            insights_path=tmp_path / "insights.ndjson", skill_store=store,
+            skill_stats_path=tmp_path / "skill_stats.json",
+        )
+        assert report.skills_distilled == 0
+        assert report.skills_quarantined == 1
+        assert list((store / "quarantine").glob("*.md"))
+        assert not list(store.glob("*.md"))  # nothing learned on red
+
+    def test_no_history_reads_as_green(self, monkeypatch):
+        import maverick.continuous_benchmark as cb
+        monkeypatch.setattr(cb, "load_history", lambda p: [])
+        assert dreaming.benchmark_regressed() is False
+
 
 class TestRehearsal:
     def _failures(self):
@@ -377,6 +419,31 @@ class TestRehearsal:
         assert await dreaming.rehearse(
             agent, path=tmp_path / "missing.ndjson",
         ) == (0, 0)
+
+    @pytest.mark.asyncio
+    async def test_verifier_scorer_gates_completion(self, tmp_path):
+        path = tmp_path / "rehearsals.ndjson"
+        dreaming.save_rehearsals(
+            dreaming.build_rehearsal_cases(self._failures(), min_cluster=2),
+            path=path,
+        )
+
+        async def agent(prompt: str) -> str:
+            return "DONE: plausible-looking answer"
+
+        async def low_confidence(prompt: str, output: str) -> float:
+            return 0.2
+
+        async def high_confidence(prompt: str, output: str) -> float:
+            return 0.9
+
+        # Completes but the verifier doesn't buy it -> not counted.
+        assert await dreaming.rehearse(
+            agent, path=path, scorer=low_confidence,
+        ) == (0, 1)
+        assert await dreaming.rehearse(
+            agent, path=path, scorer=high_confidence,
+        ) == (1, 1)
 
     def test_cycle_queues_rehearsals_when_enabled(self, tmp_path, monkeypatch):
         cfg = dict(_SETTINGS)

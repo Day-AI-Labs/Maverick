@@ -86,6 +86,61 @@ def _live(cases_path: str, rounds: int, generations: int, archive_path: str | No
     return 0
 
 
+def _adopt(args) -> int:
+    """Print (and with --yes, write) the archive-best overlay onto a pack."""
+    from .adopt import adopt_best, plan_adoption
+    if not args.archive or not args.pack:
+        print("--adopt requires --archive <archive.json> and --pack <pack.toml>")
+        return 2
+    keys = [k.strip() for k in (args.keys or "").split(",") if k.strip()] or None
+    try:
+        _, changes = plan_adoption(args.archive, args.pack, keys=keys)
+    except (OSError, ValueError) as e:
+        print(f"adopt failed: {e}")
+        return 2
+    if not changes:
+        print("archive best changes nothing in this pack; nothing to adopt.")
+        return 0
+    for key, (old, new) in changes.items():
+        print(f"{key}:\n  - {old!r}\n  + {new!r}")
+    if not args.yes:
+        print("dry run (pass --yes to write the adopted pack; the previous "
+              "file is backed up to .bak).")
+        return 0
+    dest = adopt_best(args.archive, args.pack, keys=keys, out_dir=args.out)
+    print(f"adopted -> {dest}")
+    return 0
+
+
+def _live_rehearsals(args) -> int:
+    """--live --rehearsals: evolve against the kernel's rehearsal queue."""
+    from .rehearsal_bridge import cases_from_rehearsals
+    cases = cases_from_rehearsals()
+    if not cases:
+        if args.cases:
+            return _live(args.cases, args.rounds, args.generations, args.archive)
+        print("rehearsal queue is empty (run `maverick dream` with "
+              "[dreaming] rehearse = true first), and no --cases fallback given.")
+        return 2
+    import asyncio as _asyncio
+
+    from .agent_adapter import evolve_live
+    from .config_space import default_config
+    print(f"live evolution against {len(cases)} rehearsal case(s) "
+          f"(your own recurring failures), {args.rounds} round(s) "
+          f"x {args.generations} generations.")
+    best, history = _asyncio.run(evolve_live(
+        default_config(), cases,
+        rounds=args.rounds, generations_per_round=args.generations,
+        archive_path=args.archive,
+    ))
+    for h in history:
+        print(f"  {h}")
+    if best is not None:
+        print(f"BEST: score={best.score} config={best.config}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="maverick-evolve")
     p.add_argument("--demo", action="store_true",
@@ -97,10 +152,31 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--archive", help="Path to persist/resume the evolution archive.")
     p.add_argument("--rounds", type=int, default=3)
     p.add_argument("--generations", type=int, default=20)
+    p.add_argument("--rehearsals", action="store_true",
+                   help="With --live: use the kernel's dream-time rehearsal "
+                        "queue as the eval cases (evolve against your own "
+                        "recurring failures; falls back to --cases when the "
+                        "queue is empty).")
+    p.add_argument("--adopt", action="store_true",
+                   help="Adopt the archive's best config into a domain pack "
+                        "(requires --archive and --pack; shows the diff and "
+                        "needs --yes to write).")
+    p.add_argument("--pack", help="Path to the domain pack TOML to adopt into.")
+    p.add_argument("--out", help="Directory to write the adopted pack "
+                                 "(default: alongside --pack).")
+    p.add_argument("--keys", help="Comma-separated adoptable keys "
+                                  "(default: persona,description,models).")
+    p.add_argument("--yes", action="store_true",
+                   help="Actually write the adopted pack (without it, "
+                        "--adopt only prints the planned changes).")
     args = p.parse_args(argv)
+    if args.adopt:
+        return _adopt(args)
     if args.live:
+        if args.rehearsals:
+            return _live_rehearsals(args)
         if not args.cases:
-            print("--live requires --cases <path-to-cases.json>")
+            print("--live requires --cases <path-to-cases.json> (or --rehearsals)")
             return 2
         return _live(args.cases, args.rounds, args.generations, args.archive)
     if not args.demo:
