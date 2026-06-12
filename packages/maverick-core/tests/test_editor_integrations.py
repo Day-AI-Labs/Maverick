@@ -89,6 +89,18 @@ def test_editor_integrations_only_call_real_cli_verbs():
     assert {"start", "status", "monitor", "logs", "halt", "unhalt"} <= used
 
 
+def test_editor_status_cost_option_is_supported(tmp_path):
+    """The editor status wrappers pass --cost, so the CLI must accept it."""
+    from click.testing import CliRunner
+    from maverick.cli import main
+
+    result = CliRunner().invoke(main, ["--db", str(tmp_path / "world.db"), "status", "--cost"])
+
+    assert result.exit_code == 0, result.output
+    assert "Spend" in result.output
+    assert "no goals yet" in result.output
+
+
 def test_readmes_document_the_commands():
     emacs_readme = (_REPO / "apps" / "emacs" / "README.md").read_text()
     nvim_readme = (_REPO / "apps" / "nvim" / "README.md").read_text()

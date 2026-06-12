@@ -2150,8 +2150,10 @@ def history(ctx, limit: int) -> None:
 
 
 @main.command()
+@click.option("--cost", is_flag=True,
+              help="Include persisted spend totals and recent run costs.")
 @click.pass_context
-def status(ctx) -> None:
+def status(ctx, cost: bool) -> None:
     """Show recent goals and open questions."""
     world = open_world(ctx.obj["db"])
     # Self-heal: a CLI run killed mid-flight (or pre-fix crash) leaves goals
@@ -2162,6 +2164,21 @@ def status(ctx) -> None:
         world.reclaim_orphan_goals()
     except Exception:  # pragma: no cover -- never block `status` on cleanup
         pass
+    if cost:
+        total = world.total_spend()
+        click.echo(click.style("Spend", bold=True))
+        click.echo(f"  ${total['dollars']:.4f}  across {total['runs']} completed run(s)")
+        click.echo(
+            f"  {total['input_tokens']:,} input tokens  /  "
+            f"{total['output_tokens']:,} output tokens"
+        )
+        recent = world.list_episodes(limit=5)
+        if recent:
+            click.echo("  recent:")
+            for e in recent:
+                outcome = e.outcome or "running"
+                click.echo(f"    ep #{e.id} (goal {e.goal_id}) [{outcome}]  ${e.cost_dollars:.4f}")
+        click.echo("")
     goals = world.list_goals()
     if not goals:
         click.echo("no goals yet. start one with `maverick start \"...\"`")
