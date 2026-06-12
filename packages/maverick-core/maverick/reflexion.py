@@ -41,6 +41,24 @@ log = logging.getLogger(__name__)
 
 DEFAULT_PATH = Path.home() / ".maverick" / "reflexions.ndjson"
 
+def default_path() -> Path:
+    """The active scope's reflexion log (tenant-isolated when one is active)."""
+    return _tenant_path("reflexions.ndjson", DEFAULT_PATH)
+
+
+def _tenant_path(name: str, legacy):
+    """Item-30 isolation: with an ACTIVE tenant, this store lives under the
+    tenant's data dir (one tenant's learned memory can never feed another's
+    runs); single-tenant resolution keeps the legacy location unchanged."""
+    try:
+        from .paths import current_tenant, data_dir
+        if current_tenant():
+            return data_dir(*name.split("/"))
+    except Exception:  # pragma: no cover -- isolation never blocks resolution
+        pass
+    return legacy
+
+
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
 _lock = threading.Lock()
 
@@ -85,13 +103,14 @@ def record(
     channel: str | None = None,
     user_id: str | None = None,
     domain: str | None = None,
-    path: Path = DEFAULT_PATH,
+    path: Path | None = None,
 ) -> bool:
     """Append a Reflexion. Returns True on success.
 
     Fail-safe: write errors are logged and swallowed — a failed
     reflection write should never block a subsequent agent run.
     """
+    path = path if path is not None else default_path()
     entry = Reflexion(
         ts=time.time(),
         goal_text=goal_text or "",
@@ -198,7 +217,7 @@ def recall(
     goal_text: str,
     *,
     k: int = 3,
-    path: Path = DEFAULT_PATH,
+    path: Path | None = None,
     min_score: float = 0.05,
     min_embed_score: float = 0.35,
     channel: str | None = None,
@@ -219,6 +238,7 @@ def recall(
     ``scan_cap`` lines are considered, and near-identical lessons are
     de-duplicated within the top-k.
     """
+    path = path if path is not None else default_path()
     if not goal_text or not path.exists():
         return []
     qt = _tokens(goal_text)
@@ -292,9 +312,10 @@ def recall(
 def list_recent(
     *,
     limit: int = 50,
-    path: Path = DEFAULT_PATH,
+    path: Path | None = None,
 ) -> list[Reflexion]:
     """Return the N most recent reflexions, ordered newest-first."""
+    path = path if path is not None else default_path()
     if not path.exists():
         return []
     entries: list[Reflexion] = []
@@ -321,8 +342,9 @@ def list_recent(
     return entries[:max(1, limit)]
 
 
-def clear(path: Path = DEFAULT_PATH) -> bool:
+def clear(path: Path | None = None) -> bool:
     """Delete the reflexion log."""
+    path = path if path is not None else default_path()
     if not path.exists():
         return False
     try:
@@ -394,7 +416,7 @@ def tools_from_blackboard(blackboard) -> list[str]:
 
 
 def flaky_tools(
-    *, min_count: int = 2, path: Path = DEFAULT_PATH, scan: int = 300,
+    *, min_count: int = 2, path: Path | None = None, scan: int = 300,
 ) -> set[str]:
     """Tool names with >= ``min_count`` persisted ``tool_flaky`` lessons.
 
@@ -416,7 +438,7 @@ def flaky_tools(
 def record_human_override(
     brief: str, tool_name: str, reason: str, *,
     domain: str | None = None, channel: str | None = None,
-    user_id: str | None = None, path: Path = DEFAULT_PATH,
+    user_id: str | None = None, path: Path | None = None,
 ) -> bool:
     """Persist a human's refusal of a gated action as a learning signal.
 
@@ -475,6 +497,7 @@ def synthesize_reflection(
 __all__ = [
     "Reflexion",
     "DEFAULT_PATH",
+    "default_path",
     "record",
     "record_human_override",
     "flaky_tools",

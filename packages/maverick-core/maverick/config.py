@@ -514,6 +514,10 @@ def get_dreaming() -> dict:
         # Quarantine this cycle's NEW skills while the continuously-tracked
         # benchmark suite is regressing (learning-side canary).
         "benchmark_gate": bool(cfg.get("benchmark_gate", True)),
+        # Learning rollback: snapshot every learned store before a CLI dream
+        # cycle mutates it, keeping the last N snapshots.
+        "snapshots": bool(cfg.get("snapshots", True)),
+        "snapshot_keep_last": _int("snapshot_keep_last", 5),
         # Dream-time rehearsal (maverick-evolve harness) is a separate trust
         # decision from consolidation: it spends real agent runs. Default off.
         "rehearse": bool(cfg.get("rehearse", False)),

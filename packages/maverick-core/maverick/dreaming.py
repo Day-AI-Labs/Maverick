@@ -41,6 +41,28 @@ DEFAULT_DIR = Path.home() / ".maverick" / "dreams"
 DEFAULT_INSIGHTS = DEFAULT_DIR / "insights.ndjson"
 DEFAULT_REHEARSALS = DEFAULT_DIR / "rehearsals.ndjson"
 
+
+def insights_path() -> Path:
+    return _tenant_path("dreams/insights.ndjson", DEFAULT_INSIGHTS)
+
+
+def rehearsals_path() -> Path:
+    return _tenant_path("dreams/rehearsals.ndjson", DEFAULT_REHEARSALS)
+
+
+def _tenant_path(name: str, legacy):
+    """Item-30 isolation: with an ACTIVE tenant, this store lives under the
+    tenant's data dir (one tenant's learned memory can never feed another's
+    runs); single-tenant resolution keeps the legacy location unchanged."""
+    try:
+        from .paths import current_tenant, data_dir
+        if current_tenant():
+            return data_dir(*name.split("/"))
+    except Exception:  # pragma: no cover -- isolation never blocks resolution
+        pass
+    return legacy
+
+
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _STOP = frozenset({
     "the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "with",
@@ -295,8 +317,8 @@ def promote_shared_insights(
 
 # ---------- insight store ----------
 
-def load_insights(path: Path | str = DEFAULT_INSIGHTS) -> list[DreamInsight]:
-    p = Path(path)
+def load_insights(path: Path | str | None = None) -> list[DreamInsight]:
+    p = Path(path) if path is not None else insights_path()
     if not p.exists():
         return []
     out: list[DreamInsight] = []
@@ -320,7 +342,7 @@ def load_insights(path: Path | str = DEFAULT_INSIGHTS) -> list[DreamInsight]:
 
 
 def append_insights(
-    new: list[DreamInsight], *, path: Path | str = DEFAULT_INSIGHTS,
+    new: list[DreamInsight], *, path: Path | str | None = None,
     max_insights: int = 100,
 ) -> int:
     """Append novel insights, dedup against the store, cap to most recent.
@@ -329,6 +351,7 @@ def append_insights(
     is lexically contained at/above the threshold. The whole store is
     rewritten atomically so a crash can't leave a torn NDJSON line.
     """
+    path = Path(path) if path is not None else insights_path()
     existing = load_insights(path)
     written = 0
     refreshed = 0
@@ -374,7 +397,7 @@ def append_insights(
 
 def recall_insights(
     goal_text: str, *, domain: str | None = None, k: int = 2,
-    path: Path | str = DEFAULT_INSIGHTS, min_score: float = 0.05,
+    path: Path | str | None = None, min_score: float = 0.05,
 ) -> list[tuple[float, DreamInsight]]:
     """Top-k consolidated insights for this goal, same-department boosted.
 
@@ -504,7 +527,7 @@ def _rewrite_insights(keep: list[DreamInsight], path: Path | str) -> bool:
 
 
 def expire_insights(
-    path: Path | str = DEFAULT_INSIGHTS, *, ttl_days: int = 90,
+    path: Path | str | None = None, *, ttl_days: int = 90,
     now: float | None = None,
 ) -> int:
     """Insight aging: drop insights unconfirmed for ``ttl_days``.
@@ -515,6 +538,7 @@ def expire_insights(
     """
     if ttl_days <= 0:
         return 0
+    path = Path(path) if path is not None else insights_path()
     entries = load_insights(path)
     if not entries:
         return 0
@@ -527,7 +551,7 @@ def expire_insights(
 
 
 def resolve_contradictions(
-    successes: list[dict], path: Path | str = DEFAULT_INSIGHTS, *,
+    successes: list[dict], path: Path | str | None = None, *,
     min_successes: int = 2, similarity: float = 0.3,
 ) -> int:
     """Retire failure insights the system has since outgrown.
@@ -537,6 +561,7 @@ def resolve_contradictions(
     contradicted and dropped instead of coexisting with the new reality.
     Returns how many insights were retired.
     """
+    path = Path(path) if path is not None else insights_path()
     entries = load_insights(path)
     if not entries or not successes:
         return 0
@@ -682,9 +707,9 @@ def build_rehearsal_cases(
     return [c for c in cases if c["prompt"]][:max(1, max_cases)]
 
 
-def save_rehearsals(cases: list[dict], path: Path | str = DEFAULT_REHEARSALS) -> int:
+def save_rehearsals(cases: list[dict], path: Path | str | None = None) -> int:
     """Replace the rehearsal queue with this cycle's cases (atomic)."""
-    p = Path(path)
+    p = Path(path) if path is not None else rehearsals_path()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_suffix(".tmp")
@@ -702,8 +727,8 @@ def save_rehearsals(cases: list[dict], path: Path | str = DEFAULT_REHEARSALS) ->
     return len(cases)
 
 
-def load_rehearsals(path: Path | str = DEFAULT_REHEARSALS) -> list[dict]:
-    p = Path(path)
+def load_rehearsals(path: Path | str | None = None) -> list[dict]:
+    p = Path(path) if path is not None else rehearsals_path()
     if not p.exists():
         return []
     out: list[dict] = []
@@ -740,7 +765,7 @@ def rehearsal_completed(output: str) -> bool:
 
 
 async def rehearse(
-    agent: Any, *, path: Path | str = DEFAULT_REHEARSALS, max_cases: int = 3,
+    agent: Any, *, path: Path | str | None = None, max_cases: int = 3,
     scorer: Any | None = None, min_confidence: float = 0.6,
 ) -> tuple[int, int]:
     """Run queued rehearsal cases through ``agent`` (an async ``str -> str``).
@@ -957,20 +982,25 @@ def _quarantine_new_skills(paths: list[Path]) -> int:
 def dream_cycle(
     world: Any | None = None, *, profiles: dict[str, Any] | None = None,
     max_goals: int = 50, reflexion_path: Path | str | None = None,
-    insights_path: Path | str = DEFAULT_INSIGHTS,
+    insights_path: Path | str | None = None,
     skill_store: Path | str | None = None, now: float | None = None,
-    rehearsals_path: Path | str = DEFAULT_REHEARSALS,
+    rehearsals_path: Path | str | None = None,
     skill_stats_path: Path | None = None,
     critiques_outbox: Path | str | None = None,
     user_notes_path: Path | str | None = None,
+    settings_override: dict | None = None,
 ) -> DreamReport:
     """Run one full dream cycle. Deterministic, LLM-free, fail-open.
 
     Callers gate on :func:`enabled` (the CLI and any scheduler do); the cycle
     itself stays callable so tests and operators can dream on demand.
     """
-    cfg = settings()
+    cfg = {**settings(), **(settings_override or {})}
     report = DreamReport()
+    if insights_path is None:
+        insights_path = globals()["insights_path"]()
+    if rehearsals_path is None:
+        rehearsals_path = globals()["rehearsals_path"]()
 
     if profiles is None:
         try:
@@ -1077,12 +1107,190 @@ def dream_cycle(
         i.domain for i in new_insights if i.domain
     }
     report.departments = sorted(touched)
+    _audit_cycle(report)
     return report
+
+
+
+def _audit_cycle(report: DreamReport) -> None:
+    """Learning audit trail: one tamper-evident row per dream cycle.
+
+    `maverick audit verify` then covers the learning system the same way it
+    covers tool calls -- provably governed learning. Never raises."""
+    try:
+        from .audit import EventKind, record
+        record(
+            EventKind.LEARNING_UPDATE, agent="dreaming",
+            insights_written=report.insights_written,
+            insights_expired=report.insights_expired,
+            insights_retired=report.insights_retired,
+            skills_distilled=report.skills_distilled,
+            skills_retired=report.skills_retired,
+            skills_quarantined=report.skills_quarantined,
+            rehearsals_queued=report.rehearsals_queued,
+            reflexions_pruned=report.reflexions_pruned,
+            facts_pruned=report.facts_pruned,
+            user_notes_written=report.user_notes_written,
+            departments=",".join(report.departments),
+        )
+    except Exception as e:  # pragma: no cover -- audit never blocks a dream
+        log.debug("dreaming: audit row skipped: %s", e)
+
+
+# ---------- snapshots, rollback, dry-run (learning governance) ----------
+
+def _live_stores() -> dict[str, Path]:
+    """The learned-state files/dirs a snapshot covers, resolved per tenant."""
+    from . import reflexion as _r
+    from . import skill_stats as _ss
+    from . import user_notes as _un
+    from .skill_distillation_local import _STORE
+    return {
+        "reflexions.ndjson": _r.default_path(),
+        "insights.ndjson": Path(insights_path()),
+        "rehearsals.ndjson": Path(rehearsals_path()),
+        "user_notes.ndjson": _un.default_path(),
+        "skill_stats.json": _ss._resolve(None),
+        "learned-skills": _tenant_path("learned-skills", _STORE),
+    }
+
+
+def snapshots_dir() -> Path:
+    return _tenant_path("dreams/snapshots", DEFAULT_DIR / "snapshots")
+
+
+def snapshot_learning_state(
+    *, keep_last: int = 5, directory: Path | str | None = None,
+    stores: dict[str, Path] | None = None, now: float | None = None,
+) -> Path | None:
+    """Copy every learned store into ``<snapshots>/<utc-ts>/``.
+
+    Learning rollback, half 1: taken before each ``maverick dream`` mutation
+    pass so any cycle can be reverted wholesale. Keeps the most recent
+    ``keep_last`` snapshots. Returns the snapshot dir (None when nothing
+    exists to snapshot or the copy failed)."""
+    import shutil
+    base = Path(directory) if directory is not None else snapshots_dir()
+    stores = stores if stores is not None else _live_stores()
+    stamp = time.strftime(
+        "%Y%m%dT%H%M%SZ", time.gmtime(now if now is not None else time.time()),
+    )
+    dest = base / stamp
+    copied = 0
+    try:
+        for name, src in stores.items():
+            src = Path(src)
+            if not src.exists():
+                continue
+            dest.mkdir(parents=True, exist_ok=True)
+            if src.is_dir():
+                shutil.copytree(src, dest / name, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src, dest / name)
+            copied += 1
+        if not copied:
+            return None
+        # Retention: oldest snapshots beyond keep_last are dropped.
+        snaps = sorted(p for p in base.iterdir() if p.is_dir())
+        for old_snap in snaps[:-max(1, keep_last)]:
+            shutil.rmtree(old_snap, ignore_errors=True)
+        return dest
+    except OSError as e:
+        log.warning("dreaming: snapshot failed: %s", e)
+        return None
+
+
+def list_snapshots(directory: Path | str | None = None) -> list[str]:
+    base = Path(directory) if directory is not None else snapshots_dir()
+    if not base.is_dir():
+        return []
+    return sorted(p.name for p in base.iterdir() if p.is_dir())
+
+
+def rollback_learning_state(
+    snapshot: str = "latest", *, directory: Path | str | None = None,
+    stores: dict[str, Path] | None = None,
+) -> list[str]:
+    """Restore every learned store from a snapshot (learning rollback, half 2).
+
+    ``snapshot`` is a name from :func:`list_snapshots` or ``"latest"``.
+    Stores present in the snapshot replace the live ones (a directory store
+    is replaced wholesale, so skills learned after the snapshot disappear --
+    that is the point). Returns the restored store names."""
+    import shutil
+    base = Path(directory) if directory is not None else snapshots_dir()
+    names = list_snapshots(base)
+    if not names:
+        return []
+    chosen = names[-1] if snapshot == "latest" else snapshot
+    src_dir = base / chosen
+    if not src_dir.is_dir():
+        raise ValueError(f"no such snapshot: {chosen!r} (have: {', '.join(names)})")
+    stores = stores if stores is not None else _live_stores()
+    restored: list[str] = []
+    for name, live in stores.items():
+        src = src_dir / name
+        if not src.exists():
+            continue
+        live = Path(live)
+        try:
+            live.parent.mkdir(parents=True, exist_ok=True)
+            if src.is_dir():
+                if live.exists():
+                    shutil.rmtree(live)
+                shutil.copytree(src, live)
+            else:
+                shutil.copy2(src, live)
+            restored.append(name)
+        except OSError as e:
+            log.warning("dreaming: rollback of %s failed: %s", name, e)
+    return restored
+
+
+def dream_cycle_dry(world: Any | None = None, **kwargs) -> DreamReport:
+    """Run a full dream cycle against TEMP COPIES of every learned store.
+
+    Exact would-be numbers (same code path as the real cycle), zero writes to
+    live state: pair with the audit trail for change-review of learning.
+    Fact pruning is forced off (it would touch the live world DB)."""
+    import shutil
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="maverick-dream-dry-"))
+    try:
+        copies: dict[str, Path] = {}
+        for name, src in _live_stores().items():
+            dst = tmp / name
+            src = Path(src)
+            if src.is_dir():
+                if src.exists():
+                    shutil.copytree(src, dst)
+                else:
+                    dst.mkdir(parents=True)
+            elif src.exists():
+                shutil.copy2(src, dst)
+            copies[name] = dst
+        override = dict(kwargs.pop("settings_override", None) or {})
+        override["prune_facts"] = False
+        return dream_cycle(
+            world,
+            reflexion_path=kwargs.pop("reflexion_path", copies["reflexions.ndjson"]),
+            insights_path=kwargs.pop("insights_path", copies["insights.ndjson"]),
+            rehearsals_path=kwargs.pop("rehearsals_path", copies["rehearsals.ndjson"]),
+            user_notes_path=kwargs.pop("user_notes_path", copies["user_notes.ndjson"]),
+            skill_store=kwargs.pop("skill_store", copies["learned-skills"]),
+            skill_stats_path=kwargs.pop("skill_stats_path", copies["skill_stats.json"]),
+            settings_override=override,
+            **kwargs,
+        )
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 __all__ = [
     "DEFAULT_DIR",
     "DEFAULT_INSIGHTS",
+    "insights_path",
+    "rehearsals_path",
     "DreamInsight",
     "DreamReport",
     "enabled",
@@ -1105,6 +1313,11 @@ __all__ = [
     "rehearse",
     "rehearsal_completed",
     "benchmark_regressed",
+    "snapshot_learning_state",
+    "list_snapshots",
+    "rollback_learning_state",
+    "snapshots_dir",
+    "dream_cycle_dry",
     "dream_cycle",
     "DEFAULT_REHEARSALS",
 ]

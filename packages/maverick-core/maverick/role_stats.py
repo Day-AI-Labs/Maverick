@@ -46,7 +46,23 @@ class RoleStat:
 
 
 def _resolve(path: Path | None) -> Path:
-    return path if path is not None else DEFAULT_PATH
+    if path is not None:
+        return path
+    return _tenant_path("role_stats.json", DEFAULT_PATH)
+
+
+def _tenant_path(name: str, legacy):
+    """Item-30 isolation: with an ACTIVE tenant, this store lives under the
+    tenant's data dir (one tenant's learned memory can never feed another's
+    runs); single-tenant resolution keeps the legacy location unchanged."""
+    try:
+        from .paths import current_tenant, data_dir
+        if current_tenant():
+            return data_dir(*name.split("/"))
+    except Exception:  # pragma: no cover -- isolation never blocks resolution
+        pass
+    return legacy
+
 
 
 def _load(path: Path) -> dict[str, RoleStat]:

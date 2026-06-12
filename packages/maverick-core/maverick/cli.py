@@ -3657,8 +3657,17 @@ def finance_lint_sod_cmd() -> None:
                    "the calibration interlock.")
 @click.option("--rehearse-budget", default=1.0, show_default=True,
               help="Max $ per rehearsal case.")
+@click.option("--dry-run", is_flag=True,
+              help="Run the full cycle against TEMP COPIES of every learned "
+                   "store and report what WOULD change, writing nothing.")
+@click.option("--list-snapshots", "list_snaps", is_flag=True,
+              help="List learning-state snapshots available for --rollback.")
+@click.option("--rollback", default=None, metavar="SNAPSHOT",
+              help="Restore every learned store from a snapshot "
+                   "('latest' or a name from --list-snapshots), then exit.")
 @click.pass_context
-def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float) -> None:
+def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float,
+          dry_run: bool, list_snaps: bool, rollback: str | None) -> None:
     """Run one offline dreaming cycle (experience consolidation).
 
     Replays recent successes and failure reflexions, groups them by
@@ -3675,12 +3684,39 @@ def dream(ctx, max_goals: int, rehearse: bool, rehearse_budget: float) -> None:
     that has already practiced. Refused while verifier calibration is frozen.
     """
     from . import dreaming
+    if list_snaps:
+        snaps = dreaming.list_snapshots()
+        click.echo("\n".join(snaps) if snaps else "(no snapshots yet)")
+        return
+    if rollback:
+        try:
+            restored = dreaming.rollback_learning_state(rollback)
+        except ValueError as e:
+            raise click.ClickException(str(e)) from e
+        if not restored:
+            raise click.ClickException("no snapshots to roll back to.")
+        click.echo("Restored learned state from snapshot: "
+                   + ", ".join(restored))
+        return
     if not dreaming.enabled():
         raise click.ClickException(
             "dreaming is disabled. Set MAVERICK_DREAMING=1 or add\n"
             "  [dreaming]\n  enable = true\nto ~/.maverick/config.toml."
         )
     world = open_world(ctx.obj["db"])
+    if dry_run:
+        report = dreaming.dream_cycle_dry(world, max_goals=max_goals)
+        click.echo("(dry run -- nothing written) " + report.summary())
+        return
+    # Learning rollback, half 1: snapshot every learned store before this
+    # cycle mutates anything, so `--rollback latest` can undo it wholesale.
+    cfg = dreaming.settings()
+    if cfg.get("snapshots", True):
+        snap = dreaming.snapshot_learning_state(
+            keep_last=int(cfg.get("snapshot_keep_last", 5)),
+        )
+        if snap is not None:
+            click.echo(f"[snapshot: {snap.name}]")
     report = dreaming.dream_cycle(world, max_goals=max_goals)
     click.echo(report.summary())
     if not rehearse:

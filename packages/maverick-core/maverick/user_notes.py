@@ -27,6 +27,24 @@ log = logging.getLogger(__name__)
 
 DEFAULT_PATH = Path.home() / ".maverick" / "dreams" / "user_notes.ndjson"
 
+
+def default_path() -> Path:
+    return _tenant_path("dreams/user_notes.ndjson", DEFAULT_PATH)
+
+
+def _tenant_path(name: str, legacy):
+    """Item-30 isolation: with an ACTIVE tenant, this store lives under the
+    tenant's data dir (one tenant's learned memory can never feed another's
+    runs); single-tenant resolution keeps the legacy location unchanged."""
+    try:
+        from .paths import current_tenant, data_dir
+        if current_tenant():
+            return data_dir(*name.split("/"))
+    except Exception:  # pragma: no cover -- isolation never blocks resolution
+        pass
+    return legacy
+
+
 # Sentences that are explicit self-reported preferences. Conservative on
 # purpose: false negatives just mean we learn less.
 _PREF_RE = re.compile(
@@ -78,7 +96,7 @@ def consolidate(
     dream cycle (atomic), so an edited or deleted conversation stops feeding
     notes on the next dream — no stale memory of retracted preferences.
     """
-    p = Path(path) if path is not None else DEFAULT_PATH
+    p = Path(path) if path is not None else default_path()
     ts = now if now is not None else time.time()
     notes: list[dict] = []
     try:
@@ -137,7 +155,7 @@ def notes_for(
     """The stored notes for exactly this (channel, user_id) scope."""
     if not channel or not user_id:
         return []
-    p = Path(path) if path is not None else DEFAULT_PATH
+    p = Path(path) if path is not None else default_path()
     if not p.exists():
         return []
     out: list[str] = []

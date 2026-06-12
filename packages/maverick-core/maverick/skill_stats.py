@@ -53,7 +53,18 @@ def _resolve(path: Path | None) -> Path:
     future per-profile override) wouldn't take effect. Callers pass None to
     mean "use the current default."
     """
-    return path if path is not None else DEFAULT_PATH
+    if path is not None:
+        return path
+    # Item-30 isolation: an ACTIVE tenant gets its own stats store. The
+    # module-attr lookup below stays last so tests monkeypatching
+    # DEFAULT_PATH keep working in the single-tenant layout.
+    try:
+        from .paths import current_tenant, data_dir
+        if current_tenant():
+            return data_dir("skill_stats.json")
+    except Exception:  # pragma: no cover -- isolation never blocks resolution
+        pass
+    return DEFAULT_PATH
 
 
 def _load(path: Path) -> dict[str, SkillStat]:

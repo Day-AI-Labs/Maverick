@@ -466,6 +466,129 @@ class TestRehearsal:
         assert dreaming.load_rehearsals(tmp_path / "rehearsals.ndjson")
 
 
+class TestLearningGovernance:
+    def _stores(self, tmp_path):
+        live = tmp_path / "live"
+        live.mkdir()
+        (live / "insights.ndjson").write_text('{"ts": 1.0, "kind": '
+                                              '"failure_pattern", "domain": null, '
+                                              '"text": "lesson", "evidence": 2}\n',
+                                              encoding="utf-8")
+        skills = live / "learned-skills"
+        skills.mkdir()
+        (skills / "a-skill.md").write_text("# a", encoding="utf-8")
+        return {
+            "insights.ndjson": live / "insights.ndjson",
+            "learned-skills": skills,
+        }
+
+    def test_snapshot_and_rollback_roundtrip(self, tmp_path):
+        stores = self._stores(tmp_path)
+        snapdir = tmp_path / "snaps"
+        snap = dreaming.snapshot_learning_state(
+            directory=snapdir, stores=stores, now=1000.0,
+        )
+        assert snap is not None
+        assert dreaming.list_snapshots(snapdir) == [snap.name]
+        # Mutate live state: a new skill appears, insights get overwritten.
+        (stores["learned-skills"] / "post-snap.md").write_text("# p",
+                                                               encoding="utf-8")
+        stores["insights.ndjson"].write_text("", encoding="utf-8")
+        restored = dreaming.rollback_learning_state(
+            "latest", directory=snapdir, stores=stores,
+        )
+        assert set(restored) == {"insights.ndjson", "learned-skills"}
+        assert "lesson" in stores["insights.ndjson"].read_text(encoding="utf-8")
+        # The post-snapshot skill is gone -- rollback means rollback.
+        assert not (stores["learned-skills"] / "post-snap.md").exists()
+        assert (stores["learned-skills"] / "a-skill.md").exists()
+
+    def test_snapshot_retention_caps_history(self, tmp_path):
+        stores = self._stores(tmp_path)
+        snapdir = tmp_path / "snaps"
+        for i in range(4):
+            dreaming.snapshot_learning_state(
+                directory=snapdir, stores=stores, keep_last=2,
+                now=1000.0 + i * 60,
+            )
+        assert len(dreaming.list_snapshots(snapdir)) == 2
+
+    def test_unknown_snapshot_raises(self, tmp_path):
+        stores = self._stores(tmp_path)
+        snapdir = tmp_path / "snaps"
+        dreaming.snapshot_learning_state(directory=snapdir, stores=stores)
+        with pytest.raises(ValueError, match="no such snapshot"):
+            dreaming.rollback_learning_state("nope", directory=snapdir,
+                                             stores=stores)
+
+    def test_dry_run_reports_without_writing(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dreaming, "settings", lambda: dict(_SETTINGS))
+        rpath = tmp_path / "reflexions.ndjson"
+        for goal in ("reconcile the quarterly ledger totals",
+                     "reconcile the monthly ledger totals"):
+            reflexion.record(goal_text=goal, failure_class="budget",
+                             failure_msg="cap", reflection="r",
+                             domain="finance_sox", path=rpath)
+        live = {
+            "reflexions.ndjson": rpath,
+            "insights.ndjson": tmp_path / "insights.ndjson",
+            "rehearsals.ndjson": tmp_path / "rehearsals.ndjson",
+            "user_notes.ndjson": tmp_path / "user_notes.ndjson",
+            "skill_stats.json": tmp_path / "skill_stats.json",
+            "learned-skills": tmp_path / "learned-skills",
+        }
+        monkeypatch.setattr(dreaming, "_live_stores", lambda: live)
+        report = dreaming.dream_cycle_dry(None, profiles=PROFILES)
+        # The cycle saw the failures and WOULD write an insight...
+        assert report.failures_replayed == 2
+        assert report.insights_written == 1
+        # ...but the live store was never touched.
+        assert not (tmp_path / "insights.ndjson").exists()
+
+    def test_cycle_writes_learning_audit_row(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dreaming, "settings", lambda: dict(_SETTINGS))
+        rows: list[dict] = []
+
+        def _capture(kind, **kw):
+            rows.append({"kind": kind, **kw})
+            return True
+
+        import maverick.audit as audit_pkg
+        monkeypatch.setattr(audit_pkg, "record", _capture)
+        dreaming.dream_cycle(
+            None, profiles=PROFILES, reflexion_path=tmp_path / "r.ndjson",
+            insights_path=tmp_path / "i.ndjson",
+            skill_store=tmp_path / "skills",
+            skill_stats_path=tmp_path / "stats.json",
+        )
+        assert rows and rows[0]["kind"] == "learning_update"
+        assert "insights_written" in rows[0]
+
+
+class TestTenantIsolation:
+    def test_stores_split_per_tenant(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+        monkeypatch.setenv("MAVERICK_TENANT", "acme")
+        reflexion.record(goal_text="acme-only lesson",
+                         failure_class="agent_error", failure_msg="m",
+                         reflection="r")
+        acme_path = reflexion.default_path()
+        assert "tenants" in str(acme_path) and acme_path.exists()
+        assert reflexion.recall("acme-only lesson")
+        # Another tenant sees nothing; the legacy root sees nothing.
+        monkeypatch.setenv("MAVERICK_TENANT", "globex")
+        assert reflexion.recall("acme-only lesson") == []
+        monkeypatch.delenv("MAVERICK_TENANT")
+        assert reflexion.recall("acme-only lesson") == []
+
+    def test_dream_stores_follow_tenant(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+        monkeypatch.setenv("MAVERICK_TENANT", "acme")
+        assert "tenants" in str(dreaming.insights_path())
+        monkeypatch.delenv("MAVERICK_TENANT")
+        assert "tenants" not in str(dreaming.insights_path())
+
+
 class _FakeGoal:
     def __init__(self, title: str, t: float):
         self.title = title
