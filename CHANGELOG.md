@@ -33,6 +33,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   jurisdiction packs; suite operating discipline and department memory
   applied to every pack at spawn; `maverick domains-lint` quality gate.
 - Goal rows persist their department (world-model schema v14).
+- Tax preparation pipeline (`maverick tax prepare`, `tax_prep.py`): uploaded
+  documents → deterministic classification/extraction → workpaper →
+  first-pass TY2025 draft 1040 → preparer review package, every line cited
+  to its source document and out-of-scope items flagged as open items; plus
+  the 18-pack `tax_` specialist suite (portfolio now 1,018 packs across 26
+  suites).
 
 
 ### Fixed

@@ -164,7 +164,7 @@ here.
   maker-checker + SoD, legal privilege, HR PII-minimization, IT/GRC
   chain-of-custody, ops safety interlocks, engineering tests-first, GTM
   no-overpromising, strategy source-grounding). One implementation point
-  upgrades all 1,000 built-in packs AND operator/intake-generated packs;
+  upgrades all 1,018 built-in packs AND operator/intake-generated packs;
   prompts only — hard limits stay with capabilities/governance.
 - **Department memory at every spawn depth** — `agent_from_profile` appends
   the department's recalled lessons (same-department reflexions + dream
@@ -187,16 +187,26 @@ here.
   cost avoided + ROI, the capability improvement curve from the hindsight
   ledger, and governance evidence, per department (and per external vendor
   with `--fleet`). Read-only; the POC-closing artifact.
-- **1,000-agent specialist portfolio across 25 suites** — the original 8
+- **1,018-agent specialist portfolio across 26 suites** — the original 8
   business suites plus customer experience, marketing, procurement,
-  data & analytics, security ops, executive office, facilities/EHS, and 10
-  industry verticals (healthcare, insurance, banking, retail,
-  manufacturing, construction, logistics, professional services,
+  data & analytics, security ops, executive office, facilities/EHS, tax
+  preparation, and 10 industry verticals (healthcare, insurance, banking,
+  retail, manufacturing, construction, logistics, professional services,
   government contracting, education/nonprofit), with jurisdiction packs
   (country employment law, GDPR/CCPA/PIPL/EU-AI-Act regimes, indirect-tax
   regimes). Quality gate: `maverick domains-lint [--ci]` — every pack has
   a bounded persona, least-privilege allow list, explicit deny list, and
-  risk ceiling; 0 errors, 0 warnings across all 1,000.
+  risk ceiling; 0 errors, 0 warnings across all 1,018.
+- **Tax preparation pipeline** (`tax_prep.py`, `maverick tax prepare
+  <docs-dir>`; the 18-pack `tax_` suite) — a CPA firm's docs-to-draft
+  workflow: uploaded client documents are classified and extracted
+  deterministically (W-2 / 1099 family / K-1 / 1098 / prior returns),
+  assembled into a standardized workpaper, and computed into a first-pass
+  TY2025 draft 1040 where **every line cites its source document** and
+  everything out of computed scope (Schedule C/E, itemizing) is an explicit
+  OPEN ITEM. Agents do the unstructured labor (chasing, extraction, client
+  comms — all drafts); the module does the provable math; the credentialed
+  preparer reviews, completes, and signs. Never files anything.
 - **Fleet memory — the Learning System of Record** (`fleet_memory.py`,
   opt-in `[fleet_memory] enable`; MCP tools `maverick_fleet_ingest` /
   `maverick_fleet_recall`; CLI `maverick fleet-memory`) — ANY external agent

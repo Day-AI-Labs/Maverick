@@ -155,6 +155,7 @@ SUITE_PREFIXES: dict[str, str] = {
     "ps_": "professional_services",
     "gov_": "government_contracting",
     "edu_": "education_nonprofit",
+    "tax_": "tax",
 }
 
 

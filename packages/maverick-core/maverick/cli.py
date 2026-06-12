@@ -3884,6 +3884,47 @@ def forward_cmd(ctx, days: int) -> None:
         click.echo(f"#{g.id:<5} {when:<16} {g.title[:70]}{dept}{blocked}")
 
 
+@main.group("tax")
+def tax_group() -> None:
+    """Tax preparation pipeline: uploaded documents -> first-pass draft return."""
+
+
+@tax_group.command("prepare")
+@click.argument("docs_dir", type=click.Path(exists=True, file_okay=False))
+@click.option("--filing-status", type=click.Choice(["single", "mfj", "hoh"]),
+              default="single", show_default=True,
+              help="Filing status for the first-pass computation.")
+@click.option("--dependents", default=0, show_default=True,
+              help="Qualifying children under 17 (child tax credit).")
+@click.option("--out", "out_path", type=click.Path(), default=None,
+              help="Also write the review package to this file.")
+def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
+                out_path: str | None) -> None:
+    """Turn a folder of uploaded documents into a first-pass draft 1040.
+
+    Reads every ``*.txt`` document in DOCS_DIR (text exports of the client's
+    W-2s, 1099s, etc. -- extraction agents handle PDFs upstream), classifies
+    and extracts each one deterministically, assembles the workpaper, runs
+    the TY2025 first-pass computation, and prints the preparer review
+    package: every line cited to its source document, every out-of-scope
+    item flagged as an OPEN ITEM. A credentialed preparer reviews, completes,
+    and signs -- this never files anything.
+    """
+    from . import tax_prep
+    docs = []
+    for p in sorted(Path(docs_dir).glob("*.txt")):
+        text = p.read_text(encoding="utf-8", errors="replace")
+        docs.append(tax_prep.extract(text, label=p.name))
+    wp = tax_prep.Workpaper(filing_status=filing_status,
+                            dependents_under_17=dependents, docs=docs)
+    draft = tax_prep.compute_first_pass(wp)
+    package = tax_prep.render_review_package(draft)
+    click.echo(package)
+    if out_path:
+        Path(out_path).write_text(package + "\n", encoding="utf-8")
+        click.echo(f"\nWrote review package -> {out_path}")
+
+
 @main.command("proof")
 @click.option("--days", default=90, show_default=True,
               help="Window to report over.")

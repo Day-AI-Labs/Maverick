@@ -25,7 +25,7 @@ the deepest agent framework available.
 | | Maverick | Devin | Hermes / OpenClaw | Cline / Aider |
 |---|---|---|---|---|
 | Primary form | Self-hosted platform + CLI | Hosted product | Coding agents | IDE / CLI coding agents |
-| Prebuilt business specialists | **1,000 across 25 suites** (lint-audited envelopes) | No | No | No |
+| Prebuilt business specialists | **1,018 across 26 suites** (lint-audited envelopes) | No | No | No |
 | Learns from use (governed) | **Yes** — consolidation, regression detection, rollback, signed learning audit | No | No | No |
 | Runs in your environment | **Yes** (7 sandbox backends) | Hosted | Varies | Yes (local) |
 | Multi-agent swarm | **Yes** (orchestrator + specialists) | Yes | Single-agent focus | Single-agent |
