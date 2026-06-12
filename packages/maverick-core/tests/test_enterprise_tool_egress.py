@@ -39,6 +39,18 @@ def test_local_endpoint_permitted_under_enterprise(monkeypatch):
     assert enterprise_egress_denial("http://localhost:8080/x") is None
 
 
+def test_imds_is_not_local_and_is_denied_under_enterprise(monkeypatch):
+    # Cloud IMDS is link-local but leaks instance credentials -- it must NOT be
+    # treated as a local service that bypasses the egress lock.
+    _enterprise(monkeypatch)
+    for url in ("http://169.254.169.254/latest/meta-data/",
+                "http://[fd00:ec2::254]/", "https://169.254.169.254/"):
+        assert egress_permitted(url) is False, url
+        assert enterprise_egress_denial(url) is not None, url
+    # A non-IMDS link-local (APIPA) host is still treated as local (no regression).
+    assert egress_permitted("http://169.254.1.5/x") is True
+
+
 def test_allow_listed_host_permitted_under_enterprise(monkeypatch):
     _enterprise(monkeypatch, allowed=["api.tavily.com"])
     assert egress_permitted("https://api.tavily.com/search") is True

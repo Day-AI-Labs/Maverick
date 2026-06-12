@@ -146,7 +146,17 @@ RULES: list[Rule] = [
 
     # Role hijacking
     Rule("dan_jailbreak", "critical",
-         _compile(r"\b(DAN|do anything now|developer mode|jailbreak|unfiltered\s+ai)\b"),
+         # Unambiguous jailbreak markers stand alone. "developer mode" does NOT:
+         # the bare term is a benign IDE/browser/app mode and over-blocked normal
+         # IT/dev text (measured ~13% false-positive on benign inputs,
+         # user-testing finding). The real "Developer Mode" jailbreak always
+         # sheds restrictions, so require a restriction-removal cue within a
+         # short window (either order). Bounds keep it ReDoS-safe.
+         _compile(
+             r"\b(?:DAN|do anything now|jailbreak|unfiltered\s+ai)\b"
+             r"|\bdeveloper\s+mode\b[\s\S]{0,60}(?:unrestricted|unfiltered|anything\s+goes|free\s+from|no\s+(?:restrictions?|rules?|filters?|limits?)|without\s+(?:restrictions?|rules?|filters?)|bypass|ignore\s+(?:all|your|the)?[\w\s]{0,12}(?:rules?|restrictions?|instructions?|guidelines?|policy|policies))"
+             r"|(?:unrestricted|unfiltered|anything\s+goes|no\s+(?:restrictions?|rules?|filters?)|bypass|ignore\s+(?:all|your|the)?[\w\s]{0,12}(?:rules?|restrictions?|instructions?))[\s\S]{0,60}\bdeveloper\s+mode\b"
+         ),
          "DAN / developer-mode jailbreak"),
     Rule("persona_takeover", "high",
          _compile(
@@ -239,7 +249,11 @@ RULES: list[Rule] = [
          _compile(r"\bif\s+you\s+(are|'?re|happen\s+to\s+be|find\s+yourself)\s+(an?\s+)?(automated\s+|virtual\s+|digital\s+|ai\s+|language\s+)?(ai|agent|assistant|llm|model|language\s+model|bot|system)\b[\s\S]{0,40}?\b(reading|seeing|processing|parsing|viewing|summari[sz]ing|handling)\b"),
          "Indirect injection: content addressed to an AI that reads it"),
     Rule("real_task_hijack", "high",
-         _compile(r"\byour\s+(real|actual|true|new|secret|hidden|primary)\s+(task|job|goal|mission|instruction|objective|purpose)\s+is\b"),
+         # "new"/"primary" dropped from the adjective list: "your new task is" and
+         # "your primary task is" are ordinary delegation language and over-blocked
+         # benign work (user-testing finding). The hijack signal is the claim of a
+         # hidden/true task: real|actual|true|secret|hidden.
+         _compile(r"\byour\s+(real|actual|true|secret|hidden)\s+(task|job|goal|mission|instruction|objective|purpose)\s+is\b"),
          "Task hijack: your 'real task' is ..."),
     Rule("injected_command_to_agent", "high",
          _compile(r"\b(system\s+note|important|attention|urgent|note\s+from\s+file)\b[\s\S]{0,60}?\b(assistant|ai|agent|model)\b[\s\S]{0,24}?\b(must|should|needs?\s+to|has\s+to|now)\b[\s\S]{0,24}?\b(email|send|upload|exfil\w*|delete|run|execute|forward|leak|transfer)"),

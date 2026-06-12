@@ -29,6 +29,20 @@ def test_seal_unseal_round_trip_per_tenant():
     assert k.unseal_text_for_tenant("acme", blob) == "secret invoice"
 
 
+def test_cloud_kms_provider_fails_closed_not_silent_local(monkeypatch):
+    # Configuring an HSM-backed provider that isn't wired must REFUSE, not
+    # silently hand back the in-process LocalKMS (a hidden at-rest downgrade).
+    import maverick.config as cfg
+    from maverick.crypto_at_rest import EncryptionUnavailable
+    from maverick.tenant_kms import LocalKMS, get_kms
+    monkeypatch.setattr(cfg, "load_config", lambda: {})
+    assert isinstance(get_kms(), LocalKMS)  # default stays local
+    for provider in ("aws", "gcp", "vault"):
+        monkeypatch.setattr(cfg, "load_config", lambda p=provider: {"kms": {"provider": p}})
+        with pytest.raises(EncryptionUnavailable):
+            get_kms()
+
+
 @requires_crypto
 def test_one_tenant_cannot_open_anothers_data(tmp_path):
     from maverick import tenant_kms as k

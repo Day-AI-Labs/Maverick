@@ -506,6 +506,12 @@ async def run_goal(  # noqa: C901
             world.end_episode(episode_id, "input blocked by Shield", "blocked")
         except Exception:  # pragma: no cover
             pass
+        try:  # tamper-evident record of the safety block; never block on audit
+            from .audit import EventKind, record
+            record(EventKind.SHIELD_BLOCK, goal_id=goal_id, stage="input",
+                   reason=reason, score=None)
+        except Exception:  # pragma: no cover
+            pass
         log.warning("goal #%s input blocked by Shield: %s", goal_id, reason)
         return f"BLOCKED: goal input rejected by Shield ({reason})"
 
@@ -809,6 +815,12 @@ async def run_goal(  # noqa: C901
             world.set_goal_status(goal_id, "blocked", result=f"brief blocked: {reason}")
             try:
                 world.end_episode(episode_id, "brief blocked by Shield", "blocked")
+            except Exception:  # pragma: no cover
+                pass
+            try:  # tamper-evident record of the safety block; never block on audit
+                from .audit import EventKind, record
+                record(EventKind.SHIELD_BLOCK, goal_id=goal_id, stage="input",
+                       reason=reason, score=None)
             except Exception:  # pragma: no cover
                 pass
             log.warning("goal #%s assembled brief blocked by Shield: %s", goal_id, reason)
