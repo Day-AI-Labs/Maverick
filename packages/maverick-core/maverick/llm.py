@@ -67,6 +67,12 @@ MODEL_PRICES: dict[str, tuple[float, float]] = {
     MODEL_OPUS:                  (5.0, 25.0),    # opus 4.8 (also 4.5/4.6/4.7 — same $5/$25)
     MODEL_OPUS_FAST:             (10.0, 50.0),   # opus 4.8 fast mode: 2.5x faster, 2x price
     "claude-opus-4-7":           (5.0, 25.0),    # prior Opus, still selectable in config
+    # Older Opus tiers share the $5/$25 rate (comment above). They were absent
+    # from this table, so calls fell through to the Sonnet fallback ($3/$15) --
+    # a ~40% output-cost undercount, so an Opus budget overshot (user-testing
+    # finding). effort.py/anthropic_provider.py still reference these ids.
+    "claude-opus-4-6":           (5.0, 25.0),
+    "claude-opus-4-5":           (5.0, 25.0),
     MODEL_SONNET:                (3.0, 15.0),    # sonnet 4.6
     MODEL_HAIKU:                 (1.0, 5.0),     # haiku 4.5
     # OpenAI (only enable after verifying against platform.openai.com/docs/pricing

@@ -49,3 +49,25 @@ def test_quota_positive_is_shown_per_day():
     res = CliRunner().invoke(main, ["tenant", "quota", "acme", "25"])
     assert res.exit_code == 0, res.output
     assert "$25/day" in res.output
+
+
+def test_tenant_list_flags_over_quota():
+    # Enforcement is at serve time, but the operator must be able to SEE which
+    # tenants are over their daily cap from `tenant list`.
+    from datetime import datetime, timezone
+
+    from maverick import tenant_registry as tr
+    from maverick.billing import ledger_for_tenant
+    tr.create_tenant("acme", plan="pro")
+    tr.set_quota("acme", 1.0)
+    tr.create_tenant("beta", plan="free")  # unlimited -> never flagged
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    ledger_for_tenant("acme").record("user:x", 5.0, 1000, 200, day=today)
+
+    res = CliRunner().invoke(main, ["tenant", "list"])
+    assert res.exit_code == 0, res.output
+    assert "OVER QUOTA" in res.output
+    # The flag is on acme's line, not beta's.
+    acme_line = next(ln for ln in res.output.splitlines() if ln.strip().startswith("acme"))
+    beta_line = next(ln for ln in res.output.splitlines() if ln.strip().startswith("beta"))
+    assert "OVER QUOTA" in acme_line and "OVER QUOTA" not in beta_line

@@ -492,7 +492,23 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             {"path": request.url.path},
             status_code=400,
         )
-    return JSONResponse({"detail": exc.errors()}, status_code=422)
+    # exc.errors() can embed the raw request body (bytes) in 'input' when the
+    # client sent a wrong/garbage Content-Type; json.dumps can't serialize bytes,
+    # so a 422 turned into an opaque 500. jsonable_encoder coerces bytes -> str.
+    from fastapi.encoders import jsonable_encoder
+    return JSONResponse({"detail": jsonable_encoder(exc.errors())}, status_code=422)
+
+
+@app.exception_handler(OverflowError)
+async def overflow_exception_handler(request: Request, exc: OverflowError):
+    """An out-of-range integer path param (e.g. goal_id > 2**63-1) can't be a real
+    row -- SQLite raises OverflowError binding it. Treat it as not-found rather
+    than letting it fall through to a 500 (user-testing finding)."""
+    if _wants_html(request):
+        return templates.TemplateResponse(
+            request, "404.html", {"path": request.url.path}, status_code=404,
+        )
+    return JSONResponse({"detail": "not found"}, status_code=404)
 
 
 @app.exception_handler(Exception)

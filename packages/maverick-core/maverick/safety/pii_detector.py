@@ -53,16 +53,25 @@ _IPV6 = re.compile(
     # Full AND ::-compressed forms -- the old pattern required 8 written
     # hextets, so it missed every real-world compressed address (2001:db8::1,
     # fe80::1, ::1), i.e. IPv6 PII was essentially never redacted.
+    #
+    # Order matters: Python's `|` is leftmost-match, NOT longest-match, so every
+    # form that ends in a hextet MUST precede the bare "trailing ::" form. The
+    # old order put `(?:hex:){1,7}:` first, so "2001:db8::1" matched only
+    # "2001:db8::" and leaked the final hextet (user-testing finding).
+    # Alternatives are ordered by DESCENDING count of hextets after "::" so the
+    # longest match always wins under leftmost-match. A 1-trailing-hextet form
+    # ahead of a 2-trailing one would leak the tail (2001:db8::dead:beef ->
+    # "...::dead" leaving ":beef").
     r"(?:"
     r"(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}"
-    r"|(?:[0-9a-fA-F]{1,4}:){1,7}:"
-    r"|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}"
-    r"|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}"
-    r"|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}"
-    r"|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}"
-    r"|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}"
-    r"|[0-9a-fA-F]{1,4}:(?::[0-9a-fA-F]{1,4}){1,6}"
     r"|:(?::[0-9a-fA-F]{1,4}){1,7}"
+    r"|[0-9a-fA-F]{1,4}:(?::[0-9a-fA-F]{1,4}){1,6}"
+    r"|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}"
+    r"|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}"
+    r"|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}"
+    r"|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}"
+    r"|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}"
+    r"|(?:[0-9a-fA-F]{1,4}:){1,7}:"
     r"|::"
     r")"
 )

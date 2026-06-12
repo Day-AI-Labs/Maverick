@@ -62,3 +62,23 @@ def test_persona_audits_and_never_certifies():
     assert "unknown" in p                         # honest gaps, not guessed passes
     assert "never declare" in p and "certified" in p
     assert callable(build_compliance_auditor_agent)
+
+
+def test_pii_redaction_control_reflects_real_posture(monkeypatch):
+    # User-testing finding: the report hardcoded "Secret/PII redaction" as
+    # active, but PII (email/SSN/phone) is redacted only under anon mode (and is
+    # protected by at-rest encryption). The split controls must tell the truth.
+    from maverick.compliance import compliance_report
+
+    def _status(anon, enc):
+        monkeypatch.setattr("maverick.privacy.anon_enabled", lambda: anon)
+        monkeypatch.setattr("maverick.crypto_at_rest.at_rest_enabled", lambda: enc)
+        checks = {c.control: c for c in compliance_report()}
+        assert checks["Secret redaction in logs"].status == "active"
+        return checks["PII redaction in logs"].status
+
+    # Neither anon nor encryption -> PII in plaintext logs -> action_needed.
+    assert _status(anon=False, enc=False) == "action_needed"
+    # Anon redacts it, OR at-rest encryption protects it -> active.
+    assert _status(anon=True, enc=False) == "active"
+    assert _status(anon=False, enc=True) == "active"

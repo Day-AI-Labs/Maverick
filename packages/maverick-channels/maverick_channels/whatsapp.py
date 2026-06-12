@@ -48,8 +48,16 @@ try:
     _HAVE_DEPS = True
 except ImportError:
     _HAVE_DEPS = False
-    FastAPI = Form = HTTPException = Request = Response = None  # type: ignore
+    FastAPI = HTTPException = Request = Response = None  # type: ignore
     RequestValidator = TwilioClient = None  # type: ignore
+
+    def Form(*_a, **_k):  # type: ignore  # noqa: N802
+        # Placeholder so the webhook method's ``Form(...)`` DEFAULT ARGUMENTS
+        # (evaluated at class-definition time) don't crash with a confusing
+        # "'NoneType' object is not callable" when fastapi/twilio are absent.
+        # __init__ raises the real, actionable ImportError before the method --
+        # and these defaults -- is ever used (user-testing finding).
+        return None
 
 
 class WhatsAppChannel(Channel):

@@ -261,6 +261,8 @@ def _cap_tool_output(text: str) -> str:
     states what was dropped and how to avoid it. A no-op below the cap, so normal
     results are byte-identical. The head is preserved, so a leading ``ERROR`` is
     intact for failure classification."""
+    if not isinstance(text, str):  # defensive: never crash on a non-str result
+        text = "" if text is None else str(text)
     if len(text) <= _MAX_TOOL_RESULT_BYTES:
         return text
     head = _MAX_TOOL_RESULT_BYTES * 2 // 3
@@ -1007,6 +1009,14 @@ class Agent:
                     self.name, "error",
                     f"tool={name} BLOCKED by Shield: {'; '.join(verdict.reasons)}",
                 )
+                try:  # tamper-evident record of the shield block; never block on audit
+                    from .audit import EventKind, record
+                    record(EventKind.SHIELD_BLOCK, agent=self.name,
+                           goal_id=self.ctx.goal_id, stage="tool",
+                           reason="; ".join(verdict.reasons),
+                           score=getattr(verdict, "score", None))
+                except Exception:  # pragma: no cover
+                    pass
                 self._maybe_seal(q, verdict)
                 return (
                     f"⚠ BLOCKED by Shield ({verdict.severity}): "

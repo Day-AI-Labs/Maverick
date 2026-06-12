@@ -268,3 +268,17 @@ def test_cache_read_openai_half_rate_is_5x_default():
                     cache_read_mult=CACHE_READ_MULT_OPENAI)
     # 0.5x of $5/Mtok = $2.50 (5x the 0.1x default of $0.50).
     assert abs(b.dollars - 2.5) < 1e-6
+
+
+def test_older_opus_tiers_priced_at_opus_not_sonnet():
+    # claude-opus-4-5/4-6 were absent from MODEL_PRICES and fell through to the
+    # Sonnet fallback ($3/$15) -- a ~40% output-cost undercount (user-testing
+    # finding). They must bill at the Opus $5/$25 rate like 4.7/4.8.
+    for model in ("claude-opus-4-5", "claude-opus-4-6", "claude-opus-4-7"):
+        b = Budget(max_dollars=1e9, max_output_tokens=10_000_000)
+        b.record_tokens(0, 1_000_000, model=model)
+        assert abs(b.dollars - 25.0) < 1e-6, (model, b.dollars)
+    # Sonnet stays at its own $15 rate (no accidental Opus bump).
+    b = Budget(max_dollars=1e9, max_output_tokens=10_000_000)
+    b.record_tokens(0, 1_000_000, model="claude-sonnet-4-6")
+    assert abs(b.dollars - 15.0) < 1e-6

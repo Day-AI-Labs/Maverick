@@ -464,6 +464,27 @@ def test_pii_detector_finds(name, sample):
     assert name in found, f"expected {name} in {found}"
 
 
+@pytest.mark.parametrize("compressed", [
+    "2001:db8::1",
+    "fe80::1",
+    "2001:db8::dead:beef",
+    "2001::dead:beef:cafe",
+    "fe80::dead:beef:1234:5678",
+    "::1",
+])
+def test_pii_detector_redacts_compressed_ipv6_in_full(compressed):
+    # The IPV6 alternation must redact the WHOLE address; a leftmost-match
+    # ordering bug left the final hextet(s) in cleartext (2001:db8::1 ->
+    # "[REDACTED:ipv6]1"). No hex fragment of the address may survive.
+    from maverick.safety.pii_detector import redact
+    out, matches = redact(f"addr={compressed} end")
+    assert matches and "[REDACTED:ipv6]" in out
+    for hextet in compressed.replace("::", ":").split(":"):
+        if hextet:  # no fragment of the address leaks
+            assert hextet not in out, (compressed, out)
+    assert out.startswith("addr=") and out.endswith(" end")
+
+
 def test_pii_detector_luhn_validates_credit_cards():
     from maverick.safety.pii_detector import scan
     # Real Luhn-valid Visa test number.
