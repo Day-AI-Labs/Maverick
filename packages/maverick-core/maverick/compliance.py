@@ -218,10 +218,33 @@ def compliance_report() -> list[ControlCheck]:
         else "enable [enterprise] mode = true to keep data on-box",
     ))
 
-    # GDPR Art. 25 & 32 — data protection by design (redaction always on in audit).
+    # GDPR Art. 25 & 32 — data protection by design. Secret redaction is
+    # UNCONDITIONAL, but PII redaction (email/SSN/phone) only runs under anon
+    # mode (default off). Reporting one combined "active" control overstated the
+    # default posture -- an auditor would read it as "email/SSN redacted from
+    # logs", which is false by default (user-testing finding). Split them so
+    # each control reflects what is actually applied.
+    from .crypto_at_rest import at_rest_enabled
+    from .privacy import anon_enabled
     checks.append(ControlCheck(
-        "Secret/PII redaction in logs", "GDPR Art. 25 & 32", "active",
+        "Secret redaction in logs", "GDPR Art. 25 & 32", "active",
         "audit events pass through the secret detector before write",
+    ))
+    # PII in logs is protected when anon mode REDACTS it OR at-rest encryption
+    # ENCRYPTES it; only when neither is on is PII left in plaintext logs.
+    if anon_enabled():
+        _pii_status, _pii_detail = "active", (
+            "anonymization mode redacts PII (email/SSN/phone) from audit events")
+    elif at_rest_enabled():
+        _pii_status, _pii_detail = "active", (
+            "PII in logs is protected by at-rest encryption (not redacted); enable "
+            "[privacy] anonymous = true to also redact it")
+    else:
+        _pii_status, _pii_detail = "action_needed", (
+            "PII is NOT redacted from logs by default; enable [privacy] anonymous = true "
+            "(or at-rest encryption) -- secrets are always redacted regardless")
+    checks.append(ControlCheck(
+        "PII redaction in logs", "GDPR Art. 25 & 32", _pii_status, _pii_detail,
     ))
 
     # GDPR Art. 32 — encryption of personal data at rest (memory store).

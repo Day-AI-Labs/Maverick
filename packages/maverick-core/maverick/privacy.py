@@ -20,14 +20,53 @@ Use:
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
 import os
 import re
+import threading
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 log = logging.getLogger(__name__)
+
+_anon_salt_lock = threading.Lock()
+_anon_salt_cache: bytes | None = None
+
+
+def _anon_salt() -> bytes:
+    """A persistent per-deployment secret salt for the anonymization HMAC.
+
+    Generated once (32 random bytes) and stored 0600 under the shared,
+    un-namespaced home. Without a secret key the old ``sha256(value)`` mapping
+    was rainbow-tableable for common identifiers (alice, user-1...). If the salt
+    can't be persisted (read-only fs) we fall back to a process-stable random
+    salt -- still defeats precomputation, just not stable across restarts.
+    """
+    global _anon_salt_cache
+    if _anon_salt_cache is not None:
+        return _anon_salt_cache
+    with _anon_salt_lock:
+        if _anon_salt_cache is not None:
+            return _anon_salt_cache
+        try:
+            from .paths import data_dir
+            p = data_dir("keys", "anon.salt", tenant=None)
+            if p.exists():
+                existing = p.read_bytes()
+                if len(existing) >= 16:
+                    _anon_salt_cache = existing
+                    return _anon_salt_cache
+            p.parent.mkdir(parents=True, exist_ok=True)
+            salt = os.urandom(32)
+            fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "wb") as f:
+                f.write(salt)
+            _anon_salt_cache = salt
+        except Exception:  # pragma: no cover -- read-only fs / unwritable home
+            _anon_salt_cache = os.urandom(32)
+        return _anon_salt_cache
 
 
 _SENSITIVE_KEYS = frozenset({
@@ -73,10 +112,21 @@ def anon_enabled() -> bool:
 
 
 def _hash_id(value: str, prefix: str = "") -> str:
-    """Stable but non-reversible 12-char hash; prefix tags the field type."""
+    """Stable, non-reversible 12-char hash; prefix tags the field type.
+
+    HMAC-keyed with a persistent per-deployment salt and mixed with the active
+    tenant, so the mapping is non-invertible even against a small candidate set
+    (the old unsalted sha256 was rainbow-tableable) and the SAME id under two
+    tenants hashes differently (no cross-tenant correlation in anon logs). Still
+    deterministic within a deployment+tenant, so legitimate same-user
+    correlation is preserved.
+    """
     if not value:
         return "(empty)"
-    h = hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:12]
+    from .paths import current_tenant_id
+    tenant = current_tenant_id() or ""
+    msg = f"{tenant}\x00{prefix}\x00{value}".encode()
+    h = hmac.new(_anon_salt(), msg, hashlib.sha256).hexdigest()[:12]
     return f"{prefix}#{h}" if prefix else f"#{h}"
 
 
