@@ -30,6 +30,7 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -198,5 +199,24 @@ def is_revoked(principal: str) -> bool:
         return False
 
 
+def revoked_principal(principals: Iterable[str] | str) -> str | None:
+    """Return the first revoked principal in ``principals``, fail-open.
+
+    Authorization callers pass the effective capability principal plus its
+    ancestor lineage. This makes a parent revocation kill already-spawned
+    descendants without depending on an in-memory delegation graph.
+    """
+    if isinstance(principals, str):
+        principals = (principals,)
+    try:
+        reg = shared()
+        for principal in principals:
+            if reg.is_revoked(principal):
+                return principal
+    except Exception:  # pragma: no cover -- revocation never bricks a run
+        log.debug("revocation lineage check failed; allowing", exc_info=True)
+    return None
+
+
 __all__ = ["Revocation", "RevocationRegistry", "shared", "reset_shared",
-           "is_revoked"]
+           "is_revoked", "revoked_principal"]

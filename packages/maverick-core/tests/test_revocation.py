@@ -136,6 +136,23 @@ async def test_revoked_principal_tool_call_denied(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_revoked_parent_principal_denies_child_tool_call(tmp_path, monkeypatch):
+    reg = _point_shared_at(monkeypatch, tmp_path)
+    reg.revoke("user:alice", reason="offboarded")
+    agent = _agent(tmp_path)
+    agent.capability = Capability(
+        principal="agent:coder-1", ancestors=("user:alice",),
+    )
+    calls: list = []
+    agent.tools.register(_spy_tool("read_file", calls))
+
+    out = await agent._run_tool("read_file", {"path": "x"})
+    assert "DENIED by capability" in out
+    assert "user:alice" in out
+    assert calls == []
+
+
+@pytest.mark.asyncio
 async def test_non_revoked_principal_not_denied(tmp_path, monkeypatch):
     _point_shared_at(monkeypatch, tmp_path)  # empty registry
     agent = _agent(tmp_path)

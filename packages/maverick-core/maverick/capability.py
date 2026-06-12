@@ -47,6 +47,16 @@ class Capability:
     expires_at: float | None = None
     allow_paths: frozenset[str] = frozenset()
     allow_hosts: frozenset[str] = frozenset()
+    ancestors: tuple[str, ...] = ()
+
+    def revocation_principals(self) -> tuple[str, ...]:
+        """Principals whose revocation invalidates this grant.
+
+        A child grant is re-bound to the child principal, but revoking any
+        ancestor must still kill the descendant grant immediately. Check the
+        current principal first, then walk back toward the root.
+        """
+        return (self.principal, *reversed(self.ancestors))
 
     def is_expired(self, now: float | None = None) -> bool:
         if self.expires_at is None:
@@ -111,6 +121,7 @@ class Capability:
             allow_hosts=_narrow_globs(
                 self.allow_hosts, other.allow_hosts if other.allow_hosts else None
             ),
+            ancestors=_intersected_ancestors(self, other, principal),
         )
 
     def attenuate(
@@ -153,20 +164,24 @@ class Capability:
             expires_at=self.expires_at,
             allow_paths=_narrow_globs(self.allow_paths, allow_paths),
             allow_hosts=_narrow_globs(self.allow_hosts, allow_hosts),
+            ancestors=_attenuated_ancestors(self, principal),
         )
 
     def signing_bytes(self) -> bytes:
         """Canonical, stable serialization for signing/verification."""
+        payload = {
+            "principal": self.principal,
+            "allow_tools": sorted(self.allow_tools),
+            "deny_tools": sorted(self.deny_tools),
+            "max_risk": self.max_risk,
+            "expires_at": self.expires_at,
+            "allow_paths": sorted(self.allow_paths),
+            "allow_hosts": sorted(self.allow_hosts),
+        }
+        if self.ancestors:
+            payload["ancestors"] = list(self.ancestors)
         return json.dumps(
-            {
-                "principal": self.principal,
-                "allow_tools": sorted(self.allow_tools),
-                "deny_tools": sorted(self.deny_tools),
-                "max_risk": self.max_risk,
-                "expires_at": self.expires_at,
-                "allow_paths": sorted(self.allow_paths),
-                "allow_hosts": sorted(self.allow_hosts),
-            },
+            payload,
             sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8")
@@ -176,6 +191,48 @@ class Capability:
 # represent an empty (permits-nothing) allow-list without colliding with the
 # "empty set == all" convention -- NUL is illegal in the configured names.
 _DENY_ALL = "\x00"
+
+
+def _attenuated_ancestors(cap: Capability, principal: str | None) -> tuple[str, ...]:
+    """Return lineage for a grant re-bound from ``cap`` to ``principal``.
+
+    Rebinding a capability creates a descendant principal; recording the parent
+    chain lets revocation of any ancestor propagate at the authorization
+    boundary without needing every process to share an in-memory edge graph.
+    """
+    return _lineage_for(cap, principal)
+
+
+def _intersected_ancestors(
+    left: Capability, right: Capability, principal: str | None,
+) -> tuple[str, ...]:
+    """Merge both input lineages for an intersected grant.
+
+    Verified handoffs are intersected with an agent's ambient grant at the tool
+    boundary. The result must stay revocable through either side's ancestors
+    (for example, the sender that delegated the handoff and the recipient's
+    spawn parent).
+    """
+    target = principal or left.principal
+    return _merge_lineages(_lineage_for(left, target), _lineage_for(right, target))
+
+
+def _lineage_for(cap: Capability, principal: str | None) -> tuple[str, ...]:
+    lineage = cap.ancestors
+    if principal is not None and principal != cap.principal:
+        lineage = (*lineage, cap.principal)
+    return _merge_lineages(lineage)
+
+
+def _merge_lineages(*lineages: tuple[str, ...]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    merged: list[str] = []
+    for lineage in lineages:
+        for pr in lineage:
+            if pr and pr not in seen:
+                seen.add(pr)
+                merged.append(pr)
+    return tuple(merged)
 
 
 def _narrow_tools(
