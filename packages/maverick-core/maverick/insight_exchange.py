@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,8 @@ log = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
 _MAX_TEXT = 400
+_MAX_PEER_ID = 32
+_SAFE_PEER_ID = re.compile(r"[^A-Za-z0-9_.:-]+")
 
 
 def _canonical_bytes(ts: float, insights: list[dict]) -> bytes:
@@ -86,6 +89,11 @@ def export_insights(
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(bundle, indent=2, default=str), encoding="utf-8")
     return out
+
+
+def _safe_peer_id(peer_key: str) -> str:
+    """Return a prompt-safe provenance label derived from the verified key."""
+    return _SAFE_PEER_ID.sub("-", peer_key[:_MAX_PEER_ID])[:_MAX_PEER_ID] or "unknown"
 
 
 def _sanitize(text: str, *, shield: Any | None) -> str | None:
@@ -142,7 +150,10 @@ def import_insights(
     if not verify_ed25519(peer_key, sig, _canonical_bytes(ts, rows)):
         return 0, "signature verification FAILED: bundle rejected"
 
-    key_id = str(bundle.get("peer_key_id", "") or peer_key[:8])
+    # Do not consume bundle["peer_key_id"] here: older bundles included it as
+    # unsigned display metadata, so a tampered bundle could smuggle arbitrary
+    # prompt text into persisted provenance without invalidating the signature.
+    key_id = _safe_peer_id(peer_key)
     incoming: list[DreamInsight] = []
     for row in rows:
         if not isinstance(row, dict):
