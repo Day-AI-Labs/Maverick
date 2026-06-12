@@ -8,6 +8,8 @@ and bucketing anything untagged into ``(untagged)``.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 _UNTAGGED = "(untagged)"
 
 
@@ -40,16 +42,27 @@ def _num(v) -> float:
         return 0.0
 
 
-def gather(world, *, tag_field: str = "tag", limit: int = 500) -> list[dict]:
+def gather(
+    world,
+    *,
+    tag_field: str = "tag",
+    limit: int = 500,
+    goal_ids: Iterable[int] | None = None,
+) -> list[dict]:
     """Build tag rows from a world model's priced episodes.
 
     Duck-typed: needs ``list_episodes(limit=...)`` yielding episodes with
     ``cost_dollars`` / ``in_tokens`` / ``out_tokens`` and an optional tag —
     looked up first on the episode, then on its goal's ``metadata``/``tags``.
+
+    When ``goal_ids`` is provided, only episodes for those goals are read. This
+    lets multi-user dashboard callers aggregate spend after applying their
+    owner-scoped goal filter instead of reading every recent episode globally.
     """
     rows: list[dict] = []
     goal_tags: dict[int, str] = {}
-    for ep in world.list_episodes(limit=limit):
+    episodes = _episodes_for_goals(world, limit=limit, goal_ids=goal_ids)
+    for ep in episodes:
         cost = _num(getattr(ep, "cost_dollars", 0))
         if cost <= 0:
             continue
@@ -66,6 +79,21 @@ def gather(world, *, tag_field: str = "tag", limit: int = 500) -> list[dict]:
             "out_tok": _num(getattr(ep, "out_tokens", 0)),
         })
     return rows
+
+
+def _episodes_for_goals(world, *, limit: int, goal_ids: Iterable[int] | None):
+    if goal_ids is None:
+        return world.list_episodes(limit=limit)
+
+    episodes = []
+    remaining = max(0, int(limit))
+    for goal_id in goal_ids:
+        if remaining <= 0:
+            break
+        batch = list(world.list_episodes(limit=remaining, goal_id=goal_id))
+        episodes.extend(batch)
+        remaining -= len(batch)
+    return episodes
 
 
 def _goal_tag(world, gid: int, tag_field: str) -> str:

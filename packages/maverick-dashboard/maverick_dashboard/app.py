@@ -1830,7 +1830,11 @@ async def runs_compare(request: Request, ids: str) -> JSONResponse:
 
 
 @app.get("/api/v1/cost/by-tag")
-async def cost_by_tag_api(tag_field: str = "tag", limit: int = 500) -> JSONResponse:
+async def cost_by_tag_api(
+    request: Request,
+    tag_field: str = "tag",
+    limit: int = 500,
+) -> JSONResponse:
     """Cost-attribution API: spend split by tag (team / project / cost-center).
 
     Buckets the priced episodes by their tag (episode field, else the goal's
@@ -1840,7 +1844,16 @@ async def cost_by_tag_api(tag_field: str = "tag", limit: int = 500) -> JSONRespo
     from maverick.cost_by_tag import gather, split_by_tag
 
     limit = max(1, min(int(limit), 10_000))
-    buckets = split_by_tag(gather(_world(), tag_field=tag_field, limit=limit))
+    w = _world()
+    owner = goal_owner_filter(request)
+    goal_ids = None
+    if owner is not None:
+        goal_ids = [
+            g.id for g in w.list_goals(owner=owner, limit=10_000, order="desc")
+        ]
+    buckets = split_by_tag(
+        gather(w, tag_field=tag_field, limit=limit, goal_ids=goal_ids)
+    )
     return JSONResponse({"tag_field": tag_field, "buckets": buckets})
 
 
