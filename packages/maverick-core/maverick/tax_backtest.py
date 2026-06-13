@@ -222,9 +222,15 @@ def run_backtest_dir(cases_dir: Path | str,
                     label=p.name)
             for p in sorted(case.glob("*.txt"))
         ]
-        wp = Workpaper(filing_status=filed.filing_status,
-                       dependents_under_17=int(meta.get("dependents", 0)),
-                       docs=docs, state=str(meta.get("state", "")))
+        wp = Workpaper(
+            filing_status=filed.filing_status,
+            dependents_under_17=int(meta.get("dependents", 0)),
+            docs=docs, state=str(meta.get("state", "")),
+            estimated_payments=float(meta.get("estimated_payments", 0.0) or 0.0),
+            taxpayer_65_or_older=bool(meta.get("taxpayer_65", False)),
+            spouse_65_or_older=bool(meta.get("spouse_65", False)),
+            taxpayer_blind=bool(meta.get("taxpayer_blind", False)),
+            spouse_blind=bool(meta.get("spouse_blind", False)))
         draft = compute_first_pass(wp)
         diffs.append(diff_return(filed, draft, wp))
     return BatchReport(diffs=diffs, tolerance=tolerance)

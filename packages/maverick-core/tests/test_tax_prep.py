@@ -181,6 +181,66 @@ class TestExtractionConfidence:
         assert d.confidence == 0.0 and d.review_required is True
 
 
+class TestSeniorDeductionAndPayments:
+    """The additional standard deduction (65+/blind), estimated payments, and
+    the payments-sanity flag -- accuracy improvements for common real returns
+    (especially the retirees whose SSA-1099/1099-R the engine now extracts)."""
+
+    def test_additional_standard_deduction_for_age_and_blindness(self):
+        # single 65+: $15,750 + $2,000
+        d = compute_first_pass(Workpaper(
+            filing_status="single", taxpayer_65_or_older=True,
+            docs=[SourceDoc("W-2", "a", wages=50000.0)]))
+        assert d.standard_deduction == 17750.0
+        # mfj, 3 boxes (both 65+, one blind): $31,500 + 3 * $1,600
+        d2 = compute_first_pass(Workpaper(
+            filing_status="mfj", taxpayer_65_or_older=True,
+            spouse_65_or_older=True, taxpayer_blind=True,
+            docs=[SourceDoc("W-2", "a", wages=120000.0)]))
+        assert d2.standard_deduction == 31500.0 + 3 * 1600.0
+
+    def test_single_does_not_count_spouse_boxes(self):
+        # spouse flags are ignored when not MFJ
+        d = compute_first_pass(Workpaper(
+            filing_status="single", spouse_65_or_older=True,
+            spouse_blind=True, docs=[SourceDoc("W-2", "a", wages=50000.0)]))
+        assert d.standard_deduction == 15750.0
+
+    def test_65_plus_flags_the_uncomputed_obbba_senior_deduction(self):
+        d = compute_first_pass(Workpaper(
+            filing_status="single", taxpayer_65_or_older=True,
+            docs=[SourceDoc("W-2", "a", wages=50000.0)]))
+        assert any("OBBBA senior" in i for i in d.open_items)
+
+    def test_estimated_payments_reduce_the_balance(self):
+        docs = [SourceDoc("W-2", "a", wages=60000.0, federal_withholding=5000.0)]
+        base = compute_first_pass(Workpaper(filing_status="single",
+                                            docs=list(docs)))
+        withest = compute_first_pass(Workpaper(
+            filing_status="single", estimated_payments=3000.0,
+            docs=list(docs)))
+        assert round(base.balance - withest.balance, 2) == 3000.0
+        assert "Estimated payments" in render_review_package(withest)
+
+    def test_payments_exceeding_income_is_flagged(self):
+        d = compute_first_pass(Workpaper(
+            filing_status="single",
+            docs=[SourceDoc("W-2", "a", wages=5000.0,
+                            federal_withholding=9000.0)]))
+        assert any("exceed total income" in i for i in d.open_items)
+
+    def test_bundle_without_additional_table_still_applies_it(self):
+        # A constants bundle predating the field must not silently drop the
+        # senior deduction -- the built-in table is the fallback.
+        import copy
+        old = copy.deepcopy(tax_prep.TY2025)
+        del old["additional_standard_deduction"]
+        d = compute_first_pass(Workpaper(
+            filing_status="single", taxpayer_65_or_older=True,
+            docs=[SourceDoc("W-2", "a", wages=50000.0)]), constants=old)
+        assert d.standard_deduction == 17750.0
+
+
 class TestFilingStatusNormalization:
     def test_uppercase_filing_status_is_honored_not_silently_single(self):
         # "MFJ" must compute as MFJ ($31,500 std deduction), not fall back to

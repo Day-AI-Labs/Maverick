@@ -3939,10 +3939,22 @@ def tax_group() -> None:
 @click.option("--state", "state_code", default=None, metavar="XX",
               help="Resident state for the state return (default: inferred "
                    "from W-2 box 15).")
+@click.option("--estimated-payments", default=0.0, show_default=True,
+              help="Federal estimated tax already paid (Form 1040-ES).")
+@click.option("--taxpayer-65", is_flag=True,
+              help="Taxpayer is 65 or older (additional standard deduction).")
+@click.option("--spouse-65", is_flag=True,
+              help="Spouse is 65 or older (MFJ; additional standard deduction).")
+@click.option("--taxpayer-blind", is_flag=True,
+              help="Taxpayer is blind (additional standard deduction).")
+@click.option("--spouse-blind", is_flag=True,
+              help="Spouse is blind (MFJ; additional standard deduction).")
 @click.option("--out", "out_path", type=click.Path(), default=None,
               help="Also write the review package to this file.")
 def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
-                state_code: str | None, out_path: str | None) -> None:
+                state_code: str | None, estimated_payments: float,
+                taxpayer_65: bool, spouse_65: bool, taxpayer_blind: bool,
+                spouse_blind: bool, out_path: str | None) -> None:
     """Turn a folder of uploaded documents into a first-pass draft return.
 
     Reads every ``*.txt`` document in DOCS_DIR (text exports of the client's
@@ -3971,7 +3983,12 @@ def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
         docs.append(tax_prep.extract(text, label=p.name))
     wp = tax_prep.Workpaper(filing_status=filing_status,
                             dependents_under_17=dependents, docs=docs,
-                            state=(state_code or ""))
+                            state=(state_code or ""),
+                            estimated_payments=estimated_payments,
+                            taxpayer_65_or_older=taxpayer_65,
+                            spouse_65_or_older=spouse_65,
+                            taxpayer_blind=taxpayer_blind,
+                            spouse_blind=spouse_blind)
     draft = tax_prep.compute_first_pass(wp, constants=federal)
     state = (tax_prep.compute_state_first_pass(
                  wp, tax_prep.infer_state(wp), federal=draft,
