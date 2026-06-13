@@ -84,7 +84,7 @@ def _monotonic_growth(samples: list[float]) -> bool:
     """
     if len(samples) < 4:
         return False
-    dipped = any(b < a for a, b in zip(samples, samples[1:]))
+    dipped = any(b < a for a, b in zip(samples, samples[1:], strict=False))
     rose = samples[-1] > samples[0]
     return rose and not dipped
 

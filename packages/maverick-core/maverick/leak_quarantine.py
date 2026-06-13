@@ -87,7 +87,7 @@ class LeakWatchdog:
             window = self._windows.setdefault(name, deque(maxlen=self.consecutive))
             window.append(size)
             if len(window) == self.consecutive:
-                increasing = all(b > a for a, b in zip(list(window), list(window)[1:]))
+                increasing = all(b > a for a, b in zip(list(window), list(window)[1:], strict=False))
                 growth = window[-1] - window[0]
                 if increasing and growth >= self.threshold_bytes:
                     verdict = LeakVerdict(name, growth, self.consecutive)

@@ -41,7 +41,7 @@ def _cmp_pre(a: tuple, b: tuple) -> int:
         return 1
     if not b:
         return -1
-    for x, y in zip(a, b):
+    for x, y in zip(a, b, strict=False):
         xn, yn = x.isdigit(), y.isdigit()
         if xn and yn:
             xi, yi = int(x), int(y)
@@ -57,7 +57,7 @@ def _cmp_pre(a: tuple, b: tuple) -> int:
 
 
 def _cmp(a: tuple, b: tuple) -> int:
-    for x, y in zip(a[:3], b[:3]):
+    for x, y in zip(a[:3], b[:3], strict=False):
         if x != y:
             return -1 if x < y else 1
     return _cmp_pre(a[3], b[3])

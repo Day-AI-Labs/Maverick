@@ -103,14 +103,16 @@ def test_tenant_dek_distinct_and_non_transferable():
 
 
 def test_wrapped_dek_does_not_unwrap_cross_tenant():
+    from maverick.crypto_at_rest import EncryptionUnavailable
     from maverick.tenant_kms import LocalKMS, tenant_dek
     kms = LocalKMS()
     dek = tenant_dek("acme")
     wrapped = kms.wrap(dek, context=b"tenant:acme")
     # Same context round-trips.
     assert kms.unwrap(wrapped, context=b"tenant:acme") == dek
-    # A different tenant's context must NOT recover the DEK (AEAD AAD binds it).
-    with pytest.raises(Exception):
+    # A different tenant's context must NOT recover the DEK (AEAD AAD binds it):
+    # the AESGCM InvalidTag surfaces as EncryptionUnavailable.
+    with pytest.raises(EncryptionUnavailable):
         kms.unwrap(wrapped, context=b"tenant:globex")
 
 

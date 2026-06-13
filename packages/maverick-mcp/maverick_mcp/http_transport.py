@@ -99,7 +99,7 @@ async def _read_limited_json(request, http_exc):
             if int(declared) > cap:
                 raise http_exc(status_code=413, detail="request body too large")
         except ValueError:
-            raise http_exc(status_code=400, detail="invalid Content-Length")
+            raise http_exc(status_code=400, detail="invalid Content-Length") from None
     buf = bytearray()
     async for chunk in request.stream():
         buf.extend(chunk)
@@ -108,7 +108,7 @@ async def _read_limited_json(request, http_exc):
     try:
         return json.loads(buf or b"{}")
     except (ValueError, UnicodeDecodeError):
-        raise http_exc(status_code=400, detail="body must be valid JSON")
+        raise http_exc(status_code=400, detail="body must be valid JSON") from None
 
 
 def _normalized_origin(origin: str) -> str | None:

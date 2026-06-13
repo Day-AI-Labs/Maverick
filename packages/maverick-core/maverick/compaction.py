@@ -312,7 +312,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
     """Cosine similarity. Returns 0.0 for mismatched/empty/zero vectors."""
     if len(a) != len(b) or not a:
         return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(y * y for y in b))
     if na == 0.0 or nb == 0.0:
@@ -349,7 +349,7 @@ class DigestIndex:
         vectors = embedder.embed([t for t, _ in items])
         if not vectors:
             return
-        for (text, turn), vec in zip(items, vectors):
+        for (text, turn), vec in zip(items, vectors, strict=False):
             self.entries.append(DigestEntry(text=text, vector=vec, turn=turn))
 
     def retrieve(

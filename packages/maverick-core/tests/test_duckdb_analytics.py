@@ -17,7 +17,7 @@ def _seed(path, goals):
         gid = wm.create_goal(title, "")
         if status:
             wm.set_goal_status(gid, status)
-        for cost, outcome, ended in eps:
+        for cost, outcome, _ended in eps:
             ep = wm.start_episode(gid)
             wm.end_episode(ep, summary="s", outcome=outcome, cost_dollars=cost)
     wm.close()

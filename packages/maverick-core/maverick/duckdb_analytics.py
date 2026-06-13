@@ -61,7 +61,7 @@ class WorldAnalytics:
             raise ValueError("only SELECT / WITH queries are allowed")
         cur = self._conn.execute(sql)
         cols = [d[0] for d in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
+        return [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
 
     def cost_percentiles(self) -> dict:
         rows = self.query(

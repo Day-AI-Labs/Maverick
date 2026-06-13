@@ -161,7 +161,7 @@ def _bucket_index(name: str, value: float) -> int:
 
 def bucket_key(features: dict) -> str:
     parts = []
-    for prefix, name in zip("mrcta", FEATURE_NAMES):
+    for prefix, name in zip("mrcta", FEATURE_NAMES, strict=False):
         parts.append(f"{prefix}{_bucket_index(name, float(features.get(name, 0)))}")
     return "|".join(parts)
 
@@ -180,7 +180,7 @@ def _vector_from_bucket(key: str) -> list[float] | None:
     if not m:
         return None
     vec = []
-    for name, raw in zip(FEATURE_NAMES, m.groups()):
+    for name, raw in zip(FEATURE_NAMES, m.groups(), strict=False):
         points = _BUCKET_POINTS[name]
         idx = min(int(raw), len(points) - 1)
         vec.append(_normalize(name, points[idx]))
@@ -267,7 +267,7 @@ def fit(ledger: ContextualBandit | dict | Path | str, *,
         for _ in range(max(1, int(iterations))):
             grad = [0.0] * dim
             for x, y, w in rows:
-                err = _sigmoid(sum(wi * xi for wi, xi in zip(weights, x))) - y
+                err = _sigmoid(sum(wi * xi for wi, xi in zip(weights, x, strict=False))) - y
                 for j in range(dim):
                     grad[j] += w * err * x[j]
             for j in range(dim):
@@ -367,7 +367,7 @@ class HybridPicker:
                 scores = {}
                 for s in STRATEGIES:
                     ws = weights["strategies"].get(s)
-                    scores[s] = (_sigmoid(sum(w * xi for w, xi in zip(ws, x)))
+                    scores[s] = (_sigmoid(sum(w * xi for w, xi in zip(ws, x, strict=False)))
                                  if ws else 0.5)
                 best = max(STRATEGIES, key=lambda s: (scores[s], s))
                 return best, (f"weights p={scores[best]:.2f} (bucket {bucket})")

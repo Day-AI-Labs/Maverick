@@ -28,7 +28,7 @@ def _fit(xs: list[float], ys: list[float]) -> tuple[float, float]:
     mx = statistics.fmean(xs)
     my = statistics.fmean(ys)
     sxx = sum((x - mx) ** 2 for x in xs)
-    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=False))
     syy = sum((y - my) ** 2 for y in ys)
     # Degenerate x (all samples at one t): slope undefined -> 0, no trend.
     if sxx == 0:

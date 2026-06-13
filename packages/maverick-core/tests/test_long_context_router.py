@@ -79,7 +79,7 @@ class _FakeStore:
 
     def add(self, documents, *, ids=None, metadatas=None):
         ids = ids or [str(i) for i in range(len(documents))]
-        for i, d in zip(ids, documents):
+        for i, d in zip(ids, documents, strict=False):
             self._docs[i] = d
 
     def query(self, text, *, top_k=5):

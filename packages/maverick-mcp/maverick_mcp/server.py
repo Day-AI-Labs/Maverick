@@ -887,7 +887,7 @@ class MCPServer:
             try:
                 goal_id = int(goal_id)
             except (TypeError, ValueError):
-                raise _ProtocolError(-32602, f"invalid goal_id: {goal_id!r}")
+                raise _ProtocolError(-32602, f"invalid goal_id: {goal_id!r}") from None
         # Clamp to the same operator ceilings as _tool_start. Over HTTP the
         # budget is client-controlled; a bare Budget() let a resume bypass
         # the MAVERICK_MCP_MAX_* caps that _tool_start enforces.
@@ -922,7 +922,7 @@ class MCPServer:
         try:
             qid = int(args["question_id"])
         except (TypeError, ValueError):
-            raise _ProtocolError(-32602, f"invalid question_id: {args.get('question_id')!r}")
+            raise _ProtocolError(-32602, f"invalid question_id: {args.get('question_id')!r}") from None
         answer = str(args["answer"])
         # An answer to an open question is fed straight back into the agent loop
         # as the user's reply -- equally attacker-influenced as a fact over the

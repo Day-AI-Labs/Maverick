@@ -158,7 +158,7 @@ def parse_rules(raw: list[dict]) -> list[RouteRule]:
         if not channel:
             continue
 
-        def _int(key):
+        def _int(key, *, r=r):
             v = r.get(key)
             try:
                 return int(v) if v is not None else None

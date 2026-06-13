@@ -143,7 +143,7 @@ class VoiceChannel(Channel):
         except Exception:
             # Malformed / non-JSON body: 400, don't 500 (which Vapi
             # retries, amplifying load).
-            raise HTTPException(status_code=400, detail="invalid JSON body")
+            raise HTTPException(status_code=400, detail="invalid JSON body") from None
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="expected a JSON object")
         # Coerce nested fields to dicts: a body like {"message": "x"} would make

@@ -2478,7 +2478,13 @@ class Agent:
             tool_results: list[dict] = []
             blocked = False
 
-            def _answer_pending_tool_uses(reason: str) -> None:
+            def _answer_pending_tool_uses(
+                reason: str,
+                *,
+                resp=resp,
+                messages=messages,
+                tool_results=tool_results,
+            ) -> None:
                 # #612: a control-flow stop (BudgetExceeded / Halted) can fire
                 # mid-dispatch -- most often from budget.record_tool_call(),
                 # which calls check() and can raise AFTER the assistant turn's
@@ -2503,7 +2509,7 @@ class Agent:
                 # here raises BEFORE any tool ran -- answer every pending
                 # tool_use so the turn isn't left with orphan tool_use blocks.
                 try:
-                    for tc in resp.tool_calls:
+                    for _tc in resp.tool_calls:
                         self.ctx.budget.record_tool_call()
                 except BudgetExceeded:
                     _answer_pending_tool_uses(
@@ -2553,7 +2559,7 @@ class Agent:
                 outputs = _norm
                 # Preserve original call order in the results (matched by
                 # tool_use_id, but ordering keeps traces readable).
-                for tc, output in zip(resp.tool_calls, outputs):
+                for tc, output in zip(resp.tool_calls, outputs, strict=False):
                     bb.post(
                         self.name, "observation",
                         f"tool={tc.name} -> {output[:500]}",

@@ -70,7 +70,7 @@ def segment_speakers(
 
     segments: list[SpeakerSegment] = []
     centroids: list[tuple[str, list[float]]] = []
-    for start, end in zip(bounds, bounds[1:]):
+    for start, end in zip(bounds, bounds[1:], strict=False):
         centroid = _mean(frames[start:end])
         label = next(
             (known for known, vec in centroids

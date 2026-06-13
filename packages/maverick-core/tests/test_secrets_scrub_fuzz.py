@@ -75,14 +75,14 @@ def test_secret_redactors_do_not_redos_on_long_runs():
             timeout=20,
             capture_output=True,
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         raise AssertionError(
             "a secret redactor did not finish within 20s on long single-"
             "character runs -- a regex is backtracking super-linearly (ReDoS). "
             "The redactors run on tool output / LLM error payloads, so this is "
             "a remote-DoS vector: bound the offending greedy quantifier or stop "
             "it from spanning newlines."
-        )
+        ) from exc
 
 
 def test_scrub_never_raises_on_random_input():

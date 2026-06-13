@@ -265,7 +265,7 @@ def compact(
     forced_idx = {i for i, m in enumerate(head) if m.get("role") == "system"}
     kept_by_idx: dict[int, dict] = {i: head[i] for i in forced_idx}
     used = sum(_approx_tokens(_message_text(head[i])) for i in forced_idx)
-    for score, idx, msg in scored:
+    for _score, idx, msg in scored:
         if idx in kept_by_idx:
             continue
         cost = _approx_tokens(_message_text(msg))
@@ -321,7 +321,7 @@ def _score_by_embedding(
         bx = list(b)
         if not ax or not bx or len(ax) != len(bx):
             return 0.0
-        dot = sum(x * y for x, y in zip(ax, bx))
+        dot = sum(x * y for x, y in zip(ax, bx, strict=False))
         na = math.sqrt(sum(x * x for x in ax))
         nb = math.sqrt(sum(y * y for y in bx))
         if na == 0 or nb == 0:

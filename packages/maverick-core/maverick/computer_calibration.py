@@ -78,7 +78,7 @@ def _fit_axis(observed: list[float], expected: list[float]) -> tuple[float, floa
     var = sum((o - mean_o) ** 2 for o in observed)
     if var < 1e-9:
         return 1.0, mean_e - mean_o
-    cov = sum((o - mean_o) * (e - mean_e) for o, e in zip(observed, expected))
+    cov = sum((o - mean_o) * (e - mean_e) for o, e in zip(observed, expected, strict=False))
     scale = cov / var
     return scale, mean_e - scale * mean_o
 

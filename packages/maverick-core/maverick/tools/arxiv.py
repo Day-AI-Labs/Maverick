@@ -56,7 +56,7 @@ def _parse_atom(xml: str) -> list[dict[str, str]]:
     # Split by <entry>...</entry>.
     for m in re.finditer(r"<entry>(.*?)</entry>", xml, flags=re.DOTALL):
         body = m.group(1)
-        def _grab(tag: str) -> str:
+        def _grab(tag: str, *, body=body) -> str:
             mm = re.search(rf"<{tag}>(.*?)</{tag}>", body, flags=re.DOTALL)
             return (mm.group(1).strip() if mm else "")
         title = re.sub(r"\s+", " ", _grab("title")).strip()

@@ -128,13 +128,13 @@ async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) ->
         try:
             tpl = load_template(payload.template)
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(status_code=400, detail=str(e)) from e
         except FileNotFoundError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+            raise HTTPException(status_code=404, detail=str(e)) from e
         try:
             title, description = tpl.render(**(payload.params or {}))
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(status_code=400, detail=str(e)) from e
     title = (title or "").strip()
     if not title:
         raise HTTPException(status_code=400, detail="title is required")
@@ -363,7 +363,7 @@ async def upload_attachment(
             existing_total=existing,
         )
     except AttachmentRejected as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     aid = w.add_attachment(
         goal_id=goal_id,
@@ -448,7 +448,7 @@ async def install_skill_endpoint(payload: SkillInstallIn) -> SkillOut:
     try:
         s = install_skill(payload.source, trusted_local=False)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return SkillOut(name=s.name, triggers=s.triggers, tools_needed=s.tools_needed)
 
 
@@ -560,7 +560,7 @@ async def catalog_install_skill(payload: CatalogInstallIn) -> SkillOut:
     try:
         s = install_from_catalog(payload.name)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return SkillOut(name=s.name, triggers=s.triggers, tools_needed=s.tools_needed)
 
 
@@ -652,7 +652,7 @@ async def remove_generated_tool(name: str) -> None:
     try:
         target.unlink()
     except OSError as e:
-        raise HTTPException(status_code=500, detail=f"could not remove: {e}")
+        raise HTTPException(status_code=500, detail=f"could not remove: {e}") from e
 
 
 @router.get("/spend")
@@ -817,7 +817,7 @@ async def halt_set(payload: HaltIn) -> None:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text((payload.reason or "manual via dashboard") + "\n")
     except OSError as e:
-        raise HTTPException(status_code=500, detail=f"cannot write halt file: {e}")
+        raise HTTPException(status_code=500, detail=f"cannot write halt file: {e}") from e
 
 
 @router.delete("/halt", status_code=204)
@@ -829,7 +829,7 @@ async def halt_clear() -> None:
         try:
             p.unlink()
         except OSError as e:
-            raise HTTPException(status_code=500, detail=f"cannot remove halt file: {e}")
+            raise HTTPException(status_code=500, detail=f"cannot remove halt file: {e}") from e
     clear()
 
 
@@ -874,7 +874,7 @@ async def list_plugins() -> dict:
     try:
         from maverick.plugins import _allowed_plugin_names, _entry_points
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"plugin discovery failed: {e}")
+        raise HTTPException(status_code=500, detail=f"plugin discovery failed: {e}") from e
     allow = _allowed_plugin_names()
     out: dict[str, list[dict]] = {
         "tools": [], "channels": [], "skills": [], "personas": [],
@@ -904,7 +904,7 @@ async def list_mcp_servers() -> dict:
         from maverick.config import load_config
         cfg = (load_config() or {}).get("mcp_servers") or {}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"config read failed: {e}")
+        raise HTTPException(status_code=500, detail=f"config read failed: {e}") from e
     return {
         "servers": [
             {"name": name, "command": s.get("command"), "args": s.get("args", [])}
@@ -924,7 +924,7 @@ async def list_tools() -> dict:
         sb = build_sandbox()
         reg = base_registry(world=wm, sandbox=sb)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"registry build failed: {e}")
+        raise HTTPException(status_code=500, detail=f"registry build failed: {e}") from e
     return {
         "tools": [
             {"name": t.name, "description": (t.description or "")[:200]}
@@ -940,7 +940,7 @@ async def list_channels() -> dict:
         from maverick.config import load_config
         cfg = (load_config() or {}).get("channels") or {}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"config read failed: {e}")
+        raise HTTPException(status_code=500, detail=f"config read failed: {e}") from e
     return {
         "channels": [
             {"name": name, "enabled": bool(c.get("enabled", True))}
@@ -1003,7 +1003,7 @@ async def disable_tool(name: str) -> None:
     try:
         _disable(name)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/permissions/tools/{name}/enable", status_code=204)
@@ -1018,7 +1018,7 @@ async def enable_tool(name: str) -> None:
     try:
         _enable(name)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/approvals")
@@ -1332,7 +1332,7 @@ async def create_fleet(request: Request, payload: FleetCreateIn) -> dict:
     try:
         save_fleet(Fleet(name=payload.name, owner=owner, agents=agents))
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return {"fleet": load_fleet(payload.name).to_dict()}
 
 

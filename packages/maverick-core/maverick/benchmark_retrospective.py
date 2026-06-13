@@ -63,7 +63,7 @@ class BenchRetro:
         mean_x = sum(xs) / n
         mean_y = sum(ys) / n
         denom = sum((x - mean_x) ** 2 for x in xs)
-        slope = (sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys)) / denom
+        slope = (sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys, strict=False)) / denom
                  if denom else 0.0)
         rel = slope / abs(mean_y) if mean_y else 0.0
         if rel > FLAT_BAND:

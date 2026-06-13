@@ -24,7 +24,7 @@ _MAX_LISTED = 10
 
 
 def _key_str(qis: list[str], key: tuple) -> str:
-    return ", ".join(f"{q}={v}" for q, v in zip(qis, key))
+    return ", ".join(f"{q}={v}" for q, v in zip(qis, key, strict=False))
 
 
 def _check(rows: list, qis: list[str], k: int, sensitive: str | None, l_min: int | None) -> str:

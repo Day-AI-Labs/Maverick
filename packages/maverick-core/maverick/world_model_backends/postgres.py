@@ -1380,7 +1380,7 @@ class PostgresWorldModel:
         with self._tx() as cur:
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
-        return [dict(zip(cols, r)) for r in rows]
+        return [dict(zip(cols, r, strict=False)) for r in rows]
 
     # ----- attachments -----
 

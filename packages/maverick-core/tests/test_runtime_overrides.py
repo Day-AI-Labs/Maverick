@@ -71,7 +71,7 @@ def test_disable_rejects_invalid_tool_name(monkeypatch, tmp_path):
     ro = _point_overlay(monkeypatch, tmp_path)
     try:
         ro.disable_tool('bad"name')
-        assert False, "expected ValueError for invalid tool name"
+        raise AssertionError("expected ValueError for invalid tool name")
     except ValueError:
         pass
 

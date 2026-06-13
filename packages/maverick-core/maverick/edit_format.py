@@ -213,7 +213,7 @@ def _normalise_indent(s: str) -> tuple[str, list[str]]:
         return s, leads
     common = min(nonempty, key=len)
     stripped = []
-    for ln, lead in zip(lines, leads):
+    for ln, lead in zip(lines, leads, strict=False):
         if lead.startswith(common):
             stripped.append(ln[len(common):])
         else:

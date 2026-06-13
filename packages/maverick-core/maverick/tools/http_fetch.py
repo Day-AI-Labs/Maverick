@@ -129,7 +129,7 @@ def _is_private_ip(host: str) -> bool:
         addrs = socket.getaddrinfo(host, None)
     except socket.gaierror:
         return False
-    for fam, _stype, _proto, _name, sockaddr in addrs:
+    for _fam, _stype, _proto, _name, sockaddr in addrs:
         ip_str = sockaddr[0]
         try:
             ip = ipaddress.ip_address(ip_str)

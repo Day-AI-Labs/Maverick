@@ -103,7 +103,7 @@ def _scan(args: dict[str, Any]) -> str:
 
 def _agreement(a: list, b: list) -> float:
     rounds = len(a)
-    matches = sum(1 for x, y in zip(a, b) if x == y)
+    matches = sum(1 for x, y in zip(a, b, strict=False) if x == y)
     return matches / rounds
 
 

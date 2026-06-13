@@ -348,7 +348,7 @@ async def _read_limited_request_body(
         try:
             declared = int(content_length)
         except ValueError:
-            raise HTTPException(status_code=400, detail="invalid Content-Length")
+            raise HTTPException(status_code=400, detail="invalid Content-Length") from None
         if declared > max_bytes:
             raise HTTPException(status_code=413, detail=too_large_detail)
 
@@ -1981,13 +1981,13 @@ async def views_save(request: Request, name: str) -> JSONResponse:
         )
         body = json.loads(raw_body or b"{}")
     except ValueError:
-        raise HTTPException(status_code=400, detail="body must be a JSON object of params")
+        raise HTTPException(status_code=400, detail="body must be a JSON object of params") from None
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="body must be a JSON object of params")
     try:
         _ux().save_view(caller_principal(request), name, body)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return JSONResponse({"saved": name}, status_code=201)
 
 
@@ -2036,7 +2036,7 @@ async def gallery_add(request: Request, goal_id: int) -> JSONResponse:
         entry = _ux().gallery_add(goal_id, blurb=blurb,
                                   curator=caller_principal(request))
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return JSONResponse(entry, status_code=201)
 
 
@@ -2068,7 +2068,7 @@ async def annotations_add(request: Request, goal_id: int) -> JSONResponse:
     try:
         body = await request.json()
     except ValueError:
-        raise HTTPException(status_code=400, detail="body must be JSON {seq, note}")
+        raise HTTPException(status_code=400, detail="body must be JSON {seq, note}") from None
     if not isinstance(body, dict) or "seq" not in body or not body.get("note"):
         raise HTTPException(status_code=400, detail="body must be JSON {seq, note}")
     from maverick.ux_store import shared as _ux
@@ -2076,7 +2076,7 @@ async def annotations_add(request: Request, goal_id: int) -> JSONResponse:
         entry = _ux().annotate(goal_id, int(body["seq"]), str(body["note"]),
                                author=caller_principal(request))
     except (ValueError, TypeError) as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return JSONResponse(entry, status_code=201)
 
 
@@ -2163,7 +2163,7 @@ async def runs_compare(request: Request, ids: str) -> JSONResponse:
     try:
         goal_ids = [int(x) for x in ids.split(",") if x.strip()][:8]
     except ValueError:
-        raise HTTPException(status_code=400, detail="ids must be comma-separated integers")
+        raise HTTPException(status_code=400, detail="ids must be comma-separated integers") from None
     if not goal_ids:
         raise HTTPException(status_code=400, detail="ids is required")
     w = _world()
@@ -2227,13 +2227,13 @@ async def shield_calibration_api() -> JSONResponse:
 
     try:
         from maverick_shield.redteam import calibration_report, load_corpus
-    except ImportError:
-        raise HTTPException(status_code=501, detail="maverick-shield is not installed")
+    except ImportError as exc:
+        raise HTTPException(status_code=501, detail="maverick-shield is not installed") from exc
     corpus_env = _os.environ.get("MAVERICK_REDTEAM_CORPUS", "").strip()
     try:
         cases = load_corpus(_Path(corpus_env) if corpus_env else None)
     except (OSError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=f"corpus error: {e}")
+        raise HTTPException(status_code=400, detail=f"corpus error: {e}") from e
     return JSONResponse(calibration_report(cases))
 
 
@@ -2343,8 +2343,8 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
         )
     try:
         payload = json.loads(body or b"{}")
-    except (ValueError, UnicodeDecodeError):
-        raise HTTPException(status_code=400, detail="body must be valid JSON")
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="body must be valid JSON") from exc
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="body must be a JSON object")
 
@@ -2368,7 +2368,7 @@ async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
         try:
             max_dollars = float(budget)
         except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="budget must be a number")
+            raise HTTPException(status_code=400, detail="budget must be a number") from None
         # Clamp to the same ceiling the REST route enforces. run_goal_in_thread
         # treats max_dollars as the highest-precedence override with no cap of
         # its own, so an unclamped webhook value (negative, or arbitrarily
@@ -2468,8 +2468,8 @@ async def webhook_gitlab(request: Request, bg: BackgroundTasks) -> JSONResponse:
     body = await _read_limited_webhook_body(request)
     try:
         payload = json.loads(body or b"{}")
-    except (ValueError, UnicodeDecodeError):
-        raise HTTPException(status_code=400, detail="body must be valid JSON")
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="body must be valid JSON") from exc
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="body must be a JSON object")
 
@@ -2572,8 +2572,8 @@ async def _handle_issue_webhook(
 
     try:
         payload = json.loads(body or b"{}")
-    except (ValueError, UnicodeDecodeError):
-        raise HTTPException(status_code=400, detail="body must be valid JSON")
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="body must be valid JSON") from exc
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="body must be a JSON object")
 
@@ -2860,7 +2860,7 @@ async def cost_csv(month: str | None = None) -> StreamingResponse:
                 nxt = start.replace(month=start.month + 1)
         except ValueError:
             # Don't echo strptime's internals (e.g. "unconverted data remains").
-            raise HTTPException(status_code=400, detail="month must be YYYY-MM (e.g. 2026-04)")
+            raise HTTPException(status_code=400, detail="month must be YYYY-MM (e.g. 2026-04)") from None
         start_ts = start.timestamp()
         end_ts = nxt.timestamp()
 

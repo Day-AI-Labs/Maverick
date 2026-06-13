@@ -29,12 +29,12 @@ def _age_days(rec: dict, rid: str, today: date) -> int:
         try:
             return int(rec["age_days"])
         except (TypeError, ValueError):
-            raise ValueError(f"record {rid} age_days must be an integer")
+            raise ValueError(f"record {rid} age_days must be an integer") from None
     if "created" in rec:
         try:
             created = date.fromisoformat(str(rec["created"]))
         except ValueError:
-            raise ValueError(f"record {rid} created is not an ISO date (YYYY-MM-DD)")
+            raise ValueError(f"record {rid} created is not an ISO date (YYYY-MM-DD)") from None
         return today.toordinal() - created.toordinal()
     raise ValueError(f"record {rid} needs 'created' or 'age_days'")
 

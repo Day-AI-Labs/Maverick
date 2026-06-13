@@ -86,7 +86,7 @@ async def run(
     partials = await asyncio.gather(*cp_tasks, return_exceptions=True)
 
     scored: list[_Scored[C]] = []
-    for i, (a, partial) in enumerate(zip(attempts, partials)):
+    for i, (a, partial) in enumerate(zip(attempts, partials, strict=False)):
         if isinstance(partial, BaseException):
             log.debug("attempt %s checkpoint failed: %s", a.name or i, partial)
             continue
@@ -117,7 +117,7 @@ async def run(
     results: list[tuple[float, T]] = []
     errors: list[BaseException] = []
     done = await asyncio.gather(*fin_tasks.values(), return_exceptions=True)
-    by_index = dict(zip(fin_tasks.keys(), done))
+    by_index = dict(zip(fin_tasks.keys(), done, strict=False))
     for s in survivors:
         r = by_index[s.index]
         if isinstance(r, BaseException):

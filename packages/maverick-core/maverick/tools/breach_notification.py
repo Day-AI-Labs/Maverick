@@ -32,7 +32,7 @@ def _parse(s: str, field: str) -> datetime:
     try:
         dt = datetime.fromisoformat(text)
     except ValueError:
-        raise ValueError(f"{field} is not an ISO date/datetime: {s!r}")
+        raise ValueError(f"{field} is not an ISO date/datetime: {s!r}") from None
     if dt.tzinfo is not None:
         dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt

@@ -919,7 +919,7 @@ def config(action: str) -> None:
         try:
             os.execvp(parts[0], parts + [str(p)])
         except OSError as e:
-            raise click.ClickException(f"could not launch editor {parts[0]!r}: {e}")
+            raise click.ClickException(f"could not launch editor {parts[0]!r}: {e}") from e
         return
     if not p.exists():
         click.echo(f"No config at {p}. Run:  maverick init", err=True)
@@ -4361,7 +4361,7 @@ def export_user(ctx, channel: str, user: str, output) -> None:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(payload)
         except OSError as e:
-            raise click.ClickException(f"could not write {output}: {e}")
+            raise click.ClickException(f"could not write {output}: {e}") from e
         click.echo(f"exported to {output}")
     else:
         click.echo(payload)
@@ -4712,7 +4712,7 @@ def audit_seal(dry_run: bool) -> None:
     try:
         report = seal_closed_segments(dry_run=dry_run)
     except EncryptionUnavailable as e:
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
     for name, status in sorted(report.items()):
         click.echo(f"  {name}: {status}")
     done = sum(1 for s in report.values() if s in ("sealed", "would seal"))
@@ -4849,7 +4849,7 @@ def cost(ctx, month: str | None, model: str | None, csv_out: bool) -> None:
         try:
             m_start = _dt.datetime.strptime(month, "%Y-%m")
         except ValueError:
-            raise click.ClickException("--month must be YYYY-MM (e.g. 2026-05)")
+            raise click.ClickException("--month must be YYYY-MM (e.g. 2026-05)") from None
         start = m_start.timestamp()
         # True next-month boundary (a fixed +31 days over-counted short months,
         # e.g. Feb pulled in early March).
@@ -4928,7 +4928,7 @@ def export_goal(ctx, goal_id: int, output: str | None) -> None:
     try:
         out_path.write_text(_json.dumps(bundle, default=str, indent=2))
     except OSError as e:
-        raise click.ClickException(f"could not write {out_path}: {e}")
+        raise click.ClickException(f"could not write {out_path}: {e}") from e
     click.echo(f"wrote {out_path}")
 
 
@@ -5058,7 +5058,7 @@ def ropa_cmd(fmt: str, output) -> None:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(payload + "\n")
         except OSError as e:
-            raise click.ClickException(f"could not write {output}: {e}")
+            raise click.ClickException(f"could not write {output}: {e}") from e
         click.echo(f"wrote {output}")
     else:
         click.echo(payload)
@@ -5087,7 +5087,7 @@ def dpia_cmd(fmt: str, output) -> None:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(payload + "\n")
         except OSError as e:
-            raise click.ClickException(f"could not write {output}: {e}")
+            raise click.ClickException(f"could not write {output}: {e}") from e
         click.echo(f"wrote {output}")
     else:
         click.echo(payload)
@@ -5258,7 +5258,7 @@ def assess_score(assessment_type: str, subject: str, answers_file: str,
     try:
         raw = _json.loads(Path(answers_file).read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
-        raise click.ClickException(f"could not read answers: {e}")
+        raise click.ClickException(f"could not read answers: {e}") from e
     if not isinstance(raw, dict):
         raise click.ClickException("answers file must be a JSON object {question_id: answer}")
     session = AssessmentSession(type=assessment_type, subject=subject)
@@ -5268,7 +5268,7 @@ def assess_score(assessment_type: str, subject: str, answers_file: str,
         try:
             session.record(str(qid), str(answer), str(note))
         except (KeyError, ValueError) as e:
-            raise click.ClickException(str(e))
+            raise click.ClickException(str(e)) from e
     result = session.evaluate()
     click.echo(render_result_json(result) if fmt == "json" else render_result_text(result))
     if not no_save:
@@ -5357,7 +5357,7 @@ def dsar_export(user_id: str, tenant: str | None, output, compact: bool) -> None
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(payload)
         except OSError as e:
-            raise click.ClickException(f"could not write {output}: {e}")
+            raise click.ClickException(f"could not write {output}: {e}") from e
         click.echo(f"exported to {output}")
     else:
         click.echo(payload)

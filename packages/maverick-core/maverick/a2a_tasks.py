@@ -535,7 +535,7 @@ class TaskEngine:
         except BlockedHost as e:
             raise _RpcError(
                 _INVALID_PARAMS, f"pushNotificationConfig.url rejected: {e}",
-            )
+            ) from e
         task.push_config = cfg
         return {"taskId": task.id, "pushNotificationConfig": _redacted_push_config(cfg)}
 

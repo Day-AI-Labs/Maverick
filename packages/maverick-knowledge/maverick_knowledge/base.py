@@ -72,7 +72,7 @@ class KnowledgeBase:
         vectors = self.embedder.embed(chunks)
         items = [
             (uuid.uuid4().hex, c, v, {"source": source})
-            for c, v in zip(chunks, vectors)
+            for c, v in zip(chunks, vectors, strict=False)
         ]
         self.store.add(collection, items)
         return len(items)

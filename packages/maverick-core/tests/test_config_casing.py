@@ -136,7 +136,7 @@ class TestSandboxTimeoutCoercion:
     def test_non_positive_timeout_falls_back_to_default(self, monkeypatch):
         from maverick import config
         for bad in (-5, 0):
-            monkeypatch.setattr(config, "get_sandbox", lambda: {"backend": "local", "timeout": bad})
+            monkeypatch.setattr(config, "get_sandbox", lambda bad=bad: {"backend": "local", "timeout": bad})
             assert build_sandbox().timeout == 60.0
 
     def test_valid_timeout_is_honored(self, monkeypatch):
