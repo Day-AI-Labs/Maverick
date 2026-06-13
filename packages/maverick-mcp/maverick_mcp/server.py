@@ -1286,7 +1286,87 @@ class MCPServer:
         worker._shield = self._shield  # reuse the (stateless) shield scanner
         return worker.handle_tools_call({"name": name, "arguments": arguments})
 
-    def run(self) -> None:  # noqa: C901
+    def _dispatch_stdio_message(self, method, request_id, params, is_notification) -> None:
+        """Route one parsed stdio JSON-RPC message to its handler and send the
+        reply. Behavior identical to the prior inline if/elif chain."""
+        if method == "initialize":
+            self._send_result(request_id, self.handle_initialize(params))
+        elif method == "tools/list":
+            self._send_result(request_id, self.handle_tools_list(params))
+        elif method == "tools/call":
+            self._send_result(request_id, self.handle_tools_call(params))
+            # Result first, then any resources/updated notifications.
+            self._flush_resource_updates()
+        elif method == "resources/list":
+            self._send_result(request_id, self.handle_resources_list(params))
+        elif method == "resources/read":
+            self._send_result(request_id, self.handle_resources_read(params))
+        elif method == "resources/subscribe":
+            self._send_result(request_id, self.handle_resources_subscribe(params))
+        elif method == "resources/unsubscribe":
+            self._send_result(request_id, self.handle_resources_unsubscribe(params))
+        elif method == "prompts/list":
+            self._send_result(request_id, self.handle_prompts_list(params))
+        elif method == "prompts/get":
+            self._send_result(request_id, self.handle_prompts_get(params))
+        elif method == "tasks/get":
+            self._send_result(request_id, self.handle_tasks_get(params))
+        elif method == "tasks/result":
+            self._send_result(request_id, self.handle_tasks_result(params))
+        elif method == "tasks/cancel":
+            self._send_result(request_id, self.handle_tasks_cancel(params))
+        elif method == "tasks/list":
+            self._send_result(request_id, self.handle_tasks_list(params))
+        elif method == "notifications/initialized":
+            pass
+        elif method == "ping":
+            if not is_notification:
+                self._send_result(request_id, {})
+        else:
+            if not is_notification:
+                self._send_error(request_id, -32601, f"method not found: {method}")
+
+    def _handle_stdio_line(self, line: str) -> None:
+        """Parse + dispatch one input line, translating handler exceptions into
+        JSON-RPC error responses. Behavior identical to the prior loop body."""
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError as e:
+            log.warning("bad JSON: %s", e)
+            return
+        method = msg.get("method")
+        request_id = msg.get("id")
+        params = msg.get("params", {}) or {}
+        # A client can send `params` as a non-object (list/string/number).
+        # Handlers call `params.get(...)`, which would raise AttributeError
+        # -- caught below as a scrubbed -32603 "internal error". Coerce to
+        # {} so a malformed-params call yields the correct -32602 invalid-
+        # params response from the handler instead.
+        if not isinstance(params, dict):
+            params = {}
+        is_notification = request_id is None
+        try:
+            self._dispatch_stdio_message(method, request_id, params, is_notification)
+        except TaskError as e:
+            if not is_notification:
+                self._send_error(request_id, e.code, e.message)
+        except _ProtocolError as e:
+            if not is_notification:
+                self._send_error(request_id, e.code, e.message)
+        except Exception as e:
+            log.exception("handler error")  # full traceback stays server-side
+            if not is_notification:
+                # Do NOT ship the traceback to the client: frames/locals/args
+                # can carry secrets (DSNs, tokens, credentialed URLs). Send a
+                # scrubbed one-line message; the server log keeps the detail.
+                try:
+                    from maverick.secrets import scrub
+                    detail = scrub(f"{type(e).__name__}: {e}")
+                except Exception:  # pragma: no cover
+                    detail = type(e).__name__
+                self._send_error(request_id, -32603, f"internal error: {detail}")
+
+    def run(self) -> None:
         log.info("Maverick MCP server starting (protocol %s)", PROTOCOL_VERSION)
         # Mark the stdio transport: server-initiated elicitation is only valid
         # here (it needs the bidirectional pipe; the HTTP path can't do a
@@ -1303,77 +1383,7 @@ class MCPServer:
             line = line.strip()
             if not line:
                 continue
-            try:
-                msg = json.loads(line)
-            except json.JSONDecodeError as e:
-                log.warning("bad JSON: %s", e)
-                continue
-            method = msg.get("method")
-            request_id = msg.get("id")
-            params = msg.get("params", {}) or {}
-            # A client can send `params` as a non-object (list/string/number).
-            # Handlers call `params.get(...)`, which would raise AttributeError
-            # -- caught below as a scrubbed -32603 "internal error". Coerce to
-            # {} so a malformed-params call yields the correct -32602 invalid-
-            # params response from the handler instead.
-            if not isinstance(params, dict):
-                params = {}
-            is_notification = request_id is None
-            try:
-                if method == "initialize":
-                    self._send_result(request_id, self.handle_initialize(params))
-                elif method == "tools/list":
-                    self._send_result(request_id, self.handle_tools_list(params))
-                elif method == "tools/call":
-                    self._send_result(request_id, self.handle_tools_call(params))
-                    # Result first, then any resources/updated notifications.
-                    self._flush_resource_updates()
-                elif method == "resources/list":
-                    self._send_result(request_id, self.handle_resources_list(params))
-                elif method == "resources/read":
-                    self._send_result(request_id, self.handle_resources_read(params))
-                elif method == "resources/subscribe":
-                    self._send_result(request_id, self.handle_resources_subscribe(params))
-                elif method == "resources/unsubscribe":
-                    self._send_result(request_id, self.handle_resources_unsubscribe(params))
-                elif method == "prompts/list":
-                    self._send_result(request_id, self.handle_prompts_list(params))
-                elif method == "prompts/get":
-                    self._send_result(request_id, self.handle_prompts_get(params))
-                elif method == "tasks/get":
-                    self._send_result(request_id, self.handle_tasks_get(params))
-                elif method == "tasks/result":
-                    self._send_result(request_id, self.handle_tasks_result(params))
-                elif method == "tasks/cancel":
-                    self._send_result(request_id, self.handle_tasks_cancel(params))
-                elif method == "tasks/list":
-                    self._send_result(request_id, self.handle_tasks_list(params))
-                elif method == "notifications/initialized":
-                    pass
-                elif method == "ping":
-                    if not is_notification:
-                        self._send_result(request_id, {})
-                else:
-                    if not is_notification:
-                        self._send_error(request_id, -32601, f"method not found: {method}")
-            except TaskError as e:
-                if not is_notification:
-                    self._send_error(request_id, e.code, e.message)
-            except _ProtocolError as e:
-                if not is_notification:
-                    self._send_error(request_id, e.code, e.message)
-            except Exception as e:
-                log.exception("handler error")  # full traceback stays server-side
-                if not is_notification:
-                    # Do NOT ship the traceback to the client: frames/locals/args
-                    # can carry secrets (DSNs, tokens, credentialed URLs). Send a
-                    # scrubbed one-line message; the server log keeps the detail.
-                    try:
-                        from maverick.secrets import scrub
-                        detail = scrub(f"{type(e).__name__}: {e}")
-                    except Exception:  # pragma: no cover
-                        detail = type(e).__name__
-                    self._send_error(request_id, -32603, f"internal error: {detail}")
+            self._handle_stdio_line(line)
 
 
 def main() -> None:

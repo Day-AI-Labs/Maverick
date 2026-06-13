@@ -264,255 +264,292 @@ def spawn_subagent_tool(parent: Agent) -> Tool:
     )
 
 
-def spawn_swarm_tool(parent: Agent) -> Tool:  # noqa: C901
-    async def fn(args: dict) -> str:  # noqa: C901
-        from ..agent import Agent
+def _validate_swarm_spec(agents_spec) -> str | None:
+    """Validate the ``agents`` argument. Returns an error string, or ``None``."""
+    if not isinstance(agents_spec, list) or not agents_spec:
+        return "ERROR: 'agents' must be a non-empty list"
+    for spec in agents_spec:
+        if not isinstance(spec, dict):
+            return "ERROR: each swarm agent must be an object"
+        _blocked_role = _reserved_role_error(spec.get("role"))
+        if _blocked_role is not None:
+            return _blocked_role
+    return None
 
-        agents_spec = args["agents"]
-        if not isinstance(agents_spec, list) or not agents_spec:
-            return "ERROR: 'agents' must be a non-empty list"
 
-        for spec in agents_spec:
-            if not isinstance(spec, dict):
-                return "ERROR: each swarm agent must be an object"
-            _blocked_role = _reserved_role_error(spec.get("role"))
-            if _blocked_role is not None:
-                return _blocked_role
-
-        if parent.depth + 1 > parent.ctx.max_depth:
-            return f"ERROR: max depth {parent.ctx.max_depth} reached"
-
-        # #611 synthesis reserve: once spend crosses (1 - reserve) of the cap,
-        # refuse new fan-out so the budget the top-level goal needs to write its
-        # answer isn't consumed by deeper research. Tell the agent to synthesize.
-        _blocked = _synthesis_reserve_block(parent)
-        if _blocked is not None:
-            return _blocked
-
-        # Cap per-call fan-out, DECAYING with depth so a recursive swarm can't
-        # explode geometrically (#611). An agent asking for 50 siblings on a
-        # trivial sub-goal is almost always confused / under attack too.
-        cap = _fanout_cap_for_depth(parent.depth)
-        # Adaptive test-time compute (opt-in): when the run is confident (low
-        # disagreement, high verifier confidence) concentrate compute by
-        # narrowing fan-out below the safety cap. Only ever narrows; fail-open.
-        try:
-            from .. import adaptive_compute
-            if adaptive_compute.enabled():
-                cap = adaptive_compute.adjust_width(
-                    cap,
-                    disagreement=float(getattr(parent.ctx, "last_disagreement", 0.0) or 0.0),
-                    verifier_confidence=float(
-                        getattr(parent.ctx, "last_verifier_confidence", 1.0) or 1.0
-                    ),
-                ).width
-        except Exception:  # pragma: no cover -- never break the spawn loop
-            pass
-        if len(agents_spec) > cap:
-            parent.ctx.blackboard.post(
-                parent.name, "error",
-                f"swarm fan-out capped: requested {len(agents_spec)}, "
-                f"max {cap} at depth {parent.depth}",
-            )
-            agents_spec = agents_spec[:cap]
-
-        if not parent.ctx.try_reserve_spawns(len(agents_spec)):
-            return (
-                f"ERROR: per-goal spawn cap ({parent.ctx.max_total_spawns}) reached"
-            )
-
-        children = [
-            Agent(
-                ctx=parent.ctx,
-                role=spec["role"],
-                brief=spec["task"],
-                depth=parent.depth + 1,
-                parent=parent,
-                max_steps=parent.max_steps,
-                capability=_child_capability(
-                    parent, spec["role"], parent.depth + 1, "spawn_swarm"
+def _resolve_swarm_fanout(parent: Agent) -> int:
+    """Per-call fan-out cap, decaying with depth and optionally narrowed by
+    adaptive test-time compute. Only ever narrows; fail-open."""
+    cap = _fanout_cap_for_depth(parent.depth)
+    try:
+        from .. import adaptive_compute
+        if adaptive_compute.enabled():
+            cap = adaptive_compute.adjust_width(
+                cap,
+                disagreement=float(getattr(parent.ctx, "last_disagreement", 0.0) or 0.0),
+                verifier_confidence=float(
+                    getattr(parent.ctx, "last_verifier_confidence", 1.0) or 1.0
                 ),
-            )
-            for spec in agents_spec
-        ]
+            ).width
+    except Exception:  # pragma: no cover -- never break the spawn loop
+        pass
+    return cap
 
+
+def _record_swarm_disagreement(parent: Agent, children: list, results: list) -> bool:
+    """Measure disagreement across children's FINAL answers, record it, and
+    escalate FINAL verification when it crosses the autonomy threshold.
+
+    Returns ``True`` when verification was escalated (so the caller prepends the
+    reconcile note), ``False`` otherwise.
+    """
+    finals = [
+        res.final for child, res in zip(children, results, strict=False)
+        if not isinstance(res, Exception) and res.final
+        and _sealed_notice(parent.ctx, child) is None  # sealed children don't vote
+    ]
+    if len(finals) <= 1:
+        return False
+    from ..disagreement import answer_entropy
+    entropy = answer_entropy(finals)
+    parent.ctx.blackboard.post(
+        parent.name, "verify",
+        f"swarm disagreement entropy={entropy:.3f} across {len(finals)} answers",
+    )
+    # Stamp on the context so the orchestrator's verify branch, the
+    # autonomy gate, and the donation selector can read it.
+    parent.ctx.last_disagreement = entropy
+
+    # Loop 1: act on high disagreement. Ask the orchestrator's FINAL to
+    # be verified by the cross-family ensemble (a stronger, lockstep-
+    # resistant label exactly where it matters most) and instruct the
+    # caller to reconcile the divergent answers rather than cherry-pick.
+    from .. import autonomy
+    if not autonomy.should_escalate_verification(entropy):
+        return False
+    parent.ctx.escalate_verification = True
+    parent.ctx.blackboard.post(
+        parent.name, "verify",
+        f"high swarm disagreement ({entropy:.3f}); escalating FINAL "
+        "verification to the cross-family ensemble",
+    )
+    try:  # tamper-evident record of the escalation; never block
+        from ..audit import EventKind, record
+        record(
+            EventKind.AUTONOMY_ESCALATED,
+            agent=parent.name,
+            goal_id=parent.ctx.goal_id,
+            disagreement=round(entropy, 4),
+            answers=len(finals),
+        )
+    except Exception:  # pragma: no cover -- audit must never break the loop
+        pass
+    return True
+
+
+async def _swarm_credit_assignment(parent: Agent, children: list, results: list) -> None:
+    """Counterfactual swarm credit assignment (CSCA): attribute the outcome to
+    each sub-agent by ablating its contribution and re-scoring with the verifier
+    as the value oracle. Off by default; budget-gated, capped to small swarms,
+    skipped when calibration is frozen. Fail-open; a BudgetExceeded/Halt still
+    stops the run."""
+    from .. import killswitch as _ks
+    from ..budget import BudgetExceeded as _BE
+    try:
+        from .. import credit as _credit
+        if not _credit.enabled():
+            return
+        contribs = {
+            child.name: res.final
+            for child, res in zip(children, results, strict=False)
+            if not isinstance(res, Exception) and res.final
+            and _sealed_notice(parent.ctx, child) is None
+        }
+        _cs = _credit._settings()
+        b = parent.ctx.budget
+        headroom_ok = b.dollars < b.max_dollars * (1.0 - _cs["min_budget_headroom"])
+        try:
+            from ..calibration import learning_frozen as _frozen
+            frozen = _frozen()
+        except Exception:
+            frozen = False
+        if not (2 <= len(contribs) <= _cs["max_children"] and headroom_ok and not frozen):
+            return
+        from ..verifier import verify_proposal
+
+        async def _score(subset: list[str]) -> float:
+            v = await verify_proposal(
+                parent.brief, "\n\n".join(subset), parent.ctx.llm,
+                parent.ctx.budget, proposer_model=getattr(parent, "model", None),
+            )
+            return float(v.confidence)
+
+        cmap = await _credit.counterfactual_credit(contribs, _score)
+        parent.ctx.last_credit = cmap
         parent.ctx.blackboard.post(
-            parent.name,
-            "plan",
-            f"spawning swarm of {len(children)}: "
-            + ", ".join(f"{c.role}({c.name})" for c in children),
+            parent.name, "verify",
+            "swarm credit: " + ", ".join(
+                f"{n}={c:+.2f}" for n, c in
+                sorted(cmap.items(), key=lambda x: -x[1])
+            ),
+        )
+        # Routing memory: accumulate per-role credit so future runs
+        # can prefer roles that historically contribute (role_stats).
+        # The parent's department (domain pack) scopes the record so
+        # a finance swarm's lesson steers future finance swarms.
+        try:
+            from .. import role_stats
+            role_stats.record_credit(
+                cmap, {c.name: c.role for c in children},
+                domain=getattr(parent, "domain", None),
+            )
+        except Exception:  # pragma: no cover -- stats never block
+            pass
+        # Per-sub-agent trajectory capture: pair each contributor's
+        # action sequence with its credit + learn-weight so the data
+        # engine learns from real sub-trajectories, not just a credit
+        # map on the goal record.
+        _items = [
+            (c.role, c.name, list(getattr(c, "_actions", []) or []))
+            for c in children if c.name in contribs
+        ]
+        parent.ctx.last_subtrajectories = _credit.build_subtrajectories(
+            _items, cmap,
+        )
+    except (_BE, _ks.Halted):
+        raise
+    except Exception:  # pragma: no cover -- CSCA must never break the loop
+        pass
+
+
+def _format_swarm_results(parent: Agent, children: list, results: list,
+                          escalated: bool) -> str:
+    """Render the per-child swarm output, withholding sealed children's answers."""
+    parts: list[str] = []
+    if escalated:
+        parts.append(
+            "[swarm] NOTE: the sub-agents disagreed substantially. Do not "
+            "simply pick one answer -- reconcile the differences, and expect "
+            "the FINAL to face stricter (ensemble) verification."
+        )
+    for child, res in zip(children, results, strict=False):
+        if isinstance(res, Exception):
+            parts.append(f"[{child.role}/{child.name}] EXCEPTION: {res}")
+            continue
+        # Containment Rung 1: withhold a sealed child's answer from the
+        # parent (same leak render() closes for posts).
+        notice = _sealed_notice(parent.ctx, child)
+        if notice is not None:
+            parts.append(f"[{child.role}/{child.name}] {notice}")
+        elif res.final:
+            parts.append(f"[{child.role}/{child.name}] {res.final}")
+        elif res.blocked_on_user:
+            parts.append(f"[{child.role}/{child.name}] BLOCKED_ON_USER")
+        else:
+            parts.append(f"[{child.role}/{child.name}] ERROR: {res.error}")
+    return "\n\n".join(parts)
+
+
+async def _run_swarm(parent: Agent, args: dict) -> str:
+    from ..agent import Agent
+
+    agents_spec = args["agents"]
+    _bad_spec = _validate_swarm_spec(agents_spec)
+    if _bad_spec is not None:
+        return _bad_spec
+
+    if parent.depth + 1 > parent.ctx.max_depth:
+        return f"ERROR: max depth {parent.ctx.max_depth} reached"
+
+    # #611 synthesis reserve: once spend crosses (1 - reserve) of the cap,
+    # refuse new fan-out so the budget the top-level goal needs to write its
+    # answer isn't consumed by deeper research. Tell the agent to synthesize.
+    _blocked = _synthesis_reserve_block(parent)
+    if _blocked is not None:
+        return _blocked
+
+    # Cap per-call fan-out, DECAYING with depth so a recursive swarm can't
+    # explode geometrically (#611). An agent asking for 50 siblings on a
+    # trivial sub-goal is almost always confused / under attack too.
+    cap = _resolve_swarm_fanout(parent)
+    if len(agents_spec) > cap:
+        parent.ctx.blackboard.post(
+            parent.name, "error",
+            f"swarm fan-out capped: requested {len(agents_spec)}, "
+            f"max {cap} at depth {parent.depth}",
+        )
+        agents_spec = agents_spec[:cap]
+
+    if not parent.ctx.try_reserve_spawns(len(agents_spec)):
+        return (
+            f"ERROR: per-goal spawn cap ({parent.ctx.max_total_spawns}) reached"
         )
 
-        results = await asyncio.gather(*(c.run() for c in children), return_exceptions=True)
+    children = [
+        Agent(
+            ctx=parent.ctx,
+            role=spec["role"],
+            brief=spec["task"],
+            depth=parent.depth + 1,
+            parent=parent,
+            max_steps=parent.max_steps,
+            capability=_child_capability(
+                parent, spec["role"], parent.depth + 1, "spawn_swarm"
+            ),
+        )
+        for spec in agents_spec
+    ]
 
-        # #612: every child that RAISED never consumed its slot productively;
-        # return those slots so a swarm with transient child failures doesn't
-        # permanently erode the per-goal spawn cap. Children that returned
-        # (even with result.error set) legitimately ran and keep their slot.
-        n_failed = sum(1 for res in results if isinstance(res, BaseException))
-        if n_failed:
-            parent.ctx.release_spawns(n_failed)
+    parent.ctx.blackboard.post(
+        parent.name,
+        "plan",
+        f"spawning swarm of {len(children)}: "
+        + ", ".join(f"{c.role}({c.name})" for c in children),
+    )
 
-        # A child hitting the budget cap or the killswitch is a STOP signal for
-        # the whole swarm, not a per-child failure -- re-raise it instead of
-        # folding it into the result string (matches agent.py's gather handler).
-        from .. import killswitch as _ks
-        from ..budget import BudgetExceeded as _BE
-        for res in results:
-            if isinstance(res, (_BE, _ks.Halted)):
-                raise res
+    results = await asyncio.gather(*(c.run() for c in children), return_exceptions=True)
 
-        # SubagentStop hooks: one per child that completed without raising.
-        from ..hooks import HookEvent
-        from ..hooks import emit as _emit_hook
-        for child, res in zip(children, results, strict=False):
-            if not isinstance(res, Exception):
-                await _emit_hook(
-                    HookEvent.SUBAGENT_STOP,
-                    goal_id=parent.ctx.goal_id, agent_role=child.role,
-                    extra={"name": child.name, "final": res.final or ""},
-                )
+    # #612: every child that RAISED never consumed its slot productively;
+    # return those slots so a swarm with transient child failures doesn't
+    # permanently erode the per-goal spawn cap. Children that returned
+    # (even with result.error set) legitimately ran and keep their slot.
+    n_failed = sum(1 for res in results if isinstance(res, BaseException))
+    if n_failed:
+        parent.ctx.release_spawns(n_failed)
 
-        # Karpathy SOTA-review item: measure disagreement across the
-        # children's FINAL answers and record it on the blackboard. The
-        # autonomy gate (Loop 1) acts on it -- escalating FINAL verification
-        # to the cross-family ensemble when the swarm diverged -- so it is no
-        # longer observability-only. The donation selector also reads it.
-        escalated = False
-        finals = [
-            res.final for child, res in zip(children, results, strict=False)
-            if not isinstance(res, Exception) and res.final
-            and _sealed_notice(parent.ctx, child) is None  # sealed children don't vote
-        ]
-        if len(finals) > 1:
-            from ..disagreement import answer_entropy
-            entropy = answer_entropy(finals)
-            parent.ctx.blackboard.post(
-                parent.name, "verify",
-                f"swarm disagreement entropy={entropy:.3f} across {len(finals)} answers",
+    # A child hitting the budget cap or the killswitch is a STOP signal for
+    # the whole swarm, not a per-child failure -- re-raise it instead of
+    # folding it into the result string (matches agent.py's gather handler).
+    from .. import killswitch as _ks
+    from ..budget import BudgetExceeded as _BE
+    for res in results:
+        if isinstance(res, (_BE, _ks.Halted)):
+            raise res
+
+    # SubagentStop hooks: one per child that completed without raising.
+    from ..hooks import HookEvent
+    from ..hooks import emit as _emit_hook
+    for child, res in zip(children, results, strict=False):
+        if not isinstance(res, Exception):
+            await _emit_hook(
+                HookEvent.SUBAGENT_STOP,
+                goal_id=parent.ctx.goal_id, agent_role=child.role,
+                extra={"name": child.name, "final": res.final or ""},
             )
-            # Stamp on the context so the orchestrator's verify branch, the
-            # autonomy gate, and the donation selector can read it.
-            parent.ctx.last_disagreement = entropy
 
-            # Loop 1: act on high disagreement. Ask the orchestrator's FINAL to
-            # be verified by the cross-family ensemble (a stronger, lockstep-
-            # resistant label exactly where it matters most) and instruct the
-            # caller to reconcile the divergent answers rather than cherry-pick.
-            from .. import autonomy
-            if autonomy.should_escalate_verification(entropy):
-                parent.ctx.escalate_verification = True
-                escalated = True
-                parent.ctx.blackboard.post(
-                    parent.name, "verify",
-                    f"high swarm disagreement ({entropy:.3f}); escalating FINAL "
-                    "verification to the cross-family ensemble",
-                )
-                try:  # tamper-evident record of the escalation; never block
-                    from ..audit import EventKind, record
-                    record(
-                        EventKind.AUTONOMY_ESCALATED,
-                        agent=parent.name,
-                        goal_id=parent.ctx.goal_id,
-                        disagreement=round(entropy, 4),
-                        answers=len(finals),
-                    )
-                except Exception:  # pragma: no cover -- audit must never break the loop
-                    pass
+    # Karpathy SOTA-review item: measure disagreement across the children's
+    # FINAL answers, record it on the blackboard, and escalate FINAL
+    # verification (Loop 1) when the swarm diverged.
+    escalated = _record_swarm_disagreement(parent, children, results)
 
-        # Counterfactual swarm credit assignment (CSCA): attribute the outcome
-        # to each sub-agent by ablating its contribution and re-scoring with the
-        # verifier as the value oracle. Off by default; costs N+1 verifier
-        # passes, so it is budget-gated, capped to small swarms, and skipped
-        # when the verifier's calibration is frozen (credit from a drifted judge
-        # is noise). Fail-open; a BudgetExceeded/Halt still stops the run.
-        try:
-            from .. import credit as _credit
-            if _credit.enabled():
-                contribs = {
-                    child.name: res.final
-                    for child, res in zip(children, results, strict=False)
-                    if not isinstance(res, Exception) and res.final
-                    and _sealed_notice(parent.ctx, child) is None
-                }
-                _cs = _credit._settings()
-                b = parent.ctx.budget
-                headroom_ok = b.dollars < b.max_dollars * (1.0 - _cs["min_budget_headroom"])
-                try:
-                    from ..calibration import learning_frozen as _frozen
-                    frozen = _frozen()
-                except Exception:
-                    frozen = False
-                if 2 <= len(contribs) <= _cs["max_children"] and headroom_ok and not frozen:
-                    from ..verifier import verify_proposal
+    await _swarm_credit_assignment(parent, children, results)
 
-                    async def _score(subset: list[str]) -> float:
-                        v = await verify_proposal(
-                            parent.brief, "\n\n".join(subset), parent.ctx.llm,
-                            parent.ctx.budget, proposer_model=getattr(parent, "model", None),
-                        )
-                        return float(v.confidence)
+    return _format_swarm_results(parent, children, results, escalated)
 
-                    cmap = await _credit.counterfactual_credit(contribs, _score)
-                    parent.ctx.last_credit = cmap
-                    parent.ctx.blackboard.post(
-                        parent.name, "verify",
-                        "swarm credit: " + ", ".join(
-                            f"{n}={c:+.2f}" for n, c in
-                            sorted(cmap.items(), key=lambda x: -x[1])
-                        ),
-                    )
-                    # Routing memory: accumulate per-role credit so future runs
-                    # can prefer roles that historically contribute (role_stats).
-                    # The parent's department (domain pack) scopes the record so
-                    # a finance swarm's lesson steers future finance swarms.
-                    try:
-                        from .. import role_stats
-                        role_stats.record_credit(
-                            cmap, {c.name: c.role for c in children},
-                            domain=getattr(parent, "domain", None),
-                        )
-                    except Exception:  # pragma: no cover -- stats never block
-                        pass
-                    # Per-sub-agent trajectory capture: pair each contributor's
-                    # action sequence with its credit + learn-weight so the data
-                    # engine learns from real sub-trajectories, not just a credit
-                    # map on the goal record.
-                    _items = [
-                        (c.role, c.name, list(getattr(c, "_actions", []) or []))
-                        for c in children if c.name in contribs
-                    ]
-                    parent.ctx.last_subtrajectories = _credit.build_subtrajectories(
-                        _items, cmap,
-                    )
-        except (_BE, _ks.Halted):
-            raise
-        except Exception:  # pragma: no cover -- CSCA must never break the loop
-            pass
 
-        parts: list[str] = []
-        if escalated:
-            parts.append(
-                "[swarm] NOTE: the sub-agents disagreed substantially. Do not "
-                "simply pick one answer -- reconcile the differences, and expect "
-                "the FINAL to face stricter (ensemble) verification."
-            )
-        for child, res in zip(children, results, strict=False):
-            if isinstance(res, Exception):
-                parts.append(f"[{child.role}/{child.name}] EXCEPTION: {res}")
-                continue
-            # Containment Rung 1: withhold a sealed child's answer from the
-            # parent (same leak render() closes for posts).
-            notice = _sealed_notice(parent.ctx, child)
-            if notice is not None:
-                parts.append(f"[{child.role}/{child.name}] {notice}")
-            elif res.final:
-                parts.append(f"[{child.role}/{child.name}] {res.final}")
-            elif res.blocked_on_user:
-                parts.append(f"[{child.role}/{child.name}] BLOCKED_ON_USER")
-            else:
-                parts.append(f"[{child.role}/{child.name}] ERROR: {res.error}")
-        return "\n\n".join(parts)
+def spawn_swarm_tool(parent: Agent) -> Tool:
+    async def fn(args: dict) -> str:
+        return await _run_swarm(parent, args)
 
     return Tool(
         name="spawn_swarm",

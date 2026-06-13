@@ -142,7 +142,131 @@ def _run(args: dict) -> str:
         return f"ERROR: at-rest encryption unavailable: {e}"
 
 
-def _run_impl(args: dict) -> str:  # noqa: C901
+def _cmd_rename(root: Path, args: dict) -> str:
+    try:
+        src = _resolve(root, args.get("old_path") or args.get("path") or "")
+        dst = _resolve(root, args.get("new_path") or "")
+    except ValueError as e:
+        return f"ERROR: {e}"
+    if dst == root:
+        return "ERROR: rename requires a `new_path`"
+    if not src.exists():
+        return f"ERROR: {_rel(src, root)} not found"
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        src.rename(dst)
+    except OSError as e:
+        return f"ERROR: {e}"
+    return f"renamed {_rel(src, root)} -> {_rel(dst, root)}"
+
+
+def _cmd_view(root: Path, target: Path, args: dict) -> str:
+    if not target.exists():
+        if target == root:
+            return "(memory is empty)"
+        return f"ERROR: {_rel(target, root)} not found"
+    return _view(target, root)
+
+
+def _cmd_create(root: Path, target: Path, args: dict) -> str:
+    if target == root:
+        return "ERROR: create requires a file `path`"
+    text = args.get("file_text") or args.get("content") or ""
+    err = _fits(root, target, text)
+    if err:
+        return err
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _write_text(target, text)
+    except OSError as e:
+        return f"ERROR: {e}"
+    return f"wrote {_rel(target, root)} ({len(text)} bytes)"
+
+
+def _cmd_str_replace(root: Path, target: Path, args: dict) -> str:
+    old = args.get("old_str")
+    new = args.get("new_str")
+    if old is None or new is None:
+        return "ERROR: str_replace requires `old_str` and `new_str`"
+    if not target.is_file():
+        return f"ERROR: {_rel(target, root)} not found"
+    data = _read_text(target)
+    count = data.count(old)
+    if count == 0:
+        return ("ERROR: `old_str` not found. Use `view` to confirm the exact "
+                "text before retrying.")
+    if count > 1:
+        return (f"ERROR: `old_str` is ambiguous ({count} matches). Add "
+                "surrounding context so exactly one remains.")
+    new_data = data.replace(old, new, 1)
+    err = _fits(root, target, new_data)
+    if err:
+        return err
+    try:
+        _write_text(target, new_data)
+    except OSError as e:
+        return f"ERROR: {e}"
+    delta = len(new_data) - len(data)
+    return f"edited {_rel(target, root)} ({'+' if delta >= 0 else ''}{delta} bytes)"
+
+
+def _cmd_insert(root: Path, target: Path, args: dict) -> str:
+    after = args.get("insert_line")
+    text = args.get("insert_text")
+    if text is None:
+        text = args.get("new_str", "")
+    if after is None:
+        return "ERROR: insert requires `insert_line` (0 = before first line)"
+    if not target.is_file():
+        return f"ERROR: {_rel(target, root)} not found"
+    try:
+        idx = int(after)
+    except (TypeError, ValueError):
+        return f"ERROR: insert_line must be an integer; got {after!r}"
+    data = _read_text(target)
+    lines = data.split("\n")
+    if idx < 0 or idx > len(lines):
+        return (f"ERROR: insert_line={idx} out of range "
+                f"(file has {len(lines)} lines; 0 = before first line)")
+    new_data = "\n".join(lines[:idx] + text.split("\n") + lines[idx:])
+    err = _fits(root, target, new_data)
+    if err:
+        return err
+    try:
+        _write_text(target, new_data)
+    except OSError as e:
+        return f"ERROR: {e}"
+    return f"inserted at line {idx} of {_rel(target, root)}"
+
+
+def _cmd_delete(root: Path, target: Path, args: dict) -> str:
+    if target == root:
+        return "ERROR: refusing to delete the memory root"
+    if not target.exists():
+        return f"ERROR: {_rel(target, root)} not found"
+    try:
+        if target.is_dir():
+            target.rmdir()  # only empty dirs; refuses a non-empty tree
+        else:
+            target.unlink()
+    except OSError as e:
+        return f"ERROR: {e}"
+    return f"deleted {_rel(target, root)}"
+
+
+# command -> handler(root, target, args) -> str. ``rename`` is handled
+# separately because it resolves two paths (old/new) before any single
+# ``target`` exists.
+_PATH_CMDS = {
+    "view": _cmd_view,
+    "create": _cmd_create,
+    "str_replace": _cmd_str_replace,
+    "insert": _cmd_insert,
+    "delete": _cmd_delete,
+}
+
+
+def _run_impl(args: dict) -> str:
     cmd = (args.get("command") or "").strip()
     if not cmd:
         return ("ERROR: missing `command` (view, create, str_replace, insert, "
@@ -154,115 +278,16 @@ def _run_impl(args: dict) -> str:  # noqa: C901
         return f"ERROR: cannot open memory directory: {e}"
 
     if cmd == "rename":
-        try:
-            src = _resolve(root, args.get("old_path") or args.get("path") or "")
-            dst = _resolve(root, args.get("new_path") or "")
-        except ValueError as e:
-            return f"ERROR: {e}"
-        if dst == root:
-            return "ERROR: rename requires a `new_path`"
-        if not src.exists():
-            return f"ERROR: {_rel(src, root)} not found"
-        try:
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            src.rename(dst)
-        except OSError as e:
-            return f"ERROR: {e}"
-        return f"renamed {_rel(src, root)} -> {_rel(dst, root)}"
+        return _cmd_rename(root, args)
 
     try:
         target = _resolve(root, args.get("path") or "")
     except ValueError as e:
         return f"ERROR: {e}"
 
-    if cmd == "view":
-        if not target.exists():
-            if target == root:
-                return "(memory is empty)"
-            return f"ERROR: {_rel(target, root)} not found"
-        return _view(target, root)
-
-    if cmd == "create":
-        if target == root:
-            return "ERROR: create requires a file `path`"
-        text = args.get("file_text") or args.get("content") or ""
-        err = _fits(root, target, text)
-        if err:
-            return err
-        try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            _write_text(target, text)
-        except OSError as e:
-            return f"ERROR: {e}"
-        return f"wrote {_rel(target, root)} ({len(text)} bytes)"
-
-    if cmd == "str_replace":
-        old = args.get("old_str")
-        new = args.get("new_str")
-        if old is None or new is None:
-            return "ERROR: str_replace requires `old_str` and `new_str`"
-        if not target.is_file():
-            return f"ERROR: {_rel(target, root)} not found"
-        data = _read_text(target)
-        count = data.count(old)
-        if count == 0:
-            return ("ERROR: `old_str` not found. Use `view` to confirm the exact "
-                    "text before retrying.")
-        if count > 1:
-            return (f"ERROR: `old_str` is ambiguous ({count} matches). Add "
-                    "surrounding context so exactly one remains.")
-        new_data = data.replace(old, new, 1)
-        err = _fits(root, target, new_data)
-        if err:
-            return err
-        try:
-            _write_text(target, new_data)
-        except OSError as e:
-            return f"ERROR: {e}"
-        delta = len(new_data) - len(data)
-        return f"edited {_rel(target, root)} ({'+' if delta >= 0 else ''}{delta} bytes)"
-
-    if cmd == "insert":
-        after = args.get("insert_line")
-        text = args.get("insert_text")
-        if text is None:
-            text = args.get("new_str", "")
-        if after is None:
-            return "ERROR: insert requires `insert_line` (0 = before first line)"
-        if not target.is_file():
-            return f"ERROR: {_rel(target, root)} not found"
-        try:
-            idx = int(after)
-        except (TypeError, ValueError):
-            return f"ERROR: insert_line must be an integer; got {after!r}"
-        data = _read_text(target)
-        lines = data.split("\n")
-        if idx < 0 or idx > len(lines):
-            return (f"ERROR: insert_line={idx} out of range "
-                    f"(file has {len(lines)} lines; 0 = before first line)")
-        new_data = "\n".join(lines[:idx] + text.split("\n") + lines[idx:])
-        err = _fits(root, target, new_data)
-        if err:
-            return err
-        try:
-            _write_text(target, new_data)
-        except OSError as e:
-            return f"ERROR: {e}"
-        return f"inserted at line {idx} of {_rel(target, root)}"
-
-    if cmd == "delete":
-        if target == root:
-            return "ERROR: refusing to delete the memory root"
-        if not target.exists():
-            return f"ERROR: {_rel(target, root)} not found"
-        try:
-            if target.is_dir():
-                target.rmdir()  # only empty dirs; refuses a non-empty tree
-            else:
-                target.unlink()
-        except OSError as e:
-            return f"ERROR: {e}"
-        return f"deleted {_rel(target, root)}"
+    handler = _PATH_CMDS.get(cmd)
+    if handler is not None:
+        return handler(root, target, args)
 
     return (f"ERROR: unknown command {cmd!r}; expected view, create, str_replace, "
             "insert, delete, or rename")

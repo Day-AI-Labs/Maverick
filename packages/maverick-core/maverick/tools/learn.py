@@ -42,196 +42,216 @@ def _fmt_candidates(cands: list) -> str:
     return "\n".join(lines)
 
 
-def learn_capability(agent: Agent) -> Tool:  # noqa: C901
+def _op_search(agent: Agent, self_learning, need: str) -> str:
+    if not need:
+        return "ERROR: 'need' is required for op=search"
+    cands = self_learning.search_capabilities(need)
+    local = sorted(
+        t.name for t in agent.tools.all()
+        if any(w in t.name.lower() or w in (t.description or "").lower()
+               for w in need.lower().split())
+    )[:8]
+    return (
+        f"Catalog matches for {need!r}:\n{_fmt_candidates(cands)}\n\n"
+        f"Already-loaded tools that may fit: {', '.join(local) or '(none)'}\n\n"
+        "Next: acquire_skill <name> for a [skill], add_mcp_server "
+        "<name> for an [mcp] entry (catalog-pinned; needs operator "
+        "approval and may be disabled), or create_tool to build a new one."
+    )
+
+
+def _op_acquire_skill(agent: Agent, bb, self_learning, args: dict, need: str) -> str:
+    name = (args.get("name") or "").strip()
+    if not name:
+        return "ERROR: 'name' (catalog skill name) is required"
+    try:
+        body = self_learning.acquire_skill(name, need=need)
+    except Exception as e:
+        return f"ERROR: could not install skill {name!r}: {e}"
+    bb.post(agent.name, "observation", f"learned skill: {name}")
+    return (
+        f"Installed skill {name!r}. Use these steps now:\n\n{body}"
+    )
+
+
+async def _op_add_mcp_server(agent: Agent, ctx, bb, self_learning, args: dict, need: str) -> str:
+    # A free-text command/args is exactly what #392 closed — keep it
+    # closed. Only a curated, hash-pinned catalog name is accepted.
+    if args.get("command") is not None or args.get("args") is not None:
+        return (
+            "ERROR: a free-text command/args is not accepted (RCE / "
+            "supply-chain risk). Pass a catalog 'name' instead; the "
+            "command + sha are taken from the curated catalog entry. "
+            "Use op=search to find an [mcp] catalog entry first."
+        )
+    if not self_learning.mcp_acquisition_enabled():
+        return (
+            "ERROR: agent-driven MCP server acquisition is disabled for safety. "
+            "An operator can enable it ([self_learning] allow_mcp_acquisition "
+            "= true, or MAVERICK_ALLOW_MCP_ACQUISITION=1); it still installs "
+            "only curated, hash-pinned catalog servers and requires operator "
+            "approval. Otherwise add a trusted [mcp_servers.<name>] block to "
+            "the Maverick config and restart the run."
+        )
+    name = (args.get("name") or "").strip()
+    if not name:
+        return "ERROR: 'name' (catalog mcp server name) is required"
+    from ..safety.consent import ConsentDenied
+    try:
+        spec = self_learning.acquire_mcp_server(name, need=need)
+    except ConsentDenied:
+        return (
+            f"NOT ADDED: operator did not approve MCP server {name!r}. "
+            "It was not persisted or started."
+        )
+    except Exception as e:
+        return f"ERROR: could not add MCP server {name!r}: {e}"
+    # Approved + persisted. Hot-start through the existing validated
+    # launch path (MCPClient.start() re-verifies pin_sha256) and
+    # register its tools into the live registry. A start failure
+    # leaves the (approved) config block in place for next run.
+    from ..mcp_client import MCPClient
+    from ..mcp_tools import tools_from_mcp
+    client = MCPClient(spec)
+    try:
+        await client.start()
+    except Exception as e:
+        bb.post(agent.name, "observation", f"added MCP server (start failed): {name}")
+        return (
+            f"Added MCP server {name!r} to config (operator-approved), but "
+            f"it failed to start now: {e}. It will be started on the next run."
+        )
+    ctx.mcp_clients.append(client)
+    new_tools = tools_from_mcp(client)
+    for t in new_tools:
+        agent.tools.register(t)
+    bb.post(agent.name, "observation", f"added MCP server: {name}")
+    names = ", ".join(t.name for t in new_tools) or "(none)"
+    return (
+        f"Added and started MCP server {name!r} (operator-approved, "
+        f"catalog-pinned). New tools available now: {names}"
+    )
+
+
+async def _op_create_tool(agent: Agent, ctx, bb, self_learning, st, args: dict, need: str) -> str:
+    if not st.get("create_tools", True):
+        return "ERROR: tool creation is disabled ([self_learning] create_tools=false)"
+    name = (args.get("name") or "").strip()
+    spec = (args.get("spec") or need).strip()
+    if not name or not spec:
+        return "ERROR: 'name' and 'spec' (what the tool should do) are required"
+    from ..llm import model_for_role
+    try:
+        resp = await ctx.llm.complete_async(
+            system=self_learning.TOOL_AUTHOR_SYSTEM,
+            messages=[{"role": "user", "content": (
+                f"Build a tool named {name!r}.\nIt should: {spec}"
+            )}],
+            budget=ctx.budget,
+            max_tokens=2048,
+            model=model_for_role("coder"),
+        )
+    except Exception as e:
+        return f"ERROR: tool generation call failed: {e}"
+    try:
+        tool = self_learning.write_generated_tool(
+            name, resp.text or "", need=need or spec,
+            sandbox=getattr(ctx, "sandbox", None),
+        )
+    except Exception as e:
+        return f"ERROR: generated tool was rejected: {e}"
+    agent.tools.register(tool)
+    bb.post(agent.name, "observation", f"created tool: {tool.name}")
+    return (
+        f"Created and registered tool {tool.name!r}. It is available "
+        f"now and will persist for future runs.\nDescription: {tool.description}"
+    )
+
+
+async def _op_find_api(agent: Agent, bb, self_learning, args: dict, need: str) -> str:
+    base_url = (args.get("base_url") or "").strip()
+    spec_url = None
+    if base_url:
+        spec_url = self_learning.probe_openapi_spec(base_url)
+    # Route nested tool calls through the agent's _run_tool chokepoint
+    # (shield + capability + governance + hooks), not the bare registry
+    # -- otherwise an agent granted `learn` could drive web_search /
+    # openapi_runner ungoverned. unframe_tool_output recovers the raw
+    # result (a denied/blocked call returns its notice, handled below).
+    from ..agent import unframe_tool_output
+    if not spec_url and any(t.name == "web_search" for t in agent.tools.all()):
+        try:
+            hits = unframe_tool_output(await agent._run_tool(
+                "web_search",
+                {"query": f"{need or base_url} OpenAPI specification json"},
+            ))
+        except Exception:
+            hits = ""
+        spec_url = self_learning.discover_openapi_spec(search_text=hits or "")
+    if not spec_url:
+        return (
+            "Could not auto-discover an OpenAPI spec"
+            + (" (enable the web_search tool to let me search for one)"
+               if not any(t.name == "web_search" for t in agent.tools.all())
+               else "")
+            + ".\nIf you know the service's base URL, retry with "
+            "base_url=<https://host>. Or call any REST API yourself via "
+            "the `openapi_runner` tool once you have a spec URL:\n"
+            "  openapi_runner op=list_ops spec=<spec-url>\n"
+            "  openapi_runner op=call spec=<spec-url> op_id=<id> "
+            "params={...} headers={...}\n"
+            f"Need: {need or '(unspecified)'}"
+        )
+    self_learning.record(need or base_url, "api", spec_url, source=spec_url)
+    bb.post(agent.name, "observation", f"found API spec: {spec_url}")
+    ops_preview = ""
+    if any(t.name == "openapi_runner" for t in agent.tools.all()):
+        try:
+            ops_preview = unframe_tool_output(await agent._run_tool(
+                "openapi_runner", {"op": "list_ops", "spec": spec_url},
+            ))
+        except Exception:
+            ops_preview = ""
+    msg = f"Found an OpenAPI spec for {need or base_url!r}:\n  {spec_url}\n\n"
+    if ops_preview and not ops_preview.startswith("ERROR"):
+        msg += f"Operations:\n{ops_preview}\n\n"
+    msg += (
+        f"Call it with the openapi_runner tool: op=call spec={spec_url} "
+        "op_id=<id> params={...} headers={...} (headers for auth)."
+    )
+    return msg
+
+
+async def _dispatch_learn_op(agent: Agent, ctx, args: dict) -> str:
+    from .. import self_learning
+
+    op = (args.get("op") or "").strip()
+    need = (args.get("need") or "").strip()
+    st = self_learning.settings()
+    bb = ctx.blackboard
+
+    if op == "search":
+        return _op_search(agent, self_learning, need)
+    if op == "acquire_skill":
+        return _op_acquire_skill(agent, bb, self_learning, args, need)
+    if op == "add_mcp_server":
+        return await _op_add_mcp_server(agent, ctx, bb, self_learning, args, need)
+    if op == "create_tool":
+        return await _op_create_tool(agent, ctx, bb, self_learning, st, args, need)
+    if op == "find_api":
+        return await _op_find_api(agent, bb, self_learning, args, need)
+
+    return (
+        "ERROR: unknown op. Use one of: search, acquire_skill, "
+        "create_tool, find_api, add_mcp_server"
+    )
+
+
+def learn_capability(agent: Agent) -> Tool:
     ctx = agent.ctx
 
-    async def fn(args: dict) -> str:  # noqa: C901
-        from .. import self_learning
-
-        op = (args.get("op") or "").strip()
-        need = (args.get("need") or "").strip()
-        st = self_learning.settings()
-        bb = ctx.blackboard
-
-        if op == "search":
-            if not need:
-                return "ERROR: 'need' is required for op=search"
-            cands = self_learning.search_capabilities(need)
-            local = sorted(
-                t.name for t in agent.tools.all()
-                if any(w in t.name.lower() or w in (t.description or "").lower()
-                       for w in need.lower().split())
-            )[:8]
-            return (
-                f"Catalog matches for {need!r}:\n{_fmt_candidates(cands)}\n\n"
-                f"Already-loaded tools that may fit: {', '.join(local) or '(none)'}\n\n"
-                "Next: acquire_skill <name> for a [skill], add_mcp_server "
-                "<name> for an [mcp] entry (catalog-pinned; needs operator "
-                "approval and may be disabled), or create_tool to build a new one."
-            )
-
-        if op == "acquire_skill":
-            name = (args.get("name") or "").strip()
-            if not name:
-                return "ERROR: 'name' (catalog skill name) is required"
-            try:
-                body = self_learning.acquire_skill(name, need=need)
-            except Exception as e:
-                return f"ERROR: could not install skill {name!r}: {e}"
-            bb.post(agent.name, "observation", f"learned skill: {name}")
-            return (
-                f"Installed skill {name!r}. Use these steps now:\n\n{body}"
-            )
-
-        if op == "add_mcp_server":
-            # A free-text command/args is exactly what #392 closed — keep it
-            # closed. Only a curated, hash-pinned catalog name is accepted.
-            if args.get("command") is not None or args.get("args") is not None:
-                return (
-                    "ERROR: a free-text command/args is not accepted (RCE / "
-                    "supply-chain risk). Pass a catalog 'name' instead; the "
-                    "command + sha are taken from the curated catalog entry. "
-                    "Use op=search to find an [mcp] catalog entry first."
-                )
-            if not self_learning.mcp_acquisition_enabled():
-                return (
-                    "ERROR: agent-driven MCP server acquisition is disabled for safety. "
-                    "An operator can enable it ([self_learning] allow_mcp_acquisition "
-                    "= true, or MAVERICK_ALLOW_MCP_ACQUISITION=1); it still installs "
-                    "only curated, hash-pinned catalog servers and requires operator "
-                    "approval. Otherwise add a trusted [mcp_servers.<name>] block to "
-                    "the Maverick config and restart the run."
-                )
-            name = (args.get("name") or "").strip()
-            if not name:
-                return "ERROR: 'name' (catalog mcp server name) is required"
-            from ..safety.consent import ConsentDenied
-            try:
-                spec = self_learning.acquire_mcp_server(name, need=need)
-            except ConsentDenied:
-                return (
-                    f"NOT ADDED: operator did not approve MCP server {name!r}. "
-                    "It was not persisted or started."
-                )
-            except Exception as e:
-                return f"ERROR: could not add MCP server {name!r}: {e}"
-            # Approved + persisted. Hot-start through the existing validated
-            # launch path (MCPClient.start() re-verifies pin_sha256) and
-            # register its tools into the live registry. A start failure
-            # leaves the (approved) config block in place for next run.
-            from ..mcp_client import MCPClient
-            from ..mcp_tools import tools_from_mcp
-            client = MCPClient(spec)
-            try:
-                await client.start()
-            except Exception as e:
-                bb.post(agent.name, "observation", f"added MCP server (start failed): {name}")
-                return (
-                    f"Added MCP server {name!r} to config (operator-approved), but "
-                    f"it failed to start now: {e}. It will be started on the next run."
-                )
-            ctx.mcp_clients.append(client)
-            new_tools = tools_from_mcp(client)
-            for t in new_tools:
-                agent.tools.register(t)
-            bb.post(agent.name, "observation", f"added MCP server: {name}")
-            names = ", ".join(t.name for t in new_tools) or "(none)"
-            return (
-                f"Added and started MCP server {name!r} (operator-approved, "
-                f"catalog-pinned). New tools available now: {names}"
-            )
-
-        if op == "create_tool":
-            if not st.get("create_tools", True):
-                return "ERROR: tool creation is disabled ([self_learning] create_tools=false)"
-            name = (args.get("name") or "").strip()
-            spec = (args.get("spec") or need).strip()
-            if not name or not spec:
-                return "ERROR: 'name' and 'spec' (what the tool should do) are required"
-            from ..llm import model_for_role
-            try:
-                resp = await ctx.llm.complete_async(
-                    system=self_learning.TOOL_AUTHOR_SYSTEM,
-                    messages=[{"role": "user", "content": (
-                        f"Build a tool named {name!r}.\nIt should: {spec}"
-                    )}],
-                    budget=ctx.budget,
-                    max_tokens=2048,
-                    model=model_for_role("coder"),
-                )
-            except Exception as e:
-                return f"ERROR: tool generation call failed: {e}"
-            try:
-                tool = self_learning.write_generated_tool(
-                    name, resp.text or "", need=need or spec,
-                    sandbox=getattr(ctx, "sandbox", None),
-                )
-            except Exception as e:
-                return f"ERROR: generated tool was rejected: {e}"
-            agent.tools.register(tool)
-            bb.post(agent.name, "observation", f"created tool: {tool.name}")
-            return (
-                f"Created and registered tool {tool.name!r}. It is available "
-                f"now and will persist for future runs.\nDescription: {tool.description}"
-            )
-
-        if op == "find_api":
-            base_url = (args.get("base_url") or "").strip()
-            spec_url = None
-            if base_url:
-                spec_url = self_learning.probe_openapi_spec(base_url)
-            # Route nested tool calls through the agent's _run_tool chokepoint
-            # (shield + capability + governance + hooks), not the bare registry
-            # -- otherwise an agent granted `learn` could drive web_search /
-            # openapi_runner ungoverned. unframe_tool_output recovers the raw
-            # result (a denied/blocked call returns its notice, handled below).
-            from ..agent import unframe_tool_output
-            if not spec_url and any(t.name == "web_search" for t in agent.tools.all()):
-                try:
-                    hits = unframe_tool_output(await agent._run_tool(
-                        "web_search",
-                        {"query": f"{need or base_url} OpenAPI specification json"},
-                    ))
-                except Exception:
-                    hits = ""
-                spec_url = self_learning.discover_openapi_spec(search_text=hits or "")
-            if not spec_url:
-                return (
-                    "Could not auto-discover an OpenAPI spec"
-                    + (" (enable the web_search tool to let me search for one)"
-                       if not any(t.name == "web_search" for t in agent.tools.all())
-                       else "")
-                    + ".\nIf you know the service's base URL, retry with "
-                    "base_url=<https://host>. Or call any REST API yourself via "
-                    "the `openapi_runner` tool once you have a spec URL:\n"
-                    "  openapi_runner op=list_ops spec=<spec-url>\n"
-                    "  openapi_runner op=call spec=<spec-url> op_id=<id> "
-                    "params={...} headers={...}\n"
-                    f"Need: {need or '(unspecified)'}"
-                )
-            self_learning.record(need or base_url, "api", spec_url, source=spec_url)
-            bb.post(agent.name, "observation", f"found API spec: {spec_url}")
-            ops_preview = ""
-            if any(t.name == "openapi_runner" for t in agent.tools.all()):
-                try:
-                    ops_preview = unframe_tool_output(await agent._run_tool(
-                        "openapi_runner", {"op": "list_ops", "spec": spec_url},
-                    ))
-                except Exception:
-                    ops_preview = ""
-            msg = f"Found an OpenAPI spec for {need or base_url!r}:\n  {spec_url}\n\n"
-            if ops_preview and not ops_preview.startswith("ERROR"):
-                msg += f"Operations:\n{ops_preview}\n\n"
-            msg += (
-                f"Call it with the openapi_runner tool: op=call spec={spec_url} "
-                "op_id=<id> params={...} headers={...} (headers for auth)."
-            )
-            return msg
-
-        return (
-            "ERROR: unknown op. Use one of: search, acquire_skill, "
-            "create_tool, find_api, add_mcp_server"
-        )
+    async def fn(args: dict) -> str:
+        return await _dispatch_learn_op(agent, ctx, args)
 
     return Tool(
         name="learn_capability",
