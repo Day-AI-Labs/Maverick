@@ -15,6 +15,7 @@ wizard's smoke test catches it before the agent runs.
 """
 from __future__ import annotations
 
+import shlex
 import subprocess
 import uuid
 from dataclasses import dataclass
@@ -192,7 +193,8 @@ class DockerBackend:
 
     def _exec_warm(self, cmd: str, effective: float) -> ExecResult:
         self._ensure_warm()
-        args = ["docker", "exec", self._warm_name, "sh", "-c", cmd]
+        args = ["docker", "exec", self._warm_name, "sh", "-c",
+                self._warm_command(cmd)]
         try:
             result = subprocess.run(args, capture_output=True, text=True,
                                     timeout=effective, env=scrub_env())
@@ -202,13 +204,47 @@ class DockerBackend:
                 exit_code=result.returncode,
             )
         except subprocess.TimeoutExpired as e:
-            # The exec timed out, but the WARM container stays up for the next
-            # command -- don't reap it (that's the point of reuse). Just report.
+            # A timed-out `docker exec` can leave daemon-side children running
+            # inside the warm container. Reap the container, just like the cold
+            # path does, so no command can outlive its timeout/budget boundary.
+            self.close()
             stdout = e.stdout or ""
             if isinstance(stdout, bytes):
                 stdout = stdout.decode("utf-8", errors="replace")
             return ExecResult(stdout=stdout[-8000:],
                               stderr=f"TIMEOUT after {effective}s", exit_code=124)
+
+    def _warm_command(self, cmd: str) -> str:
+        """Run a command, then reap any processes it left behind.
+
+        Warm containers intentionally keep filesystem/package state across
+        execs, but shell background jobs must not survive a tool call. Docker
+        does not provide a per-exec process cleanup primitive, so the wrapper
+        runs the requested command in a child shell, preserves its exit status,
+        then terminates every other container process except PID 1 and the
+        wrapper itself. If the exec times out before reaching this cleanup,
+        `_exec_warm` removes the whole container.
+        """
+        return "\n".join([
+            f"sh -c {shlex.quote(cmd)} &",
+            "child=$!",
+            "wait $child",
+            "rc=$?",
+            "for proc in /proc/[0-9]*; do",
+            "  pid=${proc##*/}",
+            "  [ \"$pid\" = 1 ] && continue",
+            "  [ \"$pid\" = \"$$\" ] && continue",
+            "  kill -TERM \"$pid\" 2>/dev/null || true",
+            "done",
+            "sleep 0.2",
+            "for proc in /proc/[0-9]*; do",
+            "  pid=${proc##*/}",
+            "  [ \"$pid\" = 1 ] && continue",
+            "  [ \"$pid\" = \"$$\" ] && continue",
+            "  kill -KILL \"$pid\" 2>/dev/null || true",
+            "done",
+            "exit $rc",
+        ])
 
     def close(self) -> None:
         """Tear down the warm container (no-op when reuse is off / unused)."""

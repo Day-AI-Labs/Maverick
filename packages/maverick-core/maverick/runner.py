@@ -82,6 +82,7 @@ def run_goal_in_thread(
         )
         return None
     world = None
+    sandbox = None
     try:
         from .budget import budget_from_config
         from .llm import LLM
@@ -138,6 +139,13 @@ def run_goal_in_thread(
         log.exception("background goal run failed (goal_id=%s)", goal_id)
         return None
     finally:
+        if sandbox is not None:
+            close = getattr(sandbox, "close", None)
+            if close is not None:
+                try:
+                    close()
+                except Exception:  # pragma: no cover
+                    log.debug("run_goal_in_thread: sandbox.close() failed", exc_info=True)
         if world is not None:
             try:
                 world.close()
