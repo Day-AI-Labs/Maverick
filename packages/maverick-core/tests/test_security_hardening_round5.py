@@ -78,6 +78,15 @@ def test_config_lint_flags_invalid_numeric_cap(bad):
     assert any(f.severity == "error" and "finite" in f.message for f in findings), bad
 
 
+def test_config_lint_accepts_huge_integer_cap_without_crashing():
+    from maverick.config_lint import lint_config
+
+    huge_cap = int("9" * 4000)
+    findings = lint_config({"budget": {"max_dollars": huge_cap}})
+
+    assert not findings
+
+
 # ---- CLI start refuses a suspended tenant ----------------------------------
 
 def test_cli_start_refuses_suspended_tenant(monkeypatch):
