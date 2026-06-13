@@ -69,7 +69,7 @@ _DOC_SIGNATURES: list[tuple[str, tuple[str, ...]]] = [
     ("PRIOR-RETURN", ("form 1040", "u.s. individual income tax return")),
 ]
 
-_MONEY_RE = re.compile(r"\$?([0-9][0-9,]*(?:\.[0-9]{1,2})?)")
+_MONEY_RE = re.compile(r"(-?)\$?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)")
 _STATE_TOKEN_RE = re.compile(r"\b([A-Z]{2})\b")
 
 # TY2025 federal constants (One Big Beautiful Bill Act, enacted July 2025).
@@ -222,23 +222,67 @@ def classify(text: str) -> str:
     return "UNKNOWN"
 
 
+def _looks_like_year(token: str, value: float) -> bool:
+    """A bare 4-digit integer in a plausible tax-year range, with no currency
+    marker, is almost certainly the form's tax year printed on a title/header
+    line (e.g. "Form 1099-INT Interest Income 2025") -- not a dollar amount."""
+    return ("$" not in token and "," not in token and "." not in token
+            and value == int(value) and 1900 <= value <= 2100)
+
+
 def _amount_after(text: str, *labels: str) -> float:
-    """First dollar amount AFTER a label on its line (case-insensitive).
+    """First dollar amount AFTER a label, scanning every line.
 
     Extraction agents normally supply structured figures; this parser covers
     cleanly formatted text exports so the pipeline runs end to end without
     an LLM (and so the demo/tests are deterministic). Searching after the
-    label keeps "Box 1 Wages: $85,000.00" from yielding the box number."""
+    label keeps "Box 1 Wages: $85,000.00" from yielding the box number.
+
+    Hardened against three real failure modes that would otherwise produce a
+    SILENT WRONG NUMBER on a tax return:
+      * a label that is the prefix of a longer token -- "box 1" must not match
+        "box 10".."box 19" (a word boundary is required after the label, so
+        the box-2 federal-withholding probe can't latch onto "box 20" either);
+      * a bare tax year on a title line ("... Interest Income 2025") being read
+        as the amount -- year-like bare integers are skipped, and the scan
+        continues to the real box line;
+      * a leading minus sign being dropped -- the sign is preserved.
+    The first VALID money after any label wins; labels are tried in order per
+    line. Bare unformatted integers in the 1900-2100 range are the one input
+    this intentionally skips; real exports carry a $, comma, or cents.
+    """
     for line in (text or "").splitlines():
         low = line.lower()
         for lbl in labels:
-            idx = low.find(lbl)
-            if idx < 0:
-                continue
-            m = _MONEY_RE.search(line[idx + len(lbl):])
-            if m:
-                return float(m.group(1).replace(",", ""))
+            pos = 0
+            while True:
+                idx = low.find(lbl, pos)
+                if idx < 0:
+                    break
+                after = idx + len(lbl)
+                pos = after
+                # Word boundary: reject "box 1" sitting inside "box 10" so the
+                # following digit can't be mistaken for (part of) the amount.
+                if after < len(low) and low[after].isalnum():
+                    continue
+                m = _MONEY_RE.search(line[after:])
+                if not m:
+                    continue
+                value = float(m.group(2).replace(",", ""))
+                if _looks_like_year(m.group(0), value):
+                    continue
+                return -value if m.group(1) == "-" else value
     return 0.0
+
+
+def normalize_filing_status(status: str) -> str:
+    """Filing status, case- and whitespace-normalized.
+
+    A supported status returns its canonical lowercase form ("MFJ" -> "mfj");
+    anything else returns lowercased-as-given so callers flag it rather than
+    silently miscomputing as single. Guards every programmatic/agent caller
+    that builds a Workpaper directly (the CLI already gates --filing-status)."""
+    return (status or "").strip().lower()
 
 
 def _state_code(text: str) -> str:
@@ -305,7 +349,7 @@ _PREPARER_DOC_ITEMS = {
 def missing_items(wp: Workpaper) -> list[str]:
     """Completeness check: what a preparer would chase before computing."""
     items: list[str] = []
-    if wp.filing_status not in FILING_STATUSES:
+    if normalize_filing_status(wp.filing_status) not in FILING_STATUSES:
         items.append(f"filing status {wp.filing_status!r} is not supported "
                      f"(supported: {', '.join(FILING_STATUSES)})")
     if not wp.docs:
@@ -341,7 +385,8 @@ def compute_first_pass(wp: Workpaper, *, constants: dict = TY2025) -> Draft1040:
     supported scope lands in ``open_items`` for the preparer instead of
     being guessed at.
     """
-    status = wp.filing_status if wp.filing_status in FILING_STATUSES else "single"
+    status = normalize_filing_status(wp.filing_status)
+    status = status if status in FILING_STATUSES else "single"
     lines: list[tuple[str, float, str]] = []
     for d in wp.docs:
         if d.wages:
@@ -403,7 +448,8 @@ def compute_state_first_pass(wp: Workpaper, state: str, *,
     CCH Axcess / GoSystem connectors).
     """
     state = (state or "").upper()
-    status = wp.filing_status if wp.filing_status in FILING_STATUSES else "single"
+    status = normalize_filing_status(wp.filing_status)
+    status = status if status in FILING_STATUSES else "single"
     withholding = round(sum(
         d.state_withholding for d in wp.docs
         if not d.state or d.state == state), 2)
@@ -519,4 +565,5 @@ __all__ = [
     "SourceDoc", "Workpaper", "Draft1040", "StateDraft",
     "classify", "extract", "missing_items", "compute_first_pass",
     "infer_state", "compute_state_first_pass", "render_review_package",
+    "normalize_filing_status",
 ]

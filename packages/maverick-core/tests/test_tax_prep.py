@@ -73,6 +73,70 @@ class TestClassifyExtract:
         assert extract(NEC_TEXT).nonemployee_comp == 6500.0
 
 
+class TestExtractionHardening:
+    """Regression tests for silent-wrong-number extraction failures found in
+    user testing -- each one previously corrupted a return without erroring."""
+
+    def test_title_line_year_is_not_read_as_the_amount(self):
+        # "Form 1099-INT Interest Income 2025" must not yield 2025 as interest;
+        # the scan skips the bare year and lands on the real box line.
+        txt = ("Form 1099-INT Interest Income  2025\n"
+               "Payer: Big Bank N.A.\n"
+               "Box 1 Interest income: $1,240.00\n")
+        assert extract(txt).interest == 1240.0
+        dtxt = ("Form 1099-DIV Ordinary Dividends 2025\n"
+                "Box 1a Ordinary dividends: $3,015.50\n")
+        assert extract(dtxt).ordinary_dividends == 3015.50
+
+    def test_box_label_is_word_bounded_not_a_prefix(self):
+        # "box 1" must not latch onto "box 10".."box 19" (and "box 2" not onto
+        # "box 20".."box 29"); both previously extracted 0.
+        wtxt = ("W-2 Wage and Tax Statement\n"
+                "Box 10 Dependent care benefits: $5,000.00\n"
+                "Box 1 Wages: $80,000.00\n")
+        assert extract(wtxt).wages == 80000.0
+        ftxt = ("W-2 Wage and Tax Statement\n"
+                "Box 1 Wages, tips: $80,000.00\n"
+                "Box 20 Locality name: $0.00\n"
+                "Box 2 Federal income tax withheld: $9,000.00\n")
+        assert extract(ftxt).federal_withholding == 9000.0
+
+    def test_negative_sign_is_preserved_not_flipped(self):
+        # A leading minus was silently dropped, turning a loss into income.
+        txt = "1099-DIV Dividends\nBox 1a Ordinary dividends: -$500.00\n"
+        assert extract(txt).ordinary_dividends == -500.0
+
+    def test_bare_unformatted_year_skipped_but_real_money_kept(self):
+        # The one input we intentionally skip is a bare year-range integer;
+        # formatted money ($/comma/cents) at the same magnitude is kept.
+        assert extract("1099-INT\nBox 1 Interest income: $2,025.00\n").interest \
+            == 2025.0
+        assert extract("1099-INT\nBox 1 Interest income: 2,025\n").interest \
+            == 2025.0
+
+
+class TestFilingStatusNormalization:
+    def test_uppercase_filing_status_is_honored_not_silently_single(self):
+        # "MFJ" must compute as MFJ ($31,500 std deduction), not fall back to
+        # single ($15,750) -- agents build Workpapers directly, bypassing the
+        # CLI's click.Choice gate.
+        for raw in ("MFJ", "mfj", "  Mfj "):
+            d = compute_first_pass(
+                Workpaper(filing_status=raw, docs=[SourceDoc("W-2", "a",
+                          wages=100000.0)]))
+            assert d.standard_deduction == 31500.0, raw
+            assert not any("not supported" in i for i in d.open_items), raw
+
+    def test_genuinely_unsupported_status_still_flagged(self):
+        # mfs / qualifying-widow are real statuses outside the v1 scope: they
+        # are flagged (and fall back), never silently miscomputed.
+        d = compute_first_pass(
+            Workpaper(filing_status="MFS", docs=[SourceDoc("W-2", "a",
+                      wages=100000.0)]))
+        assert any("not supported" in i for i in d.open_items)
+        assert tax_prep.normalize_filing_status("MFJ") == "mfj"
+
+
 class TestFirstPassComputation:
     def test_single_w2_only_hand_computed(self):
         # Single, $85,000 wages, $9,000 withheld. Std deduction 15,750 ->
