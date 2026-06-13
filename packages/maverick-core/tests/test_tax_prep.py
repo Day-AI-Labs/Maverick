@@ -503,6 +503,7 @@ class TestReviewPackage:
         ])
         text = render_review_package(compute_first_pass(wp))
         assert text.startswith(tax_prep.DISCLAIMER)
+        assert "REVIEW SUMMARY:" in text         # triage line at the top
         assert "[W-2 — Acme]" in text          # provenance citation
         assert "ESTIMATED REFUND" in text       # 12k withheld > 10,149 tax
         assert "OPEN ITEMS FOR PREPARER" in text

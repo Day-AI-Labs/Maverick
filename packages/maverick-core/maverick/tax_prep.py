@@ -802,7 +802,10 @@ def _render_state(out: list[str], sd: StateDraft) -> None:
 def render_review_package(draft: Draft1040,
                           state: StateDraft | None = None) -> str:
     """The preparer-facing review package: draft + provenance + open items."""
-    out = [DISCLAIMER, "",
+    n_open = len(draft.open_items) + (len(state.open_items) if state else 0)
+    triage = (f"REVIEW SUMMARY: {n_open} open item(s) for the preparer"
+              if n_open else "REVIEW SUMMARY: no open items flagged")
+    out = [DISCLAIMER, "", triage, "",
            f"DRAFT FORM 1040 (TY{TY2025['year']}) — first pass",
            "=" * 52,
            f"Filing status        : {draft.filing_status.upper()}"]
