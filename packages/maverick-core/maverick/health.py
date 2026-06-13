@@ -160,7 +160,82 @@ def _check_openai() -> None:
             _row(YELLOW, "openai", f"validation skipped: {type(e).__name__}")
 
 
-def _check_sandbox(cfg: dict) -> None:  # noqa: C901
+def _check_sandbox_docker() -> None:
+    if not shutil.which("docker"):
+        _row(RED, "sandbox", "docker not on PATH",
+             fix="install Docker Desktop (https://docker.com/products/docker-desktop) or change [sandbox] backend to 'local' in ~/.maverick/config.toml")
+        return
+    try:
+        subprocess.run(
+            ["docker", "version"],
+            capture_output=True, timeout=5, check=True,
+        )
+        _row(GREEN, "sandbox", "docker daemon responding")
+    except subprocess.CalledProcessError:
+        _row(RED, "sandbox", "docker daemon not running",
+             fix="start Docker Desktop, or `sudo systemctl start docker` on Linux")
+    except subprocess.TimeoutExpired:
+        _row(RED, "sandbox", "docker version timed out",
+             fix="docker is installed but unresponsive -- restart Docker Desktop")
+
+
+def _check_sandbox_podman() -> None:
+    if not shutil.which("podman"):
+        _row(RED, "sandbox", "podman not on PATH",
+             fix="install podman, or change [sandbox] backend to 'docker'/'local' in ~/.maverick/config.toml")
+        return
+    try:
+        subprocess.run(
+            ["podman", "version"],
+            capture_output=True, timeout=5, check=True,
+        )
+        _row(GREEN, "sandbox", "podman responding")
+    except subprocess.CalledProcessError:
+        _row(RED, "sandbox", "podman present but not responding",
+             fix="check `podman version`; on Linux/macOS you may need `podman machine start`")
+    except subprocess.TimeoutExpired:
+        _row(RED, "sandbox", "podman version timed out",
+             fix="podman is installed but unresponsive")
+
+
+def _check_sandbox_kubernetes(cfg: dict) -> None:
+    if not shutil.which("kubectl"):
+        _row(RED, "sandbox", "kubectl not on PATH",
+             fix="install kubectl and configure a kubeconfig context")
+        return
+    ctx = cfg.get("sandbox", {}).get("context")
+    try:
+        subprocess.run(
+            ["kubectl", "version", "--client"],
+            capture_output=True, timeout=5, check=True,
+        )
+        detail = "kubectl present" + (f", context={ctx}" if ctx else "")
+        _row(GREEN, "sandbox", f"{detail} (cluster reachability not checked)")
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        _row(RED, "sandbox", "kubectl present but `kubectl version --client` failed",
+             fix="check your kubectl install")
+
+
+def _check_sandbox_firecracker(cfg: dict) -> None:
+    provider = str(cfg.get("sandbox", {}).get("provider", "local") or "local").strip().lower()
+    if provider == "e2b":
+        if os.environ.get("E2B_API_KEY"):
+            _row(GREEN, "sandbox", "firecracker via E2B (E2B_API_KEY set)")
+        else:
+            _row(RED, "sandbox", "firecracker provider=e2b but E2B_API_KEY unset",
+                 fix='export E2B_API_KEY=..., or set [sandbox] provider = "local"')
+    elif provider == "local":
+        if shutil.which("firecracker"):
+            _row(GREEN, "sandbox", "firecracker binary present")
+        else:
+            _row(RED, "sandbox", "firecracker binary not on PATH",
+                 fix='install firecracker, or set [sandbox] provider = "e2b"')
+    else:
+        _row(YELLOW, "sandbox", f"firecracker provider={provider!r} unknown",
+             fix='[sandbox] provider must be "local" or "e2b"')
+
+
+def _check_sandbox(cfg: dict) -> None:
     # Match build_sandbox(): the backend is user-typed config and is compared
     # case-sensitively below, so normalize or a valid "Docker" misreports as
     # the "unsupported" catch-all while build_sandbox actually runs it.
@@ -169,40 +244,10 @@ def _check_sandbox(cfg: dict) -> None:  # noqa: C901
         _row(GREEN, "sandbox", "local subprocess")
         return
     if backend == "docker":
-        if not shutil.which("docker"):
-            _row(RED, "sandbox", "docker not on PATH",
-                 fix="install Docker Desktop (https://docker.com/products/docker-desktop) or change [sandbox] backend to 'local' in ~/.maverick/config.toml")
-            return
-        try:
-            subprocess.run(
-                ["docker", "version"],
-                capture_output=True, timeout=5, check=True,
-            )
-            _row(GREEN, "sandbox", "docker daemon responding")
-        except subprocess.CalledProcessError:
-            _row(RED, "sandbox", "docker daemon not running",
-                 fix="start Docker Desktop, or `sudo systemctl start docker` on Linux")
-        except subprocess.TimeoutExpired:
-            _row(RED, "sandbox", "docker version timed out",
-                 fix="docker is installed but unresponsive -- restart Docker Desktop")
+        _check_sandbox_docker()
         return
     if backend == "podman":
-        if not shutil.which("podman"):
-            _row(RED, "sandbox", "podman not on PATH",
-                 fix="install podman, or change [sandbox] backend to 'docker'/'local' in ~/.maverick/config.toml")
-            return
-        try:
-            subprocess.run(
-                ["podman", "version"],
-                capture_output=True, timeout=5, check=True,
-            )
-            _row(GREEN, "sandbox", "podman responding")
-        except subprocess.CalledProcessError:
-            _row(RED, "sandbox", "podman present but not responding",
-                 fix="check `podman version`; on Linux/macOS you may need `podman machine start`")
-        except subprocess.TimeoutExpired:
-            _row(RED, "sandbox", "podman version timed out",
-                 fix="podman is installed but unresponsive")
+        _check_sandbox_podman()
         return
     if backend == "devcontainer":
         # The devcontainer backend builds/runs through Docker under the hood.
@@ -214,39 +259,10 @@ def _check_sandbox(cfg: dict) -> None:  # noqa: C901
              "devcontainer (Docker present; also needs a .devcontainer/devcontainer.json with an image)")
         return
     if backend == "kubernetes":
-        if not shutil.which("kubectl"):
-            _row(RED, "sandbox", "kubectl not on PATH",
-                 fix="install kubectl and configure a kubeconfig context")
-            return
-        ctx = cfg.get("sandbox", {}).get("context")
-        try:
-            subprocess.run(
-                ["kubectl", "version", "--client"],
-                capture_output=True, timeout=5, check=True,
-            )
-            detail = "kubectl present" + (f", context={ctx}" if ctx else "")
-            _row(GREEN, "sandbox", f"{detail} (cluster reachability not checked)")
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-            _row(RED, "sandbox", "kubectl present but `kubectl version --client` failed",
-                 fix="check your kubectl install")
+        _check_sandbox_kubernetes(cfg)
         return
     if backend == "firecracker":
-        provider = str(cfg.get("sandbox", {}).get("provider", "local") or "local").strip().lower()
-        if provider == "e2b":
-            if os.environ.get("E2B_API_KEY"):
-                _row(GREEN, "sandbox", "firecracker via E2B (E2B_API_KEY set)")
-            else:
-                _row(RED, "sandbox", "firecracker provider=e2b but E2B_API_KEY unset",
-                     fix='export E2B_API_KEY=..., or set [sandbox] provider = "local"')
-        elif provider == "local":
-            if shutil.which("firecracker"):
-                _row(GREEN, "sandbox", "firecracker binary present")
-            else:
-                _row(RED, "sandbox", "firecracker binary not on PATH",
-                     fix='install firecracker, or set [sandbox] provider = "e2b"')
-        else:
-            _row(YELLOW, "sandbox", f"firecracker provider={provider!r} unknown",
-                 fix='[sandbox] provider must be "local" or "e2b"')
+        _check_sandbox_firecracker(cfg)
         return
     if backend == "ssh":
         host = cfg.get("sandbox", {}).get("host", "")

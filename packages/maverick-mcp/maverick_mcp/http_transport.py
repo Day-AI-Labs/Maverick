@@ -293,6 +293,74 @@ def _progress_token(params: dict, http_exc):
     return token
 
 
+def _sse_stream(
+    *,
+    server,
+    method: str,
+    params: dict,
+    task_owner: str | None,
+    subscriptions: set,
+    request_id,
+    should_persist_session: bool,
+    sid: str | None,
+    store_session,
+):
+    """Async SSE generator: progress heartbeats, then the final JSON-RPC result.
+
+    Factored out of ``mcp_endpoint`` so the streaming branch's control flow does
+    not inflate the endpoint's complexity. Behavior is identical.
+    """
+    progress_token = _progress_token(params, HTTPException)
+    max_progress_events = _max_progress_events()
+
+    def _dispatch_with_updates():
+        with server.resource_update_scope(subscriptions):
+            result = _dispatch(server, method, params, task_owner=task_owner)
+            updates = server.drain_resource_updates()
+            return result, updates
+
+    async def _stream():
+        task = asyncio.create_task(asyncio.to_thread(_dispatch_with_updates))
+        interval = _heartbeat_seconds()
+        progress = 0
+        while not task.done():
+            done, _pending = await asyncio.wait({task}, timeout=interval)
+            if task in done:
+                break
+            # Progress notifications are only valid when the client
+            # supplied a token to correlate them (per spec).
+            if progress_token is not None and progress < max_progress_events:
+                progress += 1
+                yield _sse({
+                    "jsonrpc": "2.0",
+                    "method": "notifications/progress",
+                    "params": {
+                        "progressToken": progress_token,
+                        "progress": progress,
+                        "message": "working",
+                    },
+                })
+        try:
+            result, updates = task.result()
+        except Exception as e:
+            yield _sse(_error_envelope(request_id, e))
+        else:
+            if should_persist_session and sid is not None:
+                store_session(sid, subscriptions)
+            yield _sse(_result_envelope(request_id, result))
+            # HTTP analog of stdio's _flush_resource_updates: push any
+            # resources/updated the tool dirtied that this client
+            # subscribed to, on the same SSE stream, after the result.
+            for uri in updates:
+                yield _sse({
+                    "jsonrpc": "2.0",
+                    "method": "notifications/resources/updated",
+                    "params": {"uri": uri},
+                })
+
+    return _stream()
+
+
 def build_app(server) -> FastAPI:  # noqa: C901
     """Wrap an MCPServer instance in a Streamable HTTP transport.
 
@@ -365,7 +433,7 @@ def build_app(server) -> FastAPI:  # noqa: C901
         return response
 
     @app.post("/mcp")
-    async def mcp_endpoint(  # noqa: C901
+    async def mcp_endpoint(
         request: Request,
         authorization: str | None = Header(None),
     ):
@@ -421,55 +489,20 @@ def build_app(server) -> FastAPI:  # noqa: C901
         # run_goal_sync() -> asyncio.run, which can't run inline under
         # FastAPI's loop.
         if accepts_sse and not is_notification:
-            progress_token = _progress_token(params, HTTPException)
-            max_progress_events = _max_progress_events()
-
-            def _dispatch_with_updates():
-                with server.resource_update_scope(subscriptions):
-                    result = _dispatch(server, method, params, task_owner=task_owner)
-                    updates = server.drain_resource_updates()
-                    return result, updates
-
-            async def _stream():
-                task = asyncio.create_task(asyncio.to_thread(_dispatch_with_updates))
-                interval = _heartbeat_seconds()
-                progress = 0
-                while not task.done():
-                    done, _pending = await asyncio.wait({task}, timeout=interval)
-                    if task in done:
-                        break
-                    # Progress notifications are only valid when the client
-                    # supplied a token to correlate them (per spec).
-                    if progress_token is not None and progress < max_progress_events:
-                        progress += 1
-                        yield _sse({
-                            "jsonrpc": "2.0",
-                            "method": "notifications/progress",
-                            "params": {
-                                "progressToken": progress_token,
-                                "progress": progress,
-                                "message": "working",
-                            },
-                        })
-                try:
-                    result, updates = task.result()
-                except Exception as e:
-                    yield _sse(_error_envelope(request_id, e))
-                else:
-                    if should_persist_session and sid is not None:
-                        _store_session(sid, subscriptions)
-                    yield _sse(_result_envelope(request_id, result))
-                    # HTTP analog of stdio's _flush_resource_updates: push any
-                    # resources/updated the tool dirtied that this client
-                    # subscribed to, on the same SSE stream, after the result.
-                    for uri in updates:
-                        yield _sse({
-                            "jsonrpc": "2.0",
-                            "method": "notifications/resources/updated",
-                            "params": {"uri": uri},
-                        })
-
-            response = StreamingResponse(_stream(), media_type="text/event-stream")
+            # Streamable HTTP path: progress events while the work runs, then
+            # the final JSON-RPC response, on one SSE stream.
+            stream = _sse_stream(
+                server=server,
+                method=method,
+                params=params,
+                task_owner=task_owner,
+                subscriptions=subscriptions,
+                request_id=request_id,
+                should_persist_session=should_persist_session,
+                sid=sid,
+                store_session=_store_session,
+            )
+            response = StreamingResponse(stream, media_type="text/event-stream")
             return _attach_session(response, sid, request)
 
         # Blocking JSON path (default). Dispatch runs in a worker thread

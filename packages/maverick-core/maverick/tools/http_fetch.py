@@ -365,17 +365,13 @@ def _check_robots(url: str, user_agent: str = "Maverick") -> bool:
     return allowed
 
 
-def _run_fetch(args: dict[str, Any]) -> str:  # noqa: C901
+def _preflight_fetch(url: str, parsed: Any) -> str | None:
+    """Run egress/private-IP/robots/policy/chaos preflight checks.
+
+    Returns an ``ERROR: ...`` string if the fetch must be refused, else None.
+    """
     import os
 
-    url = (args.get("url") or "").strip()
-    if not url:
-        return "ERROR: url is required"
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        return f"ERROR: only http/https supported; got scheme={parsed.scheme!r}"
-    if not parsed.netloc:
-        return "ERROR: missing host in URL"
     # Enterprise mode: tool egress is held to local/allow-listed hosts so the data
     # boundary covers tools too, not just the LLM call. Run this before any
     # hostname-resolution or robots.txt preflight so a denied URL cannot leak via
@@ -415,9 +411,57 @@ def _run_fetch(args: dict[str, Any]) -> str:  # noqa: C901
         maybe_fail("http_fetch", message=f"chaos: http_fetch on {url[:60]!r}")
     except ImportError:
         pass
+    return None
+
+
+def _stream_fetch(method: str, url: str, headers: dict, body: Any, max_bytes: int) -> Any:
+    """Stream a request with a hard byte ceiling.
+
+    Returns an ``ERROR: ...`` string (blocked host / HTTP error) or a tuple of
+    the response metadata + raw bytes + truncated flag.
+    """
+    import httpx
+
+    from ._ssrf import BlockedHost, safe_client
+    try:
+        with safe_client(url, timeout=30.0) as client:
+            with client.stream(method, url, headers=headers, content=body) as resp:
+                status_code = resp.status_code
+                reason_phrase = resp.reason_phrase
+                resp_url = resp.url
+                encoding = resp.encoding
+                content_type = (resp.headers.get("content-type") or "").lower()
+                buf = bytearray()
+                truncated = False
+                for chunk in resp.iter_bytes():
+                    buf += chunk
+                    if len(buf) >= max_bytes:
+                        truncated = True
+                        break
+    except BlockedHost as e:
+        return f"ERROR: refusing to fetch {url!r}: {e}"
+    except httpx.HTTPError as e:
+        return f"ERROR: {type(e).__name__}: {e}"
+    return (status_code, reason_phrase, resp_url, encoding, content_type,
+            bytes(buf[:max_bytes]), truncated)
+
+
+def _run_fetch(args: dict[str, Any]) -> str:
+    url = (args.get("url") or "").strip()
+    if not url:
+        return "ERROR: url is required"
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return f"ERROR: only http/https supported; got scheme={parsed.scheme!r}"
+    if not parsed.netloc:
+        return "ERROR: missing host in URL"
+
+    preflight_error = _preflight_fetch(url, parsed)
+    if preflight_error is not None:
+        return preflight_error
 
     try:
-        import httpx
+        import httpx  # noqa: F401
     except ImportError:
         return "ERROR: httpx not installed. Run: pip install 'maverick-agent[session]'"
 
@@ -439,28 +483,11 @@ def _run_fetch(args: dict[str, Any]) -> str:  # noqa: C901
     # model-supplied URL to a multi-GB / endless body could exhaust memory
     # (max_bytes bounded only the returned text, not the download). Read at
     # most max_bytes off the wire, then stop and mark the result truncated.
-    from ._ssrf import BlockedHost, safe_client
-    try:
-        with safe_client(url, timeout=30.0) as client:
-            with client.stream(method, url, headers=headers, content=body) as resp:
-                status_code = resp.status_code
-                reason_phrase = resp.reason_phrase
-                resp_url = resp.url
-                encoding = resp.encoding
-                content_type = (resp.headers.get("content-type") or "").lower()
-                buf = bytearray()
-                truncated = False
-                for chunk in resp.iter_bytes():
-                    buf += chunk
-                    if len(buf) >= max_bytes:
-                        truncated = True
-                        break
-    except BlockedHost as e:
-        return f"ERROR: refusing to fetch {url!r}: {e}"
-    except httpx.HTTPError as e:
-        return f"ERROR: {type(e).__name__}: {e}"
-
-    raw_bytes = bytes(buf[:max_bytes])
+    streamed = _stream_fetch(method, url, headers, body, max_bytes)
+    if isinstance(streamed, str):
+        return streamed
+    (status_code, reason_phrase, resp_url, encoding, content_type,
+     raw_bytes, truncated) = streamed
     # Per-host egress accounting (always-on, in-memory; never breaks a fetch).
     try:
         from ..egress_accounting import record as _egress_record

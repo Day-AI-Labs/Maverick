@@ -79,7 +79,73 @@ def _tombstone(event: dict, channel: str, user_id: str) -> dict:
     return out
 
 
-def _process_file(  # noqa: C901
+def _scan_rows(
+    original: str, channel: str, user_id: str,
+) -> tuple[list[tuple[str, dict | None]], int, bool]:
+    """Parse NDJSON lines into rows. Returns (rows, matched, any_signed)."""
+    rows: list[tuple[str, dict | None]] = []
+    matched = 0
+    any_signed = False
+    for raw in original.splitlines(keepends=True):
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError:
+            rows.append((raw, None))
+            continue
+        if event.get("sig") and event.get("hash") and event.get("key_id"):
+            any_signed = True
+        if _event_matches(event, channel, user_id):
+            matched += 1
+        rows.append((raw, event))
+    return rows, matched, any_signed
+
+
+def _verify_signed_chain(path: Path, rows: list[tuple[str, dict | None]]) -> bool:
+    """Validate a signed chain before the authorized erase. False = abort."""
+    try:
+        from .signing import verify_chain
+
+        breaks = verify_chain(path)
+    except Exception as e:  # pragma: no cover - defensive/crypto missing
+        log.warning("audit erase: could not verify %s before rewrite: %s", path, e)
+        return False
+    if breaks:
+        log.warning(
+            "audit erase: refusing to rewrite %s; signed chain is not clean (%s)",
+            path,
+            breaks[0],
+        )
+        return False
+    return True
+
+
+def _build_parts(
+    rows: list[tuple[str, dict | None]],
+    channel: str,
+    user_id: str,
+    *,
+    delete: bool,
+) -> tuple[list[str], int]:
+    """Rebuild NDJSON, tombstoning or dropping matches. Returns (parts, written)."""
+    parts: list[str] = []
+    written = 0
+    for raw, event in rows:
+        if event is None:
+            parts.append(raw)
+            written += 1
+            continue
+        if not _event_matches(event, channel, user_id):
+            parts.append(raw)
+            written += 1
+            continue
+        if delete:
+            continue
+        parts.append(json.dumps(_tombstone(event, channel, user_id), default=str) + "\n")
+        written += 1
+    return parts, written
+
+
+def _process_file(
     path: Path,
     channel: str,
     user_id: str,
@@ -103,20 +169,7 @@ def _process_file(  # noqa: C901
     was_sealed = is_sealed(raw)
     original = segment_text(path)
 
-    rows: list[tuple[str, dict | None]] = []
-    matched = 0
-    any_signed = False
-    for raw in original.splitlines(keepends=True):
-        try:
-            event = json.loads(raw)
-        except json.JSONDecodeError:
-            rows.append((raw, None))
-            continue
-        if event.get("sig") and event.get("hash") and event.get("key_id"):
-            any_signed = True
-        if _event_matches(event, channel, user_id):
-            matched += 1
-        rows.append((raw, event))
+    rows, matched, any_signed = _scan_rows(original, channel, user_id)
 
     if matched == 0:
         return 0, len(rows)
@@ -124,37 +177,10 @@ def _process_file(  # noqa: C901
     # If this is a signed audit file, validate it before making the authorized
     # erase mutation. Re-anchoring after the rewrite may only bless changes we
     # just made to a previously clean chain, never unrelated old tampering.
-    if any_signed:
-        try:
-            from .signing import verify_chain
+    if any_signed and not _verify_signed_chain(path, rows):
+        return 0, len(rows)
 
-            breaks = verify_chain(path)
-        except Exception as e:  # pragma: no cover - defensive/crypto missing
-            log.warning("audit erase: could not verify %s before rewrite: %s", path, e)
-            return 0, len(rows)
-        if breaks:
-            log.warning(
-                "audit erase: refusing to rewrite %s; signed chain is not clean (%s)",
-                path,
-                breaks[0],
-            )
-            return 0, len(rows)
-
-    parts: list[str] = []
-    written = 0
-    for raw, event in rows:
-        if event is None:
-            parts.append(raw)
-            written += 1
-            continue
-        if not _event_matches(event, channel, user_id):
-            parts.append(raw)
-            written += 1
-            continue
-        if delete:
-            continue
-        parts.append(json.dumps(_tombstone(event, channel, user_id), default=str) + "\n")
-        written += 1
+    parts, written = _build_parts(rows, channel, user_id, delete=delete)
 
     # Re-seal the rewritten NDJSON when the source segment was sealed, so an
     # authorized erase scrubs the data without exposing the rest of a

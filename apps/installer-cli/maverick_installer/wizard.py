@@ -606,7 +606,128 @@ _ALLOWLIST_HINT = {
 }
 
 
-def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]:  # noqa: C901
+def _channel_base_cfg(ch_id: str, envs: set[str]) -> dict[str, Any]:
+    """Build the channel-specific config for ``ch_id`` (excluding allowlists).
+
+    May add provider-specific env vars to ``envs`` (e.g. voice keys).
+    """
+    cfg: dict[str, Any] = {"enabled": True}
+
+    if ch_id == "telegram":
+        cfg["bot_token"] = "${TELEGRAM_BOT_TOKEN}"
+    elif ch_id == "discord":
+        cfg["bot_token"] = "${DISCORD_BOT_TOKEN}"
+    elif ch_id == "slack":
+        cfg["app_token"] = "${SLACK_APP_TOKEN}"
+        cfg["bot_token"] = "${SLACK_BOT_TOKEN}"
+    elif ch_id == "signal":
+        cfg["phone_number"] = _q_text(
+            "  Signal phone number (e.g., +12345550199)", default=""
+        )
+    elif ch_id == "email":
+        cfg["imap_host"] = _q_text("  IMAP server", default="imap.gmail.com")
+        cfg["smtp_host"] = _q_text("  SMTP server", default="smtp.gmail.com")
+        cfg["smtp_port"] = _safe_int(_q_text("  SMTP port", default="465"), default=465)
+        cfg["imap_user"] = "${EMAIL_USER}"
+        cfg["imap_password"] = "${EMAIL_APP_PASSWORD}"
+        cfg["smtp_user"] = "${EMAIL_USER}"
+        cfg["smtp_password"] = "${EMAIL_APP_PASSWORD}"
+        cfg["poll_interval"] = 30
+    elif ch_id == "matrix":
+        cfg["homeserver"] = _q_text("  Matrix homeserver URL", default="https://matrix.org")
+        cfg["user_id"] = _q_text("  Matrix user ID (e.g., @you:matrix.org)", default="")
+        cfg["access_token"] = "${MATRIX_ACCESS_TOKEN}"
+    elif ch_id == "bluesky":
+        cfg["handle"] = "${BLUESKY_HANDLE}"
+        cfg["password"] = "${BLUESKY_PASSWORD}"
+        cfg["poll_interval"] = 60
+    elif ch_id == "mastodon":
+        cfg["instance"] = _q_text(
+            "  Mastodon instance URL", default="https://mastodon.social",
+        )
+        cfg["access_token"] = "${MASTODON_ACCESS_TOKEN}"
+        cfg["poll_interval"] = 30
+    elif ch_id == "voice":
+        provider = (_q_text(
+            "  Voice provider (vapi, retell, bland)", default="vapi",
+        ).strip().lower() or "vapi")
+        cfg["provider"] = provider
+        key_env = {
+            "vapi": "VAPI_API_KEY",
+            "retell": "RETELL_API_KEY",
+            "bland": "BLAND_API_KEY",
+        }.get(provider, "VAPI_API_KEY")
+        # Collect the provider-specific key so the wizard actually prompts
+        # for it; otherwise a retell/bland config references ${RETELL_API_KEY}
+        # / ${BLAND_API_KEY} that the user was never asked to enter.
+        envs.add(key_env)
+        cfg["api_key"] = "${" + key_env + "}"
+        # Inbound webhook auth is Vapi-shaped today; keep the token ref.
+        cfg["webhook_token"] = "${VAPI_WEBHOOK_TOKEN}"
+        cfg["phone_number"] = _q_text(
+            "  Phone number (E.164, optional)", default="",
+        )
+        cfg["assistant_id"] = _q_text(
+            "  Assistant/agent ID (optional)", default="",
+        )
+        cfg["port"] = _safe_int(
+            _q_text("  Webhook port", default="8770"), default=8770,
+        )
+    elif ch_id == "whatsapp":
+        cfg["account_sid"] = "${TWILIO_ACCOUNT_SID}"
+        cfg["auth_token"] = "${TWILIO_AUTH_TOKEN}"
+        cfg["from_number"] = _q_text(
+            "  WhatsApp 'from' (e.g., whatsapp:+14155238886)", default=""
+        )
+        cfg["port"] = _safe_int(_q_text("  Webhook port", default="8765"), default=8765)
+    elif ch_id == "sms":
+        cfg["account_sid"] = "${TWILIO_ACCOUNT_SID}"
+        cfg["auth_token"] = "${TWILIO_AUTH_TOKEN}"
+        cfg["from_number"] = _q_text(
+            "  SMS 'from' number (e.g., +14155551234)", default=""
+        )
+        cfg["port"] = _safe_int(_q_text("  Webhook port", default="8766"), default=8766)
+    elif ch_id == "imessage":
+        cfg["poll_interval"] = 5
+
+    return cfg
+
+
+def _channel_allowlist(ch_id: str, cfg: dict[str, Any]) -> None:
+    """Prompt for and apply per-channel sender allowlists in-place on ``cfg``."""
+    if ch_id in _ALLOWLIST_CHANNELS:
+        hint = _ALLOWLIST_HINT.get(ch_id, "sender IDs")
+        raw_ids = _q_text(
+            f"  Allowed senders, comma-separated ({hint}) — "
+            "only these can drive the agent",
+            default="",
+        )
+        ids = [s.strip() for s in raw_ids.split(",") if s.strip()]
+        if ids:
+            cfg["allowed_user_ids"] = ids
+        else:
+            env_name = (
+                "IRC_ALLOWED_ACCOUNTS"
+                if ch_id == "irc"
+                else ch_id.upper() + "_ALLOWED_USER_IDS"
+            )
+            console.print(
+                "  [yellow]No allowlist set — this channel will refuse "
+                f"all senders until you set {env_name} "
+                "or add allowed_user_ids to config.[/yellow]"
+            )
+    elif ch_id == "voice":
+        raw = _q_text(
+            "  Allowed caller numbers (E.164, comma-separated; "
+            "blank = any authenticated caller)",
+            default="",
+        )
+        callers = [x.strip() for x in raw.split(",") if x.strip()]
+        if callers:
+            cfg["allowed_callers"] = callers
+
+
+def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]:
     """Returns (channels_config, env_vars_needed)."""
     console.print()
     if deployment == "desktop":
@@ -645,115 +766,8 @@ def pick_channels(deployment: str) -> tuple[dict[str, dict[str, Any]], set[str]]
             continue
         envs.update(info[2])
 
-        cfg: dict[str, Any] = {"enabled": True}
-
-        if ch_id == "telegram":
-            cfg["bot_token"] = "${TELEGRAM_BOT_TOKEN}"
-        elif ch_id == "discord":
-            cfg["bot_token"] = "${DISCORD_BOT_TOKEN}"
-        elif ch_id == "slack":
-            cfg["app_token"] = "${SLACK_APP_TOKEN}"
-            cfg["bot_token"] = "${SLACK_BOT_TOKEN}"
-        elif ch_id == "signal":
-            cfg["phone_number"] = _q_text(
-                "  Signal phone number (e.g., +12345550199)", default=""
-            )
-        elif ch_id == "email":
-            cfg["imap_host"] = _q_text("  IMAP server", default="imap.gmail.com")
-            cfg["smtp_host"] = _q_text("  SMTP server", default="smtp.gmail.com")
-            cfg["smtp_port"] = _safe_int(_q_text("  SMTP port", default="465"), default=465)
-            cfg["imap_user"] = "${EMAIL_USER}"
-            cfg["imap_password"] = "${EMAIL_APP_PASSWORD}"
-            cfg["smtp_user"] = "${EMAIL_USER}"
-            cfg["smtp_password"] = "${EMAIL_APP_PASSWORD}"
-            cfg["poll_interval"] = 30
-        elif ch_id == "matrix":
-            cfg["homeserver"] = _q_text("  Matrix homeserver URL", default="https://matrix.org")
-            cfg["user_id"] = _q_text("  Matrix user ID (e.g., @you:matrix.org)", default="")
-            cfg["access_token"] = "${MATRIX_ACCESS_TOKEN}"
-        elif ch_id == "bluesky":
-            cfg["handle"] = "${BLUESKY_HANDLE}"
-            cfg["password"] = "${BLUESKY_PASSWORD}"
-            cfg["poll_interval"] = 60
-        elif ch_id == "mastodon":
-            cfg["instance"] = _q_text(
-                "  Mastodon instance URL", default="https://mastodon.social",
-            )
-            cfg["access_token"] = "${MASTODON_ACCESS_TOKEN}"
-            cfg["poll_interval"] = 30
-        elif ch_id == "voice":
-            provider = (_q_text(
-                "  Voice provider (vapi, retell, bland)", default="vapi",
-            ).strip().lower() or "vapi")
-            cfg["provider"] = provider
-            key_env = {
-                "vapi": "VAPI_API_KEY",
-                "retell": "RETELL_API_KEY",
-                "bland": "BLAND_API_KEY",
-            }.get(provider, "VAPI_API_KEY")
-            # Collect the provider-specific key so the wizard actually prompts
-            # for it; otherwise a retell/bland config references ${RETELL_API_KEY}
-            # / ${BLAND_API_KEY} that the user was never asked to enter.
-            envs.add(key_env)
-            cfg["api_key"] = "${" + key_env + "}"
-            # Inbound webhook auth is Vapi-shaped today; keep the token ref.
-            cfg["webhook_token"] = "${VAPI_WEBHOOK_TOKEN}"
-            cfg["phone_number"] = _q_text(
-                "  Phone number (E.164, optional)", default="",
-            )
-            cfg["assistant_id"] = _q_text(
-                "  Assistant/agent ID (optional)", default="",
-            )
-            cfg["port"] = _safe_int(
-                _q_text("  Webhook port", default="8770"), default=8770,
-            )
-        elif ch_id == "whatsapp":
-            cfg["account_sid"] = "${TWILIO_ACCOUNT_SID}"
-            cfg["auth_token"] = "${TWILIO_AUTH_TOKEN}"
-            cfg["from_number"] = _q_text(
-                "  WhatsApp 'from' (e.g., whatsapp:+14155238886)", default=""
-            )
-            cfg["port"] = _safe_int(_q_text("  Webhook port", default="8765"), default=8765)
-        elif ch_id == "sms":
-            cfg["account_sid"] = "${TWILIO_ACCOUNT_SID}"
-            cfg["auth_token"] = "${TWILIO_AUTH_TOKEN}"
-            cfg["from_number"] = _q_text(
-                "  SMS 'from' number (e.g., +14155551234)", default=""
-            )
-            cfg["port"] = _safe_int(_q_text("  Webhook port", default="8766"), default=8766)
-        elif ch_id == "imessage":
-            cfg["poll_interval"] = 5
-
-        if ch_id in _ALLOWLIST_CHANNELS:
-            hint = _ALLOWLIST_HINT.get(ch_id, "sender IDs")
-            raw_ids = _q_text(
-                f"  Allowed senders, comma-separated ({hint}) — "
-                "only these can drive the agent",
-                default="",
-            )
-            ids = [s.strip() for s in raw_ids.split(",") if s.strip()]
-            if ids:
-                cfg["allowed_user_ids"] = ids
-            else:
-                env_name = (
-                    "IRC_ALLOWED_ACCOUNTS"
-                    if ch_id == "irc"
-                    else ch_id.upper() + "_ALLOWED_USER_IDS"
-                )
-                console.print(
-                    "  [yellow]No allowlist set — this channel will refuse "
-                    f"all senders until you set {env_name} "
-                    "or add allowed_user_ids to config.[/yellow]"
-                )
-        elif ch_id == "voice":
-            raw = _q_text(
-                "  Allowed caller numbers (E.164, comma-separated; "
-                "blank = any authenticated caller)",
-                default="",
-            )
-            callers = [x.strip() for x in raw.split(",") if x.strip()]
-            if callers:
-                cfg["allowed_callers"] = callers
+        cfg = _channel_base_cfg(ch_id, envs)
+        _channel_allowlist(ch_id, cfg)
 
         channels[ch_id] = cfg
 
@@ -3177,7 +3191,150 @@ def show_compliance_commands(advanced: dict[str, Any]) -> None:
     ))
 
 
-def run(fast: bool = False, resume: bool = False) -> int:  # noqa: C901
+def _run_simple_picks(state: dict[str, Any], _announce) -> dict[str, Any]:
+    """Run the contiguous block of single-answer ``state.get(x) or pick_x()``
+    steps (safety through advanced), persisting each. Returns the answers."""
+    _announce()
+    safety = state.get("safety") or pick_safety()
+    state["safety"] = safety
+    _save_partial(state)
+
+    _announce()
+    signed_skills = state.get("signed_skills") or pick_signed_skills()
+    state["signed_skills"] = signed_skills
+    _save_partial(state)
+
+    _announce()
+    budget = state.get("budget") or pick_budget()
+    state["budget"] = budget
+    _save_partial(state)
+
+    _announce()
+    sandbox = state.get("sandbox") or pick_sandbox()
+    state["sandbox"] = sandbox
+    _save_partial(state)
+
+    _announce()
+    capabilities = state.get("capabilities") or pick_capabilities()
+    state["capabilities"] = capabilities
+    _save_partial(state)
+
+    _announce()
+    self_learning = state.get("self_learning") or pick_self_learning()
+    state["self_learning"] = self_learning
+    _save_partial(state)
+
+    _announce()
+    durable = state.get("durable") or pick_durable()
+    state["durable"] = durable
+    _save_partial(state)
+
+    _announce()
+    finance = state.get("finance") or pick_finance()
+    state["finance"] = finance
+    _save_partial(state)
+
+    _announce()
+    advanced = state.get("advanced") or pick_advanced()
+    state["advanced"] = advanced
+    _save_partial(state)
+
+    return {
+        "safety": safety,
+        "signed_skills": signed_skills,
+        "budget": budget,
+        "sandbox": sandbox,
+        "capabilities": capabilities,
+        "self_learning": self_learning,
+        "durable": durable,
+        "finance": finance,
+        "advanced": advanced,
+    }
+
+
+def _run_plugin_picks(
+    state: dict[str, Any], _announce, channels: dict[str, Any]
+) -> dict[str, Any]:
+    """Run the plugin/ACL/policy block (mcp_servers through analytics).
+
+    Uses the ``is None`` sentinel for steps whose legitimate answer is falsy.
+    Returns the answers needed downstream by ``write_config``.
+    """
+    # NOTE: these steps use the `is None` sentinel (not `or`) because a
+    # legitimately-declined answer is falsy ({}/[]); the `or` pattern treated
+    # "I chose nothing" as "unanswered" and re-prompted it on --resume.
+    _announce()
+    mcp_servers = state.get("mcp_servers")
+    if mcp_servers is None:
+        mcp_servers = pick_mcp_servers()
+        state["mcp_servers"] = mcp_servers
+        _save_partial(state)
+
+    _announce()
+    plugins = state.get("plugins")
+    if plugins is None:
+        plugins = pick_plugins()
+        state["plugins"] = plugins
+        _save_partial(state)
+
+    ts_plugins = state.get("ts_plugins")
+    if ts_plugins is None:
+        ts_plugins = pick_ts_plugins()
+        state["ts_plugins"] = ts_plugins
+        _save_partial(state)
+
+    # Only ask about plugin permissions when at least one plugin is enabled --
+    # most setups have none, so the step is skipped entirely.
+    plugin_grant = state.get("plugin_grant")
+    plugin_enforce = state.get("plugin_enforce", False)
+    if plugins and plugin_grant is None:
+        plugin_grant, plugin_enforce = pick_plugin_permissions()
+        state["plugin_grant"] = plugin_grant
+        state["plugin_enforce"] = plugin_enforce
+        _save_partial(state)
+
+    _announce()
+    tool_acl = state.get("tool_acl")
+    if tool_acl is None:
+        tool_acl = pick_tool_acl(channels)
+        state["tool_acl"] = tool_acl
+        _save_partial(state)
+
+    _announce()
+    rate_limits = state.get("rate_limits")
+    if rate_limits is None:
+        rate_limits = pick_rate_limits(channels)
+        state["rate_limits"] = rate_limits
+        _save_partial(state)
+
+    _announce()
+    retention = state.get("retention")
+    if retention is None:
+        retention = pick_retention()
+        state["retention"] = retention
+        _save_partial(state)
+
+    _announce()
+    analytics = state.get("analytics")
+    if analytics is None:
+        analytics = pick_analytics()
+        state["analytics"] = analytics
+        _save_partial(state)
+
+    return {
+        "mcp_servers": mcp_servers,
+        "plugins": plugins,
+        "ts_plugins": ts_plugins,
+        "plugin_grant": plugin_grant,
+        "plugin_enforce": plugin_enforce,
+        "tool_acl": tool_acl,
+        "rate_limits": rate_limits,
+        "retention": retention,
+        "analytics": analytics,
+    }
+
+
+def run(fast: bool = False, resume: bool = False) -> int:
     if fast:
         return run_fast()
     # A non-interactive stdin (CI, Docker build, `... | maverick init`) can't
@@ -3269,50 +3426,16 @@ def run(fast: bool = False, resume: bool = False) -> int:  # noqa: C901
         channels = channels_state
         channel_envs = set(state.get("channel_envs") or [])
 
-    _announce()
-    safety = state.get("safety") or pick_safety()
-    state["safety"] = safety
-    _save_partial(state)
-
-    _announce()
-    signed_skills = state.get("signed_skills") or pick_signed_skills()
-    state["signed_skills"] = signed_skills
-    _save_partial(state)
-
-    _announce()
-    budget = state.get("budget") or pick_budget()
-    state["budget"] = budget
-    _save_partial(state)
-
-    _announce()
-    sandbox = state.get("sandbox") or pick_sandbox()
-    state["sandbox"] = sandbox
-    _save_partial(state)
-
-    _announce()
-    capabilities = state.get("capabilities") or pick_capabilities()
-    state["capabilities"] = capabilities
-    _save_partial(state)
-
-    _announce()
-    self_learning = state.get("self_learning") or pick_self_learning()
-    state["self_learning"] = self_learning
-    _save_partial(state)
-
-    _announce()
-    durable = state.get("durable") or pick_durable()
-    state["durable"] = durable
-    _save_partial(state)
-
-    _announce()
-    finance = state.get("finance") or pick_finance()
-    state["finance"] = finance
-    _save_partial(state)
-
-    _announce()
-    advanced = state.get("advanced") or pick_advanced()
-    state["advanced"] = advanced
-    _save_partial(state)
+    _simple = _run_simple_picks(state, _announce)
+    safety = _simple["safety"]
+    signed_skills = _simple["signed_skills"]
+    budget = _simple["budget"]
+    sandbox = _simple["sandbox"]
+    capabilities = _simple["capabilities"]
+    self_learning = _simple["self_learning"]
+    durable = _simple["durable"]
+    finance = _simple["finance"]
+    advanced = _simple["advanced"]
 
     _announce()
     web_search_enabled, web_search_envs = (
@@ -3321,66 +3444,16 @@ def run(fast: bool = False, resume: bool = False) -> int:  # noqa: C901
     state["_web_search_pair"] = [web_search_enabled, web_search_envs]
     _save_partial(state)
 
-    # NOTE: these steps use the `is None` sentinel (not `or`) because a
-    # legitimately-declined answer is falsy ({}/[]); the `or` pattern treated
-    # "I chose nothing" as "unanswered" and re-prompted it on --resume.
-    _announce()
-    mcp_servers = state.get("mcp_servers")
-    if mcp_servers is None:
-        mcp_servers = pick_mcp_servers()
-        state["mcp_servers"] = mcp_servers
-        _save_partial(state)
-
-    _announce()
-    plugins = state.get("plugins")
-    if plugins is None:
-        plugins = pick_plugins()
-        state["plugins"] = plugins
-        _save_partial(state)
-
-    ts_plugins = state.get("ts_plugins")
-    if ts_plugins is None:
-        ts_plugins = pick_ts_plugins()
-        state["ts_plugins"] = ts_plugins
-        _save_partial(state)
-
-    # Only ask about plugin permissions when at least one plugin is enabled --
-    # most setups have none, so the step is skipped entirely.
-    plugin_grant = state.get("plugin_grant")
-    plugin_enforce = state.get("plugin_enforce", False)
-    if plugins and plugin_grant is None:
-        plugin_grant, plugin_enforce = pick_plugin_permissions()
-        state["plugin_grant"] = plugin_grant
-        state["plugin_enforce"] = plugin_enforce
-        _save_partial(state)
-
-    _announce()
-    tool_acl = state.get("tool_acl")
-    if tool_acl is None:
-        tool_acl = pick_tool_acl(channels)
-        state["tool_acl"] = tool_acl
-        _save_partial(state)
-
-    _announce()
-    rate_limits = state.get("rate_limits")
-    if rate_limits is None:
-        rate_limits = pick_rate_limits(channels)
-        state["rate_limits"] = rate_limits
-        _save_partial(state)
-
-    _announce()
-    retention = state.get("retention")
-    if retention is None:
-        retention = pick_retention()
-        state["retention"] = retention
-        _save_partial(state)
-
-    _announce()
-    analytics = state.get("analytics")
-    if analytics is None:
-        analytics = pick_analytics()
-        state["analytics"] = analytics
-        _save_partial(state)
+    _plugins_block = _run_plugin_picks(state, _announce, channels)
+    mcp_servers = _plugins_block["mcp_servers"]
+    plugins = _plugins_block["plugins"]
+    ts_plugins = _plugins_block["ts_plugins"]
+    plugin_grant = _plugins_block["plugin_grant"]
+    plugin_enforce = _plugins_block["plugin_enforce"]
+    tool_acl = _plugins_block["tool_acl"]
+    rate_limits = _plugins_block["rate_limits"]
+    retention = _plugins_block["retention"]
+    analytics = _plugins_block["analytics"]
 
     _announce()
     persona = state.get("persona")

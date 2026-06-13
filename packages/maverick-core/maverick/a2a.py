@@ -210,7 +210,64 @@ def mount(app: Any) -> None:
     _mount_task_endpoint(app)
 
 
-def _mount_task_endpoint(app: Any) -> None:  # noqa: C901
+# A2A JSON-RPC bodies are small task envelopes. Cap them with the same
+# 256 KiB limit the dashboard webhooks use so an (optionally
+# unauthenticated) caller can't force the server to buffer an arbitrarily
+# large request body. ``request.json()`` buffers the whole body before
+# parsing, so enforce the cap on the raw stream first.
+_MAX_A2A_BODY_BYTES = 256 * 1024
+
+
+def _rpc_result(req_id: Any, result: Any) -> dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": req_id, "result": result}
+
+
+def _rpc_error(req_id: Any, code: int, message: str) -> dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": req_id,
+            "error": {"code": code, "message": message}}
+
+
+async def _read_limited_body(request) -> bytes | None:
+    """Read the body with a hard size cap; return None if it's too large."""
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > _MAX_A2A_BODY_BYTES:
+                return None
+        except ValueError:
+            return None
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > _MAX_A2A_BODY_BYTES:
+            return None
+    return bytes(body)
+
+
+async def _a2a_dispatch_unary(engine, _RpcError, JSONResponse, method, params,
+                              principal, req_id):
+    """Run a non-streaming JSON-RPC method and wrap it in a JSONResponse."""
+    try:
+        if method == "message/send":
+            result = await engine.send(params, principal)
+        elif method == "tasks/get":
+            result = engine.get(params, principal)
+        elif method == "tasks/cancel":
+            result = engine.cancel(params, principal)
+        elif method == "tasks/pushNotificationConfig/set":
+            result = engine.set_push_config(params, principal)
+        elif method == "tasks/pushNotificationConfig/get":
+            result = engine.get_push_config(params, principal)
+        else:
+            return JSONResponse(
+                _rpc_error(req_id, -32601, f"method not found: {method}")
+            )
+    except _RpcError as e:
+        return JSONResponse(_rpc_error(req_id, e.code, e.message))
+    return JSONResponse(_rpc_result(req_id, result))
+
+
+def _mount_task_endpoint(app: Any) -> None:
     """Register the A2A JSON-RPC task endpoint at ``POST /a2a/v1``.
 
     Imports FastAPI lazily so the kernel still imports without it; this
@@ -223,36 +280,6 @@ def _mount_task_endpoint(app: Any) -> None:  # noqa: C901
     from .a2a_tasks import STREAM_METHODS, TaskEngine, _RpcError
 
     engine = TaskEngine()
-
-    # A2A JSON-RPC bodies are small task envelopes. Cap them with the same
-    # 256 KiB limit the dashboard webhooks use so an (optionally
-    # unauthenticated) caller can't force the server to buffer an arbitrarily
-    # large request body. ``request.json()`` buffers the whole body before
-    # parsing, so enforce the cap on the raw stream first.
-    _MAX_A2A_BODY_BYTES = 256 * 1024
-
-    async def _read_limited_body(request) -> bytes | None:
-        """Read the body with a hard size cap; return None if it's too large."""
-        content_length = request.headers.get("content-length")
-        if content_length:
-            try:
-                if int(content_length) > _MAX_A2A_BODY_BYTES:
-                    return None
-            except ValueError:
-                return None
-        body = bytearray()
-        async for chunk in request.stream():
-            body.extend(chunk)
-            if len(body) > _MAX_A2A_BODY_BYTES:
-                return None
-        return bytes(body)
-
-    def _rpc_result(req_id: Any, result: Any) -> dict[str, Any]:
-        return {"jsonrpc": "2.0", "id": req_id, "result": result}
-
-    def _rpc_error(req_id: Any, code: int, message: str) -> dict[str, Any]:
-        return {"jsonrpc": "2.0", "id": req_id,
-                "error": {"code": code, "message": message}}
 
     def _sse(obj: dict[str, Any]) -> str:
         return f"data: {_json.dumps(obj)}\n\n"
@@ -300,23 +327,8 @@ def _mount_task_endpoint(app: Any) -> None:  # noqa: C901
                     yield _sse(_rpc_error(req_id, e.code, e.message))
             return StreamingResponse(_gen(), media_type="text/event-stream")
 
-        try:
-            if method == "message/send":
-                result = await engine.send(params, principal)
-            elif method == "tasks/get":
-                result = engine.get(params, principal)
-            elif method == "tasks/cancel":
-                result = engine.cancel(params, principal)
-            elif method == "tasks/pushNotificationConfig/set":
-                result = engine.set_push_config(params, principal)
-            elif method == "tasks/pushNotificationConfig/get":
-                result = engine.get_push_config(params, principal)
-            else:
-                return JSONResponse(
-                    _rpc_error(req_id, -32601, f"method not found: {method}")
-                )
-        except _RpcError as e:
-            return JSONResponse(_rpc_error(req_id, e.code, e.message))
-        return JSONResponse(_rpc_result(req_id, result))
+        return await _a2a_dispatch_unary(
+            engine, _RpcError, JSONResponse, method, params, principal, req_id
+        )
 
     app.add_route("/a2a/v1", _a2a_rpc, methods=["POST"])
