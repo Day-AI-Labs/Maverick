@@ -5,9 +5,9 @@
   .gb-wrap { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 1rem; }
   @media (max-width: 900px) { .gb-wrap { grid-template-columns: 1fr; } }
   .gb-palette button { display: block; width: 100%; margin-bottom: 0.5rem; padding: 0.6rem 0.8rem; background: var(--panel); color: var(--text); border: 1px dashed var(--border); border-radius: 6px; cursor: grab; text-align: start; }
-  .gb-palette button:hover { border-color: var(--accent); }
+  .gb-palette button:hover { border-color: var(--brand); }
   #gb-canvas { list-style: none; margin: 0; padding: 0.5rem; min-height: 220px; border: 2px dashed var(--border); border-radius: 8px; }
-  #gb-canvas.dragover { border-color: var(--accent); }
+  #gb-canvas.dragover { border-color: var(--brand); }
   #gb-canvas li { display: flex; gap: 0.5rem; align-items: center; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.65rem; margin-bottom: 0.5rem; }
   #gb-canvas li.placeholder { border-style: dashed; color: var(--muted); justify-content: center; cursor: default; }
   #gb-canvas .kind { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); min-width: 4.2rem; }
@@ -48,7 +48,7 @@
       <pre id="gb-preview" aria-label="Assembled goal description preview"
            style="background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; min-height: 4rem; white-space: pre-wrap;">(add blocks to preview the brief)</pre>
       <button type="button" id="gb-submit"
-              style="padding: 0.6rem 1.5rem; background: var(--accent); color: #fff; border: 0; border-radius: 6px; cursor: pointer; font-weight: 500;">
+              style="padding: 0.6rem 1.5rem; background: var(--brand); color: var(--brand-fg); border: 0; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;">
         Create &amp; run goal
       </button>
       <p id="gb-error" role="alert" aria-live="assertive"
