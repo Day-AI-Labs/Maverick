@@ -48,7 +48,7 @@ def _fake_modal(created):
 
 def test_exec_runs_sh_dash_c(tmp_path):
     created: list = []
-    sb = ModalBackend(workdir=tmp_path, client=_fake_modal(created))
+    sb = ModalBackend(workdir=tmp_path, client=_fake_modal(created), allow_network=True)
     res = sb.exec("echo hi")
     assert res.exit_code == 0
     assert created[0].cmd == ("sh", "-c", "echo hi")
@@ -59,7 +59,8 @@ def test_exec_runs_sh_dash_c(tmp_path):
 def test_timeout_and_resources_plumbed(tmp_path):
     created: list = []
     sb = ModalBackend(workdir=tmp_path, client=_fake_modal(created),
-                      image="node:22", cpu=2.0, memory_mb=2048, timeout=30)
+                      image="node:22", cpu=2.0, memory_mb=2048, timeout=30,
+                      allow_network=True)
     sb.exec("npm test", timeout=90)
     kw = created[0].kwargs
     assert kw["timeout"] == 90
@@ -72,7 +73,7 @@ def test_infra_error_is_failed_command_not_crash(tmp_path):
         App = SimpleNamespace(lookup=lambda *a, **k: (_ for _ in ()).throw(
             RuntimeError("no modal token")))
 
-    sb = ModalBackend(workdir=tmp_path, client=_Boom())
+    sb = ModalBackend(workdir=tmp_path, client=_Boom(), allow_network=True)
     res = sb.exec("echo hi")
     assert res.exit_code == 125
     assert "modal sandbox error" in res.stderr
@@ -81,7 +82,7 @@ def test_infra_error_is_failed_command_not_crash(tmp_path):
 def test_missing_modal_actionable(tmp_path, monkeypatch):
     import sys
     monkeypatch.setitem(sys.modules, "modal", None)
-    sb = ModalBackend(workdir=tmp_path)
+    sb = ModalBackend(workdir=tmp_path, allow_network=True)
     res = sb.exec("echo hi")
     assert res.exit_code == 125 and "maverick-agent[modal]" in res.stderr
 
@@ -95,3 +96,19 @@ def test_build_sandbox_routes_modal(tmp_path, monkeypatch):
     import maverick.sandbox as s
     sb = s.build_sandbox(workdir=tmp_path, backend="modal")
     assert isinstance(sb, ModalBackend)
+
+
+def test_exec_fails_closed_when_network_disabled(tmp_path):
+    created: list = []
+    sb = ModalBackend(workdir=tmp_path, client=_fake_modal(created))
+    res = sb.exec("curl https://example.invalid")
+    assert res.exit_code == 2
+    assert "allow_network=false" in res.stderr
+    assert created == []
+
+
+def test_build_sandbox_modal_preserves_allow_network_default(tmp_path):
+    import maverick.sandbox as s
+    sb = s.build_sandbox(workdir=tmp_path, backend="modal")
+    assert isinstance(sb, ModalBackend)
+    assert sb.allow_network is False

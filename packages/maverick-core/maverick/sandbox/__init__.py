@@ -207,6 +207,7 @@ def build_sandbox(
         return ModalBackend(
             workdir=wd, image=_resolve_image(full_cfg), timeout=timeout,
             cpu=full_cfg.get("cpus"), memory_mb=full_cfg.get("memory_mb"),
+            allow_network=_config_bool(full_cfg.get("allow_network"), False),
         )
 
     if chosen.startswith("ep:"):
