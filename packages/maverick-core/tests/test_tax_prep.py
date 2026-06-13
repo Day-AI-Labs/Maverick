@@ -181,6 +181,56 @@ class TestExtractionConfidence:
         assert d.confidence == 0.0 and d.review_required is True
 
 
+class TestDuplicateDetection:
+    """A re-uploaded document double-counts income -- the engine must flag
+    likely duplicates while leaving genuine multi-source returns alone."""
+
+    _W2 = ("Form W-2 Wage and Tax Statement 2025\n"
+           "Box 1 Wages, tips: $85,000.00\n"
+           "Box 2 Federal income tax withheld: $9,000.00\n")
+
+    def test_duplicate_upload_is_flagged(self):
+        wp = Workpaper(filing_status="single", docs=[
+            extract(self._W2, label="w2.txt"),
+            extract(self._W2, label="w2_copy.txt")])
+        assert any("DUPLICATE" in i for i in compute_first_pass(wp).open_items)
+
+    def test_two_distinct_w2s_are_not_flagged_and_sum(self):
+        w2b = ("Form W-2 Wage and Tax Statement 2025\n"
+               "Box 1 Wages, tips: $40,000.00\n"
+               "Box 2 Federal income tax withheld: $3,000.00\n")
+        wp = Workpaper(filing_status="single", docs=[
+            extract(self._W2, label="job1"), extract(w2b, label="job2")])
+        draft = compute_first_pass(wp)
+        assert not any("DUPLICATE" in i for i in draft.open_items)
+        assert draft.total_income == 125000.0
+
+    def test_empty_unparsed_docs_are_not_grouped(self):
+        wp = Workpaper(filing_status="single",
+                       docs=[SourceDoc("UNKNOWN", "a"), SourceDoc("UNKNOWN", "b")])
+        assert not any("DUPLICATE" in i for i in missing_items(wp))
+
+
+class TestGarbageInputHandling:
+    """Bad inputs must never silently produce a wrong number."""
+
+    def test_negative_dependents_cannot_invent_a_credit_or_inflate_tax(self):
+        neg = compute_first_pass(Workpaper(
+            filing_status="single", dependents_under_17=-2,
+            docs=[SourceDoc("W-2", "a", wages=50000.0)]))
+        zero = compute_first_pass(Workpaper(
+            filing_status="single", dependents_under_17=0,
+            docs=[SourceDoc("W-2", "a", wages=50000.0)]))
+        assert neg.child_tax_credit == 0.0
+        assert neg.tax_after_credits == zero.tax_after_credits
+
+    def test_negative_extracted_figure_is_flagged(self):
+        d = compute_first_pass(Workpaper(
+            filing_status="single",
+            docs=[SourceDoc("W-2", "a", wages=-5000.0)]))
+        assert any("NEGATIVE" in i for i in d.open_items)
+
+
 class TestSeniorDeductionAndPayments:
     """The additional standard deduction (65+/blind), estimated payments, and
     the payments-sanity flag -- accuracy improvements for common real returns

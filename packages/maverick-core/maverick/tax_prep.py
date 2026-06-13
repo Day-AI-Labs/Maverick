@@ -508,6 +508,33 @@ def carried_figures(wp: Workpaper) -> list[tuple[str, float, str]]:
     return out
 
 
+def _money_fingerprint(d: SourceDoc) -> tuple:
+    """A document's identity for duplicate detection: type + every extracted
+    money figure (rounded). Two of a client's documents with the same type and
+    byte-identical figures are almost certainly the same form uploaded twice --
+    two real jobs would not share identical wages AND withholding."""
+    return (d.doc_type, round(d.wages, 2), round(d.interest, 2),
+            round(d.ordinary_dividends, 2), round(d.federal_withholding, 2),
+            round(d.nonemployee_comp, 2), round(d.mortgage_interest, 2),
+            round(d.retirement_gross, 2), round(d.social_security, 2),
+            round(d.unemployment, 2), round(d.state_withholding, 2))
+
+
+def duplicate_groups(wp: Workpaper) -> list[list[str]]:
+    """Groups of labels that look like the same document uploaded more than
+    once (same type, identical figures, and a non-zero headline figure so two
+    empty/unparsed docs don't count). Detection only -- the preparer decides
+    whether a match is a true duplicate or a coincidence."""
+    seen: dict[tuple, list[str]] = {}
+    for d in wp.docs:
+        fp = _money_fingerprint(d)
+        # Ignore all-zero fingerprints (UNKNOWN / unparsed): they would group
+        # unrelated empty docs together.
+        if any(fp[i] for i in range(1, len(fp))):
+            seen.setdefault(fp, []).append(_report_safe(d.label))
+    return [labels for labels in seen.values() if len(labels) > 1]
+
+
 def missing_items(wp: Workpaper) -> list[str]:
     """Completeness check: what a preparer would chase before computing."""
     items: list[str] = []
@@ -516,6 +543,11 @@ def missing_items(wp: Workpaper) -> list[str]:
                      f"(supported: {', '.join(FILING_STATUSES)})")
     if not wp.docs:
         items.append("no source documents provided")
+    for group in duplicate_groups(wp):
+        items.append(
+            "POSSIBLE DUPLICATE upload (same type, identical figures): "
+            + ", ".join(group) + " -- confirm whether to include both; a "
+            "re-upload double-counts income")
     for d in wp.docs:
         label = _report_safe(d.label)
         if d.doc_type == "UNKNOWN":
@@ -531,9 +563,16 @@ def missing_items(wp: Workpaper) -> list[str]:
         # 0.3) is surfaced for verification rather than carried as a silent
         # zero. UNKNOWN docs are already named above.
         elif d.doc_type != "UNKNOWN" and d.confidence <= 0.3:
-            items.append(f"{d.label} ({d.doc_type}): LOW EXTRACTION "
+            items.append(f"{label} ({d.doc_type}): LOW EXTRACTION "
                          "CONFIDENCE -- headline figure not read; verify the "
                          "document before relying on it")
+        # A negative income / withholding figure is almost always an
+        # extraction error (a stray minus, a bracketed loss); never let it
+        # flow into the totals as a silent reducer.
+        if min(d.wages, d.interest, d.ordinary_dividends, d.nonemployee_comp,
+               d.federal_withholding, d.state_withholding) < 0:
+            items.append(f"{label}: NEGATIVE figure extracted -- verify the "
+                         "document (likely an extraction error)")
     return items
 
 
@@ -584,7 +623,9 @@ def compute_first_pass(wp: Workpaper, *, constants: dict = TY2025) -> Draft1040:
 
     # Child tax credit with the 5% phaseout, capped at tax (nonrefundable
     # portion only -- the additional CTC is an open item for the preparer).
-    ctc = constants["ctc_per_child"] * wp.dependents_under_17
+    # Dependents are clamped at 0 so a bad input can never invent a negative
+    # credit (which would otherwise inflate the tax).
+    ctc = constants["ctc_per_child"] * max(0, wp.dependents_under_17)
     over = max(0.0, total_income - constants["ctc_phaseout_start"][status])
     if over:
         ctc = max(0.0, ctc - (int((over + 999) // 1000) * 50.0))
@@ -786,5 +827,5 @@ __all__ = [
     "SourceDoc", "Workpaper", "Draft1040", "StateDraft",
     "classify", "extract", "missing_items", "compute_first_pass",
     "infer_state", "compute_state_first_pass", "render_review_package",
-    "normalize_filing_status", "carried_figures",
+    "normalize_filing_status", "carried_figures", "duplicate_groups",
 ]
