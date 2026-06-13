@@ -251,7 +251,7 @@ def _rank_embed(need: str, entries: list, max_n: int) -> list[Candidate] | None:
             return None
         qv = vecs[0]
         scored: list[Candidate] = []
-        for (kind, e), v in zip(entries, vecs[1:]):
+        for (kind, e), v in zip(entries, vecs[1:], strict=False):
             score = _cosine(qv, v)
             if score < _EMBED_MIN_SCORE:
                 continue

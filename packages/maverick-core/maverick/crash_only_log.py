@@ -154,7 +154,7 @@ def verify(path: str | Path) -> dict:
     result = replay(path)
     seqs = [r["seq"] for r in result.records
             if isinstance(r.get("seq"), int) and not isinstance(r.get("seq"), bool)]
-    gaps = [(a, b) for a, b in zip(seqs, seqs[1:]) if b > a + 1]
+    gaps = [(a, b) for a, b in zip(seqs, seqs[1:], strict=False) if b > a + 1]
     return {
         "records": len(result.records),
         "torn_tail": result.torn_tail,

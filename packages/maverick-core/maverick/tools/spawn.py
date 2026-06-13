@@ -365,7 +365,7 @@ def spawn_swarm_tool(parent: Agent) -> Tool:  # noqa: C901
         # SubagentStop hooks: one per child that completed without raising.
         from ..hooks import HookEvent
         from ..hooks import emit as _emit_hook
-        for child, res in zip(children, results):
+        for child, res in zip(children, results, strict=False):
             if not isinstance(res, Exception):
                 await _emit_hook(
                     HookEvent.SUBAGENT_STOP,
@@ -380,7 +380,7 @@ def spawn_swarm_tool(parent: Agent) -> Tool:  # noqa: C901
         # longer observability-only. The donation selector also reads it.
         escalated = False
         finals = [
-            res.final for child, res in zip(children, results)
+            res.final for child, res in zip(children, results, strict=False)
             if not isinstance(res, Exception) and res.final
             and _sealed_notice(parent.ctx, child) is None  # sealed children don't vote
         ]
@@ -431,7 +431,7 @@ def spawn_swarm_tool(parent: Agent) -> Tool:  # noqa: C901
             if _credit.enabled():
                 contribs = {
                     child.name: res.final
-                    for child, res in zip(children, results)
+                    for child, res in zip(children, results, strict=False)
                     if not isinstance(res, Exception) and res.final
                     and _sealed_notice(parent.ctx, child) is None
                 }
@@ -497,7 +497,7 @@ def spawn_swarm_tool(parent: Agent) -> Tool:  # noqa: C901
                 "simply pick one answer -- reconcile the differences, and expect "
                 "the FINAL to face stricter (ensemble) verification."
             )
-        for child, res in zip(children, results):
+        for child, res in zip(children, results, strict=False):
             if isinstance(res, Exception):
                 parts.append(f"[{child.role}/{child.name}] EXCEPTION: {res}")
                 continue

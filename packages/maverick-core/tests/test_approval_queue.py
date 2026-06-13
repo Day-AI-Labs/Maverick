@@ -111,7 +111,7 @@ def test_consent_dashboard_mode_denied(tmp_path, monkeypatch):
     t.start()
     try:
         require_consent("force-push", risk="high", raise_on_deny=True)
-        assert False, "expected ConsentDenied"
+        raise AssertionError("expected ConsentDenied")
     except ConsentDenied as e:
         assert e.action == "force-push"
     finally:

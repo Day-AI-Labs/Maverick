@@ -71,9 +71,9 @@ def _describe_code_block(body: str, context_before: str) -> str:
     noun = "line" if n == 1 else "lines"
     # Look for a file-ish token in the last couple of lines before the fence.
     tail = "\n".join(context_before.rstrip().split("\n")[-2:])
-    m = None
-    for m in _FILEISH.finditer(tail):
-        pass  # keep the last (closest) match
+    # keep the last (closest) match before the fence, if any
+    matches = list(_FILEISH.finditer(tail))
+    m = matches[-1] if matches else None
     if m:
         return f"I wrote {n} {noun} to {m.group(0)}."
     return f"(a code block of {n} {noun})"

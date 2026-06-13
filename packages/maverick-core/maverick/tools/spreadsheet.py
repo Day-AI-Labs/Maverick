@@ -92,7 +92,7 @@ def _neutralize_formula(value: Any) -> Any:
 
 def _csv_read(path: Path, limit: int) -> list[list]:
     with path.open(newline="", encoding="utf-8") as f:
-        return [row for _, row in zip(range(limit), _csv.reader(f))]
+        return [row for _, row in zip(range(limit), _csv.reader(f), strict=False)]
 
 
 def _csv_write(path: Path, rows: list[list]) -> None:

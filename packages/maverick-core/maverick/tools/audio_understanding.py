@@ -42,7 +42,7 @@ def cosine(a: list[float], b: list[float]) -> float:
     """Cosine similarity; 0.0 for mismatched lengths or zero vectors."""
     if len(a) != len(b) or not a:
         return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(y * y for y in b))
     if na == 0 or nb == 0:
@@ -61,7 +61,7 @@ def rank_labels(
     """
     if len(labels) != len(label_vecs):
         raise ValueError("labels and label_vecs must be the same length")
-    scored = [(label, cosine(audio_vec, vec)) for label, vec in zip(labels, label_vecs)]
+    scored = [(label, cosine(audio_vec, vec)) for label, vec in zip(labels, label_vecs, strict=False)]
     scored.sort(key=lambda x: (-x[1], x[0]))
     return scored
 

@@ -104,7 +104,7 @@ def test_zero_cost_row_does_not_corrupt_threshold():
     threshold = 1.0
     for _ in range(10_000):
         if total >= threshold:
-            assert False, "abort fired on accumulated zeros"
+            raise AssertionError("abort fired on accumulated zeros")
         total += 0.0
     assert total == 0.0
 

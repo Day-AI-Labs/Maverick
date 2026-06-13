@@ -232,10 +232,10 @@ async def auth_login(request: Request):
     cfg = load_oidc_config()
     try:
         endpoints = resolve_endpoints(cfg)
-    except OIDCError:
+    except OIDCError as exc:
         # Don't leak discovery internals; the operator misconfigured the IdP.
         log.warning("OIDC login: could not resolve authorization endpoint")
-        raise HTTPException(status_code=500, detail="OIDC login is misconfigured")
+        raise HTTPException(status_code=500, detail="OIDC login is misconfigured") from exc
 
     state = secrets.token_urlsafe(32)
     code_verifier = secrets.token_urlsafe(64)

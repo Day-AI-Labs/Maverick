@@ -286,7 +286,7 @@ def recall(
         floor = min_score
 
     scored: list[tuple[float, Reflexion]] = []
-    for entry, sim in zip(entries, sims):
+    for entry, sim in zip(entries, sims, strict=False):
         if sim < floor:
             continue
         recency = 1.0 if span <= 0 else (entry.ts - oldest) / span

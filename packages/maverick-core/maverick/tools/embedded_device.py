@@ -128,7 +128,7 @@ def _parse_int(raw: Any, what: str, *, lo: int, hi: int) -> int:
     try:
         value = int(str(raw).strip(), 0)
     except (TypeError, ValueError):
-        raise ValueError(f"{what} must be an integer (decimal or 0x hex), got {raw!r}")
+        raise ValueError(f"{what} must be an integer (decimal or 0x hex), got {raw!r}") from None
     if not lo <= value <= hi:
         raise ValueError(f"{what} {value:#x} out of range [{lo:#x}, {hi:#x}]")
     return value
@@ -142,7 +142,7 @@ def _parse_hex_bytes(raw: str) -> bytes:
     try:
         return bytes.fromhex(cleaned)
     except ValueError:
-        raise ValueError(f"data {raw!r} is not valid hex")
+        raise ValueError(f"data {raw!r} is not valid hex") from None
 
 
 # ---------- JTAG via OpenOCD ----------

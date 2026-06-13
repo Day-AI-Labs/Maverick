@@ -120,7 +120,7 @@ def _parse_date(value: Any, field: str) -> date:
     try:
         return date.fromisoformat(value)
     except ValueError:
-        raise ValueError(f"{field} is not a valid ISO date (YYYY-MM-DD): {value!r}")
+        raise ValueError(f"{field} is not a valid ISO date (YYYY-MM-DD): {value!r}") from None
 
 
 def _embargo_for(severity: str | None, policy: dict, flat: int) -> int:

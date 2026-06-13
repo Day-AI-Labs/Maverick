@@ -130,7 +130,7 @@ def build_or_update_cache(skills: list) -> dict[str, CachedEmbedding]:
     if vectors is None:
         return cache
 
-    for (name, text, mtime), vec in zip(to_embed, vectors):
+    for (name, text, mtime), vec in zip(to_embed, vectors, strict=False):
         cache[name] = CachedEmbedding(name=name, text=text, mtime=mtime, vector=vec)
 
     valid_names = {s.name for s in skills}
@@ -143,7 +143,7 @@ def build_or_update_cache(skills: list) -> dict[str, CachedEmbedding]:
 def _cosine(a: list[float], b: list[float]) -> float:
     if len(a) != len(b) or not a:
         return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(y * y for y in b))
     if na == 0 or nb == 0:

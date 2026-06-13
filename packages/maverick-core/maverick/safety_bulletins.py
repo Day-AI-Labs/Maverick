@@ -70,7 +70,7 @@ def parse_bulletin(path: Path) -> Bulletin:
     try:
         d = date.fromisoformat(meta["date"])
     except ValueError:
-        raise ValueError(f"{path.name}: date must be ISO (YYYY-MM-DD)")
+        raise ValueError(f"{path.name}: date must be ISO (YYYY-MM-DD)") from None
     return Bulletin(id=meta["id"], title=meta["title"], severity=sev, date=d, body=body)
 
 

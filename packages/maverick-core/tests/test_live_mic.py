@@ -17,7 +17,7 @@ _GRAMMAR = [
 def _scripted(*utterances: str):
     """A chunk source + transcriber pair: chunk N transcribes to utterance N."""
     chunks = [f"chunk-{i}".encode() for i in range(len(utterances))]
-    table = dict(zip(chunks, utterances))
+    table = dict(zip(chunks, utterances, strict=False))
     return chunks, lambda chunk: table[chunk]
 
 
@@ -66,7 +66,7 @@ def test_risky_intent_stringy_confirm_is_denied():
         chunks, transcriber = _scripted("stop everything")
         events = run_live_mic(chunks, transcriber, _GRAMMAR, lambda i, s: None,
                               risky_intents={"halt"},
-                              confirm=lambda i, s: verdict)
+                              confirm=lambda i, s, verdict=verdict: verdict)
         assert events[0].status == "denied"
 
 

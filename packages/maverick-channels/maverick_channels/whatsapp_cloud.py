@@ -162,7 +162,7 @@ class WhatsAppCloudChannel(Channel):
         try:
             payload = json.loads(body or b"{}")
         except ValueError:
-            raise HTTPException(status_code=400, detail="bad JSON")
+            raise HTTPException(status_code=400, detail="bad JSON") from None
 
         for m in self._extract_messages(payload):
             sender = str(m.get("from") or "")

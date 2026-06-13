@@ -156,7 +156,7 @@ class TestSqliteStore:
                  "the dog ran in the park"]
         vecs = e.embed(texts)
         store.add("d", [(str(i), t, v, {"source": f"doc{i}"})
-                        for i, (t, v) in enumerate(zip(texts, vecs))])
+                        for i, (t, v) in enumerate(zip(texts, vecs, strict=False))])
         hits = store.search("d", e.embed(["revenue grew this quarter"])[0], k=2)
         assert len(hits) == 2
         assert "revenue" in hits[0].text  # nearest by cosine ranks first

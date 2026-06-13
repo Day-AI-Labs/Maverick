@@ -21,17 +21,36 @@ target-version = "py310"
 # UP (pyupgrade): modern 3.10+ idioms -- PEP 604 unions (`X | None`), PEP 585
 #                 builtins (`list`/`dict`), f-strings, etc. target-version
 #                 py310 keeps every rewrite 3.10-safe.
-# B (bugbear) still off: its findings (B904 raise-from, B905 zip strict) are a
-# style commitment with no autofix; defer to its own focused PR.
+# B (bugbear): real-bug lints -- B904 (chain exceptions with raise-from), B905
+#              (explicit zip strict=), B023 (loop-var capture in closures), etc.
+#              Enabled repo-wide. FastAPI's Depends/File/Query/Form/etc. called in
+#              argument defaults are the framework idiom, not B008 bugs, so they're
+#              whitelisted via extend-immutable-calls below.
 # C90 (mccabe): cyclomatic-complexity ceiling -- the "keep functions small"
 #               ratchet (see [tool.ruff.lint.mccabe]). New code must stay under
 #               the cap; the ~30 functions already over it carry an explicit
 #               `# noqa: C901` marking them as refactor debt to pay down.
-select = ["E", "F", "W", "I", "UP", "C90"]
+select = ["E", "F", "W", "I", "UP", "C90", "B"]
 ignore = [
     "E501",   # line length
     "UP036",  # "outdated" version blocks -- ours are intentional runtime
               # "Python 3.10+ required" guards (installer/preflight), not dead code.
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependency-injection markers are evaluated once at import and used as
+# sentinels; calling them in argument defaults is the documented pattern, so
+# they are not B008 "function call in default argument" violations.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.Cookie",
+    "fastapi.Security",
 ]
 
 [tool.ruff.lint.mccabe]

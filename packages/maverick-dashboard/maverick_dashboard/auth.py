@@ -273,8 +273,8 @@ def require_principal(
             raise HTTPException(status_code=401, detail="OIDC bearer token required")
         try:
             return verify_oidc_token(ws_token)
-        except OIDCError:
-            raise HTTPException(status_code=401, detail="invalid OIDC token")
+        except OIDCError as exc:
+            raise HTTPException(status_code=401, detail="invalid OIDC token") from exc
 
     pp = _proxy_principal(request)
     if pp is not None:
@@ -311,14 +311,14 @@ def require_principal(
         )
     try:
         principal = verify_oidc_token(token)
-    except OIDCError:
+    except OIDCError as exc:
         # Opaque 401: never leak which check failed (expiry vs. signature vs.
         # audience) to an unauthenticated caller.
         raise HTTPException(
             status_code=401,
             detail="invalid OIDC token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from exc
     request.state.principal = principal
     return principal
 

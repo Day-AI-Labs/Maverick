@@ -262,7 +262,7 @@ class Server:
             for c in self._channels
         ]
         results = await asyncio.gather(*self._tasks, return_exceptions=True)
-        for c, result in zip(self._channels, results):
+        for c, result in zip(self._channels, results, strict=False):
             if isinstance(result, Exception):
                 log.error("channel %s crashed: %s", c.name, result)
 

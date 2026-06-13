@@ -144,7 +144,7 @@ def run_plan_execute_reflect(
     reflections: list[Reflection] = []
     status = "max_iterations"
 
-    for i in range(max_iterations):
+    for _i in range(max_iterations):
         iter_results: list[StepResult] = []
         for step in plan:
             try:

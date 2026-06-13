@@ -78,10 +78,10 @@ for t in inputs:
     try:
         subprocess.run([sys.executable, "-c", prog], check=True,
                        timeout=_HANG_TIMEOUT_S, capture_output=True)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         raise AssertionError(
             f"a shield scanner did not finish within {_HANG_TIMEOUT_S}s on "
             "adversarial input -- a detection regex is backtracking super-"
             "linearly (ReDoS). A hung scan that fails open is a detection "
             "bypass; treat this as a security failure, not a perf nit."
-        )
+        ) from exc

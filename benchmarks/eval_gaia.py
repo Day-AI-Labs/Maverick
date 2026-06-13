@@ -92,7 +92,7 @@ def question_scorer(model_answer: str, ground_truth: str) -> float:
         ma = _split_list(model_answer)
         if len(gt) != len(ma):
             return 0.0
-        for g, m in zip(gt, ma):
+        for g, m in zip(gt, ma, strict=False):
             if _is_float(g):
                 if _normalize_number(m) != float(g):
                     return 0.0

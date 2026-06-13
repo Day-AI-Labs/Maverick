@@ -26,7 +26,7 @@ def _parse(value: Any, field: str) -> date:
     try:
         return date.fromisoformat(str(value))
     except ValueError:
-        raise ValueError(f"{field} is not an ISO date (YYYY-MM-DD): {value!r}")
+        raise ValueError(f"{field} is not an ISO date (YYYY-MM-DD): {value!r}") from None
 
 
 def _status(rec: dict, now: date) -> tuple[str, str]:

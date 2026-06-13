@@ -186,7 +186,7 @@ def test_recv_verified_handoff_installs_grant_for_tool_enforcement(monkeypatch, 
 
     recv_out = asyncio.run(agent.tools.get("recv_from_agent").fn({"timeout": 0}))
     assert "VERIFIED handoff" in recv_out
-    assert getattr(agent, "_handoff_capability") is delegated
+    assert agent._handoff_capability is delegated
 
     denied = asyncio.run(agent._run_tool("shell", {}))
     assert "DENIED by capability policy" in denied
