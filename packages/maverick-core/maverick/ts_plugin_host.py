@@ -30,12 +30,17 @@ call gets a fresh process.
 from __future__ import annotations
 
 import atexit
+import hashlib
 import json
 import logging
+import os
 import re
+import shutil
 import subprocess
 import threading
 import time
+from dataclasses import dataclass
+from pathlib import Path
 from typing import IO, Any
 
 from .tools import Tool, scrub_child_env
@@ -57,6 +62,62 @@ class _ChildDied(Exception):
     """Child exited / closed its pipes mid-call (retried once by ``call``)."""
 
 
+@dataclass(frozen=True)
+class _PinnedFile:
+    arg_index: int
+    path: Path
+    digest: str
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+@dataclass(frozen=True)
+class _PinnedCommand:
+    command: list[str]
+    files: tuple[_PinnedFile, ...]
+
+    @classmethod
+    def from_command(cls, command: list[str]) -> _PinnedCommand:
+        if not command:
+            raise TsPluginError("ts plugin command is empty")
+        pinned = list(command)
+        exe = shutil.which(command[0]) if os.sep not in command[0] else None
+        if exe is not None:
+            pinned[0] = exe
+        files: list[_PinnedFile] = []
+        for i, arg in enumerate(pinned):
+            path = Path(arg).expanduser()
+            try:
+                resolved = path.resolve(strict=True)
+            except OSError:
+                continue
+            if not resolved.is_file():
+                continue
+            files.append(_PinnedFile(i, resolved, _sha256_file(resolved)))
+            pinned[i] = str(resolved)
+        return cls(pinned, tuple(files))
+
+    def verify(self) -> None:
+        for f in self.files:
+            try:
+                resolved = Path(self.command[f.arg_index]).resolve(strict=True)
+                digest = _sha256_file(resolved)
+            except OSError as e:
+                raise TsPluginError(
+                    f"ts plugin command file {f.path} is no longer readable"
+                ) from e
+            if resolved != f.path or digest != f.digest:
+                raise TsPluginError(
+                    f"ts plugin command file {f.path} changed after manifest discovery"
+                )
+
+
 class _PluginChild:
     """One persistent NDJSON child shared by every tool of a plugin.
 
@@ -65,8 +126,9 @@ class _PluginChild:
     if it dies mid-request.
     """
 
-    def __init__(self, command: list[str], call_timeout: float):
-        self.command = list(command)
+    def __init__(self, command: _PinnedCommand, call_timeout: float):
+        self.command = command.command
+        self._pinned_command = command
         self.call_timeout = call_timeout
         self._proc: subprocess.Popen | None = None
         self._req_id = 0
@@ -74,6 +136,7 @@ class _PluginChild:
 
     def _ensure_started(self) -> None:
         if self._proc is None or self._proc.poll() is not None:
+            self._pinned_command.verify()
             self._proc = subprocess.Popen(
                 self.command,
                 stdin=subprocess.PIPE,
@@ -158,6 +221,9 @@ class _PluginChild:
                         )
                         continue
                     return f"ERROR: ts plugin tool {tool!r} crashed (child exited twice)"
+                except TsPluginError as e:
+                    self.close()
+                    return f"ERROR: {e}"
                 except OSError as e:
                     self.close()
                     return f"ERROR: ts plugin {self.command} failed to start: {e}"
@@ -187,20 +253,21 @@ def _close_all_children() -> None:
 atexit.register(_close_all_children)
 
 
-def _fetch_manifest(command: list[str]) -> list[Any]:
+def _fetch_manifest(command: _PinnedCommand) -> list[Any]:
+    command.verify()
     try:
         r = subprocess.run(
-            [*command, "--describe"],
+            [*command.command, "--describe"],
             capture_output=True, text=True,
             timeout=DESCRIBE_TIMEOUT, env=scrub_child_env(),
         )
     except OSError as e:
-        raise TsPluginError(f"ts plugin {command} failed to run: {e}") from e
+        raise TsPluginError(f"ts plugin {command.command} failed to run: {e}") from e
     except subprocess.TimeoutExpired as e:
-        raise TsPluginError(f"ts plugin {command} --describe timed out") from e
+        raise TsPluginError(f"ts plugin {command.command} --describe timed out") from e
     if r.returncode != 0:
         raise TsPluginError(
-            f"ts plugin {command} --describe exited {r.returncode}: {r.stderr.strip()[:500]}"
+            f"ts plugin {command.command} --describe exited {r.returncode}: {r.stderr.strip()[:500]}"
         )
     for line in r.stdout.splitlines():
         try:
@@ -209,7 +276,8 @@ def _fetch_manifest(command: list[str]) -> list[Any]:
             continue
         if isinstance(manifest, dict) and isinstance(manifest.get("tools"), list):
             return manifest["tools"]
-    raise TsPluginError(f"ts plugin {command} --describe printed no manifest")
+    command.verify()
+    raise TsPluginError(f"ts plugin {command.command} --describe printed no manifest")
 
 
 def load_ts_plugin(
@@ -221,9 +289,12 @@ def load_ts_plugin(
     Raises TsPluginError when the manifest can't be fetched or parsed; entries
     with an invalid name are skipped with a warning.
     """
-    child = _PluginChild(command, call_timeout)
+    pinned_command = _PinnedCommand.from_command(command)
+    manifest = _fetch_manifest(pinned_command)
+    pinned_command.verify()
+    child = _PluginChild(pinned_command, call_timeout)
     tools: list[Tool] = []
-    for entry in _fetch_manifest(command):
+    for entry in manifest:
         if not isinstance(entry, dict):
             continue
         name = entry.get("name")
