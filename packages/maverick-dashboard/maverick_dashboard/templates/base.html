@@ -64,9 +64,30 @@
     .skip-link:focus { inset-inline-start: 1rem; top: 1rem; background: var(--accent); color: #fff; padding: 0.5rem 1rem; border-radius: 4px; z-index: 100; }
     header { padding: 1rem 2rem; border-bottom: 1px solid var(--border); display: flex; gap: 1rem; align-items: center; max-width: 1400px; margin: 0 auto; flex-wrap: wrap; }
     header h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
-    nav { display: flex; gap: 1rem; flex-wrap: wrap; }
-    nav a { color: var(--muted); text-decoration: none; }
-    nav a:hover, nav a.active { color: var(--text); }
+    .header-controls { margin-inline-start: auto; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    /* Hamburger button: opens the grouped navigation drawer. */
+    .nav-toggle { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; padding: 0; flex: 0 0 auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+    .nav-toggle:hover { border-color: var(--accent); }
+    .nav-toggle-bars { display: inline-flex; flex-direction: column; gap: 4px; }
+    .nav-toggle-bars span { display: block; width: 18px; height: 2px; background: var(--text); border-radius: 2px; }
+    /* Slide-in navigation drawer + dimming backdrop. Hidden off-canvas until
+       the hamburger toggles `.open`; logical inset keeps RTL correct. */
+    .nav-backdrop { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,0.5); opacity: 0; transition: opacity 0.2s ease; }
+    .nav-backdrop.show { opacity: 1; }
+    .nav-drawer { position: fixed; inset-block: 0; inset-inline-start: -320px; width: 288px; max-width: 86vw; z-index: 95; overflow-y: auto; background: var(--panel); border-inline-end: 1px solid var(--border); transition: inset-inline-start 0.22s ease; }
+    .nav-drawer.open { inset-inline-start: 0; box-shadow: 0 0 40px rgba(0,0,0,0.45); }
+    .nav-drawer-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; padding: 0.9rem 1.1rem; background: var(--panel); border-bottom: 1px solid var(--border); }
+    .nav-drawer-title { font-weight: 600; font-size: 1rem; }
+    .nav-close { background: none; border: 0; color: var(--muted); font-size: 1.5rem; line-height: 1; cursor: pointer; padding: 0 0.25rem; }
+    .nav-close:hover { color: var(--text); }
+    .nav-drawer nav { display: block; padding: 0.6rem 0.7rem 1.5rem; }
+    .nav-group { margin-top: 1.1rem; }
+    .nav-group:first-child { margin-top: 0.4rem; }
+    .nav-group-label { margin: 0 0 0.3rem; padding: 0 0.6rem; font-size: 0.67rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); }
+    .nav-drawer nav a { display: block; padding: 0.46rem 0.6rem; border-radius: 6px; color: var(--muted); text-decoration: none; font-size: 0.9rem; }
+    .nav-drawer nav a:hover { background: var(--bg); color: var(--text); }
+    .nav-drawer nav a.active { color: var(--text); font-weight: 600; background: var(--bg); box-shadow: inset 3px 0 0 var(--accent); }
+    @media (prefers-reduced-motion: reduce) { .nav-drawer, .nav-backdrop { transition: none; } }
     main { padding: 2rem; max-width: 1100px; margin: 0 auto; }
     h2 { margin: 0 0 1rem; font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
     .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem; overflow-x: auto; }
@@ -131,42 +152,18 @@
 <body class="theme-{{ theme or 'dark' }} font-{{ font or 'default' }} density-{{ density or 'comfortable' }}">
   <a class="skip-link" href="#content">Skip to content</a>
   <header>
+    <button id="nav-toggle" class="nav-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="nav-drawer">
+      <span class="nav-toggle-bars" aria-hidden="true"><span></span><span></span><span></span></span>
+    </button>
     <h1>Maverick</h1>
-    <nav aria-label="Primary">
-      {% set _nav = [
-        ('/', 'Overview'), ('/chat', 'Chat'), ('/goals', 'Goals'),
-        ('/graph-editor', 'Graph'), ('/goal-builder', 'Builder'),
-        ('/plan-tree-3d', '3D'),
-        ('/oversight', 'Oversight'),
-        ('/skills', 'Skills'), ('/store', 'Store'), ('/templates', 'Templates'),
-        ('/facts', 'Facts'),
-        ('/spend', 'Spend'), ('/providers', 'Providers'), ('/tools', 'Tools'),
-        ('/permissions', 'Permissions'), ('/approvals', 'Approvals'),
-        ('/fleets', 'Fleets'),
-        ('/tenants', 'Tenants'),
-        ('/learned', 'Learned'),
-        ('/safety', 'Safety'), ('/compliance', 'Compliance'),
-        ('/compartments', 'Compartments'),
-        ('/channels', 'Channels'),
-        ('/plugins', 'Plugins'), ('/mcp', 'MCP'), ('/audit', 'Audit'),
-        ('/cache', 'Cache'),
-        ('/benchmarks', 'Benchmarks'), ('/walkthroughs', 'Walkthroughs'),
-        ('/embed-demo', 'Embed'),
-      ] %}
-      {% set _path = request.url.path if request else '' %}
-      {% for _href, _label in _nav %}
-        {% set _active = (_path == _href) if _href == '/' else (_path == _href or _path.startswith(_href ~ '/')) %}
-        <a href="{{ _href }}"{% if _active %} class="active" aria-current="page"{% endif %}>{{ _label }}</a>
-      {% endfor %}
-    </nav>
-    <span style="margin-inline-start: auto; display: flex; gap: 0.5rem; align-items: center;">
+    <span class="header-controls">
       <a href="#" id="halt-pill" class="halt-pill" role="button" aria-label="Halt: arm or clear killswitch">
         <span class="dot" aria-hidden="true"></span>
         <span id="halt-label">checking</span>
       </a>
       <select id="theme-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('theme', this.value); window.location = u; }" aria-label="Theme"
               style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem;">
-        <option value="">theme</option>
+        <option value="">Theme</option>
         <option value="dark" {% if theme == 'dark' %}selected{% endif %}>Dark</option>
         <option value="light" {% if theme == 'light' %}selected{% endif %}>Light</option>
         <option value="solarized" {% if theme == 'solarized' %}selected{% endif %}>Solarized</option>
@@ -177,19 +174,19 @@
       </select>
       <select id="density-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('density', this.value); window.location = u; }" aria-label="Density"
               style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem;">
-        <option value="">density</option>
+        <option value="">Density</option>
         <option value="comfortable" {% if density == 'comfortable' %}selected{% endif %}>Comfortable</option>
         <option value="compact" {% if density == 'compact' %}selected{% endif %}>Compact</option>
       </select>
       <select id="font-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('font', this.value); window.location = u; }" aria-label="{{ t('label.font') }}"
               style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem;">
-        <option value="">{{ t('label.font')|lower }}</option>
+        <option value="">{{ t('label.font') }}</option>
         <option value="default" {% if font == 'default' %}selected{% endif %}>{{ t('font.default') }}</option>
         <option value="dyslexic" {% if font == 'dyslexic' %}selected{% endif %}>{{ t('font.dyslexic') }}</option>
       </select>
       <select id="lang-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('lang', this.value); window.location = u; }" aria-label="{{ t('label.language') }}"
               style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem;">
-        <option value="">{{ t('label.language')|lower }}</option>
+        <option value="">{{ t('label.language') }}</option>
         <option value="en" {% if lang == 'en' %}selected{% endif %}>English</option>
         <option value="fr" {% if lang == 'fr' %}selected{% endif %}>Français</option>
         <option value="de" {% if lang == 'de' %}selected{% endif %}>Deutsch</option>
@@ -199,13 +196,79 @@
       </select>
     </span>
   </header>
+  <div id="nav-backdrop" class="nav-backdrop" hidden></div>
+  <aside id="nav-drawer" class="nav-drawer" aria-label="Site menu">
+    <div class="nav-drawer-head">
+      <span class="nav-drawer-title">Maverick</span>
+      <button id="nav-close" class="nav-close" type="button" aria-label="Close menu">&times;</button>
+    </div>
+    <nav aria-label="Primary">
+      {% set _nav_groups = [
+        ('Operate', [('/', 'Overview'), ('/chat', 'Chat'), ('/goals', 'Goals'),
+                     ('/goal-builder', 'Builder'), ('/graph-editor', 'Graph'),
+                     ('/plan-tree-3d', '3D')]),
+        ('Observe', [('/oversight', 'Oversight'), ('/spend', 'Spend'),
+                     ('/benchmarks', 'Benchmarks'), ('/learned', 'Learned'),
+                     ('/audit', 'Audit'), ('/walkthroughs', 'Walkthroughs')]),
+        ('Govern', [('/approvals', 'Approvals'), ('/permissions', 'Permissions'),
+                    ('/safety', 'Safety'), ('/compliance', 'Compliance'),
+                    ('/compartments', 'Compartments')]),
+        ('Extend', [('/skills', 'Skills'), ('/store', 'Store'),
+                    ('/templates', 'Templates'), ('/tools', 'Tools'),
+                    ('/plugins', 'Plugins'), ('/mcp', 'MCP'),
+                    ('/providers', 'Providers'), ('/channels', 'Channels')]),
+        ('Admin', [('/tenants', 'Tenants'), ('/fleets', 'Fleets'),
+                   ('/facts', 'Facts'), ('/cache', 'Cache'),
+                   ('/embed-demo', 'Embed')]),
+      ] %}
+      {% set _path = request.url.path if request else '' %}
+      {% for _group, _items in _nav_groups %}
+      <div class="nav-group">
+        <p class="nav-group-label">{{ _group }}</p>
+        {% for _href, _label in _items %}
+        {% set _active = (_path == _href) if _href == '/' else (_path == _href or _path.startswith(_href ~ '/')) %}
+        <a href="{{ _href }}"{% if _active %} class="active" aria-current="page"{% endif %}>{{ _label }}</a>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </nav>
+  </aside>
   <main id="content" tabindex="-1">
     {% block content %}{% endblock %}
   </main>
   <footer>
-    <span class="muted">local-only · open source · MIT licensed</span>
+    <span class="muted">local-only · proprietary software</span>
   </footer>
   <script>
+    // Navigation drawer: the hamburger opens a grouped slide-in menu.
+    (function() {
+      var toggle = document.getElementById('nav-toggle');
+      var drawer = document.getElementById('nav-drawer');
+      var backdrop = document.getElementById('nav-backdrop');
+      var closeBtn = document.getElementById('nav-close');
+      if (!toggle || !drawer || !backdrop) return;
+      function isOpen() { return drawer.classList.contains('open'); }
+      function openDrawer() {
+        drawer.classList.add('open');
+        backdrop.hidden = false;
+        requestAnimationFrame(function() { backdrop.classList.add('show'); });
+        toggle.setAttribute('aria-expanded', 'true');
+        if (closeBtn) closeBtn.focus();
+      }
+      function closeDrawer() {
+        drawer.classList.remove('open');
+        backdrop.classList.remove('show');
+        toggle.setAttribute('aria-expanded', 'false');
+        window.setTimeout(function() { if (!isOpen()) backdrop.hidden = true; }, 220);
+        toggle.focus();
+      }
+      toggle.addEventListener('click', function() { if (isOpen()) closeDrawer(); else openDrawer(); });
+      if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
+      backdrop.addEventListener('click', closeDrawer);
+      document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && isOpen()) closeDrawer(); });
+      drawer.addEventListener('click', function(e) { if (e.target && e.target.tagName === 'A') closeDrawer(); });
+    })();
+
     // Halt indicator + arm/clear via /api/v1/halt.
     (function() {
       const pill = document.getElementById('halt-pill');
