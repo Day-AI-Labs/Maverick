@@ -17,6 +17,7 @@ import re
 import threading
 import time
 from collections import deque
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -180,6 +181,20 @@ def _set_theme_cookie(response, theme: str) -> None:
         )
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Application lifespan: run startup tasks, then yield to serve.
+
+    Replaces the deprecated ``@app.on_event("startup")`` handlers. The two
+    startup steps (orphan-goal reclaim, queue-dispatcher install) run in their
+    original registration order; their bodies each guard with try/except so a
+    failure never blocks startup. No shutdown work is needed.
+    """
+    await _reclaim_orphans()
+    await _install_queue_dispatcher()
+    yield
+
+
 app = FastAPI(
     title="Maverick Dashboard + REST API",
     description="Local browser UI plus REST API for programmatic access.",
@@ -192,6 +207,7 @@ app = FastAPI(
     # auth layer ON TOP OF the existing MAVERICK_DASHBOARD_TOKEN middleware, not
     # a replacement for it.
     dependencies=[Depends(require_principal)],
+    lifespan=_lifespan,
 )
 app.include_router(api_router)
 # Built-in OIDC browser-login routes (/auth/login, /auth/callback, /auth/logout).
@@ -268,7 +284,6 @@ async def persist_theme(request: Request, call_next):
     return response
 
 
-@app.on_event("startup")
 async def _reclaim_orphans() -> None:
     """Mark goals stuck in active/pending as blocked after a crash.
 
@@ -285,7 +300,6 @@ async def _reclaim_orphans() -> None:
         log.exception("orphan reclaim failed on startup")
 
 
-@app.on_event("startup")
 async def _install_queue_dispatcher() -> None:
     """If ``[queue] backend`` selects a task queue, install the QueueDispatcher
     so this (producer) process enqueues goals for the worker pool instead of
