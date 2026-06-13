@@ -1625,7 +1625,7 @@ class Agent:
         ):
             return await self._run_inner()
 
-    async def _run_inner(self) -> AgentResult:  # noqa: C901
+    async def _run_inner(self) -> AgentResult:  # noqa: C901  -- core agent turn loop; decompose only under dedicated review (see below)
         bb = self.ctx.blackboard
         bb.post(self.name, "plan", f"role={self.role} depth={self.depth} brief={self.brief}")
 

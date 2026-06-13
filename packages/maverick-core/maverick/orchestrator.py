@@ -380,7 +380,7 @@ def _maybe_record_reflexion(
         log.debug("reflexion record skipped: %s", e)
 
 
-async def run_goal(  # noqa: C901
+async def run_goal(  # noqa: C901  -- ~1000-line core goal-execution loop; decompose only under dedicated review
     llm: LLM,
     world: WorldModel,
     budget: Budget,
