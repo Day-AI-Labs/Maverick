@@ -121,9 +121,11 @@ def _lookup_price(model: str | None) -> tuple[float, float]:
     # behind a local prefix is the operator's own server, so price it $0
     # instead of the Sonnet fallback (which accrued phantom spend for free
     # local models -- platform-test finding). A known table id behind the
-    # same prefix was matched above and keeps its real rate.
+    # same prefix was matched above and keeps its real rate. The generic
+    # openai_compatible provider is intentionally excluded because it can
+    # point at paid public gateways.
     if ":" in model and model.split(":", 1)[0] in (
-        "ollama", "vllm", "tgi", "openai_compatible",
+        "ollama", "vllm", "tgi",
     ):
         return 0.0, 0.0
     return _FALLBACK_PRICE_IN, _FALLBACK_PRICE_OUT
