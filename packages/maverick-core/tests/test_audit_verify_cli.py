@@ -89,6 +89,17 @@ def test_verify_detects_tampered_line_exits_one(tmp_path, monkeypatch):
     assert "FAIL" in result.output
 
 
+
+@pytest.mark.skipif(not _HAVE_CRYPTO, reason="cryptography not installed")
+def test_verify_detects_deleted_unanchored_day_file(tmp_path, monkeypatch):
+    audit_dir = _isolate_home(monkeypatch, tmp_path)
+    day_file = _write_signed_events(audit_dir, n=1)
+    day_file.unlink()
+
+    result = CliRunner().invoke(main, ["audit", "verify", "--day", _today()])
+    assert result.exit_code == 1, result.output
+    assert "missing_file" in result.output
+
 @pytest.mark.skipif(not _HAVE_CRYPTO, reason="cryptography not installed")
 def test_verify_all_sweeps_every_day_file(tmp_path, monkeypatch):
     audit_dir = _isolate_home(monkeypatch, tmp_path)
