@@ -66,8 +66,11 @@ def _turn_line(turn: dict) -> str:
 class StreamingCompactor:
     """Per-conversation running summary + cursor, persisted across calls."""
 
-    def __init__(self, llm=None, *, path: Path | None = None, clock=None):
+    def __init__(
+        self, llm=None, *, path: Path | None = None, clock=None, budget=None,
+    ):
         self.llm = llm
+        self.budget = budget
         self.path = path if path is not None else _sidecar_path()
         self._clock = clock if clock is not None else time.time
 
@@ -136,6 +139,7 @@ class StreamingCompactor:
                     }],
                     max_tokens=_FOLD_MAX_TOKENS,
                     model=model_for_role("summarizer"),
+                    budget=self.budget,
                 )
                 folded = (getattr(resp, "text", "") or "").strip()
                 if folded:
@@ -203,6 +207,7 @@ def compact_streaming(
     keep_recent: int = KEEP_RECENT_TURNS,
     llm=None,
     path: Path | None = None,
+    budget=None,
 ) -> list[dict]:
     """Strategy entry: replace the old middle with the running summary.
 
@@ -214,7 +219,7 @@ def compact_streaming(
         return list(messages)
     cutoff = len(messages) - keep_recent
     key = conversation_id or _default_key(messages)
-    compactor = StreamingCompactor(llm=llm, path=path)
+    compactor = StreamingCompactor(llm=llm, path=path, budget=budget)
     summary = compactor.fold(key, messages[1:cutoff])
     summary_msg = {
         "role": "user",

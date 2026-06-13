@@ -1747,9 +1747,13 @@ class Agent:
             # on an unknown name. The agent's llm seam + conversation id reach
             # the strategies that use them.
             from .compaction_plugins import compact_with
+            # Some opt-in strategies make provider calls, so apply the same
+            # pre-spend gate and budget object to compaction as the main turn.
+            self.ctx.budget.check()
             messages = compact_with(
                 messages, llm=self.ctx.llm,
                 conversation_id=str(getattr(self.ctx, "goal_id", "") or ""),
+                budget=self.ctx.budget,
                 scope=self.domain,
             )
 
