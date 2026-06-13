@@ -18,7 +18,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -436,12 +436,25 @@ def _dec_field(text: str | None) -> str | None:
     return text
 
 
+def _row_for(cls, d: dict) -> dict:
+    """Keep only the keys that ``cls`` (a dataclass) declares.
+
+    A live ``world.db`` can carry columns written by a different schema
+    version -- e.g. a build that added a ``domain`` column to ``goals``.
+    ``cls(**dict(row))`` would then raise ``TypeError`` on that unknown column
+    and 500 every page that lists the table. Dropping unmodelled columns keeps
+    reads tolerant of schema skew in both directions.
+    """
+    allowed = {f.name for f in fields(cls)}
+    return {k: v for k, v in d.items() if k in allowed}
+
+
 def _question_from_row(row) -> Question:
     """Build a Question from a row, decrypting the sealed question/answer fields."""
     d = dict(row)
     d["question"] = _dec_field(d.get("question"))
     d["answer"] = _dec_field(d.get("answer"))
-    return Question(**d)
+    return Question(**_row_for(Question, d))
 
 
 def _goal_from_row(row) -> Goal:
@@ -451,14 +464,14 @@ def _goal_from_row(row) -> Goal:
     d["description"] = _dec_field(d.get("description"))
     if "result" in d:
         d["result"] = _dec_field(d.get("result"))
-    return Goal(**d)
+    return Goal(**_row_for(Goal, d))
 
 
 def _goal_event_from_row(row) -> GoalEvent:
     """Build a GoalEvent from a row, decrypting the sealed content field."""
     d = dict(row)
     d["content"] = _dec_field(d.get("content"))
-    return GoalEvent(**d)
+    return GoalEvent(**_row_for(GoalEvent, d))
 
 
 def _episode_spend_from_row(row) -> EpisodeSpend:
@@ -466,7 +479,7 @@ def _episode_spend_from_row(row) -> EpisodeSpend:
     d = dict(row)
     if "outcome" in d:
         d["outcome"] = _dec_field(d.get("outcome"))
-    return EpisodeSpend(**d)
+    return EpisodeSpend(**_row_for(EpisodeSpend, d))
 
 
 def _approval_from_row(row) -> Approval:
@@ -475,7 +488,7 @@ def _approval_from_row(row) -> Approval:
     d["action"] = _dec_field(d.get("action"))
     d["scope"] = _dec_field(d.get("scope"))
     d["detail"] = _dec_field(d.get("detail"))
-    return Approval(**d)
+    return Approval(**_row_for(Approval, d))
 
 
 class WorldModel:
