@@ -28,8 +28,10 @@ Failures during span/metric export are logged and swallowed.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import logging
 import os
+import re
 import threading
 from collections.abc import Iterator
 from typing import Any
@@ -42,6 +44,21 @@ _init_lock = threading.Lock()
 _tracer: Any = None
 _sentry: Any = None
 _metrics: dict[str, Any] = {}
+
+_SAFE_TELEMETRY_LABEL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]{0,63}$")
+
+
+def safe_agent_telemetry_label(value: object, *, fallback: str = "redacted-agent") -> str:
+    """Return a bounded, non-secret label safe for telemetry metadata.
+
+    Spawned-agent roles can be model-controlled.  Keep ordinary role/id labels
+    unchanged for readable traces, but never export arbitrary prompt text,
+    whitespace, or long values to Sentry/OTel span names or GenAI attributes.
+    """
+    if isinstance(value, str) and _SAFE_TELEMETRY_LABEL_RE.fullmatch(value):
+        return value
+    digest = hashlib.sha256(str(value).encode("utf-8", "replace")).hexdigest()[:12]
+    return f"{fallback}-{digest}"
 
 
 def _otel_enabled() -> bool:
@@ -386,10 +403,10 @@ def gen_ai_agent_attributes(
     """
     attrs: dict[str, Any] = {
         "gen_ai.operation.name": operation,
-        "gen_ai.agent.name": name,
+        "gen_ai.agent.name": safe_agent_telemetry_label(name),
     }
     if agent_id is not None:
-        attrs["gen_ai.agent.id"] = agent_id
+        attrs["gen_ai.agent.id"] = safe_agent_telemetry_label(agent_id)
     if description is not None:
         attrs["gen_ai.agent.description"] = description
     return attrs
@@ -426,4 +443,5 @@ __all__ = [
     "trace_span", "record_metric", "is_enabled",
     "gen_ai_span_name", "gen_ai_attributes", "gen_ai_tool_attributes",
     "gen_ai_agent_attributes",
+    "safe_agent_telemetry_label",
 ]

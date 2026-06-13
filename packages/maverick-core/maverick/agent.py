@@ -1578,11 +1578,16 @@ class Agent:
         # span (gen_ai.agent.name/id), the third semconv leg alongside the
         # LLM (chat) and tool (execute_tool) spans. No-op when tracing is off.
         try:
-            from .observability import gen_ai_agent_attributes, trace_span
+            from .observability import (
+                gen_ai_agent_attributes,
+                safe_agent_telemetry_label,
+                trace_span,
+            )
         except Exception:  # pragma: no cover -- tracing never blocks a run
             return await self._run_inner()
+        telemetry_role = safe_agent_telemetry_label(self.role)
         with trace_span(
-            f"invoke_agent {self.role}",
+            f"invoke_agent {telemetry_role}",
             attributes=gen_ai_agent_attributes(self.role, agent_id=self.name),
         ):
             return await self._run_inner()
