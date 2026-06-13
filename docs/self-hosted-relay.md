@@ -34,7 +34,7 @@ transport, so it unit-tests with no server and no network:
 | Piece | Role |
 |---|---|
 | `classify_request(text, config)` | QUICK vs ACK_THEN_RUN by a configurable regex |
-| `RelayConfig` | deadline, long-task pattern, `start_url`, secondary channel, HMAC secret |
+| `RelayConfig` | deadline, long-task pattern, `start_url`, secondary channel, outbound HMAC secret, inbound relay auth token |
 | `Relay` | orchestrator; takes injected `sync_handler`, `starter`, `deliver` |
 | `build_start_request(...)` | body + signed headers for the forward to `/webhook/start` |
 | `sign_body(...)` | HMAC-SHA256 matching `maverick.webhooks` so the receiver verifies it |
@@ -58,7 +58,7 @@ A minimal FastAPI mount next to the existing dashboard routes:
 
 ```python
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from maverick.relay_reference import Relay, RelayConfig, build_start_request
 from maverick import webhooks
 
@@ -66,7 +66,8 @@ config = RelayConfig(
     deadline_seconds=30.0,
     start_url="http://localhost:8080/webhook/start",
     secondary_channel="telegram",
-    hmac_secret="...",  # shares the [webhooks] secret knob
+    hmac_secret="...",  # shares the [webhooks] secret knob for outbound /webhook/start
+    inbound_auth_token="...",  # separate bearer token required from the device/user
 )
 
 def sync_handler(text: str) -> str:
@@ -89,18 +90,26 @@ relay = Relay(config, sync_handler=sync_handler, starter=starter, deliver=delive
 app = FastAPI()
 
 @app.post("/relay")
-async def relay_endpoint(req: Request):
+async def relay_endpoint(req: Request, authorization: str | None = Header(default=None)):
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not relay.verify_inbound_token(token):
+        raise HTTPException(status_code=401, detail="unauthorized relay request")
+
     body = await req.json()
-    resp = relay.handle(body["text"], context={"source": "glasses"})
+    resp = relay.handle(body["text"], context={"source": "glasses"}, auth_token=token)
     return {"reply": resp.immediate, "kind": resp.kind.value, "started": resp.started}
 ```
 
-Run it with any ASGI server (`uvicorn yourmodule:app`), behind your own TLS. It
-points at the Maverick instance's `POST /webhook/start`; nothing is hosted by us.
+Run it with any ASGI server (`uvicorn yourmodule:app`), behind your own TLS,
+and require callers to send `Authorization: Bearer <inbound_auth_token>`. The
+inbound bearer token is deliberately separate from the outbound webhook signing
+secret so an exposed relay cannot be used as a confused deputy. It points at the Maverick instance's `POST /webhook/start`; nothing is hosted by us.
 
 ## Run it as a Cloudflare Worker
 
-The same decision logic, ported to the Worker fetch handler. The Worker holds no
+The same decision logic, ported to the Worker fetch handler. Store a separate
+`RELAY_INBOUND_TOKEN` secret in the Worker environment and reject requests that
+do not present it. The Worker holds no
 agent — it classifies, acks, and forwards to your self-hosted Maverick's
 `POST /webhook/start`, then lets the run deliver to the secondary channel.
 
@@ -110,6 +119,11 @@ const LONG_TASK = /\b(write|build|create|research|deploy|refactor|generate|analy
 
 export default {
   async fetch(request, env) {
+    const auth = request.headers.get("Authorization") || "";
+    if (auth !== `Bearer ${env.RELAY_INBOUND_TOKEN}`) {
+      return new Response(JSON.stringify({ error: "unauthorized relay request" }), { status: 401 });
+    }
+
     const { text } = await request.json();
     const isLong = text && LONG_TASK.test(text);
 

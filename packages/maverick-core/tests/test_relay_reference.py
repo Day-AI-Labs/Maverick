@@ -24,7 +24,7 @@ from maverick.relay_reference import (
 
 def _cfg(**kw) -> RelayConfig:
     base = {"deadline_seconds": 30.0, "start_url": "http://relay/webhook/start",
-            "secondary_channel": "telegram"}
+            "secondary_channel": "telegram", "require_inbound_auth": False}
     base.update(kw)
     return RelayConfig(**base)
 
@@ -74,6 +74,33 @@ class TestClassify:
     def test_default_pattern_is_documented_constant(self):
         assert _cfg().long_task_pattern == DEFAULT_LONG_TASK_PATTERN
 
+
+class TestInboundAuth:
+    def test_default_relay_rejects_unauthenticated_requests_before_starting(self):
+        rec = _Recorder()
+        relay = Relay(RelayConfig(), sync_handler=lambda t: "should not run",
+                      starter=rec.starter, deliver=rec.deliver)
+        resp = relay.handle("research competitor pricing", context={"source": "glasses"})
+        assert resp.error == "unauthorized inbound relay request"
+        assert resp.started is False
+        assert rec.started == []
+
+    def test_configured_token_allows_background_start(self):
+        rec = _Recorder()
+        relay = Relay(_cfg(require_inbound_auth=True, inbound_auth_token="device-token"),
+                      sync_handler=lambda t: "x", starter=rec.starter, deliver=rec.deliver)
+        resp = relay.handle("research competitor pricing", auth_token="device-token")
+        assert resp.kind is RequestKind.ACK_THEN_RUN
+        assert resp.started is True
+        assert len(rec.started) == 1
+
+    def test_wrong_token_rejects_before_quick_handler(self):
+        rec = _Recorder()
+        relay = Relay(_cfg(require_inbound_auth=True, inbound_auth_token="device-token"),
+                      sync_handler=lambda t: "should not run", starter=rec.starter, deliver=rec.deliver)
+        resp = relay.handle("what time is it?", auth_token="wrong")
+        assert resp.error == "unauthorized inbound relay request"
+        assert rec.started == []
 
 class TestQuickPath:
     def test_quick_answer_returned_within_deadline(self):
