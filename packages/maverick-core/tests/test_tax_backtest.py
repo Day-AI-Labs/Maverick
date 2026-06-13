@@ -85,6 +85,21 @@ class TestBatchReport:
         assert "Δ $999.00" in bt.render_backtest(rep)
 
 
+class TestBacktestJson:
+    def test_backtest_dict_is_serializable_and_complete(self):
+        wp, draft = _draft(docs=[t.SourceDoc("W-2", "a", wages=80000.0,
+                                             federal_withholding=9000.0)])
+        good = bt.diff_return(_filed_from_draft("a", "single", draft), draft, wp)
+        oos = bt.ReturnDiff("b", in_scope=False,
+                            out_of_scope_reasons=["itemized"])
+        data = bt.backtest_dict(bt.BatchReport([good, oos]))
+        import json
+        json.dumps(data)
+        assert data["accuracy"] == 1.0 and data["in_scope"] == 1
+        assert data["returns"][0]["matched"] is True
+        assert data["returns"][1]["in_scope"] is False
+
+
 class TestBacktestCli:
     def test_dir_runner_and_cli(self, tmp_path):
         # Build one in-scope case (filed == what the engine computes) and one

@@ -142,6 +142,14 @@ STATE_TY2025: dict = {
         "PA": {"rate": .0307, "basis": "agi",
                "deduction": {"single": 0.0, "mfj": 0.0, "hoh": 0.0}},
     },
+    # Graduated states: same shape as "flat" but with a marginal "brackets"
+    # list ([(top_of_bracket, rate), ..., (None, top_rate)]) instead of a
+    # single rate. Deliberately empty in the built-in tables -- graduated
+    # bracket tables are verified tax data that ships through the SIGNED
+    # constants channel (maverick.tax_constants), not hard-coded here; until a
+    # bundle supplies a state's brackets it is handed off to the preparer /
+    # tax engine. The computation machinery (compute_state_first_pass) is ready.
+    "graduated": {},
 }
 
 
@@ -197,6 +205,9 @@ class Workpaper:
     # withholding, that reduces the balance due. Not on any W-2/1099, so it is
     # an explicit workpaper input the preparer/organizer supplies.
     estimated_payments: float = 0.0
+    # Prior-year overpayment the client elected to apply to this year (a
+    # 1040 payment line), also supplied from the organizer / prior return.
+    prior_year_overpayment: float = 0.0
 
     @property
     def additional_standard_boxes(self) -> int:
@@ -227,8 +238,10 @@ class Workpaper:
 
     @property
     def total_payments(self) -> float:
-        """Federal tax already paid: withholding + estimated payments."""
-        return self.total_withholding + self.estimated_payments
+        """Federal tax already paid: withholding + estimated payments + any
+        prior-year overpayment applied to this year."""
+        return (self.total_withholding + self.estimated_payments
+                + self.prior_year_overpayment)
 
     @property
     def total_state_withholding(self) -> float:
@@ -248,6 +261,7 @@ class Draft1040:
     federal_withholding: float
     balance: float                   # negative = refund
     estimated_payments: float = 0.0  # 1040-ES already paid
+    prior_year_overpayment: float = 0.0  # prior-year refund applied here
     open_items: list[str] = field(default_factory=list)
     lines: list[tuple[str, float, str]] = field(default_factory=list)
     # (line description, amount, source citation)
@@ -669,6 +683,7 @@ def compute_first_pass(wp: Workpaper, *, constants: dict = TY2025) -> Draft1040:
         tax_after_credits=round(after_credits, 2),
         federal_withholding=round(wp.total_withholding, 2),
         estimated_payments=round(wp.estimated_payments, 2),
+        prior_year_overpayment=round(wp.prior_year_overpayment, 2),
         balance=round(after_credits - payments, 2),
         open_items=open_items + list(wp.notes),
         lines=lines,
@@ -749,30 +764,40 @@ def compute_state_first_pass(wp: Workpaper, state: str, *,
                           open_items=open_items)
 
     flat = constants["flat"].get(state)
-    if flat is None:
+    graduated = (constants.get("graduated") or {}).get(state)
+    if flat is None and graduated is None:
         return StateDraft(
             state=state, filing_status=status, computed=False,
             withholding=withholding,
             open_items=open_items + [
-                f"{state} has a graduated/credit-structured income tax -- "
-                "first pass not computed; PREPARER MUST COMPLETE (or compute "
-                "in the firm's tax engine via the cch_axcess / gosystem_tax "
-                "connector)"])
+                f"{state} has a graduated/credit-structured income tax with no "
+                "bracket table loaded -- first pass not computed; PREPARER MUST "
+                "COMPLETE (or compute in the firm's tax engine via the "
+                "cch_axcess / gosystem_tax connector, or load a signed "
+                "constants bundle that includes this state's brackets)"])
 
-    if flat["basis"] == "federal_taxable":
+    # Flat and graduated states share the same base/deduction handling; only
+    # the tax function differs (a single rate vs. the marginal bracket table).
+    spec = flat if flat is not None else graduated
+    if spec["basis"] == "federal_taxable":
         if federal is None:
             federal = compute_first_pass(wp)
         base = federal.taxable_income
     else:  # "agi" -- equal to total income in the v1 scope (no adjustments)
         base = wp.total_wages + wp.total_interest + wp.total_dividends
-    taxable = max(0.0, base - flat["deduction"][status])
-    tax = round(taxable * flat["rate"], 2)
+    taxable = max(0.0, base - spec["deduction"][status])
+    if flat is not None:
+        rate = flat["rate"]
+        tax = round(taxable * rate, 2)
+    else:
+        rate = 0.0  # marginal; the bracket table, not a single rate
+        tax = round(_bracket_tax(taxable, graduated["brackets"]), 2)
     open_items.append(
         f"{state} credits, exemptions beyond the standard amount, and any "
         "local/municipal tax are not computed -- PREPARER MUST REVIEW")
     return StateDraft(
         state=state, filing_status=status, computed=True,
-        rate=flat["rate"], state_taxable=round(taxable, 2), tax=tax,
+        rate=rate, state_taxable=round(taxable, 2), tax=tax,
         withholding=withholding, balance=round(tax - withholding, 2),
         open_items=open_items,
     )
@@ -790,6 +815,10 @@ def _render_state(out: list[str], sd: StateDraft) -> None:
         out.append(f"State taxable income : ${sd.state_taxable:,.2f}")
         out.append(f"State tax (flat {sd.rate * 100:.2f}%)"
                    f" : ${sd.tax:,.2f}")
+    elif sd.state_taxable or sd.tax:
+        # graduated brackets: marginal, so there is no single rate to show
+        out.append(f"State taxable income : ${sd.state_taxable:,.2f}")
+        out.append(f"State tax (graduated): ${sd.tax:,.2f}")
     else:
         out.append("  No state individual income tax.")
     out.append(f"State withholding    : ${sd.withholding:,.2f}")
@@ -824,6 +853,9 @@ def render_review_package(draft: Draft1040,
     ]
     if draft.estimated_payments:
         out.append(f"Estimated payments   : ${draft.estimated_payments:,.2f}")
+    if draft.prior_year_overpayment:
+        out.append("Prior-yr overpayment : "
+                   f"${draft.prior_year_overpayment:,.2f}")
     if draft.balance < 0:
         out.append(f"ESTIMATED REFUND     : ${-draft.balance:,.2f}")
     else:
@@ -872,6 +904,7 @@ def review_package_dict(draft: Draft1040,
             "tax_after_credits": draft.tax_after_credits,
             "federal_withholding": draft.federal_withholding,
             "estimated_payments": draft.estimated_payments,
+            "prior_year_overpayment": draft.prior_year_overpayment,
             "balance": draft.balance,
             "is_refund": draft.balance < 0,
         },

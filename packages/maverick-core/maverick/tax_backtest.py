@@ -188,6 +188,35 @@ def render_backtest(report: BatchReport) -> str:
     return "\n".join(out)
 
 
+def backtest_dict(report: BatchReport) -> dict:
+    """The back-test report as a structured dict for a firm's dashboard.
+
+    Headline accuracy plus a per-return record (in/out of scope, max delta,
+    and the per-line deltas) so a firm can chart accuracy and drill into any
+    mismatch programmatically."""
+    return {
+        "tolerance": report.tolerance,
+        "cases": len(report.diffs),
+        "in_scope": len(report.in_scope),
+        "matched": len(report.matched),
+        "out_of_scope": len(report.out_of_scope),
+        "accuracy": round(report.accuracy, 4),
+        "returns": [
+            {
+                "client": d.client,
+                "in_scope": d.in_scope,
+                "matched": d.matched(report.tolerance),
+                "max_abs_delta": d.max_abs_delta,
+                "out_of_scope_reasons": list(d.out_of_scope_reasons),
+                "lines": [{"line": ln.line, "draft": ln.draft,
+                           "filed": ln.filed, "delta": ln.delta}
+                          for ln in d.lines],
+            }
+            for d in report.diffs
+        ],
+    }
+
+
 def _filed_from_dict(d: dict) -> FiledReturn:
     f = d.get("filed") or {}
     return FiledReturn(
@@ -227,6 +256,8 @@ def run_backtest_dir(cases_dir: Path | str,
             dependents_under_17=int(meta.get("dependents", 0)),
             docs=docs, state=str(meta.get("state", "")),
             estimated_payments=float(meta.get("estimated_payments", 0.0) or 0.0),
+            prior_year_overpayment=float(
+                meta.get("prior_year_overpayment", 0.0) or 0.0),
             taxpayer_65_or_older=bool(meta.get("taxpayer_65", False)),
             spouse_65_or_older=bool(meta.get("spouse_65", False)),
             taxpayer_blind=bool(meta.get("taxpayer_blind", False)),
@@ -238,5 +269,6 @@ def run_backtest_dir(cases_dir: Path | str,
 
 __all__ = [
     "DEFAULT_TOLERANCE", "FiledReturn", "LineDiff", "ReturnDiff",
-    "BatchReport", "diff_return", "render_backtest", "run_backtest_dir",
+    "BatchReport", "diff_return", "render_backtest", "backtest_dict",
+    "run_backtest_dir",
 ]

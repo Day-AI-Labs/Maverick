@@ -81,9 +81,11 @@ def _num(x) -> bool:
     return isinstance(x, (int, float)) and not isinstance(x, bool)
 
 
-def _validate_brackets(status: str, brackets, errs: list[str]) -> None:
+def _validate_brackets(label: str, brackets, errs: list[str]) -> None:
+    """Validate one marginal bracket list: ascending tops, rates in (0,1), an
+    open-ended last bracket. ``label`` is the dotted path used in any error."""
     if not isinstance(brackets, list) or not brackets:
-        errs.append(f"federal.brackets.{status} missing")
+        errs.append(f"{label} missing")
         return
     prev_top = 0.0
     for i, pair in enumerate(brackets):
@@ -91,20 +93,18 @@ def _validate_brackets(status: str, brackets, errs: list[str]) -> None:
               and (pair[0] is None or _num(pair[0]))
               and _num(pair[1]) and 0 < pair[1] < 1)
         if not ok:
-            errs.append(f"federal.brackets.{status}[{i}] malformed")
+            errs.append(f"{label}[{i}] malformed")
             return
         top = pair[0]
         if top is None:
             if i != len(brackets) - 1:
-                errs.append(f"federal.brackets.{status}: open bracket "
-                            "must be last")
+                errs.append(f"{label}: open bracket must be last")
             return
         if top <= prev_top:
-            errs.append(f"federal.brackets.{status}: tops not ascending")
+            errs.append(f"{label}: tops not ascending")
             return
         prev_top = float(top)
-    errs.append(f"federal.brackets.{status}: top bracket must be "
-                "open-ended (null top)")
+    errs.append(f"{label}: top bracket must be open-ended (null top)")
 
 
 def _validate_federal(fed: dict, errs: list[str]) -> None:
@@ -116,8 +116,8 @@ def _validate_federal(fed: dict, errs: list[str]) -> None:
     if not _num(fed.get("ctc_per_child")) or fed["ctc_per_child"] < 0:
         errs.append("federal.ctc_per_child missing/invalid")
     for status in FILING_STATUSES:
-        _validate_brackets(status, (fed.get("brackets") or {}).get(status),
-                           errs)
+        _validate_brackets(f"federal.brackets.{status}",
+                           (fed.get("brackets") or {}).get(status), errs)
 
 
 def _validate_state(state: dict, errs: list[str]) -> None:
@@ -139,6 +139,21 @@ def _validate_state(state: dict, errs: list[str]) -> None:
         for status in FILING_STATUSES:
             if not _num(ded.get(status)) or ded[status] < 0:
                 errs.append(f"state.flat.{code}.deduction.{status} invalid")
+    for code, grad in (state.get("graduated") or {}).items():
+        if code not in STATE_CODES:
+            errs.append(f"state.graduated: unknown state {code!r}")
+            continue
+        if not isinstance(grad, dict):
+            errs.append(f"state.graduated.{code} malformed")
+            continue
+        if grad.get("basis") not in ("agi", "federal_taxable"):
+            errs.append(f"state.graduated.{code}.basis invalid")
+        gded = grad.get("deduction") or {}
+        for status in FILING_STATUSES:
+            if not _num(gded.get(status)) or gded[status] < 0:
+                errs.append(f"state.graduated.{code}.deduction.{status} invalid")
+        _validate_brackets(f"state.graduated.{code}.brackets",
+                           grad.get("brackets"), errs)
 
 
 def validate_payload(payload: dict) -> list[str]:
@@ -181,6 +196,15 @@ def _to_runtime(payload: dict) -> tuple[dict, dict]:
                         "deduction": {s: float(f["deduction"][s])
                                       for s in FILING_STATUSES}}
                  for code, f in (st.get("flat") or {}).items()},
+        "graduated": {
+            code: {
+                "basis": g["basis"],
+                "brackets": [(None if t is None else float(t), float(r))
+                             for t, r in g["brackets"]],
+                "deduction": {s: float(g["deduction"][s])
+                              for s in FILING_STATUSES},
+            }
+            for code, g in (st.get("graduated") or {}).items()},
     }
     return federal, state
 

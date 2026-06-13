@@ -91,6 +91,26 @@ class TestValidation:
         assert any("open-ended" in e
                    for e in tax_constants.validate_payload(p4))
 
+    def test_graduated_state_table_validates(self):
+        good = _payload()
+        good["state"]["graduated"] = {"NY": {"basis": "agi",
+            "brackets": [[20000, .04], [None, .06]],
+            "deduction": {"single": 8000.0, "mfj": 16000.0, "hoh": 8000.0}}}
+        assert tax_constants.validate_payload(good) == []
+        # malformed graduated brackets are caught just like the federal ones
+        bad = _payload()
+        bad["state"]["graduated"] = {"NY": {"basis": "agi",
+            "brackets": [[20000, .04], [10000, .06], [None, .08]],
+            "deduction": {"single": 0.0, "mfj": 0.0, "hoh": 0.0}}}
+        assert any("ascending" in e
+                   for e in tax_constants.validate_payload(bad))
+        unknown = _payload()
+        unknown["state"]["graduated"] = {"ZZ": {"basis": "agi",
+            "brackets": [[None, .05]],
+            "deduction": {"single": 0.0, "mfj": 0.0, "hoh": 0.0}}}
+        assert any("unknown state" in e
+                   for e in tax_constants.validate_payload(unknown))
+
 
 @crypto
 class TestApply:

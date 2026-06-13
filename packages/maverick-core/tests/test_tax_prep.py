@@ -280,6 +280,16 @@ class TestSeniorDeductionAndPayments:
             docs=[SourceDoc("W-2", "a", wages=50000.0)]))
         assert any("OBBBA senior" in i for i in d.open_items)
 
+    def test_prior_year_overpayment_reduces_the_balance(self):
+        docs = [SourceDoc("W-2", "a", wages=60000.0, federal_withholding=5000.0)]
+        base = compute_first_pass(Workpaper(filing_status="single",
+                                            docs=list(docs)))
+        applied = compute_first_pass(Workpaper(
+            filing_status="single", prior_year_overpayment=1500.0,
+            docs=list(docs)))
+        assert round(base.balance - applied.balance, 2) == 1500.0
+        assert "Prior-yr overpayment" in render_review_package(applied)
+
     def test_estimated_payments_reduce_the_balance(self):
         docs = [SourceDoc("W-2", "a", wages=60000.0, federal_withholding=5000.0)]
         base = compute_first_pass(Workpaper(filing_status="single",
@@ -436,6 +446,29 @@ class TestStateFirstPass:
         joined = "\n".join(sd.open_items)
         assert "PREPARER MUST COMPLETE" in joined
         assert "cch_axcess" in joined and "gosystem_tax" in joined
+
+    def test_graduated_state_computes_from_a_loaded_bracket_table(self):
+        # When a (signed-bundle) graduated table is present, the engine
+        # computes marginal state tax; with no table the state hands off.
+        import copy
+
+        from maverick.tax_prep import compute_state_first_pass
+        const = copy.deepcopy(tax_prep.STATE_TY2025)
+        const["graduated"] = {"NY": {"basis": "agi",
+            "brackets": [(20000, 0.04), (None, 0.06)],
+            "deduction": {"single": 8000.0, "mfj": 16000.0, "hoh": 8000.0}}}
+        wp = Workpaper(filing_status="single", state="NY", docs=[
+            SourceDoc("W-2", "a", wages=50000.0, state="NY",
+                      state_withholding=2000.0)])
+        sd = compute_state_first_pass(wp, "NY", constants=const)
+        # taxable 42,000 -> 20,000*.04 + 22,000*.06 = 2,120
+        assert sd.computed and sd.state_taxable == 42000.0 and sd.tax == 2120.0
+        assert sd.rate == 0.0            # marginal: no single rate
+        assert sd.balance == 120.0       # 2,120 - 2,000 withheld
+        pkg = render_review_package(compute_first_pass(wp), sd)
+        assert "State tax (graduated)" in pkg
+        # Same state with no table loaded -> handoff
+        assert compute_state_first_pass(wp, "NY").computed is False
 
     def test_multi_state_withholding_flagged(self):
         from maverick.tax_prep import Workpaper as WP
