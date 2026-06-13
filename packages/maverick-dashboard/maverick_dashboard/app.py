@@ -1113,6 +1113,37 @@ async def compartments_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "compartments.html", {"domains": domains})
 
 
+@app.get("/agents", response_class=HTMLResponse)
+async def agents_page(request: Request) -> HTMLResponse:
+    """The per-client agent editor: browse every pack and customize one for this
+    deployment. ``?name=`` opens that agent's editor (persona, tools, risk, and
+    its workflow playbook); saving writes a tenant override that inherits the
+    built-in base and patches only what changed. Read-only when [features]
+    pack_editing is off. The roster + the selected agent's merged view are
+    rendered server-side; the page JS only drives the save/validate/reset
+    calls to /api/v1/agents."""
+    import json
+    agents: list = []
+    selected = None
+    editable = True
+    try:
+        from maverick.config import get_features
+        from maverick.domain_edit import list_agents, resolved_view
+        editable = bool(get_features().get("pack_editing", True))
+        agents = list_agents()
+        name = request.query_params.get("name")
+        if name:
+            selected = resolved_view(name)
+    except Exception:  # never 500 the page if the factory layer is unavailable
+        agents = []
+    workflow_json = json.dumps(selected["workflow"], indent=2) if selected else "[]"
+    return templates.TemplateResponse(
+        request, "agents.html",
+        {"agents": agents, "selected": selected, "editable": editable,
+         "workflow_json": workflow_json},
+    )
+
+
 _OVERSIGHT_KINDS = frozenset({
     "governance_denied", "shield_block", "capability_denied",
     "egress_blocked", "consent_result", "halt",

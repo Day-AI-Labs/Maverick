@@ -5,6 +5,8 @@ These keys were documented in configuration.md but nothing read them:
   - world_model -> inject persisted facts (cross-run memory) into runs
   - streaming   -> live progress poller (covered by the config getter test;
                    the poller branch also depends on TTY/MAVERICK_NO_PROGRESS)
+  - pack_editing-> allow editing/overriding agents (domain packs) from the
+                   dashboard editor (mutating /api/v1/agents endpoints)
 """
 from __future__ import annotations
 
@@ -19,15 +21,22 @@ def test_get_features_defaults_all_on(monkeypatch, tmp_path):
     cfg.write_text("")  # no [features] section at all
     monkeypatch.setenv("MAVERICK_CONFIG", str(cfg))
     from maverick.config import get_features
-    assert get_features() == {"skills": True, "world_model": True, "streaming": True}
+    assert get_features() == {
+        "skills": True, "world_model": True, "streaming": True, "pack_editing": True,
+    }
 
 
 def test_get_features_reads_overrides(monkeypatch, tmp_path):
     cfg = tmp_path / "config.toml"
-    cfg.write_text("[features]\nskills = false\nworld_model = false\nstreaming = false\n")
+    cfg.write_text(
+        "[features]\nskills = false\nworld_model = false\nstreaming = false\n"
+        "pack_editing = false\n"
+    )
     monkeypatch.setenv("MAVERICK_CONFIG", str(cfg))
     from maverick.config import get_features
-    assert get_features() == {"skills": False, "world_model": False, "streaming": False}
+    assert get_features() == {
+        "skills": False, "world_model": False, "streaming": False, "pack_editing": False,
+    }
 
 
 # ---------- swarm._default_use_skills precedence ----------

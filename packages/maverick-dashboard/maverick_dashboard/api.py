@@ -32,6 +32,7 @@ from starlette.responses import StreamingResponse
 from ._shared import _any_provider_key_set, _world
 from ._shared import _world_cache as _world_cache  # re-export: tests clear api._world_cache
 from .api_schemas import (
+    AgentOverrideIn,
     AnswerIn,
     AttachmentOut,
     CachePurgeIn,
@@ -972,6 +973,74 @@ async def list_tools() -> dict:
             for t in reg.all()
         ],
     }
+
+
+# ---- agents (domain packs): per-client view + override editor ---------------
+# GET is always available (read-only roster/inspector). The mutating routes are
+# gated behind the [features] pack_editing knob so a governed deployment can
+# lock the agent roster; write_override additionally refuses any override whose
+# *merged* result fails lint, so editing can never weaken the safety envelope.
+
+
+def _require_pack_editing() -> None:
+    from maverick.config import get_features
+    if not get_features().get("pack_editing", True):
+        raise HTTPException(
+            status_code=403,
+            detail=("pack editing is disabled ([features] pack_editing = false). "
+                    "Edit override TOML on the host, or re-enable it in config."),
+        )
+
+
+@router.get("/agents")
+async def list_agents_endpoint() -> dict:
+    """The agent roster: every pack, flagged by override/workflow status."""
+    from maverick.domain_edit import list_agents
+    return {"agents": list_agents()}
+
+
+@router.get("/agents/{name}")
+async def get_agent_endpoint(name: str) -> dict:
+    """The merged pack the agent runs, plus provenance (overridden vs inherited)
+    and lint findings -- the payload the editor renders."""
+    from maverick.domain_edit import resolved_view
+    view = resolved_view(name)
+    if view is None:
+        raise HTTPException(status_code=404, detail=f"no such agent: {name!r}")
+    return view
+
+
+@router.post("/agents/{name}/validate")
+async def validate_agent_override(name: str, payload: AgentOverrideIn) -> dict:
+    """Lint the merged result of a proposed override without persisting it."""
+    from maverick.domain_edit import validate_override
+    errors, warnings = validate_override(name, payload.model_dump(exclude_unset=True))
+    return {"ok": not errors, "errors": errors, "warnings": warnings}
+
+
+@router.post("/agents/{name}/override")
+async def save_agent_override(name: str, payload: AgentOverrideIn) -> dict:
+    """Persist a tenant override for ``name``. 403 if pack editing is disabled,
+    422 if the merged pack fails lint (the override is rejected, not written)."""
+    _require_pack_editing()
+    from maverick.domain_edit import resolved_view, write_override
+    try:
+        write_override(name, payload.model_dump(exclude_unset=True))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return resolved_view(name)
+
+
+@router.delete("/agents/{name}/override")
+async def delete_agent_override(name: str) -> dict:
+    """Drop a tenant override, reverting the agent to its built-in pack."""
+    _require_pack_editing()
+    from maverick.domain_edit import remove_override, resolved_view
+    removed = remove_override(name)
+    view = resolved_view(name)
+    if view is None:
+        raise HTTPException(status_code=404, detail=f"no such agent: {name!r}")
+    return {"removed": removed, "agent": view}
 
 
 @router.get("/channels")

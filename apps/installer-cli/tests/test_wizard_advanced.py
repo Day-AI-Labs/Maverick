@@ -477,3 +477,27 @@ def test_security_autofix_writes_security_section(tmp_path, monkeypatch):
 def test_security_autofix_off_writes_no_security_section(tmp_path, monkeypatch):
     text = _write(tmp_path, monkeypatch, {"security_autofix": False})
     assert "auto_fix" not in text
+
+
+def test_pack_editing_lock_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: declining dashboard pack editing writes [features]
+    pack_editing = false, and the kernel reads it back as disabled."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_CONFIG", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"allow_pack_editing": False})
+    assert "[features]" in cfg
+    assert "pack_editing = false" in cfg
+
+    from maverick.config import get_features
+    assert get_features()["pack_editing"] is False
+
+
+def test_pack_editing_default_on_writes_no_features_section(tmp_path, monkeypatch):
+    """Leaving pack editing on (the default) emits no [features] table, and the
+    kernel still reports it enabled."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_CONFIG", raising=False)
+    cfg = _write(tmp_path, monkeypatch, {"allow_pack_editing": True})
+    assert "[features]" not in cfg

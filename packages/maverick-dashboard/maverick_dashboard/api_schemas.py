@@ -8,6 +8,30 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class WorkflowStepIn(BaseModel):
+    name: str = Field(..., max_length=80)
+    instruction: str = ""
+    tools: list[str] = Field(default_factory=list)
+    gate: str | None = None
+
+
+class AgentOverrideIn(BaseModel):
+    """A tenant override patch for a domain pack (agent). Every field is
+    optional: only the ones the client actually sets are persisted, so the
+    pack inherits everything else from its built-in base. ``extends`` forks a
+    base under a new name; omit it to customize the pack in place."""
+    description: str | None = None
+    persona: str | None = None
+    allow_tools: list[str] | None = None
+    deny_tools: list[str] | None = None
+    max_risk: str | None = None
+    knowledge_sources: list[str] | None = None
+    models: dict[str, str] | None = None
+    workflow: list[WorkflowStepIn] | None = None
+    compartment: str | None = None
+    extends: str | None = None
+
+
 class GoalIn(BaseModel):
     title: str = Field(..., max_length=200)
     description: str = ""
