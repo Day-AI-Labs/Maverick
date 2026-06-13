@@ -79,3 +79,26 @@ def test_threshold_configurable(tmp_path, monkeypatch):
     strict.enroll("alice", [b"a", b"b", b"c"])
     assert strict.decide("alice", b"a").companion_ok is False
     assert DEFAULT_THRESHOLD == 0.80
+
+
+def test_store_created_without_readable_temp_window(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_VOICE_UNLOCK", "1")
+    gate = VoiceGate(_embedder([0.6, 0.8, 0.0]),
+                     store_path=tmp_path / "private" / "profiles.json")
+
+    seen_tmp_modes = []
+    real_replace = __import__("os").replace
+
+    def inspect_tmp_before_replace(src, dst):
+        seen_tmp_modes.append(oct(src.stat().st_mode)[-3:])
+        return real_replace(src, dst)
+
+    monkeypatch.setattr("maverick.voice_unlock.os.replace",
+                        inspect_tmp_before_replace)
+
+    gate.enroll("alice", [b"a1", b"a2", b"a3"])
+
+    assert seen_tmp_modes == ["600"]
+    assert oct((tmp_path / "private").stat().st_mode)[-3:] == "700"
+    assert oct((tmp_path / "private" / "profiles.json").stat().st_mode)[-3:] == "600"
+    assert not list((tmp_path / "private").glob("*.tmp"))
