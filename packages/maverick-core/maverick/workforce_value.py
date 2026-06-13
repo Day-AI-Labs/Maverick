@@ -177,11 +177,32 @@ def _coverage_trend(cutoff: float) -> list[tuple[str, int]]:
 
 
 def _governance_summary() -> dict:
-    """Policy-adherence evidence from the signed audit log (best-effort)."""
+    """Policy-adherence evidence from the signed audit log (best-effort).
+
+    A signed chain is only present when at least one audit day-file exists and
+    the same verifier used by ``maverick audit verify --all`` finds no per-file
+    or cross-file breaks. Crypto-library availability alone is not evidence that
+    signing was enabled or that existing rows are signed and intact.
+    """
     summary: dict = {"chain_verifiable": None, "denials": None}
     try:
         from .audit import signing
-        summary["chain_verifiable"] = bool(signing._have_crypto())
+        from .paths import data_dir
+
+        audit_dir = data_dir("audit")
+        if not signing._have_crypto() or not audit_dir.is_dir():
+            summary["chain_verifiable"] = False
+            return summary
+        day_files = [
+            p for p in sorted(audit_dir.glob("*.ndjson"))
+            if p.name != signing.ANCHOR_FILENAME
+        ]
+        if not day_files:
+            summary["chain_verifiable"] = False
+            return summary
+        has_breaks = any(signing.verify_chain(path) for path in day_files)
+        has_breaks = has_breaks or bool(signing.verify_anchors(audit_dir))
+        summary["chain_verifiable"] = not has_breaks
     except Exception:  # pragma: no cover
         pass
     return summary
