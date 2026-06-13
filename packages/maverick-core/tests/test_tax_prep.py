@@ -635,6 +635,34 @@ class TestTaxEngineConnectors:
             assert cap.permits("gosystem_tax") is False, name
 
 
+class TestJsonOutput:
+    def test_review_package_dict_is_serializable_and_complete(self):
+        wp = Workpaper(filing_status="single", estimated_payments=1000.0,
+                       docs=[SourceDoc("W-2", "a", wages=80000.0,
+                                       federal_withholding=9000.0)])
+        draft = compute_first_pass(wp)
+        from maverick.tax_prep import compute_state_first_pass, review_package_dict
+        state = compute_state_first_pass(wp, "PA")
+        data = review_package_dict(draft, state)
+        import json
+        json.dumps(data)                                   # must serialize
+        assert data["federal"]["total_income"] == 80000.0
+        assert data["federal"]["estimated_payments"] == 1000.0
+        assert data["state"]["state"] == "PA"
+        assert data["is_draft"] is True
+
+    def test_cli_json_format_emits_valid_json(self, tmp_path):
+        (tmp_path / "w2.txt").write_text(W2_TEXT, encoding="utf-8")
+        res = CliRunner().invoke(main, [
+            "--db", str(tmp_path / "x.db"), "tax", "prepare", str(tmp_path),
+            "--filing-status", "single", "--format", "json"])
+        assert res.exit_code == 0, res.output
+        import json
+        data = json.loads(res.output)
+        assert data["federal"]["total_income"] == 85000.0
+        assert "constants" in data
+
+
 class TestTaxPrepareCli:
     def test_docs_folder_to_review_package(self, tmp_path):
         (tmp_path / "w2_acme.txt").write_text(W2_TEXT, encoding="utf-8")

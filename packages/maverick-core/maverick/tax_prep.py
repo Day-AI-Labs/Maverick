@@ -821,6 +821,52 @@ def render_review_package(draft: Draft1040,
     return "\n".join(out)
 
 
+def review_package_dict(draft: Draft1040,
+                        state: StateDraft | None = None) -> dict:
+    """The review package as a structured dict for programmatic intake.
+
+    Stable schema for a firm wiring the first pass into its own systems:
+    every federal line with its source citation, the carried figures, the
+    combined open items, and the state block. Money stays as floats (cents);
+    the text package remains the human-facing artifact."""
+    data: dict = {
+        "disclaimer": DISCLAIMER,
+        "tax_year": TY2025["year"],
+        "filing_status": draft.filing_status,
+        "is_draft": True,
+        "federal": {
+            "lines": [{"description": desc, "amount": amt, "source": src}
+                      for desc, amt, src in draft.lines],
+            "total_income": draft.total_income,
+            "standard_deduction": draft.standard_deduction,
+            "taxable_income": draft.taxable_income,
+            "tax_before_credits": draft.tax_before_credits,
+            "child_tax_credit": draft.child_tax_credit,
+            "tax_after_credits": draft.tax_after_credits,
+            "federal_withholding": draft.federal_withholding,
+            "estimated_payments": draft.estimated_payments,
+            "balance": draft.balance,
+            "is_refund": draft.balance < 0,
+        },
+        "carried_figures": [{"description": desc, "amount": amt, "source": src}
+                            for desc, amt, src in draft.carried],
+        "open_items": list(draft.open_items),
+    }
+    if state is not None:
+        data["state"] = {
+            "state": state.state,
+            "computed": state.computed,
+            "rate": state.rate,
+            "state_taxable": state.state_taxable,
+            "tax": state.tax,
+            "withholding": state.withholding,
+            "balance": state.balance,
+            "open_items": list(state.open_items),
+        }
+        data["open_items"] += [f"[{state.state}] {i}" for i in state.open_items]
+    return data
+
+
 __all__ = [
     "DISCLAIMER", "DOC_TYPES", "TY2025", "STATE_TY2025", "STATE_CODES",
     "FILING_STATUSES",
@@ -828,4 +874,5 @@ __all__ = [
     "classify", "extract", "missing_items", "compute_first_pass",
     "infer_state", "compute_state_first_pass", "render_review_package",
     "normalize_filing_status", "carried_figures", "duplicate_groups",
+    "review_package_dict",
 ]
