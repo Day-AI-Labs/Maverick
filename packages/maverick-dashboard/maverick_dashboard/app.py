@@ -2323,8 +2323,13 @@ async def settings_page(request: Request, saved: str = "") -> HTMLResponse:
     persist_theme middleware (the form GETs back here with the params); the
     model choice is saved to the dashboard-owned runtime overlay."""
     import os as _os
+
     from maverick.llm import (
-        MODEL_HAIKU, MODEL_OPUS, MODEL_OPUS_FAST, MODEL_SONNET, model_for_role,
+        MODEL_HAIKU,
+        MODEL_OPUS,
+        MODEL_OPUS_FAST,
+        MODEL_SONNET,
+        model_for_role,
     )
     from maverick.runtime_overrides import default_model_override
     roles = [
@@ -2373,8 +2378,8 @@ async def settings_set_model(request: Request, model: str = Form("")) -> Redirec
             set_default_model(model)
         else:
             clear_default_model()
-    except ValueError:
-        raise HTTPException(status_code=400, detail="invalid model id")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid model id") from exc
     return RedirectResponse("/settings?saved=models", status_code=303)
 
 
