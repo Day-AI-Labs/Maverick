@@ -2390,8 +2390,6 @@ async def settings_page(request: Request, saved: str = "") -> HTMLResponse:
     Maverick uses by default. Appearance is applied via the existing
     persist_theme middleware (the form GETs back here with the params); the
     model choice is saved to the dashboard-owned runtime overlay."""
-    import os as _os
-
     from maverick.llm import (
         MODEL_HAIKU,
         MODEL_OPUS,
@@ -2421,22 +2419,24 @@ async def settings_page(request: Request, saved: str = "") -> HTMLResponse:
         (MODEL_SONNET, "Claude Sonnet 4.6 — balanced"),
         (MODEL_HAIKU, "Claude Haiku 4.5 — fastest, cheapest"),
     ]
-    provider_vars = (
-        "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY",
-        "OPENROUTER_API_KEY", "MOONSHOT_API_KEY", "DEEPSEEK_API_KEY", "XAI_API_KEY",
-    )
-    providers = [(v, bool(_os.environ.get(v))) for v in provider_vars]
+    from maverick_dashboard import settings_store
+    cfg_state = settings_store.state()
     saved_msg = {
         "appearance": "Appearance updated.",
         "models": "Default model updated.",
         "roles": "Per-role models updated.",
         "budget": "Spend cap updated.",
+        "providers": "Provider keys updated.",
+        "capabilities": "Capabilities updated.",
+        "features": "Features updated.",
     }.get(saved, "")
     return templates.TemplateResponse(request, "settings.html", {
         "role_models": role_models,
         "known_models": known_models,
         "pinned_model": default_model_override(),
-        "providers": providers,
+        "providers": cfg_state["providers"],
+        "capabilities": cfg_state["capabilities"],
+        "features": cfg_state["features"],
         "budget": budget_override(),
         "default_budget": DEFAULT_MAX_DOLLARS,
         "saved": saved_msg,
@@ -2500,6 +2500,63 @@ async def settings_set_role_models(request: Request) -> RedirectResponse:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="invalid model id") from exc
     return RedirectResponse("/settings?saved=roles", status_code=303)
+
+
+@app.post("/settings/providers")
+async def settings_set_provider(
+    request: Request,
+    provider: str = Form(...),
+    api_key: str = Form(""),
+    base_url: str = Form(""),
+) -> RedirectResponse:
+    """Save a provider's API key / base URL to the dashboard config overlay
+    (0600). Empty fields are left unchanged (so re-saving a base URL never wipes
+    a key you can't see); resolved before env vars; config.toml is never written."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    from maverick_dashboard import settings_store
+    try:
+        settings_store.set_provider(provider.strip(), api_key=api_key, base_url=base_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="unknown provider") from exc
+    return RedirectResponse("/settings?saved=providers", status_code=303)
+
+
+@app.post("/settings/providers/clear")
+async def settings_clear_provider(request: Request, provider: str = Form(...)) -> RedirectResponse:
+    """Remove a provider's dashboard-set key (config.toml / env unaffected)."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    from maverick_dashboard import settings_store
+    try:
+        settings_store.clear_provider(provider.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="unknown provider") from exc
+    return RedirectResponse("/settings?saved=providers", status_code=303)
+
+
+@app.post("/settings/capabilities")
+async def settings_set_capabilities(request: Request) -> RedirectResponse:
+    """Activate/deactivate capabilities via the dashboard config overlay."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    from maverick_dashboard import settings_store
+    form = await request.form()
+    for name in settings_store.CAPABILITY_DEFAULTS:
+        settings_store.set_toggle("capabilities", name, name in form)
+    return RedirectResponse("/settings?saved=capabilities", status_code=303)
+
+
+@app.post("/settings/features")
+async def settings_set_features(request: Request) -> RedirectResponse:
+    """Activate/deactivate features via the dashboard config overlay."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    from maverick_dashboard import settings_store
+    form = await request.form()
+    for name in settings_store.FEATURE_DEFAULTS:
+        settings_store.set_toggle("features", name, name in form)
+    return RedirectResponse("/settings?saved=features", status_code=303)
 
 
 @app.post("/webhook/start")
