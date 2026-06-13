@@ -144,9 +144,35 @@ class ReviewCheckpoint:
         return None if keep_going else event
 
 
+def consent_review(event: CheckpointEvent, *, goal_id: int | None = None) -> bool:
+    """Require explicit operator approval to continue past a checkpoint.
+
+    This intentionally disables the consent primitive's backwards-compatible
+    silent auto-approve and prior-ledger fast paths: a long-horizon checkpoint
+    is a fresh human-in-the-loop review, not a reusable capability grant.
+    """
+    from .safety import require_consent
+
+    scope = f"goal:{goal_id}" if goal_id is not None else "goal"
+    detail = (
+        f"Long-horizon review checkpoint reached {event.reason}="
+        f"{event.value:g} (interval {event.threshold:g}). Continue the run?"
+    )
+    decision = require_consent(
+        "review-checkpoint",
+        risk="medium",
+        scope=scope,
+        detail=detail,
+        provenance="review_checkpoint",
+        allow_auto_approve=False,
+        consult_ledger=False,
+    )
+    return bool(decision.granted)
+
+
 def from_config(review: Callable[[CheckpointEvent], bool] | None = None) -> ReviewCheckpoint:
     return ReviewCheckpoint(policy_from_config(), review=review)
 
 
 __all__ = ["CheckpointPolicy", "CheckpointEvent", "ReviewCheckpoint",
-           "policy_from_config", "from_config"]
+           "policy_from_config", "from_config", "consent_review"]

@@ -4,8 +4,10 @@ from __future__ import annotations
 import types
 
 from maverick.review_checkpoint import (
+    CheckpointEvent,
     CheckpointPolicy,
     ReviewCheckpoint,
+    consent_review,
     policy_from_config,
 )
 
@@ -78,3 +80,39 @@ def test_policy_from_config_off_by_default(monkeypatch):
     import maverick.config as config_mod
     monkeypatch.setattr(config_mod, "load_config", lambda: {})
     assert not policy_from_config().is_active()
+
+
+def test_consent_review_requires_fresh_explicit_approval(monkeypatch):
+    calls = []
+
+    def fake_require_consent(*args, **kwargs):
+        calls.append((args, kwargs))
+        return types.SimpleNamespace(granted=True)
+
+    import maverick.safety as safety
+    monkeypatch.setattr(safety, "require_consent", fake_require_consent)
+
+    event = CheckpointEvent("tool_calls", 100, 50)
+    assert consent_review(event, goal_id=123) is True
+
+    assert calls == [(
+        ("review-checkpoint",),
+        {
+            "risk": "medium",
+            "scope": "goal:123",
+            "detail": (
+                "Long-horizon review checkpoint reached tool_calls=100 "
+                "(interval 50). Continue the run?"
+            ),
+            "provenance": "review_checkpoint",
+            "allow_auto_approve": False,
+            "consult_ledger": False,
+        },
+    )]
+
+
+def test_consent_review_denies_silent_auto_approval(monkeypatch):
+    monkeypatch.setenv("MAVERICK_CONSENT_MODE", "auto-approve")
+
+    event = CheckpointEvent("dollars", 10, 10)
+    assert consent_review(event, goal_id=7) is False

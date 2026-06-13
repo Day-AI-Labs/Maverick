@@ -23,9 +23,10 @@ here.
 - **Killswitch** — `~/.maverick/HALT` aborts all running goals (`killswitch.py`).
 - **Long-horizon review checkpoint** — opt-in `[safety] review_checkpoint`
   (`review_checkpoint.py`): the root agent fires a human-review heartbeat every
-  N dollars / M tool calls / T wall-seconds; a reviewer vote to halt (an armed
-  killswitch by default) stops the run cleanly. Distinct from the hard budget
-  cap; inert and behavior-identical when unconfigured.
+  N dollars / M tool calls / T wall-seconds; continuation is gated through the
+  consent/approval path with silent auto-approval disabled, so a reviewer denial
+  or missing explicit approval stops the run cleanly. Distinct from the hard
+  budget cap; inert and behavior-identical when unconfigured.
 - **Verifier default-on** across goal types (`verifier.py`); **reflexion** retry
   loop with cross-session failure memory (`reflexion.py`); graded **critic** for
   structured accept/revise/reject feedback (`critic.py`).
