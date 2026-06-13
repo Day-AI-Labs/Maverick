@@ -75,3 +75,33 @@ def test_handoff_nonce_store_pruned(tmp_path):
     import json
     stored = json.loads(nonces.read_text())
     assert len(stored) == 1  # only c2's nonce kept
+
+
+def test_handoff_rejects_invalid_signature_before_json_parse(tmp_path):
+    import base64
+
+    body = "[" * 1200
+    b64 = base64.urlsafe_b64encode(body.encode("utf-8")).decode("ascii").rstrip("=")
+    with pytest.raises(ValueError, match="signature"):
+        sl.claim_handoff(f"{b64}.{'0' * 32}", now=1000.0, nonce_path=tmp_path / "n.json")
+
+
+def test_handoff_concurrent_claim_is_one_time(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    session = {"goal_id": 7, "conversation_id": 3, "channel": "telegram",
+               "user_id": "alice"}
+    code = sl.pack_handoff(session, now=1000.0)
+    nonces = tmp_path / "nonces.json"
+
+    def claim_once():
+        try:
+            return sl.claim_handoff(code, now=1010.0, nonce_path=nonces)
+        except ValueError as e:
+            return str(e)
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        results = list(pool.map(lambda _: claim_once(), range(16)))
+
+    assert results.count(session) == 1
+    assert results.count("handoff code already claimed (one-time use)") == 15
