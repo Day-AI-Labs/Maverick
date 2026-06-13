@@ -428,8 +428,10 @@
         <span class="dot" aria-hidden="true"></span>
         <span id="halt-label">checking</span>
       </a>
+      <a href="/settings" aria-label="Settings"
+         style="display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.7rem; border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--text); text-decoration: none; font-size: var(--text-sm);">&#9881; Settings</a>
       <select class="ctl" id="theme-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('theme', this.value); window.location = u; }" aria-label="Theme">
-        <option value="">theme</option>
+        <option value="">Theme</option>
         <option value="dark" {% if theme == 'dark' %}selected{% endif %}>Dark</option>
         <option value="light" {% if theme == 'light' %}selected{% endif %}>Light</option>
         <option value="solarized" {% if theme == 'solarized' %}selected{% endif %}>Solarized</option>
@@ -439,17 +441,17 @@
         {% endfor %}
       </select>
       <select class="ctl" id="density-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('density', this.value); window.location = u; }" aria-label="Density">
-        <option value="">density</option>
+        <option value="">Density</option>
         <option value="comfortable" {% if density == 'comfortable' %}selected{% endif %}>Comfortable</option>
         <option value="compact" {% if density == 'compact' %}selected{% endif %}>Compact</option>
       </select>
       <select class="ctl" id="font-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('font', this.value); window.location = u; }" aria-label="{{ t('label.font') }}">
-        <option value="">{{ t('label.font')|lower }}</option>
+        <option value="">{{ t('label.font') }}</option>
         <option value="default" {% if font == 'default' %}selected{% endif %}>{{ t('font.default') }}</option>
         <option value="dyslexic" {% if font == 'dyslexic' %}selected{% endif %}>{{ t('font.dyslexic') }}</option>
       </select>
       <select class="ctl" id="lang-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('lang', this.value); window.location = u; }" aria-label="{{ t('label.language') }}">
-        <option value="">{{ t('label.language')|lower }}</option>
+        <option value="">{{ t('label.language') }}</option>
         <option value="en" {% if lang == 'en' %}selected{% endif %}>English</option>
         <option value="fr" {% if lang == 'fr' %}selected{% endif %}>Français</option>
         <option value="de" {% if lang == 'de' %}selected{% endif %}>Deutsch</option>
@@ -470,7 +472,7 @@
         ('Observe', [('/oversight', 'Oversight'), ('/spend', 'Spend'), ('/providers', 'Providers'), ('/benchmarks', 'Benchmarks'), ('/learned', 'Learned'), ('/plan-tree-3d', '3D')]),
         ('Govern', [('/approvals', 'Approvals'), ('/permissions', 'Permissions'), ('/safety', 'Safety'), ('/compliance', 'Compliance'), ('/compartments', 'Compartments'), ('/audit', 'Audit')]),
         ('Extend', [('/skills', 'Skills'), ('/store', 'Store'), ('/templates', 'Templates'), ('/tools', 'Tools'), ('/plugins', 'Plugins'), ('/mcp', 'MCP'), ('/channels', 'Channels')]),
-        ('Admin', [('/tenants', 'Tenants'), ('/cache', 'Cache'), ('/facts', 'Facts'), ('/walkthroughs', 'Walkthroughs'), ('/embed-demo', 'Embed')]),
+        ('Admin', [('/settings', 'Settings'), ('/tenants', 'Tenants'), ('/cache', 'Cache'), ('/facts', 'Facts'), ('/walkthroughs', 'Walkthroughs'), ('/embed-demo', 'Embed')]),
       ] %}
       {% for _group in _nav_groups %}
         <div class="navgrp">

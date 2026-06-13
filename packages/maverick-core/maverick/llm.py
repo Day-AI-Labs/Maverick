@@ -206,6 +206,17 @@ def model_for_role(role: str) -> str:
             return spec
     except Exception:
         pass
+    # Dashboard-pinned default model (set from the settings page; lives in
+    # ~/.maverick/runtime-overrides.toml, never config.toml). Below per-role
+    # config above, above the built-in ROLE_MODELS defaults -- an explicit UI
+    # choice that still yields to a more specific config [models].<role>.
+    try:
+        from .runtime_overrides import default_model_override
+        pinned = default_model_override()
+        if pinned:
+            return pinned
+    except Exception:  # pragma: no cover -- never let the overlay break resolution
+        pass
     # Local-first (opt-in, off by default). When [system] local_first is on and
     # a configured local model's server is reachable, keep the work on-machine;
     # returns None otherwise, so this is a no-op for the default install and

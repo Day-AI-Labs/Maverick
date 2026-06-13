@@ -2316,6 +2316,68 @@ async def chat_send(
     return RedirectResponse(f"/chat/goal/{goal_id}", status_code=303)
 
 
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request, saved: str = "") -> HTMLResponse:
+    """Operator settings: appearance (theme/density/font/language) + which model
+    Maverick uses by default. Appearance is applied via the existing
+    persist_theme middleware (the form GETs back here with the params); the
+    model choice is saved to the dashboard-owned runtime overlay."""
+    import os as _os
+    from maverick.llm import (
+        MODEL_HAIKU, MODEL_OPUS, MODEL_OPUS_FAST, MODEL_SONNET, model_for_role,
+    )
+    from maverick.runtime_overrides import default_model_override
+    roles = [
+        ("Orchestrator", "orchestrator"), ("Coder", "coder"),
+        ("Researcher", "researcher"), ("Writer", "writer"),
+        ("Analyst", "analyst"), ("Verifier", "verifier"),
+        ("Summarizer", "summarizer"),
+    ]
+    role_models = [(label, role, model_for_role(role)) for label, role in roles]
+    known_models = [
+        (MODEL_OPUS, "Claude Opus 4.8 — most capable"),
+        (MODEL_OPUS_FAST, "Claude Opus 4.8 (fast) — 2x faster, 2x price"),
+        (MODEL_SONNET, "Claude Sonnet 4.6 — balanced"),
+        (MODEL_HAIKU, "Claude Haiku 4.5 — fastest, cheapest"),
+    ]
+    provider_vars = (
+        "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY",
+        "OPENROUTER_API_KEY", "MOONSHOT_API_KEY", "DEEPSEEK_API_KEY", "XAI_API_KEY",
+    )
+    providers = [(v, bool(_os.environ.get(v))) for v in provider_vars]
+    saved_msg = {
+        "appearance": "Appearance updated.",
+        "models": "Default model updated.",
+    }.get(saved, "")
+    return templates.TemplateResponse(request, "settings.html", {
+        "role_models": role_models,
+        "known_models": known_models,
+        "pinned_model": default_model_override(),
+        "providers": providers,
+        "saved": saved_msg,
+    })
+
+
+@app.post("/settings/models")
+async def settings_set_model(request: Request, model: str = Form("")) -> RedirectResponse:
+    """Pin (or clear) the dashboard's default model via the runtime overlay.
+
+    An empty value clears the pin, reverting to config.toml / built-in
+    defaults. config.toml is never written."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    from maverick.runtime_overrides import clear_default_model, set_default_model
+    model = (model or "").strip()
+    try:
+        if model:
+            set_default_model(model)
+        else:
+            clear_default_model()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid model id")
+    return RedirectResponse("/settings?saved=models", status_code=303)
+
+
 @app.post("/webhook/start")
 async def webhook_start(request: Request, bg: BackgroundTasks) -> JSONResponse:
     """Generic inbound webhook: create a goal from an HMAC-signed POST.

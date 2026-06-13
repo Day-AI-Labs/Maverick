@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}settings · Maverick{% endblock %}
+{% block content %}
+  <h1 class="page-title">Settings</h1>
+
+  {% if saved %}
+  <div class="panel" role="status"
+       style="border-color: var(--brand-border); background: var(--brand-subtle); margin-bottom: var(--space-4);">
+    <strong>Saved.</strong> {{ saved }}
+  </div>
+  {% endif %}
+
+  <h2>Appearance</h2>
+  <div class="panel">
+    <p class="muted" style="margin-top: 0;">
+      Theme, density, font and language for this browser. Applies when you save.
+    </p>
+    <form method="get" action="/settings"
+          style="display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: flex-end;">
+      <input type="hidden" name="saved" value="appearance" />
+      <label style="display: flex; flex-direction: column; gap: var(--space-1);">
+        <span>Theme</span>
+        <select class="ctl" name="theme">
+          <option value="dark" {% if theme == 'dark' %}selected{% endif %}>Dark</option>
+          <option value="light" {% if theme == 'light' %}selected{% endif %}>Light</option>
+          <option value="solarized" {% if theme == 'solarized' %}selected{% endif %}>Solarized</option>
+          <option value="hicontrast" {% if theme == 'hicontrast' %}selected{% endif %}>High contrast</option>
+          {% for name in custom_theme_names %}
+          <option value="{{ name }}" {% if theme == name %}selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label style="display: flex; flex-direction: column; gap: var(--space-1);">
+        <span>Density</span>
+        <select class="ctl" name="density">
+          <option value="comfortable" {% if density == 'comfortable' %}selected{% endif %}>Comfortable</option>
+          <option value="compact" {% if density == 'compact' %}selected{% endif %}>Compact</option>
+        </select>
+      </label>
+      <label style="display: flex; flex-direction: column; gap: var(--space-1);">
+        <span>Font</span>
+        <select class="ctl" name="font">
+          <option value="default" {% if font == 'default' %}selected{% endif %}>{{ t('font.default') }}</option>
+          <option value="dyslexic" {% if font == 'dyslexic' %}selected{% endif %}>{{ t('font.dyslexic') }}</option>
+        </select>
+      </label>
+      <label style="display: flex; flex-direction: column; gap: var(--space-1);">
+        <span>Language</span>
+        <select class="ctl" name="lang">
+          <option value="en" {% if lang == 'en' %}selected{% endif %}>English</option>
+          <option value="fr" {% if lang == 'fr' %}selected{% endif %}>Français</option>
+          <option value="de" {% if lang == 'de' %}selected{% endif %}>Deutsch</option>
+          <option value="ja" {% if lang == 'ja' %}selected{% endif %}>日本語</option>
+          <option value="zh" {% if lang == 'zh' %}selected{% endif %}>中文</option>
+          <option value="ar" {% if lang == 'ar' %}selected{% endif %}>العربية</option>
+        </select>
+      </label>
+      <button type="submit" class="btn btn--primary">Apply</button>
+    </form>
+  </div>
+
+  <h2>Models</h2>
+  <div class="panel">
+    <p class="muted" style="margin-top: 0;">
+      Choose the model Maverick uses by default. This is saved to a dashboard-owned
+      file (<code>~/.maverick/runtime-overrides.toml</code>) — your <code>config.toml</code>
+      is never touched. A model pinned per role in <code>config.toml</code> still wins.
+    </p>
+    <form method="post" action="/settings/models"
+          style="display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: flex-end;">
+      <label style="display: flex; flex-direction: column; gap: var(--space-1); min-width: 20rem;">
+        <span>Default model</span>
+        <select class="ctl" name="model">
+          <option value="" {% if not pinned_model %}selected{% endif %}>Use config.toml / built-in defaults</option>
+          {% for spec, label in known_models %}
+          <option value="{{ spec }}" {% if pinned_model == spec %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="btn btn--primary">Save model</button>
+    </form>
+    {% if pinned_model %}
+    <p class="muted" style="margin-bottom: 0;">Currently pinned: <code>{{ pinned_model }}</code></p>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h2 style="margin-top: 0;">Effective model per role</h2>
+    <table>
+      <thead><tr><th scope="col">Role</th><th scope="col">Model</th></tr></thead>
+      <tbody>
+        {% for label, role, model in role_models %}
+        <tr><td>{{ label }}</td><td><code>{{ model }}</code></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2 style="margin-top: 0;">Provider keys</h2>
+    <p class="muted" style="margin-top: 0;">
+      Which provider API keys this server can see in its environment. Maverick reads
+      keys like <code>ANTHROPIC_API_KEY</code> from the environment — set one before
+      starting the dashboard.
+    </p>
+    <table>
+      <thead><tr><th scope="col">Provider key</th><th scope="col">Status</th></tr></thead>
+      <tbody>
+        {% for name, present in providers %}
+        <tr>
+          <td><code>{{ name }}</code></td>
+          <td>
+            {% if present %}<span style="color: var(--success); font-weight: 600;">set</span>
+            {% else %}<span class="muted">not set</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}
