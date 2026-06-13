@@ -647,6 +647,14 @@ class TestLearningGovernance:
 
     def test_dry_run_reports_without_writing(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dreaming, "settings", lambda: dict(_SETTINGS))
+        rows: list[dict] = []
+
+        def _capture(kind, **kw):
+            rows.append({"kind": kind, **kw})
+            return True
+
+        import maverick.audit as audit_pkg
+        monkeypatch.setattr(audit_pkg, "record", _capture)
         rpath = tmp_path / "reflexions.ndjson"
         for goal in ("reconcile the quarterly ledger totals",
                      "reconcile the monthly ledger totals"):
@@ -668,6 +676,7 @@ class TestLearningGovernance:
         assert report.insights_written == 1
         # ...but the live store was never touched.
         assert not (tmp_path / "insights.ndjson").exists()
+        assert rows == []
 
     def test_cycle_writes_learning_audit_row(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dreaming, "settings", lambda: dict(_SETTINGS))

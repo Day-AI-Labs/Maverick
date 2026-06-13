@@ -1063,6 +1063,7 @@ def dream_cycle(
     user_notes_path: Path | str | None = None,
     settings_override: dict | None = None,
     donations_dir: Path | str | None = None,
+    audit: bool = True,
 ) -> DreamReport:
     """Run one full dream cycle. Deterministic, LLM-free, fail-open.
 
@@ -1187,9 +1188,14 @@ def dream_cycle(
         i.domain for i in new_insights if i.domain
     }
     report.departments = sorted(touched)
-    _audit_cycle(report)
+    _maybe_audit_cycle(report, audit=audit)
     return report
 
+
+
+def _maybe_audit_cycle(report: DreamReport, *, audit: bool) -> None:
+    if audit:
+        _audit_cycle(report)
 
 
 def _audit_cycle(report: DreamReport) -> None:
@@ -1360,6 +1366,7 @@ def dream_cycle_dry(world: Any | None = None, **kwargs) -> DreamReport:
             skill_store=kwargs.pop("skill_store", copies["learned-skills"]),
             skill_stats_path=kwargs.pop("skill_stats_path", copies["skill_stats.json"]),
             settings_override=override,
+            audit=False,
             **kwargs,
         )
     finally:
