@@ -3588,6 +3588,8 @@ def erase_verify(channel: str, user: str, tenant: str | None, as_json: bool) -> 
     report = verify_erasure(user, channel=channel, tenant=tenant)
     if as_json:
         click.echo(_json.dumps(report, default=str))
+        if not report["clean"]:
+            raise SystemExit(1)
         return
     if report["clean"]:
         click.echo(click.style(

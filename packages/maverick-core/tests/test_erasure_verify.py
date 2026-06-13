@@ -104,3 +104,25 @@ def test_cli_erase_verify_residual_exit_one():
         main, ["erase-verify", "--channel", "telegram", "--user", "alice"])
     assert res.exit_code == 1
     assert "RESIDUAL DATA" in res.output
+
+
+def test_verify_erasure_counts_user_scoped_facts():
+    wm = WorldModel(_world_db())
+    wm.upsert_fact("user:telegram:alice:preference", "alice secret PII")
+    wm.upsert_fact("user:telegram:bob:preference", "bob secret PII")
+    wm.upsert_fact("global:telegram:alice", "not deliberately scoped")
+    wm.close()
+
+    rep = erasure_verify.verify_erasure("alice", channel="telegram")
+
+    assert rep["clean"] is False
+    assert rep["counts"]["facts"] == 1
+    assert rep["residual"]["facts"] == 1
+
+
+def test_cli_erase_verify_json_residual_exit_one():
+    _seed()
+    res = CliRunner().invoke(
+        main, ["erase-verify", "--channel", "telegram", "--user", "alice", "--json"])
+    assert res.exit_code == 1
+    assert '"clean": false' in res.output
