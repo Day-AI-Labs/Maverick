@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -32,6 +33,48 @@ log = logging.getLogger(__name__)
 
 DEFAULT_PATH = Path.home() / ".maverick" / "role_stats.json"
 _lock = threading.Lock()
+
+_SAFE_ROLE_RE = re.compile(r"[^A-Za-z0-9_-]+")
+_MAX_ROLE_LEN = 40
+
+
+def safe_role(role: object) -> str | None:
+    """Return a prompt-safe role key for routing memory, or None.
+
+    Swarm roles are model-controlled.  Role stats are persisted across runs and
+    later rendered into the orchestrator brief, so only compact identifier-like
+    strings may enter this store.  Non-identifier runs are collapsed to hyphens
+    and capped in length to avoid carrying prompt text across sessions.
+    """
+    if not isinstance(role, str):
+        return None
+    cleaned = _SAFE_ROLE_RE.sub("-", role.strip()).strip("-_").lower()
+    if not cleaned:
+        return None
+    return cleaned[:_MAX_ROLE_LEN].rstrip("-_") or None
+
+
+# Separator between the department tag and the role in a scoped stat key.
+# "::" never appears in domain pack names (TOML stems) or role strings.
+_SCOPE_SEP = "::"
+
+
+def _safe_key(key: object) -> str | None:
+    """Sanitize a possibly department-scoped stat key, preserving the scope.
+
+    A scoped key is ``<domain>::<role>``; sanitize each segment with
+    ``safe_role`` so model-controlled text can never enter the persisted store,
+    while keeping the ``::`` separator intact so department lookups still work.
+    """
+    if not isinstance(key, str):
+        return None
+    if _SCOPE_SEP in key:
+        domain, _, role = key.partition(_SCOPE_SEP)
+        domain_key, role_key = safe_role(domain), safe_role(role)
+        if domain_key is None or role_key is None:
+            return None
+        return f"{domain_key}{_SCOPE_SEP}{role_key}"
+    return safe_role(key)
 
 
 @dataclass
@@ -76,16 +119,24 @@ def _load(path: Path) -> dict[str, RoleStat]:
     if not isinstance(raw, dict):
         return {}
     for role, entry in raw.items():
-        if not isinstance(entry, dict):
+        role_key = _safe_key(role)
+        if role_key is None or not isinstance(entry, dict):
             continue
         try:
-            out[role] = RoleStat(
+            st = RoleStat(
                 runs=int(entry.get("runs", 0)),
                 credit_sum=float(entry.get("credit_sum", 0.0)),
                 last=float(entry.get("last", 0.0)),
             )
         except (TypeError, ValueError):
             continue
+        if role_key in out:
+            prev = out[role_key]
+            prev.runs += st.runs
+            prev.credit_sum += st.credit_sum
+            prev.last = max(prev.last, st.last)
+        else:
+            out[role_key] = st
     return out
 
 
@@ -98,24 +149,24 @@ def _save(stats: dict[str, RoleStat], path: Path) -> None:
         pass
 
 
-# Separator between the department tag and the role in a scoped stat key.
-# "::" never appears in domain pack names (TOML stems) or role strings.
-_SCOPE_SEP = "::"
-
-
 def record(role: str, credit: float, path: Path | None = None, *,
            domain: str | None = None) -> None:
     """Accumulate one (role, marginal-credit) observation. Fail-safe no-op.
 
     With ``domain`` set, the observation lands in BOTH the global role entry
-    and the department-scoped ``<domain>::<role>`` entry.
+    and the department-scoped ``<domain>::<role>`` entry. Role and domain
+    strings are model-controlled, so each is sanitized via ``safe_role`` before
+    it enters the persisted store.
     """
-    if not role:
+    role_key = safe_role(role)
+    if role_key is None:
         return
     path = _resolve(path)
-    keys = [role]
+    keys = [role_key]
     if domain:
-        keys.append(f"{domain}{_SCOPE_SEP}{role}")
+        domain_key = safe_role(domain)
+        if domain_key:
+            keys.append(f"{domain_key}{_SCOPE_SEP}{role_key}")
     with _lock:
         try:
             stats = _load(path)
@@ -196,4 +247,12 @@ def guidance(path: Path | None = None, *, domain: str | None = None) -> str | No
     )
 
 
-__all__ = ["RoleStat", "record", "record_credit", "top_roles", "guidance", "DEFAULT_PATH"]
+__all__ = [
+    "RoleStat",
+    "safe_role",
+    "record",
+    "record_credit",
+    "top_roles",
+    "guidance",
+    "DEFAULT_PATH",
+]
