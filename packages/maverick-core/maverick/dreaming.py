@@ -77,6 +77,7 @@ _DEDUP_THRESHOLD = 0.8
 # Goal text must cover at least this fraction of overlap with a pack's
 # signature before the experience is attributed to that department.
 _ASSIGN_FLOOR = 0.2
+_LEGACY_SCOPE_UNKNOWN = "__legacy_scope_unknown__"
 
 
 def enabled() -> bool:
@@ -111,6 +112,8 @@ class DreamInsight:
     domain: str | None         # department (domain pack name) or None = generic
     text: str                  # the consolidated lesson, deterministic prose
     evidence: int = 1          # how many episodes back this insight
+    channel: str | None = None # reflexion scope; None = unscoped local runs
+    user_id: str | None = None # reflexion scope; None = unscoped local runs
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -234,8 +237,9 @@ def cluster_failures(
 ) -> list[list[dict]]:
     """Greedy single-pass clustering of failure records.
 
-    Each record: ``{goal_text, failure_class, reflection, domain, ts}``.
-    Two failures cluster when they share a ``failure_class`` AND their goal
+    Each record: ``{goal_text, failure_class, reflection, domain, ts}`` plus
+    optional ``channel``/``user_id`` scope. Two failures cluster when they
+    share a ``failure_class`` and scope AND their goal
     texts overlap (jaccard >= ``similarity``). Only clusters with at least
     ``min_cluster`` members survive — a one-off failure is noise, not a
     pattern worth dreaming about.
@@ -247,6 +251,10 @@ def cluster_failures(
         for cluster in clusters:
             head = cluster[0]
             if head.get("failure_class") != f.get("failure_class"):
+                continue
+            if (head.get("channel"), head.get("user_id")) != (
+                f.get("channel"), f.get("user_id"),
+            ):
                 continue
             if _jaccard(ft, _tokens(str(head.get("goal_text", "")))) >= similarity:
                 cluster.append(f)
@@ -289,9 +297,14 @@ def synthesize_insight(
         " Before committing budget, reproduce/verify the previously-failing "
         "step in isolation."
     )
+    channels = {f.get("channel") for f in cluster}
+    user_ids = {f.get("user_id") for f in cluster}
+    channel = next(iter(channels)) if len(channels) == 1 else None
+    user_id = next(iter(user_ids)) if len(user_ids) == 1 else None
     return DreamInsight(
         ts=now if now is not None else time.time(),
         kind=kind, domain=domain, text=text, evidence=len(cluster),
+        channel=channel, user_id=user_id,
     )
 
 
@@ -306,8 +319,17 @@ def promote_shared_insights(
     any cluster that includes a department marker.
     """
     promoted: list[DreamInsight] = []
-    generic_failures = [f for f in failures or [] if not f.get("domain")]
-    for cluster in cluster_failures(generic_failures, min_cluster=min_cluster):
+    # Shared (domain=None) insights must be both generic (no department marker,
+    # per #1238) AND unscoped (no channel/user_id, per #1241): a department- or
+    # user-scoped failure may carry compartment-local or attacker-influenced
+    # text and must never cross into the globally-recallable pool.
+    generic_unscoped_failures = [
+        f for f in failures or []
+        if not f.get("domain")
+        and f.get("channel") is None
+        and f.get("user_id") is None
+    ]
+    for cluster in cluster_failures(generic_unscoped_failures, min_cluster=min_cluster):
         promoted.append(synthesize_insight(
             cluster, domain=None, now=now, kind="shared_pattern",
         ))
@@ -332,6 +354,13 @@ def load_insights(path: Path | str | None = None) -> list[DreamInsight]:
                         domain=d.get("domain"),
                         text=str(d.get("text", "")),
                         evidence=int(d.get("evidence", 1) or 1),
+                        # Pre-scope insight lines may have been derived from
+                        # channel/user-scoped reflexions, so treat missing
+                        # fields as ambiguous rather than globally unscoped.
+                        channel=d.get("channel")
+                        if "channel" in d else _LEGACY_SCOPE_UNKNOWN,
+                        user_id=d.get("user_id")
+                        if "user_id" in d else _LEGACY_SCOPE_UNKNOWN,
                     ))
                 except (ValueError, TypeError):
                     continue
@@ -359,6 +388,8 @@ def append_insights(
         dup = next(
             (e for e in existing
              if e.domain == ins.domain
+             and e.channel == ins.channel
+             and e.user_id == ins.user_id
              and _containment(it, _tokens(e.text)) >= _DEDUP_THRESHOLD),
             None,
         )
@@ -397,6 +428,7 @@ def append_insights(
 def recall_insights(
     goal_text: str, *, domain: str | None = None, k: int = 2,
     path: Path | str | None = None, min_score: float = 0.05,
+    channel: str | None = None, user_id: str | None = None,
 ) -> list[tuple[float, DreamInsight]]:
     """Top-k consolidated insights for this goal, same-department boosted.
 
@@ -413,6 +445,8 @@ def recall_insights(
     span = newest - oldest
     scored: list[tuple[float, DreamInsight]] = []
     for e in entries:
+        if e.channel != channel or e.user_id != user_id:
+            continue
         sim = _jaccard(qt, _tokens(e.text))
         same_dept = bool(domain) and e.domain == domain
         if sim < min_score and not same_dept:
