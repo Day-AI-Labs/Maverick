@@ -98,7 +98,7 @@ def test_agent_attributes_use_genai_semconv_keys():
 
 
 def test_agent_attributes_redact_model_controlled_role_text():
-    secret_role = "researcher SECRET_TOKEN_FROM_WORKSPACE=sk_live_12345"
+    secret_role = "researcher SECRET_TOKEN_FROM_WORKSPACE=sk_live_12345"  # pragma: allowlist secret
     secret_id = f"{secret_role}-1-abcdef"
 
     attrs = obs.gen_ai_agent_attributes(secret_role, agent_id=secret_id)

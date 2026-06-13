@@ -44,13 +44,13 @@ def test_secrets_scrubbed():
 
 def test_export_scrubs_shareable_secret_shapes():
     private_key = (
-        "-----BEGIN PRIVATE KEY-----\n"
+        "-----BEGIN PRIVATE KEY-----\n"  # pragma: allowlist secret
         "KEY-BODY-SHOULD-NOT-LEAK\n"
         "-----END PRIVATE KEY-----"
     )
     goal = _goal(
         title="Docs export https://example.test/file?sig=GOAL-SIG-SHOULD-NOT-LEAK",
-        description='DB_PASSWORD="super secret password"',
+        description='DB_PASSWORD="super secret password"',  # pragma: allowlist secret
         result="see https://example.test/callback?token=RESULT-TOKEN-SHOULD-NOT-LEAK",
     )
     events = [
