@@ -123,11 +123,9 @@ def _openai_import_error_message(e: ImportError) -> str:
 class OpenAIClient:
     DEFAULT_MODEL = "gpt-4o"
     # Pricing qualifier prepended to the model id when recording budget spend.
-    # Self-hosted subclasses (ollama/vllm/tgi/openai_compatible) set theirs
-    # ("vllm:" etc.) so an UNKNOWN local model id prices at $0 instead of the
-    # Sonnet fallback (phantom spend for free local models). Empty for hosted
-    # providers; known table ids keep their real rate either way because the
-    # price lookup strips the prefix before matching.
+    # Provider subclasses set theirs ("vllm:" etc.) so pricing can preserve
+    # provider context while still resolving known table ids after stripping
+    # the prefix. Empty for the hosted OpenAI provider.
     PRICE_MODEL_PREFIX = ""
 
     def __init__(

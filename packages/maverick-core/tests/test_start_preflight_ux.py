@@ -8,9 +8,10 @@ Platform-test findings, round 2 fixes:
     routed roles) surfaced AFTER the goal row existed, orphaning a failed
     goal per attempt. Now: SDK availability is preflighted before goal
     creation -> exit 2, no row, same actionable message.
-  - Unknown model ids on self-hosted providers (ollama:/vllm:/tgi:/
-    openai_compatible:) billed at the Sonnet fallback rate, accruing
-    phantom spend for free local models. Now priced at $0.
+  - Unknown model ids on self-hosted providers (ollama:/vllm:/tgi:)
+    billed at the Sonnet fallback rate, accruing phantom spend for free
+    local models. Now priced at $0. The generic openai_compatible provider
+    is not blanket-zeroed because it can target paid public gateways.
 """
 from __future__ import annotations
 
@@ -94,11 +95,16 @@ def test_missing_sdks_helper_quiet_when_all_present():
 
 
 def test_unknown_local_models_priced_zero():
-    for spec in ("ollama:my-local-llm", "vllm:stub-1", "tgi:custom",
-                 "openai_compatible:proxy-model"):
+    for spec in ("ollama:my-local-llm", "vllm:stub-1", "tgi:custom"):
         b = Budget(max_dollars=1.0)
         b.record_tokens(1000, 1000, model=spec)
         assert b.dollars == 0.0, (spec, b.dollars)
+
+
+def test_unknown_openai_compatible_model_keeps_sonnet_fallback():
+    b = Budget(max_dollars=10.0)
+    b.record_tokens(1_000_000, 0, model="openai_compatible:proxy-model")
+    assert b.dollars > 0
 
 
 def test_unknown_hosted_model_keeps_sonnet_fallback():
