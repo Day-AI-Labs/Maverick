@@ -233,6 +233,19 @@ _TENANT_UNIQUE_MIGRATION: list[str] = [
 ]
 
 
+# --- Collaborative supervision (migration v13) -------------------------------
+# Fresh databases receive these through SCHEMA above. Existing Postgres
+# databases that already recorded the v1 base migration need a versioned,
+# idempotent migration too; otherwise approval listing/claim/decide paths refer
+# to columns that were never added. Keep the version aligned with SQLite's v13
+# approval-claiming migration.
+_APPROVAL_CLAIMS_MIGRATION: list[str] = [
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS claimed_by TEXT;",
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS claimed_at DOUBLE PRECISION;",
+    "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS decided_by TEXT;",
+]
+
+
 # Ordered schema migrations: ``(version, statements)``. v1 is the consolidated
 # base schema (idempotent CREATEs, so a fresh DB and a pre-framework DB both
 # converge); higher versions are incremental. The applied set is tracked in the
@@ -242,6 +255,7 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
     (1, SCHEMA),
     (10, _TENANT_MIGRATION),
     (11, _TENANT_UNIQUE_MIGRATION),
+    (13, _APPROVAL_CLAIMS_MIGRATION),
 ]
 
 # Highest migration version = the reported schema version.
