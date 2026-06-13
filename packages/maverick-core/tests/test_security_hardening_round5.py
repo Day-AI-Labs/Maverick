@@ -49,8 +49,13 @@ def test_redaction_does_not_leak_secret_past_depth_64():
 # ---- audit tail/grep: RecursionError on deep JSON --------------------------
 
 def test_audit_tail_survives_deeply_nested_line(tmp_path):
+    from datetime import datetime, timezone
+
     from maverick.audit.writer import AuditLog
-    f = tmp_path / "2026-06-12.ndjson"
+    # tail()/grep() default to today's UTC day-file, so name the fixture for
+    # today rather than a fixed date (a hard-coded date only passes on that day).
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    f = tmp_path / f"{day}.ndjson"
     # Deep enough to exhaust json's recursion-descent parser on every CPython
     # (3.11 trips near the 1000 default; 3.12+ near its C-recursion cap, which
     # let a 2000-deep line parse fine and broke an exact-equality assert here).

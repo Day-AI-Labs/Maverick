@@ -37,11 +37,12 @@ def _agent_tool_names(tmp_path: Path, fake_llm) -> set[str]:
 
 def test_get_capabilities_reads_config(tmp_path: Path):
     # conftest's autouse fixture points HOME at tmp_path.
-    _write_caps(tmp_path, "[capabilities]\nweb_search = true\nbrowser = false\n")
+    _write_caps(tmp_path, "[capabilities]\nweb_search = true\nbrowser = false\nros = true\n")
     caps = get_capabilities()
     assert caps["web_search"] is True
     assert caps["browser"] is False
     assert caps["computer_use"] is False
+    assert caps["ros"] is True
 
 
 def test_agent_enables_web_search_when_capability_set(tmp_path: Path, fake_llm):
@@ -52,3 +53,13 @@ def test_agent_enables_web_search_when_capability_set(tmp_path: Path, fake_llm):
 def test_agent_omits_web_search_by_default(tmp_path: Path, fake_llm):
     _write_caps(tmp_path, "")  # no [capabilities]
     assert "web_search" not in _agent_tool_names(tmp_path, fake_llm)
+
+
+def test_agent_enables_ros_when_capability_set(tmp_path: Path, fake_llm):
+    _write_caps(tmp_path, "[capabilities]\nros = true\n")
+    assert "ros" in _agent_tool_names(tmp_path, fake_llm)
+
+
+def test_agent_omits_ros_by_default(tmp_path: Path, fake_llm):
+    _write_caps(tmp_path, "")  # no [capabilities]
+    assert "ros" not in _agent_tool_names(tmp_path, fake_llm)

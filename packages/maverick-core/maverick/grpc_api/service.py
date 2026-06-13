@@ -94,6 +94,7 @@ class GoalService:
         max_wall_seconds: float | None = None,
         channel: str | None = None,
         user_id: str | None = None,
+        capability: Any | None = None,
     ) -> int:
         """Create a goal and dispatch it for background execution. Returns the
         new goal id immediately (the run proceeds asynchronously)."""
@@ -112,6 +113,7 @@ class GoalService:
                 max_wall_seconds=max_wall_seconds,
                 channel=channel,
                 user_id=user_id,
+                capability=capability,
             )
 
         self._spawn(_run)

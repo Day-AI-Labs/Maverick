@@ -28,7 +28,7 @@ import hashlib
 import logging
 import os
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 log = logging.getLogger(__name__)
 
@@ -137,6 +137,23 @@ def _s3_mirror(goal_id: int, dest: Path, mime: str) -> None:
         log.warning("attachment S3 mirror failed (local copy kept): %s", e)
 
 
+def _validate_attachment_name(name: str) -> None:
+    """Reject names that cannot be stored under one goal attachment dir."""
+    windows_name = PureWindowsPath(name)
+    if (
+        not name
+        or name.startswith(".")
+        or "/" in name
+        or "\\" in name
+        or Path(name).is_absolute()
+        or windows_name.is_absolute()
+        or windows_name.drive
+    ):
+        raise AttachmentRejected(f"invalid attachment name: {name!r}")
+    if any(ord(c) < 0x20 or ord(c) == 0x7f for c in name):
+        raise AttachmentRejected(f"control character in attachment name: {name!r}")
+
+
 def s3_fetch(goal_id: int, name: str, *, root: Path | None = None) -> Path | None:
     """Pull one mirrored attachment down to the local store.
 
@@ -146,6 +163,7 @@ def s3_fetch(goal_id: int, name: str, *, root: Path | None = None) -> Path | Non
     """
     if not s3_mirror_enabled():
         return None
+    _validate_attachment_name(name)
     dest_dir = _root_for_goal(goal_id, root)
     dest = dest_dir / name
     if dest.exists():
@@ -154,7 +172,18 @@ def s3_fetch(goal_id: int, name: str, *, root: Path | None = None) -> Path | Non
         client = _s3_client()
         bucket, _ = _s3_settings()
         obj = client.get_object(Bucket=bucket, Key=_s3_key(goal_id, name))
-        data = obj["Body"].read()
+        content_length = obj.get("ContentLength")
+        if content_length is not None and int(content_length) > MAX_FILE_BYTES:
+            raise AttachmentRejected(
+                f"file too large: {content_length} bytes (limit {MAX_FILE_BYTES})"
+            )
+        data = obj["Body"].read(MAX_FILE_BYTES + 1)
+        if len(data) > MAX_FILE_BYTES:
+            raise AttachmentRejected(
+                f"file too large: {len(data)} bytes (limit {MAX_FILE_BYTES})"
+            )
+    except AttachmentRejected:
+        raise
     except Exception as e:  # noqa: BLE001 -- absent object / S3 down -> None
         log.warning("attachment S3 fetch failed: %s", e)
         return None

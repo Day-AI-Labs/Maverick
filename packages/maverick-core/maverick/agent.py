@@ -118,6 +118,8 @@ _FILE_TOOL_PATH_ARGS: dict[str, str] = {
     "list_dir": "path",
     "str_replace_editor": "path",
     "ast_edit": "path",
+    "image_content_classifier": "file",
+    "wasm_run": "module",
 }
 
 # P0 capability layer (host resource-scopes): the network tools whose URL
@@ -174,6 +176,22 @@ def _capability_paths_for_tool(name: str, args: Any, sandbox: Any) -> list[str] 
     path_arg = _FILE_TOOL_PATH_ARGS.get(name)
     if path_arg is None:
         return None
+
+    if name == "wasm_run":
+        if args.get("op", "run") != "run":
+            return None
+        raw_module = args.get("module")
+        if not isinstance(raw_module, str) or raw_module == "":
+            return None
+        paths = [_workspace_relative_path(sandbox, raw_module)]
+        raw_dirs = args.get("dirs") or []
+        if isinstance(raw_dirs, list):
+            paths.extend(
+                _workspace_relative_path(sandbox, raw_dir)
+                for raw_dir in raw_dirs
+                if isinstance(raw_dir, str) and raw_dir != ""
+            )
+        return paths
 
     raw = args.get(path_arg, ".") if name == "list_dir" else args.get(path_arg)
     if not isinstance(raw, str):
@@ -569,6 +587,7 @@ class Agent:
             enable_browser=bool(caps.get("browser", False)),
             enable_web_search=bool(caps.get("web_search", False)),
             enable_mobile_tools=bool(caps.get("mobile_tools", False)),
+            enable_ros=bool(caps.get("ros", False)),
         )
         # Cross-agent bus tools, bound to this agent's id so send records
         # the right sender and recv drains the right inbox.
@@ -1034,11 +1053,16 @@ class Agent:
         # Fail-open (revocation never bricks a run) and only when a grant
         # exists (== capability enforcement is on).
         if cap is not None:
-            from .revocation import is_revoked as _is_revoked
-            if _is_revoked(cap.principal):
+            from .revocation import revoked_principal as _revoked_principal
+            principals = (
+                cap.revocation_principals()
+                if hasattr(cap, "revocation_principals") else (cap.principal,)
+            )
+            revoked = _revoked_principal(principals)
+            if revoked is not None:
                 self.ctx.blackboard.post(
                     self.name, "error",
-                    f"tool={name} DENIED: principal {cap.principal} REVOKED",
+                    f"tool={name} DENIED: principal {revoked} REVOKED",
                 )
                 try:  # tamper-evident record of the denial; never block on audit
                     from .audit import EventKind, record
@@ -1048,13 +1072,14 @@ class Agent:
                         goal_id=self.ctx.goal_id,
                         tool=name,
                         principal=cap.principal,
+                        revoked_principal=revoked,
                         channel=getattr(self.ctx, "channel", None),
                         user_id=getattr(self.ctx, "user_id", None),
                     )
                 except Exception:  # pragma: no cover
                     pass
                 return (
-                    f"⚠ DENIED by capability policy: principal {cap.principal!r} "
+                    f"⚠ DENIED by capability policy: principal {revoked!r} "
                     f"has been revoked. The tool was not executed."
                 )
         if cap is not None and not cap.permits(name):

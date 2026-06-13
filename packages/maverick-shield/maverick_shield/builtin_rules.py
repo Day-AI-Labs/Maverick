@@ -68,12 +68,12 @@ _B64_BLOB = re.compile(r"[A-Za-z0-9+/]{16,}={0,2}")
 # untrusted text; keep it linear and bounded).
 _MAX_B64_BLOBS = 20
 
-# Only decode the leading slice of any one base64 blob before re-scanning it.
-# A concealed prompt-injection INSTRUCTION is short; a giant blob is a data
-# payload, not a hidden prompt, and decoding + re-scanning the whole thing was
-# the worst hot-path cost (168ms on a 200KB blob). 8 KiB of base64 -> ~6 KiB of
-# decoded text, which still catches an instruction at the start of the blob.
+# Decode base64 in bounded, overlapping windows. A window is capped so a
+# hostile blob cannot create one giant re-scan candidate, but windows continue
+# across the full blob so padding cannot hide an instruction after the prefix.
+# 8 KiB of base64 -> ~6 KiB of decoded text.
 _MAX_B64_DECODE_CHARS = 8192
+_B64_DECODE_STEP_CHARS = _MAX_B64_DECODE_CHARS // 2
 
 
 def _strip_invisible(text: str) -> str:
@@ -93,22 +93,29 @@ def _shell_deobfuscate(text: str) -> str:
 
 def _decode_b64_blobs(text: str) -> list[str]:
     out: list[str] = []
-    for m in _B64_BLOB.finditer(text):
-        if len(out) >= _MAX_B64_BLOBS:
+    for blob_index, m in enumerate(_B64_BLOB.finditer(text)):
+        if blob_index >= _MAX_B64_BLOBS:
             break
-        # Decode only the leading slice: a hidden instruction is short, so this
-        # still catches it, but a multi-KB payload blob no longer drives a
-        # multi-KB decode + full re-scan (the worst-case latency). Trim to a
-        # multiple of 4 so the base64 chunk stays self-contained.
-        blob = m.group(0)[: _MAX_B64_DECODE_CHARS & ~3]
-        try:
-            raw = base64.b64decode(blob + "=" * (-len(blob) % 4), validate=False)
-            decoded = raw.decode("utf-8", errors="ignore")
-        except (ValueError, UnicodeDecodeError):
-            continue
-        # Only keep decodes that look like text (the attack is in the words).
-        if decoded and any(c.isalpha() for c in decoded):
-            out.append(decoded)
+        # Decode bounded, overlapping windows across the whole blob. Decoding
+        # only the leading slice let attackers prepend benign bytes and hide a
+        # malicious instruction later in the same regex match. Keep the window
+        # and step 4-byte aligned so each base64 chunk is self-contained.
+        blob = m.group(0)
+        window = _MAX_B64_DECODE_CHARS & ~3
+        step = _B64_DECODE_STEP_CHARS & ~3
+        starts = range(0, len(blob), step) if step else (0,)
+        for start in starts:
+            chunk = blob[start:start + window]
+            if not chunk:
+                continue
+            try:
+                raw = base64.b64decode(chunk + "=" * (-len(chunk) % 4), validate=False)
+                decoded = raw.decode("utf-8", errors="ignore")
+            except (ValueError, UnicodeDecodeError):
+                continue
+            # Only keep decodes that look like text (the attack is in the words).
+            if decoded and any(c.isalpha() for c in decoded):
+                out.append(decoded)
     return out
 
 
@@ -154,8 +161,8 @@ RULES: list[Rule] = [
          # short window (either order). Bounds keep it ReDoS-safe.
          _compile(
              r"\b(?:DAN|do anything now|jailbreak|unfiltered\s+ai)\b"
-             r"|\bdeveloper\s+mode\b[\s\S]{0,60}(?:unrestricted|unfiltered|anything\s+goes|free\s+from|no\s+(?:restrictions?|rules?|filters?|limits?)|without\s+(?:restrictions?|rules?|filters?)|bypass|ignore\s+(?:all|your|the)?[\w\s]{0,12}(?:rules?|restrictions?|instructions?|guidelines?|policy|policies))"
-             r"|(?:unrestricted|unfiltered|anything\s+goes|no\s+(?:restrictions?|rules?|filters?)|bypass|ignore\s+(?:all|your|the)?[\w\s]{0,12}(?:rules?|restrictions?|instructions?))[\s\S]{0,60}\bdeveloper\s+mode\b"
+             r"|\bdeveloper\s+mode\b[\s\S]{0,80}(?:unrestricted|unfiltered|anything\s+goes|free\s+from|no\s+(?:restrictions?|rules?|filters?|limits?)|without\s+(?:restrictions?|rules?|filters?)|bypass|never\s+(?:refuse|decline|deny)|(?:can|may)\s+say\s+anything|ignore\s+(?:all|your|the)?[\w\s]{0,12}(?:rules?|restrictions?|instructions?|guidelines?|policy|policies))"
+             r"|(?:unrestricted|unfiltered|anything\s+goes|no\s+(?:restrictions?|rules?|filters?)|bypass|never\s+(?:refuse|decline|deny)|(?:can|may)\s+say\s+anything|ignore\s+(?:all|your|the)?[\w\s]{0,12}(?:rules?|restrictions?|instructions?))[\s\S]{0,80}\bdeveloper\s+mode\b"
          ),
          "DAN / developer-mode jailbreak"),
     Rule("persona_takeover", "high",
@@ -249,11 +256,15 @@ RULES: list[Rule] = [
          _compile(r"\bif\s+you\s+(are|'?re|happen\s+to\s+be|find\s+yourself)\s+(an?\s+)?(automated\s+|virtual\s+|digital\s+|ai\s+|language\s+)?(ai|agent|assistant|llm|model|language\s+model|bot|system)\b[\s\S]{0,40}?\b(reading|seeing|processing|parsing|viewing|summari[sz]ing|handling)\b"),
          "Indirect injection: content addressed to an AI that reads it"),
     Rule("real_task_hijack", "high",
-         # "new"/"primary" dropped from the adjective list: "your new task is" and
-         # "your primary task is" are ordinary delegation language and over-blocked
-         # benign work (user-testing finding). The hijack signal is the claim of a
-         # hidden/true task: real|actual|true|secret|hidden.
-         _compile(r"\byour\s+(real|actual|true|secret|hidden)\s+(task|job|goal|mission|instruction|objective|purpose)\s+is\b"),
+         # "new"/"primary" remain too broad by themselves: ordinary delegation
+         # uses phrases such as "your new task is to review the PR". Treat those
+         # adjectives as hijacks only when the continuation carries injection or
+         # exfiltration intent (e.g. "follow only this document", "email/report
+         # success to ..."). Bounds keep the regex linear and local.
+         _compile(
+             r"\byour\s+(?:real|actual|true|secret|hidden)\s+(?:task|job|goal|mission|instruction|objective|purpose)\s+is\b"
+             r"|\byour\s+(?:new|primary)\s+(?:task|job|goal|mission|instruction|objective|purpose)\s+is\b[\s\S]{0,80}?(?:follow\s+only\s+(?:this|the)\s+(?:document|file|page|message|instructions?)|ignore\s+(?:all|every|the)?\s*(?:previous|prior|above|earlier|preceding)\s+(?:instructions?|prompts?|rules?|context)|(?:email|send|forward|upload|post|exfil\w*|leak)\b|report\s+success\b)"
+         ),
          "Task hijack: your 'real task' is ..."),
     Rule("injected_command_to_agent", "high",
          _compile(r"\b(system\s+note|important|attention|urgent|note\s+from\s+file)\b[\s\S]{0,60}?\b(assistant|ai|agent|model)\b[\s\S]{0,24}?\b(must|should|needs?\s+to|has\s+to|now)\b[\s\S]{0,24}?\b(email|send|upload|exfil\w*|delete|run|execute|forward|leak|transfer)"),

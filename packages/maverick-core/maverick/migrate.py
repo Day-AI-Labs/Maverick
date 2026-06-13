@@ -152,8 +152,8 @@ def migrate(config_path: Path | None = None, *, apply: bool = False) -> Migratio
         import tomli as tomllib  # type: ignore[no-redef]
 
     if config_path is None:
-        from .paths import data_dir
-        config_path = data_dir(tenant=None) / "config.toml"
+        from .config import config_path as active_config_path
+        config_path = active_config_path()
     config_path = Path(config_path)
     report = MigrationReport(apply_requested=apply)
     if not config_path.exists():

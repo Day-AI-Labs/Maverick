@@ -17,9 +17,26 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from ..config import load_config
+
 
 def _env_true(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _hardware_sensors_enabled() -> bool:
+    """Opt-in gate for host hardware telemetry.
+
+    The tool reads host state and imports the optional psutil dependency in the
+    Maverick process, so keep it out of the default model-visible registry
+    unless an operator enables it explicitly.
+    """
+    if _env_true("MAVERICK_ENABLE_HARDWARE_SENSORS"):
+        return True
+    try:
+        return bool(load_config().get("tools", {}).get("hardware_sensors", False))
+    except Exception:  # pragma: no cover -- config never blocks the registry
+        return False
 
 
 def as_bool(value: Any) -> bool:
@@ -541,6 +558,7 @@ def base_registry(  # noqa: C901
     enable_browser: bool = False,
     enable_web_search: bool = False,
     enable_mobile_tools: bool = False,
+    enable_ros: bool = False,
     channel: str | None = None,
     user_id: str | None = None,
     budget: Any = None,
@@ -555,8 +573,8 @@ def base_registry(  # noqa: C901
     filter returns nothing and "PAUSED: 0 open question(s)" is shown
     even though the agent asked.
 
-    ``enable_computer_use`` / ``enable_browser`` / ``enable_mobile_tools``
-    register optional high-impact tools. Computer/browser require
+    ``enable_computer_use`` / ``enable_browser`` / ``enable_mobile_tools`` /
+    ``enable_ros`` register optional high-impact tools. Computer/browser require
     optional extras
     (``maverick-agent[computer-use]`` / ``[browser]``); when missing
     the tool factories raise an actionable ImportError at registration
@@ -976,7 +994,8 @@ def base_registry(  # noqa: C901
     reg.register(safety_regression_budget())
     reg.register(autogen_adapter())
     reg.register(crewai_adapter())
-    reg.register(ros_tool())
+    if enable_ros:
+        reg.register(ros_tool())
     reg.register(run_events_firehose())
     reg.register(marketplace_ratings())
     reg.register(local_embeddings_cache())
@@ -1017,7 +1036,7 @@ def base_registry(  # noqa: C901
     from .oauth_helper import oauth_helper
     # template_generator / web_archive / anki: registered once above
     # (parallel-built on both branches; unified at merge).
-    reg.register(image_content_classifier())
+    reg.register(image_content_classifier(sandbox))
     reg.register(lsp_bridge())
     reg.register(oauth_helper())
     reg.register(github_search())
@@ -1121,7 +1140,8 @@ def base_registry(  # noqa: C901
     reg.register(pandoc_tool(sandbox))
     reg.register(office_convert(sandbox))
     reg.register(wasm_run(sandbox))
-    reg.register(hardware_sensors())
+    if _hardware_sensors_enabled():
+        reg.register(hardware_sensors())
     reg.register(imagemagick_tool(sandbox))
     reg.register(audio_understanding(sandbox))
     reg.register(image_edit(sandbox))

@@ -411,13 +411,18 @@ def test_write_config_emits_tools_output_cache(tmp_path: Path, monkeypatch):
 
 
 def test_write_config_tools_block_coexists(tmp_path: Path, monkeypatch):
-    # deferred_loading + output_cache share a single [tools] table.
+    # deferred_loading + output_cache + hardware_sensors share a single [tools] table.
     parsed = _write_full_config(
         tmp_path, monkeypatch,
-        advanced={"deferred_tools": True, "output_cache": True},
+        advanced={
+            "deferred_tools": True,
+            "output_cache": True,
+            "hardware_sensors": True,
+        },
     )
     assert parsed["tools"]["deferred_loading"] is True
     assert parsed["tools"]["output_cache"] is True
+    assert parsed["tools"]["hardware_sensors"] is True
 
 
 def test_write_config_emits_routing_energy_aware(tmp_path: Path, monkeypatch):
@@ -465,7 +470,7 @@ def test_pick_advanced_includes_new_toggles(monkeypatch):
     _StubQ(monkeypatch)
     from maverick_installer.wizard import pick_advanced
     adv = pick_advanced()
-    for key in ("output_cache", "local_first", "energy_aware"):
+    for key in ("output_cache", "local_first", "energy_aware", "hardware_sensors"):
         assert key in adv, f"{key} missing from pick_advanced()"
 
 

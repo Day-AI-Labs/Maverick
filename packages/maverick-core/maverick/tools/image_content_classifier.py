@@ -23,6 +23,7 @@ ops:
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from . import Tool
@@ -86,18 +87,39 @@ def classify_pixels(pixels: list[tuple[int, int, int]], width: int, height: int)
     }
 
 
-def _classify_file(path: str) -> dict[str, Any] | str:
+def _safe_image_path(sandbox: Any | None, path: str) -> Path:
+    """Resolve image file paths inside the sandbox workspace.
+
+    The image classifier is model-callable, so its file input must obey the
+    same workspace confinement as filesystem tools: relative paths are resolved
+    under ``sandbox.workdir`` (or the current working directory for standalone
+    use), while absolute paths and ``..`` escapes are rejected.
+    """
+    workdir = Path(getattr(sandbox, "workdir", Path.cwd())).resolve()
+    candidate = (workdir / path).resolve()
+    try:
+        candidate.relative_to(workdir)
+    except ValueError as e:
+        raise ValueError(f"path {path!r} escapes the workspace") from e
+    return candidate
+
+
+def _classify_file(path: str, sandbox: Any | None = None) -> dict[str, Any] | str:
+    try:
+        target = _safe_image_path(sandbox, path)
+    except ValueError as e:
+        return f"ERROR: {e}"
     try:
         from PIL import Image
     except ImportError:
         return ("ERROR: Pillow not installed (pip install 'maverick-agent[computer-use]') "
                 "— or pass raw 'pixels' + 'width'/'height' instead of 'file'")
     try:
-        with Image.open(path) as im:
-            im = im.convert("RGB")
-            # Downsample large images: the heuristics are ratio-based, so a
-            # bounded sample keeps this O(1) regardless of input size.
+        with Image.open(target) as im:
+            # Downsample before converting so large inputs are bounded before
+            # materializing RGB pixels in the host process.
             im.thumbnail((256, 256))
+            im = im.convert("RGB")
             width, height = im.size
             pixels = list(im.getdata())
     except FileNotFoundError:
@@ -120,11 +142,11 @@ def _render(result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _run(args: dict[str, Any]) -> str:
+def _run(args: dict[str, Any], sandbox: Any | None = None) -> str:
     if args.get("op") not in (None, "classify"):
         return f"ERROR: unknown op {args.get('op')!r}"
     if args.get("file"):
-        result = _classify_file(str(args["file"]))
+        result = _classify_file(str(args["file"]), sandbox)
         if isinstance(result, str):
             return result
         return _render(result)
@@ -154,7 +176,7 @@ _SCHEMA: dict[str, Any] = {
 }
 
 
-def image_content_classifier() -> Tool:
+def image_content_classifier(sandbox: Any | None = None) -> Tool:
     return Tool(
         name="image_content_classifier",
         description=(
@@ -165,6 +187,6 @@ def image_content_classifier() -> Tool:
             "verdict. Deterministic heuristics, not a moral judgment."
         ),
         input_schema=_SCHEMA,
-        fn=_run,
+        fn=lambda args: _run(args, sandbox),
         parallel_safe=True,
     )

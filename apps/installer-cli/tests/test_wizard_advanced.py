@@ -208,7 +208,7 @@ def test_enforce_capabilities_reuses_existing_capabilities_table(tmp_path, monke
         cfg_dir,
         monkeypatch,
         {"enforce_capabilities": True},
-        capabilities={"computer_use": False, "browser": False, "code_exec": False},
+        capabilities={"computer_use": False, "browser": False, "ros": False, "code_exec": False},
     )
 
     assert cfg.count("[capabilities]") == 1
@@ -216,6 +216,7 @@ def test_enforce_capabilities_reuses_existing_capabilities_table(tmp_path, monke
     assert parsed["capabilities"] == {
         "computer_use": False,
         "browser": False,
+        "ros": False,
         "code_exec": False,
         "enforce": True,
     }

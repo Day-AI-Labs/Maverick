@@ -326,10 +326,17 @@ _AUTH_EXEMPT = {
 # this before HMAC verification so unauthenticated callers cannot force the
 # dashboard to buffer or hash arbitrarily large request bodies.
 _MAX_WEBHOOK_BODY_BYTES = 256 * 1024
+_MAX_SKILL_VALIDATE_BODY_BYTES = 256 * 1024
+_MAX_SAVED_VIEW_BODY_BYTES = 32 * 1024
 
 
-async def _read_limited_webhook_body(request: Request) -> bytes:
-    """Read a webhook request body with a hard size cap.
+async def _read_limited_request_body(
+    request: Request,
+    *,
+    max_bytes: int,
+    too_large_detail: str,
+) -> bytes:
+    """Read a request body with a hard size cap.
 
     ``Content-Length`` lets us reject obviously oversized requests before
     reading any body bytes.  For chunked or otherwise lengthless requests,
@@ -342,15 +349,33 @@ async def _read_limited_webhook_body(request: Request) -> bytes:
             declared = int(content_length)
         except ValueError:
             raise HTTPException(status_code=400, detail="invalid Content-Length")
-        if declared > _MAX_WEBHOOK_BODY_BYTES:
-            raise HTTPException(status_code=413, detail="webhook body too large")
+        if declared > max_bytes:
+            raise HTTPException(status_code=413, detail=too_large_detail)
 
     body = bytearray()
     async for chunk in request.stream():
         body.extend(chunk)
-        if len(body) > _MAX_WEBHOOK_BODY_BYTES:
-            raise HTTPException(status_code=413, detail="webhook body too large")
+        if len(body) > max_bytes:
+            raise HTTPException(status_code=413, detail=too_large_detail)
     return bytes(body)
+
+
+async def _read_limited_webhook_body(request: Request) -> bytes:
+    """Read a webhook request body with a hard size cap."""
+    return await _read_limited_request_body(
+        request,
+        max_bytes=_MAX_WEBHOOK_BODY_BYTES,
+        too_large_detail="webhook body too large",
+    )
+
+
+async def _read_limited_skill_validator_body(request: Request) -> bytes:
+    """Read a skill-validator request body with a hard size cap."""
+    return await _read_limited_request_body(
+        request,
+        max_bytes=_MAX_SKILL_VALIDATE_BODY_BYTES,
+        too_large_detail="skill too large (max 256 KiB)",
+    )
 
 # Safe methods skip the CSRF check (browsers send Origin/Referer
 # inconsistently on GETs from address bars and bookmarks).
@@ -755,6 +780,60 @@ def _get_sse_semaphore() -> asyncio.Semaphore:
 def _load_skills():
     from maverick.skills import load_skills
     return load_skills()
+
+
+@app.get("/demo", response_class=HTMLResponse)
+async def public_demo(request: Request) -> HTMLResponse:
+    """Redacted public-demo page for the reference demo-cluster proxy.
+
+    The demo proxy exposes this route to the internet. Keep it intentionally
+    narrow: render only goals owned by the seeded ``demo`` principal and never
+    include facts, spend, audit logs, tool configuration, or other operator
+    state that authenticated dashboard GET endpoints may expose.
+    """
+    from html import escape
+
+    goals = _world().list_goals(owner="demo", limit=50, order="desc")
+    cards = []
+    for goal in goals:
+        status = escape(str(getattr(goal, "status", "")))
+        title = escape(str(getattr(goal, "title", "")))
+        description = escape(str(getattr(goal, "description", "") or ""))
+        result = escape(str(getattr(goal, "result", "") or ""))
+        cards.append(
+            "<article class='card'>"
+            f"<p class='status'>{status}</p>"
+            f"<h2>{title}</h2>"
+            f"<p>{description}</p>"
+            f"<p><strong>Result:</strong> {result}</p>"
+            "</article>"
+        )
+    body = "".join(cards) or "<p class='empty'>No seeded demo goals are available yet.</p>"
+    return HTMLResponse(
+        "<!doctype html>"
+        "<html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>Maverick public demo</title>"
+        "<style>"
+        ":root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;"
+        "background:#0d1117;color:#e6edf3}"
+        "body{margin:0;padding:2rem;max-width:1100px;margin-inline:auto}"
+        "header{margin-bottom:2rem}.eyebrow,.status{color:#2ea043;"
+        "text-transform:uppercase;letter-spacing:.08em;font-size:.8rem}"
+        ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem}"
+        ".card{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:1rem}"
+        ".empty{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:1rem}"
+        "a{color:#58a6ff}"
+        "</style></head><body>"
+        "<header><p class='eyebrow'>read-only public snapshot</p>"
+        "<h1>Maverick demo</h1>"
+        "<p>This page intentionally shows only seeded demo-owned finished runs. "
+        "Operator state, audit logs, spend, facts, plugins, permissions, and "
+        "the rest of the authenticated dashboard are not proxied publicly.</p>"
+        "</header><main class='grid'>"
+        f"{body}"
+        "</main></body></html>"
+    )
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -1849,11 +1928,9 @@ async def skills_validate(request: Request) -> JSONResponse:
 
     from maverick.skills import validate_skill_file
 
-    body = await request.body()
+    body = await _read_limited_skill_validator_body(request)
     if not body:
         raise HTTPException(status_code=400, detail="POST the SKILL.md body")
-    if len(body) > 256 * 1024:
-        raise HTTPException(status_code=413, detail="skill too large (max 256 KiB)")
     with _tempfile.TemporaryDirectory(prefix="mvk-skill-validate-") as td:
         p = _Path(td) / "SKILL.md"
         p.write_bytes(body)
@@ -1897,7 +1974,12 @@ async def views_list(request: Request) -> JSONResponse:
 async def views_save(request: Request, name: str) -> JSONResponse:
     from maverick.ux_store import shared as _ux
     try:
-        body = await request.json()
+        raw_body = await _read_limited_request_body(
+            request,
+            max_bytes=_MAX_SAVED_VIEW_BODY_BYTES,
+            too_large_detail="saved view body too large",
+        )
+        body = json.loads(raw_body or b"{}")
     except ValueError:
         raise HTTPException(status_code=400, detail="body must be a JSON object of params")
     if not isinstance(body, dict):
@@ -2007,7 +2089,8 @@ async def goal_anomalies(request: Request, goal_id: int, history: int = 50) -> J
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
     from maverick.cross_run_anomaly import MIN_BASELINE_RUNS, detect
-    anomalies = detect(w, goal_id, history=max(5, min(int(history), 500)))
+    anomalies = detect(w, goal_id, history=max(5, min(int(history), 500)),
+                       owner=goal_owner_filter(request))
     return JSONResponse({
         "goal_id": goal_id,
         "anomalies": [{"kind": a.kind, "severity": a.severity, "detail": a.detail}
@@ -2104,7 +2187,11 @@ async def runs_compare(request: Request, ids: str) -> JSONResponse:
 
 
 @app.get("/api/v1/cost/by-tag")
-async def cost_by_tag_api(tag_field: str = "tag", limit: int = 500) -> JSONResponse:
+async def cost_by_tag_api(
+    request: Request,
+    tag_field: str = "tag",
+    limit: int = 500,
+) -> JSONResponse:
     """Cost-attribution API: spend split by tag (team / project / cost-center).
 
     Buckets the priced episodes by their tag (episode field, else the goal's
@@ -2114,7 +2201,16 @@ async def cost_by_tag_api(tag_field: str = "tag", limit: int = 500) -> JSONRespo
     from maverick.cost_by_tag import gather, split_by_tag
 
     limit = max(1, min(int(limit), 10_000))
-    buckets = split_by_tag(gather(_world(), tag_field=tag_field, limit=limit))
+    w = _world()
+    owner = goal_owner_filter(request)
+    goal_ids = None
+    if owner is not None:
+        goal_ids = [
+            g.id for g in w.list_goals(owner=owner, limit=10_000, order="desc")
+        ]
+    buckets = split_by_tag(
+        gather(w, tag_field=tag_field, limit=limit, goal_ids=goal_ids)
+    )
     return JSONResponse({"tag_field": tag_field, "buckets": buckets})
 
 

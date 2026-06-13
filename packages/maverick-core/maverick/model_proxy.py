@@ -18,11 +18,14 @@ hop-by-hop headers, inject the proxy's key in the upstream's scheme, refuse a
 host outside the allow-set) — pure and exhaustively tested. The HTTP listener
 (:func:`serve`, ``python -m maverick.model_proxy``) is a thin stdlib shell.
 
-Config: ``[model_proxy]`` (``upstream`` / ``listen`` / ``auth_style`` =
-``bearer`` | ``x-api-key``) with the key from the proxy's **own** environment
-(``MAVERICK_PROXY_KEY``) so it is never in the agent's config. Responses are
-buffered (an SSE stream is forwarded whole), which keeps the proxy simple and
-correct; token-by-token relay is a later refinement.
+Config: ``[model_proxy]`` (``upstream`` / ``listen`` / ``auth_style`` /
+``client_token`` / ``allowed_routes``) with the key from the proxy's **own**
+environment (``MAVERICK_PROXY_KEY``) so it is never in the agent's config. The
+listener requires a client bearer token (``MAVERICK_PROXY_CLIENT_TOKEN``) and
+only forwards model-inference routes by default, so a reachable local service is
+not a general provider-key oracle. Responses are buffered (an SSE stream is
+forwarded whole), which keeps the proxy simple and correct; token-by-token relay
+is a later refinement.
 """
 from __future__ import annotations
 
@@ -30,6 +33,8 @@ import logging
 import os
 from dataclasses import dataclass
 from urllib.parse import urlparse
+
+from .config import load_config
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +47,17 @@ _HOP_BY_HOP = frozenset({
 _AUTH_HEADERS = frozenset({"authorization", "x-api-key", "api-key"})
 
 DEFAULT_PORT = 8765
+DEFAULT_ALLOWED_ROUTES = frozenset({
+    # Anthropic Messages API (+ token counting).
+    "POST /v1/messages",
+    "POST /v1/messages/count_tokens",
+    # OpenAI / OpenAI-compatible inference APIs.
+    "POST /v1/chat/completions",
+    "POST /v1/responses",
+    "POST /v1/completions",
+    "POST /v1/embeddings",
+})
+_PROXY_TOKEN_HEADER = "x-maverick-proxy-token"
 
 
 @dataclass(frozen=True)
@@ -52,6 +68,11 @@ class ProxyConfig:
     listen_port: int = DEFAULT_PORT
     auth_style: str = "bearer"          # "bearer" | "x-api-key"
     allow_hosts: frozenset[str] = frozenset()  # empty == {upstream host}
+    # Shared secret clients must present to the proxy. It is intentionally not
+    # the provider key; use it as the agent-side provider api_key/base credential.
+    client_token: str = ""
+    # "METHOD /path" specs. Empty means the safe model-inference defaults above.
+    allowed_routes: frozenset[str] = frozenset()
 
     def allowed(self) -> frozenset[str]:
         if self.allow_hosts:
@@ -70,13 +91,19 @@ def config_from_env() -> ProxyConfig | None:
     key = os.environ.get("MAVERICK_PROXY_KEY", "").strip()
     listen = os.environ.get("MAVERICK_PROXY_LISTEN", "").strip()
     auth_style = os.environ.get("MAVERICK_PROXY_AUTH_STYLE", "").strip().lower()
-    if not upstream or not auth_style:
+    client_token = os.environ.get("MAVERICK_PROXY_CLIENT_TOKEN", "").strip()
+    allowed_routes = _parse_allowed_routes(
+        os.environ.get("MAVERICK_PROXY_ALLOWED_ROUTES", "")
+    )
+    if not upstream or not auth_style or not client_token or not allowed_routes:
         try:
-            from .config import load_config
             cfg = (load_config() or {}).get("model_proxy") or {}
             upstream = upstream or str(cfg.get("upstream") or "").strip()
             listen = listen or str(cfg.get("listen") or "").strip()
             auth_style = auth_style or str(cfg.get("auth_style") or "").strip().lower()
+            client_token = client_token or str(cfg.get("client_token") or "").strip()
+            if not allowed_routes:
+                allowed_routes = _parse_allowed_routes(cfg.get("allowed_routes") or ())
         except Exception:  # pragma: no cover -- config never blocks startup
             pass
     if not upstream:
@@ -88,7 +115,52 @@ def config_from_env() -> ProxyConfig | None:
         listen_host=host,
         listen_port=port,
         auth_style=auth_style if auth_style in ("bearer", "x-api-key") else "bearer",
+        client_token=client_token,
+        allowed_routes=allowed_routes,
     )
+
+
+def _parse_allowed_routes(value) -> frozenset[str]:
+    if not value:
+        return frozenset()
+    if isinstance(value, str):
+        raw = value.replace("\n", ",").split(",")
+    else:
+        raw = value
+    routes = set()
+    for item in raw:
+        route = str(item or "").strip()
+        if not route:
+            continue
+        parts = route.split(None, 1)
+        if len(parts) != 2:
+            continue
+        method, path = parts[0].upper(), parts[1].strip()
+        if not path.startswith("/"):
+            path = f"/{path}"
+        routes.add(f"{method} {path}")
+    return frozenset(routes)
+
+
+def _configured_routes(config: ProxyConfig) -> frozenset[str]:
+    return config.allowed_routes or DEFAULT_ALLOWED_ROUTES
+
+
+def route_allowed(config: ProxyConfig, method: str, path: str) -> bool:
+    clean_path = urlparse(path).path or "/"
+    if not clean_path.startswith("/"):
+        clean_path = f"/{clean_path}"
+    return f"{method.upper()} {clean_path}" in _configured_routes(config)
+
+
+def authenticate(config: ProxyConfig, headers: dict[str, str]) -> bool:
+    if not config.client_token:
+        return False
+    lowered = {k.lower(): v for k, v in headers.items()}
+    bearer = lowered.get("authorization", "").strip()
+    if bearer == f"Bearer {config.client_token}":
+        return True
+    return lowered.get(_PROXY_TOKEN_HEADER, "").strip() == config.client_token
 
 
 def _split_listen(listen: str) -> tuple[str, int]:
@@ -146,6 +218,10 @@ def handle(config: ProxyConfig, method: str, path: str,
            client=None) -> tuple[int, dict[str, str], bytes]:
     """Whole request handling: forward, or a clean error response. Never raises
     into the listener."""
+    if not authenticate(config, headers):
+        return 401, {"Content-Type": "text/plain"}, b"proxy authentication required"
+    if not route_allowed(config, method, path):
+        return 403, {"Content-Type": "text/plain"}, b"model proxy route not allowed"
     try:
         return forward(config, method, path, headers, body, client=client)
     except ValueError as e:  # blocked host / bad request
@@ -201,9 +277,13 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- CLI shell
         print("ERROR: no upstream configured "
               "(MAVERICK_PROXY_UPSTREAM or [model_proxy] upstream)")
         return 1
+    if not config.client_token:
+        print("ERROR: MAVERICK_PROXY_CLIENT_TOKEN or [model_proxy] client_token "
+              "is required")
+        return 1
     if not config.api_key:
         print("WARNING: MAVERICK_PROXY_KEY is empty; forwarded requests will be "
-              "unauthenticated")
+              "unauthenticated upstream")
     if args.check:
         print(f"OK: {config.listen_host}:{config.listen_port} -> {config.upstream} "
               f"(auth={config.auth_style})")
@@ -213,7 +293,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- CLI shell
 
 
 __all__ = ["ProxyConfig", "config_from_env", "build_request", "forward",
-           "handle", "serve"]
+           "handle", "serve", "authenticate", "route_allowed"]
 
 
 if __name__ == "__main__":  # pragma: no cover

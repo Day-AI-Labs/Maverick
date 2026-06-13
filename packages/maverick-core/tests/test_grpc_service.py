@@ -74,7 +74,13 @@ def test_start_goal_creates_and_dispatches():
     assert gid == 1
     assert shared["titles"][1] == "Do the thing"
     assert shared["dispatched"] == [
-        (1, {"max_dollars": 2.0, "max_wall_seconds": None, "channel": None, "user_id": "u1"})
+        (1, {
+            "max_dollars": 2.0,
+            "max_wall_seconds": None,
+            "channel": None,
+            "user_id": "u1",
+            "capability": None,
+        })
     ]
     assert shared["closes"] >= 1  # world closed after create
 

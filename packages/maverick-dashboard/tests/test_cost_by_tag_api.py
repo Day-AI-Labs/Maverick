@@ -61,3 +61,49 @@ def test_cost_by_tag_limit_clamped(monkeypatch):
     monkeypatch.setattr(app_mod, "_world", lambda: _W())
     assert client.get("/api/v1/cost/by-tag?limit=999999").status_code == 200
     assert seen["limit"] == 10_000
+
+
+def test_cost_by_tag_scopes_authenticated_owner(monkeypatch):
+    class _OwnedWorld:
+        def __init__(self):
+            self.calls = []
+            self._eps = {
+                1: [_Ep(1, 1.25, tag="alice")],
+                2: [_Ep(2, 9.50, tag="bob")],
+            }
+
+        def list_goals(self, owner=None, limit=None, order="asc"):
+            assert owner == "user:alice"
+            return [types.SimpleNamespace(id=1, owner="user:alice")]
+
+        def list_episodes(self, limit=500, goal_id=None):
+            self.calls.append((limit, goal_id))
+            if goal_id is None:
+                return [ep for eps in self._eps.values() for ep in eps]
+            return self._eps.get(goal_id, [])[:limit]
+
+        def get_goal(self, gid):
+            return types.SimpleNamespace(metadata=None, tags=None)
+
+    world = _OwnedWorld()
+    monkeypatch.setattr(app_mod, "_world", lambda: world)
+    monkeypatch.setattr(app_mod, "goal_owner_filter", lambda request: "user:alice")
+
+    r = client.get("/api/v1/cost/by-tag")
+
+    assert r.status_code == 200, r.text
+    buckets = {b["tag"]: b for b in r.json()["buckets"]}
+    assert buckets == {
+        "alice": {
+            "tag": "alice",
+            "cost": 1.25,
+            "in_tok": 10,
+            "out_tok": 5,
+            "runs": 1,
+        }
+    }
+
+    by_goal = client.get("/api/v1/cost/by-tag?tag_field=goal_id")
+    assert by_goal.status_code == 200, by_goal.text
+    assert {b["tag"] for b in by_goal.json()["buckets"]} == {"1"}
+    assert world.calls == [(500, 1), (500, 1)]

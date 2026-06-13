@@ -847,9 +847,10 @@ def pick_budget() -> dict[str, float]:
 def pick_capabilities() -> dict[str, bool]:
     """Opt-in to high-impact tools that ship disabled.
 
-    Computer-use and browser tools have real safety side effects
-    (mouse/keyboard control or arbitrary navigation), so they default
-    to off until you explicitly enable them.
+    Computer-use, browser, ROS robotics, and code-exec tools have real safety
+    side effects (mouse/keyboard control, arbitrary navigation, robot/simulator
+    commands, or sandboxed tool orchestration), so they default to off until you
+    explicitly enable them.
     """
     console.print()
     use_computer = _q_confirm(
@@ -858,6 +859,12 @@ def pick_capabilities() -> dict[str, bool]:
     )
     use_browser = _q_confirm(
         "Enable browser? Lets the agent navigate the web via Playwright.",
+        default=False,
+    )
+    use_ros = _q_confirm(
+        "Enable ROS robotics? Lets the agent publish topics or call services "
+        "against ROS_BRIDGE_URL over rosbridge. Only enable for trusted robot/sim "
+        "operators.",
         default=False,
     )
     use_code_exec = _q_confirm(
@@ -884,6 +891,7 @@ def pick_capabilities() -> dict[str, bool]:
     return {
         "computer_use": use_computer,
         "browser": use_browser,
+        "ros": use_ros,
         "code_exec": use_code_exec,
         "embedded_flash": embedded_flash,
         "deferred_tools": deferred_tools,
@@ -1284,6 +1292,12 @@ def pick_advanced() -> dict[str, Any]:
         "output_cache": _q_confirm(
             "Cache tool outputs? Memoize side-effect-free (read-only) tool calls "
             "within a run so a repeated read isn't re-done. Off by default.",
+            default=False,
+        ),
+        "hardware_sensors": _q_confirm(
+            "Enable host hardware sensors? Lets agents read this machine's "
+            "temperatures, fans, and battery via the [sensors] extra. Off by "
+            "default because it exposes host telemetry to tool calls.",
             default=False,
         ),
         "local_first": _q_confirm(
@@ -2602,6 +2616,8 @@ def write_config(  # noqa: C901
             tool_lines.append("deferred_loading = true")
         if advanced.get("output_cache"):
             tool_lines.append("output_cache = true")
+        if advanced.get("hardware_sensors"):
+            tool_lines.append("hardware_sensors = true")
         if tool_lines:
             lines.append("")
             lines.append("[tools]")
@@ -2882,7 +2898,7 @@ def run_fast() -> int:
             "[bold]local[/bold] sandbox with host-mutating tools disabled. "
             "Run [bold]maverick init[/bold] to switch to docker once it's up."
         )
-    capabilities = {"computer_use": False, "browser": False}
+    capabilities = {"computer_use": False, "browser": False, "ros": False}
     # Pick up the API key from the env if it's already there;
     # otherwise the wizard's later run can populate ~/.maverick/.env.
     keys: dict[str, str] = {}
@@ -3032,7 +3048,7 @@ def write_consumer_config(
             "timeout": 60,
         },
         keys,
-        {"computer_use": False, "browser": False},  # capabilities
+        {"computer_use": False, "browser": False, "ros": False},  # capabilities
         tool_acl={"denied_tools": denied_tools},
         rate_limits={
             "web_search": "5/60",

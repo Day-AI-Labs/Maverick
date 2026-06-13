@@ -34,11 +34,15 @@ def test_compose_invariants():
     assert "${MAVERICK_DASHBOARD_TOKEN:?" in text
 
 
-def test_nginx_template_is_a_read_only_deny_proxy():
+def test_nginx_template_is_a_path_allowlist_proxy():
     text = (_DC / "nginx.conf.template").read_text()
-    assert re.search(r"limit_except\s+GET\s+HEAD\s*\{\s*deny\s+all;", text)
-    # Bearer injected upstream from the env; visitors never see it.
-    assert 'proxy_set_header Authorization "Bearer ${MAVERICK_DASHBOARD_TOKEN}"' in text
+    assert "location = /demo" in text
+    assert "location = /healthz" in text
+    assert "return 302 /demo" in text
+    assert re.search(r"location\s+/\s*\{\s*return\s+404;", text)
+    assert text.count("limit_except GET HEAD") == 2
+    # Bearer injected only on the redacted demo page; visitors never see it.
+    assert text.count('proxy_set_header Authorization "Bearer ${MAVERICK_DASHBOARD_TOKEN}"') == 1
     assert f"proxy_pass http://dashboard:{_PORT}" in text
 
 
@@ -48,6 +52,7 @@ def test_seed_script_compiles_and_uses_the_real_world_model_api():
     compile(source, str(path), "exec")  # raises on syntax errors
     assert "from maverick.world_model import" in source
     assert "create_goal" in source and "set_goal_status" in source
+    assert 'owner="demo"' in source
     # Only statuses the world model actually writes; nothing left 'active'.
     assert '"failed"' not in source
     for status in ('"done"', '"blocked"', '"cancelled"'):
@@ -69,7 +74,10 @@ def test_k8s_manifest_invariants():
     assert f"containerPort: {_PORT}" not in text
     assert f"mountPath: {_STATE}" in text
     assert "secretKeyRef" in text and "MAVERICK_DASHBOARD_TOKEN" in text
-    assert "limit_except GET HEAD" in text  # nginx ConfigMap carries the deny rule
+    assert "location = /demo" in text
+    assert "return 302 /demo" in text
+    assert "return 404" in text
+    assert text.count("limit_except GET HEAD") == 2
     assert text.count("limits:") >= 3      # resources on every container
     assert "seed_demo.py" in text          # init container runs the seeder
 
@@ -79,8 +87,20 @@ def test_readme_documents_the_honest_posture():
     # The blueprint's core honesty: no global read-only flag exists, so the
     # deny-proxy carries the posture, and DNS/TLS is a maintainer act.
     assert "no global read-only flag" in text
+    assert "path-allowlist" in text
+    assert "method-only" in text
     assert "limit_except" in text
     assert "TLS" in text and "demo.maverick.dev" in text
+
+
+def test_dashboard_public_demo_route_is_redacted():
+    text = (_REPO_ROOT / "packages" / "maverick-dashboard" / "maverick_dashboard" / "app.py").read_text()
+    assert '@app.get("/demo", response_class=HTMLResponse)' in text
+    assert 'owner="demo"' in text
+    route = text[text.index('async def public_demo'):text.index('@app.get("/", response_class=HTMLResponse)')]
+    assert "get_facts" not in route
+    assert "UsageLedger" not in route
+    assert "default_audit_log" not in route
 
 
 def test_no_baked_secrets_in_demo_cluster():

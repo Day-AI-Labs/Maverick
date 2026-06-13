@@ -1,16 +1,19 @@
 # demo-cluster — public read-only demo (demo.maverick.dev)
 
 Blueprint for a public, **read-only** Maverick demo: seeded finished runs,
-the real dashboard, and an nginx deny-proxy as the only exposed surface.
-Ships as both `docker-compose.yml` and `k8s.yaml` (same three-part shape).
+the real dashboard process, and an nginx path-allowlist proxy as the only
+exposed surface. Ships as both `docker-compose.yml` and `k8s.yaml` (same
+three-part shape).
 
 ```
- visitor ──► nginx :8080  ── GET/HEAD only ──► dashboard :8765 (token-protected)
-             │  injects Authorization:           ▲
-             │  Bearer $MAVERICK_DASHBOARD_TOKEN │ state volume /root/.maverick
-             └─ everything else → 403            │
-                                        seed_demo.py (one-shot, real
-                                        world-model API, finished goals)
+ visitor ──► nginx :8080 ── /demo only ──► dashboard :8765 (token-protected)
+             │             injects Authorization: ▲
+             │             Bearer $MAVERICK_DASHBOARD_TOKEN
+             ├─ / → 302 /demo                   │ state volume /root/.maverick
+             ├─ /healthz → dashboard health     │
+             └─ every other path → 404          │
+                                        seed_demo.py (one-shot for owner=demo,
+                                        real world-model API, finished goals)
 ```
 
 ## Run it
@@ -52,22 +55,39 @@ publicly reachable (all POST/DELETE; from `maverick_dashboard/api.py` and
   `_AUTH_EXEMPT` in `app.py`), so the proxy is the only thing standing
   between them and the internet here.
 
-The nginx config (`nginx.conf.template`) therefore rejects every non-GET/HEAD
-method at the edge (`limit_except GET HEAD { deny all; }` → 403) and injects
-`Authorization: Bearer ...` upstream — `proxy_set_header` *replaces* any
-client-sent Authorization header, so visitors can neither learn nor override
-the token. All mutating dashboard routes are POST/DELETE (none hide behind
-GET), which is what makes the method filter sufficient.
+The nginx config (`nginx.conf.template`) therefore **does not** proxy the
+authenticated dashboard by method alone. Authenticated GET endpoints include
+run history, facts, spend, audit logs, security posture, plugin/MCP/tool
+configuration, permissions, approvals, and compliance exports; a method-only
+filter would publish that state to every visitor. Instead the public proxy is
+path-allowlisted:
 
-Defense in depth: the dashboard container publishes no host port (compose)
-/ binds loopback inside the pod (k8s), so even a proxy misconfiguration
-does not expose it directly.
+- `GET/HEAD /` returns `302 /demo`.
+- `GET/HEAD /demo` is the only public page that receives the injected bearer.
+  The route renders a redacted, standalone snapshot of goals owned by the
+  seeded `demo` principal only; it does not use the full dashboard shell and
+  does not expose facts, spend, audit, configuration, permissions, approvals,
+  or compliance data.
+- `GET/HEAD /healthz` is allowed for load balancers.
+- Every other path, including `/api/*`, `/api/v1/*`, `/chat`, `/goals`,
+  `/audit`, `/permissions`, and other dashboard pages, returns 404 at nginx.
+- Non-GET/HEAD requests to the allowed upstream paths are rejected at nginx
+  with `limit_except GET HEAD { deny all; }`.
+
+`proxy_set_header Authorization ...` *replaces* any client-sent Authorization
+header on the allowlisted upstream locations, so visitors can neither learn nor
+override the token.
+
+Defense in depth: the dashboard container publishes no host port (compose) /
+binds loopback inside the pod (k8s), so even a proxy misconfiguration does not
+expose it directly. Do not add public proxy paths unless the corresponding
+dashboard route is explicitly designed to redact public-demo data.
 
 ## What the demo data is
 
 `seed_demo.py` runs once at start (compose one-shot service / k8s init
-container) inside the maverick image and writes 6 finished goals — 4
-`done`, 1 `blocked`, 1 `cancelled` — through the real
+container) inside the maverick image and writes 6 finished goals for owner
+`demo` — 4 `done`, 1 `blocked`, 1 `cancelled` — through the real
 `maverick.world_model.WorldModel` API (`create_goal` + `set_goal_status`).
 No live agents run in the demo, so nothing is seeded `active` (the
 dashboard reclaims orphaned active goals on startup) and no provider API
@@ -84,8 +104,10 @@ key is needed or configured.
   (SQLite single-writer, same rule as the kubernetes reference arch).
 - Rotation: change the token by restarting with a new
   `MAVERICK_DASHBOARD_TOKEN`; nothing else holds it.
-- Re-seeding: `seed_demo.py` is idempotent (skips when goals exist); wipe
-  the `demo-state` volume to start fresh.
+- Re-seeding: `seed_demo.py` is idempotent for the public demo owner (skips
+  when owner `demo` already has goals). Non-demo goals in a reused volume do
+  not suppress seeding and are not shown by `/demo`; wipe the `demo-state`
+  volume to start completely fresh.
 
 ## What was and wasn't verified here
 

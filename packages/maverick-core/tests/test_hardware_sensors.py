@@ -150,3 +150,49 @@ def test_tool_metadata_and_schema():
     assert t.parallel_safe is True  # read-only
     assert t.input_schema["properties"]["op"]["enum"] == ["read", "thermal", "battery"]
     assert "never invented" in t.description
+
+
+def _registry_names(tmp_path, monkeypatch, config: str = ""):
+    config_path = tmp_path / "config.toml"
+    if config:
+        config_path.write_text(config, encoding="utf-8")
+    monkeypatch.setenv("MAVERICK_CONFIG", str(config_path))
+
+    from maverick.tools import base_registry
+
+    class _W:
+        pass
+
+    class _S:
+        workdir = "."
+
+    return set(getattr(base_registry(world=_W(), sandbox=_S()), "_tools", {}).keys())
+
+
+def test_base_registry_hardware_sensors_opt_in(tmp_path, monkeypatch):
+    monkeypatch.delenv("MAVERICK_ENABLE_HARDWARE_SENSORS", raising=False)
+    assert "hardware_sensors" not in _registry_names(tmp_path, monkeypatch)
+
+    assert "hardware_sensors" in _registry_names(
+        tmp_path, monkeypatch, "[tools]\nhardware_sensors = true\n"
+    )
+
+    monkeypatch.setenv("MAVERICK_ENABLE_HARDWARE_SENSORS", "1")
+    assert "hardware_sensors" in _registry_names(tmp_path, monkeypatch)
+
+
+def test_psutil_import_ignores_current_directory(tmp_path, monkeypatch):
+    marker = tmp_path / "HOST_CODE_EXECUTED.txt"
+    (tmp_path / "psutil.py").write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('ran', encoding='utf-8')\n"
+        "def sensors_battery():\n"
+        "    return None\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delitem(sys.modules, "psutil", raising=False)
+
+    hs_mod._psutil()
+    assert not marker.exists()

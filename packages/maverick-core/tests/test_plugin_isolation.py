@@ -6,8 +6,11 @@ host module state is untouched (subinterpreter), and a hard-crashing plugin
 kills the child, not the agent (subprocess)."""
 from __future__ import annotations
 
+import json
+import subprocess
 import sys
 import textwrap
+import types
 
 import pytest
 from maverick.plugin_isolation import isolation_mode, run_isolated
@@ -59,6 +62,24 @@ def test_mode_default_none(monkeypatch):
 def test_none_mode_runs_in_process(plugin_on_path):
     out = run_isolated(f"{plugin_on_path}:tool", {"name": "ada"}, mode="none")
     assert out == "hello ada (calls=1)"
+
+
+def test_subprocess_args_passed_via_stdin_not_argv(monkeypatch):
+    secret = "MVK_ARG_SECRET_not_on_cmdline"  # pragma: allowlist secret
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured["input"] = kwargs.get("input")
+        return types.SimpleNamespace(returncode=1, stderr="forced stop")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    out = run_isolated("demo_iso_plugin:tool", {"token": secret}, mode="subprocess")
+
+    assert out.startswith("ERROR: plugin process exited 1")
+    assert captured["input"] == json.dumps({"token": secret})
+    assert secret not in "\0".join(captured["cmd"])
 
 
 def test_subprocess_roundtrip_and_host_state_untouched(plugin_on_path):

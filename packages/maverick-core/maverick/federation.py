@@ -423,6 +423,7 @@ class FederationService:
                 max_wall_seconds=(deadline_ms / 1000.0) if deadline_ms > 0 else None,
                 channel="federation",
                 user_id=f"federation:{peer.name}",
+                capability=negotiation.granted,
             ))
         except ValueError as e:  # e.g. empty title
             return self._refuse_recorded(peer, corr, str(e))

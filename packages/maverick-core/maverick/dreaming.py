@@ -702,12 +702,23 @@ def build_rehearsal_cases(
     class. Deterministic — the case text is historical goal text, never
     generated. Largest evidence first, capped at ``max_cases``.
     """
+    # Rehearsal re-runs historical goal text as a real goal. Channel/user-
+    # scoped reflexions may contain remote-user supplied prompts that were
+    # originally executed under that channel's identity and capability grant.
+    # Until the queue can preserve and reapply that full provenance, only
+    # unscoped local failures are eligible for offline practice.
+    trusted_failures = [
+        f for f in failures
+        if f.get("channel") is None and f.get("user_id") is None
+    ]
+
     cases: list[dict] = []
-    for cluster in cluster_failures(failures, min_cluster=min_cluster):
+    for cluster in cluster_failures(trusted_failures, min_cluster=min_cluster):
         newest = max(cluster, key=lambda f: float(f.get("ts", 0) or 0))
         cases.append({
             "ts": now if now is not None else time.time(),
             "prompt": str(newest.get("goal_text", "")).strip(),
+            "scope": "local",
             "domain": newest.get("domain"),
             "failure_class": str(newest.get("failure_class", "unknown")),
             "evidence": len(cluster),
@@ -748,7 +759,12 @@ def load_rehearsals(path: Path | str | None = None) -> list[dict]:
                     d = json.loads(raw)
                 except json.JSONDecodeError:
                     continue
-                if isinstance(d, dict) and str(d.get("prompt", "")).strip():
+                if not isinstance(d, dict) or not str(d.get("prompt", "")).strip():
+                    continue
+                # Legacy queues did not record whether prompt text came from
+                # a local run or a remote channel/user. Refuse those ambiguous
+                # cases instead of replaying potentially untrusted input.
+                if d.get("scope") == "local":
                     out.append(d)
     except OSError:
         return []
@@ -974,6 +990,8 @@ def _replay_failures(reflexion_path: Path | str | None) -> list[dict]:
         {
             "ts": r.ts, "goal_text": r.goal_text,
             "failure_class": r.failure_class, "reflection": r.reflection,
+            "channel": getattr(r, "channel", None),
+            "user_id": getattr(r, "user_id", None),
             "domain": getattr(r, "domain", None),
         }
         for r in _r.list_recent(**kwargs)
