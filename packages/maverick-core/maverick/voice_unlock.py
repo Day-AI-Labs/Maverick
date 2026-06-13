@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -89,14 +90,36 @@ class VoiceGate:
             return {}
 
     def _save(self, data: dict) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data), encoding="utf-8")
-        os.replace(tmp, self._path)
+        parent = self._path.parent
+        parent_existed = parent.exists()
+        parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+        if not parent_existed:
+            try:
+                os.chmod(parent, 0o700)
+            except OSError:  # pragma: no cover
+                pass
+
+        fd, tmp_name = tempfile.mkstemp(
+            dir=parent,
+            prefix=f".{self._path.name}.",
+            suffix=".tmp",
+            text=True,
+        )
+        tmp = Path(tmp_name)
         try:
-            os.chmod(self._path, 0o600)
-        except OSError:  # pragma: no cover
-            pass
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(data, fh)
+            os.replace(tmp, self._path)
+            try:
+                os.chmod(self._path, 0o600)
+            except OSError:  # pragma: no cover
+                pass
+        except Exception:
+            try:
+                tmp.unlink()
+            except OSError:  # pragma: no cover
+                pass
+            raise
 
     # -- enrollment ----------------------------------------------------------
 
