@@ -57,10 +57,10 @@ def _inspect(token: str, now: float, secret: str | None, leeway: float) -> str:
     time_ok = not time_issues
 
     # --- signature ---
-    if secret is None:
-        sig_state, sig_ok = "unverified (no secret given)", None
-    elif alg == "none":
+    if alg == "none":
         sig_state, sig_ok = "INSECURE (alg=none, unsigned)", False
+    elif secret is None:
+        sig_state, sig_ok = "unverified (no secret given)", None
     elif alg in _HMAC_ALGS:
         signing_input = f"{parts[0]}.{parts[1]}".encode()
         expected = hmac.new(secret.encode(), signing_input, _HMAC_ALGS[alg]).digest()
@@ -144,5 +144,7 @@ def jwt_inspect() -> Tool:
         ),
         input_schema=_SCHEMA,
         fn=_run,
-        parallel_safe=True,
+        # Results can depend on the current wall clock when now is omitted,
+        # so this tool must not be treated as cacheable by the output cache.
+        parallel_safe=False,
     )

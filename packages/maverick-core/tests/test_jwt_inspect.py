@@ -74,6 +74,21 @@ def test_alg_none_flagged():
     assert "INSECURE (alg=none" in out
 
 
+def test_alg_none_flagged_without_secret():
+    tok = _make({"alg": "none"}, {"sub": "u"})
+    out = _i(tok, now=1000)
+    assert out.startswith("INVALID")
+    assert "INSECURE (alg=none" in out
+
+
+def test_not_cacheable_because_default_now_is_time_dependent():
+    from maverick.tool_cache import cacheable
+
+    tool = jwt_inspect()
+    assert tool.parallel_safe is False
+    assert cacheable(tool) is False
+
+
 def test_asymmetric_unverifiable():
     tok = _make({"alg": "RS256"}, {"sub": "u"})
     out = _i(tok, now=1000, secret="x")
