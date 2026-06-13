@@ -64,6 +64,11 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["v1"])
 
+_PERF_SLA_CACHE_TTL_SECONDS = 60.0
+_PERF_SLA_LOCK = asyncio.Lock()
+_PERF_SLA_CACHE: tuple[float, list[dict], str | None] | None = None
+_PERF_HISTORY_MAX_FILES = 128
+
 
 
 
@@ -1467,18 +1472,11 @@ async def perf_dashboard() -> dict:
     """
     out: dict = {"sla": [], "benchmarks": {}, "retrospective": None}
     try:
-        import asyncio
-
-        from maverick.perf_sla import run_all
-        # run_all's dispatch probe drives its own event loop; run it in a
-        # worker thread so it never nests inside the server's running loop.
-        results = await asyncio.to_thread(run_all)
-        out["sla"] = [
-            {"name": r.name, "measured": r.measured, "threshold": r.threshold,
-             "unit": r.unit, "passed": r.passed}
-            for r in results
-        ]
-    except Exception as e:  # measurement must never 500 the dashboard
+        sla, error = await _cached_perf_sla()
+        out["sla"] = sla
+        if error:
+            out["sla_error"] = error
+    except Exception as e:  # measurement/cache must never 500 the dashboard
         out["sla_error"] = f"{type(e).__name__}: {e}"
     try:
         import json as _json
@@ -1488,7 +1486,12 @@ async def perf_dashboard() -> dict:
         store = _store_path()
         history: list[dict] = []
         if store.is_dir():
-            for f in sorted(store.glob("*.json")):
+            files = sorted(
+                store.glob("*.json"),
+                key=lambda p: p.stat().st_mtime if p.exists() else 0.0,
+                reverse=True,
+            )[:_PERF_HISTORY_MAX_FILES]
+            for f in sorted(files):
                 try:
                     rows = _json.loads(f.read_text(encoding="utf-8"))
                     if isinstance(rows, list):
@@ -1517,6 +1520,53 @@ async def perf_dashboard() -> dict:
     except Exception as e:
         out["benchmarks_error"] = f"{type(e).__name__}: {e}"
     return out
+
+
+async def _cached_perf_sla() -> tuple[list[dict], str | None]:
+    """Return perf-SLA rows with a short single-flight cache.
+
+    ``run_all()`` performs live CPU/IO probes.  The dashboard exposes this data
+    via a GET endpoint, so cache the expensive portion and serialize refreshes
+    to keep cross-site/simple GET floods from starting unbounded worker-thread
+    measurements in no-token loopback mode.
+    """
+    global _PERF_SLA_CACHE
+
+    now = time.monotonic()
+    if _PERF_SLA_CACHE is not None:
+        expires_at, rows, error = _PERF_SLA_CACHE
+        if now < expires_at:
+            return rows, error
+
+    async with _PERF_SLA_LOCK:
+        now = time.monotonic()
+        if _PERF_SLA_CACHE is not None:
+            expires_at, rows, error = _PERF_SLA_CACHE
+            if now < expires_at:
+                return rows, error
+
+        try:
+            from maverick.perf_sla import run_all
+
+            # run_all's dispatch probe drives its own event loop; run it in a
+            # worker thread so it never nests inside the server's running loop.
+            results = await asyncio.to_thread(run_all)
+            rows = [
+                {
+                    "name": r.name,
+                    "measured": r.measured,
+                    "threshold": r.threshold,
+                    "unit": r.unit,
+                    "passed": r.passed,
+                }
+                for r in results
+            ]
+            error = None
+        except Exception as e:  # measurement must never 500 the dashboard
+            rows = []
+            error = f"{type(e).__name__}: {e}"
+        _PERF_SLA_CACHE = (now + _PERF_SLA_CACHE_TTL_SECONDS, rows, error)
+        return rows, error
 
 
 @router.get("/cache/stats")
