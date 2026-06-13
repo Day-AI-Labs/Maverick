@@ -287,6 +287,18 @@ def _looks_like_year(token: str, value: float) -> bool:
             and value == int(value) and 1900 <= value <= 2100)
 
 
+def _looks_like_money(token: str) -> bool:
+    """A matched token carries a currency marker ($, thousands comma, or
+    cents) -- used to gate the next-line fallback so a bare box number or
+    label digit on the following line is never mistaken for the amount."""
+    return "$" in token or "," in token or "." in token
+
+
+def _signed(m) -> float:
+    value = float(m.group(2).replace(",", ""))
+    return -value if m.group(1) == "-" else value
+
+
 def _amount_after(text: str, *labels: str) -> float:
     """First dollar amount AFTER a label, scanning every line.
 
@@ -295,7 +307,7 @@ def _amount_after(text: str, *labels: str) -> float:
     an LLM (and so the demo/tests are deterministic). Searching after the
     label keeps "Box 1 Wages: $85,000.00" from yielding the box number.
 
-    Hardened against three real failure modes that would otherwise produce a
+    Hardened against the real failure modes that would otherwise produce a
     SILENT WRONG NUMBER on a tax return:
       * a label that is the prefix of a longer token -- "box 1" must not match
         "box 10".."box 19" (a word boundary is required after the label, so
@@ -303,12 +315,17 @@ def _amount_after(text: str, *labels: str) -> float:
       * a bare tax year on a title line ("... Interest Income 2025") being read
         as the amount -- year-like bare integers are skipped, and the scan
         continues to the real box line;
-      * a leading minus sign being dropped -- the sign is preserved.
+      * a leading minus sign being dropped -- the sign is preserved;
+      * a box label and its value on SEPARATE lines (common in PDF text
+        exports): when the label line carries no digits at all, the amount is
+        taken from the next line, but only when it is clearly money-formatted
+        ($/comma/cents) so a following box number is never grabbed.
     The first VALID money after any label wins; labels are tried in order per
     line. Bare unformatted integers in the 1900-2100 range are the one input
     this intentionally skips; real exports carry a $, comma, or cents.
     """
-    for line in (text or "").splitlines():
+    lines = (text or "").splitlines()
+    for i, line in enumerate(lines):
         low = line.lower()
         for lbl in labels:
             pos = 0
@@ -322,13 +339,20 @@ def _amount_after(text: str, *labels: str) -> float:
                 # following digit can't be mistaken for (part of) the amount.
                 if after < len(low) and low[after].isalnum():
                     continue
-                m = _MONEY_RE.search(line[after:])
-                if not m:
-                    continue
-                value = float(m.group(2).replace(",", ""))
-                if _looks_like_year(m.group(0), value):
-                    continue
-                return -value if m.group(1) == "-" else value
+                rest = line[after:]
+                m = _MONEY_RE.search(rest)
+                if m:
+                    if not _looks_like_year(m.group(0), _signed(m)):
+                        return _signed(m)
+                    continue  # year-like: keep scanning this line
+                # No usable amount on this line. A bare label line (no digits
+                # at all in the remainder) falls back to the next line, but
+                # only for a clearly money-formatted value.
+                if not any(c.isdigit() for c in rest) and i + 1 < len(lines):
+                    nm = _MONEY_RE.search(lines[i + 1])
+                    if (nm and _looks_like_money(nm.group(0))
+                            and not _looks_like_year(nm.group(0), _signed(nm))):
+                        return _signed(nm)
     return 0.0
 
 
@@ -508,6 +532,33 @@ def carried_figures(wp: Workpaper) -> list[tuple[str, float, str]]:
     return out
 
 
+def _money_fingerprint(d: SourceDoc) -> tuple:
+    """A document's identity for duplicate detection: type + every extracted
+    money figure (rounded). Two of a client's documents with the same type and
+    byte-identical figures are almost certainly the same form uploaded twice --
+    two real jobs would not share identical wages AND withholding."""
+    return (d.doc_type, round(d.wages, 2), round(d.interest, 2),
+            round(d.ordinary_dividends, 2), round(d.federal_withholding, 2),
+            round(d.nonemployee_comp, 2), round(d.mortgage_interest, 2),
+            round(d.retirement_gross, 2), round(d.social_security, 2),
+            round(d.unemployment, 2), round(d.state_withholding, 2))
+
+
+def duplicate_groups(wp: Workpaper) -> list[list[str]]:
+    """Groups of labels that look like the same document uploaded more than
+    once (same type, identical figures, and a non-zero headline figure so two
+    empty/unparsed docs don't count). Detection only -- the preparer decides
+    whether a match is a true duplicate or a coincidence."""
+    seen: dict[tuple, list[str]] = {}
+    for d in wp.docs:
+        fp = _money_fingerprint(d)
+        # Ignore all-zero fingerprints (UNKNOWN / unparsed): they would group
+        # unrelated empty docs together.
+        if any(fp[i] for i in range(1, len(fp))):
+            seen.setdefault(fp, []).append(_report_safe(d.label))
+    return [labels for labels in seen.values() if len(labels) > 1]
+
+
 def missing_items(wp: Workpaper) -> list[str]:
     """Completeness check: what a preparer would chase before computing."""
     items: list[str] = []
@@ -516,6 +567,11 @@ def missing_items(wp: Workpaper) -> list[str]:
                      f"(supported: {', '.join(FILING_STATUSES)})")
     if not wp.docs:
         items.append("no source documents provided")
+    for group in duplicate_groups(wp):
+        items.append(
+            "POSSIBLE DUPLICATE upload (same type, identical figures): "
+            + ", ".join(group) + " -- confirm whether to include both; a "
+            "re-upload double-counts income")
     for d in wp.docs:
         label = _report_safe(d.label)
         if d.doc_type == "UNKNOWN":
@@ -531,9 +587,16 @@ def missing_items(wp: Workpaper) -> list[str]:
         # 0.3) is surfaced for verification rather than carried as a silent
         # zero. UNKNOWN docs are already named above.
         elif d.doc_type != "UNKNOWN" and d.confidence <= 0.3:
-            items.append(f"{d.label} ({d.doc_type}): LOW EXTRACTION "
+            items.append(f"{label} ({d.doc_type}): LOW EXTRACTION "
                          "CONFIDENCE -- headline figure not read; verify the "
                          "document before relying on it")
+        # A negative income / withholding figure is almost always an
+        # extraction error (a stray minus, a bracketed loss); never let it
+        # flow into the totals as a silent reducer.
+        if min(d.wages, d.interest, d.ordinary_dividends, d.nonemployee_comp,
+               d.federal_withholding, d.state_withholding) < 0:
+            items.append(f"{label}: NEGATIVE figure extracted -- verify the "
+                         "document (likely an extraction error)")
     return items
 
 
@@ -584,7 +647,9 @@ def compute_first_pass(wp: Workpaper, *, constants: dict = TY2025) -> Draft1040:
 
     # Child tax credit with the 5% phaseout, capped at tax (nonrefundable
     # portion only -- the additional CTC is an open item for the preparer).
-    ctc = constants["ctc_per_child"] * wp.dependents_under_17
+    # Dependents are clamped at 0 so a bad input can never invent a negative
+    # credit (which would otherwise inflate the tax).
+    ctc = constants["ctc_per_child"] * max(0, wp.dependents_under_17)
     over = max(0.0, total_income - constants["ctc_phaseout_start"][status])
     if over:
         ctc = max(0.0, ctc - (int((over + 999) // 1000) * 50.0))
@@ -737,7 +802,10 @@ def _render_state(out: list[str], sd: StateDraft) -> None:
 def render_review_package(draft: Draft1040,
                           state: StateDraft | None = None) -> str:
     """The preparer-facing review package: draft + provenance + open items."""
-    out = [DISCLAIMER, "",
+    n_open = len(draft.open_items) + (len(state.open_items) if state else 0)
+    triage = (f"REVIEW SUMMARY: {n_open} open item(s) for the preparer"
+              if n_open else "REVIEW SUMMARY: no open items flagged")
+    out = [DISCLAIMER, "", triage, "",
            f"DRAFT FORM 1040 (TY{TY2025['year']}) — first pass",
            "=" * 52,
            f"Filing status        : {draft.filing_status.upper()}"]
@@ -780,11 +848,58 @@ def render_review_package(draft: Draft1040,
     return "\n".join(out)
 
 
+def review_package_dict(draft: Draft1040,
+                        state: StateDraft | None = None) -> dict:
+    """The review package as a structured dict for programmatic intake.
+
+    Stable schema for a firm wiring the first pass into its own systems:
+    every federal line with its source citation, the carried figures, the
+    combined open items, and the state block. Money stays as floats (cents);
+    the text package remains the human-facing artifact."""
+    data: dict = {
+        "disclaimer": DISCLAIMER,
+        "tax_year": TY2025["year"],
+        "filing_status": draft.filing_status,
+        "is_draft": True,
+        "federal": {
+            "lines": [{"description": desc, "amount": amt, "source": src}
+                      for desc, amt, src in draft.lines],
+            "total_income": draft.total_income,
+            "standard_deduction": draft.standard_deduction,
+            "taxable_income": draft.taxable_income,
+            "tax_before_credits": draft.tax_before_credits,
+            "child_tax_credit": draft.child_tax_credit,
+            "tax_after_credits": draft.tax_after_credits,
+            "federal_withholding": draft.federal_withholding,
+            "estimated_payments": draft.estimated_payments,
+            "balance": draft.balance,
+            "is_refund": draft.balance < 0,
+        },
+        "carried_figures": [{"description": desc, "amount": amt, "source": src}
+                            for desc, amt, src in draft.carried],
+        "open_items": list(draft.open_items),
+    }
+    if state is not None:
+        data["state"] = {
+            "state": state.state,
+            "computed": state.computed,
+            "rate": state.rate,
+            "state_taxable": state.state_taxable,
+            "tax": state.tax,
+            "withholding": state.withholding,
+            "balance": state.balance,
+            "open_items": list(state.open_items),
+        }
+        data["open_items"] += [f"[{state.state}] {i}" for i in state.open_items]
+    return data
+
+
 __all__ = [
     "DISCLAIMER", "DOC_TYPES", "TY2025", "STATE_TY2025", "STATE_CODES",
     "FILING_STATUSES",
     "SourceDoc", "Workpaper", "Draft1040", "StateDraft",
     "classify", "extract", "missing_items", "compute_first_pass",
     "infer_state", "compute_state_first_pass", "render_review_package",
-    "normalize_filing_status", "carried_figures",
+    "normalize_filing_status", "carried_figures", "duplicate_groups",
+    "review_package_dict",
 ]

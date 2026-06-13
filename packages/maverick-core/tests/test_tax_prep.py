@@ -114,6 +114,24 @@ class TestExtractionHardening:
         assert extract("1099-INT\nBox 1 Interest income: 2,025\n").interest \
             == 2025.0
 
+    def test_amount_on_the_line_after_the_label(self):
+        # PDF text exports put the box label and its value on separate lines.
+        ml = ("Form W-2 Wage and Tax Statement 2025\n"
+              "Box 1 Wages, tips, other compensation\n"
+              "85,000.00\n"
+              "Box 2 Federal income tax withheld\n"
+              "9,000.00\n")
+        d = extract(ml, label="w2")
+        assert d.wages == 85000.0 and d.federal_withholding == 9000.0
+
+    def test_next_line_fallback_rejects_a_bare_box_number(self):
+        # The next-line fallback only accepts money-formatted values, so an
+        # unformatted integer (e.g. the next box's number) is never grabbed.
+        bare = ("Form W-2 Wage and Tax Statement 2025\n"
+                "Box 1 Wages, tips\n"
+                "85000\n")
+        assert extract(bare, label="w2").wages == 0.0
+
 
 class TestExtractionBreadth:
     """Carried figures from the broader document set are extracted onto the
@@ -179,6 +197,56 @@ class TestExtractionConfidence:
     def test_unknown_doc_is_zero_confidence(self):
         d = extract("grocery receipt")
         assert d.confidence == 0.0 and d.review_required is True
+
+
+class TestDuplicateDetection:
+    """A re-uploaded document double-counts income -- the engine must flag
+    likely duplicates while leaving genuine multi-source returns alone."""
+
+    _W2 = ("Form W-2 Wage and Tax Statement 2025\n"
+           "Box 1 Wages, tips: $85,000.00\n"
+           "Box 2 Federal income tax withheld: $9,000.00\n")
+
+    def test_duplicate_upload_is_flagged(self):
+        wp = Workpaper(filing_status="single", docs=[
+            extract(self._W2, label="w2.txt"),
+            extract(self._W2, label="w2_copy.txt")])
+        assert any("DUPLICATE" in i for i in compute_first_pass(wp).open_items)
+
+    def test_two_distinct_w2s_are_not_flagged_and_sum(self):
+        w2b = ("Form W-2 Wage and Tax Statement 2025\n"
+               "Box 1 Wages, tips: $40,000.00\n"
+               "Box 2 Federal income tax withheld: $3,000.00\n")
+        wp = Workpaper(filing_status="single", docs=[
+            extract(self._W2, label="job1"), extract(w2b, label="job2")])
+        draft = compute_first_pass(wp)
+        assert not any("DUPLICATE" in i for i in draft.open_items)
+        assert draft.total_income == 125000.0
+
+    def test_empty_unparsed_docs_are_not_grouped(self):
+        wp = Workpaper(filing_status="single",
+                       docs=[SourceDoc("UNKNOWN", "a"), SourceDoc("UNKNOWN", "b")])
+        assert not any("DUPLICATE" in i for i in missing_items(wp))
+
+
+class TestGarbageInputHandling:
+    """Bad inputs must never silently produce a wrong number."""
+
+    def test_negative_dependents_cannot_invent_a_credit_or_inflate_tax(self):
+        neg = compute_first_pass(Workpaper(
+            filing_status="single", dependents_under_17=-2,
+            docs=[SourceDoc("W-2", "a", wages=50000.0)]))
+        zero = compute_first_pass(Workpaper(
+            filing_status="single", dependents_under_17=0,
+            docs=[SourceDoc("W-2", "a", wages=50000.0)]))
+        assert neg.child_tax_credit == 0.0
+        assert neg.tax_after_credits == zero.tax_after_credits
+
+    def test_negative_extracted_figure_is_flagged(self):
+        d = compute_first_pass(Workpaper(
+            filing_status="single",
+            docs=[SourceDoc("W-2", "a", wages=-5000.0)]))
+        assert any("NEGATIVE" in i for i in d.open_items)
 
 
 class TestSeniorDeductionAndPayments:
@@ -435,6 +503,7 @@ class TestReviewPackage:
         ])
         text = render_review_package(compute_first_pass(wp))
         assert text.startswith(tax_prep.DISCLAIMER)
+        assert "REVIEW SUMMARY:" in text         # triage line at the top
         assert "[W-2 — Acme]" in text          # provenance citation
         assert "ESTIMATED REFUND" in text       # 12k withheld > 10,149 tax
         assert "OPEN ITEMS FOR PREPARER" in text
@@ -583,6 +652,34 @@ class TestTaxEngineConnectors:
             assert cap.permits("gosystem_tax_read") is True, name
             assert cap.permits("cch_axcess") is False, name   # write seat
             assert cap.permits("gosystem_tax") is False, name
+
+
+class TestJsonOutput:
+    def test_review_package_dict_is_serializable_and_complete(self):
+        wp = Workpaper(filing_status="single", estimated_payments=1000.0,
+                       docs=[SourceDoc("W-2", "a", wages=80000.0,
+                                       federal_withholding=9000.0)])
+        draft = compute_first_pass(wp)
+        from maverick.tax_prep import compute_state_first_pass, review_package_dict
+        state = compute_state_first_pass(wp, "PA")
+        data = review_package_dict(draft, state)
+        import json
+        json.dumps(data)                                   # must serialize
+        assert data["federal"]["total_income"] == 80000.0
+        assert data["federal"]["estimated_payments"] == 1000.0
+        assert data["state"]["state"] == "PA"
+        assert data["is_draft"] is True
+
+    def test_cli_json_format_emits_valid_json(self, tmp_path):
+        (tmp_path / "w2.txt").write_text(W2_TEXT, encoding="utf-8")
+        res = CliRunner().invoke(main, [
+            "--db", str(tmp_path / "x.db"), "tax", "prepare", str(tmp_path),
+            "--filing-status", "single", "--format", "json"])
+        assert res.exit_code == 0, res.output
+        import json
+        data = json.loads(res.output)
+        assert data["federal"]["total_income"] == 85000.0
+        assert "constants" in data
 
 
 class TestTaxPrepareCli:

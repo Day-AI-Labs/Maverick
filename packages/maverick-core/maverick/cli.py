@@ -3949,12 +3949,16 @@ def tax_group() -> None:
               help="Taxpayer is blind (additional standard deduction).")
 @click.option("--spouse-blind", is_flag=True,
               help="Spouse is blind (MFJ; additional standard deduction).")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]),
+              default="text", show_default=True,
+              help="Output format: human review package or structured JSON "
+                   "for programmatic intake.")
 @click.option("--out", "out_path", type=click.Path(), default=None,
               help="Also write the review package to this file.")
 def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
                 state_code: str | None, estimated_payments: float,
                 taxpayer_65: bool, spouse_65: bool, taxpayer_blind: bool,
-                spouse_blind: bool, out_path: str | None) -> None:
+                spouse_blind: bool, fmt: str, out_path: str | None) -> None:
     """Turn a folder of uploaded documents into a first-pass draft return.
 
     Reads every ``*.txt`` document in DOCS_DIR (text exports of the client's
@@ -3994,8 +3998,14 @@ def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
                  wp, tax_prep.infer_state(wp), federal=draft,
                  constants=state_tables)
              if docs else None)
-    package = tax_prep.render_review_package(draft, state)
-    package += f"\n\nConstants: TY{federal['year']} {provenance}"
+    if fmt == "json":
+        import json
+        data = tax_prep.review_package_dict(draft, state)
+        data["constants"] = f"TY{federal['year']} {provenance}"
+        package = json.dumps(data, indent=2)
+    else:
+        package = tax_prep.render_review_package(draft, state)
+        package += f"\n\nConstants: TY{federal['year']} {provenance}"
     click.echo(package)
     if out_path:
         Path(out_path).write_text(package + "\n", encoding="utf-8")
