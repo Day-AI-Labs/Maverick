@@ -84,20 +84,35 @@ def denied_tools() -> set[str]:
 # ("anthropic:claude-opus-4-8"). Keep the charset tight so a hand-edited /
 # corrupt override can't push junk into model resolution.
 _VALID_MODEL = re.compile(r"^[A-Za-z0-9_.:/-]{1,128}$")
+# Override keys under [models]: a role name (orchestrator, coder, ...) or the
+# special "default" that applies to every role. Tight charset so a hand-edited
+# file can't inject junk keys.
+_VALID_ROLE = re.compile(r"^[a-z_]{1,40}$")
+
+
+def _models_overlay() -> dict[str, str]:
+    """The dashboard's ``[models]`` table: ``{"default": spec, "<role>": spec}``.
+    Re-validated on read; junk keys/values are dropped."""
+    raw = _load().get("models") or {}
+    out: dict[str, str] = {}
+    for k, v in raw.items():
+        if (isinstance(k, str) and _VALID_ROLE.fullmatch(k)
+                and isinstance(v, str) and _VALID_MODEL.fullmatch(v.strip())):
+            out[k] = v.strip()
+    return out
 
 
 def default_model_override() -> str | None:
-    """The model the dashboard's settings page has pinned, or None.
+    """The dashboard's global default model pin, or None. Consulted by
+    ``llm.model_for_role`` below the user's ``config.toml`` ``[models]`` and
+    above the built-in ``ROLE_MODELS`` defaults."""
+    return _models_overlay().get("default")
 
-    Consulted by ``llm.model_for_role`` *below* the user's per-role
-    ``config.toml`` ``[models]`` (so explicit per-role config still wins) and
-    above the built-in ``ROLE_MODELS`` defaults. Re-validated on read so a
-    tampered file can't inject an arbitrary string into resolution.
-    """
-    raw = (_load().get("models") or {}).get("default")
-    if isinstance(raw, str) and _VALID_MODEL.fullmatch(raw.strip()):
-        return raw.strip()
-    return None
+
+def role_model_override(role: str) -> str | None:
+    """The dashboard's per-role model pin for ``role``, or None. Wins over the
+    global default; consulted by ``llm.model_for_role`` at the same precedence."""
+    return _models_overlay().get(role) if role != "default" else None
 
 
 def budget_override() -> float | None:
@@ -112,14 +127,14 @@ def budget_override() -> float | None:
     return v if math.isfinite(v) and v > 0 else None
 
 
-def _write_state(denied: set[str], default_model: str | None,
+def _write_state(denied: set[str], models: dict[str, str] | None,
                  budget: float | None) -> None:
     """Serialise the whole overlay: [security] denied_tools + optional [models]
-    default + optional [budget] max_dollars. One file holds every surface, so
-    each write renders the full state -- changing one must not drop the others.
-    Atomic write at 0o600; no tomli-w dependency.
+    (default + per-role) + optional [budget] max_dollars. One file holds every
+    surface, so each write renders the full state -- changing one must not drop
+    the others. Atomic write at 0o600; no tomli-w dependency.
 
-    With ``default_model`` and ``budget`` both None the [security] block is
+    With ``models`` and ``budget`` both empty/None the [security] block is
     byte-identical to the historical writer, so tool-only callers are unaffected.
     """
     OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -131,8 +146,13 @@ def _write_state(denied: set[str], default_model: str | None,
         "[security]\n"
         f"denied_tools = [{rendered}]\n"
     )
-    if default_model:
-        body += f"\n[models]\ndefault = {_toml_string(default_model)}\n"
+    if models:
+        body += "\n[models]\n"
+        # "default" first (if present), then roles sorted -- deterministic.
+        ordered = (["default"] if "default" in models else []) \
+            + sorted(k for k in models if k != "default")
+        for k in ordered:
+            body += f"{k} = {_toml_string(models[k])}\n"
     if budget is not None:
         body += f"\n[budget]\nmax_dollars = {float(budget)}\n"
     tmp_path = OVERRIDES_PATH.with_suffix(".toml.tmp")
@@ -165,11 +185,19 @@ def _validate_model(model: str) -> str:
     return m
 
 
+def _validate_role(role: str) -> str:
+    r = (role or "").strip().lower()
+    if r == "default" or not _VALID_ROLE.fullmatch(r):
+        # the global pin goes through set_default_model, not the per-role path
+        raise ValueError("invalid role")
+    return r
+
+
 def disable_tool(name: str) -> set[str]:
     """Add ``name`` to the overlay deny-list. Returns the new set."""
     current = denied_tools()
     current.add(_validate_tool_name(name))
-    _write_state(current, default_model_override(), budget_override())
+    _write_state(current, _models_overlay() or None, budget_override())
     return current
 
 
@@ -181,20 +209,38 @@ def enable_tool(name: str) -> set[str]:
     """
     current = denied_tools()
     current.discard(_validate_tool_name(name))
-    _write_state(current, default_model_override(), budget_override())
+    _write_state(current, _models_overlay() or None, budget_override())
     return current
 
 
 def set_default_model(model: str) -> str:
-    """Pin the dashboard's default model. Returns the stored spec."""
+    """Pin the dashboard's global default model. Returns the stored spec."""
     spec = _validate_model(model)
-    _write_state(denied_tools(), spec, budget_override())
+    models = _models_overlay()
+    models["default"] = spec
+    _write_state(denied_tools(), models, budget_override())
     return spec
 
 
 def clear_default_model() -> None:
-    """Drop the dashboard model pin, reverting to config.toml / defaults."""
-    _write_state(denied_tools(), None, budget_override())
+    """Drop the global default model pin (per-role pins are untouched)."""
+    models = _models_overlay()
+    models.pop("default", None)
+    _write_state(denied_tools(), models or None, budget_override())
+
+
+def set_role_models(updates: dict[str, str | None]) -> None:
+    """Batch set/clear per-role model pins in one write. A falsy value clears
+    that role. Invalid role/model ids raise ValueError before anything writes."""
+    models = _models_overlay()
+    cleaned = {_validate_role(role): (_validate_model(spec) if spec else None)
+               for role, spec in updates.items()}
+    for r, spec in cleaned.items():
+        if spec:
+            models[r] = spec
+        else:
+            models.pop(r, None)
+    _write_state(denied_tools(), models or None, budget_override())
 
 
 def set_budget(max_dollars: float) -> float:
@@ -205,18 +251,19 @@ def set_budget(max_dollars: float) -> float:
         raise ValueError("budget must be a number") from exc
     if not math.isfinite(v) or v <= 0:
         raise ValueError("budget must be a positive number")
-    _write_state(denied_tools(), default_model_override(), v)
+    _write_state(denied_tools(), _models_overlay() or None, v)
     return v
 
 
 def clear_budget() -> None:
     """Drop the dashboard spend cap, reverting to config.toml / defaults."""
-    _write_state(denied_tools(), default_model_override(), None)
+    _write_state(denied_tools(), _models_overlay() or None, None)
 
 
 __all__ = [
     "denied_tools", "disable_tool", "enable_tool",
     "default_model_override", "set_default_model", "clear_default_model",
+    "role_model_override", "set_role_models",
     "budget_override", "set_budget", "clear_budget",
     "OVERRIDES_PATH",
 ]
