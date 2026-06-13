@@ -857,8 +857,9 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   with no imaging dep.
 - **Confidential-compute detection** (`confidential_compute.py`, `maverick
   confidential-compute`) — detects whether the process runs inside a hardware
-  confidential VM (AMD **SEV-SNP** / Intel **TDX**) from the standard guest
-  indicators (`/dev/{tdx,sev}-guest`, firmware sysfs, CPU flags), so a regulated
+  confidential VM (AMD **SEV-SNP** / Intel **TDX**) from standard guest
+  indicators (`/dev/{tdx,sev}-guest`, TDX firmware sysfs, TDX guest CPU flag;
+  AMD SEV CPU capability flags alone are not treated as guest proof), so a regulated
   deployment can verify (and gate on) hardware memory encryption; exits non-zero
   when not confidential.
 - **Air-gap preflight** (`air_gap.py`, `maverick airgap check`) — verifies a

@@ -33,10 +33,10 @@ def test_sev_snp_via_device():
     assert "/dev/sev-guest" in rep["indicators"]
 
 
-def test_sev_via_cpuflag():
-    rep = detect(exists=_exists([]), cpuinfo="flags : fpu sev sev_snp")
-    assert rep["sev_snp"] is True
-    assert any("cpuflag:" in i for i in rep["indicators"])
+def test_sev_cpuflags_are_not_guest_proof():
+    rep = detect(exists=_exists([]), cpuinfo="flags : fpu sev sev_es sev_snp")
+    assert rep == {"tdx": False, "sev_snp": False, "confidential": False,
+                   "indicators": []}
 
 
 def test_firmware_sysfs_tdx():

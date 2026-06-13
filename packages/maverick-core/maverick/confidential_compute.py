@@ -8,9 +8,12 @@ process is running inside a hardware confidential VM (AMD **SEV-SNP** or Intel
 confidential-compute` can gate — that its memory is actually encrypted before
 it trusts the box.
 
-Reads the standard guest indicators (the ``/dev/{tdx,sev}-guest`` attestation
-devices, the firmware sysfs entries, the CPU flags). Path/cpuinfo access is
-injected so the detection is tested deterministically without the hardware.
+Reads standard guest indicators: the ``/dev/{tdx,sev}-guest`` attestation
+devices, the TDX firmware sysfs entry, and the TDX guest CPU flag. AMD SEV
+CPU capability flags are intentionally not treated as guest proof, because a
+host or container can expose them without protecting this process as an SEV-SNP
+guest. Path/cpuinfo access is injected so the detection is tested
+deterministically without the hardware.
 """
 from __future__ import annotations
 
@@ -53,10 +56,6 @@ def detect(*, exists=None, cpuinfo: str | None = None) -> dict:
     if exists("/dev/sev-guest"):
         sev_snp = True
         indicators.append("/dev/sev-guest")
-    if flags & {"sev_snp", "sev_es", "sev"}:
-        sev_snp = True
-        indicators.append("cpuflag:" + ",".join(sorted(flags & {"sev_snp", "sev_es", "sev"})))
-
     return {
         "tdx": tdx,
         "sev_snp": sev_snp,
