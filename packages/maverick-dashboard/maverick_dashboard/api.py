@@ -473,7 +473,9 @@ async def templates_suggested(request: Request, k: int = 5) -> dict:
 
 
 @router.get("/voice/captions")
-async def voice_captions(source: str = "default", max_chars: int = 160) -> StreamingResponse:
+async def voice_captions(
+    request: Request, source: str = "default", max_chars: int = 160,
+) -> StreamingResponse:
     """Live captions (SSE) over the voice transcript seam.
 
     Streams one ``data: {caption, final, ts}`` frame per transcript segment
@@ -483,6 +485,10 @@ async def voice_captions(source: str = "default", max_chars: int = 160) -> Strea
     pipeline; tests register scripted sources), so an unregistered source
     404s.
     """
+    principal = caller_principal(request)
+    if principal is not None and not is_dashboard_admin(principal):
+        raise HTTPException(status_code=404, detail="no such caption source")
+
     from maverick.live_captions import caption_stream, get_source
     factory = get_source(source)
     if factory is None:
