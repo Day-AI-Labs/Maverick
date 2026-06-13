@@ -42,8 +42,8 @@ def test_pure_module_imports_cleanly_in_isolation():
 
 def test_module_really_has_no_intra_package_imports():
     source = _MODULE.read_text()
-    assert not re.search(r"^\s*(from|import)\s+maverick", source, re.M)
-    assert not re.search(r"^\s*from\s+\.", source, re.M)
+    assert not re.search(r"^\s*(from|import)\s+maverick", source, re.MULTILINE)
+    assert not re.search(r"^\s*from\s+\.", source, re.MULTILINE)
 
 
 def test_html_references_only_vendored_paths():
@@ -80,6 +80,6 @@ def test_kivy_main_runs_without_kivy():
 
 def test_buildozer_spec_is_pure_python_and_offline():
     spec = (_HERE / "kivy-shell" / "buildozer.spec").read_text()
-    assert re.search(r"^requirements = python3,kivy$", spec, re.M)
-    assert re.search(r"^android\.permissions =\s*$", spec, re.M)  # no INTERNET
+    assert re.search(r"^requirements = python3,kivy$", spec, re.MULTILINE)
+    assert re.search(r"^android\.permissions =\s*$", spec, re.MULTILINE)  # no INTERNET
     assert "buildozer android debug" in spec  # maintainer instructions inline

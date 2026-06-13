@@ -58,7 +58,7 @@ def test_untrusted_key_is_rejected_outright(tmp_path, keys):
 def test_no_trust_anchors_means_no_import(tmp_path, keys, monkeypatch):
     src = _seed_insights(tmp_path)
     bundle = insight_exchange.export_insights(tmp_path / "b.json", path=src)
-    monkeypatch.setattr(insight_exchange, "trusted_pubkeys", lambda: [])
+    monkeypatch.setattr(insight_exchange, "trusted_pubkeys", list)
     imported, reason = insight_exchange.import_insights(
         bundle, path=tmp_path / "dest.ndjson",
     )

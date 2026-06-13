@@ -100,7 +100,7 @@ def test_unknown_theme_still_falls_back_to_dark(monkeypatch):
 
 def test_no_config_themes_is_default_off(monkeypatch):
     import maverick.config as cfg
-    monkeypatch.setattr(cfg, "load_config", lambda: {})
+    monkeypatch.setattr(cfg, "load_config", dict)
     assert themes_mod.custom_themes() == {}
     fresh = TestClient(app)
     r = fresh.get("/")

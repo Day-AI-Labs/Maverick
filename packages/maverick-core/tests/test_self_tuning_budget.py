@@ -92,7 +92,7 @@ def test_budget_from_config_uses_suggestion_as_lowest_precedence(tmp_path, monke
     monkeypatch.setattr(stb, "shared", lambda: learner)
     # no config/overrides -> learned cap fills max_dollars
     from maverick.budget import budget_from_config
-    monkeypatch.setattr("maverick.config.get_budget_overrides", lambda: {})
+    monkeypatch.setattr("maverick.config.get_budget_overrides", dict)
     b = budget_from_config(task_class="research")
     assert b.max_dollars == 7.0
     # an explicit override still wins over the learned suggestion

@@ -107,7 +107,7 @@ class TaskGraph:
 
     def has_cycle(self) -> bool:
         WHITE, GRAY, BLACK = 0, 1, 2
-        color = {tid: WHITE for tid in self.tasks}
+        color = dict.fromkeys(self.tasks, WHITE)
 
         def visit(node: str) -> bool:
             color[node] = GRAY

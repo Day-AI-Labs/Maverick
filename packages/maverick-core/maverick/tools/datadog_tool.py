@@ -154,7 +154,7 @@ def _op_monitors(args: dict) -> str:
     if not monitors:
         return "no monitors"
     return "\n".join(
-        f"  {str(m.get('id') or '?'):>10}  [{m.get('overall_state', '?'):>4}]  "
+        f"  {m.get('id') or '?'!s:>10}  [{m.get('overall_state', '?'):>4}]  "
         f"{(m.get('name') or '')[:80]}"
         for m in monitors
     )

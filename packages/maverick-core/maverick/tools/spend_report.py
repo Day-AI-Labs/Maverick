@@ -109,7 +109,7 @@ def _op_recent(limit: int, since_hours: float) -> str:
     for ep in eps[:limit]:
         age = now - _ts(ep)
         rows.append(
-            f"{str(_ep_id(ep)):>6}  {_role(ep):>14}  "
+            f"{_ep_id(ep)!s:>6}  {_role(ep):>14}  "
             f"${_cost(ep):>7.4f}  {age/60:>6.1f} min ago"
         )
     return "\n".join(rows)

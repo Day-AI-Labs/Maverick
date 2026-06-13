@@ -58,13 +58,13 @@ def test_embedded_code_is_not_low_risk(body):
 # --- enable flag -----------------------------------------------------------
 
 def test_enabled_via_env(monkeypatch):
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     monkeypatch.setenv("MAVERICK_RISK_PROPORTIONAL_VERIFY", "1")
     assert _risk_proportional_verify_enabled() is True
 
 
 def test_disabled_by_default(monkeypatch):
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     monkeypatch.delenv("MAVERICK_RISK_PROPORTIONAL_VERIFY", raising=False)
     assert _risk_proportional_verify_enabled() is False
 
@@ -118,7 +118,7 @@ _FINAL = LLMResponse(text="FINAL: the answer is 42", thinking=None,
 
 @pytest.mark.asyncio
 async def test_low_risk_skips_verifier_when_enabled(tmp_path, monkeypatch):
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     monkeypatch.setenv("MAVERICK_RISK_PROPORTIONAL_VERIFY", "1")
     llm = _ScriptedLLM([_FINAL])
     ctx = _ctx(tmp_path, llm)
@@ -132,7 +132,7 @@ async def test_low_risk_skips_verifier_when_enabled(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_low_risk_still_verified_when_disabled(tmp_path, monkeypatch):
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     monkeypatch.delenv("MAVERICK_RISK_PROPORTIONAL_VERIFY", raising=False)
     accept = '{"confidence":0.77,"accepts":true,"critique":"looks good","issues":[]}'
     llm = _ScriptedLLM([

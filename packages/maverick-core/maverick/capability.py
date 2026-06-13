@@ -110,16 +110,16 @@ class Capability:
         return Capability(
             principal=principal or self.principal,
             allow_tools=_narrow_tools(
-                self.allow_tools, other.allow_tools if other.allow_tools else None
+                self.allow_tools, other.allow_tools or None
             ),
             deny_tools=self.deny_tools | other.deny_tools,
             max_risk=max_risk,
             expires_at=min(expiries) if expiries else None,
             allow_paths=_narrow_globs(
-                self.allow_paths, other.allow_paths if other.allow_paths else None
+                self.allow_paths, other.allow_paths or None
             ),
             allow_hosts=_narrow_globs(
-                self.allow_hosts, other.allow_hosts if other.allow_hosts else None
+                self.allow_hosts, other.allow_hosts or None
             ),
             ancestors=_intersected_ancestors(self, other, principal),
         )

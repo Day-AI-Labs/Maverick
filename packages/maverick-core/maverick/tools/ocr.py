@@ -78,7 +78,7 @@ def _run_tesseract(path: str, lang: str, sandbox) -> str:
     if code != 0:
         return f"ERROR: tesseract ({code}): {(stderr or '').strip()[:300]}"
     text = (out or "").strip()
-    return text if text else "(empty OCR result)"
+    return text or "(empty OCR result)"
 
 
 def _run_hf(path: str, model: str) -> str:

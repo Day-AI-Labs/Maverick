@@ -348,7 +348,7 @@ class TestReflexionSemanticRecall:
         path = tmp_path / "reflexions.ndjson"
         self._seed(path)
         hits = reflexion.recall(self.QUERY, path=path)
-        assert not any(self.INFRA_LESSON == r.goal_text for _, r in hits)
+        assert not any(r.goal_text == self.INFRA_LESSON for _, r in hits)
 
     def test_embedding_path_recalls_reworded_lesson(self, tmp_path, monkeypatch):
         monkeypatch.setattr("maverick.skill_embeddings._have_fastembed",

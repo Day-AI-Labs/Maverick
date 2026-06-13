@@ -37,7 +37,7 @@ def _cfg(**kw):
 def test_disabled_by_default(monkeypatch):
     for k in ("MAVERICK_PROFILING", "MAVERICK_PROFILING_FORMAT"):
         monkeypatch.delenv(k, raising=False)
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     cfg = config_from_env()
     assert cfg.enabled is False
     d = ProfilingDaemon(cfg, runner=Runner(), pid=4321)

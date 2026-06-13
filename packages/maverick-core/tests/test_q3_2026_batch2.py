@@ -363,7 +363,7 @@ def test_provider_health_singleton_is_shared():
 def test_cost_router_disabled_returns_none(monkeypatch):
     monkeypatch.delenv("MAVERICK_COST_ROUTING", raising=False)
     import maverick.config as cfg
-    monkeypatch.setattr(cfg, "load_config", lambda: {})
+    monkeypatch.setattr(cfg, "load_config", dict)
     from maverick.cost_router import CostSignal, pick
     assert pick(CostSignal(role="proposer")) is None
 
@@ -379,7 +379,7 @@ def test_cost_router_picks_cheapest_available(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
     import maverick.config as cfg
-    monkeypatch.setattr(cfg, "load_config", lambda: {})
+    monkeypatch.setattr(cfg, "load_config", dict)
 
     from maverick.cost_router import TIER_CHEAP, CostSignal, pick
     spec = pick(CostSignal(tier=TIER_CHEAP))
@@ -394,7 +394,7 @@ def test_cost_router_falls_back_when_no_provider_configured(monkeypatch):
               "GEMINI_API_KEY", "GOOGLE_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     import maverick.config as cfg
-    monkeypatch.setattr(cfg, "load_config", lambda: {})
+    monkeypatch.setattr(cfg, "load_config", dict)
 
     from maverick.cost_router import CostSignal, pick
     # When no provider has usable credentials, the picker returns None so
@@ -413,7 +413,7 @@ def test_cost_router_avoids_high_error_provider(monkeypatch):
     monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
     monkeypatch.delenv("XAI_API_KEY", raising=False)
     import maverick.config as cfg
-    monkeypatch.setattr(cfg, "load_config", lambda: {})
+    monkeypatch.setattr(cfg, "load_config", dict)
 
     # Poison deepseek with errors. With penalty factor (1 + 5 * 1.0) = 6x
     # cost surcharge, even DeepSeek's cheapness should be overridden.

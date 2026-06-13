@@ -15,7 +15,7 @@ from maverick.compaction_streaming import (
 
 
 def _section(blob: str, tag: str) -> str:
-    m = re.search(rf"<{tag}>\n?(.*?)\n?</{tag}>", blob, re.S)
+    m = re.search(rf"<{tag}>\n?(.*?)\n?</{tag}>", blob, re.DOTALL)
     return m.group(1) if m else ""
 
 

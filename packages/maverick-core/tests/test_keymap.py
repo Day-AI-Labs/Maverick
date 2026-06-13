@@ -36,7 +36,7 @@ def test_resolve_drops_bad_override_set(monkeypatch):
 
 def test_handle_key_maps_to_action(monkeypatch):
     monkeypatch.delenv("MAVERICK_TUI_KEYS", raising=False)
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     assert km.handle_key("q") == "quit"
     assert km.handle_key("DOWN") == "focus_next"
     assert km.handle_key("z") is None

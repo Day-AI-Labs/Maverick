@@ -23,7 +23,7 @@ def test_browse_lists_entries(monkeypatch):
 
 
 def test_browse_empty(monkeypatch):
-    monkeypatch.setattr(mcp_registry, "load_mcp_registry", lambda: [])
+    monkeypatch.setattr(mcp_registry, "load_mcp_registry", list)
     r = CliRunner().invoke(main, ["mcp-registry", "browse"])
     assert r.exit_code == 0 and "no registry entries" in r.output
 

@@ -76,5 +76,5 @@ def test_policy_from_config_off_by_default(monkeypatch):
     for v in ("DOLLARS", "TOOL_CALLS", "WALL_SECONDS"):
         monkeypatch.delenv(f"MAVERICK_REVIEW_CHECKPOINT_{v}", raising=False)
     import maverick.config as config_mod
-    monkeypatch.setattr(config_mod, "load_config", lambda: {})
+    monkeypatch.setattr(config_mod, "load_config", dict)
     assert not policy_from_config().is_active()

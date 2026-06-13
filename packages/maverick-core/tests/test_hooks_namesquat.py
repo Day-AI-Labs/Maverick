@@ -60,7 +60,7 @@ def _set_eps(monkeypatch, eps):
 def _hermetic(monkeypatch):
     clear()
     # No grant, enforce-by-default -- matches the plugin loader's secure default.
-    monkeypatch.setattr(plugins, "_plugins_config", lambda: {})
+    monkeypatch.setattr(plugins, "_plugins_config", dict)
     monkeypatch.delenv("MAVERICK_PLUGINS_ENFORCE", raising=False)
 
 

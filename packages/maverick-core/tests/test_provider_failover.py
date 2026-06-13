@@ -77,7 +77,7 @@ def test_fallback_models_reads_config(monkeypatch):
 
 
 def test_fallback_models_off_by_default(monkeypatch):
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     assert pf.fallback_models("a:m1") == []
 
 

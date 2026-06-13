@@ -15,7 +15,7 @@ def _regs(checks) -> str:
 
 
 def test_report_includes_us_frameworks(monkeypatch):
-    monkeypatch.setattr("maverick.compliance._report_cfg", lambda: {})
+    monkeypatch.setattr("maverick.compliance._report_cfg", dict)
     checks = compliance_report()
     assert "us" in {c.framework for c in checks}
     regs = _regs(checks)
@@ -26,14 +26,14 @@ def test_report_includes_us_frameworks(monkeypatch):
 
 
 def test_eu_rows_still_present(monkeypatch):
-    monkeypatch.setattr("maverick.compliance._report_cfg", lambda: {})
+    monkeypatch.setattr("maverick.compliance._report_cfg", dict)
     checks = compliance_report()
     assert "eu" in {c.framework for c in checks}
     assert "EU AI Act Art. 12" in _regs(checks)
 
 
 def test_us_consumer_notice_tracks_disclosure(monkeypatch):
-    monkeypatch.setattr("maverick.compliance._report_cfg", lambda: {})
+    monkeypatch.setattr("maverick.compliance._report_cfg", dict)
     monkeypatch.delenv("MAVERICK_AI_DISCLOSURE", raising=False)
     by = {c.control: c for c in compliance_report() if c.framework == "us"}
     assert by["Consumer notice of AI"].status == "active"

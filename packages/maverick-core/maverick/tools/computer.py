@@ -191,7 +191,161 @@ _VALID_ACTIONS = frozenset({
 })
 
 
-def _run_computer_action(args: dict[str, Any]) -> str:  # noqa: C901
+def _do_screenshot() -> str:
+    """Grab + (optionally) seal + OCR a screenshot. Returns the tool_result
+    string or an ``ERROR:`` string if capture deps are missing."""
+    try:
+        b64 = _screenshot_png_b64()
+    except ImportError as e:
+        return f"ERROR: {e}"
+    log.info("computer.screenshot len=%d", len(b64))
+    # Tamper-evident capture (opt-in by key presence): persist the PNG and
+    # seal it into the hash-chained ledger so it's usable as evidence.
+    # No key configured -> no seal, behavior unchanged.
+    _maybe_seal_capture(b64)
+    # Claude expects the screenshot as a tool_result image block.
+    # The agent kernel translates this string back into a block.
+    out = f"<screenshot mime=image/png base64>{b64}</screenshot>"
+    # Optional OCR fallback (MAVERICK_COMPUTER_OCR=1): attach recognized
+    # text next to the image for models/situations without a DOM. No-op
+    # if OCR deps are absent.
+    if _ocr_enabled():
+        text = _ocr_png_b64(b64)
+        if text:
+            out += f"\n<ocr>{text}</ocr>"
+    return out
+
+
+def _do_cursor_position(pyautogui, coord, args: dict[str, Any]) -> str:
+    x, y = pyautogui.position()
+    log.info("computer.cursor_position -> (%d, %d)", x, y)
+    return f"({x}, {y})"
+
+
+def _do_wait(pyautogui, coord, args: dict[str, Any]) -> str:
+    duration = float(args.get("duration") or 1.0)
+    duration = max(0.0, min(duration, 30.0))  # cap at 30s
+    time.sleep(duration)
+    log.info("computer.wait %.1fs", duration)
+    return f"waited {duration:.1f}s"
+
+
+def _do_mouse_move(pyautogui, coord, args: dict[str, Any]) -> str:
+    if not coord:
+        return "ERROR: mouse_move requires coordinate=[x, y]"
+    pyautogui.moveTo(coord[0], coord[1], duration=0.05)
+    log.info("computer.mouse_move -> %s", coord)
+    return f"moved to {coord}"
+
+
+def _do_left_click(pyautogui, coord, args: dict[str, Any]) -> str:
+    if coord:
+        pyautogui.click(coord[0], coord[1])
+    else:
+        pyautogui.click()
+    log.info("computer.left_click at %s", coord or pyautogui.position())
+    return f"clicked at {coord or pyautogui.position()}"
+
+
+def _do_right_click(pyautogui, coord, args: dict[str, Any]) -> str:
+    if coord:
+        pyautogui.rightClick(coord[0], coord[1])
+    else:
+        pyautogui.rightClick()
+    log.info("computer.right_click at %s", coord or pyautogui.position())
+    return f"right-clicked at {coord or pyautogui.position()}"
+
+
+def _do_middle_click(pyautogui, coord, args: dict[str, Any]) -> str:
+    if coord:
+        pyautogui.middleClick(coord[0], coord[1])
+    else:
+        pyautogui.middleClick()
+    log.info("computer.middle_click at %s", coord or pyautogui.position())
+    return f"middle-clicked at {coord or pyautogui.position()}"
+
+
+def _do_double_click(pyautogui, coord, args: dict[str, Any]) -> str:
+    if coord:
+        pyautogui.doubleClick(coord[0], coord[1])
+    else:
+        pyautogui.doubleClick()
+    log.info("computer.double_click at %s", coord or pyautogui.position())
+    return f"double-clicked at {coord or pyautogui.position()}"
+
+
+def _do_left_click_drag(pyautogui, coord, args: dict[str, Any]) -> str:
+    if not coord:
+        return "ERROR: left_click_drag requires coordinate=[x, y] (target)"
+    duration = float(args.get("duration") or 0.5)
+    pyautogui.dragTo(coord[0], coord[1], duration=duration, button="left")
+    log.info("computer.drag -> %s (duration=%.1fs)", coord, duration)
+    return f"dragged to {coord}"
+
+
+def _do_type(pyautogui, coord, args: dict[str, Any]) -> str:
+    text = args.get("text") or ""
+    if not text:
+        return "ERROR: type requires text"
+    # ~50 wpm typing -- realistic enough to not trigger paste-detection
+    # in apps that have it, while still being fast.
+    pyautogui.typewrite(text, interval=0.02)
+    log.info("computer.type len=%d", len(text))
+    return f"typed {len(text)} chars"
+
+
+def _do_key(pyautogui, coord, args: dict[str, Any]) -> str:
+    text = args.get("text") or ""
+    if not text:
+        return "ERROR: key requires text (e.g. 'ctrl+c', 'Return', 'shift+tab')"
+    # Anthropic spec uses xdotool-style ('ctrl+c'); pyautogui uses
+    # hotkey('ctrl', 'c'). Convert here.
+    keys = [k.strip().lower() for k in text.replace("-", "+").split("+") if k.strip()]
+    # Normalise common synonyms.
+    norm_map = {
+        "return": "enter", "escape": "esc", "del": "delete",
+        "back_space": "backspace", "page_up": "pageup", "page_down": "pagedown",
+    }
+    keys = [norm_map.get(k, k) for k in keys]
+    pyautogui.hotkey(*keys)
+    log.info("computer.key %s", "+".join(keys))
+    return f"pressed {'+'.join(keys)}"
+
+
+def _do_scroll(pyautogui, coord, args: dict[str, Any]) -> str:
+    direction = args.get("scroll_direction") or "down"
+    amount = int(args.get("scroll_amount") or 3)
+    # pyautogui.scroll: positive=up, negative=down. Horizontal uses
+    # hscroll -- the old map sent delta 0 for left/right, so the scroll was
+    # a silent no-op while the tool reported success.
+    if coord:
+        pyautogui.moveTo(coord[0], coord[1])
+    if direction in ("up", "down"):
+        pyautogui.scroll(amount if direction == "up" else -amount)
+    else:
+        pyautogui.hscroll(-amount if direction == "left" else amount)
+    log.info("computer.scroll %s %d", direction, amount)
+    return f"scrolled {direction} {amount}"
+
+
+# action -> handler(pyautogui, coord, args) -> str. These run AFTER pyautogui
+# is imported and the coordinate is clamped, so each handler can stay flat.
+_PYAUTOGUI_ACTIONS = {
+    "cursor_position": _do_cursor_position,
+    "wait": _do_wait,
+    "mouse_move": _do_mouse_move,
+    "left_click": _do_left_click,
+    "right_click": _do_right_click,
+    "middle_click": _do_middle_click,
+    "double_click": _do_double_click,
+    "left_click_drag": _do_left_click_drag,
+    "type": _do_type,
+    "key": _do_key,
+    "scroll": _do_scroll,
+}
+
+
+def _run_computer_action(args: dict[str, Any]) -> str:
     if os.environ.get("MAVERICK_COMPUTER_DISABLE") == "1":
         return "ERROR: computer-use tool disabled by MAVERICK_COMPUTER_DISABLE=1"
     action = args.get("action")
@@ -205,26 +359,7 @@ def _run_computer_action(args: dict[str, Any]) -> str:  # noqa: C901
     # Screenshot is the most common action; handle separately (doesn't
     # need pyautogui, just mss).
     if action == "screenshot":
-        try:
-            b64 = _screenshot_png_b64()
-        except ImportError as e:
-            return f"ERROR: {e}"
-        log.info("computer.screenshot len=%d", len(b64))
-        # Tamper-evident capture (opt-in by key presence): persist the PNG and
-        # seal it into the hash-chained ledger so it's usable as evidence.
-        # No key configured -> no seal, behavior unchanged.
-        _maybe_seal_capture(b64)
-        # Claude expects the screenshot as a tool_result image block.
-        # The agent kernel translates this string back into a block.
-        out = f"<screenshot mime=image/png base64>{b64}</screenshot>"
-        # Optional OCR fallback (MAVERICK_COMPUTER_OCR=1): attach recognized
-        # text next to the image for models/situations without a DOM. No-op
-        # if OCR deps are absent.
-        if _ocr_enabled():
-            text = _ocr_png_b64(b64)
-            if text:
-                out += f"\n<ocr>{text}</ocr>"
-        return out
+        return _do_screenshot()
 
     # Return an error STRING (like the screenshot path above), not a raised
     # ImportError: the tool fn contract is ``-> str``, and a raised exception
@@ -236,108 +371,14 @@ def _run_computer_action(args: dict[str, Any]) -> str:  # noqa: C901
         return f"ERROR: {e}"
     pyautogui.FAILSAFE = False  # Don't crash on corner-of-screen mouse moves.
 
-    if action == "cursor_position":
-        x, y = pyautogui.position()
-        log.info("computer.cursor_position -> (%d, %d)", x, y)
-        return f"({x}, {y})"
+    # cursor_position and wait don't need a coordinate; everything else may.
+    coord = None
+    if action not in ("cursor_position", "wait"):
+        coord = _clamp_coordinate(pyautogui, args.get("coordinate"))
 
-    if action == "wait":
-        duration = float(args.get("duration") or 1.0)
-        duration = max(0.0, min(duration, 30.0))  # cap at 30s
-        time.sleep(duration)
-        log.info("computer.wait %.1fs", duration)
-        return f"waited {duration:.1f}s"
-
-    coord = _clamp_coordinate(pyautogui, args.get("coordinate"))
-
-    if action == "mouse_move":
-        if not coord:
-            return "ERROR: mouse_move requires coordinate=[x, y]"
-        pyautogui.moveTo(coord[0], coord[1], duration=0.05)
-        log.info("computer.mouse_move -> %s", coord)
-        return f"moved to {coord}"
-
-    if action == "left_click":
-        if coord:
-            pyautogui.click(coord[0], coord[1])
-        else:
-            pyautogui.click()
-        log.info("computer.left_click at %s", coord or pyautogui.position())
-        return f"clicked at {coord or pyautogui.position()}"
-
-    if action == "right_click":
-        if coord:
-            pyautogui.rightClick(coord[0], coord[1])
-        else:
-            pyautogui.rightClick()
-        log.info("computer.right_click at %s", coord or pyautogui.position())
-        return f"right-clicked at {coord or pyautogui.position()}"
-
-    if action == "middle_click":
-        if coord:
-            pyautogui.middleClick(coord[0], coord[1])
-        else:
-            pyautogui.middleClick()
-        log.info("computer.middle_click at %s", coord or pyautogui.position())
-        return f"middle-clicked at {coord or pyautogui.position()}"
-
-    if action == "double_click":
-        if coord:
-            pyautogui.doubleClick(coord[0], coord[1])
-        else:
-            pyautogui.doubleClick()
-        log.info("computer.double_click at %s", coord or pyautogui.position())
-        return f"double-clicked at {coord or pyautogui.position()}"
-
-    if action == "left_click_drag":
-        if not coord:
-            return "ERROR: left_click_drag requires coordinate=[x, y] (target)"
-        duration = float(args.get("duration") or 0.5)
-        pyautogui.dragTo(coord[0], coord[1], duration=duration, button="left")
-        log.info("computer.drag -> %s (duration=%.1fs)", coord, duration)
-        return f"dragged to {coord}"
-
-    if action == "type":
-        text = args.get("text") or ""
-        if not text:
-            return "ERROR: type requires text"
-        # ~50 wpm typing -- realistic enough to not trigger paste-detection
-        # in apps that have it, while still being fast.
-        pyautogui.typewrite(text, interval=0.02)
-        log.info("computer.type len=%d", len(text))
-        return f"typed {len(text)} chars"
-
-    if action == "key":
-        text = args.get("text") or ""
-        if not text:
-            return "ERROR: key requires text (e.g. 'ctrl+c', 'Return', 'shift+tab')"
-        # Anthropic spec uses xdotool-style ('ctrl+c'); pyautogui uses
-        # hotkey('ctrl', 'c'). Convert here.
-        keys = [k.strip().lower() for k in text.replace("-", "+").split("+") if k.strip()]
-        # Normalise common synonyms.
-        norm_map = {
-            "return": "enter", "escape": "esc", "del": "delete",
-            "back_space": "backspace", "page_up": "pageup", "page_down": "pagedown",
-        }
-        keys = [norm_map.get(k, k) for k in keys]
-        pyautogui.hotkey(*keys)
-        log.info("computer.key %s", "+".join(keys))
-        return f"pressed {'+'.join(keys)}"
-
-    if action == "scroll":
-        direction = args.get("scroll_direction") or "down"
-        amount = int(args.get("scroll_amount") or 3)
-        # pyautogui.scroll: positive=up, negative=down. Horizontal uses
-        # hscroll -- the old map sent delta 0 for left/right, so the scroll was
-        # a silent no-op while the tool reported success.
-        if coord:
-            pyautogui.moveTo(coord[0], coord[1])
-        if direction in ("up", "down"):
-            pyautogui.scroll(amount if direction == "up" else -amount)
-        else:
-            pyautogui.hscroll(-amount if direction == "left" else amount)
-        log.info("computer.scroll %s %d", direction, amount)
-        return f"scrolled {direction} {amount}"
+    handler = _PYAUTOGUI_ACTIONS.get(action)
+    if handler is not None:
+        return handler(pyautogui, coord, args)
 
     # Defense in depth -- _VALID_ACTIONS guard at the top should make
     # this unreachable.

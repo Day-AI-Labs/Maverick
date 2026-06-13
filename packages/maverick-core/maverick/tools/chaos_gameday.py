@@ -45,7 +45,7 @@ def _topo_order(names: list[str], deps: dict[str, list[str]]) -> tuple[list[str]
     also returned as ``cyclic`` so the caller can note them.
     """
     # indegree[n] = number of this-node's deps still unplaced.
-    indeg = {n: 0 for n in names}
+    indeg = dict.fromkeys(names, 0)
     dependents: dict[str, list[str]] = {n: [] for n in names}
     for n in names:
         for d in deps[n]:

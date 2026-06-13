@@ -100,7 +100,7 @@ def test_hook_entry_points_require_plugin_allowlist(monkeypatch, tmp_path):
 
         def load(self):
             executed.append("imported")
-            return lambda: []
+            return list
 
     monkeypatch.setattr(
         "importlib.metadata.entry_points",

@@ -290,13 +290,13 @@ def test_sign_verify_roundtrip():
 # --- enable flag -----------------------------------------------------------
 
 def test_enforced_via_env(monkeypatch):
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     monkeypatch.setenv("MAVERICK_ENFORCE_CAPABILITIES", "1")
     assert capability_enforced() is True
 
 
 def test_disabled_by_default(monkeypatch):
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     monkeypatch.delenv("MAVERICK_ENFORCE_CAPABILITIES", raising=False)
     assert capability_enforced() is False
 

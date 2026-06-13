@@ -35,7 +35,7 @@ def test_cloud_kms_provider_fails_closed_not_silent_local(monkeypatch):
     import maverick.config as cfg
     from maverick.crypto_at_rest import EncryptionUnavailable
     from maverick.tenant_kms import LocalKMS, get_kms
-    monkeypatch.setattr(cfg, "load_config", lambda: {})
+    monkeypatch.setattr(cfg, "load_config", dict)
     assert isinstance(get_kms(), LocalKMS)  # default stays local
     for provider in ("aws", "gcp", "vault"):
         monkeypatch.setattr(cfg, "load_config", lambda p=provider: {"kms": {"provider": p}})

@@ -250,7 +250,7 @@ def _fmt_location(loc: dict) -> str:
     uri = loc.get("uri") or loc.get("targetUri") or ""
     rng = loc.get("range") or loc.get("targetRange") or {}
     start = rng.get("start") or {}
-    path = uri[len("file://"):] if uri.startswith("file://") else uri
+    path = uri.removeprefix("file://")
     return f"{path}:{start.get('line', 0) + 1}:{start.get('character', 0) + 1}"
 
 

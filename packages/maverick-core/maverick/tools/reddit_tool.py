@@ -58,8 +58,8 @@ def _render_posts(rows: list[dict]) -> str:
         d = (ch.get("data") if isinstance(ch, dict) else None) or {}
         out.append(
             f"  r/{d.get('subreddit', '?'):<20}  "
-            f"score={str(d.get('score', '?')):>6}  "
-            f"c={str(d.get('num_comments', '?')):>4}  "
+            f"score={d.get('score', '?')!s:>6}  "
+            f"c={d.get('num_comments', '?')!s:>4}  "
             f"{(d.get('title') or '')[:80]}"
         )
     return "\n".join(out) or "no posts"

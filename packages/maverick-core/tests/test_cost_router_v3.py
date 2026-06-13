@@ -75,7 +75,7 @@ def test_persistence_roundtrip(tmp_path):
 def test_pick_defers_to_fallback_when_off(monkeypatch):
     monkeypatch.delenv("MAVERICK_ROUTING_BANDIT", raising=False)
     import maverick.config as config_mod
-    monkeypatch.setattr(config_mod, "load_config", lambda: {})
+    monkeypatch.setattr(config_mod, "load_config", dict)
     assert pick("coder", 1, ["a", "b"], fallback=lambda: "v2pick") == "v2pick"
 
 

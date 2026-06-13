@@ -13,7 +13,7 @@ _LOCAL = next((m for m in ("ollama:llama3", "vllm:x", "tgi:x", "local:x")
 
 
 def _all_local_llm():
-    return {role: _LOCAL for role in ROLE_MODELS}
+    return dict.fromkeys(ROLE_MODELS, _LOCAL)
 
 
 def test_default_config_is_not_air_gapped():
@@ -32,7 +32,7 @@ def test_fully_local_with_deny_all_is_clean():
 
 def test_partial_local_override_still_flags_remote_defaults():
     # only one role overridden -> the rest keep remote defaults
-    one = {role: _LOCAL for role in list(ROLE_MODELS)[:1]}
+    one = dict.fromkeys(list(ROLE_MODELS)[:1], _LOCAL)
     rep = audit(config={"llm": one, "egress": {"deny": ["*"]}})
     assert rep["clean"] is False
     assert any("remote model" in v for v in rep["violations"])

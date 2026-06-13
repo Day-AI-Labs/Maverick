@@ -90,7 +90,7 @@ def test_build_script_targets_multiple_platforms_via_buildx():
 
 def test_readme_is_honest_about_riscv64_and_extras():
     text = (_MA / "README.md").read_text()
-    assert re.search(r"could not be\s+verified", text, re.I)
+    assert re.search(r"could not be\s+verified", text, re.IGNORECASE)
     # The known wheel gaps must be listed per extra.
     for native in ("grpcio", "torch", "pyarrow", "pydantic-core"):
         assert native in text, native

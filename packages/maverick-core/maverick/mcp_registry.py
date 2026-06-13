@@ -91,8 +91,7 @@ def resolve_mcp(name: str, *, indexes: list[str] | None = None) -> catalog.Catal
 def _command_basename(command: str) -> str:
     """Return a normalized executable basename for registry policy checks."""
     base = command.replace("\\", "/").rsplit("/", 1)[-1].lower()
-    if base.endswith(".exe"):
-        base = base[:-4]
+    base = base.removesuffix(".exe")
     return base
 
 
