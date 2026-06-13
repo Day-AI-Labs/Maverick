@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}users · Maverick{% endblock %}
+{% block content %}
+  <h1 class="page-title">Users &amp; roles</h1>
+
+  {% if saved %}
+  <div class="panel" role="status"
+       style="border-color: var(--brand-border); background: var(--brand-subtle); margin-bottom: var(--space-4);">
+    <strong>Saved.</strong> {{ saved }}
+  </div>
+  {% endif %}
+
+  {% if not auth_on %}
+  <div class="panel" style="border-color: color-mix(in srgb, var(--warn) 40%, transparent);">
+    <p class="muted" style="margin: 0;"><strong>Authentication is off.</strong> Roles only take effect once an
+      auth mode (OIDC or reverse-proxy) is enabled — in local mode everyone on this machine is an
+      administrator. You can stage assignments here now; they apply when auth is turned on.</p>
+  </div>
+  {% endif %}
+
+  <p class="page-subtitle">
+    <strong>Admin</strong> manages users, settings and secrets · <strong>Operator</strong> runs &amp; cancels
+    goals · <strong>Viewer</strong> is read-only. A new authenticated user defaults to
+    <code>{{ default_role }}</code>.
+  </p>
+
+  {% if bootstrap_admins %}
+  <h2>Bootstrap admins</h2>
+  <div class="panel">
+    <p class="muted" style="margin-top: 0;">Pinned in config (<code>[dashboard] admins</code> /
+      <code>MAVERICK_DASHBOARD_ADMINS</code>) — always admin and not removable here, so you can't lock
+      yourself out.</p>
+    {% for a in bootstrap_admins %}
+    <div style="padding: var(--space-2) 0; border-top: 1px solid var(--hairline);">
+      <code>{{ a }}</code> <span class="badge active">admin</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <h2>Assigned users</h2>
+  <div class="panel">
+    {% if users %}
+    {% for principal, role in users %}
+    <div style="display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; padding: var(--space-3) 0; border-top: 1px solid var(--hairline);">
+      <code style="flex: 1 1 14rem; min-width: 0; overflow: hidden; text-overflow: ellipsis;">{{ principal }}{% if principal == you %} <span class="muted">(you)</span>{% endif %}</code>
+      <form method="post" action="/users/set" style="display: flex; gap: var(--space-2); align-items: center;">
+        <input type="hidden" name="principal" value="{{ principal }}" />
+        <select class="ctl" name="role" aria-label="Role for {{ principal }}">
+          {% for r in roles %}<option value="{{ r }}"{% if r == role %} selected{% endif %}>{{ r }}</option>{% endfor %}
+        </select>
+        <button type="submit" class="btn btn--primary">Save</button>
+      </form>
+      <form method="post" action="/users/remove">
+        <input type="hidden" name="principal" value="{{ principal }}" />
+        <button type="submit" class="btn">Remove</button>
+      </form>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="muted" style="margin: 0;">No explicit assignments yet. Authenticated users default to
+      <code>{{ default_role }}</code>; add one below to override.</p>
+    {% endif %}
+  </div>
+
+  <h2>Add or change a user</h2>
+  <div class="panel">
+    <form method="post" action="/users/set" style="display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-end;">
+      <label style="display: flex; flex-direction: column; gap: var(--space-1); flex: 1 1 18rem;">
+        <span>User principal</span>
+        <input class="ctl" type="text" name="principal" placeholder="user:&lt;subject&gt;"
+               aria-label="User principal" autocomplete="off" required />
+      </label>
+      <label style="display: flex; flex-direction: column; gap: var(--space-1);">
+        <span>Role</span>
+        <select class="ctl" name="role" aria-label="Role">
+          {% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="btn btn--primary">Save user</button>
+    </form>
+    <p class="muted" style="margin-bottom: 0; font-size: var(--text-sm);">A principal is the user's identity
+      as <code>user:&lt;sub&gt;</code> (their OIDC subject) — the same string shown on their goals and in the
+      audit log.</p>
+  </div>
+{% endblock %}

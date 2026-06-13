@@ -57,6 +57,7 @@ from .auth import (
     can_access_goal_principal,
     execution_user_id_from_request,
     goal_owner_filter,
+    require_permission,
     require_principal,
     websocket_caller_principal,
 )
@@ -2325,6 +2326,7 @@ async def chat_send(
 ) -> RedirectResponse:
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    require_permission(request, "operate")
     if not _any_provider_key_set():
         raise HTTPException(
             status_code=400,
@@ -2390,6 +2392,7 @@ async def settings_page(request: Request, saved: str = "") -> HTMLResponse:
     Maverick uses by default. Appearance is applied via the existing
     persist_theme middleware (the form GETs back here with the params); the
     model choice is saved to the dashboard-owned runtime overlay."""
+    require_permission(request, "admin")
     from maverick.llm import (
         MODEL_HAIKU,
         MODEL_OPUS,
@@ -2451,6 +2454,7 @@ async def settings_set_model(request: Request, model: str = Form("")) -> Redirec
     defaults. config.toml is never written."""
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
+        require_permission(request, "admin")
     from maverick.runtime_overrides import clear_default_model, set_default_model
     model = (model or "").strip()
     try:
@@ -2470,6 +2474,7 @@ async def settings_set_budget(request: Request, max_dollars: str = Form("")) -> 
     config.toml is never written."""
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
+        require_permission(request, "admin")
     from maverick.runtime_overrides import clear_budget, set_budget
     val = (max_dollars or "").strip()
     try:
@@ -2490,6 +2495,7 @@ async def settings_set_role_models(request: Request) -> RedirectResponse:
     form field is named for a role; an empty value clears that role's pin."""
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
+        require_permission(request, "admin")
     from maverick.runtime_overrides import set_role_models
     roles = ("orchestrator", "coder", "researcher", "writer",
              "analyst", "verifier", "summarizer")
@@ -2514,6 +2520,7 @@ async def settings_set_provider(
     a key you can't see); resolved before env vars; config.toml is never written."""
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
+        require_permission(request, "admin")
     from maverick_dashboard import settings_store
     try:
         settings_store.set_provider(provider.strip(), api_key=api_key, base_url=base_url)
@@ -2527,6 +2534,7 @@ async def settings_clear_provider(request: Request, provider: str = Form(...)) -
     """Remove a provider's dashboard-set key (config.toml / env unaffected)."""
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
+        require_permission(request, "admin")
     from maverick_dashboard import settings_store
     try:
         settings_store.clear_provider(provider.strip())
@@ -2540,6 +2548,7 @@ async def settings_set_capabilities(request: Request) -> RedirectResponse:
     """Activate/deactivate capabilities via the dashboard config overlay."""
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
+        require_permission(request, "admin")
     from maverick_dashboard import settings_store
     form = await request.form()
     for name in settings_store.CAPABILITY_DEFAULTS:
@@ -2552,11 +2561,76 @@ async def settings_set_features(request: Request) -> RedirectResponse:
     """Activate/deactivate features via the dashboard config overlay."""
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
+        require_permission(request, "admin")
     from maverick_dashboard import settings_store
     form = await request.form()
     for name in settings_store.FEATURE_DEFAULTS:
         settings_store.set_toggle("features", name, name in form)
     return RedirectResponse("/settings?saved=features", status_code=303)
+
+
+@app.get("/users", response_class=HTMLResponse)
+async def users_page(request: Request) -> HTMLResponse:
+    """Admin: manage dashboard user roles (admin / operator / viewer)."""
+    require_permission(request, "admin")
+    import os as _os
+
+    from maverick.oidc import oidc_enabled
+    from maverick.proxy_auth import proxy_auth_enabled
+
+    from . import rbac
+    auth_on = (caller_principal(request) is not None
+               or oidc_enabled() or proxy_auth_enabled())
+    env = (_os.environ.get("MAVERICK_DASHBOARD_ADMINS") or "").strip()
+    if env:
+        bootstrap = [a.strip() for a in env.split(",") if a.strip()]
+    else:
+        try:
+            from maverick.config import load_config
+            raw = (load_config().get("dashboard", {}) or {}).get("admins", []) or []
+            seq = raw if isinstance(raw, (list, tuple)) else [raw]
+            bootstrap = [str(a).strip() for a in seq if str(a).strip()]
+        except Exception:
+            bootstrap = []
+    saved = {"set": "Role updated.", "removed": "User removed."}.get(
+        request.query_params.get("saved", ""), "")
+    return templates.TemplateResponse(request, "users.html", {
+        "users": sorted(rbac.list_users().items()),
+        "roles": rbac.ROLES,
+        "bootstrap_admins": sorted(bootstrap),
+        "default_role": rbac.default_role(),
+        "auth_on": auth_on,
+        "you": caller_principal(request),
+        "saved": saved,
+    })
+
+
+@app.post("/users/set")
+async def users_set_role(
+    request: Request, principal: str = Form(...), role: str = Form(...),
+) -> RedirectResponse:
+    """Assign a dashboard role to a user principal (admin only)."""
+    require_permission(request, "admin")
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    from . import rbac
+    try:
+        rbac.set_role(principal.strip(), role.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid principal or role") from exc
+    return RedirectResponse("/users?saved=set", status_code=303)
+
+
+@app.post("/users/remove")
+async def users_remove(request: Request, principal: str = Form(...)) -> RedirectResponse:
+    """Remove a user's explicit role assignment (admin only). A bootstrap admin
+    pinned in config is unaffected — it can't be removed here."""
+    require_permission(request, "admin")
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    from . import rbac
+    rbac.remove_user(principal.strip())
+    return RedirectResponse("/users?saved=removed", status_code=303)
 
 
 @app.post("/webhook/start")

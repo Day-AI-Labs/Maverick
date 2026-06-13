@@ -177,6 +177,48 @@ def is_dashboard_admin(principal: str) -> bool:
     return principal in admins
 
 
+def role_for_principal(principal: str | None) -> str | None:
+    """The dashboard RBAC role for ``principal``.
+
+    None when auth is off (no principal) -- the signal for every gate to
+    disable itself (single-user mode). A config-pinned bootstrap admin
+    (:func:`is_dashboard_admin`) is always ``"admin"`` and cannot be demoted via
+    the store, so you can't lock yourself out. Otherwise the stored role, or the
+    configured default (``operator``) for an authenticated user with no explicit
+    assignment.
+    """
+    if principal is None:
+        return None
+    if is_dashboard_admin(principal):
+        return "admin"
+    from . import rbac
+    return rbac.get_stored_role(principal) or rbac.default_role()
+
+
+def caller_role(request: Request) -> str | None:
+    """The RBAC role of the current caller (None when auth is off)."""
+    return role_for_principal(caller_principal(request))
+
+
+def has_permission(request: Request, permission: str) -> bool:
+    """Whether the caller may perform ``permission`` ("admin"/"operate"/"view").
+
+    Auth off -> True (legacy single-user; the local operator owns everything).
+    Otherwise gated by the caller's role.
+    """
+    principal = caller_principal(request)
+    if principal is None:
+        return True
+    from . import rbac
+    return permission in rbac.permissions_for(role_for_principal(principal))
+
+
+def require_permission(request: Request, permission: str) -> None:
+    """Raise ``HTTPException(403)`` unless the caller's role grants ``permission``."""
+    if not has_permission(request, permission):
+        raise HTTPException(status_code=403, detail="insufficient role for this action")
+
+
 def goal_owner_filter(request: Request) -> str | None:
     """The ``owner`` value to pass to ``WorldModel.list_goals``.
 

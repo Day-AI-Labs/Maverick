@@ -59,6 +59,7 @@ from .auth import (
     execution_user_id_from_request,
     goal_owner_filter,
     is_dashboard_admin,
+    require_permission,
 )
 
 log = logging.getLogger(__name__)
@@ -96,6 +97,7 @@ def _to_goal_out(g) -> GoalOut:
 
 @router.post("/goals", response_model=GoalOut, status_code=201)
 async def create_goal(request: Request, payload: GoalIn, bg: BackgroundTasks) -> GoalOut:
+    require_permission(request, "operate")
     if not _any_provider_key_set():
         raise HTTPException(
             status_code=400,
@@ -883,6 +885,7 @@ async def cancel_goal(request: Request, goal_id: int) -> None:
     'cancelled' here causes the next check to short-circuit the run.
     Already-done goals are a no-op.
     """
+    require_permission(request, "operate")
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
