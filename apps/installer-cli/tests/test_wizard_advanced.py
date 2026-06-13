@@ -501,3 +501,37 @@ def test_pack_editing_default_on_writes_no_features_section(tmp_path, monkeypatc
     monkeypatch.delenv("MAVERICK_CONFIG", raising=False)
     cfg = _write(tmp_path, monkeypatch, {"allow_pack_editing": True})
     assert "[features]" not in cfg
+
+
+def test_role_editing_lock_writes_and_is_read(tmp_path, monkeypatch):
+    """Rule-6 loop: declining dashboard role editing writes [features]
+    role_editing = false, and the kernel reads it back as disabled."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_CONFIG", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch, {"allow_role_editing": False})
+    assert "[features]" in cfg
+    assert "role_editing = false" in cfg
+
+    from maverick.config import get_features
+    assert get_features()["role_editing"] is False
+
+
+def test_both_editing_locks_share_one_features_table(tmp_path, monkeypatch):
+    """Locking both pack and role editing must emit a single [features] table
+    (two would be a duplicate-key TOML error); the whole config still parses and
+    the kernel reads both flags off."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("MAVERICK_CONFIG", raising=False)
+    cfg_dir = tmp_path / ".maverick"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = _write(cfg_dir, monkeypatch,
+                 {"allow_pack_editing": False, "allow_role_editing": False})
+    assert cfg.count("[features]") == 1
+    parsed = tomllib.loads(cfg)  # a duplicate table would raise here
+    assert parsed["features"] == {"pack_editing": False, "role_editing": False}
+
+    from maverick.config import get_features
+    feats = get_features()
+    assert feats["pack_editing"] is False and feats["role_editing"] is False

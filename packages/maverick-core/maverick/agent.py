@@ -699,6 +699,19 @@ class Agent:
         except Exception:
             pass
 
+        # Per-role client addendum (optional, additive): a tenant's custom
+        # instructions for this role, edited via the dashboard roles editor.
+        # Empty for any role the client hasn't customized, so behavior is
+        # unchanged by default. Specialist roles (domain-pack names) never
+        # match a known role, so this is a no-op for them.
+        try:
+            from .role_edit import role_addendum
+            addendum = role_addendum(self.role)
+            if addendum:
+                base = base + "\n\n" + addendum
+        except Exception:
+            pass
+
         # Domain-pack persona (factory spawn-from-profile): specialist
         # instructions for this agent's domain, additive to the base template.
         if self._domain_persona:

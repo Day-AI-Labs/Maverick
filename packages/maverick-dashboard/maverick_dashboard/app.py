@@ -1144,6 +1144,32 @@ async def agents_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/roles", response_class=HTMLResponse)
+async def roles_page(request: Request) -> HTMLResponse:
+    """The per-client roles editor: each core role (orchestrator, coder, ...)
+    and its editable system-prompt addendum. ``?role=`` opens that role. The
+    addendum is appended to the role's base template at spawn; model/effort are
+    shown read-only (configured via [models]/[effort]). Read-only when
+    [features] role_editing is off."""
+    roles: list = []
+    selected = None
+    editable = True
+    try:
+        from maverick.config import get_features
+        from maverick.role_edit import list_roles, resolved_role
+        editable = bool(get_features().get("role_editing", True))
+        roles = list_roles()
+        role = request.query_params.get("role")
+        if role:
+            selected = resolved_role(role)
+    except Exception:  # never 500 the page if the role layer is unavailable
+        roles = []
+    return templates.TemplateResponse(
+        request, "roles.html",
+        {"roles": roles, "selected": selected, "editable": editable},
+    )
+
+
 _OVERSIGHT_KINDS = frozenset({
     "governance_denied", "shield_block", "capability_denied",
     "egress_blocked", "consent_result", "halt",

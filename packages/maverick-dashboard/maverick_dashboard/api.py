@@ -50,6 +50,7 @@ from .api_schemas import (
     RedactIn,
     ReparentIn,
     RetitleIn,
+    RoleOverrideIn,
     SkillInstallIn,
     SkillOut,
 )
@@ -1041,6 +1042,64 @@ async def delete_agent_override(name: str) -> dict:
     if view is None:
         raise HTTPException(status_code=404, detail=f"no such agent: {name!r}")
     return {"removed": removed, "agent": view}
+
+
+# ---- roles: per-client editable system-prompt addendum -----------------------
+# Same gate pattern as agents: GET is read-only; mutations require role_editing.
+# Role model/effort routing is configured elsewhere ([models]/[effort]) and is
+# read-only here.
+
+
+def _require_role_editing() -> None:
+    from maverick.config import get_features
+    if not get_features().get("role_editing", True):
+        raise HTTPException(
+            status_code=403,
+            detail=("role editing is disabled ([features] role_editing = false). "
+                    "Edit roles.toml on the host, or re-enable it in config."),
+        )
+
+
+@router.get("/roles")
+async def list_roles_endpoint() -> dict:
+    """The core-role roster, flagged by override status."""
+    from maverick.role_edit import list_roles
+    return {"roles": list_roles()}
+
+
+@router.get("/roles/{role}")
+async def get_role_endpoint(role: str) -> dict:
+    """A role's merged view: resolved model/effort, addendum, and provenance."""
+    from maverick.role_edit import resolved_role
+    view = resolved_role(role)
+    if view is None:
+        raise HTTPException(status_code=404, detail=f"no such role: {role!r}")
+    return view
+
+
+@router.post("/roles/{role}/override")
+async def save_role_override(role: str, payload: RoleOverrideIn) -> dict:
+    """Persist a role's system-prompt addendum. 403 if role editing is disabled,
+    422 if validation fails (unknown role, over-long addendum)."""
+    _require_role_editing()
+    from maverick.role_edit import resolved_role, write_role_override
+    try:
+        write_role_override(role, payload.model_dump(exclude_unset=True))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return resolved_role(role)
+
+
+@router.delete("/roles/{role}/override")
+async def delete_role_override(role: str) -> dict:
+    """Drop a role's override, reverting it to the built-in template."""
+    _require_role_editing()
+    from maverick.role_edit import remove_role_override, resolved_role
+    removed = remove_role_override(role)
+    view = resolved_role(role)
+    if view is None:
+        raise HTTPException(status_code=404, detail=f"no such role: {role!r}")
+    return {"removed": removed, "role": view}
 
 
 @router.get("/channels")

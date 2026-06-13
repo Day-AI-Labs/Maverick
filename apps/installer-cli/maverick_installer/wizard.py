@@ -1169,6 +1169,13 @@ def pick_advanced() -> dict[str, Any]:
             "weaken the safety envelope. Turn off to lock the agent roster.",
             default=True,
         ),
+        "allow_role_editing": _q_confirm(
+            "Allow editing the core roles (orchestrator, coder, ...) from the "
+            "dashboard? Operators can add a per-client system-prompt addendum "
+            "to a role. Turn off to lock role behavior. (Model/effort routing "
+            "is configured separately.)",
+            default=True,
+        ),
         "dreaming": _q_confirm(
             "Dreaming (offline consolidation)? `maverick dream` replays recent "
             "runs while idle, distills recurring wins into skills per department, "
@@ -2513,12 +2520,18 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[audit]")
         lines.append("sign = true")
+    # Dashboard editing locks. Both default on, so we only emit the disables --
+    # and as ONE [features] table (two tables would be a duplicate-key TOML
+    # error). The kernel reads these via config.get_features.
+    _feature_locks = []
     if advanced.get("allow_pack_editing") is False:
-        # Default-on, so only emit the lock. The dashboard agent editor and the
-        # mutating /api/v1/agents endpoints read [features] pack_editing.
+        _feature_locks.append("pack_editing = false")
+    if advanced.get("allow_role_editing") is False:
+        _feature_locks.append("role_editing = false")
+    if _feature_locks:
         lines.append("")
         lines.append("[features]")
-        lines.append("pack_editing = false")
+        lines.extend(_feature_locks)
     if advanced.get("tree_of_thought"):
         lines.append("")
         lines.append("[planning]")

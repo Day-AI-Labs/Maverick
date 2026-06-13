@@ -32,6 +32,12 @@ class AgentOverrideIn(BaseModel):
     extends: str | None = None
 
 
+class RoleOverrideIn(BaseModel):
+    """A per-tenant override for a core agent role: an editable system-prompt
+    addendum appended to the role's base template. Empty clears the override."""
+    system_addendum: str | None = None
+
+
 class GoalIn(BaseModel):
     title: str = Field(..., max_length=200)
     description: str = ""

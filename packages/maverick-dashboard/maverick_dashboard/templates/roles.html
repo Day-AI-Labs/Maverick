@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}roles · Maverick{% endblock %}
+{% block content %}
+  <h2>roles</h2>
+  <p class="muted" style="max-width: 48rem;">
+    The kernel's core roles. Add a per-client <strong>system-prompt addendum</strong>
+    to any role — extra instructions appended to its base template on every spawn,
+    so you can shape how the orchestrator plans or how the coder writes for this
+    deployment, without forking the kernel. Model and reasoning effort are set
+    separately (under <code>[models]</code> / <code>[effort]</code>).
+  </p>
+  {% if not editable %}
+  <p><span class="badge">read-only</span> <span class="muted">role editing is disabled
+    (<code>[features] role_editing = false</code>) — viewing only.</span></p>
+  {% endif %}
+
+  <div class="panel" style="display: flex; gap: 1.5rem; align-items: flex-start;">
+    <nav aria-label="Role roster" style="min-width: 14rem; max-height: 70vh; overflow: auto;">
+      {% if roles %}
+      <ul style="list-style: none; padding: 0; margin: 0;">
+        {% for r in roles %}
+        <li style="margin: 0.15rem 0;">
+          <a href="/roles?role={{ r.role }}"
+             {% if selected and selected.role == r.role %}class="active" aria-current="page"{% endif %}>
+            <code>{{ r.role }}</code>
+            {% if r.is_override %}<span class="badge">custom</span>{% endif %}
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">No roles discovered.</p>
+      {% endif %}
+    </nav>
+
+    <section aria-label="Role editor" style="flex: 1; min-width: 0;">
+      {% if selected %}
+      <h3 style="margin-top: 0;"><code>{{ selected.role }}</code></h3>
+      <p class="muted">
+        model: <code>{{ selected.model or '—' }}</code>
+        {% if selected.effort %}· effort: <code>{{ selected.effort }}</code>{% endif %}
+        {% if selected.is_override %}· <span class="badge">addendum customized</span>{% endif %}
+      </p>
+      <div id="role-msg" role="status" aria-live="polite" class="muted" style="min-height: 1.2rem;"></div>
+
+      <form id="role-form" data-role="{{ selected.role }}">
+        <p>
+          <label for="f-addendum">System-prompt addendum
+            <span class="muted">(appended to this role's base template; leave empty to clear)</span></label><br>
+          <textarea id="f-addendum" name="system_addendum" rows="12"
+                    style="width: 100%;">{{ selected.system_addendum }}</textarea>
+        </p>
+        {% if editable %}
+        <p>
+          <button type="button" id="btn-save">Save addendum</button>
+          <button type="button" id="btn-reset">Reset to built-in</button>
+        </p>
+        {% else %}
+        <p class="muted">Editing is disabled in this deployment.</p>
+        {% endif %}
+      </form>
+
+      {% if selected.errors %}
+      <div class="panel" style="margin-top: 1rem;">
+        {% for e in selected.errors %}<div>⛔ {{ e }}</div>{% endfor %}
+      </div>
+      {% endif %}
+      {% else %}
+      <p class="muted">Select a role from the roster to view or edit it.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  {% if selected and editable %}
+  <script>
+    (function () {
+      const form = document.getElementById('role-form');
+      if (!form) return;
+      const role = form.dataset.role;
+      const msg = document.getElementById('role-msg');
+
+      function show(text, ok) {
+        msg.textContent = text;
+        msg.style.color = ok ? 'var(--ok, green)' : 'var(--danger, crimson)';
+      }
+
+      async function call(method, path, body) {
+        const opts = { method, headers: {} };
+        if (body !== undefined) {
+          opts.headers['Content-Type'] = 'application/json';
+          opts.body = JSON.stringify(body);
+        }
+        const r = await fetch(path, opts);
+        let data = {};
+        try { data = await r.json(); } catch (e) { /* 204 etc. */ }
+        return { status: r.status, data };
+      }
+
+      document.getElementById('btn-save').addEventListener('click', async () => {
+        const body = { system_addendum: document.getElementById('f-addendum').value };
+        const { status, data } = await call('POST', `/api/v1/roles/${role}/override`, body);
+        if (status === 200) { show('Saved.', true); window.location.search = '?role=' + encodeURIComponent(role); }
+        else show('Rejected: ' + (data.detail || ('HTTP ' + status)), false);
+      });
+
+      document.getElementById('btn-reset').addEventListener('click', async () => {
+        const { status, data } = await call('DELETE', `/api/v1/roles/${role}/override`);
+        if (status === 200) { show('Reverted to built-in.', true); window.location.search = '?role=' + encodeURIComponent(role); }
+        else show('Failed: ' + (data.detail || ('HTTP ' + status)), false);
+      });
+    })();
+  </script>
+  {% endif %}
+{% endblock %}

@@ -216,6 +216,11 @@ def get_features() -> dict:
                       mutating REST endpoints return 403, so an operator can
                       lock the agent roster in a governed deployment. Writing
                       override TOML on the host is unaffected.
+    - ``role_editing`` allow editing the core agent roles (orchestrator, coder,
+                      ...) from the dashboard -- a per-tenant system-prompt
+                      addendum per role. Off = the roles editor is read-only and
+                      its mutating endpoints 403. Role model/effort routing is
+                      configured separately ([models]/[effort]).
 
     All default on.
     """
@@ -225,6 +230,7 @@ def get_features() -> dict:
         "world_model": bool(cfg.get("world_model", True)),
         "streaming": bool(cfg.get("streaming", True)),
         "pack_editing": bool(cfg.get("pack_editing", True)),
+        "role_editing": bool(cfg.get("role_editing", True)),
     }
 
 
