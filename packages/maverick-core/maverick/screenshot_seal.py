@@ -138,6 +138,8 @@ def _read_anchor(directory: Path, key: str) -> tuple[dict | None, str | None]:
         return None, "missing"
     except (OSError, ValueError, TypeError):
         return None, "invalid"
+    if not isinstance(payload, dict):
+        return None, "invalid"
     sig = str(payload.get("sig", ""))
     expected = hmac.new(key.encode(), _anchor_canonical(payload), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, sig):
