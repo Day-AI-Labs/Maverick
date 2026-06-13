@@ -1492,13 +1492,13 @@ async def redact_preview(payload: RedactIn) -> dict:
 
 
 @router.get("/glance")
-async def watch_glance() -> dict:
+async def watch_glance(request: Request) -> dict:
     """The Apple Watch glance payload (tiny fixed shape; see maverick.glance)."""
     from maverick.glance import build_glance
     from maverick.world_model import open_world
     world = open_world()
     try:
-        return build_glance(world)
+        return build_glance(world, owner=goal_owner_filter(request))
     finally:
         try:
             world.close()

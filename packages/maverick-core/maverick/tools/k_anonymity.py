@@ -49,7 +49,7 @@ def _display_value(value_key: tuple[str, str, str]) -> str:
 
 
 def _key_str(qis: list[str], key: tuple[tuple[str, str, str], ...]) -> str:
-    return ", ".join(f"{q}={_display_value(v)}" for q, v in zip(qis, key))
+    return ", ".join(f"{q}={_display_value(v)}" for q, v in zip(qis, key, strict=False))
 
 
 def _check(rows: list, qis: list[str], k: int, sensitive: str | None, l_min: int | None) -> str:

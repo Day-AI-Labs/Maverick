@@ -7,7 +7,9 @@ import pytest
 
 pytest.importorskip("fastapi")
 
+import maverick.world_model as world_model  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+from maverick_dashboard import api as api_mod  # noqa: E402
 from maverick_dashboard.app import app  # noqa: E402
 
 
@@ -17,7 +19,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.delenv("MAVERICK_DASHBOARD_TOKEN", raising=False)
     import maverick_dashboard.api as api
     monkeypatch.setattr(api, "_PERF_SLA_CACHE", None)
-    return TestClient(app)
+    return TestClient(app, headers={"Origin": "http://testserver"})
 
 
 def test_perf_api_shape(client, monkeypatch, tmp_path):
@@ -81,3 +83,24 @@ def test_glance_endpoint_shape(client):
     d = r.json()
     assert {"active", "done_today", "failed_today", "spend_today",
             "last_result", "as_of"} == set(d)
+
+
+def test_glance_endpoint_applies_owner_scope(client, monkeypatch):
+    seen = {}
+
+    class _World:
+        def list_goals(self, *, owner=None, limit=None):
+            seen["owner"] = owner
+            seen["limit"] = limit
+            return []
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(api_mod, "goal_owner_filter", lambda request: "user:alice")
+    monkeypatch.setattr(world_model, "open_world", lambda: _World())
+
+    r = client.get("/api/v1/glance")
+
+    assert r.status_code == 200, r.text
+    assert seen == {"owner": "user:alice", "limit": 10_000}
