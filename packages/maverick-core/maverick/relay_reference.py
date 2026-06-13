@@ -74,6 +74,8 @@ class RelayConfig:
     secondary_channel: str = "telegram"
     ack_template: str = "Got it! Working on it — the result will be sent to {channel}."
     hmac_secret: str | None = None
+    inbound_auth_token: str | None = None
+    require_inbound_auth: bool = True
 
     def compiled_pattern(self) -> re.Pattern:
         return re.compile(self.long_task_pattern, re.IGNORECASE)
@@ -145,13 +147,33 @@ class Relay:
     deliver: Deliver
     now: Callable[[], float] = time.monotonic
 
-    def handle(self, text: str, *, context: dict[str, Any] | None = None) -> RelayResponse:
-        """Route one inbound request through the quick-vs-ack-then-run split."""
+    def handle(
+        self, text: str, *, context: dict[str, Any] | None = None, auth_token: str | None = None
+    ) -> RelayResponse:
+        """Route one authenticated inbound request through the quick-vs-ack-then-run split."""
         context = context or {}
+        if self.config.require_inbound_auth and not self.verify_inbound_token(auth_token):
+            return RelayResponse(
+                kind=RequestKind.QUICK,
+                immediate="Unauthorized relay request.",
+                error="unauthorized inbound relay request",
+            )
         kind = classify_request(text, self.config)
         if kind is RequestKind.QUICK:
             return self._handle_quick(text, context)
         return self._start_background(text, context)
+
+    def verify_inbound_token(self, auth_token: str | None) -> bool:
+        """Return True when the caller supplied the configured inbound relay token.
+
+        The relay signs outbound starts with ``hmac_secret``. This separate
+        token authenticates the device/user to the relay before any quick work
+        or signed background start can be triggered.
+        """
+        expected = self.config.inbound_auth_token
+        if not expected or not auth_token:
+            return False
+        return hmac.compare_digest(auth_token, expected)
 
     # -- quick path -----------------------------------------------------------
 
