@@ -114,12 +114,18 @@ def collect_node(node: str, audit_dir: Path, rows: list[dict], *,
     """
     breaks: list = []
     try:
-        from .signing import verify_anchors, verify_chain
+        from .signing import ChainBreak, verify_anchors, verify_chain
         d = Path(audit_dir)
-        if d.is_dir():
-            for f in sorted(d.glob("*.ndjson")):
-                if f.name.startswith("."):
-                    continue
+        if not d.is_dir():
+            breaks.append(ChainBreak(0, "missing_audit_dir", str(d)))
+        else:
+            audit_files = [
+                f for f in sorted(d.glob("*.ndjson"))
+                if not f.name.startswith(".")
+            ]
+            if not audit_files:
+                breaks.append(ChainBreak(0, "missing_audit_logs", str(d)))
+            for f in audit_files:
                 breaks.extend(verify_chain(f, pubkey_hex))
             breaks.extend(verify_anchors(d, pubkey_hex))
     except Exception as e:  # pragma: no cover -- verification never crashes the report
