@@ -142,10 +142,13 @@ def union_policies(policies) -> Policy:
 def compile_policy(keys) -> Policy:
     """Compile the selected regime keys into one governance Policy (strictest-wins).
 
-    Unknown keys are ignored. With no known keys, returns an empty Policy
+    Keys are case/whitespace-normalized so enabling ``"SOX"`` is never silently
+    dropped (a mis-cased known regime would otherwise compile to no enforcement).
+    Genuinely unknown keys are ignored; with none known, returns an empty Policy
     (default-open — unchanged behavior).
     """
-    selected = [REGIMES[k].policy for k in (keys or []) if k in REGIMES]
+    norm = [str(k).strip().lower() for k in (keys or [])]
+    selected = [REGIMES[k].policy for k in norm if k in REGIMES]
     return union_policies(selected)
 
 
