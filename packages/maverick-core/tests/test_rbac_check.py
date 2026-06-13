@@ -69,6 +69,32 @@ def test_errors():
     assert t.fn({"op": "nope", "roles": {}, "assignments": {}, "user": "u", "permission": "p"}).startswith("ERROR")
 
 
+def test_rejects_malformed_policy_values():
+    t = rbac_check()
+    assert t.fn({
+        "op": "check",
+        "roles": {"a": ["*"], "admin": []},
+        "assignments": {"mallory": "admin"},
+        "user": "mallory",
+        "permission": "secrets:read",
+    }).startswith("ERROR")
+    assert t.fn({
+        "op": "check",
+        "roles": {"admin": {"*": False}},
+        "assignments": {"mallory": ["admin"]},
+        "user": "mallory",
+        "permission": "secrets:read",
+    }).startswith("ERROR")
+    assert t.fn({
+        "op": "check",
+        "roles": {"base": ["secrets:read"], "admin": []},
+        "assignments": {"mallory": ["admin"]},
+        "inherits": {"admin": "base"},
+        "user": "mallory",
+        "permission": "secrets:read",
+    }).startswith("ERROR")
+
+
 def test_registered():
     from maverick.tools import base_registry
 
