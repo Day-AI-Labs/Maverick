@@ -85,11 +85,10 @@ here.
   Reflexions also carry the recording run's department (`reflexion.py`
   `domain` field), and same-department lessons outrank equally-similar
   generic ones at recall time.
-- **Cross-department insight promotion** — a failure pattern recurring in
-  ≥2 distinct departments becomes a *shared* insight every department
-  recalls (`promote_shared_insights`; `[dreaming] promote_shared`).
-  Compartment seals stay intact: only the consolidated lesson crosses the
-  boundary, never raw department trajectories.
+- **Shared generic insight promotion** — when explicitly enabled with
+  `[dreaming] promote_shared`, only recurring *unscoped* failures can become
+  shared insights. Department-scoped failures remain compartment-local and are
+  never synthesized into globally recallable `domain=None` insights.
 - **Skill retirement (the forgetting loop)** — a dream phase moves learned
   skills with a decayed track record (`skill_stats.evictable`: enough uses,
   win rate under the floor) to `learned-skills/retired/` with a logged
