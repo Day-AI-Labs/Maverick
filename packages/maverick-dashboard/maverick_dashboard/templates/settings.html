@@ -84,16 +84,40 @@
     {% endif %}
   </div>
 
+  <h2>Per-role models</h2>
   <div class="panel">
-    <h2 style="margin-top: 0;">Effective model per role</h2>
-    <table>
-      <thead><tr><th scope="col">Role</th><th scope="col">Model</th></tr></thead>
-      <tbody>
-        {% for label, role, model in role_models %}
-        <tr><td>{{ label }}</td><td><code>{{ model }}</code></td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <p class="muted" style="margin-top: 0;">
+      Override the model for a specific agent role — the platform's strength is
+      role-specialised models. "Use default" falls back to the default model above,
+      then <code>config.toml</code>, then the built-in default. The Effective column
+      is what each role will actually use.
+    </p>
+    <form method="post" action="/settings/models/roles">
+      <table>
+        <thead><tr>
+          <th scope="col">Role</th>
+          <th scope="col">Model override</th>
+          <th scope="col">Effective</th>
+        </tr></thead>
+        <tbody>
+          {% for label, role, effective, override in role_models %}
+          <tr>
+            <td>{{ label }}</td>
+            <td>
+              <select class="ctl" name="{{ role }}" aria-label="Model for {{ label }}">
+                <option value="" {% if not override %}selected{% endif %}>Use default</option>
+                {% for spec, mlabel in known_models %}
+                <option value="{{ spec }}" {% if override == spec %}selected{% endif %}>{{ mlabel }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td><code>{{ effective }}</code></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit" class="btn btn--primary" style="margin-top: var(--space-3);">Save per-role models</button>
+    </form>
   </div>
 
   <h2>Spend cap</h2>

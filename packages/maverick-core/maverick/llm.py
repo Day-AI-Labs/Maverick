@@ -206,13 +206,14 @@ def model_for_role(role: str) -> str:
             return spec
     except Exception:
         pass
-    # Dashboard-pinned default model (set from the settings page; lives in
-    # ~/.maverick/runtime-overrides.toml, never config.toml). Below per-role
-    # config above, above the built-in ROLE_MODELS defaults -- an explicit UI
-    # choice that still yields to a more specific config [models].<role>.
+    # Dashboard-pinned model (set from the settings page; lives in
+    # ~/.maverick/runtime-overrides.toml, never config.toml). A per-role pin
+    # wins over the global default pin. Below the user's config.toml [models]
+    # above, above the built-in ROLE_MODELS defaults -- an explicit UI choice
+    # that still yields to a more specific config [models].<role>.
     try:
-        from .runtime_overrides import default_model_override
-        pinned = default_model_override()
+        from .runtime_overrides import default_model_override, role_model_override
+        pinned = role_model_override(role) or default_model_override()
         if pinned:
             return pinned
     except Exception:  # pragma: no cover -- never let the overlay break resolution

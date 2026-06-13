@@ -2369,14 +2369,21 @@ async def settings_page(request: Request, saved: str = "") -> HTMLResponse:
         model_for_role,
     )
     from maverick.runner import DEFAULT_MAX_DOLLARS
-    from maverick.runtime_overrides import budget_override, default_model_override
+    from maverick.runtime_overrides import (
+        budget_override,
+        default_model_override,
+        role_model_override,
+    )
     roles = [
         ("Orchestrator", "orchestrator"), ("Coder", "coder"),
         ("Researcher", "researcher"), ("Writer", "writer"),
         ("Analyst", "analyst"), ("Verifier", "verifier"),
         ("Summarizer", "summarizer"),
     ]
-    role_models = [(label, role, model_for_role(role)) for label, role in roles]
+    role_models = [
+        (label, role, model_for_role(role), role_model_override(role))
+        for label, role in roles
+    ]
     known_models = [
         (MODEL_OPUS, "Claude Opus 4.8 — most capable"),
         (MODEL_OPUS_FAST, "Claude Opus 4.8 (fast) — 2x faster, 2x price"),
@@ -2391,6 +2398,7 @@ async def settings_page(request: Request, saved: str = "") -> HTMLResponse:
     saved_msg = {
         "appearance": "Appearance updated.",
         "models": "Default model updated.",
+        "roles": "Per-role models updated.",
         "budget": "Spend cap updated.",
     }.get(saved, "")
     return templates.TemplateResponse(request, "settings.html", {
@@ -2443,6 +2451,24 @@ async def settings_set_budget(request: Request, max_dollars: str = Form("")) -> 
             status_code=400, detail="spend cap must be a positive number",
         ) from exc
     return RedirectResponse("/settings?saved=budget", status_code=303)
+
+
+@app.post("/settings/models/roles")
+async def settings_set_role_models(request: Request) -> RedirectResponse:
+    """Set/clear per-role model pins from the settings page in one write. Each
+    form field is named for a role; an empty value clears that role's pin."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    from maverick.runtime_overrides import set_role_models
+    roles = ("orchestrator", "coder", "researcher", "writer",
+             "analyst", "verifier", "summarizer")
+    form = await request.form()
+    updates = {r: (form.get(r) or "").strip() for r in roles}
+    try:
+        set_role_models(updates)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid model id") from exc
+    return RedirectResponse("/settings?saved=roles", status_code=303)
 
 
 @app.post("/webhook/start")
