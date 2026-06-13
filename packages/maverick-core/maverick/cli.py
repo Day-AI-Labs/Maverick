@@ -3939,10 +3939,22 @@ def tax_group() -> None:
 @click.option("--state", "state_code", default=None, metavar="XX",
               help="Resident state for the state return (default: inferred "
                    "from W-2 box 15).")
+@click.option("--estimated-payments", default=0.0, show_default=True,
+              help="Federal estimated tax already paid (Form 1040-ES).")
+@click.option("--taxpayer-65", is_flag=True,
+              help="Taxpayer is 65 or older (additional standard deduction).")
+@click.option("--spouse-65", is_flag=True,
+              help="Spouse is 65 or older (MFJ; additional standard deduction).")
+@click.option("--taxpayer-blind", is_flag=True,
+              help="Taxpayer is blind (additional standard deduction).")
+@click.option("--spouse-blind", is_flag=True,
+              help="Spouse is blind (MFJ; additional standard deduction).")
 @click.option("--out", "out_path", type=click.Path(), default=None,
               help="Also write the review package to this file.")
 def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
-                state_code: str | None, out_path: str | None) -> None:
+                state_code: str | None, estimated_payments: float,
+                taxpayer_65: bool, spouse_65: bool, taxpayer_blind: bool,
+                spouse_blind: bool, out_path: str | None) -> None:
     """Turn a folder of uploaded documents into a first-pass draft return.
 
     Reads every ``*.txt`` document in DOCS_DIR (text exports of the client's
@@ -3971,7 +3983,12 @@ def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
         docs.append(tax_prep.extract(text, label=p.name))
     wp = tax_prep.Workpaper(filing_status=filing_status,
                             dependents_under_17=dependents, docs=docs,
-                            state=(state_code or ""))
+                            state=(state_code or ""),
+                            estimated_payments=estimated_payments,
+                            taxpayer_65_or_older=taxpayer_65,
+                            spouse_65_or_older=spouse_65,
+                            taxpayer_blind=taxpayer_blind,
+                            spouse_blind=spouse_blind)
     draft = tax_prep.compute_first_pass(wp, constants=federal)
     state = (tax_prep.compute_state_first_pass(
                  wp, tax_prep.infer_state(wp), federal=draft,
@@ -3983,6 +4000,57 @@ def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
     if out_path:
         Path(out_path).write_text(package + "\n", encoding="utf-8")
         click.echo(f"\nWrote review package -> {out_path}")
+
+
+@tax_group.command("backtest")
+@click.argument("cases_dir", type=click.Path(exists=True, file_okay=False))
+@click.option("--tolerance", default=None, type=float,
+              help="Dollar tolerance for an in-scope line match "
+                   "(default $1.00).")
+@click.option("--out", "out_path", type=click.Path(), default=None,
+              help="Also write the back-test report to this file.")
+def tax_backtest(cases_dir: str, tolerance: float | None,
+                 out_path: str | None) -> None:
+    """Measure first-pass accuracy against a firm's PRIOR FILED returns.
+
+    Point this at a folder of case subdirectories -- each holding a client's
+    source ``*.txt`` documents plus a ``filed.json`` with the figures the firm
+    actually filed -- and it runs the deterministic pipeline on every case and
+    reports how close the draft lands. Returns carrying items the engine
+    deliberately doesn't compute (Schedule C/D/E, itemized, graduated-state,
+    unsupported status) are listed OUT OF SCOPE and excluded from the accuracy
+    number, so "matched N of M in-scope within $T" is an honest signal a firm
+    can act on in an afternoon -- on its own data, not synthetic samples.
+    """
+    from . import tax_backtest as bt
+    tol = bt.DEFAULT_TOLERANCE if tolerance is None else tolerance
+    report = bt.run_backtest_dir(cases_dir, tolerance=tol)
+    text = bt.render_backtest(report)
+    click.echo(text)
+    if out_path:
+        Path(out_path).write_text(text + "\n", encoding="utf-8")
+        click.echo(f"\nWrote back-test report -> {out_path}")
+
+
+@tax_group.command("onboard")
+@click.argument("profile", type=click.Path(exists=True, dir_okay=False))
+def tax_onboard(profile: str) -> None:
+    """Scope a firm's pilot from its intake profile (a TOML file).
+
+    Sorts every state the firm serves into computed-first-pass (no-tax / flat)
+    vs handed-off (graduated -- their tax engine owns it), resolves the firm's
+    document-label taxonomy to the canonical types, and prints a ready-to-pilot
+    verdict with blockers (must fix) separated from warnings. Run this first to
+    set expectations, then `maverick tax backtest` to prove accuracy on the
+    firm's own prior filed returns -- together they make "intake in days"
+    concrete. Exits non-zero when there are blockers.
+    """
+    from . import tax_onboarding as ob
+    rep = ob.assess_readiness(ob.load_profile(profile))
+    click.echo(ob.render_readiness(rep))
+    if not rep.ready_to_pilot:
+        raise click.ClickException("onboarding blockers must be resolved "
+                                   "before intake (see above)")
 
 
 @tax_group.command("update")
