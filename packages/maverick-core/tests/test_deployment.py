@@ -76,9 +76,12 @@ def test_regulated_profile_passes_seals_data_and_is_compliant(monkeypatch, tmp_p
     from maverick.world_model import WorldModel
 
     # The reference profile, expressed as env (the config-file form is documented
-    # in docs/regulated-deployment.md). Enterprise mode implies at-rest encryption.
+    # in docs/regulated-deployment.md). Enterprise mode implies at-rest encryption;
+    # anonymization is required because at-rest encryption alone does not redact
+    # PII from the live (unsealed) audit day-file (PII-log-redaction control).
     monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
     monkeypatch.setenv("MAVERICK_AUDIT_SIGN", "1")
+    monkeypatch.setenv("MAVERICK_ANON", "1")
     monkeypatch.setattr(
         "maverick.config.load_config",
         lambda *a, **k: {"retention": {"audit_days": 365}},

@@ -434,7 +434,10 @@ def test_audit_chain_broken_when_signed_log_stripped_and_anchors_deleted(
     probe = soc2.collect_soc2_evidence()["audit_log"]
 
     assert probe["status"] == "broken"
-    assert probe["first_reason"] == "anchor_ledger_missing"
+    # Stripped signing fields on a signing-expected host are flagged as a strip/
+    # downgrade attempt (the more specific row-level break, per #1288), detected
+    # before the anchor loop runs, so it is the reported first_reason.
+    assert probe["first_reason"] == "missing_signature_fields"
     # status == "broken" short-circuits before the unsigned-row count is added,
     # so the key is intentionally absent on this path.
     assert probe["files_checked"] == 1
