@@ -175,6 +175,57 @@ def notes_for(
     return out[:max(1, k)]
 
 
+def erase_notes(
+    channel: str | None, user_ids: str | list[str] | tuple[str, ...] | set[str],
+    path: Path | str | None = None,
+) -> int:
+    """Remove persisted notes for ``channel`` and the given user id(s).
+
+    Returns the number of scoped note records removed. Malformed lines and
+    unrelated scopes are preserved so erasure is narrow and best-effort.
+    """
+    if not channel:
+        return 0
+    if isinstance(user_ids, str):
+        targets = {user_ids}
+    else:
+        targets = {str(u) for u in user_ids if u}
+    if not targets:
+        return 0
+
+    p = Path(path) if path is not None else default_path()
+    if not p.exists():
+        return 0
+
+    kept: list[str] = []
+    removed = 0
+    try:
+        with open(p, encoding="utf-8") as f:
+            for raw in f:
+                try:
+                    d = json.loads(raw)
+                except json.JSONDecodeError:
+                    kept.append(raw)
+                    continue
+                if d.get("channel") == channel and d.get("user_id") in targets:
+                    removed += 1
+                    continue
+                kept.append(raw)
+        if removed:
+            tmp = p.with_suffix(".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.writelines(kept)
+            os.replace(tmp, p)
+            try:
+                os.chmod(p, 0o600)
+            except OSError:
+                pass
+    except OSError as e:
+        log.warning("user_notes: erase failed: %s", e)
+        return 0
+    return removed
+
+
 def format_context(notes: list[str], *, shield: Any | None = None) -> str:
     """Render notes as a brief addendum (untrusted, self-reported data)."""
     if not notes:
@@ -212,5 +263,6 @@ __all__ = [
     "extract_preferences",
     "consolidate",
     "notes_for",
+    "erase_notes",
     "format_context",
 ]

@@ -102,3 +102,22 @@ class TestFormatContext:
 
     def test_empty_is_empty(self):
         assert user_notes.format_context([]) == ""
+
+
+def test_erase_notes_removes_only_matching_scope(tmp_path):
+    path = tmp_path / "user_notes.ndjson"
+    world = _World(
+        [_conv(1, "slack", "u1"), _conv(2, "slack", "u2"), _conv(3, "telegram", "u1")],
+        {
+            1: [_turn("user", "I prefer concise answers.")],
+            2: [_turn("user", "Please always use tables.")],
+            3: [_turn("user", "Never use emoji.")],
+        },
+    )
+    assert user_notes.consolidate(world, path=path) == 3
+
+    assert user_notes.erase_notes("slack", "u1", path) == 1
+
+    assert user_notes.notes_for("slack", "u1", path) == []
+    assert user_notes.notes_for("slack", "u2", path)
+    assert user_notes.notes_for("telegram", "u1", path)
