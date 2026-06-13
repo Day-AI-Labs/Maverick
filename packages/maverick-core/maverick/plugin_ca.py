@@ -124,6 +124,7 @@ class PluginCA:
         self._priv_path.write_text(priv_hex, encoding="utf-8")
         os.chmod(self._priv_path, 0o600)
         self._pub_path.write_text(pub_hex, encoding="utf-8")
+        self._write_crl({"revoked": {}, "sig": ""})
         return pub_hex
 
     def root_pub(self) -> str:
@@ -156,6 +157,9 @@ class PluginCA:
     def revoke(self, serial: str, *, reason: str = "") -> None:
         crl = self._load_crl()
         crl["revoked"][serial] = {"at": time.time(), "reason": reason}
+        self._write_crl(crl)
+
+    def _write_crl(self, crl: dict) -> None:
         crl["sig"] = _sign(self._root_priv(),
                            _canonical({"revoked": crl["revoked"]}))
         tmp = self._crl_path.with_suffix(".tmp")
@@ -168,23 +172,22 @@ class PluginCA:
 
     def _load_crl(self) -> dict:
         try:
-            return json.loads(self._crl_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return {"revoked": {}, "sig": ""}
+            crl = json.loads(self._crl_path.read_text(encoding="utf-8"))
+        except OSError as exc:
+            raise RuntimeError("CRL missing; refusing to infer revocation state") from exc
+        except ValueError as exc:
+            raise RuntimeError("CRL is not valid JSON; refusing to infer revocation state") from exc
+        if not isinstance(crl.get("revoked"), dict) or not isinstance(crl.get("sig"), str):
+            raise RuntimeError("CRL malformed; refusing to infer revocation state")
+        return crl
 
     def revoked_serials(self, *, root_pub: str | None = None) -> set[str]:
-        """Serials on the CRL — only if the CRL's own signature verifies.
-
-        An unverifiable CRL is treated as EMPTY for reads here; the verifier
-        treats "CRL present but bad signature" as fail-closed instead.
-        """
+        """Serials on the CRL, failing closed if the CRL cannot be verified."""
         crl = self._load_crl()
-        if not crl["revoked"]:
-            return set()
         pub = root_pub or self.root_pub()
         if not _verify(pub, crl.get("sig", ""),
                        _canonical({"revoked": crl["revoked"]})):
-            return set()
+            raise RuntimeError("CRL signature invalid; refusing to infer revocation state")
         return set(crl["revoked"])
 
 
@@ -214,7 +217,9 @@ def verify_artifact(path: Path, bundle: dict, *, root_pub: str,
     ts = float(now if now is not None else time.time())
     if ts >= float(cert["expires_at"]):
         return VerifyResult(False, f"cert expired ({cert['publisher']})")
-    if revoked and cert["serial"] in revoked:
+    if revoked is None:
+        return VerifyResult(False, "revocation data required")
+    if cert["serial"] in revoked:
         return VerifyResult(False, f"cert revoked ({cert['publisher']})")
     digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
     if digest != bundle.get("digest"):
