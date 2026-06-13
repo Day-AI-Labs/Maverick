@@ -44,9 +44,19 @@ def test_exact_and_star():
 
 
 def test_prerelease_ordering():
-    # prerelease is lower than the release
-    assert _c("1.0.0-rc.1", "<1.0.0").startswith("SATISFIED")
+    # prerelease is lower than the release when the bound explicitly names it
+    assert _c("1.0.0-rc.1", "<1.0.0-rc.2").startswith("SATISFIED")
     assert _c("1.0.0", ">1.0.0-rc.1").startswith("SATISFIED")
+
+
+def test_prerelease_excluded_at_final_release_upper_bound():
+    assert _c("2.0.0-rc.1", "^1.2.3").startswith("UNSATISFIED")
+    assert _c("1.3.0-beta", "~1.2.3").startswith("UNSATISFIED")
+    assert _c("2.0.0-rc.1", ">=1.2.0,<2.0.0").startswith("UNSATISFIED")
+
+
+def test_prerelease_allowed_before_explicit_prerelease_upper_bound():
+    assert _c("2.0.0-beta.1", ">=1.2.0,<2.0.0-rc.1").startswith("SATISFIED")
 
 
 def test_partial_version_padding():

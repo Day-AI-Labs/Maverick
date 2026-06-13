@@ -4,7 +4,8 @@ Decides whether a semver version satisfies a constraint expression — the check
 behind a dependency-pinning or upgrade-gating policy. Supports comparator sets
 (``>=1.2.0,<2.0.0``), caret (``^1.2.3``) and tilde (``~1.2.3``) ranges, exact
 pins, and ``*`` (any). Comparisons follow semver precedence, including
-prerelease ordering (``1.0.0-rc.1`` < ``1.0.0``). Pure parsing/comparison —
+prerelease ordering, while excluding prereleases at a final-release upper
+bound unless the bound explicitly names a prerelease. Pure parsing/comparison —
 deterministic and offline.
 
 ops:
@@ -99,7 +100,13 @@ def _expand(token: str) -> list[tuple[str, tuple]] | str:
     return [(op, ver)]
 
 
+def _is_prerelease_at_final_upper_bound(version: tuple, target: tuple) -> bool:
+    return bool(version[3]) and not target[3] and version[:3] == target[:3]
+
+
 def _satisfies(version: tuple, op: str, target: tuple) -> bool:
+    if op == "<" and _is_prerelease_at_final_upper_bound(version, target):
+        return False
     c = _cmp(version, target)
     return {
         ">=": c >= 0, "<=": c <= 0, ">": c > 0, "<": c < 0,
@@ -157,8 +164,9 @@ def semver_check() -> Tool:
             "Check whether a semver version satisfies a constraint. op=check with "
             "'version' and 'constraint'. Supports comparator sets ('>=1.2,<2'), "
             "caret ('^1.2.3'), tilde ('~1.2.3'), exact pins, and '*'; follows "
-            "semver precedence incl. prerelease ordering. Reports SATISFIED or "
-            "UNSATISFIED with the failing comparator. Deterministic, offline."
+            "semver precedence but excludes prereleases at final-release upper "
+            "bounds unless explicitly named. Reports SATISFIED or UNSATISFIED "
+            "with the failing comparator. Deterministic, offline."
         ),
         input_schema=_SCHEMA,
         fn=_run,

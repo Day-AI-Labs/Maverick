@@ -427,7 +427,8 @@ here.
   wildcards, ALLOW/DENY with the granting role), `cidr_check` (firewall-style
   ordered CIDR access-control for an IPv4/IPv6 address — first match wins),
   `semver_check` (does a semver version satisfy a constraint — comparator sets,
-  caret/tilde ranges, prerelease ordering).
+  caret/tilde ranges, prerelease ordering, and prerelease exclusion at
+  final-release upper bounds unless explicitly named).
 - **Extensibility** — `@tool` decorator (`tools/decorator.py`): turn a typed
   function into a registered Tool with a signature-derived JSON Schema, no
   boilerplate. **TypeScript plugin SDK** (`sdks/plugin-ts/`,
