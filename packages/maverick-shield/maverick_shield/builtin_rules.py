@@ -93,8 +93,8 @@ def _shell_deobfuscate(text: str) -> str:
 
 def _decode_b64_blobs(text: str) -> list[str]:
     out: list[str] = []
-    for blob_index, m in enumerate(_B64_BLOB.finditer(text)):
-        if blob_index >= _MAX_B64_BLOBS:
+    for m in _B64_BLOB.finditer(text):
+        if len(out) >= _MAX_B64_BLOBS:
             break
         # Decode bounded, overlapping windows across the whole blob. Decoding
         # only the leading slice let attackers prepend benign bytes and hide a
@@ -116,6 +116,8 @@ def _decode_b64_blobs(text: str) -> list[str]:
             # Only keep decodes that look like text (the attack is in the words).
             if decoded and any(c.isalpha() for c in decoded):
                 out.append(decoded)
+                if len(out) >= _MAX_B64_BLOBS:
+                    break
     return out
 
 
