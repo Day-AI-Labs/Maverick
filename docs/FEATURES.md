@@ -1040,8 +1040,10 @@ pre-warming** (`max_tokens=0` prefill at orchestrator start) and a
   strict_tenant_isolation`), opt-in **database-native Row-Level Security**
   (`[world_model] rls` / `MAVERICK_PG_RLS`: a FORCE-RLS policy on every
   tenant-scoped table keyed on a transaction-local `maverick.tenant` GUC, so
-  the database — not just the app-layer predicate — enforces the boundary;
-  applied by the table owner, enforced for non-superuser connections, validated
+  the database — not just the app-layer predicate — enforces the boundary; the
+  policy fails closed when the tenant GUC is unset/empty and startup fails if
+  the requested policy cannot be installed or verified; applied by the table
+  owner, enforced for non-superuser connections, validated
   against a live Postgres under a non-superuser role), and an opt-in
   **`psycopg_pool` connection pool** (`[world_model] pool_size` /
   `MAVERICK_PG_POOL_SIZE`) that hands each transaction its own pooled
