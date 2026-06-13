@@ -79,14 +79,37 @@ def denied_tools() -> set[str]:
     return valid
 
 
-def _write_denied(names: set[str]) -> None:
-    """Serialise the overlay. Only the [security] denied_tools list today.
+# A model spec is a bare id ("claude-sonnet-4-6") or "provider:model-id"
+# ("anthropic:claude-opus-4-8"). Keep the charset tight so a hand-edited /
+# corrupt override can't push junk into model resolution.
+_VALID_MODEL = re.compile(r"^[A-Za-z0-9_.:/-]{1,128}$")
 
-    Hand-rolled TOML (no tomli-w dependency) since the shape is fixed:
-    one table, one string-list. Atomic write at 0o600.
+
+def default_model_override() -> str | None:
+    """The model the dashboard's settings page has pinned, or None.
+
+    Consulted by ``llm.model_for_role`` *below* the user's per-role
+    ``config.toml`` ``[models]`` (so explicit per-role config still wins) and
+    above the built-in ``ROLE_MODELS`` defaults. Re-validated on read so a
+    tampered file can't inject an arbitrary string into resolution.
+    """
+    raw = (_load().get("models") or {}).get("default")
+    if isinstance(raw, str) and _VALID_MODEL.fullmatch(raw.strip()):
+        return raw.strip()
+    return None
+
+
+def _write_state(denied: set[str], default_model: str | None) -> None:
+    """Serialise the whole overlay: [security] denied_tools + optional
+    [models] default. One file holds both surfaces, so every write renders
+    the full state -- writing a model choice must not drop tool denials and
+    vice versa. Atomic write at 0o600; no tomli-w dependency.
+
+    With ``default_model`` None the [security] block is byte-identical to the
+    historical writer, so tool-only callers are unaffected.
     """
     OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    rendered = ", ".join(_toml_string(n) for n in sorted(names))
+    rendered = ", ".join(_toml_string(n) for n in sorted(denied))
     body = (
         "# Dashboard-managed overrides. Edit via the dashboard's\n"
         "# permissions page, not by hand (the dashboard rewrites this\n"
@@ -94,6 +117,8 @@ def _write_denied(names: set[str]) -> None:
         "[security]\n"
         f"denied_tools = [{rendered}]\n"
     )
+    if default_model:
+        body += f"\n[models]\ndefault = {_toml_string(default_model)}\n"
     tmp_path = OVERRIDES_PATH.with_suffix(".toml.tmp")
     fd = os.open(tmp_path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -117,11 +142,18 @@ def _validate_tool_name(name: str) -> str:
     return n
 
 
+def _validate_model(model: str) -> str:
+    m = (model or "").strip()
+    if not _VALID_MODEL.fullmatch(m):
+        raise ValueError("invalid model id")
+    return m
+
+
 def disable_tool(name: str) -> set[str]:
     """Add ``name`` to the overlay deny-list. Returns the new set."""
     current = denied_tools()
     current.add(_validate_tool_name(name))
-    _write_denied(current)
+    _write_state(current, default_model_override())
     return current
 
 
@@ -133,8 +165,24 @@ def enable_tool(name: str) -> set[str]:
     """
     current = denied_tools()
     current.discard(_validate_tool_name(name))
-    _write_denied(current)
+    _write_state(current, default_model_override())
     return current
 
 
-__all__ = ["denied_tools", "disable_tool", "enable_tool", "OVERRIDES_PATH"]
+def set_default_model(model: str) -> str:
+    """Pin the dashboard's default model. Returns the stored spec."""
+    spec = _validate_model(model)
+    _write_state(denied_tools(), spec)
+    return spec
+
+
+def clear_default_model() -> None:
+    """Drop the dashboard model pin, reverting to config.toml / defaults."""
+    _write_state(denied_tools(), None)
+
+
+__all__ = [
+    "denied_tools", "disable_tool", "enable_tool",
+    "default_model_override", "set_default_model", "clear_default_model",
+    "OVERRIDES_PATH",
+]
