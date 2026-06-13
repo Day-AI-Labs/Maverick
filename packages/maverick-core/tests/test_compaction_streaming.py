@@ -96,6 +96,37 @@ class TestFold:
         assert "FACT_4" not in summary
         assert sc.state("conv")[0] == 2
 
+    def test_prefix_mismatch_resets_state_for_same_key(self, tmp_path):
+        llm = ConcatLLM()
+        sc = StreamingCompactor(llm=llm, path=tmp_path / "s.json")
+        sc.fold("shared", [
+            {"role": "user", "content": "SECRET_A_PAYROLL"},
+            {"role": "assistant", "content": "A result"},
+        ])
+
+        summary = sc.fold("shared", [
+            {"role": "user", "content": "B public data"},
+            {"role": "assistant", "content": "B result"},
+        ])
+
+        assert "SECRET_A_PAYROLL" not in summary
+        assert "B public data" in summary
+        assert len(llm.calls) == 2
+        assert "SECRET_A_PAYROLL" not in _section(llm.calls[1]["content"], "summary")
+
+    def test_legacy_state_without_fingerprint_resets(self, tmp_path):
+        path = tmp_path / "s.json"
+        path.write_text(json.dumps({
+            "conv": {"cursor": 1, "summary": "SECRET_LEGACY", "last": 1.0},
+        }), encoding="utf-8")
+
+        summary = StreamingCompactor(path=path).fold(
+            "conv", [{"role": "user", "content": "fresh fact"}],
+        )
+
+        assert "SECRET_LEGACY" not in summary
+        assert "fresh fact" in summary
+
     def test_heuristic_fold_without_llm_is_deterministic(self, tmp_path):
         sc = StreamingCompactor(path=tmp_path / "s.json")
         summary = sc.fold("conv", _turns(2))
@@ -192,6 +223,34 @@ class TestCompactStreamingStrategy:
         assert "recent q" in second_new          # the old tail aged into the fold
         assert "FACT_5" not in second_new        # already summarized
         assert "FACT_5" in out[1]["content"]     # but still in the running summary
+
+    def test_default_key_collision_does_not_reuse_other_prefix(self, tmp_path):
+        a = (
+            [{"role": "user", "content": "summarize my file"}]
+            + [
+                {"role": "user", "content": "SECRET_A_PAYROLL"},
+                {"role": "assistant", "content": "A analysis"},
+                {"role": "user", "content": "A followup"},
+            ]
+            + [{"role": "user", "content": "recent q"}]
+        )
+        b = (
+            [{"role": "user", "content": "summarize my file"}]
+            + [
+                {"role": "user", "content": "B harmless"},
+                {"role": "assistant", "content": "B analysis"},
+                {"role": "user", "content": "B followup"},
+            ]
+            + [{"role": "user", "content": "recent q"}]
+        )
+        path = tmp_path / "s.json"
+
+        compact_streaming(a, keep_recent=1, llm=ConcatLLM(), path=path)
+        out = compact_streaming(b, keep_recent=1, llm=ConcatLLM(), path=path)
+
+        assert _default_key(a) == _default_key(b)
+        assert "SECRET_A_PAYROLL" not in out[1]["content"]
+        assert "B harmless" in out[1]["content"]
 
     def test_default_key_stable_per_first_message(self):
         a = [{"role": "user", "content": "brief"}, {"role": "user", "content": "x"}]

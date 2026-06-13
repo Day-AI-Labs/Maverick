@@ -63,6 +63,12 @@ def _turn_line(turn: dict) -> str:
     return f"{turn.get('role', '?')}: {text}"
 
 
+def _turns_fingerprint(turns: list[dict]) -> str:
+    """Stable digest of the exact folded prefix stored in the sidecar."""
+    blob = json.dumps(turns, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(blob.encode("utf-8", "replace")).hexdigest()
+
+
 class StreamingCompactor:
     """Per-conversation running summary + cursor, persisted across calls."""
 
@@ -102,16 +108,24 @@ class StreamingCompactor:
         except OSError as e:
             log.warning("compaction stream sidecar: cannot write %s: %s", self.path, e)
 
-    def state(self, conversation_id: str) -> tuple[int, str]:
-        """The persisted ``(cursor, summary)`` for a conversation."""
+    def _state_entry(self, conversation_id: str) -> tuple[int, str, str]:
+        """The persisted ``(cursor, summary, fingerprint)`` for a conversation."""
         st = self._load().get(conversation_id)
         if not isinstance(st, dict):
-            return 0, ""
+            return 0, "", ""
         try:
             cursor = max(int(st.get("cursor", 0)), 0)
         except (TypeError, ValueError):
             cursor = 0
-        return cursor, str(st.get("summary", "") or "")
+        fingerprint = st.get("fingerprint", "")
+        if not isinstance(fingerprint, str):
+            fingerprint = ""
+        return cursor, str(st.get("summary", "") or ""), fingerprint
+
+    def state(self, conversation_id: str) -> tuple[int, str]:
+        """The persisted ``(cursor, summary)`` for a conversation."""
+        cursor, summary, _fingerprint = self._state_entry(conversation_id)
+        return cursor, summary
 
     def reset(self, conversation_id: str) -> None:
         data = self._load()
@@ -155,15 +169,22 @@ class StreamingCompactor:
         than the cursor means the conversation was rewound: state resets and
         everything is refolded.
         """
-        cursor, summary = self.state(conversation_id)
-        if cursor > len(turns):
+        cursor, summary, fingerprint = self._state_entry(conversation_id)
+        prefix_matches = (
+            cursor == 0
+            or (fingerprint and fingerprint == _turns_fingerprint(turns[:cursor]))
+        )
+        if cursor > len(turns) or not prefix_matches:
             cursor, summary = 0, ""
         new_turns = turns[cursor:]
         if new_turns:
             summary = self._fold_once(summary, new_turns)
         data = self._load()
         data[conversation_id] = {
-            "cursor": len(turns), "summary": summary, "last": self._clock(),
+            "cursor": len(turns),
+            "summary": summary,
+            "fingerprint": _turns_fingerprint(turns),
+            "last": self._clock(),
         }
         self._save(data)
         return summary
@@ -176,15 +197,20 @@ class StreamingCompactor:
         running summary.
         """
         cursor, summary = self.state(conversation_id)
+        folded_turns: list[dict] = []
         while True:
             sent = yield summary
             if not sent:
                 continue
             cursor += len(sent)
+            folded_turns.extend(sent)
             summary = self._fold_once(summary, sent)
             data = self._load()
             data[conversation_id] = {
-                "cursor": cursor, "summary": summary, "last": self._clock(),
+                "cursor": cursor,
+                "summary": summary,
+                "fingerprint": _turns_fingerprint(folded_turns),
+                "last": self._clock(),
             }
             self._save(data)
 
