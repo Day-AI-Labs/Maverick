@@ -1,6 +1,7 @@
 """Image edit tool (2027-H1): remote inpaint/variation/upscale over a faked
 httpx (mirrors replicate_tool's auth + request shape) and local Pillow ops
 over a faked PIL. Offline and deterministic."""
+
 from __future__ import annotations
 
 import sys
@@ -79,6 +80,7 @@ def _fake_pil(monkeypatch, img=None):
 
 # ---- op routing ----
 
+
 def test_requires_op_and_rejects_unknown():
     t = image_edit()
     assert "op is required" in t.fn({})
@@ -86,6 +88,7 @@ def test_requires_op_and_rejects_unknown():
 
 
 # ---- remote ops ----
+
 
 def test_remote_op_requires_token(monkeypatch):
     monkeypatch.delenv("REPLICATE_API_TOKEN", raising=False)
@@ -96,12 +99,16 @@ def test_remote_op_requires_token(monkeypatch):
 
 def test_inpaint_creates_prediction_with_data_uris(monkeypatch, tmp_path):
     get, post = _wire_replicate(monkeypatch)
-    (tmp_path / "img.png").write_bytes(b"\x89PNGdata")
-    (tmp_path / "mask.png").write_bytes(b"\x89PNGmask")
-    out = image_edit(_SB(tmp_path)).fn({
-        "op": "inpaint", "image": "img.png", "mask": "mask.png",
-        "prompt": "a red hat",
-    })
+    (tmp_path / "img.png").write_bytes(b"\x89PNG\r\n\x1a\ndata")
+    (tmp_path / "mask.png").write_bytes(b"\x89PNG\r\n\x1a\nmask")
+    out = image_edit(_SB(tmp_path)).fn(
+        {
+            "op": "inpaint",
+            "image": "img.png",
+            "mask": "mask.png",
+            "prompt": "a red hat",
+        }
+    )
     assert "created prediction pred1" in out
     # version resolution hit the default inpaint model
     assert "stability-ai/stable-diffusion-inpainting" in get.call_args[0][0]
@@ -130,22 +137,61 @@ def test_variation_and_upscale_use_env_model_knobs(monkeypatch):
     assert post.call_args.kwargs["json"]["input"]["scale"] == 4
 
 
-def test_upscale_validates_scale_and_model_shape(monkeypatch):
+def test_upscale_validates_scale(monkeypatch):
     _wire_replicate(monkeypatch)
     t = image_edit()
     assert "scale must be a positive number" in t.fn(
-        {"op": "upscale", "image": "https://x/c.png", "scale": -2})
-    assert "invalid model" in t.fn(
-        {"op": "upscale", "image": "https://x/c.png", "model": "../evil"})
+        {"op": "upscale", "image": "https://x/c.png", "scale": -2}
+    )
+
+
+def test_remote_local_image_must_be_real_bounded_image(monkeypatch, tmp_path):
+    _wire_replicate(monkeypatch)
+    (tmp_path / "secret.env").write_text("TOKEN=exfiltrate-me")
+    t = image_edit(_SB(tmp_path))
+    out = t.fn({"op": "variation", "image": "secret.env"})
+    assert out.startswith("ERROR") and "must be .png" in out
+
+    (tmp_path / "fake.png").write_text("TOKEN=exfiltrate-me")
+    out = t.fn({"op": "variation", "image": "fake.png"})
+    assert out.startswith("ERROR") and "not a valid image/png image" in out
+
+    (tmp_path / "huge.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * (10 * 1024 * 1024 + 1))
+    out = t.fn({"op": "variation", "image": "huge.png"})
+    assert out.startswith("ERROR") and "too large" in out
+
+
+def test_remote_model_override_is_ignored(monkeypatch):
+    get, _post = _wire_replicate(monkeypatch)
+    t = image_edit()
+    out = t.fn(
+        {
+            "op": "variation",
+            "image": "https://x/cat.png",
+            "model": "attacker/steal-model:version123",
+        }
+    )
+    assert "created prediction pred1" in out
+    assert "lambdal/stable-diffusion-image-variation" in get.call_args[0][0]
+    assert "attacker/steal-model" not in get.call_args[0][0]
 
 
 def test_remote_wait_polls_to_terminal(monkeypatch):
     monkeypatch.setenv("REPLICATE_API_TOKEN", "r8_xx")
-    get = MagicMock(side_effect=[
-        _resp(200, {"latest_version": {"id": "ver1"}}),
-        _resp(200, {"id": "pred1", "status": "succeeded",
-                    "output": ["https://cdn/out.png"], "error": None}),
-    ])
+    get = MagicMock(
+        side_effect=[
+            _resp(200, {"latest_version": {"id": "ver1"}}),
+            _resp(
+                200,
+                {
+                    "id": "pred1",
+                    "status": "succeeded",
+                    "output": ["https://cdn/out.png"],
+                    "error": None,
+                },
+            ),
+        ]
+    )
     post = MagicMock(return_value=_resp(201, {"id": "pred1", "status": "starting"}))
     _fake_httpx(monkeypatch, get=get, post=post)
     out = image_edit().fn({"op": "variation", "image": "https://x/cat.png", "wait": True})
@@ -154,56 +200,67 @@ def test_remote_wait_polls_to_terminal(monkeypatch):
 
 def test_remote_local_image_confined_to_workspace(monkeypatch, tmp_path):
     _wire_replicate(monkeypatch)
-    out = image_edit(_SB(tmp_path)).fn(
-        {"op": "variation", "image": "../../etc/passwd"})
+    out = image_edit(_SB(tmp_path)).fn({"op": "variation", "image": "../../etc/passwd"})
     assert out.startswith("ERROR") and "escapes the workspace" in out
 
 
 # ---- local ops (Pillow) ----
 
+
 def test_crop_resize_rotate_apply_and_write(monkeypatch, tmp_path):
     img = _fake_pil(monkeypatch)
     (tmp_path / "in.png").write_bytes(b"x")
     t = image_edit(_SB(tmp_path))
-    assert "wrote" in t.fn({"op": "crop", "input_path": "in.png",
-                            "output_path": "c.png", "box": [0, 0, 4, 4]})
-    assert "wrote" in t.fn({"op": "resize", "input_path": "in.png",
-                            "output_path": "r.png", "width": 8, "height": 6})
-    assert "wrote" in t.fn({"op": "rotate", "input_path": "in.png",
-                            "output_path": "o.png", "degrees": 90})
-    assert img.calls == [("crop", (0, 0, 4, 4)), ("resize", (8, 6)),
-                         ("rotate", 90, True)]
+    assert "wrote" in t.fn(
+        {"op": "crop", "input_path": "in.png", "output_path": "c.png", "box": [0, 0, 4, 4]}
+    )
+    assert "wrote" in t.fn(
+        {"op": "resize", "input_path": "in.png", "output_path": "r.png", "width": 8, "height": 6}
+    )
+    assert "wrote" in t.fn(
+        {"op": "rotate", "input_path": "in.png", "output_path": "o.png", "degrees": 90}
+    )
+    assert img.calls == [("crop", (0, 0, 4, 4)), ("resize", (8, 6)), ("rotate", 90, True)]
     assert (tmp_path / "c.png").read_bytes() == b"edited"
 
 
 def test_local_ops_validate_args(monkeypatch, tmp_path):
     _fake_pil(monkeypatch)
     t = image_edit(_SB(tmp_path))
-    assert "requires input_path and output_path" in t.fn(
-        {"op": "crop", "box": [0, 0, 1, 1]})
+    assert "requires input_path and output_path" in t.fn({"op": "crop", "box": [0, 0, 1, 1]})
     assert "box=[left, top, right, bottom]" in t.fn(
-        {"op": "crop", "input_path": "a", "output_path": "b", "box": [1, 2]})
+        {"op": "crop", "input_path": "a", "output_path": "b", "box": [1, 2]}
+    )
     assert "positive integer width and height" in t.fn(
-        {"op": "resize", "input_path": "a", "output_path": "b", "width": 0, "height": 2})
+        {"op": "resize", "input_path": "a", "output_path": "b", "width": 0, "height": 2}
+    )
     assert "degrees" in t.fn({"op": "rotate", "input_path": "a", "output_path": "b"})
 
 
 def test_local_output_path_confined(monkeypatch, tmp_path):
     _fake_pil(monkeypatch)
-    out = image_edit(_SB(tmp_path)).fn({
-        "op": "rotate", "input_path": "in.png",
-        "output_path": "../evil.png", "degrees": 90,
-    })
+    out = image_edit(_SB(tmp_path)).fn(
+        {
+            "op": "rotate",
+            "input_path": "in.png",
+            "output_path": "../evil.png",
+            "degrees": 90,
+        }
+    )
     assert out.startswith("ERROR") and "escapes the workspace" in out
 
 
 def test_local_ops_actionable_without_pillow(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "PIL", None)
     (tmp_path / "in.png").write_bytes(b"x")
-    out = image_edit(_SB(tmp_path)).fn({
-        "op": "crop", "input_path": "in.png", "output_path": "c.png",
-        "box": [0, 0, 1, 1],
-    })
+    out = image_edit(_SB(tmp_path)).fn(
+        {
+            "op": "crop",
+            "input_path": "in.png",
+            "output_path": "c.png",
+            "box": [0, 0, 1, 1],
+        }
+    )
     assert out.startswith("ERROR") and "maverick-agent[computer-use]" in out
 
 
