@@ -81,6 +81,34 @@ def test_export_and_erase_do_not_prefix_match_non_cli_colon_ids(tmp_path: Path):
     assert remaining == {"whatsapp:+15551234567", "whatsapp:+15557654321"}
 
 
+def test_erase_scrubs_dreaming_user_notes(monkeypatch, tmp_path: Path):
+    from maverick import user_notes
+
+    db = tmp_path / "world.db"
+    notes_path = tmp_path / "user_notes.ndjson"
+    monkeypatch.setattr(user_notes, "default_path", lambda: notes_path)
+
+    w = open_world(db)
+    c1 = w.get_or_create_conversation("cli", "local:aaa")
+    c2 = w.get_or_create_conversation("cli", "local:bbb")
+    other = w.get_or_create_conversation("telegram", "999")
+    w.append_turn(c1.id, "user", "Please always call me Alice.")
+    w.append_turn(c2.id, "user", "I prefer short answers.")
+    w.append_turn(other.id, "user", "Never use emoji.")
+    assert user_notes.consolidate(w, path=notes_path) == 3
+
+    result = CliRunner().invoke(
+        main,
+        ["--db", str(db), "erase", "--channel", "cli", "--user", "local", "--yes"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "2 user note(s) scrubbed" in result.output
+    assert user_notes.notes_for("cli", "local:aaa", notes_path) == []
+    assert user_notes.notes_for("cli", "local:bbb", notes_path) == []
+    assert user_notes.notes_for("telegram", "999", notes_path) == ["Never use emoji."]
+
+
 def test_erase_uses_backend_erase_hook_for_non_sqlite_world(monkeypatch, tmp_path: Path):
     """Postgres worlds must not be driven through SQLite-only ``world.conn`` SQL."""
     from maverick import audit as audit_mod

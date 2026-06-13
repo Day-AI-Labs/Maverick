@@ -3478,7 +3478,24 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         except OSError:
             pass
 
-    # Step 4b: scrub explicitly user-scoped global facts. Facts are global
+    # Step 4b: remove derived per-user preference notes from the dreaming
+    # store. These live outside world.db, so the SQL cascade above cannot
+    # erase them; use the concrete matched conversation user_ids so CLI
+    # family erasure (local -> local:<uuid>) removes every scoped note.
+    removed_user_notes = 0
+    try:
+        from . import user_notes as _user_notes
+        removed_user_notes = _user_notes.erase_notes(
+            channel, {c.user_id for c in convs if c.user_id},
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        click.echo(
+            f"warning: erased the database but could not scrub user notes "
+            f"({type(exc).__name__}: {exc}); they may retain prior preferences.",
+            err=True,
+        )
+
+    # Step 4c: scrub explicitly user-scoped global facts. Facts are global
     # key/value pairs with no per-user attribution, so erase only touches
     # facts deliberately keyed as user:<channel>:<user_id>:<name>. Arbitrary
     # substring matching is unsafe for short/common user ids because it can
@@ -3486,7 +3503,7 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
     fact_subject = _fact_subject_token(channel, user)
     scrubbed_fact_keys = world.delete_facts_matching(fact_subject)
 
-    # Step 4c: the optional LLM cache (MAVERICK_LLM_CACHE=1) is content-
+    # Step 4d: the optional LLM cache (MAVERICK_LLM_CACHE=1) is content-
     # addressed on the full prompt -- system + messages include the user's
     # goal text and the model's replies, so the cache retains exactly the
     # PII we just erased. It can't be purged by subject (the key is a hash of
@@ -3554,6 +3571,7 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         attachments=removed_attachments,
         audit_lines_scrubbed=audit_scrubbed,
         facts_scrubbed=len(scrubbed_fact_keys),
+        user_notes_scrubbed=removed_user_notes,
     )
 
     click.echo(
@@ -3561,7 +3579,8 @@ def erase(ctx, channel: str, user: str, yes: bool) -> None:
         f"{len(goal_ids)} goal(s) and all linked rows, "
         f"{removed_attachments} attachment file(s), "
         f"{audit_scrubbed} audit event(s) scrubbed, "
-        f"{len(scrubbed_fact_keys)} fact(s) scrubbed"
+        f"{len(scrubbed_fact_keys)} fact(s) scrubbed, "
+        f"{removed_user_notes} user note(s) scrubbed"
     )
     if scrubbed_fact_keys:
         click.echo(
