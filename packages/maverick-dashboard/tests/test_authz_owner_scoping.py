@@ -251,6 +251,43 @@ def test_auth_off_sees_all_goals(world, monkeypatch):
     assert ids == {a, b, legacy}
 
 
+def test_gallery_delete_requires_goal_owner(world, monkeypatch, tmp_path):
+    _enable_oidc_principal_map(monkeypatch)
+
+    import maverick.ux_store as ux
+
+    monkeypatch.setattr(ux, "_shared", None)
+    real = ux.UxStore
+
+    def _factory(path=None):
+        return real(path=tmp_path / "ux.json")
+
+    monkeypatch.setattr(ux, "UxStore", _factory)
+
+    alice_gid = world.create_goal("alice showcase", owner="user:alice")
+    assert client.post(
+        f"/api/v1/gallery/{alice_gid}",
+        json={"blurb": "exemplary"},
+        headers=_as("alice", post=True),
+    ).status_code == 201
+
+    denied = client.delete(
+        f"/api/v1/gallery/{alice_gid}", headers=_as("mallory", post=True)
+    )
+    assert denied.status_code == 404
+    assert denied.json()["detail"] == "no such goal"
+
+    alice_listing = client.get(
+        "/api/v1/gallery", headers=_as("alice")
+    ).json()["gallery"]
+    assert [entry["goal_id"] for entry in alice_listing] == [alice_gid]
+
+    assert client.delete(
+        f"/api/v1/gallery/{alice_gid}", headers=_as("alice", post=True)
+    ).status_code == 200
+    assert client.get("/api/v1/gallery", headers=_as("alice")).json()["gallery"] == []
+
+
 def test_auth_off_can_get_and_mutate_any_goal(world, monkeypatch, no_run):
     monkeypatch.setattr(auth, "oidc_enabled", lambda: False)
     gid = world.create_goal("owned-by-someone", owner="user:alice")
