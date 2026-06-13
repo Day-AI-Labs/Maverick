@@ -3,9 +3,9 @@
 One table answering, for every installed Maverick plugin entry point: which
 distribution provides it, which plugin-API major it declares, whether the
 kernel loads that major (``SUPPORTED_API_MAJORS``), whether it's in the
-deprecation window, whether it's allowlisted (``[plugins] enabled``), and
-whether its requested permissions are granted. The CI mode (``--ci``) exits
-non-zero when any **enabled** plugin is API-incompatible — the gate a
+deprecation window, whether it's allowlisted using the runtime plugin
+allowlist semantics, and whether its requested permissions are granted.
+The CI mode (``--ci``) exits non-zero when any **enabled** plugin is API-incompatible — the gate a
 deployment runs so an upgrade that drops an API major can't ship silently
 against plugins still pinned to it.
 
@@ -38,8 +38,8 @@ def _manifest_for(ep):
         return None
 
 
-def _is_enabled(name: str, dist: str, allow) -> bool:
-    if "*" in allow:
+def _is_enabled(name: str, dist: str, allow: set[str] | None) -> bool:
+    if allow is None:
         return True
     return name in allow or f"{name}@{dist}" in allow
 
@@ -48,14 +48,13 @@ def build_matrix() -> list[MatrixRow]:
     """Inspect every installed maverick entry point into matrix rows."""
     from .plugins import (
         _PLUGIN_GROUPS,
+        _allowed_plugin_names,
         _entry_points,
         _ep_dist_name,
         _permission_policy,
-        _plugins_config,
     )
 
-    cfg = _plugins_config()
-    allow = {str(a).strip() for a in (cfg.get("enabled") or []) if str(a).strip()}
+    allow = _allowed_plugin_names()
     granted, _enforce = _permission_policy()
 
     rows: list[MatrixRow] = []
