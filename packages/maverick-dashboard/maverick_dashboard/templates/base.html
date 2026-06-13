@@ -468,7 +468,7 @@
       {% set _home_active = (_path == '/') %}
       <a href="/"{% if _home_active %} class="active" aria-current="page"{% endif %}>Overview</a>
       {% set _nav_groups = [
-        ('Operate', [('/chat', 'Chat'), ('/goals', 'Goals'), ('/agents', 'Agents'), ('/goal-builder', 'Builder'), ('/graph-editor', 'Graph'), ('/fleets', 'Fleets')]),
+        ('Operate', [('/chat', 'Chat'), ('/goals', 'Goals'), ('/agents', 'Agents'), ('/roles', 'Roles'), ('/goal-builder', 'Builder'), ('/graph-editor', 'Graph'), ('/fleets', 'Fleets')]),
         ('Observe', [('/oversight', 'Oversight'), ('/spend', 'Spend'), ('/providers', 'Providers'), ('/benchmarks', 'Benchmarks'), ('/learned', 'Learned'), ('/plan-tree-3d', '3D')]),
         ('Govern', [('/approvals', 'Approvals'), ('/permissions', 'Permissions'), ('/safety', 'Safety'), ('/compliance', 'Compliance'), ('/compartments', 'Compartments'), ('/audit', 'Audit')]),
         ('Extend', [('/skills', 'Skills'), ('/store', 'Store'), ('/templates', 'Templates'), ('/tools', 'Tools'), ('/plugins', 'Plugins'), ('/mcp', 'MCP'), ('/channels', 'Channels')]),

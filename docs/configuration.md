@@ -65,6 +65,10 @@ pack_editing = true  # allow editing/overriding agents (domain packs) from the
                      #   dashboard editor at /agents; false = the editor is
                      #   read-only and the mutating /api/v1/agents endpoints 403,
                      #   locking the roster (host-side override TOML still works).
+role_editing = true  # allow editing the core roles (orchestrator, coder, ...)
+                     #   from the dashboard editor at /roles -- a per-tenant
+                     #   system-prompt addendum per role; false = read-only and
+                     #   /api/v1/roles mutations 403. Model/effort set separately.
 
 [durable]
 # Crash-resume: checkpoint a goal's loop state each step so `maverick resume`
