@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark light" />
-  <meta name="theme-color" content="#1c1b19" />
+  <meta name="theme-color" content="#0e1320" />
   <title>{% block title %}Maverick{% endblock %}</title>
   <style>
     /* =====================================================================
@@ -50,22 +50,22 @@
     :root,
     body.theme-dark {
       color-scheme: dark;
-      --bg: #1c1b19; --panel: #262420; --border: #38352f;
-      --text: #f2efe6; --muted: #a8a296; --accent: #4cc38a;
-      --warn: #e0922f; --danger: #e5564b;
+      --bg: #0e1320; --panel: #161c2c; --border: #283149;
+      --text: #e8ebf2; --muted: #97a1b5; --accent: #3ecf8e;
+      --warn: #e0a23a; --danger: #e5564b;
     }
     body.theme-dark {
-      --brand: #c96442; --brand-hi: #d97a59; --brand-fg: #ffffff; --info: #7ab8cc;
+      --brand: #4f7bd0; --brand-hi: #6f95df; --brand-fg: #ffffff; --info: #56b6c2;
     }
     body.theme-light {
       color-scheme: light;
-      --bg: #f6f4ec; --panel: #fffdf7; --border: #e4dfd2;
-      --text: #2a2824; --muted: #6f6a5e; --accent: #2f8a4e;
-      --warn: #a8650f; --danger: #c0392b;
-      --brand: #b4542f; --brand-hi: #c96442; --brand-fg: #ffffff; --info: #2c7d99;
-      --shadow-sm: 0 1px 2px rgba(40,35,25,0.06);
-      --shadow-md: 0 4px 16px rgba(40,35,25,0.08);
-      --shadow-lg: 0 12px 40px rgba(40,35,25,0.12);
+      --bg: #f4f6fa; --panel: #ffffff; --border: #dde2ea;
+      --text: #18202e; --muted: #5b6575; --accent: #1f9d57;
+      --warn: #9a6a12; --danger: #c0392b;
+      --brand: #21426f; --brand-hi: #2d5790; --brand-fg: #ffffff; --info: #2a6f9e;
+      --shadow-sm: 0 1px 2px rgba(20,28,46,0.06);
+      --shadow-md: 0 4px 16px rgba(20,28,46,0.08);
+      --shadow-lg: 0 12px 40px rgba(20,28,46,0.12);
     }
     body.theme-solarized {
       color-scheme: dark;
@@ -405,7 +405,7 @@
 {{ custom_theme_css }}
   </style>
   {% endif %}
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230a84ff'/%3E%3Ccircle cx='16' cy='16' r='5.5' fill='none' stroke='white' stroke-width='2.6'/%3E%3C/svg%3E" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23294d8a'/%3E%3Ccircle cx='16' cy='16' r='5.5' fill='none' stroke='white' stroke-width='2.6'/%3E%3C/svg%3E" />
 </head>
 <body class="theme-{{ theme or 'dark' }} font-{{ font or 'default' }} density-{{ density or 'comfortable' }}">
   <a class="skip-link" href="#content">Skip to content</a>
