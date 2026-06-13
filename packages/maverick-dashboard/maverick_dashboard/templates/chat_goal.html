@@ -54,6 +54,12 @@
     background: var(--brand); color: var(--brand-fg); display: inline-flex; align-items: center; justify-content: center;
   }
   .ask__send:hover { background: var(--brand-hi); }
+  .halt-card {
+    margin-top: var(--space-4); padding: var(--space-4) var(--space-5);
+    background: var(--warn-subtle); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+    border-radius: var(--radius-lg);
+  }
+  .halt-card__title { font-weight: var(--font-semibold); color: var(--text); }
   @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 </style>
 
@@ -97,6 +103,15 @@
       <pre id="result" tabindex="0" aria-label="Goal result"
            style="white-space: pre-wrap; margin: 0;">{{ goal.result or '' }}</pre>
     </div>
+    <div id="halt-card" class="halt-card" style="display: none;">
+      <div class="halt-card__title">Stopped before finishing</div>
+      <p id="halt-reason" class="muted" style="margin: var(--space-2) 0 0;"></p>
+      <p class="muted" style="margin: var(--space-3) 0 0; font-size: var(--text-sm);">
+        This usually means the goal reached its budget or time cap, the killswitch was armed, or it hit an error.
+        <a href="/oversight">Open Oversight</a> for details, or resume with a higher cap from the command line:
+        <code>maverick resume {{ goal.id }} --max-dollars 5</code>
+      </p>
+    </div>
   </div>
 
   <div id="question-panel" class="ask" style="display: none;">
@@ -129,11 +144,15 @@
       const answerForm = document.getElementById('answer-form');
       const answerInput = document.getElementById('answer-input');
       const actionMsg = document.getElementById('goal-action-msg');
+      const haltCard = document.getElementById('halt-card');
+      const haltReasonEl = document.getElementById('halt-reason');
       let sinceId = 0;
       let lastSeenId = 0;  // highest event id rendered; dedups SSE replays
       let done = false;
       let pollDelay = 2000;
       let currentQuestionId = null;
+      let currentStatus = {{ goal.status|tojson }};
+      let lastResult = {{ (goal.result or '')|tojson }};
 
       const KIND_LABELS = {
         plan: 'thinking', finding: 'answer', observation: 'result',
@@ -175,6 +194,18 @@
         }
       }
 
+      function renderHalted() {
+        // A 'blocked' goal with no open question has actually stopped
+        // (budget/time cap, killswitch, or error). Make that legible instead
+        // of leaving the "Working…" spinner running and Cancel enabled forever.
+        hidePlaceholder();
+        done = true;
+        cancelBtn.disabled = true;
+        resultSection.style.display = 'none';
+        haltReasonEl.textContent = lastResult || 'The run stopped before producing a result.';
+        haltCard.style.display = 'block';
+      }
+
       function appendEvent(e) {
         // Internal trace bookkeeping isn't conversation content — skip it.
         if (e && (e.kind === 'trace_meta' || fmtAgent(e.agent) === 'system')) return;
@@ -203,6 +234,7 @@
           } else {
             currentQuestionId = null;
             questionPanel.style.display = 'none';
+            if (currentStatus === 'blocked') renderHalted();
           }
         } catch (e) { /* swallow */ }
       }
@@ -271,12 +303,18 @@
         if (evs.length > 0 && d.next_id != null) sinceId = d.next_id;
         eventsEl.parentElement.scrollTop = eventsEl.parentElement.scrollHeight;
         if (d.status) {
+          currentStatus = d.status;
           statusEl.className = 'badge ' + d.status;
           statusEl.textContent = d.status;
         }
         if (d.result) {
-          resultEl.textContent = d.result;
-          resultSection.style.display = 'block';
+          lastResult = d.result;
+          // A clean finish shows its result; a 'blocked' result is a terse
+          // stop-reason that the halt card renders instead.
+          if (d.status !== 'blocked') {
+            resultEl.textContent = d.result;
+            resultSection.style.display = 'block';
+          }
         }
         if (d.status === 'blocked') {
           pollQuestions();
@@ -343,6 +381,9 @@
       }
 
       openStream();
+      // A goal already 'blocked' on load resolves to either a question or a
+      // halt card right away, instead of waiting for the next poll tick.
+      if (currentStatus === 'blocked') pollQuestions();
       // Poll questions on a longer cadence so the form picks up on
       // ask_user that happens between event ticks.
       setInterval(function() { if (!done) pollQuestions(); }, 5000);
