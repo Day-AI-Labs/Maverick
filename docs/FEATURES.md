@@ -1484,7 +1484,8 @@ tested without spawning py-spy.
   `GET /api/v1/voice/captions`): a rolling caption window over an injected
   transcript source (finalized vs in-flight, word-boundary trimming).
 - **Browser extension** (`extensions/browser/`, opt-in `[dashboard]
-  allow_extension` — fail-closed CORS scoped to extension origins only): a
+  allow_extension` plus `MAVERICK_DASHBOARD_TOKEN` — fail-closed CORS scoped
+  to extension origins only): a
   Manifest-V3 WebExtension (no build step, loopback-only host permissions,
   `script-src 'self'`) with popup chat against the existing goals API and a
   "send this page" action shipping title/URL/selection as goal context;
