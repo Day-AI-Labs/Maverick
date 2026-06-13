@@ -4,15 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark light" />
-  <meta name="theme-color" content="#0a0a0b" />
+  <meta name="theme-color" content="#1c1b19" />
   <title>{% block title %}Maverick{% endblock %}</title>
   <style>
     /* =====================================================================
        Maverick design system. All visual decisions live in CSS variables so
        the 4 built-in themes + operator custom themes ([dashboard] themes in
        config.toml, which set only --bg/--panel/--text/--accent) all work from
-       one set of rules. New tokens default in :root and are color-mix()-derived
-       from the core vars, so a 4-variable custom theme inherits sensible
+       one set of rules. Derived tokens live on <body> (not :root) and are
+       color-mix()-derived from the core vars, so they resolve against the
+       active theme and a 4-variable custom theme still inherits sensible
        surfaces, borders, badges and a brand colour automatically.
 
        Brand vs status: --brand is the product/interaction colour (nav, links,
@@ -33,6 +34,9 @@
       --text-2xl: 1.75rem; --text-3xl: 2.25rem;
       --font-normal: 400; --font-medium: 500; --font-semibold: 600;
       --leading-tight: 1.25; --leading: 1.55;
+      /* Serif display face for greetings/headlines (system serif — New York on
+         Apple, Georgia elsewhere — no webfont, stays offline-first). */
+      --font-serif: ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
       /* ---- layout ---- */
       --sidebar-w: 248px; --topbar-h: 56px; --drawer-w: min(82vw, 320px);
       --content-max: 1180px;
@@ -40,48 +44,28 @@
       --shadow-sm: 0 1px 2px rgba(0,0,0,0.20);
       --shadow-md: 0 4px 16px rgba(0,0,0,0.28);
       --shadow-lg: 0 12px 40px rgba(0,0,0,0.40);
-      /* ---- brand fallback: follow --accent unless a theme sets it. Built-in
-         themes override below; custom (4-var) themes inherit these. ---- */
-      --brand: var(--accent); --brand-hi: var(--accent); --brand-fg: #ffffff;
-      --info: var(--accent);
-      /* ---- derived surfaces / borders / status fills (theme-agnostic) ---- */
-      --surface-1: var(--panel);
-      --surface-2: color-mix(in srgb, var(--panel) 86%, var(--text) 14%);
-      --surface-sunken: color-mix(in srgb, var(--panel) 78%, var(--bg) 22%);
-      --hairline: color-mix(in srgb, var(--text) 8%, transparent);
-      --border-strong: color-mix(in srgb, var(--border) 55%, var(--text) 45%);
-      --row-hover: color-mix(in srgb, var(--text) 5%, transparent);
-      --ring: var(--brand);
-      --brand-subtle: color-mix(in srgb, var(--brand) 16%, transparent);
-      --brand-border: color-mix(in srgb, var(--brand) 42%, transparent);
-      --success: var(--accent);
-      --success-subtle: color-mix(in srgb, var(--accent) 20%, transparent);
-      --warn-subtle:    color-mix(in srgb, var(--warn) 18%, transparent);
-      --danger-subtle:  color-mix(in srgb, var(--danger) 18%, transparent);
-      --info-subtle:    color-mix(in srgb, var(--info) 16%, transparent);
-      --muted-subtle:   color-mix(in srgb, var(--muted) 18%, transparent);
     }
     /* Core palettes. :root carries the dark values so a class-less render
        still looks right; the body always also carries body.theme-*. */
     :root,
     body.theme-dark {
       color-scheme: dark;
-      --bg: #0a0a0b; --panel: #141416; --border: #2a2a2e;
-      --text: #ededee; --muted: #9a9aa2; --accent: #30d158;
-      --warn: #ff9f0a; --danger: #ff453a;
+      --bg: #1c1b19; --panel: #262420; --border: #38352f;
+      --text: #f2efe6; --muted: #a8a296; --accent: #4cc38a;
+      --warn: #e0922f; --danger: #e5564b;
     }
     body.theme-dark {
-      --brand: #0a84ff; --brand-hi: #409cff; --brand-fg: #ffffff; --info: #64d2ff;
+      --brand: #c96442; --brand-hi: #d97a59; --brand-fg: #ffffff; --info: #7ab8cc;
     }
     body.theme-light {
       color-scheme: light;
-      --bg: #f5f5f7; --panel: #ffffff; --border: #d2d2d7;
-      --text: #1d1d1f; --muted: #6e6e73; --accent: #248a3d;
-      --warn: #b25000; --danger: #d70015;
-      --brand: #0071e3; --brand-hi: #0077ed; --brand-fg: #ffffff; --info: #0071e3;
-      --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
-      --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
-      --shadow-lg: 0 12px 40px rgba(0,0,0,0.12);
+      --bg: #f6f4ec; --panel: #fffdf7; --border: #e4dfd2;
+      --text: #2a2824; --muted: #6f6a5e; --accent: #2f8a4e;
+      --warn: #a8650f; --danger: #c0392b;
+      --brand: #b4542f; --brand-hi: #c96442; --brand-fg: #ffffff; --info: #2c7d99;
+      --shadow-sm: 0 1px 2px rgba(40,35,25,0.06);
+      --shadow-md: 0 4px 16px rgba(40,35,25,0.08);
+      --shadow-lg: 0 12px 40px rgba(40,35,25,0.12);
     }
     body.theme-solarized {
       color-scheme: dark;
@@ -96,6 +80,29 @@
       --text: #ffffff; --muted: #cccccc; --accent: #00ff00;
       --warn: #ffff00; --danger: #ff5050;
       --brand: #00ffff; --brand-hi: #aaffff; --brand-fg: #000000; --info: #66ccff;
+    }
+    /* Derived tokens — declared on <body>, where the theme class lives, so the
+       var() references resolve against the *active* theme's core vars. On :root
+       they would bake in the dark fallback and leak it into the other themes
+       (e.g. a green focus ring under the blue brand). Custom 4-var themes
+       inherit these and still get correct surfaces + brand automatically. */
+    body {
+      --brand: var(--accent); --brand-hi: var(--accent); --brand-fg: #ffffff; --info: var(--accent);
+      --surface-1: var(--panel);
+      --surface-2: color-mix(in srgb, var(--panel) 86%, var(--text) 14%);
+      --surface-sunken: color-mix(in srgb, var(--panel) 78%, var(--bg) 22%);
+      --hairline: color-mix(in srgb, var(--text) 8%, transparent);
+      --border-strong: color-mix(in srgb, var(--border) 55%, var(--text) 45%);
+      --row-hover: color-mix(in srgb, var(--text) 5%, transparent);
+      --ring: var(--brand);
+      --brand-subtle: color-mix(in srgb, var(--brand) 16%, transparent);
+      --brand-border: color-mix(in srgb, var(--brand) 42%, transparent);
+      --success: var(--accent);
+      --success-subtle: color-mix(in srgb, var(--accent) 20%, transparent);
+      --warn-subtle: color-mix(in srgb, var(--warn) 18%, transparent);
+      --danger-subtle: color-mix(in srgb, var(--danger) 18%, transparent);
+      --info-subtle: color-mix(in srgb, var(--info) 16%, transparent);
+      --muted-subtle: color-mix(in srgb, var(--muted) 18%, transparent);
     }
     /* Accessibility font axis (independent of theme). The dyslexia-friendly
        mode prefers OpenDyslexic when installed and falls back to commonly
@@ -151,7 +158,7 @@
       border-bottom: 1px solid var(--border);
     }
     .topbar__menu {
-      display: none; align-items: center; justify-content: center;
+      display: inline-flex; align-items: center; justify-content: center;
       width: 38px; height: 38px; padding: 0;
       background: transparent; color: var(--text);
       border: 1px solid var(--border); border-radius: var(--radius-md); cursor: pointer;
@@ -375,6 +382,12 @@
       }
       body.nav-open .nav-backdrop { display: block; }
     }
+    /* Desktop: the hamburger collapses the persistent sidebar for more room. */
+    @media (min-width: 881px) {
+      body.nav-collapsed { grid-template-columns: 1fr; }
+      body.nav-collapsed .sidebar { display: none; }
+      body.nav-collapsed main { grid-column: 1; }
+    }
     @media (prefers-reduced-motion: reduce) {
       .halt-pill .dot { animation: none; }
       .sidebar { transition: none; }
@@ -398,7 +411,7 @@
   <a class="skip-link" href="#content">Skip to content</a>
   <header class="topbar">
     <button type="button" class="topbar__menu" id="nav-toggle"
-            aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar">
+            aria-label="Toggle sidebar" aria-expanded="false" aria-controls="sidebar">
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
         <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
       </svg>
@@ -538,7 +551,7 @@
       form.addEventListener('submit', async function(ev) {
         ev.preventDefault();
         errBox.style.display = 'none';
-        if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+        if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
         try {
           const resp = await fetch(form.action, { method: 'POST', body: new FormData(form) });
           if (resp.redirected) { window.location.href = resp.url; return; }
@@ -555,7 +568,7 @@
           errBox.textContent = 'Network error — is the dashboard still running?';
           errBox.style.display = 'block';
         } finally {
-          if (btn) { btn.disabled = false; btn.textContent = 'Run'; }
+          if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
         }
       });
     })();
@@ -580,21 +593,37 @@
       });
     })();
 
-    // Mobile nav drawer: hamburger toggles the off-canvas sidebar; backdrop
-    // click, Escape, or following a link closes it.
+    // Sidebar toggle. Wide screens: the hamburger collapses/expands the
+    // persistent sidebar (preference persisted). Narrow screens: it opens the
+    // off-canvas drawer, closed by the backdrop, Escape, or following a link.
     (function() {
       const body = document.body;
       const btn = document.getElementById('nav-toggle');
       const backdrop = document.getElementById('nav-backdrop');
       if (!btn) return;
-      function close() { body.classList.remove('nav-open'); btn.setAttribute('aria-expanded', 'false'); }
-      function open() { body.classList.add('nav-open'); btn.setAttribute('aria-expanded', 'true'); }
+      const KEY = 'mvk_sidebar_collapsed';
+      const mobile = window.matchMedia('(max-width: 880px)');
+      try { if (localStorage.getItem(KEY) === '1') body.classList.add('nav-collapsed'); } catch (e) {}
+      function syncAria() {
+        const shown = mobile.matches ? body.classList.contains('nav-open')
+                                     : !body.classList.contains('nav-collapsed');
+        btn.setAttribute('aria-expanded', shown ? 'true' : 'false');
+      }
+      function closeDrawer() { body.classList.remove('nav-open'); syncAria(); }
       btn.addEventListener('click', function() {
-        body.classList.contains('nav-open') ? close() : open();
+        if (mobile.matches) {
+          body.classList.toggle('nav-open');
+        } else {
+          const collapsed = body.classList.toggle('nav-collapsed');
+          try { localStorage.setItem(KEY, collapsed ? '1' : ''); } catch (e) {}
+        }
+        syncAria();
       });
-      if (backdrop) backdrop.addEventListener('click', close);
-      document.addEventListener('keydown', function(ev) { if (ev.key === 'Escape') close(); });
-      document.querySelectorAll('.sidebar a').forEach(function(a) { a.addEventListener('click', close); });
+      if (backdrop) backdrop.addEventListener('click', closeDrawer);
+      document.addEventListener('keydown', function(ev) { if (ev.key === 'Escape') closeDrawer(); });
+      document.querySelectorAll('.sidebar a').forEach(function(a) { a.addEventListener('click', closeDrawer); });
+      if (mobile.addEventListener) mobile.addEventListener('change', syncAria);
+      syncAria();
     })();
   </script>
 </body>
