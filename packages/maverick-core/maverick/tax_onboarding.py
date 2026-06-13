@@ -38,6 +38,17 @@ class FirmProfile:
     doc_aliases: dict[str, str] = field(default_factory=dict)
     constants_channel_configured: bool = False
     roster_size: int = 0
+    # the document labels the firm actually works with (their words) -- used to
+    # check coverage: which the engine recognizes vs. which need a manual touch.
+    forms_handled: list[str] = field(default_factory=list)
+
+
+# Document types whose figures the engine actually extracts (vs. classified-
+# but-flagged-for-the-preparer). Mirrors tax_prep's extraction coverage.
+_EXTRACTED_TYPES = frozenset({
+    "W-2", "1099-INT", "1099-DIV", "1099-NEC", "1098", "1099-R", "SSA-1099",
+    "1099-G", "1098-E", "1098-T", "1099-B",
+})
 
 
 @dataclass
@@ -48,6 +59,9 @@ class ReadinessReport:
     invalid_states: list[str] = field(default_factory=list)
     resolved_aliases: dict[str, str] = field(default_factory=dict)
     unresolved_aliases: dict[str, str] = field(default_factory=dict)
+    forms_extracted: list[str] = field(default_factory=list)
+    forms_flagged: list[str] = field(default_factory=list)
+    forms_unrecognized: list[str] = field(default_factory=list)
     blockers: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
@@ -94,6 +108,17 @@ def assess_readiness(profile: FirmProfile) -> ReadinessReport:
         else:
             rep.unresolved_aliases[firm_label] = canonical
 
+    # Coverage: classify each form the firm handles by what the engine does
+    # with it -- extract its figures, classify-and-flag it, or not recognize it.
+    for form in profile.forms_handled:
+        canonical = resolve_doc_type(form, profile.doc_aliases)
+        if canonical in _EXTRACTED_TYPES:
+            rep.forms_extracted.append(form)
+        elif canonical != "UNKNOWN":
+            rep.forms_flagged.append(form)
+        else:
+            rep.forms_unrecognized.append(form)
+
     if rep.invalid_states:
         rep.blockers.append(
             "invalid state code(s): " + ", ".join(rep.invalid_states)
@@ -117,6 +142,15 @@ def assess_readiness(profile: FirmProfile) -> ReadinessReport:
         rep.warnings.append(
             "no client roster size given -- supply prior filed returns to "
             "`maverick tax backtest` to measure accuracy before going live")
+    if rep.forms_unrecognized:
+        rep.warnings.append(
+            "form(s) the firm handles are not recognized: "
+            + ", ".join(rep.forms_unrecognized)
+            + " -- add a [firm.doc_aliases] mapping or expect manual handling")
+    if rep.forms_flagged:
+        rep.warnings.append(
+            "form(s) classified but not auto-computed (carried/flagged for the "
+            "preparer): " + ", ".join(rep.forms_flagged))
     return rep
 
 
@@ -132,6 +166,11 @@ def render_readiness(rep: ReadinessReport) -> str:
         + (f"  (unresolved {len(rep.unresolved_aliases)})"
            if rep.unresolved_aliases else ""),
     ]
+    if rep.forms_extracted or rep.forms_flagged or rep.forms_unrecognized:
+        out.append(
+            f"Forms coverage      : {len(rep.forms_extracted)} extracted, "
+            f"{len(rep.forms_flagged)} flagged, "
+            f"{len(rep.forms_unrecognized)} unrecognized")
     if rep.blockers:
         out += ["", "BLOCKERS (must fix before intake):", "-" * 52]
         out += [f"  - {b}" for b in rep.blockers]
@@ -171,6 +210,7 @@ def load_profile(path) -> FirmProfile:
         constants_channel_configured=bool(
             firm.get("constants_channel_configured", False)),
         roster_size=int(firm.get("roster_size", 0) or 0),
+        forms_handled=[str(f) for f in (firm.get("forms_handled") or [])],
     )
 
 

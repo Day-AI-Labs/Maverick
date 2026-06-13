@@ -55,6 +55,18 @@ class TestReadiness:
         assert any("CA" in w for w in rep.warnings)
         assert any("signed-constants" in w for w in rep.warnings)
 
+    def test_forms_handled_are_classified_by_engine_coverage(self):
+        rep = ob.assess_readiness(ob.FirmProfile(
+            name="F", states=["PA"], roster_size=1,
+            constants_channel_configured=True,
+            forms_handled=["W-2", "1099-INT", "K-1", "Crypto 1099-DA"]))
+        assert rep.forms_extracted == ["W-2", "1099-INT"]
+        assert rep.forms_flagged == ["K-1"]              # classified, not computed
+        assert rep.forms_unrecognized == ["Crypto 1099-DA"]
+        assert rep.ready_to_pilot                         # unrecognized = warning
+        assert "Forms coverage" in ob.render_readiness(rep)
+        assert any("not recognized" in w for w in rep.warnings)
+
 
 class TestOnboardCli:
     def test_cli_loads_toml_and_exits_nonzero_on_blockers(self, tmp_path):

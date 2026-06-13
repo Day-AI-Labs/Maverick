@@ -3941,6 +3941,8 @@ def tax_group() -> None:
                    "from W-2 box 15).")
 @click.option("--estimated-payments", default=0.0, show_default=True,
               help="Federal estimated tax already paid (Form 1040-ES).")
+@click.option("--prior-year-overpayment", default=0.0, show_default=True,
+              help="Prior-year overpayment applied to this year.")
 @click.option("--taxpayer-65", is_flag=True,
               help="Taxpayer is 65 or older (additional standard deduction).")
 @click.option("--spouse-65", is_flag=True,
@@ -3957,6 +3959,7 @@ def tax_group() -> None:
               help="Also write the review package to this file.")
 def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
                 state_code: str | None, estimated_payments: float,
+                prior_year_overpayment: float,
                 taxpayer_65: bool, spouse_65: bool, taxpayer_blind: bool,
                 spouse_blind: bool, fmt: str, out_path: str | None) -> None:
     """Turn a folder of uploaded documents into a first-pass draft return.
@@ -3989,6 +3992,7 @@ def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
                             dependents_under_17=dependents, docs=docs,
                             state=(state_code or ""),
                             estimated_payments=estimated_payments,
+                            prior_year_overpayment=prior_year_overpayment,
                             taxpayer_65_or_older=taxpayer_65,
                             spouse_65_or_older=spouse_65,
                             taxpayer_blind=taxpayer_blind,
@@ -4017,9 +4021,12 @@ def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
 @click.option("--tolerance", default=None, type=float,
               help="Dollar tolerance for an in-scope line match "
                    "(default $1.00).")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]),
+              default="text", show_default=True,
+              help="Output format: human report or structured JSON.")
 @click.option("--out", "out_path", type=click.Path(), default=None,
               help="Also write the back-test report to this file.")
-def tax_backtest(cases_dir: str, tolerance: float | None,
+def tax_backtest(cases_dir: str, tolerance: float | None, fmt: str,
                  out_path: str | None) -> None:
     """Measure first-pass accuracy against a firm's PRIOR FILED returns.
 
@@ -4035,7 +4042,11 @@ def tax_backtest(cases_dir: str, tolerance: float | None,
     from . import tax_backtest as bt
     tol = bt.DEFAULT_TOLERANCE if tolerance is None else tolerance
     report = bt.run_backtest_dir(cases_dir, tolerance=tol)
-    text = bt.render_backtest(report)
+    if fmt == "json":
+        import json
+        text = json.dumps(bt.backtest_dict(report), indent=2)
+    else:
+        text = bt.render_backtest(report)
     click.echo(text)
     if out_path:
         Path(out_path).write_text(text + "\n", encoding="utf-8")

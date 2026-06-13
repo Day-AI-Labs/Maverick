@@ -280,6 +280,16 @@ class TestSeniorDeductionAndPayments:
             docs=[SourceDoc("W-2", "a", wages=50000.0)]))
         assert any("OBBBA senior" in i for i in d.open_items)
 
+    def test_prior_year_overpayment_reduces_the_balance(self):
+        docs = [SourceDoc("W-2", "a", wages=60000.0, federal_withholding=5000.0)]
+        base = compute_first_pass(Workpaper(filing_status="single",
+                                            docs=list(docs)))
+        applied = compute_first_pass(Workpaper(
+            filing_status="single", prior_year_overpayment=1500.0,
+            docs=list(docs)))
+        assert round(base.balance - applied.balance, 2) == 1500.0
+        assert "Prior-yr overpayment" in render_review_package(applied)
+
     def test_estimated_payments_reduce_the_balance(self):
         docs = [SourceDoc("W-2", "a", wages=60000.0, federal_withholding=5000.0)]
         base = compute_first_pass(Workpaper(filing_status="single",

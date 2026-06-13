@@ -197,6 +197,9 @@ class Workpaper:
     # withholding, that reduces the balance due. Not on any W-2/1099, so it is
     # an explicit workpaper input the preparer/organizer supplies.
     estimated_payments: float = 0.0
+    # Prior-year overpayment the client elected to apply to this year (a
+    # 1040 payment line), also supplied from the organizer / prior return.
+    prior_year_overpayment: float = 0.0
 
     @property
     def additional_standard_boxes(self) -> int:
@@ -227,8 +230,10 @@ class Workpaper:
 
     @property
     def total_payments(self) -> float:
-        """Federal tax already paid: withholding + estimated payments."""
-        return self.total_withholding + self.estimated_payments
+        """Federal tax already paid: withholding + estimated payments + any
+        prior-year overpayment applied to this year."""
+        return (self.total_withholding + self.estimated_payments
+                + self.prior_year_overpayment)
 
     @property
     def total_state_withholding(self) -> float:
@@ -248,6 +253,7 @@ class Draft1040:
     federal_withholding: float
     balance: float                   # negative = refund
     estimated_payments: float = 0.0  # 1040-ES already paid
+    prior_year_overpayment: float = 0.0  # prior-year refund applied here
     open_items: list[str] = field(default_factory=list)
     lines: list[tuple[str, float, str]] = field(default_factory=list)
     # (line description, amount, source citation)
@@ -669,6 +675,7 @@ def compute_first_pass(wp: Workpaper, *, constants: dict = TY2025) -> Draft1040:
         tax_after_credits=round(after_credits, 2),
         federal_withholding=round(wp.total_withholding, 2),
         estimated_payments=round(wp.estimated_payments, 2),
+        prior_year_overpayment=round(wp.prior_year_overpayment, 2),
         balance=round(after_credits - payments, 2),
         open_items=open_items + list(wp.notes),
         lines=lines,
@@ -824,6 +831,9 @@ def render_review_package(draft: Draft1040,
     ]
     if draft.estimated_payments:
         out.append(f"Estimated payments   : ${draft.estimated_payments:,.2f}")
+    if draft.prior_year_overpayment:
+        out.append("Prior-yr overpayment : "
+                   f"${draft.prior_year_overpayment:,.2f}")
     if draft.balance < 0:
         out.append(f"ESTIMATED REFUND     : ${-draft.balance:,.2f}")
     else:
@@ -872,6 +882,7 @@ def review_package_dict(draft: Draft1040,
             "tax_after_credits": draft.tax_after_credits,
             "federal_withholding": draft.federal_withholding,
             "estimated_payments": draft.estimated_payments,
+            "prior_year_overpayment": draft.prior_year_overpayment,
             "balance": draft.balance,
             "is_refund": draft.balance < 0,
         },
