@@ -138,6 +138,65 @@ class TestProtocol:
         })
         assert "rejected by Shield" in out
 
+    def test_fleet_ingest_passes_server_shield(self, monkeypatch):
+        """MCP fleet ingest must use the server Shield before persisting memory."""
+        from maverick import fleet_memory
+
+        s = MCPServer()
+        shield = SimpleNamespace(scan_input=lambda _text: SimpleNamespace(allowed=True))
+        s._shield = shield
+        captured = {}
+
+        def fake_ingest(record, *, shield=None):
+            captured["record"] = record
+            captured["shield"] = shield
+            return True, "ok"
+
+        monkeypatch.setattr(fleet_memory, "ingest", fake_ingest)
+
+        out = s._tool_fleet_ingest({"agent_id": "agent1", "vendor": "copilot"})
+
+        assert out == '{"ok": true, "reason": "ok"}'
+        assert captured["shield"] is shield
+        assert captured["record"] == {"agent_id": "agent1", "vendor": "copilot"}
+
+    def test_fleet_recall_passes_server_shield(self, monkeypatch):
+        """MCP fleet recall must use Shield for query and context formatting."""
+        from maverick import fleet_memory
+
+        s = MCPServer()
+        shield = SimpleNamespace(scan_input=lambda _text: SimpleNamespace(allowed=True))
+        s._shield = shield
+        captured = {}
+
+        def fake_recall(query, *, agent_id="", vendor="", domain=None, shield=None):
+            captured.update({
+                "query": query,
+                "agent_id": agent_id,
+                "vendor": vendor,
+                "domain": domain,
+                "shield": shield,
+            })
+            return "context", "ok"
+
+        monkeypatch.setattr(fleet_memory, "recall", fake_recall)
+
+        out = s._tool_fleet_recall({
+            "query": "deploy service",
+            "agent_id": "agent1",
+            "vendor": "copilot",
+            "domain": "platform",
+        })
+
+        assert out == '{"context": "context", "reason": "ok"}'
+        assert captured == {
+            "query": "deploy service",
+            "agent_id": "agent1",
+            "vendor": "copilot",
+            "domain": "platform",
+            "shield": shield,
+        }
+
     def test_maverick_start_sanitizes_non_finite_budget_limits(self, monkeypatch):
         """Regression: string NaN limits must not bypass Budget checks."""
         from maverick import llm as llm_mod
