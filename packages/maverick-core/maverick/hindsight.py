@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -228,12 +229,22 @@ def write_ledger(
             Path(dreaming._tenant_path("dreams/hindsight.ndjson",
                                        dreaming.DEFAULT_DIR / "hindsight.ndjson"))
         p.parent.mkdir(parents=True, exist_ok=True)
+        # Goal titles/descriptions are sensitive world-model content.
+        # Persist only aggregate counts in the plaintext ledger so --ledger
+        # cannot become a side channel that copies decrypted goal text out of
+        # the protected world model.
         row = {
             "ts": now if now is not None else time.time(),
             "before": before_label,
-            **report.to_dict(),
+            "n_goals": report.n_goals,
+            "covered_now": report.covered_now,
+            "covered_before": report.covered_before,
+            "gained": len(report.gained),
+            "regressed": len(report.regressed),
         }
-        with open(p, "a", encoding="utf-8") as f:
+        fd = os.open(p, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
+        os.chmod(p, 0o600)
+        with os.fdopen(fd, "a", encoding="utf-8") as f:
             f.write(json.dumps(row, default=str) + "\n")
     except Exception as e:  # pragma: no cover -- ledger never blocks
         log.debug("hindsight: ledger write skipped: %s", e)
