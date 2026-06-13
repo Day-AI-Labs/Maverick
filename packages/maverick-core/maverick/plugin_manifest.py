@@ -18,7 +18,7 @@ Schema (TOML):
     [plugin]
     name             = "my-plugin"
     version          = "0.1.0"
-    api_version      = "1"
+    api_version      = "2"
     description      = "Short description"
     author           = "Your Name <you@example.com>"
     license          = "MIT"
