@@ -592,6 +592,7 @@ answers land under the message that asked. **Email v2** adds IMAP IDLE (push
 instead of poll) + conversation threading from Message-ID/In-Reply-To/References
 (`email_v2.py`). **Discord Stages voice v2** (`discord_stages.py`): drive Maverick from a
 Stage channel — per-speaker utterance assembly over an injected transcriber,
+the same `DISCORD_ALLOWED_USER_IDS` speaker allowlist as Discord text,
 optional wake-word gating, replies spoken when the bot holds a speaker slot
 and degraded to stage-chat text when it doesn't (or TTS fails), and stage
 etiquette built in: the bot only *requests* a speaker slot, never
