@@ -22,7 +22,17 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request, WebSocket
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import (
     FileResponse,
@@ -2280,6 +2290,7 @@ async def chat_send(
     bg: BackgroundTasks,
     title: str = Form(...),
     description: str = Form(""),
+    files: list[UploadFile] = File(default=[]),
 ) -> RedirectResponse:
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
@@ -2305,6 +2316,32 @@ async def chat_send(
         title[:200], (description or title)[:8000],
         owner=caller_principal(request) or "",
     )
+    # Persist any uploaded files as goal attachments. The agent reaches them
+    # via its list_attachments + read_file tools (images are also delivered as
+    # vision blocks). Size/mime caps + on-disk storage live in
+    # maverick.attachments.store; we just record each one against the goal.
+    real_files = [f for f in files if f and (f.filename or "").strip()]
+    if real_files:
+        from maverick import attachments as _att
+        total = 0
+        for f in real_files:
+            data = await f.read()
+            if not data:
+                continue  # an unfilled file input still posts an empty part
+            try:
+                rec = _att.store(
+                    goal_id, f.filename,
+                    f.content_type or "application/octet-stream",
+                    data, existing_total=total,
+                )
+            except _att.AttachmentRejected as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Attachment '{f.filename}': {exc}",
+                ) from exc
+            w.add_attachment(goal_id, rec.filename, rec.mime, rec.size_bytes,
+                             rec.sha256, str(rec.path))
+            total += rec.size_bytes
     # Use the shared runner so this path gets the same concurrency cap,
     # budget defaults, and error handling as the REST API and MCP server.
     from maverick.runner import run_goal_in_thread
