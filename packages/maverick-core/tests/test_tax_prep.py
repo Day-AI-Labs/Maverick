@@ -349,15 +349,21 @@ class TestTaxEngineConnectors:
             assert f"{vendor}_read" in READ_CONNECTOR_NAMES
             assert READ_CONNECTOR_RISKS[f"{vendor}_read"] == "low"
 
-    def test_read_seats_are_get_only_and_low_risk(self):
+    def test_read_seats_are_get_only_low_risk_and_path_limited(self):
         from maverick.safety.tool_risk import tool_risk
         tools = self._tools()
+        blocked_paths = {
+            "cch_axcess": "/api/DocumentService/v1.0/clients/123/documents",
+            "gosystem_tax": "/returns/2025/client/123/full-return",
+        }
         for vendor in ("cch_axcess", "gosystem_tax"):
             seat = tools[f"{vendor}_read"]
             assert seat.input_schema["properties"]["op"]["enum"] == ["get"]
             assert tool_risk(f"{vendor}_read") == "low"
             out = seat.fn({"op": "post", "path": "/api/x", "confirm": True})
             assert "read-only" in out
+            out = seat.fn({"op": "get", "path": blocked_paths[vendor]})
+            assert "read path is not allowed" in out
             # the write connector stays auto-classified high (submission/
             # modification of returns never reachable from a low pack)
             assert tool_risk(vendor) == "high"
