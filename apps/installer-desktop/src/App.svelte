@@ -54,7 +54,7 @@
 <main>
   <header>
     <h1>Maverick</h1>
-    <p class="sub">Install the open-source AI agent on this machine.</p>
+    <p class="sub">Install the Maverick agent on this machine.</p>
   </header>
 
   {#if status === 'idle'}
