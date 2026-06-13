@@ -35,7 +35,9 @@ import subprocess
 import threading
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
+from .mcp_tools import _collect_schema_strings, _try_shield
 from .tools import Tool, scrub_child_env
 
 log = logging.getLogger(__name__)
@@ -45,6 +47,51 @@ DEFAULT_CALL_TIMEOUT = 60.0
 
 # Same constraint the model-facing tool catalog imposes (Anthropic tool names).
 _TOOL_NAME_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+_MAX_MANIFEST_FIELD_BYTES = 64_000
+
+def _is_local_grpc_target(target: str) -> bool:
+    """Return whether an insecure gRPC target is constrained to local IPC/loopback."""
+    t = target.strip()
+    if t.startswith("unix:"):
+        return True
+    # gRPC accepts URI-style targets such as ipv4:127.0.0.1:5000,
+    # dns:///localhost:5000, and plain host:port strings.  This loader only
+    # creates insecure channels, so keep it to loopback names/addresses.
+    parsed = urlparse(t)
+    host = parsed.hostname
+    if host is None:
+        if t.startswith(("ipv4:", "ipv6:")):
+            host = t.split(":", 1)[1].rsplit(":", 1)[0].strip("[]")
+        else:
+            host = t.rsplit(":", 1)[0].strip("[]")
+    return host in {"localhost", "127.0.0.1", "::1"} or host.startswith("127.")
+
+
+def _spec_passes_shield(name: str, description: str, schema: dict[str, Any], shield) -> bool:
+    if len(description.encode("utf-8")) > _MAX_MANIFEST_FIELD_BYTES:
+        log.warning("grpc plugin tool %r rejected: description too large", name)
+        return False
+    schema_json = json.dumps(schema, sort_keys=True)
+    if len(schema_json.encode("utf-8")) > _MAX_MANIFEST_FIELD_BYTES:
+        log.warning("grpc plugin tool %r rejected: input schema too large", name)
+        return False
+    leaves: list[str] = []
+    if not _collect_schema_strings(schema, leaves):
+        log.warning("grpc plugin tool %r rejected: input schema exceeds scan depth", name)
+        return False
+    if shield is None:
+        return True
+    payload = "\n".join(
+        [f"tool: {name}", f"description: {description}"]
+        + [f"schema_text: {leaf}" for leaf in leaves]
+    )
+    try:
+        verdict = shield.scan_input(payload)
+        return bool(verdict.allowed)
+    except Exception as e:  # pragma: no cover
+        log.warning("grpc plugin tool %r shield scan errored (fail-open): %s", name, e)
+        return True
+
 
 _PROTO = Path(__file__).with_name("grpc_api") / "plugin_host.proto"
 
@@ -254,6 +301,11 @@ def load_grpc_plugin(
     without the [grpc] extra and GrpcPluginError when the manifest can't be
     fetched; entries with an invalid name are skipped with a warning.
     """
+    if not _is_local_grpc_target(target):
+        raise GrpcPluginError(
+            f"grpc plugin target {target!r} is not local; insecure gRPC plugins "
+            "must use localhost/127.0.0.1/::1 or unix:// targets"
+        )
     chan = _PluginChannel(target, command, call_timeout)
     try:
         specs = chan.describe()
@@ -261,6 +313,7 @@ def load_grpc_plugin(
         chan.close()  # never leak a spawned server on a failed load
         raise
     tools: list[Tool] = []
+    shield = _try_shield()
     for spec in specs:
         name = str(spec.name or "")
         if not _TOOL_NAME_RE.fullmatch(name):
@@ -273,12 +326,17 @@ def load_grpc_plugin(
         if not isinstance(schema, dict):
             schema = {"type": "object"}
 
+        description = str(spec.description or "")
+        if not _spec_passes_shield(name, description, schema, shield):
+            log.warning("grpc plugin tool %s from %s rejected by Shield", name, target)
+            continue
+
         def fn(args: dict[str, Any], _name: str = name) -> str:
             return chan.call(_name, dict(args or {}))
 
         tools.append(Tool(
             name=name,
-            description=str(spec.description or ""),
+            description=description,
             input_schema=schema,
             fn=fn,
         ))
