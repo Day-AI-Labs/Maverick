@@ -55,6 +55,28 @@ def test_validation():
     assert t.fn({"op": "bogus", "action": "x"}).startswith("ERROR")
 
 
+def test_omitted_policy_does_not_load_live_config(monkeypatch):
+    from maverick import governance
+
+    captured = {}
+    original_evaluate = governance.evaluate
+
+    def _capture(action, *, risk=None, amount=None, currency="", policy=None, capability=None):
+        captured["policy"] = policy
+        return original_evaluate(
+            action, risk=risk, amount=amount, currency=currency,
+            policy=policy, capability=capability,
+        )
+
+    monkeypatch.setattr(governance, "evaluate", _capture)
+
+    out = _t().fn({"op": "explain", "action": "wire_transfer"})
+
+    assert "decision: ALLOW" in out
+    assert captured["policy"] is not None
+    assert captured["policy"].deny_actions == frozenset()
+
+
 def test_registered():
     from maverick.tools import base_registry
 
