@@ -55,7 +55,7 @@ def test_tenant_unique_migration_makes_constraints_tenant_aware():
 
 def test_schema_version_is_latest_migration():
     assert pg._PG_SCHEMA_VERSION == 11
-    assert pg._PG_SCHEMA_VERSION == max(v for v, _ in pg.MIGRATIONS)
+    assert max(v for v, _ in pg.MIGRATIONS) == pg._PG_SCHEMA_VERSION
 
 
 def test_tenant_scope_noop_without_active_tenant(monkeypatch):

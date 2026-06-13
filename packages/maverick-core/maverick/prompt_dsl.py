@@ -118,7 +118,7 @@ def lint_segments(segments: list[Segment]) -> list[str]:
     import re
     problems: list[str] = []
     seen_volatile = False
-    _SUSPECT = re.compile(r"\b(timestamp|nonce|request[_-]?id|\d{10,})\b", re.I)
+    _SUSPECT = re.compile(r"\b(timestamp|nonce|request[_-]?id|\d{10,})\b", re.IGNORECASE)
     for i, s in enumerate(segments):
         if s.stability is Stability.VOLATILE:
             seen_volatile = True

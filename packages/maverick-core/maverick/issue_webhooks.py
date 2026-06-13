@@ -58,8 +58,7 @@ def canonical_signature(signature_header: str | None) -> str | None:
     if not signature_header:
         return None
     sig = signature_header.strip()
-    if sig.startswith("sha256="):
-        sig = sig[len("sha256="):]
+    sig = sig.removeprefix("sha256=")
     return sig
 
 

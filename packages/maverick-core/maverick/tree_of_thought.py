@@ -149,8 +149,7 @@ def _score_candidates(
     # Strip ```json fences if the model added them.
     if raw.startswith("```"):
         raw = raw.strip("`")
-        if raw.startswith("json"):
-            raw = raw[4:]
+        raw = raw.removeprefix("json")
         raw = raw.strip()
     try:
         data = json.loads(raw)

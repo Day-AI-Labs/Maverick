@@ -76,7 +76,7 @@ def test_pgvector_needs_dsn(monkeypatch):
     _install_fake_psycopg(monkeypatch)
     monkeypatch.delenv("MAVERICK_PG_DSN", raising=False)
     import maverick.config as cfg
-    monkeypatch.setattr(cfg, "load_config", lambda: {})
+    monkeypatch.setattr(cfg, "load_config", dict)
     from maverick.vector_store.pgvector_store import PgVectorStore
     with pytest.raises(ValueError, match="needs a DSN"):
         PgVectorStore(dsn=None)

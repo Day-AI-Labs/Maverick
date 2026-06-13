@@ -124,7 +124,7 @@ def test_queue_dispatcher_plugs_into_the_runner_seam(monkeypatch):
 def test_install_from_config_noop_without_backend(monkeypatch):
     import maverick.config as cfg
 
-    monkeypatch.setattr(cfg, "load_config", lambda: {})
+    monkeypatch.setattr(cfg, "load_config", dict)
     original = runner.get_dispatcher()
     try:
         assert qd.install_from_config() is False

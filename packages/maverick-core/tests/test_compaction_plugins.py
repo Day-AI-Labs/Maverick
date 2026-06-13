@@ -37,7 +37,7 @@ def test_register_and_dispatch():
 
 def test_default_uses_heuristic(monkeypatch):
     monkeypatch.delenv("MAVERICK_COMPACTION_STRATEGY", raising=False)
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     # short message list -> heuristic returns it unchanged
     msgs = _msgs(3)
     assert cp.compact_with(msgs) == msgs

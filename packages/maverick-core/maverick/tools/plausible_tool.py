@@ -148,7 +148,7 @@ def _op_breakdown(args: dict) -> str:
     if not rows:
         return "no data"
     return "\n".join(
-        f"  visitors={str(r.get('visitors', '?')):>8}  {str(r.get(prop) or '?')[:80]}"
+        f"  visitors={r.get('visitors', '?')!s:>8}  {str(r.get(prop) or '?')[:80]}"
         for r in rows
     )
 

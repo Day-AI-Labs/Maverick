@@ -66,5 +66,5 @@ def test_experimental_set_matches_catalog(monkeypatch):
     from maverick_installer.wizard import CHANNELS, EXPERIMENTAL_CHANNELS
 
     catalog_ids = {c[0] for c in CHANNELS}
-    assert EXPERIMENTAL_CHANNELS <= catalog_ids
-    assert EXPERIMENTAL_CHANNELS == {"whatsapp", "whatsapp_cloud", "sms", "imessage", "threads", "rcs"}
+    assert catalog_ids >= EXPERIMENTAL_CHANNELS
+    assert {"whatsapp", "whatsapp_cloud", "sms", "imessage", "threads", "rcs"} == EXPERIMENTAL_CHANNELS

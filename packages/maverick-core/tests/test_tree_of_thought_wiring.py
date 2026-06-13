@@ -24,7 +24,7 @@ from maverick.world_model import WorldModel
 class TestTotConfig:
     def test_off_by_default(self, monkeypatch):
         monkeypatch.delenv("MAVERICK_TREE_OF_THOUGHT", raising=False)
-        monkeypatch.setattr(cfg, "load_config", lambda: {})
+        monkeypatch.setattr(cfg, "load_config", dict)
         assert tree_of_thought.enabled() is False
 
     def test_enabled_via_env(self, monkeypatch):
@@ -39,7 +39,7 @@ class TestTotConfig:
 
     def test_candidate_count_default_env_config_and_clamp(self, monkeypatch):
         monkeypatch.delenv("MAVERICK_TOT_CANDIDATES", raising=False)
-        monkeypatch.setattr(cfg, "load_config", lambda: {})
+        monkeypatch.setattr(cfg, "load_config", dict)
         assert tree_of_thought.candidate_count() == 3
         monkeypatch.setenv("MAVERICK_TOT_CANDIDATES", "5")
         assert tree_of_thought.candidate_count() == 5
@@ -104,7 +104,7 @@ async def test_winning_plan_reaches_prompt_when_enabled(monkeypatch, tmp_path: P
 @pytest.mark.asyncio
 async def test_planner_not_invoked_when_disabled(monkeypatch, tmp_path: Path, fake_llm):
     monkeypatch.delenv("MAVERICK_TREE_OF_THOUGHT", raising=False)
-    monkeypatch.setattr(cfg, "load_config", lambda: {})
+    monkeypatch.setattr(cfg, "load_config", dict)
 
     calls = {"n": 0}
     monkeypatch.setattr(

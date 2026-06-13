@@ -45,7 +45,7 @@ def test_widget_sends_exactly_the_bearer_header():
     js = _JS.read_text()
     assert '"Authorization"' in js and '"Bearer " + token' in js
     # ?token= query auth was removed from the dashboard; never send it.
-    assert "token=" not in re.sub(r"/\*.*?\*/", "", js, flags=re.S)
+    assert "token=" not in re.sub(r"/\*.*?\*/", "", js, flags=re.DOTALL)
 
 
 def test_widget_is_self_contained_no_cdn():

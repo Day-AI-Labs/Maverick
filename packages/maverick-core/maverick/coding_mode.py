@@ -1300,14 +1300,14 @@ def _parse_gotest(out: str) -> tuple[int, int, bool]:
     # isn't a real test pass. Anchor on `\nFAIL\t` (the canonical go
     # test failure-status line) instead of substring "PASS not in out".
     out = _strip_ansi(out)
-    p = len(re.findall(r"^\s*--- PASS:", out, re.M))
-    f = len(re.findall(r"^\s*--- FAIL:", out, re.M))
+    p = len(re.findall(r"^\s*--- PASS:", out, re.MULTILINE))
+    f = len(re.findall(r"^\s*--- FAIL:", out, re.MULTILINE))
     # Build failures: `FAIL\t...\t[build failed]` or "cannot find package".
     build_fail = (
         re.search(r"\bFAIL\b.*\[build failed\]", out) is not None
         or "cannot find package" in out
         or (
-            re.search(r"^\s*\S+\.go:\d+:\d+:", out, re.M) is not None
+            re.search(r"^\s*\S+\.go:\d+:\d+:", out, re.MULTILINE) is not None
             and "\nFAIL\t" in out
             and p == 0
         )
@@ -1341,8 +1341,8 @@ def _parse_gradle(out: str) -> tuple[int, int, bool]:
     # counts arbitrarily. Anchor on gradle's test-report format:
     # `ClassName > methodName PASSED` (or FAILED / SKIPPED).
     out = _strip_ansi(out)
-    p = len(re.findall(r"^\S.*?\s>\s.*?\sPASSED\s*$", out, re.M))
-    f = len(re.findall(r"^\S.*?\s>\s.*?\sFAILED\s*$", out, re.M))
+    p = len(re.findall(r"^\S.*?\s>\s.*?\sPASSED\s*$", out, re.MULTILINE))
+    f = len(re.findall(r"^\S.*?\s>\s.*?\sFAILED\s*$", out, re.MULTILINE))
     # Detect compile / build failures: BUILD FAILED with no tests is
     # a real failure regardless of the PASSED/FAILED line counts.
     if "BUILD FAILED" in out and p == 0 and f == 0:
@@ -1399,7 +1399,7 @@ _FAILURE_PATTERNS = [
     # a clear assert expression with a comparison operator.
     ("AssertionError",   re.compile(
         r"\bAssertionError\b|^\s*assert\s+\S+\s*(?:[=!<>]|is\s|not\s|in\s)",
-        re.M,
+        re.MULTILINE,
     )),
     ("SyntaxError",      re.compile(r"\bSyntaxError\b|invalid syntax")),
     ("IndentationError", re.compile(r"\bIndentationError\b")),
@@ -1420,7 +1420,7 @@ _FAILURE_PATTERNS = [
     ("GoBuildError", re.compile(
         r"\.go:\d+:\d+:|undefined: \w|(?:not enough|too many) arguments\b"
     )),
-    ("GoPanic", re.compile(r"^panic: ", re.M)),
+    ("GoPanic", re.compile(r"^panic: ", re.MULTILINE)),
     ("TypeScriptError", re.compile(
         r"error TS\d+|Cannot find name |is not assignable to|"
         r"Property '[^']+' does not exist|Expected \d+ arguments?, but got \d+"

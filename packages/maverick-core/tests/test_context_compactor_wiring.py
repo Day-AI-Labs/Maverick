@@ -24,7 +24,7 @@ from maverick.world_model import WorldModel
 class TestCompactorConfig:
     def test_off_by_default(self, monkeypatch):
         monkeypatch.delenv("MAVERICK_COMPACT_HISTORY", raising=False)
-        monkeypatch.setattr(cfg, "load_config", lambda: {})
+        monkeypatch.setattr(cfg, "load_config", dict)
         assert cc.enabled() is False
 
     def test_enabled_via_env(self, monkeypatch):
@@ -39,7 +39,7 @@ class TestCompactorConfig:
     def test_target_tokens_and_window(self, monkeypatch):
         monkeypatch.delenv("MAVERICK_HISTORY_TOKENS", raising=False)
         monkeypatch.delenv("MAVERICK_HISTORY_WINDOW", raising=False)
-        monkeypatch.setattr(cfg, "load_config", lambda: {})
+        monkeypatch.setattr(cfg, "load_config", dict)
         assert cc.target_tokens() == 1500
         assert cc.window() == 50
         monkeypatch.setenv("MAVERICK_HISTORY_TOKENS", "200")
@@ -96,7 +96,7 @@ async def test_long_history_is_compacted_when_enabled(monkeypatch, tmp_path: Pat
 @pytest.mark.asyncio
 async def test_history_uses_last_10_when_disabled(monkeypatch, tmp_path: Path, fake_llm):
     monkeypatch.delenv("MAVERICK_COMPACT_HISTORY", raising=False)
-    monkeypatch.setattr(cfg, "load_config", lambda: {})
+    monkeypatch.setattr(cfg, "load_config", dict)
 
     world = WorldModel(path=tmp_path / "world.db")
     conv = _seed_conversation(world, n=30)

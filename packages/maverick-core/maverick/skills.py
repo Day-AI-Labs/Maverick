@@ -227,7 +227,7 @@ def _decay_weights(names: list[str]) -> dict[str, float]:
         from . import skill_stats
         return skill_stats.decay_weights(names)
     except Exception:  # pragma: no cover -- stats never block recall
-        return {n: 1.0 for n in names}
+        return dict.fromkeys(names, 1.0)
 
 
 def _relevant_skills_lexical(goal: str, all_skills: list[Skill], max_n: int = 3) -> list[Skill]:
@@ -645,8 +645,7 @@ def distill(
     text = resp.text.strip()
     if text.startswith("```"):
         text = text.strip("`")
-        if text.startswith("markdown"):
-            text = text[len("markdown") :]
+        text = text.removeprefix("markdown")
         text = text.strip()
     try:
         # Route distilled skills through the SAME validation + shield scan

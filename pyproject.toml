@@ -34,7 +34,15 @@ target-version = "py310"
 #     or + concatenation -- keeps the 295 `log = getLogger(__name__)` call sites
 #     uniform and defers interpolation until a record is actually emitted.
 # RSE (flake8-raise): no redundant parentheses on `raise Exc()` with no args.
-select = ["E", "F", "W", "I", "UP", "C90", "B", "G", "RSE"]
+# Curated idiom rules (each fully safe-autofixable, applied repo-wide):
+#   PIE807 lambda:[]/{} -> list/dict default_factory; PIE808 redundant range(0,..);
+#   C420 dict-comprehension -> dict.fromkeys; RUF010 f"{str(x)}" -> f"{x!s}";
+#   SIM300 yoda conditions; FURB110 a-if-a-else-b -> a or b; FURB167 re.M ->
+#   re.MULTILINE alias spelling; FURB188 manual slice -> str.removeprefix/suffix.
+select = [
+    "E", "F", "W", "I", "UP", "C90", "B", "G", "RSE",
+    "PIE807", "PIE808", "C420", "RUF010", "SIM300", "FURB110", "FURB167", "FURB188",
+]
 ignore = [
     "E501",   # line length
     "UP036",  # "outdated" version blocks -- ours are intentional runtime

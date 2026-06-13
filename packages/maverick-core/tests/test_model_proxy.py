@@ -171,7 +171,7 @@ def test_config_from_env_none_when_unset(monkeypatch):
               "MAVERICK_PROXY_LISTEN", "MAVERICK_PROXY_AUTH_STYLE",
               "MAVERICK_PROXY_CLIENT_TOKEN", "MAVERICK_PROXY_ALLOWED_ROUTES"):
         monkeypatch.delenv(k, raising=False)
-    monkeypatch.setattr(mp, "load_config", lambda: {})
+    monkeypatch.setattr(mp, "load_config", dict)
     assert mp.config_from_env() is None
 
 

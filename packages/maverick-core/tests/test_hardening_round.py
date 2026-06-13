@@ -240,7 +240,7 @@ def test_cost_router_tolerates_snapshot_without_error_rate(monkeypatch):
     monkeypatch.setenv("MAVERICK_COST_ROUTING", "1")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "k")
     import maverick.config as cfg
-    monkeypatch.setattr(cfg, "load_config", lambda: {})
+    monkeypatch.setattr(cfg, "load_config", dict)
     # Health snapshot rows missing 'error_rate' must not crash pick().
     import maverick.provider_health as ph
     monkeypatch.setattr(

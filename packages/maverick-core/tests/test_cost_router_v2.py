@@ -28,7 +28,7 @@ def _policy(monkeypatch, role_table):
 
 def test_empty_policy_when_table_absent(monkeypatch):
     import maverick.config as config_mod
-    monkeypatch.setattr(config_mod, "load_config", lambda: {})
+    monkeypatch.setattr(config_mod, "load_config", dict)
     assert cr.role_policy("coder").is_empty()
 
 

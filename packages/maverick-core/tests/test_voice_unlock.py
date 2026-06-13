@@ -48,7 +48,7 @@ def test_unenrolled_rejected(gate):
 
 def test_disabled_by_default(tmp_path, monkeypatch):
     monkeypatch.delenv("MAVERICK_VOICE_UNLOCK", raising=False)
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     g = VoiceGate(_embedder([1.0, 0.0]), store_path=tmp_path / "p.json")
     g_enabled_bypass = g  # enrollment works; DECIDE refuses while disabled
     g_enabled_bypass.enroll("alice", [b"a", b"b", b"c"])

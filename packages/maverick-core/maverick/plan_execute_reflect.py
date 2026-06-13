@@ -64,8 +64,7 @@ def _strip_fence(raw: str) -> str:
     raw = (raw or "").strip()
     if raw.startswith("```"):
         raw = raw.strip("`")
-        if raw.startswith("json"):
-            raw = raw[4:]
+        raw = raw.removeprefix("json")
         raw = raw.strip()
     return raw
 

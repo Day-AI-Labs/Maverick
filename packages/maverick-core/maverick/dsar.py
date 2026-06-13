@@ -68,7 +68,7 @@ def _resolve_world(tenant: str | None) -> Any:
     try:
         from .world_model import world_for_tenant
 
-        world_tenant = tenant if tenant else "__active__"
+        world_tenant = tenant or "__active__"
         return world_for_tenant(world_tenant)
     except Exception as e:  # pragma: no cover - defensive (corrupt/locked DB)
         log.warning("dsar: could not open world model: %s", e)

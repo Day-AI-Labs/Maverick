@@ -66,8 +66,7 @@ def validate_donation_url(url: object) -> tuple[bool, str]:
     except ValueError:
         return False, "donation_url has a malformed port"
     host = _normalized_host(parts.hostname)
-    if host.startswith("www."):
-        host = host[4:]
+    host = host.removeprefix("www.")
     if host in ALLOWED_HOSTS:
         return True, "ok"
     if host == _GITHUB_HOST:

@@ -105,9 +105,9 @@ def test_prewarm_disabled_when_caching_off(monkeypatch):
 def test_cache_prewarm_enabled_flag(monkeypatch):
     import maverick.llm as llm_mod
     monkeypatch.delenv("MAVERICK_CACHE_PREWARM", raising=False)
-    monkeypatch.setattr(llm_mod, "load_config", lambda: {}, raising=False)
+    monkeypatch.setattr(llm_mod, "load_config", dict, raising=False)
     import maverick.config as cfg
-    monkeypatch.setattr(cfg, "load_config", lambda: {})
+    monkeypatch.setattr(cfg, "load_config", dict)
     assert llm_mod.cache_prewarm_enabled() is False
     monkeypatch.setenv("MAVERICK_CACHE_PREWARM", "1")
     assert llm_mod.cache_prewarm_enabled() is True

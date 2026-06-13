@@ -19,7 +19,7 @@ def _fake_boto3(monkeypatch):
 def test_mirror_off_by_default(monkeypatch, tmp_path):
     monkeypatch.delenv("MAVERICK_ATTACH_S3_BUCKET", raising=False)
     import maverick.config as config_mod
-    monkeypatch.setattr(config_mod, "load_config", lambda: {})
+    monkeypatch.setattr(config_mod, "load_config", dict)
     client = _fake_boto3(monkeypatch)
     st = att.store(1, "a.txt", "text/plain", b"hello", root=tmp_path)
     assert st.path.exists()
@@ -67,7 +67,7 @@ def test_s3_fetch_pulls_missing_file(monkeypatch, tmp_path):
 def test_s3_fetch_when_off_or_missing(monkeypatch, tmp_path):
     monkeypatch.delenv("MAVERICK_ATTACH_S3_BUCKET", raising=False)
     import maverick.config as config_mod
-    monkeypatch.setattr(config_mod, "load_config", lambda: {})
+    monkeypatch.setattr(config_mod, "load_config", dict)
     assert att.s3_fetch(1, "x.txt", root=tmp_path) is None
     monkeypatch.setenv("MAVERICK_ATTACH_S3_BUCKET", "b")
     client = _fake_boto3(monkeypatch)

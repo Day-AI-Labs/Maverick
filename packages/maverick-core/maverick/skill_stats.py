@@ -200,12 +200,12 @@ def decay_weights(
     so callers never have to special-case a partial result.
     """
     if not _enabled():
-        return {n: 1.0 for n in names}
+        return dict.fromkeys(names, 1.0)
     try:
         with _lock:
             stats = _load(_resolve(path))
     except Exception:  # pragma: no cover -- stats never block recall
-        return {n: 1.0 for n in names}
+        return dict.fromkeys(names, 1.0)
     return {n: _weight_from_stat(stats.get(n), min_uses, floor) for n in names}
 
 

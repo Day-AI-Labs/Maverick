@@ -162,7 +162,7 @@ def test_ledger_tail_truncation_is_tampered(tmp_path):
 def test_missing_key_refuses(tmp_path, monkeypatch):
     monkeypatch.delenv("MAVERICK_SCREENSHOT_KEY", raising=False)
     import maverick.config as config_mod
-    monkeypatch.setattr(config_mod, "load_config", lambda: {})
+    monkeypatch.setattr(config_mod, "load_config", dict)
     p = _capture(tmp_path)
     with pytest.raises(SealKeyMissing):
         seal(p)
@@ -203,7 +203,7 @@ def test_computer_screenshot_no_key_no_capture(tmp_path, monkeypatch):
     import maverick.tools.computer as comp
 
     monkeypatch.delenv("MAVERICK_SCREENSHOT_KEY", raising=False)
-    monkeypatch.setattr(config_mod, "load_config", lambda: {})
+    monkeypatch.setattr(config_mod, "load_config", dict)
     monkeypatch.setattr(paths_mod, "data_dir",
                         lambda *parts, tenant="__active__": tmp_path.joinpath(*parts))
     comp._maybe_seal_capture(_b64.b64encode(b"X").decode())

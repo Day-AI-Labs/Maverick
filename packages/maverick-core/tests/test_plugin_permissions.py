@@ -67,7 +67,7 @@ def _manifest_toml(**perms) -> str:
 def _hermetic_plugins_config(monkeypatch):
     # No grant; enforce-by-default (the secure default). Tests that need the
     # warn-only path set enforce_permissions=false explicitly.
-    monkeypatch.setattr(plugins, "_plugins_config", lambda: {})
+    monkeypatch.setattr(plugins, "_plugins_config", dict)
     monkeypatch.delenv("MAVERICK_PLUGINS_ENFORCE", raising=False)
 
 

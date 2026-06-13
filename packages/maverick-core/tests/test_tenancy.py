@@ -166,21 +166,21 @@ def test_memory_isolated_for_previously_colliding_tenants(monkeypatch, tmp_path)
 # --- per-user tenant scope (server wiring) ---------------------------------
 
 def test_tenant_by_user_disabled_by_default(monkeypatch):
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     monkeypatch.delenv("MAVERICK_TENANT_BY_USER", raising=False)
     from maverick.paths import tenant_by_user_enabled
     assert tenant_by_user_enabled() is False
 
 
 def test_tenant_by_user_via_env(monkeypatch):
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     monkeypatch.setenv("MAVERICK_TENANT_BY_USER", "1")
     from maverick.paths import tenant_by_user_enabled
     assert tenant_by_user_enabled() is True
 
 
 def test_tenant_scope_noop_when_disabled(monkeypatch):
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     monkeypatch.delenv("MAVERICK_TENANT_BY_USER", raising=False)
     monkeypatch.delenv("MAVERICK_TENANT", raising=False)
     from maverick.paths import tenant_scope
@@ -189,7 +189,7 @@ def test_tenant_scope_noop_when_disabled(monkeypatch):
 
 
 def test_tenant_scope_sets_and_restores(monkeypatch):
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     monkeypatch.setenv("MAVERICK_TENANT_BY_USER", "1")
     monkeypatch.delenv("MAVERICK_TENANT", raising=False)
     from maverick.paths import tenant_scope
@@ -200,7 +200,7 @@ def test_tenant_scope_sets_and_restores(monkeypatch):
 
 
 def test_tenant_scope_explicit_tenant_ignores_flag(monkeypatch):
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     monkeypatch.delenv("MAVERICK_TENANT_BY_USER", raising=False)
     from maverick.paths import tenant_scope
     with tenant_scope(tenant="acme"):
@@ -212,7 +212,7 @@ def test_server_tenant_scope_uses_authenticated_principal(monkeypatch):
 
     import maverick.server as server_mod
 
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     monkeypatch.setenv("MAVERICK_TENANT_BY_USER", "1")
     monkeypatch.delenv("MAVERICK_TENANT", raising=False)
     monkeypatch.setattr("maverick.compliance.first_turn_disclosure", lambda *a, **k: None)

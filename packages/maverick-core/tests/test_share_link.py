@@ -32,7 +32,7 @@ def test_share_tamper_fails():
 
 def test_no_secret_refuses(monkeypatch):
     monkeypatch.delenv("MAVERICK_SHARE_SECRET", raising=False)
-    monkeypatch.setattr("maverick.config.load_config", lambda: {})
+    monkeypatch.setattr("maverick.config.load_config", dict)
     with pytest.raises(sl.SharingDisabled):
         sl.mint_share_link(1)
     with pytest.raises(sl.SharingDisabled):

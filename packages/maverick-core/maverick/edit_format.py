@@ -339,7 +339,7 @@ def _find_with_fuzzy(content: str, needle: str) -> tuple[int | None, int | None,
     needle_cmp = needle.rstrip("\n")
     best_ratio = 0.0
     best_start = best_end = -1
-    for i in range(0, max(0, len(content_lines) - needle_lines + 1)):
+    for i in range(max(0, len(content_lines) - needle_lines + 1)):
         window = "\n".join(content_lines[i:i + needle_lines])
         ratio = difflib.SequenceMatcher(None, window, needle_cmp).ratio()
         if ratio > best_ratio:
@@ -349,7 +349,7 @@ def _find_with_fuzzy(content: str, needle: str) -> tuple[int | None, int | None,
     if best_ratio >= 0.9 and best_start >= 0:
         # Ambiguity guard: count windows within 0.02 of the best.
         near_count = 0
-        for i in range(0, max(0, len(content_lines) - needle_lines + 1)):
+        for i in range(max(0, len(content_lines) - needle_lines + 1)):
             window = "\n".join(content_lines[i:i + needle_lines])
             r = difflib.SequenceMatcher(None, window, needle_cmp).ratio()
             if r >= best_ratio - 0.02:

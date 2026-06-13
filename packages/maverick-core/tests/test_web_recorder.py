@@ -38,7 +38,7 @@ def test_string_escaping_prevents_injection():
         {"action": "fill", "selector": "#x", "text": payload},
     ]})
     # The payload must appear only inside a safe Python string literal...
-    assert f"page.fill('#x', {repr(payload)})" in out
+    assert f"page.fill('#x', {payload!r})" in out
     # ...and the whole script must still be valid (escaped, not executable).
     compile(out, "<gen>", "exec")
 
