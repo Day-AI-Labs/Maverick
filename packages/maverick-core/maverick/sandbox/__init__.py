@@ -237,9 +237,11 @@ def build_sandbox(
         # Opt-in cross-run pooling (default OFF -> this block is dead and
         # behavior is byte-identical): reuse a parked, still-healthy backend
         # for the same engine + image digest + security flags. See pool.py
-        # for the scrub contract. (reuse_container is the WITHIN-run warm
-        # knob and doesn't shape the pool key; it goes to the backend only.)
-        if _config_bool(full_cfg.get("cross_run_pool"), False):
+        # for the scrub contract. Docker's reuse_container is the WITHIN-run
+        # warm knob and is not cross-run pool eligible because it keeps a live
+        # container mounted to the run workdir.
+        reuse_container = _config_bool(full_cfg.get("reuse_container"), False)
+        if _config_bool(full_cfg.get("cross_run_pool"), False) and not reuse_container:
             from . import pool as _pool
             pooled = _pool.shared_pool().acquire(
                 "docker", image, workdir=wd, timeout=timeout,
@@ -248,8 +250,7 @@ def build_sandbox(
                 return pooled
         return DockerBackend(
             workdir=wd, image=image, timeout=timeout, runtime=runtime,
-            reuse_container=_config_bool(full_cfg.get("reuse_container"), False),
-            **kwargs,
+            reuse_container=reuse_container, **kwargs,
         )
     if chosen == "podman":
         image = _resolve_image(full_cfg)
