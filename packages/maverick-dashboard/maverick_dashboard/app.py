@@ -2042,6 +2042,10 @@ async def gallery_add(request: Request, goal_id: int) -> JSONResponse:
 
 @app.delete("/api/v1/gallery/{goal_id}")
 async def gallery_remove(request: Request, goal_id: int) -> JSONResponse:
+    g = _world().get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such goal")
+    assert_goal_access(request, g)
     from maverick.ux_store import shared as _ux
     if not _ux().gallery_remove(goal_id):
         raise HTTPException(status_code=404, detail="not in the gallery")
