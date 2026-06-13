@@ -3985,6 +3985,36 @@ def tax_prepare(docs_dir: str, filing_status: str, dependents: int,
         click.echo(f"\nWrote review package -> {out_path}")
 
 
+@tax_group.command("backtest")
+@click.argument("cases_dir", type=click.Path(exists=True, file_okay=False))
+@click.option("--tolerance", default=None, type=float,
+              help="Dollar tolerance for an in-scope line match "
+                   "(default $1.00).")
+@click.option("--out", "out_path", type=click.Path(), default=None,
+              help="Also write the back-test report to this file.")
+def tax_backtest(cases_dir: str, tolerance: float | None,
+                 out_path: str | None) -> None:
+    """Measure first-pass accuracy against a firm's PRIOR FILED returns.
+
+    Point this at a folder of case subdirectories -- each holding a client's
+    source ``*.txt`` documents plus a ``filed.json`` with the figures the firm
+    actually filed -- and it runs the deterministic pipeline on every case and
+    reports how close the draft lands. Returns carrying items the engine
+    deliberately doesn't compute (Schedule C/D/E, itemized, graduated-state,
+    unsupported status) are listed OUT OF SCOPE and excluded from the accuracy
+    number, so "matched N of M in-scope within $T" is an honest signal a firm
+    can act on in an afternoon -- on its own data, not synthetic samples.
+    """
+    from . import tax_backtest as bt
+    tol = bt.DEFAULT_TOLERANCE if tolerance is None else tolerance
+    report = bt.run_backtest_dir(cases_dir, tolerance=tol)
+    text = bt.render_backtest(report)
+    click.echo(text)
+    if out_path:
+        Path(out_path).write_text(text + "\n", encoding="utf-8")
+        click.echo(f"\nWrote back-test report -> {out_path}")
+
+
 @tax_group.command("update")
 @click.option("--file", "bundle_file", type=click.Path(exists=True),
               default=None, help="Apply a signed constants bundle from a "
