@@ -298,17 +298,16 @@ def synthesize_insight(
 def promote_shared_insights(
     failures: list[dict], *, min_cluster: int = 2, now: float | None = None,
 ) -> list[DreamInsight]:
-    """Cross-department promotion: a failure pattern that recurs in TWO OR
-    MORE distinct departments becomes a *shared* insight (``domain=None``,
-    ``kind="shared_pattern"``), recallable by every department via lexical
-    similarity. Compartment seals stay intact — only the consolidated lesson
-    crosses the boundary, never raw department trajectories.
+    """Promote only generic failures into globally recallable insights.
+
+    Department-scoped failures may contain compartment-local paths, project
+    names, or attacker-influenced reflections.  Keep those failures confined to
+    their department by refusing to synthesize ``domain=None`` insights from
+    any cluster that includes a department marker.
     """
     promoted: list[DreamInsight] = []
-    for cluster in cluster_failures(failures, min_cluster=min_cluster):
-        depts = {f.get("domain") for f in cluster if f.get("domain")}
-        if len(depts) < 2:
-            continue
+    generic_failures = [f for f in failures or [] if not f.get("domain")]
+    for cluster in cluster_failures(generic_failures, min_cluster=min_cluster):
         promoted.append(synthesize_insight(
             cluster, domain=None, now=now, kind="shared_pattern",
         ))
@@ -1144,9 +1143,9 @@ def dream_cycle(
     for dom, fs in by_domain_failure.items():
         for cluster in cluster_failures(fs, min_cluster=int(cfg.get("min_cluster", 2))):
             new_insights.append(synthesize_insight(cluster, domain=dom, now=now))
-    # Cross-department promotion: a pattern recurring in >=2 departments
-    # becomes a shared lesson every department can recall.
-    if bool(cfg.get("promote_shared", True)):
+    # Shared promotion is limited to generic, unscoped failures; department
+    # failures stay compartment-local and are consolidated only above.
+    if bool(cfg.get("promote_shared", False)):
         new_insights.extend(promote_shared_insights(
             failures, min_cluster=int(cfg.get("min_cluster", 2)), now=now,
         ))
