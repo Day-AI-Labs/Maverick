@@ -26,12 +26,32 @@ from maverick.runner import (
     DEFAULT_MAX_DOLLARS,
     DEFAULT_MAX_WALL_SECONDS,
 )
-from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import StreamingResponse
 
 from ._shared import _any_provider_key_set, _world
 from ._shared import _world_cache as _world_cache  # re-export: tests clear api._world_cache
+from .api_schemas import (
+    AnswerIn,
+    AttachmentOut,
+    CachePurgeIn,
+    CatalogInstallIn,
+    ChildIn,
+    ComposeIn,
+    FactIn,
+    FleetCreateIn,
+    FleetRunIn,
+    GoalEventOut,
+    GoalEventsResponse,
+    GoalIn,
+    GoalOut,
+    HaltIn,
+    RedactIn,
+    ReparentIn,
+    RetitleIn,
+    SkillInstallIn,
+    SkillOut,
+)
 from .auth import (
     assert_goal_access,
     caller_principal,
@@ -45,57 +65,20 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["v1"])
 
 
-class GoalIn(BaseModel):
-    title: str = Field(..., max_length=200)
-    description: str = ""
-    max_dollars: float = Field(5.0, ge=0.0, le=100.0)
-    max_wall_seconds: float = Field(3600.0, ge=1.0, le=86400.0)
-    max_depth: int = Field(3, ge=1, le=5)
-    template: str | None = None
-    params: dict[str, str] | None = None
 
 
-class GoalOut(BaseModel):
-    id: int
-    status: str
-    title: str
-    description: str | None = None
-    result: str | None = None
 
 
-class GoalEventOut(BaseModel):
-    id: int
-    agent: str
-    kind: str
-    content: str
-    ts: float
 
 
-class GoalEventsResponse(BaseModel):
-    status: str
-    result: str | None
-    next_id: int
-    events: list[GoalEventOut]
 
 
-class FactIn(BaseModel):
-    key: str
-    value: str
 
 
-class AnswerIn(BaseModel):
-    question_id: int
-    answer: str
 
 
-class SkillInstallIn(BaseModel):
-    source: str = Field(..., description="https://... or gh:org/repo[:path]")
 
 
-class SkillOut(BaseModel):
-    name: str
-    triggers: list[str]
-    tools_needed: list[str]
 
 
 def _to_goal_out(g) -> GoalOut:
@@ -307,12 +290,6 @@ async def answer_question(request: Request, goal_id: int, payload: AnswerIn) -> 
     w.answer(payload.question_id, answer)
 
 
-class AttachmentOut(BaseModel):
-    id: int
-    filename: str
-    mime: str
-    size_bytes: int
-    sha256: str
 
 
 @router.post(
@@ -452,8 +429,6 @@ async def install_skill_endpoint(payload: SkillInstallIn) -> SkillOut:
     return SkillOut(name=s.name, triggers=s.triggers, tools_needed=s.tools_needed)
 
 
-class CatalogInstallIn(BaseModel):
-    name: str = Field(..., max_length=200)
 
 
 @router.get("/diag/tail-latency")
@@ -769,8 +744,6 @@ async def security_register() -> dict:
 
 # ---------- council pass: control surface ----------
 
-class HaltIn(BaseModel):
-    reason: str = Field("manual via dashboard", max_length=200)
 
 
 @router.get("/halt")
@@ -1193,10 +1166,6 @@ async def list_fleets_api(request: Request) -> dict:
     return {"fleets": [f.to_dict() for f in fleets]}
 
 
-class FleetRunIn(BaseModel):
-    agent: str = Field(..., max_length=64)
-    prompt: str = Field(..., max_length=8000)
-    max_dollars: float | None = Field(None, ge=0.0, le=100.0)
 
 
 @router.post("/fleets/{fleet_name}/run", status_code=201)
@@ -1280,15 +1249,8 @@ async def run_fleet_agent(
     return {"goal_id": goal_id, "principal": agent_principal, "role": agent.role}
 
 
-class FleetAgentIn(BaseModel):
-    name: str = Field(..., max_length=64)
-    role: str = Field("", max_length=64)
-    description: str = Field("", max_length=500)
 
 
-class FleetCreateIn(BaseModel):
-    name: str = Field(..., max_length=64)
-    agents: list[FleetAgentIn] = Field(default_factory=list)
 
 
 @router.post("/fleets", status_code=201)
@@ -1419,9 +1381,6 @@ async def compliance_report_csv(framework: str = "all") -> Response:
     )
 
 
-class RedactIn(BaseModel):
-    text: str = Field(max_length=200_000)
-    kinds: list[str] = Field(default_factory=list)  # empty = all kinds
 
 
 @router.post("/redact/preview")
@@ -1565,8 +1524,6 @@ async def cache_stats() -> dict:
     return stats()
 
 
-class CachePurgeIn(BaseModel):
-    scopes: list[str] = Field(default_factory=lambda: ["all"])
 
 
 @router.post("/cache/purge")
@@ -1596,8 +1553,6 @@ async def goal_tree_api(request: Request, limit: int = 300) -> dict:
     return forest_view(nodes)
 
 
-class RetitleIn(BaseModel):
-    title: str = Field(..., max_length=200)
 
 
 @router.post("/goals/{goal_id}/retitle", status_code=204)
@@ -1624,8 +1579,6 @@ async def retitle_goal(request: Request, goal_id: int, payload: RetitleIn) -> No
         )
 
 
-class ReparentIn(BaseModel):
-    parent_id: int | None = None
 
 
 @router.post("/goals/{goal_id}/reparent", status_code=204)
@@ -1665,9 +1618,6 @@ async def reparent_goal(request: Request, goal_id: int, payload: ReparentIn) -> 
         )
 
 
-class ChildIn(BaseModel):
-    title: str = Field(..., max_length=200)
-    description: str = ""
 
 
 @router.post("/goals/{goal_id}/children", response_model=GoalOut, status_code=201)
@@ -1703,12 +1653,6 @@ async def create_child_goal(request: Request, goal_id: int, payload: ChildIn) ->
 _COMPOSE_PRIORITIES = ("low", "normal", "high")
 
 
-class ComposeIn(BaseModel):
-    title: str = Field(..., max_length=200)
-    steps: list[str] = Field(default_factory=list)
-    budget_dollars: float | None = Field(None, ge=0.0, le=100.0)
-    channel: str | None = Field(None, max_length=64)
-    priority: str | None = Field(None, max_length=16)
 
 
 @router.post("/goals/compose", response_model=GoalOut, status_code=201)
