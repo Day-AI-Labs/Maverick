@@ -287,6 +287,18 @@ def _looks_like_year(token: str, value: float) -> bool:
             and value == int(value) and 1900 <= value <= 2100)
 
 
+def _looks_like_money(token: str) -> bool:
+    """A matched token carries a currency marker ($, thousands comma, or
+    cents) -- used to gate the next-line fallback so a bare box number or
+    label digit on the following line is never mistaken for the amount."""
+    return "$" in token or "," in token or "." in token
+
+
+def _signed(m) -> float:
+    value = float(m.group(2).replace(",", ""))
+    return -value if m.group(1) == "-" else value
+
+
 def _amount_after(text: str, *labels: str) -> float:
     """First dollar amount AFTER a label, scanning every line.
 
@@ -295,7 +307,7 @@ def _amount_after(text: str, *labels: str) -> float:
     an LLM (and so the demo/tests are deterministic). Searching after the
     label keeps "Box 1 Wages: $85,000.00" from yielding the box number.
 
-    Hardened against three real failure modes that would otherwise produce a
+    Hardened against the real failure modes that would otherwise produce a
     SILENT WRONG NUMBER on a tax return:
       * a label that is the prefix of a longer token -- "box 1" must not match
         "box 10".."box 19" (a word boundary is required after the label, so
@@ -303,12 +315,17 @@ def _amount_after(text: str, *labels: str) -> float:
       * a bare tax year on a title line ("... Interest Income 2025") being read
         as the amount -- year-like bare integers are skipped, and the scan
         continues to the real box line;
-      * a leading minus sign being dropped -- the sign is preserved.
+      * a leading minus sign being dropped -- the sign is preserved;
+      * a box label and its value on SEPARATE lines (common in PDF text
+        exports): when the label line carries no digits at all, the amount is
+        taken from the next line, but only when it is clearly money-formatted
+        ($/comma/cents) so a following box number is never grabbed.
     The first VALID money after any label wins; labels are tried in order per
     line. Bare unformatted integers in the 1900-2100 range are the one input
     this intentionally skips; real exports carry a $, comma, or cents.
     """
-    for line in (text or "").splitlines():
+    lines = (text or "").splitlines()
+    for i, line in enumerate(lines):
         low = line.lower()
         for lbl in labels:
             pos = 0
@@ -322,13 +339,20 @@ def _amount_after(text: str, *labels: str) -> float:
                 # following digit can't be mistaken for (part of) the amount.
                 if after < len(low) and low[after].isalnum():
                     continue
-                m = _MONEY_RE.search(line[after:])
-                if not m:
-                    continue
-                value = float(m.group(2).replace(",", ""))
-                if _looks_like_year(m.group(0), value):
-                    continue
-                return -value if m.group(1) == "-" else value
+                rest = line[after:]
+                m = _MONEY_RE.search(rest)
+                if m:
+                    if not _looks_like_year(m.group(0), _signed(m)):
+                        return _signed(m)
+                    continue  # year-like: keep scanning this line
+                # No usable amount on this line. A bare label line (no digits
+                # at all in the remainder) falls back to the next line, but
+                # only for a clearly money-formatted value.
+                if not any(c.isdigit() for c in rest) and i + 1 < len(lines):
+                    nm = _MONEY_RE.search(lines[i + 1])
+                    if (nm and _looks_like_money(nm.group(0))
+                            and not _looks_like_year(nm.group(0), _signed(nm))):
+                        return _signed(nm)
     return 0.0
 
 

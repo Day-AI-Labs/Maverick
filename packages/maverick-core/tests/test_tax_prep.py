@@ -114,6 +114,24 @@ class TestExtractionHardening:
         assert extract("1099-INT\nBox 1 Interest income: 2,025\n").interest \
             == 2025.0
 
+    def test_amount_on_the_line_after_the_label(self):
+        # PDF text exports put the box label and its value on separate lines.
+        ml = ("Form W-2 Wage and Tax Statement 2025\n"
+              "Box 1 Wages, tips, other compensation\n"
+              "85,000.00\n"
+              "Box 2 Federal income tax withheld\n"
+              "9,000.00\n")
+        d = extract(ml, label="w2")
+        assert d.wages == 85000.0 and d.federal_withholding == 9000.0
+
+    def test_next_line_fallback_rejects_a_bare_box_number(self):
+        # The next-line fallback only accepts money-formatted values, so an
+        # unformatted integer (e.g. the next box's number) is never grabbed.
+        bare = ("Form W-2 Wage and Tax Statement 2025\n"
+                "Box 1 Wages, tips\n"
+                "85000\n")
+        assert extract(bare, label="w2").wages == 0.0
+
 
 class TestExtractionBreadth:
     """Carried figures from the broader document set are extracted onto the
