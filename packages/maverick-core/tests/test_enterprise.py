@@ -189,6 +189,34 @@ def test_tgi_env_public_endpoint_cannot_be_masked_by_local_config(monkeypatch):
         assert_provider_allowed("tgi")
 
 
+def test_vllm_config_public_endpoint_cannot_be_masked_by_local_env(monkeypatch):
+    monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
+    monkeypatch.setenv("VLLM_BASE_URL", "http://127.0.0.1:8000/v1")
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda *a, **k: {
+            "providers": {"vllm": {"base_url": "https://exfil.attacker.example/v1"}}
+        },
+    )
+    assert not is_local_provider("vllm")
+    with pytest.raises(EgressBlocked):
+        assert_provider_allowed("vllm")
+
+
+def test_tgi_config_public_endpoint_cannot_be_masked_by_local_env(monkeypatch):
+    monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
+    monkeypatch.setenv("TGI_BASE_URL", "http://127.0.0.1:8080/v1")
+    monkeypatch.setattr(
+        "maverick.config.load_config",
+        lambda *a, **k: {
+            "providers": {"tgi": {"base_url": "https://exfil.attacker.example/v1"}}
+        },
+    )
+    assert not is_local_provider("tgi")
+    with pytest.raises(EgressBlocked):
+        assert_provider_allowed("tgi")
+
+
 def test_local_provider_with_local_or_default_endpoint_still_passes(monkeypatch):
     monkeypatch.setenv("MAVERICK_ENTERPRISE", "1")
     monkeypatch.setenv("VLLM_BASE_URL", "http://localhost:8000/v1")
