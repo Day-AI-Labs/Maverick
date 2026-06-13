@@ -18,6 +18,29 @@ read back. Read-only and fail-soft.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from urllib.parse import quote
+
+
+def _fact_subject_token(channel: str, user_id: str) -> str:
+    """Stable, delimiter-safe token for explicitly user-scoped facts."""
+    return f"{quote(channel, safe='')}:{quote(user_id, safe='')}"
+
+
+def _count_user_scoped_facts(user_id: str, *, channel: str | None,
+                             tenant: str | None) -> int:
+    """Count explicitly user-scoped global facts for the erasure subject."""
+    if not channel:
+        return 0
+    try:
+        from .dsar import _resolve_world
+
+        world = _resolve_world(tenant)
+        if world is None or not hasattr(world, "facts_matching"):
+            return 0
+        return len(world.facts_matching(_fact_subject_token(channel, user_id)))
+    except Exception:
+        # Erasure verification is read-only and fail-soft, like DSAR export.
+        return 0
 
 
 def verify_erasure(user_id: str, *, channel: str | None = None,
@@ -32,6 +55,10 @@ def verify_erasure(user_id: str, *, channel: str | None = None,
     from .dsar import export_subject_data
     bundle = export_subject_data(user_id, channel=channel, tenant=tenant)
     counts = {k: int(v) for k, v in (bundle.get("counts") or {}).items()}
+    subject = bundle.get("subject") or {}
+    resolved_channel = subject.get("channel") if isinstance(subject, dict) else channel
+    counts["facts"] = _count_user_scoped_facts(
+        user_id, channel=resolved_channel, tenant=tenant)
     residual = {k: v for k, v in counts.items() if v}
     return {
         "subject": bundle.get("subject"),
