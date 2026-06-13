@@ -15,6 +15,7 @@ The git runner is injected so everything is unit-tested offline; the real
 runner shells ``git`` read-only (log / patch-id). Cherry-picking and pushing
 remain the maintainer's reviewed acts — this tool never mutates the repo.
 """
+
 from __future__ import annotations
 
 import re
@@ -26,6 +27,7 @@ from dataclasses import dataclass
 _MARKER = re.compile(r"^(security:|fix\(security\))", re.IGNORECASE)
 _TRAILER = re.compile(r"^Security-Backport:\s*yes\s*$", re.IGNORECASE | re.MULTILINE)
 SLA_DAYS = 7.0
+_COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 
 Runner = Callable[[list[str]], str]
 
@@ -49,11 +51,14 @@ def is_security_fix(subject: str, body: str = "") -> bool:
     return bool(_MARKER.match(subject.strip()) or _TRAILER.search(body or ""))
 
 
-def eligible_commits(since_ref: str, *, branch: str = "main",
-                     git: Runner = _real_git) -> list[Fix]:
+def _valid_commit_sha(sha: str) -> bool:
+    """Return whether ``sha`` is a full hexadecimal commit object id."""
+    return bool(_COMMIT_SHA.fullmatch(sha))
+
+
+def eligible_commits(since_ref: str, *, branch: str = "main", git: Runner = _real_git) -> list[Fix]:
     """Backport-eligible commits on ``branch`` since ``since_ref``."""
-    raw = git(["log", f"{since_ref}..{branch}",
-               "--format=%H%x01%ct%x01%s%x01%b%x02"])
+    raw = git(["log", f"{since_ref}..{branch}", "--format=%H%x01%ct%x01%s%x01%b%x02"])
     fixes: list[Fix] = []
     for chunk in raw.split("\x02"):
         chunk = chunk.strip("\n")
@@ -63,17 +68,22 @@ def eligible_commits(since_ref: str, *, branch: str = "main",
         if len(parts) < 3:
             continue
         sha, ct, subject = parts[0].strip(), parts[1], parts[2]
+        if not _valid_commit_sha(sha):
+            continue
         body = parts[3] if len(parts) > 3 else ""
         if not is_security_fix(subject, body):
             continue
         try:
             files = tuple(
-                f for f in git(["show", "--name-only", "--format=", sha]).splitlines()
-                if f.strip())
+                f
+                for f in git(
+                    ["show", "--name-only", "--format=", "--end-of-options", sha]
+                ).splitlines()
+                if f.strip()
+            )
         except RuntimeError:
             files = ()
-        fixes.append(Fix(sha=sha, subject=subject,
-                         committed_at=float(ct), files=files))
+        fixes.append(Fix(sha=sha, subject=subject, committed_at=float(ct), files=files))
     return fixes
 
 
@@ -81,21 +91,24 @@ def _patch_id_of(sha: str, git: Runner) -> str:
     """A SHA-independent identity for a commit's change (cherry-pick twin
     detection): hash the normalized diff lines, like ``git patch-id``."""
     import hashlib
-    diff = git(["show", "--format=", sha])
-    lines = [line for line in diff.splitlines()
-             if line.startswith(("+", "-", "@@", "diff --git"))
-             and not line.startswith(("+++", "---"))]
+
+    if not _valid_commit_sha(sha):
+        raise RuntimeError("invalid commit object id")
+    diff = git(["show", "--format=", "--end-of-options", sha])
+    lines = [
+        line
+        for line in diff.splitlines()
+        if line.startswith(("+", "-", "@@", "diff --git")) and not line.startswith(("+++", "---"))
+    ]
     # SHA1 matches `git patch-id` semantics: a content fingerprint for
     # cherry-pick twin detection, not a security boundary.
-    return hashlib.sha1("\n".join(lines).encode(),
-                        usedforsecurity=False).hexdigest()
+    return hashlib.sha1("\n".join(lines).encode(), usedforsecurity=False).hexdigest()
 
 
 def _patch_ids(ref_range: str, git: Runner) -> set[str]:
     """patch-ids of every commit in ``ref_range``."""
     try:
-        shas = [s.strip() for s in git(["log", "--format=%H", ref_range]).splitlines()
-                if s.strip()]
+        shas = [s.strip() for s in git(["log", "--format=%H", ref_range]).splitlines() if s.strip()]
     except RuntimeError:
         return set()
     ids: set[str] = set()
@@ -107,8 +120,9 @@ def _patch_ids(ref_range: str, git: Runner) -> set[str]:
     return ids
 
 
-def plan(lts_branch: str, since_ref: str, *, branch: str = "main",
-         git: Runner = _real_git) -> list[Fix]:
+def plan(
+    lts_branch: str, since_ref: str, *, branch: str = "main", git: Runner = _real_git
+) -> list[Fix]:
     """Eligible commits not yet on ``lts_branch`` (patch-id matched)."""
     fixes = eligible_commits(since_ref, branch=branch, git=git)
     if not fixes:
@@ -126,20 +140,29 @@ def plan(lts_branch: str, since_ref: str, *, branch: str = "main",
     return out
 
 
-def check(lts_branch: str, since_ref: str, *, branch: str = "main",
-          sla_days: float = SLA_DAYS, git: Runner = _real_git,
-          now: float | None = None) -> list[Fix]:
+def check(
+    lts_branch: str,
+    since_ref: str,
+    *,
+    branch: str = "main",
+    sla_days: float = SLA_DAYS,
+    git: Runner = _real_git,
+    now: float | None = None,
+) -> list[Fix]:
     """Fixes past the backport SLA still missing from the branch."""
     ts = float(now if now is not None else time.time())
     cutoff = ts - sla_days * 86400.0
-    return [f for f in plan(lts_branch, since_ref, branch=branch, git=git)
-            if f.committed_at <= cutoff]
+    return [
+        f for f in plan(lts_branch, since_ref, branch=branch, git=git) if f.committed_at <= cutoff
+    ]
 
 
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- CLI shell
     import argparse
-    p = argparse.ArgumentParser(prog="maverick.backport_tool",
-                                description="Security-backport planner (read-only).")
+
+    p = argparse.ArgumentParser(
+        prog="maverick.backport_tool", description="Security-backport planner (read-only)."
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("scan")
     s.add_argument("since_ref")
@@ -165,8 +188,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover -- CLI shell
     return 1 if overdue else 0
 
 
-__all__ = ["Fix", "is_security_fix", "eligible_commits", "plan", "check",
-           "SLA_DAYS"]
+__all__ = ["Fix", "is_security_fix", "eligible_commits", "plan", "check", "SLA_DAYS"]
 
 
 if __name__ == "__main__":  # pragma: no cover
