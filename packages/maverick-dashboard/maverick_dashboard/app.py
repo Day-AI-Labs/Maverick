@@ -3166,14 +3166,20 @@ async def walkthroughs_page(request: Request) -> HTMLResponse:
     if d.is_dir():
         for p in sorted(d.glob("*.mp4"), key=lambda q: q.stat().st_mtime,
                         reverse=True):
-            m = re.fullmatch(r"goal-(\d+)\.mp4", p.name)
+            try:
+                goal_id = _walkthrough_goal_id(p.name)
+            except HTTPException:
+                continue
+            g = _world().get_goal(goal_id)
+            if g is None or not can_access_goal(request, g):
+                continue
+            captions = p.with_suffix(".vtt")
             items.append({
                 "name": p.name,
                 "size_mb": round(p.stat().st_size / 1_048_576, 2),
                 "mtime": p.stat().st_mtime,
-                "captions": (p.with_suffix(".vtt").name
-                             if p.with_suffix(".vtt").exists() else None),
-                "goal_id": int(m.group(1)) if m else None,
+                "captions": captions.name if captions.exists() else None,
+                "goal_id": goal_id,
             })
     # NB: not named "dir" — the context processor injects the page's text
     # direction under that key (RTL support) and would shadow it.
@@ -3182,16 +3188,32 @@ async def walkthroughs_page(request: Request) -> HTMLResponse:
     )
 
 
-_WALKTHROUGH_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+\.(mp4|vtt)$")
+_WALKTHROUGH_NAME_RE = re.compile(r"^goal-(\d+)\.(mp4|vtt)$")
+
+
+def _walkthrough_goal_id(name: str) -> int:
+    """Return the goal id encoded in a supported walkthrough artifact name."""
+    m = _WALKTHROUGH_NAME_RE.fullmatch(name)
+    if not m:
+        raise HTTPException(status_code=400, detail="invalid walkthrough name")
+    return int(m.group(1))
+
+
+def _assert_walkthrough_access(request: Request, name: str) -> int:
+    """Ensure the caller can access the goal-derived walkthrough artifact."""
+    goal_id = _walkthrough_goal_id(name)
+    g = _world().get_goal(goal_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail="no such walkthrough")
+    assert_goal_access(request, g)
+    return goal_id
 
 
 @app.get("/walkthroughs/media/{name}")
-async def walkthrough_media(name: str) -> FileResponse:
-    """Serve one exported walkthrough artifact, strictly from the
-    walkthroughs dir (the name pattern admits no path separators)."""
+async def walkthrough_media(request: Request, name: str) -> FileResponse:
+    """Serve one exported walkthrough artifact after checking goal access."""
     from .api import _walkthroughs_dir
-    if not _WALKTHROUGH_NAME_RE.match(name):
-        raise HTTPException(status_code=400, detail="invalid walkthrough name")
+    _assert_walkthrough_access(request, name)
     path = _walkthroughs_dir() / name
     if not path.is_file():
         raise HTTPException(status_code=404, detail="no such walkthrough")

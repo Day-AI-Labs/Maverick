@@ -46,12 +46,15 @@ def test_page_empty_state_is_honest(client, home):
     assert "<video" not in r.text
 
 
-def test_page_lists_artifacts_with_video_and_captions(client, home):
+def test_page_lists_artifacts_with_video_and_captions(client, world, home):
     d = home / "walkthroughs"
     d.mkdir(parents=True)
+    world.create_goal("exported", "")  # goal id 1
+    for _ in range(6):
+        world.create_goal("padding", "")
     (d / "goal-7.mp4").write_bytes(b"\x00\x00fake")
     (d / "goal-7.vtt").write_text("WEBVTT\n")
-    (d / "freeform.mp4").write_bytes(b"\x00")  # non goal-N name: still listed
+    (d / "freeform.mp4").write_bytes(b"\x00")  # non goal-N name: never served
     r = client.get("/walkthroughs")
     assert r.status_code == 200
     assert "<video controls" in r.text
@@ -59,12 +62,14 @@ def test_page_lists_artifacts_with_video_and_captions(client, home):
     assert '<track kind="captions" src="/walkthroughs/media/goal-7.vtt"' in r.text
     # goal-N names link to the run's tutorial export
     assert "/api/v1/goals/7/tutorial.md" in r.text
-    assert 'src="/walkthroughs/media/freeform.mp4"' in r.text
+    assert 'src="/walkthroughs/media/freeform.mp4"' not in r.text
 
 
-def test_media_route_serves_and_guards(client, home):
+def test_media_route_serves_and_guards(client, world, home):
     d = home / "walkthroughs"
     d.mkdir(parents=True)
+    for _ in range(3):
+        world.create_goal("walkthrough", "")
     (d / "goal-3.mp4").write_bytes(b"MP4DATA")
     (d / "goal-3.vtt").write_text("WEBVTT\n")
     (home / "secret.txt").write_text("nope")
@@ -83,6 +88,37 @@ def test_media_route_serves_and_guards(client, home):
     assert client.get("/walkthroughs/media/..%2fsecret.txt").status_code == 404
     assert client.get("/walkthroughs/media/secret.txt").status_code == 400
     assert client.get("/walkthroughs/media/..mp4").status_code in (400, 404)
+
+
+def test_walkthroughs_hide_cross_user_artifacts(client, world, home, monkeypatch):
+    import maverick_dashboard.auth as auth
+    from maverick.oidc import VerifiedPrincipal
+
+    monkeypatch.setattr(auth, "oidc_enabled", lambda: True)
+    monkeypatch.setattr(
+        auth,
+        "verify_oidc_token",
+        lambda token, **_kw: VerifiedPrincipal(
+            sub=token, issuer="https://issuer.example", audience="maverick",
+            claims={"sub": token},
+        ),
+    )
+    alice = world.create_goal("alice private", owner="user:alice")
+    bob = world.create_goal("bob visible", owner="user:bob")
+    d = home / "walkthroughs"
+    d.mkdir(parents=True)
+    (d / f"goal-{alice}.mp4").write_bytes(b"alice video")
+    (d / f"goal-{alice}.vtt").write_text("WEBVTT\nalice secret\n")
+    (d / f"goal-{bob}.mp4").write_bytes(b"bob video")
+
+    headers = {"Authorization": "Bearer bob"}
+    page = client.get("/walkthroughs", headers=headers)
+    assert page.status_code == 200
+    assert f"goal-{bob}.mp4" in page.text
+    assert f"goal-{alice}.mp4" not in page.text
+    assert client.get(f"/walkthroughs/media/goal-{bob}.mp4", headers=headers).status_code == 200
+    assert client.get(f"/walkthroughs/media/goal-{alice}.mp4", headers=headers).status_code == 404
+    assert client.get(f"/walkthroughs/media/goal-{alice}.vtt", headers=headers).status_code == 404
 
 
 def test_export_missing_goal_404(client):
