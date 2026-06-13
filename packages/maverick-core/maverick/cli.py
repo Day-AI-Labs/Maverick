@@ -4015,6 +4015,27 @@ def tax_backtest(cases_dir: str, tolerance: float | None,
         click.echo(f"\nWrote back-test report -> {out_path}")
 
 
+@tax_group.command("onboard")
+@click.argument("profile", type=click.Path(exists=True, dir_okay=False))
+def tax_onboard(profile: str) -> None:
+    """Scope a firm's pilot from its intake profile (a TOML file).
+
+    Sorts every state the firm serves into computed-first-pass (no-tax / flat)
+    vs handed-off (graduated -- their tax engine owns it), resolves the firm's
+    document-label taxonomy to the canonical types, and prints a ready-to-pilot
+    verdict with blockers (must fix) separated from warnings. Run this first to
+    set expectations, then `maverick tax backtest` to prove accuracy on the
+    firm's own prior filed returns -- together they make "intake in days"
+    concrete. Exits non-zero when there are blockers.
+    """
+    from . import tax_onboarding as ob
+    rep = ob.assess_readiness(ob.load_profile(profile))
+    click.echo(ob.render_readiness(rep))
+    if not rep.ready_to_pilot:
+        raise click.ClickException("onboarding blockers must be resolved "
+                                   "before intake (see above)")
+
+
 @tax_group.command("update")
 @click.option("--file", "bundle_file", type=click.Path(exists=True),
               default=None, help="Apply a signed constants bundle from a "
