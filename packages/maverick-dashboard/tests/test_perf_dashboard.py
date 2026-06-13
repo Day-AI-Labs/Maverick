@@ -15,6 +15,8 @@ from maverick_dashboard.app import app  # noqa: E402
 def client(monkeypatch, tmp_path):
     monkeypatch.setenv("MAVERICK_HOME", str(tmp_path / "home"))
     monkeypatch.delenv("MAVERICK_DASHBOARD_TOKEN", raising=False)
+    import maverick_dashboard.api as api
+    monkeypatch.setattr(api, "_PERF_SLA_CACHE", None)
     return TestClient(app)
 
 
@@ -45,6 +47,26 @@ def test_perf_api_empty_history(client, monkeypatch, tmp_path):
     monkeypatch.setattr(cb, "_store_path", lambda: tmp_path / "nope")
     d = client.get("/api/v1/perf").json()
     assert d["benchmarks"] == {} and d["retrospective"] is None
+
+
+def test_perf_api_caches_live_sla(client, monkeypatch, tmp_path):
+    import maverick.continuous_benchmark as cb
+    import maverick.perf_sla as perf_sla
+    from maverick.perf_sla import SLAResult
+
+    calls = 0
+
+    def fake_run_all():
+        nonlocal calls
+        calls += 1
+        return [SLAResult("fake", 1.0, 2.0, "ms")]
+
+    monkeypatch.setattr(cb, "_store_path", lambda: tmp_path / "nope")
+    monkeypatch.setattr(perf_sla, "run_all", fake_run_all)
+
+    assert client.get("/api/v1/perf").status_code == 200
+    assert client.get("/api/v1/perf").status_code == 200
+    assert calls == 1
 
 
 def test_perf_page_renders(client):
