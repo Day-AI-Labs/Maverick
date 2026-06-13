@@ -142,7 +142,15 @@ STATE_TY2025: dict = {
 
 @dataclass
 class SourceDoc:
-    """One classified source document with its extracted figures."""
+    """One classified source document with its extracted figures.
+
+    Figures split into two tiers: those the v1 computation consumes (wages,
+    interest, ordinary dividends, withholding) and CARRIED figures from the
+    broader document set (mortgage interest, retirement, social security,
+    ...) -- extracted onto the workpaper for the preparer but never guessed
+    into the return. ``confidence`` (0..1) and ``review_required`` surface a
+    weak extraction so a misread is caught instead of flowing through.
+    """
     doc_type: str
     label: str                       # e.g. "W-2 — Acme Corp"
     wages: float = 0.0               # W-2 box 1
@@ -152,6 +160,17 @@ class SourceDoc:
     nonemployee_comp: float = 0.0    # 1099-NEC box 1 (flagged, not computed)
     state: str = ""                  # W-2 box 15 state code
     state_withholding: float = 0.0   # W-2 box 17
+    # Carried figures: extracted for the preparer, NOT in the v1 computation.
+    mortgage_interest: float = 0.0   # 1098 box 1
+    retirement_gross: float = 0.0    # 1099-R box 1
+    retirement_taxable: float = 0.0  # 1099-R box 2a
+    social_security: float = 0.0     # SSA-1099 box 5
+    unemployment: float = 0.0        # 1099-G box 1
+    student_loan_interest: float = 0.0  # 1098-E box 1
+    tuition: float = 0.0             # 1098-T box 1
+    broker_proceeds: float = 0.0     # 1099-B proceeds (basis work flagged)
+    confidence: float = 1.0          # 0..1 extraction confidence
+    review_required: bool = False    # forced human review of this doc
     raw_excerpt: str = ""            # provenance snippet (bounded)
 
 
@@ -200,6 +219,9 @@ class Draft1040:
     open_items: list[str] = field(default_factory=list)
     lines: list[tuple[str, float, str]] = field(default_factory=list)
     # (line description, amount, source citation)
+    carried: list[tuple[str, float, str]] = field(default_factory=list)
+    # carried figures (mortgage interest, retirement, ...) -- extracted for
+    # the preparer, NOT summed into the computation above
 
 
 @dataclass
@@ -314,6 +336,40 @@ def _report_safe(value: object, *, fallback: str = "document") -> str:
     return cleaned or fallback
 
 
+# The primary figure each classified doc type must yield; a zero here means
+# the extractor could not read the document's headline number, which forces
+# human review rather than a silently-empty line. K-1 has no single headline
+# figure (multi-box pass-through) so it is always preparer work.
+_PRIMARY_FIELD: dict[str, str] = {
+    "W-2": "wages", "1099-INT": "interest", "1099-DIV": "ordinary_dividends",
+    "1099-NEC": "nonemployee_comp", "1098": "mortgage_interest",
+    "1099-R": "retirement_gross", "SSA-1099": "social_security",
+    "1099-G": "unemployment", "1098-E": "student_loan_interest",
+    "1098-T": "tuition", "1099-B": "broker_proceeds",
+}
+
+
+def _score_confidence(doc: SourceDoc) -> None:
+    """Deterministic extraction confidence + forced-review flag.
+
+    1.0 when the doc's headline figure was read; 0.3 (review) when a
+    classified doc yielded nothing; 0.0 (review) for an unclassified doc;
+    0.6 (review) for K-1 / prior-return which carry no single computed
+    figure. Conservative on purpose -- a weak read is surfaced, never hidden.
+    """
+    if doc.doc_type == "UNKNOWN":
+        doc.confidence, doc.review_required = 0.0, True
+        return
+    if doc.doc_type in ("K-1", "PRIOR-RETURN"):
+        doc.confidence, doc.review_required = 0.6, True
+        return
+    field = _PRIMARY_FIELD.get(doc.doc_type)
+    if field and getattr(doc, field) == 0.0:
+        doc.confidence, doc.review_required = 0.3, True
+        return
+    doc.confidence, doc.review_required = 1.0, False
+
+
 def extract(text: str, *, label: str = "") -> SourceDoc:
     """Classify + pull the standard boxes from one document's text."""
     doc_type = classify(text)
@@ -339,6 +395,33 @@ def extract(text: str, *, label: str = "") -> SourceDoc:
     elif doc_type == "1099-NEC":
         doc.nonemployee_comp = _amount_after(
             text, "nonemployee compensation", "box 1")
+    elif doc_type == "1098":
+        doc.mortgage_interest = _amount_after(
+            text, "mortgage interest received", "mortgage interest", "box 1")
+    elif doc_type == "1099-R":
+        doc.retirement_gross = _amount_after(
+            text, "gross distribution", "box 1")
+        doc.retirement_taxable = _amount_after(
+            text, "taxable amount", "box 2a")
+        doc.federal_withholding = _amount_after(
+            text, "federal income tax withheld", "box 4")
+    elif doc_type == "SSA-1099":
+        doc.social_security = _amount_after(
+            text, "net benefits", "box 5", "social security benefit")
+    elif doc_type == "1099-G":
+        doc.unemployment = _amount_after(
+            text, "unemployment compensation", "box 1")
+        doc.federal_withholding = _amount_after(
+            text, "federal income tax withheld", "box 4")
+    elif doc_type == "1098-E":
+        doc.student_loan_interest = _amount_after(
+            text, "student loan interest", "box 1")
+    elif doc_type == "1098-T":
+        doc.tuition = _amount_after(
+            text, "payments received", "box 1")
+    elif doc_type == "1099-B":
+        doc.broker_proceeds = _amount_after(text, "proceeds", "box 1d")
+    _score_confidence(doc)
     return doc
 
 
@@ -363,6 +446,36 @@ _PREPARER_DOC_ITEMS = {
 }
 
 
+# Carried figures: (SourceDoc field, review-package description). Extracted
+# and shown to the preparer, never summed into the v1 computation.
+_CARRIED_FIELDS: list[tuple[str, str]] = [
+    ("nonemployee_comp", "Nonemployee comp (1099-NEC box 1)"),
+    ("mortgage_interest", "Mortgage interest (1098 box 1)"),
+    ("retirement_gross", "Retirement gross distribution (1099-R box 1)"),
+    ("retirement_taxable", "Retirement taxable amount (1099-R box 2a)"),
+    ("social_security", "Social security benefits (SSA-1099 box 5)"),
+    ("unemployment", "Unemployment compensation (1099-G box 1)"),
+    ("student_loan_interest", "Student loan interest (1098-E box 1)"),
+    ("tuition", "Tuition paid (1098-T box 1)"),
+    ("broker_proceeds", "Broker proceeds (1099-B)"),
+]
+
+
+def carried_figures(wp: Workpaper) -> list[tuple[str, float, str]]:
+    """Non-zero carried figures across the workpaper's docs, each cited.
+
+    These are extracted for the preparer's eyes -- they are NOT income in the
+    v1 computation (their tax treatment needs judgment: itemizing, SE tax,
+    taxability worksheets), and the matching open items say so."""
+    out: list[tuple[str, float, str]] = []
+    for d in wp.docs:
+        for fld, desc in _CARRIED_FIELDS:
+            val = getattr(d, fld, 0.0)
+            if val:
+                out.append((desc, val, d.label))
+    return out
+
+
 def missing_items(wp: Workpaper) -> list[str]:
     """Completeness check: what a preparer would chase before computing."""
     items: list[str] = []
@@ -382,6 +495,13 @@ def missing_items(wp: Workpaper) -> list[str]:
         if d.doc_type == "W-2" and d.wages <= 0:
             items.append(f"{label}: W-2 with no box-1 wages extracted -- "
                          "verify the document")
+        # A classified doc whose headline figure did not read (confidence
+        # 0.3) is surfaced for verification rather than carried as a silent
+        # zero. UNKNOWN docs are already named above.
+        elif d.doc_type != "UNKNOWN" and d.confidence <= 0.3:
+            items.append(f"{d.label} ({d.doc_type}): LOW EXTRACTION "
+                         "CONFIDENCE -- headline figure not read; verify the "
+                         "document before relying on it")
     return items
 
 
@@ -443,6 +563,7 @@ def compute_first_pass(wp: Workpaper, *, constants: dict = TY2025) -> Draft1040:
         balance=round(after_credits - withholding, 2),
         open_items=missing_items(wp) + list(wp.notes),
         lines=lines,
+        carried=carried_figures(wp),
     )
     return draft
 
@@ -569,6 +690,13 @@ def render_review_package(draft: Draft1040,
         out.append(f"ESTIMATED REFUND     : ${-draft.balance:,.2f}")
     else:
         out.append(f"ESTIMATED BALANCE DUE: ${draft.balance:,.2f}")
+    if draft.carried:
+        out += ["",
+                "CARRIED FIGURES (preparer review — NOT in the computation "
+                "above):",
+                "-" * 52]
+        for desc, amount, source in draft.carried:
+            out.append(f"  {desc:<40} ${amount:>12,.2f}   [{source}]")
     if state is not None:
         _render_state(out, state)
     open_items = list(draft.open_items)
@@ -588,5 +716,5 @@ __all__ = [
     "SourceDoc", "Workpaper", "Draft1040", "StateDraft",
     "classify", "extract", "missing_items", "compute_first_pass",
     "infer_state", "compute_state_first_pass", "render_review_package",
-    "normalize_filing_status",
+    "normalize_filing_status", "carried_figures",
 ]

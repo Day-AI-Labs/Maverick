@@ -115,6 +115,72 @@ class TestExtractionHardening:
             == 2025.0
 
 
+class TestExtractionBreadth:
+    """Carried figures from the broader document set are extracted onto the
+    workpaper for the preparer -- but never summed into the v1 computation."""
+
+    def test_new_doc_types_extract_their_headline_figure(self):
+        assert extract("Form 1098 Mortgage Interest Statement 2025\n"
+                       "Box 1 Mortgage interest received: $14,200.00\n"
+                       ).mortgage_interest == 14200.0
+        assert extract("Form 1099-R Distributions From Pensions 2025\n"
+                       "Box 1 Gross distribution: $40,000.00\n"
+                       "Box 2a Taxable amount: $38,000.00\n"
+                       ).retirement_taxable == 38000.0
+        assert extract("Form SSA-1099 Social Security Benefit 2025\n"
+                       "Box 5 Net benefits: $28,800.00\n"
+                       ).social_security == 28800.0
+        assert extract("Form 1099-G Certain Government Payments 2025\n"
+                       "Box 1 Unemployment compensation: $9,500.00\n"
+                       ).unemployment == 9500.0
+        assert extract("Form 1098-E Student Loan Interest 2025\n"
+                       "Box 1 Student loan interest: $1,800.00\n"
+                       ).student_loan_interest == 1800.0
+
+    def test_carried_figures_are_cited_and_excluded_from_income(self):
+        wp = Workpaper(filing_status="single", docs=[
+            SourceDoc("W-2", "Acme", wages=60000.0),
+            extract("Form 1098 Mortgage Interest 2025\n"
+                    "Box 1 Mortgage interest received: $14,200.00\n",
+                    label="1098-Bank"),
+        ])
+        draft = compute_first_pass(wp)
+        assert draft.total_income == 60000.0          # mortgage NOT summed in
+        assert ("Mortgage interest (1098 box 1)", 14200.0, "1098-Bank") \
+            in draft.carried
+        pkg = render_review_package(draft)
+        assert "CARRIED FIGURES" in pkg and "14,200.00" in pkg
+
+
+class TestExtractionConfidence:
+    def test_classified_doc_with_no_headline_figure_forces_review(self):
+        # A 1099-INT that classified but whose box-1 figure did not read:
+        # confidence drops and the completeness check names it for review.
+        d = extract("Form 1099-INT Interest Income 2025\nPayer: First Bank\n")
+        assert d.doc_type == "1099-INT"
+        assert d.confidence == 0.3 and d.review_required is True
+        wp = Workpaper(filing_status="single", docs=[d])
+        assert any("LOW EXTRACTION CONFIDENCE" in i
+                   for i in compute_first_pass(wp).open_items)
+
+    def test_zero_wage_w2_keeps_its_specific_message(self):
+        # W-2 with no wages stays on its dedicated message, not the generic
+        # confidence one (both mean "verify the document").
+        d = extract("Form W-2 Wage and Tax Statement 2025\nEmployer: X\n")
+        assert d.confidence == 0.3
+        items = missing_items(Workpaper(filing_status="single", docs=[d]))
+        assert any("no box-1 wages" in i for i in items)
+
+    def test_clean_doc_is_full_confidence(self):
+        d = extract("Form W-2 Wage and Tax Statement 2025\n"
+                    "Box 1 Wages, tips: $50,000.00\n")
+        assert d.confidence == 1.0 and d.review_required is False
+
+    def test_unknown_doc_is_zero_confidence(self):
+        d = extract("grocery receipt")
+        assert d.confidence == 0.0 and d.review_required is True
+
+
 class TestFilingStatusNormalization:
     def test_uppercase_filing_status_is_honored_not_silently_single(self):
         # "MFJ" must compute as MFJ ($31,500 std deduction), not fall back to
