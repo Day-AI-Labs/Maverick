@@ -45,6 +45,26 @@ def test_glance_includes_spend(tmp_path, monkeypatch):
     w.close()
 
 
+def test_glance_scopes_goals_and_spend_by_owner(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_HOME", str(tmp_path / "home"))
+    from maverick.quotas import UsageLedger
+
+    UsageLedger().record("user:alice", 1.25, 1, 1)
+    UsageLedger().record("user:bob", 9.75, 1, 1)
+    w = WorldModel(tmp_path / "world.db")
+    alice = w.create_goal("alice done", "", owner="user:alice")
+    w.set_goal_status(alice, "done", result="ALICE_ONLY_RESULT")
+    bob = w.create_goal("bob done", "", owner="user:bob")
+    w.set_goal_status(bob, "done", result="BOB_SECRET_RESULT")
+
+    g = build_glance(w, owner="user:alice")
+
+    assert g["done_today"] == 1
+    assert g["spend_today"] == 1.25
+    assert g["last_result"] == "ALICE_ONLY_RESULT"
+    w.close()
+
+
 def test_glance_empty_world(tmp_path, monkeypatch):
     monkeypatch.setenv("MAVERICK_HOME", str(tmp_path / "home"))
     w = WorldModel(tmp_path / "world.db")

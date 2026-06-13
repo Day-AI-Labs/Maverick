@@ -21,7 +21,7 @@ def _today_bounds(now: float) -> tuple[float, float]:
     return start, start + 86400.0
 
 
-def build_glance(world, *, now: float | None = None) -> dict:
+def build_glance(world, *, now: float | None = None, owner: str | None = None) -> dict:
     """The fixed glance shape:
 
     ``{active, done_today, failed_today, spend_today, last_result, as_of}``
@@ -31,7 +31,7 @@ def build_glance(world, *, now: float | None = None) -> dict:
     active = done_today = failed_today = 0
     last: tuple[float, str] | None = None
     try:
-        goals = world.list_goals(limit=10_000)
+        goals = world.list_goals(owner=owner, limit=10_000)
     except Exception:
         goals = []
     for g in goals:
@@ -54,8 +54,11 @@ def build_glance(world, *, now: float | None = None) -> dict:
         from .quotas import UsageLedger, _today
         data = UsageLedger()._load()
         day = _today()
-        spend = sum(float((days.get(day) or {}).get("dollars", 0.0))
-                    for days in data.values() if isinstance(days, dict))
+        if owner is None:
+            spend = sum(float((days.get(day) or {}).get("dollars", 0.0))
+                        for days in data.values() if isinstance(days, dict))
+        else:
+            spend = float((data.get(owner) or {}).get(day, {}).get("dollars", 0.0))
     except Exception:
         pass
     return {
