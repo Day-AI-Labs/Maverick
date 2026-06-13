@@ -32,8 +32,24 @@ except ModuleNotFoundError:  # Python 3.10
 _FIELDS = frozenset({
     "compartment", "description", "persona", "allow_tools", "deny_tools",
     "max_risk", "allow_paths", "allow_hosts", "mcp_servers", "models",
-    "knowledge_sources", "authoring",
+    "knowledge_sources", "authoring", "extends", "workflow",
 })
+
+
+@dataclass
+class WorkflowStep:
+    """One step in a pack's editable *playbook* -- the ordered procedure a
+    specialist follows for its task.
+
+    This is human-authored *guidance* (rendered into the agent's system prompt
+    by :func:`render_workflow_prompt`), deliberately distinct from
+    :class:`maverick.workflow.Workflow`, which *executes* a tool DAG. A client
+    edits these steps to tailor how an agent works; the LLM follows them.
+    """
+    name: str
+    instruction: str = ""          # what the agent does at this step
+    tools: list[str] = field(default_factory=list)  # optional tool hints
+    gate: str | None = None        # optional human gate: "approval" | "review"
 
 
 @dataclass
@@ -51,6 +67,8 @@ class DomainProfile:
     models: dict[str, str] = field(default_factory=dict)
     knowledge_sources: list[str] = field(default_factory=list)
     authoring: str = "manual"      # "manual" | "generated"
+    extends: str = ""              # overlay base: inherit a pack, patch the rest
+    workflow: list[WorkflowStep] = field(default_factory=list)  # editable playbook
 
     def __post_init__(self) -> None:
         if not self.compartment:
@@ -73,8 +91,33 @@ class DomainProfile:
         )
 
 
+def _coerce_workflow(raw: object) -> list[WorkflowStep]:
+    """Turn a pack's ``[[workflow]]`` array-of-tables into ``WorkflowStep``s.
+
+    Forgiving: a step without a name, or a non-list ``workflow``, is dropped
+    rather than raising -- a malformed playbook must not break pack discovery.
+    """
+    steps: list[WorkflowStep] = []
+    if not isinstance(raw, list):
+        return steps
+    for item in raw:
+        if not isinstance(item, dict) or not str(item.get("name") or "").strip():
+            continue
+        tools = item.get("tools")
+        steps.append(WorkflowStep(
+            name=str(item["name"]),
+            instruction=str(item.get("instruction") or ""),
+            tools=[str(t) for t in tools] if isinstance(tools, list) else [],
+            gate=(str(item["gate"]) if item.get("gate") else None),
+        ))
+    return steps
+
+
 def _coerce(name: str, data: dict) -> DomainProfile:
-    return DomainProfile(name=name, **{k: v for k, v in data.items() if k in _FIELDS})
+    fields = {k: v for k, v in data.items() if k in _FIELDS}
+    if "workflow" in fields:
+        fields["workflow"] = _coerce_workflow(fields["workflow"])
+    return DomainProfile(name=name, **fields)
 
 
 def load_domain(path: str | Path) -> DomainProfile:
@@ -118,11 +161,98 @@ def user_dir() -> Path:
     return Workspace.current().domains_dir
 
 
+def _load_raw_domains(directory: str | Path) -> dict[str, dict]:
+    """Parse every ``*.toml`` in ``directory`` to its raw dict (keys as written).
+
+    Unlike :func:`load_domains`, this keeps *which keys a file actually set* --
+    the basis for a field-level overlay, where an override patches only what it
+    touched and inherits the rest. Malformed files are skipped."""
+    directory = Path(directory)
+    out: dict[str, dict] = {}
+    if not directory.is_dir():
+        return out
+    for p in sorted(directory.glob("*.toml")):
+        try:
+            with open(p, "rb") as f:
+                data = tomllib.load(f)
+        except Exception:
+            continue
+        out[str(data.get("name") or p.stem)] = data
+    return out
+
+
+# A tenant override may patch any pack field except its identity (``name``,
+# which selects the base) and ``extends`` (the link itself, not patched in).
+_OVERLAYABLE = _FIELDS - {"extends"}
+
+
+def overridden_fields(patch: dict) -> set[str]:
+    """The set of pack fields a raw override dict actually customizes."""
+    return {k for k in patch if k in _OVERLAYABLE}
+
+
+def overlay_profile(base: DomainProfile, patch: dict) -> DomainProfile:
+    """Field-level override: start from ``base`` and replace only the keys the
+    override sets, so a client inherits everything it didn't touch.
+
+    ``patch`` is the raw TOML dict of an override pack. The result keeps the
+    base's ``name`` (identity is not overlaid). This is the upgrade from the old
+    whole-file replacement: a tenant can change just a persona line or one
+    workflow step and keep the rest of the built-in pack."""
+    data: dict = {
+        "compartment": base.compartment,
+        "description": base.description,
+        "persona": base.persona,
+        "allow_tools": list(base.allow_tools),
+        "deny_tools": list(base.deny_tools),
+        "max_risk": base.max_risk,
+        "allow_paths": list(base.allow_paths),
+        "allow_hosts": list(base.allow_hosts),
+        "mcp_servers": list(base.mcp_servers),
+        "models": dict(base.models),
+        "knowledge_sources": list(base.knowledge_sources),
+        "authoring": base.authoring,
+        "workflow": list(base.workflow),
+    }
+    for k in overridden_fields(patch):
+        data[k] = patch[k]
+    if "workflow" in patch:
+        data["workflow"] = _coerce_workflow(patch["workflow"])
+    return DomainProfile(name=base.name, **data)
+
+
+def render_workflow_prompt(workflow: list[WorkflowStep]) -> str:
+    """A pack's playbook as a system-prompt block (``""`` when there is none,
+    so packs without a workflow behave exactly as before)."""
+    if not workflow:
+        return ""
+    lines = ["", "", "Workflow -- follow these steps in order:"]
+    for i, step in enumerate(workflow, 1):
+        line = f"{i}. {step.name}"
+        if step.instruction:
+            line += f": {step.instruction}"
+        if step.tools:
+            line += f"  [tools: {', '.join(step.tools)}]"
+        if step.gate:
+            line += f"  [gate: {step.gate}]"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def available_domains() -> dict[str, DomainProfile]:
-    """All discoverable packs: built-in first, then user-provided (user wins)."""
-    domains = load_domains(builtin_dir())
-    domains.update(load_domains(user_dir()))
-    return domains
+    """All discoverable packs: built-in bases, with user/tenant overrides applied
+    as field-level overlays.
+
+    A user pack whose name matches a built-in (or that declares ``extends``)
+    *patches* that base, inheriting every field it doesn't set. A user pack with
+    a brand-new name is added as a standalone pack. This is what lets a client
+    customize an agent without re-stating the whole pack."""
+    builtin = load_domains(builtin_dir())
+    resolved = dict(builtin)
+    for name, patch in _load_raw_domains(user_dir()).items():
+        base = resolved.get(str(patch.get("extends") or name))
+        resolved[name] = overlay_profile(base, patch) if base else _coerce(name, patch)
+    return resolved
 
 
 # A pack's name prefix maps it to a business *suite* (finance, operations, legal,
@@ -218,8 +348,34 @@ def domain_capability(profile: DomainProfile, parent_cap, principal: str):
 
 
 _VALID_RISKS = frozenset({"low", "medium", "high"})
+_VALID_GATES = frozenset({"approval", "review"})
 # Below this, a persona is a label, not a working instruction set.
 _MIN_PERSONA_CHARS = 200
+
+
+def _lint_workflow(profile: DomainProfile) -> tuple[list[str], list[str]]:
+    """Quality-gate a pack's editable playbook. Returns ``(errors, warnings)``.
+
+    A nameless or duplicate step is an error (it breaks the ordered procedure);
+    an unknown gate or a step naming a tool the pack doesn't allow is a warning."""
+    errors: list[str] = []
+    warnings: list[str] = []
+    seen: set[str] = set()
+    for i, step in enumerate(profile.workflow, 1):
+        name = (step.name or "").strip()
+        if not name:
+            errors.append(f"workflow step {i} has no name")
+        elif name in seen:
+            errors.append(f"duplicate workflow step name {name!r}")
+        seen.add(name)
+        if step.gate and step.gate not in _VALID_GATES:
+            warnings.append(f"workflow step {name or i!r}: unknown gate "
+                            f"{step.gate!r} (expected {sorted(_VALID_GATES)})")
+        stray = [t for t in step.tools if profile.allow_tools and t not in profile.allow_tools]
+        if stray:
+            warnings.append(f"workflow step {name or i!r} names tools not in "
+                            f"allow_tools: {', '.join(stray)}")
+    return errors, warnings
 
 
 def lint_profile(profile: DomainProfile) -> tuple[list[str], list[str]]:
@@ -255,6 +411,9 @@ def lint_profile(profile: DomainProfile) -> tuple[list[str], list[str]]:
     if not profile.deny_tools:
         warnings.append("no deny_tools: consider explicitly denying the "
                         "tools this role must never touch")
+    wf_errors, wf_warnings = _lint_workflow(profile)
+    errors.extend(wf_errors)
+    warnings.extend(wf_warnings)
     return errors, warnings
 
 
@@ -335,6 +494,8 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
         ctx=ctx, role=profile.name, brief=task + ("\n" + memory if memory else ""),
         depth=depth, parent=parent,
         domain=profile.compartment,
-        persona=augment_persona(profile.name, profile.persona), capability=cap,
+        persona=(augment_persona(profile.name, profile.persona)
+                 + render_workflow_prompt(profile.workflow)),
+        capability=cap,
         knowledge_sources=profile.knowledge_sources,
     )
