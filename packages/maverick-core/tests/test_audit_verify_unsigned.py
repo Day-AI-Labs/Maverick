@@ -65,3 +65,41 @@ def test_cli_unsigned_day_is_one_actionable_line(tmp_path, monkeypatch):
     assert "[audit] sign" in out
     # No per-row tamper vocabulary for the expected-unsigned case.
     assert "malformed" not in out
+
+
+def test_pubkey_expectation_makes_fully_stripped_rows_malformed(tmp_path, monkeypatch):
+    from maverick.audit import signing
+
+    if not signing._have_crypto():
+        import pytest
+        pytest.skip("cryptography not installed")
+
+    from maverick.audit.events import AuditEvent
+    from maverick.audit.writer import AuditLog
+
+    monkeypatch.setattr(signing, "KEY_DIR", tmp_path / "keys")
+    audit_dir = tmp_path / "audit"
+    log = AuditLog(audit_dir, sign=True)
+    assert log.record(AuditEvent(ts=1.0, kind="x", payload={})) is True
+
+    day_file = next(audit_dir.glob("*.ndjson"))
+    signed_row = json.loads(day_file.read_text(encoding="utf-8").splitlines()[0])
+    pubkey_hex = (signing.KEY_DIR / f"{signed_row['key_id']}.pub").read_bytes().hex()
+    for field in ("hash", "sig", "key_id", "prev_hash"):
+        signed_row.pop(field, None)
+    _write_rows(day_file, [signed_row])
+
+    breaks = verify_chain(day_file, pubkey_hex=pubkey_hex)
+    assert len(breaks) == 1
+    assert breaks[0].reason == "malformed"
+    assert "possible stripped" in breaks[0].detail
+
+
+def test_leftover_prev_hash_makes_stripped_row_malformed(tmp_path):
+    f = tmp_path / "2026-06-11.ndjson"
+    _write_rows(f, [{"kind": "x", "prev_hash": "ab" * 32}])
+
+    breaks = verify_chain(f)
+
+    assert len(breaks) == 1
+    assert breaks[0].reason == "malformed"

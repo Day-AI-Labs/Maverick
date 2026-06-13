@@ -223,6 +223,10 @@ def _probe_audit_chain() -> dict[str, Any]:
     unsigned_rows = 0  # rows missing hash/sig/key_id (signing simply off)
     first_reason: str | None = None
     no_crypto = False
+    # Fail-safe to "expected" (stay strict) if the signal can't be read. Compute
+    # before row classification so stripped signatures on a host that signs do
+    # not get downgraded to the benign unsigned-configuration state.
+    signing_expected = _safe(_audit_signing_expected, True)
     for path in day_files:
         breaks = _safe(lambda p=path: verify_chain(p), None)
         if breaks is None:
@@ -236,18 +240,21 @@ def _probe_audit_chain() -> dict[str, Any]:
             if reason == "no_crypto":
                 no_crypto = True
                 continue
-            # An unsigned row (signing off) now reports as its own "unsigned"
-            # reason -- the benign configuration state, not tampering. The
-            # legacy form ("malformed" + this exact detail) is kept for
-            # results produced by older verifiers. Anything else is a real
-            # cryptographic break.
-            if reason == "unsigned":
-                unsigned_rows += 1
-                continue
-            if reason == "malformed" and "missing hash/sig/key_id" in (
-                getattr(b, "detail", "") or ""
-            ):
-                unsigned_rows += 1
+            missing_signature_fields = reason == "unsigned" or (
+                reason == "malformed"
+                and "missing hash/sig/key_id" in (getattr(b, "detail", "") or "")
+            )
+            # Missing signing fields are benign only when signing is not
+            # expected. If this deployment is configured to sign (or has a
+            # signing key), all signing fields disappearing is a possible
+            # downgrade/strip attack.
+            if missing_signature_fields:
+                if signing_expected:
+                    real_breaks += 1
+                    if first_reason is None:
+                        first_reason = "missing_signature_fields"
+                else:
+                    unsigned_rows += 1
                 continue
             real_breaks += 1
             if first_reason is None:
@@ -258,8 +265,6 @@ def _probe_audit_chain() -> dict[str, Any]:
         result["status"] = STATUS_UNKNOWN
         result["error"] = "verify_anchors raised"
         return result
-    # Fail-safe to "expected" (stay strict) if the signal can't be read.
-    signing_expected = _safe(_audit_signing_expected, True)
     for b in anchor_breaks:
         reason = getattr(b, "reason", "")
         if reason == "no_crypto":
