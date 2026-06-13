@@ -42,6 +42,7 @@ def test_usage_attributes_included_when_provided():
 def test_exports():
     assert "gen_ai_attributes" in obs.__all__
     assert "gen_ai_span_name" in obs.__all__
+    assert "safe_agent_telemetry_label" in obs.__all__
 
 
 def test_llm_complete_paths_use_genai_span_helpers():
@@ -94,6 +95,55 @@ def test_agent_attributes_use_genai_semconv_keys():
     # optional fields omitted when unknown
     b = obs.gen_ai_agent_attributes("coder")
     assert "gen_ai.agent.id" not in b and "gen_ai.agent.description" not in b
+
+
+def test_agent_attributes_redact_model_controlled_role_text():
+    secret_role = "researcher SECRET_TOKEN_FROM_WORKSPACE=sk_live_12345"
+    secret_id = f"{secret_role}-1-abcdef"
+
+    attrs = obs.gen_ai_agent_attributes(secret_role, agent_id=secret_id)
+
+    assert "SECRET_TOKEN" not in attrs["gen_ai.agent.name"]
+    assert "sk_live" not in attrs["gen_ai.agent.name"]
+    assert "SECRET_TOKEN" not in attrs["gen_ai.agent.id"]
+    assert "sk_live" not in attrs["gen_ai.agent.id"]
+    assert attrs["gen_ai.agent.name"].startswith("redacted-agent-")
+    assert attrs["gen_ai.agent.id"].startswith("redacted-agent-")
+
+
+def test_agent_run_redacts_role_from_invoke_agent_span(monkeypatch):
+    import maverick.agent as agent_mod
+
+    spans: list = []
+
+    class _Span:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def _fake_trace_span(name, *, attributes=None):
+        spans.append((name, attributes or {}))
+        return _Span()
+
+    monkeypatch.setattr(obs, "trace_span", _fake_trace_span)
+
+    async def _inner(self):
+        return "ok"
+
+    monkeypatch.setattr(agent_mod.Agent, "_run_inner", _inner)
+    agent = agent_mod.Agent.__new__(agent_mod.Agent)
+    agent.role = "researcher SECRET_TOKEN_FROM_WORKSPACE=sk_live_12345"
+    agent.name = f"{agent.role}-1-abcdef"
+
+    import asyncio
+    assert asyncio.run(agent_mod.Agent.run(agent)) == "ok"
+    span_name, attrs = spans[0]
+    assert "SECRET_TOKEN" not in span_name
+    assert "sk_live" not in span_name
+    assert "SECRET_TOKEN" not in attrs["gen_ai.agent.name"]
+    assert "sk_live" not in attrs["gen_ai.agent.id"]
 
 
 def test_agent_run_opens_invoke_agent_span(monkeypatch):
