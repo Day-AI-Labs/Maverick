@@ -146,6 +146,34 @@ def test_knob_on_hands_parked_sandbox_to_next_run(tmp_path, docker_ok, monkeypat
     assert again is not parked
 
 
+def test_warm_docker_backend_is_not_pool_eligible(tmp_path, docker_ok):
+    p = pool.SandboxPool(clock=lambda: 0.0)
+    sb = _backend(tmp_path, reuse_container=True)
+    sb._warm_name = "maverick-warm-existing"
+
+    assert p.park(sb) is False
+    assert len(p) == 0
+
+
+def test_reuse_container_config_bypasses_cross_run_pool(
+    tmp_path, docker_ok, monkeypatch
+):
+    _wire_config(monkeypatch, {
+        "backend": "docker",
+        "cross_run_pool": True,
+        "reuse_container": True,
+    })
+    parked = _backend(tmp_path)
+    assert pool.shared_pool().park(parked)
+
+    built = build_sandbox(workdir=tmp_path / "next")
+
+    assert built is not parked
+    assert isinstance(built, DockerBackend)
+    assert built.reuse_container is True
+    assert len(pool.shared_pool()) == 1
+
+
 def test_knob_on_empty_pool_builds_fresh(tmp_path, docker_ok, monkeypatch):
     _wire_config(monkeypatch, {"backend": "docker", "cross_run_pool": True})
     built = build_sandbox(workdir=tmp_path / "next")

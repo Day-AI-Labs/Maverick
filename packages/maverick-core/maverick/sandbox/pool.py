@@ -21,8 +21,10 @@ A backend may only be pooled if handing it to the next run provably carries
      exec via ``scrub_env()`` — nothing env-shaped survives on the instance.
   3. **No live guest**: eligible backends run a fresh ``docker/podman run
      --rm`` per exec, so no container/filesystem/process state exists between
-     execs, let alone between runs. Per-run ``timeout`` is re-applied at
-     acquire.
+     execs, let alone between runs. Docker's opt-in warm ``reuse_container``
+     mode is deliberately excluded from pooling because its persistent guest is
+     mounted to the workdir that existed when it was first created. Per-run
+     ``timeout`` is re-applied at acquire.
 
 Only :class:`DockerBackend` and :class:`PodmanBackend` satisfy all three
 (what is actually reused is the verified daemon handle + image-pinned
@@ -127,6 +129,12 @@ def _key(engine: str, image: str, *, allow_network: object, allow_root: object,
 def _key_of(sandbox: object) -> str | None:
     engine = _engine_of(sandbox)
     if engine is None:
+        return None
+    if isinstance(sandbox, DockerBackend) and sandbox.reuse_container:
+        log.debug(
+            "sandbox pool: DockerBackend with reuse_container is not "
+            "pool-eligible; warm containers are per-run only"
+        )
         return None
     return _key(
         engine,
