@@ -112,3 +112,28 @@ def test_check_mode_offline(tmp_path, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "ar\tgetting-started.md\tmissing" in out and "tr\t" in out
+
+
+def test_rejects_source_paths_outside_docs_root(tmp_path):
+    root = _setup_root(tmp_path)
+    outside = tmp_path / "secret.md"
+    outside.write_text("# Secret\n", encoding="utf-8")
+
+    for rel in (str(outside), "../secret.md"):
+        with pytest.raises(ValueError, match="docs file"):
+            docs_i18n.status(root, ["ar"], [rel])
+        with pytest.raises(ValueError, match="docs file"):
+            docs_i18n.run(root, ["ar"], [rel], _FakeLLM())
+
+
+def test_rejects_language_paths_outside_i18n_root(tmp_path):
+    root = _setup_root(tmp_path)
+    outside_dir = tmp_path / "outside"
+
+    for lang in (str(outside_dir), "../outside"):
+        with pytest.raises(ValueError, match="language code"):
+            docs_i18n.status(root, [lang], ["getting-started.md"])
+        with pytest.raises(ValueError, match="language code"):
+            docs_i18n.run(root, [lang], ["getting-started.md"], _FakeLLM())
+
+    assert not outside_dir.exists()
