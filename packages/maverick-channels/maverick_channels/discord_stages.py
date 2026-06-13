@@ -18,11 +18,14 @@ Etiquette rules built in:
 * it answers as text when not a speaker (graceful degradation);
 * an utterance is bounded (max seconds/chars) before it reaches the handler.
 """
+
 from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+
+from .base import IncomingMessage, is_allowed, normalize_allowlist
 
 log = logging.getLogger(__name__)
 
@@ -52,14 +55,28 @@ class StageSession:
     seam: StageSeam
     transcriber: Callable[[bytes], str]
     channel_name: str = "discord-stage"
-    wake_word: str | None = None      # only react when addressed, if set
+    wake_word: str | None = None  # only react when addressed, if set
+    allowed_user_ids: set[str] | None = None
     _buffer: dict[str, list[str]] = field(default_factory=dict)
 
-    async def on_audio_segment(self, speaker_id: str, audio: bytes,
-                               *, final: bool) -> str | None:
+    def __post_init__(self) -> None:
+        # Discord Stage speakers can trigger the normal Maverick handler, so
+        # require the same explicit Discord allowlist used by the text adapter.
+        self.allowed_user_ids = normalize_allowlist(
+            self.allowed_user_ids,
+            "DISCORD_ALLOWED_USER_IDS",
+        )
+        if not self.allowed_user_ids:
+            raise ValueError("Set DISCORD_ALLOWED_USER_IDS to restrict access")
+
+    async def on_audio_segment(self, speaker_id: str, audio: bytes, *, final: bool) -> str | None:
         """Feed one speaker's audio segment; on a final segment, transcribe
         the assembled utterance and (maybe) handle it. Returns the reply
         text when one was produced (for tests/telemetry)."""
+        if not is_allowed(speaker_id, self.allowed_user_ids):
+            log.warning("unauthorized discord stage access: speaker_id=%s", speaker_id)
+            self._buffer.pop(speaker_id, None)
+            return None
         text = (self.transcriber(audio) or "").strip()
         if text:
             self._buffer.setdefault(speaker_id, []).append(text)
@@ -73,9 +90,9 @@ class StageSession:
         return await self._respond(speaker_id, utterance)
 
     async def _respond(self, speaker_id: str, utterance: str) -> str:
-        from maverick_channels.base import IncomingMessage
-        msg = IncomingMessage(user_id=speaker_id, text=utterance,
-                              channel=self.channel_name)
+        msg = IncomingMessage(
+            user_id=speaker_id, text=utterance, channel=self.channel_name, sender_id=speaker_id
+        )
         try:
             reply = await self.handler(msg)
         except Exception:
