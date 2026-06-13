@@ -3918,9 +3918,10 @@ def forward_cmd(ctx, days: int) -> None:
     for deadline, g, nq in rows:
         delta = (deadline - now) / 86400.0
         when = f"OVERDUE {-delta:.1f}d" if delta < 0 else f"due in {delta:.1f}d"
-        dept = f" [{g.domain}]" if g.domain else ""
+        title = _strip_terminal_control(g.title)[:70]
+        dept = f" [{_strip_terminal_control(g.domain)}]" if g.domain else ""
         blocked = f"  ({nq} question(s) awaiting you)" if nq else ""
-        click.echo(f"#{g.id:<5} {when:<16} {g.title[:70]}{dept}{blocked}")
+        click.echo(f"#{g.id:<5} {when:<16} {title}{dept}{blocked}")
 
 
 @main.group("tax")
