@@ -42,6 +42,34 @@ def test_secrets_scrubbed():
     assert "sk-ant" not in md and "REDACTED" in md
 
 
+def test_export_scrubs_shareable_secret_shapes():
+    private_key = (
+        "-----BEGIN PRIVATE KEY-----\n"
+        "KEY-BODY-SHOULD-NOT-LEAK\n"
+        "-----END PRIVATE KEY-----"
+    )
+    goal = _goal(
+        title="Docs export https://example.test/file?sig=GOAL-SIG-SHOULD-NOT-LEAK",
+        description='DB_PASSWORD="super secret password"',
+        result="see https://example.test/callback?token=RESULT-TOKEN-SHOULD-NOT-LEAK",
+    )
+    events = [
+        _ev("finding", f"download with ?token=EVENT-TOKEN-SHOULD-NOT-LEAK\n{private_key}"),
+        _ev("error", "retry failed with ?sig=ERR-SIG-SHOULD-NOT-LEAK"),
+    ]
+
+    md = tutorial_markdown(goal, events, now=0)
+
+    assert "GOAL-SIG-SHOULD-NOT-LEAK" not in md
+    assert "super secret password" not in md
+    assert "RESULT-TOKEN-SHOULD-NOT-LEAK" not in md
+    assert "EVENT-TOKEN-SHOULD-NOT-LEAK" not in md
+    assert "KEY-BODY-SHOULD-NOT-LEAK" not in md
+    assert "-----END PRIVATE KEY-----" not in md
+    assert "ERR-SIG-SHOULD-NOT-LEAK" not in md
+    assert md.count("[REDACTED:") >= 5
+
+
 def test_no_events_no_result():
     md = tutorial_markdown(_goal(result="", status="failed"), [])
     assert "_The run ended with status: failed._" in md
