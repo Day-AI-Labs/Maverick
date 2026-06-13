@@ -115,12 +115,14 @@
         "maverick.dashboardUrl": {
           "type": "string",
           "default": "http://127.0.0.1:8765",
-          "description": "Local Maverick dashboard URL for live-run streaming."
+          "scope": "machine",
+          "description": "Local Maverick dashboard URL for live-run streaming. Machine-scoped so an untrusted workspace cannot redirect bearer tokens to another host."
         },
         "maverick.dashboardToken": {
           "type": "string",
           "default": "",
-          "description": "MAVERICK_DASHBOARD_TOKEN value, if the dashboard sets one."
+          "scope": "machine",
+          "description": "MAVERICK_DASHBOARD_TOKEN value, if the dashboard sets one. Machine-scoped so workspace settings cannot provide or override credentials."
         }
       }
     }
