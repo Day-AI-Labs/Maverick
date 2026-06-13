@@ -16,7 +16,10 @@ silently downgraded shell to something else would violate the contract.
 
 ``modal`` is the ``[modal]`` extra, imported lazily; per-call sandboxes are
 created with the configured image/cpu/memory/timeout and torn down after the
-command. The Modal client object is injectable so tests run offline.
+command. Modal does not currently expose a per-sandbox no-egress switch here,
+so ``allow_network=false`` fails closed instead of silently running with
+provider-default networking. The Modal client object is injectable so tests run
+offline.
 """
 from __future__ import annotations
 
@@ -33,13 +36,14 @@ class ModalBackend:
 
     def __init__(self, workdir: Path | str = ".", *, image: str = _DEFAULT_IMAGE,
                  timeout: float = 60.0, cpu: float | None = None,
-                 memory_mb: int | None = None, app_name: str = "maverick-sandbox",
-                 client=None):
+                 memory_mb: int | None = None, allow_network: bool = False,
+                 app_name: str = "maverick-sandbox", client=None):
         self.workdir = Path(workdir)
         self.image = image
         self.timeout = timeout
         self.cpu = cpu
         self.memory_mb = memory_mb
+        self.allow_network = allow_network
         self.app_name = app_name
         self._client = client  # injected in tests; lazy real client otherwise
 
@@ -62,6 +66,18 @@ class ModalBackend:
         object (stdout / stderr / exit_code)."""
         from .local import ExecResult
         effective = self.timeout if timeout is None else float(timeout)
+        if not self.allow_network:
+            return ExecResult(
+                stdout="",
+                stderr=(
+                    "networking is disabled for modal backend "
+                    "(allow_network=false), but Modal sandboxes cannot "
+                    "self-enforce no-network execution. Set "
+                    "[sandbox] allow_network = true to acknowledge and use "
+                    "Modal provider-default networking."
+                ),
+                exit_code=2,
+            )
         try:
             modal = self._modal()
             app = modal.App.lookup(self.app_name, create_if_missing=True)
