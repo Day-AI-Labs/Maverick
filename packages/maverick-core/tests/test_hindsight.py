@@ -135,7 +135,8 @@ class TestLedger:
                             lambda kind, **kw: rows.append((kind, kw)) or True)
         report = hindsight.HindsightReport(
             n_goals=3, covered_now=2, covered_before=1,
-            gained=["a"], regressed=["b"],
+            gained=["SECRET-GAINED payroll token"],
+            regressed=["SECRET-REGRESSED customer data"],
         )
         path = tmp_path / "hindsight.ndjson"
         assert hindsight.write_ledger(
@@ -144,5 +145,10 @@ class TestLedger:
         import json
         line = json.loads(path.read_text().strip())
         assert line["before"] == "snap1" and line["covered_now"] == 2
+        assert line["gained"] == 1 and line["regressed"] == 1
+        text = path.read_text()
+        assert "SECRET-GAINED" not in text
+        assert "SECRET-REGRESSED" not in text
+        assert (path.stat().st_mode & 0o777) == 0o600
         assert rows and rows[0][0] == "learning_update"
         assert rows[0][1]["replay"] == "hindsight"
