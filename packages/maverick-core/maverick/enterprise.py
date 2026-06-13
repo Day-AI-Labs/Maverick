@@ -208,23 +208,10 @@ def _endpoint_validated_provider_is_local(provider: str) -> bool:
     return _is_local_endpoint(_configured_openai_compatible_base_url())
 
 
-def _configured_base_url(provider: str) -> str | None:
-    """Return the endpoint that ``provider`` will use, if explicitly configured.
-
-    This must match the provider client's endpoint precedence: VLLM/TGI clients
-    read their dedicated environment variable before falling back to their
-    localhost default, while other provider names use ``[providers.<name>]
-    base_url``. Keeping the egress guard's view aligned with dispatch prevents a
-    local-looking config value from masking a public VLLM/TGI environment
-    override.
-    """
-    env_var = _LOCAL_PROVIDER_ENDPOINT_ENV.get(provider)
-    env_url = os.environ.get(env_var) if env_var else None
-    if env_url:
-        return str(env_url).strip()
+def _provider_config_base_url(provider: str) -> str | None:
+    from .config import get_provider_config
 
     try:
-        from .config import get_provider_config
         cfg = get_provider_config(provider)
     except Exception:
         cfg = {}
@@ -232,15 +219,49 @@ def _configured_base_url(provider: str) -> str | None:
     return str(url).strip() if url else None
 
 
+def _configured_base_url(provider: str) -> str | None:
+    """Return the endpoint that ``provider`` will use, if explicitly configured.
+
+    This mirrors the dispatch precedence: an explicit ``[providers.<name>]
+    base_url`` is passed into the provider client and wins over provider-specific
+    endpoint environment variables such as ``VLLM_BASE_URL`` and ``TGI_BASE_URL``.
+    """
+    cfg_url = _provider_config_base_url(provider)
+    if cfg_url:
+        return cfg_url
+
+    env_var = _LOCAL_PROVIDER_ENDPOINT_ENV.get(provider)
+    env_url = os.environ.get(env_var) if env_var else None
+    return str(env_url).strip() if env_url else None
+
+
+def _explicit_local_provider_endpoints(provider: str) -> tuple[str, ...]:
+    """Return every explicit endpoint source for a built-in local provider.
+
+    The egress guard must never let one local-looking source mask another
+    non-local source. Dispatch currently prefers config over env, but checking all
+    explicit sources keeps enterprise mode fail-closed if precedence changes again.
+    """
+    urls: list[str] = []
+    cfg_url = _provider_config_base_url(provider)
+    if cfg_url:
+        urls.append(cfg_url)
+    env_var = _LOCAL_PROVIDER_ENDPOINT_ENV.get(provider)
+    env_url = os.environ.get(env_var) if env_var else None
+    if env_url and str(env_url).strip():
+        urls.append(str(env_url).strip())
+    return tuple(urls)
+
+
 def _builtin_local_provider_is_local(provider: str) -> bool:
     """A built-in local provider (ollama/vllm/tgi) is local unless it has been
     pointed at a non-local endpoint. No configured endpoint -> the built-in
-    localhost default -> local. A public base_url -> NOT local: this is the
-    egress-lock bypass (a "local" provider name aimed off-box) that we close."""
-    url = _configured_base_url(provider)
-    if url is None:
+    localhost default -> local. Any public base_url/env URL -> NOT local: this is
+    the egress-lock bypass (a "local" provider name aimed off-box) that we close."""
+    urls = _explicit_local_provider_endpoints(provider)
+    if not urls:
         return True
-    return _is_local_endpoint(url)
+    return all(_is_local_endpoint(url) for url in urls)
 
 
 def _extra_local_providers() -> frozenset[str]:
