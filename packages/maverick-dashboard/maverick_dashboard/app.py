@@ -2454,7 +2454,7 @@ async def settings_set_model(request: Request, model: str = Form("")) -> Redirec
     defaults. config.toml is never written."""
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
-        require_permission(request, "admin")
+    require_permission(request, "admin")
     from maverick.runtime_overrides import clear_default_model, set_default_model
     model = (model or "").strip()
     try:
@@ -2474,7 +2474,7 @@ async def settings_set_budget(request: Request, max_dollars: str = Form("")) -> 
     config.toml is never written."""
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
-        require_permission(request, "admin")
+    require_permission(request, "admin")
     from maverick.runtime_overrides import clear_budget, set_budget
     val = (max_dollars or "").strip()
     try:
@@ -2495,7 +2495,7 @@ async def settings_set_role_models(request: Request) -> RedirectResponse:
     form field is named for a role; an empty value clears that role's pin."""
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
-        require_permission(request, "admin")
+    require_permission(request, "admin")
     from maverick.runtime_overrides import set_role_models
     roles = ("orchestrator", "coder", "researcher", "writer",
              "analyst", "verifier", "summarizer")
@@ -2520,7 +2520,7 @@ async def settings_set_provider(
     a key you can't see); resolved before env vars; config.toml is never written."""
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
-        require_permission(request, "admin")
+    require_permission(request, "admin")
     from maverick_dashboard import settings_store
     try:
         settings_store.set_provider(provider.strip(), api_key=api_key, base_url=base_url)
@@ -2534,7 +2534,7 @@ async def settings_clear_provider(request: Request, provider: str = Form(...)) -
     """Remove a provider's dashboard-set key (config.toml / env unaffected)."""
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
-        require_permission(request, "admin")
+    require_permission(request, "admin")
     from maverick_dashboard import settings_store
     try:
         settings_store.clear_provider(provider.strip())
@@ -2548,7 +2548,7 @@ async def settings_set_capabilities(request: Request) -> RedirectResponse:
     """Activate/deactivate capabilities via the dashboard config overlay."""
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
-        require_permission(request, "admin")
+    require_permission(request, "admin")
     from maverick_dashboard import settings_store
     form = await request.form()
     for name in settings_store.CAPABILITY_DEFAULTS:
@@ -2561,7 +2561,7 @@ async def settings_set_features(request: Request) -> RedirectResponse:
     """Activate/deactivate features via the dashboard config overlay."""
     if not _is_same_origin(request):
         raise HTTPException(status_code=403, detail="cross-site form post blocked")
-        require_permission(request, "admin")
+    require_permission(request, "admin")
     from maverick_dashboard import settings_store
     form = await request.form()
     for name in settings_store.FEATURE_DEFAULTS:
