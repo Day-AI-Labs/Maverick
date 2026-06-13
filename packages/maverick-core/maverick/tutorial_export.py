@@ -31,10 +31,10 @@ def _get(obj: Any, name: str, default: str = "") -> str:
 
 def _scrub(text: str) -> str:
     try:
-        from .safety.secret_detector import redact
-        out, _ = redact(text)
-        return out
-    except Exception:  # detector must never block an export
+        from .secrets import scrub
+
+        return scrub(text)
+    except Exception:  # scrubber must never block an export
         return text
 
 
