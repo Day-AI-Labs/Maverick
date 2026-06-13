@@ -211,6 +211,11 @@ def get_features() -> dict:
     - ``streaming``   stream live progress to the terminal during `maverick
                       start`. The MAVERICK_NO_PROGRESS env var / non-TTY output
                       still suppress it.
+    - ``pack_editing`` allow editing/overriding domain packs (agents) from the
+                      dashboard editor. Off = the editor is read-only and the
+                      mutating REST endpoints return 403, so an operator can
+                      lock the agent roster in a governed deployment. Writing
+                      override TOML on the host is unaffected.
 
     All default on.
     """
@@ -219,6 +224,7 @@ def get_features() -> dict:
         "skills": bool(cfg.get("skills", True)),
         "world_model": bool(cfg.get("world_model", True)),
         "streaming": bool(cfg.get("streaming", True)),
+        "pack_editing": bool(cfg.get("pack_editing", True)),
     }
 
 

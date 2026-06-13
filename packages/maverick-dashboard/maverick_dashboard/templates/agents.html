@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}agents · Maverick{% endblock %}
+{% block content %}
+  <h2>agents</h2>
+  <p class="muted" style="max-width: 48rem;">
+    Every specialist pack, and the editor to tailor one for this deployment.
+    Saving writes a <em>tenant override</em> that inherits the built-in pack and
+    patches only what you change — including the agent's <strong>workflow</strong>
+    (the playbook it follows). An override can never weaken the safety envelope:
+    one that fails validation is rejected, not saved.
+  </p>
+  {% if not editable %}
+  <p><span class="badge">read-only</span> <span class="muted">pack editing is disabled
+    (<code>[features] pack_editing = false</code>) — viewing only.</span></p>
+  {% endif %}
+
+  <div class="panel" style="display: flex; gap: 1.5rem; align-items: flex-start;">
+    <nav aria-label="Agent roster" style="min-width: 15rem; max-height: 70vh; overflow: auto;">
+      {% if agents %}
+      <ul style="list-style: none; padding: 0; margin: 0;">
+        {% for a in agents %}
+        <li style="margin: 0.15rem 0;">
+          <a href="/agents?name={{ a.name }}"
+             {% if selected and selected.name == a.name %}class="active" aria-current="page"{% endif %}>
+            <code>{{ a.name }}</code>
+            {% if a.is_override %}<span class="badge">custom</span>{% endif %}
+            {% if a.has_workflow %}<span class="badge">workflow</span>{% endif %}
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">No agents discovered.</p>
+      {% endif %}
+    </nav>
+
+    <section aria-label="Agent editor" style="flex: 1; min-width: 0;">
+      {% if selected %}
+      <h3 style="margin-top: 0;">
+        <code>{{ selected.name }}</code>{% if selected.suite %} <span class="muted">· {{ selected.suite }}</span>{% endif %}
+      </h3>
+      {% if selected.is_override %}
+      <p class="muted">Overridden fields: {{ selected.overridden|join(', ') or '—' }}
+        (everything else inherits the built-in pack).</p>
+      {% endif %}
+      <div id="agent-msg" role="status" aria-live="polite" class="muted" style="min-height: 1.2rem;"></div>
+
+      <form id="agent-form" data-name="{{ selected.name }}">
+        <p>
+          <label for="f-description">Description</label><br>
+          <input id="f-description" name="description" type="text" style="width: 100%;"
+                 value="{{ selected.description }}">
+        </p>
+        <p>
+          <label for="f-persona">Persona (system instructions)</label><br>
+          <textarea id="f-persona" name="persona" rows="8" style="width: 100%;">{{ selected.persona }}</textarea>
+        </p>
+        <p>
+          <label for="f-allow">Allowed tools <span class="muted">(space-separated)</span></label><br>
+          <input id="f-allow" name="allow_tools" type="text" style="width: 100%;"
+                 value="{{ selected.allow_tools|join(' ') }}">
+        </p>
+        <p>
+          <label for="f-deny">Denied tools <span class="muted">(space-separated)</span></label><br>
+          <input id="f-deny" name="deny_tools" type="text" style="width: 100%;"
+                 value="{{ selected.deny_tools|join(' ') }}">
+        </p>
+        <p>
+          <label for="f-risk">Max risk ceiling</label><br>
+          <select id="f-risk" name="max_risk">
+            {% for r in ['low', 'medium', 'high'] %}
+            <option value="{{ r }}"{% if selected.max_risk == r %} selected{% endif %}>{{ r }}</option>
+            {% endfor %}
+          </select>
+        </p>
+        <p>
+          <label for="f-workflow">Workflow playbook <span class="muted">(JSON list of steps:
+            name, instruction, tools, gate)</span></label><br>
+          <textarea id="f-workflow" name="workflow" rows="12"
+                    style="width: 100%; font-family: var(--mono, monospace);">{{ workflow_json }}</textarea>
+        </p>
+        {% if editable %}
+        <p>
+          <button type="button" id="btn-validate">Validate</button>
+          <button type="button" id="btn-save">Save override</button>
+          <button type="button" id="btn-reset">Reset to built-in</button>
+        </p>
+        {% else %}
+        <p class="muted">Editing is disabled in this deployment.</p>
+        {% endif %}
+      </form>
+
+      {% if selected.errors or selected.warnings %}
+      <div class="panel" style="margin-top: 1rem;">
+        {% for e in selected.errors %}<div>⛔ {{ e }}</div>{% endfor %}
+        {% for w in selected.warnings %}<div class="muted">⚠ {{ w }}</div>{% endfor %}
+      </div>
+      {% endif %}
+      {% else %}
+      <p class="muted">Select an agent from the roster to view or edit it.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  {% if selected and editable %}
+  <script>
+    (function () {
+      const form = document.getElementById('agent-form');
+      if (!form) return;
+      const name = form.dataset.name;
+      const msg = document.getElementById('agent-msg');
+      const words = (s) => s.split(/\s+/).filter(Boolean);
+
+      function show(text, ok) {
+        msg.textContent = text;
+        msg.style.color = ok ? 'var(--ok, green)' : 'var(--danger, crimson)';
+      }
+
+      function payload() {
+        // Workflow is edited as JSON; surface a parse error rather than POSTing junk.
+        let workflow;
+        try {
+          workflow = JSON.parse(document.getElementById('f-workflow').value || '[]');
+        } catch (e) {
+          throw new Error('Workflow is not valid JSON: ' + e.message);
+        }
+        return {
+          description: document.getElementById('f-description').value,
+          persona: document.getElementById('f-persona').value,
+          allow_tools: words(document.getElementById('f-allow').value),
+          deny_tools: words(document.getElementById('f-deny').value),
+          max_risk: document.getElementById('f-risk').value,
+          workflow: workflow,
+        };
+      }
+
+      async function call(method, path, body) {
+        const opts = { method, headers: {} };
+        if (body !== undefined) {
+          opts.headers['Content-Type'] = 'application/json';
+          opts.body = JSON.stringify(body);
+        }
+        const r = await fetch(path, opts);
+        let data = {};
+        try { data = await r.json(); } catch (e) { /* 204 etc. */ }
+        return { status: r.status, data };
+      }
+
+      document.getElementById('btn-validate').addEventListener('click', async () => {
+        try {
+          const { data } = await call('POST', `/api/v1/agents/${name}/validate`, payload());
+          if (data.errors && data.errors.length) show('Invalid: ' + data.errors.join('; '), false);
+          else if (data.warnings && data.warnings.length) show('OK, with warnings: ' + data.warnings.join('; '), true);
+          else show('Looks good.', true);
+        } catch (e) { show(e.message, false); }
+      });
+
+      document.getElementById('btn-save').addEventListener('click', async () => {
+        try {
+          const { status, data } = await call('POST', `/api/v1/agents/${name}/override`, payload());
+          if (status === 200) { show('Saved.', true); window.location.search = '?name=' + encodeURIComponent(name); }
+          else show('Rejected: ' + (data.detail || ('HTTP ' + status)), false);
+        } catch (e) { show(e.message, false); }
+      });
+
+      document.getElementById('btn-reset').addEventListener('click', async () => {
+        const { status, data } = await call('DELETE', `/api/v1/agents/${name}/override`);
+        if (status === 200) { show('Reverted to built-in.', true); window.location.search = '?name=' + encodeURIComponent(name); }
+        else show('Failed: ' + (data.detail || ('HTTP ' + status)), false);
+      });
+    })();
+  </script>
+  {% endif %}
+{% endblock %}

@@ -1162,6 +1162,13 @@ def pick_advanced() -> dict[str, Any]:
             "capabilities/governance.",
             default=True,
         ),
+        "allow_pack_editing": _q_confirm(
+            "Allow editing agents (domain packs) from the dashboard? Operators "
+            "can fork/tweak a specialist's persona, tools, and workflow per "
+            "client; an edit is validated before it saves, so it can never "
+            "weaken the safety envelope. Turn off to lock the agent roster.",
+            default=True,
+        ),
         "dreaming": _q_confirm(
             "Dreaming (offline consolidation)? `maverick dream` replays recent "
             "runs while idle, distills recurring wins into skills per department, "
@@ -2506,6 +2513,12 @@ def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
         lines.append("")
         lines.append("[audit]")
         lines.append("sign = true")
+    if advanced.get("allow_pack_editing") is False:
+        # Default-on, so only emit the lock. The dashboard agent editor and the
+        # mutating /api/v1/agents endpoints read [features] pack_editing.
+        lines.append("")
+        lines.append("[features]")
+        lines.append("pack_editing = false")
     if advanced.get("tree_of_thought"):
         lines.append("")
         lines.append("[planning]")

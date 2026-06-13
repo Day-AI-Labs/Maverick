@@ -61,6 +61,10 @@ world_model = true   # inject persisted facts (cross-run memory) into runs;
                      #   checkpoint store (world.db) still works regardless.
 streaming   = true   # stream live progress to the terminal during `maverick start`
                      #   (MAVERICK_NO_PROGRESS or non-TTY output still suppress it)
+pack_editing = true  # allow editing/overriding agents (domain packs) from the
+                     #   dashboard editor at /agents; false = the editor is
+                     #   read-only and the mutating /api/v1/agents endpoints 403,
+                     #   locking the roster (host-side override TOML still works).
 
 [durable]
 # Crash-resume: checkpoint a goal's loop state each step so `maverick resume`
