@@ -366,13 +366,24 @@ def verify_chain(path: Path, pubkey_hex: str | None = None) -> list[ChainBreak]:
             row_prev = data.get("prev_hash", "")
             key_id = data.get("key_id", "")
             if not row_hash and not sig and not key_id:
-                # Written with signing disabled (the opt-in default). Not the
-                # same vocabulary as tampering: a verifier in a default
-                # deployment must be able to say "signing was never on".
-                breaks.append(ChainBreak(
-                    n, "unsigned",
-                    "row has no hash/sig/key_id (audit signing disabled)",
-                ))
+                if pubkey_hex or row_prev:
+                    # A trusted pubkey means the caller expected signed rows;
+                    # an orphaned prev_hash means signing-only chain context is
+                    # still present. In either case, all signature fields being
+                    # absent is suspicious (for example, stripped signatures),
+                    # not an honestly unsigned deployment.
+                    breaks.append(ChainBreak(
+                        n, "malformed",
+                        "missing hash/sig/key_id (possible stripped signature fields)",
+                    ))
+                else:
+                    # Written with signing disabled (the opt-in default). Not
+                    # the same vocabulary as tampering: a verifier in a default
+                    # deployment must be able to say "signing was never on".
+                    breaks.append(ChainBreak(
+                        n, "unsigned",
+                        "row has no hash/sig/key_id (audit signing disabled)",
+                    ))
                 continue
             if not row_hash or not sig or not key_id:
                 breaks.append(ChainBreak(n, "malformed", "missing hash/sig/key_id"))
