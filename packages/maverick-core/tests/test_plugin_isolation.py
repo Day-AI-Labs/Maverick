@@ -65,7 +65,7 @@ def test_none_mode_runs_in_process(plugin_on_path):
 
 
 def test_subprocess_args_passed_via_stdin_not_argv(monkeypatch):
-    secret = "MVK_ARG_SECRET_not_on_cmdline"
+    secret = "MVK_ARG_SECRET_not_on_cmdline"  # pragma: allowlist secret
     captured = {}
 
     def fake_run(cmd, **kwargs):

@@ -27,7 +27,7 @@ class _FakeClient:
 
 
 def _cfg(**kw):
-    base = dict(upstream="https://api.anthropic.com", api_key="PROXY-KEY",
+    base = dict(upstream="https://api.anthropic.com", api_key="PROXY-KEY",  # pragma: allowlist secret
                 client_token="CLIENT-TOKEN")
     base.update(kw)
     return mp.ProxyConfig(**base)
@@ -159,7 +159,7 @@ def test_config_from_env(monkeypatch):
     monkeypatch.setenv("MAVERICK_PROXY_CLIENT_TOKEN", "client-secret")
     monkeypatch.setenv("MAVERICK_PROXY_ALLOWED_ROUTES", "GET /v1/models, post v1/messages")
     cfg = mp.config_from_env()
-    assert cfg.upstream == "https://api.openai.com" and cfg.api_key == "sk-secret"
+    assert cfg.upstream == "https://api.openai.com" and cfg.api_key == "sk-secret"  # pragma: allowlist secret
     assert cfg.listen_host == "0.0.0.0" and cfg.listen_port == 9000
     assert cfg.client_token == "client-secret"
     assert cfg.allowed_routes == frozenset({"GET /v1/models", "POST /v1/messages"})
