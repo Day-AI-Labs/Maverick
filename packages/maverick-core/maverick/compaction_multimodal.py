@@ -86,7 +86,7 @@ def _human_size(n: int) -> str:
     return f"{n}B"
 
 
-def _describe(block: dict, llm) -> str:
+def _describe(block: dict, llm, budget=None) -> str:
     """One-line description via the injected llm seam; "" on any failure."""
     if llm is None:
         return ""
@@ -99,6 +99,7 @@ def _describe(block: dict, llm) -> str:
             }],
             max_tokens=_DESCRIBE_MAX_TOKENS,
             model=model_for_role("vision"),
+            budget=budget,
         )
         return (getattr(resp, "text", "") or "").strip().replace("\n", " ")
     except Exception as e:
@@ -106,7 +107,7 @@ def _describe(block: dict, llm) -> str:
         return ""
 
 
-def stub_for_block(block: dict, llm=None) -> dict:
+def stub_for_block(block: dict, llm=None, budget=None) -> dict:
     """Compact text block standing in for one media block.
 
     Always records that media existed, its type and byte size; adds sniffed
@@ -120,7 +121,7 @@ def stub_for_block(block: dict, llm=None) -> dict:
     dims = _dimensions(data) if kind == "image" else None
     if dims:
         parts.append(f"{dims[0]}x{dims[1]}")
-    described = _describe(block, llm)
+    described = _describe(block, llm, budget=budget)
     head = " ".join(parts)
     if described:
         text = f"[{head}, described: {described}]"
@@ -129,7 +130,7 @@ def stub_for_block(block: dict, llm=None) -> dict:
     return {"type": "text", "text": text}
 
 
-def _compact_block_list(blocks: list, llm) -> tuple[list, bool]:
+def _compact_block_list(blocks: list, llm, budget=None) -> tuple[list, bool]:
     """Replace media blocks in a content list (recursing into tool_results)."""
     out: list = []
     changed = False
@@ -140,12 +141,13 @@ def _compact_block_list(blocks: list, llm) -> tuple[list, bool]:
         btype = blk.get("type")
         if btype in MEDIA_BLOCK_TYPES:
             try:
-                out.append(stub_for_block(blk, llm))
+                out.append(stub_for_block(blk, llm, budget=budget))
                 changed = True
             except Exception:  # fail-open: keep the original block
                 out.append(blk)
         elif btype == "tool_result" and isinstance(blk.get("content"), list):
-            inner, inner_changed = _compact_block_list(blk["content"], llm)
+            inner, inner_changed = _compact_block_list(
+                blk["content"], llm, budget=budget)
             if inner_changed:
                 new_blk = dict(blk)
                 new_blk["content"] = inner
@@ -162,6 +164,7 @@ def compact_media(
     messages: list[dict], *,
     keep_recent: int = KEEP_RECENT_TURNS,
     llm=None,
+    budget=None,
 ) -> list[dict]:
     """Return a copy of ``messages`` with old heavy media replaced by stubs.
 
@@ -178,7 +181,7 @@ def compact_media(
         if i == 0 or i >= cutoff or not isinstance(content, list):
             out.append(msg)
             continue
-        new_content, changed = _compact_block_list(content, llm)
+        new_content, changed = _compact_block_list(content, llm, budget=budget)
         if changed:
             new_msg = dict(msg)
             new_msg["content"] = new_content

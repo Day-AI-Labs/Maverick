@@ -231,9 +231,11 @@ class LearnedSummarizer:
         ledger: OutcomeLedger | None = None,
         rng: random.Random | None = None,
         clock=None,
+        budget=None,
         scope: str | None = None,
     ):
         self.llm = llm
+        self.budget = budget
         self.ledger = ledger if ledger is not None else OutcomeLedger(clock=clock)
         self._rng = rng if rng is not None else random.Random(0)
         self.last_pick: tuple[str, str] | None = None  # (kind, template_id)
@@ -268,6 +270,7 @@ class LearnedSummarizer:
                 messages=[{"role": "user", "content": _transcript(middle)}],
                 max_tokens=_DIGEST_MAX_TOKENS,
                 model=model_for_role("summarizer"),
+                budget=self.budget,
             )
             digest = (getattr(resp, "text", "") or "").strip()
         except Exception as e:

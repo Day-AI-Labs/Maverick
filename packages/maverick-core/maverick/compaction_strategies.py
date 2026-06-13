@@ -56,6 +56,7 @@ def compact_with_strategy(
     keep_recent: int = KEEP_RECENT_TURNS,
     max_tool_bytes: int = MAX_TOOL_OUTPUT_BYTES,
     strategy: str | None = None,
+    budget=None,
     scope: str | None = None,
 ) -> list[dict]:
     """Compact ``messages`` with the configured (or given) strategy.
@@ -74,23 +75,25 @@ def compact_with_strategy(
     try:
         if name == "learned":
             from .compaction_learned import LearnedSummarizer
-            return LearnedSummarizer(llm=llm, scope=scope).compact(
+            return LearnedSummarizer(llm=llm, budget=budget, scope=scope).compact(
                 messages, keep_recent=keep_recent)
         if name == "multimodal":
             from .compaction_multimodal import compact_media
             # Stub heavy media blocks, then apply the standard shrink pass.
             return compact_messages(
-                compact_media(messages, keep_recent=keep_recent, llm=llm),
+                compact_media(
+                    messages, keep_recent=keep_recent, llm=llm, budget=budget),
                 keep_recent=keep_recent, max_tool_bytes=max_tool_bytes,
             )
         if name == "streaming":
             from .compaction_streaming import compact_streaming
             return compact_streaming(
                 messages, conversation_id=conversation_id,
-                keep_recent=keep_recent, llm=llm,
+                keep_recent=keep_recent, llm=llm, budget=budget,
             )
         from .compaction_graph import compact_graph
-        return compact_graph(messages, keep_recent=keep_recent, llm=llm)
+        return compact_graph(
+            messages, keep_recent=keep_recent, llm=llm, budget=budget)
     except Exception as e:
         log.warning("compaction strategy %r failed (%s); using default path", name, e)
         return compact_messages(
