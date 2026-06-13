@@ -254,7 +254,60 @@ def _fmt_location(loc: dict) -> str:
     return f"{path}:{start.get('line', 0) + 1}:{start.get('character', 0) + 1}"
 
 
-def _run_query(args: dict[str, Any]) -> str:  # noqa: C901 -- one dispatch table
+def _op_symbols(session: _LspSession, path) -> str:
+    result = session.request("textDocument/documentSymbol",
+                             {"textDocument": {"uri": _uri(path)}}) or []
+    lines = []
+    def _walk(symbols, depth=0):
+        for s in symbols:
+            kind = _SYMBOL_KINDS.get(s.get("kind", 0), "?")
+            rng = (s.get("selectionRange") or s.get("range")
+                   or (s.get("location") or {}).get("range") or {})
+            line0 = ((rng.get("start") or {}).get("line", 0)) + 1
+            lines.append(f"{'  ' * depth}{kind} {s.get('name', '?')}  :{line0}")
+            _walk(s.get("children") or [], depth + 1)
+    _walk(result)
+    return "\n".join(lines) if lines else "(no symbols)"
+
+
+def _op_position(session: _LspSession, path, op: str, args: dict[str, Any]) -> str:
+    if "line" not in args or "character" not in args:
+        return f"ERROR: {op} needs 'line' and 'character' (0-based)"
+    params = _pos_params(path, args["line"], args["character"])
+    if op == "definition":
+        result = session.request("textDocument/definition", params)
+        locs = result if isinstance(result, list) else [result] if result else []
+        return "\n".join(_fmt_location(loc) for loc in locs) or "(no definition)"
+    if op == "references":
+        params["context"] = {"includeDeclaration": False}
+        result = session.request("textDocument/references", params) or []
+        return "\n".join(_fmt_location(loc) for loc in result) or "(no references)"
+    result = session.request("textDocument/hover", params)
+    contents = (result or {}).get("contents")
+    if isinstance(contents, dict):
+        return str(contents.get("value") or "(no hover info)")
+    if isinstance(contents, list):
+        return "\n".join(
+            c.get("value", str(c)) if isinstance(c, dict) else str(c)
+            for c in contents) or "(no hover info)"
+    return str(contents or "(no hover info)")
+
+
+def _op_diagnostics(session: _LspSession) -> str:
+    note = session.wait_notification("textDocument/publishDiagnostics")
+    diags = ((note or {}).get("params") or {}).get("diagnostics") or []
+    if not diags:
+        return "(no diagnostics)"
+    out = []
+    for d in diags:
+        sev = _SEVERITIES.get(d.get("severity", 3), "info")
+        start = (d.get("range") or {}).get("start") or {}
+        out.append(f"{sev} :{start.get('line', 0) + 1}:{start.get('character', 0) + 1} "
+                   f"{d.get('message', '')}")
+    return "\n".join(out)
+
+
+def _run_query(args: dict[str, Any]) -> str:
     op = args.get("op")
     if "server" in args:
         return "ERROR: per-call LSP server argv overrides are not allowed; configure [lsp.servers] instead"
@@ -298,54 +351,13 @@ def _run_query(args: dict[str, Any]) -> str:  # noqa: C901 -- one dispatch table
         })
 
         if op == "symbols":
-            result = session.request("textDocument/documentSymbol",
-                                     {"textDocument": {"uri": _uri(path)}}) or []
-            lines = []
-            def _walk(symbols, depth=0):
-                for s in symbols:
-                    kind = _SYMBOL_KINDS.get(s.get("kind", 0), "?")
-                    rng = (s.get("selectionRange") or s.get("range")
-                           or (s.get("location") or {}).get("range") or {})
-                    line0 = ((rng.get("start") or {}).get("line", 0)) + 1
-                    lines.append(f"{'  ' * depth}{kind} {s.get('name', '?')}  :{line0}")
-                    _walk(s.get("children") or [], depth + 1)
-            _walk(result)
-            return "\n".join(lines) if lines else "(no symbols)"
+            return _op_symbols(session, path)
 
         if op in ("definition", "references", "hover"):
-            if "line" not in args or "character" not in args:
-                return f"ERROR: {op} needs 'line' and 'character' (0-based)"
-            params = _pos_params(path, args["line"], args["character"])
-            if op == "definition":
-                result = session.request("textDocument/definition", params)
-                locs = result if isinstance(result, list) else [result] if result else []
-                return "\n".join(_fmt_location(loc) for loc in locs) or "(no definition)"
-            if op == "references":
-                params["context"] = {"includeDeclaration": False}
-                result = session.request("textDocument/references", params) or []
-                return "\n".join(_fmt_location(loc) for loc in result) or "(no references)"
-            result = session.request("textDocument/hover", params)
-            contents = (result or {}).get("contents")
-            if isinstance(contents, dict):
-                return str(contents.get("value") or "(no hover info)")
-            if isinstance(contents, list):
-                return "\n".join(
-                    c.get("value", str(c)) if isinstance(c, dict) else str(c)
-                    for c in contents) or "(no hover info)"
-            return str(contents or "(no hover info)")
+            return _op_position(session, path, op, args)
 
         if op == "diagnostics":
-            note = session.wait_notification("textDocument/publishDiagnostics")
-            diags = ((note or {}).get("params") or {}).get("diagnostics") or []
-            if not diags:
-                return "(no diagnostics)"
-            out = []
-            for d in diags:
-                sev = _SEVERITIES.get(d.get("severity", 3), "info")
-                start = (d.get("range") or {}).get("start") or {}
-                out.append(f"{sev} :{start.get('line', 0) + 1}:{start.get('character', 0) + 1} "
-                           f"{d.get('message', '')}")
-            return "\n".join(out)
+            return _op_diagnostics(session)
 
         return f"ERROR: unknown op {op!r}"
     except (TimeoutError, ConnectionError, RuntimeError, OSError) as e:

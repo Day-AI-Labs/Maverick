@@ -30,7 +30,11 @@ target-version = "py310"
 #               ratchet (see [tool.ruff.lint.mccabe]). New code must stay under
 #               the cap; the ~30 functions already over it carry an explicit
 #               `# noqa: C901` marking them as refactor debt to pay down.
-select = ["E", "F", "W", "I", "UP", "C90", "B"]
+# G   (flake8-logging-format): logging calls use %-style args, never f-strings
+#     or + concatenation -- keeps the 295 `log = getLogger(__name__)` call sites
+#     uniform and defers interpolation until a record is actually emitted.
+# RSE (flake8-raise): no redundant parentheses on `raise Exc()` with no args.
+select = ["E", "F", "W", "I", "UP", "C90", "B", "G", "RSE"]
 ignore = [
     "E501",   # line length
     "UP036",  # "outdated" version blocks -- ours are intentional runtime

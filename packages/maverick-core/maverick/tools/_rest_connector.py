@@ -47,7 +47,75 @@ _READ_SCHEMA: dict[str, Any] = {
 }
 
 
-def make_rest_tool(  # noqa: C901  (ruff 0.15 bumped its measured complexity to 21)
+def _rest_validate(
+    args: dict[str, Any],
+    *,
+    name: str,
+    read_only: bool,
+    read_prefixes: tuple[str, ...],
+    read_path_allowed,
+    norm,
+) -> tuple[str, str] | str:
+    """Validate op/path/confirm. Returns ``(op, path)`` or an ``ERROR/DRY RUN`` string."""
+    op = (args.get("op") or ("get" if read_only else "")).strip().lower()
+    if read_only and op != "get":
+        return f"ERROR: {name} is read-only -- only GET is permitted from this seat."
+    if op not in ("get", "post", "put", "patch", "delete"):
+        return f"ERROR: op must be get/post/put/patch/delete (got {op!r})"
+    path = (args.get("path") or "").strip()
+    if not path:
+        return "ERROR: path is required"
+    if read_only and not read_path_allowed(path):
+        allowed = ", ".join(read_prefixes) or "(none)"
+        return f"ERROR: {name} read path is not allowed. Allowed prefixes: {allowed}"
+    try:
+        import httpx  # noqa: F401
+    except ImportError:
+        return "ERROR: httpx not installed. Run: pip install 'maverick-agent[issue-trackers]'"
+    if op in _WRITE_OPS and not as_bool(args.get("confirm")):
+        return f"DRY RUN: would {op.upper()} {norm(path)}. Re-run with confirm=true."
+    return op, path
+
+
+def _rest_execute(
+    op: str,
+    path: str,
+    args: dict[str, Any],
+    *,
+    name: str,
+    config,
+    headers,
+    norm,
+) -> str:
+    """Perform the authenticated REST request and render the response."""
+    params = args.get("params") if isinstance(args.get("params"), dict) else None
+    body = args.get("body") if isinstance(args.get("body"), dict) else None
+    try:
+        base, tok = config()
+        url = f"{base}{norm(path)}"
+        # Enterprise mode: a connector POSTs agent-supplied content to a
+        # third-party SaaS host -- hold it to the egress boundary too.
+        from ..enterprise import enterprise_egress_denial
+        deny = enterprise_egress_denial(url, tool=name)
+        if deny:
+            return f"ERROR: {deny}"
+        import httpx
+        r = httpx.request(op.upper(), url, headers=headers(tok),
+                          params=params or None, json=body, timeout=30.0)
+        try:
+            data = r.json()
+        except ValueError:
+            data = (r.text or "")[:1500]
+        if r.status_code >= 400:
+            return f"ERROR: {op} ({r.status_code}): {data}"
+        return json.dumps(data, default=str)[:4000]
+    except RuntimeError as e:
+        return f"ERROR: {e}"
+    except Exception as e:  # noqa: BLE001
+        return f"ERROR: {name} request failed: {type(e).__name__}: {e}"
+
+
+def make_rest_tool(
     *,
     name: str,
     base_url_env: str,
@@ -127,48 +195,24 @@ def make_rest_tool(  # noqa: C901  (ruff 0.15 bumped its measured complexity to 
         )
 
     def _run(args: dict[str, Any]) -> str:
-        op = (args.get("op") or ("get" if read_only else "")).strip().lower()
-        if read_only and op != "get":
-            return f"ERROR: {name} is read-only -- only GET is permitted from this seat."
-        if op not in ("get", "post", "put", "patch", "delete"):
-            return f"ERROR: op must be get/post/put/patch/delete (got {op!r})"
-        path = (args.get("path") or "").strip()
-        if not path:
-            return "ERROR: path is required"
-        if read_only and not _read_path_allowed(path):
-            allowed = ", ".join(read_prefixes) or "(none)"
-            return f"ERROR: {name} read path is not allowed. Allowed prefixes: {allowed}"
-        try:
-            import httpx  # noqa: F401
-        except ImportError:
-            return "ERROR: httpx not installed. Run: pip install 'maverick-agent[issue-trackers]'"
-        if op in _WRITE_OPS and not as_bool(args.get("confirm")):
-            return f"DRY RUN: would {op.upper()} {_norm(path)}. Re-run with confirm=true."
-        params = args.get("params") if isinstance(args.get("params"), dict) else None
-        body = args.get("body") if isinstance(args.get("body"), dict) else None
-        try:
-            base, tok = _config()
-            url = f"{base}{_norm(path)}"
-            # Enterprise mode: a connector POSTs agent-supplied content to a
-            # third-party SaaS host -- hold it to the egress boundary too.
-            from ..enterprise import enterprise_egress_denial
-            deny = enterprise_egress_denial(url, tool=name)
-            if deny:
-                return f"ERROR: {deny}"
-            import httpx
-            r = httpx.request(op.upper(), url, headers=_headers(tok),
-                              params=params or None, json=body, timeout=30.0)
-            try:
-                data = r.json()
-            except ValueError:
-                data = (r.text or "")[:1500]
-            if r.status_code >= 400:
-                return f"ERROR: {op} ({r.status_code}): {data}"
-            return json.dumps(data, default=str)[:4000]
-        except RuntimeError as e:
-            return f"ERROR: {e}"
-        except Exception as e:  # noqa: BLE001
-            return f"ERROR: {name} request failed: {type(e).__name__}: {e}"
+        validated = _rest_validate(
+            args,
+            name=name,
+            read_only=read_only,
+            read_prefixes=read_prefixes,
+            read_path_allowed=_read_path_allowed,
+            norm=_norm,
+        )
+        if isinstance(validated, str):
+            return validated
+        op, path = validated
+        return _rest_execute(
+            op, path, args,
+            name=name,
+            config=_config,
+            headers=_headers,
+            norm=_norm,
+        )
 
     return Tool(name=name, description=description,
                 input_schema=_READ_SCHEMA if read_only else _SCHEMA, fn=_run)

@@ -256,7 +256,7 @@ def serve(config: ProxyConfig) -> None:  # pragma: no cover -- socket server
             self._do("POST")
 
         def log_message(self, *a):  # quiet by default
-            log.debug("proxy: " + a[0], *a[1:])
+            log.debug("proxy: %s", a[0] % a[1:] if len(a) > 1 else a[0])
 
     srv = ThreadingHTTPServer((config.listen_host, config.listen_port), _Handler)
     log.info("model proxy on %s:%d -> %s", config.listen_host,

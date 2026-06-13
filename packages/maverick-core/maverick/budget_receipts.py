@@ -102,7 +102,7 @@ def resolve_key(key: str | None = None) -> str:
         cfg_key = ""
     if cfg_key.strip():
         return cfg_key.strip()
-    raise ReceiptKeyMissing()
+    raise ReceiptKeyMissing
 
 
 def _canonical(payload: dict) -> bytes:

@@ -175,7 +175,88 @@ def _safe_parse_expr(expr: str, *, evaluate: bool):
 _VALID_OPS = {"evaluate", "simplify", "solve", "diff", "integrate"}
 
 
-def _run(args: dict[str, Any]) -> str:  # noqa: C901
+def _run_evaluate(args: dict[str, Any]) -> str:
+    expr = (args.get("expr") or "").strip()
+    if not expr:
+        return "ERROR: evaluate requires expr"
+    try:
+        if _have_sympy():
+            return _evaluate_with_sympy(expr)
+        return _evaluate_fallback(expr)
+    except Exception as e:
+        return f"ERROR: cannot evaluate {expr!r}: {type(e).__name__}: {e}"
+
+
+def _run_simplify(args: dict[str, Any]) -> str:
+    import sympy
+
+    expr = (args.get("expr") or "").strip()
+    if not expr:
+        return "ERROR: simplify requires expr"
+    try:
+        return str(sympy.simplify(_safe_parse_expr(expr, evaluate=True)))
+    except Exception as e:
+        return f"ERROR: cannot simplify {expr!r}: {type(e).__name__}: {e}"
+
+
+def _run_solve(args: dict[str, Any]) -> str:
+    import sympy
+
+    eqn = (args.get("equation") or args.get("expr") or "").strip()
+    if not eqn:
+        return "ERROR: solve requires equation"
+    var_name = (args.get("var") or "x").strip()
+    try:
+        var = sympy.Symbol(var_name)
+        # Parse "A = B" -> A - B. If no "=", treat as "expr = 0".
+        # .strip() each side: the split leaves leading/trailing spaces
+        # (e.g. right=" 0"), and the parser tokenizes a leading space as
+        # an IndentationError.
+        if "=" in eqn:
+            left, right = eqn.split("=", 1)
+            target = (
+                _safe_parse_expr(left.strip(), evaluate=True)
+                - _safe_parse_expr(right.strip(), evaluate=True)
+            )
+        else:
+            target = _safe_parse_expr(eqn, evaluate=True)
+        sols = sympy.solve(target, var)
+        return f"{var_name} ∈ {{{', '.join(str(s) for s in sols)}}}"
+    except Exception as e:
+        return f"ERROR: cannot solve: {type(e).__name__}: {e}"
+
+
+def _run_diff(args: dict[str, Any]) -> str:
+    import sympy
+
+    expr = (args.get("expr") or "").strip()
+    if not expr:
+        return "ERROR: diff requires expr"
+    var_name = (args.get("var") or "x").strip()
+    try:
+        return str(sympy.diff(
+            _safe_parse_expr(expr, evaluate=True), sympy.Symbol(var_name),
+        ))
+    except Exception as e:
+        return f"ERROR: cannot differentiate: {type(e).__name__}: {e}"
+
+
+def _run_integrate(args: dict[str, Any]) -> str:
+    import sympy
+
+    expr = (args.get("expr") or "").strip()
+    if not expr:
+        return "ERROR: integrate requires expr"
+    var_name = (args.get("var") or "x").strip()
+    try:
+        return str(sympy.integrate(
+            _safe_parse_expr(expr, evaluate=True), sympy.Symbol(var_name),
+        ))
+    except Exception as e:
+        return f"ERROR: cannot integrate: {type(e).__name__}: {e}"
+
+
+def _run(args: dict[str, Any]) -> str:
     op = args.get("op")
     if not op:
         return "ERROR: op is required"
@@ -183,15 +264,7 @@ def _run(args: dict[str, Any]) -> str:  # noqa: C901
         return f"ERROR: unknown op {op!r}"
 
     if op == "evaluate":
-        expr = (args.get("expr") or "").strip()
-        if not expr:
-            return "ERROR: evaluate requires expr"
-        try:
-            if _have_sympy():
-                return _evaluate_with_sympy(expr)
-            return _evaluate_fallback(expr)
-        except Exception as e:
-            return f"ERROR: cannot evaluate {expr!r}: {type(e).__name__}: {e}"
+        return _run_evaluate(args)
 
     # All remaining ops require sympy.
     if not _have_sympy():
@@ -199,64 +272,15 @@ def _run(args: dict[str, Any]) -> str:  # noqa: C901
             f"ERROR: '{op}' requires sympy. "
             "Run: pip install 'maverick-agent[math]'"
         )
-    import sympy
 
     if op == "simplify":
-        expr = (args.get("expr") or "").strip()
-        if not expr:
-            return "ERROR: simplify requires expr"
-        try:
-            return str(sympy.simplify(_safe_parse_expr(expr, evaluate=True)))
-        except Exception as e:
-            return f"ERROR: cannot simplify {expr!r}: {type(e).__name__}: {e}"
-
+        return _run_simplify(args)
     if op == "solve":
-        eqn = (args.get("equation") or args.get("expr") or "").strip()
-        if not eqn:
-            return "ERROR: solve requires equation"
-        var_name = (args.get("var") or "x").strip()
-        try:
-            var = sympy.Symbol(var_name)
-            # Parse "A = B" -> A - B. If no "=", treat as "expr = 0".
-            # .strip() each side: the split leaves leading/trailing spaces
-            # (e.g. right=" 0"), and the parser tokenizes a leading space as
-            # an IndentationError.
-            if "=" in eqn:
-                left, right = eqn.split("=", 1)
-                target = (
-                    _safe_parse_expr(left.strip(), evaluate=True)
-                    - _safe_parse_expr(right.strip(), evaluate=True)
-                )
-            else:
-                target = _safe_parse_expr(eqn, evaluate=True)
-            sols = sympy.solve(target, var)
-            return f"{var_name} ∈ {{{', '.join(str(s) for s in sols)}}}"
-        except Exception as e:
-            return f"ERROR: cannot solve: {type(e).__name__}: {e}"
-
+        return _run_solve(args)
     if op == "diff":
-        expr = (args.get("expr") or "").strip()
-        if not expr:
-            return "ERROR: diff requires expr"
-        var_name = (args.get("var") or "x").strip()
-        try:
-            return str(sympy.diff(
-                _safe_parse_expr(expr, evaluate=True), sympy.Symbol(var_name),
-            ))
-        except Exception as e:
-            return f"ERROR: cannot differentiate: {type(e).__name__}: {e}"
-
+        return _run_diff(args)
     if op == "integrate":
-        expr = (args.get("expr") or "").strip()
-        if not expr:
-            return "ERROR: integrate requires expr"
-        var_name = (args.get("var") or "x").strip()
-        try:
-            return str(sympy.integrate(
-                _safe_parse_expr(expr, evaluate=True), sympy.Symbol(var_name),
-            ))
-        except Exception as e:
-            return f"ERROR: cannot integrate: {type(e).__name__}: {e}"
+        return _run_integrate(args)
 
     return f"ERROR: unknown op {op!r}"
 

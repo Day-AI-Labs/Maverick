@@ -256,7 +256,68 @@ def _pipeline_get(project: str, pid: int) -> str:
     )
 
 
-def _run(args: dict[str, Any]) -> str:  # noqa: C901
+_PROJECT_OPS = {
+    "issues", "issue_get", "issue_create", "issue_comment",
+    "mr_list", "mr_get", "mr_comment", "pipelines", "pipeline_get",
+}
+
+
+def _dispatch_issue_op(op: str, project: str, args: dict[str, Any]) -> str | None:
+    if op == "issues":
+        return _list_issues(
+            project, args.get("state", "opened"),
+            max(1, min(int(args.get("limit") or 25), 100)),
+        )
+    if op == "issue_get":
+        iid = int(args.get("iid") or 0)
+        if not iid:
+            return "ERROR: issue_get requires iid"
+        return _issue_get(project, iid)
+    if op == "issue_create":
+        title = (args.get("title") or "").strip()
+        if not title:
+            return "ERROR: issue_create requires title"
+        return _issue_create(project, title, args.get("body") or "")
+    if op == "issue_comment":
+        iid = int(args.get("iid") or 0)
+        body = args.get("body") or ""
+        if not iid or not body:
+            return "ERROR: issue_comment requires iid and body"
+        return _issue_comment(project, iid, body)
+    return None
+
+
+def _dispatch_mr_pipeline_op(op: str, project: str, args: dict[str, Any]) -> str | None:
+    if op == "mr_list":
+        return _mr_list(
+            project, args.get("state", "opened"),
+            max(1, min(int(args.get("limit") or 25), 100)),
+        )
+    if op == "mr_get":
+        iid = int(args.get("iid") or 0)
+        if not iid:
+            return "ERROR: mr_get requires iid"
+        return _mr_get(project, iid)
+    if op == "mr_comment":
+        iid = int(args.get("iid") or 0)
+        body = args.get("body") or ""
+        if not iid or not body:
+            return "ERROR: mr_comment requires iid and body"
+        return _mr_comment(project, iid, body)
+    if op == "pipelines":
+        return _pipelines(
+            project, args.get("ref") or "",
+            max(1, min(int(args.get("limit") or 20), 100)),
+        )
+    if op == "pipeline_get":
+        pid = int(args.get("pipeline_id") or 0)
+        if not pid:
+            return "ERROR: pipeline_get requires pipeline_id"
+        return _pipeline_get(project, pid)
+    return None
+
+
+def _run(args: dict[str, Any]) -> str:
     op = args.get("op")
     if not op:
         return "ERROR: op is required"
@@ -266,58 +327,14 @@ def _run(args: dict[str, Any]) -> str:  # noqa: C901
         return "ERROR: httpx not installed. Run: pip install 'maverick-agent[issue-trackers]'"
     project = (args.get("project") or "").strip()
     try:
-        if op in {
-            "issues", "issue_get", "issue_create", "issue_comment",
-            "mr_list", "mr_get", "mr_comment", "pipelines", "pipeline_get",
-        } and not project:
+        if op in _PROJECT_OPS and not project:
             return f"ERROR: {op} requires project"
-        if op == "issues":
-            return _list_issues(
-                project, args.get("state", "opened"),
-                max(1, min(int(args.get("limit") or 25), 100)),
-            )
-        if op == "issue_get":
-            iid = int(args.get("iid") or 0)
-            if not iid:
-                return "ERROR: issue_get requires iid"
-            return _issue_get(project, iid)
-        if op == "issue_create":
-            title = (args.get("title") or "").strip()
-            if not title:
-                return "ERROR: issue_create requires title"
-            return _issue_create(project, title, args.get("body") or "")
-        if op == "issue_comment":
-            iid = int(args.get("iid") or 0)
-            body = args.get("body") or ""
-            if not iid or not body:
-                return "ERROR: issue_comment requires iid and body"
-            return _issue_comment(project, iid, body)
-        if op == "mr_list":
-            return _mr_list(
-                project, args.get("state", "opened"),
-                max(1, min(int(args.get("limit") or 25), 100)),
-            )
-        if op == "mr_get":
-            iid = int(args.get("iid") or 0)
-            if not iid:
-                return "ERROR: mr_get requires iid"
-            return _mr_get(project, iid)
-        if op == "mr_comment":
-            iid = int(args.get("iid") or 0)
-            body = args.get("body") or ""
-            if not iid or not body:
-                return "ERROR: mr_comment requires iid and body"
-            return _mr_comment(project, iid, body)
-        if op == "pipelines":
-            return _pipelines(
-                project, args.get("ref") or "",
-                max(1, min(int(args.get("limit") or 20), 100)),
-            )
-        if op == "pipeline_get":
-            pid = int(args.get("pipeline_id") or 0)
-            if not pid:
-                return "ERROR: pipeline_get requires pipeline_id"
-            return _pipeline_get(project, pid)
+        result = _dispatch_issue_op(op, project, args)
+        if result is not None:
+            return result
+        result = _dispatch_mr_pipeline_op(op, project, args)
+        if result is not None:
+            return result
     except RuntimeError as e:
         return f"ERROR: {e}"
     except Exception as e:
