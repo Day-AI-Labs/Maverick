@@ -299,12 +299,13 @@ class TestTaxSuitePacks:
             assert len(p.persona.strip()) >= 200, f"{name}: thin persona"
             assert p.compartment.startswith("tax_"), name
             cap = p.capability(f"agent:{name}")
-            assert cap.permits("read_file") is True, name
             assert "shell" in p.deny_tools and "write_file" in p.deny_tools
             for dangerous in ("shell", "write_file", "code_exec"):
                 assert cap.permits(dangerous) is False, f"{name}: {dangerous}"
             if name == "tax_law_watch":   # inverse seal, asserted below
+                assert cap.permits("read_file") is False, name
                 continue
+            assert cap.permits("read_file") is True, name
             # Client-data packs: taxpayer data never leaves -- no web egress.
             assert p.knowledge_sources == ["tax"], name
             for egress in ("web_search", "browser"):
@@ -317,6 +318,9 @@ class TestTaxSuitePacks:
         p = load_domains(builtin_dir())["tax_law_watch"]
         cap = p.capability("agent:tax_law_watch")
         assert cap.permits("web_search") is True
+        assert cap.permits("knowledge_search") is True
+        assert cap.permits("read_file") is False
+        assert "read_file" in p.deny_tools
         assert p.knowledge_sources == ["tax_law"]   # not the client corpus
         assert "constants" in p.persona and "signed" in p.persona
 
