@@ -2250,7 +2250,455 @@ def pick_suites() -> dict[str, bool]:
     return out
 
 
-def write_config(  # noqa: C901
+def _cfg_deployment(deployment: str | None) -> list[str]:
+    if not deployment:
+        return []
+    # Record the chosen deployment topology (laptop / vps / ...) for
+    # provenance + so a later `maverick init` can default to it.
+    return [
+        "[deployment]",
+        f"type = {_toml_str(str(deployment))}",
+        "",
+    ]
+
+
+def _cfg_providers(providers: list[str]) -> list[str]:
+    lines: list[str] = []
+    for prov in providers:
+        info = catalog.PROVIDERS.get(prov, {})
+        lines.append(f"[providers.{prov}]")
+        env_name = info.get("env")
+        if env_name:
+            lines.append(f'api_key = "${{{env_name}}}"')
+        if info.get("session"):
+            # Browser-session providers store their auth in
+            # ~/.maverick/sessions/<provider>.json (chmod 600), not in
+            # an env var. Mark the kind so the loader can warn early.
+            lines.append('kind = "session"')
+        if prov == "ollama":
+            lines.append('base_url = "http://localhost:11434"')
+        if prov == "openai_compatible":
+            lines.append('base_url = "${OPENAI_COMPATIBLE_BASE_URL}"')
+        lines.append("")
+    return lines
+
+
+def _cfg_role_models(role_models: dict[str, str]) -> list[str]:
+    if not role_models:
+        return []
+    lines = ["[models]"]
+    for role, spec in role_models.items():
+        lines.append(f'{role} = "{spec}"')
+    lines.append("")
+    return lines
+
+
+def _cfg_channels(channels: dict[str, dict[str, Any]]) -> list[str]:
+    lines: list[str] = []
+    for ch_id, cfg in channels.items():
+        lines.append(f"[channels.{ch_id}]")
+        for k, v in cfg.items():
+            # _emit_kv handles lists (e.g. the allowed_user_ids array) and
+            # escapes string values; the old inline branch emitted a list as
+            # a quoted string and didn't escape backslash paths.
+            _emit_kv(lines, k, v)
+        lines.append("")
+    return lines
+
+
+def _cfg_core(
+    budget: dict[str, float],
+    safety: dict[str, Any],
+    sandbox: dict[str, Any],
+) -> list[str]:
+    lines = ["[budget]"]
+    for k, v in budget.items():
+        _emit_kv(lines, k, v)
+    lines.append("")
+    lines.append("[safety]")
+    for k, v in safety.items():
+        _emit_kv(lines, k, v)
+    lines.append("")
+    lines.append("[sandbox]")
+    for k, v in sandbox.items():
+        _emit_kv(lines, k, v)
+    return lines
+
+
+def _cfg_skills(skills: dict[str, Any] | None) -> list[str]:
+    if not skills:
+        return []
+    # Signed-skill policy. trusted_pubkeys = hex Ed25519 publisher keys
+    # a signed SKILL.md must match; require_signed rejects unsigned ones.
+    lines = ["", "[skills]"]
+    for k, v in skills.items():
+        _emit_kv(lines, k, v)
+    return lines
+
+
+def _cfg_self_learning(self_learning: dict[str, Any] | None) -> list[str]:
+    if not self_learning:
+        return []
+    # Self-learning. enable gates the whole feature; sub-toggles let the
+    # agent install skills, add MCP servers, and generate+run new tools.
+    lines = ["", "[self_learning]"]
+    for k, v in self_learning.items():
+        _emit_kv(lines, k, v)
+    return lines
+
+
+def _cfg_durable(durable: dict[str, Any] | None) -> list[str]:
+    if not (durable and durable.get("enabled")):
+        return []
+    # Durable execution: checkpoint loop state so `maverick resume`
+    # continues from the last step after a crash. Off unless opted in.
+    lines = ["", "[durable]"]
+    for k, v in durable.items():
+        _emit_kv(lines, k, v)
+    return lines
+
+
+def _cfg_finance(finance: dict[str, Any] | None) -> list[str]:
+    if not finance:
+        return []
+    # Finance suite governance (finance-agent-suite): pause money movement for
+    # a human, enforce compliance regimes (strictest-wins), and screen
+    # sanctions. The [governance] scalar key precedes its sub-tables (TOML).
+    lines = ["", "[governance]", 'require_human_min_risk = "high"']
+    if finance.get("require_fresh_human_approval"):
+        # A prior persistent consent grant won't satisfy the Art-14 gate --
+        # each paused action needs a fresh human decision.
+        lines.append("require_fresh_human_approval = true")
+    rha = finance.get("require_human_above") or 0
+    if rha and rha > 0:
+        lines.append("")
+        lines.append("[governance.require_human_above]")
+        lines.append(f'"*" = {rha}')
+    da = finance.get("deny_above") or 0
+    if da and da > 0:
+        lines.append("")
+        lines.append("[governance.deny_above]")
+        lines.append(f'"*" = {da}')
+    regimes = finance.get("regimes") or []
+    if regimes:
+        lines.append("")
+        lines.append("[finance]")
+        _emit_kv(lines, "regimes", regimes)
+    sdn = (finance.get("sdn_path") or "").strip()
+    if sdn:
+        lines.append("")
+        lines.append("[screening]")
+        _emit_kv(lines, "sdn_path", sdn)
+    return lines
+
+
+def _cfg_capabilities(
+    capability_config: dict[str, Any],
+    embedded_flash: bool,
+) -> list[str]:
+    lines: list[str] = []
+    if capability_config:
+        lines.append("")
+        lines.append("[capabilities]")
+        for k, v in capability_config.items():
+            lines.append(f"{k} = {str(v).lower()}")
+    if embedded_flash:
+        lines.append("")
+        lines.append("[embedded]")
+        lines.append("allow_flash = true")
+    return lines
+
+
+def _cfg_suites(suites: dict[str, bool] | None) -> list[str]:
+    if not suites:
+        return []
+    # Per-suite enable/disable; the kernel's enabled_domains() reads this.
+    lines = ["", "[suites]"]
+    for k, v in suites.items():
+        lines.append(f"{k} = {str(v).lower()}")
+    return lines
+
+
+def _cfg_advanced(  # noqa: C901 - flat sequence of independent opt-in toggles
+    advanced: dict[str, Any] | None,
+    providers: list[str],
+) -> list[str]:
+    if not advanced:
+        return []
+    lines: list[str] = []
+    # Advanced reasoning toggles -> the kernel's config sections. Each is
+    # off unless the wizard wrote it, matching the modules' own defaults.
+    if (advanced.get("cost_aware") or advanced.get("verify_ensemble")
+            or advanced.get("energy_aware")
+            or advanced.get("autonomy_gate")):
+        lines.append("")
+        lines.append("[routing]")
+        # Constrain routing features enabled by the wizard to the providers
+        # the user selected in this run. Some router/verifier fallbacks also
+        # know about API keys from the shell environment; the allowlist keeps
+        # advanced opt-ins from sending prompts to those unselected providers.
+        _emit_kv(lines, "allowed_providers", providers)
+        if advanced.get("cost_aware"):
+            lines.append("cost_aware = true")
+        if advanced.get("verify_ensemble"):
+            lines.append("verify_ensemble = true")
+        if advanced.get("energy_aware"):
+            lines.append("energy_aware = true")
+    if advanced.get("risk_proportional_verify"):
+        lines.append("")
+        lines.append("[verification]")
+        lines.append("risk_proportional = true")
+    if advanced.get("autonomy_gate"):
+        lines.append("")
+        lines.append("[autonomy]")
+        lines.append("enable = true")
+    if advanced.get("calibration_enforce"):
+        lines.append("")
+        lines.append("[calibration]")
+        lines.append("enforce = true")
+    if advanced.get("adaptive_compute"):
+        lines.append("")
+        lines.append("[adaptive_compute]")
+        lines.append("enable = true")
+    if advanced.get("best_of_n"):
+        lines.append("")
+        lines.append("[search]")
+        lines.append("enable = true")
+    if advanced.get("skill_synthesis"):
+        lines.append("")
+        lines.append("[skill_synthesis]")
+        lines.append("enable = true")
+    if advanced.get("experience_guidance"):
+        lines.append("")
+        lines.append("[experience]")
+        lines.append("enable = true")
+    if advanced.get("credit_assignment"):
+        lines.append("")
+        lines.append("[credit]")
+        lines.append("enable = true")
+    if advanced.get("enforce_quotas"):
+        lines.append("")
+        lines.append("[quotas]")
+        lines.append("enforce = true")
+        # Starter daily caps per principal; edit or set to 0 to disable a
+        # dimension. The kernel also reads MAVERICK_QUOTA_* env overrides.
+        lines.append("max_dollars_per_day = 25.0")
+        lines.append("max_tokens_per_day = 5000000")
+    if advanced.get("tenant_by_user"):
+        lines.append("")
+        lines.append("[tenancy]")
+        lines.append("by_user = true")
+    if advanced.get("enterprise"):
+        lines.append("")
+        lines.append("[enterprise]")
+        lines.append("mode = true")
+    if advanced.get("anonymous_logs"):
+        lines.append("")
+        lines.append("[privacy]")
+        lines.append("anonymous = true")
+    if advanced.get("encrypt_at_rest"):
+        lines.append("")
+        lines.append("[encryption]")
+        lines.append("at_rest = true")
+        if advanced.get("encrypt_per_tenant"):
+            lines.append("per_tenant = true")
+    if advanced.get("audit_sign"):
+        lines.append("")
+        lines.append("[audit]")
+        lines.append("sign = true")
+    if advanced.get("tree_of_thought"):
+        lines.append("")
+        lines.append("[planning]")
+        lines.append('mode = "tree_of_thought"')
+    if advanced.get("compact_history") or advanced.get("compaction_strategy"):
+        lines.append("")
+        lines.append("[context]")
+        if advanced.get("compact_history"):
+            lines.append("compact = true")
+        strat = advanced.get("compaction_strategy")
+        if strat and strat != "default":
+            lines.append(f'compaction_strategy = "{strat}"')
+    if advanced.get("reflexion"):
+        lines.append("")
+        lines.append("[reflexion]")
+        lines.append("enable = true")
+    if advanced.get("fleet_memory"):
+        lines.append("")
+        lines.append("[fleet_memory]")
+        lines.append("enable = true")
+    # Discipline defaults ON; only an explicit decline is written.
+    if advanced.get("specialist_discipline") is False:
+        lines.append("")
+        lines.append("[domains]")
+        lines.append("discipline = false")
+    if advanced.get("dreaming"):
+        lines.append("")
+        lines.append("[dreaming]")
+        lines.append("enable = true")
+        keys = advanced.get("insight_pubkeys") or []
+        if keys:
+            quoted = ", ".join(f'"{k}"' for k in keys)
+            lines.append(f"trusted_insight_pubkeys = [{quoted}]")
+    if advanced.get("tax_update_url") or advanced.get("tax_pubkeys"):
+        lines.append("")
+        lines.append("[tax]")
+        lines.append("auto_update = true")
+        if advanced.get("tax_update_url"):
+            lines.append(f'update_url = "{advanced["tax_update_url"]}"')
+        tax_keys = advanced.get("tax_pubkeys") or []
+        if tax_keys:
+            quoted = ", ".join(f'"{k}"' for k in tax_keys)
+            lines.append(f"trusted_constants_pubkeys = [{quoted}]")
+    if advanced.get("effort"):
+        lines.append("")
+        lines.append("[effort]")
+        lines.append("enabled = true")
+    if advanced.get("cache_prewarm"):
+        lines.append("")
+        lines.append("[cache]")
+        lines.append("prewarm = true")
+    if advanced.get("hedge_requests"):
+        lines.append("")
+        lines.append("[latency]")
+        lines.append("hedge_ms = 1500")
+    tool_lines: list[str] = []
+    if advanced.get("deferred_tools"):
+        tool_lines.append("deferred_loading = true")
+    if advanced.get("output_cache"):
+        tool_lines.append("output_cache = true")
+    if advanced.get("hardware_sensors"):
+        tool_lines.append("hardware_sensors = true")
+    if tool_lines:
+        lines.append("")
+        lines.append("[tools]")
+        lines.extend(tool_lines)
+    if advanced.get("shield_updates"):
+        lines.append("")
+        lines.append("[shield]")
+        lines.append("federated_updates = true")
+        lines.append('# update_url    = "https://..."  # REQUIRED')
+        lines.append('# update_pubkey = "<ed25519 hex>"  # REQUIRED')
+    if advanced.get("ebpf_monitor"):
+        lines.append("")
+        lines.append("[ebpf_monitor]")
+        lines.append("enable = true")
+    if advanced.get("local_runtime"):
+        lines.append("")
+        lines.append("[local_runtime]")
+        lines.append("enabled = true")
+        lines.append('# engine = "vllm"  # vllm | tgi | llamacpp')
+        lines.append('# model  = "..."   # REQUIRED before `maverick local-runtime plan`')
+    if advanced.get("local_first"):
+        lines.append("")
+        lines.append("[system]")
+        lines.append("local_first = true")
+        local_model = _local_first_model(providers)
+        if local_model:
+            lines.append("")
+            lines.append("[local_first]")
+            _emit_kv(lines, "model", local_model)
+    oidc = advanced.get("oidc") or {}
+    if isinstance(oidc, dict) and oidc.get("enabled"):
+        # SSO ID-token verification for `maverick serve`. Its own table
+        # (written once), so no duplicate-[auth.oidc] bug. The kernel reads
+        # it via maverick.oidc.oidc_enabled() / load_oidc_config().
+        lines.append("")
+        lines.append("[auth.oidc]")
+        lines.append("enabled = true")
+        _emit_kv(lines, "issuer", oidc.get("issuer", ""))
+        _emit_kv(lines, "audience", oidc.get("audience", ""))
+        _emit_kv(lines, "jwks_uri", oidc.get("jwks_uri", ""))
+        # Built-in browser-login fields, written ONLY when the operator
+        # opted into that flow (so a bearer-only OIDC config is unchanged).
+        # The kernel's login_enabled() additionally gates the routes.
+        for key in (
+            "client_id", "client_secret", "redirect_uri", "session_secret",
+        ):
+            val = oidc.get(key)
+            if val:
+                _emit_kv(lines, key, val)
+    return lines
+
+
+def _cfg_mcp_servers(mcp_servers: dict[str, dict[str, Any]] | None) -> list[str]:
+    if not mcp_servers:
+        return []
+    lines: list[str] = []
+    for name, cfg in mcp_servers.items():
+        lines.append("")
+        lines.append(f"[mcp_servers.{name}]")
+        for k, v in cfg.items():
+            _emit_kv(lines, k, v)
+    return lines
+
+
+def _cfg_registries(header: str, indexes: list[str] | None) -> list[str]:
+    if not indexes:
+        return []
+    lines = ["", f"[{header}]"]
+    _emit_kv(lines, "indexes", indexes)
+    return lines
+
+
+def _cfg_plugins(
+    plugins: list[str] | None,
+    plugin_grant: list[str] | None,
+    plugin_enforce: bool,
+    ts_plugins: list[list[str]] | None,
+) -> list[str]:
+    if not (plugins or ts_plugins):
+        return []
+    lines = ["", "[plugins]"]
+    if plugins:
+        _emit_kv(lines, "enabled", plugins)
+    if plugin_grant:
+        _emit_kv(lines, "grant", plugin_grant)
+    if plugin_enforce:
+        _emit_kv(lines, "enforce_permissions", plugin_enforce)
+    if ts_plugins:
+        _emit_kv(lines, "ts", ts_plugins)
+    return lines
+
+
+def _cfg_security(tool_acl: dict[str, Any] | None, autofix: bool) -> list[str]:
+    if not (tool_acl or autofix):
+        return []
+    lines = ["", "[security]"]
+    if autofix:
+        lines.append("auto_fix = true")
+    for k, v in (tool_acl or {}).items():
+        if k == "channels":
+            continue
+        _emit_kv(lines, k, v)
+    for ch_id, ch_cfg in ((tool_acl or {}).get("channels") or {}).items():
+        lines.append("")
+        lines.append(f"[security.channels.{ch_id}]")
+        for k, v in ch_cfg.items():
+            _emit_kv(lines, k, v)
+    return lines
+
+
+def _cfg_rate_limits(rate_limits: dict[str, str] | None) -> list[str]:
+    if not rate_limits:
+        return []
+    lines = ["", "[rate_limits]"]
+    for name, spec in rate_limits.items():
+        # Quote names that aren't bare identifiers (e.g. "mcp_*").
+        key = name if name.replace("_", "").isalnum() else f'"{name}"'
+        lines.append(f'{key} = "{spec}"')
+    return lines
+
+
+def _cfg_table(header: str, mapping: dict[str, Any] | None) -> list[str]:
+    if not mapping:
+        return []
+    lines = ["", f"[{header}]"]
+    for k, v in mapping.items():
+        _emit_kv(lines, k, v)
+    return lines
+
+
+def write_config(
     providers: list[str],
     role_models: dict[str, str],
     channels: dict[str, dict[str, Any]],
@@ -2354,110 +2802,15 @@ def write_config(  # noqa: C901
         "# Maverick config. Regenerate with:  maverick init",
         "",
     ]
-    if deployment:
-        # Record the chosen deployment topology (laptop / vps / ...) for
-        # provenance + so a later `maverick init` can default to it.
-        lines.append("[deployment]")
-        lines.append(f"type = {_toml_str(str(deployment))}")
-        lines.append("")
-    for prov in providers:
-        info = catalog.PROVIDERS.get(prov, {})
-        lines.append(f"[providers.{prov}]")
-        env_name = info.get("env")
-        if env_name:
-            lines.append(f'api_key = "${{{env_name}}}"')
-        if info.get("session"):
-            # Browser-session providers store their auth in
-            # ~/.maverick/sessions/<provider>.json (chmod 600), not in
-            # an env var. Mark the kind so the loader can warn early.
-            lines.append('kind = "session"')
-        if prov == "ollama":
-            lines.append('base_url = "http://localhost:11434"')
-        if prov == "openai_compatible":
-            lines.append('base_url = "${OPENAI_COMPATIBLE_BASE_URL}"')
-        lines.append("")
-    if role_models:
-        lines.append("[models]")
-        for role, spec in role_models.items():
-            lines.append(f'{role} = "{spec}"')
-        lines.append("")
-
-    for ch_id, cfg in channels.items():
-        lines.append(f"[channels.{ch_id}]")
-        for k, v in cfg.items():
-            # _emit_kv handles lists (e.g. the allowed_user_ids array) and
-            # escapes string values; the old inline branch emitted a list as
-            # a quoted string and didn't escape backslash paths.
-            _emit_kv(lines, k, v)
-        lines.append("")
-
-    lines.append("[budget]")
-    for k, v in budget.items():
-        _emit_kv(lines, k, v)
-    lines.append("")
-    lines.append("[safety]")
-    for k, v in safety.items():
-        _emit_kv(lines, k, v)
-    lines.append("")
-    lines.append("[sandbox]")
-    for k, v in sandbox.items():
-        _emit_kv(lines, k, v)
-
-    if skills:
-        # Signed-skill policy. trusted_pubkeys = hex Ed25519 publisher keys
-        # a signed SKILL.md must match; require_signed rejects unsigned ones.
-        lines.append("")
-        lines.append("[skills]")
-        for k, v in skills.items():
-            _emit_kv(lines, k, v)
-
-    if self_learning:
-        # Self-learning. enable gates the whole feature; sub-toggles let the
-        # agent install skills, add MCP servers, and generate+run new tools.
-        lines.append("")
-        lines.append("[self_learning]")
-        for k, v in self_learning.items():
-            _emit_kv(lines, k, v)
-
-    if durable and durable.get("enabled"):
-        # Durable execution: checkpoint loop state so `maverick resume`
-        # continues from the last step after a crash. Off unless opted in.
-        lines.append("")
-        lines.append("[durable]")
-        for k, v in durable.items():
-            _emit_kv(lines, k, v)
-
-    if finance:
-        # Finance suite governance (finance-agent-suite): pause money movement for
-        # a human, enforce compliance regimes (strictest-wins), and screen
-        # sanctions. The [governance] scalar key precedes its sub-tables (TOML).
-        lines.append("")
-        lines.append("[governance]")
-        lines.append('require_human_min_risk = "high"')
-        if finance.get("require_fresh_human_approval"):
-            # A prior persistent consent grant won't satisfy the Art-14 gate --
-            # each paused action needs a fresh human decision.
-            lines.append("require_fresh_human_approval = true")
-        rha = finance.get("require_human_above") or 0
-        if rha and rha > 0:
-            lines.append("")
-            lines.append("[governance.require_human_above]")
-            lines.append(f'"*" = {rha}')
-        da = finance.get("deny_above") or 0
-        if da and da > 0:
-            lines.append("")
-            lines.append("[governance.deny_above]")
-            lines.append(f'"*" = {da}')
-        regimes = finance.get("regimes") or []
-        if regimes:
-            lines.append("")
-            lines.append("[finance]")
-            _emit_kv(lines, "regimes", regimes)
-        sdn = (finance.get("sdn_path") or "").strip()
-        if sdn:
-            lines.append("")
-            lines.append("[screening]")
-            _emit_kv(lines, "sdn_path", sdn)
+    lines += _cfg_deployment(deployment)
+    lines += _cfg_providers(providers)
+    lines += _cfg_role_models(role_models)
+    lines += _cfg_channels(channels)
+    lines += _cfg_core(budget, safety, sandbox)
+    lines += _cfg_skills(skills)
+    lines += _cfg_self_learning(self_learning)
+    lines += _cfg_durable(durable)
+    lines += _cfg_finance(finance)
 
     capability_config = dict(capabilities or {})
     if web_search_enabled and not capability_config.get("web_search"):
@@ -2471,311 +2824,21 @@ def write_config(  # noqa: C901
     # [capabilities] -- pull it out before emitting the capabilities block.
     embedded_flash = bool(capability_config.pop("embedded_flash", False))
 
-    if capability_config:
-        lines.append("")
-        lines.append("[capabilities]")
-        for k, v in capability_config.items():
-            lines.append(f"{k} = {str(v).lower()}")
-
-    if embedded_flash:
-        lines.append("")
-        lines.append("[embedded]")
-        lines.append("allow_flash = true")
-
-    if suites:
-        # Per-suite enable/disable; the kernel's enabled_domains() reads this.
-        lines.append("")
-        lines.append("[suites]")
-        for k, v in suites.items():
-            lines.append(f"{k} = {str(v).lower()}")
-
-    if advanced:
-        # Advanced reasoning toggles -> the kernel's config sections. Each is
-        # off unless the wizard wrote it, matching the modules' own defaults.
-        if (advanced.get("cost_aware") or advanced.get("verify_ensemble")
-                or advanced.get("energy_aware")
-                or advanced.get("autonomy_gate")):
-            lines.append("")
-            lines.append("[routing]")
-            # Constrain routing features enabled by the wizard to the providers
-            # the user selected in this run. Some router/verifier fallbacks also
-            # know about API keys from the shell environment; the allowlist keeps
-            # advanced opt-ins from sending prompts to those unselected providers.
-            _emit_kv(lines, "allowed_providers", providers)
-            if advanced.get("cost_aware"):
-                lines.append("cost_aware = true")
-            if advanced.get("verify_ensemble"):
-                lines.append("verify_ensemble = true")
-            if advanced.get("energy_aware"):
-                lines.append("energy_aware = true")
-        if advanced.get("risk_proportional_verify"):
-            lines.append("")
-            lines.append("[verification]")
-            lines.append("risk_proportional = true")
-        if advanced.get("autonomy_gate"):
-            lines.append("")
-            lines.append("[autonomy]")
-            lines.append("enable = true")
-        if advanced.get("calibration_enforce"):
-            lines.append("")
-            lines.append("[calibration]")
-            lines.append("enforce = true")
-        if advanced.get("adaptive_compute"):
-            lines.append("")
-            lines.append("[adaptive_compute]")
-            lines.append("enable = true")
-        if advanced.get("best_of_n"):
-            lines.append("")
-            lines.append("[search]")
-            lines.append("enable = true")
-        if advanced.get("skill_synthesis"):
-            lines.append("")
-            lines.append("[skill_synthesis]")
-            lines.append("enable = true")
-        if advanced.get("experience_guidance"):
-            lines.append("")
-            lines.append("[experience]")
-            lines.append("enable = true")
-        if advanced.get("credit_assignment"):
-            lines.append("")
-            lines.append("[credit]")
-            lines.append("enable = true")
-        if advanced.get("enforce_quotas"):
-            lines.append("")
-            lines.append("[quotas]")
-            lines.append("enforce = true")
-            # Starter daily caps per principal; edit or set to 0 to disable a
-            # dimension. The kernel also reads MAVERICK_QUOTA_* env overrides.
-            lines.append("max_dollars_per_day = 25.0")
-            lines.append("max_tokens_per_day = 5000000")
-        if advanced.get("tenant_by_user"):
-            lines.append("")
-            lines.append("[tenancy]")
-            lines.append("by_user = true")
-        if advanced.get("enterprise"):
-            lines.append("")
-            lines.append("[enterprise]")
-            lines.append("mode = true")
-        if advanced.get("anonymous_logs"):
-            lines.append("")
-            lines.append("[privacy]")
-            lines.append("anonymous = true")
-        if advanced.get("encrypt_at_rest"):
-            lines.append("")
-            lines.append("[encryption]")
-            lines.append("at_rest = true")
-            if advanced.get("encrypt_per_tenant"):
-                lines.append("per_tenant = true")
-        if advanced.get("audit_sign"):
-            lines.append("")
-            lines.append("[audit]")
-            lines.append("sign = true")
-        if advanced.get("tree_of_thought"):
-            lines.append("")
-            lines.append("[planning]")
-            lines.append('mode = "tree_of_thought"')
-        if advanced.get("compact_history") or advanced.get("compaction_strategy"):
-            lines.append("")
-            lines.append("[context]")
-            if advanced.get("compact_history"):
-                lines.append("compact = true")
-            strat = advanced.get("compaction_strategy")
-            if strat and strat != "default":
-                lines.append(f'compaction_strategy = "{strat}"')
-        if advanced.get("reflexion"):
-            lines.append("")
-            lines.append("[reflexion]")
-            lines.append("enable = true")
-        if advanced.get("fleet_memory"):
-            lines.append("")
-            lines.append("[fleet_memory]")
-            lines.append("enable = true")
-        # Discipline defaults ON; only an explicit decline is written.
-        if advanced.get("specialist_discipline") is False:
-            lines.append("")
-            lines.append("[domains]")
-            lines.append("discipline = false")
-        if advanced.get("dreaming"):
-            lines.append("")
-            lines.append("[dreaming]")
-            lines.append("enable = true")
-            keys = advanced.get("insight_pubkeys") or []
-            if keys:
-                quoted = ", ".join(f'"{k}"' for k in keys)
-                lines.append(f"trusted_insight_pubkeys = [{quoted}]")
-        if advanced.get("tax_update_url") or advanced.get("tax_pubkeys"):
-            lines.append("")
-            lines.append("[tax]")
-            lines.append("auto_update = true")
-            if advanced.get("tax_update_url"):
-                lines.append(f'update_url = "{advanced["tax_update_url"]}"')
-            tax_keys = advanced.get("tax_pubkeys") or []
-            if tax_keys:
-                quoted = ", ".join(f'"{k}"' for k in tax_keys)
-                lines.append(f"trusted_constants_pubkeys = [{quoted}]")
-        if advanced.get("effort"):
-            lines.append("")
-            lines.append("[effort]")
-            lines.append("enabled = true")
-        if advanced.get("cache_prewarm"):
-            lines.append("")
-            lines.append("[cache]")
-            lines.append("prewarm = true")
-        if advanced.get("hedge_requests"):
-            lines.append("")
-            lines.append("[latency]")
-            lines.append("hedge_ms = 1500")
-        tool_lines: list[str] = []
-        if advanced.get("deferred_tools"):
-            tool_lines.append("deferred_loading = true")
-        if advanced.get("output_cache"):
-            tool_lines.append("output_cache = true")
-        if advanced.get("hardware_sensors"):
-            tool_lines.append("hardware_sensors = true")
-        if tool_lines:
-            lines.append("")
-            lines.append("[tools]")
-            lines.extend(tool_lines)
-        if advanced.get("shield_updates"):
-            lines.append("")
-            lines.append("[shield]")
-            lines.append("federated_updates = true")
-            lines.append('# update_url    = "https://..."  # REQUIRED')
-            lines.append('# update_pubkey = "<ed25519 hex>"  # REQUIRED')
-        if advanced.get("ebpf_monitor"):
-            lines.append("")
-            lines.append("[ebpf_monitor]")
-            lines.append("enable = true")
-        if advanced.get("local_runtime"):
-            lines.append("")
-            lines.append("[local_runtime]")
-            lines.append("enabled = true")
-            lines.append('# engine = "vllm"  # vllm | tgi | llamacpp')
-            lines.append('# model  = "..."   # REQUIRED before `maverick local-runtime plan`')
-        if advanced.get("local_first"):
-            lines.append("")
-            lines.append("[system]")
-            lines.append("local_first = true")
-            local_model = _local_first_model(providers)
-            if local_model:
-                lines.append("")
-                lines.append("[local_first]")
-                _emit_kv(lines, "model", local_model)
-        oidc = advanced.get("oidc") or {}
-        if isinstance(oidc, dict) and oidc.get("enabled"):
-            # SSO ID-token verification for `maverick serve`. Its own table
-            # (written once), so no duplicate-[auth.oidc] bug. The kernel reads
-            # it via maverick.oidc.oidc_enabled() / load_oidc_config().
-            lines.append("")
-            lines.append("[auth.oidc]")
-            lines.append("enabled = true")
-            _emit_kv(lines, "issuer", oidc.get("issuer", ""))
-            _emit_kv(lines, "audience", oidc.get("audience", ""))
-            _emit_kv(lines, "jwks_uri", oidc.get("jwks_uri", ""))
-            # Built-in browser-login fields, written ONLY when the operator
-            # opted into that flow (so a bearer-only OIDC config is unchanged).
-            # The kernel's login_enabled() additionally gates the routes.
-            for key in (
-                "client_id", "client_secret", "redirect_uri", "session_secret",
-            ):
-                val = oidc.get(key)
-                if val:
-                    _emit_kv(lines, key, val)
-
-    if mcp_servers:
-        for name, cfg in mcp_servers.items():
-            lines.append("")
-            lines.append(f"[mcp_servers.{name}]")
-            for k, v in cfg.items():
-                _emit_kv(lines, k, v)
-
-    # Custom/self-hosted MCP registry index URLs (`maverick mcp-registry browse`
-    # reads these; default is the built-in awesome-maverick index). Only emitted
-    # when the operator overrode them — discovery works out of the box otherwise.
-    if mcp_registries:
-        lines.append("")
-        lines.append("[mcp_registries]")
-        _emit_kv(lines, "indexes", mcp_registries)
-
-    # Custom/self-hosted goal-template registry indexes (`maverick template
-    # browse`). Like MCP registries: only emitted on override; the built-in
-    # default index works out of the box.
-    if template_registries:
-        lines.append("")
-        lines.append("[template_registries]")
-        _emit_kv(lines, "indexes", template_registries)
-
-    if plugins or ts_plugins:
-        lines.append("")
-        lines.append("[plugins]")
-        if plugins:
-            _emit_kv(lines, "enabled", plugins)
-        if plugin_grant:
-            _emit_kv(lines, "grant", plugin_grant)
-        if plugin_enforce:
-            _emit_kv(lines, "enforce_permissions", plugin_enforce)
-        if ts_plugins:
-            _emit_kv(lines, "ts", ts_plugins)
-
-    autofix = bool((advanced or {}).get("security_autofix"))
-    if tool_acl or autofix:
-        lines.append("")
-        lines.append("[security]")
-        if autofix:
-            lines.append("auto_fix = true")
-        for k, v in (tool_acl or {}).items():
-            if k == "channels":
-                continue
-            _emit_kv(lines, k, v)
-        for ch_id, ch_cfg in ((tool_acl or {}).get("channels") or {}).items():
-            lines.append("")
-            lines.append(f"[security.channels.{ch_id}]")
-            for k, v in ch_cfg.items():
-                _emit_kv(lines, k, v)
-
-    if rate_limits:
-        lines.append("")
-        lines.append("[rate_limits]")
-        for name, spec in rate_limits.items():
-            # Quote names that aren't bare identifiers (e.g. "mcp_*").
-            key = name if name.replace("_", "").isalnum() else f'"{name}"'
-            lines.append(f'{key} = "{spec}"')
-
-    if retention:
-        lines.append("")
-        lines.append("[retention]")
-        for k, v in retention.items():
-            _emit_kv(lines, k, v)
-
-    if analytics:
-        lines.append("")
-        lines.append("[analytics]")
-        for k, v in analytics.items():
-            _emit_kv(lines, k, v)
-
-    if persona:
-        lines.append("")
-        lines.append("[persona]")
-        for k, v in persona.items():
-            _emit_kv(lines, k, v)
-
-    if notifications:
-        lines.append("")
-        lines.append("[notifications]")
-        for k, v in notifications.items():
-            _emit_kv(lines, k, v)
-
-    if webhooks:
-        lines.append("")
-        lines.append("[webhooks]")
-        for k, v in webhooks.items():
-            _emit_kv(lines, k, v)
-
-    if a2a:
-        lines.append("")
-        lines.append("[a2a]")
-        for k, v in a2a.items():
-            _emit_kv(lines, k, v)
+    lines += _cfg_capabilities(capability_config, embedded_flash)
+    lines += _cfg_suites(suites)
+    lines += _cfg_advanced(advanced, providers)
+    lines += _cfg_mcp_servers(mcp_servers)
+    lines += _cfg_registries("mcp_registries", mcp_registries)
+    lines += _cfg_registries("template_registries", template_registries)
+    lines += _cfg_plugins(plugins, plugin_grant, plugin_enforce, ts_plugins)
+    lines += _cfg_security(tool_acl, bool((advanced or {}).get("security_autofix")))
+    lines += _cfg_rate_limits(rate_limits)
+    lines += _cfg_table("retention", retention)
+    lines += _cfg_table("analytics", analytics)
+    lines += _cfg_table("persona", persona)
+    lines += _cfg_table("notifications", notifications)
+    lines += _cfg_table("webhooks", webhooks)
+    lines += _cfg_table("a2a", a2a)
 
     # Config has no secrets today but does carry provider names and
     # runtime settings. chmod 600 so multi-user hosts don't
