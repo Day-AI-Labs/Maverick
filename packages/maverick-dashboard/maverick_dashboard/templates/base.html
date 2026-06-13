@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark light" />
-  <meta name="theme-color" content="#0b0f17" />
+  <meta name="theme-color" content="#0a0a0b" />
   <title>{% block title %}Maverick{% endblock %}</title>
   <style>
     /* =====================================================================
@@ -26,7 +26,7 @@
       --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
       --space-5: 24px; --space-6: 32px; --space-7: 48px;
       /* ---- radii ---- */
-      --radius-sm: 4px; --radius-md: 6px; --radius-lg: 10px; --radius-pill: 999px;
+      --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px; --radius-pill: 999px;
       /* ---- type scale ---- */
       --text-xs: 0.75rem;  --text-sm: 0.8125rem; --text-base: 0.875rem;
       --text-md: 1rem;     --text-lg: 1.125rem;  --text-xl: 1.375rem;
@@ -37,9 +37,9 @@
       --sidebar-w: 248px; --topbar-h: 56px; --drawer-w: min(82vw, 320px);
       --content-max: 1180px;
       /* ---- elevation (dark-tuned default; light theme overrides) ---- */
-      --shadow-sm: 0 1px 2px rgba(0,0,0,0.40);
-      --shadow-md: 0 6px 18px rgba(2,6,15,0.50);
-      --shadow-lg: 0 16px 40px rgba(2,6,15,0.60);
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.20);
+      --shadow-md: 0 4px 16px rgba(0,0,0,0.28);
+      --shadow-lg: 0 12px 40px rgba(0,0,0,0.40);
       /* ---- brand fallback: follow --accent unless a theme sets it. Built-in
          themes override below; custom (4-var) themes inherit these. ---- */
       --brand: var(--accent); --brand-hi: var(--accent); --brand-fg: #ffffff;
@@ -66,22 +66,22 @@
     :root,
     body.theme-dark {
       color-scheme: dark;
-      --bg: #0b0f17; --panel: #131a24; --border: #27303d;
-      --text: #e6edf3; --muted: #8b97a6; --accent: #3fb950;
-      --warn: #d29922; --danger: #f85149;
+      --bg: #0a0a0b; --panel: #141416; --border: #2a2a2e;
+      --text: #ededee; --muted: #9a9aa2; --accent: #30d158;
+      --warn: #ff9f0a; --danger: #ff453a;
     }
     body.theme-dark {
-      --brand: #6366f1; --brand-hi: #818cf8; --brand-fg: #ffffff; --info: #58a6ff;
+      --brand: #0a84ff; --brand-hi: #409cff; --brand-fg: #ffffff; --info: #64d2ff;
     }
     body.theme-light {
       color-scheme: light;
-      --bg: #ffffff; --panel: #f6f8fa; --border: #d0d7de;
-      --text: #1f2328; --muted: #57606a; --accent: #1a7f37;
-      --warn: #9a6700; --danger: #cf222e;
-      --brand: #4f46e5; --brand-hi: #6366f1; --brand-fg: #ffffff; --info: #0969da;
-      --shadow-sm: 0 1px 2px rgba(31,35,40,0.08);
-      --shadow-md: 0 6px 18px rgba(31,35,40,0.10);
-      --shadow-lg: 0 16px 40px rgba(31,35,40,0.16);
+      --bg: #f5f5f7; --panel: #ffffff; --border: #d2d2d7;
+      --text: #1d1d1f; --muted: #6e6e73; --accent: #248a3d;
+      --warn: #b25000; --danger: #d70015;
+      --brand: #0071e3; --brand-hi: #0077ed; --brand-fg: #ffffff; --info: #0071e3;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+      --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
+      --shadow-lg: 0 12px 40px rgba(0,0,0,0.12);
     }
     body.theme-solarized {
       color-scheme: dark;
@@ -110,8 +110,9 @@
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font: var(--text-base)/var(--leading) Inter, -apple-system, BlinkMacSystemFont,
-             "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font: var(--text-base)/var(--leading) -apple-system, BlinkMacSystemFont,
+             "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+      letter-spacing: -0.006em;
       background: var(--bg); color: var(--text);
       -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
       /* App shell: top bar spans full width; sidebar + main below; footer last. */
@@ -163,7 +164,7 @@
     .brand:hover { text-decoration: none; }
     .brand__mark { display: block; flex: none; }
     .brand__name {
-      font-size: var(--text-lg); letter-spacing: -0.01em; line-height: 1;
+      font-size: var(--text-lg); letter-spacing: -0.02em; line-height: 1; font-weight: var(--font-semibold);
     }
     .topbar__controls {
       display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
@@ -190,12 +191,10 @@
     .sidebar nav a {
       display: block; color: var(--muted); border-radius: var(--radius-md);
       padding: 0.42rem var(--space-3); font-size: var(--text-base);
-      border-inline-start: 2px solid transparent;
     }
     .sidebar nav a:hover { color: var(--text); background: var(--surface-2); text-decoration: none; }
     .sidebar nav a.active {
-      color: var(--brand); background: var(--brand-subtle);
-      border-inline-start-color: var(--brand); font-weight: var(--font-medium);
+      color: var(--brand); background: var(--brand-subtle); font-weight: var(--font-medium);
     }
     /* The home/Overview link is the only direct child link of the nav. */
     .sidebar nav > a { color: var(--text); font-weight: var(--font-medium); margin-bottom: var(--space-2); }
@@ -235,8 +234,8 @@
 
     /* ---------- headings ---------- */
     .page-title {
-      font-size: var(--text-2xl); font-weight: var(--font-semibold);
-      letter-spacing: -0.01em; color: var(--text); margin: 0 0 var(--space-2);
+      font-size: var(--text-3xl); font-weight: var(--font-semibold);
+      letter-spacing: -0.022em; line-height: 1.15; color: var(--text); margin: 0 0 var(--space-2);
     }
     .page-subtitle { color: var(--muted); margin: 0 0 var(--space-5); }
     /* Section label (the established uppercase "eyebrow" used across pages). */
@@ -253,18 +252,13 @@
     }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-5); }
     .stat {
-      position: relative; background: var(--surface-2);
+      background: var(--surface-1);
       border: 1px solid var(--border); border-radius: var(--radius-lg);
-      padding: var(--space-4) var(--space-5); box-shadow: var(--shadow-sm);
-    }
-    .stat::before {
-      content: ""; position: absolute; inset-block-start: 0;
-      inset-inline: var(--space-5); height: 2px; border-radius: 2px;
-      background: var(--hairline);
+      padding: var(--space-5); box-shadow: var(--shadow-sm);
     }
     .stat .num {
       font-size: var(--text-3xl); font-weight: var(--font-semibold);
-      line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+      line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -0.03em;
     }
     .stat .label {
       color: var(--muted); font-size: var(--text-xs); margin-top: var(--space-1);
@@ -285,20 +279,20 @@
     tbody tr:hover { background: var(--row-hover); }
     tr:last-child td { border-bottom: none; }
 
-    /* ---------- badges (recoloured from semantic tokens, theme-aware) ---------- */
+    /* ---------- badges: a quiet status pill with a semantic dot (Linear/Apple
+       style). One low-saturation tint per state; the dot carries the colour. */
     .badge {
-      display: inline-block; padding: 0.12rem 0.5rem; border-radius: var(--radius-sm);
-      font-size: var(--text-xs); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      border: 1px solid transparent;
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.16rem 0.6rem; border-radius: var(--radius-pill);
+      font-size: var(--text-xs); font-weight: var(--font-medium); line-height: 1.4;
+      background: var(--muted-subtle); color: var(--muted);
     }
-    .badge.active    { background: var(--success-subtle); color: var(--success); border-color: color-mix(in srgb, var(--success) 35%, transparent); }
-    .badge.success   { background: var(--success-subtle); color: var(--success); border-color: color-mix(in srgb, var(--success) 35%, transparent); }
-    .badge.done      { background: var(--muted-subtle); color: var(--muted); }
-    .badge.pending   { background: var(--muted-subtle); color: var(--muted); }
-    .badge.cancelled { background: var(--muted-subtle); color: var(--muted); }
-    .badge.blocked   { background: var(--warn-subtle); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
-    .badge.failure   { background: var(--danger-subtle); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
-    .badge.info      { background: var(--info-subtle); color: var(--info); border-color: color-mix(in srgb, var(--info) 35%, transparent); }
+    .badge::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .badge.active, .badge.success { background: var(--success-subtle); color: var(--success); }
+    .badge.blocked { background: var(--warn-subtle); color: var(--warn); }
+    .badge.failure { background: var(--danger-subtle); color: var(--danger); }
+    .badge.info    { background: var(--info-subtle); color: var(--info); }
+    .badge.done, .badge.pending, .badge.cancelled { background: var(--muted-subtle); color: var(--muted); }
 
     code { background: var(--surface-sunken); padding: 0.1rem 0.3rem; border-radius: var(--radius-sm); font-size: 0.85em; }
     .muted { color: var(--muted); }
@@ -398,7 +392,7 @@
 {{ custom_theme_css }}
   </style>
   {% endif %}
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236366f1'/%3E%3Cpath d='M6 23 L12 8 L16 15 L20 8 L26 23' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230a84ff'/%3E%3Ccircle cx='16' cy='16' r='5.5' fill='none' stroke='white' stroke-width='2.6'/%3E%3C/svg%3E" />
 </head>
 <body class="theme-{{ theme or 'dark' }} font-{{ font or 'default' }} density-{{ density or 'comfortable' }}">
   <a class="skip-link" href="#content">Skip to content</a>
@@ -410,9 +404,9 @@
       </svg>
     </button>
     <a class="brand" href="/" aria-label="Maverick — home">
-      <svg class="brand__mark" width="26" height="26" viewBox="0 0 36 28" fill="none" aria-hidden="true">
-        <path d="M3 24 L11 6 L18 16 L25 6 L33 24" stroke="var(--brand)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
-        <circle cx="18" cy="16" r="2.4" fill="var(--brand-hi)"/>
+      <svg class="brand__mark" width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
+        <rect x="1" y="1" width="20" height="20" rx="6.5" fill="var(--brand)"/>
+        <circle cx="11" cy="11" r="3.2" fill="none" stroke="#fff" stroke-width="1.8"/>
       </svg>
       <span class="brand__name">Maverick</span>
     </a>
