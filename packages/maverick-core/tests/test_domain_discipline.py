@@ -85,6 +85,50 @@ class TestSpawnIntegration:
         assert "Prior failures on similar goals" in agent.brief
         assert "raise the cap" in agent.brief
 
+    def test_department_memory_uses_run_scope_and_shield(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MAVERICK_REFLEXION", "1")
+        monkeypatch.setattr(reflexion, "default_path",
+                            lambda: tmp_path / "reflexions.ndjson")
+        reflexion.record(
+            goal_text="reconcile leaked operator ledger",
+            failure_class="scope", failure_msg="unscoped",
+            reflection="LEAKME_OPERATOR_SECRET",
+            domain="finance_sox",
+        )
+        reflexion.record(
+            goal_text="reconcile customer ledger",
+            failure_class="scope", failure_msg="scoped",
+            reflection="LEAKME_SCOPED_SECRET",
+            channel="api", user_id="victim-user", domain="finance_sox",
+        )
+
+        class Verdict:
+            allowed = False
+
+        class Shield:
+            def scan_input(self, text):
+                if "LEAKME_SCOPED_SECRET" in text:
+                    return Verdict()
+                allowed = type("Allowed", (), {"allowed": True})
+                return allowed()
+
+        ctx = self._ctx(tmp_path)
+        ctx.channel = "api"
+        ctx.user_id = "victim-user"
+        ctx.shield = Shield()
+
+        from maverick.domain import agent_from_profile
+        profile = DomainProfile(
+            name="finance_sox", persona="You are a SOX control tester.",
+            allow_tools=["read_file"], max_risk="low",
+        )
+
+        agent = agent_from_profile(profile, ctx, "reconcile customer ledger")
+
+        assert "LEAKME_OPERATOR_SECRET" not in agent.brief
+        assert "LEAKME_SCOPED_SECRET" not in agent.brief
+        assert "[redacted by Shield]" in agent.brief
+
     def test_memory_block_empty_when_loops_disabled(self, tmp_path, monkeypatch):
         monkeypatch.delenv("MAVERICK_REFLEXION", raising=False)
         monkeypatch.delenv("MAVERICK_DREAMING", raising=False)
