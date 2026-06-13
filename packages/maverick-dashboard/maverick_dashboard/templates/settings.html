@@ -144,26 +144,68 @@
     {% endif %}
   </div>
 
+  <h2>Provider keys</h2>
   <div class="panel">
-    <h2 style="margin-top: 0;">Provider keys</h2>
     <p class="muted" style="margin-top: 0;">
-      Which provider API keys this server can see in its environment. Maverick reads
-      keys like <code>ANTHROPIC_API_KEY</code> from the environment — set one before
-      starting the dashboard.
+      Set an API key for at least one provider to run goals. Keys are stored
+      locally (chmod 600) in the dashboard overlay and resolved <em>before</em>
+      any environment variable — never shown again, never written to
+      <code>config.toml</code>. Leave a field blank to keep the current value.
     </p>
-    <table>
-      <thead><tr><th scope="col">Provider key</th><th scope="col">Status</th></tr></thead>
-      <tbody>
-        {% for name, present in providers %}
-        <tr>
-          <td><code>{{ name }}</code></td>
-          <td>
-            {% if present %}<span style="color: var(--success); font-weight: 600;">set</span>
-            {% else %}<span class="muted">not set</span>{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {% for p in providers %}
+    <div style="display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-end; padding: var(--space-3) 0; border-top: 1px solid var(--hairline);">
+      <div style="min-width: 13rem; flex: 1 1 13rem;">
+        <div style="font-weight: var(--font-medium);">{{ p.label }}</div>
+        <div class="muted" style="font-size: var(--text-sm);">
+          {% if p.configured %}<span class="badge active">configured</span> via {{ p.via }}{% if p.key_hint %} · {{ p.key_hint }}{% endif %}
+          {% else %}not set{% if p.env_hint %} · or env <code>{{ p.env_hint }}</code>{% endif %}{% endif %}
+        </div>
+      </div>
+      <form method="post" action="/settings/providers" style="display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: flex-end;">
+        <input type="hidden" name="provider" value="{{ p.name }}" />
+        {% if p.base_url_field %}
+        <input class="ctl" type="text" name="base_url" value="{{ p.base_url }}"
+               placeholder="Base URL" aria-label="{{ p.label }} base URL" autocomplete="off" />
+        {% endif %}
+        <input class="ctl" type="password" name="api_key"
+               placeholder="Paste API key" aria-label="{{ p.label }} API key" autocomplete="off" />
+        <button type="submit" class="btn btn--primary">Save</button>
+      </form>
+      {% if p.dashboard_set %}
+      <form method="post" action="/settings/providers/clear">
+        <input type="hidden" name="provider" value="{{ p.name }}" />
+        <button type="submit" class="btn">Clear</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <h2>Capabilities</h2>
+  <div class="panel">
+    <p class="muted" style="margin-top: 0;">High-impact tools, off by default. Saved to the dashboard overlay; effective on the next run.</p>
+    <form method="post" action="/settings/capabilities">
+      {% for c in capabilities %}
+      <label style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) 0;">
+        <span>{{ c.name|replace('_', ' ')|capitalize }}</span>
+        <input type="checkbox" name="{{ c.name }}"{% if c.enabled %} checked{% endif %} style="width: 18px; height: 18px; accent-color: var(--brand);" />
+      </label>
+      {% endfor %}
+      <p style="margin-bottom: 0;"><button type="submit" class="btn btn--primary">Save capabilities</button></p>
+    </form>
+  </div>
+
+  <h2>Features</h2>
+  <div class="panel">
+    <p class="muted" style="margin-top: 0;">Agent behaviours that are otherwise on by default.</p>
+    <form method="post" action="/settings/features">
+      {% for f in features %}
+      <label style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) 0;">
+        <span>{{ f.name|replace('_', ' ')|capitalize }}</span>
+        <input type="checkbox" name="{{ f.name }}"{% if f.enabled %} checked{% endif %} style="width: 18px; height: 18px; accent-color: var(--brand);" />
+      </label>
+      {% endfor %}
+      <p style="margin-bottom: 0;"><button type="submit" class="btn btn--primary">Save features</button></p>
+    </form>
   </div>
 {% endblock %}

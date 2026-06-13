@@ -55,6 +55,14 @@ def _default_config_path() -> Path:
 DEFAULT_CONFIG_PATH = _default_config_path()
 CONFIG_OVERLAY_ENV = "MAVERICK_CONFIG_OVERLAY"
 
+# Dashboard Settings overlay for config-read settings (provider keys,
+# capability/feature toggles). Deep-merged over config.toml on every
+# load_config() — always-on at a fixed path next to config.toml — so UI edits
+# take effect on the next read without rewriting the user's config.toml. The
+# dashboard owns this file (maverick_dashboard.settings_store). Distinct from
+# runtime-overrides.toml (denied_tools / models / budget, read via own hooks).
+DASHBOARD_OVERRIDES_BASENAME = "dashboard-config.toml"
+
 # Accept lower/mixed-case names too: a hand-edited config referencing a
 # lowercase env var (`${my_token}`) previously left the literal `${my_token}`
 # in the value, silently un-substituted. The docstring promises "${VAR_NAME}
@@ -111,15 +119,25 @@ def _deep_merge_config(base: dict, overlay: dict) -> dict:
     return merged
 
 
+def dashboard_overrides_path() -> Path:
+    """Path to the dashboard-owned config overlay (next to config.toml)."""
+    return config_path().parent / DASHBOARD_OVERRIDES_BASENAME
+
+
 def load_config(path: Path | None = None) -> dict:
     if path is not None:
         return _load_config_file(path)
 
     cfg = _load_config_file(config_path())
+    # Dashboard Settings overlay (always-on, fixed path): UI-edited provider
+    # keys / capability+feature toggles merge over config.toml without touching it.
+    dash = dashboard_overrides_path()
+    if dash.exists():
+        cfg = _deep_merge_config(cfg, _load_config_file(dash))
     overlay = os.environ.get(CONFIG_OVERLAY_ENV)
-    if not overlay:
-        return cfg
-    return _deep_merge_config(cfg, _load_config_file(Path(overlay).expanduser()))
+    if overlay:
+        cfg = _deep_merge_config(cfg, _load_config_file(Path(overlay).expanduser()))
+    return cfg
 
 
 def get_role_model(role: str) -> str | None:
