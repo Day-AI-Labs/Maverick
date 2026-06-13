@@ -247,6 +247,32 @@ def _sse_event(e) -> str:
 
 _TERMINAL_STATUSES = frozenset({"done", "failed", "cancelled", "blocked", "error"})
 
+# ----- v1 SSE stream resource limits -----
+# Match the legacy dashboard stream hardening: open SSE streams hold an async
+# task and repeatedly poll SQLite, so cap concurrency, enforce a finite stream
+# lifetime, and use a server-controlled polling cadence with idle backoff.
+def _max_sse_streams() -> int:
+    try:
+        return max(1, int(os.environ.get("MAVERICK_DASHBOARD_MAX_SSE", "64")))
+    except ValueError:
+        return 64
+
+
+_sse_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_sse_semaphore() -> asyncio.Semaphore:
+    global _sse_semaphore
+    if _sse_semaphore is None:
+        _sse_semaphore = asyncio.Semaphore(_max_sse_streams())
+    return _sse_semaphore
+
+
+_SSE_POLL_INTERVAL = 0.5
+_SSE_MAX_POLL_INTERVAL = 5.0
+_SSE_IDLE_HEARTBEAT_EVERY = 30.0
+_SSE_MAX_STREAM_SECONDS = 300.0
+_SSE_MAX_BATCH = 200
 
 @router.get("/goals/{goal_id}/events/stream")
 async def goal_events_stream(
@@ -259,34 +285,65 @@ async def goal_events_stream(
     process split, unlike an in-process bus): emits each new event as it lands,
     ends when the goal reaches a terminal status with no more events, or on
     client disconnect. ``limit`` (>0) closes after N events — used by tests and
-    bounded consumers; ``poll`` is the tail interval.
+    bounded consumers. ``poll`` is accepted for compatibility but ignored; the
+    server controls polling cadence and idle backoff.
     """
+    del poll
     w = _world()
     g = w.get_goal(goal_id)
     if g is None:
         raise HTTPException(status_code=404, detail="no such goal")
     assert_goal_access(request, g)
 
+    sem = _get_sse_semaphore()
+    if sem.locked():
+        raise HTTPException(
+            status_code=503,
+            detail="too many concurrent event streams; retry shortly",
+            headers={"Retry-After": "5"},
+        )
+    await sem.acquire()
+
     async def _gen():
+        started = asyncio.get_running_loop().time()
         last = since
         sent = 0
-        yield ": connected\n\n"   # open the stream immediately
-        while True:
-            if await request.is_disconnected():
-                break
-            events = await run_in_threadpool(
-                w.goal_events, goal_id, last, 200)  # (goal_id, since_id, limit)
-            for e in events:
-                yield _sse_event(e)
-                last = e.id
-                sent += 1
-                if limit and sent >= limit:
+        idle_for = 0.0
+        poll_interval = _SSE_POLL_INTERVAL
+        try:
+            yield ": connected\n\n"   # open the stream immediately
+            while True:
+                if await request.is_disconnected():
+                    break
+                if (asyncio.get_running_loop().time() - started) >= _SSE_MAX_STREAM_SECONDS:
+                    yield "event: timeout\ndata: {\"detail\": \"stream lifetime exceeded\"}\n\n"
                     return
-            cur = w.get_goal(goal_id)
-            if not events and cur is not None and cur.status in _TERMINAL_STATUSES:
-                yield f"event: end\ndata: {json.dumps({'status': cur.status})}\n\n"
-                return
-            await asyncio.sleep(max(0.0, poll))
+                events = await run_in_threadpool(
+                    w.goal_events, goal_id, last, _SSE_MAX_BATCH)
+                for e in events:
+                    yield _sse_event(e)
+                    last = e.id
+                    sent += 1
+                    if limit and sent >= limit:
+                        return
+                cur = await run_in_threadpool(w.get_goal, goal_id)
+                if events:
+                    idle_for = 0.0
+                    poll_interval = _SSE_POLL_INTERVAL
+                else:
+                    idle_for += poll_interval
+                    if idle_for >= _SSE_IDLE_HEARTBEAT_EVERY:
+                        yield ": heartbeat\n\n"
+                        idle_for = 0.0
+                    poll_interval = min(_SSE_MAX_POLL_INTERVAL, poll_interval * 1.5)
+                if cur is not None and cur.status in _TERMINAL_STATUSES:
+                    yield f"event: end\ndata: {json.dumps({'status': cur.status})}\n\n"
+                    return
+                await asyncio.sleep(poll_interval)
+        except asyncio.CancelledError:
+            return
+        finally:
+            sem.release()
 
     return StreamingResponse(_gen(), media_type="text/event-stream")
 

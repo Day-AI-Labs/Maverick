@@ -74,3 +74,37 @@ def test_stream_since_skips_old(tmp_path):
     assert resp.status_code == 200
     assert resp.text.count("event: status") == 0
     assert "event: end" in resp.text
+
+
+def test_stream_rejects_when_concurrency_cap_is_full(monkeypatch, tmp_path):
+    from maverick_dashboard import api
+
+    gid = _goal_with_events(tmp_path, 1)
+
+    class FullSemaphore:
+        def locked(self):
+            return True
+
+        async def acquire(self):  # pragma: no cover - route must not wait here
+            raise AssertionError("should reject instead of acquiring")
+
+    monkeypatch.setattr(api, "_get_sse_semaphore", lambda: FullSemaphore())
+    resp = client.get(f"/api/v1/goals/{gid}/events/stream")
+    assert resp.status_code == 503
+    assert resp.headers["retry-after"] == "5"
+
+
+def test_stream_poll_parameter_does_not_control_sleep(monkeypatch, tmp_path):
+    from maverick_dashboard import api
+
+    gid = _goal_with_events(tmp_path, 0, status="done")
+    sleeps = []
+
+    async def fake_sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr(api.asyncio, "sleep", fake_sleep)
+    resp = client.get(f"/api/v1/goals/{gid}/events/stream?poll=0")
+    assert resp.status_code == 200
+    assert "event: end" in resp.text
+    assert sleeps == []
