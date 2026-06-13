@@ -250,6 +250,44 @@ class TestReviewPackage:
         assert "OPEN ITEMS FOR PREPARER" in text
         assert "PREPARER MUST COMPLETE" in text
 
+    def test_report_sanitizes_untrusted_labels_and_open_items(self):
+        malicious = "evil_w2]\nFORGED REPORT LINE\x1b[31m\n[tail.txt"
+        wp = Workpaper(filing_status="single", docs=[
+            SourceDoc("W-2", malicious, wages=1000.0),
+            SourceDoc("1099-NEC", "nec\n  - forged open item\x1b[0m"),
+        ], notes=["note\nFORGED NOTE\x1b[2J"])
+        text = render_review_package(compute_first_pass(wp))
+        assert "\x1b" not in text
+        assert "\nFORGED REPORT LINE" not in text
+        assert "\n  - forged open item" not in text
+        assert "\nFORGED NOTE" not in text
+        assert "[evil_w2] FORGED REPORT LINE [tail.txt]" in text
+        assert "nec - forged open item" in text
+        assert "note FORGED NOTE" in text
+
+    def test_cli_sanitizes_uploaded_filenames_in_stdout_and_report(self, tmp_path):
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "w2]\nFORGED TAX LINE\x1b[31m\n[tail.txt").write_text(
+            W2_TEXT, encoding="utf-8")
+        (docs / "nec\n  - forged open item\x1b[0m.txt").write_text(
+            NEC_TEXT, encoding="utf-8")
+        out = tmp_path / "review.txt"
+
+        result = CliRunner().invoke(main, [
+            "tax", "prepare", str(docs), "--out", str(out),
+            "--state", "PA",
+        ])
+
+        assert result.exit_code == 0, result.output
+        written = out.read_text(encoding="utf-8")
+        for text in (result.output, written):
+            assert "\x1b" not in text
+            assert "\nFORGED TAX LINE" not in text
+            assert "\n  - forged open item" not in text
+            assert "[w2] FORGED TAX LINE [tail.txt]" in text
+            assert "nec - forged open item" in text
+
 
 class TestTaxSuitePacks:
     def test_roster_present_and_sealed(self):
