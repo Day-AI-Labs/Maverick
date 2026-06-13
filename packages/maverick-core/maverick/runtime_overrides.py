@@ -18,6 +18,7 @@ the next goal with no restart. config.toml is never touched.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 from pathlib import Path
@@ -99,14 +100,27 @@ def default_model_override() -> str | None:
     return None
 
 
-def _write_state(denied: set[str], default_model: str | None) -> None:
-    """Serialise the whole overlay: [security] denied_tools + optional
-    [models] default. One file holds both surfaces, so every write renders
-    the full state -- writing a model choice must not drop tool denials and
-    vice versa. Atomic write at 0o600; no tomli-w dependency.
+def budget_override() -> float | None:
+    """The per-goal spend cap (USD) the dashboard's settings page has set, or
+    None. Consulted by ``budget.budget_from_config`` above the ``[budget]``
+    config section. Re-validated on read; only a finite, positive number wins."""
+    raw = (_load().get("budget") or {}).get("max_dollars")
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return v if math.isfinite(v) and v > 0 else None
 
-    With ``default_model`` None the [security] block is byte-identical to the
-    historical writer, so tool-only callers are unaffected.
+
+def _write_state(denied: set[str], default_model: str | None,
+                 budget: float | None) -> None:
+    """Serialise the whole overlay: [security] denied_tools + optional [models]
+    default + optional [budget] max_dollars. One file holds every surface, so
+    each write renders the full state -- changing one must not drop the others.
+    Atomic write at 0o600; no tomli-w dependency.
+
+    With ``default_model`` and ``budget`` both None the [security] block is
+    byte-identical to the historical writer, so tool-only callers are unaffected.
     """
     OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
     rendered = ", ".join(_toml_string(n) for n in sorted(denied))
@@ -119,6 +133,8 @@ def _write_state(denied: set[str], default_model: str | None) -> None:
     )
     if default_model:
         body += f"\n[models]\ndefault = {_toml_string(default_model)}\n"
+    if budget is not None:
+        body += f"\n[budget]\nmax_dollars = {float(budget)}\n"
     tmp_path = OVERRIDES_PATH.with_suffix(".toml.tmp")
     fd = os.open(tmp_path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -153,7 +169,7 @@ def disable_tool(name: str) -> set[str]:
     """Add ``name`` to the overlay deny-list. Returns the new set."""
     current = denied_tools()
     current.add(_validate_tool_name(name))
-    _write_state(current, default_model_override())
+    _write_state(current, default_model_override(), budget_override())
     return current
 
 
@@ -165,24 +181,42 @@ def enable_tool(name: str) -> set[str]:
     """
     current = denied_tools()
     current.discard(_validate_tool_name(name))
-    _write_state(current, default_model_override())
+    _write_state(current, default_model_override(), budget_override())
     return current
 
 
 def set_default_model(model: str) -> str:
     """Pin the dashboard's default model. Returns the stored spec."""
     spec = _validate_model(model)
-    _write_state(denied_tools(), spec)
+    _write_state(denied_tools(), spec, budget_override())
     return spec
 
 
 def clear_default_model() -> None:
     """Drop the dashboard model pin, reverting to config.toml / defaults."""
-    _write_state(denied_tools(), None)
+    _write_state(denied_tools(), None, budget_override())
+
+
+def set_budget(max_dollars: float) -> float:
+    """Set the dashboard's per-goal spend cap (USD). Returns the stored value."""
+    try:
+        v = float(max_dollars)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("budget must be a number") from exc
+    if not math.isfinite(v) or v <= 0:
+        raise ValueError("budget must be a positive number")
+    _write_state(denied_tools(), default_model_override(), v)
+    return v
+
+
+def clear_budget() -> None:
+    """Drop the dashboard spend cap, reverting to config.toml / defaults."""
+    _write_state(denied_tools(), default_model_override(), None)
 
 
 __all__ = [
     "denied_tools", "disable_tool", "enable_tool",
     "default_model_override", "set_default_model", "clear_default_model",
+    "budget_override", "set_budget", "clear_budget",
     "OVERRIDES_PATH",
 ]

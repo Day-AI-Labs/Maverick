@@ -96,6 +96,30 @@
     </table>
   </div>
 
+  <h2>Spend cap</h2>
+  <div class="panel">
+    <p class="muted" style="margin-top: 0;">
+      The most a single goal may spend before Maverick stops it. Saved to the
+      dashboard overlay (<code>~/.maverick/runtime-overrides.toml</code>), never
+      <code>config.toml</code>. Default is ${{ '%.2f'|format(default_budget) }} per goal.
+    </p>
+    <form method="post" action="/settings/budget"
+          style="display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: flex-end;">
+      <label style="display: flex; flex-direction: column; gap: var(--space-1); min-width: 14rem;">
+        <span>Max spend per goal (USD)</span>
+        <input class="ctl" type="number" name="max_dollars" min="0.01" step="0.5"
+               value="{% if budget is not none %}{{ '%.2f'|format(budget) }}{% endif %}"
+               placeholder="{{ '%.2f'|format(default_budget) }}" />
+      </label>
+      <button type="submit" class="btn btn--primary">Save cap</button>
+    </form>
+    {% if budget is not none %}
+    <p class="muted" style="margin-bottom: 0;">
+      Current cap: <code>${{ '%.2f'|format(budget) }}</code> per goal. Clear the field and save to use the default.
+    </p>
+    {% endif %}
+  </div>
+
   <div class="panel">
     <h2 style="margin-top: 0;">Provider keys</h2>
     <p class="muted" style="margin-top: 0;">
