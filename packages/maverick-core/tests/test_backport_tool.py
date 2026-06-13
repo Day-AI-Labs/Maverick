@@ -1,4 +1,5 @@
 """Security-backport planner: eligibility, patch-id plans, SLA gate."""
+
 from __future__ import annotations
 
 from maverick.backport_tool import (
@@ -30,7 +31,8 @@ class FakeGit:
         if args[0] == "log" and "--format=%H%x01%ct%x01%s%x01%b%x02" in args:
             return "".join(
                 f"{sha}\x01{ct}\x01{subject}\x01{body}\x02"
-                for sha, ct, subject, body, _d in self.main)
+                for sha, ct, subject, body, _d in self.main
+            )
         if args[0] == "log" and args[1] == "--format=%H":
             return "\n".join(self.lts_shas)
         if args[0] == "show" and "--name-only" in args:
@@ -41,19 +43,64 @@ class FakeGit:
         raise AssertionError(f"unexpected git call: {args}")
 
 
-_SEC = ("a" * 40, "1700000000", "security: scrub creds", "",
-        "diff --git a/s.py b/s.py\n+scrub()\n")
+_SEC = ("a" * 40, "1700000000", "security: scrub creds", "", "diff --git a/s.py b/s.py\n+scrub()\n")
 _FEAT = ("b" * 40, "1700000100", "feat: pony", "", "diff --git a/p.py b/p.py\n+pony\n")
-_SEC2 = ("c" * 40, "1700000200", "fix(security): ssrf", "",
-         "diff --git a/h.py b/h.py\n+pin_ip()\n")
+_SEC2 = ("c" * 40, "1700000200", "fix(security): ssrf", "", "diff --git a/h.py b/h.py\n+pin_ip()\n")
 
 
 def test_eligible_commits_filters_markers():
     git = FakeGit([_SEC, _FEAT, _SEC2])
     fixes = eligible_commits("v1.0", git=git)
-    assert [f.subject for f in fixes] == ["security: scrub creds",
-                                          "fix(security): ssrf"]
+    assert [f.subject for f in fixes] == ["security: scrub creds", "fix(security): ssrf"]
     assert fixes[0].files == ("maverick/x.py",)
+
+
+def test_eligible_commits_ignores_forged_delimiter_record():
+    forged = "--output=/tmp/backport_pwn"
+    raw = (
+        f"{_SEC[0]}\x01{_SEC[1]}\x01{_SEC[2]}\x01"
+        f"body\x02{forged}\x011700000100\x01security: injected\x01body\x02"
+    )
+    calls = []
+
+    def git(args):
+        calls.append(args)
+        if args[0] == "log":
+            return raw
+        if args[0] == "show":
+            return "maverick/x.py\n"
+        raise AssertionError(f"unexpected git call: {args}")
+
+    fixes = eligible_commits("v1.0", git=git)
+
+    assert [f.sha for f in fixes] == [_SEC[0]]
+    assert all(forged not in args for args in calls if args[0] == "show")
+    assert calls[1] == [
+        "show",
+        "--name-only",
+        "--format=",
+        "--end-of-options",
+        _SEC[0],
+    ]
+
+
+def test_plan_uses_option_terminator_for_patch_id():
+    calls = []
+
+    def git(args):
+        calls.append(args)
+        if args[0] == "log" and "--format=%H%x01%ct%x01%s%x01%b%x02" in args:
+            return f"{_SEC[0]}\x01{_SEC[1]}\x01{_SEC[2]}\x01{_SEC[3]}\x02"
+        if args[0] == "log" and args[1] == "--format=%H":
+            return ""
+        if args[0] == "show" and "--name-only" in args:
+            return "maverick/x.py\n"
+        if args[0] == "show":
+            return _SEC[4]
+        raise AssertionError(f"unexpected git call: {args}")
+
+    assert plan("lts/1.0", "v1.0", git=git)
+    assert ["show", "--format=", "--end-of-options", _SEC[0]] in calls
 
 
 def test_plan_skips_cherry_picked_twin():
