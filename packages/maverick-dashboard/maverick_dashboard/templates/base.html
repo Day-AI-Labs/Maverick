@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark light" />
-  <meta name="theme-color" content="#0a0a0b" />
+  <meta name="theme-color" content="#1c1b19" />
   <title>{% block title %}Maverick{% endblock %}</title>
   <style>
     /* =====================================================================
@@ -34,6 +34,9 @@
       --text-2xl: 1.75rem; --text-3xl: 2.25rem;
       --font-normal: 400; --font-medium: 500; --font-semibold: 600;
       --leading-tight: 1.25; --leading: 1.55;
+      /* Serif display face for greetings/headlines (system serif — New York on
+         Apple, Georgia elsewhere — no webfont, stays offline-first). */
+      --font-serif: ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
       /* ---- layout ---- */
       --sidebar-w: 248px; --topbar-h: 56px; --drawer-w: min(82vw, 320px);
       --content-max: 1180px;
@@ -47,22 +50,22 @@
     :root,
     body.theme-dark {
       color-scheme: dark;
-      --bg: #0a0a0b; --panel: #141416; --border: #2a2a2e;
-      --text: #ededee; --muted: #9a9aa2; --accent: #30d158;
-      --warn: #ff9f0a; --danger: #ff453a;
+      --bg: #1c1b19; --panel: #262420; --border: #38352f;
+      --text: #f2efe6; --muted: #a8a296; --accent: #4cc38a;
+      --warn: #e0922f; --danger: #e5564b;
     }
     body.theme-dark {
-      --brand: #0a84ff; --brand-hi: #409cff; --brand-fg: #ffffff; --info: #64d2ff;
+      --brand: #c96442; --brand-hi: #d97a59; --brand-fg: #ffffff; --info: #7ab8cc;
     }
     body.theme-light {
       color-scheme: light;
-      --bg: #f5f5f7; --panel: #ffffff; --border: #d2d2d7;
-      --text: #1d1d1f; --muted: #6e6e73; --accent: #248a3d;
-      --warn: #b25000; --danger: #d70015;
-      --brand: #0071e3; --brand-hi: #0077ed; --brand-fg: #ffffff; --info: #0071e3;
-      --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
-      --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
-      --shadow-lg: 0 12px 40px rgba(0,0,0,0.12);
+      --bg: #f6f4ec; --panel: #fffdf7; --border: #e4dfd2;
+      --text: #2a2824; --muted: #6f6a5e; --accent: #2f8a4e;
+      --warn: #a8650f; --danger: #c0392b;
+      --brand: #b4542f; --brand-hi: #c96442; --brand-fg: #ffffff; --info: #2c7d99;
+      --shadow-sm: 0 1px 2px rgba(40,35,25,0.06);
+      --shadow-md: 0 4px 16px rgba(40,35,25,0.08);
+      --shadow-lg: 0 12px 40px rgba(40,35,25,0.12);
     }
     body.theme-solarized {
       color-scheme: dark;
@@ -548,7 +551,7 @@
       form.addEventListener('submit', async function(ev) {
         ev.preventDefault();
         errBox.style.display = 'none';
-        if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+        if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
         try {
           const resp = await fetch(form.action, { method: 'POST', body: new FormData(form) });
           if (resp.redirected) { window.location.href = resp.url; return; }
@@ -565,7 +568,7 @@
           errBox.textContent = 'Network error — is the dashboard still running?';
           errBox.style.display = 'block';
         } finally {
-          if (btn) { btn.disabled = false; btn.textContent = 'Run'; }
+          if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
         }
       });
     })();

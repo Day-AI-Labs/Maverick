@@ -1,89 +1,156 @@
 {% extends "base.html" %}
 {% block title %}chat · Maverick{% endblock %}
 {% block content %}
-  <h2>chat</h2>
-  <div class="panel">
-    <label for="goal-title" style="display: block; font-weight: 600; margin-bottom: 0.75rem;">
-      What do you want Maverick to do?
-    </label>
-    <form method="post" action="/chat/send" style="display: flex; flex-direction: column; gap: 0.5rem;">
-      <div style="display: flex; gap: 0.5rem;">
-        <input
-          type="text"
-          id="goal-title"
-          name="title"
-          value="{{ prefill_title or '' }}"
-          placeholder="Plan a 3-day trip to Lisbon under $1500"
-          required
-          autofocus
-          style="flex: 1; padding: 0.65rem 0.85rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px;"
-        />
-        <button
-          type="submit"
-          id="send-btn"
-          style="padding: 0.65rem 1.5rem; background: var(--brand); color: var(--brand-fg); border: 0; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;"
-        >Run</button>
-      </div>
-      <details{% if prefill_description %} open{% endif %}>
-        <summary style="cursor: pointer; font-size: 0.85rem; color: var(--muted, #888);">Add details (optional)</summary>
-        <textarea
-          name="description"
-          aria-label="Extra details for the agent (optional)"
-          rows="{{ 8 if prefill_description else 3 }}"
-          placeholder="Extra context, constraints, links, or acceptance criteria for the agent."
-          style="width: 100%; box-sizing: border-box; margin-top: 0.4rem; padding: 0.5rem 0.85rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-family: inherit;"
-        >{{ prefill_description or '' }}</textarea>
-      </details>
-    </form>
-    <p id="goal-error" role="alert" aria-live="assertive"
-       style="display: none; margin: 0.75rem 0 0; color: var(--danger); font-size: 0.85rem;"></p>
-    <div style="margin-top: 1rem;">
-      <p class="muted" style="font-size: 0.8rem; margin: 0 0 0.5rem;">Examples</p>
-      <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
-        <button type="button" class="example-chip" data-text="Summarize my unread emails from this morning"
-                style="padding: 0.4rem 0.85rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font-size: 0.85rem;">
-          Summarize unread emails
-        </button>
-        <button type="button" class="example-chip" data-text="Research the latest news on AI safety regulation"
-                style="padding: 0.4rem 0.85rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font-size: 0.85rem;">
-          Research a topic
-        </button>
-        <button type="button" class="example-chip" data-text="Draft a polite reschedule email for my 2pm meeting"
-                style="padding: 0.4rem 0.85rem; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font-size: 0.85rem;">
-          Draft an email
-        </button>
-      </div>
-    </div>
-    <script>
-      document.querySelectorAll('.example-chip').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-          var input = document.getElementById('goal-title');
-          input.value = btn.dataset.text;
-          input.focus();
-        });
-      });
-      // The goal-form submit handler (fetch + inline errors) lives in
-      // base.html so the overview and chat pages share one copy.
-    </script>
+<style>
+  /* Chat composer — page-scoped. Uses the design-system tokens from base. */
+  .chat-home { max-width: 740px; margin-inline: auto; padding-top: clamp(var(--space-6), 7vh, 88px); }
+  .chat-hero { display: flex; align-items: center; justify-content: center; gap: var(--space-3); margin-bottom: var(--space-6); }
+  .chat-hero__mark { flex: none; }
+  .display {
+    font-family: var(--font-serif); font-weight: 400;
+    font-size: clamp(1.8rem, 4.2vw, 2.5rem); line-height: 1.1;
+    letter-spacing: -0.01em; color: var(--text); margin: 0; text-align: center;
+  }
+  .composer {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 18px; box-shadow: var(--shadow-md);
+    padding: var(--space-3) var(--space-4) var(--space-3);
+    transition: border-color 0.15s ease;
+  }
+  .composer:focus-within { border-color: var(--border-strong); }
+  .composer__field {
+    width: 100%; border: 0; background: transparent; color: var(--text);
+    font: inherit; font-size: var(--text-lg); padding: var(--space-2) var(--space-1);
+    outline: none;
+  }
+  .composer__field::placeholder { color: var(--muted); }
+  .composer details { margin-top: var(--space-1); }
+  .composer summary {
+    cursor: pointer; color: var(--muted); font-size: var(--text-sm);
+    padding: var(--space-1) var(--space-1); width: max-content; list-style: none;
+  }
+  .composer summary::-webkit-details-marker { display: none; }
+  .composer summary::before { content: "+ "; }
+  .composer details[open] summary::before { content: "– "; }
+  .composer__details {
+    width: 100%; box-sizing: border-box; margin-top: var(--space-2);
+    background: var(--surface-sunken); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3); font: inherit; resize: vertical;
+  }
+  .composer__bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-2); }
+  .composer__hint { color: var(--muted); font-size: var(--text-xs); }
+  .composer__send {
+    flex: none; display: inline-flex; align-items: center; justify-content: center;
+    width: 38px; height: 38px; border: 0; border-radius: 50%; cursor: pointer;
+    background: var(--brand); color: var(--brand-fg);
+  }
+  .composer__send:hover { background: var(--brand-hi); }
+  .composer__send:disabled { opacity: 0.5; cursor: default; }
+  .chip-row { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: center; margin-top: var(--space-5); }
+  .chip {
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    padding: 0.5rem 0.9rem; border: 1px solid var(--border); border-radius: var(--radius-pill);
+    background: var(--surface-1); color: var(--text); cursor: pointer; font-size: var(--text-sm);
+  }
+  .chip:hover { border-color: var(--border-strong); background: var(--surface-2); }
+  .chip svg { color: var(--muted); }
+  .recents { margin-top: var(--space-7); }
+  .recents h2 { margin-bottom: var(--space-3); }
+  .recent-row {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-3); border-radius: var(--radius-md);
+    color: var(--text); text-decoration: none; border: 1px solid transparent;
+  }
+  .recent-row:hover { background: var(--surface-2); text-decoration: none; }
+  .recent-row + .recent-row { border-top: 1px solid var(--hairline); border-radius: 0; }
+  .recent-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+
+<div class="chat-home">
+  <div class="chat-hero">
+    <svg class="chat-hero__mark" width="30" height="30" viewBox="0 0 22 22" aria-hidden="true">
+      <rect x="1" y="1" width="20" height="20" rx="6.5" fill="var(--brand)"/>
+      <circle cx="11" cy="11" r="3.2" fill="none" stroke="#fff" stroke-width="1.8"/>
+    </svg>
+    <h1 class="display">What should Maverick take on?</h1>
   </div>
 
-  <h2>recent goals</h2>
-  <div class="panel">
+  <form method="post" action="/chat/send" class="composer">
+    <input
+      type="text"
+      name="title"
+      value="{{ prefill_title or '' }}"
+      class="composer__field"
+      placeholder="Describe a goal — e.g. plan a 2-week trip to Japan under $4k"
+      aria-label="Describe a goal for Maverick to run"
+      required
+      autofocus
+    />
+    <details{% if prefill_description %} open{% endif %}>
+      <summary>Add details</summary>
+      <textarea
+        name="description"
+        class="composer__details"
+        rows="{{ 6 if prefill_description else 3 }}"
+        aria-label="Extra details for the agent (optional)"
+        placeholder="Context, constraints, links, or acceptance criteria."
+      >{{ prefill_description or '' }}</textarea>
+    </details>
+    <div class="composer__bar">
+      <span class="composer__hint">Maverick plans a sub-agent swarm and runs it under a budget cap.</span>
+      <button type="submit" id="send-btn" class="composer__send" aria-label="Start goal">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+          <path d="M9 14.5V4M9 4l-4.5 4.5M9 4l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </form>
+  <p id="goal-error" role="alert" aria-live="assertive"
+     style="display: none; margin: var(--space-3) 0 0; color: var(--danger); font-size: var(--text-sm); text-align: center;"></p>
+
+  <div class="chip-row">
+    <button type="button" class="chip example-chip" data-text="Summarize my unread emails from this morning">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 4h12v8H2zM2 4l6 4 6-4" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+      Summarize email
+    </button>
+    <button type="button" class="chip example-chip" data-text="Research the latest news on AI safety regulation">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.3"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Research a topic
+    </button>
+    <button type="button" class="chip example-chip" data-text="Draft a polite reschedule email for my 2pm meeting">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M11 2.5 13.5 5 5.5 13H3v-2.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+      Draft an email
+    </button>
+    <button type="button" class="chip example-chip" data-text="Reconcile last month's cloud spend against budget by team">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 13.5V8M7 13.5V3M11.5 13.5V6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+      Analyze spend
+    </button>
+  </div>
+
+  <div class="recents">
+    <h2>Recent goals</h2>
     {% if recent %}
-      <table>
-        <thead><tr><th scope="col">id</th><th scope="col">status</th><th scope="col">title</th></tr></thead>
-        <tbody>
-          {% for g in recent %}
-          <tr>
-            <td><a href="/chat/goal/{{ g.id }}" style="color: var(--text);"><code>#{{ g.id }}</code></a></td>
-            <td><span class="badge {{ g.status }}">{{ g.status }}</span></td>
-            <td><a href="/chat/goal/{{ g.id }}" style="color: var(--text); text-decoration: none;">{{ g.title }}</a></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      {% for g in recent %}
+      <a class="recent-row" href="/chat/goal/{{ g.id }}">
+        <span class="badge {{ g.status }}">{{ g.status }}</span>
+        <span class="recent-title">{{ g.title }}</span>
+      </a>
+      {% endfor %}
     {% else %}
-      <p class="muted">No goals yet — type one above to get started.</p>
+      <p class="muted">No goals yet — describe one above to get started.</p>
     {% endif %}
   </div>
+</div>
+
+<script>
+  // Example chips fill the goal field. (The submit handler — fetch + inline
+  // errors — lives in base.html, shared with the overview first-run form.)
+  document.querySelectorAll('.example-chip').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var input = document.getElementById('send-btn').form.querySelector('input[name="title"]');
+      if (input) { input.value = btn.dataset.text; input.focus(); }
+    });
+  });
+</script>
 {% endblock %}
