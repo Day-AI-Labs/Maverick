@@ -339,10 +339,10 @@ def status(
     proposal = store.get(change_id)
     if proposal is None:
         raise QuorumError(f"unknown proposal {change_id!r}")
-    if proposal.approved():
-        return APPROVED
     if _is_expired(proposal, policy, float(store.clock())):
         return EXPIRED
+    if proposal.approved():
+        return APPROVED
     return PENDING
 
 
