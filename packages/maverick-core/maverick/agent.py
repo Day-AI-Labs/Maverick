@@ -448,13 +448,16 @@ class Agent:
         self.parent = parent
         # Long-horizon review checkpoint (root only; opt-in). Built once per
         # agent from config; None when unconfigured (the common case) so the
-        # turn gate stays a no-op. The reviewer consults the killswitch -- an
-        # operator arming `maverick halt` mid-review is the "stop" vote.
+        # turn gate stays a no-op. The reviewer uses the consent/approval path
+        # with silent auto-approval disabled, so crossing an interval requires
+        # an explicit operator decision to continue.
         self._review_checkpoint = None
         if role == "orchestrator":
             try:
-                from .review_checkpoint import from_config
-                _cp = from_config(review=lambda _e: not killswitch.is_active())
+                from .review_checkpoint import consent_review, from_config
+                _cp = from_config(
+                    review=lambda event: consent_review(event, goal_id=self.ctx.goal_id)
+                )
                 if _cp.policy.is_active():
                     self._review_checkpoint = _cp
             except Exception:  # pragma: no cover -- never block agent construction
