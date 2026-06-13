@@ -25,6 +25,18 @@ def test_classify_duty():
     assert classify_duty("propose_transfer") is None  # proposing is not custody
 
 
+def test_classify_duty_is_case_insensitive():
+    # A control linter must never let a mis-cased tool name silently escape
+    # classification and hide a real SoD conflict.
+    assert classify_duty("Release_Payment") == "custody"
+    assert classify_duty("RELEASE_PAYMENT") == "custody"
+    assert classify_duty("  approve_expense  ") == "authorize"
+    # the conflict is now caught even with mixed-case tool names
+    conflicts = lint_compartment("ap", ["Stage_Payment_Batch", "RELEASE_PAYMENT"])
+    assert len(conflicts) == 1
+    assert {conflicts[0].duty_a, conflicts[0].duty_b} == {"record", "custody"}
+
+
 def test_record_plus_custody_is_conflict():
     conflicts = lint_compartment("ap", ["stage_payment_batch", "release_payment"])
     assert len(conflicts) == 1

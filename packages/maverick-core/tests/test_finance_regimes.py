@@ -24,6 +24,16 @@ def test_sox_gates_money_movement():
     assert evaluate("release_payment", policy=pol).decision is Decision.REQUIRE_HUMAN
 
 
+def test_compile_policy_normalizes_regime_key_case():
+    # A mis-cased KNOWN regime key must not silently compile to no enforcement.
+    caps = compile_policy(["SOX", "AML"])
+    low = compile_policy(["sox", "aml"])
+    assert caps.require_human_actions == low.require_human_actions
+    assert "release_payment" in caps.require_human_actions
+    assert compile_policy([" Sox "]).require_human_actions \
+        == compile_policy(["sox"]).require_human_actions
+
+
 def test_sec_and_irs_gate_filing():
     assert "file_with_sec" in compile_policy(["sec"]).require_human_actions
     irs = compile_policy(["irs"])

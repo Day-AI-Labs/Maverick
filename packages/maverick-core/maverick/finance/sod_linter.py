@@ -64,9 +64,14 @@ _INCOMPATIBLE: frozenset[frozenset[str]] = frozenset({
 
 
 def classify_duty(tool: str) -> str | None:
-    """Return the SoD duty a tool belongs to, or ``None`` (read/analysis/propose)."""
+    """Return the SoD duty a tool belongs to, or ``None`` (read/analysis/propose).
+
+    Matching is case-insensitive: a control linter must never let a mis-cased
+    tool name (``Release_Payment``) silently escape classification and hide a
+    real segregation-of-duties conflict."""
+    name = (tool or "").strip().lower()
     for duty, pattern in _DUTY_PATTERNS:
-        if fnmatch.fnmatchcase(tool, pattern):
+        if fnmatch.fnmatchcase(name, pattern):
             return duty
     return None
 
