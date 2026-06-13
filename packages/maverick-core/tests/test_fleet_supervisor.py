@@ -119,6 +119,35 @@ def test_run_goal_in_thread_threads_capability_into_ctx(monkeypatch):
     assert captured["user_id"] == "agent:acme.bob"
 
 
+
+def test_run_goal_in_thread_closes_sandbox(monkeypatch):
+    from maverick import budget as budget_mod
+    from maverick import llm as llm_mod
+    from maverick import orchestrator, runner, world_model
+    from maverick import sandbox as sandbox_mod
+
+    closed = {"sandbox": False, "world": False}
+
+    class FakeWorld:
+        def get_goal(self, goal_id):
+            return SimpleNamespace(id=goal_id, status="done")
+
+        def close(self):
+            closed["world"] = True
+
+    class FakeSandbox:
+        def close(self):
+            closed["sandbox"] = True
+
+    monkeypatch.setattr(world_model, "open_world", lambda _db: FakeWorld())
+    monkeypatch.setattr(llm_mod, "LLM", lambda: object())
+    monkeypatch.setattr(sandbox_mod, "build_sandbox", lambda: FakeSandbox())
+    monkeypatch.setattr(budget_mod, "budget_from_config", lambda **_kwargs: object())
+    monkeypatch.setattr(orchestrator, "run_goal_sync", lambda *args, **kwargs: None)
+
+    assert runner.run_goal_in_thread(7) == "done"
+    assert closed == {"sandbox": True, "world": True}
+
 def test_run_goal_in_thread_default_capability_is_none(monkeypatch):
     """Default None == zero behaviour change: no capability reaches the run."""
     from maverick import budget as budget_mod

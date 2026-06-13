@@ -207,9 +207,12 @@ def test_warm_first_exec_starts_then_execs(monkeypatch, tmp_path):
     # first call: docker run -d (sleep infinity) to start the warm container
     assert runs[0][:3] == ["docker", "run", "-d"]
     assert runs[0][-2:] == ["sleep", "infinity"]
-    # second call: docker exec into it (NOT another run)
+    # second call: docker exec into it (NOT another run); the command is
+    # wrapped so background jobs are reaped before the exec returns.
     assert runs[1][:2] == ["docker", "exec"]
-    assert runs[1][-3:] == ["sh", "-c", "echo hi"]
+    assert runs[1][3:5] == ["sh", "-c"]
+    assert "sh -c 'echo hi' &" in runs[1][5]
+    assert "kill -KILL" in runs[1][5]
 
 
 def test_warm_reuses_container_across_execs(monkeypatch, tmp_path):
@@ -225,6 +228,35 @@ def test_warm_reuses_container_across_execs(monkeypatch, tmp_path):
     assert len(execs) == 3
     # all execs target the same container name
     assert len({r[2] for r in execs}) == 1
+
+
+def test_warm_timeout_removes_container(monkeypatch, tmp_path):
+    calls = []
+
+    def _fake_run(args, **kwargs):
+        calls.append(args)
+        if args[:2] == ["docker", "version"]:
+            return subprocess.CompletedProcess(args, 0, stdout="ok", stderr="")
+        if args[:3] == ["docker", "run", "-d"]:
+            return subprocess.CompletedProcess(args, 0, stdout="warm", stderr="")
+        if args[:2] == ["docker", "exec"]:
+            raise subprocess.TimeoutExpired(args, kwargs.get("timeout", 0), output=b"partial")
+        if args[:3] == ["docker", "rm", "-f"]:
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        raise AssertionError(f"unexpected docker call: {args}")
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+
+    be = DockerBackend(workdir=tmp_path, reuse_container=True)
+    result = be.exec("while true; do :; done", timeout=1)
+
+    assert result.exit_code == 124
+    assert result.stdout == "partial"
+    assert result.stderr == "TIMEOUT after 1s"
+    start = next(r for r in calls if r[:3] == ["docker", "run", "-d"])
+    cname = start[start.index("--name") + 1]
+    assert ["docker", "rm", "-f", cname] in calls
+    assert be._warm_name is None
 
 
 def test_warm_close_removes_container(monkeypatch, tmp_path):
