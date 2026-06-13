@@ -1,67 +1,133 @@
 {% extends "base.html" %}
 {% block title %}goal #{{ goal.id }} · Maverick{% endblock %}
 {% block content %}
-  <h2>goal #{{ goal.id }}</h2>
+<style>
+  /* Goal as a conversation — same column + composer language as /chat, so
+     arriving here from the composer reads as the conversation continuing
+     rather than a jump to a different screen. */
+  .convo { max-width: 760px; margin-inline: auto; padding-bottom: var(--space-7); }
+  .convo__head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0 var(--space-5); }
+  .convo__back { color: var(--muted); font-size: var(--text-sm); margin-inline-end: auto; }
+  .convo__cancel {
+    padding: 0.35rem 0.8rem; background: var(--surface-1); border: 1px solid var(--border);
+    color: var(--text); border-radius: var(--radius-md); cursor: pointer; font-size: var(--text-sm);
+  }
+  .convo__cancel:hover { border-color: var(--border-strong); }
+  .convo__cancel:disabled { opacity: 0.5; cursor: default; }
 
-  <div class="panel" style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+  .msg { margin-bottom: var(--space-5); }
+  .msg--user { display: flex; justify-content: flex-end; }
+  .msg--user .bubble {
+    background: var(--brand-subtle); border: 1px solid var(--brand-border);
+    border-radius: 16px 16px 4px 16px; padding: var(--space-3) var(--space-4); max-width: 85%;
+  }
+  .bubble__title { font-weight: var(--font-medium); }
+  .bubble__desc { color: var(--muted); font-size: var(--text-sm); margin-top: var(--space-2); white-space: pre-wrap; }
+
+  .agent__label { display: flex; align-items: center; gap: var(--space-2); color: var(--muted); font-size: var(--text-sm); font-weight: var(--font-medium); margin-bottom: var(--space-3); }
+  .worklog {
+    background: var(--surface-sunken); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    padding: var(--space-3) var(--space-4); font-size: var(--text-sm); color: var(--muted);
+  }
+  #events { font-family: ui-monospace, SFMono-Regular, Menlo, "Roboto Mono", monospace; }
+  .answer { margin-top: var(--space-4); font-size: var(--text-md); line-height: 1.65; color: var(--text); }
+  .answer #result { font-family: inherit; }  /* the result reads as prose, not code */
+  .spinner {
+    display: inline-block; width: 0.8em; height: 0.8em;
+    border: 2px solid var(--border); border-top-color: var(--brand);
+    border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -0.1em;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* The reply composer appears (sticky, at the bottom) only when the agent
+     needs an answer — Maverick goals run autonomously between asks. */
+  .ask {
+    position: sticky; bottom: var(--space-4); margin-top: var(--space-5);
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 16px; box-shadow: var(--shadow-md); padding: var(--space-3) var(--space-4);
+  }
+  .ask__text { margin: 0 0 var(--space-2); color: var(--text); font-size: var(--text-sm); }
+  .ask__row { display: flex; gap: var(--space-2); align-items: center; }
+  .ask__field { flex: 1; border: 0; background: transparent; color: var(--text); font: inherit; font-size: var(--text-base); outline: none; padding: var(--space-2); }
+  .ask__send {
+    flex: none; width: 36px; height: 36px; border: 0; border-radius: 50%; cursor: pointer;
+    background: var(--brand); color: var(--brand-fg); display: inline-flex; align-items: center; justify-content: center;
+  }
+  .ask__send:hover { background: var(--brand-hi); }
+  .halt-card {
+    margin-top: var(--space-4); padding: var(--space-4) var(--space-5);
+    background: var(--warn-subtle); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+    border-radius: var(--radius-lg);
+  }
+  .halt-card__title { font-weight: var(--font-semibold); color: var(--text); }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+</style>
+
+<div class="convo">
+  <div class="convo__head">
+    <a class="convo__back" href="/chat">← New goal</a>
     <span id="status" class="badge {{ goal.status }}">{{ goal.status }}</span>
-    <span class="muted">{{ goal.title }}</span>
-    <span style="margin-left: auto; display: flex; gap: 0.5rem;">
-      <button id="cancel-btn" type="button"
-              style="padding: 0.4rem 0.8rem; background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 4px; cursor: pointer; font-size: 0.8rem;"
-              {% if goal.status in ('done', 'cancelled', 'failed') %}disabled{% endif %}>
-        Cancel goal
-      </button>
-    </span>
+    <button id="cancel-btn" class="convo__cancel" type="button"
+            {% if goal.status in ('done', 'cancelled', 'failed') %}disabled{% endif %}>
+      Cancel
+    </button>
   </div>
 
-  <p id="goal-action-msg" role="status" aria-live="polite" class="muted"
-     style="min-height: 1em; margin: 0 0 1.5rem;"></p>
+  <div class="msg msg--user">
+    <div class="bubble">
+      <div class="bubble__title">{{ goal.title }}</div>
+      {% if goal.description and goal.description != goal.title %}
+      <div class="bubble__desc">{{ goal.description }}</div>
+      {% endif %}
+    </div>
+  </div>
 
-  <div id="question-panel" class="panel" style="display: none; border-color: var(--warn);">
-    <h3 style="margin-top: 0;">The agent is waiting on an answer</h3>
-    <p id="question-text" class="muted"></p>
-    <form id="answer-form" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+  <div class="msg msg--agent">
+    <div class="agent__label">
+      <svg width="16" height="16" viewBox="0 0 22 22" aria-hidden="true">
+        <rect x="1" y="1" width="20" height="20" rx="6.5" fill="var(--brand)"/>
+        <circle cx="11" cy="11" r="3.2" fill="none" stroke="#fff" stroke-width="1.8"/>
+      </svg>
+      Maverick
+    </div>
+    <p id="goal-action-msg" role="status" aria-live="polite" class="muted" style="min-height: 1em; margin: 0 0 0.75rem;"></p>
+    <div class="worklog">
+      <pre id="events" role="log" aria-live="polite" aria-label="Goal progress" tabindex="0"
+           style="white-space: pre-wrap; margin: 0; max-height: 460px; overflow-y: auto;"></pre>
+      <p id="loading-placeholder" class="muted" aria-busy="true" style="margin: 0;">
+        <span class="spinner" aria-hidden="true"></span> Working…
+      </p>
+      <p id="stream-error" role="alert" class="muted" style="display: none; margin: 0; color: var(--danger);"></p>
+    </div>
+    <div id="result-section" class="answer" style="display: {% if goal.result %}block{% else %}none{% endif %};">
+      <pre id="result" tabindex="0" aria-label="Goal result"
+           style="white-space: pre-wrap; margin: 0;">{{ goal.result or '' }}</pre>
+    </div>
+    <div id="halt-card" class="halt-card" style="display: none;">
+      <div class="halt-card__title">Stopped before finishing</div>
+      <p id="halt-reason" class="muted" style="margin: var(--space-2) 0 0;"></p>
+      <p class="muted" style="margin: var(--space-3) 0 0; font-size: var(--text-sm);">
+        This usually means the goal reached its budget or time cap, the killswitch was armed, or it hit an error.
+        <a href="/oversight">Open Oversight</a> for details, or resume with a higher cap from the command line:
+        <code>maverick resume {{ goal.id }} --max-dollars 5</code>
+      </p>
+    </div>
+  </div>
+
+  <div id="question-panel" class="ask" style="display: none;">
+    <p id="question-text" class="ask__text"></p>
+    <form id="answer-form" class="ask__row">
       <input type="text" id="answer-input" required
-             placeholder="Your answer" aria-label="Your answer to the agent's question"
-             style="flex: 1 1 280px; padding: 0.5rem 0.75rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px;" />
-      <button type="submit"
-              style="padding: 0.5rem 1.25rem; background: var(--accent); color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-weight: 500;">
-        Submit
+             placeholder="Reply to Maverick…" aria-label="Your answer to the agent's question"
+             class="ask__field" />
+      <button type="submit" class="ask__send" aria-label="Send reply">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+          <path d="M9 14.5V4M9 4l-4.5 4.5M9 4l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
       </button>
     </form>
   </div>
-
-  <h2>progress</h2>
-  <div class="panel" id="progress" data-goal="{{ goal.id }}">
-    <pre id="events" role="log" aria-live="polite" aria-label="Goal progress" tabindex="0"
-         style="white-space: pre-wrap; margin: 0; max-height: 480px; overflow-y: auto;"></pre>
-    <p id="loading-placeholder" class="muted" aria-busy="true" style="margin: 0;">
-      <span class="spinner" aria-hidden="true"></span> Waiting for the agent…
-    </p>
-    <p id="stream-error" role="alert" class="muted" style="display: none; margin: 0; color: var(--danger);"></p>
-  </div>
-
-  <div id="result-section" class="panel" style="display: {% if goal.result %}block{% else %}none{% endif %};">
-    <h3 style="margin-top: 0;">result</h3>
-    <pre id="result" tabindex="0" aria-label="Goal result"
-         style="white-space: pre-wrap; margin: 0; max-height: 480px; overflow-y: auto;">{{ goal.result or '' }}</pre>
-  </div>
-
-  <p style="margin-top: 2rem;">
-    <a href="/chat" class="muted" style="text-decoration: underline;">Back to chat</a>
-  </p>
-
-  <style>
-    .spinner {
-      display: inline-block; width: 0.8em; height: 0.8em;
-      border: 2px solid var(--border); border-top-color: var(--accent);
-      border-radius: 50%; animation: spin 0.8s linear infinite;
-      vertical-align: -0.1em;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
-  </style>
+</div>
 
   <script>
     (function() {
@@ -78,18 +144,22 @@
       const answerForm = document.getElementById('answer-form');
       const answerInput = document.getElementById('answer-input');
       const actionMsg = document.getElementById('goal-action-msg');
+      const haltCard = document.getElementById('halt-card');
+      const haltReasonEl = document.getElementById('halt-reason');
       let sinceId = 0;
       let lastSeenId = 0;  // highest event id rendered; dedups SSE replays
       let done = false;
       let pollDelay = 2000;
       let currentQuestionId = null;
+      let currentStatus = {{ goal.status|tojson }};
+      let lastResult = {{ (goal.result or '')|tojson }};
 
       const KIND_LABELS = {
         plan: 'thinking', finding: 'answer', observation: 'result',
         error: 'error', verify: 'checking', artifact: 'produced',
       };
       const KIND_COLORS = {
-        plan: 'var(--accent)', finding: 'var(--accent)',
+        plan: 'var(--brand)', finding: 'var(--accent)',
         observation: 'var(--text)', error: 'var(--danger)',
         verify: 'var(--warn)', artifact: 'var(--accent)',
       };
@@ -124,7 +194,21 @@
         }
       }
 
+      function renderHalted() {
+        // A 'blocked' goal with no open question has actually stopped
+        // (budget/time cap, killswitch, or error). Make that legible instead
+        // of leaving the "Working…" spinner running and Cancel enabled forever.
+        hidePlaceholder();
+        done = true;
+        cancelBtn.disabled = true;
+        resultSection.style.display = 'none';
+        haltReasonEl.textContent = lastResult || 'The run stopped before producing a result.';
+        haltCard.style.display = 'block';
+      }
+
       function appendEvent(e) {
+        // Internal trace bookkeeping isn't conversation content — skip it.
+        if (e && (e.kind === 'trace_meta' || fmtAgent(e.agent) === 'system')) return;
         hidePlaceholder();
         const line = document.createElement('div');
         const agent = document.createElement('span');
@@ -150,6 +234,7 @@
           } else {
             currentQuestionId = null;
             questionPanel.style.display = 'none';
+            if (currentStatus === 'blocked') renderHalted();
           }
         } catch (e) { /* swallow */ }
       }
@@ -218,12 +303,18 @@
         if (evs.length > 0 && d.next_id != null) sinceId = d.next_id;
         eventsEl.parentElement.scrollTop = eventsEl.parentElement.scrollHeight;
         if (d.status) {
+          currentStatus = d.status;
           statusEl.className = 'badge ' + d.status;
           statusEl.textContent = d.status;
         }
         if (d.result) {
-          resultEl.textContent = d.result;
-          resultSection.style.display = 'block';
+          lastResult = d.result;
+          // A clean finish shows its result; a 'blocked' result is a terse
+          // stop-reason that the halt card renders instead.
+          if (d.status !== 'blocked') {
+            resultEl.textContent = d.result;
+            resultSection.style.display = 'block';
+          }
         }
         if (d.status === 'blocked') {
           pollQuestions();
@@ -290,6 +381,9 @@
       }
 
       openStream();
+      // A goal already 'blocked' on load resolves to either a question or a
+      // halt card right away, instead of waiting for the next poll tick.
+      if (currentStatus === 'blocked') pollQuestions();
       // Poll questions on a longer cadence so the form picks up on
       // ask_user that happens between event ticks.
       setInterval(function() { if (!done) pollQuestions(); }, 5000);
