@@ -426,6 +426,16 @@ def budget_from_config(*, defaults: dict | None = None,
                 kwargs[key] = cast
             except (TypeError, ValueError):
                 pass  # malformed config value -> fall back to prior layer
+    # Dashboard-set spend cap (settings page; lives in runtime-overrides.toml,
+    # never config.toml). A live UI choice sits above [budget] config, below an
+    # explicit per-call override / env flag.
+    try:
+        from .runtime_overrides import budget_override
+        dash_cap = budget_override()
+        if dash_cap is not None:
+            kwargs["max_dollars"] = dash_cap
+    except Exception:  # pragma: no cover -- overlay never blocks a run
+        pass
     # Env override for the documented MAVERICK_BUDGET_DOLLARS. The cookbooks
     # use `MAVERICK_BUDGET_DOLLARS=0.5 maverick start ...` to cap a single
     # invocation, but nothing read it -- so the cap silently did nothing and

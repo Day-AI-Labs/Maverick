@@ -2331,7 +2331,8 @@ async def settings_page(request: Request, saved: str = "") -> HTMLResponse:
         MODEL_SONNET,
         model_for_role,
     )
-    from maverick.runtime_overrides import default_model_override
+    from maverick.runner import DEFAULT_MAX_DOLLARS
+    from maverick.runtime_overrides import budget_override, default_model_override
     roles = [
         ("Orchestrator", "orchestrator"), ("Coder", "coder"),
         ("Researcher", "researcher"), ("Writer", "writer"),
@@ -2353,12 +2354,15 @@ async def settings_page(request: Request, saved: str = "") -> HTMLResponse:
     saved_msg = {
         "appearance": "Appearance updated.",
         "models": "Default model updated.",
+        "budget": "Spend cap updated.",
     }.get(saved, "")
     return templates.TemplateResponse(request, "settings.html", {
         "role_models": role_models,
         "known_models": known_models,
         "pinned_model": default_model_override(),
         "providers": providers,
+        "budget": budget_override(),
+        "default_budget": DEFAULT_MAX_DOLLARS,
         "saved": saved_msg,
     })
 
@@ -2381,6 +2385,27 @@ async def settings_set_model(request: Request, model: str = Form("")) -> Redirec
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="invalid model id") from exc
     return RedirectResponse("/settings?saved=models", status_code=303)
+
+
+@app.post("/settings/budget")
+async def settings_set_budget(request: Request, max_dollars: str = Form("")) -> RedirectResponse:
+    """Set (or clear) the dashboard's per-goal spend cap via the runtime
+    overlay. An empty value clears it, reverting to config.toml / defaults.
+    config.toml is never written."""
+    if not _is_same_origin(request):
+        raise HTTPException(status_code=403, detail="cross-site form post blocked")
+    from maverick.runtime_overrides import clear_budget, set_budget
+    val = (max_dollars or "").strip()
+    try:
+        if val:
+            set_budget(float(val))
+        else:
+            clear_budget()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail="spend cap must be a positive number",
+        ) from exc
+    return RedirectResponse("/settings?saved=budget", status_code=303)
 
 
 @app.post("/webhook/start")
