@@ -28,6 +28,7 @@ Default OFF::
 Fetching goes through an INJECTED fetcher seam (``fetcher(url) -> text``);
 tests never touch the network. The default fetcher is a lazy httpx GET.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -42,6 +43,7 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 RULES_FILENAME = "shield_rules.json"
+MAX_BUNDLE_BYTES = 1_000_000
 
 # A fetcher maps the update URL to the bundle's JSON text.
 Fetcher = Callable[[str], str]
@@ -114,9 +116,7 @@ def verify_bundle(bundle: Any, pubkey_hex: str) -> tuple[int, list]:
     if not isinstance(sig, str) or not sig.strip():
         raise UpdateRefused("bundle is unsigned (missing 'sig')")
     if not pubkey_hex:
-        raise UpdateRefused(
-            "no [shield] update_pubkey configured -- refusing to trust any bundle"
-        )
+        raise UpdateRefused("no [shield] update_pubkey configured -- refusing to trust any bundle")
     from .audit import signing
 
     if not signing._have_crypto():
@@ -162,6 +162,7 @@ def _staged_rules(path: Path) -> list:
 @dataclass
 class UpdateResult:
     """What an update attempt did. ``applied`` False = nothing changed."""
+
     applied: bool
     reason: str
     version: int | None = None
@@ -200,8 +201,11 @@ def apply_update(
         raise UpdateRefused(f"version downgrade refused: bundle v{version} < staged v{cur}")
     if cur is not None and version == cur:
         return UpdateResult(
-            applied=False, reason=f"already at v{cur}", version=version,
-            previous_version=cur, path=str(p),
+            applied=False,
+            reason=f"already at v{cur}",
+            version=version,
+            previous_version=cur,
+            path=str(p),
         )
 
     old_ids = {_rule_id(r) for r in _staged_rules(p)}
@@ -232,21 +236,48 @@ def apply_update(
         pass
 
     result = UpdateResult(
-        applied=True, reason="ok", version=version, previous_version=cur,
-        added=sorted(new_ids - old_ids), removed=sorted(old_ids - new_ids),
+        applied=True,
+        reason="ok",
+        version=version,
+        previous_version=cur,
+        added=sorted(new_ids - old_ids),
+        removed=sorted(old_ids - new_ids),
         path=str(p),
     )
     log.info("shield rules update: %s", result.summary())
     return result
 
 
+def _refuse_oversized_bundle(size: int) -> None:
+    if size > MAX_BUNDLE_BYTES:
+        raise UpdateRefused(f"bundle exceeds maximum size of {MAX_BUNDLE_BYTES} bytes")
+
+
+def _decode_bundle_bytes(data: bytes) -> str:
+    _refuse_oversized_bundle(len(data))
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise UpdateRefused(f"bundle is not valid UTF-8: {e}") from e
+
+
 def _default_fetcher(url: str) -> str:
-    """Lazy httpx GET (httpx is a core dependency). Tests inject instead."""
+    """Lazy httpx GET with a hard response-size cap. Tests inject instead."""
     import httpx
 
-    resp = httpx.get(url, timeout=30.0, follow_redirects=True)
-    resp.raise_for_status()
-    return resp.text
+    chunks = bytearray()
+    with httpx.stream("GET", url, timeout=30.0, follow_redirects=True) as resp:
+        resp.raise_for_status()
+        content_length = resp.headers.get("content-length")
+        if content_length is not None:
+            try:
+                _refuse_oversized_bundle(int(content_length))
+            except ValueError:
+                pass
+        for chunk in resp.iter_bytes():
+            chunks.extend(chunk)
+            _refuse_oversized_bundle(len(chunks))
+    return _decode_bundle_bytes(bytes(chunks))
 
 
 def check_and_apply(*, fetcher: Fetcher | None = None) -> UpdateResult:
@@ -259,15 +290,19 @@ def check_and_apply(*, fetcher: Fetcher | None = None) -> UpdateResult:
     cfg = get_update_config()
     if not cfg["federated_updates"]:
         return UpdateResult(
-            applied=False, reason="disabled: [shield] federated_updates is off",
+            applied=False,
+            reason="disabled: [shield] federated_updates is off",
         )
     url = cfg["update_url"]
     if not url:
         return UpdateResult(applied=False, reason="no [shield] update_url configured")
     try:
         text = (fetcher or _default_fetcher)(url)
+    except UpdateRefused:
+        raise
     except Exception as e:  # noqa: BLE001 -- network failures refuse, not crash
         raise UpdateRefused(f"fetch failed: {type(e).__name__}: {e}") from e
+    _refuse_oversized_bundle(len(text.encode("utf-8")))
     try:
         bundle = json.loads(text)
     except json.JSONDecodeError as e:
@@ -276,6 +311,7 @@ def check_and_apply(*, fetcher: Fetcher | None = None) -> UpdateResult:
 
 
 __all__ = [
+    "MAX_BUNDLE_BYTES",
     "RULES_FILENAME",
     "UpdateRefused",
     "UpdateResult",
