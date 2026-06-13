@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -26,6 +27,25 @@ log = logging.getLogger(__name__)
 
 DEFAULT_PATH = Path.home() / ".maverick" / "role_stats.json"
 _lock = threading.Lock()
+
+_SAFE_ROLE_RE = re.compile(r"[^A-Za-z0-9_-]+")
+_MAX_ROLE_LEN = 40
+
+
+def safe_role(role: object) -> str | None:
+    """Return a prompt-safe role key for routing memory, or None.
+
+    Swarm roles are model-controlled.  Role stats are persisted across runs and
+    later rendered into the orchestrator brief, so only compact identifier-like
+    strings may enter this store.  Non-identifier runs are collapsed to hyphens
+    and capped in length to avoid carrying prompt text across sessions.
+    """
+    if not isinstance(role, str):
+        return None
+    cleaned = _SAFE_ROLE_RE.sub("-", role.strip()).strip("-_").lower()
+    if not cleaned:
+        return None
+    return cleaned[:_MAX_ROLE_LEN].rstrip("-_") or None
 
 
 @dataclass
@@ -54,16 +74,24 @@ def _load(path: Path) -> dict[str, RoleStat]:
     if not isinstance(raw, dict):
         return {}
     for role, entry in raw.items():
-        if not isinstance(entry, dict):
+        role_key = safe_role(role)
+        if role_key is None or not isinstance(entry, dict):
             continue
         try:
-            out[role] = RoleStat(
+            st = RoleStat(
                 runs=int(entry.get("runs", 0)),
                 credit_sum=float(entry.get("credit_sum", 0.0)),
                 last=float(entry.get("last", 0.0)),
             )
         except (TypeError, ValueError):
             continue
+        if role_key in out:
+            prev = out[role_key]
+            prev.runs += st.runs
+            prev.credit_sum += st.credit_sum
+            prev.last = max(prev.last, st.last)
+        else:
+            out[role_key] = st
     return out
 
 
@@ -78,17 +106,18 @@ def _save(stats: dict[str, RoleStat], path: Path) -> None:
 
 def record(role: str, credit: float, path: Path | None = None) -> None:
     """Accumulate one (role, marginal-credit) observation. Fail-safe no-op."""
-    if not role:
+    role_key = safe_role(role)
+    if role_key is None:
         return
     path = _resolve(path)
     with _lock:
         try:
             stats = _load(path)
-            st = stats.get(role) or RoleStat()
+            st = stats.get(role_key) or RoleStat()
             st.runs += 1
             st.credit_sum += float(credit)
             st.last = time.time()
-            stats[role] = st
+            stats[role_key] = st
             _save(stats, path)
         except OSError as e:  # pragma: no cover -- stats never block a run
             log.debug("role_stats record failed: %s", e)
@@ -136,4 +165,12 @@ def guidance(path: Path | None = None) -> str | None:
     )
 
 
-__all__ = ["RoleStat", "record", "record_credit", "top_roles", "guidance", "DEFAULT_PATH"]
+__all__ = [
+    "RoleStat",
+    "safe_role",
+    "record",
+    "record_credit",
+    "top_roles",
+    "guidance",
+    "DEFAULT_PATH",
+]
