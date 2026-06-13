@@ -20,11 +20,15 @@ def test_pending_from_fresh_db_applies_everything():
 def test_pending_skips_already_applied():
     # A DB already at the latest version has nothing to do.
     assert pg.pending_migrations(pg._PG_SCHEMA_VERSION) == []
-    # A DB at v1 still needs both tenant migrations (v10 columns, v11 uniques).
+    # A DB at v1 still needs both tenant migrations (v10 columns, v11 uniques)
+    # and the approval-claims migration (v13).
     pending = pg.pending_migrations(1)
-    assert [v for v, _ in pending] == [10, 11]
-    # A DB at v10 still needs the tenant-unique migration.
-    assert [v for v, _ in pg.pending_migrations(10)] == [11]
+    assert [v for v, _ in pending] == [10, 11, 13]
+    # A DB at v10 still needs the tenant-unique and approval-claims migrations.
+    assert [v for v, _ in pg.pending_migrations(10)] == [11, 13]
+    # A DB at v11 still needs the approval-claims migration for upgraded
+    # deployments that already applied the previous Postgres ladder.
+    assert [v for v, _ in pg.pending_migrations(11)] == [13]
 
 
 def test_pending_is_ordered_with_custom_ladder():
@@ -53,8 +57,16 @@ def test_tenant_unique_migration_makes_constraints_tenant_aware():
     assert joined.count("COALESCE(tenant_id, '')") == 3  # one per unique table
 
 
+def test_approval_claims_migration_adds_collaboration_columns():
+    stmts = dict(pg.MIGRATIONS)[13]
+    joined = "\n".join(stmts)
+    assert "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS claimed_by TEXT" in joined
+    assert "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS claimed_at DOUBLE PRECISION" in joined
+    assert "ALTER TABLE approvals ADD COLUMN IF NOT EXISTS decided_by TEXT" in joined
+
+
 def test_schema_version_is_latest_migration():
-    assert pg._PG_SCHEMA_VERSION == 11
+    assert pg._PG_SCHEMA_VERSION == 13
     assert pg._PG_SCHEMA_VERSION == max(v for v, _ in pg.MIGRATIONS)
 
 
