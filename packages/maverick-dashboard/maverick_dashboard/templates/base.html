@@ -4,168 +4,424 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark light" />
-  <meta name="theme-color" content="#0d1117" />
+  <meta name="theme-color" content="#0b0f17" />
   <title>{% block title %}Maverick{% endblock %}</title>
   <style>
-    /* Theme presets. The body class chosen by the route + ?theme=
-       query param selects the active palette. Default = dark. */
+    /* =====================================================================
+       Maverick design system. All visual decisions live in CSS variables so
+       the 4 built-in themes + operator custom themes ([dashboard] themes in
+       config.toml, which set only --bg/--panel/--text/--accent) all work from
+       one set of rules. New tokens default in :root and are color-mix()-derived
+       from the core vars, so a 4-variable custom theme inherits sensible
+       surfaces, borders, badges and a brand colour automatically.
+
+       Brand vs status: --brand is the product/interaction colour (nav, links,
+       primary actions, focus). --accent stays the status/success colour
+       (running/succeeded). Built-in themes set --brand explicitly; custom
+       themes fall back to --brand: var(--accent) so the operator's chosen
+       accent drives their chrome.
+       ===================================================================== */
+    :root {
+      /* ---- spacing (8px system, 4px-quantised) ---- */
+      --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+      --space-5: 24px; --space-6: 32px; --space-7: 48px;
+      /* ---- radii ---- */
+      --radius-sm: 4px; --radius-md: 6px; --radius-lg: 10px; --radius-pill: 999px;
+      /* ---- type scale ---- */
+      --text-xs: 0.75rem;  --text-sm: 0.8125rem; --text-base: 0.875rem;
+      --text-md: 1rem;     --text-lg: 1.125rem;  --text-xl: 1.375rem;
+      --text-2xl: 1.75rem; --text-3xl: 2.25rem;
+      --font-normal: 400; --font-medium: 500; --font-semibold: 600;
+      --leading-tight: 1.25; --leading: 1.55;
+      /* ---- layout ---- */
+      --sidebar-w: 248px; --topbar-h: 56px; --drawer-w: min(82vw, 320px);
+      --content-max: 1180px;
+      /* ---- elevation (dark-tuned default; light theme overrides) ---- */
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.40);
+      --shadow-md: 0 6px 18px rgba(2,6,15,0.50);
+      --shadow-lg: 0 16px 40px rgba(2,6,15,0.60);
+      /* ---- brand fallback: follow --accent unless a theme sets it. Built-in
+         themes override below; custom (4-var) themes inherit these. ---- */
+      --brand: var(--accent); --brand-hi: var(--accent); --brand-fg: #ffffff;
+      --info: var(--accent);
+      /* ---- derived surfaces / borders / status fills (theme-agnostic) ---- */
+      --surface-1: var(--panel);
+      --surface-2: color-mix(in srgb, var(--panel) 86%, var(--text) 14%);
+      --surface-sunken: color-mix(in srgb, var(--panel) 78%, var(--bg) 22%);
+      --hairline: color-mix(in srgb, var(--text) 8%, transparent);
+      --border-strong: color-mix(in srgb, var(--border) 55%, var(--text) 45%);
+      --row-hover: color-mix(in srgb, var(--text) 5%, transparent);
+      --ring: var(--brand);
+      --brand-subtle: color-mix(in srgb, var(--brand) 16%, transparent);
+      --brand-border: color-mix(in srgb, var(--brand) 42%, transparent);
+      --success: var(--accent);
+      --success-subtle: color-mix(in srgb, var(--accent) 20%, transparent);
+      --warn-subtle:    color-mix(in srgb, var(--warn) 18%, transparent);
+      --danger-subtle:  color-mix(in srgb, var(--danger) 18%, transparent);
+      --info-subtle:    color-mix(in srgb, var(--info) 16%, transparent);
+      --muted-subtle:   color-mix(in srgb, var(--muted) 18%, transparent);
+    }
+    /* Core palettes. :root carries the dark values so a class-less render
+       still looks right; the body always also carries body.theme-*. */
     :root,
     body.theme-dark {
       color-scheme: dark;
-      --bg: #0d1117; --panel: #161b22; --border: #30363d;
-      --text: #e6edf3; --muted: #9aa3ad; --accent: #3fb950;
+      --bg: #0b0f17; --panel: #131a24; --border: #27303d;
+      --text: #e6edf3; --muted: #8b97a6; --accent: #3fb950;
       --warn: #d29922; --danger: #f85149;
+    }
+    body.theme-dark {
+      --brand: #6366f1; --brand-hi: #818cf8; --brand-fg: #ffffff; --info: #58a6ff;
     }
     body.theme-light {
       color-scheme: light;
       --bg: #ffffff; --panel: #f6f8fa; --border: #d0d7de;
       --text: #1f2328; --muted: #57606a; --accent: #1a7f37;
       --warn: #9a6700; --danger: #cf222e;
+      --brand: #4f46e5; --brand-hi: #6366f1; --brand-fg: #ffffff; --info: #0969da;
+      --shadow-sm: 0 1px 2px rgba(31,35,40,0.08);
+      --shadow-md: 0 6px 18px rgba(31,35,40,0.10);
+      --shadow-lg: 0 16px 40px rgba(31,35,40,0.16);
     }
     body.theme-solarized {
       color-scheme: dark;
       --bg: #002b36; --panel: #073642; --border: #586e75;
       --text: #eee8d5; --muted: #93a1a1; --accent: #6c9b00;
       --warn: #b58900; --danger: #dc322f;
+      --brand: #268bd2; --brand-hi: #4fa3d8; --brand-fg: #ffffff; --info: #2aa198;
     }
     body.theme-hicontrast {
       color-scheme: dark;
       --bg: #000000; --panel: #111111; --border: #ffffff;
       --text: #ffffff; --muted: #cccccc; --accent: #00ff00;
       --warn: #ffff00; --danger: #ff5050;
+      --brand: #00ffff; --brand-hi: #aaffff; --brand-fg: #000000; --info: #66ccff;
     }
-    /* Accessibility font axis (independent of theme). The dyslexia-
-       friendly mode prefers OpenDyslexic when the user has it installed and
-       falls back to the commonly recommended system faces, with wider
-       letter/word spacing and taller line height per readability guidance. */
+    /* Accessibility font axis (independent of theme). The dyslexia-friendly
+       mode prefers OpenDyslexic when installed and falls back to commonly
+       recommended faces, with wider letter/word spacing and taller lines. */
     body.font-dyslexic, body.font-dyslexic input, body.font-dyslexic select,
     body.font-dyslexic button, body.font-dyslexic textarea {
       font-family: "OpenDyslexic", "Comic Sans MS", Verdana, Tahoma, sans-serif;
       letter-spacing: 0.04em; word-spacing: 0.16em;
     }
     body.font-dyslexic { line-height: 1.8; }
+
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, sans-serif;
+      font: var(--text-base)/var(--leading) Inter, -apple-system, BlinkMacSystemFont,
+             "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       background: var(--bg); color: var(--text);
       -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+      /* App shell: top bar spans full width; sidebar + main below; footer last. */
+      display: grid;
+      grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+      grid-template-rows: auto 1fr auto;
+      min-height: 100vh; min-height: 100dvh;
     }
-    a { color: var(--accent); }
+    a { color: var(--brand); text-decoration: none; }
+    a:hover { text-decoration: underline; }
     a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
+    textarea:focus-visible, summary:focus-visible, [role="button"]:focus-visible,
     [tabindex="0"]:focus-visible {
-      outline: 2px solid var(--accent); outline-offset: 2px;
+      outline: 2px solid var(--ring); outline-offset: 2px; border-radius: var(--radius-sm);
     }
-    /* #content is a programmatic skip-link target (tabindex=-1), not a
-       tab stop, so it needs no focus ring of its own. */
+    /* #content is a programmatic skip-link target (tabindex=-1), not a tab
+       stop, so it needs no focus ring of its own. */
     main:focus { outline: none; }
     .mono, code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, "Roboto Mono", monospace; }
     .skip-link { position: absolute; inset-inline-start: -9999px; }
-    .skip-link:focus { inset-inline-start: 1rem; top: 1rem; background: var(--accent); color: #fff; padding: 0.5rem 1rem; border-radius: 4px; z-index: 100; }
-    header { padding: 1rem 2rem; border-bottom: 1px solid var(--border); display: flex; gap: 1rem; align-items: center; max-width: 1400px; margin: 0 auto; flex-wrap: wrap; }
-    header h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
-    nav { display: flex; gap: 1rem; flex-wrap: wrap; }
-    nav a { color: var(--muted); text-decoration: none; }
-    nav a:hover, nav a.active { color: var(--text); }
-    main { padding: 2rem; max-width: 1100px; margin: 0 auto; }
-    h2 { margin: 0 0 1rem; font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
-    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem; overflow-x: auto; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
-    .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; }
-    .stat .num { font-size: 2rem; font-weight: 600; }
-    .stat .label { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
-    table { width: 100%; border-collapse: collapse; }
-    /* Logical properties (text-align: start, margin-inline-start, …) keep
-       the layout correct for the RTL languages (dir="rtl": ar/he/fa/ur)
-       without a separate stylesheet. */
-    th, td { text-align: start; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
-    th { color: var(--muted); font-weight: 500; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
+    .skip-link:focus {
+      inset-inline-start: var(--space-4); top: var(--space-4); z-index: 200;
+      background: var(--brand); color: var(--brand-fg);
+      padding: var(--space-2) var(--space-4); border-radius: var(--radius-md);
+    }
+
+    /* ---------- top bar ---------- */
+    .topbar {
+      grid-column: 1 / -1; grid-row: 1;
+      position: sticky; top: 0; z-index: 50;
+      display: flex; align-items: center; gap: var(--space-4);
+      min-height: var(--topbar-h);
+      padding: var(--space-2) var(--space-5);
+      background: color-mix(in srgb, var(--panel) 82%, transparent);
+      backdrop-filter: saturate(140%) blur(8px);
+      border-bottom: 1px solid var(--border);
+    }
+    .topbar__menu {
+      display: none; align-items: center; justify-content: center;
+      width: 38px; height: 38px; padding: 0;
+      background: transparent; color: var(--text);
+      border: 1px solid var(--border); border-radius: var(--radius-md); cursor: pointer;
+    }
+    .topbar__menu:hover { background: var(--surface-2); }
+    .brand {
+      display: inline-flex; align-items: center; gap: var(--space-3);
+      color: var(--text); font-weight: var(--font-semibold);
+    }
+    .brand:hover { text-decoration: none; }
+    .brand__mark { display: block; flex: none; }
+    .brand__name {
+      font-size: var(--text-lg); letter-spacing: -0.01em; line-height: 1;
+    }
+    .topbar__controls {
+      display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+      justify-content: flex-end; row-gap: var(--space-2);
+      margin-inline-start: auto;
+    }
+    .ctl {
+      background: var(--surface-sunken); color: var(--text);
+      border: 1px solid var(--border); border-radius: var(--radius-md);
+      padding: 0.34rem 0.5rem; font-size: var(--text-sm); line-height: 1.2;
+    }
+    .ctl:hover { border-color: var(--border-strong); }
+
+    /* ---------- sidebar nav ---------- */
+    .sidebar {
+      grid-column: 1; grid-row: 2;
+      position: sticky; top: var(--topbar-h); align-self: start;
+      max-height: calc(100dvh - var(--topbar-h)); overflow-y: auto;
+      background: color-mix(in srgb, var(--panel) 45%, var(--bg));
+      border-inline-end: 1px solid var(--border);
+      padding: var(--space-4) var(--space-3) var(--space-6);
+    }
+    .sidebar nav { display: flex; flex-direction: column; gap: var(--space-1); }
+    .sidebar nav a {
+      display: block; color: var(--muted); border-radius: var(--radius-md);
+      padding: 0.42rem var(--space-3); font-size: var(--text-base);
+      border-inline-start: 2px solid transparent;
+    }
+    .sidebar nav a:hover { color: var(--text); background: var(--surface-2); text-decoration: none; }
+    .sidebar nav a.active {
+      color: var(--brand); background: var(--brand-subtle);
+      border-inline-start-color: var(--brand); font-weight: var(--font-medium);
+    }
+    /* The home/Overview link is the only direct child link of the nav. */
+    .sidebar nav > a { color: var(--text); font-weight: var(--font-medium); margin-bottom: var(--space-2); }
+    .sidebar nav > a.active { color: var(--brand); }
+    .navgrp { display: flex; flex-direction: column; }
+    .navgrp + .navgrp { margin-top: var(--space-2); }
+    .navgrp__toggle {
+      display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+      width: 100%; background: transparent; border: 0; cursor: pointer;
+      padding: var(--space-2) var(--space-3) var(--space-1);
+      color: var(--muted); font: inherit;
+      font-size: var(--text-xs); font-weight: var(--font-semibold);
+      text-transform: uppercase; letter-spacing: 0.07em;
+    }
+    .navgrp__toggle:hover { color: var(--text); }
+    .navgrp__caret { color: var(--muted); transition: transform 0.15s ease; }
+    .navgrp__toggle[aria-expanded="false"] .navgrp__caret { transform: rotate(-90deg); }
+    [dir="rtl"] .navgrp__toggle[aria-expanded="false"] .navgrp__caret { transform: rotate(90deg); }
+    .navgrp__toggle[aria-expanded="false"] + .navgrp__items { display: none; }
+    .navgrp__items { list-style: none; margin: 0; padding: 0; }
+
+    /* mobile drawer backdrop (hidden on desktop) */
+    .nav-backdrop { display: none; }
+
+    /* ---------- main + footer ---------- */
+    main {
+      grid-column: 2; grid-row: 2; min-width: 0;
+      width: 100%; max-width: var(--content-max); margin-inline: auto;
+      padding: var(--space-6) var(--space-7);
+    }
+    footer {
+      grid-column: 1 / -1; grid-row: 3;
+      text-align: center; color: var(--muted);
+      padding: var(--space-6); font-size: var(--text-xs);
+      border-top: 1px solid var(--border);
+    }
+
+    /* ---------- headings ---------- */
+    .page-title {
+      font-size: var(--text-2xl); font-weight: var(--font-semibold);
+      letter-spacing: -0.01em; color: var(--text); margin: 0 0 var(--space-2);
+    }
+    .page-subtitle { color: var(--muted); margin: 0 0 var(--space-5); }
+    /* Section label (the established uppercase "eyebrow" used across pages). */
+    h2 {
+      margin: 0 0 var(--space-3); font-size: var(--text-xs); color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.08em; font-weight: var(--font-semibold);
+    }
+
+    /* ---------- surfaces ---------- */
+    .panel {
+      background: var(--surface-1); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: var(--space-5);
+      margin-bottom: var(--space-5); overflow-x: auto; box-shadow: var(--shadow-sm);
+    }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-5); }
+    .stat {
+      position: relative; background: var(--surface-2);
+      border: 1px solid var(--border); border-radius: var(--radius-lg);
+      padding: var(--space-4) var(--space-5); box-shadow: var(--shadow-sm);
+    }
+    .stat::before {
+      content: ""; position: absolute; inset-block-start: 0;
+      inset-inline: var(--space-5); height: 2px; border-radius: 2px;
+      background: var(--hairline);
+    }
+    .stat .num {
+      font-size: var(--text-3xl); font-weight: var(--font-semibold);
+      line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+    }
+    .stat .label {
+      color: var(--muted); font-size: var(--text-xs); margin-top: var(--space-1);
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+
+    /* ---------- tables ---------- */
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    /* Logical properties (text-align: start, *-inline-*) keep RTL correct
+       (dir="rtl": ar/he/fa/ur) without a separate stylesheet. */
+    th, td { text-align: start; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--hairline); }
+    th {
+      color: var(--muted); font-weight: var(--font-medium); font-size: var(--text-xs);
+      text-transform: uppercase; letter-spacing: 0.06em;
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr { transition: background 0.1s ease; }
+    tbody tr:hover { background: var(--row-hover); }
     tr:last-child td { border-bottom: none; }
-    .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .badge.active  { background: rgba(46,160,67,0.25); color: var(--accent); }
-    .badge.done    { background: rgba(110,118,129,0.2); color: var(--muted); }
-    .badge.blocked { background: rgba(210,153,34,0.2); color: var(--warn); }
-    .badge.pending { background: rgba(139,148,158,0.15); color: var(--muted); }
-    .badge.success { background: rgba(46,160,67,0.25); color: var(--accent); }
-    .badge.failure { background: rgba(248,81,73,0.2); color: var(--danger); }
-    .badge.cancelled { background: rgba(139,148,158,0.2); color: var(--muted); }
-    code { background: var(--panel); padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.85em; }
+
+    /* ---------- badges (recoloured from semantic tokens, theme-aware) ---------- */
+    .badge {
+      display: inline-block; padding: 0.12rem 0.5rem; border-radius: var(--radius-sm);
+      font-size: var(--text-xs); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      border: 1px solid transparent;
+    }
+    .badge.active    { background: var(--success-subtle); color: var(--success); border-color: color-mix(in srgb, var(--success) 35%, transparent); }
+    .badge.success   { background: var(--success-subtle); color: var(--success); border-color: color-mix(in srgb, var(--success) 35%, transparent); }
+    .badge.done      { background: var(--muted-subtle); color: var(--muted); }
+    .badge.pending   { background: var(--muted-subtle); color: var(--muted); }
+    .badge.cancelled { background: var(--muted-subtle); color: var(--muted); }
+    .badge.blocked   { background: var(--warn-subtle); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+    .badge.failure   { background: var(--danger-subtle); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
+    .badge.info      { background: var(--info-subtle); color: var(--info); border-color: color-mix(in srgb, var(--info) 35%, transparent); }
+
+    code { background: var(--surface-sunken); padding: 0.1rem 0.3rem; border-radius: var(--radius-sm); font-size: 0.85em; }
     .muted { color: var(--muted); }
-    .halt-pill { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.7rem; border-radius: 999px; font-size: 0.75rem; cursor: pointer; border: 1px solid var(--border); background: var(--panel); color: var(--text); text-decoration: none; }
-    .halt-pill:hover { border-color: var(--danger); }
+
+    /* ---------- buttons / inputs (available for page migration) ---------- */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+      padding: 0.5rem 0.95rem; border-radius: var(--radius-md); cursor: pointer;
+      font-size: var(--text-base); font-weight: var(--font-medium); line-height: 1.2;
+      border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+    }
+    .btn:hover { border-color: var(--border-strong); text-decoration: none; }
+    .btn--primary { background: var(--brand); border-color: var(--brand); color: var(--brand-fg); }
+    .btn--primary:hover { background: var(--brand-hi); border-color: var(--brand-hi); }
+    .btn--ghost { background: transparent; }
+    .btn--danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .input, .select, .textarea {
+      background: var(--surface-sunken); color: var(--text);
+      border: 1px solid var(--border); border-radius: var(--radius-md);
+      padding: 0.55rem 0.7rem; font: inherit; width: 100%;
+    }
+    .input:hover, .select:hover, .textarea:hover { border-color: var(--border-strong); }
+
+    /* ---------- empty + loading states ---------- */
+    .empty { text-align: center; padding: var(--space-7) var(--space-5); color: var(--muted); }
+    .empty__title { color: var(--text); font-size: var(--text-lg); font-weight: var(--font-semibold); margin: 0 0 var(--space-2); }
+    .skeleton {
+      background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-sunken) 37%, var(--surface-2) 63%);
+      background-size: 400% 100%; border-radius: var(--radius-sm);
+      animation: skeleton 1.4s ease infinite; min-height: 1rem;
+    }
+    @keyframes skeleton { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+
+    /* ---------- halt killswitch pill ---------- */
+    .halt-pill {
+      display: inline-flex; align-items: center; gap: var(--space-2);
+      padding: 0.3rem 0.7rem; border-radius: var(--radius-pill); font-size: var(--text-xs);
+      cursor: pointer; border: 1px solid var(--border); background: var(--surface-2);
+      color: var(--text); text-decoration: none;
+    }
+    .halt-pill:hover { border-color: var(--danger); text-decoration: none; }
     .halt-pill.armed { background: var(--danger); color: #fff; border-color: var(--danger); }
     .halt-pill .dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--muted); }
     .halt-pill.armed .dot { background: #fff; animation: pulse 1.2s ease-in-out infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-    footer { text-align: center; color: var(--muted); padding: 2rem; font-size: 0.8rem; }
+
+    /* ---------- adaptive density. Comfortable is the default above;
+       compact tightens the scale + chrome for operators watching many runs.
+       Selected via ?density= / mvk_density cookie. ---------- */
+    body.density-compact {
+      font-size: 13px; --topbar-h: 48px; --sidebar-w: 212px;
+      --space-4: 12px; --space-5: 18px; --space-6: 24px; --space-7: 36px;
+    }
+    body.density-compact .topbar { padding-block: var(--space-2); }
+    body.density-compact main { padding: var(--space-4) var(--space-5); }
+    body.density-compact .panel { padding: var(--space-4); margin-bottom: var(--space-4); }
+    body.density-compact th, body.density-compact td { padding: var(--space-1) var(--space-3); }
+    body.density-compact .stat { padding: var(--space-4); }
+    body.density-compact .stat .num { font-size: var(--text-xl); }
+    body.density-compact h2 { margin-bottom: var(--space-2); }
+    body.density-compact footer { padding: var(--space-4); }
+    body.density-compact .sidebar nav a { padding-block: 0.3rem; }
+
+    /* ---------- responsive: collapse the sidebar into a drawer ---------- */
+    @media (max-width: 880px) {
+      body { grid-template-columns: 1fr; }
+      .topbar__menu { display: inline-flex; }
+      main { grid-column: 1; padding: var(--space-5) var(--space-4); }
+      .sidebar {
+        position: fixed; top: var(--topbar-h); bottom: 0;
+        inset-inline-start: calc(-1 * var(--drawer-w));
+        width: var(--drawer-w); z-index: 60;
+        box-shadow: var(--shadow-lg); transition: inset-inline-start 0.2s ease;
+      }
+      body.nav-open .sidebar { inset-inline-start: 0; }
+      .nav-backdrop {
+        position: fixed; inset: var(--topbar-h) 0 0 0; z-index: 55;
+        background: rgba(0,0,0,0.5);
+      }
+      body.nav-open .nav-backdrop { display: block; }
+    }
     @media (prefers-reduced-motion: reduce) {
       .halt-pill .dot { animation: none; }
+      .sidebar { transition: none; }
+      .navgrp__caret { transition: none; }
+      .skeleton { animation: none; }
+      tbody tr { transition: none; }
     }
-    @media (max-width: 720px) {
-      header { padding: 1rem; gap: 0.5rem; }
-      main { padding: 1rem; }
-      nav a { font-size: 0.85rem; }
-    }
-    /* Adaptive UI density. Default (comfortable) keeps the layout above;
-       body.density-compact tightens spacing for operators watching many
-       runs at once. Selected via ?density= / mvk_density cookie. */
-    body.density-compact { font-size: 13px; }
-    body.density-compact header { padding: 0.5rem 1.25rem; }
-    body.density-compact main { padding: 1rem; }
-    body.density-compact .panel { padding: 0.65rem 0.85rem; margin-bottom: 0.75rem; }
-    body.density-compact th, body.density-compact td { padding: 0.25rem 0.5rem; }
-    body.density-compact .stat { padding: 0.65rem 0.85rem; }
-    body.density-compact .stat .num { font-size: 1.4rem; }
-    body.density-compact h2 { margin-bottom: 0.5rem; }
-    body.density-compact footer { padding: 1rem; }
   </style>
   {% if custom_theme_css %}
   <style>
     /* Operator-defined themes ([dashboard] themes in config.toml). Values
-       are strictly validated as #hex colors before they reach this block. */
+       are strictly validated as #hex colors before they reach this block.
+       These set only --bg/--panel/--text/--accent; everything else (borders,
+       surfaces, badges, brand) is derived from them by the rules above. */
 {{ custom_theme_css }}
   </style>
   {% endif %}
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232ea043'/%3E%3Ctext x='16' y='22' font-family='Helvetica' font-weight='700' font-size='18' fill='white' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236366f1'/%3E%3Cpath d='M6 23 L12 8 L16 15 L20 8 L26 23' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
 </head>
 <body class="theme-{{ theme or 'dark' }} font-{{ font or 'default' }} density-{{ density or 'comfortable' }}">
   <a class="skip-link" href="#content">Skip to content</a>
-  <header>
-    <h1>Maverick</h1>
-    <nav aria-label="Primary">
-      {% set _nav = [
-        ('/', 'Overview'), ('/chat', 'Chat'), ('/goals', 'Goals'),
-        ('/graph-editor', 'Graph'), ('/goal-builder', 'Builder'),
-        ('/plan-tree-3d', '3D'),
-        ('/oversight', 'Oversight'),
-        ('/skills', 'Skills'), ('/store', 'Store'), ('/templates', 'Templates'),
-        ('/facts', 'Facts'),
-        ('/spend', 'Spend'), ('/providers', 'Providers'), ('/tools', 'Tools'),
-        ('/permissions', 'Permissions'), ('/approvals', 'Approvals'),
-        ('/fleets', 'Fleets'),
-        ('/tenants', 'Tenants'),
-        ('/learned', 'Learned'),
-        ('/safety', 'Safety'), ('/compliance', 'Compliance'),
-        ('/compartments', 'Compartments'),
-        ('/channels', 'Channels'),
-        ('/plugins', 'Plugins'), ('/mcp', 'MCP'), ('/audit', 'Audit'),
-        ('/cache', 'Cache'),
-        ('/benchmarks', 'Benchmarks'), ('/walkthroughs', 'Walkthroughs'),
-        ('/embed-demo', 'Embed'),
-      ] %}
-      {% set _path = request.url.path if request else '' %}
-      {% for _href, _label in _nav %}
-        {% set _active = (_path == _href) if _href == '/' else (_path == _href or _path.startswith(_href ~ '/')) %}
-        <a href="{{ _href }}"{% if _active %} class="active" aria-current="page"{% endif %}>{{ _label }}</a>
-      {% endfor %}
-    </nav>
-    <span style="margin-inline-start: auto; display: flex; gap: 0.5rem; align-items: center;">
+  <header class="topbar">
+    <button type="button" class="topbar__menu" id="nav-toggle"
+            aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+        <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <a class="brand" href="/" aria-label="Maverick — home">
+      <svg class="brand__mark" width="26" height="26" viewBox="0 0 36 28" fill="none" aria-hidden="true">
+        <path d="M3 24 L11 6 L18 16 L25 6 L33 24" stroke="var(--brand)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="18" cy="16" r="2.4" fill="var(--brand-hi)"/>
+      </svg>
+      <span class="brand__name">Maverick</span>
+    </a>
+    <span class="topbar__controls">
       <a href="#" id="halt-pill" class="halt-pill" role="button" aria-label="Halt: arm or clear killswitch">
         <span class="dot" aria-hidden="true"></span>
         <span id="halt-label">checking</span>
       </a>
-      <select id="theme-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('theme', this.value); window.location = u; }" aria-label="Theme"
-              style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem;">
+      <select class="ctl" id="theme-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('theme', this.value); window.location = u; }" aria-label="Theme">
         <option value="">theme</option>
         <option value="dark" {% if theme == 'dark' %}selected{% endif %}>Dark</option>
         <option value="light" {% if theme == 'light' %}selected{% endif %}>Light</option>
@@ -175,20 +431,17 @@
         <option value="{{ name }}" {% if theme == name %}selected{% endif %}>{{ name }}</option>
         {% endfor %}
       </select>
-      <select id="density-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('density', this.value); window.location = u; }" aria-label="Density"
-              style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem;">
+      <select class="ctl" id="density-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('density', this.value); window.location = u; }" aria-label="Density">
         <option value="">density</option>
         <option value="comfortable" {% if density == 'comfortable' %}selected{% endif %}>Comfortable</option>
         <option value="compact" {% if density == 'compact' %}selected{% endif %}>Compact</option>
       </select>
-      <select id="font-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('font', this.value); window.location = u; }" aria-label="{{ t('label.font') }}"
-              style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem;">
+      <select class="ctl" id="font-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('font', this.value); window.location = u; }" aria-label="{{ t('label.font') }}">
         <option value="">{{ t('label.font')|lower }}</option>
         <option value="default" {% if font == 'default' %}selected{% endif %}>{{ t('font.default') }}</option>
         <option value="dyslexic" {% if font == 'dyslexic' %}selected{% endif %}>{{ t('font.dyslexic') }}</option>
       </select>
-      <select id="lang-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('lang', this.value); window.location = u; }" aria-label="{{ t('label.language') }}"
-              style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem;">
+      <select class="ctl" id="lang-select" onchange="if (this.value) { const u = new URL(window.location); u.searchParams.set('lang', this.value); window.location = u; }" aria-label="{{ t('label.language') }}">
         <option value="">{{ t('label.language')|lower }}</option>
         <option value="en" {% if lang == 'en' %}selected{% endif %}>English</option>
         <option value="fr" {% if lang == 'fr' %}selected{% endif %}>Français</option>
@@ -199,11 +452,41 @@
       </select>
     </span>
   </header>
+  <div class="nav-backdrop" id="nav-backdrop"></div>
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="Primary">
+      {% set _path = request.url.path if request else '' %}
+      {% set _home_active = (_path == '/') %}
+      <a href="/"{% if _home_active %} class="active" aria-current="page"{% endif %}>Overview</a>
+      {% set _nav_groups = [
+        ('Operate', [('/chat', 'Chat'), ('/goals', 'Goals'), ('/goal-builder', 'Builder'), ('/graph-editor', 'Graph'), ('/fleets', 'Fleets')]),
+        ('Observe', [('/oversight', 'Oversight'), ('/spend', 'Spend'), ('/providers', 'Providers'), ('/benchmarks', 'Benchmarks'), ('/learned', 'Learned'), ('/plan-tree-3d', '3D')]),
+        ('Govern', [('/approvals', 'Approvals'), ('/permissions', 'Permissions'), ('/safety', 'Safety'), ('/compliance', 'Compliance'), ('/compartments', 'Compartments'), ('/audit', 'Audit')]),
+        ('Extend', [('/skills', 'Skills'), ('/store', 'Store'), ('/templates', 'Templates'), ('/tools', 'Tools'), ('/plugins', 'Plugins'), ('/mcp', 'MCP'), ('/channels', 'Channels')]),
+        ('Admin', [('/tenants', 'Tenants'), ('/cache', 'Cache'), ('/facts', 'Facts'), ('/walkthroughs', 'Walkthroughs'), ('/embed-demo', 'Embed')]),
+      ] %}
+      {% for _group in _nav_groups %}
+        <div class="navgrp">
+          <button type="button" class="navgrp__toggle" data-grp="{{ _group[0] }}"
+                  aria-expanded="true" aria-controls="navgrp-{{ loop.index0 }}">
+            <span class="navgrp__label">{{ _group[0] }}</span>
+            <svg class="navgrp__caret" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 L5 6.5 L8 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <ul class="navgrp__items" id="navgrp-{{ loop.index0 }}">
+            {% for _href, _label in _group[1] %}
+              {% set _active = (_path == _href or _path.startswith(_href ~ '/')) %}
+              <li><a href="{{ _href }}"{% if _active %} class="active" aria-current="page"{% endif %}>{{ _label }}</a></li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endfor %}
+    </nav>
+  </aside>
   <main id="content" tabindex="-1">
     {% block content %}{% endblock %}
   </main>
   <footer>
-    <span class="muted">local-only · open source · MIT licensed</span>
+    <span class="muted">Maverick · {{ t('footer.local') }} · proprietary software</span>
   </footer>
   <script>
     // Halt indicator + arm/clear via /api/v1/halt.
@@ -281,6 +564,43 @@
           if (btn) { btn.disabled = false; btn.textContent = 'Run'; }
         }
       });
+    })();
+
+    // Collapsible sidebar groups. Default open (progressive enhancement: with
+    // no JS every group stays visible); collapse state persists per-group in
+    // localStorage, but the group holding the active page is always forced open.
+    (function() {
+      const KEY = 'mvk_nav_collapsed';
+      let collapsed = {};
+      try { collapsed = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) {}
+      document.querySelectorAll('.navgrp__toggle').forEach(function(btn) {
+        const grp = btn.getAttribute('data-grp');
+        const hasActive = btn.parentElement.querySelector('a.active');
+        if (collapsed[grp] && !hasActive) btn.setAttribute('aria-expanded', 'false');
+        btn.addEventListener('click', function() {
+          const open = btn.getAttribute('aria-expanded') === 'true';
+          btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+          collapsed[grp] = open;
+          try { localStorage.setItem(KEY, JSON.stringify(collapsed)); } catch (e) {}
+        });
+      });
+    })();
+
+    // Mobile nav drawer: hamburger toggles the off-canvas sidebar; backdrop
+    // click, Escape, or following a link closes it.
+    (function() {
+      const body = document.body;
+      const btn = document.getElementById('nav-toggle');
+      const backdrop = document.getElementById('nav-backdrop');
+      if (!btn) return;
+      function close() { body.classList.remove('nav-open'); btn.setAttribute('aria-expanded', 'false'); }
+      function open() { body.classList.add('nav-open'); btn.setAttribute('aria-expanded', 'true'); }
+      btn.addEventListener('click', function() {
+        body.classList.contains('nav-open') ? close() : open();
+      });
+      if (backdrop) backdrop.addEventListener('click', close);
+      document.addEventListener('keydown', function(ev) { if (ev.key === 'Escape') close(); });
+      document.querySelectorAll('.sidebar a').forEach(function(a) { a.addEventListener('click', close); });
     })();
   </script>
 </body>
