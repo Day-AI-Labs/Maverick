@@ -59,6 +59,15 @@ def _check(roles: dict, assignments: dict, inherits: dict, user: str, permission
     return f"DENY: user {user!r} lacks {permission!r} (roles: {', '.join(effective)})"
 
 
+def _normalize_list_map(value: dict, name: str, item_name: str) -> tuple[dict[str, list[str]] | None, str | None]:
+    normalized: dict[str, list[str]] = {}
+    for key, items in value.items():
+        if not isinstance(items, list):
+            return None, f"ERROR: {name} entry {str(key)!r} must be a list of {item_name}"
+        normalized[str(key)] = [str(item) for item in items]
+    return normalized, None
+
+
 def _run(args: dict[str, Any]) -> str:
     if args.get("op") not in (None, "check"):
         return f"ERROR: unknown op {args.get('op')!r}"
@@ -78,18 +87,37 @@ def _run(args: dict[str, Any]) -> str:
     if not isinstance(permission, str) or not permission:
         return "ERROR: permission must be a non-empty string"
 
-    norm_roles = {str(r): [str(p) for p in (perms or [])] for r, perms in roles.items()}
-    norm_inherits = {str(r): [str(p) for p in (parents or [])] for r, parents in inherits.items()}
-    return _check(norm_roles, assignments, norm_inherits, user, permission)
+    norm_roles, error = _normalize_list_map(roles, "roles", "permissions")
+    if error:
+        return error
+    norm_assignments, error = _normalize_list_map(assignments, "assignments", "roles")
+    if error:
+        return error
+    norm_inherits, error = _normalize_list_map(inherits, "inherits", "parent roles")
+    if error:
+        return error
+    return _check(norm_roles or {}, norm_assignments or {}, norm_inherits or {}, user, permission)
 
 
 _SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "op": {"type": "string", "enum": ["check"]},
-        "roles": {"type": "object", "description": "role -> list of permissions ('*' and 'prefix:*' wildcards allowed)"},
-        "assignments": {"type": "object", "description": "user -> list of assigned roles"},
-        "inherits": {"type": "object", "description": "optional role -> list of parent roles (child inherits parent perms)"},
+        "roles": {
+            "type": "object",
+            "additionalProperties": {"type": "array", "items": {"type": "string"}},
+            "description": "role -> list of permissions ('*' and 'prefix:*' wildcards allowed)",
+        },
+        "assignments": {
+            "type": "object",
+            "additionalProperties": {"type": "array", "items": {"type": "string"}},
+            "description": "user -> list of assigned roles",
+        },
+        "inherits": {
+            "type": "object",
+            "additionalProperties": {"type": "array", "items": {"type": "string"}},
+            "description": "optional role -> list of parent roles (child inherits parent perms)",
+        },
         "user": {"type": "string", "description": "the subject to authorize"},
         "permission": {"type": "string", "description": "the permission being requested"},
     },
