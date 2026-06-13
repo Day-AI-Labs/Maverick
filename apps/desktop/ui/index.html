@@ -5,62 +5,149 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Maverick</title>
     <style>
+      :root {
+        --bg: #0b0e14;
+        --bg-soft: #11151f;
+        --card: #161b27;
+        --line: #232a39;
+        --text: #e8ebf2;
+        --muted: #9aa4b2;
+        --accent: #f5a623;
+        --accent-soft: rgba(245, 166, 35, 0.16);
+        --danger: #e5534b;
+      }
+      * { box-sizing: border-box; }
       html, body {
         height: 100%;
         margin: 0;
-        background: #0b0e14;
-        color: #e6e6e6;
-        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(1200px 600px at 50% -10%, #141a27 0%, var(--bg) 60%);
+        color: var(--text);
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
         display: flex;
         align-items: center;
         justify-content: center;
+        user-select: none;
       }
-      .splash { text-align: center; max-width: 28rem; padding: 1rem; }
-      .dot {
-        width: 14px; height: 14px; border-radius: 50%;
-        background: #f5a623; margin: 0 auto 1rem;
+      .stage { text-align: center; max-width: 30rem; padding: 1.5rem; }
+
+      /* Brand mark: a glowing ring that spins, with the Maverick monogram. */
+      .ring {
+        position: relative;
+        width: 86px; height: 86px;
+        margin: 0 auto 1.4rem;
+      }
+      .ring .spin {
+        position: absolute; inset: 0;
+        border-radius: 50%;
+        background: conic-gradient(from 0deg, var(--accent) 0deg, rgba(245,166,35,0) 130deg);
+        -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 5px));
+                mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 5px));
+        animation: spin 1.05s linear infinite;
+      }
+      .ring .core {
+        position: absolute; inset: 12px;
+        border-radius: 50%;
+        background: var(--card);
+        border: 1px solid var(--line);
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 800; font-size: 1.6rem; color: var(--accent);
+        letter-spacing: -0.04em;
+        box-shadow: inset 0 0 24px rgba(245,166,35,0.08);
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      h1 { font-size: 1.35rem; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+      .tag { font-size: 0.82rem; color: var(--muted); margin: 0.3rem 0 1.4rem; }
+
+      #status {
+        font-size: 0.9rem; color: var(--text);
+        min-height: 1.2rem;
+        display: inline-flex; align-items: center; gap: 0.5rem;
+      }
+      #status .live {
+        width: 7px; height: 7px; border-radius: 50%;
+        background: var(--accent); flex: 0 0 auto;
         animation: pulse 1.2s ease-in-out infinite;
       }
-      @keyframes pulse { 50% { opacity: 0.25; } }
-      h1 { font-size: 1.1rem; font-weight: 600; margin: 0 0 0.5rem; }
-      p { font-size: 0.85rem; color: #9aa4b2; line-height: 1.5; margin: 0.25rem 0; }
-      code { background: #1c2230; padding: 0.1rem 0.35rem; border-radius: 4px; }
-      #hint { display: none; }
+      @keyframes pulse { 50% { opacity: 0.3; } }
+      code {
+        background: var(--bg-soft); border: 1px solid var(--line);
+        padding: 0.12rem 0.4rem; border-radius: 5px; font-size: 0.86em;
+        user-select: text;
+      }
+
+      /* Trouble card — only shown if the dashboard never answers. */
+      #trouble {
+        display: none;
+        margin-top: 1.6rem;
+        text-align: left;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 1.1rem 1.2rem;
+      }
+      #trouble h2 {
+        font-size: 0.98rem; margin: 0 0 0.5rem;
+        display: flex; align-items: center; gap: 0.5rem;
+      }
+      #trouble h2::before {
+        content: ""; width: 9px; height: 9px; border-radius: 50%;
+        background: var(--danger); flex: 0 0 auto;
+      }
+      #trouble p { font-size: 0.85rem; color: var(--muted); line-height: 1.55; margin: 0.35rem 0; }
+      #trouble ol { font-size: 0.85rem; color: var(--muted); line-height: 1.6; margin: 0.5rem 0 0.2rem; padding-left: 1.2rem; }
+      .row { display: flex; gap: 0.6rem; margin-top: 0.95rem; flex-wrap: wrap; }
+      button {
+        font: inherit; font-size: 0.85rem; font-weight: 550;
+        border-radius: 8px; padding: 0.5rem 0.9rem; cursor: pointer;
+        border: 1px solid var(--line); background: var(--bg-soft); color: var(--text);
+        transition: background 0.12s, border-color 0.12s;
+      }
+      button:hover { background: #1b2230; border-color: #2c3547; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #1a1205; }
+      button.primary:hover { background: #ffb734; }
+      #copied { font-size: 0.78rem; color: var(--accent); margin-left: 0.2rem; opacity: 0; transition: opacity 0.2s; }
+
+      @media (prefers-reduced-motion: reduce) {
+        .ring .spin { animation: none; opacity: 0.85; }
+        #status .live { animation: none; }
+      }
     </style>
   </head>
   <body>
-    <div class="splash">
-      <div class="dot"></div>
-      <h1>Waiting for the local Maverick dashboard&hellip;</h1>
-      <p>Connecting to <code>http://127.0.0.1:8765</code>.</p>
-      <p id="hint">
-        Still nothing after a few seconds &mdash; the shell could not start it
-        for you. Install the CLI and run <code>maverick dashboard</code>, then
-        this window will connect by itself.
+    <main class="stage">
+      <div class="ring" aria-hidden="true">
+        <div class="spin"></div>
+        <div class="core">M</div>
+      </div>
+      <h1>Maverick</h1>
+      <p class="tag">Self-hosted agent platform</p>
+
+      <p id="status" role="status" aria-live="polite">
+        <span class="live"></span><span id="status-text">Starting&hellip;</span>
       </p>
-    </div>
-    <script>
-      // Poll the auth-exempt health endpoint; navigate once it answers.
-      // The Rust shell may still be spawning `maverick dashboard`, so keep
-      // trying and surface a hint if it never comes up.
-      var DASH = "http://127.0.0.1:8765";
-      var tries = 0;
-      function probe() {
-        tries += 1;
-        if (tries > 8) {
-          document.getElementById("hint").style.display = "block";
-        }
-        fetch(DASH + "/healthz", { cache: "no-store" })
-          .then(function (res) {
-            if (res.ok) {
-              window.location.replace(DASH + "/");
-            } else {
-              setTimeout(probe, 700);
-            }
-          })
-          .catch(function () { setTimeout(probe, 700); });
-      }
-      probe();
-    </script>
+
+      <section id="trouble" role="alert">
+        <h2>Couldn&rsquo;t reach the dashboard</h2>
+        <p>
+          Maverick tries to start the dashboard for you. If it never comes up,
+          the <code>maverick</code> command usually isn&rsquo;t installed yet, or
+          isn&rsquo;t on the PATH this app can see.
+        </p>
+        <ol>
+          <li>Make sure Maverick is installed (see the setup guide).</li>
+          <li>Open a terminal and run <code>maverick dashboard</code> &mdash; this
+            window connects automatically once it&rsquo;s up.</li>
+        </ol>
+        <div class="row">
+          <button class="primary" id="retry" type="button">Try again</button>
+          <button id="copy" type="button">Copy command</button>
+          <span id="copied" aria-live="polite">Copied</span>
+        </div>
+      </section>
+    </main>
+    <script src="app.js" defer></script>
   </body>
 </html>

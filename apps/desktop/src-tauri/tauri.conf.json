@@ -9,15 +9,19 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Maverick",
-        "width": 1200,
-        "height": 800,
+        "width": 1280,
+        "height": 860,
+        "minWidth": 940,
+        "minHeight": 640,
         "resizable": true,
+        "center": true,
         "fullscreen": false
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8765; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8765 ws://127.0.0.1:8765; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
     }
   },
   "bundle": {
