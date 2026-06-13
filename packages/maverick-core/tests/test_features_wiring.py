@@ -22,7 +22,8 @@ def test_get_features_defaults_all_on(monkeypatch, tmp_path):
     monkeypatch.setenv("MAVERICK_CONFIG", str(cfg))
     from maverick.config import get_features
     assert get_features() == {
-        "skills": True, "world_model": True, "streaming": True, "pack_editing": True,
+        "skills": True, "world_model": True, "streaming": True,
+        "pack_editing": True, "role_editing": True,
     }
 
 
@@ -30,12 +31,13 @@ def test_get_features_reads_overrides(monkeypatch, tmp_path):
     cfg = tmp_path / "config.toml"
     cfg.write_text(
         "[features]\nskills = false\nworld_model = false\nstreaming = false\n"
-        "pack_editing = false\n"
+        "pack_editing = false\nrole_editing = false\n"
     )
     monkeypatch.setenv("MAVERICK_CONFIG", str(cfg))
     from maverick.config import get_features
     assert get_features() == {
-        "skills": False, "world_model": False, "streaming": False, "pack_editing": False,
+        "skills": False, "world_model": False, "streaming": False,
+        "pack_editing": False, "role_editing": False,
     }
 
 
