@@ -117,3 +117,44 @@ class TestRender:
         assert d["deliverables"] == 1
         assert d["cost_avoided"] == 48.0
         assert d["by_department"][0]["department"] == "x"
+
+class TestGovernance:
+    def test_governance_does_not_claim_unsigned_audit_chain(self, tmp_path, monkeypatch):
+        from maverick.audit import signing
+
+        monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+        monkeypatch.setattr(signing, "_have_crypto", lambda: True)
+        monkeypatch.setattr(
+            signing,
+            "verify_chain",
+            lambda path: [signing.ChainBreak(1, "unsigned", "audit signing disabled")],
+        )
+        audit_dir = tmp_path / "audit"
+        audit_dir.mkdir()
+        (audit_dir / "2026-06-13.ndjson").write_text(
+            '{"kind":"test","ts":1}\n', encoding="utf-8",
+        )
+
+        summary = workforce_value._governance_summary()
+
+        assert summary["chain_verifiable"] is False
+        assert "signed audit chain present" not in workforce_value.format_report(
+            workforce_value.WorkforceValue(governance=summary),
+        )
+
+    def test_governance_claims_chain_only_after_verifier_passes(self, tmp_path, monkeypatch):
+        from maverick.audit import signing
+
+        monkeypatch.setenv("MAVERICK_HOME", str(tmp_path))
+        monkeypatch.setattr(signing, "_have_crypto", lambda: True)
+        monkeypatch.setattr(signing, "verify_chain", lambda path: [])
+        monkeypatch.setattr(signing, "verify_anchors", lambda audit_dir: [])
+        audit_dir = tmp_path / "audit"
+        audit_dir.mkdir()
+        (audit_dir / "2026-06-13.ndjson").write_text(
+            '{"hash":"h","sig":"s","key_id":"k"}\n', encoding="utf-8",
+        )
+
+        summary = workforce_value._governance_summary()
+
+        assert summary["chain_verifiable"] is True
