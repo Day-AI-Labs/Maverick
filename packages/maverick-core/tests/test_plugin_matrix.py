@@ -18,10 +18,23 @@ def _wire(monkeypatch, eps_by_group, manifests, cfg=None, granted=None):
                         lambda group: list(eps_by_group.get(group, [])))
     monkeypatch.setattr(plugins_mod, "_ep_dist_name", lambda ep: ep._dist)
     monkeypatch.setattr(plugins_mod, "_plugins_config", lambda: cfg or {})
+    monkeypatch.setattr(plugins_mod, "_allowed_plugin_names",
+                        lambda: _allow_from_cfg(cfg or {}))
     monkeypatch.setattr(plugins_mod, "_permission_policy",
                         lambda: (set(granted or []), True))
     monkeypatch.setattr(plugins_mod, "_find_manifest",
                         lambda ep: manifests.get(ep.name))
+
+
+def _allow_from_cfg(cfg):
+    enabled = cfg.get("enabled")
+    if enabled is None:
+        return set()
+    if isinstance(enabled, str):
+        items = {p.strip() for p in enabled.split(",") if p.strip()}
+    else:
+        items = {str(x).strip() for x in enabled if str(x).strip()}
+    return None if "*" in items else items
 
 
 def _manifest(api="2", *, network=False):
@@ -84,3 +97,34 @@ def test_render_empty_and_populated(monkeypatch):
           {"alpha": _manifest("1")}, cfg={"enabled": ["alpha"]})
     out = pmx.render(pmx.build_matrix())
     assert "alpha" in out and "DEPRECATED" in out and "kernel API v2" in out
+
+
+def test_matrix_uses_runtime_allowlist_semantics(monkeypatch):
+    _wire(monkeypatch, {"maverick.tools": [_EP("future")]},
+          {"future": _manifest("3")}, cfg={})
+    monkeypatch.setattr(plugins_mod, "_allowed_plugin_names", lambda: {"future"})
+
+    (row,) = pmx.build_matrix()
+
+    assert row.enabled is True
+    assert "future" in pmx.problems([row])[0]
+
+
+def test_matrix_enables_all_when_runtime_allowlist_is_wildcard(monkeypatch):
+    _wire(monkeypatch, {"maverick.tools": [_EP("future")]},
+          {"future": _manifest("3")}, cfg={})
+    monkeypatch.setattr(plugins_mod, "_allowed_plugin_names", lambda: None)
+
+    (row,) = pmx.build_matrix()
+
+    assert row.enabled is True
+
+
+def test_matrix_supports_string_enabled_config(monkeypatch):
+    _wire(monkeypatch, {"maverick.tools": [_EP("future")]},
+          {"future": _manifest("3")}, cfg={"enabled": "future"})
+
+    (row,) = pmx.build_matrix()
+
+    assert row.enabled is True
+    assert "future" in pmx.problems([row])[0]
