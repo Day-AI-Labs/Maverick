@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 from maverick.conversational_supervisor import (
     HELP_TEXT,
+    MAX_GOAL_REF_DIGITS,
     MUTATING_INTENTS,
     Supervisor,
     parse_utterance,
@@ -229,6 +230,18 @@ def test_unknown_goal_id_is_honest(world, ledger):
 def test_unreadable_goal_ref_is_honest(world, ledger):
     sup = make_supervisor(world, ledger, confirm=lambda _d: True)
     out = sup.handle("pause goal banana")
+    assert "couldn't read a goal number" in out
+
+
+def test_overlong_numeric_goal_ref_is_honest(world, ledger):
+    sup = make_supervisor(world, ledger, confirm=lambda _d: True)
+    out = sup.handle("pause goal " + "9" * (MAX_GOAL_REF_DIGITS + 1))
+    assert "couldn't read a goal number" in out
+
+
+def test_extremely_long_numeric_goal_ref_does_not_raise(world, ledger):
+    sup = make_supervisor(world, ledger, confirm=lambda _d: True)
+    out = sup.handle("pause goal " + "9" * 5000)
     assert "couldn't read a goal number" in out
 
 
