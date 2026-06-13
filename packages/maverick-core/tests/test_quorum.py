@@ -138,6 +138,16 @@ def test_expiry_via_injected_clock(store, clock):
         quorum.approve("chg-1", "carol", store=store)
 
 
+def test_approved_proposal_expires_via_status(store, clock):
+    _propose(store)
+    quorum.approve("chg-1", "bob", store=store)
+    quorum.approve("chg-1", "carol", store=store)
+    assert quorum.status("chg-1", store=store) == quorum.APPROVED
+
+    clock.now[0] += 8 * 86400.0                      # ttl_days=7 -> stale
+    assert quorum.status("chg-1", store=store) == quorum.EXPIRED
+
+
 def test_not_expired_just_inside_ttl(store, clock):
     _propose(store)
     clock.now[0] += 7 * 86400.0                      # exactly the boundary
