@@ -258,15 +258,18 @@ def lint_profile(profile: DomainProfile) -> tuple[list[str], list[str]]:
     return errors, warnings
 
 
-def _department_memory(profile: DomainProfile, task: str) -> str:
+def _department_memory(profile: DomainProfile, task: str, *,
+                       channel: str | None = None, user_id: str | None = None,
+                       shield=None) -> str:
     """The department's recalled lessons, formatted for a specialist's brief.
 
     Pre-run context layers only run at the orchestrator root; a specialist
     spawned mid-run via ``spawn_specialist`` used to start blank. This gives
     every pack its department memory at ANY spawn depth: same-department
-    reflexion lessons and consolidated dream insights, both already
-    sanitized/bounded by their formatters. Empty (and free) unless the
-    operator enabled those loops; never raises into a spawn.
+    reflexion lessons scoped to the current channel/user and consolidated
+    dream insights, both already sanitized/bounded by their formatters. Empty
+    (and free) unless the operator enabled those loops; never raises into a
+    spawn.
     """
     try:
         from .config import get_domains
@@ -278,8 +281,11 @@ def _department_memory(profile: DomainProfile, task: str) -> str:
     try:
         from . import reflexion
         if reflexion.enabled():
-            recalled = reflexion.recall(task, k=2, domain=profile.name)
-            block = reflexion.format_context(recalled)
+            recalled = reflexion.recall(
+                task, k=2, domain=profile.name,
+                channel=channel, user_id=user_id,
+            )
+            block = reflexion.format_context(recalled, shield=shield)
             if block:
                 blocks.append(block)
     except Exception:  # pragma: no cover -- recall never blocks a spawn
@@ -319,7 +325,12 @@ def agent_from_profile(profile: DomainProfile, ctx, task: str, *,
     else:
         parent_cap = getattr(parent, "capability", None)
     cap = domain_capability(profile, parent_cap, principal)
-    memory = _department_memory(profile, task)
+    memory = _department_memory(
+        profile, task,
+        channel=getattr(ctx, "channel", None),
+        user_id=getattr(ctx, "user_id", None),
+        shield=getattr(ctx, "shield", None),
+    )
     return Agent(
         ctx=ctx, role=profile.name, brief=task + ("\n" + memory if memory else ""),
         depth=depth, parent=parent,
