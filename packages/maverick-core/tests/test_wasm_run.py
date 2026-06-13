@@ -53,6 +53,17 @@ def test_module_path_confined(tmp_path, have_wasmtime):
     assert sb.commands == []
 
 
+def test_dirs_must_be_array(tmp_path, have_wasmtime):
+    sb = RecordingSandbox(tmp_path)
+    out = wasm_run(sandbox=sb).fn({
+        "op": "run",
+        "module": "allowed/module.wasm",
+        "dirs": {"secret": True},
+    })
+    assert out.startswith("ERROR") and "dirs must be an array" in out
+    assert sb.commands == []
+
+
 def test_dash_module_rejected_without_sandbox(have_wasmtime):
     out = wasm_run().fn({"op": "run", "module": "--invoke"})
     assert out.startswith("ERROR") and "may not begin with '-'" in out
