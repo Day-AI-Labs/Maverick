@@ -1,9 +1,10 @@
 """Browser-extension CORS gate (extensions/browser <-> the local dashboard).
 
 The allowance is opt-in (`[dashboard] allow_extension` / env) and fail-closed:
-until the operator turns it on, no CORS header is emitted, preflights are not
-answered, and extension-origin POSTs are blocked by the cross-site gate.
-Scoped to extension origins only — web origins never get a CORS header.
+until the operator turns it on and configures a dashboard token, no CORS header
+is emitted, preflights are not answered, and extension-origin POSTs are blocked
+by the cross-site gate. Scoped to extension origins only — web origins never get
+a CORS header.
 """
 from __future__ import annotations
 
@@ -73,6 +74,7 @@ def test_gate_off_extension_post_blocked(monkeypatch):
 
 def test_gate_on_preflight_answered(monkeypatch):
     monkeypatch.setenv("MAVERICK_DASHBOARD_ALLOW_EXTENSION", "1")
+    monkeypatch.setenv("MAVERICK_DASHBOARD_TOKEN", "sekret")
     resp = _client().options("/api/v1/goals", headers=PREFLIGHT_HEADERS)
     assert resp.status_code == 204
     assert resp.headers["access-control-allow-origin"] == EXT_ORIGIN
@@ -82,11 +84,12 @@ def test_gate_on_preflight_answered(monkeypatch):
 
 def test_gate_on_extension_post_creates_goal(monkeypatch):
     monkeypatch.setenv("MAVERICK_DASHBOARD_ALLOW_EXTENSION", "1")
+    monkeypatch.setenv("MAVERICK_DASHBOARD_TOKEN", "sekret")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
     calls = _patch_runner(monkeypatch)
     resp = _client().post(
         "/api/v1/goals", json={"title": "from the popup"},
-        headers={"Origin": EXT_ORIGIN},
+        headers={"Origin": EXT_ORIGIN, "Authorization": "Bearer sekret"},
     )
     assert resp.status_code == 201
     assert resp.headers["access-control-allow-origin"] == EXT_ORIGIN
@@ -95,10 +98,12 @@ def test_gate_on_extension_post_creates_goal(monkeypatch):
 
 def test_gate_on_events_poll_gets_cors_header(monkeypatch):
     monkeypatch.setenv("MAVERICK_DASHBOARD_ALLOW_EXTENSION", "1")
+    monkeypatch.setenv("MAVERICK_DASHBOARD_TOKEN", "sekret")
     from maverick_dashboard._shared import _world
     goal_id = _world().create_goal("t", "d")
     resp = _client().get(
-        f"/api/v1/goals/{goal_id}/events", headers={"Origin": EXT_ORIGIN},
+        f"/api/v1/goals/{goal_id}/events",
+        headers={"Origin": EXT_ORIGIN, "Authorization": "Bearer sekret"},
     )
     assert resp.status_code == 200
     assert resp.headers["access-control-allow-origin"] == EXT_ORIGIN
@@ -107,18 +112,20 @@ def test_gate_on_events_poll_gets_cors_header(monkeypatch):
 def test_gate_on_web_origin_never_allowed(monkeypatch):
     """Scoped to extension origins: an https origin gets neither CORS nor CSRF pass."""
     monkeypatch.setenv("MAVERICK_DASHBOARD_ALLOW_EXTENSION", "1")
+    monkeypatch.setenv("MAVERICK_DASHBOARD_TOKEN", "sekret")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fake")
     _patch_runner(monkeypatch)
     resp = _client().post(
         "/api/v1/goals", json={"title": "hi"},
         headers={"Origin": "https://evil.example"},
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 401
     assert "access-control-allow-origin" not in resp.headers
 
 
 def test_gate_on_firefox_origin_accepted(monkeypatch):
     monkeypatch.setenv("MAVERICK_DASHBOARD_ALLOW_EXTENSION", "1")
+    monkeypatch.setenv("MAVERICK_DASHBOARD_TOKEN", "sekret")
     moz = "moz-extension://12345678-90ab-cdef-1234-567890abcdef"
     resp = _client().options(
         "/api/v1/goals", headers={**PREFLIGHT_HEADERS, "Origin": moz},
@@ -130,6 +137,7 @@ def test_gate_on_firefox_origin_accepted(monkeypatch):
 # ---------- opt-in via config file ----------
 
 def test_gate_on_via_config_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("MAVERICK_DASHBOARD_TOKEN", "sekret")
     cfg = tmp_path / "config.toml"
     cfg.write_text("[dashboard]\nallow_extension = true\n", encoding="utf-8")
     monkeypatch.setenv("MAVERICK_CONFIG", str(cfg))
@@ -143,6 +151,20 @@ def test_config_false_stays_closed(tmp_path, monkeypatch):
     cfg.write_text("[dashboard]\nallow_extension = false\n", encoding="utf-8")
     monkeypatch.setenv("MAVERICK_CONFIG", str(cfg))
     resp = _client().options("/api/v1/goals", headers=PREFLIGHT_HEADERS)
+    assert "access-control-allow-origin" not in resp.headers
+
+
+def test_gate_on_without_token_stays_closed(monkeypatch):
+    monkeypatch.setenv("MAVERICK_DASHBOARD_ALLOW_EXTENSION", "1")
+    resp = _client().options("/api/v1/goals", headers=PREFLIGHT_HEADERS)
+    assert "access-control-allow-origin" not in resp.headers
+    assert resp.status_code != 204
+
+
+def test_gate_on_without_token_extension_get_not_readable(monkeypatch):
+    monkeypatch.setenv("MAVERICK_DASHBOARD_ALLOW_EXTENSION", "1")
+    resp = _client().get("/api/v1/goals", headers={"Origin": EXT_ORIGIN})
+    assert resp.status_code == 200
     assert "access-control-allow-origin" not in resp.headers
 
 

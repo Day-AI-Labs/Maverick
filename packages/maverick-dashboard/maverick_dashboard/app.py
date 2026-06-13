@@ -593,11 +593,12 @@ async def security_headers(request: Request, call_next):
 # and the no-token CSRF gate in bearer_auth would otherwise 403 its POSTs.
 # This allowance is OPT-IN and fail-closed: until the operator sets
 # `[dashboard] allow_extension = true` (or MAVERICK_DASHBOARD_ALLOW_EXTENSION=1)
-# no CORS header is ever emitted and extension origins stay blocked. It is
-# scoped to extension origins only — a web origin (https://…) never matches,
-# so the same-origin posture for ordinary sites is unchanged. A configured
-# dashboard token still applies to every extension call (the extension sends
-# the same Authorization: Bearer header as any API client).
+# AND configures MAVERICK_DASHBOARD_TOKEN, no CORS header is ever emitted and
+# extension origins stay blocked. Requiring a bearer token keeps extension
+# support from turning no-token loopback mode into an ambient trust boundary for
+# any installed browser extension. The allowance is scoped to extension origins
+# only — a web origin (https://…) never matches, so the same-origin posture for
+# ordinary sites is unchanged.
 _EXTENSION_ORIGIN_RE = re.compile(r"^(?:chrome|moz)-extension://[a-zA-Z0-9-]+$")
 
 
@@ -613,9 +614,13 @@ def _extension_cors_enabled() -> bool:
 
 
 def _allowed_extension_origin(request: Request) -> str | None:
-    """The request's Origin, iff it is an extension origin AND the gate is on."""
+    """The request's Origin, iff extension CORS is enabled and token-gated."""
     origin = request.headers.get("origin") or ""
-    if _EXTENSION_ORIGIN_RE.match(origin) and _extension_cors_enabled():
+    if (
+        os.environ.get("MAVERICK_DASHBOARD_TOKEN")
+        and _EXTENSION_ORIGIN_RE.match(origin)
+        and _extension_cors_enabled()
+    ):
         return origin
     return None
 
